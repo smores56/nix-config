@@ -1,4 +1,6 @@
 { pkgs, ... }: {
+  home.packages = [ pkgs.nitch ];
+
   programs.starship.enable = true;
   programs.zoxide = {
     enable = true;
@@ -12,8 +14,8 @@
 
     shellAbbrs = {
       # workflow apps
-      e = "$EDITOR";
-      ef = "$EDITOR (gum file .)";
+      e = "hx";
+      ef = "hx (gum file .)";
       l = "exa --icons -lh";
       t = "zellij-picker";
       a = "mkdir -p";
@@ -57,19 +59,15 @@
     };
 
     interactiveShellInit = ''
-    # set custom prompt
-    set fish_greeting
-
-    # startup splashes
+    set fish_greeting # custom prompt
     if status --is-interactive
-        # fetch sys info: https://github.com/willeccles/f
-        f
+        nitch
     end
     '';
 
     plugins = [
-      { name = "pisces"; src = pkgs.fishPlugins.pisces.src; }
       { name = "done"; src = pkgs.fishPlugins.done.src; }
+      { name = "pisces"; src = pkgs.fishPlugins.pisces.src; }
       {
         name = "lf-icons";
         src = pkgs.fetchFromGitHub {
