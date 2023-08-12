@@ -9,7 +9,7 @@
     enable = true;
 
     settings = {
-      icons = true;  
+      icons = true;
       shell = "${pkgs.bash}/bin/bash";
       shellopts = "-eu";
       ifs = "\\n";

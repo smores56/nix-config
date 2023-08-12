@@ -56,11 +56,11 @@
       { name = "nix"; auto-format = true; }
       { name = "javascript"; auto-format = true; }
       { name = "typescript"; auto-format = true; }
-      { name = "svelte"; auto-format = true; roots = ["package.json"]; }
+      { name = "svelte"; auto-format = true; roots = [ "package.json" ]; }
       { name = "java"; indent = { tab-width = 4; unit = "    "; }; }
       {
         name = "rust";
-        config.rust-analyzer.diagnostics.disabled = ["unresolved-proc-macro"];
+        config.rust-analyzer.diagnostics.disabled = [ "unresolved-proc-macro" ];
       }
     ];
   };

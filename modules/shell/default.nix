@@ -1,5 +1,6 @@
 { pkgs, ... }: {
   imports = [
+    ./fish
     ./editor.nix
     ./git.nix
     ./lf.nix
@@ -10,7 +11,6 @@
     jq
     curl
     openssh
-    # TODO: https://github.com/willeccles/f # Simple sysfetch
     zip
     unzip
     flyctl

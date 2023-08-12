@@ -3,7 +3,7 @@
   home.homeDirectory = "/home/smores";
   home.stateVersion = "23.11";
 
-  xdg.enable = true; 
+  xdg.enable = true;
   programs.home-manager.enable = true;
 
   home.sessionVariables = {
@@ -12,12 +12,7 @@
   };
 
   imports = [
-    ./gui/gui.nix
-    ./fish/fish.nix
-    ./shell/shell.nix
+    ./gui
+    ./shell
   ];
-
-  home.packages = [ pkgs.tailscale ];
-
-  systemd.user.startServices = "sd-switch";
 }
