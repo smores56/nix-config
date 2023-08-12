@@ -28,25 +28,16 @@
       "/" = "fd --type f";
       "//" = "sk --ansi -i -c 'rg --color=always --line-number \"{}\"'";
 
-      # Arch Linux
-      pi = "doas pacman -Sy";
-      pr = "doas pacman -R";
-      pq = "doas pacman -Q";
-
       # theming
       dt = "set-theme dark";
       lt = "set-theme light";
       dts = "set-theme dark --select";
       lts = "set-theme light --select";
 
-      # dotfiles management
-      cdf = "c ~/.local/share/chezmoi";
-      cm = "chezmoi";
-      ca = "chezmoi apply";
-
       # home manager
+      cn = "c ~/.config/nix";
       hm = "home-manager";
-      hs = "home-manager switch --flake ~/.config/nix/";
+      hs = "home-manager switch --flake ~/.config/nix";
 
       # nix
       ns = "nixos-rebuild switch --upgrade";
@@ -59,10 +50,10 @@
     };
 
     interactiveShellInit = ''
-    set fish_greeting # custom prompt
-    if status --is-interactive
-        nitch
-    end
+      set fish_greeting # custom prompt
+      if status --is-interactive
+          nitch
+      end
     '';
 
     plugins = [
