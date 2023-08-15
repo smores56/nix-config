@@ -3,6 +3,7 @@
   home.packages = with pkgs; [
     taplo
     gopls
+    marksman
     nixpkgs-fmt
     python311Packages.mypy
     python311Packages.python-lsp-server
