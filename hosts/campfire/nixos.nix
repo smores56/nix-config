@@ -5,7 +5,7 @@
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
 
-  networking.hostName = "smoresbook";
+  networking.hostName = "campfire";
 
   users.users.smores = {
     isNormalUser = true;
