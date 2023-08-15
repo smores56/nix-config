@@ -6,6 +6,10 @@
     });
   };
 
+  imports = [
+    ./waybar
+  ];
+
   home.packages = with pkgs; [
     hyprpaper
     wofi

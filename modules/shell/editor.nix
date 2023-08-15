@@ -1,8 +1,6 @@
 { pkgs, ... }: {
   # LSPs
   home.packages = with pkgs; [
-    kakoune
-
     taplo
     gopls
     nixpkgs-fmt
@@ -15,12 +13,16 @@
     nodePackages.dockerfile-language-server-nodejs
   ];
 
+  programs.micro.enable = true;
+  home.sessionVariables = { VISUAL = "micro"; };
+
   programs.helix = {
-    enable = true;
-    defaultEditor = true;
+    # enable = true;
+    # defaultEditor = true;
+
+    # package = 123;
 
     settings = {
-      # TODO: set programmatically
       theme = "rose_pine_moon";
 
       keys.normal.space = {
