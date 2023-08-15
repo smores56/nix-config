@@ -42,6 +42,7 @@
       # nix
       ns = "nixos-rebuild switch --upgrade";
       nsr = "nix-store --repair --verify --check-contents";
+      ng = "nix-collect-garbage";
 
       # remote access
       sl = "ssh smoresnet -t fish";
