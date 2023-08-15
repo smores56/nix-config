@@ -19,5 +19,5 @@
     preload = ${/. + ../../misc/wallpaper.jpg}
     wallpaper = ,${/. + ../../misc/wallpaper.jpg}
     ipc = off
-  '';  
+  '';
 }

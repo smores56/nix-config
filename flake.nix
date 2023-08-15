@@ -21,7 +21,7 @@
         };
 
         modules = [
-          ./hosts/smoresbook.nix
+          ./hosts/smoresbook/home.nix
         ];
       };
       "smores@campfire" = home-manager.lib.homeManagerConfiguration {
@@ -31,7 +31,7 @@
         };
 
         modules = [
-          ./hosts/campfire.nix
+          ./hosts/campfire/home.nix
         ];
       };
     };

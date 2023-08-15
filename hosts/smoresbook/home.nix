@@ -7,8 +7,8 @@
   programs.home-manager.enable = true;
 
   imports = [
-    ../modules/shell
-    ../modules/hyprland
-    ../modules/gui
+    ../../modules/shell
+    ../../modules/hyprland
+    ../../modules/gui
   ];
 }

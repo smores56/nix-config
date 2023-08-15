@@ -7,6 +7,12 @@
         return 1
       '';
     };
+    tailscale-hosts = {
+      description = "List all tailscale hosts";
+      body = ''
+        tailscale status --json | jq ".Peer | to_entries[] | .value.HostName" -r
+      '';
+    };
     lfcd = {
       description = "Open a file manager and cd to last directory opened on close";
       body = ''

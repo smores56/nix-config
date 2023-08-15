@@ -44,9 +44,10 @@
       nsr = "nix-store --repair --verify --check-contents";
 
       # remote access
-      sl = "ssh smores@sammohr.dev -t";
-      sm = "ssh smores@home.sammohr.dev -t";
-      sc = "ssh smores@campfire.sammohr.dev -t";
+      sl = "ssh smoresnet -t fish";
+      sm = "ssh smortress -t fish";
+      sc = "ssh campfire -t fish";
+      st = "ssh (tailscale-hosts | fzf) -t fish";
       pf = "port-forward smores@home.sammohr.dev";
     };
 

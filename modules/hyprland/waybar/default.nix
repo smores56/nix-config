@@ -4,7 +4,7 @@
   programs.waybar = {
     enable = true;
     style = ./style.css;
-    
+
     settings = [{
       layer = "top";
       position = "top";
@@ -15,7 +15,7 @@
         "custom/launcher"
         "cpu"
         "memory"
-      	"custom/updates"
+        "custom/updates"
       ];
 
       modules-center = [
@@ -27,8 +27,8 @@
         "tray"
         "network"
         "pulseaudio"
-      	"pulseaudio#microphone"
-      	"bluetooth"
+        "pulseaudio#microphone"
+        "bluetooth"
         "backlight"
         "battery"
         "custom/lock"

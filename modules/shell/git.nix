@@ -1,7 +1,11 @@
-{ pkgs, ... }: {
+{ options, pkgs, ... }: 
+let
+  lightTheme = false;
+in
+{
   home.packages = [
     pkgs.delta
-    pkgs.gitAndTools.gh
+    pkgs.gh
   ];
 
   programs.git = {
@@ -10,9 +14,6 @@
     userName = "Sam Mohr";
     userEmail = "sam@sammohr.dev";
 
-    aliases = {
-      prettylog = "...";
-    };
     extraConfig = {
       core = {
         excludesFile = "$HOME/.gitignore";
@@ -53,13 +54,12 @@
     enable = true;
 
     settings = {
-      os.editPreset = "helix";
       git.paging = {
         colorArg = "always";
-        pager = "delta --paging=never --dark";
+        pager = "delta --paging=never --${if lightTheme then "light" else "dark"}";
       };
       gui.theme = {
-        lightTheme = false;
+        lightTheme = lightTheme;
         selectedLineBgColor = [ "underline" ];
         selectedRangeBgColor = [ "underline" ];
       };
