@@ -6,6 +6,7 @@
   boot.loader.efi.canTouchEfiVariables = true;
 
   networking.hostName = "campfire";
+  time.timeZone = "America/Los_Angeles";
 
   users.users.smores = {
     isNormalUser = true;

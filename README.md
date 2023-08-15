@@ -7,7 +7,7 @@ Configuration for my Nix home/programs and NixOS programs/services.
 
 For NixOS, run the following:
 
-```console
+```bash
 export HOSTNAME=<hostname> # set -xg HOSTNAME <hostname> on fish shell
 
 nix-shell -p git gh home-manager

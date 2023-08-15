@@ -6,6 +6,7 @@
   boot.loader.efi.canTouchEfiVariables = true;
 
   networking.hostName = "smoresbook";
+  time.timeZone = "America/Los_Angeles";
 
   # Define a user account. Don't forget to set a password with ‘passwd’.
   users.users.smores = {
