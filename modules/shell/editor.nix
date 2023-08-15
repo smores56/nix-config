@@ -1,6 +1,8 @@
 { pkgs, ... }: {
   # LSPs
   home.packages = with pkgs; [
+    kakoune
+
     taplo
     gopls
     nixpkgs-fmt

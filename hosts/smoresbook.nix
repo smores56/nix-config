@@ -6,13 +6,9 @@
   xdg.enable = true;
   programs.home-manager.enable = true;
 
-  home.sessionVariables = {
-    GUM_CHOOSE_CURSOR_FOREGROUND = 3;
-    # LS_COLORS (cat ~/.config/fish/ls-colors.txt)
-  };
-
   imports = [
-    ./gui
-    ./shell
+    ../modules/shell
+    ../modules/hyprland
+    ../modules/gui
   ];
 }

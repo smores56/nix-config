@@ -7,6 +7,11 @@
     ./zellij.nix
   ];
 
+  home.sessionVariables = {
+    GUM_CHOOSE_CURSOR_FOREGROUND = 3;
+    # LS_COLORS (cat ~/.config/fish/ls-colors.txt)
+  };
+
   home.packages = with pkgs; [
     jq
     curl

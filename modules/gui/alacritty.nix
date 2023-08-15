@@ -5,9 +5,9 @@
     settings = {
       shell = "${pkgs.fish}/bin/fish";
       font = {
-        size = 8; # TODO: set programatically
+        size = 12;
         normal = {
-          family = "CaskaydiaCove Nerd Font Mono"; # TODO: set programmatically
+          family = "CaskaydiaCove Nerd Font Mono";
         };
       };
 

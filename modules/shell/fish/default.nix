@@ -41,6 +41,7 @@
 
       # nix
       ns = "nixos-rebuild switch --upgrade";
+      nsr = "nix-store --repair --verify --check-contents";
 
       # remote access
       sl = "ssh smores@sammohr.dev -t";
