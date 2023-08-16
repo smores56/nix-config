@@ -8,7 +8,5 @@
 
   imports = [
     ../../modules/shell
-    ../../modules/hyprland
-    ../../modules/gui
   ];
 }
