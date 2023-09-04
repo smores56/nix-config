@@ -10,7 +10,7 @@
   # Some default env vars.
   env = XCURSOR_SIZE,24
 
-  windowrulev2=opacity 0.9 0.8,class:^(Alacritty)$
+  windowrulev2=opacity 0.9 0.8,class:^(Alacritty)$,class:^(org.wezfurlong.wezterm)$
 
   input {
       kb_layout = us
@@ -82,7 +82,7 @@
   $mod = SUPER
 
   # Example binds, see https://wiki.hyprland.org/Configuring/Binds/ for more
-  bind = $mod, Return, exec, alacritty
+  bind = $mod, Return, exec, wezterm
   bind = $mod, B, exec, firefox
   bind = , Print, exec, grimblast copy area
   bind = $mod, Q, killactive, 
@@ -121,12 +121,4 @@
       ''
     )
     10)}
-
-  # Scroll through existing workspaces with mod + scroll
-  bind = $mod, mouse_down, workspace, e+1
-  bind = $mod, mouse_up, workspace, e-1
-
-  # Move/resize windows with mod + LMB/RMB and dragging
-  bindm = $mod, mouse:272, movewindow
-  bindm = $mod, mouse:273, resizewindow
 ''

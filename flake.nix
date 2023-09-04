@@ -7,41 +7,64 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    hyprland.url = "github:hyprwm/Hyprland";
+    helix.url = "github:helix-editor/helix";
   };
 
-  outputs = { nixpkgs, home-manager, hyprland, ... }: {
+  outputs = { nixpkgs, home-manager, helix, ... }:
+    let
+      localOverlay = prev: final: {
+        helix = helix.packages.${prev.system}.helix;
+      };
+
+      pkgsForSystem = system: import nixpkgs {
+        overlays = [
+          localOverlay
+        ];
+        inherit system;
+        config = { allowUnfree = true; };
+      };
+
+      mkHomeConfiguration = args: home-manager.lib.homeManagerConfiguration (rec {
+        pkgs = pkgsForSystem (args.system or "x86_64-linux");
+
+        modules = [
+          ./modules/terminal
+          {
+            xdg.enable = true;
+            home = {
+              stateVersion = "23.11";
+              packages = [ pkgs.home-manager ];
+              username = args.username or "smores";
+              homeDirectory = args.homeDirectory or "/home/smores";
+            };
+          }
+        ] ++ (if args.extraSpecialArgs.gui then [
+          ./modules/hyprland
+          ./modules/gui
+        ] else []);
+      } // args);
+    in
+  {
     defaultPackage.x86_64-linux = home-manager.defaultPackage.x86_64-linux;
 
     homeConfigurations = {
-      "smores@smoresbook" = home-manager.lib.homeManagerConfiguration {
-        pkgs = import nixpkgs {
-          system = "x86_64-linux";
-          config = { allowUnfree = true; };
+      "smores@smoresbook" = mkHomeConfiguration {
+        extraSpecialArgs = {
+          gui = true;
+          lightTheme = false;
         };
-
-        modules = [
-          ./hosts/smoresbook/home.nix
-        ];
       };
-      "smores@campfire" = home-manager.lib.homeManagerConfiguration {
-        pkgs = import nixpkgs {
-          system = "x86_64-linux";
-          config = { allowUnfree = true; };
+      "smores@campfire" = mkHomeConfiguration {
+        extraSpecialArgs = {
+          gui = true;
+          lightTheme = false;
         };
-
-        modules = [
-          ./hosts/campfire/home.nix
-        ];
       };
-      "smores@smoresnet" = home-manager.lib.homeManagerConfiguration {
-        pkgs = import nixpkgs {
-          system = "x86_64-linux";
+      "smores@smoresnet" = mkHomeConfiguration {
+        extraSpecialArgs = {
+          gui = false;
+          lightTheme = false;
         };
-
-        modules = [
-          ./hosts/smoresnet/home.nix
-        ];
       };
     };
   };

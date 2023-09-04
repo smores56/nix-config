@@ -24,7 +24,7 @@
             rm -f $tmp
             if test -d "$dir"
                 if test "$dir" != (pwd)
-                    cd $dir
+                    c $dir
                 end
             end
         end

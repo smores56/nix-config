@@ -1,9 +1,9 @@
-{ ... }: {
+{ pkgs, ... }: {
   programs.zellij = {
     enable = true;
 
     settings = {
-      default_shell = "fish";
+      default_shell = "${pkgs.fish}/bin/fish";
       ui.pane_frames.rounded_corners = true;
       themes.default = {
         fg = 7;

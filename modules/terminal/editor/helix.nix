@@ -1,6 +1,7 @@
 { pkgs, ... }: {
   # LSPs
   home.packages = with pkgs; [
+    nil
     taplo
     gopls
     marksman
@@ -14,17 +15,12 @@
     nodePackages.dockerfile-language-server-nodejs
   ];
 
-  programs.micro.enable = true;
-  home.sessionVariables = { VISUAL = "micro"; };
-
   programs.helix = {
-    # enable = true;
-    # defaultEditor = true;
-
-    # package = 123;
+    enable = true;
+    defaultEditor = true;
 
     settings = {
-      theme = "rose_pine_moon";
+      theme = "base16_transparent";
 
       keys.normal.space = {
         s = ":write";
@@ -63,10 +59,10 @@
       { name = "typescript"; auto-format = true; }
       { name = "svelte"; auto-format = true; roots = [ "package.json" ]; }
       { name = "java"; indent = { tab-width = 4; unit = "    "; }; }
-      {
-        name = "rust";
-        config.rust-analyzer.diagnostics.disabled = [ "unresolved-proc-macro" ];
-      }
     ];
+
+    languages.language-server.rust-analyzer = {
+      config.rust-analyzer.diagnostics.disabled = [ "unresolved-proc-macro" ];
+    };
   };
 }

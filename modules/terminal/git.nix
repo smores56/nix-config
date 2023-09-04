@@ -1,8 +1,4 @@
-{ options, pkgs, ... }: 
-let
-  lightTheme = false;
-in
-{
+{ pkgs, lightTheme, ... }: {
   home.packages = [
     pkgs.delta
     pkgs.gh

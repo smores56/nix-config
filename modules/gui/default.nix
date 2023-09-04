@@ -2,7 +2,7 @@
   fonts.fontconfig.enable = true;
 
   imports = [
-    ./alacritty.nix
+    ./wezterm.nix
   ];
 
   home.packages = with pkgs; [

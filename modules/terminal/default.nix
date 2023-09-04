@@ -1,15 +1,14 @@
 { pkgs, ... }: {
   imports = [
-    ./fish
-    ./editor.nix
+    ./shell
+    ./editor
     ./git.nix
-    ./lf.nix
-    ./zellij.nix
+    ./file-manager
+    ./multiplexer
   ];
 
   home.sessionVariables = {
     GUM_CHOOSE_CURSOR_FOREGROUND = 3;
-    # LS_COLORS (cat ~/.config/fish/ls-colors.txt)
   };
 
   home.packages = with pkgs; [
@@ -19,6 +18,8 @@
     zip
     unzip
     flyctl
+    comma
+    file
 
     zoxide
     exa
@@ -26,11 +27,11 @@
     sd
     zellij
     delta
-    bat
     fd
     dua
     ouch
     bottom
+    tokei
     eva
     licensor
     terminal-typeracer

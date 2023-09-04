@@ -8,6 +8,7 @@
 
   imports = [
     ./waybar
+    ./swaylock.nix
   ];
 
   home.packages = with pkgs; [
