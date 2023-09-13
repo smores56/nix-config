@@ -20,6 +20,7 @@
     flyctl
     comma
     file
+    direnv
 
     zoxide
     exa

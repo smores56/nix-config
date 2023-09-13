@@ -2,7 +2,7 @@
   fonts.fontconfig.enable = true;
 
   imports = [
-    ./wezterm.nix
+    ./terminal
   ];
 
   home.packages = with pkgs; [

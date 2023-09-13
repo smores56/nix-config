@@ -19,7 +19,7 @@
       l = "exa --icons -lh";
       t = "zellij-picker";
       a = "mkdir -p";
-      f = "lfcd";
+      f = "yazi";
       b = "bat";
       g = "lazygit";
       gc = "gh repo clone";

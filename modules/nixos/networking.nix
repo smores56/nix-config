@@ -1,11 +1,13 @@
-{ pkgs, ... }: {
-  # Use NetworkManager for wifi management
-  networking.networkmanager = {
+{ ... }: {
+  # Use Connman for wifi management
+  services.connman = {
     enable = true;
     wifi.backend = "iwd";
   };
 
+  # Enable Gnome keyring for secret storage
+  services.gnome.gnome-keyring.enable = true;
+
   # Enable tailscale
-  environment.systemPackages = [ pkgs.tailscale ];
   services.tailscale.enable = true;
 }

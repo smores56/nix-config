@@ -30,7 +30,7 @@
         pkgs = pkgsForSystem (args.system or "x86_64-linux");
 
         modules = [
-          ./modules/terminal
+          ./modules/tools
           {
             xdg.enable = true;
             home = {
@@ -43,31 +43,31 @@
         ] ++ (if args.extraSpecialArgs.gui then [
           ./modules/hyprland
           ./modules/gui
-        ] else []);
+        ] else [ ]);
       } // args);
     in
-  {
-    defaultPackage.x86_64-linux = home-manager.defaultPackage.x86_64-linux;
+    {
+      defaultPackage.x86_64-linux = home-manager.defaultPackage.x86_64-linux;
 
-    homeConfigurations = {
-      "smores@smoresbook" = mkHomeConfiguration {
-        extraSpecialArgs = {
-          gui = true;
-          lightTheme = false;
+      homeConfigurations = {
+        "smores@smoresbook" = mkHomeConfiguration {
+          extraSpecialArgs = {
+            gui = true;
+            lightTheme = false;
+          };
         };
-      };
-      "smores@campfire" = mkHomeConfiguration {
-        extraSpecialArgs = {
-          gui = true;
-          lightTheme = false;
+        "smores@campfire" = mkHomeConfiguration {
+          extraSpecialArgs = {
+            gui = true;
+            lightTheme = false;
+          };
         };
-      };
-      "smores@smoresnet" = mkHomeConfiguration {
-        extraSpecialArgs = {
-          gui = false;
-          lightTheme = false;
+        "smores@smoresnet" = mkHomeConfiguration {
+          extraSpecialArgs = {
+            gui = false;
+            lightTheme = false;
+          };
         };
       };
     };
-  };
 }
