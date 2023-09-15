@@ -7,15 +7,18 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
     helix.url = "github:helix-editor/helix";
     comma.url = "github:nix-community/comma";
+    nixgl.url = "github:guibou/nixGL";
   };
 
-  outputs = { nixpkgs, home-manager, helix, comma, ... }:
+  outputs = { nixpkgs, home-manager, nixgl, helix, comma, ... }:
     let
       localOverlay = prev: final: {
         helix = helix.packages.${prev.system}.helix;
         comma = comma.packages.${prev.system}.comma;
+        nixgl = nixgl.packages.${prev.system}.nixGLIntel;
       };
 
       pkgsForSystem = system: import nixpkgs {
@@ -33,6 +36,12 @@
           ./modules/tools
           {
             xdg.enable = true;
+            xdg.mime.enable = true;
+            targets.genericLinux.enable = true;
+            xdg.systemDirs.data = [
+              "${args.homeDirectory or "/home/smores"}/.nix-profile/share/applications"
+            ];
+
             home = {
               stateVersion = "23.11";
               packages = [ pkgs.home-manager ];
@@ -53,6 +62,7 @@
         "smores@smoresbook" = mkHomeConfiguration {
           extraSpecialArgs = {
             gui = true;
+            wallpaper = ./wallpapers/windmills.jpg;
             lightTheme = false;
           };
         };

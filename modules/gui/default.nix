@@ -3,6 +3,7 @@
 
   imports = [
     ./terminal
+    ./dconf.nix
   ];
 
   home.packages = with pkgs; [

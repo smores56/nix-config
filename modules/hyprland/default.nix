@@ -17,8 +17,8 @@
   ];
 
   home.file.".config/hypr/hyprpaper.conf".text = ''
-    preload = ${/. + ../../misc/rocket-launch.png}
-    wallpaper = ,${/. + ../../misc/rocket-launch.png}
+    preload = ${/. + ../../wallpapers/rocket-launch.png}
+    wallpaper = ,${/. + ../../wallpapers/rocket-launch.png}
     ipc = off
   '';
 }

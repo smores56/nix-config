@@ -21,6 +21,8 @@
     comma
     file
     direnv
+    cbonsai
+    xsel
 
     zoxide
     exa
