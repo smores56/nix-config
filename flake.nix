@@ -72,6 +72,13 @@
             lightTheme = false;
           };
         };
+        "smores@smortress" = mkHomeConfiguration {
+          extraSpecialArgs = {
+            gui = true;
+            wallpaper = ./wallpapers/rocket-launch.png;
+            lightTheme = false;
+          };
+        };
         "smores@smoresnet" = mkHomeConfiguration {
           extraSpecialArgs = {
             gui = false;
