@@ -5,6 +5,8 @@
     taplo
     gopls
     marksman
+    typst-lsp
+    typst-fmt
     nixpkgs-fmt
     python311Packages.mypy
     python311Packages.python-lsp-server

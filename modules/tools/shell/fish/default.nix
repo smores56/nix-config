@@ -16,7 +16,7 @@
       # workflow apps
       e = "hx";
       ef = "hx (gum file .)";
-      l = "exa --icons -lh";
+      l = "eza --icons -lh";
       t = "zellij-picker";
       a = "mkdir -p";
       f = "yazi";

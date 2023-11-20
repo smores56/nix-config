@@ -9,15 +9,13 @@
     };
 
     helix.url = "github:helix-editor/helix";
-    comma.url = "github:nix-community/comma";
     nixgl.url = "github:guibou/nixGL";
   };
 
-  outputs = { nixpkgs, home-manager, nixgl, helix, comma, ... }:
+  outputs = { nixpkgs, home-manager, nixgl, helix, ... }:
     let
       localOverlay = prev: final: {
         helix = helix.packages.${prev.system}.helix;
-        comma = comma.packages.${prev.system}.comma;
         nixgl = nixgl.packages.${prev.system}.nixGLIntel;
       };
 

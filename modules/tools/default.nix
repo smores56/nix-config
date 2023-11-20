@@ -25,7 +25,7 @@
     xsel
 
     zoxide
-    exa
+    eza
     ripgrep
     sd
     zellij
@@ -38,13 +38,14 @@
     eva
     licensor
     terminal-typeracer
+    typst
 
     gum
     glow
     fzf
 
     go
-    python3
+    python3Full
     cargo
     rustc
     yarn

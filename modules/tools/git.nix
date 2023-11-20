@@ -2,6 +2,7 @@
   home.packages = [
     pkgs.delta
     pkgs.gh
+    pkgs.mercurial
   ];
 
   programs.git = {
