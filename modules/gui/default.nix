@@ -17,8 +17,9 @@
     evince
     libsForQt5.dolphin
     feh
+    libreoffice
     kicad
     gimp
-    libreoffice
+    musescore
   ];
 }

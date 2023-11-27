@@ -12,18 +12,7 @@
   };
 
   home.packages = with pkgs; [
-    jq
-    curl
-    openssh
-    zip
-    unzip
-    flyctl
-    comma
-    file
-    direnv
-    cbonsai
-    xsel
-
+    # rust tools
     zoxide
     eza
     ripgrep
@@ -36,19 +25,38 @@
     bottom
     tokei
     eva
+    typst
     licensor
     terminal-typeracer
     typst
 
+    # go tools
     gum
     glow
     fzf
 
+    # languages
     go
     python3Full
     cargo
     rustc
     yarn
+
+    # fun stuff
+    cbonsai
+    musikcube
+
+    # other packages
+    jq
+    curl
+    openssh
+    zip
+    unzip
+    flyctl
+    comma
+    file
+    direnv
+    xsel
   ];
 
   programs.bat = {

@@ -1,7 +1,6 @@
 { pkgs, ... }: {
   home.packages = [ pkgs.nitch ];
 
-  programs.starship.enable = true;
   programs.zoxide = {
     enable = true;
     options = [ "--cmd" "c" ];
@@ -62,6 +61,7 @@
     plugins = [
       { name = "done"; src = pkgs.fishPlugins.done.src; }
       { name = "pisces"; src = pkgs.fishPlugins.pisces.src; }
+      { name = "pure"; src = pkgs.fishPlugins.pure.src; }
       {
         name = "lf-icons";
         src = pkgs.fetchFromGitHub {
