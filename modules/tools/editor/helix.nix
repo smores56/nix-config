@@ -61,10 +61,43 @@
       { name = "typescript"; auto-format = true; }
       { name = "svelte"; auto-format = true; roots = [ "package.json" ]; }
       { name = "java"; indent = { tab-width = 4; unit = "    "; }; }
+      {
+        name = "roc";
+        scope = "source.roc";
+        injection-regex = "roc";
+        file-types = ["roc"];
+        shebangs = ["roc"];
+        roots = [];
+        comment-token = "#";
+        language-servers = ["roc-ls"];
+        indent = { tab-width = 4; unit = "    "; };
+
+        auto-pairs = {
+          "(" = ")";
+          "{" = "}";
+          "[" = "]";
+          "\"" = "\"";
+        };
+      }
     ];
 
-    languages.language-server.rust-analyzer = {
-      config.rust-analyzer.diagnostics.disabled = [ "unresolved-proc-macro" ];
+    languages.grammar = [
+      {
+        name = "roc";
+        source = {
+          git = "https://github.com/faldor20/tree-sitter-roc.git";
+          rev = "2c985e01fd1eae1e8ce0d52b084a6b555c26048e";
+        };
+      }
+    ];
+
+    languages.language-server = {
+      roc-ls = {
+        command = "roc_ls";
+      };
+      rust-analyzer = {
+        config.rust-analyzer.diagnostics.disabled = [ "unresolved-proc-macro" ];
+      };
     };
   };
 }

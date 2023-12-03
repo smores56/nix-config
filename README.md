@@ -19,3 +19,7 @@ sudo ln -sf ~/.config/nix/hosts/$HOSTNAME/nixos.nix /etc/nixos/configuration.nix
 sudo nixos-generate-config
 sudo nixos-rebuild switch --upgrade
 ```
+
+### Theming to consider
+
+- Modus-Operandi-Tinted
