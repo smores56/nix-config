@@ -1,5 +1,10 @@
 { pkgs, ... }: {
-  home.packages = [ pkgs.nitch ];
+  home.packages = if pkgs.stdenv.isLinux then [ pkgs.nitch ] else [ pkgs.pfetch ];
+
+  programs.direnv = {
+    enable = true;
+    nix-direnv.enable = true;
+  };
 
   programs.zoxide = {
     enable = true;
@@ -52,16 +57,28 @@
     };
 
     interactiveShellInit = ''
+      ${if pkgs.stdenv.isLinux then "nitch" else "pfetch"}
       set fish_greeting # custom prompt
-      if status --is-interactive
-          nitch
+      set -xg PATH /opt/homebrew/bin $PATH
+
+      # include local extras if present
+      for configFile in ~/.config/fish/extras/*.fish
+          source $configFile
       end
     '';
 
     plugins = [
       { name = "done"; src = pkgs.fishPlugins.done.src; }
       { name = "pisces"; src = pkgs.fishPlugins.pisces.src; }
-      { name = "pure"; src = pkgs.fishPlugins.pure.src; }
+      {
+        name = "lucid";
+        src = pkgs.fetchFromGitHub {
+          owner = "mattgreen";
+          repo = "lucid.fish";
+          rev = "c9aa46c1b59d40be49c37d92632baa1ea7093e9d";
+          sha256 = "sha256-oydBnPMpR6iYcPv7P+DRCJBLOC/Uj77dGZXWz6y699I=";
+        };
+      }
       {
         name = "lf-icons";
         src = pkgs.fetchFromGitHub {

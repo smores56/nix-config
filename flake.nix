@@ -28,28 +28,37 @@
       };
 
       mkHomeConfiguration = args: home-manager.lib.homeManagerConfiguration (rec {
-        pkgs = pkgsForSystem (args.system or "x86_64-linux");
+        pkgs = pkgsForSystem (args.extraSpecialArgs.system or "x86_64-linux");
+        inherit (args) extraSpecialArgs;
 
         modules = [
           ./modules/tools
           {
-            xdg.enable = true;
-            xdg.mime.enable = true;
-            targets.genericLinux.enable = true;
-            xdg.systemDirs.data = [
-              "${args.homeDirectory or "/home/smores"}/.nix-profile/share/applications"
-            ];
 
             home = {
               stateVersion = "23.11";
               packages = [ pkgs.home-manager ];
-              username = args.username or "smores";
-              homeDirectory = args.homeDirectory or "/home/smores";
+              username = args.extraSpecialArgs.username or "smores";
+              homeDirectory = args.extraSpecialArgs.homeDirectory or "/home/smores";
             };
           }
-        ] ++ (if args.extraSpecialArgs.gui then [
+        ]
+        ++ (if pkgs.stdenv.isLinux then [
+          {
+            xdg.enable = true;
+            xdg.mime.enable = true;
+            targets.genericLinux.enable = true;
+            xdg.systemDirs.data =  [
+              "${args.extraSpecialArgs.homeDirectory or "/home/smores"}/.nix-profile/share/applications"
+            ];
+          }
+        ] else [ ])
+        ++ (if (args.extraSpecialArgs.gui or false) then [
           ./modules/hyprland
           ./modules/gui
+        ] else [ ])
+        ++ (if (args.extraSpecialArgs.wezterm or false) then [
+          ./modules/gui/terminal/wezterm.nix
         ] else [ ]);
       } // args);
     in
@@ -80,6 +89,15 @@
         "smores@smoresnet" = mkHomeConfiguration {
           extraSpecialArgs = {
             gui = false;
+            lightTheme = false;
+          };
+        };
+        "smohr" = mkHomeConfiguration {
+          extraSpecialArgs = {
+            username = "smohr";
+            homeDirectory = "/Users/smohr";
+            system = "aarch64-darwin";
+            wezterm = true;
             lightTheme = false;
           };
         };

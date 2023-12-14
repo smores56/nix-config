@@ -20,7 +20,7 @@
         default = "simple";
       };
       pull = {
-        rebase = "false";
+        rebase = "true";
       };
       init = {
         defaultBranch = "main";

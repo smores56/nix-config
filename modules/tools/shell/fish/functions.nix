@@ -13,23 +13,6 @@
         tailscale status --json | jq ".Peer | to_entries[] | .value.HostName" -r
       '';
     };
-    lfcd = {
-      description = "Open a file manager and cd to last directory opened on close";
-      body = ''
-        set tmp (mktemp)
-        # `command` is needed in case `lfcd` is aliased to `lf`
-        command lf -last-dir-path=$tmp $argv
-        if test -f "$tmp"
-            set dir (cat $tmp)
-            rm -f $tmp
-            if test -d "$dir"
-                if test "$dir" != (pwd)
-                    c $dir
-                end
-            end
-        end
-      '';
-    };
     port-forward = {
       description = "Port forward through SSH server";
       body = ''
@@ -73,22 +56,12 @@
         ln -sf ~/.config/alacritty/"$theme/$variant.yml" ~/.config/alacritty/theme.yml
         ln -sf ~/.config/alacritty/"$theme/$variant.yml" ~/.theme.yml
 
-        if test (uname) = "Darkin"
+        if test (uname) = "Darwin"
             ln -sf /opt/homebrew/opt/helix/libexec/runtime/themes/"$variant.toml" ~/.config/helix/themes/theme.toml
         else
             ln -sf /lib/helix/runtime/themes/"$variant.toml" ~/.config/helix/themes/theme.toml
             qtile cmd-obj -o cmd -f reload_config
         end
-      '';
-    };
-    set-wallpaper = {
-      description = "Set the desktop background image";
-      body = ''
-        set wallpaper (ls ~/Pictures/wallpapers/* | gum choose --header="Pick a wallpaper")
-        or return (error "Must choose a wallpaper")
-
-        ln -sf "$wallpaper" ~/.wallpaper
-        qtile cmd-obj -o cmd -f reload_config
       '';
     };
     zellij-picker = {
@@ -97,7 +70,7 @@
         if test (count $argv) -gt 0
             zellij attach $argv[1] 2>/dev/null; or zellij -s $argv[1]
         else if zellij list-sessions 2>/dev/null
-            set session (zellij list-sessions | gum choose);
+            set session (zellij list-sessions | gum choose | cut -d " " -f1);
             or return (error "You must pick a session!")
             zellij attach "$session"
         else

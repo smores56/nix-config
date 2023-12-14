@@ -9,6 +9,7 @@
 
   home.sessionVariables = {
     GUM_CHOOSE_CURSOR_FOREGROUND = 3;
+    DISABLE_NIX_SHELL_WELCOME = 1;
   };
 
   home.packages = with pkgs; [
@@ -46,6 +47,12 @@
     cbonsai
     musikcube
 
+    # container tools
+    k9s
+    docker
+    docker-compose
+    oxker
+
     # other packages
     jq
     curl
@@ -57,6 +64,7 @@
     file
     direnv
     xsel
+    terraform
   ];
 
   programs.bat = {
