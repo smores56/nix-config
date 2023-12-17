@@ -21,7 +21,7 @@
     defaultEditor = true;
 
     settings = {
-      theme = if lightTheme then "rose_pine_dawn" else "rose_pine_moon";
+      theme = if lightTheme then "gruvbox_light" else "noctis_bordo";
 
       keys.normal.space = {
         s = ":write";

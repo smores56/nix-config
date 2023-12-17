@@ -17,7 +17,7 @@
         window_background_opacity = 0.9,
         hide_tab_bar_if_only_one_tab = true,
         hide_mouse_cursor_when_typing = false,
-        color_scheme = ${if lightTheme then "\"rose-pine-dawn\"" else "\"rose-pine-moon\""},
+        color_scheme = ${if lightTheme then "\"Gruvbox light, medium (base16)\"" else "\"Monokai Pro Ristretto (Gogh)\""},
         hide_tab_bar_if_only_one_tab = true,
         initial_cols = 200,
         initial_rows = 50,
