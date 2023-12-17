@@ -13,6 +13,14 @@
 
   imports = [ ./functions.nix ];
 
+  # Setting colors for the hydro prompt
+  home.sessionVariables = {
+    hydro_color_pwd = "blue";
+    hydro_color_git = "green";
+    hydro_color_prompt = "magenta";
+    hydro_color_duration = "yellow";
+  };
+
   programs.fish = {
     enable = true;
 
@@ -70,15 +78,7 @@
     plugins = [
       { name = "done"; src = pkgs.fishPlugins.done.src; }
       { name = "pisces"; src = pkgs.fishPlugins.pisces.src; }
-      {
-        name = "lucid";
-        src = pkgs.fetchFromGitHub {
-          owner = "mattgreen";
-          repo = "lucid.fish";
-          rev = "c9aa46c1b59d40be49c37d92632baa1ea7093e9d";
-          sha256 = "sha256-oydBnPMpR6iYcPv7P+DRCJBLOC/Uj77dGZXWz6y699I=";
-        };
-      }
+      { name = "hydro"; src = pkgs.fishPlugins.hydro.src; }
       {
         name = "lf-icons";
         src = pkgs.fetchFromGitHub {
