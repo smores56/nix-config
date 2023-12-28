@@ -13,12 +13,9 @@
 
   imports = [ ./functions.nix ];
 
-  # Setting colors for the hydro prompt
+  # configure fish-async-prompt
   home.sessionVariables = {
-    hydro_color_pwd = "blue";
-    hydro_color_git = "green";
-    hydro_color_prompt = "magenta";
-    hydro_color_duration = "yellow";
+    async_prompt_functions = "_pure_prompt_git";
   };
 
   programs.fish = {
@@ -78,7 +75,8 @@
     plugins = [
       { name = "done"; src = pkgs.fishPlugins.done.src; }
       { name = "pisces"; src = pkgs.fishPlugins.pisces.src; }
-      { name = "hydro"; src = pkgs.fishPlugins.hydro.src; }
+      { name = "pure"; src = pkgs.fishPlugins.pure.src; }
+      { name = "async-prompt"; src = pkgs.fishPlugins.async-prompt.src; }
       {
         name = "lf-icons";
         src = pkgs.fetchFromGitHub {

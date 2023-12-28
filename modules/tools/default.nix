@@ -13,28 +13,27 @@
   };
 
   home.packages = with pkgs; [
-    # rust tools
+    # exploration
     zoxide
     eza
-    ripgrep
-    sd
-    zellij
-    delta
     fd
-    dua
-    ouch
-    bottom
-    tokei
-    eva
-    typst
-    licensor
-    terminal-typeracer
-    typst
-
-    # go tools
-    gum
+    ripgrep
     glow
     fzf
+    jq
+    delta
+
+    # editing
+    sd
+    ouch
+    zip
+    unzip
+
+    # monitoring
+    dua
+    bottom
+    tokei
+    bandwhich
 
     # languages
     go
@@ -42,10 +41,16 @@
     cargo
     rustc
     yarn
+    erg
+    typst
+    terraform
 
     # fun stuff
+    gum
     cbonsai
     musikcube
+    terminal-typeracer
+    jrnl
 
     # container tools
     k9s
@@ -54,17 +59,17 @@
     oxker
 
     # other packages
-    jq
+    zellij
+    eva
+    licensor
     curl
     openssh
-    zip
-    unzip
     flyctl
-    comma
-    file
     direnv
     xsel
-    terraform
+    navi
+    xxh
+    file
   ];
 
   programs.bat = {
