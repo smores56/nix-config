@@ -9,14 +9,14 @@
     };
 
     helix.url = "github:helix-editor/helix";
-    nixgl.url = "github:guibou/nixGL";
+    stylix.url = "github:danth/stylix";
   };
 
-  outputs = { nixpkgs, home-manager, nixgl, helix, ... }:
+  outputs = { nixpkgs, home-manager, helix, stylix, ... }:
     let
       localOverlay = prev: final: {
         helix = helix.packages.${prev.system}.helix;
-        nixgl = nixgl.packages.${prev.system}.nixGLIntel;
+        stylix = stylix.packages.${prev.system}.stylix;
       };
 
       pkgsForSystem = system: import nixpkgs {
