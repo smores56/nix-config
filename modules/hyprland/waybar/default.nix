@@ -3,7 +3,7 @@
 
   programs.waybar = {
     enable = true;
-    style = ./style.css;
+    # style = ./style.css;
 
     settings = [{
       layer = "top";

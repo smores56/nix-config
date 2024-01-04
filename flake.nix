@@ -8,98 +8,53 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    helix.url = "github:helix-editor/helix";
     stylix.url = "github:danth/stylix";
   };
 
-  outputs = { nixpkgs, home-manager, helix, stylix, ... }:
+  outputs = { nixpkgs, home-manager, stylix, ... }:
     let
       localOverlay = prev: final: {
-        helix = helix.packages.${prev.system}.helix;
         stylix = stylix.packages.${prev.system}.stylix;
       };
 
       pkgsForSystem = system: import nixpkgs {
-        overlays = [
-          localOverlay
-        ];
         inherit system;
+        overlays = [ localOverlay ];
         config = { allowUnfree = true; };
       };
 
-      mkHomeConfiguration = args: home-manager.lib.homeManagerConfiguration (rec {
-        pkgs = pkgsForSystem (args.extraSpecialArgs.system or "x86_64-linux");
-        inherit (args) extraSpecialArgs;
-
-        modules = [
-          ./modules/tools
-          {
-
-            home = {
-              stateVersion = "23.11";
-              packages = [ pkgs.home-manager ];
-              username = args.extraSpecialArgs.username or "smores";
-              homeDirectory = args.extraSpecialArgs.homeDirectory or "/home/smores";
-            };
-          }
-        ]
-        ++ (if pkgs.stdenv.isLinux then [
-          {
-            xdg.enable = true;
-            xdg.mime.enable = true;
-            targets.genericLinux.enable = true;
-            xdg.systemDirs.data =  [
-              "${args.extraSpecialArgs.homeDirectory or "/home/smores"}/.nix-profile/share/applications"
-            ];
-          }
-        ] else [ ])
-        ++ (if (args.extraSpecialArgs.gui or false) then [
-          ./modules/hyprland
-          ./modules/gui
-        ] else [ ])
-        ++ (if (args.extraSpecialArgs.wezterm or false) then [
-          ./modules/gui/terminal/wezterm.nix
-        ] else [ ]);
-      } // args);
+      mkHomeConfiguration = args: home-manager.lib.homeManagerConfiguration {
+        pkgs = pkgsForSystem (args.system or "x86_64-linux");
+        extraSpecialArgs = {
+          polarity = args.polarity or "either";
+        } // args;
+        modules = [ stylix.homeManagerModules.stylix ./modules/home.nix ];
+      };
     in
     {
       defaultPackage.x86_64-linux = home-manager.defaultPackage.x86_64-linux;
 
       homeConfigurations = {
-        "smores@smoresbook" = mkHomeConfiguration {
-          extraSpecialArgs = {
-            gui = true;
-            wallpaper = ./wallpapers/windmills.jpg;
-            lightTheme = false;
-          };
+        "smores" = mkHomeConfiguration {
+          machineType = "laptop";
+          polarity = "dark";
+          wallpaper = ./wallpapers/enchanted-evening-retreat.png;
         };
         "smores@campfire" = mkHomeConfiguration {
-          extraSpecialArgs = {
-            gui = true;
-            lightTheme = false;
-          };
+          machineType = "desktop";
         };
         "smores@smortress" = mkHomeConfiguration {
-          extraSpecialArgs = {
-            gui = true;
-            wallpaper = ./wallpapers/rocket-launch.png;
-            lightTheme = false;
-          };
+          machineType = "desktop";
+          wallpaper = ./wallpapers/rocket-launch.png;
         };
         "smores@smoresnet" = mkHomeConfiguration {
-          extraSpecialArgs = {
-            gui = false;
-            lightTheme = false;
-          };
+          machineType = "server";
         };
         "smohr" = mkHomeConfiguration {
-          extraSpecialArgs = {
-            username = "smohr";
-            homeDirectory = "/Users/smohr";
-            system = "aarch64-darwin";
-            wezterm = true;
-            lightTheme = false;
-          };
+          username = "smohr";
+          homeDirectory = "/Users/smohr";
+          system = "aarch64-darwin";
+          machineType = "laptop";
         };
       };
     };

@@ -2,7 +2,7 @@
   fonts.fontconfig.enable = true;
 
   imports = [
-    ./terminal
+    ./terminal.nix
     ./dconf.nix
   ];
 
