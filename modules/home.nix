@@ -11,6 +11,11 @@ let
       base16Scheme = "${pkgs.base16-schemes}/share/themes/rose-pine.yaml";
     };
 
+  cascadiaCodeFont = {
+    name = "CaskaydiaCove Nerd Font Mono";
+    package = pkgs.cascadia-code;
+  };
+
   machineType = specialArgs.machineType or null;
   machineConfig =
     if machineType == "server" then
@@ -43,10 +48,14 @@ with machineConfig; {
     polarity = specialArgs.polarity or "either";
     autoEnable = true;
     opacity.terminal = 0.9;
-    fonts.sizes.terminal = if largeScreen then 12 else 14;
-    fonts.monospace = {
-      name = "CaskaydiaCove Nerd Font Mono";
-      package = pkgs.cascadia-code;
+    fonts = {
+      sizes = {
+        desktop = 12;
+        terminal = if largeScreen then 12 else 14;
+      };
+      monospace = cascadiaCodeFont;
+      sansSerif = cascadiaCodeFont;
+      emoji = cascadiaCodeFont;
     };
   };
 

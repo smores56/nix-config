@@ -86,10 +86,9 @@
   bind = $mod, B, exec, firefox
   bind = , Print, exec, grimblast copy area
   bind = $mod, Q, killactive, 
-  bind = $mod SHIFT, X, exit, 
   bind = $mod, N, exec, dolphin
   bind = $mod, V, togglefloating, 
-  bind = $mod, R, exec, wofi --show drun
+  bind = $mod, D, exec, wofi --show drun
   bind = $mod, P, pseudo, # dwindle
   bind = $mod, J, togglesplit, # dwindle
 
@@ -106,6 +105,28 @@
   # Move/resize windows with mod + LMB/RMB and dragging
   bindm = $mod, mouse:272, movewindow
   bindm = $mod, mouse:273, resizewindow
+
+  # Resize submap
+  bind = $mod, R, submap, resize
+  submap = resize
+  binde = , right, resizeactive, 10 0
+  binde = , left, resizeactive, -10 0
+  binde = , up, resizeactive, 0 -10
+  binde = , down, resizeactive, 0 10
+  # use reset to go back to the global submap
+  bind = , escape, submap, reset
+  submap = reset
+
+  # Exit submap
+  bind = $mod, X, submap, exit
+  submap = exit
+  binde = , S, exec, systemctl suspend
+  binde = , P, exec, systemctl poweroff
+  binde = , R, exec, systemctl reboot
+  binde = , L, exit,
+  # use reset to go back to the global submap
+  bind = , escape, submap, reset
+  submap = reset
 
   # workspaces
   # binds $mod + [shift +] {1..10} to [move to] workspace {1..10}

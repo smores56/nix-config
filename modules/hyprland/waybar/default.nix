@@ -3,182 +3,158 @@
 
   programs.waybar = {
     enable = true;
-    # style = ./style.css;
 
     settings = [{
-      layer = "top";
-      position = "top";
-      height = 40;
-      gtk-layer-shell = true;
+      "layer" = "top";
+      "position" = "top";
+      "height" = 25;
+      "margin-left" = 5;
+      "margin-right" = 5;
+      "margin-top" = 5;
+      "spacing" = 1;
 
-      modules-left = [
-        "custom/launcher"
-        "cpu"
-        "memory"
-        "custom/updates"
-      ];
+      # Choose the order of the modules
+      "modules-left" = ["hyprland/workspaces"];
+      "modules-center" = ["clock"];
+      "modules-right" = ["cpu" "temperature" "memory" "backlight" "pulseaudio" "tray"];
 
-      modules-center = [
-        "wlr/workspaces"
-        "custom/spotify"
-      ];
-
-      modules-right = [
-        "tray"
-        "network"
-        "pulseaudio"
-        "pulseaudio#microphone"
-        "bluetooth"
-        "backlight"
-        "battery"
-        "custom/lock"
-        "clock"
-        "custom/power-menu"
-      ];
-
-      "wlr/workspaces" = {
-        format = "{icon}";
-        on-click = "activate";
-        format-icons = {
-          active = " 󰮯";
-          default = "";
+      # Modules configuration
+      "hyprland/workspaces" = {
+      "on-click" = "activate";
+      "active-only" = false;
+      "all-outputs" = true;
+      "persistent-workspaces" = {
+          "1" = [];
+          "2" = [];
+          "3" = [];
+          "4" = [];
+          "5" = [];
+          "6" = [];
+          "7" = [];
+          "8" = [];
+          "9" = [];
+          "10" = [];
+       };
+      "format" = "{icon}";
+      "format-icons" = {
+          "1" = "";
+          "2" = "";
+          "3" = "";
+          "4" = "";
+          "5" = "";
+          "6" = "";
+          "7" = "";
+          "8" = "";
+          "9" = "󰙯";
+          "10" = "";
+          # "urgent" = "";
+          # "active" = "";
+          # "default" = ""
         };
       };
-      bluetooth = {
-        format = "<span color='#b4befe'></span>";
-        format-disabled = ""; # an empty format will hide the module
-        on-click = "bash ~/.config/waybar/scripts/rofi-bluetooth";
-        format-connected = "<span color='#b4befe'></span> {num_connections} {device_battery_percentage}%";
-        tooltip-format = "{device_enumerate}";
-        tooltip-format-enumerate-connected = "{device_alias}   {device_address}";
+      "keyboard-state" = {
+          "numlock" = true;
+          "capslock" = true;
+          "format" = "{name} {icon}";
+          "format-icons" = {
+              "locked" = "";
+              "unlocked" = "";
+          };
       };
-      "hyprland/window" = {
-        format = "{}";
-        max-length = 25;
-      };
-      tray = {
-        spacing = 10;
-      };
-      clock = {
-        format = "{:%H:%M}";
-        format-alt = "{:%b %d %Y}";
-        tooltip-format = "<big>{:%Y %B}</big>\n<tt><small>{calendar}</small></tt>";
-      };
-      cpu = {
-        interval = 10;
-        format = " {}%";
-        max-length = 10;
-        on-click = "";
-      };
-      memory = {
-        interval = 30;
-        format = " {used:0.1f}GB";
-        format-alt = " {}%";
-        max-length = 10;
-      };
-      backlight = {
-        device = "intel_backlight";
-        format = "{icon}";
-        tooltip-format = "{percent}";
-        format-icons = [
-          "󱩎 "
-          "󱩏 "
-          "󱩐 "
-          "󱩑 "
-          "󱩒 "
-          "󱩓 "
-          "󱩔 "
-          "󱩕 "
-          "󱩖 "
-          "󰛨 "
-        ];
-      };
-      network = {
-        format-wifi = "{icon}";
-        format-ethernet = " ";
-        format-disconnected = "睊";
-        tooltip-format = "{essid}";
-        on-click = "~/.config/waybar/scripts/network/rofi-network-manager.sh";
-        format-icons = [
-          "󰤯"
-          "󰤟"
-          "󰤢"
-          "󰤥"
-          "󰤨"
-        ];
-      };
-      "custom/updates" = {
-        format = "{}";
-        exec = "$HOME/.config/waybar/scripts/updates";
-        on-click = "$HOME/.config/waybar/scripts/updates update";
-        interval = 300;
-        tooltip = true;
-      };
-      pulseaudio = {
-        format = "{icon}";
-        format-muted = "婢";
-        format-icons = {
-          default = [
-            ""
-            ""
-            "墳"
+      "wlr/taskbar" = {
+          "format" = "{icon}";
+          "icon-size" = 18;
+          "tooltip-format" = "{title}";
+          "on-click" = "activate";
+          "on-click-middle" = "close";
+          "ignore-list" = [
+             "kitty"
+             "wezterm"
+             "foot"
+             "footclient"
           ];
-        };
-        on-click = "pavucontrol &";
       };
-      "pulseaudio#microphone" = {
-        format = "{format_source}";
-        format-source = "";
-        format-source-muted = "";
+      "tray" = {
+          "icon-size" = 18;
+          "spacing" = 5;
+          "show-passive-items" = true;
       };
-      battery = {
-        bat = "BAT0";
-        adapter = "DC";
-        interval = 60;
-        states = {
-          warning = 30;
-          critical = 15;
-        };
-        max-length = 30;
-        format = "{icon} {capacity}% ";
-        format-warning = "{icon} {capacity}% ";
-        format-critical = "{icon} {capacity}% ";
-        format-charging = "<span font-family='Font Awesome 6 Free'></span> {capacity}%";
-        format-plugged = "ﮣ";
-        format-alt = "{icon} {time}";
-        format-full = "ﮣ";
-        format-icons = [
-          "󱊡"
-          "󱊢"
-          "󱊣"
-        ];
+      "clock" = {
+        "interval" = 60;
+        "format" = "{:%a %b %d  %I:%M %p}";
       };
-      "custom/weather" = {
-        exec = "python3 ~/.config/waybar/scripts/weather.py";
-        restart-interval = 300;
-        return-type = "json";
+     "temperature" = {
+          # "thermal-zone" = 2;
+          # "hwmon-path" = "/sys/class/hwmon/hwmon2/temp1_input";
+          # "format-critical" = "{temperatureC}°C {icon}";
+          "critical-threshold" = 80;
+          "interval" = 2;
+          "format" = "{temperatureC}°C ";
+          "format-icons" = ["" "" ""];
       };
-      "custom/lock" = {
-        tooltip = false;
-        on-click = "swaylock";
-        format = "";
+      "cpu" = {
+          "interval" = 2;
+          "format" = "{usage}% ";
+          "tooltip" = false;
       };
-      "custom/spotify" = {
-        exec = "python3 ~/.config/waybar/scripts/mediaplayer.py --player spotify";
-        format = " {}";
-        max-length = 30;
-        return-type = "json";
-        on-click = "playerctl play-pause";
-        on-double-click-right = "playerctl next";
-        on-scroll-down = "playerctl previous";
+      "memory" = {
+          "interval" = 2;
+          "format" = "{}% ";
       };
-      "custom/power-menu" = {
-        format = " ⏻ ";
-        on-click = "bash ~/.config/waybar/scripts/power-menu/powermenu.sh &";
+     "disk" = {
+          "interval" = 15;
+          "format" = "{percentage_used}% 󰋊";
       };
-      "custom/launcher" = {
-        format = "";
-        on-click = "sh .config/rofi/launchers/type-2/launcher.sh --style-2";
+      "backlight" = {
+          # "device" = "acpi_video1";
+          "format" = "{percent}% {icon}";
+          "format-icons" = ["" "" "" "" "" "" "" "" ""];
+      };
+      "battery" = {
+          "states" = {
+              # "good" = 95;
+              "warning" = 30;
+              "critical" = 15;
+          };
+          "format" = "{capacity}% {icon}";
+          "format-charging" = "{capacity}% ";
+          "format-plugged" = "{capacity}% ";
+          "format-alt" = "{time} {icon}";
+          # "format-good" = "", # An empty format will hide the module
+          # "format-full" = "";
+          "format-icons" = ["" "" "" "" ""];
+      };
+      "battery#bat2" = {
+          "bat" = "BAT2";
+      };
+      "network" = {
+          # "interface" = "wlp2*", # (Optional) To force the use of this interface
+          "format-wifi" = "  ={ipaddr}"; #({essid} {signalStrength}%)
+          "format-ethernet" = "{ipaddr}/{cidr} ";
+          "tooltip-format-wifi" = "{essid} ({signalStrength}%) ";
+          "tooltip-format" = "{ifname} via {gwaddr} ";
+          "format-linked" = "{ifname} (No IP) ";
+          "format-disconnected" = "Disconnected ⚠";
+          "format-alt" = "{ifname} = {ipaddr}/{cidr}";
+      };
+      "pulseaudio" = {
+          # "scroll-step" = 1, # %, can be a float
+          "format" = "{volume}% {icon}"; #{format_source}";
+          "format-bluetooth" = "{volume}% {icon} 󰂯"; #{format_source}";
+          "format-bluetooth-muted" = "󰖁 {icon} 󰂯"; #{format_source}";
+          "format-muted" = "󰖁 {format_source}";
+          "format-source" = "{volume}% ";
+          "format-source-muted" = "";
+          "format-icons" = {
+              "headphone" = "󰋋";
+              "hands-free" = "󱡒";
+              "headset" = "󰋎";
+              "phone" = "";
+              "portable" = "";
+              "car" = "";
+              "default" = ["" "" ""];
+          };
+          "on-click" = "pavucontrol";
       };
     }];
   };
