@@ -82,7 +82,7 @@
   $mod = SUPER
 
   # Example binds, see https://wiki.hyprland.org/Configuring/Binds/ for more
-  bind = $mod, Return, exec, wezterm
+  bind = $mod, Return, exec, kitty
   bind = $mod, B, exec, firefox
   bind = , Print, exec, grimblast copy area
   bind = $mod, Q, killactive, 

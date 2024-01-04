@@ -1,4 +1,4 @@
-{ ... }: {
+{ pkgs, ... }: {
   system.stateVersion = "23.05";
 
   # Bootloader
@@ -13,7 +13,10 @@
     isNormalUser = true;
     description = "Sam Mohr";
     extraGroups = [ "networkmanager" "wheel" ];
+    shell = pkgs.fish;
   };
+
+  programs.fish.enable = true;
 
   # Allow unfree packages
   nixpkgs.config.allowUnfree = true;

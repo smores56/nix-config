@@ -6,6 +6,6 @@
   ];
 
   home.sessionVariables = {
-    TERMINAL = "wezterm";
+    TERMINAL = "kitty";
   };
 }

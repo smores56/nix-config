@@ -1,4 +1,4 @@
-{ config, pkgs, hyprland, ... }: {
+{ config, pkgs, wallpaper, ... }: {
   wayland.windowManager.hyprland = {
     enable = true;
     extraConfig = (import ./config.nix {
@@ -17,8 +17,8 @@
   ];
 
   home.file.".config/hypr/hyprpaper.conf".text = ''
-    preload = ${/. + ../../wallpapers/rocket-launch.png}
-    wallpaper = ,${/. + ../../wallpapers/rocket-launch.png}
+    preload = ${wallpaper}
+    wallpaper = ,${wallpaper}
     ipc = off
   '';
 }
