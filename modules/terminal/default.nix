@@ -70,6 +70,7 @@
     navi
     xxh
     file
+    clipman
   ];
 
   programs.bat = {

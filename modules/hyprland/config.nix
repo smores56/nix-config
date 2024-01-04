@@ -79,6 +79,10 @@
       workspace_swipe = on
   }
 
+  misc {
+    disable_hyprland_logo = true
+  }
+
   $mod = SUPER
 
   # Example binds, see https://wiki.hyprland.org/Configuring/Binds/ for more

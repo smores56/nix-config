@@ -16,6 +16,11 @@
     shell = pkgs.fish;
   };
 
+  services.xserver.displayManager.autoLogin = {
+    enable = true;
+    user = "smores";
+  };
+
   programs.fish.enable = true;
 
   # Allow unfree packages
