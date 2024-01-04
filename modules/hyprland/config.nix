@@ -87,6 +87,7 @@
   bind = , Print, exec, grimblast copy area
   bind = $mod, Q, killactive, 
   bind = $mod, N, exec, dolphin
+  bind = $mod, L, exec, swaylock
   bind = $mod, V, togglefloating, 
   bind = $mod, D, exec, wofi --show drun
   bind = $mod, P, pseudo, # dwindle
@@ -118,7 +119,7 @@
   submap = reset
 
   # Exit submap
-  bind = $mod, X, submap, exit
+  bind = $mod, E, submap, exit
   submap = exit
   binde = , S, exec, systemctl suspend
   binde = , P, exec, systemctl poweroff
