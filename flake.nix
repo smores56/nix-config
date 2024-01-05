@@ -42,7 +42,9 @@
         };
         "smores@smortress" = mkHomeConfiguration {
           machineType = "desktop";
-          wallpaper = ./wallpapers/spirited-away.jpg;
+          polarity = "dark";
+          wallpaper = ./wallpapers/angled-waves.png;
+          colorscheme = "gruvbox-material-dark-medium";
         };
         "smores@smoresnet" = mkHomeConfiguration {
           machineType = "server";

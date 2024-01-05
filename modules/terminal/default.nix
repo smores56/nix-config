@@ -46,6 +46,11 @@
     typst
     terraform
 
+    # compilation
+    gcc
+    pkg-config
+    openssl.dev
+
     # fun stuff
     gum
     cbonsai

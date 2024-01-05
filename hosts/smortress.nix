@@ -44,6 +44,10 @@
     package = config.boot.kernelPackages.nvidiaPackages.stable;
   };
 
+  environment.sessionVariables = {
+    WLR_NO_HARDWARE_CURSORS = "1";
+  };
+
   imports = [
     # Generated with `sudo nixos-generate-config`
     /etc/nixos/hardware-configuration.nix
