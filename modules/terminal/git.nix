@@ -3,6 +3,7 @@
     pkgs.delta
     pkgs.gh
     pkgs.mercurial
+    pkgs.git-lfs
   ];
 
   programs.git = {

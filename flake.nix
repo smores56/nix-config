@@ -32,29 +32,21 @@
       };
     in
     {
-      defaultPackage.x86_64-linux = home-manager.defaultPackage.x86_64-linux;
-
       homeConfigurations = {
-        "smores" = mkHomeConfiguration {
-          machineType = "laptop";
-          polarity = "dark";
+        "smores@smoresbook" = mkHomeConfiguration {
+          screenSize = "small";
           wallpaper = ./wallpapers/enchanted-evening-retreat.png;
         };
-        "smores@campfire" = mkHomeConfiguration {
-          machineType = "desktop";
-        };
+        "smores@campfire" = mkHomeConfiguration { };
         "smores@smortress" = mkHomeConfiguration {
-          machineType = "desktop";
-          wallpaper = ./wallpapers/rocket-launch.png;
+          screenSize = "large";
+          wallpaper = ./wallpapers/spirited-away.jpg;
         };
-        "smores@smoresnet" = mkHomeConfiguration {
-          machineType = "server";
-        };
+        "smores@smoresnet" = mkHomeConfiguration { };
         "smohr" = mkHomeConfiguration {
           username = "smohr";
           homeDirectory = "/Users/smohr";
           system = "aarch64-darwin";
-          machineType = "laptop";
         };
       };
     };

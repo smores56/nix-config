@@ -2,6 +2,7 @@
   imports = [
     ./shell
     ./editor
+    ./emulator
     ./git.nix
     ./file-manager
     ./multiplexer

@@ -4,5 +4,6 @@
     ./security.nix
     ./bluetooth.nix
     ./networking.nix
+    ../gui
   ];
 }

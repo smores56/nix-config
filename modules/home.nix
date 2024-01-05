@@ -4,29 +4,18 @@ let
   username = specialArgs.username or "smores";
   homeDirectory = specialArgs.homeDirectory or "/home/${username}";
 
-  stylixBase =
-    if builtins.hasAttr "wallpaper" specialArgs then {
-      image = specialArgs.wallpaper;
-    } else {
-      base16Scheme = "${pkgs.base16-schemes}/share/themes/rose-pine.yaml";
-    };
+  largeScreen = (specialArgs.screenSize or "small") == "large";
+  wallpaper = specialArgs.wallpaper or ../wallpapers/angled-waves.png;
+  stylixBase = if builtins.hasAttr "colorscheme" specialArgs then {
+    base16Scheme = "${pkgs.base16-schemes}/share/themes/${specialArgs.colorscheme}.yaml";
+  } else {};
 
   cascadiaCodeFont = {
     name = "CaskaydiaCove Nerd Font Mono";
     package = pkgs.cascadia-code;
   };
-
-  machineType = specialArgs.machineType or null;
-  machineConfig =
-    if machineType == "server" then
-      { largeScreen = false; headless = true; }
-    else if machineType == "desktop" then
-      { largeScreen = true; headless = false; }
-    else if machineType == "laptop" then
-      { largeScreen = false; headless = false; }
-    else abort "Invalid `machineType`, please specify server, desktop, or laptop";
 in
-with machineConfig; {
+{
   home = {
     stateVersion = "23.11";
     packages = [ pkgs.home-manager ];
@@ -42,9 +31,10 @@ with machineConfig; {
       systemDirs.data = [
         "${homeDirectory}/.nix-profile/share/applications"
       ];
-    } else null;
+    } else { };
 
   stylix = stylixBase // {
+    image = wallpaper;
     polarity = specialArgs.polarity or "either";
     autoEnable = true;
     opacity.terminal = 0.9;
@@ -59,5 +49,5 @@ with machineConfig; {
     };
   };
 
-  imports = [ ./terminal ] ++ (if headless then [ ] else [ ./hyprland ./gui ]);
+  imports = [ ./terminal ];
 }

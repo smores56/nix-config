@@ -2,15 +2,10 @@
   fonts.fontconfig.enable = true;
 
   imports = [
-    ./terminal.nix
     ./dconf.nix
   ];
 
   home.packages = with pkgs; [
-    # fonts
-    cascadia-code
-    nerdfonts
-
     discord
     firefox
     vlc
@@ -21,5 +16,6 @@
     kicad
     gimp
     musescore
+    nerdfonts
   ];
 }
