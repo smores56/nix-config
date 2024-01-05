@@ -13,7 +13,7 @@ in
 
     settings = {
       "org/gnome/desktop/applications/terminal" = {
-        exec = "wezterm";
+        exec = "kitty";
       };
 
       "org/gnome/shell/extensions/pop-shell" = {

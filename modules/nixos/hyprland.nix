@@ -24,8 +24,4 @@
       defaultSession = "hyprland";
     };
   };
-
-  imports = [
-    ../hyprland
-  ];
 }

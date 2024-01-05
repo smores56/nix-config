@@ -6,6 +6,10 @@
   ];
 
   home.packages = with pkgs; [
+    # fonts
+    cascadia-code
+    nerdfonts
+
     discord
     firefox
     vlc
@@ -16,6 +20,5 @@
     kicad
     gimp
     musescore
-    nerdfonts
   ];
 }

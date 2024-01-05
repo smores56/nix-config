@@ -34,16 +34,21 @@
     {
       homeConfigurations = {
         "smores@smoresbook" = mkHomeConfiguration {
-          screenSize = "small";
+          machineType = "laptop";
           wallpaper = ./wallpapers/enchanted-evening-retreat.png;
         };
-        "smores@campfire" = mkHomeConfiguration { };
+        "smores@campfire" = mkHomeConfiguration {
+          machineType = "server";
+        };
         "smores@smortress" = mkHomeConfiguration {
-          screenSize = "large";
+          machineType = "desktop";
           wallpaper = ./wallpapers/spirited-away.jpg;
         };
-        "smores@smoresnet" = mkHomeConfiguration { };
+        "smores@smoresnet" = mkHomeConfiguration {
+          machineType = "server";
+        };
         "smohr" = mkHomeConfiguration {
+          machineType = "laptop";
           username = "smohr";
           homeDirectory = "/Users/smohr";
           system = "aarch64-darwin";

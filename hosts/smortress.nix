@@ -1,4 +1,4 @@
-{ config, ... }: {
+{ config, pkgs, ... }: {
   system.stateVersion = "23.05";
 
   # Bootloader
@@ -13,6 +13,14 @@
     isNormalUser = true;
     description = "Sam Mohr";
     extraGroups = [ "networkmanager" "wheel" ];
+    shell = pkgs.fish;
+  };
+
+  programs.fish.enable = true;
+
+  services.xserver.displayManager.autoLogin = {
+    enable = true;
+    user = "smores";
   };
 
   # Allow unfree packages
@@ -41,7 +49,7 @@
     /etc/nixos/hardware-configuration.nix
     ../modules/nixos
     ../modules/nixos/sound.nix
-    ../modules/nixos/popos.nix
+    ../modules/nixos/hyprland.nix
     ../modules/nixos/sshd.nix
   ];
 }
