@@ -80,7 +80,7 @@
   }
 
   misc {
-    disable_hyprland_logo = true
+      disable_hyprland_logo = true
   }
 
   $mod = SUPER

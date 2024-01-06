@@ -48,8 +48,8 @@ with machineConfig; {
     opacity.terminal = if isLinux then 0.9 else 1.0;
     fonts = {
       sizes = {
-        desktop = 12;
-        terminal = if highResolution then 14 else 14;
+        desktop =  if highResolution then 14 else 12;
+        terminal = 14;
       };
       monospace = cascadiaCodeFont;
       sansSerif = cascadiaCodeFont;

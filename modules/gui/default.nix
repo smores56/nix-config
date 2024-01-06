@@ -20,5 +20,8 @@
     kicad
     gimp
     musescore
+    transmission_4-gtk
+    steam
+    protonup-qt
   ];
 }
