@@ -1,6 +1,6 @@
 { pkgs, specialArgs, ... }:
 let
-  isLinux = pkgs.stdenv.isLinux;
+  isLinux = specialArgs.system == "x86_64-linux";
   username = specialArgs.username or "smores";
   homeDirectory = specialArgs.homeDirectory or "/home/${username}";
 
@@ -19,9 +19,9 @@ let
     if machineType == "server" then
       { highResolution = false; hasDisplay = false; }
     else if machineType == "desktop" then
-      { highResolution = true; hasDisplay = true; }
+      { highResolution = true; hasDisplay = isLinux; }
     else if machineType == "laptop" then
-      { highResolution = false; hasDisplay = true; }
+      { highResolution = false; hasDisplay = isLinux; }
     else abort "Invalid `machineType`, please provide server, desktop, or laptop";
 in
 with machineConfig; {
@@ -46,7 +46,7 @@ with machineConfig; {
     image = wallpaper;
     polarity = specialArgs.polarity or "either";
     autoEnable = true;
-    opacity.terminal = 0.9;
+    opacity.terminal = if isLinux then 0.9 else 1.0;
     fonts = {
       sizes = {
         desktop = 12;
@@ -58,5 +58,5 @@ with machineConfig; {
     };
   };
 
-  imports = [ ./terminal ] ++ (if hasDisplay then [ ./gui ./hyprland ] else [ ]);
+  imports = [ ./terminal ] ++ (if machineConfig.hasDisplay then [ ./gui ./hyprland ] else [ ]);
 }

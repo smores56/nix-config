@@ -54,6 +54,7 @@
           username = "smohr";
           homeDirectory = "/Users/smohr";
           system = "aarch64-darwin";
+          colorscheme = "kanagawa";
         };
       };
     };
