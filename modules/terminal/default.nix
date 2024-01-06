@@ -76,7 +76,7 @@
     navi
     xxh
     file
-  ] ++ (if pkgs.stdenv.isLinux then [ clipman ] else [ ]);
+  ] ++ (if pkgs.stdenv.isLinux then [ wl-clipboard ] else [ ]);
 
   programs.bat = {
     enable = true;

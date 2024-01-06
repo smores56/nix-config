@@ -9,10 +9,6 @@ let
       base16Scheme = "${pkgs.base16-schemes}/share/themes/${specialArgs.colorscheme}.yaml";
     } else { };
 
-  cascadiaCodeFont = {
-    name = "CaskaydiaCove Nerd Font Mono";
-    package = pkgs.cascadia-code;
-  };
   machineType = specialArgs.machineType or null;
   machineConfig =
     if machineType == "server" then
@@ -46,14 +42,20 @@ with machineConfig; {
     polarity = specialArgs.polarity or "either";
     autoEnable = true;
     opacity.terminal = if isLinux then 0.9 else 1.0;
+
     fonts = {
       sizes = {
         desktop =  if highResolution then 14 else 12;
         terminal = 14;
       };
-      monospace = cascadiaCodeFont;
-      sansSerif = cascadiaCodeFont;
-      emoji = cascadiaCodeFont;
+      monospace = {
+        name = "JetBrainsMono Nerd Font Mono";
+        package = pkgs.cascadia-code;
+      };
+      sansSerif = {
+        name = "Ubuntu Nerd Font";
+        package = pkgs.nerdfonts;
+      };
     };
   };
 
