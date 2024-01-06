@@ -1,6 +1,5 @@
-{ pkgs, specialArgs, ... }:
+{ pkgs, specialArgs, isLinux, ... }:
 let
-  isLinux = specialArgs.system == "x86_64-linux";
   username = specialArgs.username or "smores";
   homeDirectory = specialArgs.homeDirectory or "/home/${username}";
 

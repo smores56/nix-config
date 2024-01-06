@@ -23,13 +23,15 @@
         config = { allowUnfree = true; };
       };
 
-      mkHomeConfiguration = args: home-manager.lib.homeManagerConfiguration {
-        pkgs = pkgsForSystem (args.system or "x86_64-linux");
-        extraSpecialArgs = {
+      mkHomeConfiguration = args: home-manager.lib.homeManagerConfiguration (rec {
+        extraSpecialArgs = (rec {
+          system = args.system or "x86_64-linux";
+          isLinux = system == "x86_64-linux";
           polarity = args.polarity or "either";
-        } // args;
+        } // args);
+        pkgs = pkgsForSystem extraSpecialArgs.system;
         modules = [ stylix.homeManagerModules.stylix ./modules/home.nix ];
-      };
+      });
     in
     {
       homeConfigurations = {
