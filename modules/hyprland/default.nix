@@ -12,9 +12,10 @@
 
   home.packages = with pkgs; [
     hyprpaper
-    wofi
     grimblast
   ];
+
+  programs.fuzzel.enable = true;
 
   home.file.".config/hypr/hyprpaper.conf".text = ''
     preload = ${wallpaper}

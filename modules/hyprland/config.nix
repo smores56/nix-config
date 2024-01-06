@@ -93,7 +93,8 @@
   bind = $mod, N, exec, dolphin
   bind = $mod, L, exec, swaylock
   bind = $mod, V, togglefloating, 
-  bind = $mod, D, exec, wofi --show drun
+  bind = $mod, D, exec, fuzzel
+  bind = $mod, slash, exec, fuzzel
   bind = $mod, P, pseudo, # dwindle
   bind = $mod, J, togglesplit, # dwindle
 

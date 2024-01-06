@@ -1,4 +1,6 @@
 { pkgs, ... }: {
+  home.packages = [ pkgs.swayidle ];
+
   services.swayidle = {
     enable = true;
 
