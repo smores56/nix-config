@@ -1,6 +1,4 @@
-{ pkgs, ... }: {
-  home.packages = [ pkgs.font-awesome_5 ];
-
+{ ... }: {
   programs.waybar = {
     enable = true;
 
@@ -16,7 +14,7 @@
       # Choose the order of the modules
       "modules-left" = [ "hyprland/workspaces" ];
       "modules-center" = [ "clock" ];
-      "modules-right" = [ "cpu" "temperature" "memory" "backlight" "pulseaudio" "tray" ];
+      "modules-right" = [ "cpu" "temperature" "memory" "backlight" "pulseaudio" "battery" "network" "tray" ];
 
       # Modules configuration
       "hyprland/workspaces" = {
@@ -94,7 +92,7 @@
       };
       "cpu" = {
         "interval" = 2;
-        "format" = "{usage}% ";
+        "format" = "{usage}%  ";
         "tooltip" = false;
       };
       "memory" = {
@@ -106,17 +104,15 @@
         "format" = "{percentage_used}% 󰋊";
       };
       "backlight" = {
-        # "device" = "acpi_video1";
         "format" = "{percent}% {icon}";
         "format-icons" = [ "" "" "" "" "" "" "" "" "" ];
       };
       "battery" = {
         "states" = {
-          # "good" = 95;
           "warning" = 30;
           "critical" = 15;
         };
-        "format" = "{capacity}% {icon}";
+        "format" = "{capacity}% {icon} ";
         "format-charging" = "{capacity}% ";
         "format-plugged" = "{capacity}% ";
         "format-alt" = "{time} {icon}";
@@ -128,8 +124,7 @@
         "bat" = "BAT2";
       };
       "network" = {
-        # "interface" = "wlp2*", # (Optional) To force the use of this interface
-        "format-wifi" = "  ={ipaddr}"; #({essid} {signalStrength}%)
+        "format-wifi" = "";
         "format-ethernet" = "{ipaddr}/{cidr} ";
         "tooltip-format-wifi" = "{essid} ({signalStrength}%) ";
         "tooltip-format" = "{ifname} via {gwaddr} ";
@@ -154,7 +149,7 @@
           "car" = "";
           "default" = [ "" "" "" ];
         };
-        "on-click" = "pavucontrol";
+        "on-click" = "pactl set-sink-mute @DEFAULT_SINK@ toggle";
       };
     }];
   };

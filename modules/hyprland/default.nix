@@ -5,7 +5,7 @@
   };
 
   imports = [
-    ./waybar
+    ./waybar.nix
     ./swaylock.nix
     ./swayidle.nix
   ];

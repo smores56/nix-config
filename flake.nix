@@ -37,6 +37,7 @@
       homeConfigurations = {
         "smores@smoresbook" = mkHomeConfiguration {
           machineType = "laptop";
+          polarity = "dark";
           wallpaper = ./wallpapers/enchanted-evening-retreat.png;
         };
         "smores@campfire" = mkHomeConfiguration {
