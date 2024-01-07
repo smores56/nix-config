@@ -43,6 +43,12 @@ with machineConfig; {
     autoEnable = true;
     opacity.terminal = if isLinux then 0.9 else 1.0;
 
+    cursor = {
+      package = pkgs.bibata-cursors;
+      name = "Bibata-Modern-Classic";
+      size = 24;
+    };
+
     fonts = {
       sizes = {
         desktop =  if highResolution then 14 else 12;
