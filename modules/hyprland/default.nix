@@ -13,6 +13,7 @@
   home.packages = with pkgs; [
     hyprpaper
     grimblast
+    brightnessctl
   ];
 
   programs.fuzzel.enable = true;

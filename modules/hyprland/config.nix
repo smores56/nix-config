@@ -134,6 +134,15 @@
   bind = , escape, submap, reset
   submap = reset
 
+  bindle=, XF86MonBrightnessUp, exec, brightnessctl set 5%+
+  bindle=, XF86MonBrightnessDown, exec, brightnessctl set 5%-
+  bindle=, XF86AudioRaiseVolume, exec, pactl -- set-sink-volume @DEFAULT_SINK@ +5%
+  bindle=, XF86AudioLowerVolume, exec, pactl -- set-sink-volume @DEFAULT_SINK@ -5%
+  bindl=, XF86AudioMute, exec, pactl set-sink-mute @DEFAULT_SINK@ toggle
+  bindl=, XF86AudioPlay, exec, playerctl play-pause
+  bindl=, XF86AudioNext, exec, playerctl next
+  bindl=, XF86AudioPrev, exec, playerctl previous
+
   # workspaces
   # binds $mod + [shift +] {1..10} to [move to] workspace {1..10}
   ${builtins.concatStringsSep "\n" (builtins.genList (

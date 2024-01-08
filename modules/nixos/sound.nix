@@ -1,6 +1,7 @@
 { pkgs, ... }: {
   environment.systemPackages = [
     pkgs.pulseaudio
+    pkgs.playerctl
   ];
 
   # Enable sound with pipewire
