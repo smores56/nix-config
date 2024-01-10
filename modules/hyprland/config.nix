@@ -89,12 +89,12 @@
   bind = $mod, Return, exec, kitty
   bind = $mod, B, exec, firefox
   bind = , Print, exec, grimblast copy area
-  bind = $mod, Q, killactive, 
-  bind = $mod, N, exec, dolphin
+  bind = $mod, Q, killactive,
+  bind = $mod, N, exec, thunar
   bind = $mod, L, exec, swaylock
-  bind = $mod, V, togglefloating, 
   bind = $mod, D, exec, fuzzel
   bind = $mod, slash, exec, fuzzel
+  bind = $mod, V, togglefloating,
   bind = $mod, P, pseudo, # dwindle
   bind = $mod, J, togglesplit, # dwindle
 

@@ -51,7 +51,7 @@ with machineConfig; {
 
     fonts = {
       sizes = {
-        desktop =  if highResolution then 14 else 12;
+        desktop = if highResolution then 14 else 12;
         terminal = 14;
       };
       monospace = {

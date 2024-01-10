@@ -9,18 +9,26 @@
     # fonts
     nerdfonts
 
-    discord
-    firefox
-    vlc
-    evince
+    # file management
+    xfce.thunar
     libsForQt5.dolphin
+    evince
     feh
     libreoffice
-    kicad
-    gimp
-    musescore
-    transmission_4-gtk
+
+    # games
     steam
     protonup-qt
+
+    # media
+    vlc
+    gimp
+    transmission_4-gtk
+
+    # other
+    discord
+    firefox
+    kicad
+    musescore
   ];
 }
