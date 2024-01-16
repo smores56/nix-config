@@ -58,6 +58,7 @@
           homeDirectory = "/Users/smohr";
           system = "aarch64-darwin";
           colorscheme = "kanagawa";
+          polarity = "dark";
         };
       };
     };

@@ -76,6 +76,7 @@
     navi
     xxh
     file
+    awscli2
   ] ++ (if pkgs.stdenv.isLinux then [ wl-clipboard ] else [ ]);
 
   programs.bat = {

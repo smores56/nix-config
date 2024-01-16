@@ -10,6 +10,7 @@
     nixpkgs-fmt
     nodePackages.yaml-language-server
     nodePackages.svelte-language-server
+    nodePackages."@prisma/language-server"
     nodePackages.typescript-language-server
     nodePackages.vscode-langservers-extracted
     nodePackages.graphql-language-service-cli

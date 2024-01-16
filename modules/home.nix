@@ -52,7 +52,7 @@ with machineConfig; {
     fonts = {
       sizes = {
         desktop = if highResolution then 14 else 12;
-        terminal = 14;
+        terminal = if highResolution then 12 else 14;
       };
       monospace = {
         name = "JetBrainsMono Nerd Font Mono";
