@@ -14,6 +14,8 @@
     extraGroups = [ "networkmanager" "wheel" ];
   };
 
+  programs.fish.enable = true;
+
   # Allow unfree packages
   nixpkgs.config.allowUnfree = true;
 
@@ -22,5 +24,6 @@
     /etc/nixos/hardware-configuration.nix
     ../modules/nixos
     ../modules/nixos/sshd.nix
+    ../modules/nixos/ssh-serve.nix
   ];
 }
