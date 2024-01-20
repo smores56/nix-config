@@ -2,7 +2,7 @@
   home.packages = [ pkgs.swayidle ];
 
   services.swayidle = {
-    enable = true;
+    # enable = true;
 
     timeouts = [
       # {
