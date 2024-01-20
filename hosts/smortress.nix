@@ -8,7 +8,6 @@
   networking.hostName = "smortress";
   time.timeZone = "America/Los_Angeles";
 
-  # Define a user account. Don't forget to set a password with ‘passwd’.
   users.users.smores = {
     isNormalUser = true;
     description = "Sam Mohr";
@@ -55,5 +54,6 @@
     ../modules/nixos/sound.nix
     ../modules/nixos/hyprland.nix
     ../modules/nixos/sshd.nix
+    ../modules/nixos/ssh-serve.nix
   ];
 }

@@ -15,7 +15,7 @@
       # }
       {
         timeout = 10;
-        command = "if pgrep swaylock; ${pkgs.hyprland}/bin/hyprctl dispatch dpms off; fi";
+        command = "if pgrep swaylock; ${pkgs.hyprland}/bin/hyprctl dispatch dpms off; end";
         resumeCommand = "${pkgs.hyprland}/bin/hyprctl dispatch dpms on";
       }
     ];
