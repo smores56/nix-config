@@ -45,6 +45,10 @@
     erg
     typst
     terraform
+    gleam
+    elixir
+    erlang
+    rebar3
 
     # compilation
     gcc

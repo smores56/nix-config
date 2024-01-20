@@ -1,6 +1,6 @@
 { pkgs, displayManager, ... }: {
   fonts.fontconfig.enable = true;
-  # stylix.targets.xresources.enable = true;
+  stylix.targets.xresources.enable = true;
 
   imports =
     if displayManager == "pop-os" then [

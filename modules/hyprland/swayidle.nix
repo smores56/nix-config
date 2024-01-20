@@ -5,17 +5,17 @@
     enable = true;
 
     timeouts = [
+      # {
+      #   timeout = 295;
+      #   command = "${pkgs.libnotify}/bin/notify-send 'Locking in 5 seconds' -t 5000";
+      # }
+      # {
+      #   timeout = 300;
+      #   command = "${pkgs.swaylock}/bin/swaylock";
+      # }
       {
-        timeout = 295;
-        command = "${pkgs.libnotify}/bin/notify-send 'Locking in 5 seconds' -t 5000";
-      }
-      {
-        timeout = 300;
-        command = "${pkgs.swaylock}/bin/swaylock";
-      }
-      {
-        timeout = 360;
-        command = "${pkgs.hyprland}/bin/hyprctl dispatch dpms off";
+        timeout = 10;
+        command = "if pgrep swaylock; ${pkgs.hyprland}/bin/hyprctl dispatch dpms off; fi";
         resumeCommand = "${pkgs.hyprland}/bin/hyprctl dispatch dpms on";
       }
     ];

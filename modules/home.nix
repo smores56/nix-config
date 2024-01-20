@@ -46,8 +46,8 @@ in
 
     fonts = {
       sizes = {
-        desktop = 10;
-        terminal = 11;
+        desktop = 14;
+        terminal = if displayManager == "hyprland" then 12 else 11;
       };
       monospace = {
         name = "JetBrainsMono Nerd Font Mono";

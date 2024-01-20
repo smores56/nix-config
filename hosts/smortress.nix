@@ -1,5 +1,5 @@
 { config, pkgs, ... }: {
-  system.stateVersion = "23.05";
+  system.stateVersion = "unstable";
 
   # Bootloader
   boot.loader.systemd-boot.enable = true;

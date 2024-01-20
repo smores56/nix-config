@@ -1,4 +1,6 @@
 { pkgs, wallpaper, ... }: {
+  stylix.targets.hyprland.enable = true;
+
   wayland.windowManager.hyprland = {
     enable = true;
     extraConfig = (import ./config.nix { });
@@ -17,6 +19,7 @@
   ];
 
   programs.fuzzel.enable = true;
+  stylix.targets.fuzzel.enable = true;
 
   home.file.".config/hypr/hyprpaper.conf".text = ''
     preload = ${wallpaper}
