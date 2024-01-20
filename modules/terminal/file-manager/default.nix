@@ -1,5 +1,3 @@
-{ ... }: {
-  imports = [
-    ./yazi.nix
-  ];
+{ pkgs, ... }: {
+  home.packages = [ pkgs.yazi ];
 }

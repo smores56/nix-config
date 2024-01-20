@@ -1,4 +1,4 @@
-{ pkgs, specialArgs, isLinux, ... }:
+{ pkgs, specialArgs, isLinux, displayManager, ... }:
 let
   username = specialArgs.username or "smores";
   homeDirectory = specialArgs.homeDirectory or "/home/${username}";
@@ -8,18 +8,8 @@ let
     if builtins.hasAttr "colorscheme" specialArgs then {
       base16Scheme = "${pkgs.base16-schemes}/share/themes/${specialArgs.colorscheme}.yaml";
     } else { };
-
-  machineType = specialArgs.machineType or null;
-  machineConfig =
-    if machineType == "server" then
-      { highResolution = false; hasDisplay = false; }
-    else if machineType == "desktop" then
-      { highResolution = true; hasDisplay = isLinux; }
-    else if machineType == "laptop" then
-      { highResolution = false; hasDisplay = isLinux; }
-    else abort "Invalid `machineType`, please provide server, desktop, or laptop";
 in
-with machineConfig; {
+{
   home = {
     stateVersion = "23.11";
     packages = [ pkgs.home-manager ];
@@ -27,32 +17,37 @@ with machineConfig; {
     homeDirectory = homeDirectory;
   };
 
+  home.file.".xinitrc".text = ''
+    ${pkgs.xorg.xmodmap}/bin/xmodmap -e "keycode 94 = Shift_L"
+  '';
+
   targets.genericLinux.enable = isLinux;
   xdg =
     if isLinux then {
       enable = true;
       mime.enable = true;
-      systemDirs.data = [
-        "${homeDirectory}/.nix-profile/share/applications"
-      ];
+      systemDirs.data =
+        if displayManager == "hyprland" then [
+          "${homeDirectory}/.nix-profile/share/applications"
+        ] else [ ];
     } else { };
 
   stylix = stylixBase // {
     image = wallpaper;
+    autoEnable = false;
     polarity = specialArgs.polarity or "either";
-    autoEnable = true;
     opacity.terminal = if isLinux then 0.9 else 1.0;
 
     cursor = {
       package = pkgs.bibata-cursors;
       name = "Bibata-Modern-Classic";
-      size = 24;
+      size = 16;
     };
 
     fonts = {
       sizes = {
-        desktop = if highResolution then 14 else 12;
-        terminal = if highResolution then 12 else 14;
+        desktop = 10;
+        terminal = 11;
       };
       monospace = {
         name = "JetBrainsMono Nerd Font Mono";
@@ -63,7 +58,9 @@ with machineConfig; {
         package = pkgs.nerdfonts;
       };
     };
+
+    targets.gnome.enable = displayManager == "pop-os";
   };
 
-  imports = [ ./terminal ] ++ (if machineConfig.hasDisplay then [ ./gui ./hyprland ] else [ ]);
+  imports = [ ./terminal ] ++ (if displayManager == "hyprland" then [ ./gui ./hyprland ] else [ ]);
 }

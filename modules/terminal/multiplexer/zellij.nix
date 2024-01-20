@@ -1,4 +1,6 @@
 { pkgs, ... }: {
+  stylix.targets.zellij.enable = true;
+
   programs.zellij = {
     enable = true;
 

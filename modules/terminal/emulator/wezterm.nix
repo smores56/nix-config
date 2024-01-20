@@ -1,4 +1,6 @@
 { pkgs, ... }: {
+  stylix.targets.wezterm.enable = true;
+
   programs.wezterm = {
     enable = true;
     extraConfig = ''

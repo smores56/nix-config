@@ -17,6 +17,8 @@
     nodePackages.dockerfile-language-server-nodejs
   ];
 
+  stylix.targets.helix.enable = true;
+
   programs.helix = {
     enable = true;
     defaultEditor = true;

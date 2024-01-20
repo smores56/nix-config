@@ -1,4 +1,6 @@
 { pkgs, ... }: {
+  stylix.targets.fish.enable = true;
+
   home.packages = if pkgs.stdenv.isLinux then [ pkgs.nitch ] else [ pkgs.pfetch ];
 
   programs.direnv = {
