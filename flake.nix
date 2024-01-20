@@ -59,7 +59,9 @@
           colorscheme = "gruvbox-material-dark-medium";
         };
         "smores@smoresnet" = mkHomeConfiguration {
-          machineType = null;
+          displayManager = null;
+          polarity = "dark";
+          colorscheme = "gruvbox-material-dark-medium";
         };
         "smohr" = mkHomeConfiguration {
           displayManager = "osx";
