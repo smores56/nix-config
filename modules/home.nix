@@ -17,10 +17,6 @@ in
     homeDirectory = homeDirectory;
   };
 
-  home.file.".xinitrc".text = ''
-    ${pkgs.xorg.xmodmap}/bin/xmodmap -e "keycode 94 = Shift_L"
-  '';
-
   targets.genericLinux.enable = isLinux;
   xdg =
     if isLinux then {
@@ -30,6 +26,15 @@ in
         if displayManager == "hyprland" then [
           "${homeDirectory}/.nix-profile/share/applications"
         ] else [ ];
+      configFile."autostart/iso-keyboard-fix.desktop".text = ''
+        [Desktop Entry]
+        Name=ISO Keyboard Fix
+        Comment=Change the half of the left shift key to also perform shift
+        Exec=bash -c 'sleep 5 && xmodmap -e "keycode 94 = Shift_L"'
+        Icon=org.gnome.Terminal
+        Terminal=false
+        Type=Application
+      '';
     } else { };
 
   stylix = stylixBase // {
