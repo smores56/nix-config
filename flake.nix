@@ -9,14 +9,12 @@
     };
 
     stylix.url = "github:danth/stylix";
-    yazi.url = "github:sxyazi/yazi";
   };
 
-  outputs = { nixpkgs, home-manager, stylix, yazi, ... }:
+  outputs = { nixpkgs, home-manager, stylix, ... }:
     let
       localOverlay = prev: final: {
         stylix = stylix.packages.${prev.system}.stylix;
-        yazi = yazi.packages.${prev.system}.yazi;
       };
 
       pkgsForSystem = system: import nixpkgs {

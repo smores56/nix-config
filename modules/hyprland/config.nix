@@ -1,11 +1,11 @@
-{ ... }: ''
+{ pkgs, ... }: ''
   # See https://wiki.hyprland.org/Configuring/Keywords/ for more
 
   # See https://wiki.hyprland.org/Configuring/Monitors/
   monitor=,highres,auto,1
 
   # Execute your favorite apps at launch
-  exec-once = waybar & hyprpaper
+  exec-once = waybar & hyprpaper & swayidle timeout 10 "pgrep swaylock && hyprctl dispatch dpms off" resume "hyprctl dispatch dpms on" before-sleep "swaylock"
 
   # Some default env vars.
   env = XCURSOR_SIZE,24
