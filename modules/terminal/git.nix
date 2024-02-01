@@ -1,9 +1,10 @@
 { pkgs, polarity, ... }: {
-  home.packages = [
-    pkgs.delta
-    pkgs.gh
-    pkgs.mercurial
-    pkgs.git-lfs
+  home.packages = with pkgs; [
+    delta
+    gh
+    mercurial
+    git-lfs
+    gitui
   ];
 
   programs.git = {

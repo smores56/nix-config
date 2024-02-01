@@ -50,6 +50,7 @@
     elixir
     erlang
     rebar3
+    idris2
 
     # compilation
     gcc

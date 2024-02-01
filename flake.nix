@@ -66,8 +66,9 @@
           username = "smohr";
           homeDirectory = "/Users/smohr";
           system = "aarch64-darwin";
-          colorscheme = "kanagawa";
-          polarity = "dark";
+          colorscheme = "rose-pine-dawn";
+          polarity = "light";
+          terminalFontSize = 12;
         };
       };
     };

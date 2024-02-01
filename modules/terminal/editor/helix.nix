@@ -87,6 +87,7 @@
         file-types = [ "kk" ];
         roots = [ ];
         comment-token = "//";
+        language-servers = [ "koka-ls" ];
         indent = { tab-width = 8; unit = "  "; };
       }
       {
@@ -121,7 +122,7 @@
         name = "koka";
         source = {
           git = "https://github.com/mtoohey31/tree-sitter-koka.git";
-          rev = "bae18088ab7b6938b11640c468ca35618d215830";
+          rev = "2527e152d4b6a79fd50aebd8d0b4b4336c94a034";
         };
       }
     ];
@@ -130,9 +131,9 @@
       roc-ls = {
         command = "roc_ls";
       };
-      koka-lsp = {
+      koka-ls = {
         command = "koka";
-        args = [ "language-server" ];
+        args = [ "--language-server" ];
       };
       els = {
         command = "erg";

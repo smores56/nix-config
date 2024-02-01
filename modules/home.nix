@@ -4,6 +4,7 @@ let
   homeDirectory = specialArgs.homeDirectory or "/home/${username}";
 
   wallpaper = specialArgs.wallpaper or ../wallpapers/angled-waves.png;
+  terminalFontSize = specialArgs.terminalFontSize or 11;
   stylixBase =
     if builtins.hasAttr "colorscheme" specialArgs then {
       base16Scheme = "${pkgs.base16-schemes}/share/themes/${specialArgs.colorscheme}.yaml";
@@ -52,7 +53,7 @@ in
     fonts = {
       sizes = {
         desktop = 14;
-        terminal = if displayManager == "hyprland" then 12 else 11;
+        terminal = terminalFontSize;
       };
       monospace = {
         name = "JetBrainsMono Nerd Font Mono";
