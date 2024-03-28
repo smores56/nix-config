@@ -1,6 +1,5 @@
 { pkgs, ... }: {
   imports = [
-    ./ssh
     ./shell
     ./editor
     ./emulator
