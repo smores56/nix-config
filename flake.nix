@@ -51,10 +51,10 @@
           displayManager = null;
         };
         "smores@smortress" = mkHomeConfiguration {
-          displayManager = "hyprland";
+          displayManager = "pop-os";
+          colorscheme = "rose-pine-moon";
           polarity = "dark";
-          wallpaper = ./wallpapers/angled-waves.png;
-          colorscheme = "gruvbox-material-dark-medium";
+          wallpaper = ./wallpapers/morocco.jpg;
         };
         "smores@smoresnet" = mkHomeConfiguration {
           displayManager = null;

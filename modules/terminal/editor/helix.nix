@@ -8,6 +8,7 @@
     typst-lsp
     typst-fmt
     nixpkgs-fmt
+    rust-analyzer
     nodePackages.yaml-language-server
     nodePackages.svelte-language-server
     nodePackages."@prisma/language-server"
@@ -60,6 +61,7 @@
       { name = "python"; auto-format = true; }
       { name = "javascript"; auto-format = true; }
       { name = "typescript"; auto-format = true; }
+      { name = "json"; auto-format = false; }
       { name = "svelte"; auto-format = true; roots = [ "package.json" ]; }
       { name = "java"; indent = { tab-width = 4; unit = "    "; }; }
       {
@@ -72,6 +74,11 @@
         comment-token = "#";
         language-servers = [ "roc-ls" ];
         indent = { tab-width = 4; unit = "    "; };
+        auto-format = true;
+        formatter = {
+          command = "roc";
+          args = [ "format" "--stdin" "--stdout" ];
+        };
 
         auto-pairs = {
           "(" = ")";
@@ -90,24 +97,6 @@
         language-servers = [ "koka-ls" ];
         indent = { tab-width = 8; unit = "  "; };
       }
-      {
-        name = "erg";
-        scope = "source.erg";
-        injection-regex = "erg";
-        file-types = [ "er" ];
-        roots = [ ];
-        comment-token = "#";
-        language-servers = [ "els" ];
-        indent = { tab-width = 4; unit = "    "; };
-
-        auto-pairs = {
-          "(" = ")";
-          "{" = "}";
-          "[" = "]";
-          "'" = "'";
-          "\"" = "\"";
-        };
-      }
     ];
 
     languages.grammar = [
@@ -115,7 +104,7 @@
         name = "roc";
         source = {
           git = "https://github.com/faldor20/tree-sitter-roc.git";
-          rev = "2c985e01fd1eae1e8ce0d52b084a6b555c26048e";
+          rev = "381743cd40ee19a9508c6445aacb9085d4bc0cf8";
         };
       }
       {
@@ -129,15 +118,11 @@
 
     languages.language-server = {
       roc-ls = {
-        command = "roc_ls";
+        command = "roc_language_server";
       };
       koka-ls = {
         command = "koka";
         args = [ "--language-server" ];
-      };
-      els = {
-        command = "erg";
-        args = [ "server" ];
       };
       pylsp.config = {
         pylsp.plugins = {
