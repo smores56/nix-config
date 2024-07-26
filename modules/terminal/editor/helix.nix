@@ -87,16 +87,6 @@
           "\"" = "\"";
         };
       }
-      {
-        name = "koka";
-        scope = "source.koka";
-        injection-regex = "koka";
-        file-types = [ "kk" ];
-        roots = [ ];
-        comment-token = "//";
-        language-servers = [ "koka-ls" ];
-        indent = { tab-width = 8; unit = "  "; };
-      }
     ];
 
     languages.grammar = [
@@ -104,14 +94,7 @@
         name = "roc";
         source = {
           git = "https://github.com/faldor20/tree-sitter-roc.git";
-          rev = "381743cd40ee19a9508c6445aacb9085d4bc0cf8";
-        };
-      }
-      {
-        name = "koka";
-        source = {
-          git = "https://github.com/mtoohey31/tree-sitter-koka.git";
-          rev = "2527e152d4b6a79fd50aebd8d0b4b4336c94a034";
+          rev = "a662513450e163dc2056603b1f426b4787aac0fd";
         };
       }
     ];
@@ -119,10 +102,6 @@
     languages.language-server = {
       roc-ls = {
         command = "roc_language_server";
-      };
-      koka-ls = {
-        command = "koka";
-        args = [ "--language-server" ];
       };
       pylsp.config = {
         pylsp.plugins = {

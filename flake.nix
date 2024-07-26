@@ -8,6 +8,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    hyprland.url = "git+https://github.com/hyprwm/Hyprland?submodules=1";
     stylix.url = "github:danth/stylix";
   };
 
@@ -37,9 +38,9 @@
     {
       homeConfigurations = {
         "smores@smorestux" = mkHomeConfiguration {
-          displayManager = "pop-os";
-          colorscheme = "tender";
+          displayManager = "hyprland";
           polarity = "dark";
+          colorscheme = "gruvbox-material-dark-medium";
           wallpaper = ./wallpapers/spirited-away.jpg;
         };
         "smores@smoresbook" = mkHomeConfiguration {
