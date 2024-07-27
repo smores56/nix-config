@@ -1,13 +1,17 @@
 { pkgs, ... }: {
+  # Enable touchpad support
+  services.libinput.enable = true;
+
+  services.displayManager.defaultSession = "gnome";
+
   services.xserver = {
     enable = true;
 
     # Configure keymap in X11
-    layout = "us";
-    xkbVariant = "";
-
-    # Enable touchpad support
-    libinput.enable = true;
+    xkb = {
+      layout = "us";
+      variant = "";
+    };
 
     # Use GDM as the login manager
     displayManager = {
@@ -18,7 +22,6 @@
         autoSuspend = false;
       };
 
-      defaultSession = "gnome";
     };
 
     desktopManager = {
@@ -29,24 +32,24 @@
   environment.gnome.excludePackages = (with pkgs; [
     gnome-photos
     gnome-tour
-  ]) ++ (with pkgs.gnome; [
-    cheese
-    gnome-music
     gedit
+    cheese
     epiphany
     geary
+    yelp
+  ]) ++ (with pkgs.gnome; [
+    gnome-music
     gnome-characters
     tali
     iagno
     hitori
     atomix
-    yelp
     gnome-contacts
     gnome-initial-setup
   ]);
 
   environment.systemPackages = with pkgs; [
-    gnome.gnome-tweaks
+    gnome-tweaks
     gnomeExtensions.pop-shell
   ];
 }

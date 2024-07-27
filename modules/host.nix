@@ -1,11 +1,15 @@
-{ pkgs, ... }: {
+{ pkgs, nixos-cosmic, hostname, ... }: {
+  nix.settings = {
+    substituters = [ "https://cosmic.cachix.org/" ];
+    trusted-public-keys = [ "cosmic.cachix.org-1:Dya9IyXD4xdBehWjrkPv6rtxpmMdRel02smYzA85dPE=" ];
+  };
+
   system.stateVersion = "unstable";
 
-  # Bootloader
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
 
-  networking.hostName = "smorestux";
+  networking.hostName = hostname;
   time.timeZone = "America/Los_Angeles";
 
   # Define a user account. Don't forget to set a password with ‘passwd’.
@@ -16,21 +20,22 @@
     shell = pkgs.fish;
   };
 
-  services.xserver.displayManager.autoLogin = {
+  services.displayManager.autoLogin = {
     enable = true;
     user = "smores";
   };
 
   programs.fish.enable = true;
 
-  # Allow unfree packages
   nixpkgs.config.allowUnfree = true;
 
+  services.desktopManager.cosmic.enable = true;
+  services.displayManager.cosmic-greeter.enable = true;
+
   imports = [
-    # Generated with `sudo nixos-generate-config`
-    /etc/nixos/hardware-configuration.nix
-    ../modules/nixos
-    ../modules/nixos/sound.nix
-    ../modules/nixos/hyprland.nix
+    ./nixos
+    ./nixos/sound.nix
+    ../hardware-configuration/${hostname}.nix
+    nixos-cosmic.nixosModules.default
   ];
 }

@@ -7,12 +7,14 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-
-    hyprland.url = "git+https://github.com/hyprwm/Hyprland?submodules=1";
+    nixos-cosmic = {
+      url = "github:lilyinstarlight/nixos-cosmic";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     stylix.url = "github:danth/stylix";
   };
 
-  outputs = { nixpkgs, home-manager, stylix, ... }:
+  outputs = { nixpkgs, home-manager, nixos-cosmic, stylix, ... }:
     let
       localOverlay = prev: final: {
         stylix = stylix.packages.${prev.system}.stylix;
@@ -30,17 +32,24 @@
           isLinux = system == "x86_64-linux";
           polarity = args.polarity or "either";
           displayManager = args.displayManager or null;
+          helixTheme = args.helixTheme or null;
         } // args);
         pkgs = pkgsForSystem extraSpecialArgs.system;
         modules = [ stylix.homeManagerModules.stylix ./modules/home.nix ];
       });
+
+      mkNixosConfiguration = args: nixpkgs.lib.nixosSystem {
+        specialArgs = { nixos-cosmic = nixos-cosmic; } // args;
+        modules = [ ./modules/host.nix ];
+      };
     in
     {
       homeConfigurations = {
         "smores@smorestux" = mkHomeConfiguration {
-          displayManager = "hyprland";
+          displayManager = "pop-os";
           polarity = "dark";
           colorscheme = "gruvbox-material-dark-medium";
+          helixTheme = "noctis_bordo";
           wallpaper = ./wallpapers/spirited-away.jpg;
         };
         "smores@smoresbook" = mkHomeConfiguration {
@@ -70,6 +79,12 @@
           colorscheme = "rose-pine-dawn";
           polarity = "light";
           terminalFontSize = 12;
+        };
+      };
+
+      nixosConfigurations = {
+        "smorestux" = mkNixosConfiguration {
+          hostname = "smorestux";
         };
       };
     };

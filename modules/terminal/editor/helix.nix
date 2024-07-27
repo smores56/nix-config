@@ -1,4 +1,4 @@
-{ pkgs, ... }: {
+{ pkgs, helixTheme, ... }: {
   # LSPs
   home.packages = with pkgs; [
     nil
@@ -18,13 +18,15 @@
     nodePackages.dockerfile-language-server-nodejs
   ];
 
-  stylix.targets.helix.enable = true;
+  stylix.targets.helix.enable = helixTheme == null;
 
   programs.helix = {
     enable = true;
     defaultEditor = true;
 
     settings = {
+      theme = if helixTheme == null then "" else helixTheme;
+
       keys.normal.space = {
         s = ":write";
         c = ":quit";

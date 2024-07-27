@@ -7,7 +7,7 @@
     ] else [ ];
 
   home.packages =
-    if displayManager != "hyprland" then [ ] else
+    if displayManager == null then [ ] else
     (with pkgs; [
       # file management
       xfce.thunar
