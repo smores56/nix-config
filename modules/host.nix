@@ -25,6 +25,12 @@
     user = "smores";
   };
 
+  # Enable OpenGL
+  hardware.graphics = {
+    enable = true;
+    enable32Bit = true;
+  };
+
   programs.fish.enable = true;
 
   nixpkgs.config.allowUnfree = true;
