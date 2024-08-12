@@ -66,7 +66,7 @@
     interactiveShellInit = ''
       ${if pkgs.stdenv.isLinux then "nitch" else "pfetch"}
       set fish_greeting # custom prompt
-      set -xg PATH /opt/homebrew/bin $PATH
+      set -xg PATH /opt/homebrew/bin /usr/local/bin $PATH
 
       # include local extras if present
       for configFile in ~/.config/fish/extras/*.fish

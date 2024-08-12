@@ -53,8 +53,10 @@
           wallpaper = ./wallpapers/spirited-away.jpg;
         };
         "smores@smoresbook" = mkHomeConfiguration {
-          displayManager = "hyprland";
+          displayManager = "pop-os";
           polarity = "dark";
+          colorscheme = "kanagawa";
+          helixTheme = "kanagawa";
           wallpaper = ./wallpapers/enchanted-evening-retreat.png;
         };
         "smores@campfire" = mkHomeConfiguration {
@@ -85,6 +87,9 @@
       nixosConfigurations = {
         "smorestux" = mkNixosConfiguration {
           hostname = "smorestux";
+        };
+        "smoresbook" = mkNixosConfiguration {
+          hostname = "smoresbook";
         };
       };
     };

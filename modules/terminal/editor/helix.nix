@@ -96,7 +96,7 @@
         name = "roc";
         source = {
           git = "https://github.com/faldor20/tree-sitter-roc.git";
-          rev = "a662513450e163dc2056603b1f426b4787aac0fd";
+          rev = "ef46edd0c03ea30a22f7e92bc68628fb7231dc8a";
         };
       }
     ];
