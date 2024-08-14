@@ -46,6 +46,9 @@
       safe = {
         directory = "*";
       };
+      commit = {
+        gpgsign = true;
+      };
     };
   };
 

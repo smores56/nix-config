@@ -61,7 +61,6 @@
     cbonsai
     musikcube
     terminal-typeracer
-    jrnl
 
     # container tools
     k9s

@@ -28,7 +28,7 @@
       e = "hx";
       ef = "hx (gum file .)";
       l = "eza --icons -lh";
-      t = "zellij-picker";
+      t = "zellij";
       a = "mkdir -p";
       f = "yazi";
       b = "bat";
