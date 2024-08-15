@@ -81,6 +81,8 @@
     xxh
     file
     awscli2
+    gnupg
+    pinentry
   ] ++ (if pkgs.stdenv.isLinux then [ wl-clipboard ] else [ ]);
 
   programs.bat = {

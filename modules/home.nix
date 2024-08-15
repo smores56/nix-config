@@ -23,20 +23,7 @@ in
     if isLinux then {
       enable = true;
       mime.enable = true;
-      # systemDirs.data =
-      #   if displayManager == "hyprland" then [
-      #     "${homeDirectory}/.nix-profile/share/applications"
-      #   ] else [ ];
       systemDirs.data = ["${homeDirectory}/.nix-profile/share/applications"];
-      configFile."autostart/iso-keyboard-fix.desktop".text = ''
-        [Desktop Entry]
-        Name=ISO Keyboard Fix
-        Comment=Change the half of the left shift key to also perform shift
-      Exec=bash -c 'sleep 5 && xmodmap -e "keycode 94 = Shift_L"'
-        Icon=org.gnome.Terminal
-        Terminal=false
-        Type=Application
-      '';
     } else { };
 
   stylix = stylixBase // {
