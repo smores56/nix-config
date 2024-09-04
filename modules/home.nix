@@ -27,6 +27,7 @@ in
     } else { };
 
   stylix = stylixBase // {
+    enable = true;
     image = wallpaper;
     autoEnable = false;
     polarity = specialArgs.polarity or "either";

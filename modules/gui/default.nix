@@ -30,5 +30,6 @@
       firefox
       kicad
       musescore
+      freecad
     ]);
 }

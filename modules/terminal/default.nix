@@ -60,7 +60,7 @@
     gum
     cbonsai
     musikcube
-    terminal-typeracer
+    # terminal-typeracer
 
     # container tools
     k9s
