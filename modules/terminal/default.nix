@@ -42,6 +42,7 @@
     cargo
     rustc
     yarn
+    nodePackages.pnpm
     erg
     typst
     terraform
@@ -50,6 +51,7 @@
     erlang
     rebar3
     idris2
+    fnm
 
     # compilation
     gcc
@@ -67,6 +69,8 @@
     docker
     docker-compose
     oxker
+    kubernetes-helm
+    kubectl
 
     # other packages
     zellij
@@ -82,8 +86,20 @@
     file
     awscli2
     gnupg
+  ] ++ (if pkgs.stdenv.isLinux then [
     pinentry
-  ] ++ (if pkgs.stdenv.isLinux then [ wl-clipboard ] else [ ]);
+    wl-clipboard
+  ] else [ ])
+  ++ (if pkgs.stdenv.isDarwin then [
+    ngrok
+    graphviz
+    gnupg
+    watchman
+    grpcurl
+    grpcui
+    bazelisk
+    teleport_14
+  ] else [ ]);
 
   programs.bat = {
     enable = true;

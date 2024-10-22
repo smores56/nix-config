@@ -1,7 +1,7 @@
 { pkgs, ... }: {
   stylix.targets.fish.enable = true;
 
-  home.packages = if pkgs.stdenv.isLinux then [ pkgs.nitch ] else [ pkgs.pfetch ];
+  home.packages = [ pkgs.pfetch-rs ];
 
   programs.direnv = {
     enable = true;
@@ -64,7 +64,7 @@
     };
 
     interactiveShellInit = ''
-      ${if pkgs.stdenv.isLinux then "nitch" else "pfetch"}
+      pfetch
       set fish_greeting # custom prompt
       set -xg PATH /opt/homebrew/bin /usr/local/bin $PATH
 

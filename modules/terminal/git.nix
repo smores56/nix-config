@@ -5,6 +5,7 @@
     mercurial
     git-lfs
     gitui
+    difftastic
   ];
 
   programs.git = {
@@ -28,20 +29,20 @@
         defaultBranch = "main";
       };
       diff = {
-        colorMoved = "default";
+        tool = "difftastic";
+        external = "difft";
       };
-      delta = {
-        navigate = true;
-        line-numbers = true;
+      difftool = {
+        prompt = false;
+        difftastic = {
+          cmd = "difft \"$LOCAL\" \"$REMOTE\"";
+        };
       };
       pager = {
-        diff = "delta";
-        log = "delta";
-        reflog = "delta";
-        show = "delta";
+        difftool = true;
       };
       interactive = {
-        diffFilter = "delta --color-only";
+        diffFilter = "difft --color-only";
       };
       safe = {
         directory = "*";
@@ -57,8 +58,7 @@
 
     settings = {
       git.paging = {
-        colorArg = "always";
-        pager = "delta --paging=never --${if polarity == "light" then "light" else "dark"}";
+        externalDiffCommand = "difft --color=always";
       };
       gui.theme = {
         lightTheme = polarity == "light";
