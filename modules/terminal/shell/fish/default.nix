@@ -56,10 +56,10 @@
       ng = "nix-collect-garbage";
 
       # remote access
-      sl = "ssh smoresnet -t fish";
-      sm = "ssh smortress -t fish";
-      sc = "ssh campfire -t fish";
-      st = "ssh (tailscale-hosts | fzf) -t fish";
+      sl = "ssh smores@smoresnet -t fish";
+      sm = "ssh smores@smortress -t fish";
+      sc = "ssh smores@campfire -t fish";
+      st = "ssh smores@(tailscale-hosts | fzf) -t fish";
       pf = "port-forward smores@home.sammohr.dev";
     };
 
