@@ -98,7 +98,7 @@
     grpcurl
     grpcui
     bazelisk
-    teleport_14
+    teleport
   ] else [ ]);
 
   programs.bat = {
