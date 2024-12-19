@@ -2,6 +2,7 @@
   # LSPs
   home.packages = with pkgs; [
     nil
+    zls
     taplo
     gopls
     marksman

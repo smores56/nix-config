@@ -16,10 +16,6 @@
       feh
       libreoffice
 
-      # games
-      steam
-      protonup-qt
-
       # media
       vlc
       gimp
@@ -27,9 +23,6 @@
 
       # other
       discord
-      firefox
-      kicad
       musescore
-      freecad
     ]);
 }

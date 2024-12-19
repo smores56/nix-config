@@ -99,6 +99,8 @@
     grpcui
     bazelisk
     teleport
+    buildifier
+    flyway
   ] else [ ]);
 
   programs.bat = {
