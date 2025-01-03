@@ -2,6 +2,9 @@
   stylix.targets.wezterm.enable = true;
 
   programs.wezterm = {
+    # Prefer local installs
+    package = pkgs.nil;
+
     enable = true;
     extraConfig = ''
       return {

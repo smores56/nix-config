@@ -45,7 +45,7 @@ in
         terminal = terminalFontSize;
       };
       monospace = {
-        name = "JetBrainsMono Nerd Font Mono";
+        name = "CaskaydiaCove NF SemiBold";
         package = pkgs.nerd-fonts.caskaydia-cove;
       };
     };
@@ -53,6 +53,5 @@ in
     targets.gnome.enable = displayManager == "pop-os";
   };
 
-  # imports = [ ./terminal ] ++ (if displayManager == "hyprland" then [ ./gui ./hyprland ] else [ ]);
   imports = [ ./terminal ] ++ (if displayManager == "pop-os" then [ ./gui ] else [ ]);
 }

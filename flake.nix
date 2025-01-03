@@ -53,7 +53,7 @@
           polarity = "dark";
           colorscheme = "gruvbox-material-dark-medium";
           helixTheme = "noctis_bordo";
-          wallpaper = ./wallpapers/spirited-away.jpg;
+          wallpaper = ./wallpapers/windmills.jpg;
         };
         "smores@smoresbook" = mkHomeConfiguration {
           displayManager = "pop-os";

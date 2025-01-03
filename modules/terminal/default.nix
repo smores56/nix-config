@@ -23,6 +23,7 @@
     fzf
     jq
     delta
+    television
 
     # editing
     sd
