@@ -67,8 +67,9 @@
         };
         "smores@smortress" = mkHomeConfiguration {
           displayManager = "pop-os";
-          colorscheme = "rose-pine-moon";
           polarity = "dark";
+          colorscheme = "gruvbox-material-dark-medium";
+          helixTheme = "noctis_bordo";
           wallpaper = ./wallpapers/morocco.jpg;
         };
         "smores@smoresnet" = mkHomeConfiguration {

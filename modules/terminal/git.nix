@@ -6,6 +6,7 @@
     git-lfs
     gitui
     difftastic
+    jujutsu
   ];
 
   programs.git = {
@@ -29,8 +30,11 @@
         defaultBranch = "main";
       };
       diff = {
-        tool = "difftastic";
-        external = "difft";
+        colorMoved = "default";
+      };
+      delta = {
+        navigate = true;
+        line-numbers = true;
       };
       difftool = {
         prompt = false;
@@ -39,10 +43,13 @@
         };
       };
       pager = {
-        difftool = true;
+        diff = "delta";
+        log = "delta";
+        reflog = "delta";
+        show = "delta";
       };
       interactive = {
-        diffFilter = "difft --color-only";
+        diffFilter = "delta --color-only";
       };
       safe = {
         directory = "*";
@@ -58,7 +65,8 @@
 
     settings = {
       git.paging = {
-        externalDiffCommand = "difft --color=always";
+        colorArg = "always";
+        pager = "delta --paging=never --${if polarity == "light" then "light" else "dark"}";
       };
       gui.theme = {
         lightTheme = polarity == "light";

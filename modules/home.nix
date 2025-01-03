@@ -46,11 +46,7 @@ in
       };
       monospace = {
         name = "JetBrainsMono Nerd Font Mono";
-        package = pkgs.cascadia-code;
-      };
-      sansSerif = {
-        name = "Ubuntu Nerd Font";
-        package = pkgs.nerdfonts;
+        package = pkgs.nerd-fonts.caskaydia-cove;
       };
     };
 
