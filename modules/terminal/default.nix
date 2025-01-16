@@ -1,4 +1,4 @@
-{ pkgs, ... }: {
+{ pkgs, displayManager, ... }: {
   imports = [
     ./shell
     ./editor
@@ -41,16 +41,10 @@
     go
     python3Full
     cargo
-    rustc
     yarn
     nodePackages.pnpm
     erg
     typst
-    terraform
-    gleam
-    elixir
-    erlang
-    rebar3
     idris2
     fnm
 
@@ -67,7 +61,6 @@
 
     # container tools
     k9s
-    docker
     docker-compose
     oxker
     kubernetes-helm
@@ -85,16 +78,15 @@
     navi
     xxh
     file
-    awscli2
     gnupg
-  ] ++ (if pkgs.stdenv.isLinux then [
-    pinentry
+  ] ++ (if pkgs.stdenv.isLinux && displayManager != null then [
     wl-clipboard
   ] else [ ])
   ++ (if pkgs.stdenv.isDarwin then [
+    docker
+    terraform
     ngrok
     graphviz
-    gnupg
     watchman
     grpcurl
     grpcui

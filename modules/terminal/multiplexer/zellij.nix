@@ -1,5 +1,5 @@
-{ pkgs, ... }: {
-  stylix.targets.zellij.enable = true;
+{ lib, pkgs, displayManager, ... }: {
+  stylix = lib.mkIf (displayManager != null) { targets.zellij.enable = true; };
 
   programs.zellij = {
     enable = true;

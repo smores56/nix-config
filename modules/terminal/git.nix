@@ -2,7 +2,6 @@
   home.packages = with pkgs; [
     delta
     gh
-    mercurial
     git-lfs
     gitui
     difftastic

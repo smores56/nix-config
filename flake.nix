@@ -76,6 +76,7 @@
           displayManager = null;
           polarity = "dark";
           colorscheme = "gruvbox-material-dark-medium";
+          helixTheme = "gruvbox";
         };
         "smohr" = mkHomeConfiguration {
           displayManager = "osx";

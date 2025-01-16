@@ -1,4 +1,4 @@
-{ pkgs, helixTheme, ... }: {
+{ lib, pkgs, helixTheme, displayManager, ... }: {
   # LSPs
   home.packages = with pkgs; [
     nil
@@ -12,14 +12,13 @@
     rust-analyzer
     nodePackages.yaml-language-server
     nodePackages.svelte-language-server
-    nodePackages."@prisma/language-server"
     nodePackages.typescript-language-server
     nodePackages.vscode-langservers-extracted
     nodePackages.graphql-language-service-cli
     nodePackages.dockerfile-language-server-nodejs
   ];
 
-  stylix.targets.helix.enable = helixTheme == null;
+  stylix.targets.helix.enable = lib.mkIf (displayManager != null) (helixTheme == null);
 
   programs.helix = {
     enable = true;

@@ -1,6 +1,6 @@
 { pkgs, ... }: {
   programs.neovim = {
-    enable = true;
+    enable = false;
 
     plugins = with pkgs.vimPlugins; [
       nvchad

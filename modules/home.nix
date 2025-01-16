@@ -27,7 +27,7 @@ in
     } else { };
 
   stylix = stylixBase // {
-    enable = true;
+    enable = displayManager != null;
     image = wallpaper;
     autoEnable = false;
     polarity = specialArgs.polarity or "either";
