@@ -42,14 +42,23 @@
         file-picker.hidden = false;
         indent-guides.render = true;
         soft-wrap.enable = true;
+
+        end-of-line-diagnostics = "hint";
+        inline-diagnostics = {
+          cursor-line = "error";
+          # other-lines = "error";
+        };
+
         lsp = {
           display-messages = true;
           display-inlay-hints = false;
         };
+
         whitespace.render = {
           space = "all";
           tab = "all";
         };
+
         cursor-shape = {
           normal = "block";
           insert = "bar";

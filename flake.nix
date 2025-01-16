@@ -69,8 +69,8 @@
           displayManager = "pop-os";
           polarity = "dark";
           colorscheme = "gruvbox-material-dark-medium";
-          helixTheme = "noctis_bordo";
-          wallpaper = ./wallpapers/morocco.jpg;
+          helixTheme = "gruvbox";
+          wallpaper = ./wallpapers/backyard.png;
         };
         "smores@smoresnet" = mkHomeConfiguration {
           displayManager = null;

@@ -4,7 +4,7 @@ let
   homeDirectory = specialArgs.homeDirectory or "/home/${username}";
 
   wallpaper = specialArgs.wallpaper or ../wallpapers/angled-waves.png;
-  terminalFontSize = specialArgs.terminalFontSize or 11;
+  terminalFontSize = specialArgs.terminalFontSize or 12;
   stylixBase =
     if builtins.hasAttr "colorscheme" specialArgs then {
       base16Scheme = "${pkgs.base16-schemes}/share/themes/${specialArgs.colorscheme}.yaml";
