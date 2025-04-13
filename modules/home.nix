@@ -45,7 +45,7 @@ in
         terminal = terminalFontSize;
       };
       monospace = {
-        name = "CaskaydiaCove NF SemiBold";
+        name = "CaskaydiaCove NF";
         package = pkgs.nerd-fonts.caskaydia-cove;
       };
     };

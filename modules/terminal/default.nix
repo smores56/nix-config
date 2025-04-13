@@ -40,14 +40,24 @@
     # languages
     go
     python3Full
-    cargo
     yarn
     nodePackages.pnpm
     erg
     typst
     idris2
     fnm
+    tree-sitter
+    zig
 
+    # rust
+    (pkgs.fenix.complete.withComponents [
+      "cargo"
+      "clippy"
+      "rust-src"
+      "rustc"
+      "rustfmt"
+    ])
+    
     # compilation
     gcc
     pkg-config
@@ -69,7 +79,6 @@
     # other packages
     zellij
     eva
-    licensor
     curl
     openssh
     flyctl
@@ -79,6 +88,7 @@
     xxh
     file
     gnupg
+    watchexec
   ] ++ (if pkgs.stdenv.isLinux && displayManager != null then [
     wl-clipboard
   ] else [ ])

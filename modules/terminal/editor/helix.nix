@@ -6,8 +6,9 @@
     taplo
     gopls
     marksman
-    typst-lsp
+    tinymist
     typst-fmt
+    starpls-bin
     nixpkgs-fmt
     rust-analyzer
     nodePackages.yaml-language-server

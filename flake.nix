@@ -15,9 +15,13 @@
       url = "github:danth/stylix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    fenix = {
+      url = "github:nix-community/fenix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { nixpkgs, home-manager, nixos-cosmic, stylix, ... }:
+  outputs = { nixpkgs, home-manager, nixos-cosmic, stylix, fenix, ... }:
     let
       localOverlay = prev: final: {
         stylix = stylix.packages.${prev.system}.stylix;
@@ -25,7 +29,7 @@
 
       pkgsForSystem = system: import nixpkgs {
         inherit system;
-        overlays = [ localOverlay ];
+        overlays = [ localOverlay fenix.overlays.default ];
         config = { allowUnfree = true; };
       };
 
@@ -43,7 +47,9 @@
 
       mkNixosConfiguration = args: nixpkgs.lib.nixosSystem {
         specialArgs = { nixos-cosmic = nixos-cosmic; } // args;
-        modules = [ ./modules/host.nix ];
+        modules = [
+          ./modules/host.nix
+        ];
       };
     in
     {
