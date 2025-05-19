@@ -1,4 +1,10 @@
-{ pkgs, specialArgs, isLinux, displayManager, ... }:
+{
+  pkgs,
+  specialArgs,
+  isLinux,
+  displayManager,
+  ...
+}:
 let
   username = specialArgs.username or "smores";
   homeDirectory = specialArgs.homeDirectory or "/home/${username}";
@@ -6,13 +12,16 @@ let
   wallpaper = specialArgs.wallpaper or ../wallpapers/angled-waves.png;
   terminalFontSize = specialArgs.terminalFontSize or 12;
   stylixBase =
-    if builtins.hasAttr "colorscheme" specialArgs then {
-      base16Scheme = "${pkgs.base16-schemes}/share/themes/${specialArgs.colorscheme}.yaml";
-    } else { };
+    if builtins.hasAttr "colorscheme" specialArgs then
+      {
+        base16Scheme = "${pkgs.base16-schemes}/share/themes/${specialArgs.colorscheme}.yaml";
+      }
+    else
+      { };
 in
 {
   home = {
-    stateVersion = "23.11";
+    stateVersion = "25.05";
     packages = [ pkgs.home-manager ];
     username = username;
     homeDirectory = homeDirectory;
@@ -20,18 +29,22 @@ in
 
   targets.genericLinux.enable = isLinux;
   xdg =
-    if isLinux then {
-      enable = true;
-      mime.enable = true;
-      systemDirs.data = ["${homeDirectory}/.nix-profile/share/applications"];
-    } else { };
+    if isLinux then
+      {
+        enable = true;
+        mime.enable = true;
+        systemDirs.data = [ "${homeDirectory}/.nix-profile/share/applications" ];
+      }
+    else
+      { };
 
   stylix = stylixBase // {
     enable = displayManager != null;
+    enableReleaseChecks = false;
     image = wallpaper;
     autoEnable = false;
     polarity = specialArgs.polarity or "either";
-    opacity.terminal = if isLinux then 0.9 else 1.0;
+    opacity.terminal = 0.9;
 
     cursor = {
       package = pkgs.bibata-cursors;

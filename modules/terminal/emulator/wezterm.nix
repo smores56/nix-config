@@ -1,4 +1,5 @@
-{ pkgs, ... }: {
+{ pkgs, ... }:
+{
   stylix.targets.wezterm.enable = true;
 
   programs.wezterm = {

@@ -1,4 +1,5 @@
-{ pkgs, ... }: {
+{ pkgs, ... }:
+{
   stylix.targets.kitty.enable = true;
 
   programs.kitty = {

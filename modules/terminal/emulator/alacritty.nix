@@ -1,4 +1,5 @@
-{ pkgs, ... }: {
+{ pkgs, ... }:
+{
   stylix.targets.alacritty.enable = true;
 
   programs.alacritty = {

@@ -21,36 +21,63 @@
     };
   };
 
-  outputs = { nixpkgs, home-manager, nixos-cosmic, stylix, fenix, ... }:
+  outputs =
+    {
+      nixpkgs,
+      home-manager,
+      nixos-cosmic,
+      stylix,
+      fenix,
+      ...
+    }:
     let
       localOverlay = prev: final: {
         stylix = stylix.packages.${prev.system}.stylix;
       };
 
-      pkgsForSystem = system: import nixpkgs {
-        inherit system;
-        overlays = [ localOverlay fenix.overlays.default ];
-        config = { allowUnfree = true; };
-      };
+      pkgsForSystem =
+        system:
+        import nixpkgs {
+          inherit system;
+          overlays = [
+            localOverlay
+            fenix.overlays.default
+          ];
+          config = {
+            allowUnfree = true;
+          };
+        };
 
-      mkHomeConfiguration = args: home-manager.lib.homeManagerConfiguration (rec {
-        extraSpecialArgs = (rec {
-          system = args.system or "x86_64-linux";
-          isLinux = system == "x86_64-linux";
-          polarity = args.polarity or "either";
-          displayManager = args.displayManager or null;
-          helixTheme = args.helixTheme or null;
-        } // args);
-        pkgs = pkgsForSystem extraSpecialArgs.system;
-        modules = [ stylix.homeManagerModules.stylix ./modules/home.nix ];
-      });
+      mkHomeConfiguration =
+        args:
+        home-manager.lib.homeManagerConfiguration (rec {
+          extraSpecialArgs = (
+            rec {
+              system = args.system or "x86_64-linux";
+              isLinux = system == "x86_64-linux";
+              polarity = args.polarity or "either";
+              displayManager = args.displayManager or null;
+              helixTheme = args.helixTheme or null;
+            }
+            // args
+          );
+          pkgs = pkgsForSystem extraSpecialArgs.system;
+          modules = [
+            stylix.homeModules.stylix
+            ./modules/home.nix
+          ];
+        });
 
-      mkNixosConfiguration = args: nixpkgs.lib.nixosSystem {
-        specialArgs = { nixos-cosmic = nixos-cosmic; } // args;
-        modules = [
-          ./modules/host.nix
-        ];
-      };
+      mkNixosConfiguration =
+        args:
+        nixpkgs.lib.nixosSystem {
+          specialArgs = {
+            nixos-cosmic = nixos-cosmic;
+          } // args;
+          modules = [
+            ./modules/host.nix
+          ];
+        };
     in
     {
       homeConfigurations = {

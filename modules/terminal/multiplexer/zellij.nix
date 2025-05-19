@@ -1,4 +1,10 @@
-{ lib, pkgs, displayManager, ... }: {
+{
+  lib,
+  pkgs,
+  displayManager,
+  ...
+}:
+{
   stylix = lib.mkIf (displayManager != null) { targets.zellij.enable = true; };
 
   programs.zellij = {

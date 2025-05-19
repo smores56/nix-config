@@ -1,4 +1,5 @@
-{ lib, ... }: {
+{ lib, ... }:
+{
   # Enable SSH server
   services.openssh = {
     enable = true;

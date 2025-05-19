@@ -1,4 +1,10 @@
-{ lib, pkgs, displayManager, ... }: {
+{
+  lib,
+  pkgs,
+  displayManager,
+  ...
+}:
+{
   stylix.targets.fish.enable = lib.mkIf (displayManager != null) true;
 
   home.packages = [ pkgs.pfetch-rs ];
@@ -10,7 +16,10 @@
 
   programs.zoxide = {
     enable = true;
-    options = [ "--cmd" "c" ];
+    options = [
+      "--cmd"
+      "c"
+    ];
   };
 
   imports = [ ./functions.nix ];
@@ -75,10 +84,22 @@
     '';
 
     plugins = [
-      { name = "done"; src = pkgs.fishPlugins.done.src; }
-      { name = "pisces"; src = pkgs.fishPlugins.pisces.src; }
-      { name = "pure"; src = pkgs.fishPlugins.pure.src; }
-      { name = "async-prompt"; src = pkgs.fishPlugins.async-prompt.src; }
+      {
+        name = "done";
+        src = pkgs.fishPlugins.done.src;
+      }
+      {
+        name = "pisces";
+        src = pkgs.fishPlugins.pisces.src;
+      }
+      {
+        name = "pure";
+        src = pkgs.fishPlugins.pure.src;
+      }
+      {
+        name = "async-prompt";
+        src = pkgs.fishPlugins.async-prompt.src;
+      }
       {
         name = "lf-icons";
         src = pkgs.fetchFromGitHub {

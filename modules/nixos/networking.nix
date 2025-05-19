@@ -1,4 +1,5 @@
-{ ... }: {
+{ ... }:
+{
   # Use Connman for wifi management
   services.connman = {
     enable = true;

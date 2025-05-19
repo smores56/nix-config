@@ -1,4 +1,5 @@
-{ pkgs, ... }: {
+{ pkgs, ... }:
+{
   # Enable touchpad support
   services.libinput.enable = true;
 
@@ -29,24 +30,26 @@
     };
   };
 
-  environment.gnome.excludePackages = (with pkgs; [
-    gnome-photos
-    gnome-tour
-    gedit
-    cheese
-    epiphany
-    geary
-    yelp
-  ]) ++ (with pkgs.gnome; [
-    gnome-music
-    gnome-characters
-    tali
-    iagno
-    hitori
-    atomix
-    gnome-contacts
-    gnome-initial-setup
-  ]);
+  environment.gnome.excludePackages =
+    (with pkgs; [
+      gnome-photos
+      gnome-tour
+      gedit
+      cheese
+      epiphany
+      geary
+      yelp
+    ])
+    ++ (with pkgs.gnome; [
+      gnome-music
+      gnome-characters
+      tali
+      iagno
+      hitori
+      atomix
+      gnome-contacts
+      gnome-initial-setup
+    ]);
 
   environment.systemPackages = with pkgs; [
     gnome-tweaks

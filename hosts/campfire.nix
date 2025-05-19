@@ -1,4 +1,5 @@
-{ ... }: {
+{ ... }:
+{
   system.stateVersion = "unstable";
 
   # Bootloader
@@ -11,7 +12,10 @@
   users.users.smores = {
     isNormalUser = true;
     description = "Sam Mohr";
-    extraGroups = [ "networkmanager" "wheel" ];
+    extraGroups = [
+      "networkmanager"
+      "wheel"
+    ];
   };
 
   programs.fish.enable = true;

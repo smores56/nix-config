@@ -1,4 +1,5 @@
-{ pkgs, polarity, ... }: {
+{ pkgs, polarity, ... }:
+{
   home.packages = with pkgs; [
     delta
     gh
@@ -54,8 +55,9 @@
         directory = "*";
       };
       commit = {
-        gpgsign = true;
+        # gpgsign = true;
       };
+      # gpg.format = "ssh";
     };
   };
 

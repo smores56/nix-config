@@ -1,4 +1,5 @@
-{ inputs, pkgs, ... }: {
+{ inputs, pkgs, ... }:
+{
   # Use Hyprland as the window manager
   programs.hyprland = {
     enable = true;

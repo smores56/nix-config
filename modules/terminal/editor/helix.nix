@@ -1,4 +1,11 @@
-{ lib, pkgs, helixTheme, displayManager, ... }: {
+{
+  lib,
+  pkgs,
+  helixTheme,
+  displayManager,
+  ...
+}:
+{
   # LSPs
   home.packages = with pkgs; [
     nil
@@ -9,8 +16,8 @@
     tinymist
     typst-fmt
     starpls-bin
-    nixpkgs-fmt
     rust-analyzer
+    nixfmt-rfc-style
     nodePackages.yaml-language-server
     nodePackages.svelte-language-server
     nodePackages.typescript-language-server
@@ -68,14 +75,65 @@
     };
 
     languages.language = [
-      { name = "tsx"; auto-format = true; }
-      { name = "nix"; auto-format = true; }
-      { name = "python"; auto-format = true; }
-      { name = "javascript"; auto-format = true; }
-      { name = "typescript"; auto-format = true; }
-      { name = "json"; auto-format = false; }
-      { name = "svelte"; auto-format = true; roots = [ "package.json" ]; }
-      { name = "java"; indent = { tab-width = 4; unit = "    "; }; }
+      {
+        name = "python";
+        auto-format = true;
+      }
+      {
+        name = "json";
+        auto-format = false;
+      }
+      {
+        name = "svelte";
+        auto-format = true;
+        roots = [ "package.json" ];
+      }
+      {
+        name = "java";
+        indent = {
+          tab-width = 4;
+          unit = "    ";
+        };
+      }
+      {
+        name = "nix";
+        formatter = {
+          command = "nixfmt";
+        };
+        auto-format = true;
+      }
+      {
+        name = "tsx";
+        auto-format = true;
+      }
+      {
+        name = "typescript";
+        roots = [
+          "deno.json"
+          "deno.jsonc"
+          "package.json"
+        ];
+        file-types = [
+          "ts"
+          "tsx"
+        ];
+        auto-format = true;
+        language-servers = [ "deno-lsp" ];
+      }
+      {
+        name = "javascript";
+        roots = [
+          "deno.json"
+          "deno.jsonc"
+          "package.json"
+        ];
+        file-types = [
+          "js"
+          "jsx"
+        ];
+        auto-format = true;
+        language-servers = [ "deno-lsp" ];
+      }
       {
         name = "roc";
         scope = "source.roc";
@@ -85,11 +143,18 @@
         roots = [ ];
         comment-token = "#";
         language-servers = [ "roc-ls" ];
-        indent = { tab-width = 4; unit = "    "; };
+        indent = {
+          tab-width = 4;
+          unit = "    ";
+        };
         auto-format = true;
         formatter = {
           command = "roc";
-          args = [ "format" "--stdin" "--stdout" ];
+          args = [
+            "format"
+            "--stdin"
+            "--stdout"
+          ];
         };
 
         auto-pairs = {
@@ -123,6 +188,11 @@
       };
       rust-analyzer.config = {
         rust-analyzer.diagnostics.disabled = [ "unresolved-proc-macro" ];
+      };
+      deno-lsp = {
+        command = "deno";
+        args = [ "lsp" ];
+        config.deno.enable = true;
       };
     };
   };

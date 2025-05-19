@@ -1,4 +1,5 @@
-{ pkgs, ... }: {
+{ pkgs, ... }:
+{
   home.packages = [ pkgs.yazi ];
 
   xdg.configFile."yazi/yazi.toml".text = ''

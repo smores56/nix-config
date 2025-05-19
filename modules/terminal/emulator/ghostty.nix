@@ -1,4 +1,5 @@
-{ pkgs, ... }: {
+{ pkgs, ... }:
+{
   stylix.targets.ghostty.enable = true;
 
   programs.ghostty = {

@@ -1,4 +1,10 @@
-{ pkgs, nixos-cosmic, hostname, ... }: {
+{
+  pkgs,
+  nixos-cosmic,
+  hostname,
+  ...
+}:
+{
   nix.settings = {
     substituters = [ "https://cosmic.cachix.org/" ];
     trusted-public-keys = [ "cosmic.cachix.org-1:Dya9IyXD4xdBehWjrkPv6rtxpmMdRel02smYzA85dPE=" ];
@@ -16,7 +22,10 @@
   users.users.smores = {
     isNormalUser = true;
     description = "Sam Mohr";
-    extraGroups = [ "networkmanager" "wheel" ];
+    extraGroups = [
+      "networkmanager"
+      "wheel"
+    ];
     shell = pkgs.fish;
   };
 
