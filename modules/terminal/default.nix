@@ -40,13 +40,13 @@
     # languages
     go
     python3Full
+    deno
     yarn
     nodePackages.pnpm
     erg
     typst
     idris2
     fnm
-    tree-sitter
     zig
 
     # rust
@@ -93,15 +93,12 @@
     wl-clipboard
   ] else [ ])
   ++ (if pkgs.stdenv.isDarwin then [
-    docker
-    terraform
     ngrok
     graphviz
     watchman
     grpcurl
     grpcui
     bazelisk
-    teleport
     buildifier
     flyway
   ] else [ ]);

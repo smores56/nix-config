@@ -9,6 +9,7 @@
       default_shell = "${pkgs.fish}/bin/fish";
       ui.pane_frames.rounded_corners = true;
       session_serialization = false;
+      show_startup_tips = false;
 
       themes.default = {
         fg = 7;

@@ -45,7 +45,7 @@ in
         terminal = terminalFontSize;
       };
       monospace = {
-        name = "CaskaydiaCove NF";
+        name = if displayManager == "osx" then "CaskaydiaCove NF" else "CaskaydiaCove NF SemiBold";
         package = pkgs.nerd-fonts.caskaydia-cove;
       };
     };

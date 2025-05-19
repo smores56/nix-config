@@ -89,10 +89,10 @@
           username = "smohr";
           homeDirectory = "/Users/smohr";
           system = "aarch64-darwin";
-          colorscheme = "rose-pine";
-          helixTheme = "rose_pine";
+          colorscheme = "everforest";
+          helixTheme = "everforest_dark";
+          terminalFontSize = 14;
           polarity = "dark";
-          terminalFontSize = 12;
         };
       };
 
