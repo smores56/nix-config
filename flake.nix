@@ -103,7 +103,7 @@
           polarity = "dark";
           colorscheme = "gruvbox-material-dark-medium";
           helixTheme = "gruvbox";
-          wallpaper = ./wallpapers/backyard.png;
+          wallpaper = ./wallpapers/rocket-launch.png;
         };
         "smores@smoresnet" = mkHomeConfiguration {
           displayManager = null;

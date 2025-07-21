@@ -28,6 +28,9 @@
       delta
       television
 
+      # AI tools
+      claude-code
+
       # editing
       sd
       ouch
@@ -92,6 +95,7 @@
       file
       gnupg
       watchexec
+      rainfrog
     ]
     ++ (
       if pkgs.stdenv.isLinux && displayManager != null then

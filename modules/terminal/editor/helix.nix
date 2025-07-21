@@ -18,6 +18,7 @@
     starpls-bin
     rust-analyzer
     nixfmt-rfc-style
+    python313Packages.python-lsp-server
     nodePackages.yaml-language-server
     nodePackages.svelte-language-server
     nodePackages.typescript-language-server
