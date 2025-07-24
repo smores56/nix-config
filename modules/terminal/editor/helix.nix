@@ -12,6 +12,7 @@
     zls
     taplo
     gopls
+    lsp-ai
     marksman
     tinymist
     typst-fmt
@@ -78,6 +79,10 @@
     languages.language = [
       {
         name = "python";
+        auto-format = true;
+      }
+      {
+        name = "starlark";
         auto-format = true;
       }
       {

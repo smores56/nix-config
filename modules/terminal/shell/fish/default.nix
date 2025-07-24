@@ -76,6 +76,7 @@
       pfetch
       set fish_greeting # custom prompt
       set -xg PATH /opt/homebrew/bin /usr/local/bin $PATH
+      set -xg AWS_REGION us-east-1
 
       # include local extras if present
       for configFile in ~/.config/fish/extras/*.fish

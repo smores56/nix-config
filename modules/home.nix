@@ -66,5 +66,8 @@ in
     targets.gnome.enable = displayManager == "pop-os";
   };
 
-  imports = [ ./terminal ] ++ (if displayManager == "pop-os" then [ ./gui ] else [ ]);
+  imports =
+    [ ./terminal ]
+    ++ (if displayManager == "osx" then [ ./osx ] else [ ])
+    ++ (if displayManager == "pop-os" then [ ./gui ] else [ ]);
 }

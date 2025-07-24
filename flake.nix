@@ -116,8 +116,8 @@
           username = "smohr";
           homeDirectory = "/Users/smohr";
           system = "aarch64-darwin";
-          colorscheme = "everforest";
-          helixTheme = "everforest_dark";
+          colorscheme = "rose-pine-moon";
+          helixTheme = "rose_pine_moon";
           terminalFontSize = 14;
           polarity = "dark";
         };
