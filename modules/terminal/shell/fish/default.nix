@@ -27,6 +27,7 @@
   # configure fish-async-prompt
   home.sessionVariables = {
     async_prompt_functions = "_pure_prompt_git";
+    OLLAMA_API_BASE = "http://smortress:11434";
   };
 
   programs.fish = {
@@ -75,7 +76,7 @@
     interactiveShellInit = ''
       pfetch
       set fish_greeting # custom prompt
-      set -xg PATH /opt/homebrew/bin /usr/local/bin $PATH
+      set -xg PATH /opt/homebrew/bin /usr/local/bin ~/.local/bin $PATH
       set -xg AWS_REGION us-east-1
 
       # include local extras if present

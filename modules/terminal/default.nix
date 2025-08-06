@@ -121,10 +121,10 @@
         [ ]
     );
 
-  programs.bat = {
-    enable = true;
-    config = {
-      theme = "ansi";
-    };
-  };
+  # programs.bat = {
+  #   enable = true;
+  #   config = {
+  #     theme = "ansi";
+  #   };
+  # };
 }

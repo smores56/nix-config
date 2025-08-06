@@ -11,7 +11,7 @@
       terminal.shell = "${pkgs.fish}/bin/fish";
 
       window = {
-        decorations = "None";
+        decorations = "Buttonless";
         blur = true;
       };
     };

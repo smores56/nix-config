@@ -6,10 +6,11 @@ let
     "up"
     "down"
   ];
+  gapAmount = 6;
   gapsConfig = [
-    { monitor.built-in = 3; }
-    { monitor.main = 6; }
-    6
+    { monitor.built-in = gapAmount; }
+    { monitor.main = gapAmount * 2; }
+    (gapAmount * 2)
   ];
 
   mkWorkspaceBindingsInRange =
@@ -65,7 +66,10 @@ let
     ++ mkServiceAction action message;
 in
 {
-  home.packages = [ pkgs.noti ];
+  home.packages = [
+    pkgs.noti
+    pkgs.jankyborders
+  ];
 
   programs.aerospace = {
     enable = true;
@@ -73,6 +77,13 @@ in
     userSettings = {
       # config borrowed from:
       # https://github.com/marcoscurvello/dotfiles/blob/9fdc5aa65651e504934266aab6579186d67c48cc/aerospace.toml
+
+      start-at-login = false;
+      default-root-container-layout = "tiles";
+      default-root-container-orientation = "auto";
+      after-startup-command = [
+        "exec-and-forget borders active_color=0xFFFFBE69 inactive_color=0xFF007692 width=${toString (gapAmount - 1)} hidpi=on"
+      ];
 
       gaps = {
         inner = {

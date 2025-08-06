@@ -80,6 +80,10 @@
       {
         name = "python";
         auto-format = true;
+        language-servers = [
+          "ruff"
+          "basedpyright"
+        ];
       }
       {
         name = "starlark";
@@ -185,6 +189,22 @@
     languages.language-server = {
       roc-ls = {
         command = "roc_language_server";
+      };
+      ruff = {
+        command = "uv";
+        args = [
+          "run"
+          "ruff"
+          "server"
+        ];
+      };
+      basedpyright = {
+        command = "uv";
+        args = [
+          "run"
+          "basedpyright-langserver"
+          "--stdio"
+        ];
       };
       pylsp.config = {
         pylsp.plugins = {

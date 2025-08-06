@@ -44,7 +44,7 @@ in
     image = wallpaper;
     autoEnable = false;
     polarity = specialArgs.polarity or "either";
-    opacity.terminal = 0.9;
+    opacity.terminal = 0.8;
 
     cursor = {
       package = pkgs.bibata-cursors;
@@ -66,8 +66,9 @@ in
     targets.gnome.enable = displayManager == "pop-os";
   };
 
-  imports =
-    [ ./terminal ]
-    ++ (if displayManager == "osx" then [ ./osx ] else [ ])
-    ++ (if displayManager == "pop-os" then [ ./gui ] else [ ]);
+  imports = [
+    ./terminal
+  ]
+  ++ (if displayManager == "osx" then [ ./osx ] else [ ])
+  ++ (if displayManager == "pop-os" then [ ./gui ] else [ ]);
 }
