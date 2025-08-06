@@ -27,6 +27,7 @@
 
   outputs =
     {
+      nur,
       nixpkgs,
       home-manager,
       nixos-cosmic,
@@ -46,6 +47,7 @@
           overlays = [
             localOverlay
             fenix.overlays.default
+            nur.overlays.default
           ];
           config = {
             allowUnfree = true;

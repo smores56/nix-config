@@ -30,6 +30,7 @@
 
       # AI tools
       claude-code
+      nur.repos.charmbracelet.crush
 
       # editing
       sd
