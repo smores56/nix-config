@@ -31,6 +31,9 @@
       # AI tools
       claude-code
       nur.repos.charmbracelet.crush
+      ollama
+      smartcat
+      aider-chat-full
 
       # editing
       sd

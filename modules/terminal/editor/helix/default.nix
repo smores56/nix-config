@@ -37,10 +37,22 @@
     settings = {
       theme = if helixTheme == null then "" else helixTheme;
 
+      keys.normal.C-r = [
+        ":config-reload"
+        ":reload-all"
+      ];
+
       keys.normal.space = {
         s = ":write";
         c = ":quit";
         t = "hover";
+        o = [
+          ":sh rm -f /tmp/yazi-helix-context"
+          ":insert-output yazi %{buffer_name} --chooser-file=/tmp/yazi-helix-context"
+          ":insert-output echo \"\\x1b[?1049h\\x1b[?2004h\" > /dev/tty"
+          ":open %sh{cat /tmp/yazi-helix-context}"
+          ":redraw"
+        ];
       };
 
       editor = {
@@ -77,6 +89,10 @@
     };
 
     languages.language = [
+      {
+        name = "markdown";
+        language-servers = [ "lsp-ai" ];
+      }
       {
         name = "python";
         auto-format = true;
@@ -128,7 +144,10 @@
           "tsx"
         ];
         auto-format = true;
-        language-servers = [ "deno-lsp" ];
+        language-servers = [
+          "deno-lsp"
+          "lsp-ai"
+        ];
       }
       {
         name = "javascript";
@@ -220,6 +239,8 @@
         args = [ "lsp" ];
         config.deno.enable = true;
       };
+
+      lsp-ai = import ./lsp-ai.nix { };
     };
   };
 }

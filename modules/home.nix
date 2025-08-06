@@ -57,6 +57,10 @@ in
         desktop = 14;
         terminal = terminalFontSize;
       };
+      sansSerif = {
+        name = "Open Sans Bold";
+        package = pkgs.open-sans;
+      };
       monospace = {
         name = if displayManager == "osx" then "CaskaydiaCove NF" else "CaskaydiaCove NF SemiBold";
         package = pkgs.nerd-fonts.caskaydia-cove;
