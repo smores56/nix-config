@@ -8,8 +8,8 @@
 {
   # LSPs
   home.packages = with pkgs; [
-    nil
     zls
+    nixd
     taplo
     gopls
     lsp-ai
