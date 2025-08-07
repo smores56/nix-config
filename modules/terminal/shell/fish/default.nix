@@ -43,6 +43,8 @@
       f = "yazi";
       b = "bat";
       g = "lazygit";
+      gs = "gh-dash";
+      gn = "gh-notify";
       gc = "gh repo clone";
 
       # searching
