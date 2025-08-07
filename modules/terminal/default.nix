@@ -33,7 +33,7 @@
       nur.repos.charmbracelet.crush
       ollama
       smartcat
-      aider-chat-full
+      aider-chat
 
       # editing
       sd

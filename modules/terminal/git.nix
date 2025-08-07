@@ -3,6 +3,8 @@
   home.packages = with pkgs; [
     delta
     gh
+    gh-dash
+    gh-notify
     git-lfs
     gitui
     difftastic

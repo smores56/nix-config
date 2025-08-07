@@ -36,7 +36,7 @@
     shellAbbrs = {
       # workflow apps
       e = "hx";
-      ef = "hx (gum file .)";
+      ef = "hx (fzf)";
       l = "eza --icons -lh";
       t = "zellij";
       a = "mkdir -p";
