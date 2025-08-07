@@ -2,14 +2,30 @@
 {
   home.packages = with pkgs; [
     delta
-    gh
-    gh-dash
-    gh-notify
     git-lfs
     gitui
     difftastic
     jujutsu
   ];
+
+  programs.gh = {
+    enable = true;
+    settings = {
+      aliases = {
+        co = "pr checkout";
+        pv = "pr view";
+      };
+    };
+
+    extensions = with pkgs; [
+      gh-f
+      gh-i
+      gh-s
+      gh-eco
+      gh-dash
+      gh-notify
+    ];
+  };
 
   programs.git = {
     enable = true;
