@@ -35,7 +35,7 @@
 
     extraConfig = {
       core = {
-        excludesFile = "$HOME/.gitignore";
+        excludesFile = "~/.gitignore";
         pager = "delta";
       };
       push = {

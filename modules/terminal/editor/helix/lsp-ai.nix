@@ -1,10 +1,10 @@
 { ... }:
 let
-  ollama-model-name = "qwen2.5-coder:14b-instruct";
+  ollama-model-name = "llama3-groq-tool-use:8b";
   model-id = "home-ollama";
   max-context = 8192;
-  max-chat-tokens = 4096;
-  max-generate-tokens = 4096;
+  max-chat-tokens = 8192;
+  max-generate-tokens = 8192;
 in
 {
   command = "lsp-ai";
