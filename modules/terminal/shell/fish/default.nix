@@ -78,6 +78,7 @@
     interactiveShellInit = ''
       pfetch
       set fish_greeting # custom prompt
+      __auto_zellij_update_tabname
       set -xg PATH /opt/homebrew/bin /usr/local/bin ~/.local/bin $PATH
       set -xg AWS_REGION us-east-1
 
