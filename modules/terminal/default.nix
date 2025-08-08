@@ -25,8 +25,10 @@
       glow
       fzf
       jq
+      jqp
       delta
       television
+      lazysql
 
       # AI tools
       claude-code
@@ -77,6 +79,7 @@
       gum
       cbonsai
       musikcube
+      clock-rs
       # terminal-typeracer
 
       # container tools
