@@ -27,7 +27,6 @@
   # configure fish-async-prompt
   home.sessionVariables = {
     async_prompt_functions = "_pure_prompt_git";
-    OLLAMA_API_BASE = "http://smortress:11434";
   };
 
   programs.fish = {
@@ -43,8 +42,8 @@
       f = "yazi";
       b = "bat";
       g = "lazygit";
-      gs = "gh-dash";
-      gn = "gh-notify";
+      gs = "gh dash";
+      gn = "gh notify";
       gc = "gh repo clone";
 
       # searching
@@ -73,6 +72,9 @@
       sc = "ssh smores@campfire -t fish";
       st = "ssh smores@(tailscale-hosts | fzf) -t fish";
       pf = "port-forward smores@home.sammohr.dev";
+
+      # AI calling
+      olu = "ollama run $OPENAI_MODEL";
     };
 
     interactiveShellInit = ''

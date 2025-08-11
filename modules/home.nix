@@ -70,6 +70,15 @@ in
     targets.gnome.enable = displayManager == "pop-os";
   };
 
+  home.sessionVariables = {
+    OLLAMA_HOST = "http://smortress:11434";
+    OLLAMA_API_BASE = "http://smortress:11434";
+
+    OPENAI_API_KEY = "";
+    OPENAI_BASE_URL = "http://smortress:11434/v1";
+    OPENAI_MODEL = "cnshenyang/qwen3-nothink:14b";
+  };
+
   imports = [
     ./terminal
   ]

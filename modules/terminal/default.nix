@@ -32,10 +32,11 @@
 
       # AI tools
       claude-code
-      nur.repos.charmbracelet.crush
       ollama
       smartcat
-      aider-chat
+      opencode
+      aichat
+      goose-cli
 
       # editing
       sd

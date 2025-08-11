@@ -1,4 +1,9 @@
-{ pkgs, lib, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  ...
+}:
 let
   allDirections = [
     "left"
@@ -82,7 +87,8 @@ in
       default-root-container-layout = "tiles";
       default-root-container-orientation = "auto";
       after-startup-command = [
-        "exec-and-forget borders active_color=0xFFFFBE69 inactive_color=0xFF007692 width=${toString (gapAmount - 1)} hidpi=on"
+        "layout tiles"
+        "exec-and-forget ${pkgs.jankyborders}/bin/borders active_color=0xFF${config.lib.stylix.colors.base0A} inactive_color=0xFF${config.lib.stylix.colors.base04} width=${toString (gapAmount - 1)} hidpi=on"
       ];
 
       gaps = {
