@@ -76,7 +76,7 @@ in
 
     OPENAI_API_KEY = "";
     OPENAI_BASE_URL = "http://smortress:11434/v1";
-    OPENAI_MODEL = "cnshenyang/qwen3-nothink:14b";
+    OPENAI_MODEL = "devstral:24b";
   };
 
   imports = [

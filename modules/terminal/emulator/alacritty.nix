@@ -12,6 +12,7 @@
 
       window = {
         decorations = "Buttonless";
+        option_as_alt = "Both";
         blur = true;
       };
     };

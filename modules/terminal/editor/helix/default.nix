@@ -1,10 +1,9 @@
 {
   lib,
   pkgs,
-  helixTheme,
   displayManager,
   ...
-}:
+}@args:
 {
   # LSPs
   home.packages = with pkgs; [
@@ -19,6 +18,8 @@
     starpls-bin
     rust-analyzer
     nixfmt-rfc-style
+    lua-language-server
+    kotlin-language-server
     python313Packages.python-lsp-server
     nodePackages.yaml-language-server
     nodePackages.svelte-language-server
@@ -28,14 +29,14 @@
     nodePackages.dockerfile-language-server-nodejs
   ];
 
-  stylix.targets.helix.enable = lib.mkIf (displayManager != null) (helixTheme == null);
+  stylix.targets.helix.enable = lib.mkIf (displayManager != null) (args ? helix);
 
   programs.helix = {
     enable = true;
     defaultEditor = true;
 
     settings = {
-      theme = if helixTheme == null then "" else helixTheme;
+      theme = if (args ? helix) then args.helix else "base16_default";
 
       keys.normal.C-r = [
         ":config-reload"

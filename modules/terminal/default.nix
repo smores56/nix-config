@@ -37,6 +37,7 @@
       opencode
       aichat
       goose-cli
+      gpt-cli
 
       # editing
       sd
@@ -52,6 +53,7 @@
 
       # languages
       go
+      uv
       python3Full
       deno
       yarn

@@ -123,8 +123,8 @@
           username = "smohr";
           homeDirectory = "/Users/smohr";
           system = "aarch64-darwin";
-          colorscheme = "rose-pine-moon";
-          helixTheme = "rose_pine_moon";
+          colorscheme = "tender";
+          helixTheme = "focus_nova";
           terminalFontSize = 14;
           polarity = "dark";
         };
