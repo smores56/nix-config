@@ -83,7 +83,7 @@
       cbonsai
       musikcube
       clock-rs
-      # terminal-typeracer
+      ttyper
 
       # container tools
       k9s
