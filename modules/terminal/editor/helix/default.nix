@@ -1,9 +1,4 @@
-{
-  lib,
-  pkgs,
-  displayManager,
-  ...
-}@args:
+{ lib, pkgs, ... }@args:
 {
   # LSPs
   home.packages = with pkgs; [
@@ -29,14 +24,14 @@
     nodePackages.dockerfile-language-server-nodejs
   ];
 
-  stylix.targets.helix.enable = lib.mkIf (displayManager != null) (args ? helix);
+  stylix.targets.helix.enable = !args ? helixTheme;
 
   programs.helix = {
     enable = true;
     defaultEditor = true;
 
     settings = {
-      theme = if (args ? helix) then args.helix else "base16_default";
+      theme = lib.mkIf (args ? helixTheme) args.helixTheme;
 
       keys.normal.C-r = [
         ":config-reload"

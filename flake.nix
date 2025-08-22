@@ -56,14 +56,13 @@
 
       mkHomeConfiguration =
         args:
-        home-manager.lib.homeManagerConfiguration (rec {
+        home-manager.lib.homeManagerConfiguration rec {
           extraSpecialArgs = (
             rec {
               system = args.system or "x86_64-linux";
               isLinux = system == "x86_64-linux";
               polarity = args.polarity or "either";
               displayManager = args.displayManager or null;
-              helixTheme = args.helixTheme or null;
             }
             // args
           );
@@ -72,7 +71,7 @@
             stylix.homeModules.stylix
             ./modules/home.nix
           ];
-        });
+        };
 
       mkNixosConfiguration =
         args:
