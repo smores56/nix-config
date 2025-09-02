@@ -128,9 +128,9 @@
           username = "smohr";
           homeDirectory = "/Users/smohr";
           system = "aarch64-darwin";
-          colorscheme = "tender";
-          helixTheme = "focus_nova";
-          terminalFontSize = 14;
+          colorscheme = "rose-pine-moon";
+          helixTheme = "rose_pine_moon";
+          terminalFontSize = 16;
           polarity = "dark";
         };
       };
