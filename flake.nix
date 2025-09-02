@@ -15,6 +15,10 @@
       url = "github:lilyinstarlight/nixos-cosmic";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    npm-package = {
+      url = "github:netbrain/npm-package";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     stylix = {
       url = "github:danth/stylix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -31,6 +35,7 @@
       nixpkgs,
       home-manager,
       nixos-cosmic,
+      npm-package,
       stylix,
       fenix,
       ...
@@ -38,6 +43,7 @@
     let
       localOverlay = prev: final: {
         stylix = stylix.packages.${prev.system}.stylix;
+        # npm-package = npm-package.packages.${prev.system}.npm-package;
       };
 
       pkgsForSystem =

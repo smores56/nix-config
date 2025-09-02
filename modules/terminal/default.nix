@@ -1,4 +1,4 @@
-{ pkgs, displayManager, ... }:
+{ pkgs, ... }:
 {
   imports = [
     ./shell
@@ -14,122 +14,104 @@
     DISABLE_NIX_SHELL_WELCOME = 1;
   };
 
-  home.packages =
-    with pkgs;
-    [
-      # exploration
-      zoxide
-      eza
-      fd
-      ripgrep
-      glow
-      fzf
-      jq
-      jqp
-      delta
-      television
-      lazysql
+  home.packages = with pkgs; [
+    # exploration
+    zoxide
+    eza
+    fd
+    ripgrep
+    glow
+    fzf
+    jq
+    jqp
+    delta
+    television
+    lazysql
 
-      # AI tools
-      claude-code
-      ollama
-      smartcat
-      opencode
-      aichat
-      goose-cli
-      gpt-cli
+    # AI tools
+    claude-code
+    ollama
+    smartcat
+    opencode
+    aichat
+    goose-cli
+    gemini-cli
+    gpt-cli
 
-      # editing
-      sd
-      ouch
-      zip
-      unzip
+    # editing
+    sd
+    ouch
+    zip
+    unzip
 
-      # monitoring
-      dua
-      bottom
-      tokei
-      bandwhich
+    # monitoring
+    dua
+    bottom
+    tokei
+    bandwhich
 
-      # languages
-      go
-      uv
-      python3Full
-      deno
-      yarn
-      nodePackages.pnpm
-      erg
-      typst
-      idris2
-      fnm
-      zig
+    # security
+    yara
+    yara-x
 
-      # rust
-      (pkgs.fenix.complete.withComponents [
-        "cargo"
-        "clippy"
-        "rust-src"
-        "rustc"
-        "rustfmt"
-      ])
+    # languages
+    go
+    uv
+    python3Full
+    deno
+    yarn
+    nodePackages.pnpm
+    erg
+    typst
+    idris2
+    fnm
+    zig
+    buf
 
-      # compilation
-      gcc
-      pkg-config
-      openssl.dev
+    # rust
+    (pkgs.fenix.complete.withComponents [
+      "cargo"
+      "clippy"
+      "rust-src"
+      "rustc"
+      "rustfmt"
+    ])
 
-      # fun stuff
-      gum
-      cbonsai
-      musikcube
-      clock-rs
-      ttyper
+    # compilation
+    gcc
+    pkg-config
+    openssl.dev
 
-      # container tools
-      k9s
-      docker-compose
-      oxker
-      kubernetes-helm
-      kubectl
+    # fun stuff
+    gum
+    cbonsai
+    musikcube
+    clock-rs
+    ttyper
 
-      # other packages
-      zellij
-      eva
-      curl
-      openssh
-      flyctl
-      direnv
-      xsel
-      navi
-      xxh
-      file
-      gnupg
-      watchexec
-      rainfrog
-    ]
-    ++ (
-      if pkgs.stdenv.isLinux && displayManager != null then
-        [
-          wl-clipboard
-        ]
-      else
-        [ ]
-    )
-    ++ (
-      if pkgs.stdenv.isDarwin then
-        [
-          ngrok
-          graphviz
-          watchman
-          grpcurl
-          grpcui
-          bazelisk
-          buildifier
-          flyway
-        ]
-      else
-        [ ]
-    );
+    # container tools
+    k9s
+    docker-compose
+    oxker
+    kubernetes-helm
+    kubectl
+
+    # other packages
+    zellij
+    eva
+    curl
+    openssh
+    flyctl
+    direnv
+    xsel
+    navi
+    xxh
+    file
+    gnupg
+    watchexec
+    rainfrog
+    redis
+  ];
 
   # programs.bat = {
   #   enable = true;

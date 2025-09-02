@@ -4,9 +4,10 @@
     ./kitty.nix
     ./wezterm.nix
     ./alacritty.nix
+    ./ghostty.nix
   ];
 
   home.sessionVariables = {
-    TERMINAL = "kitty";
+    TERMINAL = "ghostty";
   };
 }

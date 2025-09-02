@@ -4,7 +4,7 @@
 
   programs.ghostty = {
     # Prefer local installs
-    # package = pkgs.nil;
+    package = pkgs.nil;
 
     enable = true;
   };
