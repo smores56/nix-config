@@ -67,6 +67,7 @@
     fnm
     zig
     buf
+    terraform
 
     # rust
     (pkgs.fenix.complete.withComponents [

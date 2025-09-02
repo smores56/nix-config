@@ -24,6 +24,17 @@
     nodePackages.dockerfile-language-server-nodejs
   ];
 
+  # Add TypeScript highlighting for YAML-sourced flow handlers
+  home.file = {
+    ".config/helix/runtime/queries/yaml/injections.scm".text = ''
+      ${builtins.readFile "${pkgs.helix}/lib/runtime/queries/yaml/injections.scm"}
+
+      ((block_scalar) @injection.content
+       (#match? @injection.content "function handler")
+       (#set! injection.language "typescript"))
+    '';
+  };
+
   stylix.targets.helix.enable = !args ? helixTheme;
 
   programs.helix = {
