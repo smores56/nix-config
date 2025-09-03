@@ -62,7 +62,7 @@
       hs = "home-manager switch --flake ~/.config/nix";
 
       # nix
-      ns = "sudo nixos-rebuild switch --upgrade";
+      ns = "sudo nixos-rebuild --flake ~/.config/nix switch --upgrade";
       nsr = "nix-store --repair --verify --check-contents";
       ng = "nix-collect-garbage";
 

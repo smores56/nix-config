@@ -20,7 +20,8 @@ gh auth login
 git clone git@github.com:smores56/nix-config.git
 home-manager switch --flake ~/.config/nix
 
-sudo ln -sf ~/.config/nix/hosts/$HOSTNAME/nixos.nix /etc/nixos/configuration.nix
 sudo nixos-generate-config
-sudo nixos-rebuild switch --upgrade
+cp /etc/nixos/hardware-configuration.nix ~/.config/nix/hardware-configuration/$HOSTNAME.nix
+sudo ln -sf ~/.config/nix/flake.nix /etc/nixos/flake.nix
+sudo nixos-rebuild switch --flake ~/.config/nix#$HOSTNAME --upgrade
 ```

@@ -77,7 +77,7 @@
         args:
         nixpkgs.lib.nixosSystem {
           specialArgs = {
-            nixos-cosmic = nixos-cosmic;
+            inherit nixos-cosmic;
           }
           // args;
           modules = [
@@ -130,11 +130,15 @@
       };
 
       nixosConfigurations = {
+        "campfire" = mkNixosConfiguration {
+          hostname = "campfire";
+          expose-ssh = true;
+          display-manager = null;
+        };
         "smorestux" = mkNixosConfiguration {
           hostname = "smorestux";
-        };
-        "smoresbook" = mkNixosConfiguration {
-          hostname = "smoresbook";
+          expose-ssh = false;
+          display-manager = "cosmic";
         };
       };
     };

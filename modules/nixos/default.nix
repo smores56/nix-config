@@ -4,7 +4,7 @@
   programs.nix-ld.libraries = with pkgs; [
     libz
     libgcc
-    libstdcxx5
+    # libstdcxx5
     ncurses
   ];
 
@@ -14,5 +14,6 @@
     ./security.nix
     ./bluetooth.nix
     ./networking.nix
+    ./rfkill-unblock.nix
   ];
 }

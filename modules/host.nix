@@ -2,6 +2,8 @@
   pkgs,
   nixos-cosmic,
   hostname,
+  expose-ssh,
+  display-manager,
   ...
 }:
 {
@@ -10,13 +12,13 @@
     trusted-public-keys = [ "cosmic.cachix.org-1:Dya9IyXD4xdBehWjrkPv6rtxpmMdRel02smYzA85dPE=" ];
   };
 
-  system.stateVersion = "unstable";
+  system.stateVersion = "25.11";
 
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
 
   networking.hostName = hostname;
-  time.timeZone = "America/Los_Angeles";
+  time.timeZone = "America/New_York";
 
   # Define a user account. Don't forget to set a password with ‘passwd’.
   users.users.smores = {
@@ -44,13 +46,30 @@
 
   nixpkgs.config.allowUnfree = true;
 
-  services.desktopManager.cosmic.enable = true;
-  services.displayManager.cosmic-greeter.enable = true;
-
   imports = [
     ./nixos
-    ./nixos/sound.nix
     ../hardware-configuration/${hostname}.nix
-    nixos-cosmic.nixosModules.default
-  ];
+  ]
+  ++ (if display-manager != null then [ ./nixos/sound.nix ] else [ ])
+  ++ (
+    if display-manager == "cosmic" then
+      [
+        nixos-cosmic.nixosModules.default
+        {
+          services.desktopManager.cosmic.enable = true;
+          services.displayManager.cosmic-greeter.enable = true;
+        }
+      ]
+    else
+      [ ]
+  )
+  ++ (
+    if expose-ssh then
+      [
+        ./nixos/sshd.nix
+        ./nixos/ssh-serve.nix
+      ]
+    else
+      [ ]
+  );
 }
