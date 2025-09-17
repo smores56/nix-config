@@ -88,7 +88,7 @@ in
       default-root-container-orientation = "auto";
       after-startup-command = [
         "layout tiles"
-        "exec-and-forget ${pkgs.jankyborders}/bin/borders active_color=0xFF${config.lib.stylix.colors.base0A} inactive_color=0xFF${config.lib.stylix.colors.base04} width=${toString (gapAmount - 1)} hidpi=on"
+        "exec-and-forget ${pkgs.jankyborders}/bin/borders active_color=0xFF${config.lib.stylix.colors.base0A} inactive_color=0xFF${config.lib.stylix.colors.base04} width=${toString gapAmount} hidpi=on"
       ];
 
       gaps = {

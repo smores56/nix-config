@@ -11,7 +11,6 @@
     tinymist
     typst-fmt
     starpls-bin
-    rust-analyzer
     nixfmt-rfc-style
     lua-language-server
     kotlin-language-server
@@ -32,6 +31,10 @@
       ((block_scalar) @injection.content
        (#match? @injection.content "function handler")
        (#set! injection.language "typescript"))
+
+      ((block_scalar) @injection.content
+       (#match? @injection.content "query.*\\{")
+       (#set! injection.language "graphql"))
     '';
   };
 
@@ -244,7 +247,10 @@
       deno-lsp = {
         command = "deno";
         args = [ "lsp" ];
-        config.deno.enable = true;
+        config.deno = {
+          enable = true;
+          enablePaths = true;
+        };
       };
 
       lsp-ai = import ./lsp-ai.nix { };

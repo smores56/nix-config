@@ -23,6 +23,7 @@
     glow
     fzf
     jq
+    jaq
     jqp
     delta
     television
@@ -70,13 +71,14 @@
     terraform
 
     # rust
-    (pkgs.fenix.complete.withComponents [
-      "cargo"
-      "clippy"
-      "rust-src"
-      "rustc"
-      "rustfmt"
-    ])
+    rustup
+    # (pkgs.fenix.complete.withComponents [
+    #   "cargo"
+    #   "clippy"
+    #   "rust-src"
+    #   "rustc"
+    #   "rustfmt"
+    # ])
 
     # compilation
     gcc
@@ -96,6 +98,7 @@
     oxker
     kubernetes-helm
     kubectl
+    kubectx
 
     # other packages
     zellij
@@ -112,6 +115,15 @@
     watchexec
     rainfrog
     redis
+    pre-commit
+    protobuf
+    atlas
+    typos
+    pgcli
+    opkssh
+    eksctl
+    _1password-cli
+    aws-sso-cli
   ];
 
   # programs.bat = {
