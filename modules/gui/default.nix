@@ -17,7 +17,7 @@
       (with pkgs; [
         # file management
         xfce.thunar
-        libsForQt5.dolphin
+        kdePackages.dolphin
         evince
         feh
         libreoffice

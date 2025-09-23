@@ -35,7 +35,6 @@
     smartcat
     opencode
     aichat
-    goose-cli
     gemini-cli
     gpt-cli
 
@@ -58,7 +57,7 @@
     # languages
     go
     uv
-    python3Full
+    python3
     deno
     yarn
     nodePackages.pnpm
