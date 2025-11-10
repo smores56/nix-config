@@ -21,10 +21,17 @@ let
 in
 {
   home = {
-    stateVersion = "25.05";
+    stateVersion = "25.11";
     packages = [ pkgs.home-manager ];
     username = username;
     homeDirectory = homeDirectory;
+
+    # Disable App Management permission check on macOS
+    activation.checkAppManagementPermission = pkgs.lib.mkIf pkgs.stdenv.isDarwin (pkgs.lib.mkForce {
+      before = [ ];
+      after = [ ];
+      data = "";
+    });
   };
 
   targets.genericLinux.enable = isLinux;

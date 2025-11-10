@@ -71,13 +71,6 @@
 
     # rust
     rustup
-    # (pkgs.fenix.complete.withComponents [
-    #   "cargo"
-    #   "clippy"
-    #   "rust-src"
-    #   "rustc"
-    #   "rustfmt"
-    # ])
 
     # compilation
     gcc
@@ -94,7 +87,7 @@
     # container tools
     k9s
     docker-compose
-    oxker
+    # oxker
     kubernetes-helm
     kubectl
     kubectx
@@ -125,10 +118,10 @@
     aws-sso-cli
   ];
 
-  # programs.bat = {
-  #   enable = true;
-  #   config = {
-  #     theme = "ansi";
-  #   };
-  # };
+  programs.bat = {
+    # enable = true;
+    config = {
+      theme = "ansi";
+    };
+  };
 }

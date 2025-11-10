@@ -7,10 +7,10 @@
     taplo
     gopls
     lsp-ai
+    starpls
     marksman
     tinymist
-    typst-fmt
-    starpls-bin
+    typstyle
     nixfmt-rfc-style
     lua-language-server
     kotlin-language-server
@@ -50,6 +50,7 @@
       keys.normal.C-r = [
         ":config-reload"
         ":reload-all"
+        ":lsp-restart"
       ];
 
       keys.normal.space = {
@@ -220,7 +221,7 @@
         command = "roc_language_server";
       };
       ruff = {
-        command = "uv";
+        command = "uvx";
         args = [
           "run"
           "ruff"
@@ -228,7 +229,7 @@
         ];
       };
       basedpyright = {
-        command = "uv";
+        command = "uvx";
         args = [
           "run"
           "basedpyright-langserver"
@@ -249,7 +250,7 @@
         args = [ "lsp" ];
         config.deno = {
           enable = true;
-          enablePaths = true;
+          lint = true;
         };
       };
 

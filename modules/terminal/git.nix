@@ -3,7 +3,6 @@
   home.packages = with pkgs; [
     delta
     git-lfs
-    gitui
     difftastic
     jujutsu
   ];
@@ -15,6 +14,8 @@
         co = "pr checkout";
         pv = "pr view";
       };
+      editor = "hx";
+      git_protocol = "ssh";
     };
 
     extensions = with pkgs; [
@@ -30,10 +31,11 @@
   programs.git = {
     enable = true;
 
-    userName = "Sam Mohr";
-    userEmail = "sam@sammohr.dev";
-
-    extraConfig = {
+    settings = {
+      user = {
+        name = "Sam Mohr";
+        email = "sam@sammohr.dev";
+      };
       core = {
         excludesFile = "~/.gitignore";
         pager = "delta";
@@ -83,10 +85,12 @@
     enable = true;
 
     settings = {
-      git.paging = {
-        colorArg = "always";
-        pager = "delta --paging=never --${if polarity == "light" then "light" else "dark"}";
-      };
+      git.pagers = [
+        {
+          colorArg = "always";
+          pager = "delta --paging=never --${if polarity == "light" then "light" else "dark"}";
+        }
+      ];
       gui.theme = {
         lightTheme = polarity == "light";
         selectedLineBgColor = [ "underline" ];

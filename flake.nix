@@ -3,10 +3,6 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    nur = {
-      url = "github:nix-community/NUR";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -19,20 +15,14 @@
       url = "github:danth/stylix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    fenix = {
-      url = "github:nix-community/fenix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
   outputs =
     {
-      nur,
       nixpkgs,
       home-manager,
       nixos-cosmic,
       stylix,
-      fenix,
       ...
     }:
     let
@@ -44,11 +34,7 @@
         system:
         import nixpkgs {
           inherit system;
-          overlays = [
-            localOverlay
-            fenix.overlays.default
-            nur.overlays.default
-          ];
+          overlays = [ localOverlay ];
           config = {
             allowUnfree = true;
           };

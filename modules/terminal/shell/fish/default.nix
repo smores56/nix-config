@@ -29,6 +29,10 @@
     async_prompt_functions = "_pure_prompt_git";
   };
 
+  # Make man-cache builds much faster
+  programs.man.generateCaches = false;
+  programs.fish.generateCompletions = false;
+
   programs.fish = {
     enable = true;
 
@@ -82,11 +86,14 @@
       set fish_greeting # custom prompt
       __auto_zellij_update_tabname
       set -xg PATH /opt/homebrew/bin /usr/local/bin ~/.local/bin $PATH
-      set -xg AWS_REGION us-east-1
 
       # include local extras if present
       for configFile in ~/.config/fish/extras/*.fish
           source $configFile
+      end
+
+      if test -f ~/okami/devenv/sevenai.fish
+          source ~/okami/devenv/sevenai.fish
       end
     '';
 
