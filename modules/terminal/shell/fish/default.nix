@@ -91,10 +91,6 @@
       for configFile in ~/.config/fish/extras/*.fish
           source $configFile
       end
-
-      if test -f ~/okami/devenv/sevenai.fish
-          source ~/okami/devenv/sevenai.fish
-      end
     '';
 
     plugins = [
