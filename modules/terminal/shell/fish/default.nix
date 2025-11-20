@@ -39,7 +39,8 @@
     shellAbbrs = {
       # workflow apps
       e = "hx";
-      ef = "hx (tv)";
+      ef = "tv | read -l f; and hx $f";
+      et = "tv text | read -l f; and hx $f";
       l = "eza --icons -lh";
       t = "zellij";
       a = "mkdir -p";
@@ -48,11 +49,8 @@
       g = "lazygit";
       gs = "gh dash";
       gn = "gh notify";
+      gp = "gh pr create";
       gc = "gh repo clone";
-
-      # searching
-      "/" = "fd --type f";
-      "//" = "sk --ansi -i -c 'rg --color=always --line-number \"{}\"'";
 
       # theming
       dt = "set-theme dark";

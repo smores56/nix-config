@@ -19,6 +19,7 @@
     zoxide
     eza
     fd
+    bat
     ripgrep
     glow
     fzf
@@ -31,12 +32,11 @@
 
     # AI tools
     claude-code
-    ollama
+    # ollama
     smartcat
     opencode
     aichat
     gemini-cli
-    gpt-cli
 
     # editing
     sd
@@ -101,27 +101,10 @@
     direnv
     xsel
     navi
-    xxh
-    file
     gnupg
     watchexec
-    rainfrog
     redis
-    pre-commit
-    protobuf
-    atlas
-    typos
-    pgcli
-    opkssh
-    eksctl
     _1password-cli
     aws-sso-cli
   ];
-
-  programs.bat = {
-    # enable = true;
-    config = {
-      theme = "ansi";
-    };
-  };
 }
