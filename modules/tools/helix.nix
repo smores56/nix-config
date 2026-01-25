@@ -14,13 +14,13 @@
     typstyle
     lua-language-server
     kotlin-language-server
+    dockerfile-language-server
     python313Packages.python-lsp-server
     nodePackages.yaml-language-server
     nodePackages.svelte-language-server
     nodePackages.typescript-language-server
     nodePackages.vscode-langservers-extracted
     nodePackages.graphql-language-service-cli
-    nodePackages.dockerfile-language-server
   ];
 
   # Add TypeScript highlighting for YAML-sourced flow handlers
