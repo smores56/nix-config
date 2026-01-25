@@ -27,6 +27,7 @@
   # configure fish-async-prompt
   home.sessionVariables = {
     async_prompt_functions = "_pure_prompt_git";
+    fish_greeting = "";
   };
 
   # Make man-cache builds much faster
@@ -52,12 +53,6 @@
       gp = "gh pr create";
       gc = "gh repo clone";
 
-      # theming
-      dt = "set-theme dark";
-      lt = "set-theme light";
-      dts = "set-theme dark --select";
-      lts = "set-theme light --select";
-
       # home manager
       cn = "c ~/.config/nix";
       hm = "home-manager";
@@ -81,14 +76,8 @@
 
     interactiveShellInit = ''
       pfetch
-      set fish_greeting # custom prompt
       __auto_zellij_update_tabname
-      set -xg PATH /opt/homebrew/bin /usr/local/bin ~/.local/bin $PATH
-
-      # include local extras if present
-      for configFile in ~/.config/fish/extras/*.fish
-          source $configFile
-      end
+      fish_add_path /opt/homebrew/bin /usr/local/bin ~/.local/bin
     '';
 
     plugins = [
@@ -107,15 +96,6 @@
       {
         name = "async-prompt";
         src = pkgs.fishPlugins.async-prompt.src;
-      }
-      {
-        name = "lf-icons";
-        src = pkgs.fetchFromGitHub {
-          owner = "joshmedeski";
-          repo = "fish-lf-icons";
-          rev = "d1c47b2088e0ffd95766b61d2455514274865b4f";
-          sha256 = "sha256-6po/PYvq4t0K8Jq5/t5hXPLn80iyl3Ymx2Whme/20kc=";
-        };
       }
       # Need this when using Fish as a default macOS shell in order to pick
       # up ~/.nix-profile/bin

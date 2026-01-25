@@ -1,34 +1,21 @@
-{ pkgs, displayManager, ... }:
+{ displayManager, ... }:
 {
   fonts.fontconfig.enable = true;
 
-  imports =
+  imports = [
+    ./terminal-emulator
+  ]
+  ++ (
     if displayManager == "pop-os" then
       [
         ./dconf.nix
+        ./linux-apps.nix
+      ]
+    else if displayManager == "osx" then
+      [
+        ./aerospace.nix
       ]
     else
-      [ ];
-
-  home.packages =
-    if displayManager == null then
       [ ]
-    else
-      (with pkgs; [
-        # file management
-        xfce.thunar
-        kdePackages.dolphin
-        evince
-        feh
-        libreoffice
-
-        # media
-        vlc
-        gimp
-        transmission_4-gtk
-
-        # other
-        discord
-        musescore
-      ]);
+  );
 }

@@ -27,11 +27,13 @@ in
     homeDirectory = homeDirectory;
 
     # Disable App Management permission check on macOS
-    activation.checkAppManagementPermission = pkgs.lib.mkIf pkgs.stdenv.isDarwin (pkgs.lib.mkForce {
-      before = [ ];
-      after = [ ];
-      data = "";
-    });
+    activation.checkAppManagementPermission = pkgs.lib.mkIf pkgs.stdenv.isDarwin (
+      pkgs.lib.mkForce {
+        before = [ ];
+        after = [ ];
+        data = "";
+      }
+    );
   };
 
   targets.genericLinux.enable = isLinux;
@@ -40,7 +42,9 @@ in
       {
         enable = true;
         mime.enable = true;
-        systemDirs.data = [ "${homeDirectory}/.nix-profile/share/applications" ];
+        systemDirs.data = [
+          "${homeDirectory}/.nix-profile/share/applications"
+        ];
       }
     else
       { };
@@ -86,9 +90,5 @@ in
     OPENAI_MODEL = "devstral:24b";
   };
 
-  imports = [
-    ./terminal
-  ]
-  ++ (if displayManager == "osx" then [ ./osx ] else [ ])
-  ++ (if displayManager == "pop-os" then [ ./gui ] else [ ]);
+  imports = [ ./tools ] ++ (if displayManager != null then [ ./gui ] else [ ]);
 }

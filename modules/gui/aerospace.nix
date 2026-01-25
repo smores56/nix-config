@@ -79,7 +79,7 @@ in
   programs.aerospace = {
     enable = true;
 
-    userSettings = {
+    settings = {
       # config borrowed from:
       # https://github.com/marcoscurvello/dotfiles/blob/9fdc5aa65651e504934266aab6579186d67c48cc/aerospace.toml
 

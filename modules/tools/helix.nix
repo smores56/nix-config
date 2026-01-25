@@ -6,12 +6,12 @@
     nixd
     taplo
     gopls
+    nixfmt
     lsp-ai
     starpls
     marksman
     tinymist
     typstyle
-    nixfmt-rfc-style
     lua-language-server
     kotlin-language-server
     python313Packages.python-lsp-server
@@ -20,7 +20,7 @@
     nodePackages.typescript-language-server
     nodePackages.vscode-langservers-extracted
     nodePackages.graphql-language-service-cli
-    nodePackages.dockerfile-language-server-nodejs
+    nodePackages.dockerfile-language-server
   ];
 
   # Add TypeScript highlighting for YAML-sourced flow handlers
@@ -53,6 +53,8 @@
         ":lsp-restart"
       ];
 
+      keys.normal.C-x = ":buffer-close";
+
       keys.normal.space = {
         s = ":write";
         c = ":quit";
@@ -68,27 +70,14 @@
 
       editor = {
         cursorline = true;
+        completion-replace = true;
         bufferline = "multiple";
         color-modes = true;
-
-        file-picker.hidden = false;
-        indent-guides.render = true;
-        soft-wrap.enable = true;
+        jump-label-alphabet = "sntgrwfmpvcldbxieahyouk";
 
         end-of-line-diagnostics = "hint";
         inline-diagnostics = {
-          cursor-line = "error";
-          # other-lines = "error";
-        };
-
-        lsp = {
-          display-messages = true;
-          display-inlay-hints = false;
-        };
-
-        whitespace.render = {
-          space = "all";
-          tab = "all";
+          cursor-line = "hint";
         };
 
         cursor-shape = {
@@ -96,6 +85,16 @@
           insert = "bar";
           select = "underline";
         };
+
+        auto-save = {
+          focus-lost = true;
+          after-delay.enable = true;
+        };
+
+        whitespace.render = "all";
+        indent-guides.render = true;
+        soft-wrap.enable = true;
+        smart-tab.enable = true;
       };
     };
 
@@ -204,6 +203,10 @@
           "\"" = "\"";
         };
       }
+      {
+        name = "ocaml";
+        auto-format = true;
+      }
     ];
 
     languages.grammar = [
@@ -253,8 +256,6 @@
           lint = true;
         };
       };
-
-      lsp-ai = import ./lsp-ai.nix { };
     };
   };
 }

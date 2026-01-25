@@ -75,9 +75,12 @@
         directory = "*";
       };
       commit = {
-        # gpgsign = true;
+        gpgsign = true;
       };
-      # gpg.format = "ssh";
+      gpg.format = "ssh";
+      fetch = {
+        prune = true;
+      };
     };
   };
 

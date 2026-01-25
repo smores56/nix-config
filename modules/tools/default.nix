@@ -1,16 +1,14 @@
 { pkgs, ... }:
 {
   imports = [
-    ./shell
-    ./editor
-    ./emulator
+    ./fish
     ./git.nix
-    ./file-manager
-    ./multiplexer
+    ./helix.nix
+    ./yazi.nix
+    ./zellij.nix
   ];
 
   home.sessionVariables = {
-    GUM_CHOOSE_CURSOR_FOREGROUND = 3;
     DISABLE_NIX_SHELL_WELCOME = 1;
   };
 
@@ -23,54 +21,42 @@
     ripgrep
     glow
     fzf
-    jq
-    jaq
-    jqp
     delta
     television
-    lazysql
+    openssh
 
-    # AI tools
-    claude-code
-    # ollama
-    smartcat
-    opencode
-    aichat
-    gemini-cli
-
-    # editing
+    # data interaction
+    jq
+    eva
+    curl
     sd
     ouch
     zip
     unzip
+    lazysql
+
+    # environment management
+    zellij
+    direnv
+    mise
+
+    # AI tools
+    claude-code
+    gemini-cli
 
     # monitoring
     dua
     bottom
     tokei
-    bandwhich
-
-    # security
-    yara
-    yara-x
+    watchexec
 
     # languages
     go
     uv
     python3
     deno
-    yarn
-    nodePackages.pnpm
-    erg
     typst
-    idris2
-    fnm
-    zig
-    buf
-    terraform
-
-    # rust
-    rustup
+    cargo
 
     # compilation
     gcc
@@ -78,7 +64,6 @@
     openssl.dev
 
     # fun stuff
-    gum
     cbonsai
     musikcube
     clock-rs
@@ -86,25 +71,19 @@
 
     # container tools
     k9s
+    oxker
     docker-compose
-    # oxker
     kubernetes-helm
     kubectl
     kubectx
 
     # other packages
-    zellij
-    eva
-    curl
-    openssh
-    flyctl
-    direnv
     xsel
-    navi
     gnupg
-    watchexec
-    redis
-    _1password-cli
+    awscli2
     aws-sso-cli
+    _1password-cli
+    python313Packages.dvc
+    python313Packages.playwright
   ];
 }

@@ -1,14 +1,8 @@
 {
-  description = "My Home Manager Flake";
-
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     home-manager = {
       url = "github:nix-community/home-manager";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-    nixos-cosmic = {
-      url = "github:lilyinstarlight/nixos-cosmic";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     stylix = {
@@ -21,7 +15,6 @@
     {
       nixpkgs,
       home-manager,
-      nixos-cosmic,
       stylix,
       ...
     }:
@@ -62,10 +55,7 @@
       mkNixosConfiguration =
         args:
         nixpkgs.lib.nixosSystem {
-          specialArgs = {
-            inherit nixos-cosmic;
-          }
-          // args;
+          specialArgs = args;
           modules = [
             ./modules/host.nix
           ];
@@ -110,7 +100,7 @@
           system = "aarch64-darwin";
           colorscheme = "rose-pine-moon";
           helixTheme = "rose_pine_moon";
-          terminalFontSize = 16;
+          terminalFontSize = 14;
           polarity = "dark";
         };
       };
