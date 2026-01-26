@@ -38,7 +38,9 @@
     # environment management
     zellij
     direnv
-    mise
+    awscli2
+    aws-sso-cli
+    _1password-cli
 
     # AI tools
     claude-code
@@ -79,10 +81,6 @@
 
     # other packages
     xsel
-    gnupg
-    awscli2
-    aws-sso-cli
-    _1password-cli
     python313Packages.dvc
     python313Packages.playwright
   ];

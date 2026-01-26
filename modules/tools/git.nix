@@ -1,6 +1,7 @@
 { pkgs, polarity, ... }:
 {
   home.packages = with pkgs; [
+    gnupg
     delta
     git-lfs
     difftastic
