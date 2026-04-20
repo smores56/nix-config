@@ -2,20 +2,15 @@
 {
   # LSPs
   home.packages = with pkgs; [
-    zls
     nixd
     taplo
     gopls
     nixfmt
-    lsp-ai
     starpls
+    mdformat
     marksman
-    tinymist
-    typstyle
     lua-language-server
-    kotlin-language-server
     dockerfile-language-server
-    python313Packages.python-lsp-server
     nodePackages.yaml-language-server
     nodePackages.svelte-language-server
     nodePackages.typescript-language-server
@@ -59,13 +54,6 @@
         s = ":write";
         c = ":quit";
         t = "hover";
-        o = [
-          ":sh rm -f /tmp/yazi-helix-context"
-          ":insert-output yazi %{buffer_name} --chooser-file=/tmp/yazi-helix-context"
-          ":insert-output echo \"\\x1b[?1049h\\x1b[?2004h\" > /dev/tty"
-          ":open %sh{cat /tmp/yazi-helix-context}"
-          ":redraw"
-        ];
       };
 
       editor = {
@@ -100,10 +88,6 @@
 
     languages.language = [
       {
-        name = "markdown";
-        language-servers = [ "lsp-ai" ];
-      }
-      {
         name = "python";
         auto-format = true;
         language-servers = [
@@ -133,9 +117,6 @@
       }
       {
         name = "nix";
-        formatter = {
-          command = "nixfmt";
-        };
         auto-format = true;
       }
       {
@@ -154,10 +135,7 @@
           "tsx"
         ];
         auto-format = true;
-        language-servers = [
-          "deno-lsp"
-          "lsp-ai"
-        ];
+        language-servers = [ "deno-lsp" ];
       }
       {
         name = "javascript";
@@ -174,55 +152,24 @@
         language-servers = [ "deno-lsp" ];
       }
       {
-        name = "roc";
-        scope = "source.roc";
-        injection-regex = "roc";
-        file-types = [ "roc" ];
-        shebangs = [ "roc" ];
-        roots = [ ];
-        comment-token = "#";
-        language-servers = [ "roc-ls" ];
-        indent = {
-          tab-width = 4;
-          unit = "    ";
-        };
+        name = "markdown";
         auto-format = true;
         formatter = {
-          command = "roc";
+          command = "mdformat";
           args = [
-            "format"
-            "--stdin"
-            "--stdout"
+            "--wrap"
+            "120"
+            "-"
           ];
         };
-
-        auto-pairs = {
-          "(" = ")";
-          "{" = "}";
-          "[" = "]";
-          "\"" = "\"";
-        };
-      }
-      {
-        name = "ocaml";
-        auto-format = true;
-      }
-    ];
-
-    languages.grammar = [
-      {
-        name = "roc";
-        source = {
-          git = "https://github.com/faldor20/tree-sitter-roc.git";
-          rev = "ef46edd0c03ea30a22f7e92bc68628fb7231dc8a";
-        };
+        language-servers = [
+          "marksman"
+          "harper-ls"
+        ];
       }
     ];
 
     languages.language-server = {
-      roc-ls = {
-        command = "roc_language_server";
-      };
       ruff = {
         command = "uvx";
         args = [
@@ -255,6 +202,10 @@
           enable = true;
           lint = true;
         };
+      };
+      harper-ls = {
+        command = "harper-ls";
+        args = [ "--stdio" ];
       };
     };
   };

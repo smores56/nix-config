@@ -57,20 +57,10 @@ in
     polarity = specialArgs.polarity or "either";
     opacity.terminal = 0.8;
 
-    cursor = {
-      package = pkgs.bibata-cursors;
-      name = "Bibata-Modern-Classic";
-      size = 16;
-    };
-
     fonts = {
       sizes = {
         desktop = 14;
         terminal = terminalFontSize;
-      };
-      sansSerif = {
-        name = "Open Sans Bold";
-        package = pkgs.open-sans;
       };
       monospace = {
         name = if displayManager == "osx" then "CaskaydiaCove NF" else "CaskaydiaCove NF SemiBold";

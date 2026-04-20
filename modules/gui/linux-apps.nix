@@ -3,7 +3,7 @@
 
   home.packages = with pkgs; [
     # file management
-    xfce.thunar
+    thunar
     kdePackages.dolphin
     evince
     feh
