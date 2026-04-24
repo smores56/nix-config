@@ -86,10 +86,6 @@
         src = pkgs.fishPlugins.done.src;
       }
       {
-        name = "pisces";
-        src = pkgs.fishPlugins.pisces.src;
-      }
-      {
         name = "pure";
         src = pkgs.fishPlugins.pure.src;
       }

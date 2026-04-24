@@ -120,16 +120,19 @@ in
   programs.fish = {
     interactiveShellInit = ''
       if command -q tinty
-          if not test -d ~/.local/share/tinted-theming/tinty/repos/schemes
-              tinty install > /dev/null 2>&1
-              tinty apply (tinty current 2>/dev/null; or echo base16-rose-pine-moon) > /dev/null 2>&1
-          end
-          set -l scheme (tinty current 2>/dev/null)
-          if test -n "$scheme"
-              set -l shell_script ~/.local/share/tinted-theming/tinty/repos/tinted-shell/scripts/"$scheme".sh
-              test -f "$shell_script"; and bash "$shell_script"
-              set -l fzf_script ~/.local/share/tinted-theming/tinty/repos/tinted-fzf/fish/"$scheme".fish
-              test -f "$fzf_script"; and source "$fzf_script"
+          function __tinty_init --on-event fish_prompt
+              functions --erase __tinty_init
+              if not test -d ~/.local/share/tinted-theming/tinty/repos/schemes
+                  tinty install > /dev/null 2>&1
+                  tinty apply (tinty current 2>/dev/null; or echo base16-rose-pine-moon) > /dev/null 2>&1
+              end
+              set -l scheme (tinty current 2>/dev/null)
+              if test -n "$scheme"
+                  set -l shell_script ~/.local/share/tinted-theming/tinty/repos/tinted-shell/scripts/"$scheme".sh
+                  test -f "$shell_script"; and bash "$shell_script"
+                  set -l fzf_script ~/.local/share/tinted-theming/tinty/repos/tinted-fzf/fish/"$scheme".fish
+                  test -f "$fzf_script"; and source "$fzf_script"
+              end
           end
       end
     '';
