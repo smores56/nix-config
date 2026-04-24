@@ -11,31 +11,6 @@
     enable = true;
     enableFishIntegration = false;
 
-    extraConfig = ''
-      keybinds {
-          unbind "Ctrl q"
-          shared_except "locked" {
-              bind "Alt w" {
-                  Run "hq" {
-                      floating true
-                      close_on_exit true
-                  }
-              }
-              bind "Alt t" {
-                  Run "hq" "next" {
-                      close_on_exit true
-                  }
-              }
-              bind "Alt a" {
-                  Run "hq" "watch" {
-                      floating true
-                      close_on_exit true
-                  }
-              }
-          }
-      }
-    '';
-
     settings = {
       default_shell = "${pkgs.fish}/bin/fish";
       ui.pane_frames.rounded_corners = true;
@@ -54,11 +29,6 @@
         cyan = 6;
         white = 7;
         orange = 208;
-      };
-
-      load_plugins = {
-        "https://github.com/KiryuuLight/zellij-attention/releases/latest/download/zellij-attention.wasm" =
-          { };
       };
     };
   };
