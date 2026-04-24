@@ -22,7 +22,6 @@
     ripgrep
     glow
     fzf
-    delta
     television
     openssh
 
@@ -38,19 +37,14 @@
 
     # environment management
     zellij
-    direnv
     awscli2
     aws-sso-cli
     _1password-cli
 
-    # AI tools
-    # claude-code
-    gemini-cli
-
     # monitoring
     dua
-    bottom
     tokei
+    bottom
     watchexec
 
     # languages
@@ -74,17 +68,10 @@
 
     # container tools
     k9s
-    # oxker
+    lazydocker
     docker-compose
     kubernetes-helm
     kubectl
     kubectx
-
-    # other packages
-    xsel
-    python313Packages.dvc
-    python313Packages.playwright
-    websocat
-    argocd
   ];
 }

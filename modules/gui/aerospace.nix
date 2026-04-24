@@ -49,7 +49,7 @@ let
       }) allDirections
     );
 
-  mkAppBinding = key: app: [
+  mkAppBinding = _: app: [
     "exec-and-forget open -a ${app}"
     "mode main"
   ];

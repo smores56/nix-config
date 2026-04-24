@@ -1,13 +1,12 @@
 {
+  config,
   pkgs,
-  specialArgs,
-  isLinux,
+  lib,
   displayManager,
   ...
 }:
 let
-  username = specialArgs.username or "smores";
-  homeDirectory = specialArgs.homeDirectory or "/home/${username}";
+  isLinux = pkgs.stdenv.isLinux;
 in
 {
   home = {
@@ -17,18 +16,16 @@ in
       pkgs.nerd-fonts.caskaydia-cove
       pkgs.open-sans
     ];
-    username = username;
-    homeDirectory = homeDirectory;
 
-    activation.checkAppManagementPermission = pkgs.lib.mkIf pkgs.stdenv.isDarwin (
-      pkgs.lib.mkForce {
+    activation.checkAppManagementPermission = lib.mkIf pkgs.stdenv.isDarwin (
+      lib.mkForce {
         before = [ ];
         after = [ ];
         data = "";
       }
     );
 
-    pointerCursor = pkgs.lib.mkIf (isLinux && displayManager != null) {
+    pointerCursor = lib.mkIf (isLinux && config.dotfiles.displayManager != null) {
       package = pkgs.bibata-cursors;
       name = "Bibata-Modern-Classic";
       size = 16;
@@ -36,17 +33,13 @@ in
   };
 
   targets.genericLinux.enable = isLinux;
-  xdg =
-    if isLinux then
-      {
-        enable = true;
-        mime.enable = true;
-        systemDirs.data = [
-          "${homeDirectory}/.nix-profile/share/applications"
-        ];
-      }
-    else
-      { };
+  xdg = lib.mkIf isLinux {
+    enable = true;
+    mime.enable = true;
+    systemDirs.data = [
+      "${config.home.homeDirectory}/.nix-profile/share/applications"
+    ];
+  };
 
-  imports = [ ./tools ] ++ (if displayManager != null then [ ./gui ] else [ ]);
+  imports = [ ./options.nix ./tools ] ++ lib.optionals (displayManager != null) [ ./gui ];
 }

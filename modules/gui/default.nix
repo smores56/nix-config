@@ -1,26 +1,21 @@
 { displayManager, ... }:
+let
+  displayManagerModules = {
+    pop-os = [
+      ./dconf.nix
+      ./linux-apps.nix
+    ];
+    osx = [
+      ./aerospace.nix
+    ];
+    niri = [
+      ./niri.nix
+      ./linux-apps.nix
+    ];
+  };
+in
 {
-  fonts.fontconfig.enable = true;
-
-  imports = [
-    ./terminal-emulator
-  ]
-  ++ (
-    if displayManager == "pop-os" then
-      [
-        ./dconf.nix
-        ./linux-apps.nix
-      ]
-    else if displayManager == "osx" then
-      [
-        ./aerospace.nix
-      ]
-    else if displayManager == "niri" then
-      [
-        ./niri.nix
-        ./linux-apps.nix
-      ]
-    else
-      [ ]
-  );
+  imports =
+    [ ./terminal-emulator ]
+    ++ (displayManagerModules.${displayManager} or [ ]);
 }

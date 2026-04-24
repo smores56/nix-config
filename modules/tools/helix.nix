@@ -1,4 +1,7 @@
-{ lib, pkgs, ... }@args:
+{ config, lib, pkgs, ... }:
+let
+  isLinux = pkgs.stdenv.isLinux;
+in
 {
   # LSPs
   home.packages = with pkgs; [
@@ -43,7 +46,7 @@
     defaultEditor = true;
 
     settings = {
-      theme = lib.mkIf (args ? helixTheme) args.helixTheme;
+      theme = lib.mkIf (config.dotfiles.helixTheme != null) config.dotfiles.helixTheme;
 
       keys.normal.C-r = [
         ":config-reload"
@@ -157,48 +160,52 @@
       {
         name = "yaml";
         auto-format = true;
-        language-servers = [
-          {
-            name = "yaml-language-server";
-            except-features = [ "format" ];
-          }
-          "sevenql-lsp"
-        ];
+        language-servers =
+          [
+            {
+              name = "yaml-language-server";
+              except-features = [ "format" ];
+            }
+          ]
+          ++ lib.optionals (!isLinux) [ "sevenql-lsp" ];
       }
     ];
 
-    languages.language-server = {
-      ruff = {
-        command = "ruff";
-        args = [ "server" ];
-      };
-      basedpyright = {
-        command = "basedpyright-langserver";
-        args = [ "--stdio" ];
-      };
-      rust-analyzer.config = {
-        rust-analyzer.diagnostics.disabled = [ "unresolved-proc-macro" ];
-      };
-      deno-lsp = {
-        command = "deno";
-        args = [ "lsp" ];
-        config.deno = {
-          enable = true;
-          lint = true;
+    languages.language-server =
+      {
+        ruff = {
+          command = "ruff";
+          args = [ "server" ];
+        };
+        basedpyright = {
+          command = "basedpyright-langserver";
+          args = [ "--stdio" ];
+        };
+        rust-analyzer.config = {
+          rust-analyzer.diagnostics.disabled = [ "unresolved-proc-macro" ];
+        };
+        deno-lsp = {
+          command = "deno";
+          args = [ "lsp" ];
+          config.deno = {
+            enable = true;
+            lint = true;
+          };
+        };
+        harper-ls = {
+          command = "harper-ls";
+          args = [ "--stdio" ];
+        };
+      }
+      // lib.optionalAttrs (!isLinux) {
+        sevenql-lsp = {
+          command = "deno";
+          args = [
+            "run"
+            "-A"
+            "/Users/smohr/dev/okami/typescript/tools/sevenql-lsp/main.ts"
+          ];
         };
       };
-      harper-ls = {
-        command = "harper-ls";
-        args = [ "--stdio" ];
-      };
-      sevenql-lsp = {
-        command = "deno";
-        args = [
-          "run"
-          "-A"
-          "/Users/smohr/dev/okami/typescript/tools/sevenql-lsp/main.ts"
-        ];
-      };
-    };
   };
 }

@@ -8,6 +8,7 @@
   ];
 
   imports = [
+    ./options.nix
     ./i18n.nix
     ./disks.nix
     ./security.nix

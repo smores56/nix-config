@@ -34,75 +34,87 @@
           ];
         };
 
-      mkHomeConfiguration =
+      flakeModules = {
+        home.niri = [
+          niri.homeModules.niri
+          niri.homeModules.config
+          noctalia.homeModules.default
+        ];
+        nixos.niri = [ niri.nixosModules.niri ];
+      };
+
+      mkHome =
         args:
-        home-manager.lib.homeManagerConfiguration rec {
-          extraSpecialArgs = (
-            rec {
-              system = args.system or "x86_64-linux";
-              isLinux = system == "x86_64-linux";
-              polarity = args.polarity or "dark";
-              displayManager = args.displayManager or null;
-            }
-            // args
-          );
-          pkgs = pkgsForSystem extraSpecialArgs.system;
+        let
+          system = args.system or "x86_64-linux";
+          dm = args.displayManager or null;
+        in
+        home-manager.lib.homeManagerConfiguration {
+          pkgs = pkgsForSystem system;
+          extraSpecialArgs = {
+            displayManager = dm;
+          };
           modules =
             [
               ./modules/home.nix
+              {
+                dotfiles = {
+                  displayManager = dm;
+                  polarity = args.polarity or "dark";
+                  helixTheme = args.helixTheme or null;
+                  terminalFontSize = args.terminalFontSize or 12;
+                };
+                home.username = args.username or "smores";
+                home.homeDirectory = args.homeDirectory or "/home/${args.username or "smores"}";
+              }
             ]
-            ++ (
-              if (args.displayManager or null) == "niri" then
-                [
-                  niri.homeModules.niri
-                  niri.homeModules.config
-                  noctalia.homeModules.default
-                ]
-              else
-                [ ]
-            );
+            ++ (if dm != null then (flakeModules.home.${dm} or [ ]) else [ ]);
         };
 
-      mkNixosConfiguration =
+      mkNixos =
         args:
+        let
+          dm = args.displayManager or null;
+        in
         nixpkgs.lib.nixosSystem {
-          specialArgs = args;
+          specialArgs = {
+            displayManager = dm;
+            exposeSsh = args.exposeSsh or false;
+          };
           modules =
             [
               ./modules/host.nix
+              ./hosts/${args.hostname}/hardware.nix
+              {
+                networking.hostName = args.hostname;
+                dotfiles = {
+                  displayManager = dm;
+                  exposeSsh = args.exposeSsh or false;
+                };
+              }
             ]
-            ++ (
-              if (args.display-manager or null) == "niri" then
-                [
-                  niri.nixosModules.niri
-                ]
-              else
-                [ ]
-            );
+            ++ (if dm != null then (flakeModules.nixos.${dm} or [ ]) else [ ]);
         };
     in
     {
       homeConfigurations = {
-        "smores@smorestux" = mkHomeConfiguration {
+        "smores@smorestux" = mkHome {
           displayManager = "pop-os";
           helixTheme = "noctis_bordo";
         };
-        "smores@smoresbook" = mkHomeConfiguration {
+        "smores@smoresbook" = mkHome {
           displayManager = "niri";
           helixTheme = "kanagawa";
         };
-        "smores@campfire" = mkHomeConfiguration {
-          displayManager = null;
-        };
-        "smores@smortress" = mkHomeConfiguration {
+        "smores@campfire" = mkHome { };
+        "smores@smortress" = mkHome {
           displayManager = "pop-os";
           helixTheme = "gruvbox";
         };
-        "smores@smoresnet" = mkHomeConfiguration {
-          displayManager = null;
+        "smores@smoresnet" = mkHome {
           helixTheme = "gruvbox";
         };
-        "smohr" = mkHomeConfiguration {
+        "smohr" = mkHome {
           displayManager = "osx";
           username = "smohr";
           homeDirectory = "/Users/smohr";
@@ -113,20 +125,17 @@
       };
 
       nixosConfigurations = {
-        "campfire" = mkNixosConfiguration {
+        "campfire" = mkNixos {
           hostname = "campfire";
-          expose-ssh = true;
-          display-manager = null;
+          exposeSsh = true;
         };
-        "smorestux" = mkNixosConfiguration {
+        "smorestux" = mkNixos {
           hostname = "smorestux";
-          expose-ssh = false;
-          display-manager = "cosmic";
+          displayManager = "niri";
         };
-        "smoresbook" = mkNixosConfiguration {
+        "smoresbook" = mkNixos {
           hostname = "smoresbook";
-          expose-ssh = false;
-          display-manager = "niri";
+          displayManager = "niri";
         };
       };
     };

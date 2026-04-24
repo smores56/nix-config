@@ -1,7 +1,4 @@
-{
-  pkgs,
-  ...
-}:
+{ pkgs, ... }:
 {
   home.packages = [ pkgs.pfetch-rs ];
 
@@ -27,6 +24,7 @@
   };
 
   # Make man-cache builds much faster
+  manual.manpages.enable = false;
   programs.man.generateCaches = false;
   programs.fish.generateCompletions = false;
 

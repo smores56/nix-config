@@ -1,4 +1,10 @@
-{ pkgs, polarity, ... }:
+{ config, pkgs, ... }:
+let
+  polarity = config.dotfiles.polarity;
+  hunk = pkgs.writeShellScriptBin "hunk" ''
+    exec ${pkgs.nodejs}/bin/npx hunkdiff "$@"
+  '';
+in
 {
   home.packages = with pkgs; [
     gnupg
@@ -6,6 +12,7 @@
     git-lfs
     difftastic
     jujutsu
+    hunk
   ];
 
   programs.gh = {

@@ -1,5 +1,7 @@
 { ... }:
 {
+  fonts.fontconfig.enable = true;
+
   imports = [
     ./kitty.nix
     ./wezterm.nix
@@ -8,6 +10,6 @@
   ];
 
   home.sessionVariables = {
-    TERMINAL = "kitty";
+    TERMINAL = "wezterm";
   };
 }
