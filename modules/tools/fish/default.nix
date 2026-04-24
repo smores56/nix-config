@@ -71,7 +71,7 @@
     };
 
     interactiveShellInit = ''
-      fish_add_path ~/.nix-profile/bin /nix/var/nix/profiles/default/bin /opt/homebrew/bin /usr/local/bin ~/.local/bin ~/.deno/bin
+      fish_add_path /opt/homebrew/bin /usr/local/bin ~/.local/bin ~/.deno/bin
       for p in $NIX_PROFILES
           set -a fish_function_path $p/share/fish/vendor_functions.d
           set -a fish_complete_path $p/share/fish/vendor_completions.d
