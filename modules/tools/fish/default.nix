@@ -71,6 +71,10 @@
     };
 
     interactiveShellInit = ''
+      for p in $NIX_PROFILES
+          set -a fish_function_path $p/share/fish/vendor_functions.d
+          set -a fish_complete_path $p/share/fish/vendor_completions.d
+      end
       pfetch
       __auto_zellij_update_tabname
       fish_add_path /opt/homebrew/bin /usr/local/bin ~/.local/bin ~/.deno/bin
@@ -92,17 +96,6 @@
       {
         name = "async-prompt";
         src = pkgs.fishPlugins.async-prompt.src;
-      }
-      # Need this when using Fish as a default macOS shell in order to pick
-      # up ~/.nix-profile/bin
-      {
-        name = "nix-env";
-        src = pkgs.fetchFromGitHub {
-          owner = "lilyball";
-          repo = "nix-env.fish";
-          rev = "00c6cc762427efe08ac0bd0d1b1d12048d3ca727";
-          sha256 = "1hrl22dd0aaszdanhvddvqz3aq40jp9zi2zn0v1hjnf7fx4bgpma";
-        };
       }
     ];
   };
