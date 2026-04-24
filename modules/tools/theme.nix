@@ -100,7 +100,7 @@ in
   home.packages = [ pkgs.tinty ];
 
   home.file.".config/tinted-theming/tinty/config.toml".text = ''
-    shell = "bash -c '{}'"
+    shell = "fish -c '{}'"
     default-scheme = "base16-rose-pine-moon"
 
     [[items]]
@@ -124,7 +124,13 @@ in
               tinty install > /dev/null 2>&1
               tinty apply (tinty current 2>/dev/null; or echo base16-rose-pine-moon) > /dev/null 2>&1
           end
-          tinty init | source
+          set -l scheme (tinty current 2>/dev/null)
+          if test -n "$scheme"
+              set -l shell_script ~/.local/share/tinted-theming/tinty/repos/tinted-shell/scripts/"$scheme".sh
+              test -f "$shell_script"; and bash "$shell_script"
+              set -l fzf_script ~/.local/share/tinted-theming/tinty/repos/tinted-fzf/fish/"$scheme".fish
+              test -f "$fzf_script"; and source "$fzf_script"
+          end
       end
     '';
 
