@@ -56,7 +56,7 @@
       # home manager
       cn = "c ~/.config/nix";
       hm = "home-manager";
-      hs = "home-manager switch --flake ~/.config/nix";
+      hs = "home-manager switch --flake ~/.config/nix#$USER --no-write-lock-file";
 
       # nix
       ns = "sudo nixos-rebuild --flake ~/.config/nix switch --upgrade";
@@ -77,7 +77,7 @@
     interactiveShellInit = ''
       pfetch
       __auto_zellij_update_tabname
-      fish_add_path /opt/homebrew/bin /usr/local/bin ~/.local/bin
+      fish_add_path /opt/homebrew/bin /usr/local/bin ~/.local/bin ~/.deno/bin
     '';
 
     plugins = [

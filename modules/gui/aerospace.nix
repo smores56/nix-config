@@ -113,6 +113,9 @@ in
         cmd-ctrl-minus = "resize smart -30";
         cmd-ctrl-equal = "resize smart +30";
         cmd-ctrl-0 = "balance-sizes";
+
+        cmd-ctrl-e = "layout tiles horizontal vertical";
+        cmd-ctrl-a = "layout accordion horizontal vertical";
       }
       // mkAllDirectionBindings "cmd-ctrl" (d: "focus ${d}")
       // mkAllDirectionBindings "cmd-ctrl-shift" (d: "move ${d}")

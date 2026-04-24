@@ -43,7 +43,7 @@
     _1password-cli
 
     # AI tools
-    claude-code
+    # claude-code
     gemini-cli
 
     # monitoring
@@ -73,7 +73,7 @@
 
     # container tools
     k9s
-    oxker
+    # oxker
     docker-compose
     kubernetes-helm
     kubectl
@@ -83,5 +83,7 @@
     xsel
     python313Packages.dvc
     python313Packages.playwright
+    websocat
+    argocd
   ];
 }

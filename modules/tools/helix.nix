@@ -3,12 +3,13 @@
   # LSPs
   home.packages = with pkgs; [
     nixd
+    ruff
     taplo
     gopls
     nixfmt
-    starpls
     mdformat
     marksman
+    basedpyright
     lua-language-server
     dockerfile-language-server
     nodePackages.yaml-language-server
@@ -20,17 +21,21 @@
 
   # Add TypeScript highlighting for YAML-sourced flow handlers
   home.file = {
-    ".config/helix/runtime/queries/yaml/injections.scm".text = ''
-      ${builtins.readFile "${pkgs.helix}/lib/runtime/queries/yaml/injections.scm"}
+    ".config/helix/runtime/queries/yaml/injections.scm".source =
+      pkgs.runCommand "helix-yaml-injections" { }
+        ''
+          cat ${pkgs.helix.passthru.runtime}/queries/yaml/injections.scm > $out
+          cat >> $out << 'EXTRA'
 
-      ((block_scalar) @injection.content
-       (#match? @injection.content "function handler")
-       (#set! injection.language "typescript"))
+          ((block_scalar) @injection.content
+           (#match? @injection.content "function handler")
+           (#set! injection.language "typescript"))
 
-      ((block_scalar) @injection.content
-       (#match? @injection.content "query.*\\{")
-       (#set! injection.language "graphql"))
-    '';
+          ((block_scalar) @injection.content
+           (#match? @injection.content "query.*\\{")
+           (#set! injection.language "graphql"))
+          EXTRA
+        '';
   };
 
   stylix.targets.helix.enable = !args ? helixTheme;
@@ -88,32 +93,8 @@
 
     languages.language = [
       {
-        name = "python";
-        auto-format = true;
-        language-servers = [
-          "ruff"
-          "basedpyright"
-        ];
-      }
-      {
-        name = "starlark";
-        auto-format = true;
-      }
-      {
         name = "json";
         auto-format = false;
-      }
-      {
-        name = "svelte";
-        auto-format = true;
-        roots = [ "package.json" ];
-      }
-      {
-        name = "java";
-        indent = {
-          tab-width = 4;
-          unit = "    ";
-        };
       }
       {
         name = "nix";
@@ -152,6 +133,14 @@
         language-servers = [ "deno-lsp" ];
       }
       {
+        name = "python";
+        auto-format = true;
+        language-servers = [
+          "ruff"
+          "basedpyright"
+        ];
+      }
+      {
         name = "markdown";
         auto-format = true;
         formatter = {
@@ -167,30 +156,27 @@
           "harper-ls"
         ];
       }
+      {
+        name = "yaml";
+        auto-format = true;
+        language-servers = [
+          {
+            name = "yaml-language-server";
+            except-features = [ "format" ];
+          }
+          "sevenql-lsp"
+        ];
+      }
     ];
 
     languages.language-server = {
       ruff = {
-        command = "uvx";
-        args = [
-          "run"
-          "ruff"
-          "server"
-        ];
+        command = "ruff";
+        args = [ "server" ];
       };
       basedpyright = {
-        command = "uvx";
-        args = [
-          "run"
-          "basedpyright-langserver"
-          "--stdio"
-        ];
-      };
-      pylsp.config = {
-        pylsp.plugins = {
-          ruff.enabled = true;
-          black.enabled = true;
-        };
+        command = "basedpyright-langserver";
+        args = [ "--stdio" ];
       };
       rust-analyzer.config = {
         rust-analyzer.diagnostics.disabled = [ "unresolved-proc-macro" ];
@@ -206,6 +192,14 @@
       harper-ls = {
         command = "harper-ls";
         args = [ "--stdio" ];
+      };
+      sevenql-lsp = {
+        command = "deno";
+        args = [
+          "run"
+          "-A"
+          "/Users/smohr/dev/okami/typescript/tools/sevenql-lsp/main.ts"
+        ];
       };
     };
   };

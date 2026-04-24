@@ -21,7 +21,7 @@ let
 in
 {
   home = {
-    stateVersion = "25.11";
+    stateVersion = "26.05";
     packages = [ pkgs.home-manager ];
     username = username;
     homeDirectory = homeDirectory;
@@ -71,14 +71,14 @@ in
     targets.gnome.enable = displayManager == "pop-os";
   };
 
-  home.sessionVariables = {
-    OLLAMA_HOST = "http://smortress:11434";
-    OLLAMA_API_BASE = "http://smortress:11434";
+  # home.sessionVariables = {
+  #   OLLAMA_HOST = "http://smortress:11434";
+  #   OLLAMA_API_BASE = "http://smortress:11434";
 
-    OPENAI_API_KEY = "";
-    OPENAI_BASE_URL = "http://smortress:11434/v1";
-    OPENAI_MODEL = "devstral:24b";
-  };
+  #   OPENAI_API_KEY = "";
+  #   OPENAI_BASE_URL = "http://smortress:11434/v1";
+  #   OPENAI_MODEL = "devstral:24b";
+  # };
 
   imports = [ ./tools ] ++ (if displayManager != null then [ ./gui ] else [ ]);
 }
