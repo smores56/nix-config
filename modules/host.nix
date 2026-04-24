@@ -1,6 +1,7 @@
 {
   pkgs,
-  nixos-cosmic,
+  lib,
+  nixos-cosmic ? null,
   hostname,
   expose-ssh,
   display-manager,
@@ -20,7 +21,6 @@
   networking.hostName = hostname;
   time.timeZone = "America/New_York";
 
-  # Define a user account. Don't forget to set a password with ‘passwd’.
   users.users.smores = {
     isNormalUser = true;
     description = "Sam Mohr";
@@ -31,12 +31,11 @@
     shell = pkgs.fish;
   };
 
-  services.displayManager.autoLogin = {
+  services.displayManager.autoLogin = lib.mkIf (display-manager != "niri") {
     enable = true;
     user = "smores";
   };
 
-  # Enable OpenGL
   hardware.graphics = {
     enable = true;
     enable32Bit = true;
@@ -59,6 +58,14 @@
           services.desktopManager.cosmic.enable = true;
           services.displayManager.cosmic-greeter.enable = true;
         }
+      ]
+    else
+      [ ]
+  )
+  ++ (
+    if display-manager == "niri" then
+      [
+        ./nixos/niri.nix
       ]
     else
       [ ]

@@ -5,12 +5,19 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    niri.url = "github:sodiboo/niri-flake";
+    noctalia = {
+      url = "github:noctalia-dev/noctalia-shell";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
     {
       nixpkgs,
       home-manager,
+      niri,
+      noctalia,
       ...
     }:
     let
@@ -21,6 +28,10 @@
           config = {
             allowUnfree = true;
           };
+          overlays = [
+            niri.overlays.niri
+            noctalia.overlays.default
+          ];
         };
 
       mkHomeConfiguration =
@@ -36,18 +47,38 @@
             // args
           );
           pkgs = pkgsForSystem extraSpecialArgs.system;
-          modules = [
-            ./modules/home.nix
-          ];
+          modules =
+            [
+              ./modules/home.nix
+            ]
+            ++ (
+              if (args.displayManager or null) == "niri" then
+                [
+                  niri.homeModules.niri
+                  niri.homeModules.config
+                  noctalia.homeModules.default
+                ]
+              else
+                [ ]
+            );
         };
 
       mkNixosConfiguration =
         args:
         nixpkgs.lib.nixosSystem {
           specialArgs = args;
-          modules = [
-            ./modules/host.nix
-          ];
+          modules =
+            [
+              ./modules/host.nix
+            ]
+            ++ (
+              if (args.display-manager or null) == "niri" then
+                [
+                  niri.nixosModules.niri
+                ]
+              else
+                [ ]
+            );
         };
     in
     {
@@ -57,7 +88,7 @@
           helixTheme = "noctis_bordo";
         };
         "smores@smoresbook" = mkHomeConfiguration {
-          displayManager = "pop-os";
+          displayManager = "niri";
           helixTheme = "kanagawa";
         };
         "smores@campfire" = mkHomeConfiguration {
@@ -91,6 +122,11 @@
           hostname = "smorestux";
           expose-ssh = false;
           display-manager = "cosmic";
+        };
+        "smoresbook" = mkNixosConfiguration {
+          hostname = "smoresbook";
+          expose-ssh = false;
+          display-manager = "niri";
         };
       };
     };

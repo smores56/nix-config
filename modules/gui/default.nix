@@ -15,6 +15,11 @@
       [
         ./aerospace.nix
       ]
+    else if displayManager == "niri" then
+      [
+        ./niri.nix
+        ./linux-apps.nix
+      ]
     else
       [ ]
   );
