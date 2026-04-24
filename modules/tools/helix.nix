@@ -38,8 +38,6 @@
         '';
   };
 
-  stylix.targets.helix.enable = !args ? helixTheme;
-
   programs.helix = {
     enable = true;
     defaultEditor = true;

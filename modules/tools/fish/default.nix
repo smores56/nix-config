@@ -1,12 +1,8 @@
 {
-  lib,
   pkgs,
-  displayManager,
   ...
 }:
 {
-  stylix.targets.fish.enable = lib.mkIf (displayManager != null) true;
-
   home.packages = [ pkgs.pfetch-rs ];
 
   programs.direnv = {

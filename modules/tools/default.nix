@@ -4,6 +4,7 @@
     ./fish
     ./git.nix
     ./helix.nix
+    ./theme.nix
     ./yazi.nix
     ./zellij.nix
   ];

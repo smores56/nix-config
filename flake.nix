@@ -5,29 +5,19 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    stylix = {
-      url = "github:danth/stylix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
   outputs =
     {
       nixpkgs,
       home-manager,
-      stylix,
       ...
     }:
     let
-      localOverlay = prev: final: {
-        stylix = stylix.packages.${prev.system}.stylix;
-      };
-
       pkgsForSystem =
         system:
         import nixpkgs {
           inherit system;
-          overlays = [ localOverlay ];
           config = {
             allowUnfree = true;
           };
@@ -40,14 +30,13 @@
             rec {
               system = args.system or "x86_64-linux";
               isLinux = system == "x86_64-linux";
-              polarity = args.polarity or "either";
+              polarity = args.polarity or "dark";
               displayManager = args.displayManager or null;
             }
             // args
           );
           pkgs = pkgsForSystem extraSpecialArgs.system;
           modules = [
-            stylix.homeModules.stylix
             ./modules/home.nix
           ];
         };
@@ -65,32 +54,21 @@
       homeConfigurations = {
         "smores@smorestux" = mkHomeConfiguration {
           displayManager = "pop-os";
-          polarity = "dark";
-          colorscheme = "gruvbox-material-dark-medium";
           helixTheme = "noctis_bordo";
-          wallpaper = ./wallpapers/windmills.jpg;
         };
         "smores@smoresbook" = mkHomeConfiguration {
           displayManager = "pop-os";
-          polarity = "dark";
-          colorscheme = "kanagawa";
           helixTheme = "kanagawa";
-          wallpaper = ./wallpapers/enchanted-evening-retreat.png;
         };
         "smores@campfire" = mkHomeConfiguration {
           displayManager = null;
         };
         "smores@smortress" = mkHomeConfiguration {
           displayManager = "pop-os";
-          polarity = "dark";
-          colorscheme = "gruvbox-material-dark-medium";
           helixTheme = "gruvbox";
-          wallpaper = ./wallpapers/rocket-launch.png;
         };
         "smores@smoresnet" = mkHomeConfiguration {
           displayManager = null;
-          polarity = "dark";
-          colorscheme = "gruvbox-material-dark-medium";
           helixTheme = "gruvbox";
         };
         "smohr" = mkHomeConfiguration {
@@ -98,10 +76,8 @@
           username = "smohr";
           homeDirectory = "/Users/smohr";
           system = "aarch64-darwin";
-          colorscheme = "rose-pine-moon";
           helixTheme = "rose_pine_moon";
           terminalFontSize = 14;
-          polarity = "dark";
         };
       };
 

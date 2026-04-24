@@ -8,25 +8,18 @@
 let
   username = specialArgs.username or "smores";
   homeDirectory = specialArgs.homeDirectory or "/home/${username}";
-
-  wallpaper = specialArgs.wallpaper or ../wallpapers/angled-waves.png;
-  terminalFontSize = specialArgs.terminalFontSize or 12;
-  stylixBase =
-    if builtins.hasAttr "colorscheme" specialArgs then
-      {
-        base16Scheme = "${pkgs.base16-schemes}/share/themes/${specialArgs.colorscheme}.yaml";
-      }
-    else
-      { };
 in
 {
   home = {
     stateVersion = "26.05";
-    packages = [ pkgs.home-manager ];
+    packages = [
+      pkgs.home-manager
+      pkgs.nerd-fonts.caskaydia-cove
+      pkgs.open-sans
+    ];
     username = username;
     homeDirectory = homeDirectory;
 
-    # Disable App Management permission check on macOS
     activation.checkAppManagementPermission = pkgs.lib.mkIf pkgs.stdenv.isDarwin (
       pkgs.lib.mkForce {
         before = [ ];
@@ -34,6 +27,12 @@ in
         data = "";
       }
     );
+
+    pointerCursor = pkgs.lib.mkIf (isLinux && displayManager != null) {
+      package = pkgs.bibata-cursors;
+      name = "Bibata-Modern-Classic";
+      size = 16;
+    };
   };
 
   targets.genericLinux.enable = isLinux;
@@ -48,37 +47,6 @@ in
       }
     else
       { };
-
-  stylix = stylixBase // {
-    enable = displayManager != null;
-    enableReleaseChecks = false;
-    image = wallpaper;
-    autoEnable = false;
-    polarity = specialArgs.polarity or "either";
-    opacity.terminal = 0.8;
-
-    fonts = {
-      sizes = {
-        desktop = 14;
-        terminal = terminalFontSize;
-      };
-      monospace = {
-        name = if displayManager == "osx" then "CaskaydiaCove NF" else "CaskaydiaCove NF SemiBold";
-        package = pkgs.nerd-fonts.caskaydia-cove;
-      };
-    };
-
-    targets.gnome.enable = displayManager == "pop-os";
-  };
-
-  # home.sessionVariables = {
-  #   OLLAMA_HOST = "http://smortress:11434";
-  #   OLLAMA_API_BASE = "http://smortress:11434";
-
-  #   OPENAI_API_KEY = "";
-  #   OPENAI_BASE_URL = "http://smortress:11434/v1";
-  #   OPENAI_MODEL = "devstral:24b";
-  # };
 
   imports = [ ./tools ] ++ (if displayManager != null then [ ./gui ] else [ ]);
 }
