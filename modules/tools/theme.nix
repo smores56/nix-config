@@ -120,6 +120,10 @@ in
   programs.fish = {
     interactiveShellInit = ''
       if command -q tinty
+          if not test -d ~/.local/share/tinted-theming/tinty/repos/schemes
+              tinty install > /dev/null 2>&1
+              tinty apply (tinty current 2>/dev/null; or echo base16-rose-pine-moon) > /dev/null 2>&1
+          end
           tinty init | source
       end
     '';
