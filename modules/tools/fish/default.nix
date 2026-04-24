@@ -76,7 +76,10 @@
           set -a fish_complete_path $p/share/fish/vendor_completions.d
       end
       pfetch
-      __auto_zellij_update_tabname
+      function __deferred_zellij_tabname --on-event fish_prompt
+          functions --erase __deferred_zellij_tabname
+          __auto_zellij_update_tabname
+      end
       fish_add_path /opt/homebrew/bin /usr/local/bin ~/.local/bin ~/.deno/bin
     '';
 
