@@ -46,6 +46,7 @@ in
 {
   config = lib.mkIf isNiri {
     home.packages = with pkgs; [
+      quickshell
       swaylock
       brightnessctl
       wl-clipboard
