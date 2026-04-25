@@ -1,14 +1,5 @@
 { pkgs, ... }:
 {
-  imports = [
-    ./fish
-    ./git.nix
-    ./helix.nix
-    ./theme.nix
-    ./yazi.nix
-    ./zellij.nix
-  ];
-
   home.sessionVariables = {
     DISABLE_NIX_SHELL_WELCOME = 1;
   };
@@ -65,6 +56,9 @@
     musikcube
     clock-rs
     ttyper
+
+    # TUI utilities
+    gum
 
     # container tools
     k9s

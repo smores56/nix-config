@@ -1,9 +1,13 @@
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
   isLinux = pkgs.stdenv.isLinux;
 in
 {
-  # LSPs
   home.packages = with pkgs; [
     nixd
     ruff
@@ -22,7 +26,6 @@ in
     nodePackages.graphql-language-service-cli
   ];
 
-  # Add TypeScript highlighting for YAML-sourced flow handlers
   home.file = {
     ".config/helix/runtime/queries/yaml/injections.scm".source =
       pkgs.runCommand "helix-yaml-injections" { }
@@ -160,52 +163,50 @@ in
       {
         name = "yaml";
         auto-format = true;
-        language-servers =
-          [
-            {
-              name = "yaml-language-server";
-              except-features = [ "format" ];
-            }
-          ]
-          ++ lib.optionals (!isLinux) [ "sevenql-lsp" ];
+        language-servers = [
+          {
+            name = "yaml-language-server";
+            except-features = [ "format" ];
+          }
+        ]
+        ++ lib.optionals (!isLinux) [ "sevenql-lsp" ];
       }
     ];
 
-    languages.language-server =
-      {
-        ruff = {
-          command = "ruff";
-          args = [ "server" ];
-        };
-        basedpyright = {
-          command = "basedpyright-langserver";
-          args = [ "--stdio" ];
-        };
-        rust-analyzer.config = {
-          rust-analyzer.diagnostics.disabled = [ "unresolved-proc-macro" ];
-        };
-        deno-lsp = {
-          command = "deno";
-          args = [ "lsp" ];
-          config.deno = {
-            enable = true;
-            lint = true;
-          };
-        };
-        harper-ls = {
-          command = "harper-ls";
-          args = [ "--stdio" ];
-        };
-      }
-      // lib.optionalAttrs (!isLinux) {
-        sevenql-lsp = {
-          command = "deno";
-          args = [
-            "run"
-            "-A"
-            "/Users/smohr/dev/okami/typescript/tools/sevenql-lsp/main.ts"
-          ];
+    languages.language-server = {
+      ruff = {
+        command = "ruff";
+        args = [ "server" ];
+      };
+      basedpyright = {
+        command = "basedpyright-langserver";
+        args = [ "--stdio" ];
+      };
+      rust-analyzer.config = {
+        rust-analyzer.diagnostics.disabled = [ "unresolved-proc-macro" ];
+      };
+      deno-lsp = {
+        command = "deno";
+        args = [ "lsp" ];
+        config.deno = {
+          enable = true;
+          lint = true;
         };
       };
+      harper-ls = {
+        command = "harper-ls";
+        args = [ "--stdio" ];
+      };
+    }
+    // lib.optionalAttrs (!isLinux) {
+      sevenql-lsp = {
+        command = "deno";
+        args = [
+          "run"
+          "-A"
+          "/Users/smohr/dev/okami/typescript/tools/sevenql-lsp/main.ts"
+        ];
+      };
+    };
   };
 }

@@ -32,12 +32,6 @@
     fsType = "vfat";
   };
 
-  fileSystems."/var/lib/bluetooth" = {
-    device = "/persist/var/lib/bluetooth";
-    fsType = "none";
-    options = [ "bind" ];
-  };
-
   swapDevices = [ ];
 
   # Enables DHCP on each ethernet and wireless interface. In case of scripted networking

@@ -48,27 +48,17 @@ in
         excludesFile = "~/.gitignore";
         pager = "delta";
       };
-      push = {
-        default = "simple";
-      };
-      pull = {
-        rebase = "true";
-      };
-      init = {
-        defaultBranch = "main";
-      };
-      diff = {
-        colorMoved = "default";
-      };
+      push.default = "simple";
+      pull.rebase = "true";
+      init.defaultBranch = "main";
+      diff.colorMoved = "default";
       delta = {
         navigate = true;
         line-numbers = true;
       };
       difftool = {
         prompt = false;
-        difftastic = {
-          cmd = "difft \"$LOCAL\" \"$REMOTE\"";
-        };
+        difftastic.cmd = "difft \"$LOCAL\" \"$REMOTE\"";
       };
       pager = {
         diff = "delta";
@@ -76,19 +66,11 @@ in
         reflog = "delta";
         show = "delta";
       };
-      interactive = {
-        diffFilter = "delta --color-only";
-      };
-      safe = {
-        directory = "*";
-      };
-      commit = {
-        gpgsign = true;
-      };
+      interactive.diffFilter = "delta --color-only";
+      safe.directory = "*";
+      commit.gpgsign = true;
       gpg.format = "ssh";
-      fetch = {
-        prune = true;
-      };
+      fetch.prune = true;
     };
   };
 

@@ -15,15 +15,11 @@
     ];
   };
 
-  imports = [ ./functions.nix ];
-
-  # configure fish-async-prompt
   home.sessionVariables = {
     async_prompt_functions = "_pure_prompt_git";
     fish_greeting = "";
   };
 
-  # Make man-cache builds much faster
   manual.manpages.enable = false;
   programs.man.generateCaches = false;
   programs.fish.generateCompletions = false;
@@ -32,7 +28,6 @@
     enable = true;
 
     shellAbbrs = {
-      # workflow apps
       e = "hx";
       ef = "tv | read -l f; and hx $f";
       et = "tv text | read -l f; and hx $f";
@@ -47,24 +42,20 @@
       gp = "gh pr create";
       gc = "gh repo clone";
 
-      # home manager
       cn = "c ~/.config/nix";
       hm = "home-manager";
-      hs = "home-manager switch --flake ~/.config/nix#$USER --no-write-lock-file";
+      hs = "home-manager switch --flake ~/.config/nix#$USER@(hostname) --no-write-lock-file";
 
-      # nix
       ns = "sudo nixos-rebuild --flake ~/.config/nix switch --upgrade";
       nsr = "nix-store --repair --verify --check-contents";
       ng = "nix-collect-garbage";
 
-      # remote access
       sl = "ssh smores@smoresnet -t fish";
       sm = "ssh smores@smortress -t fish";
       sc = "ssh smores@campfire -t fish";
       st = "ssh smores@(tailscale-hosts | fzf) -t fish";
       pf = "port-forward smores@home.sammohr.dev";
 
-      # AI calling
       olu = "ollama run $OPENAI_MODEL";
     };
 
@@ -81,19 +72,16 @@
       end
     '';
 
-    plugins = [
-      {
-        name = "done";
-        src = pkgs.fishPlugins.done.src;
-      }
-      {
-        name = "pure";
-        src = pkgs.fishPlugins.pure.src;
-      }
-      {
-        name = "async-prompt";
-        src = pkgs.fishPlugins.async-prompt.src;
-      }
-    ];
+    plugins =
+      map
+        (name: {
+          inherit name;
+          src = pkgs.fishPlugins.${name}.src;
+        })
+        [
+          "done"
+          "pure"
+          "async-prompt"
+        ];
   };
 }

@@ -2,7 +2,6 @@
 {
   programs.ghostty = {
     enable = true;
-    # Prefer local installs
     package = pkgs.nil;
     settings = {
       macos-option-as-alt = true;

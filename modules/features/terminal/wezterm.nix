@@ -30,7 +30,7 @@ in
         },
         initial_cols = 200,
         initial_rows = 50,
-        default_prog = { "${pkgs.fish}/bin/fish" },
+        default_prog = { "${pkgs.${cfg.shell}}/bin/${cfg.shell}" },
       }
     '';
   };

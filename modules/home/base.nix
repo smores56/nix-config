@@ -2,7 +2,6 @@
   config,
   pkgs,
   lib,
-  displayManager,
   ...
 }:
 let
@@ -40,6 +39,4 @@ in
       "${config.home.homeDirectory}/.nix-profile/share/applications"
     ];
   };
-
-  imports = [ ./options.nix ./tools ] ++ lib.optionals (displayManager != null) [ ./gui ];
 }

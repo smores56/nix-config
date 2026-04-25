@@ -2,17 +2,10 @@
   config,
   pkgs,
   lib,
-  displayManager,
-  exposeSsh,
   ...
 }:
 let
   cfg = config.dotfiles;
-
-  displayManagerModules = {
-    niri = [ ./nixos/niri.nix ];
-  };
-
   hasGreeter = builtins.elem cfg.displayManager [ "niri" ];
 in
 {
@@ -30,7 +23,7 @@ in
       "networkmanager"
       "wheel"
     ];
-    shell = pkgs.fish;
+    shell = pkgs.${cfg.shell};
   };
 
   services.displayManager.autoLogin = lib.mkIf (!hasGreeter) {
@@ -43,15 +36,6 @@ in
     enable32Bit = true;
   };
 
-  programs.fish.enable = true;
-
+  programs.${cfg.shell}.enable = true;
   nixpkgs.config.allowUnfree = true;
-
-  imports =
-    [
-      ./nixos
-    ]
-    ++ lib.optionals (displayManager != null) [ ./nixos/sound.nix ]
-    ++ (if displayManager != null then (displayManagerModules.${displayManager} or [ ]) else [ ])
-    ++ lib.optionals exposeSsh [ ./nixos/sshd.nix ./nixos/ssh-serve.nix ];
 }
