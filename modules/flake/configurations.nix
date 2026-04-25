@@ -26,7 +26,7 @@ let
   ++ importTree ../features
   ++ importTree ../desktop
   ++ [
-    niri.homeModules.config
+    niri.homeModules.niri
     noctalia.homeModules.default
   ];
 
