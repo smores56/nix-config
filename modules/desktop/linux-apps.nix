@@ -6,7 +6,7 @@
 }:
 let
   hasDm = config.dotfiles.displayManager != null;
-  isLinux = pkgs.stdenv.isLinux;
+  inherit (pkgs.stdenv) isLinux;
 in
 {
   config = lib.mkIf (hasDm && isLinux) {

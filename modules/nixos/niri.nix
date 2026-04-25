@@ -8,10 +8,11 @@
   config = lib.mkIf (config.dotfiles.displayManager == "niri") {
     programs.niri.enable = true;
 
-    services.libinput.enable = true;
-
-    services.upower.enable = true;
-    services.power-profiles-daemon.enable = true;
+    services = {
+      libinput.enable = true;
+      upower.enable = true;
+      power-profiles-daemon.enable = true;
+    };
 
     nix.settings = {
       substituters = [ "https://noctalia.cachix.org" ];

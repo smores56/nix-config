@@ -1,5 +1,4 @@
-{ ... }:
-{
+_: {
   programs.fish.functions = {
     error = {
       description = "Print error to stderr";

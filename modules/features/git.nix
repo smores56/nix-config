@@ -1,6 +1,6 @@
 { config, pkgs, ... }:
 let
-  polarity = config.dotfiles.polarity;
+  inherit (config.dotfiles) polarity;
   hunk = pkgs.writeShellScriptBin "hunk" ''
     exec ${pkgs.nodejs}/bin/npx hunkdiff "$@"
   '';
@@ -15,79 +15,81 @@ in
     hunk
   ];
 
-  programs.gh = {
-    enable = true;
-    settings = {
-      aliases = {
-        co = "pr checkout";
-        pv = "pr view";
+  programs = {
+    gh = {
+      enable = true;
+      settings = {
+        aliases = {
+          co = "pr checkout";
+          pv = "pr view";
+        };
+        editor = "hx";
+        git_protocol = "ssh";
       };
-      editor = "hx";
-      git_protocol = "ssh";
-    };
 
-    extensions = with pkgs; [
-      gh-f
-      gh-i
-      gh-s
-      gh-eco
-      gh-dash
-      gh-notify
-    ];
-  };
-
-  programs.git = {
-    enable = true;
-
-    settings = {
-      user = {
-        name = "Sam Mohr";
-        email = "sam@sammohr.dev";
-      };
-      core = {
-        excludesFile = "~/.gitignore";
-        pager = "delta";
-      };
-      push.default = "simple";
-      pull.rebase = "true";
-      init.defaultBranch = "main";
-      diff.colorMoved = "default";
-      delta = {
-        navigate = true;
-        line-numbers = true;
-      };
-      difftool = {
-        prompt = false;
-        difftastic.cmd = "difft \"$LOCAL\" \"$REMOTE\"";
-      };
-      pager = {
-        diff = "delta";
-        log = "delta";
-        reflog = "delta";
-        show = "delta";
-      };
-      interactive.diffFilter = "delta --color-only";
-      safe.directory = "*";
-      commit.gpgsign = true;
-      gpg.format = "ssh";
-      fetch.prune = true;
-    };
-  };
-
-  programs.lazygit = {
-    enable = true;
-
-    settings = {
-      git.pagers = [
-        {
-          colorArg = "always";
-          pager = "delta --paging=never --${if polarity == "light" then "light" else "dark"}";
-        }
+      extensions = with pkgs; [
+        gh-f
+        gh-i
+        gh-s
+        gh-eco
+        gh-dash
+        gh-notify
       ];
-      gui.theme = {
-        lightTheme = polarity == "light";
-        selectedLineBgColor = [ "underline" ];
-        selectedRangeBgColor = [ "underline" ];
+    };
+
+    git = {
+      enable = true;
+
+      settings = {
+        user = {
+          name = "Sam Mohr";
+          email = "sam@sammohr.dev";
+        };
+        core = {
+          excludesFile = "~/.gitignore";
+          pager = "delta";
+        };
+        push.default = "simple";
+        pull.rebase = "true";
+        init.defaultBranch = "main";
+        diff.colorMoved = "default";
+        delta = {
+          navigate = true;
+          line-numbers = true;
+        };
+        difftool = {
+          prompt = false;
+          difftastic.cmd = "difft \"$LOCAL\" \"$REMOTE\"";
+        };
+        pager = {
+          diff = "delta";
+          log = "delta";
+          reflog = "delta";
+          show = "delta";
+        };
+        interactive.diffFilter = "delta --color-only";
+        safe.directory = "*";
+        commit.gpgsign = true;
+        gpg.format = "ssh";
+        fetch.prune = true;
+      };
+    };
+
+    lazygit = {
+      enable = true;
+
+      settings = {
+        git.pagers = [
+          {
+            colorArg = "always";
+            pager = "delta --paging=never --${if polarity == "light" then "light" else "dark"}";
+          }
+        ];
+        gui.theme = {
+          lightTheme = polarity == "light";
+          selectedLineBgColor = [ "underline" ];
+          selectedRangeBgColor = [ "underline" ];
+        };
       };
     };
   };

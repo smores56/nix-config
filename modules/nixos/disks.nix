@@ -1,8 +1,10 @@
 { pkgs, ... }:
 {
-  services.devmon.enable = true;
-  services.gvfs.enable = true;
-  services.udisks2.enable = true;
+  services = {
+    devmon.enable = true;
+    gvfs.enable = true;
+    udisks2.enable = true;
+  };
 
   environment.systemPackages = [ pkgs.pcloud ];
 }

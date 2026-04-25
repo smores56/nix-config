@@ -21,6 +21,6 @@
         "x86_64-linux"
         "aarch64-darwin"
       ];
-      imports = (inputs.import-tree ./modules/flake).imports;
+      inherit ((inputs.import-tree ./modules/flake)) imports;
     };
 }

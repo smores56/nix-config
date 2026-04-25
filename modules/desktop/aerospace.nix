@@ -84,54 +84,56 @@ in
           };
         };
 
-        mode.main.binding = {
-          cmd-ctrl-esc = "mode move";
-          cmd-ctrl-space = "mode open";
-          cmd-ctrl-s = "mode service";
-          cmd-ctrl-minus = "resize smart -30";
-          cmd-ctrl-equal = "resize smart +30";
-          cmd-ctrl-0 = "balance-sizes";
-          cmd-ctrl-e = "layout tiles horizontal vertical";
-          cmd-ctrl-a = "layout accordion horizontal vertical";
-        }
-        // mkAllDirectionBindings "cmd-ctrl" (d: "focus ${d}")
-        // mkAllDirectionBindings "cmd-ctrl-shift" (d: "move ${d}")
-        // mkWorkspaceBindings "ctrl-alt" (i: "workspace ${toString i}")
-        // mkWorkspaceBindings "ctrl-alt-shift" (i: [
-          "move-node-to-workspace ${toString i}"
-          "workspace ${toString i}"
-        ]);
+        mode = {
+          main.binding = {
+            cmd-ctrl-esc = "mode move";
+            cmd-ctrl-space = "mode open";
+            cmd-ctrl-s = "mode service";
+            cmd-ctrl-minus = "resize smart -30";
+            cmd-ctrl-equal = "resize smart +30";
+            cmd-ctrl-0 = "balance-sizes";
+            cmd-ctrl-e = "layout tiles horizontal vertical";
+            cmd-ctrl-a = "layout accordion horizontal vertical";
+          }
+          // mkAllDirectionBindings "cmd-ctrl" (d: "focus ${d}")
+          // mkAllDirectionBindings "cmd-ctrl-shift" (d: "move ${d}")
+          // mkWorkspaceBindings "ctrl-alt" (i: "workspace ${toString i}")
+          // mkWorkspaceBindings "ctrl-alt-shift" (i: [
+            "move-node-to-workspace ${toString i}"
+            "workspace ${toString i}"
+          ]);
 
-        mode.move.binding = {
-          esc = "mode main";
-        }
-        // mkAllDirectionBindings "" (d: "move ${d}")
-        // mkWorkspaceBindings "" (i: [
-          "move-node-to-workspace ${toString i}"
-          "workspace ${toString i}"
-          "mode main"
-        ]);
+          move.binding = {
+            esc = "mode main";
+          }
+          // mkAllDirectionBindings "" (d: "move ${d}")
+          // mkWorkspaceBindings "" (i: [
+            "move-node-to-workspace ${toString i}"
+            "workspace ${toString i}"
+            "mode main"
+          ]);
 
-        mode.open.binding = {
-          esc = "mode main";
-          t = mkAppBinding "/Applications/Alacritty.app";
-          b = mkAppBinding "/Applications/Firefox.app";
-          s = mkAppBinding "/Applications/Slack.app";
-          m = mkAppBinding "/Applications/Spotify.app";
-          f = mkAppBinding "/System/Library/CoreServices/Finder.app";
-        };
+          open.binding = {
+            esc = "mode main";
+            t = mkAppBinding "/Applications/Alacritty.app";
+            b = mkAppBinding "/Applications/Firefox.app";
+            s = mkAppBinding "/Applications/Slack.app";
+            m = mkAppBinding "/Applications/Spotify.app";
+            f = mkAppBinding "/System/Library/CoreServices/Finder.app";
+          };
 
-        mode.service.binding = {
-          esc = mkServiceAction "reload-config" "Config reloaded! Back to main mode.";
-          p = [
-            "exec-and-forget noti -t aerospace -m \"Disabled Aerospace\""
-            "enable toggle"
-          ];
-          b =
-            mkServiceActionWithCommand "exec-and-forget brew services restart borders" ""
-              "Restarted borders! Back to main mode.";
-          r = mkServiceAction "flatten-workspace-tree" "Reset layout tree! Back to main mode.";
-          backspace = mkServiceAction "close-all-windows-but-current" "Closed all other windows! Back to main mode.";
+          service.binding = {
+            esc = mkServiceAction "reload-config" "Config reloaded! Back to main mode.";
+            p = [
+              "exec-and-forget noti -t aerospace -m \"Disabled Aerospace\""
+              "enable toggle"
+            ];
+            b =
+              mkServiceActionWithCommand "exec-and-forget brew services restart borders" ""
+                "Restarted borders! Back to main mode.";
+            r = mkServiceAction "flatten-workspace-tree" "Reset layout tree! Back to main mode.";
+            backspace = mkServiceAction "close-all-windows-but-current" "Closed all other windows! Back to main mode.";
+          };
         };
       };
     };

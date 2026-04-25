@@ -43,6 +43,19 @@ cp /etc/nixos/hardware-configuration.nix ~/.config/nix/modules/hosts/$(hostname)
 sudo nixos-rebuild switch --flake ~/.config/nix#$(hostname) --upgrade
 ```
 
+## Code quality
+
+```bash
+# Format all nix files
+nix fmt
+
+# Lint with statix
+nix run nixpkgs#statix -- check .
+
+# Auto-fix statix warnings
+nix run nixpkgs#statix -- fix .
+```
+
 ## Architecture
 
 `flake.nix` is a thin shell — inputs + `flake-parts.lib.mkFlake` delegating to `modules/flake/`. All module discovery is handled by `import-tree`, which recursively loads every `.nix` file in a directory.

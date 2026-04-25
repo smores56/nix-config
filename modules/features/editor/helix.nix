@@ -5,7 +5,7 @@
   ...
 }:
 let
-  isLinux = pkgs.stdenv.isLinux;
+  inherit (pkgs.stdenv) isLinux;
 in
 {
   home.packages = with pkgs; [
@@ -51,18 +51,18 @@ in
     settings = {
       theme = lib.mkIf (config.dotfiles.helixTheme != null) config.dotfiles.helixTheme;
 
-      keys.normal.C-r = [
-        ":config-reload"
-        ":reload-all"
-        ":lsp-restart"
-      ];
-
-      keys.normal.C-x = ":buffer-close";
-
-      keys.normal.space = {
-        s = ":write";
-        c = ":quit";
-        t = "hover";
+      keys.normal = {
+        C-r = [
+          ":config-reload"
+          ":reload-all"
+          ":lsp-restart"
+        ];
+        C-x = ":buffer-close";
+        space = {
+          s = ":write";
+          c = ":quit";
+          t = "hover";
+        };
       };
 
       editor = {
