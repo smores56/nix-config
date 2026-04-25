@@ -12,10 +12,6 @@ let
     Right = "right";
     Up = "up";
     Down = "down";
-    H = "left";
-    L = "right";
-    K = "up";
-    J = "down";
   };
 
   mkDirectionBinds =
