@@ -1,8 +1,7 @@
-{ pkgs, ... }:
+{ ... }:
 {
   programs.ghostty = {
     enable = true;
-    package = pkgs.nil;
     settings = {
       macos-option-as-alt = true;
       keybind = [

@@ -1,10 +1,9 @@
-{ config, pkgs, ... }:
+{ config, ... }:
 let
   cfg = config.dotfiles;
 in
 {
   programs.wezterm = {
-    package = pkgs.nil;
     enable = true;
     extraConfig = ''
       local wezterm = require 'wezterm'

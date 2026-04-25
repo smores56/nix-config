@@ -13,6 +13,7 @@ in
     home.packages = with pkgs; [
       thunar
       kdePackages.dolphin
+      firefox
       evince
       feh
       libreoffice
