@@ -56,6 +56,10 @@
       ];
       default = "fish";
     };
+    browser = lib.mkOption {
+      type = lib.types.str;
+      default = "firefox";
+    };
     shellPath = lib.mkOption {
       type = lib.types.str;
       readOnly = true;

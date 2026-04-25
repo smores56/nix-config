@@ -63,8 +63,9 @@ in
       ];
 
       input.touchpad = {
-        natural-scroll = true;
+        natural-scroll = false;
         tap = true;
+        scroll-factor = 0.5;
       };
 
       environment = {
@@ -90,6 +91,7 @@ in
 
       binds = {
         "Mod+T".action.spawn = [ config.dotfiles.terminal ];
+        "Mod+B".action.spawn = [ config.dotfiles.browser ];
         "Mod+Space".action.spawn = [
           "qs"
           "-c"
