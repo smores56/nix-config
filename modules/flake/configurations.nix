@@ -94,7 +94,7 @@ in
       "smores@smoresnet" = mkHome {
         helixTheme = "gruvbox";
       };
-      "smohr" = mkHome {
+      "smohr@smoreswork" = mkHome {
         displayManager = "osx";
         username = "smohr";
         homeDirectory = "/Users/smohr";
