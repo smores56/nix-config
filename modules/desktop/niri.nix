@@ -94,8 +94,6 @@ in
         "Mod+T".action.spawn = [ config.dotfiles.terminal ];
         "Mod+B".action.spawn = [ config.dotfiles.browser ];
         "Mod+Space".action.spawn = [
-          "qs"
-          "-c"
           "noctalia-shell"
           "ipc"
           "call"
@@ -103,8 +101,6 @@ in
           "toggle"
         ];
         "Mod+S".action.spawn = [
-          "qs"
-          "-c"
           "noctalia-shell"
           "ipc"
           "call"
