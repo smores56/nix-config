@@ -190,7 +190,7 @@ in
         "Mod+Escape".action.toggle-keyboard-shortcuts-inhibit = [ ];
         "Mod+Shift+Slash".action.show-hotkey-overlay = [ ];
         "Mod+Shift+P".action.power-off-monitors = [ ];
-        "Mod+Shift+X".action.spawn = [ "swaylock" ];
+        "Mod+L".action.spawn = [ "swaylock" ];
       }
       // mkColumnDirectionBinds "Mod" "focus-column" "focus-window"
       // mkColumnDirectionBinds "Mod+Shift" "move-column" "move-window"
