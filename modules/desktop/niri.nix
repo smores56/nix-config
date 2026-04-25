@@ -38,7 +38,7 @@ let
         value.action.focus-workspace = i;
       }
       {
-        name = "Mod+Ctrl+${toString i}";
+        name = "Mod+Shift+${toString i}";
         value.action.move-column-to-workspace = i;
       }
     ]) (lib.range 1 9)
@@ -121,8 +121,8 @@ in
 
         "Mod+Page_Up".action.focus-workspace-up = [ ];
         "Mod+Page_Down".action.focus-workspace-down = [ ];
-        "Mod+Ctrl+Page_Up".action.move-column-to-workspace-up = [ ];
-        "Mod+Ctrl+Page_Down".action.move-column-to-workspace-down = [ ];
+        "Mod+Shift+Page_Up".action.move-column-to-workspace-up = [ ];
+        "Mod+Shift+Page_Down".action.move-column-to-workspace-down = [ ];
 
         "Mod+R".action.switch-preset-column-width = [ ];
         "Mod+Minus".action.set-column-width = "-10%";
@@ -194,11 +194,11 @@ in
         "Mod+Shift+X".action.spawn = [ "swaylock" ];
       }
       // mkColumnDirectionBinds "Mod" "focus-column" "focus-window"
-      // mkColumnDirectionBinds "Mod+Ctrl" "move-column" "move-window"
-      // mkDirectionBinds "Mod+Shift" (dir: {
+      // mkColumnDirectionBinds "Mod+Shift" "move-column" "move-window"
+      // mkDirectionBinds "Mod+Ctrl" (dir: {
         "focus-monitor-${dir}" = [ ];
       })
-      // mkDirectionBinds "Mod+Shift+Ctrl" (dir: {
+      // mkDirectionBinds "Mod+Ctrl+Shift" (dir: {
         "move-column-to-monitor-${dir}" = [ ];
       })
       // workspaceBinds;
