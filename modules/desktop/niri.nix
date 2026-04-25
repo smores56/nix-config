@@ -209,7 +209,10 @@ in
         };
         bar.position = "top";
         appLauncher.terminalCommand = "${config.dotfiles.terminal} -e";
-        colorSchemes.darkMode = true;
+        colorSchemes = {
+          predefinedScheme = "Rose Pine Moon";
+          darkMode = true;
+        };
       };
     };
   };
