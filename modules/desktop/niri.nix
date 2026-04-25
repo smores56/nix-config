@@ -26,7 +26,10 @@ let
       key: dir:
       let
         action =
-          if dir == "left" || dir == "right" then "${horizontalAction}-${dir}" else "${verticalAction}-${dir}";
+          if dir == "left" || dir == "right" then
+            "${horizontalAction}-${dir}"
+          else
+            "${verticalAction}-${dir}";
       in
       lib.nameValuePair "${prefix}+${key}" { action.${action} = [ ]; }
     ) directionKeys;
@@ -210,7 +213,7 @@ in
         bar.position = "top";
         appLauncher.terminalCommand = "${config.dotfiles.terminal} -e";
         colorSchemes = {
-          predefinedScheme = "Rose Pine Moon";
+          predefinedScheme = "Rose Pine";
           darkMode = true;
         };
       };
