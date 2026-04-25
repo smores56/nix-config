@@ -21,11 +21,12 @@ let
     ) directionKeys;
 
   mkColumnDirectionBinds =
-    prefix: leftRight: upDown:
+    prefix: horizontalAction: verticalAction:
     lib.mapAttrs' (
       key: dir:
       let
-        action = if dir == "left" || dir == "right" then leftRight else upDown;
+        action =
+          if dir == "left" || dir == "right" then "${horizontalAction}-${dir}" else "${verticalAction}-${dir}";
       in
       lib.nameValuePair "${prefix}+${key}" { action.${action} = [ ]; }
     ) directionKeys;
@@ -192,8 +193,8 @@ in
         "Mod+Shift+P".action.power-off-monitors = [ ];
         "Mod+Shift+X".action.spawn = [ "swaylock" ];
       }
-      // mkColumnDirectionBinds "Mod" "focus-column-left" "focus-window-up"
-      // mkColumnDirectionBinds "Mod+Ctrl" "move-column-left" "move-window-up"
+      // mkColumnDirectionBinds "Mod" "focus-column" "focus-window"
+      // mkColumnDirectionBinds "Mod+Ctrl" "move-column" "move-window"
       // mkDirectionBinds "Mod+Shift" (dir: {
         "focus-monitor-${dir}" = [ ];
       })
