@@ -1,10 +1,9 @@
 { config, pkgs, ... }:
 {
   programs.alacritty = {
-    package = pkgs.nil;
     enable = true;
     settings = {
-      terminal.shell = "${pkgs.${config.dotfiles.shell}}/bin/${config.dotfiles.shell}";
+      terminal.shell = config.dotfiles.shellPath;
       window = {
         decorations = "Buttonless";
         option_as_alt = "Both";

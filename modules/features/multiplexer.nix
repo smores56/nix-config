@@ -1,14 +1,11 @@
-{ config, pkgs, ... }:
-let
-  shellBin = "${pkgs.${config.dotfiles.shell}}/bin/${config.dotfiles.shell}";
-in
+{ config, ... }:
 {
   programs.zellij = {
     enable = true;
     enableFishIntegration = false;
 
     settings = {
-      default_shell = shellBin;
+      default_shell = config.dotfiles.shellPath;
       theme = "tinted";
       ui.pane_frames.rounded_corners = true;
       session_serialization = false;

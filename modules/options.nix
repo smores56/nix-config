@@ -1,4 +1,4 @@
-{ config, lib, ... }:
+{ config, lib, pkgs, ... }:
 {
   options.dotfiles = {
     displayManager = lib.mkOption {
@@ -51,7 +51,14 @@
       ];
       default = "fish";
     };
+    shellPath = lib.mkOption {
+      type = lib.types.str;
+      readOnly = true;
+    };
   };
 
-  config.dotfiles.wayland = lib.mkDefault (config.dotfiles.displayManager == "niri");
+  config.dotfiles = {
+    wayland = lib.mkDefault (config.dotfiles.displayManager == "niri");
+    shellPath = "${pkgs.${config.dotfiles.shell}}/bin/${config.dotfiles.shell}";
+  };
 }
