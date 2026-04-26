@@ -73,4 +73,5 @@ in
     theme-switch init
   '';
 
+  programs.fish.shellAbbrs.ts = "theme-switch";
 }
