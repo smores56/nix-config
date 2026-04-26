@@ -49,7 +49,7 @@ in
     defaultEditor = true;
 
     settings = {
-      theme = lib.mkIf (config.dotfiles.helixTheme != null) config.dotfiles.helixTheme;
+      theme = "active";
 
       keys.normal = {
         C-r = [

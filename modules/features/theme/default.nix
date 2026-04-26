@@ -1,5 +1,16 @@
-{ pkgs, ... }:
+{ config, pkgs, ... }:
 let
+  defaultScheme = "base16-rose-pine-moon";
+
+  defaultHelixTheme =
+    if config.dotfiles.helixTheme != null
+    then config.dotfiles.helixTheme
+    else "default";
+
+  baseColors = "base00 base01 base02 base03 base04 base05 base06 base07 base08 base09 base0A base0B base0C base0D base0E base0F";
+
+  helixThemesDir = "${pkgs.helix-unwrapped.HELIX_DEFAULT_RUNTIME}/themes";
+
   tintyHook = pkgs.writeShellScript "tinty-hook" ''
     FULL_SCHEME=$(tinty current 2>/dev/null)
     [ -z "$FULL_SCHEME" ] && exit 0
@@ -14,22 +25,11 @@ let
       grep "  $1:" "$SCHEME_FILE" | sed 's/.*"#\([0-9a-fA-F]*\)".*/\1/'
     }
 
-    base00=$(get_color base00)
-    base01=$(get_color base01)
-    base02=$(get_color base02)
-    base03=$(get_color base03)
-    base04=$(get_color base04)
-    base05=$(get_color base05)
-    base06=$(get_color base06)
-    base07=$(get_color base07)
-    base08=$(get_color base08)
-    base09=$(get_color base09)
-    base0A=$(get_color base0A)
-    base0B=$(get_color base0B)
-    base0C=$(get_color base0C)
-    base0D=$(get_color base0D)
-    base0E=$(get_color base0E)
-    base0F=$(get_color base0F)
+    for base in ${baseColors}; do
+      val=$(get_color "$base")
+      [ -z "$val" ] && exit 1
+      declare "$base=$val"
+    done
 
     mkdir -p "$HOME/.config/wezterm/colors"
     cat > "$HOME/.config/wezterm/colors/tinted.toml" << WEZTERM
@@ -87,13 +87,27 @@ let
     echo "$label ($variant)"
     echo ""
 
-    for base in base00 base01 base02 base03 base04 base05 base06 base07 base08 base09 base0A base0B base0C base0D base0E base0F; do
+    label_for() {
+      case $1 in
+        base00) echo bg;; base01) echo bg+;; base02) echo sel;; base03) echo comment;;
+        base04) echo fg-;; base05) echo fg;; base06) echo fg+;; base07) echo bg++;;
+        base08) echo red;; base09) echo orange;; base0A) echo yellow;; base0B) echo green;;
+        base0C) echo cyan;; base0D) echo blue;; base0E) echo purple;; base0F) echo brown;;
+      esac
+    }
+
+    for base in ${baseColors}; do
       hex=$(grep "  $base:" "$SCHEME_FILE" | sed 's/.*"#\([0-9a-fA-F]*\)".*/\1/')
+      [ -z "$hex" ] && continue
       r=$(printf "%d" "0x$(echo "$hex" | cut -c1-2)")
       g=$(printf "%d" "0x$(echo "$hex" | cut -c3-4)")
       b=$(printf "%d" "0x$(echo "$hex" | cut -c5-6)")
-      printf "\033[48;2;%d;%d;%dm    \033[0m %s #%s\n" "$r" "$g" "$b" "$base" "$hex"
+      printf "\033[48;2;%d;%d;%dm    \033[0m %-7s #%s\n" "$r" "$g" "$b" "$(label_for "$base")" "$hex"
     done
+  '';
+
+  helixPreview = pkgs.writeShellScript "helix-theme-preview" ''
+    exec bash ${./helix-preview.sh} "${helixThemesDir}" "$1"
   '';
 in
 {
@@ -101,7 +115,7 @@ in
 
   home.file.".config/tinted-theming/tinty/config.toml".text = ''
     shell = "fish -c '{}'"
-    default-scheme = "base16-rose-pine-moon"
+    default-scheme = "${defaultScheme}"
 
     [[items]]
     path = "https://github.com/tinted-theming/tinted-shell"
@@ -124,7 +138,7 @@ in
               functions --erase __tinty_init
               if not test -d ~/.local/share/tinted-theming/tinty/repos/schemes
                   tinty install > /dev/null 2>&1
-                  tinty apply (tinty current 2>/dev/null; or echo base16-rose-pine-moon) > /dev/null 2>&1
+                  tinty apply (tinty current 2>/dev/null; or echo ${defaultScheme}) > /dev/null 2>&1
               end
               set -l scheme (tinty current 2>/dev/null)
               if test -n "$scheme"
@@ -135,20 +149,54 @@ in
               end
           end
       end
+
+      if not test -f ~/.config/helix/themes/active.toml
+          mkdir -p ~/.config/helix/themes
+          echo 'inherits = "${defaultHelixTheme}"' > ~/.config/helix/themes/active.toml
+      end
     '';
 
     functions.set-theme = {
-      description = "Pick and apply a base16 color scheme";
+      description = "Pick color schemes [shell|editor]";
       body = ''
-        if not command -q tinty
-          echo "tinty not found"
-          return 1
+        set -l do_shell 1
+        set -l do_editor 1
+
+        if test (count $argv) -gt 0
+            switch $argv[1]
+                case shell
+                    set do_editor 0
+                case editor
+                    set do_shell 0
+                case '*'
+                    echo "Usage: set-theme [shell|editor]"
+                    return 1
+            end
         end
 
-        tinty install > /dev/null 2>&1
-        set scheme (tinty list | fzf --preview '${themePreview} {}')
-        or return 0
-        tinty apply $scheme
+        if test $do_shell -eq 1
+            if command -q tinty
+                tinty install > /dev/null 2>&1
+                set -l current (tinty current 2>/dev/null)
+                set -l scheme (tinty list | fzf --header "Shell theme — current: $current" --preview '${themePreview} {}')
+                test -n "$scheme"; and tinty apply $scheme
+            else
+                echo "tinty not found"
+            end
+        end
+
+        if test $do_editor -eq 1
+            set -l current_editor ""
+            if test -f ~/.config/helix/themes/active.toml
+                set current_editor (grep 'inherits' ~/.config/helix/themes/active.toml | sed 's/.*"\(.*\)".*/\1/')
+            end
+            set -l theme (command ls ${helixThemesDir}/*.toml | sed 's|.*/||;s|\.toml$||' | sort | fzf --header "Helix theme — current: $current_editor" --preview '${helixPreview} {}')
+            if test -n "$theme"
+                mkdir -p ~/.config/helix/themes
+                echo "inherits = \"$theme\"" > ~/.config/helix/themes/active.toml
+                echo "Helix theme set to $theme — Ctrl-R in helix to reload"
+            end
+        end
       '';
     };
   };
