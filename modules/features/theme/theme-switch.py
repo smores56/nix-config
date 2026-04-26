@@ -171,8 +171,8 @@ def main():
                 (STATE_DIR / f"light_{t}").unlink(missing_ok=True)
             print(f"Cleared light variant for {args.target}")
         case _:
-            parser.print_help()
-            sys.exit(1)
+            pick_shell()
+            pick_editor()
 
 
 if __name__ == "__main__":
