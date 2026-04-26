@@ -29,8 +29,9 @@
       ];
       settings = {
         GTK.application_prefer_dark_theme = true;
+        "widget.clock".format = "%a %I:%M %p";
         background = {
-          path = "${../../wallpapers/spirited-away.jpg}";
+          path = "${../../wallpapers/rocket-launch.png}";
           fit = "Cover";
         };
       };

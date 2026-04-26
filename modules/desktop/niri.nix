@@ -225,6 +225,7 @@ in
         };
         bar.position = "top";
         appLauncher.terminalCommand = "${config.dotfiles.terminal} -e";
+        location.use12hourFormat = true;
         colorSchemes = {
           predefinedScheme = "Rose Pine";
           schedulingMode = "location";
