@@ -1,10 +1,20 @@
-{ config, pkgs, ... }:
+{ pkgs, ... }:
 let
   defaultScheme = "base16-rose-pine-moon";
+  defaultLightScheme = "base16-rose-pine-dawn";
+  defaultDarkEditor = "rose_pine_moon";
+  defaultLightEditor = "rose_pine_dawn";
+
+  stateDir = "~/.local/state/theme";
 
   baseColors = "base00 base01 base02 base03 base04 base05 base06 base07 base08 base09 base0A base0B base0C base0D base0E base0F";
 
   helixThemesDir = "${pkgs.helix-unwrapped.HELIX_DEFAULT_RUNTIME}/themes";
+
+  themeSwitcher = pkgs.writeShellScriptBin "theme-switch" ''
+    exec bash ${./theme-switch.sh} "${pkgs.tinty}/bin/tinty" "$1" \
+      "${defaultScheme}" "${defaultLightScheme}" "${defaultDarkEditor}" "${defaultLightEditor}"
+  '';
 
   tintyHook = pkgs.writeShellScript "tinty-hook" ''
     FULL_SCHEME=$(tinty current 2>/dev/null)
@@ -121,7 +131,10 @@ let
   '';
 in
 {
-  home.packages = [ pkgs.tinty ];
+  home.packages = [
+    pkgs.tinty
+    themeSwitcher
+  ];
 
   home.file.".config/tinted-theming/tinty/config.toml".text = ''
     shell = "fish -c '{}'"
@@ -148,38 +161,52 @@ in
               functions --erase __tinty_init
               if not test -d ~/.local/share/tinted-theming/tinty/repos/schemes
                   tinty install > /dev/null 2>&1
-                  tinty apply (tinty current 2>/dev/null; or echo ${defaultScheme}) > /dev/null 2>&1
               end
-              set -l scheme (tinty current 2>/dev/null)
-              if test -n "$scheme"
-                  set -l shell_script ~/.local/share/tinted-theming/tinty/repos/tinted-shell/scripts/"$scheme".sh
-                  test -f "$shell_script"; and bash "$shell_script"
-                  set -l fzf_script ~/.local/share/tinted-theming/tinty/repos/tinted-fzf/fish/"$scheme".fish
-                  test -f "$fzf_script"; and source "$fzf_script"
-              end
+              theme-switch (cat ${stateDir}/mode 2>/dev/null; or echo dark)
           end
       end
 
-      if not test -f ~/.config/helix/themes/active.toml
-          mkdir -p ~/.config/helix/themes
-          echo 'inherits = "rose_pine_moon"' > ~/.config/helix/themes/active.toml
+      if not test -f ${stateDir}/mode
+          mkdir -p ${stateDir}
+          echo dark > ${stateDir}/mode
+          echo ${defaultScheme} > ${stateDir}/dark_shell
+          echo ${defaultLightScheme} > ${stateDir}/light_shell
+          echo ${defaultDarkEditor} > ${stateDir}/dark_editor
+          echo ${defaultLightEditor} > ${stateDir}/light_editor
       end
     '';
 
     functions.set-theme = {
-      description = "Pick color schemes [shell|editor]";
+      description = "Pick color schemes [shell|editor|mode|clear-light]";
       body = ''
+        set -l state ${stateDir}
+        set -l mode (cat $state/mode 2>/dev/null; or echo dark)
         set -l do_shell 1
         set -l do_editor 1
 
         if test (count $argv) -gt 0
             switch $argv[1]
+                case mode
+                    theme-switch toggle
+                    return
+                case clear-light
+                    set -l target (test (count $argv) -gt 1; and echo $argv[2]; or echo both)
+                    switch $target
+                        case shell
+                            rm -f $state/light_shell
+                        case editor
+                            rm -f $state/light_editor
+                        case '*'
+                            rm -f $state/light_shell $state/light_editor
+                    end
+                    echo "Cleared light variant for $target"
+                    return
                 case shell
                     set do_editor 0
                 case editor
                     set do_shell 0
                 case '*'
-                    echo "Usage: set-theme [shell|editor]"
+                    echo "Usage: set-theme [shell|editor|mode|clear-light [shell|editor]]"
                     return 1
             end
         end
@@ -190,8 +217,12 @@ in
                     tinty install > /dev/null 2>&1
                 end
                 set -l current (tinty current 2>/dev/null)
-                set -l scheme (tinty list | fzf --header "Shell theme — current: $current" --preview '${themePreview} {}')
-                test -n "$scheme"; and tinty apply "$scheme"
+                set -l scheme (tinty list | fzf --header "Shell theme ($mode) — current: $current" --preview '${themePreview} {}')
+                if test -n "$scheme"
+                    tinty apply "$scheme"
+                    mkdir -p $state
+                    echo "$scheme" > $state/{$mode}_shell
+                end
             else
                 echo "tinty not found"
             end
@@ -202,11 +233,13 @@ in
             if test -f ~/.config/helix/themes/active.toml
                 set current_editor (grep 'inherits' ~/.config/helix/themes/active.toml | sed 's/.*"\(.*\)".*/\1/')
             end
-            set -l theme (command ls ${helixThemesDir}/*.toml | sed 's|.*/||;s|\.toml$||' | sort | fzf --header "Helix theme — current: $current_editor" --preview '${helixPreview} {}')
+            set -l theme (command ls ${helixThemesDir}/*.toml | sed 's|.*/||;s|\.toml$||' | sort | fzf --header "Helix theme ($mode) — current: $current_editor" --preview '${helixPreview} {}')
             if test -n "$theme"
                 mkdir -p ~/.config/helix/themes
                 echo "inherits = \"$theme\"" > ~/.config/helix/themes/active.toml
-                echo "Helix theme set to $theme — Ctrl-R in helix to reload"
+                mkdir -p $state
+                echo "$theme" > $state/{$mode}_editor
+                echo "Helix theme set to $theme ($mode) — C-r in helix to reload"
             end
         end
       '';

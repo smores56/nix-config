@@ -214,8 +214,15 @@ in
         appLauncher.terminalCommand = "${config.dotfiles.terminal} -e";
         colorSchemes = {
           predefinedScheme = "Rose Pine";
-          darkMode = true;
+          schedulingMode = "location";
         };
+        hooks.darkModeChange = "${pkgs.writeShellScript "on-dark-mode-change" ''
+          export PATH="$HOME/.nix-profile/bin:$PATH"
+          sleep 0.2
+          CS=$(${pkgs.glib.bin}/bin/gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null)
+          [ "$CS" = "'prefer-light'" ] && MODE=light || MODE=dark
+          exec theme-switch "$MODE"
+        ''}";
       };
     };
   };
