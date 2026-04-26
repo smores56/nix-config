@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ config, pkgs, ... }:
 let
   hunk = pkgs.writeShellScriptBin "hunk" ''
     export PATH="${pkgs.nodejs}/bin:$PATH"
@@ -15,7 +15,7 @@ in
     hunk
   ];
 
-  home.sessionVariables.LG_CONFIG_FILE = "~/.config/lazygit/config.yml,~/.config/lazygit/theme.yml";
+  home.sessionVariables.LG_CONFIG_FILE = "${config.home.homeDirectory}/.config/lazygit/theme.yml";
 
   programs = {
     gh = {
@@ -77,13 +77,6 @@ in
       };
     };
 
-    lazygit = {
-      enable = true;
-
-      settings.gui.theme = {
-        selectedLineBgColor = [ "underline" ];
-        selectedRangeBgColor = [ "underline" ];
-      };
-    };
+    lazygit.enable = true;
   };
 }

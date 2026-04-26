@@ -69,6 +69,10 @@ git:
 gui:
   theme:
     lightTheme: $LIGHT_THEME
+    selectedLineBgColor:
+      - underline
+    selectedRangeBgColor:
+      - underline
 LAZYGIT
 
 if command -v borders &> /dev/null; then
