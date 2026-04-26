@@ -10,7 +10,10 @@ in
 {
   home = {
     stateVersion = "26.05";
-    packages = [ pkgs.home-manager ];
+    packages = [
+      pkgs.home-manager
+      config.dotfiles.fontPackage
+    ];
 
     activation.checkAppManagementPermission = lib.mkIf pkgs.stdenv.isDarwin (
       lib.mkForce {

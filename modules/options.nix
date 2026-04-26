@@ -55,8 +55,6 @@
   };
 
   config = {
-    home.packages = [ config.dotfiles.fontPackage ];
-
     dotfiles = {
       wayland = config.dotfiles.displayManager == "niri";
       terminal = "wezterm";
