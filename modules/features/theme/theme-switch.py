@@ -4,6 +4,7 @@
 import argparse
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 STATE_DIR = Path.home() / ".local/state/theme"
@@ -107,7 +108,8 @@ def main():
                 (STATE_DIR / f"light_{t}").unlink(missing_ok=True)
             print(f"Cleared light variant for {args.target}")
         case _:
-            apply_mode(detect_mode())
+            parser.print_help()
+            sys.exit(1)
 
 
 if __name__ == "__main__":
