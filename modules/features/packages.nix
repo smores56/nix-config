@@ -6,7 +6,6 @@
 
   home.packages = with pkgs; [
     # exploration
-    zoxide
     eza
     fd
     bat
@@ -27,7 +26,6 @@
     lazysql
 
     # environment management
-    zellij
     awscli2
     aws-sso-cli
     _1password-cli

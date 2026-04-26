@@ -68,7 +68,6 @@ in
         default-root-container-orientation = "auto";
         after-startup-command = [
           "layout tiles"
-          "exec-and-forget ${pkgs.jankyborders}/bin/borders active_color=0xFFea9a97 inactive_color=0xFF908caa width=${toString gapAmount} hidpi=on"
         ];
 
         gaps = {
@@ -115,7 +114,7 @@ in
 
           open.binding = {
             esc = "mode main";
-            t = mkAppBinding "/Applications/Alacritty.app";
+            t = mkAppBinding "/Applications/WezTerm.app";
             b = mkAppBinding "/Applications/Firefox.app";
             s = mkAppBinding "/Applications/Slack.app";
             m = mkAppBinding "/Applications/Spotify.app";

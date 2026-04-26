@@ -2,7 +2,8 @@
 let
   inherit (config.dotfiles) polarity;
   hunk = pkgs.writeShellScriptBin "hunk" ''
-    exec ${pkgs.nodejs}/bin/npx hunkdiff "$@"
+    export PATH="${pkgs.nodejs}/bin:$PATH"
+    exec npx hunkdiff "$@"
   '';
 in
 {

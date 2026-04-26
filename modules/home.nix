@@ -10,11 +10,6 @@ in
 {
   home = {
     stateVersion = "26.05";
-    packages = [
-      pkgs.home-manager
-      pkgs.nerd-fonts.caskaydia-cove
-      pkgs.open-sans
-    ];
 
     activation.checkAppManagementPermission = lib.mkIf pkgs.stdenv.isDarwin (
       lib.mkForce {

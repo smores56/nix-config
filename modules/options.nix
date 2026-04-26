@@ -23,10 +23,6 @@
       ];
       default = "dark";
     };
-    helixTheme = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
-      default = null;
-    };
     terminalFontSize = lib.mkOption {
       type = lib.types.int;
       default = 12;
@@ -40,19 +36,12 @@
       default = false;
     };
     terminal = lib.mkOption {
-      type = lib.types.enum [
-        "wezterm"
-        "kitty"
-        "alacritty"
-        "ghostty"
-      ];
-      default = "wezterm";
+      type = lib.types.str;
+      readOnly = true;
     };
     shell = lib.mkOption {
       type = lib.types.enum [
         "fish"
-        "zsh"
-        "bash"
       ];
       default = "fish";
     };
@@ -60,14 +49,29 @@
       type = lib.types.str;
       default = "firefox";
     };
+    font = lib.mkOption {
+      type = lib.types.str;
+      readOnly = true;
+    };
+    fontPackage = lib.mkOption {
+      type = lib.types.package;
+      readOnly = true;
+    };
     shellPath = lib.mkOption {
       type = lib.types.str;
       readOnly = true;
     };
   };
 
-  config.dotfiles = {
-    wayland = lib.mkDefault (config.dotfiles.displayManager == "niri");
-    shellPath = "${pkgs.${config.dotfiles.shell}}/bin/${config.dotfiles.shell}";
+  config = {
+    home.packages = [ config.dotfiles.fontPackage ];
+
+    dotfiles = {
+      wayland = lib.mkDefault (config.dotfiles.displayManager == "niri");
+      terminal = "wezterm";
+      font = "CaskaydiaCove Nerd Font";
+      fontPackage = pkgs.nerd-fonts.caskaydia-cove;
+      shellPath = "${pkgs.${config.dotfiles.shell}}/bin/${config.dotfiles.shell}";
+    };
   };
 }

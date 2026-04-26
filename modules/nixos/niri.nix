@@ -43,8 +43,8 @@
         name = "Bibata-Modern-Classic";
       };
       font = {
-        package = pkgs.nerd-fonts.caskaydia-cove;
-        name = "CaskaydiaCove Nerd Font";
+        package = config.dotfiles.fontPackage;
+        name = config.dotfiles.font;
         size = 16;
       };
     };

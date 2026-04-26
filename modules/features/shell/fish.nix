@@ -46,7 +46,7 @@
 
         cn = "c ~/.config/nix";
         hm = "home-manager";
-        hs = "home-manager switch --flake ~/.config/nix#$USER@(hostname) --no-write-lock-file";
+        hs = "home-manager switch --flake ~/.config/nix#$USER@(hostname -s) --no-write-lock-file";
 
         ns = "sudo nixos-rebuild --flake ~/.config/nix switch --upgrade";
         nsr = "nix-store --repair --verify --check-contents";

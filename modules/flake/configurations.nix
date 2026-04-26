@@ -21,8 +21,8 @@ let
 
   homeModules = [
     ../options.nix
+    ../home.nix
   ]
-  ++ importTree ../home
   ++ importTree ../features
   ++ importTree ../desktop
   ++ [
@@ -45,8 +45,11 @@ let
           dotfiles = builtins.intersectAttrs {
             displayManager = null;
             polarity = null;
-            helixTheme = null;
             terminalFontSize = null;
+            shell = null;
+            browser = null;
+            wayland = null;
+            exposeSsh = null;
           } args;
           home.username = username;
           home.homeDirectory = args.homeDirectory or "/home/${username}";
@@ -80,26 +83,20 @@ in
     homeConfigurations = {
       "smores@smorestux" = mkHome {
         displayManager = "niri";
-        helixTheme = "noctis_bordo";
       };
       "smores@smoresbook" = mkHome {
         displayManager = "niri";
-        helixTheme = "kanagawa";
       };
       "smores@campfire" = mkHome { };
       "smores@smortress" = mkHome {
         displayManager = "pop-os";
-        helixTheme = "gruvbox";
       };
-      "smores@smoresnet" = mkHome {
-        helixTheme = "gruvbox";
-      };
+      "smores@smoresnet" = mkHome { };
       "smohr@smoreswork" = mkHome {
         displayManager = "osx";
         username = "smohr";
         homeDirectory = "/Users/smohr";
         system = "aarch64-darwin";
-        helixTheme = "rose_pine_moon";
         terminalFontSize = 14;
       };
     };

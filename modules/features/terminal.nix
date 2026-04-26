@@ -1,14 +1,19 @@
-{ config, ... }:
+{ config, lib, ... }:
 let
   cfg = config.dotfiles;
 in
 {
+  config = lib.mkIf (cfg.displayManager != null) {
+    fonts.fontconfig.enable = true;
+    home.sessionVariables.TERMINAL = cfg.terminal;
+  };
+
   programs.wezterm = {
     enable = true;
     extraConfig = ''
       local wezterm = require 'wezterm'
       return {
-        font = wezterm.font("CaskaydiaCove NF"),
+        font = wezterm.font("${cfg.font}"),
         font_size = ${toString cfg.terminalFontSize},
         color_scheme = "tinted",
         window_background_opacity = 0.8,

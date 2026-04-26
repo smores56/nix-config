@@ -8,7 +8,7 @@ INHERITS=$(grep '^inherits' "$THEME_FILE" | head -1 | sed 's/inherits *= *"\([^"
 
 extract_palette() {
   awk '/^\[palette\]/{f=1; next} /^\[/{f=0} f && /"#[0-9a-fA-F]/' "$1" | \
-    sed 's/^[[:space:]]*\([a-zA-Z0-9_]*\)[[:space:]]*=.*"#\([0-9a-fA-F]*\)".*/\1 \2/'
+    sed 's/^[[:space:]]*\([a-zA-Z0-9_-]*\)[[:space:]]*=.*"#\([0-9a-fA-F]*\)".*/\1 \2/'
 }
 
 PALETTE=""
@@ -43,7 +43,7 @@ if [ -z "$BG_REF" ]; then
   printf "  \033[7m  transparent  \033[0m\n"
 else
   BG_HEX=$(resolve_hex "$BG_REF")
-  if [ -n "$BG_HEX" ]; then
+  if [ -n "$BG_HEX" ] && [ ${#BG_HEX} -eq 6 ]; then
     r=$(printf "%d" "0x${BG_HEX:0:2}")
     g=$(printf "%d" "0x${BG_HEX:2:2}")
     b=$(printf "%d" "0x${BG_HEX:4:2}")
@@ -59,6 +59,7 @@ fi
 
 echo "$PALETTE" | sort | while read -r name hex; do
   [ -z "$hex" ] && continue
+  [ ${#hex} -ne 6 ] && continue
   r=$(printf "%d" "0x${hex:0:2}")
   g=$(printf "%d" "0x${hex:2:2}")
   b=$(printf "%d" "0x${hex:4:2}")

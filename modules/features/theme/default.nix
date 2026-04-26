@@ -2,11 +2,6 @@
 let
   defaultScheme = "base16-rose-pine-moon";
 
-  defaultHelixTheme =
-    if config.dotfiles.helixTheme != null
-    then config.dotfiles.helixTheme
-    else "default";
-
   baseColors = "base00 base01 base02 base03 base04 base05 base06 base07 base08 base09 base0A base0B base0C base0D base0E base0F";
 
   helixThemesDir = "${pkgs.helix-unwrapped.HELIX_DEFAULT_RUNTIME}/themes";
@@ -152,7 +147,7 @@ in
 
       if not test -f ~/.config/helix/themes/active.toml
           mkdir -p ~/.config/helix/themes
-          echo 'inherits = "${defaultHelixTheme}"' > ~/.config/helix/themes/active.toml
+          echo 'inherits = "rose_pine_moon"' > ~/.config/helix/themes/active.toml
       end
     '';
 
@@ -176,10 +171,12 @@ in
 
         if test $do_shell -eq 1
             if command -q tinty
-                tinty install > /dev/null 2>&1
+                if not test -d ~/.local/share/tinted-theming/tinty/repos/schemes
+                    tinty install > /dev/null 2>&1
+                end
                 set -l current (tinty current 2>/dev/null)
                 set -l scheme (tinty list | fzf --header "Shell theme — current: $current" --preview '${themePreview} {}')
-                test -n "$scheme"; and tinty apply $scheme
+                test -n "$scheme"; and tinty apply "$scheme"
             else
                 echo "tinty not found"
             end
