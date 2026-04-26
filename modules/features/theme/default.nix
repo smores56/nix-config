@@ -66,8 +66,15 @@ in
             theme-switch init
             if not test -d ~/.local/share/tinted-theming/tinty/repos/schemes
                 tinty install > /dev/null 2>&1
+                theme-switch (cat ~/.local/state/theme/mode 2>/dev/null; or echo dark)
             end
-            theme-switch (cat ~/.local/state/theme/mode 2>/dev/null; or echo dark)
+            set -l scheme (tinty current 2>/dev/null)
+            if test -n "$scheme"
+                set -l shell_script ~/.local/share/tinted-theming/tinty/repos/tinted-shell/scripts/"$scheme".sh
+                test -f "$shell_script"; and bash "$shell_script"
+                set -l fzf_script ~/.local/share/tinted-theming/tinty/repos/tinted-fzf/fish/"$scheme".fish
+                test -f "$fzf_script"; and source "$fzf_script"
+            end
         end
     end
   '';

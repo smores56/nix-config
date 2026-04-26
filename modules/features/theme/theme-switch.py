@@ -55,7 +55,7 @@ def apply_mode(mode):
     write_pref("mode", mode)
 
     shell_theme = resolve_theme(mode, "shell")
-    subprocess.run([TINTY, "apply", shell_theme], capture_output=True)
+    subprocess.run([TINTY, "apply", shell_theme], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     editor_theme = resolve_theme(mode, "editor")
     helix_dir = Path.home() / ".config/helix/themes"
@@ -75,7 +75,7 @@ def init_defaults():
 def ensure_tinty_repos():
     schemes = Path.home() / ".local/share/tinted-theming/tinty/repos/schemes"
     if not schemes.is_dir():
-        subprocess.run([TINTY, "install"], capture_output=True)
+        subprocess.run([TINTY, "install"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def fzf_pick(items, header, preview_cmd):
