@@ -7,6 +7,10 @@
 let
   isNiri = config.dotfiles.displayManager == "niri";
 
+  niriEqualize = pkgs.writeShellScript "niri-equalize" ''
+    exec ${pkgs.python3}/bin/python3 ${./niri-equalize.py}
+  '';
+
   directionKeys = {
     Left = "left";
     Right = "right";
@@ -132,6 +136,7 @@ in
         "Mod+Comma".action.consume-window-into-column = [ ];
         "Mod+Period".action.expel-window-from-column = [ ];
         "Mod+C".action.center-column = [ ];
+        "Mod+E".action.spawn = [ "${niriEqualize}" ];
 
         "Print".action.screenshot = [ ];
         "Ctrl+Print".action.screenshot-screen = [ ];
