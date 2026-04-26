@@ -94,6 +94,7 @@ in
         {
           matches = [ { app-id = "^org\\.wezfurlong\\.wezterm$"; } ];
           default-column-width = { };
+          default-window-height = { proportion = 1.0; };
         }
       ];
 
