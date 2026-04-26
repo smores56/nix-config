@@ -1,6 +1,5 @@
-{ config, pkgs, ... }:
+{ pkgs, ... }:
 let
-  inherit (config.dotfiles) polarity;
   hunk = pkgs.writeShellScriptBin "hunk" ''
     export PATH="${pkgs.nodejs}/bin:$PATH"
     exec npx hunkdiff "$@"
@@ -15,6 +14,8 @@ in
     jujutsu
     hunk
   ];
+
+  home.sessionVariables.LG_CONFIG_FILE = "~/.config/lazygit/config.yml,~/.config/lazygit/theme.yml";
 
   programs = {
     gh = {
@@ -79,18 +80,9 @@ in
     lazygit = {
       enable = true;
 
-      settings = {
-        git.pagers = [
-          {
-            colorArg = "always";
-            pager = "delta --paging=never --${if polarity == "light" then "light" else "dark"}";
-          }
-        ];
-        gui.theme = {
-          lightTheme = polarity == "light";
-          selectedLineBgColor = [ "underline" ];
-          selectedRangeBgColor = [ "underline" ];
-        };
+      settings.gui.theme = {
+        selectedLineBgColor = [ "underline" ];
+        selectedRangeBgColor = [ "underline" ];
       };
     };
   };

@@ -16,20 +16,13 @@
       );
       default = null;
     };
-    polarity = lib.mkOption {
-      type = lib.types.enum [
-        "light"
-        "dark"
-      ];
-      default = "dark";
-    };
     terminalFontSize = lib.mkOption {
       type = lib.types.int;
       default = 12;
     };
     wayland = lib.mkOption {
       type = lib.types.bool;
-      default = false;
+      readOnly = true;
     };
     exposeSsh = lib.mkOption {
       type = lib.types.bool;
@@ -40,14 +33,12 @@
       readOnly = true;
     };
     shell = lib.mkOption {
-      type = lib.types.enum [
-        "fish"
-      ];
-      default = "fish";
+      type = lib.types.str;
+      readOnly = true;
     };
     browser = lib.mkOption {
       type = lib.types.str;
-      default = "firefox";
+      readOnly = true;
     };
     font = lib.mkOption {
       type = lib.types.str;
@@ -67,8 +58,10 @@
     home.packages = [ config.dotfiles.fontPackage ];
 
     dotfiles = {
-      wayland = lib.mkDefault (config.dotfiles.displayManager == "niri");
+      wayland = config.dotfiles.displayManager == "niri";
       terminal = "wezterm";
+      shell = "fish";
+      browser = "firefox";
       font = "CaskaydiaCove Nerd Font";
       fontPackage = pkgs.nerd-fonts.caskaydia-cove;
       shellPath = "${pkgs.${config.dotfiles.shell}}/bin/${config.dotfiles.shell}";

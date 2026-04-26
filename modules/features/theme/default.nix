@@ -62,6 +62,21 @@ let
     }
     ZELLIJ
 
+    VARIANT=$(grep "^variant:" "$SCHEME_FILE" | sed 's/variant: *"\(.*\)"/\1/')
+    DELTA_MODE=$([ "$VARIANT" = "light" ] && echo "light" || echo "dark")
+    LIGHT_THEME=$([ "$VARIANT" = "light" ] && echo "true" || echo "false")
+
+    mkdir -p "$HOME/.config/lazygit"
+    cat > "$HOME/.config/lazygit/theme.yml" << LAZYGIT
+    git:
+      paging:
+        colorArg: always
+        pager: "delta --paging=never --$DELTA_MODE"
+    gui:
+      theme:
+        lightTheme: $LIGHT_THEME
+    LAZYGIT
+
     if command -v borders &> /dev/null; then
       pkill -f borders 2>/dev/null || true
       borders active_color="0xFF$base0A" inactive_color="0xFF$base04" width=6 hidpi=on &

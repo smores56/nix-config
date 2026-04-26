@@ -3,10 +3,8 @@ let
   cfg = config.dotfiles;
 in
 {
-  config = lib.mkIf (cfg.displayManager != null) {
-    fonts.fontconfig.enable = true;
-    home.sessionVariables.TERMINAL = cfg.terminal;
-  };
+  fonts.fontconfig.enable = lib.mkIf (cfg.displayManager != null) true;
+  home.sessionVariables.TERMINAL = lib.mkIf (cfg.displayManager != null) cfg.terminal;
 
   programs.wezterm = {
     enable = true;

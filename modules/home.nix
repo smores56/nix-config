@@ -10,6 +10,7 @@ in
 {
   home = {
     stateVersion = "26.05";
+    packages = [ pkgs.home-manager ];
 
     activation.checkAppManagementPermission = lib.mkIf pkgs.stdenv.isDarwin (
       lib.mkForce {
@@ -18,12 +19,6 @@ in
         data = "";
       }
     );
-
-    pointerCursor = lib.mkIf (isLinux && config.dotfiles.displayManager != null) {
-      package = pkgs.bibata-cursors;
-      name = "Bibata-Modern-Classic";
-      size = 16;
-    };
   };
 
   targets.genericLinux.enable = isLinux;

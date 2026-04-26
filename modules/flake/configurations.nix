@@ -44,11 +44,7 @@ let
         {
           dotfiles = builtins.intersectAttrs {
             displayManager = null;
-            polarity = null;
             terminalFontSize = null;
-            shell = null;
-            browser = null;
-            wayland = null;
             exposeSsh = null;
           } args;
           home.username = username;
