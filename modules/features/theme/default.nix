@@ -5,6 +5,7 @@ let
   defaultDarkEditor = "rose_pine_moon";
   defaultLightEditor = "rose_pine_dawn";
 
+  python = "${pkgs.python3}/bin/python3";
   stateDir = "~/.local/state/theme";
 
   baseColors = "base00 base01 base02 base03 base04 base05 base06 base07 base08 base09 base0A base0B base0C base0D base0E base0F";
@@ -12,8 +13,20 @@ let
   helixThemesDir = "${pkgs.helix-unwrapped.HELIX_DEFAULT_RUNTIME}/themes";
 
   themeSwitcher = pkgs.writeShellScriptBin "theme-switch" ''
-    exec bash ${./theme-switch.sh} "${pkgs.tinty}/bin/tinty" "$1" \
-      "${defaultScheme}" "${defaultLightScheme}" "${defaultDarkEditor}" "${defaultLightEditor}"
+    export TINTY="${pkgs.tinty}/bin/tinty"
+    export DEFAULT_DARK_SHELL="${defaultScheme}"
+    export DEFAULT_LIGHT_SHELL="${defaultLightScheme}"
+    export DEFAULT_DARK_EDITOR="${defaultDarkEditor}"
+    export DEFAULT_LIGHT_EDITOR="${defaultLightEditor}"
+    exec ${python} ${./theme-switch.py} "$@"
+  '';
+
+  themePreview = pkgs.writeShellScript "theme-preview" ''
+    exec ${python} ${./theme-preview.py} "$@"
+  '';
+
+  helixPreview = pkgs.writeShellScript "helix-theme-preview" ''
+    exec ${python} ${./helix-preview.py} "${helixThemesDir}" "$@"
   '';
 
   tintyHook = pkgs.writeShellScript "tinty-hook" ''
@@ -93,42 +106,6 @@ let
       disown
     fi
   '';
-
-  themePreview = pkgs.writeShellScript "theme-preview" ''
-    FULL="$1"
-    SYSTEM="''${FULL%%-*}"
-    NAME="''${FULL#*-}"
-    SCHEMES_DIR="$HOME/.local/share/tinted-theming/tinty/repos/schemes/$SYSTEM"
-    SCHEME_FILE="$SCHEMES_DIR/$NAME.yaml"
-    [ ! -f "$SCHEME_FILE" ] && echo "Scheme not found: $SCHEME_FILE" && exit 0
-
-    label=$(grep "^name:" "$SCHEME_FILE" | sed 's/name: *"\(.*\)"/\1/')
-    variant=$(grep "^variant:" "$SCHEME_FILE" | sed 's/variant: *"\(.*\)"/\1/')
-    echo "$label ($variant)"
-    echo ""
-
-    label_for() {
-      case $1 in
-        base00) echo bg;; base01) echo bg+;; base02) echo sel;; base03) echo comment;;
-        base04) echo fg-;; base05) echo fg;; base06) echo fg+;; base07) echo bg++;;
-        base08) echo red;; base09) echo orange;; base0A) echo yellow;; base0B) echo green;;
-        base0C) echo cyan;; base0D) echo blue;; base0E) echo purple;; base0F) echo brown;;
-      esac
-    }
-
-    for base in ${baseColors}; do
-      hex=$(grep "  $base:" "$SCHEME_FILE" | sed 's/.*"#\([0-9a-fA-F]*\)".*/\1/')
-      [ -z "$hex" ] && continue
-      r=$(printf "%d" "0x$(echo "$hex" | cut -c1-2)")
-      g=$(printf "%d" "0x$(echo "$hex" | cut -c3-4)")
-      b=$(printf "%d" "0x$(echo "$hex" | cut -c5-6)")
-      printf "\033[48;2;%d;%d;%dm    \033[0m %-7s #%s\n" "$r" "$g" "$b" "$(label_for "$base")" "$hex"
-    done
-  '';
-
-  helixPreview = pkgs.writeShellScript "helix-theme-preview" ''
-    exec bash ${./helix-preview.sh} "${helixThemesDir}" "$1"
-  '';
 in
 {
   home.packages = [
@@ -166,23 +143,13 @@ in
           end
       end
 
-      if not test -f ${stateDir}/mode
-          mkdir -p ${stateDir}
-          echo dark > ${stateDir}/mode
-          echo ${defaultScheme} > ${stateDir}/dark_shell
-          echo ${defaultLightScheme} > ${stateDir}/light_shell
-          echo ${defaultDarkEditor} > ${stateDir}/dark_editor
-          echo ${defaultLightEditor} > ${stateDir}/light_editor
-      end
+      theme-switch init
     '';
 
     functions.set-theme = {
       description = "Pick color schemes [shell|editor|mode|clear-light]";
       body = ''
-        set -l state ${stateDir}
-        set -l mode (cat $state/mode 2>/dev/null; or echo dark)
-        set -l do_shell 1
-        set -l do_editor 1
+        set -l mode (theme-switch current)
 
         if test (count $argv) -gt 0
             switch $argv[1]
@@ -190,57 +157,60 @@ in
                     theme-switch toggle
                     return
                 case clear-light
-                    set -l target (test (count $argv) -gt 1; and echo $argv[2]; or echo both)
-                    switch $target
-                        case shell
-                            rm -f $state/light_shell
-                        case editor
-                            rm -f $state/light_editor
-                        case '*'
-                            rm -f $state/light_shell $state/light_editor
-                    end
-                    echo "Cleared light variant for $target"
+                    theme-switch clear-light $argv[2..]
                     return
                 case shell
-                    set do_editor 0
+                    __set_shell_theme $mode
+                    return
                 case editor
-                    set do_shell 0
+                    __set_editor_theme $mode
+                    return
                 case '*'
-                    echo "Usage: set-theme [shell|editor|mode|clear-light [shell|editor]]"
+                    theme-switch --help
                     return 1
             end
         end
 
-        if test $do_shell -eq 1
-            if command -q tinty
-                if not test -d ~/.local/share/tinted-theming/tinty/repos/schemes
-                    tinty install > /dev/null 2>&1
-                end
-                set -l current (tinty current 2>/dev/null)
-                set -l scheme (tinty list | fzf --header "Shell theme ($mode) — current: $current" --preview '${themePreview} {}')
-                if test -n "$scheme"
-                    tinty apply "$scheme"
-                    mkdir -p $state
-                    echo "$scheme" > $state/{$mode}_shell
-                end
-            else
-                echo "tinty not found"
-            end
+        __set_shell_theme $mode
+        __set_editor_theme $mode
+      '';
+    };
+
+    functions.__set_shell_theme = {
+      description = "Pick a shell color scheme for the given mode";
+      body = ''
+        set -l mode $argv[1]
+        if not command -q tinty
+            echo "tinty not found"
+            return 1
         end
 
-        if test $do_editor -eq 1
-            set -l current_editor ""
-            if test -f ~/.config/helix/themes/active.toml
-                set current_editor (grep 'inherits' ~/.config/helix/themes/active.toml | sed 's/.*"\(.*\)".*/\1/')
-            end
-            set -l theme (command ls ${helixThemesDir}/*.toml | sed 's|.*/||;s|\.toml$||' | sort | fzf --header "Helix theme ($mode) — current: $current_editor" --preview '${helixPreview} {}')
-            if test -n "$theme"
-                mkdir -p ~/.config/helix/themes
-                echo "inherits = \"$theme\"" > ~/.config/helix/themes/active.toml
-                mkdir -p $state
-                echo "$theme" > $state/{$mode}_editor
-                echo "Helix theme set to $theme ($mode) — C-r in helix to reload"
-            end
+        if not test -d ~/.local/share/tinted-theming/tinty/repos/schemes
+            tinty install > /dev/null 2>&1
+        end
+        set -l current (tinty current 2>/dev/null)
+        set -l scheme (tinty list | fzf --header "Shell theme ($mode) — current: $current" --preview '${themePreview} {}')
+        if test -n "$scheme"
+            tinty apply "$scheme"
+            theme-switch save shell "$scheme"
+        end
+      '';
+    };
+
+    functions.__set_editor_theme = {
+      description = "Pick a helix theme for the given mode";
+      body = ''
+        set -l mode $argv[1]
+        set -l current_editor ""
+        if test -f ~/.config/helix/themes/active.toml
+            set current_editor (grep 'inherits' ~/.config/helix/themes/active.toml | sed 's/.*"\(.*\)".*/\1/')
+        end
+        set -l theme (command ls ${helixThemesDir}/*.toml | sed 's|.*/||;s|\.toml$||' | sort | fzf --header "Helix theme ($mode) — current: $current_editor" --preview '${helixPreview} {}')
+        if test -n "$theme"
+            mkdir -p ~/.config/helix/themes
+            echo "inherits = \"$theme\"" > ~/.config/helix/themes/active.toml
+            theme-switch save editor "$theme"
+            echo "Helix theme set to $theme ($mode) — C-r in helix to reload"
         end
       '';
     };
