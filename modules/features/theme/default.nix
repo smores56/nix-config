@@ -63,14 +63,13 @@ in
     if command -q tinty
         function __tinty_init --on-event fish_prompt
             functions --erase __tinty_init
+            theme-switch init
             if not test -d ~/.local/share/tinted-theming/tinty/repos/schemes
                 tinty install > /dev/null 2>&1
             end
             theme-switch (cat ~/.local/state/theme/mode 2>/dev/null; or echo dark)
         end
     end
-
-    theme-switch init
   '';
 
   programs.fish.shellAbbrs.ts = "theme-switch";
