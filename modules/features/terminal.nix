@@ -30,8 +30,6 @@ in
         colors = {
           visual_bell = "#202020",
         },
-        initial_cols = 200,
-        initial_rows = 50,
         default_prog = { "${cfg.shellPath}" },
       }
     '';
