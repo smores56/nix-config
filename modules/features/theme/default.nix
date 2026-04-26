@@ -1,6 +1,6 @@
 { pkgs, ... }:
 let
-  defaultScheme = "base16-rose-pine-moon";
+  defaultDarkScheme = "base16-rose-pine-moon";
   defaultLightScheme = "base16-rose-pine-dawn";
   defaultDarkEditor = "rose_pine_moon";
   defaultLightEditor = "rose_pine_dawn";
@@ -14,7 +14,7 @@ let
 
   themeSwitcher = pkgs.writeShellScriptBin "theme-switch" ''
     export TINTY="${pkgs.tinty}/bin/tinty"
-    export DEFAULT_DARK_SHELL="${defaultScheme}"
+    export DEFAULT_DARK_SHELL="${defaultDarkScheme}"
     export DEFAULT_LIGHT_SHELL="${defaultLightScheme}"
     export DEFAULT_DARK_EDITOR="${defaultDarkEditor}"
     export DEFAULT_LIGHT_EDITOR="${defaultLightEditor}"
@@ -41,7 +41,7 @@ in
 
   home.file.".config/tinted-theming/tinty/config.toml".text = ''
     shell = "fish -c '{}'"
-    default-scheme = "${defaultScheme}"
+    default-scheme = "${defaultDarkScheme}"
 
     [[items]]
     path = "https://github.com/tinted-theming/tinted-shell"
