@@ -29,6 +29,10 @@
       ];
       settings = {
         GTK.application_prefer_dark_theme = true;
+        background = {
+          path = "${../../wallpapers/spirited-away.jpg}";
+          fit = "Cover";
+        };
       };
       theme = {
         package = pkgs.adw-gtk3;

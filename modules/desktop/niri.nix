@@ -55,7 +55,6 @@ in
   config = lib.mkIf isNiri {
     home.packages = with pkgs; [
       quickshell
-      swaylock
       brightnessctl
       wl-clipboard
       grim
@@ -65,6 +64,8 @@ in
 
     programs.niri.settings = {
       prefer-no-csd = true;
+      hotkey-overlay.skip-at-startup = true;
+      layout.background-color = "#232136";
 
       spawn-at-startup = [
         { command = [ "noctalia-shell" ]; }
@@ -196,7 +197,13 @@ in
         "Mod+Escape".action.toggle-keyboard-shortcuts-inhibit = [ ];
         "Mod+Shift+Slash".action.show-hotkey-overlay = [ ];
         "Mod+Shift+P".action.power-off-monitors = [ ];
-        "Mod+L".action.spawn = [ "swaylock" ];
+        "Mod+L".action.spawn = [
+          "noctalia-shell"
+          "ipc"
+          "call"
+          "lockScreen"
+          "lock"
+        ];
       }
       // mkColumnDirectionBinds "Mod" "focus-column" "focus-window"
       // mkColumnDirectionBinds "Mod+Shift" "move-column" "move-window"

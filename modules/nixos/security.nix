@@ -1,5 +1,5 @@
 _: {
-  security.pam.services.swaylock = {
+  security.pam.services.noctalia-shell = {
     text = ''
       auth include login
     '';
