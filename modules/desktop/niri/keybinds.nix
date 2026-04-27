@@ -80,6 +80,9 @@ in
           "toggle"
         ];
 
+        "Mod+Tab".action.next-window = [ ];
+        "Mod+Shift+Tab".action.previous-window = [ ];
+
         "Mod+Q".action.close-window = [ ];
         "Mod+F".action.maximize-column = [ ];
         "Mod+Shift+F".action.fullscreen-window = [ ];
