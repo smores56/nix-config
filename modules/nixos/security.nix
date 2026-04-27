@@ -30,8 +30,8 @@ let
       patch -p1 < ${goodix53x5-src}/meson-integration.patch
       substituteInPlace libfprint/meson.build \
         --replace-fail "/usr/include/opencv4" "${pkgs.opencv}/include/opencv4"
-      echo '#!/bin/sh' > tests/test-generated-hwdb.sh
-      echo 'exit 0' >> tests/test-generated-hwdb.sh
+      substituteInPlace meson.build \
+        --replace-fail "subdir('tests')" ""
     '';
   });
 
