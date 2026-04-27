@@ -65,7 +65,21 @@ in
     programs.niri.settings = {
       prefer-no-csd = true;
       hotkey-overlay.skip-at-startup = true;
-      layout.background-color = "#232136";
+      layout = {
+        background-color = "#232136";
+        border = {
+          width = 2;
+          active.color = "#c4a7e7";
+          inactive.color = "#393552";
+          urgent.color = "#eb6f92";
+        };
+        tab-indicator = {
+          active.color = "#c4a7e7";
+          inactive.color = "#393552";
+          urgent.color = "#eb6f92";
+        };
+        insert-hint.display.color = "#c4a7e780";
+      };
       overview.backdrop-color = "#232136";
 
       spawn-at-startup = [
