@@ -3,15 +3,20 @@
 
 import json
 import subprocess
+import sys
 
 
 def niri_msg(*args):
     result = subprocess.run(["niri", "msg", "--json", *args], capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"niri msg {' '.join(args)} failed: {result.stderr}", file=sys.stderr)
     return result.stdout
 
 
 def niri_action(*args):
-    subprocess.run(["niri", "msg", "action", *args], capture_output=True)
+    result = subprocess.run(["niri", "msg", "action", *args], capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"niri action {' '.join(args)} failed: {result.stderr}", file=sys.stderr)
 
 
 def main():
@@ -32,7 +37,7 @@ def main():
         return
 
     focused_col = focused["pos_in_scrolling_layout"][0]
-    proportion = f"{100 / len(columns):.1f}%"
+    proportion = f"{100 // len(columns)}%"
 
     for col in sorted(columns):
         niri_action("focus-column", str(col))
