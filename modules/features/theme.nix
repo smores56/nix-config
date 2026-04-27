@@ -12,9 +12,11 @@ let
     MODE=$(${pkgs.glib}/bin/gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null || echo "")
     if echo "$MODE" | grep -q "prefer-light"; then
       HELIX_THEME="${cfg.lightTheme.helix}"
+      NOCTALIA_SCHEME="${cfg.lightTheme.noctalia}"
       LAZYGIT_LIGHT="true"
     else
       HELIX_THEME="${cfg.darkTheme.helix}"
+      NOCTALIA_SCHEME="${cfg.darkTheme.noctalia}"
       LAZYGIT_LIGHT="false"
     fi
 
@@ -27,6 +29,8 @@ let
       theme:
         lightTheme: $LAZYGIT_LIGHT
     EOF
+
+    noctalia-shell ipc prop set colorSchemes predefinedScheme "$NOCTALIA_SCHEME" 2>/dev/null || true
   '';
 in
 {
