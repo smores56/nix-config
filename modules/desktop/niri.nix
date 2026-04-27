@@ -291,7 +291,11 @@ in
           autoPasteClipboard = true;
           terminalCommand = "${config.dotfiles.terminal} -e";
         };
-        wallpaper.automationEnabled = true;
+        wallpaper = {
+          automationEnabled = true;
+          fillColor = base;
+          solidColor = base;
+        };
         colorSchemes = {
           predefinedScheme = "Rose Pine";
           schedulingMode = "location";

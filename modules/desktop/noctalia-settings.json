@@ -10,13 +10,7 @@
     "settingsPanelSideBarCardStyle": false
   },
   "wallpaper": {
-    "showHiddenFiles": false,
-    "viewMode": "single",
-    "fillColor": "#000000",
-    "useSolidColor": false,
-    "solidColor": "#1a1a2e",
-    "transitionEdgeSmoothness": 0.05,
-    "sortOrder": "name"
+    "useSolidColor": false
   },
   "appLauncher": {
     "iconMode": "tabler",
