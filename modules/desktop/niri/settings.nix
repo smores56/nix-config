@@ -6,13 +6,7 @@
 }:
 let
   isNiri = config.dotfiles.displayManager == "niri";
-
-  # Rose Pine Moon palette
-  base = "#232136"; # background
-  overlay = "#393552"; # inactive/subtle
-  love = "#eb6f92"; # urgent/attention
-  iris = "#c4a7e7"; # active/accent
-  foam = "#9ccfd8"; # secondary accent
+  colors = config.lib.stylix.colors;
 in
 {
   config = lib.mkIf isNiri {
@@ -30,17 +24,7 @@ in
       prefer-no-csd = true;
       hotkey-overlay.skip-at-startup = true;
       layout = {
-        background-color = base;
-        border = {
-          width = 2;
-          active.gradient = {
-            from = iris;
-            to = foam;
-            angle = 135;
-          };
-          inactive.color = overlay;
-          urgent.color = love;
-        };
+        background-color = "#${colors.base00}";
         shadow = {
           enable = true;
           color = "#00000050";
@@ -52,15 +36,10 @@ in
           softness = 12;
           spread = 0;
         };
-        tab-indicator = {
-          active.color = iris;
-          inactive.color = overlay;
-          urgent.color = love;
-        };
-        insert-hint.display.color = "${iris}80";
+        insert-hint.display.color = "#${colors.base0E}80";
         default-column-width.proportion = 0.5;
       };
-      overview.backdrop-color = base;
+      overview.backdrop-color = "#${colors.base00}";
 
       animations = {
         window-open.kind.easing = {

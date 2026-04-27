@@ -15,8 +15,6 @@ in
     hunk
   ];
 
-  home.sessionVariables.LG_CONFIG_FILE = "${config.home.homeDirectory}/.config/lazygit/theme.yml";
-
   programs = {
     gh = {
       enable = true;

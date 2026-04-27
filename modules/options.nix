@@ -36,6 +36,26 @@
       type = lib.types.bool;
       readOnly = true;
     };
+    darkSystemTheme = lib.mkOption {
+      type = lib.types.str;
+      default = "rose-pine-moon";
+    };
+    lightSystemTheme = lib.mkOption {
+      type = lib.types.str;
+      default = "rose-pine-dawn";
+    };
+    darkHelixTheme = lib.mkOption {
+      type = lib.types.str;
+      default = "rose_pine_moon";
+    };
+    lightHelixTheme = lib.mkOption {
+      type = lib.types.str;
+      default = "rose_pine_dawn";
+    };
+    darkModeHook = lib.mkOption {
+      type = lib.types.path;
+      readOnly = true;
+    };
     terminal = lib.mkOption {
       type = lib.types.str;
       readOnly = true;

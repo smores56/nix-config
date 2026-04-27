@@ -4,6 +4,7 @@ let
     home-manager
     niri
     noctalia
+    stylix
     ;
 
   importTree = path: (inputs.import-tree path).imports;
@@ -28,6 +29,7 @@ let
   ++ [
     niri.homeModules.niri
     noctalia.homeModules.default
+    stylix.homeManagerModules.stylix
   ];
 
   nixosModules = [ ../options.nix ] ++ importTree ../nixos;

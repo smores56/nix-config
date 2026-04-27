@@ -7,7 +7,7 @@
 let
   isNiri = config.dotfiles.displayManager == "niri";
 
-  base = "#232136";
+  base = "#${config.lib.stylix.colors.base00}";
 in
 {
   config = lib.mkIf isNiri {
@@ -114,11 +114,7 @@ in
         nightLight.enabled = true;
         hooks = {
           enabled = true;
-          darkModeChange = "${pkgs.writeShellScript "on-dark-mode-change" ''
-            export PATH="$HOME/.nix-profile/bin:$PATH"
-            sleep 0.2
-            exec theme-switch detect
-          ''}";
+          darkModeChange = "${config.dotfiles.darkModeHook}";
         };
       };
     };
