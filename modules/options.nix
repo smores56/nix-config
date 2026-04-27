@@ -108,16 +108,28 @@ in
   };
 
   config = {
-    assertions = [
-      {
-        assertion = builtins.pathExists "${pkgs.base16-schemes}/share/themes/${config.dotfiles.darkTheme.system}.yaml";
-        message = "darkTheme.system '${config.dotfiles.darkTheme.system}' not found in base16-schemes";
-      }
-      {
-        assertion = builtins.pathExists "${pkgs.base16-schemes}/share/themes/${config.dotfiles.lightTheme.system}.yaml";
-        message = "lightTheme.system '${config.dotfiles.lightTheme.system}' not found in base16-schemes";
-      }
-    ];
+    assertions =
+      let
+        helixThemes = "${pkgs.helix-unwrapped.src}/runtime/themes";
+      in
+      [
+        {
+          assertion = builtins.pathExists "${pkgs.base16-schemes}/share/themes/${config.dotfiles.darkTheme.system}.yaml";
+          message = "darkTheme.system '${config.dotfiles.darkTheme.system}' not found in base16-schemes";
+        }
+        {
+          assertion = builtins.pathExists "${pkgs.base16-schemes}/share/themes/${config.dotfiles.lightTheme.system}.yaml";
+          message = "lightTheme.system '${config.dotfiles.lightTheme.system}' not found in base16-schemes";
+        }
+        {
+          assertion = builtins.pathExists "${helixThemes}/${config.dotfiles.darkTheme.helix}.toml";
+          message = "darkTheme.helix '${config.dotfiles.darkTheme.helix}' not found in helix themes";
+        }
+        {
+          assertion = builtins.pathExists "${helixThemes}/${config.dotfiles.lightTheme.helix}.toml";
+          message = "lightTheme.helix '${config.dotfiles.lightTheme.helix}' not found in helix themes";
+        }
+      ];
 
     dotfiles = {
       wayland = config.dotfiles.displayManager == "niri";
