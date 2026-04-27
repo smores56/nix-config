@@ -210,6 +210,21 @@ in
     };
   };
 
+  config.programs.zellij = {
+    enable = true;
+    enableFishIntegration = false;
+  };
+
+  config.home.activation.validateHelixThemes = lib.hm.dag.entryBefore [ "seedThemeConfigs" ] ''
+    HELIX_THEMES="${pkgs.helix.passthru.runtime}/themes"
+    for theme in "${cfg.darkTheme.helix}" "${cfg.lightTheme.helix}"; do
+      if [ ! -f "$HELIX_THEMES/$theme.toml" ]; then
+        echo "ERROR: helix theme '$theme' not found in $HELIX_THEMES" >&2
+        exit 1
+      fi
+    done
+  '';
+
   config.home.activation.seedThemeConfigs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     ${darkModeHook} true
   '';

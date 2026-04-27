@@ -4,6 +4,7 @@ let
     home-manager
     niri
     noctalia
+    paneru
     stylix
     ;
 
@@ -29,6 +30,7 @@ let
   ++ [
     niri.homeModules.niri
     noctalia.homeModules.default
+    paneru.homeModules.paneru
     stylix.homeModules.stylix
   ];
 
@@ -48,6 +50,8 @@ let
             displayManager = null;
             terminalFontSize = null;
             exposeSsh = null;
+            darkTheme = null;
+            lightTheme = null;
           } args;
           home.username = username;
           home.homeDirectory = args.homeDirectory or "/home/${username}";
