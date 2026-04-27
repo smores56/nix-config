@@ -114,7 +114,7 @@ in
         nightLight.enabled = true;
         hooks = {
           enabled = true;
-          darkModeChange = "${config.dotfiles.darkModeHook}";
+          darkModeChange = "${config.dotfiles.darkModeHook} $1";
         };
       };
     };

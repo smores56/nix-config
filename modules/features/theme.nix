@@ -128,10 +128,16 @@ let
   lightZellijConfig = pkgs.writeText "light-zellij-config.kdl" (zellijConfig lightColors);
 
   darkModeHook = pkgs.writeShellScript "dark-mode-hook" ''
-    DELAY=''${1:-0.2}
-    sleep "$DELAY"
-    MODE=$(${pkgs.glib}/bin/gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null || echo "")
-    if echo "$MODE" | grep -q "prefer-light"; then
+    IS_DARK="''${1:-}"
+    if [ -z "$IS_DARK" ]; then
+      MODE=$(${pkgs.glib}/bin/gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null || echo "")
+      if echo "$MODE" | grep -q "prefer-light"; then
+        IS_DARK="false"
+      else
+        IS_DARK="true"
+      fi
+    fi
+    if [ "$IS_DARK" = "false" ]; then
       HELIX_THEME="${cfg.lightTheme.helix}"
       LAZYGIT_LIGHT="true"
       FISH_COLORS="${lightFishColors}"
@@ -171,7 +177,7 @@ in
 
   config.home.packages = [
     (pkgs.writeShellScriptBin "theme-sync" ''
-      exec ${darkModeHook} 0
+      exec ${darkModeHook}
     '')
   ];
 
