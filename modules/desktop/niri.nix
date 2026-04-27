@@ -92,11 +92,6 @@ in
           ] (_: 12.0);
           clip-to-geometry = true;
         }
-        {
-          matches = [ { app-id = "^org\\.wezfurlong\\.wezterm$"; } ];
-          default-column-width = { };
-          default-window-height = { proportion = 1.0; };
-        }
       ];
 
       binds = {
@@ -222,7 +217,9 @@ in
         general = {
           enableBlurBehind = true;
           enableShadows = true;
+          clockStyle = "digital";
         };
+        lockScreen.lockOnSuspend = true;
         bar.position = "top";
         appLauncher.terminalCommand = "${config.dotfiles.terminal} -e";
         location.use12hourFormat = true;
