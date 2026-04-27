@@ -80,8 +80,8 @@ in
           "toggle"
         ];
 
-        "Mod+Tab".action.next-window = [ ];
-        "Mod+Shift+Tab".action.previous-window = [ ];
+        "Mod+Tab".action.focus-window-down-or-column-right = [ ];
+        "Mod+Shift+Tab".action.focus-window-up-or-column-left = [ ];
 
         "Mod+Q".action.close-window = [ ];
         "Mod+F".action.maximize-column = [ ];
