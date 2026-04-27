@@ -6,6 +6,7 @@
 }:
 let
   inherit (pkgs.stdenv) isLinux;
+  cfg = config.dotfiles;
 in
 {
   home = {
@@ -24,7 +25,7 @@ in
     );
   };
 
-  targets.genericLinux.enable = isLinux;
+  targets.genericLinux.enable = isLinux && !cfg.nixos;
   xdg = lib.mkIf isLinux {
     enable = true;
     mime.enable = true;

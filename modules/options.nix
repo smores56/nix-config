@@ -32,6 +32,10 @@
       type = lib.types.bool;
       default = false;
     };
+    nixos = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+    };
     terminal = lib.mkOption {
       type = lib.types.str;
       readOnly = true;
