@@ -255,6 +255,7 @@ in
           lockScreenAnimations = true;
           lockScreenBlur = 0.4;
           lockScreenTint = 0.4;
+          passwordChars = true;
           showChangelogOnStartup = false;
         };
         bar.widgets = {
@@ -290,6 +291,7 @@ in
           autoPasteClipboard = true;
           terminalCommand = "${config.dotfiles.terminal} -e";
         };
+        wallpaper.automationEnabled = true;
         colorSchemes = {
           predefinedScheme = "Rose Pine";
           schedulingMode = "location";

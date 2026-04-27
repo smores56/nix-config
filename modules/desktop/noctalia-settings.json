@@ -1,9 +1,7 @@
 {
   "general": {
     "dimmerOpacity": 0.2,
-    "showScreenCorners": false,
-    "language": "",
-    "passwordChars": false
+    "showScreenCorners": false
   },
   "ui": {
     "tooltipsEnabled": true,
@@ -11,45 +9,23 @@
     "translucentWidgets": false,
     "settingsPanelSideBarCardStyle": false
   },
-  "location": {
-    "name": ""
-  },
   "wallpaper": {
-    "overviewEnabled": false,
     "showHiddenFiles": false,
     "viewMode": "single",
-    "fillMode": "crop",
     "fillColor": "#000000",
     "useSolidColor": false,
     "solidColor": "#1a1a2e",
-    "automationEnabled": false,
-    "skipStartupTransition": false,
     "transitionEdgeSmoothness": 0.05,
-    "hideWallpaperFilenames": false,
-    "useOriginalImages": false,
-    "overviewBlur": 0.4,
-    "overviewTint": 0.6,
     "sortOrder": "name"
   },
   "appLauncher": {
     "iconMode": "tabler",
     "showIconBackground": false,
     "screenshotAnnotationTool": "",
-    "overviewLayer": false,
-    "density": "default"
+    "overviewLayer": false
   },
   "notifications": {
     "enableMarkdown": false,
-    "density": "default",
-    "sounds": {
-      "enabled": false,
-      "volume": 0.5,
-      "separateSounds": false,
-      "criticalSoundFile": "",
-      "normalSoundFile": "",
-      "lowSoundFile": "",
-      "excludedApps": "discord,firefox,chrome,chromium,edge"
-    },
     "enableMediaToast": false
   },
   "audio": {
