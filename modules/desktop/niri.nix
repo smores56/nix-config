@@ -253,8 +253,8 @@ in
           enableLockScreenMediaControls = true;
           lockOnSuspend = true;
           lockScreenAnimations = true;
-          lockScreenBlur = 40;
-          lockScreenTint = 40;
+          lockScreenBlur = 0.4;
+          lockScreenTint = 0.4;
           showChangelogOnStartup = false;
         };
         bar.widgets = {
