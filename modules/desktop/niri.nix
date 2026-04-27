@@ -244,12 +244,13 @@ in
 
     programs.noctalia-shell = {
       enable = true;
-      settings = lib.recursiveUpdate (builtins.fromJSON (builtins.readFile ./noctalia-settings.json)) {
+      settings = {
         general = {
           avatarImage = "${../../pfp.png}";
           autoStartAuth = true;
           allowPasswordWithFprintd = true;
           clockStyle = "digital";
+          dimmerOpacity = 0.3;
           enableLockScreenMediaControls = true;
           lockOnSuspend = true;
           lockScreenAnimations = true;
@@ -300,7 +301,12 @@ in
           predefinedScheme = "Rose Pine";
           schedulingMode = "location";
         };
-        audio.volumeOverdrive = true;
+        audio = {
+          volumeOverdrive = true;
+          volumeFeedback = true;
+        };
+        notifications.enableMarkdown = true;
+        desktopWidgets.enabled = true;
         dock.enabled = false;
         idle.enabled = true;
         nightLight.enabled = true;
