@@ -4,6 +4,11 @@
   pkgs,
   ...
 }:
+let
+  regreetState = pkgs.writeText "regreet-state.toml" ''
+    last_user = "smores"
+  '';
+in
 {
   config = lib.mkIf (config.dotfiles.displayManager == "niri") {
     programs.niri.enable = true;
@@ -18,6 +23,10 @@
       substituters = [ "https://noctalia.cachix.org" ];
       trusted-public-keys = [ "noctalia.cachix.org-1:pCOR47nnMEo5thcxNDtzWpOxNFQsBRglJzxWPp3dkU4=" ];
     };
+
+    systemd.tmpfiles.rules = [
+      "C /var/lib/regreet/state.toml 0644 greeter greeter - ${regreetState}"
+    ];
 
     programs.regreet = {
       enable = true;
