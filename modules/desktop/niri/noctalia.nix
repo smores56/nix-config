@@ -83,21 +83,26 @@ in
               widgets = [
                 {
                   id = "Clock";
-                  x = 760;
-                  y = 40;
-                  scale = 2.5;
+                  x = 550;
+                  y = 24;
+                  scale = 3.5;
                   showBackground = false;
+                  clockColor = "tertiary";
                   clockStyle = "minimal";
-                  format = "h:mm AP";
+                  format = "h:mm AP\\nddd, MMM dd";
+                  roundedCorners = true;
                 }
                 {
                   id = "MediaPlayer";
-                  x = 1100;
-                  y = 40;
-                  scale = 2.0;
-                  showBackground = false;
+                  x = 508;
+                  y = 312;
+                  scale = 1.3;
+                  showBackground = true;
                   showButtons = true;
                   showAlbumArt = true;
+                  showVisualizer = true;
+                  visualizerType = "wave";
+                  hideMode = "idle";
                   roundedCorners = true;
                 }
               ];
