@@ -66,6 +66,7 @@ in
       prefer-no-csd = true;
       hotkey-overlay.skip-at-startup = true;
       layout.background-color = "#232136";
+      overview.backdrop-color = "#232136";
 
       spawn-at-startup = [
         { command = [ "noctalia-shell" ]; }
