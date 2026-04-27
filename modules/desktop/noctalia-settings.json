@@ -18,7 +18,7 @@
   "general": {
     "dimmerOpacity": 0.2,
     "showScreenCorners": false,
-    "lockOnSuspend": true,
+    "lockOnSuspend": false,
     "showSessionButtonsOnLockScreen": true,
     "showHibernateOnLockScreen": false,
     "enableLockScreenMediaControls": false,

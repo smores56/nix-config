@@ -239,6 +239,7 @@ in
         general = {
           avatarImage = "${../../pfp.png}";
           clockStyle = "digital";
+          lockOnSuspend = true;
           lockScreenAnimations = true;
           showChangelogOnStartup = false;
         };
