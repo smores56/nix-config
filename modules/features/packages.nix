@@ -7,6 +7,10 @@
     default = { };
   };
 
+  config.programs.bat.enable = true;
+  config.programs.fzf.enable = true;
+  config.programs.k9s.enable = true;
+
   config.home.sessionVariables = {
     DISABLE_NIX_SHELL_WELCOME = 1;
   };
@@ -15,10 +19,8 @@
     # exploration
     eza
     fd
-    bat
     ripgrep
     glow
-    fzf
     television
     openssh
 
@@ -67,7 +69,6 @@
     opencode
 
     # container tools
-    k9s
     lazydocker
     docker-compose
     kubernetes-helm
