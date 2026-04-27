@@ -7,11 +7,11 @@
     default = { };
   };
 
-  home.sessionVariables = {
+  config.home.sessionVariables = {
     DISABLE_NIX_SHELL_WELCOME = 1;
   };
 
-  home.packages = with pkgs; [
+  config.home.packages = with pkgs; [
     # exploration
     eza
     fd
