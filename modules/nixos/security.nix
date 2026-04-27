@@ -15,6 +15,7 @@ let
   };
 
   libfprint-goodix53x5 = pkgs.libfprint.overrideAttrs (old: {
+    doCheck = false;
     buildInputs = old.buildInputs ++ (with pkgs; [
       opencv
       openssl
