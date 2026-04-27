@@ -127,16 +127,29 @@ let
   darkZellijConfig = pkgs.writeText "dark-zellij-config.kdl" (zellijConfig darkColors);
   lightZellijConfig = pkgs.writeText "light-zellij-config.kdl" (zellijConfig lightColors);
 
-  darkModeHook = pkgs.writeShellScript "dark-mode-hook" ''
-    IS_DARK="''${1:-}"
-    if [ -z "$IS_DARK" ]; then
-      # Fallback: detect from gsettings (defaults to dark on macOS/headless where gsettings is unavailable)
+  isOsx = cfg.displayManager == "osx";
+
+  detectDarkMode =
+    if isOsx then ''
+      MODE=$(defaults read -g AppleInterfaceStyle 2>/dev/null || echo "Light")
+      if [ "$MODE" = "Dark" ]; then
+        IS_DARK="true"
+      else
+        IS_DARK="false"
+      fi
+    '' else ''
       MODE=$(${pkgs.glib}/bin/gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null || echo "")
       if echo "$MODE" | grep -q "prefer-light"; then
         IS_DARK="false"
       else
         IS_DARK="true"
       fi
+    '';
+
+  darkModeHook = pkgs.writeShellScript "dark-mode-hook" ''
+    IS_DARK="''${1:-}"
+    if [ -z "$IS_DARK" ]; then
+      ${detectDarkMode}
     fi
     if [ "$IS_DARK" = "false" ]; then
       HELIX_THEME="${cfg.lightTheme.helix}"
@@ -215,17 +228,31 @@ in
     enableFishIntegration = false;
   };
 
-  config.home.activation.validateHelixThemes = lib.hm.dag.entryBefore [ "seedThemeConfigs" ] ''
-    HELIX_THEMES="${pkgs.helix.passthru.runtime}/themes"
-    for theme in "${cfg.darkTheme.helix}" "${cfg.lightTheme.helix}"; do
-      if [ ! -f "$HELIX_THEMES/$theme.toml" ]; then
-        echo "ERROR: helix theme '$theme' not found in $HELIX_THEMES" >&2
-        exit 1
-      fi
-    done
-  '';
-
   config.home.activation.seedThemeConfigs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     ${darkModeHook} true
   '';
+
+  config.launchd.agents.dark-mode-watcher = lib.mkIf isOsx {
+    enable = true;
+    config = {
+      ProgramArguments = [
+        "${pkgs.writeShellScript "dark-mode-watcher" ''
+          CURRENT=$(defaults read -g AppleInterfaceStyle 2>/dev/null || echo "Light")
+          CACHE="$HOME/.cache/dark-mode-state"
+          mkdir -p "$HOME/.cache"
+          PREVIOUS=$(cat "$CACHE" 2>/dev/null || echo "")
+          if [ "$CURRENT" != "$PREVIOUS" ]; then
+            echo "$CURRENT" > "$CACHE"
+            if [ "$CURRENT" = "Dark" ]; then
+              ${darkModeHook} true
+            else
+              ${darkModeHook} false
+            fi
+          fi
+        ''}"
+      ];
+      WatchPaths = [ "${config.home.homeDirectory}/Library/Preferences/.GlobalPreferences.plist" ];
+      RunAtLoad = true;
+    };
+  };
 }
