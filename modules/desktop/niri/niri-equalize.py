@@ -44,7 +44,7 @@ def main():
         niri_action("set-column-width", proportion)
 
     niri_action("focus-column", str(focused_col))
-    niri_action("center-visible-columns")
+    niri_action("center-column")
 
 
 if __name__ == "__main__":
