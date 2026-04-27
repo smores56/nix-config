@@ -234,25 +234,15 @@ in
 
     programs.noctalia-shell = {
       enable = true;
-      settings = {
-        general = {
-          enableBlurBehind = true;
-          enableShadows = true;
-          clockStyle = "digital";
+      settings = lib.recursiveUpdate (builtins.fromJSON (builtins.readFile ./noctalia-settings.json)) {
+        hooks = {
+          enabled = true;
+          darkModeChange = "${pkgs.writeShellScript "on-dark-mode-change" ''
+            export PATH="$HOME/.nix-profile/bin:$PATH"
+            sleep 0.2
+            exec theme-switch detect
+          ''}";
         };
-        lockScreen.lockOnSuspend = true;
-        bar.position = "top";
-        appLauncher.terminalCommand = "${config.dotfiles.terminal} -e";
-        location.use12hourFormat = true;
-        colorSchemes = {
-          predefinedScheme = "Rose Pine";
-          schedulingMode = "location";
-        };
-        hooks.darkModeChange = "${pkgs.writeShellScript "on-dark-mode-change" ''
-          export PATH="$HOME/.nix-profile/bin:$PATH"
-          sleep 0.2
-          exec theme-switch detect
-        ''}";
       };
     };
   };
