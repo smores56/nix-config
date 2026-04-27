@@ -6,7 +6,7 @@ import subprocess
 
 
 def niri_msg(*args):
-    result = subprocess.run(["niri", "msg", *args], capture_output=True, text=True)
+    result = subprocess.run(["niri", "msg", "--json", *args], capture_output=True, text=True)
     return result.stdout
 
 
