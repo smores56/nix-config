@@ -28,6 +28,10 @@
       type = lib.types.bool;
       default = false;
     };
+    fingerprint = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+    };
     terminal = lib.mkOption {
       type = lib.types.str;
       readOnly = true;

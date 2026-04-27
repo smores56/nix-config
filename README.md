@@ -43,6 +43,18 @@ cp /etc/nixos/hardware-configuration.nix ~/.config/nix/modules/hosts/$(hostname)
 sudo nixos-rebuild switch --flake ~/.config/nix#$(hostname) --upgrade
 ```
 
+## Optional setup
+
+### Fingerprint authentication (smoresbook)
+
+After rebuilding with `fingerprint = true`, enroll your fingerprint:
+
+```bash
+sudo fprintd-enroll smores
+```
+
+Follow the prompts to swipe your finger. Once enrolled, the Noctalia lock screen will accept fingerprint or password.
+
 ## Code quality
 
 ```bash

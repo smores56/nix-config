@@ -68,6 +68,7 @@ let
             dotfiles = {
               displayManager = dm;
               exposeSsh = args.exposeSsh or false;
+              fingerprint = args.fingerprint or false;
             };
           }
         ]
@@ -109,6 +110,7 @@ in
       "smoresbook" = mkNixos {
         hostname = "smoresbook";
         displayManager = "niri";
+        fingerprint = true;
       };
     };
   };
