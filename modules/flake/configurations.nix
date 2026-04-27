@@ -29,7 +29,7 @@ let
   ++ [
     niri.homeModules.niri
     noctalia.homeModules.default
-    stylix.homeManagerModules.stylix
+    stylix.homeModules.stylix
   ];
 
   nixosModules = [ ../options.nix ] ++ importTree ../nixos;
