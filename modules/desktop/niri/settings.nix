@@ -62,25 +62,25 @@ in
       overview.backdrop-color = base;
 
       animations = {
-        window-open.easing = {
+        window-open.kind.easing = {
           curve = "ease-out-expo";
           duration-ms = 200;
         };
-        window-close.easing = {
+        window-close.kind.easing = {
           curve = "ease-out-expo";
           duration-ms = 150;
         };
-        window-movement.spring = {
+        window-movement.kind.spring = {
           damping-ratio = 0.8;
           stiffness = 800;
           epsilon = 0.0001;
         };
-        workspace-switch.spring = {
+        workspace-switch.kind.spring = {
           damping-ratio = 0.8;
           stiffness = 800;
           epsilon = 0.0001;
         };
-        horizontal-view-movement.spring = {
+        horizontal-view-movement.kind.spring = {
           damping-ratio = 0.8;
           stiffness = 800;
           epsilon = 0.0001;
