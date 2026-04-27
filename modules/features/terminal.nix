@@ -12,7 +12,7 @@ in
       local wezterm = require 'wezterm'
       local config = wezterm.config_builder()
 
-      config.font = wezterm.font("${cfg.font}")
+      config.font = wezterm.font("${cfg.font}", { weight = "Regular" })
       config.font_size = ${toString cfg.terminalFontSize}
       config.window_background_opacity = 0.8
       config.enable_wayland = ${if cfg.wayland then "true" else "false"}
@@ -39,7 +39,7 @@ in
 
       config.color_scheme = scheme_for_appearance(wezterm.gui.get_appearance())
 
-      wezterm.on("window-config-reloaded", function(window, pane)
+      wezterm.on("update-status", function(window, pane)
         local overrides = window:get_config_overrides() or {}
         local scheme = scheme_for_appearance(window:get_appearance())
         if overrides.color_scheme ~= scheme then

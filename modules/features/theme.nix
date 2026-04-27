@@ -64,6 +64,10 @@ let
       show_startup_tips false
       themes {
         active {
+          base {
+            fg "#${colors.base05}"
+            bg "#${colors.base00}"
+          }
           text_unselected {
             fg "#${colors.base05}"
             bg "#${colors.base01}"
