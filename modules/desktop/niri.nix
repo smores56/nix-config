@@ -236,6 +236,7 @@ in
     programs.noctalia-shell = {
       enable = true;
       settings = lib.recursiveUpdate (builtins.fromJSON (builtins.readFile ./noctalia-settings.json)) {
+        general.avatarImage = "${../../pfp.png}";
         hooks = {
           enabled = true;
           darkModeChange = "${pkgs.writeShellScript "on-dark-mode-change" ''
