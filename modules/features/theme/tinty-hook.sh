@@ -32,6 +32,7 @@ selection_bg = "#$base02"
 selection_fg = "#$base05"
 ansi = ["#$base00", "#$base08", "#$base0B", "#$base0A", "#$base0D", "#$base0E", "#$base0C", "#$base05"]
 brights = ["#$base03", "#$base08", "#$base0B", "#$base0A", "#$base0D", "#$base0E", "#$base0C", "#$base07"]
+visual_bell = "#$base01"
 
 [metadata]
 name = "tinted"
