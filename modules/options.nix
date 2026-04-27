@@ -79,6 +79,7 @@ in
     darkModeHook = lib.mkOption {
       type = lib.types.path;
       readOnly = true;
+      description = "Script path. Accepts optional $1: 'true' (dark) or 'false' (light). Falls back to gsettings detection if omitted.";
     };
     terminal = lib.mkOption {
       type = lib.types.str;

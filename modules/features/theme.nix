@@ -130,6 +130,7 @@ let
   darkModeHook = pkgs.writeShellScript "dark-mode-hook" ''
     IS_DARK="''${1:-}"
     if [ -z "$IS_DARK" ]; then
+      # Fallback: detect from gsettings (defaults to dark on macOS/headless where gsettings is unavailable)
       MODE=$(${pkgs.glib}/bin/gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null || echo "")
       if echo "$MODE" | grep -q "prefer-light"; then
         IS_DARK="false"
@@ -156,11 +157,11 @@ let
 
     # Lazygit: update theme for next launch
     mkdir -p "$HOME/.config/lazygit"
-    cat > "$HOME/.config/lazygit/theme.yml" << EOF
-    gui:
-      theme:
-        lightTheme: $LAZYGIT_LIGHT
-    EOF
+    cat > "$HOME/.config/lazygit/theme.yml" <<EOF
+gui:
+  theme:
+    lightTheme: $LAZYGIT_LIGHT
+EOF
 
     # Fish: update universal color variables (affects all running sessions)
     ${pkgs.fish}/bin/fish "$FISH_COLORS" 2>/dev/null || true
@@ -177,7 +178,7 @@ in
 
   config.home.packages = [
     (pkgs.writeShellScriptBin "theme-sync" ''
-      exec ${darkModeHook}
+      exec ${darkModeHook} "$@"
     '')
   ];
 
@@ -210,13 +211,6 @@ in
   };
 
   config.home.activation.seedThemeConfigs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    mkdir -p "$HOME/.config/helix/themes"
-    echo 'inherits = "${cfg.darkTheme.helix}"' > "$HOME/.config/helix/themes/active.toml"
-
-    ${pkgs.fish}/bin/fish "${darkFishColors}" 2>/dev/null || true
-
-    mkdir -p "$HOME/.config/zellij"
-    cp "${darkZellijConfig}" "$HOME/.config/zellij/config.kdl"
-    chmod 644 "$HOME/.config/zellij/config.kdl"
+    ${darkModeHook} true
   '';
 }
