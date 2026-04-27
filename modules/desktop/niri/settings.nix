@@ -73,14 +73,17 @@ in
         window-movement.spring = {
           damping-ratio = 0.8;
           stiffness = 800;
+          epsilon = 0.0001;
         };
         workspace-switch.spring = {
           damping-ratio = 0.8;
           stiffness = 800;
+          epsilon = 0.0001;
         };
         horizontal-view-movement.spring = {
           damping-ratio = 0.8;
           stiffness = 800;
+          epsilon = 0.0001;
         };
       };
 
