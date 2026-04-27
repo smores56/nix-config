@@ -1,5 +1,12 @@
-{ pkgs, ... }:
+{ pkgs, lib, ... }:
 {
+  # Workaround: Stylix's opencode module references programs.opencode.tui
+  # which doesn't exist in the current home-manager version
+  options.programs.opencode.tui = lib.mkOption {
+    type = lib.types.anything;
+    default = { };
+  };
+
   home.sessionVariables = {
     DISABLE_NIX_SHELL_WELCOME = 1;
   };

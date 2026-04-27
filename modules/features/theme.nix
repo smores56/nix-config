@@ -30,11 +30,6 @@ let
   '';
 in
 {
-  options.programs.opencode.tui = lib.mkOption {
-    type = lib.types.anything;
-    default = { };
-  };
-
   config.dotfiles.darkModeHook = darkModeHook;
 
   config.stylix = {
