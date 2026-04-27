@@ -34,7 +34,7 @@
     };
     nixos = lib.mkOption {
       type = lib.types.bool;
-      default = false;
+      readOnly = true;
     };
     terminal = lib.mkOption {
       type = lib.types.str;
@@ -65,6 +65,7 @@
   config = {
     dotfiles = {
       wayland = config.dotfiles.displayManager == "niri";
+      nixos = config.dotfiles.displayManager == "niri";
       terminal = "wezterm";
       shell = "fish";
       browser = "firefox";

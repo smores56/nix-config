@@ -46,7 +46,6 @@ let
             displayManager = null;
             terminalFontSize = null;
             exposeSsh = null;
-            nixos = null;
           } args;
           home.username = username;
           home.homeDirectory = args.homeDirectory or "/home/${username}";
@@ -81,15 +80,11 @@ in
     homeConfigurations = {
       "smores@smorestux" = mkHome {
         displayManager = "niri";
-        nixos = true;
       };
       "smores@smoresbook" = mkHome {
         displayManager = "niri";
-        nixos = true;
       };
-      "smores@campfire" = mkHome {
-        nixos = true;
-      };
+      "smores@campfire" = mkHome { };
       "smores@smortress" = mkHome {
         displayManager = "pop-os";
       };
