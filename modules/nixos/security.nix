@@ -31,7 +31,7 @@ let
       substituteInPlace libfprint/meson.build \
         --replace-fail "/usr/include/opencv4" "${pkgs.opencv}/include/opencv4"
       substituteInPlace meson.build \
-        --replace-fail "subdir('tests')" ""
+        --replace-fail "subdir('tests')" "installed_tests = false"
     '';
   });
 
