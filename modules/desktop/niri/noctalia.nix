@@ -67,7 +67,7 @@ in
           solidColor = base;
         };
         colorSchemes = {
-          predefinedScheme = "Rose Pine";
+          predefinedScheme = config.dotfiles.darkTheme.noctalia;
           schedulingMode = "location";
         };
         audio = {

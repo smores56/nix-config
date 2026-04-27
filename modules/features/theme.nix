@@ -11,10 +11,10 @@ let
     sleep 0.2
     MODE=$(${pkgs.glib}/bin/gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null || echo "")
     if echo "$MODE" | grep -q "prefer-light"; then
-      HELIX_THEME="${cfg.lightHelixTheme}"
+      HELIX_THEME="${cfg.lightTheme.helix}"
       LAZYGIT_LIGHT="true"
     else
-      HELIX_THEME="${cfg.darkHelixTheme}"
+      HELIX_THEME="${cfg.darkTheme.helix}"
       LAZYGIT_LIGHT="false"
     fi
 
@@ -36,7 +36,7 @@ in
     enable = true;
     autoEnable = true;
     polarity = "dark";
-    base16Scheme = "${pkgs.base16-schemes}/share/themes/${cfg.darkSystemTheme}.yaml";
+    base16Scheme = "${pkgs.base16-schemes}/share/themes/${cfg.darkTheme.system}.yaml";
     image = ../../wallpapers/rocket-launch.png;
 
     fonts.monospace = {
@@ -60,7 +60,7 @@ in
   config.home.activation.seedHelixTheme = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     mkdir -p "$HOME/.config/helix/themes"
     if [ ! -f "$HOME/.config/helix/themes/active.toml" ]; then
-      echo 'inherits = "${cfg.darkHelixTheme}"' > "$HOME/.config/helix/themes/active.toml"
+      echo 'inherits = "${cfg.darkTheme.helix}"' > "$HOME/.config/helix/themes/active.toml"
     fi
   '';
 }

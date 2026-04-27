@@ -31,9 +31,9 @@ in
 
       local function scheme_for_appearance(appearance)
         if appearance:find("Dark") then
-          return "Rosé Pine Moon (Gogh)"
+          return "${cfg.darkTheme.wezterm}"
         else
-          return "Rosé Pine Dawn (Gogh)"
+          return "${cfg.lightTheme.wezterm}"
         end
       end
 
