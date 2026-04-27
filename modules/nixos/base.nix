@@ -6,7 +6,6 @@
 }:
 let
   cfg = config.dotfiles;
-  hasGreeter = builtins.elem cfg.displayManager [ "niri" ];
 in
 {
   system.stateVersion = "25.11";
@@ -26,7 +25,7 @@ in
     shell = pkgs.${cfg.shell};
   };
 
-  services.displayManager.autoLogin = lib.mkIf (!hasGreeter) {
+  services.displayManager.autoLogin = {
     enable = true;
     user = "smores";
   };

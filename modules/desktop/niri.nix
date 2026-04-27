@@ -91,6 +91,15 @@ in
 
       spawn-at-startup = [
         { command = [ "noctalia-shell" ]; }
+        {
+          command = [
+            "${pkgs.writeShellScript "lock-on-start" ''
+              until noctalia-shell ipc call lockScreen lock 2>/dev/null; do
+                sleep 0.5
+              done
+            ''}"
+          ];
+        }
       ];
 
       input.touchpad = {
@@ -254,7 +263,6 @@ in
         };
         location = {
           useFahrenheit = true;
-          weatherTaliaMascotAlways = true;
           use12hourFormat = true;
           analogClockInCalendar = true;
         };

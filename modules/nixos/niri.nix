@@ -1,14 +1,8 @@
 {
   config,
   lib,
-  pkgs,
   ...
 }:
-let
-  regreetState = pkgs.writeText "regreet-state.toml" ''
-    last_user = "smores"
-  '';
-in
 {
   config = lib.mkIf (config.dotfiles.displayManager == "niri") {
     programs.niri.enable = true;
@@ -17,50 +11,18 @@ in
       libinput.enable = true;
       upower.enable = true;
       power-profiles-daemon.enable = true;
+      greetd = {
+        enable = true;
+        settings.default_session = {
+          command = "niri-session";
+          user = "smores";
+        };
+      };
     };
 
     nix.settings = {
       substituters = [ "https://noctalia.cachix.org" ];
       trusted-public-keys = [ "noctalia.cachix.org-1:pCOR47nnMEo5thcxNDtzWpOxNFQsBRglJzxWPp3dkU4=" ];
-    };
-
-    systemd.tmpfiles.rules = [
-      "C /var/lib/regreet/state.toml 0644 greeter greeter - ${regreetState}"
-    ];
-
-    programs.regreet = {
-      enable = true;
-      cageArgs = [
-        "-s"
-        "-d"
-        "-m"
-        "last"
-      ];
-      settings = {
-        GTK.application_prefer_dark_theme = true;
-        "widget.clock".format = "%a %I:%M %p";
-        background = {
-          path = "${../../wallpapers/rocket-launch.png}";
-          fit = "Cover";
-        };
-      };
-      theme = {
-        package = pkgs.adw-gtk3;
-        name = "adw-gtk3-dark";
-      };
-      iconTheme = {
-        package = pkgs.papirus-icon-theme;
-        name = "Papirus-Dark";
-      };
-      cursorTheme = {
-        package = pkgs.bibata-cursors;
-        name = "Bibata-Modern-Classic";
-      };
-      font = {
-        package = config.dotfiles.fontPackage;
-        name = config.dotfiles.font;
-        size = 16;
-      };
     };
   };
 }
