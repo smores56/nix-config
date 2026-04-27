@@ -5,6 +5,7 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # TODO: switch back to github:sodiboo/niri-flake when extraConfig or recent-windows is supported
     niri.url = "github:cmm/niri-flake/add-extraConfig";
     noctalia = {
       url = "github:noctalia-dev/noctalia-shell";
