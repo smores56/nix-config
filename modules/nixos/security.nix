@@ -49,13 +49,17 @@ in
     ACTION=="bind", SUBSYSTEM=="usb", DRIVER=="cdc_acm", ATTRS{idVendor}=="27c6", ATTRS{idProduct}=="5385", RUN+="/bin/sh -c 'echo %k > /sys/bus/usb/drivers/cdc_acm/unbind 2>/dev/null || true'"
   '';
 
-  security.pam.services.noctalia-shell =
+  security.pam.services.noctalia-shell.text =
     if cfg.fingerprint then
-      { fprintAuth = true; }
+      ''
+        auth sufficient ${fprintd-goodix53x5}/lib/security/pam_fprintd.so max-tries=10
+        auth required pam_unix.so try_first_pass nullok
+        account required pam_unix.so
+        password required pam_unix.so nullok sha512
+        session required pam_unix.so
+      ''
     else
-      {
-        text = ''
-          auth include login
-        '';
-      };
+      ''
+        auth include login
+      '';
 }
