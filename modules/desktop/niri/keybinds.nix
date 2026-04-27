@@ -54,6 +54,11 @@ in
 {
   config = lib.mkIf isNiri {
     programs.niri.settings = {
+      recent-windows.binds = {
+        "Mod+Tab".action.next-window = [ ];
+        "Mod+Shift+Tab".action.previous-window = [ ];
+      };
+
       switch-events.lid-close.action.spawn = [
         "noctalia-shell"
         "ipc"
@@ -79,9 +84,6 @@ in
           "controlCenter"
           "toggle"
         ];
-
-        "Mod+Tab".action.next-window = [ ];
-        "Mod+Shift+Tab".action.previous-window = [ ];
 
         "Mod+Q".action.close-window = [ ];
         "Mod+F".action.maximize-column = [ ];
