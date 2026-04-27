@@ -236,7 +236,32 @@ in
     programs.noctalia-shell = {
       enable = true;
       settings = lib.recursiveUpdate (builtins.fromJSON (builtins.readFile ./noctalia-settings.json)) {
-        general.avatarImage = "${../../pfp.png}";
+        general = {
+          avatarImage = "${../../pfp.png}";
+          clockStyle = "digital";
+          lockScreenAnimations = true;
+          showChangelogOnStartup = false;
+        };
+        ui = {
+          fontDefault = config.dotfiles.font;
+          fontFixed = config.dotfiles.font;
+        };
+        location = {
+          useFahrenheit = true;
+          weatherTaliaMascotAlways = true;
+          use12hourFormat = true;
+          analogClockInCalendar = true;
+        };
+        appLauncher = {
+          enableClipboardHistory = true;
+          autoPasteClipboard = true;
+          terminalCommand = "${config.dotfiles.terminal} -e";
+        };
+        colorSchemes = {
+          predefinedScheme = "Rose Pine";
+          schedulingMode = "location";
+        };
+        nightLight.enabled = true;
         hooks = {
           enabled = true;
           darkModeChange = "${pkgs.writeShellScript "on-dark-mode-change" ''
