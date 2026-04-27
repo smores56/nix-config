@@ -128,7 +128,8 @@ let
   lightZellijConfig = pkgs.writeText "light-zellij-config.kdl" (zellijConfig lightColors);
 
   darkModeHook = pkgs.writeShellScript "dark-mode-hook" ''
-    sleep 0.2
+    DELAY=''${1:-0.2}
+    sleep "$DELAY"
     MODE=$(${pkgs.glib}/bin/gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null || echo "")
     if echo "$MODE" | grep -q "prefer-light"; then
       HELIX_THEME="${cfg.lightTheme.helix}"
@@ -168,6 +169,12 @@ in
 {
   config.dotfiles.darkModeHook = darkModeHook;
 
+  config.home.packages = [
+    (pkgs.writeShellScriptBin "theme-sync" ''
+      exec ${darkModeHook} 0
+    '')
+  ];
+
   config.stylix = {
     enable = true;
     autoEnable = true;
@@ -196,22 +203,14 @@ in
     };
   };
 
-  config.home.activation.seedHelixTheme = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+  config.home.activation.seedThemeConfigs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     mkdir -p "$HOME/.config/helix/themes"
-    if [ ! -f "$HOME/.config/helix/themes/active.toml" ]; then
-      echo 'inherits = "${cfg.darkTheme.helix}"' > "$HOME/.config/helix/themes/active.toml"
-    fi
-  '';
+    echo 'inherits = "${cfg.darkTheme.helix}"' > "$HOME/.config/helix/themes/active.toml"
 
-  config.home.activation.seedFishColors = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     ${pkgs.fish}/bin/fish "${darkFishColors}" 2>/dev/null || true
-  '';
 
-  config.home.activation.seedZellijConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     mkdir -p "$HOME/.config/zellij"
-    if [ ! -f "$HOME/.config/zellij/config.kdl" ]; then
-      cp "${darkZellijConfig}" "$HOME/.config/zellij/config.kdl"
-      chmod 644 "$HOME/.config/zellij/config.kdl"
-    fi
+    cp "${darkZellijConfig}" "$HOME/.config/zellij/config.kdl"
+    chmod 644 "$HOME/.config/zellij/config.kdl"
   '';
 }
