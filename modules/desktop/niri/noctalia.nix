@@ -54,7 +54,7 @@ in
           useFahrenheit = true;
           use12hourFormat = true;
           analogClockInCalendar = true;
-          weatherTaliaMascotAlways = true;
+          weatherTaliaMascotAlways = false;
         };
         appLauncher = {
           enableClipboardHistory = true;
