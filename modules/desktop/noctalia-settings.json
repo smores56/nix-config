@@ -21,7 +21,6 @@
     "language": "",
     "clockFormat": "hh\\nmm",
     "passwordChars": false,
-    "reverseScroll": false,
     "smoothScrollEnabled": true
   },
   "ui": {
@@ -71,44 +70,11 @@
     "favorites": []
   },
   "appLauncher": {
-    "enableClipPreview": true,
-    "clipboardWrapText": true,
-    "enableClipboardSmartIcons": true,
-    "enableClipboardChips": true,
-    "clipboardWatchTextCommand": "wl-paste --type text --watch cliphist store",
-    "clipboardWatchImageCommand": "wl-paste --type image --watch cliphist store",
-    "position": "center",
-    "pinnedApps": [],
-    "sortByMostUsed": true,
-    "customLaunchPrefixEnabled": false,
-    "customLaunchPrefix": "",
-    "viewMode": "list",
-    "showCategories": true,
     "iconMode": "tabler",
     "showIconBackground": false,
-    "enableSettingsSearch": true,
-    "enableWindowsSearch": true,
-    "enableSessionSearch": true,
-    "ignoreMouseInput": false,
     "screenshotAnnotationTool": "",
     "overviewLayer": false,
     "density": "default"
-  },
-  "controlCenter": {
-    "position": "close_to_bar_button",
-    "diskPath": "/",
-    "shortcuts": {
-      "left": [{"id":"Network"},{"id":"Bluetooth"},{"id":"WallpaperSelector"},{"id":"NoctaliaPerformance"}],
-      "right": [{"id":"Notifications"},{"id":"PowerProfile"},{"id":"KeepAwake"},{"id":"NightLight"}]
-    },
-    "cards": [
-      {"enabled":true,"id":"profile-card"},
-      {"enabled":true,"id":"shortcuts-card"},
-      {"enabled":true,"id":"audio-card"},
-      {"enabled":false,"id":"brightness-card"},
-      {"enabled":true,"id":"weather-card"},
-      {"enabled":true,"id":"media-sysmon-card"}
-    ]
   },
   "colorSchemes": {
     "useWallpaperColors": false,
@@ -117,19 +83,12 @@
     "syncGsettings": true
   },
   "notifications": {
-    "enabled": true,
     "enableMarkdown": false,
     "density": "default",
     "monitors": [],
     "location": "top_right",
     "overlayLayer": true,
-    "backgroundOpacity": 1,
-    "respectExpireTimeout": false,
-    "lowUrgencyDuration": 3,
-    "normalUrgencyDuration": 8,
-    "criticalUrgencyDuration": 15,
     "clearDismissed": true,
-    "saveToHistory": {"low":true,"normal":true,"critical":true},
     "sounds": {
       "enabled": false,
       "volume": 0.5,
@@ -139,9 +98,7 @@
       "lowSoundFile": "",
       "excludedApps": "discord,firefox,chrome,chromium,edge"
     },
-    "enableMediaToast": false,
-    "enableKeyboardLayoutToast": true,
-    "enableBatteryToast": true
+    "enableMediaToast": false
   },
   "osd": {
     "enabled": true,
@@ -153,8 +110,6 @@
     "monitors": []
   },
   "audio": {
-    "volumeStep": 5,
-    "volumeOverdrive": false,
     "spectrumFrameRate": 30,
     "visualizerType": "linear",
     "spectrumMirrored": true,
@@ -163,14 +118,7 @@
     "volumeFeedback": false,
     "volumeFeedbackSoundFile": ""
   },
-  "brightness": {
-    "brightnessStep": 5,
-    "enforceMinimum": true,
-    "enableDdcSupport": false,
-    "backlightDeviceMappings": []
-  },
   "idle": {
-    "enabled": false,
     "screenOffTimeout": 600,
     "lockTimeout": 660,
     "suspendTimeout": 1800,
@@ -180,8 +128,7 @@
     "suspendCommand": "",
     "resumeScreenOffCommand": "",
     "resumeLockCommand": "",
-    "resumeSuspendCommand": "",
-    "customCommands": "[]"
+    "resumeSuspendCommand": ""
   },
   "desktopWidgets": {
     "enabled": false

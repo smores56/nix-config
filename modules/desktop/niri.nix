@@ -267,7 +267,9 @@ in
           predefinedScheme = "Rose Pine";
           schedulingMode = "location";
         };
+        audio.volumeOverdrive = true;
         dock.enabled = false;
+        idle.enabled = true;
         nightLight.enabled = true;
         hooks = {
           enabled = true;
