@@ -26,6 +26,8 @@ let
       mkdir -p libfprint/sigfm
       cp ${goodix53x5-src}/sigfm/* libfprint/sigfm/
       patch -p1 < ${goodix53x5-src}/meson-integration.patch
+      substituteInPlace libfprint/meson.build \
+        --replace-fail "/usr/include/opencv4" "${pkgs.opencv}/include/opencv4"
     '';
   });
 
