@@ -1,11 +1,13 @@
 {
   config,
   lib,
+  pkgs,
   ...
 }:
 {
   config = lib.mkIf (config.dotfiles.displayManager == "niri") {
     programs.niri.enable = true;
+    programs.niri.package = pkgs.niri-unstable;
 
     services = {
       libinput.enable = true;
