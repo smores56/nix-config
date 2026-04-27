@@ -238,9 +238,14 @@ in
       settings = lib.recursiveUpdate (builtins.fromJSON (builtins.readFile ./noctalia-settings.json)) {
         general = {
           avatarImage = "${../../pfp.png}";
+          autoStartAuth = true;
+          allowPasswordWithFprintd = true;
           clockStyle = "digital";
+          enableLockScreenMediaControls = true;
           lockOnSuspend = true;
           lockScreenAnimations = true;
+          lockScreenBlur = 40;
+          lockScreenTint = 40;
           showChangelogOnStartup = false;
         };
         ui = {
@@ -262,6 +267,7 @@ in
           predefinedScheme = "Rose Pine";
           schedulingMode = "location";
         };
+        dock.enabled = false;
         nightLight.enabled = true;
         hooks = {
           enabled = true;
