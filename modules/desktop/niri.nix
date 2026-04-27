@@ -85,6 +85,7 @@ in
           urgent.color = love;
         };
         insert-hint.display.color = "${iris}80";
+        default-column-width.proportion = 0.5;
       };
       overview.backdrop-color = base;
 
