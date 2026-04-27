@@ -7,6 +7,11 @@
 let
   isNiri = config.dotfiles.displayManager == "niri";
 
+  base = "#232136";
+  overlay = "#393552";
+  love = "#eb6f92";
+  iris = "#c4a7e7";
+
   niriEqualize = pkgs.writeShellScript "niri-equalize" ''
     exec ${pkgs.python3}/bin/python3 ${./niri-equalize.py}
   '';
@@ -66,21 +71,21 @@ in
       prefer-no-csd = true;
       hotkey-overlay.skip-at-startup = true;
       layout = {
-        background-color = "#232136";
+        background-color = base;
         border = {
           width = 2;
-          active.color = "#c4a7e7";
-          inactive.color = "#393552";
-          urgent.color = "#eb6f92";
+          active.color = iris;
+          inactive.color = overlay;
+          urgent.color = love;
         };
         tab-indicator = {
-          active.color = "#c4a7e7";
-          inactive.color = "#393552";
-          urgent.color = "#eb6f92";
+          active.color = iris;
+          inactive.color = overlay;
+          urgent.color = love;
         };
-        insert-hint.display.color = "#c4a7e780";
+        insert-hint.display.color = "${iris}80";
       };
-      overview.backdrop-color = "#232136";
+      overview.backdrop-color = base;
 
       spawn-at-startup = [
         { command = [ "noctalia-shell" ]; }
