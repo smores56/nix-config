@@ -7,6 +7,7 @@
 let
   isNiri = config.dotfiles.displayManager == "niri";
 
+  # Rose Pine Moon palette
   base = "#232136";
   overlay = "#393552";
   love = "#eb6f92";
