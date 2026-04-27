@@ -8,10 +8,10 @@ let
   isNiri = config.dotfiles.displayManager == "niri";
 
   # Rose Pine Moon palette
-  base = "#232136";
-  overlay = "#393552";
-  love = "#eb6f92";
-  iris = "#c4a7e7";
+  base = "#232136"; # background
+  overlay = "#393552"; # inactive/subtle
+  love = "#eb6f92"; # urgent/attention
+  iris = "#c4a7e7"; # active/accent
 
   niriEqualize = pkgs.writeShellScript "niri-equalize" ''
     exec ${pkgs.python3}/bin/python3 ${./niri-equalize.py}
