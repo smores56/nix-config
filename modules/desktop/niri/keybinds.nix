@@ -53,6 +53,15 @@ let
 in
 {
   config = lib.mkIf isNiri {
+    programs.niri.extraConfig = ''
+      recent-windows {
+        binds {
+          Mod+Tab { next-window; }
+          Mod+Shift+Tab { previous-window; }
+        }
+      }
+    '';
+
     programs.niri.settings = {
       switch-events.lid-close.action.spawn = [
         "noctalia-shell"
