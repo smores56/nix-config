@@ -75,7 +75,35 @@ in
           volumeFeedback = true;
         };
         notifications.enableMarkdown = true;
-        desktopWidgets.enabled = true;
+        desktopWidgets = {
+          enabled = true;
+          monitorWidgets = [
+            {
+              name = "eDP-1";
+              widgets = [
+                {
+                  id = "Clock";
+                  x = 760;
+                  y = 40;
+                  scale = 2.5;
+                  showBackground = false;
+                  clockStyle = "minimal";
+                  format = "h:mm AP";
+                }
+                {
+                  id = "MediaPlayer";
+                  x = 1100;
+                  y = 40;
+                  scale = 2.0;
+                  showBackground = false;
+                  showButtons = true;
+                  showAlbumArt = true;
+                  roundedCorners = true;
+                }
+              ];
+            }
+          ];
+        };
         dock.enabled = false;
         idle.enabled = true;
         nightLight.enabled = true;
