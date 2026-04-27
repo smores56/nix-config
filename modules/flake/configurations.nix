@@ -60,7 +60,8 @@ let
     in
     inputs.nixpkgs.lib.nixosSystem {
       modules =
-        nixosModules
+        [ { nixpkgs.overlays = [ niri.overlays.niri ]; } ]
+        ++ nixosModules
         ++ [
           ../hosts/${args.hostname}.nix
           {
