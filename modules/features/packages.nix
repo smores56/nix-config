@@ -57,6 +57,7 @@
 
     # TUI utilities
     gum
+    opencode
 
     # container tools
     k9s
