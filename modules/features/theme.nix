@@ -30,6 +30,11 @@ let
   '';
 in
 {
+  options.programs.opencode.tui = lib.mkOption {
+    type = lib.types.anything;
+    default = { };
+  };
+
   config.dotfiles.darkModeHook = darkModeHook;
 
   config.stylix = {
@@ -54,6 +59,7 @@ in
       wezterm.enable = false;
       helix.enable = false;
       lazygit.enable = false;
+      opencode.enable = false;
     };
   };
 
