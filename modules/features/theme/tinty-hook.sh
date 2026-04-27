@@ -64,9 +64,9 @@ LIGHT_THEME=$([ "$VARIANT" = "light" ] && echo "true" || echo "false")
 mkdir -p "$HOME/.config/lazygit"
 cat > "$HOME/.config/lazygit/theme.yml" << LAZYGIT
 git:
-  paging:
-    colorArg: always
-    pager: "delta --paging=never --$DELTA_MODE"
+  pagers:
+    - colorArg: always
+      pager: "delta --paging=never --$DELTA_MODE"
 gui:
   theme:
     lightTheme: $LIGHT_THEME
