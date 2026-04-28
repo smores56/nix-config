@@ -231,6 +231,17 @@ EOF
     else
       echo "Light" > "$HOME/.cache/dark-mode-state"
     fi
+
+    ${if isOsx then ''
+      if [ "$IS_DARK" = "true" ]; then
+        defaults write -g AppleInterfaceStyle Dark
+      else
+        defaults delete -g AppleInterfaceStyle 2>/dev/null || true
+      fi
+    '' else ''
+      ${pkgs.glib}/bin/gsettings set org.gnome.desktop.interface color-scheme \
+        "$([ "$IS_DARK" = "true" ] && echo "prefer-dark" || echo "prefer-light")" 2>/dev/null || true
+    ''}
   '';
 
   currentGen = "$HOME/.local/state/home-manager/gcroots/current-home";
@@ -312,6 +323,11 @@ in
   config.home.activation.seedThemeConfigs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     ${if isAutoSwitch then detectDarkMode else ''IS_DARK="${if baseIsDark then "true" else "false"}"''}
     ${darkModeHook} "$IS_DARK"
+    ${lib.optionalString isOsx (
+      if isAutoSwitch
+      then "defaults write -g AppleInterfaceStyleSwitchesAutomatically -bool true"
+      else "defaults write -g AppleInterfaceStyleSwitchesAutomatically -bool false"
+    )}
   '';
 
   config.launchd.agents.dark-mode-watcher = lib.mkIf (isOsx && isAutoSwitch) {
