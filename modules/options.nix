@@ -67,6 +67,10 @@ in
       type = lib.types.bool;
       default = false;
     };
+    ollama = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+    };
     nixos = lib.mkOption {
       type = lib.types.bool;
       default = false;

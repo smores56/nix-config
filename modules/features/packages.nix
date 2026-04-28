@@ -13,6 +13,9 @@
 
   config.home.sessionVariables = {
     DISABLE_NIX_SHELL_WELCOME = 1;
+    OLLAMA_HOST = "http://smortress:11434";
+    OLLAMA_API_BASE = "http://smortress:11434";
+    OPENAI_MODEL = "qwen3.6:27b";
   };
 
   config.home.packages = with pkgs; [
@@ -66,7 +69,8 @@
 
     # TUI utilities
     gum
-    opencode
+    crush
+    aider-chat
 
     # container tools
     lazydocker

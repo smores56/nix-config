@@ -57,6 +57,8 @@
         sc = "ssh smores@campfire -t fish";
         st = "ssh smores@(tailscale-hosts | fzf) -t fish";
 
+        cr = "crush";
+        ai = "aider --model ollama_chat/qwen3.6:27b";
         olu = "ollama run $OPENAI_MODEL";
       };
 

@@ -80,6 +80,7 @@ let
             displayManager = dm;
             exposeSsh = args.exposeSsh or false;
             fingerprint = args.fingerprint or false;
+            ollama = args.ollama or false;
           };
         }
       ]
