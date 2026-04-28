@@ -17,10 +17,12 @@ let
   libfprint-goodix53x5 = pkgs.libfprint.overrideAttrs (old: {
     doCheck = false;
     doInstallCheck = false;
-    buildInputs = old.buildInputs ++ (with pkgs; [
-      opencv
-      openssl
-    ]);
+    buildInputs =
+      old.buildInputs
+      ++ (with pkgs; [
+        opencv
+        openssl
+      ]);
     nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.pkg-config ];
     postPatch = (old.postPatch or "") + ''
       mkdir -p libfprint/drivers/goodix53x5

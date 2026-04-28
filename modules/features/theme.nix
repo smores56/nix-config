@@ -31,99 +31,116 @@ let
   darkColors = parseScheme "${pkgs.base16-schemes}/share/themes/${cfg.darkTheme.system}.yaml";
   lightColors = parseScheme "${pkgs.base16-schemes}/share/themes/${cfg.lightTheme.system}.yaml";
 
-  fishColorsScript =
-    colors: ''
-      set -U fish_color_normal ${colors.base05}
-      set -U fish_color_command ${colors.base0D}
-      set -U fish_color_quote ${colors.base0B}
-      set -U fish_color_redirection ${colors.base0C}
-      set -U fish_color_end ${colors.base0C}
-      set -U fish_color_error ${colors.base08}
-      set -U fish_color_param ${colors.base05}
-      set -U fish_color_comment ${colors.base03}
-      set -U fish_color_selection --background=${colors.base02}
-      set -U fish_color_search_match --background=${colors.base02}
-      set -U fish_color_operator ${colors.base0C}
-      set -U fish_color_escape ${colors.base0C}
-      set -U fish_color_autosuggestion ${colors.base03}
-      set -U fish_pager_color_progress ${colors.base03}
-      set -U fish_pager_color_prefix ${colors.base0D}
-      set -U fish_pager_color_completion ${colors.base05}
-      set -U fish_pager_color_description ${colors.base03}
-    '';
+  fishColorsScript = colors: ''
+    set -U fish_color_normal ${colors.base05}
+    set -U fish_color_command ${colors.base0D}
+    set -U fish_color_quote ${colors.base0B}
+    set -U fish_color_redirection ${colors.base0C}
+    set -U fish_color_end ${colors.base0C}
+    set -U fish_color_error ${colors.base08}
+    set -U fish_color_param ${colors.base05}
+    set -U fish_color_comment ${colors.base03}
+    set -U fish_color_selection --background=${colors.base02}
+    set -U fish_color_search_match --background=${colors.base02}
+    set -U fish_color_operator ${colors.base0C}
+    set -U fish_color_escape ${colors.base0C}
+    set -U fish_color_autosuggestion ${colors.base03}
+    set -U fish_pager_color_progress ${colors.base03}
+    set -U fish_pager_color_prefix ${colors.base0D}
+    set -U fish_pager_color_completion ${colors.base05}
+    set -U fish_pager_color_description ${colors.base03}
+  '';
 
-  zellijConfig =
-    colors: ''
-      default_shell "${cfg.shellPath}"
-      ui {
-        pane_frames {
-          rounded_corners true
+  hexToRgb =
+    hex:
+    let
+      hexDigits = {
+        "0" = 0; "1" = 1; "2" = 2; "3" = 3; "4" = 4;
+        "5" = 5; "6" = 6; "7" = 7; "8" = 8; "9" = 9;
+        "a" = 10; "b" = 11; "c" = 12; "d" = 13; "e" = 14; "f" = 15;
+        "A" = 10; "B" = 11; "C" = 12; "D" = 13; "E" = 14; "F" = 15;
+      };
+      hexByte = s: hexDigits.${builtins.substring 0 1 s} * 16 + hexDigits.${builtins.substring 1 1 s};
+      r = hexByte (builtins.substring 0 2 hex);
+      g = hexByte (builtins.substring 2 2 hex);
+      b = hexByte (builtins.substring 4 2 hex);
+    in
+    "${toString r} ${toString g} ${toString b}";
+
+  zellijBlock = base: background: e0: e1: e2: e3: ''
+          base ${hexToRgb base}
+          background ${hexToRgb background}
+          emphasis_0 ${hexToRgb e0}
+          emphasis_1 ${hexToRgb e1}
+          emphasis_2 ${hexToRgb e2}
+          emphasis_3 ${hexToRgb e3}'';
+
+  zellijConfig = colors: ''
+    default_shell "${cfg.shellPath}"
+    ui {
+      pane_frames {
+        rounded_corners true
+      }
+    }
+    session_serialization false
+    show_startup_tips false
+    themes {
+      active {
+        text_unselected {
+          ${zellijBlock colors.base05 colors.base01 colors.base08 colors.base0C colors.base0B colors.base0E}
+        }
+        text_selected {
+          ${zellijBlock colors.base05 colors.base04 colors.base08 colors.base0C colors.base0B colors.base0E}
+        }
+        ribbon_selected {
+          ${zellijBlock colors.base01 colors.base0E colors.base08 colors.base0C colors.base0B colors.base0D}
+        }
+        ribbon_unselected {
+          ${zellijBlock colors.base01 colors.base05 colors.base08 colors.base0C colors.base0B colors.base0E}
+        }
+        table_title {
+          ${zellijBlock colors.base0E colors.base00 colors.base08 colors.base0C colors.base0B colors.base0D}
+        }
+        table_cell_selected {
+          ${zellijBlock colors.base05 colors.base04 colors.base08 colors.base0C colors.base0B colors.base0E}
+        }
+        table_cell_unselected {
+          ${zellijBlock colors.base05 colors.base01 colors.base08 colors.base0C colors.base0B colors.base0E}
+        }
+        list_selected {
+          ${zellijBlock colors.base05 colors.base04 colors.base08 colors.base0C colors.base0B colors.base0E}
+        }
+        list_unselected {
+          ${zellijBlock colors.base05 colors.base01 colors.base08 colors.base0C colors.base0B colors.base0E}
+        }
+        frame_selected {
+          ${zellijBlock colors.base0E colors.base00 colors.base08 colors.base0C colors.base0B colors.base0D}
+        }
+        frame_highlight {
+          ${zellijBlock colors.base08 colors.base00 colors.base0E colors.base0C colors.base0B colors.base0D}
+        }
+        exit_code_success {
+          ${zellijBlock colors.base0B colors.base00 colors.base08 colors.base0C colors.base0E colors.base0D}
+        }
+        exit_code_error {
+          ${zellijBlock colors.base08 colors.base00 colors.base0B colors.base0C colors.base0E colors.base0D}
+        }
+        multiplayer_user_colors {
+          player_1 ${hexToRgb colors.base08}
+          player_2 ${hexToRgb colors.base0B}
+          player_3 ${hexToRgb colors.base0D}
+          player_4 ${hexToRgb colors.base0E}
+          player_5 ${hexToRgb colors.base0C}
+          player_6 ${hexToRgb colors.base09}
+          player_7 ${hexToRgb colors.base0A}
+          player_8 ${hexToRgb colors.base0F}
+          player_9 ${hexToRgb colors.base03}
+          player_10 ${hexToRgb colors.base04}
         }
       }
-      session_serialization false
-      show_startup_tips false
-      themes {
-        active {
-          base {
-            fg "#${colors.base05}"
-            bg "#${colors.base00}"
-          }
-          text_unselected {
-            fg "#${colors.base05}"
-            bg "#${colors.base01}"
-          }
-          text_selected {
-            fg "#${colors.base05}"
-            bg "#${colors.base04}"
-          }
-          ribbon_selected {
-            fg "#${colors.base01}"
-            bg "#${colors.base0E}"
-          }
-          ribbon_unselected {
-            fg "#${colors.base01}"
-            bg "#${colors.base05}"
-          }
-          table_title {
-            fg "#${colors.base0E}"
-            bg "#${colors.base00}"
-          }
-          table_cell_selected {
-            fg "#${colors.base05}"
-            bg "#${colors.base04}"
-          }
-          table_cell_unselected {
-            fg "#${colors.base05}"
-            bg "#${colors.base01}"
-          }
-          list_selected {
-            fg "#${colors.base05}"
-            bg "#${colors.base04}"
-          }
-          list_unselected {
-            fg "#${colors.base05}"
-            bg "#${colors.base01}"
-          }
-          frame_selected {
-            fg "#${colors.base0E}"
-            bg "#${colors.base00}"
-          }
-          frame_highlight {
-            fg "#${colors.base08}"
-            bg "#${colors.base00}"
-          }
-          exit_code_success {
-            fg "#${colors.base0B}"
-            bg "#${colors.base00}"
-          }
-          exit_code_error {
-            fg "#${colors.base08}"
-            bg "#${colors.base00}"
-          }
-        }
-      }
-      theme "active"
-    '';
+    }
+    theme "active"
+  '';
 
   darkFishColors = pkgs.writeText "dark-fish-colors.fish" (fishColorsScript darkColors);
   lightFishColors = pkgs.writeText "light-fish-colors.fish" (fishColorsScript lightColors);
@@ -134,21 +151,24 @@ let
   isOsx = cfg.displayManager == "osx";
 
   detectDarkMode =
-    if isOsx then ''
-      MODE=$(defaults read -g AppleInterfaceStyle 2>/dev/null || echo "Light")
-      if [ "$MODE" = "Dark" ]; then
-        IS_DARK="true"
-      else
-        IS_DARK="false"
-      fi
-    '' else ''
-      MODE=$(${pkgs.glib}/bin/gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null || echo "")
-      if echo "$MODE" | grep -q "prefer-light"; then
-        IS_DARK="false"
-      else
-        IS_DARK="true"
-      fi
-    '';
+    if isOsx then
+      ''
+        MODE=$(defaults read -g AppleInterfaceStyle 2>/dev/null || echo "Light")
+        if [ "$MODE" = "Dark" ]; then
+          IS_DARK="true"
+        else
+          IS_DARK="false"
+        fi
+      ''
+    else
+      ''
+        MODE=$(${pkgs.glib}/bin/gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null || echo "")
+        if echo "$MODE" | grep -q "prefer-light"; then
+          IS_DARK="false"
+        else
+          IS_DARK="true"
+        fi
+      '';
 
   darkModeHook = pkgs.writeShellScript "dark-mode-hook" ''
     IS_DARK="''${1:-}"
@@ -167,12 +187,10 @@ let
       ZELLIJ_CONFIG="${darkZellijConfig}"
     fi
 
-    # Helix: update active theme and signal reload
     mkdir -p "$HOME/.config/helix/themes"
     echo "inherits = \"$HELIX_THEME\"" > "$HOME/.config/helix/themes/active.toml"
     ${pkgs.procps}/bin/pkill -USR1 hx 2>/dev/null || true
 
-    # Lazygit: update theme for next launch
     mkdir -p "$HOME/.config/lazygit"
     cat > "$HOME/.config/lazygit/theme.yml" <<EOF
 gui:
@@ -180,14 +198,29 @@ gui:
     lightTheme: $LAZYGIT_LIGHT
 EOF
 
-    # Fish: update universal color variables (affects all running sessions)
     ${pkgs.fish}/bin/fish "$FISH_COLORS" 2>/dev/null || true
 
-    # Zellij: copy config with matching theme (regular file, not symlink)
-    # Zellij's file watcher detects the change and reloads live
     mkdir -p "$HOME/.config/zellij"
     cp "$ZELLIJ_CONFIG" "$HOME/.config/zellij/config.kdl"
     chmod 644 "$HOME/.config/zellij/config.kdl"
+  '';
+
+  currentGen = "$HOME/.local/state/home-manager/gcroots/current-home";
+
+  activateSpecialisation = pkgs.writeShellScript "activate-specialisation" ''
+    IS_DARK="''${1:-}"
+    if [ -z "$IS_DARK" ]; then
+      ${detectDarkMode}
+    fi
+
+    GEN="${currentGen}"
+    if [ "$IS_DARK" = "false" ] && [ -e "$GEN/specialisation/light/activate" ]; then
+      "$GEN/specialisation/light/activate"
+    elif [ -e "$GEN/activate" ]; then
+      "$GEN/activate"
+    else
+      ${darkModeHook} "$IS_DARK"
+    fi
   '';
 in
 {
@@ -197,13 +230,16 @@ in
     (pkgs.writeShellScriptBin "theme-sync" ''
       exec ${darkModeHook} "$@"
     '')
+    (pkgs.writeShellScriptBin "theme-switch" ''
+      exec ${activateSpecialisation} "$@"
+    '')
   ];
 
   config.stylix = {
     enable = true;
     autoEnable = true;
-    polarity = "dark";
-    base16Scheme = "${pkgs.base16-schemes}/share/themes/${cfg.darkTheme.system}.yaml";
+    polarity = lib.mkDefault "dark";
+    base16Scheme = lib.mkDefault "${pkgs.base16-schemes}/share/themes/${cfg.darkTheme.system}.yaml";
     image = ../../wallpapers/rocket-launch.png;
 
     fonts.monospace = {
@@ -227,13 +263,20 @@ in
     };
   };
 
+  config.specialisation.light.configuration = {
+    stylix = {
+      polarity = lib.mkForce "light";
+      base16Scheme = lib.mkForce "${pkgs.base16-schemes}/share/themes/${cfg.lightTheme.system}.yaml";
+    };
+  };
+
   config.programs.zellij = {
     enable = true;
     enableFishIntegration = false;
   };
 
   config.home.activation.seedThemeConfigs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    ${darkModeHook} true
+    ${darkModeHook}
   '';
 
   config.launchd.agents.dark-mode-watcher = lib.mkIf isOsx {
@@ -248,9 +291,9 @@ in
           if [ "$CURRENT" != "$PREVIOUS" ]; then
             echo "$CURRENT" > "$CACHE"
             if [ "$CURRENT" = "Dark" ]; then
-              ${darkModeHook} true
+              ${activateSpecialisation} true
             else
-              ${darkModeHook} false
+              ${activateSpecialisation} false
             fi
           fi
         ''}"

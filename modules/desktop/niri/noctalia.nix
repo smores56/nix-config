@@ -31,7 +31,12 @@ in
         bar.widgets = {
           left = [
             { id = "Launcher"; }
-            { id = "Clock"; formatHorizontal = "h:mm AP ddd, MMM dd"; formatVertical = "h:mm AP"; tooltipFormat = "h:mm AP ddd, MMM dd"; }
+            {
+              id = "Clock";
+              formatHorizontal = "h:mm AP ddd, MMM dd";
+              formatVertical = "h:mm AP";
+              tooltipFormat = "h:mm AP ddd, MMM dd";
+            }
             { id = "SystemMonitor"; }
             { id = "ActiveWindow"; }
             { id = "MediaMini"; }

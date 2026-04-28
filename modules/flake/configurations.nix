@@ -65,21 +65,22 @@ let
       dm = args.displayManager or null;
     in
     inputs.nixpkgs.lib.nixosSystem {
-      modules =
-        [ { nixpkgs.overlays = [ niri.overlays.niri ]; } ]
-        ++ nixosModules
-        ++ [
-          ../hosts/${args.hostname}.nix
-          {
-            networking.hostName = args.hostname;
-            dotfiles = {
-              displayManager = dm;
-              exposeSsh = args.exposeSsh or false;
-              fingerprint = args.fingerprint or false;
-            };
-          }
-        ]
-        ++ (if dm == "niri" then [ niri.nixosModules.niri ] else [ ]);
+      modules = [
+        { nixpkgs.overlays = [ niri.overlays.niri ]; }
+      ]
+      ++ nixosModules
+      ++ [
+        ../hosts/${args.hostname}.nix
+        {
+          networking.hostName = args.hostname;
+          dotfiles = {
+            displayManager = dm;
+            exposeSsh = args.exposeSsh or false;
+            fingerprint = args.fingerprint or false;
+          };
+        }
+      ]
+      ++ (if dm == "niri" then [ niri.nixosModules.niri ] else [ ]);
     };
 in
 {

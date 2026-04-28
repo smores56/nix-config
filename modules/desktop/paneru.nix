@@ -14,7 +14,11 @@ in
       enable = true;
       settings = {
         options = {
-          preset_column_widths = [ 0.33 0.5 0.67 ];
+          preset_column_widths = [
+            0.33
+            0.5
+            0.67
+          ];
           animation_speed = 50;
         };
 
