@@ -168,6 +168,8 @@ let
   lightZellijConfig = pkgs.writeText "light-zellij-config.kdl" (zellijConfig lightColors);
 
   isOsx = cfg.displayManager == "osx";
+  isAutoSwitch = cfg.polarity == "timeOfDay";
+  baseIsDark = cfg.polarity != "light";
 
   detectDarkMode =
     if isOsx then
@@ -235,6 +237,8 @@ EOF
     GEN="${currentGen}"
     if [ "$IS_DARK" = "false" ] && [ -e "$GEN/specialisation/light/activate" ]; then
       "$GEN/specialisation/light/activate"
+    elif [ "$IS_DARK" = "true" ] && [ -e "$GEN/specialisation/dark/activate" ]; then
+      "$GEN/specialisation/dark/activate"
     elif [ -e "$GEN/activate" ]; then
       "$GEN/activate"
     else
@@ -254,8 +258,10 @@ in
   config.stylix = {
     enable = true;
     autoEnable = true;
-    polarity = lib.mkDefault "dark";
-    base16Scheme = lib.mkDefault "${pkgs.base16-schemes}/share/themes/${cfg.darkTheme.system}.yaml";
+    polarity = lib.mkDefault (if baseIsDark then "dark" else "light");
+    base16Scheme = lib.mkDefault "${pkgs.base16-schemes}/share/themes/${
+      if baseIsDark then cfg.darkTheme.system else cfg.lightTheme.system
+    }.yaml";
     image = ../../wallpapers/rocket-launch.png;
 
     fonts.monospace = {
@@ -279,10 +285,15 @@ in
     };
   };
 
-  config.specialisation.light.configuration = {
-    stylix = {
+  config.specialisation = if baseIsDark then {
+    light.configuration.stylix = {
       polarity = lib.mkForce "light";
       base16Scheme = lib.mkForce "${pkgs.base16-schemes}/share/themes/${cfg.lightTheme.system}.yaml";
+    };
+  } else {
+    dark.configuration.stylix = {
+      polarity = lib.mkForce "dark";
+      base16Scheme = lib.mkForce "${pkgs.base16-schemes}/share/themes/${cfg.darkTheme.system}.yaml";
     };
   };
 
@@ -292,7 +303,7 @@ in
   };
 
   config.home.activation.seedThemeConfigs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    ${detectDarkMode}
+    ${if isAutoSwitch then detectDarkMode else ''IS_DARK="${if baseIsDark then "true" else "false"}"''}
     ${darkModeHook} "$IS_DARK"
     mkdir -p "$HOME/.cache"
     if [ "$IS_DARK" = "true" ]; then
@@ -302,7 +313,7 @@ in
     fi
   '';
 
-  config.launchd.agents.dark-mode-watcher = lib.mkIf isOsx {
+  config.launchd.agents.dark-mode-watcher = lib.mkIf (isOsx && isAutoSwitch) {
     enable = true;
     config = {
       ProgramArguments = [

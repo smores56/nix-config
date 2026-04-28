@@ -38,6 +38,14 @@ in
       );
       default = null;
     };
+    polarity = lib.mkOption {
+      type = lib.types.enum [
+        "dark"
+        "light"
+        "timeOfDay"
+      ];
+      default = "dark";
+    };
     terminalFontSize = lib.mkOption {
       type = lib.types.int;
       default = 12;

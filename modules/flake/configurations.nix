@@ -49,6 +49,7 @@ let
           dotfiles = builtins.intersectAttrs {
             displayManager = null;
             terminalFontSize = null;
+            polarity = null;
             exposeSsh = null;
             nixos = null;
             email = null;
@@ -95,6 +96,7 @@ in
       "smores@smoresbook" = mkHome {
         displayManager = "niri";
         nixos = true;
+        polarity = "timeOfDay";
       };
       "smores@campfire" = mkHome {
         nixos = true;

@@ -6,6 +6,7 @@
 }:
 let
   isNiri = config.dotfiles.displayManager == "niri";
+  polarity = config.dotfiles.polarity;
 
   base = "#${config.lib.stylix.colors.base00}";
 in
@@ -73,7 +74,9 @@ in
         };
         colorSchemes = {
           predefinedScheme = config.dotfiles.darkTheme.noctalia;
-          schedulingMode = "location";
+          schedulingMode = if polarity == "timeOfDay" then "location" else "off";
+        } // lib.optionalAttrs (polarity != "timeOfDay") {
+          darkMode = polarity != "light";
         };
         audio = {
           volumeOverdrive = true;
