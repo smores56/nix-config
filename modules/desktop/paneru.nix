@@ -45,15 +45,15 @@ in
         };
 
         bindings = {
-          window_focus_west = "alt - leftarrow";
-          window_focus_east = "alt - rightarrow";
-          window_focus_north = "alt - uparrow";
-          window_focus_south = "alt - downarrow";
+          window_focus_west = "ctrl - leftarrow";
+          window_focus_east = "ctrl - rightarrow";
+          window_focus_north = "ctrl - uparrow";
+          window_focus_south = "ctrl - downarrow";
 
-          window_swap_west = "alt + shift - leftarrow";
-          window_swap_east = "alt + shift - rightarrow";
-          window_swap_north = "alt + shift - uparrow";
-          window_swap_south = "alt + shift - downarrow";
+          window_swap_west = "ctrl + shift - leftarrow";
+          window_swap_east = "ctrl + shift - rightarrow";
+          window_swap_north = "ctrl + shift - uparrow";
+          window_swap_south = "ctrl + shift - downarrow";
 
           window_center = "alt - c";
           window_equalize = "alt - e";

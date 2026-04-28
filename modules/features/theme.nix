@@ -15,7 +15,7 @@ let
       parseLine =
         line:
         let
-          match = builtins.match ''[[:space:]]+(base[0-9A-Fa-f]+):[[:space:]]+"#([0-9a-fA-F]+)"'' line;
+          match = builtins.match ''[[:space:]]+(base[0-9A-Fa-f]+):[[:space:]]+"#([0-9a-fA-F]+)".*'' line;
         in
         if match != null then
           {
@@ -67,15 +67,31 @@ let
     in
     "${toString r} ${toString g} ${toString b}";
 
-  zellijBlock = base: background: e0: e1: e2: e3: ''
+  zellijBlock =
+    {
+      base,
+      background,
+      emphasis_0,
+      emphasis_1,
+      emphasis_2,
+      emphasis_3,
+    }:
+    ''
           base ${hexToRgb base}
           background ${hexToRgb background}
-          emphasis_0 ${hexToRgb e0}
-          emphasis_1 ${hexToRgb e1}
-          emphasis_2 ${hexToRgb e2}
-          emphasis_3 ${hexToRgb e3}'';
+          emphasis_0 ${hexToRgb emphasis_0}
+          emphasis_1 ${hexToRgb emphasis_1}
+          emphasis_2 ${hexToRgb emphasis_2}
+          emphasis_3 ${hexToRgb emphasis_3}'';
 
-  zellijConfig = colors: ''
+  zellijConfig = colors:
+    let
+      c = colors;
+      unselected = zellijBlock { base = c.base05; background = c.base01; emphasis_0 = c.base08; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0E; };
+      selected = zellijBlock { base = c.base05; background = c.base04; emphasis_0 = c.base08; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0E; };
+      title = zellijBlock { base = c.base0E; background = c.base00; emphasis_0 = c.base08; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0D; };
+    in
+    ''
     default_shell "${cfg.shellPath}"
     ui {
       pane_frames {
@@ -87,43 +103,43 @@ let
     themes {
       active {
         text_unselected {
-          ${zellijBlock colors.base05 colors.base01 colors.base08 colors.base0C colors.base0B colors.base0E}
+          ${unselected}
         }
         text_selected {
-          ${zellijBlock colors.base05 colors.base04 colors.base08 colors.base0C colors.base0B colors.base0E}
+          ${selected}
         }
         ribbon_selected {
-          ${zellijBlock colors.base01 colors.base0E colors.base08 colors.base0C colors.base0B colors.base0D}
+          ${zellijBlock { base = c.base01; background = c.base0E; emphasis_0 = c.base08; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0D; }}
         }
         ribbon_unselected {
-          ${zellijBlock colors.base01 colors.base05 colors.base08 colors.base0C colors.base0B colors.base0E}
+          ${zellijBlock { base = c.base01; background = c.base05; emphasis_0 = c.base08; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0E; }}
         }
         table_title {
-          ${zellijBlock colors.base0E colors.base00 colors.base08 colors.base0C colors.base0B colors.base0D}
+          ${title}
         }
         table_cell_selected {
-          ${zellijBlock colors.base05 colors.base04 colors.base08 colors.base0C colors.base0B colors.base0E}
+          ${selected}
         }
         table_cell_unselected {
-          ${zellijBlock colors.base05 colors.base01 colors.base08 colors.base0C colors.base0B colors.base0E}
+          ${unselected}
         }
         list_selected {
-          ${zellijBlock colors.base05 colors.base04 colors.base08 colors.base0C colors.base0B colors.base0E}
+          ${selected}
         }
         list_unselected {
-          ${zellijBlock colors.base05 colors.base01 colors.base08 colors.base0C colors.base0B colors.base0E}
+          ${unselected}
         }
         frame_selected {
-          ${zellijBlock colors.base0E colors.base00 colors.base08 colors.base0C colors.base0B colors.base0D}
+          ${title}
         }
         frame_highlight {
-          ${zellijBlock colors.base08 colors.base00 colors.base0E colors.base0C colors.base0B colors.base0D}
+          ${zellijBlock { base = c.base08; background = c.base00; emphasis_0 = c.base0E; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0D; }}
         }
         exit_code_success {
-          ${zellijBlock colors.base0B colors.base00 colors.base08 colors.base0C colors.base0E colors.base0D}
+          ${zellijBlock { base = c.base0B; background = c.base00; emphasis_0 = c.base08; emphasis_1 = c.base0C; emphasis_2 = c.base0E; emphasis_3 = c.base0D; }}
         }
         exit_code_error {
-          ${zellijBlock colors.base08 colors.base00 colors.base0B colors.base0C colors.base0E colors.base0D}
+          ${zellijBlock { base = c.base08; background = c.base00; emphasis_0 = c.base0B; emphasis_1 = c.base0C; emphasis_2 = c.base0E; emphasis_3 = c.base0D; }}
         }
         multiplayer_user_colors {
           player_1 ${hexToRgb colors.base08}
@@ -227,9 +243,6 @@ in
   config.dotfiles.darkModeHook = darkModeHook;
 
   config.home.packages = [
-    (pkgs.writeShellScriptBin "theme-sync" ''
-      exec ${darkModeHook} "$@"
-    '')
     (pkgs.writeShellScriptBin "theme-switch" ''
       exec ${activateSpecialisation} "$@"
     '')
@@ -276,7 +289,14 @@ in
   };
 
   config.home.activation.seedThemeConfigs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    ${darkModeHook}
+    ${detectDarkMode}
+    ${darkModeHook} "$IS_DARK"
+    mkdir -p "$HOME/.cache"
+    if [ "$IS_DARK" = "true" ]; then
+      echo "Dark" > "$HOME/.cache/dark-mode-state"
+    else
+      echo "Light" > "$HOME/.cache/dark-mode-state"
+    fi
   '';
 
   config.launchd.agents.dark-mode-watcher = lib.mkIf isOsx {
