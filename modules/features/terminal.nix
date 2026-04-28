@@ -29,19 +29,29 @@ in
       }
       config.default_prog = { "${cfg.shellPath}" }
 
-      local function scheme_for_appearance(appearance)
-        if appearance:find("Dark") then
+      local function read_polarity()
+        local f = io.open(os.getenv("HOME") .. "/.cache/dark-mode-state", "r")
+        if f then
+          local content = f:read("*l")
+          f:close()
+          return content
+        end
+        return "Dark"
+      end
+
+      local function color_scheme()
+        if read_polarity() == "Dark" then
           return "${cfg.darkTheme.wezterm}"
         else
           return "${cfg.lightTheme.wezterm}"
         end
       end
 
-      config.color_scheme = scheme_for_appearance(wezterm.gui.get_appearance())
+      config.color_scheme = color_scheme()
 
       wezterm.on("update-status", function(window, pane)
         local overrides = window:get_config_overrides() or {}
-        local scheme = scheme_for_appearance(window:get_appearance())
+        local scheme = color_scheme()
         if overrides.color_scheme ~= scheme then
           overrides.color_scheme = scheme
           window:set_config_overrides(overrides)

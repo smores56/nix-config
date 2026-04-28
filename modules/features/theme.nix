@@ -224,6 +224,13 @@ EOF
     mkdir -p "$HOME/.config/zellij"
     cp "$ZELLIJ_CONFIG" "$HOME/.config/zellij/config.kdl"
     chmod 644 "$HOME/.config/zellij/config.kdl"
+
+    mkdir -p "$HOME/.cache"
+    if [ "$IS_DARK" = "true" ]; then
+      echo "Dark" > "$HOME/.cache/dark-mode-state"
+    else
+      echo "Light" > "$HOME/.cache/dark-mode-state"
+    fi
   '';
 
   currentGen = "$HOME/.local/state/home-manager/gcroots/current-home";
@@ -305,12 +312,6 @@ in
   config.home.activation.seedThemeConfigs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     ${if isAutoSwitch then detectDarkMode else ''IS_DARK="${if baseIsDark then "true" else "false"}"''}
     ${darkModeHook} "$IS_DARK"
-    mkdir -p "$HOME/.cache"
-    if [ "$IS_DARK" = "true" ]; then
-      echo "Dark" > "$HOME/.cache/dark-mode-state"
-    else
-      echo "Light" > "$HOME/.cache/dark-mode-state"
-    fi
   '';
 
   config.launchd.agents.dark-mode-watcher = lib.mkIf (isOsx && isAutoSwitch) {
