@@ -100,10 +100,6 @@ in
         auto-format = true;
       }
       {
-        name = "tsx";
-        auto-format = true;
-      }
-      {
         name = "typescript";
         roots = [
           "deno.json"

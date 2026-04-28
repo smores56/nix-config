@@ -25,8 +25,11 @@ let
         else
           null;
       parsed = builtins.filter (x: x != null) (map parseLine lines);
+      result = builtins.listToAttrs parsed;
     in
-    builtins.listToAttrs parsed;
+    assert builtins.length parsed >= 16
+      || throw "parseScheme: expected at least 16 base16 colors in ${file}, got ${toString (builtins.length parsed)}";
+    result;
 
   darkColors = parseScheme "${pkgs.base16-schemes}/share/themes/${cfg.darkTheme.system}.yaml";
   lightColors = parseScheme "${pkgs.base16-schemes}/share/themes/${cfg.lightTheme.system}.yaml";

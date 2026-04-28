@@ -7,6 +7,11 @@
 let
   isNiri = config.dotfiles.displayManager == "niri";
   colors = config.lib.stylix.colors;
+  defaultSpring = {
+    damping-ratio = 0.8;
+    stiffness = 800;
+    epsilon = 0.0001;
+  };
 in
 {
   config = lib.mkIf isNiri {
@@ -50,21 +55,9 @@ in
           curve = "ease-out-expo";
           duration-ms = 150;
         };
-        window-movement.kind.spring = {
-          damping-ratio = 0.8;
-          stiffness = 800;
-          epsilon = 0.0001;
-        };
-        workspace-switch.kind.spring = {
-          damping-ratio = 0.8;
-          stiffness = 800;
-          epsilon = 0.0001;
-        };
-        horizontal-view-movement.kind.spring = {
-          damping-ratio = 0.8;
-          stiffness = 800;
-          epsilon = 0.0001;
-        };
+        window-movement.kind.spring = defaultSpring;
+        workspace-switch.kind.spring = defaultSpring;
+        horizontal-view-movement.kind.spring = defaultSpring;
       };
 
       cursor = {
@@ -77,7 +70,8 @@ in
         {
           command = [
             "${pkgs.writeShellScript "lock-on-start" ''
-              until noctalia-shell ipc call lockScreen lock 2>/dev/null; do
+              for i in $(seq 1 60); do
+                noctalia-shell ipc call lockScreen lock 2>/dev/null && exit 0
                 sleep 0.5
               done
             ''}"
