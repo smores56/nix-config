@@ -56,7 +56,6 @@
         sm = "ssh smores@smortress -t fish";
         sc = "ssh smores@campfire -t fish";
         st = "ssh smores@(tailscale-hosts | fzf) -t fish";
-        pf = "port-forward smores@home.sammohr.dev";
 
         olu = "ollama run $OPENAI_MODEL";
       };

@@ -7,7 +7,7 @@ Follows the [dendritic pattern](https://github.com/mightyiam/dendritic) using [f
 
 | Host | System | Desktop | Config type |
 |---|---|---|---|
-| `smohr` | macOS (aarch64) | Aerospace | home-manager |
+| `smohr` | macOS (aarch64) | Paneru / Aerospace | home-manager |
 | `smoresbook` | NixOS | Niri + Noctalia | NixOS + home-manager |
 | `smorestux` | NixOS | Niri + Noctalia | NixOS + home-manager |
 | `campfire` | NixOS | headless | NixOS + home-manager |
@@ -28,11 +28,44 @@ sudo nixos-rebuild switch --flake ~/.config/nix#<hostname> --upgrade
 nix fmt
 ```
 
+## SSH Access
+
+SSH between machines uses [Tailscale SSH](https://tailscale.com/kb/1193/tailscale-ssh/).
+Authentication is identity-based through the tailnet — no SSH keys needed for
+interactive sessions. MagicDNS provides hostnames (`ssh smores@campfire`).
+
+### Tailscale ACLs
+
+Configure in the [Tailscale admin console](https://login.tailscale.com/admin/acls).
+The SSH ACL section should allow all tailnet members to SSH as any non-root user:
+
+```json
+{
+  "ssh": [
+    {
+      "action": "accept",
+      "src": ["autogroup:member"],
+      "dst": ["autogroup:self"],
+      "users": ["autogroup:nonroot", "root"]
+    }
+  ]
+}
+```
+
+### Nix remote builds
+
+Remote builds use `campfire` as a build host over Tailscale SSH:
+
+```bash
+nix build --builders 'ssh://smores@campfire x86_64-linux'
+```
+
+The `smores` user is in `trusted-users` on campfire (configured via `exposeSsh = true`).
+
 ## New machine setup
 
 ```bash
 nix-shell -p git gh home-manager helix
-ssh-keygen -t ed25519 -b 4096 -C <hostname>
 gh auth login
 gh repo clone smores56/nix-config ~/.config/nix
 home-manager switch --flake ~/.config/nix#$USER@$(hostname)
@@ -41,6 +74,27 @@ home-manager switch --flake ~/.config/nix#$USER@$(hostname)
 sudo nixos-generate-config
 cp /etc/nixos/hardware-configuration.nix ~/.config/nix/modules/hosts/$(hostname).nix
 sudo nixos-rebuild switch --flake ~/.config/nix#$(hostname) --upgrade
+```
+
+### Joining the tailnet
+
+**Client (any machine):**
+
+```bash
+sudo tailscale up    # opens browser for auth
+```
+
+**Server (NixOS host accepting SSH):**
+
+Set `exposeSsh = true` in the host's entry in `modules/flake/configurations.nix`,
+then rebuild. This enables Tailscale SSH and marks the user as a trusted nix builder.
+Run `sudo tailscale up` on first boot to authenticate.
+
+**Non-NixOS server:**
+
+```bash
+tailscale up
+tailscale set --ssh
 ```
 
 ## Optional setup
@@ -89,7 +143,7 @@ modules/
     terminal/        — wezterm, kitty, alacritty, ghostty (config-only via package = pkgs.nil)
     git, theme, packages, multiplexer, file-manager
   desktop/           — display-manager-specific HM modules (mkIf-gated)
-    niri, aerospace, pop-os, linux-apps
+    niri, aerospace, paneru, pop-os, linux-apps
   nixos/             — NixOS system modules (mkIf-gated where needed)
     base, niri, sound, ssh, networking, bluetooth, etc.
   hosts/             — per-host hardware configs (referenced explicitly)
