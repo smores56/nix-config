@@ -36,7 +36,7 @@ in
           f:close()
           return content
         end
-        return "Dark"
+        return "${if cfg.polarity != "light" then "Dark" else "Light"}"
       end
 
       local function color_scheme()

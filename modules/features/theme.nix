@@ -170,6 +170,7 @@ let
   isOsx = cfg.displayManager == "osx";
   isAutoSwitch = cfg.polarity == "timeOfDay";
   baseIsDark = cfg.polarity != "light";
+  cacheFile = "$HOME/.cache/dark-mode-state";
 
   detectDarkMode =
     if isOsx then
@@ -227,9 +228,9 @@ EOF
 
     mkdir -p "$HOME/.cache"
     if [ "$IS_DARK" = "true" ]; then
-      echo "Dark" > "$HOME/.cache/dark-mode-state"
+      echo "Dark" > "${cacheFile}"
     else
-      echo "Light" > "$HOME/.cache/dark-mode-state"
+      echo "Light" > "${cacheFile}"
     fi
 
     ${if isOsx then ''
@@ -238,7 +239,7 @@ EOF
       else
         defaults delete -g AppleInterfaceStyle 2>/dev/null || true
       fi
-    '' else ''
+    '' else lib.optionalString (cfg.displayManager != null) ''
       ${pkgs.glib}/bin/gsettings set org.gnome.desktop.interface color-scheme \
         "$([ "$IS_DARK" = "true" ] && echo "prefer-dark" || echo "prefer-light")" 2>/dev/null || true
     ''}
@@ -321,13 +322,13 @@ in
   };
 
   config.home.activation.seedThemeConfigs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    ${if isAutoSwitch then detectDarkMode else ''IS_DARK="${if baseIsDark then "true" else "false"}"''}
-    ${darkModeHook} "$IS_DARK"
     ${lib.optionalString isOsx (
       if isAutoSwitch
       then "defaults write -g AppleInterfaceStyleSwitchesAutomatically -bool true"
       else "defaults write -g AppleInterfaceStyleSwitchesAutomatically -bool false"
     )}
+    ${if isAutoSwitch then detectDarkMode else ''IS_DARK="${if baseIsDark then "true" else "false"}"''}
+    ${darkModeHook} "$IS_DARK"
   '';
 
   config.launchd.agents.dark-mode-watcher = lib.mkIf (isOsx && isAutoSwitch) {
@@ -336,7 +337,7 @@ in
       ProgramArguments = [
         "${pkgs.writeShellScript "dark-mode-watcher" ''
           CURRENT=$(defaults read -g AppleInterfaceStyle 2>/dev/null || echo "Light")
-          CACHE="$HOME/.cache/dark-mode-state"
+          CACHE="${cacheFile}"
           mkdir -p "$HOME/.cache"
           PREVIOUS=$(cat "$CACHE" 2>/dev/null || echo "")
           if [ "$CURRENT" != "$PREVIOUS" ]; then

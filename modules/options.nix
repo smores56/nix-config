@@ -45,6 +45,7 @@ in
         "timeOfDay"
       ];
       default = "dark";
+      description = "Theme polarity. 'dark' and 'light' set a fixed theme; 'timeOfDay' enables automatic switching via macOS auto-appearance or Noctalia location scheduling.";
     };
     terminalFontSize = lib.mkOption {
       type = lib.types.int;
