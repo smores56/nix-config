@@ -74,8 +74,8 @@ in
         };
         colorSchemes = {
           predefinedScheme = config.dotfiles.darkTheme.noctalia;
-          schedulingMode = if polarity == "timeOfDay" then "location" else "off";
-        } // lib.optionalAttrs (polarity != "timeOfDay") {
+          schedulingMode = if polarity == "time-of-day" then "location" else "off";
+        } // lib.optionalAttrs (polarity != "time-of-day") {
           darkMode = polarity != "light";
         };
         audio = {

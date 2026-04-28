@@ -168,7 +168,7 @@ let
   lightZellijConfig = pkgs.writeText "light-zellij-config.kdl" (zellijConfig lightColors);
 
   isOsx = cfg.displayManager == "osx";
-  isAutoSwitch = cfg.polarity == "timeOfDay";
+  isAutoSwitch = cfg.polarity == "time-of-day";
   baseIsDark = cfg.polarity != "light";
   cacheFile = "$HOME/.cache/dark-mode-state";
 
@@ -270,7 +270,12 @@ in
 
   config.home.packages = [
     (pkgs.writeShellScriptBin "theme-switch" ''
-      exec ${activateSpecialisation} "$@"
+      case "''${1:-}" in
+        dark) exec ${activateSpecialisation} true ;;
+        light) exec ${activateSpecialisation} false ;;
+        "") exec ${activateSpecialisation} ;;
+        *) echo "Usage: theme-switch [dark|light]" >&2; exit 1 ;;
+      esac
     '')
   ];
 

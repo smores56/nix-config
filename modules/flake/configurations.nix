@@ -96,7 +96,7 @@ in
       "smores@smoresbook" = mkHome {
         displayManager = "niri";
         nixos = true;
-        polarity = "timeOfDay";
+        polarity = "time-of-day";
       };
       "smores@campfire" = mkHome {
         nixos = true;

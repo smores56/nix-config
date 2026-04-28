@@ -42,10 +42,10 @@ in
       type = lib.types.enum [
         "dark"
         "light"
-        "timeOfDay"
+        "time-of-day"
       ];
       default = "dark";
-      description = "Theme polarity. 'dark' and 'light' set a fixed theme; 'timeOfDay' enables automatic switching via macOS auto-appearance or Noctalia location scheduling.";
+      description = "Theme polarity. 'dark' and 'light' set a fixed theme; 'time-of-day' enables automatic switching via macOS auto-appearance or Noctalia location scheduling.";
     };
     terminalFontSize = lib.mkOption {
       type = lib.types.int;
@@ -141,6 +141,12 @@ in
         {
           assertion = builtins.pathExists "${helixThemes}/${config.dotfiles.lightTheme.helix}.toml";
           message = "lightTheme.helix '${config.dotfiles.lightTheme.helix}' not found in helix themes";
+        }
+        {
+          assertion = config.dotfiles.polarity != "time-of-day"
+            || config.dotfiles.displayManager == "osx"
+            || config.dotfiles.displayManager == "niri";
+          message = "polarity 'time-of-day' requires displayManager 'osx' or 'niri' for automatic switching";
         }
       ];
 
