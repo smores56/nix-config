@@ -1,7 +1,8 @@
-_: {
-  hardware.bluetooth.enable = true;
+{ config, lib, ... }:
+{
+  hardware.bluetooth.enable = lib.mkIf (config.dotfiles.displayManager != null) true;
 
-  fileSystems."/var/lib/bluetooth" = {
+  fileSystems."/var/lib/bluetooth" = lib.mkIf (builtins.pathExists "/persist") {
     device = "/persist/var/lib/bluetooth";
     options = [
       "bind"

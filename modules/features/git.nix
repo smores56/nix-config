@@ -1,5 +1,6 @@
 { config, pkgs, ... }:
 let
+  cfg = config.dotfiles;
   hunk = pkgs.writeShellScriptBin "hunk" ''
     export PATH="${pkgs.nodejs}/bin:$PATH"
     exec npx hunkdiff "$@"
@@ -43,7 +44,7 @@ in
       settings = {
         user = {
           name = "Sam Mohr";
-          email = "sam@sammohr.dev";
+          email = cfg.email;
         };
         core = {
           excludesFile = "~/.gitignore";

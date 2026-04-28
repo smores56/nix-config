@@ -46,6 +46,10 @@ in
       type = lib.types.bool;
       readOnly = true;
     };
+    email = lib.mkOption {
+      type = lib.types.str;
+      default = "sam@sammohr.dev";
+    };
     exposeSsh = lib.mkOption {
       type = lib.types.bool;
       default = false;
@@ -56,7 +60,7 @@ in
     };
     nixos = lib.mkOption {
       type = lib.types.bool;
-      readOnly = true;
+      default = false;
     };
     darkTheme = lib.mkOption {
       type = themeType;
@@ -133,7 +137,6 @@ in
 
     dotfiles = {
       wayland = config.dotfiles.displayManager == "niri";
-      nixos = config.dotfiles.displayManager == "niri";
       terminal = "wezterm";
       shell = "fish";
       browser = "firefox";

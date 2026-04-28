@@ -50,6 +50,8 @@ let
             displayManager = null;
             terminalFontSize = null;
             exposeSsh = null;
+            nixos = null;
+            email = null;
             darkTheme = null;
             lightTheme = null;
           } args;
@@ -88,11 +90,15 @@ in
     homeConfigurations = {
       "smores@smorestux" = mkHome {
         displayManager = "niri";
+        nixos = true;
       };
       "smores@smoresbook" = mkHome {
         displayManager = "niri";
+        nixos = true;
       };
-      "smores@campfire" = mkHome { };
+      "smores@campfire" = mkHome {
+        nixos = true;
+      };
       "smores@smortress" = mkHome {
         displayManager = "pop-os";
       };
@@ -103,6 +109,7 @@ in
         homeDirectory = "/Users/smohr";
         system = "aarch64-darwin";
         terminalFontSize = 14;
+        email = "sam.mohr@sevenai.com";
       };
     };
 

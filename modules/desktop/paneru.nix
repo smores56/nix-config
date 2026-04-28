@@ -45,15 +45,15 @@ in
         };
 
         bindings = {
-          window_focus_west = "ctrl - leftarrow";
-          window_focus_east = "ctrl - rightarrow";
-          window_focus_north = "ctrl - uparrow";
-          window_focus_south = "ctrl - downarrow";
+          window_focus_west = "cmd + ctrl - leftarrow";
+          window_focus_east = "cmd + ctrl - rightarrow";
+          window_focus_north = "cmd + ctrl - uparrow";
+          window_focus_south = "cmd + ctrl - downarrow";
 
-          window_swap_west = "ctrl + shift - leftarrow";
-          window_swap_east = "ctrl + shift - rightarrow";
-          window_swap_north = "ctrl + shift - uparrow";
-          window_swap_south = "ctrl + shift - downarrow";
+          window_swap_west = "cmd + ctrl + shift - leftarrow";
+          window_swap_east = "cmd + ctrl + shift - rightarrow";
+          window_swap_north = "cmd + ctrl + shift - uparrow";
+          window_swap_south = "cmd + ctrl + shift - downarrow";
 
           window_center = "alt - c";
           window_equalize = "alt - e";
@@ -67,8 +67,8 @@ in
           window_shrink = "alt - minus";
           window_resize = "alt - r";
 
-          window_virtual_north = "alt + ctrl - uparrow";
-          window_virtual_south = "alt + ctrl - downarrow";
+          window_virtual_north = "alt + cmd + ctrl - uparrow";
+          window_virtual_south = "alt + cmd + ctrl - downarrow";
           window_virtualmove_north = "alt + ctrl + shift - uparrow";
           window_virtualmove_south = "alt + ctrl + shift - downarrow";
 
