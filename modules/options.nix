@@ -70,6 +70,7 @@ in
     ollama = lib.mkOption {
       type = lib.types.bool;
       default = false;
+      description = "Enable Ollama LLM service with NVIDIA CUDA support. NixOS-only.";
     };
     nixos = lib.mkOption {
       type = lib.types.bool;

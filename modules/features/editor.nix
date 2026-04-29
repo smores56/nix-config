@@ -14,11 +14,11 @@ in
     basedpyright
     lua-language-server
     dockerfile-language-server
-    nodePackages.yaml-language-server
-    nodePackages.svelte-language-server
-    nodePackages.typescript-language-server
-    nodePackages.vscode-langservers-extracted
-    nodePackages.graphql-language-service-cli
+    yaml-language-server
+    svelte-language-server
+    typescript-language-server
+    vscode-langservers-extracted
+    graphql-language-service-cli
   ];
 
   home.file = {

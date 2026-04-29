@@ -62,6 +62,7 @@ in
   };
 
   config.xdg.configFile."goose/config.yaml".text = ''
+    # Managed by nix — edit modules/features/packages.nix instead
     GOOSE_PROVIDER: "ollama"
     GOOSE_MODEL: "gemma4:26b-a4b-it-q4_K_M"
     GOOSE_MODE: "auto"
