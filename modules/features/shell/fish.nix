@@ -10,11 +10,6 @@
   manual.manpages.enable = false;
 
   programs = {
-    direnv = {
-      enable = true;
-      nix-direnv.enable = true;
-    };
-
     zoxide = {
       enable = true;
       options = [

@@ -53,6 +53,7 @@ in
     GOOSE_DISABLE_KEYRING = "true";
   };
 
+  xdg.configFile."goose/config.yaml".force = true;
   xdg.configFile."goose/config.yaml".text = ''
     # Managed by nix — edit modules/features/ai.nix instead
     GOOSE_PROVIDER: "ollama"

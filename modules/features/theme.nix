@@ -175,7 +175,7 @@ let
   detectDarkMode =
     if isOsx then
       ''
-        MODE=$(defaults read -g AppleInterfaceStyle 2>/dev/null || echo "Light")
+        MODE=$(/usr/bin/defaults read -g AppleInterfaceStyle 2>/dev/null || echo "Light")
         if [ "$MODE" = "Dark" ]; then
           IS_DARK="true"
         else
@@ -235,9 +235,9 @@ EOF
 
     ${if isOsx then ''
       if [ "$IS_DARK" = "true" ]; then
-        defaults write -g AppleInterfaceStyle Dark
+        /usr/bin/defaults write -g AppleInterfaceStyle Dark
       else
-        defaults delete -g AppleInterfaceStyle 2>/dev/null || true
+        /usr/bin/defaults delete -g AppleInterfaceStyle 2>/dev/null || true
       fi
     '' else lib.optionalString (cfg.displayManager != null) ''
       ${pkgs.glib}/bin/gsettings set org.gnome.desktop.interface color-scheme \
@@ -329,8 +329,8 @@ in
   config.home.activation.seedThemeConfigs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     ${lib.optionalString isOsx (
       if isAutoSwitch
-      then "defaults write -g AppleInterfaceStyleSwitchesAutomatically -bool true"
-      else "defaults write -g AppleInterfaceStyleSwitchesAutomatically -bool false"
+      then "/usr/bin/defaults write -g AppleInterfaceStyleSwitchesAutomatically -bool true"
+      else "/usr/bin/defaults write -g AppleInterfaceStyleSwitchesAutomatically -bool false"
     )}
     ${if isAutoSwitch then detectDarkMode else ''IS_DARK="${if baseIsDark then "true" else "false"}"''}
     ${darkModeHook} "$IS_DARK"
@@ -341,7 +341,7 @@ in
     config = {
       ProgramArguments = [
         "${pkgs.writeShellScript "dark-mode-watcher" ''
-          CURRENT=$(defaults read -g AppleInterfaceStyle 2>/dev/null || echo "Light")
+          CURRENT=$(/usr/bin/defaults read -g AppleInterfaceStyle 2>/dev/null || echo "Light")
           CACHE="${cacheFile}"
           mkdir -p "$HOME/.cache"
           PREVIOUS=$(cat "$CACHE" 2>/dev/null || echo "")
