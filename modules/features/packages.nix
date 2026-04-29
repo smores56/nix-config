@@ -48,6 +48,10 @@
     - Comments explain WHY, never WHAT
     - No multi-line comment blocks or verbose docstrings
 
+    # Data
+    - Transform data at point of use — keep it in its richest form until the consumer needs a different shape
+    - Avoid eager conversion (loses information prematurely) and lazy conversion (adds redundant intermediates)
+
     # Error Handling
     - Errors must be explicit — never silently swallow or fall back
     - Prefer Result/Option/Either types and typed error variants over exceptions or string messages
@@ -62,6 +66,10 @@
     - Add tests when the change warrants it
     - Prefer real dependencies over mocks
     - Match test scope to the change being made
+
+    # Git Workflow
+    - Always commit and push in a single call — never commit without immediately pushing
+    - Local-only commits hide completed work
 
     # Communication
     - Be concise — no verbose explanations unless asked
