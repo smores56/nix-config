@@ -4,11 +4,10 @@
 
   services.tailscale = {
     enable = true;
+    openFirewall = true;
+    useRoutingFeatures = "client";
     extraSetFlags = lib.optionals config.dotfiles.exposeSsh [ "--ssh" ];
   };
 
-  networking.firewall = {
-    trustedInterfaces = [ "tailscale0" ];
-    allowedUDPPorts = [ config.services.tailscale.port ];
-  };
+  networking.firewall.trustedInterfaces = [ "tailscale0" ];
 }

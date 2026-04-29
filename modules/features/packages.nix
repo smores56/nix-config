@@ -39,6 +39,9 @@
     aws-sso-cli
     _1password-cli
 
+    # networking
+    tailscale
+
     # monitoring
     dua
     tokei
