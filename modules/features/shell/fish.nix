@@ -58,6 +58,8 @@
         st = "ssh smores@(tailscale-hosts | fzf) -t fish";
 
         s = "goose session";
+        sg = "GOOSE_MODEL=gemma4:26b-a4b-it-q4_K_M goose session";
+        sq = "GOOSE_MODEL=qwen3.6:27b goose session";
         olu = "ollama run $OPENAI_MODEL";
       };
 

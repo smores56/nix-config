@@ -11,7 +11,10 @@
       enable = true;
       package = pkgs.ollama-cuda;
       host = "0.0.0.0";
-      loadModels = [ "qwen3.6:27b" ];
+      loadModels = [
+        "gemma4:26b-a4b-it-q4_K_M"
+        "qwen3.6:27b"
+      ];
     };
   };
 }

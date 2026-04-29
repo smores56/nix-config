@@ -57,13 +57,13 @@ in
     DISABLE_NIX_SHELL_WELCOME = 1;
     OLLAMA_HOST = "http://smortress:11434";
     OLLAMA_CONTEXT_LENGTH = "32768";
-    OPENAI_MODEL = "qwen3.6:27b";
+    OPENAI_MODEL = "gemma4:26b-a4b-it-q4_K_M";
     GOOSE_DISABLE_KEYRING = "true";
   };
 
   config.xdg.configFile."goose/config.yaml".text = ''
     GOOSE_PROVIDER: "ollama"
-    GOOSE_MODEL: "qwen3.6:27b"
+    GOOSE_MODEL: "gemma4:26b-a4b-it-q4_K_M"
     GOOSE_MODE: "auto"
     GOOSE_TELEMETRY_ENABLED: false
     GOOSE_CLI_THEME: "dark"
