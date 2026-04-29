@@ -1,41 +1,6 @@
 { pkgs, lib, ... }:
-{
-  # Workaround: Stylix's opencode module references programs.opencode.tui
-  # which doesn't exist in the current home-manager version
-  options.programs.opencode.tui = lib.mkOption {
-    type = lib.types.anything;
-    default = { };
-  };
-
-  config.programs.bat.enable = true;
-  config.programs.fzf.enable = true;
-  config.programs.k9s.enable = true;
-
-  config.home.sessionVariables = {
-    DISABLE_NIX_SHELL_WELCOME = 1;
-    OLLAMA_HOST = "http://smortress:11434";
-    OLLAMA_CONTEXT_LENGTH = "32768";
-    OPENAI_MODEL = "qwen3.6:27b";
-    GOOSE_DISABLE_KEYRING = "true";
-  };
-
-  config.xdg.configFile."goose/config.yaml".text = ''
-    GOOSE_PROVIDER: "ollama"
-    GOOSE_MODEL: "qwen3.6:27b"
-    GOOSE_MODE: "auto"
-    GOOSE_TELEMETRY_ENABLED: false
-    GOOSE_CLI_THEME: "dark"
-    GOOSE_AUTO_COMPACT_THRESHOLD: 0.8
-
-    extensions:
-      developer:
-        enabled: true
-        type: builtin
-        name: developer
-        timeout: 300
-  '';
-
-  config.home.file.".goosehints".text = ''
+let
+  aiHints = ''
     # Code Style
     - Strongly prefer functional programming: pure functions, immutability, composition over inheritance
     - Single-purpose functions — no flag parameters, no multi-mode behavior
@@ -75,6 +40,45 @@
     - Be concise — no verbose explanations unless asked
     - Non-interactive CLI commands only (flags over interactive prompts)
   '';
+in
+{
+  # Workaround: Stylix's opencode module references programs.opencode.tui
+  # which doesn't exist in the current home-manager version
+  options.programs.opencode.tui = lib.mkOption {
+    type = lib.types.anything;
+    default = { };
+  };
+
+  config.programs.bat.enable = true;
+  config.programs.fzf.enable = true;
+  config.programs.k9s.enable = true;
+
+  config.home.sessionVariables = {
+    DISABLE_NIX_SHELL_WELCOME = 1;
+    OLLAMA_HOST = "http://smortress:11434";
+    OLLAMA_CONTEXT_LENGTH = "32768";
+    OPENAI_MODEL = "qwen3.6:27b";
+    GOOSE_DISABLE_KEYRING = "true";
+  };
+
+  config.xdg.configFile."goose/config.yaml".text = ''
+    GOOSE_PROVIDER: "ollama"
+    GOOSE_MODEL: "qwen3.6:27b"
+    GOOSE_MODE: "auto"
+    GOOSE_TELEMETRY_ENABLED: false
+    GOOSE_CLI_THEME: "dark"
+    GOOSE_AUTO_COMPACT_THRESHOLD: 0.8
+
+    extensions:
+      developer:
+        enabled: true
+        type: builtin
+        name: developer
+        timeout: 300
+  '';
+
+  config.home.file.".goosehints".text = aiHints;
+  config.home.file.".claude/CLAUDE.md".text = aiHints;
 
   config.home.packages = with pkgs; [
     # exploration
