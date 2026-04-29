@@ -36,10 +36,36 @@
   '';
 
   config.home.file.".goosehints".text = ''
-    Prefer functional programming patterns.
-    Write clean code without unnecessary comments.
-    Use Nix, home-manager, and flake-parts conventions when editing .nix files.
-    This user edits code in Helix and runs AI tools in a separate Zellij tab.
+    # Code Style
+    - Strongly prefer functional programming: pure functions, immutability, composition over inheritance
+    - Single-purpose functions — no flag parameters, no multi-mode behavior
+    - Prefer pattern matching and algebraic data types where available
+    - Prefer early returns and guard clauses over nested conditionals
+    - Prefer structured types over untyped dictionaries/maps/objects
+
+    # Comments
+    - No comments on self-explanatory code
+    - Comments explain WHY, never WHAT
+    - No multi-line comment blocks or verbose docstrings
+
+    # Error Handling
+    - Errors must be explicit — never silently swallow or fall back
+    - Prefer Result/Option/Either types and typed error variants over exceptions or string messages
+    - Error messages must include enough context to debug without a stack trace
+
+    # Design Process
+    - IMPORTANT: Ask design questions before implementing — clarify ambiguity rather than guessing
+    - When the approach is unclear, propose 2-3 options with tradeoffs
+    - Scope changes narrowly — no broad refactors unless explicitly requested
+
+    # Testing
+    - Add tests when the change warrants it
+    - Prefer real dependencies over mocks
+    - Match test scope to the change being made
+
+    # Communication
+    - Be concise — no verbose explanations unless asked
+    - Non-interactive CLI commands only (flags over interactive prompts)
   '';
 
   config.home.packages = with pkgs; [
