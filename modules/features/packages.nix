@@ -14,9 +14,33 @@
   config.home.sessionVariables = {
     DISABLE_NIX_SHELL_WELCOME = 1;
     OLLAMA_HOST = "http://smortress:11434";
-    OLLAMA_API_BASE = "http://smortress:11434";
+    OLLAMA_CONTEXT_LENGTH = "32768";
     OPENAI_MODEL = "qwen3.6:27b";
+    GOOSE_DISABLE_KEYRING = "true";
   };
+
+  config.xdg.configFile."goose/config.yaml".text = ''
+    GOOSE_PROVIDER: "ollama"
+    GOOSE_MODEL: "qwen3.6:27b"
+    GOOSE_MODE: "auto"
+    GOOSE_TELEMETRY_ENABLED: false
+    GOOSE_CLI_THEME: "dark"
+    GOOSE_AUTO_COMPACT_THRESHOLD: 0.8
+
+    extensions:
+      developer:
+        enabled: true
+        type: builtin
+        name: developer
+        timeout: 300
+  '';
+
+  config.home.file.".goosehints".text = ''
+    Prefer functional programming patterns.
+    Write clean code without unnecessary comments.
+    Use Nix, home-manager, and flake-parts conventions when editing .nix files.
+    This user edits code in Helix and runs AI tools in a separate Zellij tab.
+  '';
 
   config.home.packages = with pkgs; [
     # exploration
@@ -69,8 +93,7 @@
 
     # TUI utilities
     gum
-    crush
-    aider-chat
+    goose-cli
 
     # container tools
     lazydocker
