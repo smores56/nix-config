@@ -12,9 +12,10 @@
       package = pkgs.ollama-cuda;
       host = "0.0.0.0";
       loadModels = [
-        "gemma4:26b-a4b-it-q4_K_M"
-        "qwen3.6:27b"
+        config.dotfiles.defaultModel
+        config.dotfiles.altModel
       ];
+      environmentVariables.OLLAMA_CONTEXT_LENGTH = "32768";
     };
   };
 }

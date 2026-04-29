@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ config, pkgs, ... }:
 {
   home.packages = [ pkgs.pfetch-rs ];
 
@@ -58,7 +58,7 @@
         st = "ssh smores@(tailscale-hosts | fzf) -t fish";
 
         s = "goose session";
-        sq = "GOOSE_MODEL=qwen3.6:27b goose session";
+        sq = "GOOSE_MODEL=${config.dotfiles.altModel} goose session";
         olu = "ollama run $OPENAI_MODEL";
       };
 

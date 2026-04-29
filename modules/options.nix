@@ -123,6 +123,16 @@ in
       type = lib.types.str;
       readOnly = true;
     };
+    defaultModel = lib.mkOption {
+      type = lib.types.str;
+      readOnly = true;
+      description = "Default Ollama model for AI coding tools.";
+    };
+    altModel = lib.mkOption {
+      type = lib.types.str;
+      readOnly = true;
+      description = "Alternative Ollama model available via sq abbreviation.";
+    };
   };
 
   config = {
@@ -163,6 +173,8 @@ in
       font = "CaskaydiaCove Nerd Font";
       fontPackage = pkgs.nerd-fonts.caskaydia-cove;
       shellPath = "${pkgs.${config.dotfiles.shell}}/bin/${config.dotfiles.shell}";
+      defaultModel = "gemma4:26b-a4b-it-q4_K_M";
+      altModel = "qwen3.6:27b";
     };
   };
 }
