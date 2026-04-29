@@ -68,6 +68,7 @@ in
     GOOSE_TELEMETRY_ENABLED: false
     GOOSE_CLI_THEME: "dark"
     GOOSE_AUTO_COMPACT_THRESHOLD: 0.8
+    GOOSE_TOOLSHIM: true
 
     extensions:
       developer:
@@ -75,6 +76,32 @@ in
         type: builtin
         name: developer
         timeout: 300
+      memory:
+        enabled: true
+        type: builtin
+        name: memory
+        timeout: 300
+      fetch:
+        enabled: true
+        type: builtin
+        name: fetch
+        timeout: 300
+      code_execution:
+        enabled: true
+        type: platform
+        name: code_execution
+      skills:
+        enabled: true
+        type: platform
+        name: skills
+      todo:
+        enabled: true
+        type: platform
+        name: todo
+      extensionmanager:
+        enabled: true
+        type: platform
+        name: Extension Manager
   '';
 
   config.home.file.".goosehints".text = aiHints;
