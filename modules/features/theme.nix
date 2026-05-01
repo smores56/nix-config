@@ -219,6 +219,8 @@ EOF
       "$BASE_GEN/specialisation/light/activate"
     elif [ "$IS_DARK" = "true" ] && [ -e "$BASE_GEN/specialisation/dark/activate" ]; then
       "$BASE_GEN/specialisation/dark/activate"
+    elif [ -e "$BASE_GEN/activate" ]; then
+      "$BASE_GEN/activate"
     else
       ${darkModeHook} "$IS_DARK"
     fi
@@ -268,11 +270,12 @@ in
     };
   };
 
-  config.specialisation = {
+  config.specialisation = if baseIsDark then {
     light.configuration.stylix = {
       polarity = lib.mkForce "light";
       base16Scheme = lib.mkForce "${pkgs.base16-schemes}/share/themes/${cfg.lightTheme.system}.yaml";
     };
+  } else {
     dark.configuration.stylix = {
       polarity = lib.mkForce "dark";
       base16Scheme = lib.mkForce "${pkgs.base16-schemes}/share/themes/${cfg.darkTheme.system}.yaml";
