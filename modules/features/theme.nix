@@ -264,6 +264,7 @@ in
   config.programs.zellij = {
     enable = true;
     enableFishIntegration = false;
+    # TODO: drop override once zellij ≥0.45.0 lands in nixpkgs (~Sep 2026)
     package =
       let
         zellij-src = pkgs.fetchFromGitHub {
