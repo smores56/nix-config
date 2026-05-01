@@ -190,6 +190,7 @@ in
       lazygit.enable = false;
       opencode.enable = false;
       fish.enable = false;
+      zellij.enable = false;
     };
   };
 
@@ -205,17 +206,58 @@ in
     };
   };
 
-  config.programs.zellij = {
-    enable = true;
-    enableFishIntegration = false;
-    settings = {
-      default_shell = cfg.shellPath;
-      ui.pane_frames.rounded_corners = true;
-      session_serialization = false;
-      show_startup_tips = false;
-      theme = "default";
+  config.programs.zellij =
+    let
+      c = config.lib.stylix.colors.withHashtag;
+      block = base: background: e0: e1: e2: e3: {
+        inherit base background;
+        emphasis_0 = e0;
+        emphasis_1 = e1;
+        emphasis_2 = e2;
+        emphasis_3 = e3;
+      };
+      unselected = block c.base05 c.base01 c.base09 c.base0C c.base0B c.base0E;
+      selected = block c.base05 c.base04 c.base09 c.base0C c.base0B c.base0E;
+      title = block c.base0E c.base00 c.base09 c.base0C c.base0B c.base0D;
+    in
+    {
+      enable = true;
+      enableFishIntegration = false;
+      settings = {
+        default_shell = cfg.shellPath;
+        ui.pane_frames.rounded_corners = true;
+        session_serialization = false;
+        show_startup_tips = false;
+        theme = "active";
+        themes.active = {
+          text_unselected = unselected;
+          text_selected = selected;
+          ribbon_selected = block c.base01 c.base0E c.base08 c.base0C c.base0B c.base0D;
+          ribbon_unselected = block c.base01 c.base05 c.base08 c.base0C c.base0B c.base0E;
+          table_title = title;
+          table_cell_selected = selected;
+          table_cell_unselected = unselected;
+          list_selected = selected;
+          list_unselected = unselected;
+          frame_selected = title;
+          frame_highlight = block c.base08 c.base00 c.base0E c.base0C c.base0B c.base0D;
+          exit_code_success = block c.base0B c.base00 c.base08 c.base0C c.base0E c.base0D;
+          exit_code_error = block c.base08 c.base00 c.base0B c.base0C c.base0E c.base0D;
+          multiplayer_user_colors = {
+            player_1 = c.base08;
+            player_2 = c.base0B;
+            player_3 = c.base0D;
+            player_4 = c.base0E;
+            player_5 = c.base0C;
+            player_6 = c.base09;
+            player_7 = c.base0A;
+            player_8 = c.base0F;
+            player_9 = c.base03;
+            player_10 = c.base04;
+          };
+        };
+      };
     };
-  };
 
   config.home.activation.seedThemeConfigs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     ${lib.optionalString isOsx (
