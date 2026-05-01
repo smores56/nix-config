@@ -193,6 +193,7 @@ let
       '';
 
   darkModeHook = pkgs.writeShellScript "dark-mode-hook" ''
+    trap "" USR1
     IS_DARK="''${1:-}"
     if [ -z "$IS_DARK" ]; then
       ${detectDarkMode}
