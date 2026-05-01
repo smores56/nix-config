@@ -53,8 +53,8 @@ in
           ];
         };
         ui = {
-          fontDefault = config.dotfiles.font;
-          fontFixed = config.dotfiles.font;
+          fontDefault = lib.mkForce config.dotfiles.font;
+          fontFixed = lib.mkForce config.dotfiles.font;
         };
         location = {
           useFahrenheit = true;
