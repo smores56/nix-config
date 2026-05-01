@@ -104,7 +104,23 @@ let
       };
     };
 
-  zellij-pkg = pkgs.zellij;
+  zellij-src = pkgs.fetchFromGitHub {
+    owner = "zellij-org";
+    repo = "zellij";
+    rev = "914953758357024d3c1aeaa496bfe8df906f8416";
+    hash = "sha256-hVtpZ43KbdmlyY6Ms98ZemamNlz0wsYv417WiR/A9jU=";
+  };
+
+  # TODO: drop override once zellij ≥0.45.0 lands in nixpkgs (~Sep 2026)
+  zellij-pkg = pkgs.zellij.overrideAttrs (old: {
+    version = "0.45.0-pre";
+    src = zellij-src;
+    cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
+      src = zellij-src;
+      hash = "sha256-7bRnzQ2BqYfMH8NEBT8uwDkXzeUyhni28eqRGCGjvOc=";
+    };
+    doInstallCheck = false;
+  });
 
   isOsx = cfg.displayManager == "osx";
   isAutoSwitch = cfg.polarity == "time-of-day";
@@ -266,25 +282,7 @@ in
   config.programs.zellij = {
     enable = true;
     enableFishIntegration = false;
-    # TODO: drop override once zellij ≥0.45.0 lands in nixpkgs (~Sep 2026)
-    package =
-      let
-        zellij-src = pkgs.fetchFromGitHub {
-          owner = "zellij-org";
-          repo = "zellij";
-          rev = "914953758357024d3c1aeaa496bfe8df906f8416";
-          hash = "sha256-hVtpZ43KbdmlyY6Ms98ZemamNlz0wsYv417WiR/A9jU=";
-        };
-      in
-      pkgs.zellij.overrideAttrs (old: {
-        version = "0.45.0-pre";
-        src = zellij-src;
-        cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
-          src = zellij-src;
-          hash = "sha256-7bRnzQ2BqYfMH8NEBT8uwDkXzeUyhni28eqRGCGjvOc=";
-        };
-        doInstallCheck = false;
-      });
+    package = zellij-pkg;
     settings = {
       default_shell = cfg.shellPath;
       ui.pane_frames.rounded_corners = true;
