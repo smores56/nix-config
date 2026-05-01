@@ -190,7 +190,6 @@ in
       lazygit.enable = false;
       opencode.enable = false;
       fish.enable = false;
-      zellij.enable = true;
     };
   };
 
