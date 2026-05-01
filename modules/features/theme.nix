@@ -54,118 +54,8 @@ let
     set -U fish_pager_color_description ${colors.base03}
   '';
 
-  hexToRgb =
-    hex:
-    let
-      hexDigits = {
-        "0" = 0; "1" = 1; "2" = 2; "3" = 3; "4" = 4;
-        "5" = 5; "6" = 6; "7" = 7; "8" = 8; "9" = 9;
-        "a" = 10; "b" = 11; "c" = 12; "d" = 13; "e" = 14; "f" = 15;
-        "A" = 10; "B" = 11; "C" = 12; "D" = 13; "E" = 14; "F" = 15;
-      };
-      hexByte = s: hexDigits.${builtins.substring 0 1 s} * 16 + hexDigits.${builtins.substring 1 1 s};
-      r = hexByte (builtins.substring 0 2 hex);
-      g = hexByte (builtins.substring 2 2 hex);
-      b = hexByte (builtins.substring 4 2 hex);
-    in
-    "${toString r} ${toString g} ${toString b}";
-
-  zellijBlock =
-    {
-      base,
-      background,
-      emphasis_0,
-      emphasis_1,
-      emphasis_2,
-      emphasis_3,
-    }:
-    ''
-          base ${hexToRgb base}
-          background ${hexToRgb background}
-          emphasis_0 ${hexToRgb emphasis_0}
-          emphasis_1 ${hexToRgb emphasis_1}
-          emphasis_2 ${hexToRgb emphasis_2}
-          emphasis_3 ${hexToRgb emphasis_3}'';
-
-  zellijConfig = colors:
-    let
-      c = colors;
-      unselected = zellijBlock { base = c.base05; background = c.base01; emphasis_0 = c.base08; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0E; };
-      selected = zellijBlock { base = c.base05; background = c.base04; emphasis_0 = c.base08; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0E; };
-      title = zellijBlock { base = c.base0E; background = c.base00; emphasis_0 = c.base08; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0D; };
-    in
-    ''
-    default_shell "${cfg.shellPath}"
-    ui {
-      pane_frames {
-        rounded_corners true
-      }
-    }
-    session_serialization false
-    show_startup_tips false
-    themes {
-      active {
-        text_unselected {
-          ${unselected}
-        }
-        text_selected {
-          ${selected}
-        }
-        ribbon_selected {
-          ${zellijBlock { base = c.base01; background = c.base0E; emphasis_0 = c.base08; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0D; }}
-        }
-        ribbon_unselected {
-          ${zellijBlock { base = c.base01; background = c.base05; emphasis_0 = c.base08; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0E; }}
-        }
-        table_title {
-          ${title}
-        }
-        table_cell_selected {
-          ${selected}
-        }
-        table_cell_unselected {
-          ${unselected}
-        }
-        list_selected {
-          ${selected}
-        }
-        list_unselected {
-          ${unselected}
-        }
-        frame_selected {
-          ${title}
-        }
-        frame_highlight {
-          ${zellijBlock { base = c.base08; background = c.base00; emphasis_0 = c.base0E; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0D; }}
-        }
-        exit_code_success {
-          ${zellijBlock { base = c.base0B; background = c.base00; emphasis_0 = c.base08; emphasis_1 = c.base0C; emphasis_2 = c.base0E; emphasis_3 = c.base0D; }}
-        }
-        exit_code_error {
-          ${zellijBlock { base = c.base08; background = c.base00; emphasis_0 = c.base0B; emphasis_1 = c.base0C; emphasis_2 = c.base0E; emphasis_3 = c.base0D; }}
-        }
-        multiplayer_user_colors {
-          player_1 ${hexToRgb colors.base08}
-          player_2 ${hexToRgb colors.base0B}
-          player_3 ${hexToRgb colors.base0D}
-          player_4 ${hexToRgb colors.base0E}
-          player_5 ${hexToRgb colors.base0C}
-          player_6 ${hexToRgb colors.base09}
-          player_7 ${hexToRgb colors.base0A}
-          player_8 ${hexToRgb colors.base0F}
-          player_9 ${hexToRgb colors.base03}
-          player_10 ${hexToRgb colors.base04}
-        }
-      }
-    }
-    theme "active"
-  '';
-
   darkFishColors = pkgs.writeText "dark-fish-colors.fish" (fishColorsScript darkColors);
   lightFishColors = pkgs.writeText "light-fish-colors.fish" (fishColorsScript lightColors);
-
-  darkZellijConfig = pkgs.writeText "dark-zellij-config.kdl" (zellijConfig darkColors);
-  lightZellijConfig = pkgs.writeText "light-zellij-config.kdl" (zellijConfig lightColors);
 
   isOsx = cfg.displayManager == "osx";
   isAutoSwitch = cfg.polarity == "time-of-day";
@@ -202,12 +92,10 @@ let
       HELIX_THEME="${cfg.lightTheme.helix}"
       LAZYGIT_LIGHT="true"
       FISH_COLORS="${lightFishColors}"
-      ZELLIJ_CONFIG="${lightZellijConfig}"
     else
       HELIX_THEME="${cfg.darkTheme.helix}"
       LAZYGIT_LIGHT="false"
       FISH_COLORS="${darkFishColors}"
-      ZELLIJ_CONFIG="${darkZellijConfig}"
     fi
 
     mkdir -p "$HOME/.config/helix/themes"
@@ -222,10 +110,6 @@ gui:
 EOF
 
     ${pkgs.fish}/bin/fish "$FISH_COLORS" 2>/dev/null || true
-
-    mkdir -p "$HOME/.config/zellij"
-    cp "$ZELLIJ_CONFIG" "$HOME/.config/zellij/config.kdl"
-    chmod 644 "$HOME/.config/zellij/config.kdl"
 
     mkdir -p "$HOME/.cache"
     if [ "$IS_DARK" = "true" ]; then
@@ -306,7 +190,7 @@ in
       lazygit.enable = false;
       opencode.enable = false;
       fish.enable = false;
-      zellij.enable = false;
+      zellij.enable = true;
     };
   };
 
@@ -325,6 +209,13 @@ in
   config.programs.zellij = {
     enable = true;
     enableFishIntegration = false;
+    settings = {
+      default_shell = cfg.shellPath;
+      ui.pane_frames.rounded_corners = true;
+      session_serialization = false;
+      show_startup_tips = false;
+      theme = "default";
+    };
   };
 
   config.home.activation.seedThemeConfigs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
@@ -333,7 +224,7 @@ in
       then "/usr/bin/defaults write -g AppleInterfaceStyleSwitchesAutomatically -bool true"
       else "/usr/bin/defaults write -g AppleInterfaceStyleSwitchesAutomatically -bool false"
     )}
-    ${if isAutoSwitch then detectDarkMode else ''IS_DARK="${if baseIsDark then "true" else "false"}"''}
+    IS_DARK="${if config.stylix.polarity == "dark" then "true" else "false"}"
     ${darkModeHook} "$IS_DARK"
   '';
 
