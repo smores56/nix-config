@@ -111,6 +111,11 @@ EOF
 
     ${pkgs.fish}/bin/fish "$FISH_COLORS" 2>/dev/null || true
 
+    ZELLIJ_CFG="$HOME/.config/zellij/config.kdl"
+    if [ -L "$ZELLIJ_CFG" ]; then
+      cp --remove-destination "$(${pkgs.coreutils}/bin/readlink -f "$ZELLIJ_CFG")" "$ZELLIJ_CFG"
+    fi
+
     mkdir -p "$HOME/.cache"
     if [ "$IS_DARK" = "true" ]; then
       echo "Dark" > "${cacheFile}"
