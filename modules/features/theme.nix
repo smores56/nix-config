@@ -57,39 +57,39 @@ let
   darkFishColors = pkgs.writeText "dark-fish-colors.fish" (fishColorsScript darkColors);
   lightFishColors = pkgs.writeText "light-fish-colors.fish" (fishColorsScript lightColors);
 
-  addHash = colors: lib.mapAttrs (_: v: "#${v}") colors;
-
-  zellijThemeBlock = base: background: e0: e1: e2: e3: {
-    inherit base background;
-    emphasis_0 = e0;
-    emphasis_1 = e1;
-    emphasis_2 = e2;
-    emphasis_3 = e3;
-  };
+  zellijBlock =
+    {
+      base,
+      background,
+      emphasis_0,
+      emphasis_1,
+      emphasis_2,
+      emphasis_3,
+    }:
+    { inherit base background emphasis_0 emphasis_1 emphasis_2 emphasis_3; };
 
   zellijTheme =
     colors:
     let
-      c = addHash colors;
-      b = zellijThemeBlock;
-      unselected = b c.base05 c.base01 c.base09 c.base0C c.base0B c.base0E;
-      selected = b c.base05 c.base04 c.base09 c.base0C c.base0B c.base0E;
-      title = b c.base0E c.base00 c.base09 c.base0C c.base0B c.base0D;
+      c = lib.mapAttrs (_: v: "#${v}") colors;
+      unselected = zellijBlock { base = c.base05; background = c.base01; emphasis_0 = c.base09; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0E; };
+      selected = zellijBlock { base = c.base05; background = c.base04; emphasis_0 = c.base09; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0E; };
+      title = zellijBlock { base = c.base0E; background = c.base00; emphasis_0 = c.base09; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0D; };
     in
     {
       text_unselected = unselected;
       text_selected = selected;
-      ribbon_selected = b c.base01 c.base0E c.base08 c.base0C c.base0B c.base0D;
-      ribbon_unselected = b c.base01 c.base05 c.base08 c.base0C c.base0B c.base0E;
+      ribbon_selected = zellijBlock { base = c.base01; background = c.base0E; emphasis_0 = c.base08; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0D; };
+      ribbon_unselected = zellijBlock { base = c.base01; background = c.base05; emphasis_0 = c.base08; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0E; };
       table_title = title;
       table_cell_selected = selected;
       table_cell_unselected = unselected;
       list_selected = selected;
       list_unselected = unselected;
       frame_selected = title;
-      frame_highlight = b c.base08 c.base00 c.base0E c.base0C c.base0B c.base0D;
-      exit_code_success = b c.base0B c.base00 c.base08 c.base0C c.base0E c.base0D;
-      exit_code_error = b c.base08 c.base00 c.base0B c.base0C c.base0E c.base0D;
+      frame_highlight = zellijBlock { base = c.base08; background = c.base00; emphasis_0 = c.base0E; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0D; };
+      exit_code_success = zellijBlock { base = c.base0B; background = c.base00; emphasis_0 = c.base08; emphasis_1 = c.base0C; emphasis_2 = c.base0E; emphasis_3 = c.base0D; };
+      exit_code_error = zellijBlock { base = c.base08; background = c.base00; emphasis_0 = c.base0B; emphasis_1 = c.base0C; emphasis_2 = c.base0E; emphasis_3 = c.base0D; };
       multiplayer_user_colors = {
         player_1 = c.base08;
         player_2 = c.base0B;
@@ -112,7 +112,7 @@ let
   };
 
   # TODO: drop override once zellij ≥0.45.0 lands in nixpkgs (~Sep 2026)
-  zellij-pkg = pkgs.zellij.overrideAttrs (old: {
+  zellij-pkg = pkgs.zellij.overrideAttrs (_: {
     version = "0.45.0-pre";
     src = zellij-src;
     cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
@@ -178,7 +178,7 @@ EOF
 
     ${pkgs.fish}/bin/fish "$FISH_COLORS" 2>/dev/null || true
 
-    for session in $(${zellij-pkg}/bin/zellij list-sessions --short 2>/dev/null); do
+    ${zellij-pkg}/bin/zellij list-sessions --short 2>/dev/null | while IFS= read -r session; do
       ${zellij-pkg}/bin/zellij --session "$session" action "$ZELLIJ_ACTION" 2>/dev/null || true
     done
 
@@ -301,12 +301,15 @@ in
 
   config.home.activation.saveBaseGeneration = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     if [ -z "''${HM_SPECIALISATION_SWITCH:-}" ]; then
-      mkdir -p "$HOME/.cache"
-      ${pkgs.coreutils}/bin/readlink -f "$HOME/.local/state/home-manager/gcroots/current-home" > "${baseGenFile}"
+      gen=$(${pkgs.coreutils}/bin/readlink -f "$HOME/.local/state/home-manager/gcroots/current-home" 2>/dev/null)
+      if [ -n "$gen" ]; then
+        mkdir -p "$HOME/.cache"
+        echo "$gen" > "${baseGenFile}"
+      fi
     fi
   '';
 
-  config.home.activation.seedThemeConfigs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+  config.home.activation.seedThemeConfigs = lib.hm.dag.entryAfter [ "saveBaseGeneration" ] ''
     ${lib.optionalString isOsx (
       if isAutoSwitch
       then "/usr/bin/defaults write -g AppleInterfaceStyleSwitchesAutomatically -bool true"
