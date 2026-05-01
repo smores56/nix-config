@@ -185,7 +185,7 @@ EOF
     ''}
   '';
 
-  currentGen = "$HOME/.local/state/home-manager/gcroots/current-home";
+  baseGenFile = "$HOME/.cache/hm-base-generation";
 
   activateSpecialisation = pkgs.writeShellScript "activate-specialisation" ''
     IS_DARK="''${1:-}"
@@ -193,13 +193,16 @@ EOF
       ${detectDarkMode}
     fi
 
-    GEN="${currentGen}"
-    if [ "$IS_DARK" = "false" ] && [ -e "$GEN/specialisation/light/activate" ]; then
-      "$GEN/specialisation/light/activate"
-    elif [ "$IS_DARK" = "true" ] && [ -e "$GEN/specialisation/dark/activate" ]; then
-      "$GEN/specialisation/dark/activate"
-    elif [ -e "$GEN/activate" ]; then
-      "$GEN/activate"
+    BASE_GEN=$(cat "${baseGenFile}" 2>/dev/null)
+    if [ -z "$BASE_GEN" ] || [ ! -d "$BASE_GEN" ]; then
+      BASE_GEN=$(${pkgs.coreutils}/bin/readlink -f "$HOME/.local/state/home-manager/gcroots/current-home")
+    fi
+
+    export HM_SPECIALISATION_SWITCH=1
+    if [ "$IS_DARK" = "false" ] && [ -e "$BASE_GEN/specialisation/light/activate" ]; then
+      "$BASE_GEN/specialisation/light/activate"
+    elif [ "$IS_DARK" = "true" ] && [ -e "$BASE_GEN/specialisation/dark/activate" ]; then
+      "$BASE_GEN/specialisation/dark/activate"
     else
       ${darkModeHook} "$IS_DARK"
     fi
@@ -294,6 +297,13 @@ in
       themes.light = zellijTheme lightColors;
     };
   };
+
+  config.home.activation.saveBaseGeneration = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    if [ -z "''${HM_SPECIALISATION_SWITCH:-}" ]; then
+      mkdir -p "$HOME/.cache"
+      ${pkgs.coreutils}/bin/readlink -f "$HOME/.local/state/home-manager/gcroots/current-home" > "${baseGenFile}"
+    fi
+  '';
 
   config.home.activation.seedThemeConfigs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     ${lib.optionalString isOsx (
