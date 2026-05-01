@@ -67,7 +67,7 @@ let
     emphasis_3 = e3;
   };
 
-  zellijConfig =
+  zellijTheme =
     colors:
     let
       c = addHash colors;
@@ -77,42 +77,34 @@ let
       title = b c.base0E c.base00 c.base09 c.base0C c.base0B c.base0D;
     in
     {
-      default_shell = cfg.shellPath;
-      ui.pane_frames.rounded_corners = true;
-      session_serialization = false;
-      show_startup_tips = false;
-      theme = "active";
-      themes.active = {
-        text_unselected = unselected;
-        text_selected = selected;
-        ribbon_selected = b c.base01 c.base0E c.base08 c.base0C c.base0B c.base0D;
-        ribbon_unselected = b c.base01 c.base05 c.base08 c.base0C c.base0B c.base0E;
-        table_title = title;
-        table_cell_selected = selected;
-        table_cell_unselected = unselected;
-        list_selected = selected;
-        list_unselected = unselected;
-        frame_selected = title;
-        frame_highlight = b c.base08 c.base00 c.base0E c.base0C c.base0B c.base0D;
-        exit_code_success = b c.base0B c.base00 c.base08 c.base0C c.base0E c.base0D;
-        exit_code_error = b c.base08 c.base00 c.base0B c.base0C c.base0E c.base0D;
-        multiplayer_user_colors = {
-          player_1 = c.base08;
-          player_2 = c.base0B;
-          player_3 = c.base0D;
-          player_4 = c.base0E;
-          player_5 = c.base0C;
-          player_6 = c.base09;
-          player_7 = c.base0A;
-          player_8 = c.base0F;
-          player_9 = c.base03;
-          player_10 = c.base04;
-        };
+      text_unselected = unselected;
+      text_selected = selected;
+      ribbon_selected = b c.base01 c.base0E c.base08 c.base0C c.base0B c.base0D;
+      ribbon_unselected = b c.base01 c.base05 c.base08 c.base0C c.base0B c.base0E;
+      table_title = title;
+      table_cell_selected = selected;
+      table_cell_unselected = unselected;
+      list_selected = selected;
+      list_unselected = unselected;
+      frame_selected = title;
+      frame_highlight = b c.base08 c.base00 c.base0E c.base0C c.base0B c.base0D;
+      exit_code_success = b c.base0B c.base00 c.base08 c.base0C c.base0E c.base0D;
+      exit_code_error = b c.base08 c.base00 c.base0B c.base0C c.base0E c.base0D;
+      multiplayer_user_colors = {
+        player_1 = c.base08;
+        player_2 = c.base0B;
+        player_3 = c.base0D;
+        player_4 = c.base0E;
+        player_5 = c.base0C;
+        player_6 = c.base09;
+        player_7 = c.base0A;
+        player_8 = c.base0F;
+        player_9 = c.base03;
+        player_10 = c.base04;
       };
     };
 
-  darkZellijConfig = pkgs.writeText "dark-zellij-config.kdl" (lib.hm.generators.toKDL { } (zellijConfig darkColors));
-  lightZellijConfig = pkgs.writeText "light-zellij-config.kdl" (lib.hm.generators.toKDL { } (zellijConfig lightColors));
+  zellij-pkg = pkgs.zellij;
 
   isOsx = cfg.displayManager == "osx";
   isAutoSwitch = cfg.polarity == "time-of-day";
@@ -149,12 +141,12 @@ let
       HELIX_THEME="${cfg.lightTheme.helix}"
       LAZYGIT_LIGHT="true"
       FISH_COLORS="${lightFishColors}"
-      ZELLIJ_CONFIG="${lightZellijConfig}"
+      ZELLIJ_ACTION="set-light-theme"
     else
       HELIX_THEME="${cfg.darkTheme.helix}"
       LAZYGIT_LIGHT="false"
       FISH_COLORS="${darkFishColors}"
-      ZELLIJ_CONFIG="${darkZellijConfig}"
+      ZELLIJ_ACTION="set-dark-theme"
     fi
 
     mkdir -p "$HOME/.config/helix/themes"
@@ -170,9 +162,9 @@ EOF
 
     ${pkgs.fish}/bin/fish "$FISH_COLORS" 2>/dev/null || true
 
-    mkdir -p "$HOME/.config/zellij"
-    cp "$ZELLIJ_CONFIG" "$HOME/.config/zellij/config.kdl"
-    chmod 644 "$HOME/.config/zellij/config.kdl"
+    for session in $(${zellij-pkg}/bin/zellij list-sessions --short 2>/dev/null); do
+      ${zellij-pkg}/bin/zellij --session "$session" action "$ZELLIJ_ACTION" 2>/dev/null || true
+    done
 
     mkdir -p "$HOME/.cache"
     if [ "$IS_DARK" = "true" ]; then
@@ -272,6 +264,35 @@ in
   config.programs.zellij = {
     enable = true;
     enableFishIntegration = false;
+    package =
+      let
+        zellij-src = pkgs.fetchFromGitHub {
+          owner = "zellij-org";
+          repo = "zellij";
+          rev = "914953758357024d3c1aeaa496bfe8df906f8416";
+          hash = "sha256-hVtpZ43KbdmlyY6Ms98ZemamNlz0wsYv417WiR/A9jU=";
+        };
+      in
+      pkgs.zellij.overrideAttrs (old: {
+        version = "0.45.0-pre";
+        src = zellij-src;
+        cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
+          src = zellij-src;
+          hash = "sha256-7bRnzQ2BqYfMH8NEBT8uwDkXzeUyhni28eqRGCGjvOc=";
+        };
+        doInstallCheck = false;
+      });
+    settings = {
+      default_shell = cfg.shellPath;
+      ui.pane_frames.rounded_corners = true;
+      session_serialization = false;
+      show_startup_tips = false;
+      theme = if baseIsDark then "dark" else "light";
+      theme_dark = "dark";
+      theme_light = "light";
+      themes.dark = zellijTheme darkColors;
+      themes.light = zellijTheme lightColors;
+    };
   };
 
   config.home.activation.seedThemeConfigs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
