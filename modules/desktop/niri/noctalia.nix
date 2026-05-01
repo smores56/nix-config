@@ -73,7 +73,9 @@ in
           solidColor = base;
         };
         colorSchemes = {
-          predefinedScheme = config.dotfiles.darkTheme.noctalia;
+          predefinedScheme =
+            if polarity == "light" then config.dotfiles.lightTheme.noctalia
+            else config.dotfiles.darkTheme.noctalia;
           schedulingMode = if polarity == "time-of-day" then "location" else "off";
         } // lib.optionalAttrs (polarity != "time-of-day") {
           darkMode = polarity != "light";

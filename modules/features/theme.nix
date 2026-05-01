@@ -72,35 +72,35 @@ let
     colors:
     let
       c = lib.mapAttrs (_: v: "#${v}") colors;
-      unselected = zellijBlock { base = c.base05; background = c.base01; emphasis_0 = c.base09; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0E; };
-      selected = zellijBlock { base = c.base05; background = c.base04; emphasis_0 = c.base09; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0E; };
-      title = zellijBlock { base = c.base0E; background = c.base00; emphasis_0 = c.base09; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0D; };
+      unselected = zellijBlock { base = c.base05; background = c.base01; emphasis_0 = c.base09; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0F; };
+      selected = zellijBlock { base = c.base05; background = c.base04; emphasis_0 = c.base09; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0F; };
+      title = zellijBlock { base = c.base0E; background = c.base00; emphasis_0 = c.base09; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0F; };
     in
     {
       text_unselected = unselected;
       text_selected = selected;
-      ribbon_selected = zellijBlock { base = c.base01; background = c.base0E; emphasis_0 = c.base08; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0D; };
-      ribbon_unselected = zellijBlock { base = c.base01; background = c.base05; emphasis_0 = c.base08; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0E; };
+      ribbon_selected = zellijBlock { base = c.base01; background = c.base0E; emphasis_0 = c.base08; emphasis_1 = c.base09; emphasis_2 = c.base0F; emphasis_3 = c.base0D; };
+      ribbon_unselected = zellijBlock { base = c.base01; background = c.base05; emphasis_0 = c.base08; emphasis_1 = c.base05; emphasis_2 = c.base0D; emphasis_3 = c.base0F; };
       table_title = title;
       table_cell_selected = selected;
       table_cell_unselected = unselected;
       list_selected = selected;
       list_unselected = unselected;
-      frame_selected = title;
-      frame_highlight = zellijBlock { base = c.base08; background = c.base00; emphasis_0 = c.base0E; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0D; };
-      exit_code_success = zellijBlock { base = c.base0B; background = c.base00; emphasis_0 = c.base08; emphasis_1 = c.base0C; emphasis_2 = c.base0E; emphasis_3 = c.base0D; };
-      exit_code_error = zellijBlock { base = c.base08; background = c.base00; emphasis_0 = c.base0B; emphasis_1 = c.base0C; emphasis_2 = c.base0E; emphasis_3 = c.base0D; };
+      frame_selected = zellijBlock { base = c.base0E; background = c.base00; emphasis_0 = c.base09; emphasis_1 = c.base0C; emphasis_2 = c.base0F; emphasis_3 = c.base00; };
+      frame_highlight = zellijBlock { base = c.base08; background = c.base00; emphasis_0 = c.base0F; emphasis_1 = c.base09; emphasis_2 = c.base09; emphasis_3 = c.base09; };
+      exit_code_success = zellijBlock { base = c.base0B; background = c.base00; emphasis_0 = c.base0C; emphasis_1 = c.base01; emphasis_2 = c.base0F; emphasis_3 = c.base0D; };
+      exit_code_error = zellijBlock { base = c.base08; background = c.base00; emphasis_0 = c.base0A; emphasis_1 = c.base00; emphasis_2 = c.base00; emphasis_3 = c.base00; };
       multiplayer_user_colors = {
-        player_1 = c.base08;
-        player_2 = c.base0B;
-        player_3 = c.base0D;
-        player_4 = c.base0E;
+        player_1 = c.base0F;
+        player_2 = c.base0D;
+        player_3 = c.base00;
+        player_4 = c.base0A;
         player_5 = c.base0C;
-        player_6 = c.base09;
-        player_7 = c.base0A;
-        player_8 = c.base0F;
-        player_9 = c.base03;
-        player_10 = c.base04;
+        player_6 = c.base00;
+        player_7 = c.base08;
+        player_8 = c.base00;
+        player_9 = c.base00;
+        player_10 = c.base00;
       };
     };
 
@@ -232,10 +232,10 @@ in
   config.home.packages = [
     (pkgs.writeShellScriptBin "theme-switch" ''
       case "''${1:-}" in
-        dark) exec ${activateSpecialisation} true ;;
-        light) exec ${activateSpecialisation} false ;;
-        "") exec ${activateSpecialisation} ;;
-        *) echo "Usage: theme-switch [dark|light]" >&2; exit 1 ;;
+        dark)  ${activateSpecialisation} true  && echo "Switched to dark theme" ;;
+        light) ${activateSpecialisation} false && echo "Switched to light theme" ;;
+        "")    ${activateSpecialisation}       && echo "Theme synced to system setting" ;;
+        *)     echo "Usage: theme-switch [dark|light]" >&2; exit 1 ;;
       esac
     '')
   ];
@@ -329,11 +329,10 @@ in
           mkdir -p "$HOME/.cache"
           PREVIOUS=$(cat "$CACHE" 2>/dev/null || echo "")
           if [ "$CURRENT" != "$PREVIOUS" ]; then
-            echo "$CURRENT" > "$CACHE"
             if [ "$CURRENT" = "Dark" ]; then
-              ${activateSpecialisation} true
+              ${activateSpecialisation} true && echo "$CURRENT" > "$CACHE"
             else
-              ${activateSpecialisation} false
+              ${activateSpecialisation} false && echo "$CURRENT" > "$CACHE"
             fi
           fi
         ''}"
