@@ -70,10 +70,10 @@ in
       default = false;
       description = "Enable proprietary NVIDIA GPU driver. NixOS-only.";
     };
-    ollama = lib.mkOption {
+    llm = lib.mkOption {
       type = lib.types.bool;
       default = false;
-      description = "Enable Ollama LLM service with NVIDIA CUDA support. NixOS-only.";
+      description = "Enable llama.cpp LLM server with NVIDIA CUDA support. NixOS-only.";
     };
     persist = lib.mkOption {
       type = lib.types.bool;
@@ -196,8 +196,8 @@ in
       font = "CaskaydiaCove Nerd Font";
       fontPackage = pkgs.nerd-fonts.caskaydia-cove;
       shellPath = "${pkgs.${config.dotfiles.shell}}/bin/${config.dotfiles.shell}";
-      defaultModel = "gemma4:26b-a4b-it-q4_K_M";
-      altModel = "qwen3.6:27b";
+      defaultModel = "gemma-4-26b";
+      altModel = "qwen3.6-27b";
     };
   };
 }

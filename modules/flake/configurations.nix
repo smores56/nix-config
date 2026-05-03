@@ -83,7 +83,7 @@ let
             exposeSsh = args.exposeSsh or false;
             fingerprint = args.fingerprint or false;
             nvidia = args.nvidia or false;
-            ollama = args.ollama or false;
+            llm = args.llm or false;
             persist = args.persist or false;
           };
         }
@@ -145,6 +145,7 @@ in
         displayManager = "niri";
         exposeSsh = true;
         nvidia = true;
+        llm = true;
       };
     };
   };

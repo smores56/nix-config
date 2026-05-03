@@ -54,7 +54,6 @@
 
         s = "goose session";
         sq = "GOOSE_MODEL=${config.dotfiles.altModel} goose session";
-        olu = "ollama run $OPENAI_MODEL";
       };
 
       interactiveShellInit = ''

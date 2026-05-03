@@ -47,7 +47,8 @@ in
   home.packages = [ pkgs.goose-cli ];
 
   home.sessionVariables = {
-    OLLAMA_HOST = "http://smortress:11434";
+    OPENAI_API_BASE = "http://smortress:8080/v1";
+    OPENAI_API_KEY = "not-needed";
     GOOSE_CONTEXT_LIMIT = "32768";
     OPENAI_MODEL = cfg.defaultModel;
     GOOSE_DISABLE_KEYRING = "true";
@@ -56,7 +57,7 @@ in
   xdg.configFile."goose/config.yaml".force = true;
   xdg.configFile."goose/config.yaml".text = ''
     # Managed by nix — edit modules/features/ai.nix instead
-    GOOSE_PROVIDER: "ollama"
+    GOOSE_PROVIDER: "openai"
     GOOSE_MODEL: "${cfg.defaultModel}"
     GOOSE_MODE: "auto"
     GOOSE_TELEMETRY_ENABLED: false
