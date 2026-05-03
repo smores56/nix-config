@@ -103,7 +103,9 @@ in
         nixos = true;
       };
       "smores@smortress" = mkHome {
-        displayManager = "pop-os";
+        displayManager = "niri";
+        nixos = true;
+        polarity = "time-of-day";
       };
       "smores@smoresnet" = mkHome { };
       "smohr@smoreswork" = mkHome {
@@ -129,6 +131,11 @@ in
         hostname = "smoresbook";
         displayManager = "niri";
         fingerprint = true;
+      };
+      "smortress" = mkNixos {
+        hostname = "smortress";
+        displayManager = "niri";
+        exposeSsh = true;
       };
     };
   };
