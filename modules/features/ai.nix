@@ -47,6 +47,8 @@ in
   home.packages = [ pkgs.goose-cli ];
 
   home.sessionVariables = {
+    OPENAI_BASE_URL = "http://smortress:8080/v1";
+    OPENAI_API_KEY = "sk-no-key-required";
     GOOSE_CONTEXT_LIMIT = "32768";
     OPENAI_MODEL = cfg.defaultModel;
     GOOSE_DISABLE_KEYRING = "true";
@@ -56,8 +58,6 @@ in
   xdg.configFile."goose/config.yaml".text = ''
     # Managed by nix — edit modules/features/ai.nix instead
     GOOSE_PROVIDER: "openai"
-    OPENAI_BASE_URL: "http://smortress:8080/v1"
-    OPENAI_API_KEY: "sk-no-key-required"
     GOOSE_MODEL: "${cfg.defaultModel}"
     GOOSE_MODE: "auto"
     GOOSE_TELEMETRY_ENABLED: false
