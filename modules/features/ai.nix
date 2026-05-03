@@ -47,8 +47,8 @@ in
   home.packages = [ pkgs.goose-cli ];
 
   home.sessionVariables = {
-    OPENAI_API_BASE = "http://smortress:8080/v1";
-    OPENAI_API_KEY = "not-needed";
+    OPENAI_BASE_URL = "http://smortress:8080/v1";
+    OPENAI_API_KEY = "sk-no-key-required";
     GOOSE_CONTEXT_LIMIT = "32768";
     OPENAI_MODEL = cfg.defaultModel;
     GOOSE_DISABLE_KEYRING = "true";
