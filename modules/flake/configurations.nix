@@ -56,6 +56,7 @@ let
             darkTheme = null;
             lightTheme = null;
             primaryMonitor = null;
+            monitorSize = null;
           } args;
           home.username = username;
           home.homeDirectory = args.homeDirectory or "/home/${username}";
@@ -102,6 +103,7 @@ in
         nixos = true;
         polarity = "time-of-day";
         primaryMonitor = "eDP-1";
+        monitorSize = { width = 1920; height = 1080; };
       };
       "smores@campfire" = mkHome {
         nixos = true;
@@ -111,6 +113,7 @@ in
         nixos = true;
         polarity = "time-of-day";
         primaryMonitor = "DP-2";
+        monitorSize = { width = 5120; height = 2160; };
       };
       "smores@smoresnet" = mkHome { };
       "smohr@smoreswork" = mkHome {

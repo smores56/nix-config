@@ -7,6 +7,26 @@
 let
   isNiri = config.dotfiles.displayManager == "niri";
   polarity = config.dotfiles.polarity;
+  monitor = config.dotfiles.primaryMonitor;
+  size = config.dotfiles.monitorSize;
+  hasWidgets = monitor != null && size != null;
+
+  # Reference resolution all widget positions/scales are authored against
+  refSize = { width = 1920; height = 1080; };
+
+  # Scale a widget definition from refSize to the target monitor.
+  # Each widget carries a `refWidth` (measured pixel width at its authored scale)
+  # used to horizontally center it; this key is stripped from the output.
+  scaleWidget =
+    widget:
+    let
+      factor = (size.height * 1.0) / refSize.height;
+    in
+    (removeAttrs widget [ "refWidth" ]) // {
+      x = builtins.floor ((size.width - widget.refWidth * factor) / 2.0);
+      y = builtins.floor (widget.y * factor);
+      scale = widget.scale * factor;
+    };
 
   base = "#${config.lib.stylix.colors.base00}";
 in
@@ -86,14 +106,14 @@ in
         };
         notifications.enableMarkdown = true;
         desktopWidgets = {
-          enabled = config.dotfiles.primaryMonitor != null;
-          monitorWidgets = lib.optionals (config.dotfiles.primaryMonitor != null) [
+          enabled = hasWidgets;
+          monitorWidgets = lib.optionals hasWidgets [
             {
-              name = config.dotfiles.primaryMonitor;
-              widgets = [
+              name = monitor;
+              widgets = map scaleWidget [
                 {
                   id = "Clock";
-                  x = 550;
+                  refWidth = 820;
                   y = 24;
                   scale = 3.5;
                   showBackground = false;
@@ -104,7 +124,7 @@ in
                 }
                 {
                   id = "MediaPlayer";
-                  x = 508;
+                  refWidth = 904;
                   y = 312;
                   scale = 1.3;
                   showBackground = true;

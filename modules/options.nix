@@ -85,6 +85,16 @@ in
       default = null;
       description = "Primary monitor name for desktop widgets (e.g. eDP-1, DP-1).";
     };
+    monitorSize = lib.mkOption {
+      type = lib.types.nullOr (lib.types.submodule {
+        options = {
+          width = lib.mkOption { type = lib.types.int; };
+          height = lib.mkOption { type = lib.types.int; };
+        };
+      });
+      default = null;
+      description = "Primary monitor resolution. Used to compute desktop widget positions.";
+    };
     nixos = lib.mkOption {
       type = lib.types.bool;
       default = false;
