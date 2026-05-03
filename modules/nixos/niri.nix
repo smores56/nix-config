@@ -16,9 +16,15 @@
       power-profiles-daemon.enable = true;
       greetd = {
         enable = true;
-        settings.default_session = {
-          command = "niri-session";
-          user = "smores";
+        settings = {
+          default_session = {
+            command = "niri-session";
+            user = "smores";
+          };
+          initial_session = {
+            command = "niri-session";
+            user = "smores";
+          };
         };
       };
     };
