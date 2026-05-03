@@ -1,11 +1,7 @@
 { config, lib, pkgs, ... }:
 {
   config = lib.mkIf config.dotfiles.ollama {
-    hardware.nvidia = {
-      open = true;
-      modesetting.enable = true;
-    };
-    services.xserver.videoDrivers = [ "nvidia" ];
+    dotfiles.nvidia = true;
 
     services.ollama = {
       enable = true;

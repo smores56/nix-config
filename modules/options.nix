@@ -67,6 +67,11 @@ in
       type = lib.types.bool;
       default = false;
     };
+    nvidia = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Enable proprietary NVIDIA GPU driver. NixOS-only.";
+    };
     ollama = lib.mkOption {
       type = lib.types.bool;
       default = false;
