@@ -75,11 +75,6 @@ in
         type: builtin
         name: memory
         timeout: 300
-      fetch:
-        enabled: true
-        type: builtin
-        name: fetch
-        timeout: 300
       code_execution:
         enabled: true
         type: platform
