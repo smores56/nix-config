@@ -7,7 +7,11 @@ import sys
 
 
 def niri_msg(*args):
-    result = subprocess.run(["niri", "msg", "--json", *args], capture_output=True, text=True)
+    try:
+        result = subprocess.run(["niri", "msg", "--json", *args], capture_output=True, text=True, timeout=5)
+    except subprocess.TimeoutExpired:
+        print(f"niri msg {' '.join(args)} timed out", file=sys.stderr)
+        return None
     if result.returncode != 0:
         print(f"niri msg {' '.join(args)} failed: {result.stderr}", file=sys.stderr)
         return None
@@ -15,7 +19,11 @@ def niri_msg(*args):
 
 
 def niri_action(*args):
-    result = subprocess.run(["niri", "msg", "action", *args], capture_output=True, text=True)
+    try:
+        result = subprocess.run(["niri", "msg", "action", *args], capture_output=True, text=True, timeout=5)
+    except subprocess.TimeoutExpired:
+        print(f"niri action {' '.join(args)} timed out", file=sys.stderr)
+        return
     if result.returncode != 0:
         print(f"niri action {' '.join(args)} failed: {result.stderr}", file=sys.stderr)
 
@@ -46,7 +54,7 @@ def main():
         return
 
     focused_col = focused_pos[0]
-    proportion = f"{100 // len(columns)}%"
+    proportion = f"{100 / len(columns):.4f}%"
 
     for col in sorted(columns):
         niri_action("focus-column", str(col))

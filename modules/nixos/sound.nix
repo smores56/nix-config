@@ -5,7 +5,7 @@
   ...
 }:
 {
-  config = lib.mkIf (config.dotfiles.displayManager != null) {
+  config = lib.mkIf (config.dotfiles.displayManager != "none") {
     environment.systemPackages = [
       pkgs.pulseaudio
       pkgs.playerctl

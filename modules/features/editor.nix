@@ -11,6 +11,7 @@ in
     nixfmt
     mdformat
     marksman
+    harper
     basedpyright
     lua-language-server
     dockerfile-language-server

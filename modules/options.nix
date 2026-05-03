@@ -29,14 +29,12 @@ in
 {
   options.dotfiles = {
     displayManager = lib.mkOption {
-      type = lib.types.nullOr (
-        lib.types.enum [
-          "pop-os"
-          "osx"
-          "niri"
-        ]
-      );
-      default = null;
+      type = lib.types.enum [
+        "none"
+        "osx"
+        "niri"
+      ];
+      default = "none";
     };
     polarity = lib.mkOption {
       type = lib.types.enum [
@@ -76,6 +74,16 @@ in
       type = lib.types.bool;
       default = false;
       description = "Enable Ollama LLM service with NVIDIA CUDA support. NixOS-only.";
+    };
+    persist = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Host uses /persist for impermanence. NixOS-only.";
+    };
+    primaryMonitor = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Primary monitor name for desktop widgets (e.g. eDP-1, DP-1).";
     };
     nixos = lib.mkOption {
       type = lib.types.bool;

@@ -25,7 +25,7 @@ in
     shell = pkgs.${cfg.shell};
   };
 
-  services.displayManager.autoLogin = {
+  services.displayManager.autoLogin = lib.mkIf (cfg.displayManager != "none") {
     enable = true;
     user = "smores";
   };

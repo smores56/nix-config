@@ -36,7 +36,7 @@ _: {
                 end
             end
 
-            nohup zellij action rename-tab $tab_name >/dev/null 2>&1
+            nohup zellij action rename-tab "$tab_name" >/dev/null 2>&1
         end
       '';
     };

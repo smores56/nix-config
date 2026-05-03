@@ -5,7 +5,7 @@
   ...
 }:
 let
-  hasDm = config.dotfiles.displayManager != null;
+  hasDm = config.dotfiles.displayManager != "none";
   inherit (pkgs.stdenv) isLinux;
 in
 {

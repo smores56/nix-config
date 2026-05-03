@@ -86,10 +86,10 @@ in
         };
         notifications.enableMarkdown = true;
         desktopWidgets = {
-          enabled = true;
-          monitorWidgets = [
+          enabled = config.dotfiles.primaryMonitor != null;
+          monitorWidgets = lib.optionals (config.dotfiles.primaryMonitor != null) [
             {
-              name = "eDP-1";
+              name = config.dotfiles.primaryMonitor;
               widgets = [
                 {
                   id = "Clock";

@@ -74,6 +74,8 @@ in
                 noctalia-shell ipc call lockScreen lock 2>/dev/null && exit 0
                 sleep 0.5
               done
+              echo "lock-on-start: noctalia-shell failed to respond after 30s" >&2
+              exit 1
             ''}"
           ];
         }

@@ -1,7 +1,12 @@
 { config, lib, pkgs, ... }:
 {
   config = lib.mkIf config.dotfiles.ollama {
-    dotfiles.nvidia = true;
+    assertions = [
+      {
+        assertion = config.dotfiles.nvidia;
+        message = "ollama requires nvidia = true for CUDA support";
+      }
+    ];
 
     services.ollama = {
       enable = true;

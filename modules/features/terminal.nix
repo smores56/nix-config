@@ -3,8 +3,8 @@ let
   cfg = config.dotfiles;
 in
 {
-  fonts.fontconfig.enable = lib.mkIf (cfg.displayManager != null) true;
-  home.sessionVariables.TERMINAL = lib.mkIf (cfg.displayManager != null) cfg.terminal;
+  fonts.fontconfig.enable = lib.mkIf (cfg.displayManager != "none") true;
+  home.sessionVariables.TERMINAL = lib.mkIf (cfg.displayManager != "none") cfg.terminal;
 
   programs.wezterm = {
     enable = true;
@@ -34,7 +34,7 @@ in
         if f then
           local content = f:read("*l")
           f:close()
-          return content
+          if content and content ~= "" then return content end
         end
         return "${if cfg.polarity != "light" then "Dark" else "Light"}"
       end

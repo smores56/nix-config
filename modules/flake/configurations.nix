@@ -47,7 +47,7 @@ let
       modules = homeModules ++ [
         {
           dotfiles = builtins.intersectAttrs {
-            displayManager = null;
+            displayManager = "none";
             terminalFontSize = null;
             polarity = null;
             exposeSsh = null;
@@ -55,6 +55,7 @@ let
             email = null;
             darkTheme = null;
             lightTheme = null;
+            primaryMonitor = null;
           } args;
           home.username = username;
           home.homeDirectory = args.homeDirectory or "/home/${username}";
@@ -65,7 +66,7 @@ let
   mkNixos =
     args:
     let
-      dm = args.displayManager or null;
+      dm = args.displayManager or "none";
     in
     inputs.nixpkgs.lib.nixosSystem {
       modules = [
@@ -82,6 +83,7 @@ let
             fingerprint = args.fingerprint or false;
             nvidia = args.nvidia or false;
             ollama = args.ollama or false;
+            persist = args.persist or false;
           };
         }
       ]
@@ -99,6 +101,7 @@ in
         displayManager = "niri";
         nixos = true;
         polarity = "time-of-day";
+        primaryMonitor = "eDP-1";
       };
       "smores@campfire" = mkHome {
         nixos = true;
@@ -107,6 +110,7 @@ in
         displayManager = "niri";
         nixos = true;
         polarity = "time-of-day";
+        primaryMonitor = "DP-2";
       };
       "smores@smoresnet" = mkHome { };
       "smohr@smoreswork" = mkHome {
