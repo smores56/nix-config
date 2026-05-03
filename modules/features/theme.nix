@@ -27,7 +27,8 @@ let
       parsed = builtins.filter (x: x != null) (map parseLine lines);
       result = builtins.listToAttrs parsed;
     in
-    assert builtins.length parsed >= 16
+    assert
+      builtins.length parsed >= 16
       || throw "parseScheme: expected at least 16 base16 colors in ${file}, got ${toString (builtins.length parsed)}";
     result;
 
@@ -85,56 +86,61 @@ let
       '';
 
   darkModeHook = pkgs.writeShellScript "dark-mode-hook" ''
-    IS_DARK="''${1:-}"
-    if [ -z "$IS_DARK" ]; then
-      ${detectDarkMode}
-    fi
-    if [ "$IS_DARK" = "false" ]; then
-      HELIX_THEME="${cfg.lightTheme.helix}"
-      LAZYGIT_LIGHT="true"
-      FISH_COLORS="${lightFishColors}"
-      ZELLIJ_ACTION="set-light-theme"
-    else
-      HELIX_THEME="${cfg.darkTheme.helix}"
-      LAZYGIT_LIGHT="false"
-      FISH_COLORS="${darkFishColors}"
-      ZELLIJ_ACTION="set-dark-theme"
-    fi
+        IS_DARK="''${1:-}"
+        if [ -z "$IS_DARK" ]; then
+          ${detectDarkMode}
+        fi
+        if [ "$IS_DARK" = "false" ]; then
+          HELIX_THEME="${cfg.lightTheme.helix}"
+          LAZYGIT_LIGHT="true"
+          FISH_COLORS="${lightFishColors}"
+          ZELLIJ_ACTION="set-light-theme"
+        else
+          HELIX_THEME="${cfg.darkTheme.helix}"
+          LAZYGIT_LIGHT="false"
+          FISH_COLORS="${darkFishColors}"
+          ZELLIJ_ACTION="set-dark-theme"
+        fi
 
-    mkdir -p "$HOME/.config/helix/themes"
-    echo "inherits = \"$HELIX_THEME\"" > "$HOME/.config/helix/themes/active.toml"
-    ${pkgs.procps}/bin/pkill -USR1 hx 2>/dev/null || true
+        mkdir -p "$HOME/.config/helix/themes"
+        echo "inherits = \"$HELIX_THEME\"" > "$HOME/.config/helix/themes/active.toml"
+        ${pkgs.procps}/bin/pkill -USR1 hx 2>/dev/null || true
 
-    mkdir -p "$HOME/.config/lazygit"
-    cat > "$HOME/.config/lazygit/theme.yml" <<EOF
-gui:
-  theme:
-    lightTheme: $LAZYGIT_LIGHT
-EOF
+        mkdir -p "$HOME/.config/lazygit"
+        cat > "$HOME/.config/lazygit/theme.yml" <<EOF
+    gui:
+      theme:
+        lightTheme: $LAZYGIT_LIGHT
+    EOF
 
-    ${pkgs.fish}/bin/fish "$FISH_COLORS" 2>/dev/null || true
+        ${pkgs.fish}/bin/fish "$FISH_COLORS" 2>/dev/null || true
 
-    ${zellij}/bin/zellij list-sessions --short 2>/dev/null | while IFS= read -r session; do
-      ${zellij}/bin/zellij --session "$session" action "$ZELLIJ_ACTION" 2>/dev/null || true
-    done
+        ${zellij}/bin/zellij list-sessions --short 2>/dev/null | while IFS= read -r session; do
+          ${zellij}/bin/zellij --session "$session" action "$ZELLIJ_ACTION" 2>/dev/null || true
+        done
 
-    mkdir -p "$HOME/.cache"
-    if [ "$IS_DARK" = "true" ]; then
-      echo "Dark" > "${cacheFile}"
-    else
-      echo "Light" > "${cacheFile}"
-    fi
+        mkdir -p "$HOME/.cache"
+        if [ "$IS_DARK" = "true" ]; then
+          echo "Dark" > "${cacheFile}"
+        else
+          echo "Light" > "${cacheFile}"
+        fi
 
-    ${if isOsx then ''
-      if [ "$IS_DARK" = "true" ]; then
-        /usr/bin/defaults write -g AppleInterfaceStyle Dark
-      else
-        /usr/bin/defaults delete -g AppleInterfaceStyle 2>/dev/null || true
-      fi
-    '' else lib.optionalString (cfg.displayManager != "none") ''
-      ${pkgs.glib}/bin/gsettings set org.gnome.desktop.interface color-scheme \
-        "$([ "$IS_DARK" = "true" ] && echo "prefer-dark" || echo "prefer-light")" 2>/dev/null || true
-    ''}
+        ${
+          if isOsx then
+            ''
+              if [ "$IS_DARK" = "true" ]; then
+                /usr/bin/defaults write -g AppleInterfaceStyle Dark
+              else
+                /usr/bin/defaults delete -g AppleInterfaceStyle 2>/dev/null || true
+              fi
+            ''
+          else
+            lib.optionalString (cfg.displayManager != "none") ''
+              ${pkgs.glib}/bin/gsettings set org.gnome.desktop.interface color-scheme \
+                "$([ "$IS_DARK" = "true" ] && echo "prefer-dark" || echo "prefer-light")" 2>/dev/null || true
+            ''
+        }
   '';
 
   baseGenFile = "$HOME/.cache/hm-base-generation";
@@ -206,17 +212,21 @@ in
     };
   };
 
-  config.specialisation = if baseIsDark then {
-    light.configuration.stylix = {
-      polarity = lib.mkForce "light";
-      base16Scheme = lib.mkForce "${pkgs.base16-schemes}/share/themes/${cfg.lightTheme.system}.yaml";
-    };
-  } else {
-    dark.configuration.stylix = {
-      polarity = lib.mkForce "dark";
-      base16Scheme = lib.mkForce "${pkgs.base16-schemes}/share/themes/${cfg.darkTheme.system}.yaml";
-    };
-  };
+  config.specialisation =
+    if baseIsDark then
+      {
+        light.configuration.stylix = {
+          polarity = lib.mkForce "light";
+          base16Scheme = lib.mkForce "${pkgs.base16-schemes}/share/themes/${cfg.lightTheme.system}.yaml";
+        };
+      }
+    else
+      {
+        dark.configuration.stylix = {
+          polarity = lib.mkForce "dark";
+          base16Scheme = lib.mkForce "${pkgs.base16-schemes}/share/themes/${cfg.darkTheme.system}.yaml";
+        };
+      };
 
   config.home.activation.saveBaseGeneration = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     if [ -z "''${HM_SPECIALISATION_SWITCH:-}" ]; then
@@ -230,9 +240,10 @@ in
 
   config.home.activation.seedThemeConfigs = lib.hm.dag.entryAfter [ "saveBaseGeneration" ] ''
     ${lib.optionalString isOsx (
-      if isAutoSwitch
-      then "/usr/bin/defaults write -g AppleInterfaceStyleSwitchesAutomatically -bool true"
-      else "/usr/bin/defaults write -g AppleInterfaceStyleSwitchesAutomatically -bool false"
+      if isAutoSwitch then
+        "/usr/bin/defaults write -g AppleInterfaceStyleSwitchesAutomatically -bool true"
+      else
+        "/usr/bin/defaults write -g AppleInterfaceStyleSwitchesAutomatically -bool false"
     )}
     IS_DARK="${if config.stylix.polarity == "dark" then "true" else "false"}"
     ${darkModeHook} "$IS_DARK"

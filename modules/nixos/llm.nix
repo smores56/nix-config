@@ -1,4 +1,9 @@
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
   cfg = config.dotfiles;
 in
@@ -28,8 +33,10 @@ in
         };
       };
       extraFlags = [
-        "-ngl" "99"
-        "-c" "32768"
+        "-ngl"
+        "99"
+        "-c"
+        "32768"
       ];
     };
   };

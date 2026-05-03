@@ -86,12 +86,14 @@ in
       description = "Primary monitor name for desktop widgets (e.g. eDP-1, DP-1).";
     };
     monitorSize = lib.mkOption {
-      type = lib.types.nullOr (lib.types.submodule {
-        options = {
-          width = lib.mkOption { type = lib.types.int; };
-          height = lib.mkOption { type = lib.types.int; };
-        };
-      });
+      type = lib.types.nullOr (
+        lib.types.submodule {
+          options = {
+            width = lib.mkOption { type = lib.types.int; };
+            height = lib.mkOption { type = lib.types.int; };
+          };
+        }
+      );
       default = null;
       description = "Primary monitor resolution. Used to compute desktop widget positions.";
     };
@@ -181,7 +183,8 @@ in
           message = "lightTheme.helix '${config.dotfiles.lightTheme.helix}' not found in helix themes";
         }
         {
-          assertion = config.dotfiles.polarity != "time-of-day"
+          assertion =
+            config.dotfiles.polarity != "time-of-day"
             || config.dotfiles.displayManager == "osx"
             || config.dotfiles.displayManager == "niri";
           message = "polarity 'time-of-day' requires displayManager 'osx' or 'niri' for automatic switching";

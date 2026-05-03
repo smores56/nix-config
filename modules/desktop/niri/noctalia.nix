@@ -12,7 +12,10 @@ let
   hasWidgets = monitor != null && size != null;
 
   # Reference resolution all widget positions/scales are authored against
-  refSize = { width = 1920; height = 1080; };
+  refSize = {
+    width = 1920;
+    height = 1080;
+  };
 
   # Scale a widget definition from refSize to the target monitor.
   # Each widget carries a `refWidth` (measured pixel width at its authored scale)
@@ -22,7 +25,8 @@ let
     let
       factor = (size.height * 1.0) / refSize.height;
     in
-    (removeAttrs widget [ "refWidth" ]) // {
+    (removeAttrs widget [ "refWidth" ])
+    // {
       x = builtins.floor ((size.width - widget.refWidth * factor) / 2.0);
       y = builtins.floor (widget.y * factor);
       scale = widget.scale * factor;
@@ -94,10 +98,13 @@ in
         };
         colorSchemes = {
           predefinedScheme =
-            if polarity == "light" then config.dotfiles.lightTheme.noctalia
-            else config.dotfiles.darkTheme.noctalia;
+            if polarity == "light" then
+              config.dotfiles.lightTheme.noctalia
+            else
+              config.dotfiles.darkTheme.noctalia;
           schedulingMode = if polarity == "time-of-day" then "location" else "off";
-        } // lib.optionalAttrs (polarity != "time-of-day") {
+        }
+        // lib.optionalAttrs (polarity != "time-of-day") {
           darkMode = polarity != "light";
         };
         audio = {

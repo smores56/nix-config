@@ -103,7 +103,10 @@ in
         nixos = true;
         polarity = "time-of-day";
         primaryMonitor = "eDP-1";
-        monitorSize = { width = 1920; height = 1080; };
+        monitorSize = {
+          width = 1920;
+          height = 1080;
+        };
       };
       "smores@campfire" = mkHome {
         nixos = true;
@@ -113,7 +116,10 @@ in
         nixos = true;
         polarity = "time-of-day";
         primaryMonitor = "DP-2";
-        monitorSize = { width = 5120; height = 2160; };
+        monitorSize = {
+          width = 5120;
+          height = 2160;
+        };
       };
       "smores@smoresnet" = mkHome { };
       "smohr@smoreswork" = mkHome {
@@ -143,6 +149,7 @@ in
       "smortress" = mkNixos {
         hostname = "smortress";
         displayManager = "niri";
+        polarity = "time-of-day";
         exposeSsh = true;
         nvidia = true;
         llm = true;

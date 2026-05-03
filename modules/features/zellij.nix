@@ -27,7 +27,8 @@ let
       parsed = builtins.filter (x: x != null) (map parseLine lines);
       result = builtins.listToAttrs parsed;
     in
-    assert builtins.length parsed >= 16
+    assert
+      builtins.length parsed >= 16
       || throw "parseScheme: expected at least 16 base16 colors in ${file}, got ${toString (builtins.length parsed)}";
     result;
 
@@ -43,30 +44,102 @@ let
       emphasis_2,
       emphasis_3,
     }:
-    { inherit base background emphasis_0 emphasis_1 emphasis_2 emphasis_3; };
+    {
+      inherit
+        base
+        background
+        emphasis_0
+        emphasis_1
+        emphasis_2
+        emphasis_3
+        ;
+    };
 
   zellijTheme =
     colors:
     let
       c = lib.mapAttrs (_: v: "#${v}") colors;
-      unselected = zellijBlock { base = c.base05; background = c.base01; emphasis_0 = c.base09; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0F; };
-      selected = zellijBlock { base = c.base05; background = c.base04; emphasis_0 = c.base09; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0F; };
-      title = zellijBlock { base = c.base0E; background = c.base00; emphasis_0 = c.base09; emphasis_1 = c.base0C; emphasis_2 = c.base0B; emphasis_3 = c.base0F; };
+      unselected = zellijBlock {
+        base = c.base05;
+        background = c.base01;
+        emphasis_0 = c.base09;
+        emphasis_1 = c.base0C;
+        emphasis_2 = c.base0B;
+        emphasis_3 = c.base0F;
+      };
+      selected = zellijBlock {
+        base = c.base05;
+        background = c.base04;
+        emphasis_0 = c.base09;
+        emphasis_1 = c.base0C;
+        emphasis_2 = c.base0B;
+        emphasis_3 = c.base0F;
+      };
+      title = zellijBlock {
+        base = c.base0E;
+        background = c.base00;
+        emphasis_0 = c.base09;
+        emphasis_1 = c.base0C;
+        emphasis_2 = c.base0B;
+        emphasis_3 = c.base0F;
+      };
     in
     {
       text_unselected = unselected;
       text_selected = selected;
-      ribbon_selected = zellijBlock { base = c.base01; background = c.base0E; emphasis_0 = c.base08; emphasis_1 = c.base09; emphasis_2 = c.base0F; emphasis_3 = c.base0D; };
-      ribbon_unselected = zellijBlock { base = c.base01; background = c.base05; emphasis_0 = c.base08; emphasis_1 = c.base05; emphasis_2 = c.base0D; emphasis_3 = c.base0F; };
+      ribbon_selected = zellijBlock {
+        base = c.base01;
+        background = c.base0E;
+        emphasis_0 = c.base08;
+        emphasis_1 = c.base09;
+        emphasis_2 = c.base0F;
+        emphasis_3 = c.base0D;
+      };
+      ribbon_unselected = zellijBlock {
+        base = c.base01;
+        background = c.base05;
+        emphasis_0 = c.base08;
+        emphasis_1 = c.base05;
+        emphasis_2 = c.base0D;
+        emphasis_3 = c.base0F;
+      };
       table_title = title;
       table_cell_selected = selected;
       table_cell_unselected = unselected;
       list_selected = selected;
       list_unselected = unselected;
-      frame_selected = zellijBlock { base = c.base0E; background = c.base00; emphasis_0 = c.base09; emphasis_1 = c.base0C; emphasis_2 = c.base0F; emphasis_3 = c.base00; };
-      frame_highlight = zellijBlock { base = c.base08; background = c.base00; emphasis_0 = c.base0F; emphasis_1 = c.base09; emphasis_2 = c.base09; emphasis_3 = c.base09; };
-      exit_code_success = zellijBlock { base = c.base0B; background = c.base00; emphasis_0 = c.base0C; emphasis_1 = c.base01; emphasis_2 = c.base0F; emphasis_3 = c.base0D; };
-      exit_code_error = zellijBlock { base = c.base08; background = c.base00; emphasis_0 = c.base0A; emphasis_1 = c.base00; emphasis_2 = c.base00; emphasis_3 = c.base00; };
+      frame_selected = zellijBlock {
+        base = c.base0E;
+        background = c.base00;
+        emphasis_0 = c.base09;
+        emphasis_1 = c.base0C;
+        emphasis_2 = c.base0F;
+        emphasis_3 = c.base00;
+      };
+      frame_highlight = zellijBlock {
+        base = c.base08;
+        background = c.base00;
+        emphasis_0 = c.base0F;
+        emphasis_1 = c.base09;
+        emphasis_2 = c.base09;
+        emphasis_3 = c.base09;
+      };
+      exit_code_success = zellijBlock {
+        base = c.base0B;
+        background = c.base00;
+        emphasis_0 = c.base0C;
+        emphasis_1 = c.base01;
+        emphasis_2 = c.base0F;
+        emphasis_3 = c.base0D;
+      };
+      exit_code_error = zellijBlock {
+        base = c.base08;
+        background = c.base00;
+        emphasis_0 = c.base0A;
+        emphasis_1 = c.base00;
+        emphasis_2 = c.base00;
+        emphasis_3 = c.base00;
+      };
       multiplayer_user_colors = {
         player_1 = c.base0F;
         player_2 = c.base0D;
