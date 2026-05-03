@@ -2,6 +2,14 @@
 {
   networking.networkmanager.enable = true;
 
+  services.openssh = lib.mkIf config.dotfiles.exposeSsh {
+    enable = true;
+    settings = {
+      PasswordAuthentication = false;
+      KbdInteractiveAuthentication = false;
+    };
+  };
+
   services.tailscale = {
     enable = true;
     openFirewall = true;
