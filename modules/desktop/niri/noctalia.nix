@@ -119,6 +119,7 @@ in
             }
           ];
         };
+        sessionMenu.countdownDuration = 5000;
         dock.enabled = false;
         idle.enabled = true;
         nightLight.enabled = true;
