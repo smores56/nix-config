@@ -47,7 +47,6 @@ in
   home.packages = [ pkgs.goose-cli ];
 
   home.sessionVariables = {
-    LLAMA_SWAP_HOST = "http://smortress:8080";
     GOOSE_CONTEXT_LIMIT = "32768";
     OPENAI_MODEL = cfg.defaultModel;
     GOOSE_DISABLE_KEYRING = "true";
@@ -56,7 +55,9 @@ in
   xdg.configFile."goose/config.yaml".force = true;
   xdg.configFile."goose/config.yaml".text = ''
     # Managed by nix — edit modules/features/ai.nix instead
-    GOOSE_PROVIDER: "llama_swap"
+    GOOSE_PROVIDER: "openai"
+    OPENAI_BASE_URL: "http://smortress:8080/v1"
+    OPENAI_API_KEY: "sk-no-key-required"
     GOOSE_MODEL: "${cfg.defaultModel}"
     GOOSE_MODE: "auto"
     GOOSE_TELEMETRY_ENABLED: false
