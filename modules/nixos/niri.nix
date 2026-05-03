@@ -8,6 +8,7 @@
   config = lib.mkIf (config.dotfiles.displayManager == "niri") {
     programs.niri.enable = true;
     programs.niri.package = pkgs.niri-unstable;
+    environment.systemPackages = [ pkgs.xwayland-satellite-unstable ];
 
     services = {
       libinput.enable = true;
