@@ -36,6 +36,15 @@ in
       ];
       default = "none";
     };
+    windowManager = lib.mkOption {
+      type = lib.types.enum [
+        "none"
+        "aerospace"
+        "paneru"
+      ];
+      default = "none";
+      description = "macOS tiling window manager. Only meaningful when displayManager is 'osx'.";
+    };
     polarity = lib.mkOption {
       type = lib.types.enum [
         "dark"

@@ -48,6 +48,7 @@ let
         {
           dotfiles = builtins.intersectAttrs {
             displayManager = "none";
+            windowManager = "none";
             terminalFontSize = null;
             polarity = null;
             exposeSsh = null;
@@ -124,6 +125,7 @@ in
       "smores@smoresnet" = mkHome { };
       "smohr@smoreswork" = mkHome {
         displayManager = "osx";
+        windowManager = "aerospace";
         username = "smohr";
         homeDirectory = "/Users/smohr";
         system = "aarch64-darwin";

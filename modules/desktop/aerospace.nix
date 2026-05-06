@@ -5,7 +5,7 @@
   ...
 }:
 let
-  isOsx = config.dotfiles.displayManager == "osx";
+  enabled = config.dotfiles.windowManager == "aerospace";
 
   allDirections = [
     "left"
@@ -53,7 +53,7 @@ let
     ++ mkServiceAction action message;
 in
 {
-  config = lib.mkIf isOsx {
+  config = lib.mkIf enabled {
     home.packages = [
       pkgs.noti
       pkgs.jankyborders

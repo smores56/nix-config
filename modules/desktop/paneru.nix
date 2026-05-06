@@ -4,12 +4,12 @@
   ...
 }:
 let
-  isOsx = config.dotfiles.displayManager == "osx";
+  enabled = config.dotfiles.windowManager == "paneru";
   colors = config.lib.stylix.colors;
   gapAmount = 12;
 in
 {
-  config = lib.mkIf isOsx {
+  config = lib.mkIf enabled {
     services.paneru = {
       enable = true;
       settings = {
