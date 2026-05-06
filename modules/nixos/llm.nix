@@ -19,14 +19,16 @@ let
   };
   downloadModels = pkgs.writeShellScript "download-llm-models" (
     "mkdir -p ${modelsDir}\n"
-    + lib.concatStringsSep "\n" (lib.mapAttrsToList (_: m: ''
-      [ -f "${modelsDir}/${m.file}" ] || {
-        echo "Downloading ${m.file}..."
-        ${pkgs.curl}/bin/curl -fL -C - -o "${modelsDir}/${m.file}.part" \
-          "https://huggingface.co/${m.repo}/resolve/main/${m.file}"
-        mv "${modelsDir}/${m.file}.part" "${modelsDir}/${m.file}"
-      }
-    '') models)
+    + lib.concatStringsSep "\n" (
+      lib.mapAttrsToList (_: m: ''
+        [ -f "${modelsDir}/${m.file}" ] || {
+          echo "Downloading ${m.file}..."
+          ${pkgs.curl}/bin/curl -fL -C - -o "${modelsDir}/${m.file}.part" \
+            "https://huggingface.co/${m.repo}/resolve/main/${m.file}"
+          mv "${modelsDir}/${m.file}.part" "${modelsDir}/${m.file}"
+        }
+      '') models
+    )
   );
 in
 {
