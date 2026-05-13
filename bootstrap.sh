@@ -14,6 +14,7 @@ REPO_NAME="nix-config"
 REPO_URL_HTTPS="https://github.com/${REPO_OWNER}/${REPO_NAME}.git"
 REPO_URL_SSH="git@github.com:${REPO_OWNER}/${REPO_NAME}.git"
 GITHUB_HOST="github.com"
+GITHUB_USER="${BOOTSTRAP_GITHUB_USER:-${REPO_OWNER}}"
 REPO_DIR="${HOME}/dev/repos/github.com/${REPO_OWNER}/${REPO_NAME}"
 HM_LINK="${HOME}/.config/home-manager"
 
@@ -124,23 +125,29 @@ fi
 
 GH_KEY_SCOPES="read:public_key,write:public_key,read:ssh_signing_key,write:ssh_signing_key"
 
-if gh auth token --hostname "$GITHUB_HOST" >/dev/null 2>&1; then
-  skip "Already authenticated with GitHub"
+if gh auth token --hostname "$GITHUB_HOST" --user "$GITHUB_USER" >/dev/null 2>&1; then
+  skip "Already authenticated with GitHub as ${GITHUB_USER}"
 else
-  info "Authenticating with GitHub (device code flow)..."
+  info "Authenticating with GitHub as ${GITHUB_USER} (device code flow)..."
   info "A code will appear below. Visit https://github.com/login/device from any browser to enter it."
   gh auth login --hostname "$GITHUB_HOST" --git-protocol ssh --web --skip-ssh-key --scopes "$GH_KEY_SCOPES"
+  gh auth token --hostname "$GITHUB_HOST" --user "$GITHUB_USER" >/dev/null 2>&1 \
+    || err "GitHub authentication did not create credentials for ${GITHUB_USER}. Re-run and choose ${GITHUB_USER} in the browser."
   ok "GitHub authentication complete"
 fi
 
-if gh auth status --hostname "$GITHUB_HOST" >/dev/null 2>&1; then
-  info "Ensuring GitHub auth has SSH key management scopes..."
-  gh auth refresh --hostname "$GITHUB_HOST" --scopes "$GH_KEY_SCOPES"
-  ok "GitHub auth scopes ready"
-else
-  warn "GitHub token is available, but gh auth status failed; skipping scope refresh"
-  warn "If key registration fails, re-run: gh auth refresh --hostname ${GITHUB_HOST} --scopes ${GH_KEY_SCOPES}"
-fi
+info "Selecting GitHub account ${GITHUB_USER}..."
+gh auth switch --hostname "$GITHUB_HOST" --user "$GITHUB_USER" >/dev/null \
+  || err "Unable to select GitHub account ${GITHUB_USER}. Run: gh auth switch --hostname ${GITHUB_HOST} --user ${GITHUB_USER}"
+ok "Using GitHub account ${GITHUB_USER}"
+
+ACTIVE_GITHUB_USER="$(gh api user --jq .login 2>/dev/null || true)"
+[ "$ACTIVE_GITHUB_USER" = "$GITHUB_USER" ] \
+  || err "gh is authenticated as '${ACTIVE_GITHUB_USER:-unknown}', expected '${GITHUB_USER}'. Unset GH_TOKEN/GITHUB_TOKEN or authenticate as ${GITHUB_USER}."
+
+info "Ensuring GitHub auth has SSH key management scopes..."
+gh auth refresh --hostname "$GITHUB_HOST" --scopes "$GH_KEY_SCOPES"
+ok "GitHub auth scopes ready"
 
 SSH_KEY_BLOB="$(awk '{print $2}' "${SSH_KEY}.pub")"
 if gh api user/keys --jq '.[].key' | grep -qF "$SSH_KEY_BLOB"; then
