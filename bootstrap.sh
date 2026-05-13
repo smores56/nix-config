@@ -59,6 +59,10 @@ has_nixos_config() {
 
 command -v nix >/dev/null 2>&1 || err "Nix is not installed"
 
+# Enable flakes for all nix commands in this script (nix.conf doesn't exist yet
+# on a fresh machine — home-manager will create it once it runs)
+export NIX_CONFIG="experimental-features = nix-command flakes"
+
 valid=false
 for c in "${KNOWN_HOME_CONFIGS[@]}"; do
   [ "$c" = "$CONFIG_NAME" ] && valid=true && break
@@ -73,8 +77,8 @@ if [ -d "${REPO_DIR}/.git" ] || [ -f "${REPO_DIR}/.git" ]; then
   skip "Repository already cloned at ${REPO_DIR}"
 else
   info "Cloning repository via HTTPS..."
-  mkdir -p "$(dirname "$REPO_DIR")"
-  nix-shell -p git --run "git clone ${REPO_URL_HTTPS} ${REPO_DIR}"
+  mkdir -p "$(dirname "${REPO_DIR}")"
+  nix-shell -p git --run "git clone '${REPO_URL_HTTPS}' '${REPO_DIR}'"
   ok "Repository cloned"
 fi
 
@@ -123,8 +127,8 @@ else
   ok "GitHub authentication complete"
 fi
 
-SSH_KEY_FINGERPRINT="$(ssh-keygen -lf "${SSH_KEY}.pub" | awk '{print $2}')"
-if gh ssh-key list 2>/dev/null | grep -q "$SSH_KEY_FINGERPRINT"; then
+SSH_KEY_CONTENT="$(awk '{print $2}' "${SSH_KEY}.pub")"
+if gh ssh-key list 2>/dev/null | grep -qF "$SSH_KEY_CONTENT"; then
   skip "SSH key already registered with GitHub"
 else
   info "Adding SSH key to GitHub..."
@@ -161,7 +165,7 @@ if is_nixos && has_nixos_config; then
   fi
 
   info "Running nixos-rebuild switch (this may take a while)..."
-  sudo nixos-rebuild switch --flake "$REPO_DIR" --upgrade
+  sudo nixos-rebuild switch --flake "${REPO_DIR}#${HOSTNAME}" --upgrade
   ok "NixOS rebuild complete"
 elif is_nixos; then
   warn "NixOS detected but no nixosConfiguration for '${HOSTNAME}'."
