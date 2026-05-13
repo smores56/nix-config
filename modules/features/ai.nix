@@ -73,9 +73,19 @@ let
     - Be concise — no verbose explanations unless asked
     - Non-interactive CLI commands only (flags over interactive prompts)
   '';
+
+  piSettingsJson = builtins.toJSON {
+    model = "smortress/${cfg.defaultModel}";
+    compaction = {
+      enabled = true;
+    };
+  };
 in
 {
-  home.packages = [ pkgs.goose-cli ];
+  home.packages = [
+    pkgs.goose-cli
+    pkgs.pi-coding-agent
+  ];
 
   home.sessionVariables = {
     OPENAI_HOST = "http://smortress:8080";
@@ -124,6 +134,14 @@ in
         name: Extension Manager
   '';
 
+  # Pi supervisor extension — auto-discovered from ~/.pi/agent/extensions/
+  home.file.".pi/agent/extensions/pi-supervisor.ts".source = ../../pi-supervisor.ts;
+  home.file.".pi/agent/settings.json" = {
+    text = piSettingsJson;
+    force = true;
+  };
+
   home.file.".goosehints".text = aiHints;
   home.file.".claude/CLAUDE.md".text = aiHints;
+  home.file."AGENTS.md".text = aiHints;
 }
