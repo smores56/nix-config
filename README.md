@@ -7,22 +7,21 @@ Follows the [dendritic pattern](https://github.com/mightyiam/dendritic) using [f
 
 | Host | System | Desktop | Config type |
 |---|---|---|---|
-| `smohr` | macOS (aarch64) | Paneru / Aerospace | home-manager |
+| `smoreswork` | macOS (aarch64) | Aerospace | home-manager |
 | `smoresbook` | NixOS | Niri + Noctalia | NixOS + home-manager |
 | `smorestux` | NixOS | Niri + Noctalia | NixOS + home-manager |
 | `campfire` | NixOS | headless | NixOS + home-manager |
-| `smortress` | Linux | Pop/GNOME | home-manager |
+| `smortress` | NixOS | Niri + Noctalia | NixOS + home-manager |
 | `smoresnet` | Linux | headless | home-manager |
 
 ## Usage
 
 ```bash
-# Home-manager
-home-manager switch --flake ~/.config/nix#smores@<hostname>   # Linux
-home-manager switch --flake ~/.config/nix#smohr               # macOS
+# Home-manager (uses ~/.config/home-manager symlink)
+home-manager switch --no-write-lock-file
 
 # NixOS
-sudo nixos-rebuild switch --flake ~/.config/nix#<hostname> --upgrade
+sudo nixos-rebuild switch --flake ~/dev/repos/github.com/smores56/nix-config --upgrade
 
 # Format all nix files
 nix fmt
@@ -66,14 +65,22 @@ The `smores` user is in `trusted-users` on campfire (configured via `exposeSsh =
 
 ```bash
 nix-shell -p git gh home-manager helix
+
+# Clone the repo
 gh auth login
-gh repo clone smores56/nix-config ~/.config/nix
-home-manager switch --flake ~/.config/nix#$USER@$(hostname)
+gh repo clone smores56/nix-config ~/dev/repos/github.com/smores56/nix-config
+
+# Symlink so home-manager and nix find their config
+ln -s ~/dev/repos/github.com/smores56/nix-config ~/.config/home-manager
+
+# Apply home-manager config
+home-manager switch --no-write-lock-file
 
 # NixOS only:
-sudo nixos-generate-config
-cp /etc/nixos/hardware-configuration.nix ~/.config/nix/modules/hosts/$(hostname).nix
-sudo nixos-rebuild switch --flake ~/.config/nix#$(hostname) --upgrade
+sudo nixos-generate-config --force
+cp /etc/nixos/hardware-configuration.nix ~/dev/repos/github.com/smores56/nix-config/modules/hosts/$(hostname).nix
+ln -sf ~/dev/repos/github.com/smores56/nix-config/flake.nix /etc/nixos/configuration.nix
+sudo nixos-rebuild switch --flake ~/dev/repos/github.com/smores56/nix-config --upgrade
 ```
 
 ### Joining the tailnet
@@ -136,7 +143,7 @@ Modules are organized by feature, not by system type. Each module gates itself w
 modules/
   flake/             — flake-parts plumbing (configurations, formatter)
   options.nix        — unified dotfiles options (displayManager, polarity, etc.)
-  home/              — home-manager base (stateVersion, fonts, cursor, xdg)
+  home.nix           — home-manager base (stateVersion, nix.settings, fonts, xdg)
   features/          — CLI tools and configs (all hosts)
     shell/           — fish config, abbreviations, functions
     editor/          — helix + LSPs
