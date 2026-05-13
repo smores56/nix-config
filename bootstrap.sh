@@ -123,16 +123,22 @@ fi
 
 GH_KEY_SCOPES="read:public_key,write:public_key,read:ssh_signing_key,write:ssh_signing_key"
 
-if gh auth status &>/dev/null; then
+if gh auth token >/dev/null 2>&1; then
   skip "Already authenticated with GitHub"
-  info "Ensuring GitHub auth has SSH key management scopes..."
-  gh auth refresh --scopes "$GH_KEY_SCOPES"
-  ok "GitHub auth scopes ready"
 else
   info "Authenticating with GitHub (device code flow)..."
   info "A code will appear below. Visit https://github.com/login/device from any browser to enter it."
   gh auth login --git-protocol ssh --web --skip-ssh-key --scopes "$GH_KEY_SCOPES"
   ok "GitHub authentication complete"
+fi
+
+if gh auth status >/dev/null 2>&1; then
+  info "Ensuring GitHub auth has SSH key management scopes..."
+  gh auth refresh --scopes "$GH_KEY_SCOPES"
+  ok "GitHub auth scopes ready"
+else
+  warn "GitHub token is available, but gh auth status failed; skipping scope refresh"
+  warn "If key registration fails, re-run: gh auth refresh --scopes ${GH_KEY_SCOPES}"
 fi
 
 SSH_KEY_BLOB="$(awk '{print $2}' "${SSH_KEY}.pub")"
