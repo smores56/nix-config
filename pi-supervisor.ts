@@ -1,5 +1,4 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
 import { spawn, execFile, type ChildProcess } from "node:child_process";
 import { resolve } from "node:path";
 import { homedir } from "node:os";
@@ -8,6 +7,26 @@ import { mkdir, readdir, readFile, writeFile, unlink } from "node:fs/promises";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
+
+type JsonSchema = Record<string, unknown> & { optional?: true };
+
+const Type = {
+  Object: (properties: Record<string, JsonSchema>) => ({
+    type: "object",
+    properties: Object.fromEntries(
+      Object.entries(properties).map(([name, schema]) => {
+        const { optional: _optional, ...rest } = schema;
+        return [name, rest];
+      }),
+    ),
+    required: Object.entries(properties)
+      .filter(([, schema]) => !schema.optional)
+      .map(([name]) => name),
+  }),
+  String: (options: Record<string, unknown> = {}) => ({ type: "string", ...options }),
+  Number: (options: Record<string, unknown> = {}) => ({ type: "number", ...options }),
+  Optional: (schema: JsonSchema) => ({ ...schema, optional: true }),
+};
 
 type SessionStatus = "running" | "idle" | "error" | "dead";
 
@@ -352,7 +371,15 @@ export default async function supervisorExtension(pi: ExtensionAPI) {
   pi.registerProvider("smortress", {
     name: "smortress llama.cpp",
     baseUrl: `${baseUrl}/v1`,
-    api: "openai-chat",
+    apiKey: "PI_SMORTRESS_API_KEY",
+    api: "openai-completions",
+    compat: {
+      supportsStore: false,
+      supportsDeveloperRole: false,
+      supportsReasoningEffort: false,
+      supportsUsageInStreaming: true,
+      maxTokensField: "max_tokens",
+    },
     models: [
       {
         id: "gemma-4-26b",

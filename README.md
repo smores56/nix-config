@@ -7,7 +7,7 @@ Follows the [dendritic pattern](https://github.com/mightyiam/dendritic) using [f
 
 | Host | System | Desktop | Config type |
 |---|---|---|---|
-| `smohr` | macOS (aarch64) | Paneru / Aerospace | home-manager |
+| `smoreswork` | macOS (aarch64) | Paneru / Aerospace | home-manager |
 | `smoresbook` | NixOS | Niri + Noctalia | NixOS + home-manager |
 | `smorestux` | NixOS | Niri + Noctalia | NixOS + home-manager |
 | `campfire` | NixOS | headless | NixOS + home-manager |
@@ -17,12 +17,11 @@ Follows the [dendritic pattern](https://github.com/mightyiam/dendritic) using [f
 ## Usage
 
 ```bash
-# Home-manager
-home-manager switch --flake ~/.config/nix#smores@<hostname>   # Linux
-home-manager switch --flake ~/.config/nix#smohr               # macOS
+# Home-manager (uses ~/.config/home-manager symlink)
+home-manager switch --no-write-lock-file
 
 # NixOS
-sudo nixos-rebuild switch --flake ~/.config/nix#<hostname> --upgrade
+sudo nixos-rebuild switch --flake ~/dev/repos/github.com/smores56/nix-config --upgrade
 
 # Format all nix files
 nix fmt
@@ -64,17 +63,28 @@ The `smores` user is in `trusted-users` on campfire (configured via `exposeSsh =
 
 ## New machine setup
 
-```bash
-nix-shell -p git gh home-manager helix
-gh auth login
-gh repo clone smores56/nix-config ~/.config/nix
-home-manager switch --flake ~/.config/nix#$USER@$(hostname)
+On a fresh machine with only Nix installed:
 
-# NixOS only:
-sudo nixos-generate-config
-cp /etc/nixos/hardware-configuration.nix ~/.config/nix/modules/hosts/$(hostname).nix
-sudo nixos-rebuild switch --flake ~/.config/nix#$(hostname) --upgrade
+```sh
+curl -fsSL bootstrap.sammohr.dev | bash
 ```
+
+Override auto-detected username or hostname:
+
+```sh
+curl -fsSL bootstrap.sammohr.dev | env BOOTSTRAP_USER=smohr BOOTSTRAP_HOST=smoreswork bash
+```
+
+The script is idempotent — safe to re-run at any time. It will:
+
+1. Clone the repo to `~/dev/repos/github.com/smores56/nix-config` via HTTPS.
+2. Symlink `~/.config/home-manager` to the repo.
+3. Run `home-manager switch`.
+4. Generate `~/.ssh/id_personal` if needed.
+5. Authenticate with GitHub via device flow.
+6. Register the SSH key with GitHub for authentication and signing.
+7. Switch the repo remote to SSH.
+8. On NixOS: generate hardware config and run `nixos-rebuild switch`.
 
 ### Joining the tailnet
 

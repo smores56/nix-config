@@ -72,6 +72,7 @@ in
         safe.directory = "*";
         commit.gpgsign = true;
         gpg.format = "ssh";
+        user.signingkey = "~/.ssh/id_personal.pub";
         fetch.prune = true;
       };
     };
