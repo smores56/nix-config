@@ -1,7 +1,7 @@
 { config, pkgs, ... }:
 let
   cfg = config.dotfiles;
-  branchPrefix = cfg.branchPrefix;
+  inherit (cfg) branchPrefix;
 
   ticketSection =
     if cfg.ticketPrefix != null then
@@ -75,55 +75,61 @@ let
   '';
 in
 {
-  home.packages = [ pkgs.goose-cli ];
+  home = {
+    packages = [ pkgs.goose-cli ];
 
-  home.sessionVariables = {
-    OPENAI_HOST = "http://smortress:8080";
-    GOOSE_CONTEXT_LIMIT = "32768";
-    OPENAI_MODEL = cfg.defaultModel;
-    GOOSE_DISABLE_KEYRING = "true";
+    sessionVariables = {
+      OPENAI_HOST = "http://smortress:8080";
+      GOOSE_CONTEXT_LIMIT = "32768";
+      OPENAI_MODEL = cfg.defaultModel;
+      GOOSE_DISABLE_KEYRING = "true";
+    };
+
+    file = {
+      ".goosehints".text = aiHints;
+      ".claude/CLAUDE.md".text = aiHints;
+    };
   };
 
-  xdg.configFile."goose/config.yaml".force = true;
-  xdg.configFile."goose/config.yaml".text = ''
-    # Managed by nix — edit modules/features/ai.nix instead
-    GOOSE_PROVIDER: "openai"
-    GOOSE_MODEL: "${cfg.defaultModel}"
-    GOOSE_MODE: "auto"
-    GOOSE_TELEMETRY_ENABLED: false
-    GOOSE_CLI_THEME: "dark"
-    GOOSE_AUTO_COMPACT_THRESHOLD: 0.8
-    GOOSE_TOOLSHIM: true
+  xdg.configFile."goose/config.yaml" = {
+    force = true;
+    text = ''
+      # Managed by nix — edit modules/features/ai.nix instead
+      GOOSE_PROVIDER: "openai"
+      GOOSE_MODEL: "${cfg.defaultModel}"
+      GOOSE_MODE: "auto"
+      GOOSE_TELEMETRY_ENABLED: false
+      GOOSE_CLI_THEME: "dark"
+      GOOSE_AUTO_COMPACT_THRESHOLD: 0.8
+      GOOSE_TOOLSHIM: true
 
-    extensions:
-      developer:
-        enabled: true
-        type: builtin
-        name: developer
-        timeout: 300
-      memory:
-        enabled: true
-        type: builtin
-        name: memory
-        timeout: 300
-      code_execution:
-        enabled: true
-        type: platform
-        name: code_execution
-      skills:
-        enabled: true
-        type: platform
-        name: skills
-      todo:
-        enabled: true
-        type: platform
-        name: todo
-      extensionmanager:
-        enabled: true
-        type: platform
-        name: Extension Manager
-  '';
-
-  home.file.".goosehints".text = aiHints;
-  home.file.".claude/CLAUDE.md".text = aiHints;
+      extensions:
+        developer:
+          enabled: true
+          type: builtin
+          name: developer
+          timeout: 300
+        memory:
+          enabled: true
+          type: builtin
+          name: memory
+          timeout: 300
+        code_execution:
+          enabled: true
+          type: platform
+          name: code_execution
+        skills:
+          enabled: true
+          type: platform
+          name: skills
+        todo:
+          enabled: true
+          type: platform
+          name: todo
+        extensionmanager:
+          enabled: true
+          type: platform
+          name: Extension Manager
+    '';
+  };
 }

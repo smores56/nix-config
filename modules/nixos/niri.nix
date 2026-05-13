@@ -19,11 +19,11 @@
         settings = {
           default_session = {
             command = "niri-session";
-            user = "smores";
+            user = config.dotfiles.username;
           };
           initial_session = {
             command = "niri-session";
-            user = "smores";
+            user = config.dotfiles.username;
           };
         };
       };

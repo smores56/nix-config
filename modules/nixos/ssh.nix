@@ -1,6 +1,6 @@
 { config, lib, ... }:
 {
   config = lib.mkIf config.dotfiles.exposeSsh {
-    nix.settings.trusted-users = [ "smores" ];
+    nix.settings.trusted-users = [ config.dotfiles.username ];
   };
 }

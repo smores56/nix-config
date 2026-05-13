@@ -6,6 +6,42 @@ import subprocess
 import sys
 
 
+def equalize_actions(windows):
+    focused = next((w for w in windows if w.get("is_focused")), None)
+    if not focused:
+        return []
+
+    focused_pos = focused.get("layout", {}).get("pos_in_scrolling_layout")
+    if focused_pos is None:
+        return []
+
+    workspace_id = focused.get("workspace_id")
+    if workspace_id is None:
+        return []
+
+    columns = {
+        w["layout"]["pos_in_scrolling_layout"][0]
+        for w in windows
+        if w.get("workspace_id") == workspace_id
+        and w.get("layout", {}).get("pos_in_scrolling_layout") is not None
+    }
+
+    if len(columns) < 2:
+        return []
+
+    focused_col = focused_pos[0]
+    proportion = f"{100 / len(columns):.4f}%"
+    actions = []
+
+    for col in sorted(columns):
+        actions.append(("focus-column", str(col)))
+        actions.append(("set-column-width", proportion))
+
+    actions.append(("focus-column", str(focused_col)))
+    actions.append(("center-column",))
+    return actions
+
+
 def niri_msg(*args):
     try:
         result = subprocess.run(["niri", "msg", "--json", *args], capture_output=True, text=True, timeout=5)
@@ -33,35 +69,14 @@ def main():
     if not raw:
         return
 
-    windows = json.loads(raw)
-    focused = next((w for w in windows if w.get("is_focused")), None)
-    if not focused:
+    try:
+        windows = json.loads(raw)
+    except json.JSONDecodeError as error:
+        print(f"niri windows returned invalid JSON: {error}", file=sys.stderr)
         return
 
-    focused_pos = focused.get("layout", {}).get("pos_in_scrolling_layout")
-    if focused_pos is None:
-        return
-
-    workspace_id = focused["workspace_id"]
-    columns = {
-        w["layout"]["pos_in_scrolling_layout"][0]
-        for w in windows
-        if w.get("workspace_id") == workspace_id
-        and w.get("layout", {}).get("pos_in_scrolling_layout") is not None
-    }
-
-    if len(columns) < 2:
-        return
-
-    focused_col = focused_pos[0]
-    proportion = f"{100 / len(columns):.4f}%"
-
-    for col in sorted(columns):
-        niri_action("focus-column", str(col))
-        niri_action("set-column-width", proportion)
-
-    niri_action("focus-column", str(focused_col))
-    niri_action("center-column")
+    for action in equalize_actions(windows):
+        niri_action(*action)
 
 
 if __name__ == "__main__":

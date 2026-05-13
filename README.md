@@ -1,69 +1,40 @@
 # Nix Config
 
-NixOS system configs and home-manager user configs for all my machines.
-Follows the [dendritic pattern](https://github.com/mightyiam/dendritic) using [flake-parts](https://github.com/hercules-ci/flake-parts) and [import-tree](https://github.com/vic/import-tree).
+Personal NixOS and Home Manager configs for my machines. The flake follows the
+[dendritic pattern](https://github.com/mightyiam/dendritic) with
+[flake-parts](https://github.com/hercules-ci/flake-parts) and
+[import-tree](https://github.com/vic/import-tree).
 
 ## Hosts
 
 | Host | System | Desktop | Config type |
 |---|---|---|---|
-| `smoreswork` | macOS (aarch64) | Aerospace | home-manager |
-| `smoresbook` | NixOS | Niri + Noctalia | NixOS + home-manager |
-| `smorestux` | NixOS | Niri + Noctalia | NixOS + home-manager |
-| `campfire` | NixOS | headless | NixOS + home-manager |
-| `smortress` | NixOS | Niri + Noctalia | NixOS + home-manager |
-| `smoresnet` | Linux | headless | home-manager |
+| `smoreswork` | macOS aarch64 | Aerospace | Home Manager |
+| `smoresbook` | NixOS | Niri + Noctalia | NixOS + Home Manager |
+| `smorestux` | NixOS | Niri + Noctalia | NixOS + Home Manager |
+| `campfire` | NixOS | headless | NixOS + Home Manager |
+| `smortress` | NixOS | Niri + Noctalia | NixOS + Home Manager |
+| `smoresnet` | Linux | headless | Home Manager |
 
-## Usage
+## Commands
 
 ```bash
-# Home-manager (uses ~/.config/home-manager symlink)
+# Home Manager, through ~/.config/home-manager
 home-manager switch --no-write-lock-file
 
 # NixOS
 sudo nixos-rebuild switch --flake ~/dev/repos/github.com/smores56/nix-config --upgrade
 
-# Format all nix files
+# Format and check
 nix fmt
+nix fmt -- --check .
+nix flake check --no-write-lock-file
+nix run nixpkgs#statix -- check .
 ```
 
-## SSH Access
+## Bootstrap
 
-SSH between machines uses [Tailscale SSH](https://tailscale.com/kb/1193/tailscale-ssh/).
-Authentication is identity-based through the tailnet — no SSH keys needed for
-interactive sessions. MagicDNS provides hostnames (`ssh smores@campfire`).
-
-### Tailscale ACLs
-
-Configure in the [Tailscale admin console](https://login.tailscale.com/admin/acls).
-The SSH ACL section should allow all tailnet members to SSH as any non-root user:
-
-```json
-{
-  "ssh": [
-    {
-      "action": "accept",
-      "src": ["autogroup:member"],
-      "dst": ["autogroup:self"],
-      "users": ["autogroup:nonroot", "root"]
-    }
-  ]
-}
-```
-
-### Nix remote builds
-
-Remote builds use `campfire` as a build host over Tailscale SSH:
-
-```bash
-nix build --builders 'ssh://smores@campfire x86_64-linux'
-```
-
-The `smores` user is in `trusted-users` on campfire (configured via `exposeSsh = true`).
-
-## New machine setup
-
-On a fresh machine with only Nix installed:
+On a fresh machine with Nix installed:
 
 ```bash
 bash <(curl -fsSL bootstrap.sammohr.dev)
@@ -75,84 +46,55 @@ Override auto-detected username or hostname:
 BOOTSTRAP_USER=smohr BOOTSTRAP_HOST=smoreswork bash <(curl -fsSL bootstrap.sammohr.dev)
 ```
 
-The script is idempotent — safe to re-run at any time. It will:
-1. Clone the repo to `~/dev/repos/github.com/smores56/nix-config` (via HTTPS)
-2. Symlink `~/.config/home-manager` to the repo
-3. Run `home-manager switch` to install all tools
-4. Generate an SSH key if needed
-5. Authenticate with GitHub via device code flow (works without a local browser)
-6. Register the SSH key with GitHub and switch the repo remote to SSH
-7. On NixOS: generate hardware config and run `nixos-rebuild switch`
+The script clones the repo, symlinks `~/.config/home-manager`, runs Home Manager,
+sets up an SSH key, authenticates GitHub with device flow, switches the repo
+remote to SSH, and runs the NixOS rebuild when the current hostname has a
+`nixosConfiguration`.
 
-### Joining the tailnet
+## NixOS Notes
 
-**Client (any machine):**
+Tailscale is enabled on NixOS hosts. Run this once after first boot:
 
 ```bash
-sudo tailscale up    # opens browser for auth
+sudo tailscale up
 ```
 
-**Server (NixOS host accepting SSH):**
+Hosts with `exposeSsh = true` enable Tailscale SSH and mark the configured user
+as a trusted Nix builder.
 
-Set `exposeSsh = true` in the host's entry in `modules/flake/configurations.nix`,
-then rebuild. This enables Tailscale SSH and marks the user as a trusted nix builder.
-Run `sudo tailscale up` on first boot to authenticate.
-
-**Non-NixOS server:**
+Remote builds can use `campfire` over Tailscale SSH:
 
 ```bash
-tailscale up
-tailscale set --ssh
+nix build --builders 'ssh://smores@campfire x86_64-linux'
 ```
 
-## Optional setup
+### Fingerprint Authentication
 
-### Fingerprint authentication (smoresbook)
-
-After rebuilding with `fingerprint = true`, enroll your fingerprint:
+`smoresbook` enables the Goodix fingerprint override. Enroll after rebuilding:
 
 ```bash
 sudo fprintd-enroll smores
 ```
 
-Follow the prompts to swipe your finger. Once enrolled, the Noctalia lock screen will accept fingerprint or password.
-
-## Code quality
-
-```bash
-# Format all nix files
-nix fmt
-
-# Lint with statix
-nix run nixpkgs#statix -- check .
-
-# Auto-fix statix warnings
-nix run nixpkgs#statix -- fix .
-```
-
 ## Architecture
 
-`flake.nix` is a thin shell — inputs + `flake-parts.lib.mkFlake` delegating to `modules/flake/`. All module discovery is handled by `import-tree`, which recursively loads every `.nix` file in a directory.
+`flake.nix` only declares inputs and delegates to `modules/flake/`. `import-tree`
+loads feature and desktop modules recursively, while host hardware modules are
+referenced explicitly from `modules/flake/configurations.nix`.
 
-Per-host properties (`displayManager`, `helixTheme`, etc.) are set inline in `modules/flake/configurations.nix` via `config.dotfiles.*`. Options are validated by `modules/options.nix` using `lib.mkOption` with typed enums.
-
-Modules are organized by feature, not by system type. Each module gates itself with `lib.mkIf` on `config.dotfiles.*`, so everything is loaded unconditionally and activates based on the host's configuration.
-
-### Module structure
+Shared `dotfiles.*` options live in `modules/options.nix`. Most modules are
+loaded for every Home Manager or NixOS config and activate with `lib.mkIf` based
+on those options.
 
 ```
 modules/
-  flake/             — flake-parts plumbing (configurations, formatter)
-  options.nix        — unified dotfiles options (displayManager, polarity, etc.)
-  home.nix           — home-manager base (stateVersion, nix.settings, fonts, xdg)
-  features/          — CLI tools and configs (all hosts)
-    shell/           — fish config, abbreviations, functions
-    editor/          — helix + LSPs
-    terminal/        — wezterm, kitty, alacritty, ghostty (config-only via package = pkgs.nil)
-    git, theme, packages, multiplexer, file-manager
-  desktop/           — display-manager-specific HM modules (mkIf-gated)
-    niri, aerospace, paneru, pop-os, linux-apps
-  nixos/             — NixOS system modules (mkIf-gated where needed)
-    base, niri, sound, ssh, networking, bluetooth, etc.
-  hosts/             — per-host hardware configs (referenced explicitly)
+  flake/       flake-parts outputs, formatter, checks
+  options.nix  shared dotfiles options and defaults
+  home.nix     base Home Manager settings
+  features/    shell, editor, git, theme, packages, repos, zellij
+  desktop/     Niri, Noctalia, Aerospace, Paneru, Linux desktop apps
+  nixos/       system modules for bootstrapping NixOS hosts
+  hosts/       per-host hardware configuration
+  lib/         small shared Nix helpers
+tests/         repo-local tests used by flake checks
 ```

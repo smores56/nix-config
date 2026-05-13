@@ -1,6 +1,13 @@
-{ lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
+  cfg = config.dotfiles;
   inherit (pkgs.stdenv) isLinux;
+  hasSevenql = pkgs.stdenv.isDarwin && cfg.sevenqlLspPath != null;
 in
 {
   home.packages = with pkgs; [
@@ -161,7 +168,7 @@ in
             except-features = [ "format" ];
           }
         ]
-        ++ lib.optionals (!isLinux) [ "sevenql-lsp" ];
+        ++ lib.optionals hasSevenql [ "sevenql-lsp" ];
       }
     ];
 
@@ -190,13 +197,13 @@ in
         args = [ "--stdio" ];
       };
     }
-    // lib.optionalAttrs (!isLinux) {
+    // lib.optionalAttrs hasSevenql {
       sevenql-lsp = {
         command = "deno";
         args = [
           "run"
           "-A"
-          "/Users/smohr/dev/okami/typescript/tools/sevenql-lsp/main.ts"
+          cfg.sevenqlLspPath
         ];
       };
     };

@@ -15,7 +15,7 @@ in
 
   time.timeZone = "America/New_York";
 
-  users.users.smores = {
+  users.users.${cfg.username} = {
     isNormalUser = true;
     description = "Sam Mohr";
     extraGroups = [
@@ -27,7 +27,7 @@ in
 
   services.displayManager.autoLogin = lib.mkIf (cfg.displayManager != "none") {
     enable = true;
-    user = "smores";
+    user = cfg.username;
   };
 
   hardware.graphics = {

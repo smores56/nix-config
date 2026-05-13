@@ -20,21 +20,6 @@ USERNAME="${BOOTSTRAP_USER:-$(whoami)}"
 HOSTNAME="${BOOTSTRAP_HOST:-$(hostname -s 2>/dev/null || hostname)}"
 CONFIG_NAME="${USERNAME}@${HOSTNAME}"
 
-KNOWN_HOME_CONFIGS=(
-  "smores@smorestux"
-  "smores@smoresbook"
-  "smores@campfire"
-  "smores@smortress"
-  "smores@smoresnet"
-  "smohr@smoreswork"
-)
-KNOWN_NIXOS_CONFIGS=(
-  "campfire"
-  "smorestux"
-  "smoresbook"
-  "smortress"
-)
-
 case "$USERNAME" in
   smohr) EMAIL="sam.mohr@sevenai.com" ;;
   *)     EMAIL="sam@sammohr.dev" ;;
@@ -48,11 +33,27 @@ skip()  { printf '\033[1;36m[skip]\033[0m  %s\n' "$*"; }
 
 is_nixos() { [ -f /etc/NIXOS ] || command -v nixos-version &>/dev/null; }
 
-has_nixos_config() {
-  for h in "${KNOWN_NIXOS_CONFIGS[@]}"; do
-    [ "$h" = "$HOSTNAME" ] && return 0
-  done
+contains_line() {
+  local needle="$1"
+  local lines="$2"
+  while IFS= read -r line; do
+    [ "$line" = "$needle" ] && return 0
+  done <<< "$lines"
   return 1
+}
+
+format_names() {
+  local names="$1"
+  printf '%s' "${names//$'\n'/ }"
+}
+
+flake_attr_names() {
+  local attr="$1"
+  nix eval --raw --expr "builtins.concatStringsSep \"\n\" (builtins.attrNames (builtins.getFlake \"git+file://${REPO_DIR}\").${attr})"
+}
+
+has_nixos_config() {
+  contains_line "$HOSTNAME" "$NIXOS_CONFIGS"
 }
 
 # ── Phase 0: Validate ─────────────────────────────────────────────
@@ -62,12 +63,6 @@ command -v nix >/dev/null 2>&1 || err "Nix is not installed"
 # Enable flakes for all nix commands in this script (nix.conf doesn't exist yet
 # on a fresh machine — home-manager will create it once it runs)
 export NIX_CONFIG="experimental-features = nix-command flakes"
-
-valid=false
-for c in "${KNOWN_HOME_CONFIGS[@]}"; do
-  [ "$c" = "$CONFIG_NAME" ] && valid=true && break
-done
-$valid || err "No home-manager config for '${CONFIG_NAME}'. Known: ${KNOWN_HOME_CONFIGS[*]}"
 
 info "Bootstrapping ${CONFIG_NAME}"
 
@@ -82,7 +77,15 @@ else
   ok "Repository cloned"
 fi
 
-# ── Phase 2: Create home-manager symlink ──────────────────────────
+# ── Phase 2: Validate flake configuration ─────────────────────────
+
+HOME_CONFIGS="$(flake_attr_names homeConfigurations)" || err "Unable to read homeConfigurations from ${REPO_DIR}"
+NIXOS_CONFIGS="$(flake_attr_names nixosConfigurations)" || err "Unable to read nixosConfigurations from ${REPO_DIR}"
+
+contains_line "$CONFIG_NAME" "$HOME_CONFIGS" \
+  || err "No home-manager config for '${CONFIG_NAME}'. Known: $(format_names "$HOME_CONFIGS")"
+
+# ── Phase 3: Create home-manager symlink ──────────────────────────
 
 if [ -L "$HM_LINK" ] && [ "$(readlink "$HM_LINK")" = "$REPO_DIR" ]; then
   skip "home-manager symlink already correct"
@@ -95,7 +98,7 @@ else
   ok "Symlinked ${HM_LINK} -> ${REPO_DIR}"
 fi
 
-# ── Phase 3: home-manager switch ──────────────────────────────────
+# ── Phase 4: home-manager switch ──────────────────────────────────
 
 info "Running home-manager switch (this may take a while on first run)..."
 nix-shell -p home-manager --run "home-manager switch --no-write-lock-file"
@@ -103,9 +106,9 @@ ok "home-manager switch complete"
 
 export PATH="${HOME}/.nix-profile/bin:${PATH}"
 
-# ── Phase 4: SSH key generation ───────────────────────────────────
+# ── Phase 5: SSH key generation ───────────────────────────────────
 
-SSH_KEY="${HOME}/.ssh/id_ed25519"
+SSH_KEY="${HOME}/.ssh/id_personal"
 if [ -f "$SSH_KEY" ]; then
   skip "SSH key already exists at ${SSH_KEY}"
 else
@@ -116,27 +119,40 @@ else
   ok "SSH key generated"
 fi
 
-# ── Phase 5: GitHub authentication ────────────────────────────────
+# ── Phase 6: GitHub authentication ────────────────────────────────
+
+GH_KEY_SCOPES="read:public_key,write:public_key,read:ssh_signing_key,write:ssh_signing_key"
 
 if gh auth status &>/dev/null; then
   skip "Already authenticated with GitHub"
+  info "Ensuring GitHub auth has SSH key management scopes..."
+  gh auth refresh --scopes "$GH_KEY_SCOPES"
+  ok "GitHub auth scopes ready"
 else
   info "Authenticating with GitHub (device code flow)..."
   info "A code will appear below. Visit https://github.com/login/device from any browser to enter it."
-  gh auth login --git-protocol ssh --web
+  gh auth login --git-protocol ssh --web --skip-ssh-key --scopes "$GH_KEY_SCOPES"
   ok "GitHub authentication complete"
 fi
 
-SSH_KEY_CONTENT="$(awk '{print $2}' "${SSH_KEY}.pub")"
-if gh ssh-key list 2>/dev/null | grep -qF "$SSH_KEY_CONTENT"; then
-  skip "SSH key already registered with GitHub"
+SSH_KEY_BLOB="$(awk '{print $2}' "${SSH_KEY}.pub")"
+if gh api user/keys --jq '.[].key' | grep -qF "$SSH_KEY_BLOB"; then
+  skip "SSH authentication key already registered with GitHub"
 else
-  info "Adding SSH key to GitHub..."
-  gh ssh-key add "${SSH_KEY}.pub" --title "${CONFIG_NAME}"
-  ok "SSH key added to GitHub"
+  info "Adding SSH authentication key to GitHub..."
+  gh ssh-key add "${SSH_KEY}.pub" --type authentication --title "${CONFIG_NAME}"
+  ok "SSH authentication key added to GitHub"
 fi
 
-# ── Phase 6: Switch remote to SSH ─────────────────────────────────
+if gh api user/ssh_signing_keys --jq '.[].key' | grep -qF "$SSH_KEY_BLOB"; then
+  skip "SSH signing key already registered with GitHub"
+else
+  info "Adding SSH signing key to GitHub..."
+  gh ssh-key add "${SSH_KEY}.pub" --type signing --title "${CONFIG_NAME} signing"
+  ok "SSH signing key added to GitHub"
+fi
+
+# ── Phase 7: Switch remote to SSH ─────────────────────────────────
 
 CURRENT_REMOTE="$(git -C "$REPO_DIR" remote get-url origin 2>/dev/null || true)"
 if [ "$CURRENT_REMOTE" = "$REPO_URL_SSH" ]; then
@@ -147,7 +163,7 @@ else
   ok "Remote switched to SSH"
 fi
 
-# ── Phase 7: NixOS setup ──────────────────────────────────────────
+# ── Phase 8: NixOS setup ──────────────────────────────────────────
 
 if is_nixos && has_nixos_config; then
   info "NixOS detected with config for ${HOSTNAME}"

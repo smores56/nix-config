@@ -58,6 +58,11 @@ in
       type = lib.types.int;
       default = 12;
     };
+    username = lib.mkOption {
+      type = lib.types.str;
+      default = "smores";
+      description = "Primary local username for personal host-level configuration.";
+    };
     wayland = lib.mkOption {
       type = lib.types.bool;
       readOnly = true;
@@ -75,6 +80,11 @@ in
       type = lib.types.nullOr lib.types.str;
       default = null;
       description = "Ticket ID prefix for branch names (e.g. '7AI'). Null for no ticket requirement.";
+    };
+    sevenqlLspPath = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Absolute path to the SevenQL LSP entrypoint on hosts that use it.";
     };
     exposeSsh = lib.mkOption {
       type = lib.types.bool;

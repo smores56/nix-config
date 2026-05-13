@@ -6,34 +6,10 @@
 }:
 let
   cfg = config.dotfiles;
+  base16 = import ../lib/base16.nix { inherit lib; };
 
-  parseScheme =
-    file:
-    let
-      content = builtins.readFile file;
-      lines = lib.splitString "\n" content;
-      parseLine =
-        line:
-        let
-          match = builtins.match ''[[:space:]]+(base[0-9A-Fa-f]+):[[:space:]]+"#([0-9a-fA-F]+)".*'' line;
-        in
-        if match != null then
-          {
-            name = builtins.elemAt match 0;
-            value = builtins.elemAt match 1;
-          }
-        else
-          null;
-      parsed = builtins.filter (x: x != null) (map parseLine lines);
-      result = builtins.listToAttrs parsed;
-    in
-    assert
-      builtins.length parsed >= 16
-      || throw "parseScheme: expected at least 16 base16 colors in ${file}, got ${toString (builtins.length parsed)}";
-    result;
-
-  darkColors = parseScheme "${pkgs.base16-schemes}/share/themes/${cfg.darkTheme.system}.yaml";
-  lightColors = parseScheme "${pkgs.base16-schemes}/share/themes/${cfg.lightTheme.system}.yaml";
+  darkColors = base16.parseScheme "${pkgs.base16-schemes}/share/themes/${cfg.darkTheme.system}.yaml";
+  lightColors = base16.parseScheme "${pkgs.base16-schemes}/share/themes/${cfg.lightTheme.system}.yaml";
 
   zellijBlock =
     {
@@ -169,6 +145,8 @@ let
       src = zellij-src;
       hash = "sha256-7bRnzQ2BqYfMH8NEBT8uwDkXzeUyhni28eqRGCGjvOc=";
     };
+    # The pinned pre-release is used for current theme-switching behavior; nixpkgs
+    # install checks do not cover this override cleanly yet.
     doInstallCheck = false;
   });
 

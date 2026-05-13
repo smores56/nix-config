@@ -15,6 +15,8 @@ let
   };
 
   libfprint-goodix53x5 = pkgs.libfprint.overrideAttrs (old: {
+    # The out-of-tree Goodix driver is patched into libfprint before build; the
+    # upstream test/install checks assume the unpatched source tree.
     doCheck = false;
     doInstallCheck = false;
     buildInputs =

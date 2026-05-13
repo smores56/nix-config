@@ -5,7 +5,7 @@
 }:
 let
   enabled = config.dotfiles.windowManager == "paneru";
-  colors = config.lib.stylix.colors;
+  inherit (config.lib.stylix) colors;
   gapAmount = 12;
 in
 {

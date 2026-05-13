@@ -5,10 +5,11 @@
   ...
 }:
 let
-  isNiri = config.dotfiles.displayManager == "niri";
-  polarity = config.dotfiles.polarity;
-  monitor = config.dotfiles.primaryMonitor;
-  size = config.dotfiles.monitorSize;
+  cfg = config.dotfiles;
+  inherit (cfg) polarity;
+  isNiri = cfg.displayManager == "niri";
+  monitor = cfg.primaryMonitor;
+  size = cfg.monitorSize;
   hasWidgets = monitor != null && size != null;
 
   # Reference resolution all widget positions/scales are authored against

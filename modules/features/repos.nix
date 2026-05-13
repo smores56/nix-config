@@ -1,4 +1,9 @@
-{ config, pkgs, lib, ... }:
+{
+  config,
+  pkgs,
+  lib,
+  ...
+}:
 let
   cfg = config.dotfiles;
 
@@ -30,7 +35,12 @@ let
 
     postInstall = ''
       wrapProgram $out/bin/gwq \
-        --prefix PATH : ${lib.makeBinPath [ pkgs.gitMinimal pkgs.tmux ]}
+        --prefix PATH : ${
+          lib.makeBinPath [
+            pkgs.gitMinimal
+            pkgs.tmux
+          ]
+        }
 
       export HOME=$(mktemp -d)
       installShellCompletion --cmd gwq \
@@ -55,35 +65,39 @@ in
     gwq
   ];
 
-  programs.git.settings.ghq.root = "~/dev/repos";
-
   xdg.configFile."gwq/config.toml".text = ''
     [worktree]
     basedir = "~/dev/worktrees"
   '';
 
-  programs.fish.shellAbbrs = {
-    r = "repo";
-    w = "wt";
-    nw = "gwq add -b ${prefix}";
-    nb = "git checkout -b ${prefix}";
-  };
+  programs = {
+    git.settings.ghq.root = "~/dev/repos";
 
-  programs.fish.functions = {
-    repo = {
-      description = "Navigate to a ghq repo via fzf";
-      body = ''
-        set -l root (ghq root)
-        ghq list | fzf --preview "eza --icons -lh $root/{} | head -30" | read -l selected
-        and c $root/$selected
-      '';
-    };
-    wt = {
-      description = "Navigate to a gwq worktree via fzf";
-      body = ''
-        gwq list | fzf --preview "git -C {} log --oneline -10" | read -l selected
-        and c $selected
-      '';
+    fish = {
+      shellAbbrs = {
+        r = "repo";
+        w = "wt";
+        nw = "gwq add -b ${prefix}";
+        nb = "git checkout -b ${prefix}";
+      };
+
+      functions = {
+        repo = {
+          description = "Navigate to a ghq repo via fzf";
+          body = ''
+            set -l root (ghq root)
+            ghq list | fzf --preview "eza --icons -lh $root/{} | head -30" | read -l selected
+            and c $root/$selected
+          '';
+        };
+        wt = {
+          description = "Navigate to a gwq worktree via fzf";
+          body = ''
+            gwq list | fzf --preview "git -C {} log --oneline -10" | read -l selected
+            and c $selected
+          '';
+        };
+      };
     };
   };
 }

@@ -6,7 +6,7 @@
 }:
 let
   isNiri = config.dotfiles.displayManager == "niri";
-  colors = config.lib.stylix.colors;
+  inherit (config.lib.stylix) colors;
   defaultSpring = {
     damping-ratio = 0.8;
     stiffness = 800;

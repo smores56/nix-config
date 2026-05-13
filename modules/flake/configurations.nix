@@ -46,7 +46,10 @@ let
       pkgs = pkgsForSystem system;
       modules = homeModules ++ [
         {
-          dotfiles = builtins.intersectAttrs {
+          dotfiles = {
+            inherit username;
+          }
+          // builtins.intersectAttrs {
             displayManager = "none";
             windowManager = "none";
             terminalFontSize = null;
@@ -60,6 +63,7 @@ let
             monitorSize = null;
             branchPrefix = null;
             ticketPrefix = null;
+            sevenqlLspPath = null;
           } args;
           home.username = username;
           home.homeDirectory = args.homeDirectory or "/home/${username}";
@@ -71,6 +75,7 @@ let
     args:
     let
       dm = args.displayManager or "none";
+      username = args.username or "smores";
     in
     inputs.nixpkgs.lib.nixosSystem {
       modules = [
@@ -82,6 +87,7 @@ let
         {
           networking.hostName = args.hostname;
           dotfiles = {
+            inherit username;
             displayManager = dm;
             exposeSsh = args.exposeSsh or false;
             fingerprint = args.fingerprint or false;
@@ -135,6 +141,7 @@ in
         email = "sam.mohr@sevenai.com";
         branchPrefix = "sam.mohr";
         ticketPrefix = "7AI";
+        sevenqlLspPath = "/Users/smohr/dev/okami/typescript/tools/sevenql-lsp/main.ts";
       };
     };
 

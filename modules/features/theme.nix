@@ -6,34 +6,10 @@
 }:
 let
   cfg = config.dotfiles;
+  base16 = import ../lib/base16.nix { inherit lib; };
 
-  parseScheme =
-    file:
-    let
-      content = builtins.readFile file;
-      lines = lib.splitString "\n" content;
-      parseLine =
-        line:
-        let
-          match = builtins.match ''[[:space:]]+(base[0-9A-Fa-f]+):[[:space:]]+"#([0-9a-fA-F]+)".*'' line;
-        in
-        if match != null then
-          {
-            name = builtins.elemAt match 0;
-            value = builtins.elemAt match 1;
-          }
-        else
-          null;
-      parsed = builtins.filter (x: x != null) (map parseLine lines);
-      result = builtins.listToAttrs parsed;
-    in
-    assert
-      builtins.length parsed >= 16
-      || throw "parseScheme: expected at least 16 base16 colors in ${file}, got ${toString (builtins.length parsed)}";
-    result;
-
-  darkColors = parseScheme "${pkgs.base16-schemes}/share/themes/${cfg.darkTheme.system}.yaml";
-  lightColors = parseScheme "${pkgs.base16-schemes}/share/themes/${cfg.lightTheme.system}.yaml";
+  darkColors = base16.parseScheme "${pkgs.base16-schemes}/share/themes/${cfg.darkTheme.system}.yaml";
+  lightColors = base16.parseScheme "${pkgs.base16-schemes}/share/themes/${cfg.lightTheme.system}.yaml";
 
   fishColorsScript = colors: ''
     set -U fish_color_normal ${colors.base05}
@@ -169,107 +145,113 @@ let
   '';
 in
 {
-  config.dotfiles.darkModeHook = darkModeHook;
+  config = {
+    dotfiles.darkModeHook = darkModeHook;
 
-  config.home.packages = [
-    (pkgs.writeShellScriptBin "theme-switch" ''
-      case "''${1:-}" in
-        dark)  ${activateSpecialisation} true  && echo "Switched to dark theme" ;;
-        light) ${activateSpecialisation} false && echo "Switched to light theme" ;;
-        "")    ${activateSpecialisation}       && echo "Theme synced to system setting" ;;
-        *)     echo "Usage: theme-switch [dark|light]" >&2; exit 1 ;;
-      esac
-    '')
-  ];
+    home = {
+      packages = [
+        (pkgs.writeShellScriptBin "theme-switch" ''
+          case "''${1:-}" in
+            dark)  ${activateSpecialisation} true  && echo "Switched to dark theme" ;;
+            light) ${activateSpecialisation} false && echo "Switched to light theme" ;;
+            "")    ${activateSpecialisation}       && echo "Theme synced to system setting" ;;
+            *)     echo "Usage: theme-switch [dark|light]" >&2; exit 1 ;;
+          esac
+        '')
+      ];
 
-  config.stylix = {
-    enable = true;
-    autoEnable = true;
-    polarity = lib.mkDefault (if baseIsDark then "dark" else "light");
-    base16Scheme = lib.mkDefault "${pkgs.base16-schemes}/share/themes/${
-      if baseIsDark then cfg.darkTheme.system else cfg.lightTheme.system
-    }.yaml";
-    image = ../../wallpapers/rocket-launch.png;
-
-    fonts.monospace = {
-      package = cfg.fontPackage;
-      name = cfg.font;
-    };
-
-    cursor = lib.mkIf (cfg.displayManager != "none") {
-      package = pkgs.bibata-cursors;
-      name = "Bibata-Modern-Classic";
-      size = 24;
-    };
-
-    targets = {
-      wezterm.enable = false;
-      helix.enable = false;
-      lazygit.enable = false;
-      opencode.enable = false;
-      fish.enable = false;
-      zellij.enable = false;
-    };
-  };
-
-  config.specialisation =
-    if baseIsDark then
-      {
-        light.configuration.stylix = {
-          polarity = lib.mkForce "light";
-          base16Scheme = lib.mkForce "${pkgs.base16-schemes}/share/themes/${cfg.lightTheme.system}.yaml";
-        };
-      }
-    else
-      {
-        dark.configuration.stylix = {
-          polarity = lib.mkForce "dark";
-          base16Scheme = lib.mkForce "${pkgs.base16-schemes}/share/themes/${cfg.darkTheme.system}.yaml";
-        };
-      };
-
-  config.home.activation.saveBaseGeneration = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    if [ -z "''${HM_SPECIALISATION_SWITCH:-}" ]; then
-      gen=$(${pkgs.coreutils}/bin/readlink -f "$HOME/.local/state/home-manager/gcroots/current-home" 2>/dev/null)
-      if [ -n "$gen" ]; then
-        mkdir -p "$HOME/.cache"
-        echo "$gen" > "${baseGenFile}"
-      fi
-    fi
-  '';
-
-  config.home.activation.seedThemeConfigs = lib.hm.dag.entryAfter [ "saveBaseGeneration" ] ''
-    ${lib.optionalString isOsx (
-      if isAutoSwitch then
-        "/usr/bin/defaults write -g AppleInterfaceStyleSwitchesAutomatically -bool true"
-      else
-        "/usr/bin/defaults write -g AppleInterfaceStyleSwitchesAutomatically -bool false"
-    )}
-    IS_DARK="${if config.stylix.polarity == "dark" then "true" else "false"}"
-    ${darkModeHook} "$IS_DARK"
-  '';
-
-  config.launchd.agents.dark-mode-watcher = lib.mkIf (isOsx && isAutoSwitch) {
-    enable = true;
-    config = {
-      ProgramArguments = [
-        "${pkgs.writeShellScript "dark-mode-watcher" ''
-          CURRENT=$(/usr/bin/defaults read -g AppleInterfaceStyle 2>/dev/null || echo "Light")
-          CACHE="${cacheFile}"
-          mkdir -p "$HOME/.cache"
-          PREVIOUS=$(cat "$CACHE" 2>/dev/null || echo "")
-          if [ "$CURRENT" != "$PREVIOUS" ]; then
-            if [ "$CURRENT" = "Dark" ]; then
-              ${activateSpecialisation} true && echo "$CURRENT" > "$CACHE"
-            else
-              ${activateSpecialisation} false && echo "$CURRENT" > "$CACHE"
+      activation = {
+        saveBaseGeneration = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+          if [ -z "''${HM_SPECIALISATION_SWITCH:-}" ]; then
+            gen=$(${pkgs.coreutils}/bin/readlink -f "$HOME/.local/state/home-manager/gcroots/current-home" 2>/dev/null)
+            if [ -n "$gen" ]; then
+              mkdir -p "$HOME/.cache"
+              echo "$gen" > "${baseGenFile}"
             fi
           fi
-        ''}"
-      ];
-      WatchPaths = [ "${config.home.homeDirectory}/Library/Preferences/.GlobalPreferences.plist" ];
-      ThrottleInterval = 5;
-      RunAtLoad = true;
+        '';
+
+        seedThemeConfigs = lib.hm.dag.entryAfter [ "saveBaseGeneration" ] ''
+          ${lib.optionalString isOsx (
+            if isAutoSwitch then
+              "/usr/bin/defaults write -g AppleInterfaceStyleSwitchesAutomatically -bool true"
+            else
+              "/usr/bin/defaults write -g AppleInterfaceStyleSwitchesAutomatically -bool false"
+          )}
+          IS_DARK="${if config.stylix.polarity == "dark" then "true" else "false"}"
+          ${darkModeHook} "$IS_DARK"
+        '';
+      };
+    };
+
+    stylix = {
+      enable = true;
+      autoEnable = true;
+      polarity = lib.mkDefault (if baseIsDark then "dark" else "light");
+      base16Scheme = lib.mkDefault "${pkgs.base16-schemes}/share/themes/${
+        if baseIsDark then cfg.darkTheme.system else cfg.lightTheme.system
+      }.yaml";
+      image = ../../wallpapers/rocket-launch.png;
+
+      fonts.monospace = {
+        package = cfg.fontPackage;
+        name = cfg.font;
+      };
+
+      cursor = lib.mkIf (cfg.displayManager != "none") {
+        package = pkgs.bibata-cursors;
+        name = "Bibata-Modern-Classic";
+        size = 24;
+      };
+
+      targets = {
+        wezterm.enable = false;
+        helix.enable = false;
+        lazygit.enable = false;
+        opencode.enable = false;
+        fish.enable = false;
+        zellij.enable = false;
+      };
+    };
+
+    specialisation =
+      if baseIsDark then
+        {
+          light.configuration.stylix = {
+            polarity = lib.mkForce "light";
+            base16Scheme = lib.mkForce "${pkgs.base16-schemes}/share/themes/${cfg.lightTheme.system}.yaml";
+          };
+        }
+      else
+        {
+          dark.configuration.stylix = {
+            polarity = lib.mkForce "dark";
+            base16Scheme = lib.mkForce "${pkgs.base16-schemes}/share/themes/${cfg.darkTheme.system}.yaml";
+          };
+        };
+
+    launchd.agents.dark-mode-watcher = lib.mkIf (isOsx && isAutoSwitch) {
+      enable = true;
+      config = {
+        ProgramArguments = [
+          "${pkgs.writeShellScript "dark-mode-watcher" ''
+            CURRENT=$(/usr/bin/defaults read -g AppleInterfaceStyle 2>/dev/null || echo "Light")
+            CACHE="${cacheFile}"
+            mkdir -p "$HOME/.cache"
+            PREVIOUS=$(cat "$CACHE" 2>/dev/null || echo "")
+            if [ "$CURRENT" != "$PREVIOUS" ]; then
+              if [ "$CURRENT" = "Dark" ]; then
+                ${activateSpecialisation} true && echo "$CURRENT" > "$CACHE"
+              else
+                ${activateSpecialisation} false && echo "$CURRENT" > "$CACHE"
+              fi
+            fi
+          ''}"
+        ];
+        WatchPaths = [ "${config.home.homeDirectory}/Library/Preferences/.GlobalPreferences.plist" ];
+        ThrottleInterval = 5;
+        RunAtLoad = true;
+      };
     };
   };
 }

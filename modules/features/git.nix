@@ -44,7 +44,7 @@ in
       settings = {
         user = {
           name = "Sam Mohr";
-          email = cfg.email;
+          inherit (cfg) email;
         };
         core = {
           excludesFile = "~/.gitignore";
@@ -72,7 +72,7 @@ in
         safe.directory = "*";
         commit.gpgsign = true;
         gpg.format = "ssh";
-        user.signingkey = "~/.ssh/id_ed25519.pub";
+        user.signingkey = "~/.ssh/id_personal.pub";
         fetch.prune = true;
       };
     };

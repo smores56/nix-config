@@ -4,7 +4,9 @@ let
 in
 {
   fonts.fontconfig.enable = lib.mkIf (cfg.displayManager != "none") true;
-  home.sessionVariables.TERMINAL = lib.mkIf (cfg.displayManager != "none") cfg.terminal;
+  home.sessionVariables = lib.mkIf (cfg.displayManager != "none") {
+    TERMINAL = cfg.terminal;
+  };
 
   programs.wezterm = {
     enable = true;
