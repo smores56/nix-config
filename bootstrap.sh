@@ -49,7 +49,7 @@ format_names() {
 
 flake_attr_names() {
   local attr="$1"
-  nix eval --raw --expr "builtins.concatStringsSep \"\n\" (builtins.attrNames (builtins.getFlake \"git+file://${REPO_DIR}\").${attr})"
+  nix eval --impure --raw --expr "builtins.concatStringsSep \"\n\" (builtins.attrNames (builtins.getFlake \"git+file://${REPO_DIR}\").${attr})"
 }
 
 has_nixos_config() {
