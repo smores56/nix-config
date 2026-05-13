@@ -66,13 +66,13 @@ The `smores` user is in `trusted-users` on campfire (configured via `exposeSsh =
 On a fresh machine with only Nix installed:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/smores56/nix-config/main/bootstrap.sh)
+bash <(curl -fsSL bootstrap.sammohr.dev)
 ```
 
 Override auto-detected username or hostname:
 
 ```bash
-BOOTSTRAP_USER=smohr BOOTSTRAP_HOST=smoreswork bash <(curl -fsSL https://raw.githubusercontent.com/smores56/nix-config/main/bootstrap.sh)
+BOOTSTRAP_USER=smohr BOOTSTRAP_HOST=smoreswork bash <(curl -fsSL bootstrap.sammohr.dev)
 ```
 
 The script is idempotent — safe to re-run at any time. It will:
