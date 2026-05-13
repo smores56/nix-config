@@ -9,6 +9,16 @@ let
   cfg = config.dotfiles;
 in
 {
+  nix.package = pkgs.nix;
+  nix.settings = {
+    warn-dirty = false;
+    accept-flake-config = true;
+    experimental-features = [
+      "nix-command"
+      "flakes"
+    ];
+  };
+
   home = {
     stateVersion = "26.05";
     packages = [
