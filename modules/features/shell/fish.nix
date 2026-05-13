@@ -1,6 +1,9 @@
 { config, pkgs, ... }:
 {
-  home.packages = [ pkgs.pfetch-rs ];
+  home.packages = [
+    pkgs.osc
+    pkgs.pfetch-rs
+  ];
 
   home.sessionVariables = {
     async_prompt_functions = "_pure_prompt_git";
@@ -38,6 +41,8 @@
         gn = "gh notify";
         gp = "gh pr create";
         gc = "ghq get";
+        copy = "osc copy";
+        paste = "osc paste";
 
         cn = "c ~/.config/nix";
         hm = "home-manager";
