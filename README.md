@@ -63,25 +63,26 @@ The `smores` user is in `trusted-users` on campfire (configured via `exposeSsh =
 
 ## New machine setup
 
+On a fresh machine with only Nix installed:
+
 ```bash
-nix-shell -p git gh home-manager helix
-
-# Clone the repo
-gh auth login
-gh repo clone smores56/nix-config ~/dev/repos/github.com/smores56/nix-config
-
-# Symlink so home-manager and nix find their config
-ln -s ~/dev/repos/github.com/smores56/nix-config ~/.config/home-manager
-
-# Apply home-manager config
-home-manager switch --no-write-lock-file
-
-# NixOS only:
-sudo nixos-generate-config --force
-cp /etc/nixos/hardware-configuration.nix ~/dev/repos/github.com/smores56/nix-config/modules/hosts/$(hostname).nix
-ln -sf ~/dev/repos/github.com/smores56/nix-config/flake.nix /etc/nixos/configuration.nix
-sudo nixos-rebuild switch --flake ~/dev/repos/github.com/smores56/nix-config --upgrade
+bash <(curl -fsSL https://raw.githubusercontent.com/smores56/nix-config/main/bootstrap.sh)
 ```
+
+Override auto-detected username or hostname:
+
+```bash
+BOOTSTRAP_USER=smohr BOOTSTRAP_HOST=smoreswork bash <(curl -fsSL https://raw.githubusercontent.com/smores56/nix-config/main/bootstrap.sh)
+```
+
+The script is idempotent — safe to re-run at any time. It will:
+1. Clone the repo to `~/dev/repos/github.com/smores56/nix-config` (via HTTPS)
+2. Symlink `~/.config/home-manager` to the repo
+3. Run `home-manager switch` to install all tools
+4. Generate an SSH key if needed
+5. Authenticate with GitHub via device code flow (works without a local browser)
+6. Register the SSH key with GitHub and switch the repo remote to SSH
+7. On NixOS: generate hardware config and run `nixos-rebuild switch`
 
 ### Joining the tailnet
 
