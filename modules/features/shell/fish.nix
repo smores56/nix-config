@@ -39,11 +39,11 @@
         gp = "gh pr create";
         gc = "ghq get";
 
-        cn = "c ~/.config/nix";
+        cn = "c ~/dev/repos/github.com/smores56/nix-config";
         hm = "home-manager";
-        hs = "home-manager switch --flake ~/.config/nix#$USER@(hostname -s) --no-write-lock-file";
+        hs = "home-manager switch --flake ~/dev/repos/github.com/smores56/nix-config#$USER@(hostname -s) --no-write-lock-file";
 
-        ns = "sudo nixos-rebuild --flake ~/.config/nix switch --upgrade";
+        ns = "sudo nixos-rebuild --flake ~/dev/repos/github.com/smores56/nix-config switch --upgrade";
         nsr = "nix-store --repair --verify --check-contents";
         ng = "nix-collect-garbage";
 
