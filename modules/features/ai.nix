@@ -3,6 +3,19 @@ let
   cfg = config.dotfiles;
   inherit (cfg) branchPrefix;
 
+  piNpm = pkgs.writeShellScriptBin "pi-npm" ''
+    export PATH="${pkgs.nodejs}/bin:$PATH"
+    export NPM_CONFIG_PREFIX="$HOME/.pi/agent/npm-global"
+    mkdir -p "$NPM_CONFIG_PREFIX"
+    exec ${pkgs.nodejs}/bin/npm "$@"
+  '';
+  piNpx = pkgs.writeShellScriptBin "npx" ''
+    export PATH="${pkgs.nodejs}/bin:$PATH"
+    export NPM_CONFIG_PREFIX="$HOME/.pi/agent/npm-global"
+    mkdir -p "$NPM_CONFIG_PREFIX"
+    exec ${pkgs.nodejs}/bin/npx "$@"
+  '';
+
   ticketSection =
     if cfg.ticketPrefix != null then
       ''
@@ -73,21 +86,116 @@ let
     - Be concise — no verbose explanations unless asked
     - Non-interactive CLI commands only (flags over interactive prompts)
   '';
+
+  smortressBaseUrl = "http://smortress:8080";
+  smortressCompat = {
+    supportsStore = false;
+    supportsDeveloperRole = false;
+    supportsReasoningEffort = false;
+    supportsUsageInStreaming = true;
+    maxTokensField = "max_tokens";
+  };
+  smortressModels = [
+    {
+      id = "gemma-4-26b";
+      name = "Gemma 4 26B";
+      reasoning = false;
+      input = [ "text" ];
+      contextWindow = 131072;
+      maxTokens = 8192;
+      cost = {
+        input = 0;
+        output = 0;
+        cacheRead = 0;
+        cacheWrite = 0;
+      };
+    }
+    {
+      id = "qwen3.6-27b";
+      name = "Qwen 3.6 27B";
+      reasoning = false;
+      input = [ "text" ];
+      contextWindow = 131072;
+      maxTokens = 8192;
+      cost = {
+        input = 0;
+        output = 0;
+        cacheRead = 0;
+        cacheWrite = 0;
+      };
+    }
+  ];
+
+  piSettingsJson = builtins.toJSON {
+    defaultProvider = "smortress";
+    defaultModel = cfg.defaultModel;
+    npmCommand = [ "${piNpm}/bin/pi-npm" ];
+    packages = [
+      "npm:pi-subagents@0.24.2"
+      "npm:pi-intercom@0.6.0"
+      "npm:pi-interactive-shell@0.13.0"
+      {
+        source = "npm:pi-messenger-swarm@0.25.4";
+        extensions = [ ];
+        skills = [ "./skills" ];
+      }
+      "npm:@earendil-works/pi-agent-core@0.74.0"
+      "npm:@earendil-works/pi-ai@0.74.0"
+      "npm:@earendil-works/pi-coding-agent@0.74.0"
+      "npm:@earendil-works/pi-tui@0.74.0"
+      "npm:@mariozechner/pi-tui@0.73.1"
+      "npm:tsx@4.21.0"
+    ];
+    compaction = {
+      enabled = true;
+    };
+  };
+
+  piModelsJson = builtins.toJSON {
+    providers = {
+      smortress = {
+        baseUrl = "${smortressBaseUrl}/v1";
+        apiKey = "PI_SMORTRESS_API_KEY";
+        api = "openai-completions";
+        compat = smortressCompat;
+        models = smortressModels;
+      };
+    };
+  };
 in
 {
   home = {
-    packages = [ pkgs.goose-cli ];
+    packages = [
+      pkgs.goose-cli
+      pkgs.pi-coding-agent
+      piNpm
+      piNpx
+    ];
 
     sessionVariables = {
-      OPENAI_HOST = "http://smortress:8080";
+      OPENAI_HOST = smortressBaseUrl;
       GOOSE_CONTEXT_LIMIT = "32768";
       OPENAI_MODEL = cfg.defaultModel;
+      PI_SMORTRESS_API_KEY = "not-needed";
       GOOSE_DISABLE_KEYRING = "true";
     };
 
     file = {
       ".goosehints".text = aiHints;
       ".claude/CLAUDE.md".text = aiHints;
+      "AGENTS.md".text = aiHints;
+      ".pi/agent/extensions/pi-supervisor.ts".source = ../../pi-supervisor.ts;
+      ".pi/agent/extensions/pi-messenger-swarm.js".text = ''
+        export { default } from "${config.home.homeDirectory}/.pi/agent/npm-global/lib/node_modules/pi-messenger-swarm/dist/index.js";
+      '';
+      ".pi/agent/settings.json" = {
+        text = piSettingsJson;
+        force = true;
+      };
+      ".pi/agent/models.json" = {
+        text = piModelsJson;
+        force = true;
+      };
     };
   };
 
