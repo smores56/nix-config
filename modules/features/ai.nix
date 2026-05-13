@@ -1,6 +1,35 @@
 { config, pkgs, ... }:
 let
   cfg = config.dotfiles;
+  branchPrefix = cfg.branchPrefix;
+
+  ticketSection =
+    if cfg.ticketPrefix != null then
+      ''
+        - Branch format: `${branchPrefix}/${cfg.ticketPrefix}-<ticket-number>-<kebab-slug>`
+        - Example: `${branchPrefix}/${cfg.ticketPrefix}-12345-fix-auth-flow`
+        - Every change must reference a ${cfg.ticketPrefix} Linear ticket
+        - To create a ticket: `linear issue create -t "Title" --team ${cfg.ticketPrefix} --assignee self --start`
+        - To list your tickets: `linear issue mine`
+        - To view a ticket: `linear issue view ${cfg.ticketPrefix}-<number>`
+        - Create worktrees with gwq: `gwq add -b ${branchPrefix}/${cfg.ticketPrefix}-<ticket-number>-<kebab-slug>`
+        - Do NOT use `git worktree add` or Claude's built-in EnterWorktree — always use `gwq add -b`
+        - Worktrees are stored in ~/dev/worktrees/, organized by repo URL path
+        - List worktrees for current repo: `gwq list`
+        - List all worktrees: `gwq list -g`
+        - Remove a worktree: `gwq remove <path>`
+      ''
+    else
+      ''
+        - Branch format: `${branchPrefix}/<kebab-slug>`
+        - Example: `${branchPrefix}/fix-auth-flow`
+        - Create worktrees with gwq: `gwq add -b ${branchPrefix}/<kebab-slug>`
+        - Do NOT use `git worktree add` or Claude's built-in EnterWorktree — always use `gwq add -b`
+        - Worktrees are stored in ~/dev/worktrees/, organized by repo URL path
+        - List worktrees for current repo: `gwq list`
+        - List all worktrees: `gwq list -g`
+        - Remove a worktree: `gwq remove <path>`
+      '';
 
   aiHints = ''
     # Code Style
@@ -35,9 +64,11 @@ let
     - Match test scope to the change being made
 
     # Git Workflow
+    - ALL repos should be cloned to ~/dev/repos/ (managed by ghq, organized as ~/dev/repos/github.com/org/repo/)
+    - ALL worktrees should be created in ~/dev/worktrees/ (managed by gwq, organized by repo URL path)
     - Always commit and push in a single call — never commit without immediately pushing
     - Local-only commits hide completed work
-
+    ${ticketSection}
     # Communication
     - Be concise — no verbose explanations unless asked
     - Non-interactive CLI commands only (flags over interactive prompts)

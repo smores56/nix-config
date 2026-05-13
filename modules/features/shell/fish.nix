@@ -37,7 +37,7 @@
         gs = "gh dash";
         gn = "gh notify";
         gp = "gh pr create";
-        gc = "gh repo clone";
+        gc = "ghq get";
 
         cn = "c ~/.config/nix";
         hm = "home-manager";

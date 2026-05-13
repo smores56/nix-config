@@ -66,6 +66,16 @@ in
       type = lib.types.str;
       default = "sam@sammohr.dev";
     };
+    branchPrefix = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = "smores";
+      description = "Prefix for git branch names (e.g. 'sam.mohr'). Null for no prefix.";
+    };
+    ticketPrefix = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Ticket ID prefix for branch names (e.g. '7AI'). Null for no ticket requirement.";
+    };
     exposeSsh = lib.mkOption {
       type = lib.types.bool;
       default = false;

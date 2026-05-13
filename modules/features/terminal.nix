@@ -20,6 +20,7 @@ in
       config.hide_mouse_cursor_when_typing = false
       config.send_composed_key_when_left_alt_is_pressed = false
       config.send_composed_key_when_right_alt_is_pressed = false
+      config.enable_scroll_bar = true
       config.audible_bell = "Disabled"
       config.visual_bell = {
         fade_in_function = "EaseIn",

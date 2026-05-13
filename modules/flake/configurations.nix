@@ -58,6 +58,8 @@ let
             lightTheme = null;
             primaryMonitor = null;
             monitorSize = null;
+            branchPrefix = null;
+            ticketPrefix = null;
           } args;
           home.username = username;
           home.homeDirectory = args.homeDirectory or "/home/${username}";
@@ -131,6 +133,8 @@ in
         system = "aarch64-darwin";
         terminalFontSize = 14;
         email = "sam.mohr@sevenai.com";
+        branchPrefix = "sam.mohr";
+        ticketPrefix = "7AI";
       };
     };
 
