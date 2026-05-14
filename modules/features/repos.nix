@@ -79,8 +79,9 @@ in
             return 1
         end
         set -l path (string replace -r '^(https?://|ssh://[^/]*/|git@)' "" $url | string replace -r '^([^/]+):' '$1/' | string replace -r '\.git$' "")
-        if test (string split '/' $path | count) -lt 3
-            set path github.com/$path
+        set -l parts (string split '/' $path)
+        if test (count $parts) -ge 3
+            set path (string join '/' $parts[2..])
         end
         set -l dest (ghq root)/$path
         if test -d $dest/.git
