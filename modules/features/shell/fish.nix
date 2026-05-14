@@ -44,11 +44,11 @@
         copy = "osc copy";
         paste = "osc paste";
 
-        cn = "c ~/code/smores56/nix-config";
+        cn = "c ~/.config/home-manager";
         hm = "home-manager";
         hs = "home-manager switch --no-write-lock-file";
 
-        ns = "sudo nixos-rebuild --flake ~/code/smores56/nix-config switch --upgrade";
+        ns = "sudo nixos-rebuild --flake ~/.config/home-manager switch --upgrade";
         nsr = "nix-store --repair --verify --check-contents";
         ng = "nix-collect-garbage";
 

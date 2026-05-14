@@ -23,7 +23,7 @@ Personal NixOS and Home Manager configs for my machines. The flake follows the
 home-manager switch --no-write-lock-file
 
 # NixOS
-sudo nixos-rebuild switch --flake ~/code/smores56/nix-config --upgrade
+sudo nixos-rebuild switch --flake ~/.config/home-manager --upgrade
 
 # Format and check
 nix fmt
@@ -53,16 +53,37 @@ intentionally registering keys with a different account:
 curl -fsSL bootstrap.sammohr.dev | env BOOTSTRAP_GITHUB_USER=smores56 bash
 ```
 
-The script clones the repo, symlinks `~/.config/home-manager`, runs Home Manager,
-sets up an SSH key, authenticates GitHub with device flow, switches the repo
-remote to SSH, and runs the NixOS rebuild when the current hostname has a
-`nixosConfiguration`.
+The script creates or reuses the repo under `~/code/smores56/nix-config`, runs
+Home Manager from the resolved checkout, sets up an SSH key, authenticates
+GitHub with device flow, switches the repo remote to SSH, and runs the NixOS
+rebuild when the current hostname has a `nixosConfiguration`.
 
-By default, the repo is cloned to `~/code/smores56/nix-config`. Override the
-root with `BOOTSTRAP_CODE_ROOT`:
+Home Manager owns `~/.config/home-manager` after the first switch, so subsequent
+`home-manager switch --no-write-lock-file` runs use the Nix-managed link without
+bootstrap needing it up front.
+
+By default, fresh clones use a GRM-compatible layout:
+`~/code/smores56/nix-config/.git-main-working-tree` plus the
+`~/code/smores56/nix-config/main` worktree. Existing plain checkouts at
+`~/code/smores56/nix-config` still work. Override the root with
+`BOOTSTRAP_CODE_ROOT`:
 
 ```sh
 curl -fsSL bootstrap.sammohr.dev | env BOOTSTRAP_CODE_ROOT="$HOME/code" bash
+```
+
+## Repo Management
+
+Repos live under `~/code/<owner>/<repo>`. GRM keeps each repo as a
+`.git-main-working-tree` plus worktrees such as `main/`.
+
+The machine-local inventory is `~/.config/grm/repos.toml`. Home Manager seeds
+that file with `smores56/nix-config` if it is missing, but the file remains
+editable local state for arbitrary repos. Add and remove other repos directly in
+that TOML file, then sync with:
+
+```bash
+grm repos sync config --config ~/.config/grm/repos.toml
 ```
 
 ## NixOS Notes

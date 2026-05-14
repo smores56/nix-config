@@ -25,6 +25,10 @@ in
       pkgs.home-manager
       config.dotfiles.fontPackage
     ];
+    file.".config/home-manager" = {
+      source = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/code/smores56/nix-config/main";
+      force = true;
+    };
 
     activation.checkAppManagementPermission = lib.mkIf pkgs.stdenv.isDarwin (
       lib.mkForce {

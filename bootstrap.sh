@@ -19,8 +19,10 @@ REPO_URL_SSH="git@github.com:${REPO_OWNER}/${REPO_NAME}.git"
 GITHUB_HOST="github.com"
 GITHUB_USER="${BOOTSTRAP_GITHUB_USER:-${REPO_OWNER}}"
 CODE_ROOT="${BOOTSTRAP_CODE_ROOT:-${HOME}/code}"
-REPO_DIR="${CODE_ROOT}/${REPO_OWNER}/${REPO_NAME}"
-HM_LINK="${HOME}/.config/home-manager"
+REPO_CONTAINER_DIR="${CODE_ROOT}/${REPO_OWNER}/${REPO_NAME}"
+REPO_WORKTREE_NAME="main"
+REPO_WORKTREE_DIR="${REPO_CONTAINER_DIR}/${REPO_WORKTREE_NAME}"
+REPO_DIR="${REPO_WORKTREE_DIR}"
 
 USERNAME="${BOOTSTRAP_USER:-$(whoami)}"
 HOSTNAME="${BOOTSTRAP_HOST:-$(hostname -s 2>/dev/null || hostname)}"
@@ -38,6 +40,14 @@ err()   { printf '\033[1;31m[error]\033[0m %s\n' "$*" >&2; exit 1; }
 skip()  { printf '\033[1;36m[skip]\033[0m  %s\n' "$*"; }
 
 is_nixos() { [ -f /etc/NIXOS ] || command -v nixos-version &>/dev/null; }
+
+is_git_checkout() {
+  [ -d "$1/.git" ] || [ -f "$1/.git" ]
+}
+
+is_nonempty_dir() {
+  [ -d "$1" ] && [ -n "$(find "$1" -mindepth 1 -maxdepth 1 -print -quit)" ]
+}
 
 contains_line() {
   local needle="$1"
@@ -62,6 +72,57 @@ has_nixos_config() {
   contains_line "$HOSTNAME" "$NIXOS_CONFIGS"
 }
 
+resolve_existing_repo_dir() {
+  if is_git_checkout "$REPO_CONTAINER_DIR"; then
+    REPO_DIR="$REPO_CONTAINER_DIR"
+    return 0
+  fi
+
+  if [ ! -d "${REPO_CONTAINER_DIR}/.git-main-working-tree" ]; then
+    return 1
+  fi
+
+  if is_git_checkout "$REPO_WORKTREE_DIR"; then
+    REPO_DIR="$REPO_WORKTREE_DIR"
+    return 0
+  fi
+
+  local child
+  local found=""
+  local count=0
+
+  while IFS= read -r child; do
+    if is_git_checkout "$child"; then
+      found="$child"
+      count=$((count + 1))
+    fi
+  done < <(find "$REPO_CONTAINER_DIR" -mindepth 1 -maxdepth 1 -type d -print)
+
+  if [ "$count" -eq 1 ]; then
+    REPO_DIR="$found"
+    return 0
+  fi
+
+  if [ "$count" -eq 0 ]; then
+    err "GRM repository exists at ${REPO_CONTAINER_DIR}, but no worktrees were found. Create one with: cd ${REPO_CONTAINER_DIR} && grm wt add ${REPO_WORKTREE_NAME} --track origin/${REPO_WORKTREE_NAME}"
+  fi
+
+  err "GRM repository at ${REPO_CONTAINER_DIR} has multiple worktrees and no ${REPO_WORKTREE_NAME}/ checkout. Create ${REPO_WORKTREE_NAME} or point BOOTSTRAP_CODE_ROOT at a clean location."
+}
+
+clone_repo() {
+  local git_dir="${REPO_CONTAINER_DIR}/.git-main-working-tree"
+
+  mkdir -p "$REPO_CONTAINER_DIR"
+  nix-shell -p git --run "git clone --bare '${REPO_URL_HTTPS}' '${git_dir}'"
+  nix-shell -p git --run "git --git-dir='${git_dir}' config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'"
+  nix-shell -p git --run "git --git-dir='${git_dir}' fetch origin"
+  nix-shell -p git --run "git --git-dir='${git_dir}' remote set-head origin --auto"
+  nix-shell -p git --run "git --git-dir='${git_dir}' branch --set-upstream-to='origin/${REPO_WORKTREE_NAME}' '${REPO_WORKTREE_NAME}'"
+  nix-shell -p git --run "git --git-dir='${git_dir}' worktree add '${REPO_WORKTREE_DIR}' '${REPO_WORKTREE_NAME}'"
+  REPO_DIR="$REPO_WORKTREE_DIR"
+}
+
 # ── Phase 0: Validate ─────────────────────────────────────────────
 
 command -v nix >/dev/null 2>&1 || err "Nix is not installed"
@@ -72,14 +133,16 @@ export NIX_CONFIG="experimental-features = nix-command flakes"
 
 info "Bootstrapping ${CONFIG_NAME}"
 
-# ── Phase 1: Clone repository ─────────────────────────────────────
+# ── Phase 1: Clone or resolve repository ──────────────────────────
 
-if [ -d "${REPO_DIR}/.git" ] || [ -f "${REPO_DIR}/.git" ]; then
-  skip "Repository already cloned at ${REPO_DIR}"
+if resolve_existing_repo_dir; then
+  skip "Repository already available at ${REPO_DIR}"
+elif is_nonempty_dir "$REPO_CONTAINER_DIR"; then
+  err "${REPO_CONTAINER_DIR} already exists but is not a Git checkout or GRM repository. Move it aside or set BOOTSTRAP_CODE_ROOT to a clean directory."
 else
-  info "Cloning repository via HTTPS..."
-  mkdir -p "$(dirname "${REPO_DIR}")"
-  nix-shell -p git --run "git clone '${REPO_URL_HTTPS}' '${REPO_DIR}'"
+  info "Cloning repository via HTTPS into GRM-compatible layout..."
+  mkdir -p "$(dirname "${REPO_CONTAINER_DIR}")"
+  clone_repo
   ok "Repository cloned"
 fi
 
@@ -91,28 +154,15 @@ NIXOS_CONFIGS="$(flake_attr_names nixosConfigurations)" || err "Unable to read n
 contains_line "$CONFIG_NAME" "$HOME_CONFIGS" \
   || err "No home-manager config for '${CONFIG_NAME}'. Known: $(format_names "$HOME_CONFIGS")"
 
-# ── Phase 3: Create home-manager symlink ──────────────────────────
-
-if [ -L "$HM_LINK" ] && [ "$(readlink "$HM_LINK")" = "$REPO_DIR" ]; then
-  skip "home-manager symlink already correct"
-elif [ -e "$HM_LINK" ]; then
-  err "${HM_LINK} already exists but is not the expected symlink. Remove it and re-run."
-else
-  info "Creating home-manager symlink..."
-  mkdir -p "$(dirname "$HM_LINK")"
-  ln -s "$REPO_DIR" "$HM_LINK"
-  ok "Symlinked ${HM_LINK} -> ${REPO_DIR}"
-fi
-
-# ── Phase 4: home-manager switch ──────────────────────────────────
+# ── Phase 3: home-manager switch ──────────────────────────────────
 
 info "Running home-manager switch (this may take a while on first run)..."
-nix-shell -p home-manager --run "home-manager switch --no-write-lock-file"
+nix-shell -p home-manager --run "home-manager switch --flake '${REPO_DIR}#${CONFIG_NAME}' --no-write-lock-file"
 ok "home-manager switch complete"
 
 export PATH="${HOME}/.nix-profile/bin:${PATH}"
 
-# ── Phase 5: SSH key generation ───────────────────────────────────
+# ── Phase 4: SSH key generation ───────────────────────────────────
 
 SSH_KEY="${HOME}/.ssh/id_personal"
 if [ -f "$SSH_KEY" ]; then
@@ -125,7 +175,7 @@ else
   ok "SSH key generated"
 fi
 
-# ── Phase 6: GitHub authentication ────────────────────────────────
+# ── Phase 5: GitHub authentication ────────────────────────────────
 
 GH_KEY_SCOPES="read:public_key,write:public_key,read:ssh_signing_key,write:ssh_signing_key"
 
@@ -170,7 +220,7 @@ else
   ok "SSH signing key added to GitHub"
 fi
 
-# ── Phase 7: Switch remote to SSH ─────────────────────────────────
+# ── Phase 6: Switch remote to SSH ─────────────────────────────────
 
 CURRENT_REMOTE="$(git -C "$REPO_DIR" remote get-url origin 2>/dev/null || true)"
 if [ "$CURRENT_REMOTE" = "$REPO_URL_SSH" ]; then
@@ -181,7 +231,7 @@ else
   ok "Remote switched to SSH"
 fi
 
-# ── Phase 8: NixOS setup ──────────────────────────────────────────
+# ── Phase 7: NixOS setup ──────────────────────────────────────────
 
 if is_nixos && has_nixos_config; then
   info "NixOS detected with config for ${HOSTNAME}"

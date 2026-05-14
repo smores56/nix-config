@@ -1,6 +1,7 @@
 {
   config,
   inputs,
+  lib,
   pkgs,
   ...
 }:
@@ -11,22 +12,48 @@ let
   configPath = "$HOME/.config/grm/repos.toml";
   repoRoot = "$HOME/code";
   prefix = "${cfg.branchPrefix}/";
-in
-{
-  home.packages = [ grm ];
-
-  xdg.configFile."grm/repos.example.toml".text = ''
+  grmNixConfigRepoEntry = ''
     [[trees]]
-    root = "~/code/owner"
+    root = "${config.home.homeDirectory}/code/smores56"
 
     [[trees.repos]]
-    name = "repo"
+    name = "nix-config"
     worktree_setup = true
 
     [[trees.repos.remotes]]
     name = "origin"
-    url = "git@github.com:owner/repo.git"
+    url = "git@github.com:smores56/nix-config.git"
     type = "ssh"
+  '';
+  grmDefaultConfig = ''
+    # Machine-local GRM repo inventory.
+    # Edit this file directly to add or remove cloned repos.
+    # Nix only seeds the dotfiles repo entry below.
+    # Keep worktree_setup = true so new syncs use GRM's worktree layout.
+
+    ${grmNixConfigRepoEntry}
+  '';
+in
+{
+  home.packages = [ grm ];
+
+  xdg.configFile."grm/repos.example.toml".text = grmDefaultConfig;
+
+  home.activation.ensureGrmNixConfigRepo = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    grm_config="${config.home.homeDirectory}/.config/grm/repos.toml"
+    mkdir -p "$(${pkgs.coreutils}/bin/dirname "$grm_config")"
+
+    if [ ! -e "$grm_config" ]; then
+      cat > "$grm_config" <<'EOF'
+    ${grmDefaultConfig}
+    EOF
+    elif ! ${pkgs.gnugrep}/bin/grep -Eq 'github\.com[:/]smores56/nix-config(\.git)?' "$grm_config"; then
+      cat >> "$grm_config" <<'EOF'
+
+    # Required dotfiles repository.
+    ${grmNixConfigRepoEntry}
+    EOF
+    fi
   '';
 
   programs.fish.shellAbbrs = {
