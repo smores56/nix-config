@@ -8,6 +8,9 @@ set -euo pipefail
 #
 # Override auto-detected user/host:
 #   curl -fsSL bootstrap.sammohr.dev | env BOOTSTRAP_USER=smohr BOOTSTRAP_HOST=smoreswork bash
+#
+# Override repository root:
+#   curl -fsSL bootstrap.sammohr.dev | env BOOTSTRAP_CODE_ROOT="$HOME/code" bash
 
 REPO_OWNER="smores56"
 REPO_NAME="nix-config"
@@ -15,7 +18,8 @@ REPO_URL_HTTPS="https://github.com/${REPO_OWNER}/${REPO_NAME}.git"
 REPO_URL_SSH="git@github.com:${REPO_OWNER}/${REPO_NAME}.git"
 GITHUB_HOST="github.com"
 GITHUB_USER="${BOOTSTRAP_GITHUB_USER:-${REPO_OWNER}}"
-REPO_DIR="${HOME}/dev/repos/${REPO_OWNER}/${REPO_NAME}"
+CODE_ROOT="${BOOTSTRAP_CODE_ROOT:-${HOME}/code}"
+REPO_DIR="${CODE_ROOT}/${REPO_OWNER}/${REPO_NAME}"
 HM_LINK="${HOME}/.config/home-manager"
 
 USERNAME="${BOOTSTRAP_USER:-$(whoami)}"

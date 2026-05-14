@@ -28,21 +28,21 @@ let
     - To create a ticket: `linear issue create -t "Title" --team ${cfg.ticketPrefix} --assignee self --start`
     - To list your tickets: `linear issue mine`
     - To view a ticket: `linear issue view ${cfg.ticketPrefix}-<number>`
-    - Create worktrees with worktrunk: `wt switch -c ${branchPrefix}/${cfg.ticketPrefix}-<ticket-number>-<kebab-slug>`
-    - Do NOT use `git worktree add` or Claude's built-in EnterWorktree — always use `wt switch -c`
-    - Worktrees are stored inside the bare repo directory alongside .git/
-    - List worktrees: `wt list`
-    - Remove a worktree: `wt remove`
+    - Create worktrees with GRM from the repo root: `grm wt add ${branchPrefix}/${cfg.ticketPrefix}-<ticket-number>-<kebab-slug> --track origin/${branchPrefix}/${cfg.ticketPrefix}-<ticket-number>-<kebab-slug>`
+    - Do NOT use `git clone`, `git worktree add`, `git checkout -b`, or Claude's built-in EnterWorktree — always use `grm`
+    - Worktrees are stored inside the GRM repo directory alongside `.git-main-working-tree/`
+    - List worktrees from the repo root: `grm wt status`
+    - Remove a worktree: `grm wt delete <worktree>`
   '';
 
   personalBranchWorkflow = ''
     - Branch format: `${branchPrefix}/<kebab-slug>`
     - Example: `${branchPrefix}/fix-auth-flow`
-    - Create worktrees with worktrunk: `wt switch -c ${branchPrefix}/<kebab-slug>`
-    - Do NOT use `git worktree add` or Claude's built-in EnterWorktree — always use `wt switch -c`
-    - Worktrees are stored inside the bare repo directory alongside .git/
-    - List worktrees: `wt list`
-    - Remove a worktree: `wt remove`
+    - Create worktrees with GRM from the repo root: `grm wt add ${branchPrefix}/<kebab-slug> --track origin/${branchPrefix}/<kebab-slug>`
+    - Do NOT use `git clone`, `git worktree add`, `git checkout -b`, or Claude's built-in EnterWorktree — always use `grm`
+    - Worktrees are stored inside the GRM repo directory alongside `.git-main-working-tree/`
+    - List worktrees from the repo root: `grm wt status`
+    - Remove a worktree: `grm wt delete <worktree>`
   '';
 
   branchWorkflow = if cfg.ticketPrefix != null then workBranchWorkflow else personalBranchWorkflow;
@@ -80,8 +80,13 @@ let
     - Match test scope to the change being made
 
     # Git Workflow
-    - ALL repos should be bare cloned to ~/dev/repos/ (use `repo-clone`, organized as ~/dev/org/repo/)
-    - ALL worktrees are managed by worktrunk (`wt`) inside the bare repo directory
+    - ALL repos live under `~/code/` and are managed by Git Repo Manager (`grm`)
+    - Repo inventory is local state in `~/.config/grm/repos.toml`; do not edit config-nix just to add or remove a cloned repo
+    - To initialize the local repo inventory: `grm-init-repos`
+    - To list existing local repos as GRM config: `grm repos find local ~/code --format toml`
+    - To clone/sync repos from the local inventory: `grm repos sync config --config ~/.config/grm/repos.toml`
+    - To inspect configured repos: `grm repos status --config ~/.config/grm/repos.toml`
+    - ALL worktrees are managed by GRM (`grm wt`) inside the repo root
     - Always commit and push in a single call — never commit without immediately pushing
     - Local-only commits hide completed work
     ${branchWorkflow}

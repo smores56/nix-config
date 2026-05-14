@@ -44,6 +44,9 @@ let
     in
     home-manager.lib.homeManagerConfiguration {
       pkgs = pkgsForSystem system;
+      extraSpecialArgs = {
+        inherit inputs;
+      };
       modules = homeModules ++ [
         {
           dotfiles = {
