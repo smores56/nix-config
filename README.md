@@ -60,14 +60,31 @@ remote to SSH, and runs the NixOS rebuild when the current hostname has a
 
 ## NixOS Notes
 
-Tailscale is enabled on NixOS hosts. Run this once after first boot:
+Tailscale is enabled on NixOS hosts and auto-joins with the upstream NixOS
+`services.tailscale.authKeyFile` support. Before the first rebuild on a fresh
+NixOS host, create a reusable or one-off auth key in the Tailscale admin console
+and install it outside the repo:
 
 ```bash
-sudo tailscale up
+sudo install -d -m 700 /var/lib/tailscale
+read -rsp "Tailscale auth key: " TAILSCALE_AUTH_KEY
+printf '\n'
+printf '%s\n' "$TAILSCALE_AUTH_KEY" | sudo tee /var/lib/tailscale/authkey >/dev/null
+unset TAILSCALE_AUTH_KEY
+sudo chmod 600 /var/lib/tailscale/authkey
 ```
 
 Hosts with `exposeSsh = true` enable Tailscale SSH and mark the configured user
-as a trusted Nix builder.
+as a trusted Nix builder. This is handled by the same official Tailscale
+auto-join path with `tailscale up --ssh`, plus `tailscale set --ssh` on rebuilds
+for hosts that are already joined.
+
+After switching the system, verify Tailscale is running and SSH is advertised:
+
+```bash
+sudo systemctl status tailscaled-autoconnect
+tailscale status --json --peers=false
+```
 
 Remote builds can use `campfire` over Tailscale SSH:
 

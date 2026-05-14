@@ -55,6 +55,7 @@ let
             terminalFontSize = null;
             polarity = null;
             exposeSsh = null;
+            tailscaleAuthKeyFile = null;
             nixos = null;
             email = null;
             darkTheme = null;
@@ -91,6 +92,7 @@ let
             inherit username;
             displayManager = dm;
             exposeSsh = args.exposeSsh or false;
+            tailscaleAuthKeyFile = args.tailscaleAuthKeyFile or "/var/lib/tailscale/authkey";
             fingerprint = args.fingerprint or false;
             nvidia = args.nvidia or false;
             llm = args.llm or false;
