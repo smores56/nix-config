@@ -37,17 +37,15 @@ let
     ln -sfn "$main/node_modules" "$wt/node_modules"
   '';
 
+  repoRoot = "~/dev/repos";
   prefix = "${cfg.branchPrefix}/";
 in
 {
   home.packages = [
-    pkgs.ghq
     pkgs.worktrunk
     wt-cargo-link
     wt-node-link
   ];
-
-  programs.git.settings.ghq.root = "~/dev";
 
   xdg.configFile."worktrunk/config.toml".text = ''
     worktree-path = "{{ repo_path }}/{{ branch | sanitize }}"
@@ -64,7 +62,7 @@ in
     '';
 
     shellAbbrs = {
-      r = "ghq list | tv | read -l s; and c (ghq root)/$s";
+      r = "find ${repoRoot} -name .git -maxdepth 3 | sed 's|${repoRoot}/||;s|/\\.git||' | tv -p 'gh repo view {}' --cache-preview | read -l s; and c ${repoRoot}/$s";
       w = "wt switch";
       nw = "wt switch -c ${prefix}";
       nb = "git checkout -b ${prefix}";
@@ -83,7 +81,7 @@ in
         if test (count $parts) -ge 3
             set path (string join '/' $parts[2..])
         end
-        set -l dest (ghq root)/$path
+        set -l dest ${repoRoot}/$path
         if test -d $dest/.git
             echo "Already exists: $dest"
             return 1

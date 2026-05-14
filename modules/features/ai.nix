@@ -80,7 +80,7 @@ let
     - Match test scope to the change being made
 
     # Git Workflow
-    - ALL repos should be bare cloned to ~/dev/ (use `repo-clone`, organized as ~/dev/org/repo/)
+    - ALL repos should be bare cloned to ~/dev/repos/ (use `repo-clone`, organized as ~/dev/org/repo/)
     - ALL worktrees are managed by worktrunk (`wt`) inside the bare repo directory
     - Always commit and push in a single call — never commit without immediately pushing
     - Local-only commits hide completed work
