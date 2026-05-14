@@ -23,7 +23,7 @@ Personal NixOS and Home Manager configs for my machines. The flake follows the
 home-manager switch --no-write-lock-file
 
 # NixOS
-sudo nixos-rebuild switch --flake ~/dev/repos/github.com/smores56/nix-config --upgrade
+sudo nixos-rebuild switch --flake ~/dev/github.com/smores56/nix-config --upgrade
 
 # Format and check
 nix fmt

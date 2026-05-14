@@ -28,23 +28,21 @@ let
     - To create a ticket: `linear issue create -t "Title" --team ${cfg.ticketPrefix} --assignee self --start`
     - To list your tickets: `linear issue mine`
     - To view a ticket: `linear issue view ${cfg.ticketPrefix}-<number>`
-    - Create worktrees with gwq: `gwq add -b ${branchPrefix}/${cfg.ticketPrefix}-<ticket-number>-<kebab-slug>`
-    - Do NOT use `git worktree add` or Claude's built-in EnterWorktree — always use `gwq add -b`
-    - Worktrees are stored in ~/dev/worktrees/, organized by repo URL path
-    - List worktrees for current repo: `gwq list`
-    - List all worktrees: `gwq list -g`
-    - Remove a worktree: `gwq remove <path>`
+    - Create worktrees with worktrunk: `wt switch -c ${branchPrefix}/${cfg.ticketPrefix}-<ticket-number>-<kebab-slug>`
+    - Do NOT use `git worktree add` or Claude's built-in EnterWorktree — always use `wt switch -c`
+    - Worktrees are stored inside the bare repo directory alongside .git/
+    - List worktrees: `wt list`
+    - Remove a worktree: `wt remove`
   '';
 
   personalBranchWorkflow = ''
     - Branch format: `${branchPrefix}/<kebab-slug>`
     - Example: `${branchPrefix}/fix-auth-flow`
-    - Create worktrees with gwq: `gwq add -b ${branchPrefix}/<kebab-slug>`
-    - Do NOT use `git worktree add` or Claude's built-in EnterWorktree — always use `gwq add -b`
-    - Worktrees are stored in ~/dev/worktrees/, organized by repo URL path
-    - List worktrees for current repo: `gwq list`
-    - List all worktrees: `gwq list -g`
-    - Remove a worktree: `gwq remove <path>`
+    - Create worktrees with worktrunk: `wt switch -c ${branchPrefix}/<kebab-slug>`
+    - Do NOT use `git worktree add` or Claude's built-in EnterWorktree — always use `wt switch -c`
+    - Worktrees are stored inside the bare repo directory alongside .git/
+    - List worktrees: `wt list`
+    - Remove a worktree: `wt remove`
   '';
 
   branchWorkflow = if cfg.ticketPrefix != null then workBranchWorkflow else personalBranchWorkflow;
@@ -82,8 +80,8 @@ let
     - Match test scope to the change being made
 
     # Git Workflow
-    - ALL repos should be cloned to ~/dev/repos/ (managed by ghq, organized as ~/dev/repos/github.com/org/repo/)
-    - ALL worktrees should be created in ~/dev/worktrees/ (managed by gwq, organized by repo URL path)
+    - ALL repos should be bare cloned to ~/dev/ (use `repo-clone`, organized as ~/dev/github.com/org/repo/)
+    - ALL worktrees are managed by worktrunk (`wt`) inside the bare repo directory
     - Always commit and push in a single call — never commit without immediately pushing
     - Local-only commits hide completed work
     ${branchWorkflow}

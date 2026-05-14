@@ -7,61 +7,12 @@
 let
   cfg = config.dotfiles;
 
-  gwq = pkgs.buildGoModule {
-    pname = "gwq";
-    version = "0.1.1";
-
-    src = pkgs.fetchFromGitHub {
-      owner = "d-kuro";
-      repo = "gwq";
-      tag = "v0.1.1";
-      hash = "sha256-MfCYFbODWnfPxx+6sLlcMT6tqghgILHB13+ccYqVjBA=";
-    };
-
-    vendorHash = "sha256-4K01Xf1EXl/NVX1loQ76l1bW8QglBAQdvlZSo7J4NPI=";
-
-    subPackages = [ "cmd/gwq" ];
-
-    ldflags = [
-      "-s"
-      "-w"
-      "-X github.com/d-kuro/gwq/internal/cmd.version=v0.1.1"
-    ];
-
-    nativeBuildInputs = with pkgs; [
-      installShellFiles
-      makeWrapper
-    ];
-
-    postInstall = ''
-      wrapProgram $out/bin/gwq \
-        --prefix PATH : ${
-          lib.makeBinPath [
-            pkgs.gitMinimal
-            pkgs.tmux
-          ]
-        }
-
-      export HOME=$(mktemp -d)
-      installShellCompletion --cmd gwq \
-        --bash <($out/bin/gwq completion bash) \
-        --fish <($out/bin/gwq completion fish) \
-        --zsh <($out/bin/gwq completion zsh)
-    '';
-
-    meta = {
-      description = "Git worktree manager with fuzzy finder";
-      homepage = "https://github.com/d-kuro/gwq";
-      license = lib.licenses.asl20;
-      mainProgram = "gwq";
-    };
-  };
-
-  gwq-cargo-link = pkgs.writeShellScriptBin "gwq-cargo-link" ''
+  wt-cargo-link = pkgs.writeShellScriptBin "wt-cargo-link" ''
     set -euo pipefail
-    wt="''${1:?usage: gwq-cargo-link <worktree-path>}"
+    wt="''${1:?usage: wt-cargo-link <worktree-path>}"
     [ -f "$wt/Cargo.toml" ] || exit 0
-    main=$(git -C "$wt" worktree list --porcelain | head -1 | sed 's/^worktree //')
+    main=$(git -C "$wt" worktree list --porcelain | awk '/^worktree /{sub(/^worktree /,"");p=$0} /^branch /{print p; exit}')
+    [ -z "$main" ] && exit 0
     [ "$main" = "$wt" ] && exit 0
     for profile in debug release; do
       src="$main/target/$profile"
@@ -74,11 +25,12 @@ let
     done
   '';
 
-  gwq-node-link = pkgs.writeShellScriptBin "gwq-node-link" ''
+  wt-node-link = pkgs.writeShellScriptBin "wt-node-link" ''
     set -euo pipefail
-    wt="''${1:?usage: gwq-node-link <worktree-path>}"
+    wt="''${1:?usage: wt-node-link <worktree-path>}"
     [ -f "$wt/package.json" ] || exit 0
-    main=$(git -C "$wt" worktree list --porcelain | head -1 | sed 's/^worktree //')
+    main=$(git -C "$wt" worktree list --porcelain | awk '/^worktree /{sub(/^worktree /,"");p=$0} /^branch /{print p; exit}')
+    [ -z "$main" ] && exit 0
     [ "$main" = "$wt" ] && exit 0
     [ -d "$main/node_modules" ] || exit 0
     [ -d "$wt/node_modules" ] && [ ! -L "$wt/node_modules" ] && rm -rf "$wt/node_modules"
@@ -90,32 +42,60 @@ in
 {
   home.packages = [
     pkgs.ghq
-    gwq
-    gwq-cargo-link
-    gwq-node-link
+    pkgs.worktrunk
+    wt-cargo-link
+    wt-node-link
   ];
 
-  xdg.configFile."gwq/config.toml".text = ''
-    [worktree]
-    basedir = "~/dev/worktrees"
+  programs.git.settings.ghq.root = "~/dev";
 
-    [[repository_settings]]
-    repository = "**"
-    setup_commands = [
-      "gwq-cargo-link '{{.Path}}'",
-      "gwq-node-link '{{.Path}}'",
-      "mise trust '{{.Path}}/mise.toml' 2>/dev/null || true",
-    ]
+  xdg.configFile."worktrunk/config.toml".text = ''
+    worktree-path = "{{ repo_path }}/{{ branch | sanitize }}"
+
+    [post-start]
+    cargo = "wt-cargo-link '{{ worktree_path }}'"
+    node = "wt-node-link '{{ worktree_path }}'"
+    mise = "mise trust '{{ worktree_path }}/mise.toml' 2>/dev/null || true"
   '';
 
-  programs = {
-    git.settings.ghq.root = "~/dev/repos";
+  programs.fish = {
+    interactiveShellInit = lib.mkAfter ''
+      command -q wt; and wt config shell init fish | source
+    '';
 
-    fish.shellAbbrs = {
+    shellAbbrs = {
       r = "ghq list | tv | read -l s; and c (ghq root)/$s";
-      w = "gwq list | tv | read -l s; and c $s";
-      nw = "gwq add -b ${prefix}";
+      w = "wt switch";
+      nw = "wt switch -c ${prefix}";
       nb = "git checkout -b ${prefix}";
+    };
+
+    functions.repo-clone = {
+      description = "Bare clone a repo for worktrunk";
+      body = ''
+        set -l url $argv[1]
+        if test -z "$url"
+            echo "Usage: repo-clone <url>"
+            return 1
+        end
+        set -l path (string replace -r '^(https?://|ssh://[^/]*/|git@)' "" $url | string replace -r '^([^/]+):' '$1/' | string replace -r '\.git$' "")
+        if test (string split '/' $path | count) -lt 3
+            set path github.com/$path
+        end
+        set -l dest (ghq root)/$path
+        if test -d $dest/.git
+            echo "Already exists: $dest"
+            return 1
+        end
+        mkdir -p $dest
+        if not git clone --bare $url $dest/.git
+            rm -rf $dest
+            return 1
+        end
+        git -C $dest config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
+        git -C $dest fetch origin
+        echo $dest
+      '';
     };
   };
 }

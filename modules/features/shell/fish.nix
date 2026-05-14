@@ -40,15 +40,15 @@
         gs = "gh dash";
         gn = "gh notify";
         gp = "gh pr create";
-        gc = "ghq get";
+        gc = "repo-clone";
         copy = "osc copy";
         paste = "osc paste";
 
-        cn = "c ~/dev/repos/github.com/smores56/nix-config";
+        cn = "c ~/dev/github.com/smores56/nix-config";
         hm = "home-manager";
         hs = "home-manager switch --no-write-lock-file";
 
-        ns = "sudo nixos-rebuild --flake ~/dev/repos/github.com/smores56/nix-config switch --upgrade";
+        ns = "sudo nixos-rebuild --flake ~/dev/github.com/smores56/nix-config switch --upgrade";
         nsr = "nix-store --repair --verify --check-contents";
         ng = "nix-collect-garbage";
 

@@ -15,7 +15,7 @@ REPO_URL_HTTPS="https://github.com/${REPO_OWNER}/${REPO_NAME}.git"
 REPO_URL_SSH="git@github.com:${REPO_OWNER}/${REPO_NAME}.git"
 GITHUB_HOST="github.com"
 GITHUB_USER="${BOOTSTRAP_GITHUB_USER:-${REPO_OWNER}}"
-REPO_DIR="${HOME}/dev/repos/github.com/${REPO_OWNER}/${REPO_NAME}"
+REPO_DIR="${HOME}/dev/github.com/${REPO_OWNER}/${REPO_NAME}"
 HM_LINK="${HOME}/.config/home-manager"
 
 USERNAME="${BOOTSTRAP_USER:-$(whoami)}"
