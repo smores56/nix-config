@@ -87,6 +87,7 @@ let
     - To clone/sync repos from the local inventory: `grm repos sync config --config ~/.config/grm/repos.toml`
     - To inspect configured repos: `grm repos status --config ~/.config/grm/repos.toml`
     - ALL worktrees are managed by GRM (`grm wt`) inside the repo root
+    - Use `g`/`grm-lazygit` to open LazyGit from either a worktree or a GRM repo root; do not create or delete worktrees from LazyGit
     - Always commit and push in a single call — never commit without immediately pushing
     - Local-only commits hide completed work
     ${branchWorkflow}

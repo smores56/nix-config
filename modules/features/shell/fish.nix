@@ -36,7 +36,7 @@
         a = "mkdir -p";
         f = "yazi";
         b = "bat";
-        g = "lazygit";
+        g = "grm-lazygit";
         gs = "gh dash";
         gn = "gh notify";
         gp = "gh pr create";

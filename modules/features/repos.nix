@@ -77,4 +77,64 @@ in
       grm wt add $branch --track origin/$branch
     '';
   };
+
+  programs.fish.functions.grm-lazygit = {
+    description = "Open LazyGit in the current Git worktree or a GRM worktree";
+    body = ''
+      if git rev-parse --is-inside-work-tree >/dev/null 2>&1
+          command lazygit $argv
+          return $status
+      end
+
+      set -l dir $PWD
+      while test "$dir" != /
+          if test -d "$dir/.git-main-working-tree"
+              set -l worktrees
+              for child in (find "$dir" -mindepth 1 -maxdepth 1 -type d)
+                  if test -e "$child/.git"
+                      set -a worktrees "$child"
+                  end
+              end
+
+              set -l worktree_count (count $worktrees)
+              if test $worktree_count -eq 0
+                  echo "No GRM worktrees found under $dir"
+                  echo "Create one with: grm wt add main --track origin/main"
+                  return 1
+              end
+
+              if test $worktree_count -eq 1
+                  command lazygit --path "$worktrees[1]" $argv
+                  return $status
+              end
+
+              if command -q tv
+                  set -l names
+                  for worktree in $worktrees
+                      set -a names (basename "$worktree")
+                  end
+
+                  printf '%s\n' $names | tv | read -l selected
+                  if test -z "$selected"
+                      return 1
+                  end
+
+                  command lazygit --path "$dir/$selected" $argv
+                  return $status
+              end
+
+              echo "Multiple GRM worktrees found under $dir"
+              for worktree in $worktrees
+                  echo "  "(basename "$worktree")
+              end
+              echo "Run from a worktree, or install tv to select one from the GRM root."
+              return 1
+          end
+
+          set dir (dirname "$dir")
+      end
+
+      command lazygit $argv
+    '';
+  };
 }
