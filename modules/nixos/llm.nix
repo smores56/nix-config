@@ -61,5 +61,12 @@ in
       ExecStartPre = "${downloadModels}";
       TimeoutStartSec = "1h";
     };
+
+    systemd.sleep.settings.Sleep = {
+      AllowSuspend = false;
+      AllowHibernation = false;
+      AllowHybridSleep = false;
+      AllowSuspendThenHibernate = false;
+    };
   };
 }

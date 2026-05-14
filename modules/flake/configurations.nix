@@ -59,6 +59,7 @@ let
             email = null;
             darkTheme = null;
             lightTheme = null;
+            llm = null;
             primaryMonitor = null;
             monitorSize = null;
             branchPrefix = null;
@@ -124,6 +125,7 @@ in
         displayManager = "niri";
         nixos = true;
         polarity = "time-of-day";
+        llm = true;
         primaryMonitor = "DP-2";
         monitorSize = {
           width = 5120;

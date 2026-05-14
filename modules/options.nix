@@ -102,7 +102,7 @@ in
     llm = lib.mkOption {
       type = lib.types.bool;
       default = false;
-      description = "Enable llama.cpp LLM server with NVIDIA CUDA support. NixOS-only.";
+      description = "Host runs the llama.cpp LLM service; also disables desktop/system sleep for availability.";
     };
     persist = lib.mkOption {
       type = lib.types.bool;

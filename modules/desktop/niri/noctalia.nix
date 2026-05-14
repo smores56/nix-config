@@ -149,7 +149,12 @@ in
         };
         sessionMenu.countdownDuration = 5000;
         dock.enabled = false;
-        idle.enabled = true;
+        idle = {
+          enabled = true;
+        }
+        // lib.optionalAttrs cfg.llm {
+          suspendTimeout = 0;
+        };
         nightLight.enabled = true;
         hooks = {
           enabled = true;
