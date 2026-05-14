@@ -3,11 +3,11 @@ set -euo pipefail
 
 # Idempotent bootstrap for a fresh machine with only Nix installed.
 #
-# Usage:
-#   bash <(curl -fsSL https://raw.githubusercontent.com/smores56/nix-config/main/bootstrap.sh)
+# Usage from Bash, Zsh, or Fish:
+#   curl -fsSL bootstrap.sammohr.dev | bash
 #
 # Override auto-detected user/host:
-#   BOOTSTRAP_USER=smohr BOOTSTRAP_HOST=smoreswork bash <(curl ...)
+#   curl -fsSL bootstrap.sammohr.dev | env BOOTSTRAP_USER=smohr BOOTSTRAP_HOST=smoreswork bash
 
 REPO_OWNER="smores56"
 REPO_NAME="nix-config"

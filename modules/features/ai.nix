@@ -128,7 +128,7 @@ let
 
   piSettingsJson = builtins.toJSON {
     defaultProvider = "smortress";
-    defaultModel = cfg.defaultModel;
+    inherit (cfg) defaultModel;
     npmCommand = [ "${piNpm}/bin/pi-npm" ];
     packages = [
       "npm:pi-subagents@0.24.2"

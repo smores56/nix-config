@@ -34,16 +34,23 @@ nix run nixpkgs#statix -- check .
 
 ## Bootstrap
 
-On a fresh machine with Nix installed:
+On a fresh machine with Nix installed, from Bash, Zsh, or Fish:
 
-```bash
-bash <(curl -fsSL bootstrap.sammohr.dev)
+```sh
+curl -fsSL bootstrap.sammohr.dev | bash
 ```
 
 Override auto-detected username or hostname:
 
-```bash
-BOOTSTRAP_USER=smohr BOOTSTRAP_HOST=smoreswork bash <(curl -fsSL bootstrap.sammohr.dev)
+```sh
+curl -fsSL bootstrap.sammohr.dev | env BOOTSTRAP_USER=smohr BOOTSTRAP_HOST=smoreswork bash
+```
+
+The bootstrap GitHub account defaults to `smores56`. Override it only when
+intentionally registering keys with a different account:
+
+```sh
+curl -fsSL bootstrap.sammohr.dev | env BOOTSTRAP_GITHUB_USER=smores56 bash
 ```
 
 The script clones the repo, symlinks `~/.config/home-manager`, runs Home Manager,
