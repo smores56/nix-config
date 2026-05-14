@@ -33,6 +33,7 @@ in
         model.repo
         "--hf-file"
         model.file
+        "--no-mmproj"
         "-ngl"
         "99"
         "-c"
