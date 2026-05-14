@@ -45,8 +45,12 @@ in
       ];
     };
 
-    systemd.services.llama-cpp.serviceConfig = {
-      TimeoutStartSec = "1h";
+    systemd.services.llama-cpp = {
+      requires = [ "nvidia-uvm.service" ];
+      after = [ "nvidia-uvm.service" ];
+      serviceConfig = {
+        TimeoutStartSec = "1h";
+      };
     };
 
     systemd.sleep.settings.Sleep = {
