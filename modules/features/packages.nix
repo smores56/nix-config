@@ -17,70 +17,83 @@
     home = {
       sessionVariables = {
         DISABLE_NIX_SHELL_WELCOME = 1;
+      }
+      // lib.optionalAttrs pkgs.stdenv.isDarwin {
+        # Use Apple's clang for C compilation — Nix's GCC sysroot lacks macOS
+        # framework headers (CoreServices, Security, etc.) needed by native deps.
+        CC = "/usr/bin/clang";
       };
 
-      packages = with pkgs; [
-        # exploration
-        eza
-        fd
-        ripgrep
-        glow
-        television
-        openssh
+      packages =
+        with pkgs;
+        [
+          # exploration
+          eza
+          fd
+          ripgrep
+          glow
+          television
+          openssh
 
-        # data interaction
-        jq
-        eva
-        curl
-        sd
-        ouch
-        zip
-        unzip
-        lazysql
+          # data interaction
+          jq
+          eva
+          curl
+          sd
+          ouch
+          zip
+          unzip
+          lazysql
 
-        # environment management
-        awscli2
-        aws-sso-cli
-        _1password-cli
+          # environment management
+          awscli2
+          aws-sso-cli
+          _1password-cli
 
-        # networking
-        tailscale
+          # networking
+          tailscale
 
-        # monitoring
-        dua
-        tokei
-        bottom
-        watchexec
+          # monitoring
+          dua
+          tokei
+          bottom
+          watchexec
 
-        # languages
-        go
-        uv
-        python3
-        deno
-        typst
-        cargo
+          # languages
+          go
+          uv
+          python3
+          deno
+          typst
+          cargo
 
-        # compilation
-        gcc
-        pkg-config
-        openssl.dev
+          # compilation
+          gcc
+          pkg-config
+          openssl.dev
+          libiconv
+        ]
+        ++ lib.optionals pkgs.stdenv.isDarwin [
+          pkgs.apple-sdk_15
+        ]
+        ++ [
 
-        # fun stuff
-        cbonsai
-        musikcube
-        clock-rs
-        ttyper
+          # fun stuff
+          cbonsai
+          musikcube
+          clock-rs
+          ttyper
 
-        # TUI utilities
-        gum
+          # TUI utilities
+          gum
 
-        # container tools
-        lazydocker
-        docker-compose
-        kubernetes-helm
-        kubectl
-        kubectx
-      ];
+          # container tools
+          lazydocker
+          docker-compose
+          kubernetes-helm
+          kubectl
+          kubectx
+        ];
     };
   };
 }
