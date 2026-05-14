@@ -97,20 +97,6 @@ let
   };
   smortressModels = [
     {
-      id = "gemma-4-26b";
-      name = "Gemma 4 26B";
-      reasoning = false;
-      input = [ "text" ];
-      contextWindow = 131072;
-      maxTokens = 8192;
-      cost = {
-        input = 0;
-        output = 0;
-        cacheRead = 0;
-        cacheWrite = 0;
-      };
-    }
-    {
       id = "qwen3.6-27b";
       name = "Qwen 3.6 27B";
       reasoning = false;

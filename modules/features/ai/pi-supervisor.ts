@@ -207,7 +207,7 @@ function drainResponseHandlers(child: RpcChild, reason: string): void {
 }
 
 function spawnRpcChild(name: string, task: string, cwd: string, sessionDir: string): RpcChild {
-  const model = process.env.OPENAI_MODEL ?? "gemma-4-26b";
+  const model = process.env.OPENAI_MODEL ?? "qwen3.6-27b";
   const baseUrl = process.env.OPENAI_HOST ?? "http://smortress:8080";
   const args = [
     "--mode", "rpc",
@@ -381,15 +381,6 @@ export default async function supervisorExtension(pi: ExtensionAPI) {
       maxTokensField: "max_tokens",
     },
     models: [
-      {
-        id: "gemma-4-26b",
-        name: "Gemma 4 26B",
-        reasoning: false,
-        input: ["text"],
-        contextWindow: 131072,
-        maxTokens: 8192,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      },
       {
         id: "qwen3.6-27b",
         name: "Qwen 3.6 27B",
@@ -632,7 +623,7 @@ export default async function supervisorExtension(pi: ExtensionAPI) {
       }
 
       const model = process.env.OPENAI_MODEL;
-      checks.push(model ? `[ok] OPENAI_MODEL=${model}` : `[WARN] OPENAI_MODEL not set, defaulting to gemma-4-26b`);
+      checks.push(model ? `[ok] OPENAI_MODEL=${model}` : `[WARN] OPENAI_MODEL not set, defaulting to qwen3.6-27b`);
 
       try {
         const testFile = resolve(sessionsDir, ".health-check");

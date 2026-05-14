@@ -58,7 +58,6 @@
         st = "ssh smores@(tailscale-hosts | fzf) -t fish";
 
         s = "goose session";
-        sq = "GOOSE_MODEL=${config.dotfiles.altModel} goose session";
       };
 
       interactiveShellInit = ''

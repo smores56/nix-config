@@ -8,10 +8,6 @@ let
   cfg = config.dotfiles;
   models = {
     ${cfg.defaultModel} = {
-      repo = "bartowski/google_gemma-4-26B-A4B-it-GGUF";
-      file = "google_gemma-4-26B-A4B-it-Q4_K_M.gguf";
-    };
-    ${cfg.altModel} = {
       repo = "unsloth/Qwen3.6-27B-GGUF";
       file = "Qwen3.6-27B-Q4_K_M.gguf";
     };
@@ -42,6 +38,10 @@ in
         "99"
         "-c"
         "131072"
+        "--cache-type-k"
+        "q4_0"
+        "--cache-type-v"
+        "q4_0"
       ];
     };
 
