@@ -174,7 +174,7 @@ in
 
     sessionVariables = {
       OPENAI_HOST = smortressBaseUrl;
-      GOOSE_CONTEXT_LIMIT = "32768";
+      GOOSE_CONTEXT_LIMIT = "131072";
       OPENAI_MODEL = cfg.defaultModel;
       PI_SMORTRESS_API_KEY = "not-needed";
       GOOSE_DISABLE_KEYRING = "true";
