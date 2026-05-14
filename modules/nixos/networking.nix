@@ -13,8 +13,6 @@ in
     enable = true;
     openFirewall = true;
     useRoutingFeatures = "client";
-    authKeyFile = cfg.tailscaleAuthKeyFile;
-    extraUpFlags = lib.optionals cfg.exposeSsh [ "--ssh" ];
     extraSetFlags = lib.optionals cfg.exposeSsh [ "--ssh" ];
   };
 

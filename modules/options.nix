@@ -90,11 +90,6 @@ in
       type = lib.types.bool;
       default = false;
     };
-    tailscaleAuthKeyFile = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
-      default = null;
-      description = "Runtime path to a Tailscale auth key file for NixOS auto-join.";
-    };
     fingerprint = lib.mkOption {
       type = lib.types.bool;
       default = false;
