@@ -6,11 +6,9 @@
 }:
 let
   cfg = config.dotfiles;
-  models = {
-    ${cfg.defaultModel} = {
-      repo = "unsloth/Qwen3.6-27B-GGUF";
-      file = "Qwen3.6-27B-Q4_K_M.gguf";
-    };
+  model = {
+    repo = "unsloth/Qwen3.6-27B-GGUF";
+    file = "Qwen3.6-27B-Q4_K_M.gguf";
   };
 in
 {
@@ -28,12 +26,13 @@ in
       host = "0.0.0.0";
       port = 8080;
       openFirewall = false;
-      modelsPreset = lib.mapAttrs (name: m: {
-        alias = name;
-        hf-repo = m.repo;
-        hf-file = m.file;
-      }) models;
       extraFlags = [
+        "--alias"
+        cfg.defaultModel
+        "--hf-repo"
+        model.repo
+        "--hf-file"
+        model.file
         "-ngl"
         "99"
         "-c"
