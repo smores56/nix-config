@@ -1,4 +1,9 @@
-{ config, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
   cfg = config.dotfiles;
   inherit (cfg) branchPrefix;
@@ -16,33 +21,33 @@ let
     exec ${pkgs.nodejs}/bin/npx "$@"
   '';
 
-  ticketSection =
-    if cfg.ticketPrefix != null then
-      ''
-        - Branch format: `${branchPrefix}/${cfg.ticketPrefix}-<ticket-number>-<kebab-slug>`
-        - Example: `${branchPrefix}/${cfg.ticketPrefix}-12345-fix-auth-flow`
-        - Every change must reference a ${cfg.ticketPrefix} Linear ticket
-        - To create a ticket: `linear issue create -t "Title" --team ${cfg.ticketPrefix} --assignee self --start`
-        - To list your tickets: `linear issue mine`
-        - To view a ticket: `linear issue view ${cfg.ticketPrefix}-<number>`
-        - Create worktrees with gwq: `gwq add -b ${branchPrefix}/${cfg.ticketPrefix}-<ticket-number>-<kebab-slug>`
-        - Do NOT use `git worktree add` or Claude's built-in EnterWorktree — always use `gwq add -b`
-        - Worktrees are stored in ~/dev/worktrees/, organized by repo URL path
-        - List worktrees for current repo: `gwq list`
-        - List all worktrees: `gwq list -g`
-        - Remove a worktree: `gwq remove <path>`
-      ''
-    else
-      ''
-        - Branch format: `${branchPrefix}/<kebab-slug>`
-        - Example: `${branchPrefix}/fix-auth-flow`
-        - Create worktrees with gwq: `gwq add -b ${branchPrefix}/<kebab-slug>`
-        - Do NOT use `git worktree add` or Claude's built-in EnterWorktree — always use `gwq add -b`
-        - Worktrees are stored in ~/dev/worktrees/, organized by repo URL path
-        - List worktrees for current repo: `gwq list`
-        - List all worktrees: `gwq list -g`
-        - Remove a worktree: `gwq remove <path>`
-      '';
+  workBranchWorkflow = ''
+    - Branch format: `${branchPrefix}/${cfg.ticketPrefix}-<ticket-number>-<kebab-slug>`
+    - Example: `${branchPrefix}/${cfg.ticketPrefix}-12345-fix-auth-flow`
+    - Every change must reference a ${cfg.ticketPrefix} Linear ticket
+    - To create a ticket: `linear issue create -t "Title" --team ${cfg.ticketPrefix} --assignee self --start`
+    - To list your tickets: `linear issue mine`
+    - To view a ticket: `linear issue view ${cfg.ticketPrefix}-<number>`
+    - Create worktrees with gwq: `gwq add -b ${branchPrefix}/${cfg.ticketPrefix}-<ticket-number>-<kebab-slug>`
+    - Do NOT use `git worktree add` or Claude's built-in EnterWorktree — always use `gwq add -b`
+    - Worktrees are stored in ~/dev/worktrees/, organized by repo URL path
+    - List worktrees for current repo: `gwq list`
+    - List all worktrees: `gwq list -g`
+    - Remove a worktree: `gwq remove <path>`
+  '';
+
+  personalBranchWorkflow = ''
+    - Branch format: `${branchPrefix}/<kebab-slug>`
+    - Example: `${branchPrefix}/fix-auth-flow`
+    - Create worktrees with gwq: `gwq add -b ${branchPrefix}/<kebab-slug>`
+    - Do NOT use `git worktree add` or Claude's built-in EnterWorktree — always use `gwq add -b`
+    - Worktrees are stored in ~/dev/worktrees/, organized by repo URL path
+    - List worktrees for current repo: `gwq list`
+    - List all worktrees: `gwq list -g`
+    - Remove a worktree: `gwq remove <path>`
+  '';
+
+  branchWorkflow = if cfg.ticketPrefix != null then workBranchWorkflow else personalBranchWorkflow;
 
   aiHints = ''
     # Code Style
@@ -81,11 +86,24 @@ let
     - ALL worktrees should be created in ~/dev/worktrees/ (managed by gwq, organized by repo URL path)
     - Always commit and push in a single call — never commit without immediately pushing
     - Local-only commits hide completed work
-    ${ticketSection}
+    ${branchWorkflow}
     # Communication
     - Be concise — no verbose explanations unless asked
     - Non-interactive CLI commands only (flags over interactive prompts)
   '';
+
+  ticketLikeTerms = [
+    "ticket"
+    "tickets"
+    "issue"
+    "issues"
+    "linear"
+    "jira"
+    "work item"
+    "work items"
+  ];
+  containsTicketLikeTerm =
+    text: builtins.any (term: lib.hasInfix term (lib.toLower text)) ticketLikeTerms;
 
   smortressBaseUrl = "http://smortress:8080";
   smortressCompat = {
@@ -150,6 +168,13 @@ let
   };
 in
 {
+  assertions = [
+    {
+      assertion = cfg.ticketPrefix != null || !containsTicketLikeTerm aiHints;
+      message = "Non-work CLAUDE.md must not mention tickets, issues, Linear, Jira, or work items.";
+    }
+  ];
+
   home = {
     packages = [
       pkgs.goose-cli
