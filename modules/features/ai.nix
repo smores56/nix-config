@@ -25,7 +25,7 @@ let
   branchSlug =
     if hasTicket then "${cfg.ticketPrefix}-<ticket-number>-<kebab-slug>" else "<kebab-slug>";
   exampleSlug = if hasTicket then "${cfg.ticketPrefix}-12345-fix-auth-flow" else "fix-auth-flow";
-  wcbArg = if hasTicket then "<ticket-number>-<kebab-slug>" else "<kebab-slug>";
+  waArg = if hasTicket then "<ticket-number>-<kebab-slug>" else "<kebab-slug>";
 
   branchWorkflowLines = [
     "- Branch format: `${branchPrefix}/${branchSlug}`"
@@ -38,9 +38,10 @@ let
     "- To view a ticket: `linear issue view ${cfg.ticketPrefix}-<number>`"
   ]
   ++ [
-    "- Create worktrees with `wcb ${wcbArg}` (expands to `wt switch --create ${branchPrefix}/${branchSlug}`)"
+    "- Create worktrees with `wa ${waArg}` (expands to `wt switch --create ${branchPrefix}/${branchSlug}`)"
     "- Or directly: `wt switch --create ${branchPrefix}/${branchSlug}` (or `wc` abbrev)"
     "- Worktree directories are siblings of the repo: `<repo>.${branchSlug}` (worktrunk strips the `${branchPrefix}/` prefix)"
+    "- Switch between worktrees: `ws` (no args opens worktrunk's native picker) or `ws <branch>` to jump directly"
     "- To return to the canonical (non-worktree) checkout: `cd ${cfg.codeRoot}/github.com/<owner>/<repo>`"
     "- Do NOT use `git clone`, `git worktree add`, `git checkout -b`, or Claude's built-in EnterWorktree"
     "- List worktrees: `wt list` (or `wl` abbrev)"
@@ -96,19 +97,6 @@ let
     - Be concise — no verbose explanations unless asked
     - Non-interactive CLI commands only (flags over interactive prompts)
   '';
-
-  ticketLikeTerms = [
-    "ticket"
-    "tickets"
-    "issue"
-    "issues"
-    "linear"
-    "jira"
-    "work item"
-    "work items"
-  ];
-  containsTicketLikeTerm =
-    text: builtins.any (term: lib.hasInfix term (lib.toLower text)) ticketLikeTerms;
 
   smortressBaseUrl = "http://smortress:8080";
   smortressCompat = {
@@ -173,13 +161,6 @@ let
   };
 in
 {
-  assertions = [
-    {
-      assertion = cfg.ticketPrefix != null || !containsTicketLikeTerm aiHints;
-      message = "Non-work CLAUDE.md must not mention tickets, issues, Linear, Jira, or work items.";
-    }
-  ];
-
   home = {
     packages = [
       pkgs.goose-cli

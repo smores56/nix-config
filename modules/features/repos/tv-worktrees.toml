@@ -1,9 +1,0 @@
-[metadata]
-name = "worktrees"
-description = "Worktrees of the current repository (excludes bare entries)"
-
-[source]
-command = "git worktree list --porcelain | awk '/^worktree /{ if (p) print p; sub(/^worktree /,\"\",$0); p=$0; next } /^bare$/{ p=\"\" } END{ if (p) print p }'"
-
-[preview]
-command = "git -C \"{}\" log --oneline --decorate --graph -20 --color=always"

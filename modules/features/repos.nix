@@ -6,7 +6,7 @@
 }:
 let
   cfg = config.dotfiles;
-  wcbPrefix =
+  waPrefix =
     "${cfg.branchPrefix}/" + lib.optionalString (cfg.ticketPrefix != null) "${cfg.ticketPrefix}-";
 in
 {
@@ -20,13 +20,12 @@ in
   home.file = {
     ".config/worktrunk/config.toml".source = ./repos/worktrunk.toml;
     ".config/television/cable/repos.toml".source = ./repos/tv-repos.toml;
-    ".config/television/cable/worktrees.toml".source = ./repos/tv-worktrees.toml;
   };
 
   programs.fish = {
     interactiveShellInit = ''
       wt config shell init fish | source
-      abbr -a wcb --set-cursor "wt switch --create ${wcbPrefix}%"
+      abbr -a wa --set-cursor "wt switch --create ${waPrefix}%"
     '';
 
     shellAbbrs = {
@@ -37,21 +36,12 @@ in
       wl = "wt list";
     };
 
-    functions = {
-      r = {
-        description = "Fuzzy-pick a ghq-managed repo and cd in (interactive)";
-        body = ''
-          set -l selected (tv repos)
-          test -n "$selected"; and cd -- "$selected"
-        '';
-      };
-      w = {
-        description = "Fuzzy-pick a worktree of the current repo and cd in (interactive)";
-        body = ''
-          set -l selected (tv worktrees)
-          test -n "$selected"; and cd -- "$selected"
-        '';
-      };
+    functions.r = {
+      description = "Fuzzy-pick a ghq-managed repo and cd in (interactive)";
+      body = ''
+        set -l selected (tv repos)
+        test -n "$selected"; and cd -- "$selected"
+      '';
     };
   };
 }
