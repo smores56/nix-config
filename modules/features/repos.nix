@@ -20,6 +20,7 @@ in
   home.file = {
     ".config/worktrunk/config.toml".source = ./repos/worktrunk.toml;
     ".config/television/cable/repos.toml".source = ./repos/tv-repos.toml;
+    ".config/television/cable/worktrees.toml".source = ./repos/tv-worktrees.toml;
   };
 
   programs.fish = {
@@ -30,7 +31,7 @@ in
 
     shellAbbrs = {
       r = "tv repos | read -l s; and c $s";
-      ws = "wt switch";
+      w = "tv worktrees | read -l s; and c $s";
       wc = "wt switch --create";
       wm = "wt merge";
       wx = "wt remove";

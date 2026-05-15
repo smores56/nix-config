@@ -84,8 +84,8 @@ new sibling at `<repo>.main`.
 
 | Abbrev / function | Expands to | When to use |
 |---|---|---|
-| `r` | `tv repos` picker → `cd` | Fuzzy-jump between repos (interactive) |
-| `ws` | `wt switch` | No args opens worktrunk's native picker; `ws <branch>` jumps directly |
+| `r` | `tv repos | read -l s; and c $s` | Fuzzy-jump between repos (interactive, via tv channel + zoxide) |
+| `w` | `tv worktrees | read -l s; and c $s` | Fuzzy-jump between worktrees of the current repo |
 | `wc <branch>` | `wt switch --create <branch>` | Create a new worktree on a new branch |
 | `wa <slug>` | `wt switch --create <branchPrefix>/[<ticketPrefix>-]<slug>` | "Worktree add" — same as `wc` but prefills the configured prefixes |
 | `wl` | `wt list` | List worktrees of the current repo |
