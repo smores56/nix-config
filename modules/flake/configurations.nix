@@ -7,6 +7,7 @@ let
     paneru
     stylix
     ;
+  inherit (inputs.nixpkgs) lib;
 
   importTree = path: (inputs.import-tree path).imports;
 
@@ -71,7 +72,9 @@ let
             sevenqlLspPath = null;
           } args;
           home.username = username;
-          home.homeDirectory = args.homeDirectory or "/home/${username}";
+          home.homeDirectory =
+            args.homeDirectory
+              or (if lib.hasSuffix "-darwin" system then "/Users/${username}" else "/home/${username}");
         }
       ];
     };
@@ -141,7 +144,6 @@ in
         displayManager = "osx";
         windowManager = "aerospace";
         username = "smohr";
-        homeDirectory = "/Users/smohr";
         system = "aarch64-darwin";
         terminalFontSize = 14;
         email = "sam.mohr@sevenai.com";
