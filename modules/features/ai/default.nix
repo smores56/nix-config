@@ -91,6 +91,7 @@ let
     - Use `lazygit` from any worktree; it reads `git worktree list` natively
     - Always commit and push in a single call — never commit without immediately pushing
     - Local-only commits hide completed work
+    - Do not add `Co-Authored-By` trailers to commit messages (no AI attribution)
     ${branchWorkflow}
 
     # Communication
