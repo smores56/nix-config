@@ -46,6 +46,28 @@ is_nonempty_dir() {
   [ -d "$1" ] && [ -n "$(find "$1" -mindepth 1 -maxdepth 1 -print -quit)" ]
 }
 
+has_required_scopes() {
+  local needed="$1"
+  local current
+  current="$(gh api -i user 2>/dev/null | awk '
+    tolower($0) ~ /^x-oauth-scopes:/ {
+      sub(/^[Xx]-[Oo]auth-[Ss]copes:[[:space:]]*/, "")
+      gsub(/[[:space:]]/, "")
+      print
+      exit
+    }
+  ')"
+
+  local scope
+  local IFS=','
+  for scope in $needed; do
+    case ",${current}," in
+      *",${scope},"*) ;;
+      *) return 1 ;;
+    esac
+  done
+}
+
 contains_line() {
   local needle="$1"
   local lines="$2"
@@ -138,7 +160,7 @@ fi
 
 # ── Phase 5: GitHub authentication ────────────────────────────────
 
-GH_KEY_SCOPES="read:public_key,write:public_key,read:ssh_signing_key,write:ssh_signing_key"
+GH_KEY_SCOPES="write:public_key,write:ssh_signing_key"
 
 if gh auth token --hostname "$GITHUB_HOST" --user "$GITHUB_USER" >/dev/null 2>&1; then
   skip "Already authenticated with GitHub as ${GITHUB_USER}"
@@ -160,9 +182,13 @@ ACTIVE_GITHUB_USER="$(gh api user --jq .login 2>/dev/null || true)"
 [ "$ACTIVE_GITHUB_USER" = "$GITHUB_USER" ] \
   || err "gh is authenticated as '${ACTIVE_GITHUB_USER:-unknown}', expected '${GITHUB_USER}'. Unset GH_TOKEN/GITHUB_TOKEN or authenticate as ${GITHUB_USER}."
 
-info "Ensuring GitHub auth has SSH key management scopes..."
-gh auth refresh --hostname "$GITHUB_HOST" --scopes "$GH_KEY_SCOPES"
-ok "GitHub auth scopes ready"
+if has_required_scopes "$GH_KEY_SCOPES"; then
+  skip "GitHub auth already has required scopes (${GH_KEY_SCOPES})"
+else
+  info "Adding missing GitHub auth scopes (${GH_KEY_SCOPES})..."
+  gh auth refresh --hostname "$GITHUB_HOST" --scopes "$GH_KEY_SCOPES"
+  ok "GitHub auth scopes ready"
+fi
 
 SSH_KEY_BLOB="$(awk '{print $2}' "${SSH_KEY}.pub")"
 if gh api user/keys --jq '.[].key' | grep -qF "$SSH_KEY_BLOB"; then
