@@ -3,7 +3,7 @@ name = "repos"
 description = "ghq-managed repositories (filters out sibling worktrees)"
 
 [source]
-command = "ghq list -p | while read -r p; do [ -d \"$p/.git\" ] && printf '%s\\n' \"$p\"; done"
+command = "sh -c 'ghq list -p | while read -r p; do [ -d \"$p/.git\" ] && echo \"$p\"; done'"
 
 [preview]
 command = "git -C \"{}\" log --oneline --decorate --graph -20 --color=always"
