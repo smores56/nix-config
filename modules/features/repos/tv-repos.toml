@@ -4,6 +4,7 @@ description = "ghq-managed repositories (filters out sibling worktrees)"
 
 [source]
 command = "sh -c 'ghq list -p | while read -r p; do [ -d \"$p/.git\" ] && echo \"$p\"; done'"
+display = "{split:/:4..}"
 
 [preview]
 command = "git -C \"{}\" log --oneline --decorate --graph -20 --color=always"
