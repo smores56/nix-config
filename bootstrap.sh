@@ -7,7 +7,7 @@ set -euo pipefail
 #   curl -fsSL bootstrap.sammohr.dev | bash
 #
 # Override auto-detected user/host:
-#   curl -fsSL bootstrap.sammohr.dev | env BOOTSTRAP_USER=smohr BOOTSTRAP_HOST=smoreswork bash
+#   curl -fsSL bootstrap.sammohr.dev | env BOOTSTRAP_USER=smores BOOTSTRAP_HOST=smorespro bash
 #
 # Override repository root:
 #   curl -fsSL bootstrap.sammohr.dev | env BOOTSTRAP_CODE_ROOT="$HOME/code" bash

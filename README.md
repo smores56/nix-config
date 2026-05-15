@@ -43,7 +43,7 @@ curl -fsSL bootstrap.sammohr.dev | bash
 Override auto-detected username or hostname:
 
 ```sh
-curl -fsSL bootstrap.sammohr.dev | env BOOTSTRAP_USER=smohr BOOTSTRAP_HOST=smoreswork bash
+curl -fsSL bootstrap.sammohr.dev | env BOOTSTRAP_USER=smores BOOTSTRAP_HOST=smorespro bash
 ```
 
 The bootstrap GitHub account defaults to `smores56`. Override it only when
