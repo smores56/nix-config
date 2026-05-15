@@ -157,27 +157,6 @@
         "type": "github"
       }
     },
-    "git-repo-manager": {
-      "inputs": {
-        "nixpkgs": [
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1778697779,
-        "narHash": "sha256-s/KzDCXOy8j8ZimBcbWr0nHa2FQVv/foZtJS2lTCVPA=",
-        "owner": "hakoerber",
-        "repo": "git-repo-manager",
-        "rev": "1afe75d86f47a34f79c8fc82abf8e979e2bfeb13",
-        "type": "github"
-      },
-      "original": {
-        "owner": "hakoerber",
-        "ref": "v0.9.1",
-        "repo": "git-repo-manager",
-        "type": "github"
-      }
-    },
     "gnome-shell": {
       "flake": false,
       "locked": {
@@ -496,7 +475,6 @@
     "root": {
       "inputs": {
         "flake-parts": "flake-parts",
-        "git-repo-manager": "git-repo-manager",
         "home-manager": "home-manager",
         "import-tree": "import-tree",
         "niri": "niri",

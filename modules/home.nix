@@ -26,7 +26,7 @@ in
       config.dotfiles.fontPackage
     ];
     file.".config/home-manager" = {
-      source = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/code/smores56/nix-config/main";
+      source = config.lib.file.mkOutOfStoreSymlink "${cfg.codeRoot}/github.com/smores56/nix-config";
       force = true;
     };
 

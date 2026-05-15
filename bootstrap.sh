@@ -19,10 +19,7 @@ REPO_URL_SSH="git@github.com:${REPO_OWNER}/${REPO_NAME}.git"
 GITHUB_HOST="github.com"
 GITHUB_USER="${BOOTSTRAP_GITHUB_USER:-${REPO_OWNER}}"
 CODE_ROOT="${BOOTSTRAP_CODE_ROOT:-${HOME}/code}"
-REPO_CONTAINER_DIR="${CODE_ROOT}/${REPO_OWNER}/${REPO_NAME}"
-REPO_WORKTREE_NAME="main"
-REPO_WORKTREE_DIR="${REPO_CONTAINER_DIR}/${REPO_WORKTREE_NAME}"
-REPO_DIR="${REPO_WORKTREE_DIR}"
+REPO_DIR="${CODE_ROOT}/${GITHUB_HOST}/${REPO_OWNER}/${REPO_NAME}"
 
 USERNAME="${BOOTSTRAP_USER:-$(whoami)}"
 HOSTNAME="${BOOTSTRAP_HOST:-$(hostname -s 2>/dev/null || hostname)}"
@@ -72,55 +69,19 @@ has_nixos_config() {
   contains_line "$HOSTNAME" "$NIXOS_CONFIGS"
 }
 
-resolve_existing_repo_dir() {
-  if is_git_checkout "$REPO_CONTAINER_DIR"; then
-    REPO_DIR="$REPO_CONTAINER_DIR"
-    return 0
-  fi
-
-  if [ ! -d "${REPO_CONTAINER_DIR}/.git-main-working-tree" ]; then
-    return 1
-  fi
-
-  if is_git_checkout "$REPO_WORKTREE_DIR"; then
-    REPO_DIR="$REPO_WORKTREE_DIR"
-    return 0
-  fi
-
-  local child
-  local found=""
-  local count=0
-
-  while IFS= read -r child; do
-    if is_git_checkout "$child"; then
-      found="$child"
-      count=$((count + 1))
-    fi
-  done < <(find "$REPO_CONTAINER_DIR" -mindepth 1 -maxdepth 1 -type d -print)
-
-  if [ "$count" -eq 1 ]; then
-    REPO_DIR="$found"
-    return 0
-  fi
-
-  if [ "$count" -eq 0 ]; then
-    err "GRM repository exists at ${REPO_CONTAINER_DIR}, but no worktrees were found. Create one with: cd ${REPO_CONTAINER_DIR} && grm wt add ${REPO_WORKTREE_NAME} --track origin/${REPO_WORKTREE_NAME}"
-  fi
-
-  err "GRM repository at ${REPO_CONTAINER_DIR} has multiple worktrees and no ${REPO_WORKTREE_NAME}/ checkout. Create ${REPO_WORKTREE_NAME} or point BOOTSTRAP_CODE_ROOT at a clean location."
+validate_origin() {
+  local actual
+  actual="$(git -C "$1" remote get-url origin 2>/dev/null || true)"
+  case "$actual" in
+    "$REPO_URL_HTTPS"|"$REPO_URL_SSH") return 0 ;;
+    "") err "Existing checkout at ${1} has no 'origin' remote. Remove or rename it, or set BOOTSTRAP_CODE_ROOT to a clean directory." ;;
+    *)  err "Existing checkout at ${1} has unexpected origin '${actual}' (expected ${REPO_URL_HTTPS} or ${REPO_URL_SSH}). Remove or rename it, or set BOOTSTRAP_CODE_ROOT to a clean directory." ;;
+  esac
 }
 
 clone_repo() {
-  local git_dir="${REPO_CONTAINER_DIR}/.git-main-working-tree"
-
-  mkdir -p "$REPO_CONTAINER_DIR"
-  nix-shell -p git --run "git clone --bare '${REPO_URL_HTTPS}' '${git_dir}'"
-  nix-shell -p git --run "git --git-dir='${git_dir}' config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'"
-  nix-shell -p git --run "git --git-dir='${git_dir}' fetch origin"
-  nix-shell -p git --run "git --git-dir='${git_dir}' remote set-head origin --auto"
-  nix-shell -p git --run "git --git-dir='${git_dir}' branch --set-upstream-to='origin/${REPO_WORKTREE_NAME}' '${REPO_WORKTREE_NAME}'"
-  nix-shell -p git --run "git --git-dir='${git_dir}' worktree add '${REPO_WORKTREE_DIR}' '${REPO_WORKTREE_NAME}'"
-  REPO_DIR="$REPO_WORKTREE_DIR"
+  mkdir -p "$(dirname "$REPO_DIR")"
+  GHQ_ROOT="$CODE_ROOT" nix-shell -p ghq --run "ghq get '${REPO_URL_HTTPS}'"
 }
 
 # ── Phase 0: Validate ─────────────────────────────────────────────
@@ -133,15 +94,15 @@ export NIX_CONFIG="experimental-features = nix-command flakes"
 
 info "Bootstrapping ${CONFIG_NAME}"
 
-# ── Phase 1: Clone or resolve repository ──────────────────────────
+# ── Phase 1: Clone repository via ghq ─────────────────────────────
 
-if resolve_existing_repo_dir; then
-  skip "Repository already available at ${REPO_DIR}"
-elif is_nonempty_dir "$REPO_CONTAINER_DIR"; then
-  err "${REPO_CONTAINER_DIR} already exists but is not a Git checkout or GRM repository. Move it aside or set BOOTSTRAP_CODE_ROOT to a clean directory."
+if is_git_checkout "$REPO_DIR"; then
+  validate_origin "$REPO_DIR"
+  skip "Repository already at ${REPO_DIR}"
+elif is_nonempty_dir "$REPO_DIR"; then
+  err "${REPO_DIR} exists but is not a Git checkout. Remove or rename it, or set BOOTSTRAP_CODE_ROOT to a clean directory."
 else
-  info "Cloning repository via HTTPS into GRM-compatible layout..."
-  mkdir -p "$(dirname "${REPO_CONTAINER_DIR}")"
+  info "Cloning repository via ghq into ${REPO_DIR}..."
   clone_repo
   ok "Repository cloned"
 fi

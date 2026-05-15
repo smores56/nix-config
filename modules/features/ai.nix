@@ -21,31 +21,33 @@ let
     exec ${pkgs.nodejs}/bin/npx "$@"
   '';
 
-  workBranchWorkflow = ''
-    - Branch format: `${branchPrefix}/${cfg.ticketPrefix}-<ticket-number>-<kebab-slug>`
-    - Example: `${branchPrefix}/${cfg.ticketPrefix}-12345-fix-auth-flow`
-    - Every change must reference a ${cfg.ticketPrefix} Linear ticket
-    - To create a ticket: `linear issue create -t "Title" --team ${cfg.ticketPrefix} --assignee self --start`
-    - To list your tickets: `linear issue mine`
-    - To view a ticket: `linear issue view ${cfg.ticketPrefix}-<number>`
-    - Create worktrees with GRM from the repo root: `grm wt add ${branchPrefix}/${cfg.ticketPrefix}-<ticket-number>-<kebab-slug> --track origin/${branchPrefix}/${cfg.ticketPrefix}-<ticket-number>-<kebab-slug>`
-    - Do NOT use `git clone`, `git worktree add`, `git checkout -b`, or Claude's built-in EnterWorktree — always use `grm`
-    - Worktrees are stored inside the GRM repo directory alongside `.git-main-working-tree/`
-    - List worktrees from the repo root: `grm wt status`
-    - Remove a worktree: `grm wt delete <worktree>`
-  '';
+  hasTicket = cfg.ticketPrefix != null;
+  branchSlug =
+    if hasTicket then "${cfg.ticketPrefix}-<ticket-number>-<kebab-slug>" else "<kebab-slug>";
+  exampleSlug = if hasTicket then "${cfg.ticketPrefix}-12345-fix-auth-flow" else "fix-auth-flow";
+  wcbArg = if hasTicket then "<ticket-number>-<kebab-slug>" else "<kebab-slug>";
 
-  personalBranchWorkflow = ''
-    - Branch format: `${branchPrefix}/<kebab-slug>`
-    - Example: `${branchPrefix}/fix-auth-flow`
-    - Create worktrees with GRM from the repo root: `grm wt add ${branchPrefix}/<kebab-slug> --track origin/${branchPrefix}/<kebab-slug>`
-    - Do NOT use `git clone`, `git worktree add`, `git checkout -b`, or Claude's built-in EnterWorktree — always use `grm`
-    - Worktrees are stored inside the GRM repo directory alongside `.git-main-working-tree/`
-    - List worktrees from the repo root: `grm wt status`
-    - Remove a worktree: `grm wt delete <worktree>`
-  '';
+  branchWorkflowLines = [
+    "- Branch format: `${branchPrefix}/${branchSlug}`"
+    "- Example: `${branchPrefix}/${exampleSlug}`"
+  ]
+  ++ lib.optionals hasTicket [
+    "- Every change must reference a ${cfg.ticketPrefix} Linear ticket"
+    "- To create a ticket: `linear issue create -t \"Title\" --team ${cfg.ticketPrefix} --assignee self --start`"
+    "- To list your tickets: `linear issue mine`"
+    "- To view a ticket: `linear issue view ${cfg.ticketPrefix}-<number>`"
+  ]
+  ++ [
+    "- Create worktrees with `wcb ${wcbArg}` (expands to `wt switch --create ${branchPrefix}/${branchSlug}`)"
+    "- Or directly: `wt switch --create ${branchPrefix}/${branchSlug}` (or `wc` abbrev)"
+    "- Worktree directories are siblings of the repo: `<repo>.${branchSlug}` (worktrunk strips the `${branchPrefix}/` prefix)"
+    "- To return to the canonical (non-worktree) checkout: `cd ${cfg.codeRoot}/github.com/<owner>/<repo>`"
+    "- Do NOT use `git clone`, `git worktree add`, `git checkout -b`, or Claude's built-in EnterWorktree"
+    "- List worktrees: `wt list` (or `wl` abbrev)"
+    "- Remove a worktree: `wt remove` (or `wx` abbrev) — from inside it, or with explicit `<branch>`"
+  ];
 
-  branchWorkflow = if cfg.ticketPrefix != null then workBranchWorkflow else personalBranchWorkflow;
+  branchWorkflow = lib.concatStringsSep "\n" branchWorkflowLines;
 
   aiHints = ''
     # Code Style
@@ -80,17 +82,16 @@ let
     - Match test scope to the change being made
 
     # Git Workflow
-    - ALL repos live under `~/code/` and are managed by Git Repo Manager (`grm`)
-    - Repo inventory is local state in `~/.config/grm/repos.toml`; do not edit config-nix just to add or remove a cloned repo
-    - To initialize the local repo inventory: `grm-init-repos`
-    - To list existing local repos as GRM config: `grm repos find local ~/code --format toml`
-    - To clone/sync repos from the local inventory: `grm repos sync config --config ~/.config/grm/repos.toml`
-    - To inspect configured repos: `grm repos status --config ~/.config/grm/repos.toml`
-    - ALL worktrees are managed by GRM (`grm wt`) inside the repo root
-    - Use `g`/`grm-lazygit` to open LazyGit from either a worktree or a GRM repo root; do not create or delete worktrees from LazyGit
+    - ALL repos live under `${cfg.codeRoot}/` and are managed by `ghq` (layout: `${cfg.codeRoot}/<host>/<owner>/<repo>`)
+    - Clone repos: `ghq get <owner/repo-or-url>`. Never `git clone` directly
+    - Find repos: `ghq list -p | grep <name>` (the `r` fish function is interactive-only)
+    - ALL worktrees follow the siblings pattern via `worktrunk` (`wt`)
+    - Worktree of branch `${branchPrefix}/X` lives at `<repo>.X` (sibling of the main checkout; the `${branchPrefix}/` prefix is stripped from the directory name)
+    - Use `lazygit` from any worktree; it reads `git worktree list` natively
     - Always commit and push in a single call — never commit without immediately pushing
     - Local-only commits hide completed work
     ${branchWorkflow}
+
     # Communication
     - Be concise — no verbose explanations unless asked
     - Non-interactive CLI commands only (flags over interactive prompts)

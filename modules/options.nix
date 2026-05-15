@@ -72,9 +72,14 @@ in
       default = "sam@sammohr.dev";
     };
     branchPrefix = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
+      type = lib.types.str;
       default = "smores";
-      description = "Prefix for git branch names (e.g. 'sam.mohr'). Null for no prefix.";
+      description = "Prefix for git branch names (e.g. 'sam.mohr').";
+    };
+    codeRoot = lib.mkOption {
+      type = lib.types.str;
+      default = "${config.home.homeDirectory}/code";
+      description = "Root directory under which all git repos live (ghq's root). Layout: <codeRoot>/<host>/<owner>/<repo>.";
     };
     ticketPrefix = lib.mkOption {
       type = lib.types.nullOr lib.types.str;

@@ -53,20 +53,17 @@ intentionally registering keys with a different account:
 curl -fsSL bootstrap.sammohr.dev | env BOOTSTRAP_GITHUB_USER=smores56 bash
 ```
 
-The script creates or reuses the repo under `~/code/smores56/nix-config`, runs
-Home Manager from the resolved checkout, sets up an SSH key, authenticates
-GitHub with device flow, switches the repo remote to SSH, and runs the NixOS
-rebuild when the current hostname has a `nixosConfiguration`.
+The script uses `ghq` to clone the repo into
+`~/code/github.com/smores56/nix-config`, runs Home Manager from that checkout,
+sets up an SSH key, authenticates GitHub with device flow, switches the repo
+remote to SSH, and runs the NixOS rebuild when the current hostname has a
+`nixosConfiguration`.
 
-Home Manager owns `~/.config/home-manager` after the first switch, so subsequent
-`home-manager switch --no-write-lock-file` runs use the Nix-managed link without
-bootstrap needing it up front.
+Home Manager owns `~/.config/home-manager` after the first switch (as a symlink
+to the checkout), so subsequent `home-manager switch --no-write-lock-file` runs
+use the Nix-managed link without bootstrap needing it up front.
 
-By default, fresh clones use a GRM-compatible layout:
-`~/code/smores56/nix-config/.git-main-working-tree` plus the
-`~/code/smores56/nix-config/main` worktree. Existing plain checkouts at
-`~/code/smores56/nix-config` still work. Override the root with
-`BOOTSTRAP_CODE_ROOT`:
+Override the code root with `BOOTSTRAP_CODE_ROOT`:
 
 ```sh
 curl -fsSL bootstrap.sammohr.dev | env BOOTSTRAP_CODE_ROOT="$HOME/code" bash
@@ -74,17 +71,33 @@ curl -fsSL bootstrap.sammohr.dev | env BOOTSTRAP_CODE_ROOT="$HOME/code" bash
 
 ## Repo Management
 
-Repos live under `~/code/<owner>/<repo>`. GRM keeps each repo as a
-`.git-main-working-tree` plus worktrees such as `main/`.
+Repos live under `~/code/<host>/<owner>/<repo>`, managed by [`ghq`](https://github.com/x-motemen/ghq).
+Worktrees use [`worktrunk`](https://github.com/max-sixty/worktrunk) with the
+siblings pattern: a worktree of branch `sam.mohr/foo` of repo
+`~/code/github.com/smores56/nix-config` lives at
+`~/code/github.com/smores56/nix-config.foo` (worktrunk strips the `sam.mohr/`
+prefix via `{{ branch | split('/') | last }}`). To return to the canonical
+checkout, `cd` to the repo directory directly — `wt switch main` would create a
+new sibling at `<repo>.main`.
 
-The machine-local inventory is `~/.config/grm/repos.toml`. Home Manager seeds
-that file with `smores56/nix-config` if it is missing, but the file remains
-editable local state for arbitrary repos. Add and remove other repos directly in
-that TOML file, then sync with:
+### Shell commands
 
-```bash
-grm repos sync config --config ~/.config/grm/repos.toml
-```
+| Abbrev / function | Expands to | When to use |
+|---|---|---|
+| `r` | `tv repos` picker → `cd` | Fuzzy-jump between repos (interactive) |
+| `w` | `tv worktrees` picker → `cd` | Fuzzy-jump between worktrees of the current repo (interactive) |
+| `ws <branch>` | `wt switch <branch>` | Switch to a known worktree by name |
+| `wc <branch>` | `wt switch --create <branch>` | Create a new worktree on a new branch |
+| `wcb <slug>` | `wt switch --create <branchPrefix>/[<ticketPrefix>-]<slug>` | Same as `wc`, but prefills the configured prefixes |
+| `wl` | `wt list` | List worktrees of the current repo |
+| `wm <target>` | `wt merge <target>` | Merge current worktree into target branch |
+| `wx [<branch>]` | `wt remove [<branch>]` | Remove the current worktree (or named one) |
+| `g` | `lazygit` | Open lazygit; it reads worktrees natively |
+
+After bootstrap, the script switches `origin` from HTTPS to SSH. Subsequent
+`ghq get smores56/nix-config` invocations clone via HTTPS by default — if you
+re-clone manually, run `git -C <repo> remote set-url origin git@github.com:smores56/nix-config.git`
+or pass an SSH URL to `ghq get`.
 
 ## NixOS Notes
 

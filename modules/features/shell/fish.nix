@@ -36,11 +36,10 @@
         a = "mkdir -p";
         f = "yazi";
         b = "bat";
-        g = "grm-lazygit";
+        g = "lazygit";
         gs = "gh dash";
         gn = "gh notify";
         gp = "gh pr create";
-        gc = "grm repos sync config --config ~/.config/grm/repos.toml";
         copy = "osc copy";
         paste = "osc paste";
 
