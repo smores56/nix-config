@@ -1,7 +1,4 @@
-{ config, pkgs, ... }:
-let
-  cfg = config.dotfiles;
-in
+{ pkgs, ... }:
 {
   home.packages = [
     pkgs.osc
@@ -46,7 +43,7 @@ in
         copy = "osc copy";
         paste = "osc paste";
 
-        cn = "c ${cfg.codeRoot}/github.com/smores56/nix-config";
+        cn = "c ~/code/github.com/smores56/nix-config";
         hm = "home-manager";
         hs = "home-manager switch --no-write-lock-file";
 
