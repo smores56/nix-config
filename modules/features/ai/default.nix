@@ -89,10 +89,17 @@ let
     - ALL worktrees follow the siblings pattern via `worktrunk` (`wt`)
     - Worktree of branch `${branchPrefix}/X` lives at `<repo>.X` (sibling of the main checkout; the `${branchPrefix}/` prefix is stripped from the directory name)
     - Use `lazygit` from any worktree; it reads `git worktree list` natively
-    - Always commit and push in a single call — never commit without immediately pushing
-    - Local-only commits hide completed work
+    - Always push immediately after committing — never leave local-only commits
     - Do not add `Co-Authored-By` trailers to commit messages (no AI attribution)
     ${branchWorkflow}
+
+    # Commits and PRs
+    - Follow Conventional Commits: <https://www.conventionalcommits.org/en/v1.0.0/>
+    - Types: feat, fix, refactor, chore, docs, test, perf, ci
+    ${if hasTicket
+      then "- Scope is the Linear ticket: `type(${cfg.ticketPrefix}-<number>): description` (e.g. `fix(${cfg.ticketPrefix}-123): resolve token refresh`)"
+      else "- Scope is the affected module or area: `type(scope): description`"}
+    - Applies to both commit messages and PR titles
 
     # Communication
     - Be concise — no verbose explanations unless asked
