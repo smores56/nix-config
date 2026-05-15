@@ -9,16 +9,6 @@ let
   cfg = config.dotfiles;
 in
 {
-  nix.package = pkgs.nix;
-  nix.settings = {
-    warn-dirty = false;
-    accept-flake-config = true;
-    experimental-features = [
-      "nix-command"
-      "flakes"
-    ];
-  };
-
   home = {
     stateVersion = "26.05";
     packages = [
@@ -29,6 +19,11 @@ in
       source = config.lib.file.mkOutOfStoreSymlink "${cfg.codeRoot}/github.com/smores56/nix-config";
       force = true;
     };
+    file.".config/nix/nix.conf".text = ''
+      warn-dirty = false
+      accept-flake-config = true
+      experimental-features = nix-command flakes
+    '';
 
     activation.checkAppManagementPermission = lib.mkIf pkgs.stdenv.isDarwin (
       lib.mkForce {
