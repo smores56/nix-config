@@ -18,9 +18,9 @@ in
   programs.git.settings.ghq.root = cfg.codeRoot;
 
   home.file = {
-    ".config/worktrunk/config.toml".source = ./repos/worktrunk.toml;
-    ".config/television/cable/repos.toml".source = ./repos/tv-repos.toml;
-    ".config/television/cable/worktrees.toml".source = ./repos/tv-worktrees.toml;
+    ".config/worktrunk/config.toml".source = ./worktrunk.toml;
+    ".config/television/cable/repos.toml".source = ./tv-repos.toml;
+    ".config/television/cable/worktrees.toml".source = ./tv-worktrees.toml;
   };
 
   programs.fish = {

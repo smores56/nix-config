@@ -181,7 +181,7 @@ in
       ".goosehints".text = aiHints;
       ".claude/CLAUDE.md".text = aiHints;
       "AGENTS.md".text = aiHints;
-      ".pi/agent/extensions/pi-supervisor.ts".source = ./ai/pi-supervisor.ts;
+      ".pi/agent/extensions/pi-supervisor.ts".source = ./pi-supervisor.ts;
       ".pi/agent/extensions/pi-messenger-swarm.js".text = ''
         export { default } from "${config.home.homeDirectory}/.pi/agent/npm-global/lib/node_modules/pi-messenger-swarm/dist/index.js";
       '';
