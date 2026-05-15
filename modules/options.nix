@@ -81,6 +81,11 @@ in
       default = "${config.home.homeDirectory}/code";
       description = "Root directory under which all git repos live (ghq's root). Layout: <codeRoot>/<host>/<owner>/<repo>.";
     };
+    workSshKey = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Enable a `github-work` SSH Host alias backed by `~/.ssh/id_work`. Clone work repos as `git@github-work:<owner>/<repo>.git`.";
+    };
     ticketPrefix = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;

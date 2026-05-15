@@ -67,6 +67,7 @@ let
             monitorSize = null;
             branchPrefix = null;
             ticketPrefix = null;
+            workSshKey = null;
             sevenqlLspPath = null;
           } args;
           home.username = username;
@@ -146,6 +147,7 @@ in
         email = "sam.mohr@sevenai.com";
         branchPrefix = "sam.mohr";
         ticketPrefix = "7AI";
+        workSshKey = true;
         sevenqlLspPath = "/Users/smohr/dev/okami/typescript/tools/sevenql-lsp/main.ts";
       };
     };
