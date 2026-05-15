@@ -41,7 +41,7 @@ let
     "- Create worktrees with `wa ${waArg}` (expands to `wt switch --create ${branchPrefix}/${branchSlug}`)"
     "- Or directly: `wt switch --create ${branchPrefix}/${branchSlug}` (or `wc` abbrev)"
     "- Worktree directories are siblings of the repo: `<repo>.${branchSlug}` (worktrunk strips the `${branchPrefix}/` prefix)"
-    "- Switch between worktrees: `ws` (no args opens worktrunk's native picker) or `ws <branch>` to jump directly"
+    "- Switch between worktrees: `w` (fuzzy picker via tv; interactive) or `wt switch <branch>` to jump directly"
     "- To return to the canonical (non-worktree) checkout: `cd ${cfg.codeRoot}/github.com/<owner>/<repo>`"
     "- Do NOT use `git clone`, `git worktree add`, `git checkout -b`, or Claude's built-in EnterWorktree"
     "- List worktrees: `wt list` (or `wl` abbrev)"
