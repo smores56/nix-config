@@ -13,6 +13,7 @@ in
     git-lfs
     difftastic
     jujutsu
+    lazyjj
     hunk
   ];
 
