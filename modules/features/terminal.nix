@@ -8,59 +8,18 @@ in
     TERMINAL = cfg.terminal;
   };
 
-  programs.wezterm = {
+  programs.kitty = {
     enable = true;
-    extraConfig = ''
-      local wezterm = require 'wezterm'
-      local config = wezterm.config_builder()
-
-      config.font = wezterm.font("${cfg.font}", { weight = "Regular" })
-      config.font_size = ${toString cfg.terminalFontSize}
-      config.window_background_opacity = 0.8
-      config.enable_wayland = ${if cfg.wayland then "true" else "false"}
-      config.hide_tab_bar_if_only_one_tab = true
-      config.hide_mouse_cursor_when_typing = false
-      config.send_composed_key_when_left_alt_is_pressed = false
-      config.send_composed_key_when_right_alt_is_pressed = false
-      config.audible_bell = "Disabled"
-      config.visual_bell = {
-        fade_in_function = "EaseIn",
-        fade_in_duration_ms = 150,
-        fade_out_function = "EaseOut",
-        fade_out_duration_ms = 150,
-      }
-      config.default_prog = { "${cfg.shellPath}" }
-
-      local function read_polarity()
-        local f = io.open(os.getenv("HOME") .. "/.cache/dark-mode-state", "r")
-        if f then
-          local content = f:read("*l")
-          f:close()
-          if content and content ~= "" then return content end
-        end
-        return "${if cfg.polarity != "light" then "Dark" else "Light"}"
-      end
-
-      local function color_scheme()
-        if read_polarity() == "Dark" then
-          return "${cfg.darkTheme.wezterm}"
-        else
-          return "${cfg.lightTheme.wezterm}"
-        end
-      end
-
-      config.color_scheme = color_scheme()
-
-      wezterm.on("update-status", function(window, pane)
-        local overrides = window:get_config_overrides() or {}
-        local scheme = color_scheme()
-        if overrides.color_scheme ~= scheme then
-          overrides.color_scheme = scheme
-          window:set_config_overrides(overrides)
-        end
-      end)
-
-      return config
-    '';
+    settings = {
+      font_size = cfg.terminalFontSize;
+      background_opacity = lib.mkForce "0.8";
+      shell = cfg.shellPath;
+      tab_bar_min_tabs = 2;
+      hide_window_decorations = "yes";
+      enable_audio_bell = "no";
+      visual_bell_duration = "0.15";
+      macos_option_as_alt = "both";
+      wayland_enable_ime = if cfg.wayland then "yes" else "no";
+    };
   };
 }

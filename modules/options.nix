@@ -15,10 +15,6 @@ let
         type = lib.types.str;
         description = "Helix theme name (must exist in helix runtime themes)";
       };
-      wezterm = lib.mkOption {
-        type = lib.types.str;
-        description = "Wezterm color scheme name (must match built-in scheme registry)";
-      };
       noctalia = lib.mkOption {
         type = lib.types.str;
         description = "Noctalia predefined color scheme name";
@@ -145,7 +141,6 @@ in
       default = {
         system = "rose-pine-moon";
         helix = "rose_pine_moon";
-        wezterm = "Rosé Pine Moon (Gogh)";
         noctalia = "Rose Pine";
       };
     };
@@ -154,7 +149,6 @@ in
       default = {
         system = "rose-pine-dawn";
         helix = "rose_pine_dawn";
-        wezterm = "Rosé Pine Dawn (Gogh)";
         noctalia = "Rose Pine";
       };
     };
@@ -227,7 +221,7 @@ in
 
     dotfiles = {
       wayland = config.dotfiles.displayManager == "niri";
-      terminal = "wezterm";
+      terminal = "kitty";
       shell = "fish";
       browser = "firefox";
       font = "CaskaydiaCove Nerd Font";

@@ -205,7 +205,6 @@ in
       };
 
       targets = {
-        wezterm.enable = false;
         helix.enable = false;
         lazygit.enable = false;
         opencode.enable = false;
