@@ -174,7 +174,7 @@ in
         polarity = "time-of-day";
         exposeSsh = true;
         nvidia = true;
-        llm = true;
+        llm = false;
       };
     };
   };
