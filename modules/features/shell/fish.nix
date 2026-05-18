@@ -42,6 +42,7 @@
         gp = "gh pr create";
         copy = "osc copy";
         paste = "osc paste";
+        o = "opencode";
 
         cn = "c ~/code/github.com/smores56/nix-config";
         hm = "home-manager";
@@ -60,7 +61,7 @@
       };
 
       shellInit = ''
-        fish_add_path /opt/homebrew/bin /usr/local/bin ~/.local/bin ~/.deno/bin ~/.cargo/bin
+        fish_add_path /opt/homebrew/bin /usr/local/bin ~/.local/bin ~/.deno/bin ~/.cargo/bin ~/.opencode/bin ~/.wasmtime/bin
       '';
 
       interactiveShellInit = ''

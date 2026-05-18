@@ -66,6 +66,7 @@
           deno
           typst
           cargo
+          odin
 
           # compilation
           gcc

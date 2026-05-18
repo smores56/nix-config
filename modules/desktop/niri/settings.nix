@@ -81,10 +81,17 @@ in
         }
       ];
 
-      input.touchpad = {
-        natural-scroll = false;
-        tap = true;
-        scroll-factor = 0.5;
+      input = {
+        keyboard = {
+          repeat-delay = 200;
+          repeat-rate = 35;
+        };
+
+        touchpad = {
+          natural-scroll = false;
+          tap = true;
+          scroll-factor = 0.5;
+        };
       };
 
       environment = {
@@ -94,6 +101,7 @@ in
 
       window-rules = [
         {
+          draw-border-with-background = false;
           geometry-corner-radius = lib.genAttrs [
             "top-left"
             "top-right"
