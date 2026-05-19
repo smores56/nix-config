@@ -64,6 +64,7 @@
           uv
           python3
           deno
+          bun
           typst
           cargo
           odin
