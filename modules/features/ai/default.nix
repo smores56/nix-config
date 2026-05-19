@@ -204,6 +204,16 @@ in
     };
   };
 
+  xdg.configFile."opencode/tui.json" = {
+    force = true;
+    text = builtins.toJSON {
+      "$schema" = "https://opencode.ai/tui.json";
+      keybinds = {
+        leader = "ctrl+a";
+      };
+    };
+  };
+
   xdg.configFile."goose/config.yaml" = {
     force = true;
     text = ''
