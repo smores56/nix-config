@@ -40,27 +40,11 @@ _: {
         end
       '';
     };
-    o = {
-      description = "Attach to smortress opencode in current project";
+    opencode-hosted = {
+      description = "Attach to smortress opencode instance at git root";
       body = ''
-        # Find git root or use current directory
-        set -l target_dir (git rev-parse --show-toplevel 2>/dev/null; or pwd)
-        
-        # Attach with --dir set to project root
-        opencode attach http://smortress:4000 --dir $target_dir $argv
-      '';
-    };
-    oc = {
-      description = "Select repo, cd to it, and attach opencode";
-      body = ''
-        # Use tv to select a repo from the repos channel
-        set -l selected (tv --channel repos 2>/dev/null)
-        
-        # If a repo was selected, cd to it and run o
-        if test -n "$selected"
-            c $selected
-            o
-        end
+        set -l dir (git rev-parse --show-toplevel 2>/dev/null; or pwd)
+        opencode attach http://smortress:4000 --dir $dir $argv
       '';
     };
   };

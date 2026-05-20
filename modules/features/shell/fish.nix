@@ -74,23 +74,8 @@
             __auto_zellij_update_tabname
         end
 
-        # OpenCode remote attach function
-        function o --description "Attach to smortress opencode instance"
-            if test (count $argv) -gt 0
-                # If argument looks like a path, use it as --dir
-                if string match -q '/*' $argv[1]
-                    or string match -q '~*' $argv[1]
-                    or string match -q './*' $argv[1]
-                    opencode attach http://smortress:4000 --dir $argv[1] $argv[2..]
-                else
-                    # Otherwise pass all args through
-                    opencode attach http://smortress:4000 $argv
-                end
-            else
-                # Default: attach to home directory
-                opencode attach http://smortress:4000
-            end
-        end
+        abbr --add o opencode-hosted
+        abbr --add oc 'tv --channel repos | read -l r; and c $r; and opencode-hosted'
       '';
 
       plugins =
