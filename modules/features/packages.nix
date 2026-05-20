@@ -1,4 +1,4 @@
-{ pkgs, lib, ... }:
+{ pkgs, lib, inputs, ... }:
 {
   # Workaround: Stylix's opencode module references programs.opencode.tui
   # which may not exist in the current home-manager version
@@ -58,6 +58,7 @@
           tokei
           bottom
           watchexec
+          lsof
 
           # languages
           go
@@ -70,6 +71,9 @@
           cargo
           odin
           tree-sitter
+
+          # ai-assisted dev
+          inputs.openspec.packages.${pkgs.stdenv.system}.default
 
           # compilation
           gcc

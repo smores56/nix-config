@@ -189,7 +189,7 @@ in
     opencodeServe = lib.mkOption {
       type = lib.types.bool;
       default = false;
-      description = "Host runs the opencode server service for remote TUI access.";
+      description = "Host runs the opencode server and OpenChamber web UI for remote access.";
     };
     aiHints = lib.mkOption {
       type = lib.types.str;

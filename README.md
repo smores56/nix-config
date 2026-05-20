@@ -155,22 +155,28 @@ sudo fprintd-enroll smores
 /plugin install revdiff@revdiff
 ```
 
-### OpenCode Portal
+### OpenChamber (OpenCode Web UI)
 
-Portal is deployed on `smortress` (port 3000) and exposed via a Caddy reverse proxy on `smoresnet` with TLS and basic auth at `https://opencode.sammohr.dev`.
+OpenChamber runs on `smortress` (port 3000) alongside the OpenCode server (port 4000).
+Exposed publicly via a Caddy reverse proxy on `smoresnet` at `https://opencode.sammohr.dev`.
+Auth is handled by OpenChamber's `--ui-password`.
 
-**Regenerate and redistribute password:**
+**Set UI password:**
 
 ```bash
-# Generate new password (4 words + 2 specials)
-nix-shell -p diceware --run 'diceware -n 4 -s 2'
+# Generate password (4 words + 2 specials)
+PASSWORD=$(nix-shell -p diceware --run 'diceware -n 4 -s 2')
+echo "$PASSWORD" > ~/.config/openchamber/ui-password
+systemctl --user restart openchamber
+```
 
-# Generate bcrypt hash (replace PASSWORD with the generated passphrase)
-nix-shell -p apacheHttpd --run 'htpasswd -nbB smores56 "PASSWORD"'
+**Deploy Caddy config to smoresnet:**
 
-# Update Caddy config on smoresnet
-scp /tmp/Caddyfile smores@smoresnet:~/Caddyfile
-ssh smores@smoresnet 'sudo mv ~/Caddyfile /etc/caddy/Caddyfile && sudo systemctl restart caddy'
+```bash
+scp modules/features/ai/portal-proxy/Caddyfile \
+    modules/features/ai/portal-proxy/deploy-smoresnet.sh \
+    smores@smoresnet:~
+ssh smores@smoresnet 'bash ~/deploy-smoresnet.sh'
 ```
 
 **DNS:** Point `opencode.sammohr.dev` to smoresnet's public IP (`45.79.90.184`) via Namecheap.

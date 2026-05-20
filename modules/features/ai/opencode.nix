@@ -1,14 +1,29 @@
-{
-  config,
-  lib,
-  pkgs,
-  ...
-}:
+{ config, lib, pkgs, ... }:
 let
   cfg = config.dotfiles;
 
-  openportal = pkgs.writeShellScriptBin "openportal" ''
-    exec ${pkgs.bun}/bin/bun x openportal@0.1.32 "$@"
+  openchamberVersion = "1.11.3";
+
+  openchamber = pkgs.writeShellScriptBin "openchamber" ''
+    exec ${pkgs.bun}/bin/bun x @openchamber/web@${openchamberVersion} "$@"
+  '';
+
+  openchamberServe = pkgs.writeShellScriptBin "openchamber-serve" ''
+    set -e
+    PASSPHRASE_FILE="${config.home.homeDirectory}/.config/openchamber/ui-password"
+    if [ -f "$PASSPHRASE_FILE" ] && [ -s "$PASSPHRASE_FILE" ]; then
+      IFS= read -r PASSPHRASE < "$PASSPHRASE_FILE"
+      exec ${pkgs.bun}/bin/bun x @openchamber/web@${openchamberVersion} serve \
+        --port 3000 \
+        --host 0.0.0.0 \
+        --ui-password "$PASSPHRASE" \
+        --foreground
+    else
+      exec ${pkgs.bun}/bin/bun x @openchamber/web@${openchamberVersion} serve \
+        --port 3000 \
+        --host 0.0.0.0 \
+        --foreground
+    fi
   '';
 
   ocx = pkgs.writeShellScriptBin "ocx" ''
@@ -27,8 +42,12 @@ let
     ];
     server = {
       hostname = "0.0.0.0";
-      port = 4096;
+      port = 4000;
     };
+    provider.opencode-go = {
+      name = "OpenCode Go";
+    };
+
     provider.wafer = {
       npm = "@ai-sdk/openai-compatible";
       name = "Wafer";
@@ -38,11 +57,8 @@ let
       };
       models = {
         "GLM-5.1" = {
-          name = "GLM-5.1";
-          limit = {
-            context = 202752;
-            output = 65536;
-          };
+          name = "GLM 5.1";
+          limit = { context = 202752; output = 65536; };
         };
       };
     };
@@ -59,6 +75,7 @@ in
     beads
     snip
     ocx
+    openchamber
   ];
 
   xdg.configFile."opencode/opencode.json" = {
@@ -91,19 +108,36 @@ in
     '';
   };
 
-  systemd.user.services.openportal = lib.mkIf cfg.opencodeServe {
+  systemd.user.services.opencode = lib.mkIf cfg.opencodeServe {
     Unit = {
-      Description = "OpenCode Portal (Web UI + Server)";
+      Description = "OpenCode Server";
       After = [ "network.target" ];
     };
     Service = {
-      Environment = "PATH=${
-        lib.makeBinPath [
-          pkgs.bun
-          pkgs.opencode
-        ]
-      }:$PATH";
-      ExecStart = "${openportal}/bin/openportal --hostname 0.0.0.0 --opencode-port 4000 --port 3000";
+      Environment = "PATH=${lib.makeBinPath [ pkgs.opencode ]}:${config.home.homeDirectory}/.nix-profile/bin";
+      ExecStart = "${pkgs.opencode}/bin/opencode serve --port 4000";
+      WorkingDirectory = config.home.homeDirectory;
+      Restart = "always";
+      RestartSec = 5;
+    };
+    Install = {
+      WantedBy = [ "default.target" ];
+    };
+  };
+
+  systemd.user.services.openchamber = lib.mkIf cfg.opencodeServe {
+    Unit = {
+      Description = "OpenChamber Web UI";
+      After = [ "network.target" "opencode.service" ];
+      BindsTo = [ "opencode.service" ];
+    };
+    Service = {
+      Environment = [
+        "PATH=${lib.makeBinPath [ pkgs.bun pkgs.nodejs ]}:${config.home.homeDirectory}/.nix-profile/bin"
+        "OPENCODE_HOST=http://localhost:4000"
+        "OPENCODE_SKIP_START=true"
+      ];
+      ExecStart = "${openchamberServe}/bin/openchamber-serve";
       WorkingDirectory = config.home.homeDirectory;
       Restart = "always";
       RestartSec = 5;

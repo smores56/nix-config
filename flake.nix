@@ -21,6 +21,7 @@
     };
     flake-parts.url = "github:hercules-ci/flake-parts";
     import-tree.url = "github:vic/import-tree";
+    openspec.url = "github:Fission-AI/OpenSpec";
   };
 
   outputs =
