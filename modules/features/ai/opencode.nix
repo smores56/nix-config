@@ -53,7 +53,7 @@ in
           apiKey = "{env:WAFER_API_KEY}";
         };
         models = {
-          GLM-5.1 = {
+          "GLM-5.1" = {
             name = "GLM 5.1";
             limit = { context = 202752; output = 65536; };
           };
