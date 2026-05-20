@@ -79,17 +79,17 @@ in
       
       # Initialize ocx if not already done
       if [ ! -f "$HOME/.config/opencode/ocx.jsonc" ]; then
-        ${ocx}/bin/ocx init --global >/dev/null 2>&1
+        ${ocx}/bin/ocx init --global >/dev/null 2>&1 || true
       fi
       
-      # Add tweak registry if not configured
-      if ! ${ocx}/bin/ocx registry list --global 2>/dev/null | grep -q "tweak"; then
-        ${ocx}/bin/ocx registry add https://tweak.ocx.dev/registry --name tweak --global >/dev/null 2>&1
+      # Add tweak registry if not configured (with timeout)
+      if ! timeout 5 ${ocx}/bin/ocx registry list --global 2>/dev/null | grep -q "tweak"; then
+        timeout 10 ${ocx}/bin/ocx registry add https://tweak.ocx.dev/registry --name tweak --global >/dev/null 2>&1 || true
       fi
       
-      # Add workspace profile if not exists
+      # Add workspace profile if not exists (with timeout)
       if [ ! -d "$HOME/.config/opencode/profiles/ws" ]; then
-        ${ocx}/bin/ocx profile add ws --source tweak/p-1vp4xoqv --global >/dev/null 2>&1
+        timeout 10 ${ocx}/bin/ocx profile add ws --source tweak/p-1vp4xoqv --global >/dev/null 2>&1 || true
       fi
       
       echo "OCX workspace profile setup complete."
