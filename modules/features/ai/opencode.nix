@@ -75,11 +75,24 @@ in
     after = [ "linkGeneration" ];
     before = [ ];
     data = ''
-      if [ ! -d "$HOME/.config/opencode/profiles/ws" ]; then
-        echo "Setting up OCX workspace profile..."
-        ${ocx}/bin/ocx profile add ws --source tweak/p-1vp4xoqv --global
-        echo "OCX workspace profile setup complete."
+      echo "Setting up OCX workspace profile..."
+      
+      # Initialize ocx if not already done
+      if [ ! -f "$HOME/.config/opencode/ocx.jsonc" ]; then
+        ${ocx}/bin/ocx init --global >/dev/null 2>&1
       fi
+      
+      # Add tweak registry if not configured
+      if ! ${ocx}/bin/ocx registry list --global 2>/dev/null | grep -q "tweak"; then
+        ${ocx}/bin/ocx registry add https://tweak.ocx.dev/registry --name tweak --global >/dev/null 2>&1
+      fi
+      
+      # Add workspace profile if not exists
+      if [ ! -d "$HOME/.config/opencode/profiles/ws" ]; then
+        ${ocx}/bin/ocx profile add ws --source tweak/p-1vp4xoqv --global >/dev/null 2>&1
+      fi
+      
+      echo "OCX workspace profile setup complete."
     '';
   };
 
