@@ -56,7 +56,8 @@
         sc = "ssh smores@campfire -t fish";
         st = "ssh smores@(tailscale-hosts | fzf) -t fish";
 
-        s = "goose session";
+        o = "opencode-hosted";
+        oc = "tv repos | read -l r; and c $r; and opencode-hosted";
       };
 
       shellInit = ''
@@ -73,9 +74,6 @@
             functions --erase __deferred_zellij_tabname
             __auto_zellij_update_tabname
         end
-
-        abbr --add o opencode-hosted
-        abbr --add oc 'tv --channel repos | read -l r; and c $r; and opencode-hosted'
       '';
 
       plugins =
