@@ -4,6 +4,10 @@ let
 
   openchamberVersion = "1.11.3";
 
+  openspec = pkgs.writeShellScriptBin "openspec" ''
+    exec ${pkgs.bun}/bin/bun x @fission-ai/openspec@latest "$@"
+  '';
+
   openchamber = pkgs.writeShellScriptBin "openchamber" ''
     exec ${pkgs.bun}/bin/bun x @openchamber/web@${openchamberVersion} "$@"
   '';
@@ -76,6 +80,7 @@ in
     snip
     ocx
     openchamber
+    openspec
   ];
 
   xdg.configFile."opencode/opencode.json" = {
