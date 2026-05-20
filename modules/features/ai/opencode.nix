@@ -79,17 +79,27 @@ in
       
       # Initialize ocx if not already done
       if [ ! -f "$HOME/.config/opencode/ocx.jsonc" ]; then
-        ${ocx}/bin/ocx init --global >/dev/null 2>&1 || true
+        echo "[ocx] Initializing ocx..."
+        time ${ocx}/bin/ocx init --global
+      else
+        echo "[ocx] ocx.jsonc exists, skipping init"
       fi
       
-      # Add tweak registry if not configured (with timeout)
-      if ! timeout 5 ${ocx}/bin/ocx registry list --global 2>/dev/null | grep -q "tweak"; then
-        timeout 10 ${ocx}/bin/ocx registry add https://tweak.ocx.dev/registry --name tweak --global >/dev/null 2>&1 || true
+      # Add tweak registry if not configured
+      echo "[ocx] Checking for tweak registry..."
+      if ! timeout 5 ${ocx}/bin/ocx registry list --global 2>&1 | grep -q "tweak"; then
+        echo "[ocx] Adding tweak registry (may take a few seconds)..."
+        time timeout 10 ${ocx}/bin/ocx registry add https://tweak.ocx.dev/registry --name tweak --global
+      else
+        echo "[ocx] tweak registry already configured"
       fi
       
-      # Add workspace profile if not exists (with timeout)
+      # Add workspace profile if not exists
       if [ ! -d "$HOME/.config/opencode/profiles/ws" ]; then
-        timeout 10 ${ocx}/bin/ocx profile add ws --source tweak/p-1vp4xoqv --global >/dev/null 2>&1 || true
+        echo "[ocx] Adding workspace profile..."
+        time timeout 10 ${ocx}/bin/ocx profile add ws --source tweak/p-1vp4xoqv --global
+      else
+        echo "[ocx] workspace profile already exists"
       fi
       
       echo "OCX workspace profile setup complete."
