@@ -1,4 +1,9 @@
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
   cfg = config.dotfiles;
 
@@ -33,8 +38,11 @@ let
       };
       models = {
         "GLM-5.1" = {
-          name = "GLM 5.1";
-          limit = { context = 202752; output = 65536; };
+          name = "GLM-5.1";
+          limit = {
+            context = 202752;
+            output = 65536;
+          };
         };
       };
     };
@@ -89,7 +97,12 @@ in
       After = [ "network.target" ];
     };
     Service = {
-      Environment = "PATH=${lib.makeBinPath [ pkgs.bun pkgs.opencode ]}:$PATH";
+      Environment = "PATH=${
+        lib.makeBinPath [
+          pkgs.bun
+          pkgs.opencode
+        ]
+      }:$PATH";
       ExecStart = "${openportal}/bin/openportal --hostname 0.0.0.0 --opencode-port 4000 --port 3000";
       WorkingDirectory = config.home.homeDirectory;
       Restart = "always";
