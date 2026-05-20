@@ -4,9 +4,9 @@ let
 
   ocxArch = if pkgs.stdenv.isDarwin then "darwin-arm64" else "linux-x64";
   ocxHash = if pkgs.stdenv.isDarwin then
-    "sha256-9c9d5e7102c3e4ea076540900c84ebfde7acf449636b45f1d5cc40d0fcff0492"
+    "sha256-nJ1ecQIj5OoAVcWQC97vb7b89P1jy0Tx1WwFT/S/BJI="
   else
-    "sha256-4a99b0487f8ad2f8ce0879393cdb6ba54345d87624b9259e8011738a70d70f54";
+    "sha256-Spm9SH8o0vzMP4Y323bWq3sF2XYlJLbmUoR7sI5w9FQ=";
 
   ocx = pkgs.stdenv.mkDerivation rec {
     pname = "ocx";
