@@ -75,18 +75,10 @@ in
     after = [ "linkGeneration" ];
     before = [ ];
     data = ''
-      echo "Checking OCX workspace profile..."
-      
-      # Skip automatic setup - registry server often unreachable
-      # Manual setup if needed:
-      #   ocx init --global
-      #   ocx registry add https://tweak.ocx.dev/registry --name tweak --global
-      #   ocx profile add ws --source tweak/p-1vp4xoqv --global
-      
       if [ -d "$HOME/.config/opencode/profiles/ws" ]; then
-        echo "[ocx] Workspace profile found"
+        echo "[ocx] Workspace profile configured"
       else
-        echo "[ocx] Workspace profile not configured (run: ocx profile add ws --source tweak/p-1vp4xoqv --global)"
+        echo "[ocx] Workspace profile not found"
       fi
     '';
   };
