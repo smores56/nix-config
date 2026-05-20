@@ -65,9 +65,11 @@
           python3
           deno
           bun
+          nodejs_24
           typst
           cargo
           odin
+          tree-sitter
 
           # compilation
           gcc

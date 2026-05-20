@@ -142,6 +142,19 @@ nix build --builders 'ssh://smores@campfire x86_64-linux'
 sudo fprintd-enroll smores
 ```
 
+## AI Tools
+
+### revdiff
+
+[revdiff](https://github.com/umputun/revdiff) is a TUI diff reviewer that integrates with AI coding agents. The binary and OpenCode plugin are managed declaratively.
+
+**Claude Code** — install the plugin at runtime:
+
+```
+/plugin marketplace add umputun/revdiff
+/plugin install revdiff@revdiff
+```
+
 ## Architecture
 
 `flake.nix` only declares inputs and delegates to `modules/flake/`. `import-tree`

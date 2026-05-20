@@ -8,17 +8,30 @@ let
   cfg = config.dotfiles;
   inherit (cfg) branchPrefix;
 
+  revdiff-src = pkgs.fetchFromGitHub {
+    owner = "umputun";
+    repo = "revdiff";
+    tag = "v1.3.0";
+    hash = "sha256-lcqkvQ5jLP3sA9WeFcp1PRPIvtq7vWjl7M+9juBYXL0=";
+  };
+
+  revdiff = pkgs.buildGoModule rec {
+    pname = "revdiff";
+    version = "1.3.0";
+    src = revdiff-src;
+    vendorHash = null;
+    ldflags = [ "-s" "-w" "-X main.version=v${version}" ];
+    doCheck = false;
+    postInstall = ''
+      mv $out/bin/app $out/bin/revdiff
+    '';
+  };
+
   piNpm = pkgs.writeShellScriptBin "pi-npm" ''
     export PATH="${pkgs.nodejs}/bin:$PATH"
     export NPM_CONFIG_PREFIX="$HOME/.pi/agent/npm-global"
     mkdir -p "$NPM_CONFIG_PREFIX"
     exec ${pkgs.nodejs}/bin/npm "$@"
-  '';
-  piNpx = pkgs.writeShellScriptBin "npx" ''
-    export PATH="${pkgs.nodejs}/bin:$PATH"
-    export NPM_CONFIG_PREFIX="$HOME/.pi/agent/npm-global"
-    mkdir -p "$NPM_CONFIG_PREFIX"
-    exec ${pkgs.nodejs}/bin/npx "$@"
   '';
 
   hasTicket = cfg.ticketPrefix != null;
@@ -77,6 +90,10 @@ let
     - When the approach is unclear, propose 2-3 options with tradeoffs
     - Scope changes narrowly — no broad refactors unless explicitly requested
 
+    # Socratic Planning
+    - Before proposing solutions, probe the problem: challenge constraints ("what if X weren't a constraint?"), question assumptions ("is Y actually true?"), explore the space ("what are we really trying to solve?")
+    - When gathering requirements, ask "what happens if we do nothing?" and "what's the simplest version that could work?" before committing to an approach
+
     # Testing
     - Add tests when the change warrants it
     - Prefer real dependencies over mocks
@@ -96,9 +113,12 @@ let
     # Commits and PRs
     - Follow Conventional Commits: <https://www.conventionalcommits.org/en/v1.0.0/>
     - Types: feat, fix, refactor, chore, docs, test, perf, ci
-    ${if hasTicket
-      then "- Scope is the Linear ticket: `type(${cfg.ticketPrefix}-<number>): description` (e.g. `fix(${cfg.ticketPrefix}-123): resolve token refresh`)"
-      else "- Scope is the affected module or area: `type(scope): description`"}
+    ${
+      if hasTicket then
+        "- Scope is the Linear ticket: `type(${cfg.ticketPrefix}-<number>): description` (e.g. `fix(${cfg.ticketPrefix}-123): resolve token refresh`)"
+      else
+        "- Scope is the affected module or area: `type(scope): description`"
+    }
     - Applies to both commit messages and PR titles
 
     # Communication
@@ -174,7 +194,7 @@ in
       pkgs.goose-cli
       pkgs.pi-coding-agent
       piNpm
-      piNpx
+      revdiff
     ];
 
     sessionVariables = {
