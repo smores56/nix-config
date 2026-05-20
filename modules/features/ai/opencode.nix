@@ -2,29 +2,12 @@
 let
   cfg = config.dotfiles;
 
-  ocxArch = if pkgs.stdenv.isDarwin then "darwin-arm64" else "linux-x64";
-  ocxHash = if pkgs.stdenv.isDarwin then
-    "sha256-nJ1ecQIj5OoAVcWQC97vb7b89P1jy0Tx1WwFT/S/BJI="
-  else
-    "sha256-SpmwSH+K0vjOCHk5PNtrpUNF2HYkuSWegBFzinDXD1Q=";
-
-  ocx = pkgs.stdenv.mkDerivation rec {
-    pname = "ocx";
-    version = "2.0.11";
-    src = pkgs.fetchurl {
-      url = "https://github.com/kdcokenny/ocx/releases/download/v${version}/ocx-${ocxArch}";
-      hash = ocxHash;
-    };
-    dontUnpack = true;
-    installPhase = ''
-      mkdir -p $out/bin
-      cp $src $out/bin/ocx
-      chmod +x $out/bin/ocx
-    '';
-  };
-
   openportal = pkgs.writeShellScriptBin "openportal" ''
     exec ${pkgs.bun}/bin/bun x openportal@0.1.32 "$@"
+  '';
+
+  ocx = pkgs.writeShellScriptBin "ocx" ''
+    exec ${pkgs.bun}/bin/bun x ocx@2.0.11 "$@"
   '';
 
   opencodeSettings = {
@@ -97,7 +80,7 @@ in
       if [ ! -d "$HOME/.config/opencode/profiles/ws" ]; then
         echo "Setting up OCX workspace profile..."
         ${ocx}/bin/ocx init --global
-        ${ocx}/bin/ocx profile add ws --source tweak/p-1vp4xoqv --from https://tweakoc.com/r --global
+        ${ocx}/bin/ocx add kdco/workspace --source tweak/p-1vp4xoqv --from https://tweakoc.com/r --global
         echo "OCX workspace profile setup complete."
       fi
     '';
