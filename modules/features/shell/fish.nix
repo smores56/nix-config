@@ -80,6 +80,7 @@
                 # If argument looks like a path, use it as --dir
                 if string match -q '/*' $argv[1]
                     or string match -q '~*' $argv[1]
+                    or string match -q './*' $argv[1]
                     opencode attach http://smortress:4000 --dir $argv[1] $argv[2..]
                 else
                     # Otherwise pass all args through
@@ -89,11 +90,6 @@
                 # Default: attach to home directory
                 opencode attach http://smortress:4000
             end
-        end
-
-        # Project-specific shortcuts
-        function oc --description "Attach to camp project on smortress"
-            opencode attach http://smortress:4000 --dir ~/code/github.com/camp-language/camp $argv
         end
       '';
 
