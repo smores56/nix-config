@@ -155,6 +155,26 @@ sudo fprintd-enroll smores
 /plugin install revdiff@revdiff
 ```
 
+### OpenCode Portal
+
+Portal is deployed on `smortress` (port 3000) and exposed via a Caddy reverse proxy on `smoresnet` with TLS and basic auth at `https://opencode.sammohr.dev`.
+
+**Regenerate and redistribute password:**
+
+```bash
+# Generate new password (4 words + 2 specials)
+nix-shell -p diceware --run 'diceware -n 4 -s 2'
+
+# Generate bcrypt hash (replace PASSWORD with the generated passphrase)
+nix-shell -p apacheHttpd --run 'htpasswd -nbB smores56 "PASSWORD"'
+
+# Update Caddy config on smoresnet
+scp /tmp/Caddyfile smores@smoresnet:~/Caddyfile
+ssh smores@smoresnet 'sudo mv ~/Caddyfile /etc/caddy/Caddyfile && sudo systemctl restart caddy'
+```
+
+**DNS:** Point `opencode.sammohr.dev` to smoresnet's public IP (`45.79.90.184`) via Namecheap.
+
 ## Architecture
 
 `flake.nix` only declares inputs and delegates to `modules/flake/`. `import-tree`
