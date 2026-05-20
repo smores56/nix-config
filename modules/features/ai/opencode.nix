@@ -71,8 +71,6 @@ in
     };
   };
 
-  programs.fish.shellAbbrs.o = "opencode attach http://smortress:4000";
-
   home.activation.setupOcxWorkspace = {
     after = [ "linkGeneration" ];
     before = [ ];
