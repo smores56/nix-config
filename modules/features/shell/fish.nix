@@ -42,7 +42,6 @@
         gp = "gh pr create";
         copy = "osc copy";
         paste = "osc paste";
-        o = "opencode";
 
         cn = "c ~/code/github.com/smores56/nix-config";
         hm = "home-manager";

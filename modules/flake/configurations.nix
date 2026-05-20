@@ -70,6 +70,7 @@ let
             ticketPrefix = null;
             workSshKey = null;
             sevenqlLspPath = null;
+            opencodeServe = null;
           } args;
           home.username = username;
           home.homeDirectory =
@@ -133,6 +134,7 @@ in
         nixos = true;
         polarity = "time-of-day";
         llm = true;
+        opencodeServe = true;
         primaryMonitor = "DP-2";
         monitorSize = {
           width = 5120;
@@ -175,6 +177,7 @@ in
         exposeSsh = true;
         nvidia = true;
         llm = false;
+        opencodeServe = true;
       };
     };
   };

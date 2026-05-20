@@ -20,7 +20,11 @@ let
     version = "1.3.0";
     src = revdiff-src;
     vendorHash = null;
-    ldflags = [ "-s" "-w" "-X main.version=v${version}" ];
+    ldflags = [
+      "-s"
+      "-w"
+      "-X main.version=v${version}"
+    ];
     doCheck = false;
     postInstall = ''
       mv $out/bin/app $out/bin/revdiff
@@ -84,15 +88,6 @@ let
     - Errors must be explicit — never silently swallow or fall back
     - Prefer Result/Option/Either types and typed error variants over exceptions or string messages
     - Error messages must include enough context to debug without a stack trace
-
-    # Design Process
-    - IMPORTANT: Ask design questions before implementing — clarify ambiguity rather than guessing
-    - When the approach is unclear, propose 2-3 options with tradeoffs
-    - Scope changes narrowly — no broad refactors unless explicitly requested
-
-    # Socratic Planning
-    - Before proposing solutions, probe the problem: challenge constraints ("what if X weren't a constraint?"), question assumptions ("is Y actually true?"), explore the space ("what are we really trying to solve?")
-    - When gathering requirements, ask "what happens if we do nothing?" and "what's the simplest version that could work?" before committing to an approach
 
     # Testing
     - Add tests when the change warrants it
@@ -189,90 +184,83 @@ let
   };
 in
 {
-  home = {
-    packages = [
-      pkgs.goose-cli
-      pkgs.pi-coding-agent
-      piNpm
-      revdiff
-    ];
+  config = {
+    home = {
+      packages = [
+        pkgs.goose-cli
+        pkgs.pi-coding-agent
+        piNpm
+        revdiff
+      ];
 
-    sessionVariables = {
-      OPENAI_HOST = smortressBaseUrl;
-      GOOSE_CONTEXT_LIMIT = "131072";
-      OPENAI_MODEL = cfg.defaultModel;
-      PI_SMORTRESS_API_KEY = "not-needed";
-      GOOSE_DISABLE_KEYRING = "true";
+      sessionVariables = {
+        OPENAI_HOST = smortressBaseUrl;
+        GOOSE_CONTEXT_LIMIT = "131072";
+        OPENAI_MODEL = cfg.defaultModel;
+        PI_SMORTRESS_API_KEY = "not-needed";
+        GOOSE_DISABLE_KEYRING = "true";
+      };
+
+      file = {
+        ".goosehints".text = aiHints;
+        ".claude/CLAUDE.md".text = aiHints;
+        ".pi/agent/extensions/pi-supervisor.ts".source = ./pi-supervisor.ts;
+        ".pi/agent/extensions/pi-messenger-swarm.js".text = ''
+          export { default } from "${config.home.homeDirectory}/.pi/agent/npm-global/lib/node_modules/pi-messenger-swarm/dist/index.js";
+        '';
+        ".pi/agent/settings.json" = {
+          text = piSettingsJson;
+          force = true;
+        };
+        ".pi/agent/models.json" = {
+          text = piModelsJson;
+          force = true;
+        };
+      };
     };
 
-    file = {
-      ".goosehints".text = aiHints;
-      ".claude/CLAUDE.md".text = aiHints;
-      "AGENTS.md".text = aiHints;
-      ".pi/agent/extensions/pi-supervisor.ts".source = ./pi-supervisor.ts;
-      ".pi/agent/extensions/pi-messenger-swarm.js".text = ''
-        export { default } from "${config.home.homeDirectory}/.pi/agent/npm-global/lib/node_modules/pi-messenger-swarm/dist/index.js";
+    dotfiles.aiHints = aiHints;
+
+    xdg.configFile."goose/config.yaml" = {
+      force = true;
+      text = ''
+        # Managed by nix — edit modules/features/ai.nix instead
+        GOOSE_PROVIDER: "openai"
+        GOOSE_MODEL: "${cfg.defaultModel}"
+        GOOSE_MODE: "auto"
+        GOOSE_TELEMETRY_ENABLED: false
+        GOOSE_CLI_THEME: "dark"
+        GOOSE_AUTO_COMPACT_THRESHOLD: 0.8
+        GOOSE_TOOLSHIM: true
+
+        extensions:
+          developer:
+            enabled: true
+            type: builtin
+            name: developer
+            timeout: 300
+          memory:
+            enabled: true
+            type: builtin
+            name: memory
+            timeout: 300
+          code_execution:
+            enabled: true
+            type: platform
+            name: code_execution
+          skills:
+            enabled: true
+            type: platform
+            name: skills
+          todo:
+            enabled: true
+            type: platform
+            name: todo
+          extensionmanager:
+            enabled = true;
+            type: platform
+            name: Extension Manager
       '';
-      ".pi/agent/settings.json" = {
-        text = piSettingsJson;
-        force = true;
-      };
-      ".pi/agent/models.json" = {
-        text = piModelsJson;
-        force = true;
-      };
     };
-  };
-
-  xdg.configFile."opencode/tui.json" = {
-    force = true;
-    text = builtins.toJSON {
-      "$schema" = "https://opencode.ai/tui.json";
-      keybinds = {
-        leader = "ctrl+a";
-      };
-    };
-  };
-
-  xdg.configFile."goose/config.yaml" = {
-    force = true;
-    text = ''
-      # Managed by nix — edit modules/features/ai.nix instead
-      GOOSE_PROVIDER: "openai"
-      GOOSE_MODEL: "${cfg.defaultModel}"
-      GOOSE_MODE: "auto"
-      GOOSE_TELEMETRY_ENABLED: false
-      GOOSE_CLI_THEME: "dark"
-      GOOSE_AUTO_COMPACT_THRESHOLD: 0.8
-      GOOSE_TOOLSHIM: true
-
-      extensions:
-        developer:
-          enabled: true
-          type: builtin
-          name: developer
-          timeout: 300
-        memory:
-          enabled: true
-          type: builtin
-          name: memory
-          timeout: 300
-        code_execution:
-          enabled: true
-          type: platform
-          name: code_execution
-        skills:
-          enabled: true
-          type: platform
-          name: skills
-        todo:
-          enabled: true
-          type: platform
-          name: todo
-        extensionmanager:
-          enabled: true
-          type: platform
-          name: Extension Manager
-    '';
   };
 }

@@ -186,6 +186,16 @@ in
       readOnly = true;
       description = "Default local LLM model for AI coding tools.";
     };
+    opencodeServe = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Host runs the opencode server service for remote TUI access.";
+    };
+    aiHints = lib.mkOption {
+      type = lib.types.str;
+      readOnly = true;
+      description = "AI coding assistant context/rules, shared across goose, pi, and opencode.";
+    };
   };
 
   config = {

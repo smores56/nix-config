@@ -1,7 +1,7 @@
 { pkgs, lib, ... }:
 {
   # Workaround: Stylix's opencode module references programs.opencode.tui
-  # which doesn't exist in the current home-manager version
+  # which may not exist in the current home-manager version
   options.programs.opencode.tui = lib.mkOption {
     type = lib.types.anything;
     default = { };
