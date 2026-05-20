@@ -75,34 +75,19 @@ in
     after = [ "linkGeneration" ];
     before = [ ];
     data = ''
-      echo "Setting up OCX workspace profile..."
+      echo "Checking OCX workspace profile..."
       
-      # Initialize ocx if not already done
-      if [ ! -f "$HOME/.config/opencode/ocx.jsonc" ]; then
-        echo "[ocx] Initializing ocx..."
-        time ${ocx}/bin/ocx init --global
+      # Skip automatic setup - registry server often unreachable
+      # Manual setup if needed:
+      #   ocx init --global
+      #   ocx registry add https://tweak.ocx.dev/registry --name tweak --global
+      #   ocx profile add ws --source tweak/p-1vp4xoqv --global
+      
+      if [ -d "$HOME/.config/opencode/profiles/ws" ]; then
+        echo "[ocx] Workspace profile found"
       else
-        echo "[ocx] ocx.jsonc exists, skipping init"
+        echo "[ocx] Workspace profile not configured (run: ocx profile add ws --source tweak/p-1vp4xoqv --global)"
       fi
-      
-      # Add tweak registry if not configured
-      echo "[ocx] Checking for tweak registry..."
-      if ! timeout 5 ${ocx}/bin/ocx registry list --global 2>&1 | grep -q "tweak"; then
-        echo "[ocx] Adding tweak registry (may take 15+ seconds on slow networks)..."
-        time timeout 30 ${ocx}/bin/ocx registry add https://tweak.ocx.dev/registry --name tweak --global || echo "[ocx] Warning: registry add timed out or failed, continuing anyway..."
-      else
-        echo "[ocx] tweak registry already configured"
-      fi
-      
-      # Add workspace profile if not exists
-      if [ ! -d "$HOME/.config/opencode/profiles/ws" ]; then
-        echo "[ocx] Adding workspace profile..."
-        time timeout 30 ${ocx}/bin/ocx profile add ws --source tweak/p-1vp4xoqv --global || echo "[ocx] Warning: profile add timed out or failed, continuing anyway..."
-      else
-        echo "[ocx] workspace profile already exists"
-      fi
-      
-      echo "OCX workspace profile setup complete."
     '';
   };
 
