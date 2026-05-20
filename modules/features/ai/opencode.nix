@@ -1,7 +1,6 @@
 { config, lib, pkgs, ... }:
 let
   cfg = config.dotfiles;
-  inherit (pkgs.stdenv) isLinux;
 
   ocxArch = if pkgs.stdenv.isDarwin then "darwin-arm64" else "linux-x64";
   ocxHash = if pkgs.stdenv.isDarwin then
@@ -27,44 +26,60 @@ let
   openportal = pkgs.writeShellScriptBin "openportal" ''
     exec ${pkgs.bun}/bin/bun x openportal@0.1.32 "$@"
   '';
+
+  opencodeSettings = {
+    "$schema" = "https://opencode.ai/config.json";
+    model = "opencode-go/deepseek-v4-pro";
+    small_model = "opencode-go/deepseek-v4-flash";
+    plugin = [
+      "opencode-plugin-openspec"
+      "opencode-beads"
+      "@tarquinen/opencode-smart-title"
+      "opencode-snip"
+    ];
+    server = {
+      hostname = "0.0.0.0";
+      port = 4096;
+    };
+    provider.wafer = {
+      npm = "@ai-sdk/openai-compatible";
+      name = "Wafer";
+      options = {
+        baseURL = "https://pass.wafer.ai/v1";
+        apiKey = "{env:WAFER_API_KEY}";
+      };
+      models = {
+        "GLM-5.1" = {
+          name = "GLM 5.1";
+          limit = { context = 202752; output = 65536; };
+        };
+      };
+    };
+  };
+
+  opencodeTui = {
+    "$schema" = "https://opencode.ai/tui.json";
+    keybinds.leader = "ctrl+a";
+  };
 in
 {
-  programs.opencode = {
-    enable = true;
-    extraPackages = with pkgs; [ beads snip ] ++ [ ocx ];
-    settings = {
-      model = "opencode-go/deepseek-v4-pro";
-      small_model = "opencode-go/deepseek-v4-flash";
-      plugin = [
-        "opencode-plugin-openspec"
-        "opencode-beads"
-        "@tarquinen/opencode-smart-title"
-        "opencode-snip"
-      ];
-      server = {
-        hostname = "0.0.0.0";
-        port = 4096;
-      };
-      provider.wafer = {
-        npm = "@ai-sdk/openai-compatible";
-        name = "Wafer";
-        options = {
-          baseURL = "https://pass.wafer.ai/v1";
-          apiKey = "{env:WAFER_API_KEY}";
-        };
-        models = {
-          "GLM-5.1" = {
-            name = "GLM 5.1";
-            limit = { context = 202752; output = 65536; };
-          };
-        };
-      };
-    };
-    tui.keybinds.leader = "ctrl+a";
-    rules = cfg.aiHints;
-    web = lib.mkIf cfg.opencodeServe {
-      enable = false;
-    };
+  home.packages = with pkgs; [
+    opencode
+    beads
+    snip
+    ocx
+  ];
+
+  xdg.configFile."opencode/opencode.json" = {
+    text = builtins.toJSON opencodeSettings;
+  };
+
+  xdg.configFile."opencode/tui.json" = {
+    text = builtins.toJSON opencodeTui;
+  };
+
+  xdg.configFile."opencode/AGENTS.md" = {
+    text = cfg.aiHints;
   };
 
   xdg.configFile."opencode/smart-title.jsonc" = {
@@ -94,7 +109,7 @@ in
       After = [ "network.target" ];
     };
     Service = {
-      Environment = "PATH=${lib.makeBinPath [ pkgs.bun ]}:${config.home.profileDirectory}/bin";
+      Environment = "PATH=${lib.makeBinPath [ pkgs.bun pkgs.opencode ]}:$PATH";
       ExecStart = "${openportal}/bin/openportal --hostname 0.0.0.0 --opencode-port 4000 --port 3000";
       WorkingDirectory = config.home.homeDirectory;
       Restart = "always";
