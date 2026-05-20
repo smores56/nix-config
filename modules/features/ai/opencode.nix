@@ -61,7 +61,7 @@ in
       };
     };
     tui.keybinds.leader = "ctrl+a";
-    context = cfg.aiHints;
+    rules = cfg.aiHints;
     web = lib.mkIf cfg.opencodeServe {
       enable = false;
     };
