@@ -6,7 +6,7 @@ let
   ocxHash = if pkgs.stdenv.isDarwin then
     "sha256-nJ1ecQIj5OoAVcWQC97vb7b89P1jy0Tx1WwFT/S/BJI="
   else
-    "sha256-Spm9SH8o0vzMP4Y323bWq3sF2XYlJLbmUoR7sI5w9FQ=";
+    "sha256-SpmwSH+K0vjOCHk5PNtrpUNF2HYkuSWegBFzinDXD1Q=";
 
   ocx = pkgs.stdenv.mkDerivation rec {
     pname = "ocx";
