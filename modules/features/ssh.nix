@@ -15,6 +15,7 @@ in
       };
 
       "*" = {
+        identityFile = "~/.ssh/id_personal";
         forwardAgent = false;
         addKeysToAgent = "no";
         compression = false;
