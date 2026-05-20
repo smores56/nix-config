@@ -80,7 +80,7 @@ in
       if [ ! -d "$HOME/.config/opencode/profiles/ws" ]; then
         echo "Setting up OCX workspace profile..."
         ${ocx}/bin/ocx init --global
-        ${ocx}/bin/ocx add kdco/workspace --source tweak/p-1vp4xoqv --from https://tweakoc.com/r --global
+        ${ocx}/bin/ocx add kdco/workspace --from https://tweakoc.com/r --global -p ws
         echo "OCX workspace profile setup complete."
       fi
     '';
