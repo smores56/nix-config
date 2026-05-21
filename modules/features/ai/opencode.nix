@@ -1,8 +1,21 @@
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
   cfg = config.dotfiles;
 
   openchamberVersion = "1.11.3";
+
+  models = {
+    wafer-glm51 = "wafer/GLM-5.1";
+    go-ds4pro = "opencode-go/deepseek-v4-pro";
+    go-ds4flash = "opencode-go/deepseek-v4-flash";
+    go-minimax = "opencode-go/minimax-m2.7";
+    go-kimi = "opencode-go/kimi-k2.6";
+  };
 
   openspec = pkgs.writeShellScriptBin "openspec" ''
     exec ${pkgs.bun}/bin/bun x @fission-ai/openspec@latest "$@"
@@ -36,35 +49,70 @@ let
 
   opencodeSettings = {
     "$schema" = "https://opencode.ai/config.json";
-    model = "opencode-go/deepseek-v4-pro";
-    small_model = "opencode-go/deepseek-v4-flash";
+    model = models.wafer-glm51;
+    small_model = models.go-ds4flash;
     plugin = [
+      "oh-my-opencode-slim"
       "opencode-plugin-openspec"
       "opencode-beads"
       "@tarquinen/opencode-smart-title"
-      "opencode-snip"
     ];
+    provider.wafer = {
+      npm = "@ai-sdk/openai-compatible";
+      name = "Wafer";
+      options.baseURL = "https://pass.wafer.ai/v1";
+      models."GLM-5.1".name = "GLM 5.1";
+    };
     server = {
       hostname = "0.0.0.0";
       port = 4000;
     };
-    provider.opencode-go = {
-      name = "OpenCode Go";
-    };
+  };
 
-    provider.wafer = {
-      npm = "@ai-sdk/openai-compatible";
-      name = "Wafer";
-      options = {
-        baseURL = "https://pass.wafer.ai/v1";
-        apiKey = "{env:WAFER_API_KEY}";
+  ohMyOpencodeSlimConfig = {
+    "$schema" = "https://unpkg.com/oh-my-opencode-slim@latest/oh-my-opencode-slim.schema.json";
+    preset = "smores";
+    disabled_agents = [ ];
+    fallback = {
+      enabled = true;
+      timeoutMs = 15000;
+      retryDelayMs = 500;
+      retry_on_empty = true;
+      chains = {
+        orchestrator = [ models.go-ds4pro ];
+        oracle = [ models.go-ds4pro ];
       };
-      models = {
-        "GLM-5.1" = {
-          name = "GLM 5.1";
-          limit = { context = 202752; output = 65536; };
-        };
+    };
+    presets.smores = {
+      orchestrator = {
+        model = models.wafer-glm51;
+        skills = [ "*" ];
+        mcps = [ "*" "!context7" ];
       };
+      oracle = {
+        model = models.wafer-glm51;
+        variant = "high";
+        skills = [ "simplify" ];
+        mcps = [ ];
+      };
+      council = {
+        model = models.go-ds4pro;
+        variant = "high";
+      };
+      librarian = {
+        model = models.go-minimax;
+        mcps = [ "websearch" "context7" "grep_app" ];
+      };
+      explorer.model = models.go-minimax;
+      designer = {
+        model = models.go-kimi;
+        variant = "medium";
+      };
+      fixer = {
+        model = models.go-ds4flash;
+        variant = "high";
+      };
+      observer.model = models.go-kimi;
     };
   };
 
@@ -77,7 +125,6 @@ in
   home.packages = with pkgs; [
     opencode
     beads
-    snip
     ocx
     openchamber
     openspec
@@ -95,9 +142,13 @@ in
     text = cfg.aiHints;
   };
 
+  xdg.configFile."opencode/oh-my-opencode-slim.json" = {
+    text = builtins.toJSON ohMyOpencodeSlimConfig;
+  };
+
   xdg.configFile."opencode/smart-title.jsonc" = {
     text = builtins.toJSON {
-      model = "opencode-go/deepseek-v4-flash";
+      model = models.go-ds4flash;
     };
   };
 
@@ -113,13 +164,26 @@ in
     '';
   };
 
+  home.activation.reloadOpencodeConfig = lib.mkIf cfg.opencodeServe {
+    after = [ "linkGeneration" ];
+    before = [ ];
+    data = ''
+      if systemctl --user is-active opencode.service >/dev/null 2>&1; then
+        echo "[opencode] Reloading config..."
+        systemctl --user restart opencode.service
+      fi
+    '';
+  };
+
   systemd.user.services.opencode = lib.mkIf cfg.opencodeServe {
     Unit = {
       Description = "OpenCode Server";
       After = [ "network.target" ];
     };
     Service = {
-      Environment = "PATH=${lib.makeBinPath [ pkgs.opencode ]}:${config.home.homeDirectory}/.nix-profile/bin";
+      Environment = "PATH=${
+        lib.makeBinPath [ pkgs.opencode ]
+      }:${config.home.homeDirectory}/.nix-profile/bin";
       ExecStart = "${pkgs.opencode}/bin/opencode serve --port 4000";
       WorkingDirectory = config.home.homeDirectory;
       Restart = "always";
@@ -133,12 +197,20 @@ in
   systemd.user.services.openchamber = lib.mkIf cfg.opencodeServe {
     Unit = {
       Description = "OpenChamber Web UI";
-      After = [ "network.target" "opencode.service" ];
+      After = [
+        "network.target"
+        "opencode.service"
+      ];
       BindsTo = [ "opencode.service" ];
     };
     Service = {
       Environment = [
-        "PATH=${lib.makeBinPath [ pkgs.bun pkgs.nodejs ]}:${config.home.homeDirectory}/.nix-profile/bin"
+        "PATH=${
+          lib.makeBinPath [
+            pkgs.bun
+            pkgs.nodejs
+          ]
+        }:${config.home.homeDirectory}/.nix-profile/bin"
         "OPENCODE_HOST=http://localhost:4000"
         "OPENCODE_SKIP_START=true"
       ];

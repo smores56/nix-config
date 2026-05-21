@@ -1,6 +1,8 @@
 # OpenCode Setup
 
-## OpenCode Go Subscription
+## Provider Auth
+
+### OpenCode Go
 
 1. Sign up at [opencode.ai/auth](https://opencode.ai/auth)
 2. Subscribe to OpenCode Go ($5 first month, then $10/month)
@@ -8,54 +10,51 @@
 4. In the OpenCode TUI, run `/connect` and select "OpenCode Go"
 5. Paste your API key
 
-Your auth is stored in `~/.local/share/opencode/auth.json` (not in the nix store).
+### Wafer (GLM-5.1)
 
-## Wafer API Key (GLM-5.1)
-
-For the heaviest/most difficult tasks, configure the Wafer provider:
-
-1. Get your API key from [wafer.ai/pass](https://pass.wafer.ai/)
-2. In the OpenCode TUI, run `/connect` and select "Other"
+1. Get your API key from [wafer.ai/pass](https://www.wafer.ai/pass)
+2. In the OpenCode TUI, run `/connect`, search for "Other"
 3. Enter provider ID: `wafer`
 4. Paste your API key
 
-Or set the environment variable:
-```bash
-export WAFER_API_KEY=wfr_...
-```
+Auth is stored in `~/.local/share/opencode/auth.json` (not in the nix store).
 
-To use GLM-5.1 for a session, run `/model wafer/GLM-5.1` in the TUI.
+## Model Routing (oh-my-opencode-slim)
+
+Configured in `oh-my-opencode-slim.json` via the `"smores"` preset.
+
+| Agent | Model | Budget |
+|-------|-------|--------|
+| Orchestrator | `wafer/GLM-5.1` | wafer (1,000 req/5hr) |
+| Oracle | `wafer/GLM-5.1` (high) | wafer |
+| Council | `opencode-go/deepseek-v4-pro` | go |
+| Explorer | `opencode-go/minimax-m2.7` | go |
+| Librarian | `opencode-go/minimax-m2.7` | go |
+| Designer | `opencode-go/kimi-k2.6` | go |
+| Fixer | `opencode-go/deepseek-v4-flash` (high) | go |
+| Observer | `opencode-go/kimi-k2.6` | go |
+
+Orchestrator and Oracle fall back to `opencode-go/deepseek-v4-pro` if wafer.ai is down or rate-limited.
 
 ## OCX Workspace Profile
 
-The OCX workspace profile is auto-installed on first `home-manager switch`. If auto-install fails, run manually:
+Auto-installed on first `home-manager switch`. If it fails, run manually:
 
 ```bash
 ocx init --global
 ocx profile add ws --source tweak/p-1vp4xoqv --from https://tweakoc.com/r --global
 ```
 
-The workspace profile adds multi-agent orchestration (planner, coder, reviewer, scribe agents) and MCP servers. Use with `ocx oc -p ws` when launching OpenCode directly.
+## OpenChamber Web UI
 
-## Portal Web UI
+Accessible at `http://campfire:3000` over Tailscale. The web UI and TUI connect to the same backend server, so sessions are shared.
 
-Portal provides a web-based interface to OpenCode, accessible at:
+Proxied at `https://opencode.sammohr.dev` via Caddy on smoresnet (see `portal-proxy/`).
 
-```
-http://campfire:3000
-```
+## Config Reload
 
-Access over Tailscale from any device. The web UI and TUI connect to the same backend server, so sessions are shared.
+On hosts with `opencodeServe = true`, `home-manager switch` automatically restarts the opencode systemd service to pick up config changes. OpenChamber restarts too (it's bound to the opencode service).
 
 ## Fish Abbreviations
 
 - `o` — Attach to the campfire-hosted OpenCode instance (`opencode attach http://campfire:4000`)
-- On campfire itself, this connects to the local Portal server via Tailscale MagicDNS
-
-## Model Routing
-
-| Model | Use |
-|-------|-----|
-| `opencode-go/deepseek-v4-pro` | Default coding (3,450 req/5hr) |
-| `opencode-go/deepseek-v4-flash` | Titles, summaries, trivial tasks (31,650 req/5hr) |
-| `wafer/GLM-5.1` | Heaviest/most complex tasks (manual switch via `/model`) |
