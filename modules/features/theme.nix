@@ -211,6 +211,7 @@ in
         fish.enable = false;
         zellij.enable = false;
         gtk.enable = false;
+        gnome.enable = false;
       };
     };
 
