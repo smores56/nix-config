@@ -42,15 +42,15 @@ The workspace profile adds multi-agent orchestration (planner, coder, reviewer, 
 Portal provides a web-based interface to OpenCode, accessible at:
 
 ```
-http://smortress:3000
+http://campfire:3000
 ```
 
 Access over Tailscale from any device. The web UI and TUI connect to the same backend server, so sessions are shared.
 
 ## Fish Abbreviations
 
-- `o` — Attach to the smortress-hosted OpenCode instance (`opencode attach http://smortress:4000`)
-- On smortress itself, this connects to the local Portal server via Tailscale MagicDNS
+- `o` — Attach to the campfire-hosted OpenCode instance (`opencode attach http://campfire:4000`)
+- On campfire itself, this connects to the local Portal server via Tailscale MagicDNS
 
 ## Model Routing
 

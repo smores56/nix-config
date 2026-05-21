@@ -127,14 +127,15 @@ in
         };
       };
       "smores@campfire" = mkHome {
+        displayManager = "niri";
         nixos = true;
+        polarity = "time-of-day";
+        opencodeServe = true;
       };
       "smores@smortress" = mkHome {
         displayManager = "niri";
         nixos = true;
         polarity = "time-of-day";
-        llm = true;
-        opencodeServe = true;
         primaryMonitor = "DP-2";
         monitorSize = {
           width = 5120;

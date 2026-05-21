@@ -121,33 +121,8 @@ let
     - Non-interactive CLI commands only (flags over interactive prompts)
   '';
 
-  smortressBaseUrl = "http://smortress:8080";
-  smortressCompat = {
-    supportsStore = false;
-    supportsDeveloperRole = false;
-    supportsReasoningEffort = false;
-    supportsUsageInStreaming = true;
-    maxTokensField = "max_tokens";
-  };
-  smortressModels = [
-    {
-      id = "qwen3.6-27b";
-      name = "Qwen 3.6 27B";
-      reasoning = false;
-      input = [ "text" ];
-      contextWindow = 131072;
-      maxTokens = 8192;
-      cost = {
-        input = 0;
-        output = 0;
-        cacheRead = 0;
-        cacheWrite = 0;
-      };
-    }
-  ];
-
   piSettingsJson = builtins.toJSON {
-    defaultProvider = "smortress";
+    defaultProvider = "campfire";
     inherit (cfg) defaultModel;
     npmCommand = [ "${piNpm}/bin/pi-npm" ];
     packages = [
@@ -170,18 +145,6 @@ let
       enabled = true;
     };
   };
-
-  piModelsJson = builtins.toJSON {
-    providers = {
-      smortress = {
-        baseUrl = "${smortressBaseUrl}/v1";
-        apiKey = "PI_SMORTRESS_API_KEY";
-        api = "openai-completions";
-        compat = smortressCompat;
-        models = smortressModels;
-      };
-    };
-  };
 in
 {
   config = {
@@ -193,14 +156,6 @@ in
         revdiff
       ];
 
-      sessionVariables = {
-        OPENAI_HOST = smortressBaseUrl;
-        GOOSE_CONTEXT_LIMIT = "131072";
-        OPENAI_MODEL = cfg.defaultModel;
-        PI_SMORTRESS_API_KEY = "not-needed";
-        GOOSE_DISABLE_KEYRING = "true";
-      };
-
       file = {
         ".goosehints".text = aiHints;
         ".claude/CLAUDE.md".text = aiHints;
@@ -210,10 +165,6 @@ in
         '';
         ".pi/agent/settings.json" = {
           text = piSettingsJson;
-          force = true;
-        };
-        ".pi/agent/models.json" = {
-          text = piModelsJson;
           force = true;
         };
       };

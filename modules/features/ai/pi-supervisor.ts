@@ -1,9 +1,12 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { spawn, execFile, type ChildProcess } from "node:child_process";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
+import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { homedir } from "node:os";
 import { createWriteStream, type WriteStream } from "node:fs";
-import { mkdir, readdir, readFile, writeFile, unlink } from "node:fs/promises";
+import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -23,8 +26,14 @@ const Type = {
       .filter(([, schema]) => !schema.optional)
       .map(([name]) => name),
   }),
-  String: (options: Record<string, unknown> = {}) => ({ type: "string", ...options }),
-  Number: (options: Record<string, unknown> = {}) => ({ type: "number", ...options }),
+  String: (options: Record<string, unknown> = {}) => ({
+    type: "string",
+    ...options,
+  }),
+  Number: (options: Record<string, unknown> = {}) => ({
+    type: "number",
+    ...options,
+  }),
   Optional: (schema: JsonSchema) => ({ ...schema, optional: true }),
 };
 
@@ -44,7 +53,14 @@ interface RpcChild {
   entry: ChildEntry;
   process: ChildProcess | null;
   buffer: string;
-  responseHandlers: Map<string, { resolve: (msg: RpcResponse) => void; reject: (err: Error) => void; timer: ReturnType<typeof setTimeout> }>;
+  responseHandlers: Map<
+    string,
+    {
+      resolve: (msg: RpcResponse) => void;
+      reject: (err: Error) => void;
+      timer: ReturnType<typeof setTimeout>;
+    }
+  >;
   nextId: number;
 }
 
@@ -66,7 +82,10 @@ interface RpcEvent {
 }
 
 interface Registry {
-  children: Record<string, { sessionDir: string; task: string; status: string; createdAt: number }>;
+  children: Record<
+    string,
+    { sessionDir: string; task: string; status: string; createdAt: number }
+  >;
   supervisorSession?: string;
 }
 
@@ -111,7 +130,10 @@ function statusIcon(status: SessionStatus): string {
 function getChildOrError(name: string): RpcChild | ToolResult {
   const child = children.get(name);
   if (!child) {
-    return { content: [{ type: "text", text: `No session named "${name}".` }], details: { error: "not_found" } };
+    return {
+      content: [{ type: "text", text: `No session named "${name}".` }],
+      details: { error: "not_found" },
+    };
   }
   return child;
 }
@@ -154,7 +176,8 @@ async function flushRegistry(): Promise<void> {
     };
   }
   if (latestCtx) {
-    reg.supervisorSession = latestCtx.sessionManager.getSessionFile?.() ?? undefined;
+    reg.supervisorSession = latestCtx.sessionManager.getSessionFile?.() ??
+      undefined;
   }
   await writeFile(registryPath, JSON.stringify(reg, null, 2));
 }
@@ -181,10 +204,16 @@ function renderWidget(): void {
   const lines = ["─── Sessions ───"];
   for (const child of children.values()) {
     const age = formatAge(Date.now() - child.entry.createdAt);
-    lines.push(` ${statusIcon(child.entry.status)} ${child.entry.name}  ${age}  ${child.entry.task.slice(0, 50)}`);
+    lines.push(
+      ` ${statusIcon(child.entry.status)} ${child.entry.name}  ${age}  ${
+        child.entry.task.slice(0, 50)
+      }`,
+    );
   }
 
-  latestCtx.ui.setWidget("supervisor-sessions", lines, { placement: "belowEditor" });
+  latestCtx.ui.setWidget("supervisor-sessions", lines, {
+    placement: "belowEditor",
+  });
 }
 
 function formatAge(ms: number): string {
@@ -201,20 +230,32 @@ function formatAge(ms: number): string {
 function drainResponseHandlers(child: RpcChild, reason: string): void {
   for (const [id, handler] of child.responseHandlers) {
     clearTimeout(handler.timer);
-    handler.reject(new Error(`${child.entry.name}: ${reason} (pending: ${id})`));
+    handler.reject(
+      new Error(`${child.entry.name}: ${reason} (pending: ${id})`),
+    );
   }
   child.responseHandlers.clear();
 }
 
-function spawnRpcChild(name: string, task: string, cwd: string, sessionDir: string): RpcChild {
+function spawnRpcChild(
+  name: string,
+  task: string,
+  cwd: string,
+  sessionDir: string,
+): RpcChild {
   const model = process.env.OPENAI_MODEL ?? "qwen3.6-27b";
-  const baseUrl = process.env.OPENAI_HOST ?? "http://smortress:8080";
+  const baseUrl = process.env.OPENAI_HOST ?? "http://campfire:8080";
   const args = [
-    "--mode", "rpc",
-    "--provider", "smortress",
-    "--model", model,
-    "--session-dir", sessionDir,
-    "--cwd", cwd,
+    "--mode",
+    "rpc",
+    "--provider",
+    "campfire",
+    "--model",
+    model,
+    "--session-dir",
+    sessionDir,
+    "--cwd",
+    cwd,
   ];
   log("info", `spawn ${name}: pi ${args.join(" ")} (baseUrl=${baseUrl})`);
 
@@ -298,7 +339,10 @@ function spawnRpcChild(name: string, task: string, cwd: string, sessionDir: stri
         _child.entry.status = "idle";
         break;
       case "message_update":
-        if (event.assistantMessageEvent?.type === "text_delta" && event.assistantMessageEvent.delta) {
+        if (
+          event.assistantMessageEvent?.type === "text_delta" &&
+          event.assistantMessageEvent.delta
+        ) {
           appendOutput(_child, event.assistantMessageEvent.delta);
         }
         break;
@@ -321,7 +365,10 @@ function spawnRpcChild(name: string, task: string, cwd: string, sessionDir: stri
       _child.entry.output.push(text);
     }
     appendsSinceTrim++;
-    if (appendsSinceTrim >= OUTPUT_TRIM_INTERVAL && _child.entry.output.length > MAX_OUTPUT_LINES) {
+    if (
+      appendsSinceTrim >= OUTPUT_TRIM_INTERVAL &&
+      _child.entry.output.length > MAX_OUTPUT_LINES
+    ) {
       _child.entry.output = _child.entry.output.slice(-MAX_OUTPUT_LINES);
       appendsSinceTrim = 0;
     }
@@ -330,8 +377,14 @@ function spawnRpcChild(name: string, task: string, cwd: string, sessionDir: stri
   return child;
 }
 
-function sendRpc(child: RpcChild, command: string, params: Record<string, unknown> = {}): Promise<RpcResponse> {
-  if (!child.process) return Promise.reject(new Error(`${child.entry.name}: no process`));
+function sendRpc(
+  child: RpcChild,
+  command: string,
+  params: Record<string, unknown> = {},
+): Promise<RpcResponse> {
+  if (!child.process) {
+    return Promise.reject(new Error(`${child.entry.name}: no process`));
+  }
 
   const id = `req-${child.nextId++}`;
   log("info", `${child.entry.name} rpc send: ${command} (${id})`);
@@ -339,7 +392,9 @@ function sendRpc(child: RpcChild, command: string, params: Record<string, unknow
   return new Promise((res, rej) => {
     const timer = setTimeout(() => {
       child.responseHandlers.delete(id);
-      const err = new Error(`RPC timeout for ${command} on ${child.entry.name}`);
+      const err = new Error(
+        `RPC timeout for ${command} on ${child.entry.name}`,
+      );
       log("error", err.message);
       rej(err);
     }, 300_000);
@@ -366,12 +421,12 @@ async function findSessionFile(dir: string): Promise<string | null> {
 // --- Extension entry point ---
 
 export default async function supervisorExtension(pi: ExtensionAPI) {
-  const baseUrl = process.env.OPENAI_HOST ?? "http://smortress:8080";
+  const baseUrl = process.env.OPENAI_HOST ?? "http://campfire:8080";
 
-  pi.registerProvider("smortress", {
-    name: "smortress llama.cpp",
+  pi.registerProvider("campfire", {
+    name: "campfire llama.cpp",
     baseUrl: `${baseUrl}/v1`,
-    apiKey: "PI_SMORTRESS_API_KEY",
+    apiKey: "PI_CAMPFIRE_API_KEY",
     api: "openai-completions",
     compat: {
       supportsStore: false,
@@ -403,7 +458,9 @@ export default async function supervisorExtension(pi: ExtensionAPI) {
 
   const registry = await loadRegistry();
   const restoredCount = Object.keys(registry.children).length;
-  if (restoredCount > 0) log("info", `restoring ${restoredCount} session(s) from registry`);
+  if (restoredCount > 0) {
+    log("info", `restoring ${restoredCount} session(s) from registry`);
+  }
 
   for (const [name, info] of Object.entries(registry.children)) {
     children.set(name, {
@@ -446,13 +503,21 @@ export default async function supervisorExtension(pi: ExtensionAPI) {
     description:
       "Create a new background agent session. The child session runs autonomously with full coding tools (read, write, edit, bash). Use this to delegate tasks that can run independently.",
     parameters: Type.Object({
-      name: Type.String({ description: "Short identifier for the session (kebab-case)" }),
-      task: Type.String({ description: "The task prompt to send to the child agent" }),
+      name: Type.String({
+        description: "Short identifier for the session (kebab-case)",
+      }),
+      task: Type.String({
+        description: "The task prompt to send to the child agent",
+      }),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       if (children.has(params.name)) {
         return {
-          content: [{ type: "text", text: `Session "${params.name}" already exists. Use a different name or kill it first.` }],
+          content: [{
+            type: "text",
+            text:
+              `Session "${params.name}" already exists. Use a different name or kill it first.`,
+          }],
           details: { error: "exists" },
         };
       }
@@ -460,7 +525,12 @@ export default async function supervisorExtension(pi: ExtensionAPI) {
       const sessionDir = resolve(sessionsDir, params.name);
       await mkdir(sessionDir, { recursive: true });
 
-      const child = spawnRpcChild(params.name, params.task, ctx.cwd, sessionDir);
+      const child = spawnRpcChild(
+        params.name,
+        params.task,
+        ctx.cwd,
+        sessionDir,
+      );
       children.set(params.name, child);
       scheduleWidgetUpdate();
       markRegistryDirty();
@@ -472,7 +542,10 @@ export default async function supervisorExtension(pi: ExtensionAPI) {
       });
 
       return {
-        content: [{ type: "text", text: `Session "${params.name}" spawned. Task: ${params.task}` }],
+        content: [{
+          type: "text",
+          text: `Session "${params.name}" spawned. Task: ${params.task}`,
+        }],
         details: { name: params.name },
       };
     },
@@ -485,18 +558,26 @@ export default async function supervisorExtension(pi: ExtensionAPI) {
     parameters: Type.Object({}),
     async execute() {
       if (children.size === 0) {
-        return { content: [{ type: "text", text: "No active sessions." }], details: { count: 0 } };
+        return {
+          content: [{ type: "text", text: "No active sessions." }],
+          details: { count: 0 },
+        };
       }
 
       const lines = Array.from(children.values()).map((c) => {
         const age = formatAge(Date.now() - c.entry.createdAt);
         const outputTail = c.entry.output.slice(-3).join("").trim();
-        return `[${c.entry.status}] ${c.entry.name} (${age}) — ${c.entry.task}\n  Last output: ${outputTail || "(none)"}`;
+        return `[${c.entry.status}] ${c.entry.name} (${age}) — ${c.entry.task}\n  Last output: ${
+          outputTail || "(none)"
+        }`;
       });
 
       return {
         content: [{ type: "text", text: lines.join("\n\n") }],
-        details: { count: children.size, sessions: Array.from(children.keys()) },
+        details: {
+          count: children.size,
+          sessions: Array.from(children.keys()),
+        },
       };
     },
   });
@@ -507,7 +588,11 @@ export default async function supervisorExtension(pi: ExtensionAPI) {
     description: "Get the recent output from a child session.",
     parameters: Type.Object({
       name: Type.String({ description: "Session name" }),
-      lines: Type.Optional(Type.Number({ description: "Number of output lines to return (default 30)" })),
+      lines: Type.Optional(
+        Type.Number({
+          description: "Number of output lines to return (default 30)",
+        }),
+      ),
     }),
     async execute(_toolCallId, params) {
       const result = getChildOrError(params.name);
@@ -517,7 +602,13 @@ export default async function supervisorExtension(pi: ExtensionAPI) {
       const tail = result.entry.output.slice(-n).join("");
 
       return {
-        content: [{ type: "text", text: `[${result.entry.status}] ${result.entry.name}\nTask: ${result.entry.task}\n\n${tail || "(no output yet)"}` }],
+        content: [{
+          type: "text",
+          text:
+            `[${result.entry.status}] ${result.entry.name}\nTask: ${result.entry.task}\n\n${
+              tail || "(no output yet)"
+            }`,
+        }],
         details: { status: result.entry.status, name: result.entry.name },
       };
     },
@@ -526,7 +617,8 @@ export default async function supervisorExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "message_session",
     label: "Message Session",
-    description: "Send a follow-up message to an existing child session. If the child's process has exited, a new one is spawned on the same session history.",
+    description:
+      "Send a follow-up message to an existing child session. If the child's process has exited, a new one is spawned on the same session history.",
     parameters: Type.Object({
       name: Type.String({ description: "Session name" }),
       message: Type.String({ description: "Message to send" }),
@@ -536,7 +628,12 @@ export default async function supervisorExtension(pi: ExtensionAPI) {
       if (isToolResult(result)) return result;
 
       if (!result.process?.pid || result.process.exitCode !== null) {
-        const respawned = spawnRpcChild(result.entry.name, result.entry.task, ctx.cwd, result.entry.sessionDir);
+        const respawned = spawnRpcChild(
+          result.entry.name,
+          result.entry.task,
+          ctx.cwd,
+          result.entry.sessionDir,
+        );
         result.process = respawned.process;
         result.buffer = "";
         result.responseHandlers = new Map();
@@ -551,14 +648,18 @@ export default async function supervisorExtension(pi: ExtensionAPI) {
         scheduleWidgetUpdate();
       });
 
-      return { content: [{ type: "text", text: `Message sent to "${params.name}".` }], details: { name: params.name } };
+      return {
+        content: [{ type: "text", text: `Message sent to "${params.name}".` }],
+        details: { name: params.name },
+      };
     },
   });
 
   pi.registerTool({
     name: "kill_session",
     label: "Kill Session",
-    description: "Terminate a child session. The session history is preserved on disk.",
+    description:
+      "Terminate a child session. The session history is preserved on disk.",
     parameters: Type.Object({
       name: Type.String({ description: "Session name" }),
     }),
@@ -566,14 +667,21 @@ export default async function supervisorExtension(pi: ExtensionAPI) {
       const result = getChildOrError(params.name);
       if (isToolResult(result)) return result;
 
-      log("info", `killing session ${params.name} (pid=${result.process?.pid ?? "none"})`);
+      log(
+        "info",
+        `killing session ${params.name} (pid=${result.process?.pid ?? "none"})`,
+      );
       if (result.process?.pid) result.process.kill("SIGTERM");
       children.delete(params.name);
       scheduleWidgetUpdate();
       markRegistryDirty();
 
       return {
-        content: [{ type: "text", text: `Session "${params.name}" killed. Session history preserved at ${result.entry.sessionDir}` }],
+        content: [{
+          type: "text",
+          text:
+            `Session "${params.name}" killed. Session history preserved at ${result.entry.sessionDir}`,
+        }],
         details: { name: params.name },
       };
     },
@@ -582,7 +690,8 @@ export default async function supervisorExtension(pi: ExtensionAPI) {
   // --- Commands ---
 
   pi.registerCommand("health", {
-    description: "Check supervisor prerequisites: Pi CLI, smortress connectivity, RPC mode",
+    description:
+      "Check supervisor prerequisites: Pi CLI, campfire connectivity, RPC mode",
     handler: async (_args, ctx) => {
       const checks: string[] = [];
 
@@ -599,31 +708,55 @@ export default async function supervisorExtension(pi: ExtensionAPI) {
             stdio: ["pipe", "pipe", "pipe"],
             env: { ...process.env, PI_SUPERVISOR_CHILD: "1" },
           });
-          const timer = setTimeout(() => { p.kill(); res("timeout (5s) — may still be ok if Pi is loading extensions"); }, 5000);
-          p.stdout!.once("data", () => { clearTimeout(timer); p.kill(); res("ok"); });
-          p.stderr!.once("data", (d: Buffer) => { clearTimeout(timer); p.kill(); res(`stderr: ${d.toString().trim().slice(0, 200)}`); });
-          p.on("error", (e) => { clearTimeout(timer); res(`spawn error: ${e.message}`); });
+          const timer = setTimeout(() => {
+            p.kill();
+            res("timeout (5s) — may still be ok if Pi is loading extensions");
+          }, 5000);
+          p.stdout!.once("data", () => {
+            clearTimeout(timer);
+            p.kill();
+            res("ok");
+          });
+          p.stderr!.once("data", (d: Buffer) => {
+            clearTimeout(timer);
+            p.kill();
+            res(`stderr: ${d.toString().trim().slice(0, 200)}`);
+          });
+          p.on("error", (e) => {
+            clearTimeout(timer);
+            res(`spawn error: ${e.message}`);
+          });
         });
-        checks.push(`[${rpcOk === "ok" ? "ok" : "WARN"}] pi RPC mode: ${rpcOk}`);
+        checks.push(
+          `[${rpcOk === "ok" ? "ok" : "WARN"}] pi RPC mode: ${rpcOk}`,
+        );
       } catch (err: unknown) {
         checks.push(`[FAIL] pi RPC mode: ${errorMsg(err)}`);
       }
 
       try {
-        const resp = await fetch(`${baseUrl}/v1/models`, { signal: AbortSignal.timeout(5000) });
+        const resp = await fetch(`${baseUrl}/v1/models`, {
+          signal: AbortSignal.timeout(5000),
+        });
         if (resp.ok) {
           const body = await resp.json() as { data?: Array<{ id: string }> };
           const models = body.data?.map((m) => m.id).join(", ") ?? "unknown";
           checks.push(`[ok] ${baseUrl} reachable — models: ${models}`);
         } else {
-          checks.push(`[FAIL] ${baseUrl} responded ${resp.status} ${resp.statusText}`);
+          checks.push(
+            `[FAIL] ${baseUrl} responded ${resp.status} ${resp.statusText}`,
+          );
         }
       } catch (err: unknown) {
         checks.push(`[FAIL] ${baseUrl} unreachable: ${errorMsg(err)}`);
       }
 
       const model = process.env.OPENAI_MODEL;
-      checks.push(model ? `[ok] OPENAI_MODEL=${model}` : `[WARN] OPENAI_MODEL not set, defaulting to qwen3.6-27b`);
+      checks.push(
+        model
+          ? `[ok] OPENAI_MODEL=${model}`
+          : `[WARN] OPENAI_MODEL not set, defaulting to qwen3.6-27b`,
+      );
 
       try {
         const testFile = resolve(sessionsDir, ".health-check");
@@ -646,8 +779,12 @@ export default async function supervisorExtension(pi: ExtensionAPI) {
   pi.registerCommand("enter", {
     description: "Enter a child session for interactive use",
     getArgumentCompletions: (prefix) => {
-      const names = Array.from(children.keys()).filter((n) => n.startsWith(prefix));
-      return names.length > 0 ? names.map((n) => ({ value: n, label: n })) : null;
+      const names = Array.from(children.keys()).filter((n) =>
+        n.startsWith(prefix)
+      );
+      return names.length > 0
+        ? names.map((n) => ({ value: n, label: n }))
+        : null;
     },
     handler: async (args, ctx) => {
       const name = args.trim();
@@ -662,13 +799,19 @@ export default async function supervisorExtension(pi: ExtensionAPI) {
 
       const sessionPath = await findSessionFile(child.entry.sessionDir);
       if (!sessionPath) {
-        ctx.ui.notify(`No session file found in ${child.entry.sessionDir}`, "error");
+        ctx.ui.notify(
+          `No session file found in ${child.entry.sessionDir}`,
+          "error",
+        );
         return;
       }
 
       await ctx.switchSession(sessionPath, {
         withSession: async (newCtx) => {
-          newCtx.ui.notify(`Entered session "${name}". Use /back to return to supervisor.`, "info");
+          newCtx.ui.notify(
+            `Entered session "${name}". Use /back to return to supervisor.`,
+            "info",
+          );
         },
       });
     },
@@ -702,7 +845,9 @@ export default async function supervisorExtension(pi: ExtensionAPI) {
       const names = Array.from(children.keys());
       const items = names.map((n) => {
         const c = children.get(n)!;
-        return `${statusIcon(c.entry.status)} ${n} [${c.entry.status}] — ${c.entry.task.slice(0, 60)}`;
+        return `${statusIcon(c.entry.status)} ${n} [${c.entry.status}] — ${
+          c.entry.task.slice(0, 60)
+        }`;
       });
 
       const selected = await ctx.ui.select("Sessions", items);
@@ -711,7 +856,12 @@ export default async function supervisorExtension(pi: ExtensionAPI) {
         if (idx >= 0) {
           const child = children.get(names[idx])!;
           const tail = child.entry.output.slice(-20).join("");
-          ctx.ui.notify(`${child.entry.name} [${child.entry.status}]\n${tail || "(no output)"}`, "info");
+          ctx.ui.notify(
+            `${child.entry.name} [${child.entry.status}]\n${
+              tail || "(no output)"
+            }`,
+            "info",
+          );
         }
       }
     },

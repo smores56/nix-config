@@ -1,3 +1,3 @@
 opencode.sammohr.dev {
-    reverse_proxy smortress:3000
+    reverse_proxy campfire:3000
 }

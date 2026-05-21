@@ -41,10 +41,10 @@ _: {
       '';
     };
     opencode-hosted = {
-      description = "Attach to smortress opencode instance at git root";
+      description = "Attach to campfire opencode instance at git root";
       body = ''
         set -l dir (git rev-parse --show-toplevel 2>/dev/null; or pwd)
-        opencode attach http://smortress:4000 --dir $dir $argv
+        opencode attach http://campfire:4000 --dir $dir $argv
       '';
     };
   };

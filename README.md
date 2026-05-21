@@ -12,7 +12,7 @@ Personal NixOS and Home Manager configs for my machines. The flake follows the
 | `smoreswork` | macOS aarch64 | Aerospace | Home Manager |
 | `smoresbook` | NixOS | Niri + Noctalia | NixOS + Home Manager |
 | `smorestux` | NixOS | Niri + Noctalia | NixOS + Home Manager |
-| `campfire` | NixOS | headless | NixOS + Home Manager |
+| `campfire` | NixOS | Niri + Noctalia | NixOS + Home Manager |
 | `smortress` | NixOS | Niri + Noctalia | NixOS + Home Manager |
 | `smoresnet` | Linux | headless | Home Manager |
 
@@ -157,7 +157,7 @@ sudo fprintd-enroll smores
 
 ### OpenChamber (OpenCode Web UI)
 
-OpenChamber runs on `smortress` (port 3000) alongside the OpenCode server (port 4000).
+OpenChamber runs on `campfire` (port 3000) alongside the OpenCode server (port 4000).
 Exposed publicly via a Caddy reverse proxy on `smoresnet` at `https://opencode.sammohr.dev`.
 Auth is handled by OpenChamber's `--ui-password`.
 
