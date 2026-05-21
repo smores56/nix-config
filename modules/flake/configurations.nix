@@ -103,6 +103,7 @@ let
             nvidia = args.nvidia or false;
             llm = args.llm or false;
             persist = args.persist or false;
+            opencodeServe = args.opencodeServe or false;
           };
         }
       ]
@@ -161,6 +162,7 @@ in
       "campfire" = mkNixos {
         hostname = "campfire";
         exposeSsh = true;
+        opencodeServe = true;
       };
       "smorestux" = mkNixos {
         hostname = "smorestux";

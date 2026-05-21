@@ -1,3 +1,11 @@
 opencode.sammohr.dev {
-    reverse_proxy campfire:3000
+    reverse_proxy campfire:3000 {
+        transport http {
+            keepalive_idle_conns_per_host 0
+            dial_timeout 5s
+        }
+        health_uri /
+        health_interval 15s
+        health_timeout 5s
+    }
 }
