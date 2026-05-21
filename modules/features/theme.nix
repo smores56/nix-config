@@ -210,6 +210,7 @@ in
         opencode.enable = false;
         fish.enable = false;
         zellij.enable = false;
+        gtk.enable = false;
       };
     };
 
