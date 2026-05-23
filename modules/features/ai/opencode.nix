@@ -294,6 +294,7 @@ in
             ]
           }:${config.home.homeDirectory}/.nix-profile/bin"
           "OPENCODE_HOST=http://localhost:4000"
+          "OPENCODE_DISABLE_AUTOUPDATE=true"
         ];
         ExecStart = "${pkgs.opencode}/bin/opencode serve --hostname ${opencodeHost.bindAddress} --port ${toString opencodeHost.opencodePort}";
         WorkingDirectory = config.home.homeDirectory;
@@ -326,6 +327,7 @@ in
           }:${config.home.homeDirectory}/.nix-profile/bin"
           "OPENCODE_HOST=${opencodeBackendUrl}"
           "OPENCODE_SKIP_START=true"
+          "OPENCODE_DISABLE_AUTOUPDATE=true"
         ];
         ExecStart = "${openchamberServe}/bin/openchamber-serve";
         WorkingDirectory = config.home.homeDirectory;
@@ -356,6 +358,7 @@ in
             lib.makeBinPath [ pkgs.opencode ]
           }:${config.home.homeDirectory}/.nix-profile/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
           OPENCODE_MESSAGE_QUEUE_MODE = "hold";
+          OPENCODE_DISABLE_AUTOUPDATE = "true";
         };
         KeepAlive = true;
         RunAtLoad = true;
@@ -378,6 +381,7 @@ in
           }:${config.home.homeDirectory}/.nix-profile/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
           OPENCODE_HOST = opencodeBackendUrl;
           OPENCODE_SKIP_START = "true";
+          OPENCODE_DISABLE_AUTOUPDATE = "true";
         };
         KeepAlive = true;
         RunAtLoad = true;
