@@ -177,6 +177,7 @@ in
     nixosConfigurations = {
       "campfire" = mkNixos {
         hostname = "campfire";
+        displayManager = "niri";
         exposeSsh = true;
         opencodeServe = true;
         opencodeHost = {
@@ -202,8 +203,6 @@ in
         polarity = "time-of-day";
         exposeSsh = true;
         nvidia = true;
-        llm = false;
-        opencodeServe = true;
       };
     };
   };
