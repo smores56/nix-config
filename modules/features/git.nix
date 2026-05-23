@@ -17,6 +17,10 @@ in
     hunk
   ];
 
+  home.file.".gitignore".text = ''
+    .worktrees/
+  '';
+
   programs = {
     gh = {
       enable = true;

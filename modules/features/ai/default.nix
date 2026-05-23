@@ -57,7 +57,7 @@ let
   ++ [
     "- Create worktrees with `wa ${waArg}` (expands to `wt switch --create ${branchPrefix}/${branchSlug}`)"
     "- Or directly: `wt switch --create ${branchPrefix}/${branchSlug}` (or `wc` abbrev)"
-    "- Worktree directories are siblings of the repo: `<repo>.${branchSlug}` (worktrunk strips the `${branchPrefix}/` prefix)"
+    "- Worktree directories live inside the canonical checkout at `.worktrees/${branchSlug}` (worktrunk strips the `${branchPrefix}/` prefix)"
     "- Switch between worktrees: `w` (fuzzy picker via tv; interactive) or `wt switch <branch>` to jump directly"
     "- To return to the canonical (non-worktree) checkout: `cd ${cfg.codeRoot}/github.com/<owner>/<repo>`"
     "- Do NOT use `git clone`, `git worktree add`, `git checkout -b`, or Claude's built-in EnterWorktree"
@@ -98,8 +98,8 @@ let
     - ALL repos live under `${cfg.codeRoot}/` and are managed by `ghq` (layout: `${cfg.codeRoot}/<host>/<owner>/<repo>`)
     - Clone repos: `ghq get <owner/repo-or-url>`. Never `git clone` directly
     - Find repos: `ghq list -p | grep <name>` (the `r` fish function is interactive-only)
-    - ALL worktrees follow the siblings pattern via `worktrunk` (`wt`)
-    - Worktree of branch `${branchPrefix}/X` lives at `<repo>.X` (sibling of the main checkout; the `${branchPrefix}/` prefix is stripped from the directory name)
+    - ALL worktrees live under each repo's `.worktrees/` directory via `worktrunk` (`wt`)
+    - Worktree of branch `${branchPrefix}/X` lives at `.worktrees/X` inside the canonical checkout; the `${branchPrefix}/` prefix is stripped from the directory name
     - Use `lazygit` from any worktree; it reads `git worktree list` natively
     - Always push immediately after committing — never leave local-only commits
     - Do not add `Co-Authored-By` trailers to commit messages (no AI attribution)
