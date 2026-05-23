@@ -63,6 +63,7 @@ let
       "opencode-plugin-openspec"
       "opencode-beads"
       "@tarquinen/opencode-smart-title"
+      "@0xsero/open-queue"
     ];
     provider.wafer = {
       npm = "@ai-sdk/openai-compatible";
@@ -85,6 +86,15 @@ let
         mode = "primary";
         description = "Anthropic Claude-backed primary coding agent.";
       };
+    };
+    command.queue = {
+      description = "Control message queue mode (hold/immediate/status)";
+      template = ''
+        Use the queue tool with action: $ARGUMENTS.
+        Only change queue mode when the user explicitly asks.
+        Do not switch to immediate on your own.
+        If no argument provided, use action "status" to show current state.
+      '';
     };
   };
 
@@ -193,6 +203,8 @@ let
 in
 {
   home = {
+    sessionVariables.OPENCODE_MESSAGE_QUEUE_MODE = "hold";
+
     packages = with pkgs; [
       opencode
       beads
@@ -245,9 +257,10 @@ in
         After = [ "network.target" ];
       };
       Service = {
-        Environment = "PATH=${
-          lib.makeBinPath [ pkgs.opencode ]
-        }:${config.home.homeDirectory}/.nix-profile/bin";
+        Environment = [
+          "PATH=${lib.makeBinPath [ pkgs.opencode ]}:${config.home.homeDirectory}/.nix-profile/bin"
+          "OPENCODE_MESSAGE_QUEUE_MODE=hold"
+        ];
         ExecStart = "${pkgs.opencode}/bin/opencode serve --hostname ${opencodeHost.bindAddress} --port ${toString opencodeHost.opencodePort}";
         WorkingDirectory = config.home.homeDirectory;
         Restart = "always";
@@ -306,6 +319,7 @@ in
           PATH = "${
             lib.makeBinPath [ pkgs.opencode ]
           }:${config.home.homeDirectory}/.nix-profile/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+          OPENCODE_MESSAGE_QUEUE_MODE = "hold";
         };
         KeepAlive = true;
         RunAtLoad = true;
