@@ -68,7 +68,7 @@ let
             monitorSize = null;
             branchPrefix = null;
             ticketPrefix = null;
-            workSshKey = null;
+            workGithubOrgs = null;
             sevenqlLspPath = null;
             opencodeServe = null;
             opencodeHost = null;
@@ -162,7 +162,7 @@ in
         email = "sam.mohr@sevenai.com";
         branchPrefix = "sam.mohr";
         ticketPrefix = "7AI";
-        workSshKey = true;
+        workGithubOrgs = [ "OkamiAI" ];
         sevenqlLspPath = "/Users/smohr/dev/okami/typescript/tools/sevenql-lsp/main.ts";
         opencodeHost = {
           enable = true;

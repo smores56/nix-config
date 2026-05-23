@@ -1,8 +1,4 @@
-{ config, lib, ... }:
-let
-  cfg = config.dotfiles;
-in
-{
+_: {
   programs.ssh = {
     enable = true;
     enableDefaultConfig = false;
@@ -26,14 +22,6 @@ in
         controlMaster = "no";
         controlPath = "~/.ssh/master-%r@%n:%p";
         controlPersist = "no";
-      };
-    }
-    // lib.optionalAttrs cfg.workSshKey {
-      "github-work" = {
-        hostname = "github.com";
-        user = "git";
-        identityFile = "~/.ssh/id_work";
-        identitiesOnly = true;
       };
     };
   };

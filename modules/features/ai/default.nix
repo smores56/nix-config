@@ -66,6 +66,9 @@ let
   ];
 
   branchWorkflow = lib.concatStringsSep "\n" branchWorkflowLines;
+  workGithubOrgHint = lib.optionalString (cfg.workGithubOrgs != [ ]) ''
+    - Work GitHub orgs (${lib.concatStringsSep ", " cfg.workGithubOrgs}) use canonical `github.com` remotes and paths
+  '';
 
   aiHints = ''
     # Code Style
@@ -97,6 +100,7 @@ let
     # Git Workflow
     - ALL repos live under `${cfg.codeRoot}/` and are managed by `ghq` (layout: `${cfg.codeRoot}/<host>/<owner>/<repo>`)
     - Clone repos: `ghq get <owner/repo-or-url>`. Never `git clone` directly
+    ${workGithubOrgHint}
     - Find repos: `ghq list -p | grep <name>` (the `r` fish function is interactive-only)
     - ALL worktrees live under each repo's `.worktrees/` directory via `worktrunk` (`wt`)
     - Worktree of branch `${branchPrefix}/X` lives at `.worktrees/X` inside the canonical checkout; the `${branchPrefix}/` prefix is stripped from the directory name

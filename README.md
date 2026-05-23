@@ -80,6 +80,11 @@ canonical checkout: a worktree of branch `sam.mohr/foo` of repo
 to the canonical checkout, `cd` to the repo directory directly — `wt switch main`
 would create a new worktree at `.worktrees/main`.
 
+On `smoreswork`, OkamiAI repos still use canonical `github.com` remotes and live
+under `~/code/github.com/OkamiAI/`. Git rewrites `https://github.com/OkamiAI/`
+URLs to `git@github.com:OkamiAI/`, then an SSH wrapper selects `~/.ssh/id_work`
+only for that org.
+
 ### Shell commands
 
 | Abbrev / function | Expands to | When to use |
