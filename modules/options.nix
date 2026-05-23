@@ -191,6 +191,39 @@ in
       default = false;
       description = "Host runs the opencode server and OpenChamber web UI for remote access.";
     };
+    opencodeHost = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkOption {
+            type = lib.types.bool;
+            default = false;
+            description = "Enable the opencode server and OpenChamber web UI.";
+          };
+          hostname = lib.mkOption {
+            type = lib.types.str;
+            default = "campfire";
+            description = "Hostname clients should use to reach the hosted opencode server.";
+          };
+          bindAddress = lib.mkOption {
+            type = lib.types.str;
+            default = "0.0.0.0";
+            description = "Address the opencode and OpenChamber services bind to.";
+          };
+          opencodePort = lib.mkOption {
+            type = lib.types.port;
+            default = 4000;
+            description = "Port for the opencode server.";
+          };
+          openchamberPort = lib.mkOption {
+            type = lib.types.port;
+            default = 3000;
+            description = "Port for the OpenChamber web UI.";
+          };
+        };
+      };
+      default = { };
+      description = "Host and port settings for a hosted opencode/OpenChamber pair.";
+    };
     aiHints = lib.mkOption {
       type = lib.types.str;
       readOnly = true;
@@ -227,9 +260,16 @@ in
             || config.dotfiles.displayManager == "niri";
           message = "polarity 'time-of-day' requires displayManager 'osx' or 'niri' for automatic switching";
         }
+        {
+          assertion =
+            !config.dotfiles.opencodeHost.enable
+            || config.dotfiles.opencodeHost.opencodePort != config.dotfiles.opencodeHost.openchamberPort;
+          message = "opencodeHost opencodePort and openchamberPort must be different";
+        }
       ];
 
     dotfiles = {
+      opencodeHost.enable = lib.mkDefault config.dotfiles.opencodeServe;
       wayland = config.dotfiles.displayManager == "niri";
       terminal = "kitty";
       shell = "fish";

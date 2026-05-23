@@ -36,6 +36,15 @@ Configured in `oh-my-opencode-slim.json` via the `"smores"` preset.
 
 Orchestrator and Oracle fall back to `opencode-go/deepseek-v4-pro` if wafer.ai is down or rate-limited.
 
+## Primary Agents
+
+OpenCode also exposes primary agents for direct model switching:
+
+| Agent | Model |
+|-------|-------|
+| Codex | `openai/gpt-5.3-codex` |
+| Claude | `anthropic/claude-sonnet-4-5` |
+
 ## OCX Workspace Profile
 
 Auto-installed on first `home-manager switch`. If it fails, run manually:
@@ -47,14 +56,26 @@ ocx profile add ws --source tweak/p-1vp4xoqv --from https://tweakoc.com/r --glob
 
 ## OpenChamber Web UI
 
-Accessible at `http://campfire:3000` over Tailscale. The web UI and TUI connect to the same backend server, so sessions are shared.
+Personal hosting is accessible at `http://campfire:3000` over Tailscale. The web UI and TUI connect to the same backend server, so sessions are shared.
 
 Proxied at `https://opencode.sammohr.dev` via Caddy on smoresnet (see `portal-proxy/`).
 
+The work host runs a local-only pair:
+
+- OpenChamber: `http://openchamber.local:15500`
+- OpenCode backend: `http://openchamber.local:16500`
+
+Map `openchamber.local` to `127.0.0.1` in `/etc/hosts` or local DNS if needed. On macOS:
+
+```bash
+grep -q '^127\.0\.0\.1[[:space:]]\+openchamber\.local$' /etc/hosts || \
+  echo '127.0.0.1 openchamber.local' | sudo tee -a /etc/hosts
+```
+
 ## Config Reload
 
-On hosts with `opencodeServe = true`, `home-manager switch` automatically restarts the opencode systemd service to pick up config changes. OpenChamber restarts too (it's bound to the opencode service).
+On Linux hosts with hosting enabled, `home-manager switch` restarts the opencode systemd service to pick up config changes. OpenChamber restarts too because it is bound to the opencode service. On macOS work hosts, Home Manager manages the launchd agents.
 
 ## Fish Abbreviations
 
-- `o` — Attach to the campfire-hosted OpenCode instance (`opencode attach http://campfire:4000`)
+- `o` — Attach to the configured hosted OpenCode instance. Personal configs default to `http://campfire:4000`; the work config uses `http://openchamber.local:16500`.

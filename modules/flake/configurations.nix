@@ -71,6 +71,7 @@ let
             workSshKey = null;
             sevenqlLspPath = null;
             opencodeServe = null;
+            opencodeHost = null;
           } args;
           home.username = username;
           home.homeDirectory =
@@ -104,6 +105,7 @@ let
             llm = args.llm or false;
             persist = args.persist or false;
             opencodeServe = args.opencodeServe or false;
+            opencodeHost = args.opencodeHost or { };
           };
         }
       ]
@@ -132,6 +134,13 @@ in
         nixos = true;
         polarity = "time-of-day";
         opencodeServe = true;
+        opencodeHost = {
+          enable = true;
+          hostname = "campfire";
+          bindAddress = "0.0.0.0";
+          opencodePort = 4000;
+          openchamberPort = 3000;
+        };
       };
       "smores@smortress" = mkHome {
         displayManager = "niri";
@@ -155,6 +164,13 @@ in
         ticketPrefix = "7AI";
         workSshKey = true;
         sevenqlLspPath = "/Users/smohr/dev/okami/typescript/tools/sevenql-lsp/main.ts";
+        opencodeHost = {
+          enable = true;
+          hostname = "openchamber.local";
+          bindAddress = "127.0.0.1";
+          opencodePort = 16500;
+          openchamberPort = 15500;
+        };
       };
     };
 
@@ -163,6 +179,13 @@ in
         hostname = "campfire";
         exposeSsh = true;
         opencodeServe = true;
+        opencodeHost = {
+          enable = true;
+          hostname = "campfire";
+          bindAddress = "0.0.0.0";
+          opencodePort = 4000;
+          openchamberPort = 3000;
+        };
       };
       "smorestux" = mkNixos {
         hostname = "smorestux";

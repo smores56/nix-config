@@ -1,4 +1,9 @@
-_: {
+{ config, ... }:
+let
+  cfg = config.dotfiles;
+  opencodeAttachUrl = "http://${cfg.opencodeHost.hostname}:${toString cfg.opencodeHost.opencodePort}";
+in
+{
   programs.fish.functions = {
     error = {
       description = "Print error to stderr";
@@ -41,10 +46,10 @@ _: {
       '';
     };
     opencode-hosted = {
-      description = "Attach to campfire opencode instance at git root";
+      description = "Attach to hosted opencode instance at git root";
       body = ''
         set -l dir (git rev-parse --show-toplevel 2>/dev/null; or pwd)
-        opencode attach http://campfire:4000 --dir $dir $argv
+        opencode attach ${opencodeAttachUrl} --dir $dir $argv
       '';
     };
   };

@@ -161,13 +161,25 @@ OpenChamber runs on `campfire` (port 3000) alongside the OpenCode server (port 4
 Exposed publicly via a Caddy reverse proxy on `smoresnet` at `https://opencode.sammohr.dev`.
 Auth is handled by OpenChamber's `--ui-password`.
 
+The work host runs its own local-only OpenChamber/OpenCode pair at:
+
+- OpenChamber: `http://openchamber.local:15500`
+- OpenCode backend: `http://openchamber.local:16500`
+
+Map `openchamber.local` to `127.0.0.1` in `/etc/hosts` or local DNS if it does not already resolve. On macOS:
+
+```bash
+grep -q '^127\.0\.0\.1[[:space:]]\+openchamber\.local$' /etc/hosts || \
+  echo '127.0.0.1 openchamber.local' | sudo tee -a /etc/hosts
+```
+
 **Set UI password:**
 
 ```bash
 # Generate password (4 words + 2 specials)
 PASSWORD=$(nix-shell -p diceware --run 'diceware -n 4 -s 2')
 echo "$PASSWORD" > ~/.config/openchamber/ui-password
-systemctl --user restart openchamber
+systemctl --user restart openchamber  # Linux hosts
 ```
 
 **Deploy Caddy config to smoresnet:**
