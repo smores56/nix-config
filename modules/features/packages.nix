@@ -77,6 +77,7 @@
           pkg-config
           openssl.dev
           libiconv
+          wabt
         ]
         ++ lib.optionals pkgs.stdenv.isDarwin [
           pkgs.apple-sdk_15

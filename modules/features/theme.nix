@@ -211,7 +211,9 @@ in
         fish.enable = false;
         zellij.enable = false;
         gtk.enable = false;
-        gnome.enable = false;
+        gnome.enable = lib.mkDefault false;
+        gnome-text-editor.enable = false;
+        eog.enable = false;
       };
     };
 
