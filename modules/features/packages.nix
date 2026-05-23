@@ -49,6 +49,7 @@
           awscli2
           aws-sso-cli
           _1password-cli
+          just
 
           # networking
           tailscale

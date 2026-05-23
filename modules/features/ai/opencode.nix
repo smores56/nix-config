@@ -12,8 +12,6 @@ let
     if opencodeHost.bindAddress == "0.0.0.0" then "127.0.0.1" else opencodeHost.bindAddress;
   opencodeBackendUrl = "http://${opencodeBackendHost}:${toString opencodeHost.opencodePort}";
 
-  openchamberVersion = "1.11.4";
-
   models = {
     wafer-glm51 = "wafer/GLM-5.1";
     openai-codex = "openai/gpt-5.3-codex";
@@ -24,42 +22,10 @@ let
     go-kimi = "opencode-go/kimi-k2.6";
   };
 
-  openspec = pkgs.writeShellScriptBin "openspec" ''
-    exec ${pkgs.bun}/bin/bun x @fission-ai/openspec@latest "$@"
-  '';
-
-  openchamber = pkgs.writeShellScriptBin "openchamber" ''
-    exec ${pkgs.bun}/bin/bun x @openchamber/web@${openchamberVersion} "$@"
-  '';
-
-  openchamberServe = pkgs.writeShellScriptBin "openchamber-serve" ''
-    set -e
-    PASSPHRASE_FILE="${config.home.homeDirectory}/.config/openchamber/ui-password"
-    if [ -f "$PASSPHRASE_FILE" ] && [ -s "$PASSPHRASE_FILE" ]; then
-      IFS= read -r PASSPHRASE < "$PASSPHRASE_FILE"
-      exec ${pkgs.bun}/bin/bun x @openchamber/web@${openchamberVersion} serve \
-        --port ${toString opencodeHost.openchamberPort} \
-        --host ${lib.escapeShellArg opencodeHost.bindAddress} \
-        --ui-password "$PASSPHRASE" \
-        --foreground
-    else
-      exec ${pkgs.bun}/bin/bun x @openchamber/web@${openchamberVersion} serve \
-        --port ${toString opencodeHost.openchamberPort} \
-        --host ${lib.escapeShellArg opencodeHost.bindAddress} \
-        --foreground
-    fi
-  '';
-
-  ocx = pkgs.writeShellScriptBin "ocx" ''
-    exec ${pkgs.bun}/bin/bun x ocx@2.0.11 "$@"
-  '';
+  openchamberBin = "${config.home.homeDirectory}/.cache/.bun/install/global/node_modules/@openchamber/web/bin/cli.js";
 
   opencodeSettings = {
     "$schema" = "https://opencode.ai/config.json";
-    shell = {
-      path = cfg.shellPath;
-      args = [ "-l" ];
-    };
     model = models.wafer-glm51;
     small_model = models.go-ds4flash;
     plugin = [
@@ -67,29 +33,10 @@ let
       "opencode-plugin-openspec"
       "opencode-beads"
       "@tarquinen/opencode-smart-title"
-      "@0xsero/open-queue"
     ];
-    provider.wafer = {
-      npm = "@ai-sdk/openai-compatible";
-      name = "Wafer";
-      options.baseURL = "https://pass.wafer.ai/v1";
-      models."GLM-5.1".name = "GLM 5.1";
-    };
     server = {
       hostname = opencodeHost.bindAddress;
       port = opencodeHost.opencodePort;
-    };
-    agent = {
-      codex = {
-        model = models.openai-codex;
-        mode = "primary";
-        description = "OpenAI Codex-backed primary coding agent.";
-      };
-      claude = {
-        model = models.anthropic-sonnet;
-        mode = "primary";
-        description = "Anthropic Claude-backed primary coding agent.";
-      };
     };
     command.queue = {
       description = "Control message queue mode (hold/immediate/status)";
@@ -112,8 +59,8 @@ let
       retryDelayMs = 500;
       retry_on_empty = true;
       chains = {
-        orchestrator = [ models.go-ds4pro ];
-        oracle = [ models.go-ds4pro ];
+        orchestrator = [ models.wafer-glm51 ];
+        oracle = [ models.wafer-glm51 ];
       };
     };
     presets.smores = {
@@ -132,27 +79,27 @@ let
         mcps = [ ];
       };
       council = {
-        model = models.go-ds4pro;
+        model = models.wafer-glm51;
         variant = "high";
       };
       librarian = {
-        model = models.go-minimax;
+        model = models.wafer-glm51;
         mcps = [
           "websearch"
           "context7"
           "grep_app"
         ];
       };
-      explorer.model = models.go-minimax;
+      explorer.model = models.wafer-glm51;
       designer = {
-        model = models.go-kimi;
+        model = models.wafer-glm51;
         variant = "medium";
       };
       fixer = {
         model = models.go-ds4flash;
         variant = "high";
       };
-      observer.model = models.go-kimi;
+      observer.model = models.wafer-glm51;
     };
   };
 
@@ -210,11 +157,9 @@ in
     sessionVariables.OPENCODE_MESSAGE_QUEUE_MODE = "hold";
 
     packages = with pkgs; [
-      opencode
       beads
-      ocx
-      openchamber
-      openspec
+      bun
+      nodejs
       gnumake
       gcc
     ];
@@ -224,12 +169,12 @@ in
         after = [ "linkGeneration" ];
         before = [ ];
         data = ''
-          export PATH="${
-            lib.makeBinPath [
-              pkgs.nodejs
-              pkgs.opencode
-            ]
-          }:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+          export PATH="$HOME/.opencode/bin:$PATH"
+
+          if ! command -v opencode >/dev/null 2>&1; then
+            echo "[opencode] opencode not found in PATH, skipping plugin install"
+            exit 0
+          fi
 
           install_plugin() {
             local name="$1"
@@ -290,17 +235,9 @@ in
       };
       Service = {
         Environment = [
-          "PATH=${
-            lib.makeBinPath [
-              pkgs.opencode
-              pkgs.gnumake
-              pkgs.gcc
-            ]
-          }:${config.home.homeDirectory}/.nix-profile/bin"
           "OPENCODE_HOST=http://localhost:4000"
-          "OPENCODE_DISABLE_AUTOUPDATE=true"
         ];
-        ExecStart = "${pkgs.opencode}/bin/opencode serve --hostname ${opencodeHost.bindAddress} --port ${toString opencodeHost.opencodePort}";
+        ExecStart = "${config.home.homeDirectory}/.opencode/bin/opencode serve --hostname ${opencodeHost.bindAddress} --port ${toString opencodeHost.opencodePort}";
         WorkingDirectory = config.home.homeDirectory;
         Restart = "always";
         RestartSec = 5;
@@ -317,23 +254,25 @@ in
           "network.target"
           "opencode.service"
         ];
-        BindsTo = [ "opencode.service" ];
+        Requires = [ "opencode.service" ];
       };
       Service = {
         Environment = [
-          "PATH=${
-            lib.makeBinPath [
-              pkgs.bun
-              pkgs.nodejs
-              pkgs.gnumake
-              pkgs.gcc
-            ]
-          }:${config.home.homeDirectory}/.nix-profile/bin"
           "OPENCODE_HOST=${opencodeBackendUrl}"
+          "OPENCODE_BINARY=${config.home.homeDirectory}/.opencode/bin/opencode"
           "OPENCODE_SKIP_START=true"
-          "OPENCODE_DISABLE_AUTOUPDATE=true"
         ];
-        ExecStart = "${openchamberServe}/bin/openchamber-serve";
+        ExecStart = pkgs.writeShellScript "openchamber-serve" ''
+          PASSWORD=""
+          if [ -f "${config.home.homeDirectory}/.config/openchamber/ui-password" ] && [ -s "${config.home.homeDirectory}/.config/openchamber/ui-password" ]; then
+            IFS= read -r PASSWORD < "${config.home.homeDirectory}/.config/openchamber/ui-password"
+          fi
+          exec ${openchamberBin} serve \
+            --port ${toString opencodeHost.openchamberPort} \
+            --host ${lib.escapeShellArg opencodeHost.bindAddress} \
+            --ui-password "$PASSWORD" \
+            --foreground
+        '';
         WorkingDirectory = config.home.homeDirectory;
         Restart = "always";
         RestartSec = 5;
@@ -349,7 +288,7 @@ in
       enable = true;
       config = {
         ProgramArguments = [
-          "${pkgs.opencode}/bin/opencode"
+          "${config.home.homeDirectory}/.opencode/bin/opencode"
           "serve"
           "--hostname"
           opencodeHost.bindAddress
@@ -358,11 +297,7 @@ in
         ];
         WorkingDirectory = config.home.homeDirectory;
         EnvironmentVariables = {
-          PATH = "${
-            lib.makeBinPath [ pkgs.opencode ]
-          }:${config.home.homeDirectory}/.nix-profile/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
           OPENCODE_MESSAGE_QUEUE_MODE = "hold";
-          OPENCODE_DISABLE_AUTOUPDATE = "true";
         };
         KeepAlive = true;
         RunAtLoad = true;
@@ -374,15 +309,17 @@ in
     openchamber = lib.mkIf (opencodeEnabled && pkgs.stdenv.isDarwin) {
       enable = true;
       config = {
-        ProgramArguments = [ "${openchamberServe}/bin/openchamber-serve" ];
+        ProgramArguments = [
+          "${openchamberBin}"
+          "serve"
+          "--port"
+          (toString opencodeHost.openchamberPort)
+          "--host"
+          opencodeHost.bindAddress
+          "--foreground"
+        ];
         WorkingDirectory = config.home.homeDirectory;
         EnvironmentVariables = {
-          PATH = "${
-            lib.makeBinPath [
-              pkgs.bun
-              pkgs.nodejs
-            ]
-          }:${config.home.homeDirectory}/.nix-profile/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
           OPENCODE_HOST = opencodeBackendUrl;
           OPENCODE_SKIP_START = "true";
           OPENCODE_DISABLE_AUTOUPDATE = "true";
