@@ -56,6 +56,10 @@ let
 
   opencodeSettings = {
     "$schema" = "https://opencode.ai/config.json";
+    shell = {
+      path = cfg.shellPath;
+      args = [ "-l" ];
+    };
     model = models.wafer-glm51;
     small_model = models.go-ds4flash;
     plugin = [
