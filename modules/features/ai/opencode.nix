@@ -12,7 +12,7 @@ let
     if opencodeHost.bindAddress == "0.0.0.0" then "127.0.0.1" else opencodeHost.bindAddress;
   opencodeBackendUrl = "http://${opencodeBackendHost}:${toString opencodeHost.opencodePort}";
 
-  openchamberVersion = "1.11.3";
+  openchamberVersion = "1.11.4";
 
   models = {
     wafer-glm51 = "wafer/GLM-5.1";
@@ -154,8 +154,8 @@ let
 
   opencodeTui = {
     "$schema" = "https://opencode.ai/tui.json";
-    keybinds.leader = "ctrl+a";
-    plugin = [ "./plugins/empty-left-session-switcher.js" ];
+    keybinds.leader = "ctrl+space";
+    plugin = [ "oh-my-opencode-slim" ];
   };
 
   emptyLeftSessionSwitcher = ''
@@ -211,9 +211,37 @@ in
       ocx
       openchamber
       openspec
+      gnumake
+      gcc
     ];
 
     activation = {
+      installOpencodePlugins = {
+        after = [ "linkGeneration" ];
+        before = [ ];
+        data = ''
+          export PATH="${
+            lib.makeBinPath [
+              pkgs.nodejs
+              pkgs.opencode
+            ]
+          }:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
+          install_plugin() {
+            local name="$1"
+            local pkg_dir="$HOME/.cache/opencode/packages/$name@latest"
+            if [ ! -d "$pkg_dir/node_modules/$name" ]; then
+              opencode plugin "$name" --global --force 2>&1 || true
+            fi
+          }
+
+          install_plugin "oh-my-opencode-slim"
+          install_plugin "opencode-plugin-openspec"
+          install_plugin "opencode-beads"
+          install_plugin "@tarquinen/opencode-smart-title"
+        '';
+      };
+
       setupOcxWorkspace = {
         after = [ "linkGeneration" ];
         before = [ ];
@@ -226,7 +254,7 @@ in
         '';
       };
 
-      reloadOpencodeConfig = lib.mkIf (opencodeEnabled && pkgs.stdenv.isLinux) {
+      reloadOpencodeConfig = lib.mkIf cfg.opencodeServe {
         after = [ "linkGeneration" ];
         before = [ ];
         data = ''
@@ -251,15 +279,21 @@ in
   };
 
   systemd.user.services = {
-    opencode = lib.mkIf (opencodeEnabled && pkgs.stdenv.isLinux) {
+    opencode = lib.mkIf cfg.opencodeServe {
       Unit = {
         Description = "OpenCode Server";
         After = [ "network.target" ];
       };
       Service = {
         Environment = [
-          "PATH=${lib.makeBinPath [ pkgs.opencode ]}:${config.home.homeDirectory}/.nix-profile/bin"
-          "OPENCODE_MESSAGE_QUEUE_MODE=hold"
+          "PATH=${
+            lib.makeBinPath [
+              pkgs.opencode
+              pkgs.gnumake
+              pkgs.gcc
+            ]
+          }:${config.home.homeDirectory}/.nix-profile/bin"
+          "OPENCODE_HOST=http://localhost:4000"
         ];
         ExecStart = "${pkgs.opencode}/bin/opencode serve --hostname ${opencodeHost.bindAddress} --port ${toString opencodeHost.opencodePort}";
         WorkingDirectory = config.home.homeDirectory;
@@ -286,6 +320,8 @@ in
             lib.makeBinPath [
               pkgs.bun
               pkgs.nodejs
+              pkgs.gnumake
+              pkgs.gcc
             ]
           }:${config.home.homeDirectory}/.nix-profile/bin"
           "OPENCODE_HOST=${opencodeBackendUrl}"
