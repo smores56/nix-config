@@ -55,7 +55,9 @@ let
       retryDelayMs = 500;
       retry_on_empty = true;
       chains = {
-        orchestrator = [ models.wafer-glm51 ];
+        orchestrator = [ models.ds4pro ];
+        designer = [ models.ds4pro ];
+        observer = [ models.ds4pro ];
         oracle = [ models.ds4flash ];
       };
     };
