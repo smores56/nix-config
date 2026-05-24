@@ -90,6 +90,7 @@
           musikcube
           clock-rs
           ttyper
+          concord
 
           # TUI utilities
           gum

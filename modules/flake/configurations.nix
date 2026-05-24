@@ -5,6 +5,7 @@ let
     niri
     noctalia
     paneru
+    concord
     stylix
     ;
   inherit (inputs.nixpkgs) lib;
@@ -19,6 +20,9 @@ let
       overlays = [
         niri.overlays.niri
         noctalia.overlays.default
+        (final: prev: {
+          concord = concord.packages.${system}.default;
+        })
       ];
     };
 
