@@ -29,6 +29,7 @@ let
       "opencode-plugin-openspec"
       "opencode-beads"
       "@tarquinen/opencode-smart-title"
+      "@tarquinen/opencode-dcp"
     ];
     server = {
       hostname = opencodeHost.bindAddress;
@@ -42,6 +43,13 @@ let
         Do not switch to immediate on your own.
         If no argument provided, use action "status" to show current state.
       '';
+    };
+    mcp = {
+      beads = {
+        type = "local";
+        command = [ "${config.home.homeDirectory}/.local/bin/beads-mcp" ];
+        enabled = true;
+      };
     };
   };
 
@@ -186,6 +194,7 @@ in
           install_plugin "opencode-plugin-openspec"
           install_plugin "opencode-beads"
           install_plugin "@tarquinen/opencode-smart-title"
+          install_plugin "@tarquinen/opencode-dcp"
         '';
       };
 
@@ -197,6 +206,18 @@ in
             echo "[ocx] Workspace profile configured"
           else
             echo "[ocx] Workspace profile not found"
+          fi
+        '';
+      };
+
+      installBeadsMcp = {
+        after = [ "linkGeneration" ];
+        before = [ ];
+        data = ''
+          export PATH="$HOME/.local/bin:$PATH"
+          if ! command -v beads-mcp >/dev/null 2>&1; then
+            echo "[beads] Installing beads-mcp..."
+            ${pkgs.uv}/bin/uv tool install beads-mcp
           fi
         '';
       };
