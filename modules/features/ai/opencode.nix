@@ -14,8 +14,6 @@ let
 
   models = {
     wafer-glm51 = "wafer/GLM-5.1";
-    openai-codex = "openai/gpt-5.3-codex";
-    anthropic-sonnet = "anthropic/claude-sonnet-4-5";
     ds4pro = "deepseek/deepseek-v4-pro";
     ds4flash = "deepseek/deepseek-v4-flash";
   };
