@@ -42,7 +42,6 @@ let
   branchSlug =
     if hasTicket then "${cfg.ticketPrefix}-<ticket-number>-<kebab-slug>" else "<kebab-slug>";
   exampleSlug = if hasTicket then "${cfg.ticketPrefix}-12345-fix-auth-flow" else "fix-auth-flow";
-  waArg = if hasTicket then "<ticket-number>-<kebab-slug>" else "<kebab-slug>";
 
   branchWorkflowLines = [
     "- Branch format: `${branchPrefix}/${branchSlug}`"
@@ -55,14 +54,13 @@ let
     "- To view a ticket: `linear issue view ${cfg.ticketPrefix}-<number>`"
   ]
   ++ [
-    "- Create worktrees with `wa ${waArg}` (expands to `wt switch --create ${branchPrefix}/${branchSlug}`)"
-    "- Or directly: `wt switch --create ${branchPrefix}/${branchSlug}` (or `wc` abbrev)"
+    "- Create worktrees with `wt switch --create ${branchPrefix}/${branchSlug}`"
     "- Worktree directories live inside the canonical checkout at `.worktrees/${branchSlug}` (worktrunk strips the `${branchPrefix}/` prefix)"
-    "- Switch between worktrees: `w` (fuzzy picker via tv; interactive) or `wt switch <branch>` to jump directly"
+    "- Switch between worktrees: `wt switch <branch>` to jump directly"
     "- To return to the canonical (non-worktree) checkout: `cd ${cfg.codeRoot}/github.com/<owner>/<repo>`"
     "- Do NOT use `git clone`, `git worktree add`, `git checkout -b`, or Claude's built-in EnterWorktree"
-    "- List worktrees: `wt list` (or `wl` abbrev)"
-    "- Remove a worktree: `wt remove` (or `wx` abbrev) — from inside it, or with explicit `<branch>`"
+    "- List worktrees: `wt list`"
+    "- Remove a worktree: `wt remove` — from inside it, or with explicit `<branch>`"
   ];
 
   branchWorkflow = lib.concatStringsSep "\n" branchWorkflowLines;
@@ -101,7 +99,7 @@ let
     - ALL repos live under `${cfg.codeRoot}/` and are managed by `ghq` (layout: `${cfg.codeRoot}/<host>/<owner>/<repo>`)
     - Clone repos: `ghq get <owner/repo-or-url>`. Never `git clone` directly
     ${workGithubOrgHint}
-    - Find repos: `ghq list -p | grep <name>` (the `r` fish function is interactive-only)
+    - Find repos: `ghq list -p | grep <name>`
     - ALL worktrees live under each repo's `.worktrees/` directory via `worktrunk` (`wt`)
     - Worktree of branch `${branchPrefix}/X` lives at `.worktrees/X` inside the canonical checkout; the `${branchPrefix}/` prefix is stripped from the directory name
     - Use `lazygit` from any worktree; it reads `git worktree list` natively

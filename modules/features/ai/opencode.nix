@@ -16,10 +16,8 @@ let
     wafer-glm51 = "wafer/GLM-5.1";
     openai-codex = "openai/gpt-5.3-codex";
     anthropic-sonnet = "anthropic/claude-sonnet-4-5";
-    go-ds4pro = "opencode-go/deepseek-v4-pro";
-    go-ds4flash = "opencode-go/deepseek-v4-flash";
-    go-minimax = "opencode-go/minimax-m2.7";
-    go-kimi = "opencode-go/kimi-k2.6";
+    ds4pro = "deepseek/deepseek-v4-pro";
+    ds4flash = "deepseek/deepseek-v4-flash";
   };
 
   openchamberBin = "${config.home.homeDirectory}/.cache/.bun/install/global/node_modules/@openchamber/web/bin/cli.js";
@@ -27,7 +25,7 @@ let
   opencodeSettings = {
     "$schema" = "https://opencode.ai/config.json";
     model = models.wafer-glm51;
-    small_model = models.go-ds4flash;
+    small_model = models.ds4flash;
     plugin = [
       "oh-my-opencode-slim"
       "opencode-plugin-openspec"
@@ -60,7 +58,7 @@ let
       retry_on_empty = true;
       chains = {
         orchestrator = [ models.wafer-glm51 ];
-        oracle = [ models.wafer-glm51 ];
+        oracle = [ models.ds4flash ];
       };
     };
     presets.smores = {
@@ -73,30 +71,30 @@ let
         ];
       };
       oracle = {
-        model = models.wafer-glm51;
+        model = models.ds4pro;
         variant = "high";
         skills = [ "simplify" ];
         mcps = [ ];
       };
       council = {
-        model = models.wafer-glm51;
+        model = models.ds4pro;
         variant = "high";
       };
       librarian = {
-        model = models.wafer-glm51;
+        model = models.ds4flash;
         mcps = [
           "websearch"
           "context7"
           "grep_app"
         ];
       };
-      explorer.model = models.wafer-glm51;
+      explorer.model = models.ds4flash;
       designer = {
         model = models.wafer-glm51;
         variant = "medium";
       };
       fixer = {
-        model = models.go-ds4flash;
+        model = models.ds4flash;
         variant = "high";
       };
       observer.model = models.wafer-glm51;
@@ -105,7 +103,7 @@ let
 
   opencodeTui = {
     "$schema" = "https://opencode.ai/tui.json";
-    keybinds.leader = "ctrl+space";
+    keybinds.leader = "ctrl+e";
     plugin = [ "oh-my-opencode-slim" ];
   };
 
@@ -223,7 +221,7 @@ in
     "opencode/AGENTS.md".text = cfg.aiHints;
     "opencode/oh-my-opencode-slim.json".text = builtins.toJSON ohMyOpencodeSlimConfig;
     "opencode/smart-title.jsonc".text = builtins.toJSON {
-      model = models.go-ds4flash;
+      model = models.ds4flash;
     };
   };
 
@@ -322,7 +320,6 @@ in
         EnvironmentVariables = {
           OPENCODE_HOST = opencodeBackendUrl;
           OPENCODE_SKIP_START = "true";
-          OPENCODE_DISABLE_AUTOUPDATE = "true";
         };
         KeepAlive = true;
         RunAtLoad = true;

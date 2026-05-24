@@ -8,6 +8,17 @@ let
   cfg = config.dotfiles;
   inherit (pkgs.stdenv) isLinux;
   hasSevenql = pkgs.stdenv.isDarwin && cfg.sevenqlLspPath != null;
+
+  camp-src = builtins.fetchGit {
+    url = "/home/smores/code/github.com/camp-language/camp";
+    rev = "318b9fb89017e8dae43a3bfedf953ce6c058e6ed";
+  };
+
+  tree-sitter-camp = pkgs.tree-sitter.buildGrammar {
+    language = "camp";
+    version = (lib.importJSON "${camp-src}/tree-sitter/tree-sitter.json").metadata.version;
+    src = "${camp-src}/tree-sitter";
+  };
 in
 {
   home.packages = with pkgs; [
@@ -30,6 +41,10 @@ in
   ];
 
   home.file = {
+    ".config/helix/runtime/grammars/camp.so".source = "${tree-sitter-camp}/parser";
+    ".config/helix/runtime/queries/camp/highlights.scm".source = "${tree-sitter-camp}/queries/highlights.scm";
+    ".config/helix/runtime/queries/camp/locals.scm".source = "${tree-sitter-camp}/queries/locals.scm";
+    ".config/helix/runtime/queries/camp/tags.scm".source = "${tree-sitter-camp}/queries/tags.scm";
     ".config/helix/runtime/queries/yaml/injections.scm".source =
       pkgs.runCommand "helix-yaml-injections" { }
         ''
@@ -170,9 +185,25 @@ in
         ]
         ++ lib.optionals hasSevenql [ "sevenql-lsp" ];
       }
+      {
+        name = "camp";
+        scope = "source.camp";
+        file-types = [ "camp" ];
+        roots = [ "camp.toml" ];
+        auto-format = true;
+        formatter = {
+          command = "odin";
+          args = [ "run" "${camp-src}/src" "--" "fmt" "--stdin" ];
+        };
+        language-servers = [ "camp-lsp" ];
+      }
     ];
 
     languages.language-server = {
+      camp-lsp = {
+        command = "odin";
+        args = [ "run" "${camp-src}/src" "--" "lsp" ];
+      };
       ruff = {
         command = "ruff";
         args = [ "server" ];
