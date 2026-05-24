@@ -64,6 +64,7 @@ let
             darkTheme = null;
             lightTheme = null;
             llm = null;
+            noSleep = null;
             primaryMonitor = null;
             monitorSize = null;
             branchPrefix = null;
@@ -103,6 +104,7 @@ let
             fingerprint = args.fingerprint or false;
             nvidia = args.nvidia or false;
             llm = args.llm or false;
+            noSleep = args.noSleep or false;
             persist = args.persist or false;
             opencodeServe = args.opencodeServe or false;
             opencodeHost = args.opencodeHost or { };
@@ -133,6 +135,7 @@ in
         displayManager = "niri";
         nixos = true;
         polarity = "time-of-day";
+        noSleep = true;
         opencodeServe = true;
         opencodeHost = {
           enable = true;
@@ -179,6 +182,7 @@ in
         hostname = "campfire";
         displayManager = "niri";
         exposeSsh = true;
+        noSleep = true;
         opencodeServe = true;
         opencodeHost = {
           enable = true;

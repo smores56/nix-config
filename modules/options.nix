@@ -110,6 +110,11 @@ in
       default = false;
       description = "Host runs the llama.cpp LLM service; also disables desktop/system sleep for availability.";
     };
+    noSleep = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Disable automatic suspend/sleep at both desktop (noctalia idle) and systemd level. For always-on hosts.";
+    };
     persist = lib.mkOption {
       type = lib.types.bool;
       default = false;

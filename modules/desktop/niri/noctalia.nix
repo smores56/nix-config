@@ -152,7 +152,7 @@ in
         idle = {
           enabled = true;
         }
-        // lib.optionalAttrs cfg.llm {
+        // lib.optionalAttrs (cfg.noSleep || cfg.llm) {
           suspendTimeout = 0;
         };
         nightLight.enabled = true;

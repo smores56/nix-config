@@ -7,18 +7,12 @@
 let
   cfg = config.dotfiles;
   inherit (cfg) opencodeHost;
-  opencodeEnabled = opencodeHost.enable;
-  opencodeBackendHost =
-    if opencodeHost.bindAddress == "0.0.0.0" then "127.0.0.1" else opencodeHost.bindAddress;
-  opencodeBackendUrl = "http://${opencodeBackendHost}:${toString opencodeHost.opencodePort}";
 
   models = {
     wafer-glm51 = "wafer/GLM-5.1";
     ds4pro = "deepseek/deepseek-v4-pro";
     ds4flash = "deepseek/deepseek-v4-flash";
   };
-
-  openchamberBin = "${config.home.homeDirectory}/.cache/.bun/install/global/node_modules/@openchamber/web/bin/cli.js";
 
   opencodeSettings = {
     "$schema" = "https://opencode.ai/config.json";
@@ -30,6 +24,7 @@ let
       "opencode-beads"
       "@tarquinen/opencode-smart-title"
       "@tarquinen/opencode-dcp"
+      "@slkiser/opencode-quota"
     ];
     server = {
       hostname = opencodeHost.bindAddress;
@@ -109,10 +104,25 @@ let
     };
   };
 
+  quotaToastConfig = {
+    enabled = true;
+    enabledProviders = "auto";
+    enableToast = true;
+    tuiSidebarPanel.enabled = true;
+    tuiCompactStatus.enabled = false;
+    showSessionTokens = true;
+    percentDisplayMode = "remaining";
+    formatStyle = "singleWindow";
+    maintainerAnnouncements.enabled = true;
+  };
+
   opencodeTui = {
     "$schema" = "https://opencode.ai/tui.json";
     keybinds.leader = "ctrl+e";
-    plugin = [ "oh-my-opencode-slim" ];
+    plugin = [
+      "oh-my-opencode-slim"
+      "@slkiser/opencode-quota"
+    ];
   };
 
   emptyLeftSessionSwitcher = ''
@@ -195,6 +205,7 @@ in
           install_plugin "opencode-beads"
           install_plugin "@tarquinen/opencode-smart-title"
           install_plugin "@tarquinen/opencode-dcp"
+          install_plugin "@slkiser/opencode-quota"
         '';
       };
 
@@ -244,109 +255,6 @@ in
     "opencode/smart-title.jsonc".text = builtins.toJSON {
       model = models.ds4flash;
     };
-  };
-
-  systemd.user.services = {
-    opencode = lib.mkIf cfg.opencodeServe {
-      Unit = {
-        Description = "OpenCode Server";
-        After = [ "network.target" ];
-      };
-      Service = {
-        Environment = [
-          "OPENCODE_HOST=http://localhost:4000"
-        ];
-        ExecStart = "${config.home.homeDirectory}/.opencode/bin/opencode serve --hostname ${opencodeHost.bindAddress} --port ${toString opencodeHost.opencodePort}";
-        WorkingDirectory = config.home.homeDirectory;
-        Restart = "always";
-        RestartSec = 5;
-      };
-      Install = {
-        WantedBy = [ "default.target" ];
-      };
-    };
-
-    openchamber = lib.mkIf (opencodeEnabled && pkgs.stdenv.isLinux) {
-      Unit = {
-        Description = "OpenChamber Web UI";
-        After = [
-          "network.target"
-          "opencode.service"
-        ];
-        Requires = [ "opencode.service" ];
-      };
-      Service = {
-        Environment = [
-          "OPENCODE_HOST=${opencodeBackendUrl}"
-          "OPENCODE_BINARY=${config.home.homeDirectory}/.opencode/bin/opencode"
-          "OPENCODE_SKIP_START=true"
-        ];
-        ExecStart = pkgs.writeShellScript "openchamber-serve" ''
-          PASSWORD=""
-          if [ -f "${config.home.homeDirectory}/.config/openchamber/ui-password" ] && [ -s "${config.home.homeDirectory}/.config/openchamber/ui-password" ]; then
-            IFS= read -r PASSWORD < "${config.home.homeDirectory}/.config/openchamber/ui-password"
-          fi
-          exec ${openchamberBin} serve \
-            --port ${toString opencodeHost.openchamberPort} \
-            --host ${lib.escapeShellArg opencodeHost.bindAddress} \
-            --ui-password "$PASSWORD" \
-            --foreground
-        '';
-        WorkingDirectory = config.home.homeDirectory;
-        Restart = "always";
-        RestartSec = 5;
-      };
-      Install = {
-        WantedBy = [ "default.target" ];
-      };
-    };
-  };
-
-  launchd.agents = {
-    opencode = lib.mkIf (opencodeEnabled && pkgs.stdenv.isDarwin) {
-      enable = true;
-      config = {
-        ProgramArguments = [
-          "${config.home.homeDirectory}/.opencode/bin/opencode"
-          "serve"
-          "--hostname"
-          opencodeHost.bindAddress
-          "--port"
-          (toString opencodeHost.opencodePort)
-        ];
-        WorkingDirectory = config.home.homeDirectory;
-        EnvironmentVariables = {
-          OPENCODE_MESSAGE_QUEUE_MODE = "hold";
-        };
-        KeepAlive = true;
-        RunAtLoad = true;
-        StandardOutPath = "${config.home.homeDirectory}/Library/Logs/opencode.log";
-        StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/opencode.error.log";
-      };
-    };
-
-    openchamber = lib.mkIf (opencodeEnabled && pkgs.stdenv.isDarwin) {
-      enable = true;
-      config = {
-        ProgramArguments = [
-          "${openchamberBin}"
-          "serve"
-          "--port"
-          (toString opencodeHost.openchamberPort)
-          "--host"
-          opencodeHost.bindAddress
-          "--foreground"
-        ];
-        WorkingDirectory = config.home.homeDirectory;
-        EnvironmentVariables = {
-          OPENCODE_HOST = opencodeBackendUrl;
-          OPENCODE_SKIP_START = "true";
-        };
-        KeepAlive = true;
-        RunAtLoad = true;
-        StandardOutPath = "${config.home.homeDirectory}/Library/Logs/openchamber.log";
-        StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/openchamber.error.log";
-      };
-    };
+    "opencode-quota/quota-toast.json".text = builtins.toJSON quotaToastConfig;
   };
 }

@@ -6,33 +6,6 @@
 }:
 let
   cfg = config.dotfiles;
-  base16 = import ../lib/base16.nix { inherit lib; };
-
-  darkColors = base16.parseScheme "${pkgs.base16-schemes}/share/themes/${cfg.darkTheme.system}.yaml";
-  lightColors = base16.parseScheme "${pkgs.base16-schemes}/share/themes/${cfg.lightTheme.system}.yaml";
-
-  fishColorsScript = colors: ''
-    set -U fish_color_normal ${colors.base05}
-    set -U fish_color_command ${colors.base0D}
-    set -U fish_color_quote ${colors.base0B}
-    set -U fish_color_redirection ${colors.base0C}
-    set -U fish_color_end ${colors.base0C}
-    set -U fish_color_error ${colors.base08}
-    set -U fish_color_param ${colors.base05}
-    set -U fish_color_comment ${colors.base03}
-    set -U fish_color_selection --background=${colors.base02}
-    set -U fish_color_search_match --background=${colors.base02}
-    set -U fish_color_operator ${colors.base0C}
-    set -U fish_color_escape ${colors.base0C}
-    set -U fish_color_autosuggestion ${colors.base03}
-    set -U fish_pager_color_progress ${colors.base03}
-    set -U fish_pager_color_prefix ${colors.base0D}
-    set -U fish_pager_color_completion ${colors.base05}
-    set -U fish_pager_color_description ${colors.base03}
-  '';
-
-  darkFishColors = pkgs.writeText "dark-fish-colors.fish" (fishColorsScript darkColors);
-  lightFishColors = pkgs.writeText "light-fish-colors.fish" (fishColorsScript lightColors);
 
   zellij = config.programs.zellij.package;
 
@@ -69,12 +42,10 @@ let
         if [ "$IS_DARK" = "false" ]; then
           HELIX_THEME="${cfg.lightTheme.helix}"
           LAZYGIT_LIGHT="true"
-          FISH_COLORS="${lightFishColors}"
           ZELLIJ_ACTION="set-light-theme"
         else
           HELIX_THEME="${cfg.darkTheme.helix}"
           LAZYGIT_LIGHT="false"
-          FISH_COLORS="${darkFishColors}"
           ZELLIJ_ACTION="set-dark-theme"
         fi
 
@@ -88,8 +59,6 @@ let
       theme:
         lightTheme: $LAZYGIT_LIGHT
     EOF
-
-        ${pkgs.fish}/bin/fish "$FISH_COLORS" 2>/dev/null || true
 
         ${zellij}/bin/zellij list-sessions --short 2>/dev/null | while IFS= read -r session; do
           ${zellij}/bin/zellij --session "$session" action "$ZELLIJ_ACTION" 2>/dev/null || true
@@ -208,7 +177,6 @@ in
         helix.enable = false;
         lazygit.enable = false;
         opencode.enable = false;
-        fish.enable = false;
         zellij.enable = false;
         gtk.enable = false;
         gnome.enable = lib.mkDefault false;
