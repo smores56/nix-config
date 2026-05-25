@@ -6,10 +6,9 @@
 }:
 let
   cfg = config.dotfiles;
-  inherit (pkgs.stdenv) isLinux;
   hasSevenql = pkgs.stdenv.isDarwin && cfg.sevenqlLspPath != null;
 
-  camp-src = builtins.fetchGit {
+  camp-src = fetchGit {
     url = "/home/smores/code/github.com/camp-language/camp";
     rev = "318b9fb89017e8dae43a3bfedf953ce6c058e6ed";
   };
@@ -42,7 +41,8 @@ in
 
   home.file = {
     ".config/helix/runtime/grammars/camp.so".source = "${tree-sitter-camp}/parser";
-    ".config/helix/runtime/queries/camp/highlights.scm".source = "${tree-sitter-camp}/queries/highlights.scm";
+    ".config/helix/runtime/queries/camp/highlights.scm".source =
+      "${tree-sitter-camp}/queries/highlights.scm";
     ".config/helix/runtime/queries/camp/locals.scm".source = "${tree-sitter-camp}/queries/locals.scm";
     ".config/helix/runtime/queries/camp/tags.scm".source = "${tree-sitter-camp}/queries/tags.scm";
     ".config/helix/runtime/queries/yaml/injections.scm".source =
@@ -171,7 +171,7 @@ in
         };
         language-servers = [
           "marksman"
-          "harper-ls"
+          "codebook"
         ];
       }
       {
@@ -193,7 +193,13 @@ in
         auto-format = true;
         formatter = {
           command = "odin";
-          args = [ "run" "${camp-src}/src" "--" "fmt" "--stdin" ];
+          args = [
+            "run"
+            "${camp-src}/src"
+            "--"
+            "fmt"
+            "--stdin"
+          ];
         };
         language-servers = [ "camp-lsp" ];
       }
@@ -202,7 +208,12 @@ in
     languages.language-server = {
       camp-lsp = {
         command = "odin";
-        args = [ "run" "${camp-src}/src" "--" "lsp" ];
+        args = [
+          "run"
+          "${camp-src}/src"
+          "--"
+          "lsp"
+        ];
       };
       ruff = {
         command = "ruff";
@@ -223,9 +234,9 @@ in
           lint = true;
         };
       };
-      harper-ls = {
-        command = "harper-ls";
-        args = [ "--stdio" ];
+      codebook = {
+        command = "codebook-lsp";
+        args = [ "serve" ];
       };
     }
     // lib.optionalAttrs hasSevenql {
