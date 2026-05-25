@@ -106,7 +106,9 @@ let
     - Always push immediately after committing — never leave local-only commits
     - Do not add `Co-Authored-By` trailers to commit messages (no AI attribution)
     ${branchWorkflow}
-
+    ${lib.optionalString (!hasTicket) ''
+      - For personal projects: do all work in a worktree, commit and push after each meaningful change, merge back to main when all work is done, then clean up the worktree, local branch, and remote branch
+    ''}
     # Commits and PRs
     - Follow Conventional Commits: <https://www.conventionalcommits.org/en/v1.0.0/>
     - Types: feat, fix, refactor, chore, docs, test, perf, ci
@@ -121,6 +123,9 @@ let
     # Communication
     - Be concise — no verbose explanations unless asked
     - Non-interactive CLI commands only (flags over interactive prompts)
+
+    # Retry Discipline
+    If a command returns unexpected or ambiguous output **more than twice**, stop and investigate the cause instead of blindly retrying. Changing nothing and re-running is never productive.
   '';
 
   piSettingsJson = builtins.toJSON {
