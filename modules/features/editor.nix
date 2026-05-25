@@ -21,6 +21,7 @@ let
 in
 {
   home.packages = with pkgs; [
+    ols
     nixd
     ruff
     taplo
