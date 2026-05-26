@@ -216,10 +216,20 @@ let
     systemctl --user restart herdr-phone.service
     systemctl --user is-active --quiet herdr-phone.service
 
-    sudo ${pkgs.tailscale}/bin/tailscale serve \
+    set +e
+    ${pkgs.coreutils}/bin/timeout 30s ${pkgs.tailscale}/bin/tailscale serve \
+      --yes \
       --bg \
       --https=${tailscaleHttpsPort} \
       ${lib.escapeShellArg targetUrl}
+    serve_status="$?"
+    set -e
+    if [ "$serve_status" -ne 0 ]; then
+      if [ "$serve_status" -eq 124 ]; then
+        echo "tailscale serve timed out. If Serve is disabled, open the Tailscale URL above, then rerun herdr-phone-serve." >&2
+      fi
+      exit "$serve_status"
+    fi
 
     ${pkgs.tailscale}/bin/tailscale serve status
   '';
