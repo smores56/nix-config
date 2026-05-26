@@ -360,6 +360,11 @@ in
     };
 
     xdg.configFile."herdr/config.toml".text = ''
+      onboarding = false
+
+      [theme]
+      name = "terminal"
+
       [keys]
       previous_workspace = "ctrl+shift+up"
       next_workspace = "ctrl+shift+down"
