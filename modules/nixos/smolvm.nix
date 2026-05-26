@@ -71,9 +71,11 @@ in
     smolvm-loopfs-helper
   ];
 
-  # SmolVM expects /dev/kvm with group=kvm, mode=0660.
+  # SmolVM expects /dev/kvm accessible by the runtime user.
+  # Mode 0666 avoids needing the kvm group active in the current login session
+  # (group membership only takes effect after re-login, which is disruptive).
   services.udev.extraRules = ''
-    KERNEL=="kvm", GROUP="kvm", MODE="0660", TAG+="uaccess"
+    KERNEL=="kvm", MODE="0666", TAG+="uaccess"
   '';
 
   users.groups.kvm = { };
