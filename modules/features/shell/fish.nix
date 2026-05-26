@@ -60,7 +60,7 @@
       };
 
       shellInit = ''
-        fish_add_path /opt/homebrew/bin /usr/local/bin ~/.local/bin ~/.deno/bin ~/.cargo/bin ~/.opencode/bin ~/.wasmtime/bin
+        fish_add_path /opt/homebrew/bin /usr/local/bin ~/.local/bin ~/.deno/bin ~/.cargo/bin ~/.opencode/bin ~/.wasmtime/bin ~/.bun/bin ~/.cache/.bun/bin
       '';
 
       interactiveShellInit = ''

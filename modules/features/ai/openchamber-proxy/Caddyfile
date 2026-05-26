@@ -1,5 +1,5 @@
 opencode.sammohr.dev {
-    reverse_proxy smortress:4000 {
+    reverse_proxy smortress:3000 {
         transport http {
             keepalive_idle_conns_per_host 0
             dial_timeout 5s
