@@ -72,22 +72,22 @@ grep -q '^127\.0\.0\.1[[:space:]]\+openchamber\.local$' /etc/hosts || \
   echo '127.0.0.1 openchamber.local' | sudo tee -a /etc/hosts
 ```
 
-## Herdr Phone Bridge
+## Herdr Hosted Bridge
 
 On `smortress`, Home Manager installs Herdr, a local-only `ttyd` bridge, and scripts for Tailscale Serve.
 
 ```bash
-herdr-phone-serve
+herdr-hosted-serve
 ```
 
-The phone bridge uses one Herdr runtime namespace, `phone`. When the web terminal opens, it prompts for a workspace target: `Home` or any repo from `ghq list -p`. Choosing a target focuses an existing Herdr workspace for that folder or creates one.
+The hosted bridge uses one Herdr runtime namespace, `hosted`. When the web terminal opens, it prompts for a workspace target: `Home` or any repo from `ghq list -p`. Choosing a target focuses an existing Herdr workspace for that folder or creates one.
 
 You can skip the picker from a shell:
 
 ```bash
-herdr-phone
-herdr-phone nix-config
-herdr-phone ~/code/github.com/smores56/nix-config
+herdr-hosted
+herdr-hosted nix-config
+herdr-hosted ~/code/github.com/smores56/nix-config
 ```
 
 The bridge serves Herdr through `ttyd` on `127.0.0.1:7681` and configures Tailscale Serve on HTTPS port 443. It requires Tailscale Serve's `Tailscale-User-Login` identity header, so direct requests to the local `ttyd` port are not accepted.
@@ -95,10 +95,10 @@ The bridge serves Herdr through `ttyd` on `127.0.0.1:7681` and configures Tailsc
 Useful commands:
 
 ```bash
-herdr-phone          # pick Home or a ghq repo, then attach locally
-herdr-phone work     # focus/create a matching ghq repo workspace
-herdr-phone-status
-herdr-phone-logs
+herdr-hosted          # pick Home or a ghq repo, then attach locally
+herdr-hosted work     # focus/create a matching ghq repo workspace
+herdr-hosted-status
+herdr-hosted-logs
 herdr-omp-tab        # start omp in a new tab of the current Herdr workspace
 hot                  # short shell alias for herdr-omp-tab
 ```

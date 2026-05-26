@@ -9,7 +9,7 @@ let
   cfg = dotfiles.herdrHost;
   enabled = cfg.enable && pkgs.stdenv.isLinux;
 
-  phoneSession = lib.escapeShellArg cfg.session;
+  hostedSession = lib.escapeShellArg cfg.session;
   bindAddress = lib.escapeShellArg cfg.bindAddress;
   port = toString cfg.port;
   tailscaleHttpsPort = toString cfg.tailscaleHttpsPort;
@@ -21,7 +21,7 @@ let
     if pkgs.stdenv.hostPlatform.system == "x86_64-linux" then
       "herdr-linux-x86_64"
     else
-      throw "herdr-phone only packages Herdr for x86_64-linux right now";
+      throw "herdr-hosted only packages Herdr for x86_64-linux right now";
   herdr = pkgs.stdenvNoCC.mkDerivation {
     pname = "herdr";
     version = herdrVersion;
@@ -51,22 +51,22 @@ let
     export PATH="${scriptPath}:$PATH"
   '';
 
-  phoneSessionPrelude = ''
-    phone_session=${phoneSession}
-    export HERDR_SESSION="$phone_session"
+  hostedSessionPrelude = ''
+    hosted_session=${hostedSession}
+    export HERDR_SESSION="$hosted_session"
     unset HERDR_SOCKET_PATH
   '';
 
-  phoneHelpers = ''
+  hostedHelpers = ''
     ${pathPrelude}
-    ${phoneSessionPrelude}
+    ${hostedSessionPrelude}
 
-    ensure_phone_server() {
+    ensure_hosted_server() {
       if herdr status server 2>/dev/null | grep -q '^status: running'; then
         return 0
       fi
 
-      systemctl --user start herdr-phone-server.service
+      systemctl --user start herdr-hosted-server.service
 
       for _ in 1 2 3 4 5; do
         if herdr status server 2>/dev/null | grep -q '^status: running'; then
@@ -75,7 +75,7 @@ let
         sleep 0.2
       done
 
-      echo "Herdr phone server did not start; run herdr-phone-logs for details." >&2
+      echo "Herdr hosted server did not start; run herdr-hosted-logs for details." >&2
       return 1
     }
 
@@ -173,23 +173,23 @@ let
     }
   '';
 
-  herdrPhoneAttach = pkgs.writeShellScriptBin "herdr-phone" ''
+  herdrHostedAttach = pkgs.writeShellScriptBin "herdr-hosted" ''
     set -euo pipefail
-    ${phoneHelpers}
+    ${hostedHelpers}
 
     if ! command -v herdr >/dev/null 2>&1; then
       echo "herdr is not on PATH. Re-run home-manager switch for smortress." >&2
       exit 127
     fi
 
-    ensure_phone_server
+    ensure_hosted_server
     target_path="$(choose_workspace_target "$@")"
     focus_or_create_workspace "$target_path"
 
-    exec herdr session attach "$phone_session"
+    exec herdr session attach "$hosted_session"
   '';
 
-  herdrPhoneTtyd = pkgs.writeShellScriptBin "herdr-phone-ttyd" ''
+  herdrHostedTtyd = pkgs.writeShellScriptBin "herdr-hosted-ttyd" ''
     set -euo pipefail
     ${pathPrelude}
 
@@ -199,22 +199,22 @@ let
       --writable \
       --check-origin \
       --auth-header Tailscale-User-Login \
-      -- ${herdrPhoneAttach}/bin/herdr-phone
+      -- ${herdrHostedAttach}/bin/herdr-hosted
   '';
 
-  herdrPhoneServe = pkgs.writeShellScriptBin "herdr-phone-serve" ''
+  herdrHostedServe = pkgs.writeShellScriptBin "herdr-hosted-serve" ''
     set -euo pipefail
-    ${phoneHelpers}
+    ${hostedHelpers}
 
     if ! command -v herdr >/dev/null 2>&1; then
       echo "herdr is not on PATH. Re-run home-manager switch for smortress." >&2
       exit 127
     fi
 
-    ensure_phone_server
+    ensure_hosted_server
     herdr server reload-config >/dev/null || true
-    systemctl --user restart herdr-phone.service
-    systemctl --user is-active --quiet herdr-phone.service
+    systemctl --user restart herdr-hosted.service
+    systemctl --user is-active --quiet herdr-hosted.service
 
     set +e
     ${pkgs.coreutils}/bin/timeout 30s ${pkgs.tailscale}/bin/tailscale serve \
@@ -226,7 +226,7 @@ let
     set -e
     if [ "$serve_status" -ne 0 ]; then
       if [ "$serve_status" -eq 124 ]; then
-        echo "tailscale serve timed out. If Serve is disabled, open the Tailscale URL above, then rerun herdr-phone-serve." >&2
+        echo "tailscale serve timed out. If Serve is disabled, open the Tailscale URL above, then rerun herdr-hosted-serve." >&2
       fi
       exit "$serve_status"
     fi
@@ -234,17 +234,17 @@ let
     ${pkgs.tailscale}/bin/tailscale serve status
   '';
 
-  herdrPhoneStatus = pkgs.writeShellScriptBin "herdr-phone-status" ''
+  herdrHostedStatus = pkgs.writeShellScriptBin "herdr-hosted-status" ''
     set +e
-    ${phoneHelpers}
+    ${hostedHelpers}
 
-    printf 'herdr session: %s\n' "$phone_session"
+    printf 'herdr session: %s\n' "$hosted_session"
 
-    printf '\nherdr-phone-server.service: '
-    systemctl --user is-active herdr-phone-server.service
+    printf '\nherdr-hosted-server.service: '
+    systemctl --user is-active herdr-hosted-server.service
 
-    printf 'herdr-phone.service: '
-    systemctl --user is-active herdr-phone.service
+    printf 'herdr-hosted.service: '
+    systemctl --user is-active herdr-hosted.service
 
     printf '\nTailscale Serve:\n'
     ${pkgs.tailscale}/bin/tailscale serve status
@@ -258,9 +258,9 @@ let
     fi
   '';
 
-  herdrPhoneLogs = pkgs.writeShellScriptBin "herdr-phone-logs" ''
+  herdrHostedLogs = pkgs.writeShellScriptBin "herdr-hosted-logs" ''
     ${pathPrelude}
-    exec journalctl --user -u herdr-phone-server.service -u herdr-phone.service -f
+    exec journalctl --user -u herdr-hosted-server.service -u herdr-hosted.service -f
   '';
 
   herdrOmpTab = pkgs.writeShellScriptBin "herdr-omp-tab" ''
@@ -324,37 +324,37 @@ in
     home.packages = [
       herdr
       pkgs.ttyd
-      herdrPhoneAttach
-      herdrPhoneServe
-      herdrPhoneStatus
-      herdrPhoneLogs
+      herdrHostedAttach
+      herdrHostedServe
+      herdrHostedStatus
+      herdrHostedLogs
       herdrOmpTab
       herdrOmpShortcut
     ];
 
-    systemd.user.services.herdr-phone = {
+    systemd.user.services.herdr-hosted = {
       Unit = {
-        Description = "Herdr phone web terminal";
+        Description = "Herdr hosted web terminal";
         After = [
           "network.target"
-          "herdr-phone-server.service"
+          "herdr-hosted-server.service"
         ];
-        Wants = [ "herdr-phone-server.service" ];
+        Wants = [ "herdr-hosted-server.service" ];
       };
       Service = {
         Environment = [
           "PATH=${scriptPath}"
         ];
-        ExecStart = "${herdrPhoneTtyd}/bin/herdr-phone-ttyd";
+        ExecStart = "${herdrHostedTtyd}/bin/herdr-hosted-ttyd";
         WorkingDirectory = config.home.homeDirectory;
         Restart = "always";
         RestartSec = 2;
       };
     };
 
-    systemd.user.services.herdr-phone-server = {
+    systemd.user.services.herdr-hosted-server = {
       Unit = {
-        Description = "Herdr phone session server";
+        Description = "Herdr hosted session server";
         After = [ "network.target" ];
       };
       Service = {

@@ -267,8 +267,8 @@ in
           };
           session = lib.mkOption {
             type = lib.types.str;
-            default = "phone";
-            description = "Single Herdr runtime namespace used by the phone bridge; folders are selected as workspaces.";
+            default = "hosted";
+            description = "Single Herdr runtime namespace used by the hosted bridge; folders are selected as workspaces.";
           };
           bindAddress = lib.mkOption {
             type = lib.types.str;
