@@ -229,6 +229,29 @@ in
       default = { };
       description = "Host and port settings for a hosted opencode/OpenChamber pair.";
     };
+    piWeb = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkOption {
+            type = lib.types.bool;
+            default = false;
+            description = "Enable the pi-web service for oh-my-pi remote access from mobile.";
+          };
+          port = lib.mkOption {
+            type = lib.types.port;
+            default = 8192;
+            description = "Port for the pi-web server.";
+          };
+          bindAddress = lib.mkOption {
+            type = lib.types.str;
+            default = "0.0.0.0";
+            description = "Address the pi-web service binds to.";
+          };
+        };
+      };
+      default = { };
+      description = "pi-web settings for oh-my-pi browser access. Serves the Pi coding agent via a React web UI.";
+    };
     aiHints = lib.mkOption {
       type = lib.types.str;
       readOnly = true;

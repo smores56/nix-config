@@ -77,6 +77,7 @@ let
             sevenqlLspPath = null;
             opencodeServe = null;
             opencodeHost = null;
+            piWeb = null;
           } args;
           home.username = username;
           home.homeDirectory =
@@ -112,6 +113,7 @@ let
             persist = args.persist or false;
             opencodeServe = args.opencodeServe or false;
             opencodeHost = args.opencodeHost or { };
+            piWeb = args.piWeb or { };
           };
         }
       ]
@@ -158,6 +160,11 @@ in
           bindAddress = "0.0.0.0";
           opencodePort = 4000;
           openchamberPort = 3000;
+        };
+        piWeb = {
+          enable = true;
+          port = 8192;
+          bindAddress = "0.0.0.0";
         };
       };
       "smores@smoresnet" = mkHome { };
@@ -212,6 +219,11 @@ in
           bindAddress = "0.0.0.0";
           opencodePort = 4000;
           openchamberPort = 3000;
+        };
+        piWeb = {
+          enable = true;
+          port = 8192;
+          bindAddress = "0.0.0.0";
         };
       };
     };
