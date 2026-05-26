@@ -12,6 +12,7 @@ let
   hostedSession = lib.escapeShellArg cfg.session;
   bindAddress = lib.escapeShellArg cfg.bindAddress;
   port = toString cfg.port;
+  webTerminalFontSize = toString cfg.webTerminalFontSize;
   tailscaleHttpsPort = toString cfg.tailscaleHttpsPort;
   targetUrl = "http://${cfg.bindAddress}:${port}";
   codeRoot = lib.escapeShellArg dotfiles.codeRoot;
@@ -37,9 +38,9 @@ let
 
   runtimePath = lib.makeBinPath [
     pkgs.coreutils
+    pkgs.fzf
     pkgs.ghq
     pkgs.gnugrep
-    pkgs.gum
     herdr
     pkgs.jq
     pkgs.systemd
@@ -149,7 +150,22 @@ let
         return 0
       fi
 
-      choice="$(list_workspace_targets | gum filter --height 18 --placeholder "Herdr workspace")"
+      choice="$(
+        list_workspace_targets \
+          | fzf \
+            --height=90% \
+            --min-height=12 \
+            --layout=reverse \
+            --border=rounded \
+            --border-label=' Herdr workspace ' \
+            --prompt='> ' \
+            --delimiter='\t' \
+            --nth=1 \
+            --with-nth=1 \
+            --highlight-line \
+            --cycle \
+            --bind='left-click:accept'
+      )"
       [ -n "$choice" ] || return 1
       printf '%s\n' "$choice" | cut -f2-
     }
@@ -199,6 +215,7 @@ let
       --writable \
       --check-origin \
       --auth-header Tailscale-User-Login \
+      --client-option fontSize=${webTerminalFontSize} \
       -- ${herdrHostedAttach}/bin/herdr-hosted
   '';
 

@@ -80,7 +80,7 @@ On `smortress`, Home Manager installs Herdr, a local-only `ttyd` bridge, and scr
 herdr-hosted-serve
 ```
 
-The hosted bridge uses one Herdr runtime namespace, `hosted`. When the web terminal opens, it prompts for a workspace target: `Home` or any repo from `ghq list -p`. Choosing a target focuses an existing Herdr workspace for that folder or creates one.
+The hosted bridge uses one Herdr runtime namespace, `hosted`. When the web terminal opens, it prompts for a workspace target using a mouse-aware picker that shows `Home` or repo labels like `github.com/smores56/nix-config`. Choosing a target focuses an existing Herdr workspace for that folder or creates one.
 
 You can skip the picker from a shell:
 
@@ -91,6 +91,8 @@ herdr-hosted ~/code/github.com/smores56/nix-config
 ```
 
 The bridge serves Herdr through `ttyd` on `127.0.0.1:7681` and configures Tailscale Serve on HTTPS port 443. It requires Tailscale Serve's `Tailscale-User-Login` identity header, so direct requests to the local `ttyd` port are not accepted.
+
+The browser terminal defaults to a larger mobile-friendly font size. Override it per visit with a query string, for example `https://smortress.<tailnet>.ts.net/?fontSize=24`, or set `dotfiles.herdrHost.webTerminalFontSize`.
 
 Useful commands:
 

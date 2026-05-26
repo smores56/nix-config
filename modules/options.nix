@@ -280,6 +280,11 @@ in
             default = 7681;
             description = "Port for the local ttyd bridge.";
           };
+          webTerminalFontSize = lib.mkOption {
+            type = lib.types.int;
+            default = 20;
+            description = "Browser terminal font size passed to ttyd for the Herdr hosted bridge.";
+          };
           tailscaleHttpsPort = lib.mkOption {
             type = lib.types.port;
             default = 443;
