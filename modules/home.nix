@@ -6,7 +6,15 @@
 }:
 let
   inherit (pkgs.stdenv) isLinux;
+  isDarwin = pkgs.stdenv.isDarwin;
   cfg = config.dotfiles;
+  darwinFontsEnv = pkgs.buildEnv {
+    name = "home-manager-fonts";
+    paths = [ cfg.fontPackage ];
+    pathsToLink = [ "/share/fonts" ];
+  };
+  darwinFonts = "${darwinFontsEnv}/share/fonts";
+  darwinFontsInstallDir = "${config.home.homeDirectory}/Library/Fonts/HomeManager";
 in
 {
   home = {
@@ -24,8 +32,21 @@ in
       accept-flake-config = true
       experimental-features = nix-command flakes
     '';
+    file."Library/Fonts/.home-manager-fonts-version" = lib.mkIf isDarwin (
+      lib.mkForce {
+        text = "${darwinFontsEnv}";
+        onChange = ''
+          run mkdir -p ${lib.escapeShellArg darwinFontsInstallDir}
+          run /usr/bin/rsync $VERBOSE_ARG -acL --chmod=u+w --delete \
+            ${lib.escapeShellArgs [
+              "${darwinFonts}/"
+              darwinFontsInstallDir
+            ]}
+        '';
+      }
+    );
 
-    activation.checkAppManagementPermission = lib.mkIf pkgs.stdenv.isDarwin (
+    activation.checkAppManagementPermission = lib.mkIf isDarwin (
       lib.mkForce {
         before = [ ];
         after = [ ];

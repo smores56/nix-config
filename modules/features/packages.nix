@@ -90,7 +90,6 @@
           musikcube
           clock-rs
           ttyper
-          concord
 
           # TUI utilities
           gum
@@ -101,6 +100,9 @@
           kubernetes-helm
           kubectl
           kubectx
+        ]
+        ++ lib.optionals pkgs.stdenv.isLinux [
+          concord
         ];
     };
   };

@@ -7,17 +7,27 @@
 let
   cfg = config.dotfiles;
   hasSevenql = pkgs.stdenv.isDarwin && cfg.sevenqlLspPath != null;
+  campPath = "${cfg.codeRoot}/github.com/camp-language/camp";
+  hasCamp = builtins.pathExists campPath;
 
-  camp-src = fetchGit {
-    url = "/home/smores/code/github.com/camp-language/camp";
-    rev = "318b9fb89017e8dae43a3bfedf953ce6c058e6ed";
-  };
+  camp-src =
+    if hasCamp then
+      fetchGit {
+        url = campPath;
+        rev = "318b9fb89017e8dae43a3bfedf953ce6c058e6ed";
+      }
+    else
+      null;
 
-  tree-sitter-camp = pkgs.tree-sitter.buildGrammar {
-    language = "camp";
-    version = (lib.importJSON "${camp-src}/tree-sitter/tree-sitter.json").metadata.version;
-    src = "${camp-src}/tree-sitter";
-  };
+  tree-sitter-camp =
+    if hasCamp then
+      pkgs.tree-sitter.buildGrammar {
+        language = "camp";
+        version = (lib.importJSON "${camp-src}/tree-sitter/tree-sitter.json").metadata.version;
+        src = "${camp-src}/tree-sitter";
+      }
+    else
+      null;
 in
 {
   home.packages = with pkgs; [
@@ -40,28 +50,32 @@ in
     graphql-language-service-cli
   ];
 
-  home.file = {
-    ".config/helix/runtime/grammars/camp.so".source = "${tree-sitter-camp}/parser";
-    ".config/helix/runtime/queries/camp/highlights.scm".source =
-      "${tree-sitter-camp}/queries/highlights.scm";
-    ".config/helix/runtime/queries/camp/locals.scm".source = "${tree-sitter-camp}/queries/locals.scm";
-    ".config/helix/runtime/queries/camp/tags.scm".source = "${tree-sitter-camp}/queries/tags.scm";
-    ".config/helix/runtime/queries/yaml/injections.scm".source =
-      pkgs.runCommand "helix-yaml-injections" { }
-        ''
-          cat ${pkgs.helix.passthru.runtime}/queries/yaml/injections.scm > $out
-          cat >> $out << 'EXTRA'
+  home.file = lib.mkMerge [
+    (lib.mkIf hasCamp {
+      ".config/helix/runtime/grammars/camp.so".source = "${tree-sitter-camp}/parser";
+      ".config/helix/runtime/queries/camp/highlights.scm".source =
+        "${tree-sitter-camp}/queries/highlights.scm";
+      ".config/helix/runtime/queries/camp/locals.scm".source = "${tree-sitter-camp}/queries/locals.scm";
+      ".config/helix/runtime/queries/camp/tags.scm".source = "${tree-sitter-camp}/queries/tags.scm";
+    })
+    {
+      ".config/helix/runtime/queries/yaml/injections.scm".source =
+        pkgs.runCommand "helix-yaml-injections" { }
+          ''
+            cat ${pkgs.helix.passthru.runtime}/queries/yaml/injections.scm > $out
+            cat >> $out << 'EXTRA'
 
-          ((block_scalar) @injection.content
-           (#match? @injection.content "function handler")
-           (#set! injection.language "typescript"))
+            ((block_scalar) @injection.content
+             (#match? @injection.content "function handler")
+             (#set! injection.language "typescript"))
 
-          ((block_scalar) @injection.content
-           (#match? @injection.content "query.*\\{")
-           (#set! injection.language "graphql"))
-          EXTRA
-        '';
-  };
+            ((block_scalar) @injection.content
+             (#match? @injection.content "query.*\\{")
+             (#set! injection.language "graphql"))
+            EXTRA
+          '';
+    }
+  ];
 
   programs.helix = {
     enable = true;
@@ -186,6 +200,8 @@ in
         ]
         ++ lib.optionals hasSevenql [ "sevenql-lsp" ];
       }
+    ]
+    ++ lib.optionals hasCamp [
       {
         name = "camp";
         scope = "source.camp";
@@ -206,49 +222,52 @@ in
       }
     ];
 
-    languages.language-server = {
-      camp-lsp = {
-        command = "odin";
-        args = [
-          "run"
-          "${camp-src}/src"
-          "--"
-          "lsp"
-        ];
-      };
-      ruff = {
-        command = "ruff";
-        args = [ "server" ];
-      };
-      basedpyright = {
-        command = "basedpyright-langserver";
-        args = [ "--stdio" ];
-      };
-      rust-analyzer.config = {
-        rust-analyzer.diagnostics.disabled = [ "unresolved-proc-macro" ];
-      };
-      deno-lsp = {
-        command = "deno";
-        args = [ "lsp" ];
-        config.deno = {
-          enable = true;
-          lint = true;
+    languages.language-server =
+      lib.optionalAttrs hasCamp {
+        camp-lsp = {
+          command = "odin";
+          args = [
+            "run"
+            "${camp-src}/src"
+            "--"
+            "lsp"
+          ];
+        };
+      }
+      // {
+        ruff = {
+          command = "ruff";
+          args = [ "server" ];
+        };
+        basedpyright = {
+          command = "basedpyright-langserver";
+          args = [ "--stdio" ];
+        };
+        rust-analyzer.config = {
+          rust-analyzer.diagnostics.disabled = [ "unresolved-proc-macro" ];
+        };
+        deno-lsp = {
+          command = "deno";
+          args = [ "lsp" ];
+          config.deno = {
+            enable = true;
+            lint = true;
+          };
+        };
+        codebook = {
+          command = "codebook-lsp";
+          args = [ "serve" ];
+        };
+      }
+      // lib.optionalAttrs hasSevenql {
+        sevenql-lsp = {
+          command = "deno";
+          args = [
+            "run"
+            "-A"
+            cfg.sevenqlLspPath
+          ];
         };
       };
-      codebook = {
-        command = "codebook-lsp";
-        args = [ "serve" ];
-      };
-    }
-    // lib.optionalAttrs hasSevenql {
-      sevenql-lsp = {
-        command = "deno";
-        args = [
-          "run"
-          "-A"
-          cfg.sevenqlLspPath
-        ];
-      };
-    };
   };
 }
