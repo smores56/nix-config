@@ -7,6 +7,8 @@
   environment.systemPackages = [
     pkgs.firecracker
     pkgs.nftables
+    pkgs.wget
+    pkgs.gnutar
   ];
 
   # SmolVM expects /dev/kvm with group=kvm, mode=0660.
