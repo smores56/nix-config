@@ -11,7 +11,7 @@ let
   opencodeBackendHost =
     if opencodeHost.bindAddress == "0.0.0.0" then "127.0.0.1" else opencodeHost.bindAddress;
   opencodeBackendUrl = "http://${opencodeBackendHost}:${toString opencodeHost.opencodePort}";
-  openchamberBin = "${config.home.homeDirectory}/.cache/.bun/install/global/node_modules/@openchamber/web/bin/cli.js";
+  openchamberBin = "${config.home.homeDirectory}/.cache/.bun/bin/openchamber";
 in
 {
   systemd.user.services = {
