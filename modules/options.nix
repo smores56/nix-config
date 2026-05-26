@@ -196,6 +196,11 @@ in
       default = false;
       description = "Host runs the opencode server and OpenChamber web UI for remote access.";
     };
+    herdrServe = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Host runs a localhost Herdr web terminal bridge for Tailscale Serve.";
+    };
     opencodeHost = lib.mkOption {
       type = lib.types.submodule {
         options = {
@@ -252,6 +257,39 @@ in
       default = { };
       description = "pi-web settings for oh-my-pi browser access. Serves the Pi coding agent via a React web UI.";
     };
+    herdrHost = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkOption {
+            type = lib.types.bool;
+            default = false;
+            description = "Enable the Herdr web terminal bridge scripts and user service.";
+          };
+          session = lib.mkOption {
+            type = lib.types.str;
+            default = "phone";
+            description = "Single Herdr runtime namespace used by the phone bridge; folders are selected as workspaces.";
+          };
+          bindAddress = lib.mkOption {
+            type = lib.types.str;
+            default = "127.0.0.1";
+            description = "Address for the local ttyd bridge to bind.";
+          };
+          port = lib.mkOption {
+            type = lib.types.port;
+            default = 7681;
+            description = "Port for the local ttyd bridge.";
+          };
+          tailscaleHttpsPort = lib.mkOption {
+            type = lib.types.port;
+            default = 443;
+            description = "Tailscale Serve HTTPS port for the Herdr bridge.";
+          };
+        };
+      };
+      default = { };
+      description = "Host and port settings for the Herdr Tailscale Serve bridge.";
+    };
     aiHints = lib.mkOption {
       type = lib.types.str;
       readOnly = true;
@@ -298,6 +336,7 @@ in
 
     dotfiles = {
       opencodeHost.enable = lib.mkDefault config.dotfiles.opencodeServe;
+      herdrHost.enable = lib.mkDefault config.dotfiles.herdrServe;
       wayland = config.dotfiles.displayManager == "niri";
       terminal = "kitty";
       shell = "fish";

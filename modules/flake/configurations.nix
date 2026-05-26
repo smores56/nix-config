@@ -78,6 +78,8 @@ let
             opencodeServe = null;
             opencodeHost = null;
             piWeb = null;
+            herdrServe = null;
+            herdrHost = null;
           } args;
           home.username = username;
           home.homeDirectory =
@@ -147,6 +149,7 @@ in
         displayManager = "niri";
         nixos = true;
         polarity = "time-of-day";
+        herdrServe = true;
         primaryMonitor = "DP-2";
         monitorSize = {
           width = 5120;

@@ -118,7 +118,6 @@ let
 
   opencodeTui = {
     "$schema" = "https://opencode.ai/tui.json";
-    keybinds.leader = "ctrl+e";
     plugin = [
       "oh-my-opencode-slim"
       "@slkiser/opencode-quota"
