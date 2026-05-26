@@ -67,6 +67,7 @@ in
     pkgs.nftables
     pkgs.wget
     pkgs.gnutar
+    pkgs.qemu
     smolvm-loopfs-helper
   ];
 
