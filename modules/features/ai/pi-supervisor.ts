@@ -244,12 +244,12 @@ function spawnRpcChild(
   sessionDir: string,
 ): RpcChild {
   const model = process.env.OPENAI_MODEL ?? "qwen3.6-27b";
-  const baseUrl = process.env.OPENAI_HOST ?? "http://campfire:8080";
+  const baseUrl = process.env.OPENAI_HOST ?? "http://smortress:8080";
   const args = [
     "--mode",
     "rpc",
     "--provider",
-    "campfire",
+    "smortress",
     "--model",
     model,
     "--session-dir",
@@ -421,12 +421,12 @@ async function findSessionFile(dir: string): Promise<string | null> {
 // --- Extension entry point ---
 
 export default async function supervisorExtension(pi: ExtensionAPI) {
-  const baseUrl = process.env.OPENAI_HOST ?? "http://campfire:8080";
+  const baseUrl = process.env.OPENAI_HOST ?? "http://smortress:8080";
 
-  pi.registerProvider("campfire", {
-    name: "campfire llama.cpp",
+  pi.registerProvider("smortress", {
+    name: "smortress llama.cpp",
     baseUrl: `${baseUrl}/v1`,
-    apiKey: "PI_CAMPFIRE_API_KEY",
+    apiKey: "PI_SMORTRESS_API_KEY",
     api: "openai-completions",
     compat: {
       supportsStore: false,
@@ -691,7 +691,7 @@ export default async function supervisorExtension(pi: ExtensionAPI) {
 
   pi.registerCommand("health", {
     description:
-      "Check supervisor prerequisites: Pi CLI, campfire connectivity, RPC mode",
+      "Check supervisor prerequisites: Pi CLI, smortress connectivity, RPC mode",
     handler: async (_args, ctx) => {
       const checks: string[] = [];
 

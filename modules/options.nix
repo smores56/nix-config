@@ -206,7 +206,7 @@ in
           };
           hostname = lib.mkOption {
             type = lib.types.str;
-            default = "campfire";
+            default = "smortress";
             description = "Hostname clients should use to reach the hosted opencode server.";
           };
           bindAddress = lib.mkOption {

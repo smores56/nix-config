@@ -140,14 +140,6 @@ in
         nixos = true;
         polarity = "time-of-day";
         noSleep = true;
-        opencodeServe = true;
-        opencodeHost = {
-          enable = true;
-          hostname = "campfire";
-          bindAddress = "0.0.0.0";
-          opencodePort = 4000;
-          openchamberPort = 3000;
-        };
       };
       "smores@smortress" = mkHome {
         displayManager = "niri";
@@ -157,6 +149,15 @@ in
         monitorSize = {
           width = 5120;
           height = 2160;
+        };
+        noSleep = true;
+        opencodeServe = true;
+        opencodeHost = {
+          enable = true;
+          hostname = "smortress";
+          bindAddress = "0.0.0.0";
+          opencodePort = 4000;
+          openchamberPort = 3000;
         };
       };
       "smores@smoresnet" = mkHome { };
@@ -187,14 +188,6 @@ in
         displayManager = "niri";
         exposeSsh = true;
         noSleep = true;
-        opencodeServe = true;
-        opencodeHost = {
-          enable = true;
-          hostname = "campfire";
-          bindAddress = "0.0.0.0";
-          opencodePort = 4000;
-          openchamberPort = 3000;
-        };
       };
       "smorestux" = mkNixos {
         hostname = "smorestux";
@@ -211,6 +204,15 @@ in
         polarity = "time-of-day";
         exposeSsh = true;
         nvidia = true;
+        noSleep = true;
+        opencodeServe = true;
+        opencodeHost = {
+          enable = true;
+          hostname = "smortress";
+          bindAddress = "0.0.0.0";
+          opencodePort = 4000;
+          openchamberPort = 3000;
+        };
       };
     };
   };

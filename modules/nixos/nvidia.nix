@@ -14,6 +14,10 @@
       nvidiaPersistenced = true;
     };
 
+    boot.extraModprobeConfig = ''
+      options nvidia NVreg_RegistryDwords=0x00800e28=0x20104000
+    '';
+
     services.xserver.videoDrivers = [ "nvidia" ];
 
     environment.etc = lib.mkIf (config.dotfiles.displayManager == "niri") {

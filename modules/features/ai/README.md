@@ -56,7 +56,7 @@ ocx profile add ws --source tweak/p-1vp4xoqv --from https://tweakoc.com/r --glob
 
 ## OpenChamber Web UI
 
-Personal hosting is accessible at `http://campfire:3000` over Tailscale. The web UI and TUI connect to the same backend server, so sessions are shared.
+Personal hosting is accessible at `http://smortress:3000` over Tailscale. The web UI and TUI connect to the same backend server, so sessions are shared.
 
 Proxied at `https://opencode.sammohr.dev` via Caddy on smoresnet (see `portal-proxy/`).
 
@@ -78,4 +78,4 @@ On Linux hosts with hosting enabled, `home-manager switch` restarts the opencode
 
 ## Fish Abbreviations
 
-- `o` — Attach to the configured hosted OpenCode instance. Personal configs default to `http://campfire:4000`; the work config uses `http://openchamber.local:16500`.
+- `o` — Attach to the configured hosted OpenCode instance. Personal configs default to `http://smortress:4000`; the work config uses `http://openchamber.local:16500`.

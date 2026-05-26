@@ -129,7 +129,7 @@ let
   '';
 
   piSettingsJson = builtins.toJSON {
-    defaultProvider = "campfire";
+    defaultProvider = "smortress";
     inherit (cfg) defaultModel;
     npmCommand = [ "${piNpm}/bin/pi-npm" ];
     packages = [

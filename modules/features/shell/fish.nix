@@ -53,7 +53,6 @@
 
         sl = "ssh smores@smoresnet -t fish";
         sm = "ssh smores@smortress -t fish";
-        sc = "ssh smores@campfire -t fish";
         st = "ssh smores@(tailscale-hosts | fzf) -t fish";
 
         o = "opencode-hosted";
