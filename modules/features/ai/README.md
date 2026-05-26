@@ -58,7 +58,7 @@ ocx profile add ws --source tweak/p-1vp4xoqv --from https://tweakoc.com/r --glob
 
 Personal hosting is accessible at `http://smortress:3000` over Tailscale. The web UI and TUI connect to the same backend server, so sessions are shared.
 
-Proxied at `https://opencode.sammohr.dev` via Caddy on smoresnet (see `portal-proxy/`).
+Proxied at `https://opencode.sammohr.dev` via Caddy on smoresnet (see `openchamber-proxy/`).
 
 The work host runs a local-only pair:
 

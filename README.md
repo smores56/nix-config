@@ -189,8 +189,8 @@ systemctl --user restart openchamber  # Linux hosts
 **Deploy Caddy config to smoresnet:**
 
 ```bash
-scp modules/features/ai/portal-proxy/Caddyfile \
-    modules/features/ai/portal-proxy/deploy-smoresnet.sh \
+scp modules/features/ai/openchamber-proxy/Caddyfile \
+    modules/features/ai/openchamber-proxy/deploy-smoresnet.sh \
     smores@smoresnet:~
 ssh smores@smoresnet 'bash ~/deploy-smoresnet.sh'
 ```
