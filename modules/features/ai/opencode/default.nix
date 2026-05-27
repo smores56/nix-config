@@ -9,7 +9,7 @@ let
   inherit (cfg) opencodeHost;
 
   models = {
-    minimax-m27 = "minimax/MiniMax-M2.7";
+    minimax-m27 = "deepseek/deepseek-v4-pro"; # temporarily switched from minimax/MiniMax-M2.7
     ds4pro = "deepseek/deepseek-v4-pro";
     ds4flash = "deepseek/deepseek-v4-flash";
   };

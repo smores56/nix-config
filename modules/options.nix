@@ -288,7 +288,7 @@ in
     aiHints = lib.mkOption {
       type = lib.types.str;
       readOnly = true;
-      description = "AI coding assistant context/rules, shared across goose, pi, and opencode.";
+      description = "AI coding assistant context/rules, shared across pi and opencode.";
     };
   };
 
