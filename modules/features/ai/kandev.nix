@@ -22,7 +22,7 @@ let
     version = kandevVersion;
     src = pkgs.fetchurl {
       url = "https://github.com/kdlbs/kandev/releases/download/v${kandevVersion}/${kandevAsset}.tar.gz";
-      hash = "sha256-VcXJ6PqF/INb6AWVtfQSok/d3WCj1VKJqUle6d2qLpY=";
+      hash = "sha256-u5uvf8U3WCf4T1WaNAtpB6N0DlK4kNH1r7TzFWp3vfI=";
     };
     sourceRoot = ".";
     installPhase = ''
