@@ -74,6 +74,8 @@ in
       '';
     };
 
+    home.file.".omp/agent/extensions/wt-switch-cd.ts".source = ./wt-switch-cd.ts;
+
     programs.fish.shellAbbrs = {
       oc = "omp --tools read,edit,write,search,find,bash,lsp,todo_write,ask";
     };
