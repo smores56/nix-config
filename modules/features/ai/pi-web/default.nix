@@ -13,7 +13,7 @@ in
 {
   systemd.user.services.pi-web = lib.mkIf (piWebEnabled && pkgs.stdenv.isLinux) {
     Unit = {
-      Description = "Pi Web UI for oh-my-pi";
+      Description = "oh-my-pi Web UI";
       After = [ "network.target" ];
     };
     Service = {

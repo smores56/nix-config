@@ -8,28 +8,7 @@ let
   cfg = config.dotfiles;
   inherit (cfg) branchPrefix;
 
-  revdiff-src = pkgs.fetchFromGitHub {
-    owner = "umputun";
-    repo = "revdiff";
-    tag = "v1.3.0";
-    hash = "sha256-lcqkvQ5jLP3sA9WeFcp1PRPIvtq7vWjl7M+9juBYXL0=";
-  };
 
-  revdiff = pkgs.buildGoModule rec {
-    pname = "revdiff";
-    version = "1.3.0";
-    src = revdiff-src;
-    vendorHash = null;
-    ldflags = [
-      "-s"
-      "-w"
-      "-X main.version=v${version}"
-    ];
-    doCheck = false;
-    postInstall = ''
-      mv $out/bin/app $out/bin/revdiff
-    '';
-  };
 
 
   hasTicket = cfg.ticketPrefix != null;
@@ -127,7 +106,6 @@ in
   config = {
     home = {
       packages = [
-        revdiff
       ];
 
       file = {
