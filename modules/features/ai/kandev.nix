@@ -57,7 +57,7 @@ in
           "HOME=${homeDir}"
         ];
         ExecStart = "${kandev}/bin/kandev start --backend-port ${toString cfg.port} --web-port ${toString (cfg.port - 1000)}";
-        WorkingDirectory = homeDir;
+        WorkingDirectory = "${kandev}";
         Restart = "always";
         RestartSec = 5;
       };
