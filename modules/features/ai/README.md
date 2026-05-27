@@ -75,7 +75,7 @@ Modes: `lite`, `full` (default), `ultra`, `wenyan-lite`, `wenyan-full`, `wenyan-
 
 ### oh-my-pi — `v2nic/pi-caveman`
 
-Installed via `omp plugin install` and persisted in `~/.omp/`. Not managed by Nix.
+Installed via `oh-my-pi.nix` activation when `dotfiles.ohMyPi.enable = true`.
 
 Commands: `/caveman` (toggle), `/caveman lite`, `/caveman full`, `/caveman ultra`.
 
@@ -132,10 +132,30 @@ ctrl+down            next agent
 
 On Linux hosts with `opencodeHost.bindAddress` set, `home-manager switch` restarts the opencode systemd service to pick up config changes. OpenChamber restarts too because it is bound to the opencode service.
 
-## omp Config
+## oh-my-pi Config
 
-The omp `config.yml`, `models.yml`, and plugins are user-managed outside Nix (in `~/.omp/`). Use `omp config set` / `omp plugin install` to configure. Provider credentials stay local.
+Managed by `oh-my-pi.nix` (set `dotfiles.ohMyPi.enable = true`). On `home-manager switch`:
 
-## Fish Abbreviations
+- Installs `pi-caveman` and `pi-context-usage` plugins via `omp plugin install`
+- Applies aggressive compaction settings via `omp config set` (respects omp's own config management)
+- Sets `steeringMode: one-at-a-time`
 
+Compaction settings are tunable via `dotfiles.ohMyPi.compaction.*` options.
+
+### Plugin Selection Rationale
+
+omp (~27K LoC Rust) has extensive built-in token reduction. Many popular plugins duplicate built-in features:
+
+| Plugin | Overlap | Verdict |
+|--------|---------|---------|
+| context-mode | HIGH — built-in compaction, search, eval, tool hooks | SKIP |
+| pi-lean-ctx | MOD-HIGH — read summarization, session memory, LSP built-in | SKIP (+ heavy `brew install` dep) |
+| pi-loadout | HIGH — `--tools` already pins tools | SKIP |
+| pi-context-tools | MOD — agent-callable compaction adds convenience over `/compact` | SKIP (marginal) |
+| pi-context-prune | HIGH — auto-compaction + tool-output pruning built-in | SKIP |
+| pi-context-usage | MINIMAL — pure visualization, no built-in equivalent | **INSTALL** |
+
+### Fish Abbreviations
+
+- `oc` — Run `omp --tools read,edit,write,search,find,bash,lsp,todo_write,ask` for minimal-context sessions
 - `o` — Run `opencode` locally

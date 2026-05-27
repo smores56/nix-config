@@ -79,6 +79,7 @@ let
             piWeb = null;
             herdrServe = null;
             herdrHost = null;
+            ohMyPi = null;
           } args;
           home.username = username;
           home.homeDirectory =
@@ -165,6 +166,7 @@ in
           port = 8192;
           bindAddress = "0.0.0.0";
         };
+        ohMyPi.enable = true;
       };
       "smores@smoresnet" = mkHome { };
       "smohr@smoreswork" = mkHome {
