@@ -84,5 +84,10 @@ if ! $SUDO rc-service caddy reload; then
 fi
 echo "Done. Test: curl -sI https://omp.sammohr.dev | head -5"'
 
+REMOTE_SCRIPT_FILE="$(mktemp)"
+printf '%s\n' "$remote_script" > "$REMOTE_SCRIPT_FILE"
+
 scp Caddyfile "smores@smoresnet:~/omp-acp-Caddyfile"
-printf '%s\n' "$remote_script" | ssh -tt smores@smoresnet sh -s
+scp "$REMOTE_SCRIPT_FILE" "smores@smoresnet:~/omp-acp-deploy.sh"
+rm -f "$REMOTE_SCRIPT_FILE"
+ssh -t smores@smoresnet "sh ~/omp-acp-deploy.sh; rm -f ~/omp-acp-deploy.sh"
