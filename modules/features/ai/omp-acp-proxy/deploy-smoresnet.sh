@@ -1,7 +1,16 @@
 #!/bin/sh
 set -e
 
-echo "Deploying omp-acp proxy block on smoresnet..."
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ACP_UI_DIR="$SCRIPT_DIR/acp-ui"
+
+echo "==> Building ACP UI..."
+if [ ! -d "$ACP_UI_DIR" ]; then
+    git clone https://github.com/formulahendry/acp-ui.git "$ACP_UI_DIR"
+fi
+(cd "$ACP_UI_DIR" && git pull --ff-only && npm install && npm run build:web)
+
+echo "==> Deploying to smoresnet..."
 
 remote_script='#!/bin/sh
 set -e
@@ -88,6 +97,7 @@ REMOTE_SCRIPT_FILE="$(mktemp)"
 printf '%s\n' "$remote_script" > "$REMOTE_SCRIPT_FILE"
 
 scp Caddyfile "smores@smoresnet:~/omp-acp-Caddyfile"
+rsync -a --delete "$ACP_UI_DIR/dist-web/" "smores@smoresnet:~/acp-ui-dist/"
 scp "$REMOTE_SCRIPT_FILE" "smores@smoresnet:~/omp-acp-deploy.sh"
 rm -f "$REMOTE_SCRIPT_FILE"
 ssh -t smores@smoresnet "sh ~/omp-acp-deploy.sh; rm -f ~/omp-acp-deploy.sh"

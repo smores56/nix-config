@@ -3,5 +3,13 @@ omp.sammohr.dev {
         smores {$OMP_ACP_BASIC_AUTH_HASH}
     }
 
-    reverse_proxy smortress:8193
+    @websocket {
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+    reverse_proxy @websocket smortress:8193
+
+    root * /home/smores/acp-ui-dist
+    try_files {path} /index.html
+    file_server
 }
