@@ -78,6 +78,7 @@ let
             opencodeHost = null;
             piWeb = null;
             ompWeb = null;
+            kandev = null;
             herdrServe = null;
             herdrHost = null;
             ohMyPi = null;
@@ -169,6 +170,7 @@ in
         };
         ohMyPi.enable = true;
         ompWeb.enable = true;
+        kandev.enable = true;
       };
       "smores@smoresnet" = mkHome { };
       "smohr@smoreswork" = mkHome {

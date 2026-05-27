@@ -270,6 +270,29 @@ in
       default = { };
       description = "ACP WebSocket bridge for oh-my-pi. Exposes omp via the Agent Client Protocol over WebSocket for use with ACP UI or other ACP clients.";
     };
+    kandev = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkOption {
+            type = lib.types.bool;
+            default = false;
+            description = "Enable the Kandev AI development environment service.";
+          };
+          port = lib.mkOption {
+            type = lib.types.port;
+            default = 38429;
+            description = "Port for the Kandev backend server.";
+          };
+          bindAddress = lib.mkOption {
+            type = lib.types.str;
+            default = "0.0.0.0";
+            description = "Address the Kandev server binds to.";
+          };
+        };
+      };
+      default = { };
+      description = "Kandev AI Kanban and development environment. Orchestrates omp, opencode, and other ACP agents via a unified web UI.";
+    };
     herdrHost = lib.mkOption {
       type = lib.types.submodule {
         options = {
