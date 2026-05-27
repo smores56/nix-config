@@ -1,7 +1,7 @@
 import type {
   ExtensionAPI,
   ExtensionContext,
-} from "@earendil-works/pi-coding-agent";
+} from "@oh-my-pi/pi-coding-agent";
 import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { homedir } from "node:os";
@@ -95,7 +95,7 @@ interface ToolResult {
 }
 
 const children = new Map<string, RpcChild>();
-const sessionsDir = resolve(homedir(), ".pi/agent/sessions/supervisor");
+const sessionsDir = resolve(homedir(), ".omp/agent/sessions/supervisor");
 const registryPath = resolve(sessionsDir, "registry.json");
 const logPath = resolve(sessionsDir, "supervisor.log");
 let latestCtx: ExtensionContext | null = null;

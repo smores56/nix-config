@@ -23,7 +23,7 @@ in
       ExecStartPre = pkgs.writeShellScript "pi-web-patch-agent-cmd" ''
         SERVER_JS="${config.home.homeDirectory}/.cache/.bun/install/cache/pi-web@0.14.0@@@1/build/server/server.js"
         if [ -f "$SERVER_JS" ]; then
-          ${pkgs.gnused}/bin/sed -i 's|{ command: .npx., args: \[.-y., .@earendil-works/pi-coding-agent@latest.\] }|{ command: "${config.home.homeDirectory}/.cache/.bun/bin/omp", args: [] }|' "$SERVER_JS"
+          ${pkgs.gnused}/bin/sed -i -e 's|{ command: .npx., args: \[.-y., .@earendil-works/pi-coding-agent@latest.\] }|{ command: "${config.home.homeDirectory}/.cache/.bun/bin/omp", args: [] }|' -e 's|{ command: .npx., args: \[.-y., .@oh-my-pi/pi-coding-agent@latest.\] }|{ command: "${config.home.homeDirectory}/.cache/.bun/bin/omp", args: [] }|' "$SERVER_JS"
         fi
       '';
       ExecStart = "${piWebBin} --agent omp --host ${piWeb.bindAddress} --port ${toString piWeb.port}";

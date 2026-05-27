@@ -31,12 +31,6 @@ let
     '';
   };
 
-  piNpm = pkgs.writeShellScriptBin "pi-npm" ''
-    export PATH="${pkgs.nodejs}/bin:$PATH"
-    export NPM_CONFIG_PREFIX="$HOME/.pi/agent/npm-global"
-    mkdir -p "$NPM_CONFIG_PREFIX"
-    exec ${pkgs.nodejs}/bin/npm "$@"
-  '';
 
   hasTicket = cfg.ticketPrefix != null;
   branchSlug =
@@ -128,28 +122,16 @@ let
     If a command returns unexpected or ambiguous output **more than twice**, stop and investigate the cause instead of blindly retrying. Changing nothing and re-running is never productive.
   '';
 
-  piSettingsJson = builtins.toJSON {
+  ompSettingsJson = builtins.toJSON {
     defaultProvider = "smortress";
     inherit (cfg) defaultModel;
-    npmCommand = [ "${piNpm}/bin/pi-npm" ];
     packages = [
-      "npm:pi-subagents@0.24.2"
-      "npm:pi-intercom@0.6.0"
-      "npm:pi-interactive-shell@0.13.0"
-      {
-        source = "npm:pi-messenger-swarm@0.25.4";
-        extensions = [ ];
-        skills = [ "./skills" ];
-      }
-      "npm:@earendil-works/pi-agent-core@0.74.0"
-      "npm:@earendil-works/pi-ai@0.74.0"
-      "npm:@earendil-works/pi-coding-agent@0.74.0"
-      "npm:@earendil-works/pi-tui@0.74.0"
-      "npm:@mariozechner/pi-tui@0.73.1"
       "npm:tsx@4.21.0"
     ];
     compaction = {
       enabled = true;
+      reserveTokens = 16384;
+      keepRecentTokens = 12000;
     };
   };
 in
@@ -158,26 +140,21 @@ in
     home = {
       packages = [
         pkgs.goose-cli
-        pkgs.pi-coding-agent
-        piNpm
         revdiff
       ];
 
       file = {
         ".goosehints".text = aiHints;
         ".claude/CLAUDE.md".text = aiHints;
-        ".pi/agent/extensions/pi-supervisor.ts".source = ./pi-supervisor.ts;
-        ".pi/agent/extensions/caveman/index.ts".source = pkgs.fetchFromGitHub {
+        ".omp/agent/extensions/pi-supervisor.ts".source = ./pi-supervisor.ts;
+        ".omp/agent/extensions/caveman/index.ts".source = pkgs.fetchFromGitHub {
           owner = "v2nic";
           repo = "pi-caveman";
           rev = "2480692ffabddc3d1efec8eb822e664ff7e0e5ef";
           hash = "sha256-J9Kbvp6Ln3W8QIwCIzC6E6MjeyZqCU2ucYPSUrsmJg0=";
         } + "/extensions/caveman/index.ts";
-        ".pi/agent/extensions/pi-messenger-swarm.js".text = ''
-          export { default } from "${config.home.homeDirectory}/.pi/agent/npm-global/lib/node_modules/pi-messenger-swarm/dist/index.js";
-        '';
-        ".pi/agent/settings.json" = {
-          text = piSettingsJson;
+        ".omp/agent/settings.json" = {
+          text = ompSettingsJson;
           force = true;
         };
       };
