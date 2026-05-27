@@ -10,6 +10,10 @@ if [ ! -d "$ACP_UI_DIR" ]; then
 fi
 (cd "$ACP_UI_DIR" && git checkout -- . && git pull --ff-only && npm install && npm run build:web)
 
+SEED_SCRIPT='<script>if(!localStorage.getItem("acp-ui:agents")){localStorage.setItem("acp-ui:agents",JSON.stringify({agents:{omp:{transport:"websocket",url:"wss://omp.sammohr.dev"}}}))}</script>'
+sed -i.bak "s|</head>|${SEED_SCRIPT}</head>|" "$ACP_UI_DIR/dist-web/index.html"
+rm -f "$ACP_UI_DIR/dist-web/index.html.bak"
+
 echo "==> Deploying to smoresnet..."
 
 remote_script='#!/bin/sh
