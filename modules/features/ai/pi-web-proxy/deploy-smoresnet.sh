@@ -14,13 +14,75 @@ else
     echo "Neither sudo nor doas found"
     exit 1
 fi
-if grep -q "pi.sammohr.dev" /etc/caddy/Caddyfile; then
-    echo "pi.sammohr.dev block already present, skipping append."
-else
-    $SUDO sh -c "cat \"$HOME/pi-web-Caddyfile\" >> /etc/caddy/Caddyfile"
+MANAGED_BEGIN="# BEGIN managed pi-web proxy"
+MANAGED_END="# END managed pi-web proxy"
+TMP="$HOME/Caddyfile.pi-web.$$"
+BACKUP="/etc/caddy/Caddyfile.bak.pi-web"
+
+if [ -r /etc/conf.d/caddy ]; then
+    . /etc/conf.d/caddy
 fi
-$SUDO rc-service caddy reload
+
+if [ -z "${PI_WEB_BASIC_AUTH_HASH:-}" ]; then
+    echo "PI_WEB_BASIC_AUTH_HASH is not set for Caddy."
+    echo "On smoresnet, run: caddy hash-password"
+    echo "Then add the resulting hash to /etc/conf.d/caddy as:"
+    echo "  export PI_WEB_BASIC_AUTH_HASH='\''<hash>'\''"
+    exit 1
+fi
+
+$SUDO awk -v begin="$MANAGED_BEGIN" -v end="$MANAGED_END" '"'"'
+function brace_delta(s, i, c, d) {
+    d = 0
+    for (i = 1; i <= length(s); i++) {
+        c = substr(s, i, 1)
+        if (c == "{") d++
+        else if (c == "}") d--
+    }
+    return d
+}
+$0 == begin {
+    mode = "managed"
+    next
+}
+mode == "managed" {
+    if ($0 == end) mode = ""
+    next
+}
+mode == "oldblock" {
+    depth += brace_delta($0)
+    if (depth <= 0) mode = ""
+    next
+}
+$0 ~ /^[[:space:]]*pi[.]sammohr[.]dev[[:space:]]*[{]/ {
+    mode = "oldblock"
+    depth = brace_delta($0)
+    if (depth <= 0) mode = ""
+    next
+}
+{
+    print
+}
+'"'"' /etc/caddy/Caddyfile > "$TMP"
+
+{
+    printf "\n%s\n" "$MANAGED_BEGIN"
+    cat "$HOME/pi-web-Caddyfile"
+    printf "%s\n" "$MANAGED_END"
+} >> "$TMP"
+
+$SUDO cp /etc/caddy/Caddyfile "$BACKUP"
+$SUDO cp "$TMP" /etc/caddy/Caddyfile
+rm -f "$TMP"
+
+if ! $SUDO rc-service caddy reload; then
+    echo "Caddy reload failed; restoring previous Caddyfile."
+    $SUDO cp "$BACKUP" /etc/caddy/Caddyfile
+    $SUDO rc-service caddy reload || true
+    echo "Make sure PI_WEB_BASIC_AUTH_HASH is set in Caddy'\''s service environment."
+    exit 1
+fi
 echo "Done. Test: curl -sI https://pi.sammohr.dev | head -5"'
 
 scp Caddyfile "smores@smoresnet:~/pi-web-Caddyfile"
-ssh smores@smoresnet "$remote_script"
+printf '%s\n' "$remote_script" | ssh smores@smoresnet sh -s
