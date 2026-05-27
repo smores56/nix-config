@@ -24,9 +24,12 @@ let
       url = "https://github.com/kdlbs/kandev/releases/download/v${kandevVersion}/${kandevAsset}.tar.gz";
       hash = "sha256-u5uvf8U3WCf4T1WaNAtpB6N0DlK4kNH1r7TzFWp3vfI=";
     };
-    sourceRoot = ".";
+    sourceRoot = "kandev";
+    dontBuild = true;
     installPhase = ''
-      install -Dm755 kandev $out/bin/kandev
+      mkdir -p $out/bin $out/lib/kandev
+      cp -r . $out/lib/kandev/
+      ln -s $out/lib/kandev/kandev $out/bin/kandev
     '';
   };
 
