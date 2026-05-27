@@ -55,8 +55,7 @@
         sm = "ssh smores@smortress -t fish";
         st = "ssh smores@(tailscale-hosts | fzf) -t fish";
 
-        o = "opencode-hosted";
-        oc = "tv repos | read -l r; and c $r; and opencode-hosted";
+        o = "opencode";
       };
 
       shellInit = ''

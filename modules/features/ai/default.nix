@@ -167,6 +167,12 @@ in
         ".goosehints".text = aiHints;
         ".claude/CLAUDE.md".text = aiHints;
         ".pi/agent/extensions/pi-supervisor.ts".source = ./pi-supervisor.ts;
+        ".pi/agent/extensions/caveman/index.ts".source = pkgs.fetchFromGitHub {
+          owner = "v2nic";
+          repo = "pi-caveman";
+          rev = "2480692ffabddc3d1efec8eb822e664ff7e0e5ef";
+          hash = "sha256-J9Kbvp6Ln3W8QIwCIzC6E6MjeyZqCU2ucYPSUrsmJg0=";
+        } + "/extensions/caveman/index.ts";
         ".pi/agent/extensions/pi-messenger-swarm.js".text = ''
           export { default } from "${config.home.homeDirectory}/.pi/agent/npm-global/lib/node_modules/pi-messenger-swarm/dist/index.js";
         '';

@@ -7,7 +7,7 @@
 let
   cfg = config.dotfiles;
   inherit (cfg) opencodeHost;
-  opencodeEnabled = opencodeHost.enable;
+  opencodeEnabled = opencodeHost.bindAddress != null;
   opencodeBackendHost =
     if opencodeHost.bindAddress == "0.0.0.0" then "127.0.0.1" else opencodeHost.bindAddress;
   opencodeBackendUrl = "http://${opencodeBackendHost}:${toString opencodeHost.opencodePort}";
@@ -15,7 +15,7 @@ let
 in
 {
   systemd.user.services = {
-    opencode = lib.mkIf cfg.opencodeServe {
+    opencode = lib.mkIf (opencodeEnabled && pkgs.stdenv.isLinux) {
       Unit = {
         Description = "OpenCode Server";
         After = [ "network.target" ];
@@ -66,54 +66,6 @@ in
       };
       Install = {
         WantedBy = [ "default.target" ];
-      };
-    };
-  };
-
-  launchd.agents = {
-    opencode = lib.mkIf (opencodeEnabled && pkgs.stdenv.isDarwin) {
-      enable = true;
-      config = {
-        ProgramArguments = [
-          "${config.home.homeDirectory}/.opencode/bin/opencode"
-          "serve"
-          "--hostname"
-          opencodeHost.bindAddress
-          "--port"
-          (toString opencodeHost.opencodePort)
-        ];
-        WorkingDirectory = config.home.homeDirectory;
-        EnvironmentVariables = {
-          OPENCODE_MESSAGE_QUEUE_MODE = "hold";
-        };
-        KeepAlive = true;
-        RunAtLoad = true;
-        StandardOutPath = "${config.home.homeDirectory}/Library/Logs/opencode.log";
-        StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/opencode.error.log";
-      };
-    };
-
-    openchamber = lib.mkIf (opencodeEnabled && pkgs.stdenv.isDarwin) {
-      enable = true;
-      config = {
-        ProgramArguments = [
-          "${openchamberBin}"
-          "serve"
-          "--port"
-          (toString opencodeHost.openchamberPort)
-          "--host"
-          opencodeHost.bindAddress
-          "--foreground"
-        ];
-        WorkingDirectory = config.home.homeDirectory;
-        EnvironmentVariables = {
-          OPENCODE_HOST = opencodeBackendUrl;
-          OPENCODE_SKIP_START = "true";
-        };
-        KeepAlive = true;
-        RunAtLoad = true;
-        StandardOutPath = "${config.home.homeDirectory}/Library/Logs/openchamber.log";
-        StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/openchamber.error.log";
       };
     };
   };

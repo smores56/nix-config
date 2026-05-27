@@ -10,12 +10,21 @@
 4. In the OpenCode TUI, run `/connect` and select "OpenCode Go"
 5. Paste your API key
 
-### Wafer (GLM-5.1)
+### MiniMax
 
-1. Get your API key from [wafer.ai/pass](https://www.wafer.ai/pass)
-2. In the OpenCode TUI, run `/connect`, search for "Other"
-3. Enter provider ID: `wafer`
-4. Paste your API key
+1. Sign up at [MiniMax](https://www.minimaxi.com)
+2. Get your API key
+3. In the OpenCode TUI, run `/connect`, search for "Other"
+4. Enter provider ID: `minimax`
+5. Paste your API key
+
+### DeepSeek
+
+1. Sign up at [DeepSeek](https://platform.deepseek.com)
+2. Get your API key
+3. In the OpenCode TUI, run `/connect`, search for "Other"
+4. Enter provider ID: `deepseek`
+5. Paste your API key
 
 Auth is stored in `~/.local/share/opencode/auth.json` (not in the nix store).
 
@@ -23,18 +32,18 @@ Auth is stored in `~/.local/share/opencode/auth.json` (not in the nix store).
 
 Configured in `oh-my-opencode-slim.json` via the `"smores"` preset.
 
-| Agent | Model | Budget |
-|-------|-------|--------|
-| Orchestrator | `wafer/GLM-5.1` | wafer (1,000 req/5hr) |
-| Oracle | `wafer/GLM-5.1` (high) | wafer |
-| Council | `opencode-go/deepseek-v4-pro` | go |
-| Explorer | `opencode-go/minimax-m2.7` | go |
-| Librarian | `opencode-go/minimax-m2.7` | go |
-| Designer | `opencode-go/kimi-k2.6` | go |
-| Fixer | `opencode-go/deepseek-v4-flash` (high) | go |
-| Observer | `opencode-go/kimi-k2.6` | go |
+| Agent | Model | Provider |
+|-------|-------|----------|
+| Orchestrator | `minimax/MiniMax-M2.7` | MiniMax |
+| Oracle | `deepseek/deepseek-v4-pro` (high) | DeepSeek |
+| Council | `deepseek/deepseek-v4-pro` | DeepSeek |
+| Explorer | `minimax/MiniMax-M2.7` | MiniMax |
+| Librarian | `minimax/MiniMax-M2.7` | MiniMax |
+| Designer | `minimax/MiniMax-M2.7` | MiniMax |
+| Fixer | `deepseek/deepseek-v4-flash` (high) | DeepSeek |
+| Observer | `minimax/MiniMax-M2.7` | MiniMax |
 
-Orchestrator and Oracle fall back to `opencode-go/deepseek-v4-pro` if wafer.ai is down or rate-limited.
+Orchestrator, Designer, and Observer fall back to `deepseek/deepseek-v4-pro` if MiniMax is unavailable.
 
 ## Primary Agents
 
@@ -54,23 +63,29 @@ ocx init --global
 ocx profile add ws --source tweak/p-1vp4xoqv --from https://tweakoc.com/r --global
 ```
 
+## Caveman Plugins
+
+### OpenCode — `caveman-opencode-plugin`
+
+Installed via `opencode plugin` and configured in `~/.config/opencode/caveman.json`.
+
+Commands: `/caveman <mode>`, `/caveman-commit <diff>`, `/caveman-review <code>`.
+
+Modes: `lite`, `full` (default), `ultra`, `wenyan-lite`, `wenyan-full`, `wenyan-ultra`, `off`.
+
+### Pi — `v2nic/pi-caveman`
+
+Extension installed at `~/.pi/agent/extensions/caveman/index.ts` from a pinned upstream commit.
+
+Commands: `/caveman` (toggle), `/caveman lite`, `/caveman full`, `/caveman ultra`.
+
+Auto-triggers on: "caveman mode", "talk like caveman", "less tokens", "be brief".
+
 ## OpenChamber Web UI
 
-Personal hosting is accessible at `http://smortress:3000` over Tailscale. The web UI and TUI connect to the same backend server, so sessions are shared.
+Smortress is the sole host for OpenCode/OpenChamber services, accessible at `http://smortress:3000` over Tailscale.
 
 Proxied at `https://opencode.sammohr.dev` via Caddy on smoresnet (see `openchamber-proxy/`).
-
-The work host runs a local-only pair:
-
-- OpenChamber: `http://openchamber.local:15500`
-- OpenCode backend: `http://openchamber.local:16500`
-
-Map `openchamber.local` to `127.0.0.1` in `/etc/hosts` or local DNS if needed. On macOS:
-
-```bash
-grep -q '^127\.0\.0\.1[[:space:]]\+openchamber\.local$' /etc/hosts || \
-  echo '127.0.0.1 openchamber.local' | sudo tee -a /etc/hosts
-```
 
 ## Herdr Hosted Bridge
 
@@ -117,8 +132,12 @@ ctrl+down            next agent
 
 ## Config Reload
 
-On Linux hosts with hosting enabled, `home-manager switch` restarts the opencode systemd service to pick up config changes. OpenChamber restarts too because it is bound to the opencode service. On macOS work hosts, Home Manager manages the launchd agents.
+On Linux hosts with `opencodeHost.bindAddress` set, `home-manager switch` restarts the opencode systemd service to pick up config changes. OpenChamber restarts too because it is bound to the opencode service.
+
+## Pi/omp Provider Config
+
+The omp `models.yml` and `config.yml` with API keys are user-managed outside Nix (in `~/.pi/`). The Nix config only installs the agent and extensions — provider credentials stay local.
 
 ## Fish Abbreviations
 
-- `o` — Attach to the configured hosted OpenCode instance. Personal configs default to `http://smortress:4000`; the work config uses `http://openchamber.local:16500`.
+- `o` — Run `opencode` locally

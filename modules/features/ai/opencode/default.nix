@@ -9,14 +9,14 @@ let
   inherit (cfg) opencodeHost;
 
   models = {
-    wafer-glm51 = "wafer/GLM-5.1";
+    minimax-m27 = "minimax/MiniMax-M2.7";
     ds4pro = "deepseek/deepseek-v4-pro";
     ds4flash = "deepseek/deepseek-v4-flash";
   };
 
   opencodeSettings = {
     "$schema" = "https://opencode.ai/config.json";
-    model = models.wafer-glm51;
+    model = models.minimax-m27;
     small_model = models.ds4flash;
     plugin = [
       "oh-my-opencode-slim"
@@ -25,8 +25,10 @@ let
       "@tarquinen/opencode-smart-title"
       "@tarquinen/opencode-dcp"
       "@slkiser/opencode-quota"
+      "caveman-opencode-plugin"
     ];
-    server = {
+
+    server = lib.optionalAttrs (opencodeHost.bindAddress != null) {
       hostname = opencodeHost.bindAddress;
       port = opencodeHost.opencodePort;
     };
@@ -66,7 +68,7 @@ let
     };
     presets.smores = {
       orchestrator = {
-        model = models.wafer-glm51;
+        model = models.minimax-m27;
         skills = [ "*" ];
         mcps = [
           "*"
@@ -84,23 +86,23 @@ let
         variant = "high";
       };
       librarian = {
-        model = models.ds4flash;
+        model = models.minimax-m27;
         mcps = [
           "websearch"
           "context7"
           "grep_app"
         ];
       };
-      explorer.model = models.ds4flash;
+      explorer.model = models.minimax-m27;
       designer = {
-        model = models.wafer-glm51;
+        model = models.minimax-m27;
         variant = "medium";
       };
       fixer = {
         model = models.ds4flash;
         variant = "high";
       };
-      observer.model = models.wafer-glm51;
+      observer.model = models.minimax-m27;
     };
   };
 
@@ -121,6 +123,7 @@ let
     plugin = [
       "oh-my-opencode-slim"
       "@slkiser/opencode-quota"
+      "caveman-opencode-plugin"
     ];
   };
 
@@ -205,6 +208,7 @@ in
           install_plugin "@tarquinen/opencode-smart-title"
           install_plugin "@tarquinen/opencode-dcp"
           install_plugin "@slkiser/opencode-quota"
+          install_plugin "caveman-opencode-plugin"
         '';
       };
 
@@ -232,7 +236,7 @@ in
         '';
       };
 
-      reloadOpencodeConfig = lib.mkIf cfg.opencodeServe {
+      reloadOpencodeConfig = lib.mkIf (cfg.opencodeHost.bindAddress != null) {
         after = [ "linkGeneration" ];
         before = [ ];
         data = ''
@@ -252,7 +256,16 @@ in
     "opencode/AGENTS.md".text = cfg.aiHints;
     "opencode/oh-my-opencode-slim.json".text = builtins.toJSON ohMyOpencodeSlimConfig;
     "opencode/smart-title.jsonc".text = builtins.toJSON {
-      model = models.ds4flash;
+      model = models.minimax-m27;
+    };
+    "opencode/caveman.json".text = builtins.toJSON {
+      enabled = true;
+      defaultMode = "full";
+      features = {
+        caveman = true;
+        commit = true;
+        review = true;
+      };
     };
     "opencode-quota/quota-toast.json".text = builtins.toJSON quotaToastConfig;
   };

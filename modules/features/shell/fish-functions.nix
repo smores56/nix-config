@@ -1,8 +1,4 @@
-{ config, ... }:
-let
-  cfg = config.dotfiles;
-  opencodeAttachUrl = "http://${cfg.opencodeHost.hostname}:${toString cfg.opencodeHost.opencodePort}";
-in
+_:
 {
   programs.fish.functions = {
     error = {
@@ -43,13 +39,6 @@ in
 
             nohup zellij action rename-tab "$tab_name" >/dev/null 2>&1
         end
-      '';
-    };
-    opencode-hosted = {
-      description = "Attach to hosted opencode instance at git root";
-      body = ''
-        set -l dir (git rev-parse --show-toplevel 2>/dev/null; or pwd)
-        opencode attach ${opencodeAttachUrl} --dir $dir $argv
       '';
     };
   };

@@ -75,7 +75,6 @@ let
             ticketPrefix = null;
             workGithubOrgs = null;
             sevenqlLspPath = null;
-            opencodeServe = null;
             opencodeHost = null;
             piWeb = null;
             herdrServe = null;
@@ -113,7 +112,6 @@ let
             llm = args.llm or false;
             noSleep = args.noSleep or false;
             persist = args.persist or false;
-            opencodeServe = args.opencodeServe or false;
             opencodeHost = args.opencodeHost or { };
             piWeb = args.piWeb or { };
           };
@@ -156,9 +154,7 @@ in
           height = 2160;
         };
         noSleep = true;
-        opencodeServe = true;
         opencodeHost = {
-          enable = true;
           hostname = "smortress";
           bindAddress = "0.0.0.0";
           opencodePort = 4000;
@@ -182,13 +178,6 @@ in
         ticketPrefix = "7AI";
         workGithubOrgs = [ "OkamiAI" ];
         sevenqlLspPath = "/Users/smohr/dev/okami/typescript/tools/sevenql-lsp/main.ts";
-        opencodeHost = {
-          enable = true;
-          hostname = "openchamber.local";
-          bindAddress = "127.0.0.1";
-          opencodePort = 16500;
-          openchamberPort = 15500;
-        };
       };
     };
 
@@ -215,9 +204,7 @@ in
         exposeSsh = true;
         nvidia = true;
         noSleep = true;
-        opencodeServe = true;
         opencodeHost = {
-          enable = true;
           hostname = "smortress";
           bindAddress = "0.0.0.0";
           opencodePort = 4000;

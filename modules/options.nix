@@ -191,11 +191,6 @@ in
       readOnly = true;
       description = "Default local LLM model for AI coding tools.";
     };
-    opencodeServe = lib.mkOption {
-      type = lib.types.bool;
-      default = false;
-      description = "Host runs the opencode server and OpenChamber web UI for remote access.";
-    };
     herdrServe = lib.mkOption {
       type = lib.types.bool;
       default = false;
@@ -204,20 +199,15 @@ in
     opencodeHost = lib.mkOption {
       type = lib.types.submodule {
         options = {
-          enable = lib.mkOption {
-            type = lib.types.bool;
-            default = false;
-            description = "Enable the opencode server and OpenChamber web UI.";
-          };
           hostname = lib.mkOption {
             type = lib.types.str;
             default = "smortress";
             description = "Hostname clients should use to reach the hosted opencode server.";
           };
           bindAddress = lib.mkOption {
-            type = lib.types.str;
-            default = "0.0.0.0";
-            description = "Address the opencode and OpenChamber services bind to.";
+            type = lib.types.nullOr lib.types.str;
+            default = null;
+            description = "Address the opencode and OpenChamber services bind to. Null means this host does not run opencode services.";
           };
           opencodePort = lib.mkOption {
             type = lib.types.port;
@@ -232,7 +222,7 @@ in
         };
       };
       default = { };
-      description = "Host and port settings for a hosted opencode/OpenChamber pair.";
+      description = "Host and port settings for a hosted opencode/OpenChamber pair. Set bindAddress to enable services.";
     };
     piWeb = lib.mkOption {
       type = lib.types.submodule {
@@ -333,14 +323,13 @@ in
         }
         {
           assertion =
-            !config.dotfiles.opencodeHost.enable
+            config.dotfiles.opencodeHost.bindAddress == null
             || config.dotfiles.opencodeHost.opencodePort != config.dotfiles.opencodeHost.openchamberPort;
           message = "opencodeHost opencodePort and openchamberPort must be different";
         }
       ];
 
     dotfiles = {
-      opencodeHost.enable = lib.mkDefault config.dotfiles.opencodeServe;
       herdrHost.enable = lib.mkDefault config.dotfiles.herdrServe;
       wayland = config.dotfiles.displayManager == "niri";
       terminal = "kitty";
