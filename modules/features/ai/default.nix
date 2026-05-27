@@ -9,8 +9,6 @@ let
   inherit (cfg) branchPrefix;
 
 
-
-
   hasTicket = cfg.ticketPrefix != null;
   branchSlug =
     if hasTicket then "${cfg.ticketPrefix}-<ticket-number>-<kebab-slug>" else "<kebab-slug>";
@@ -105,9 +103,6 @@ in
 {
   config = {
     home = {
-      packages = [
-      ];
-
       file = {
         ".claude/CLAUDE.md".text = aiHints;
       };

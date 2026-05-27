@@ -73,13 +73,11 @@ Commands: `/caveman <mode>`, `/caveman-commit <diff>`, `/caveman-review <code>`.
 
 Modes: `lite`, `full` (default), `ultra`, `wenyan-lite`, `wenyan-full`, `wenyan-ultra`, `off`.
 
-### Pi — `v2nic/pi-caveman`
+### oh-my-pi — `v2nic/pi-caveman`
 
-Extension installed at `~/.omp/agent/extensions/caveman/index.ts` from a pinned upstream commit.
+Installed via `omp plugin install` and persisted in `~/.omp/`. Not managed by Nix.
 
 Commands: `/caveman` (toggle), `/caveman lite`, `/caveman full`, `/caveman ultra`.
-
-Auto-triggers on: "caveman mode", "talk like caveman", "less tokens", "be brief".
 
 ## OpenChamber Web UI
 
@@ -134,9 +132,9 @@ ctrl+down            next agent
 
 On Linux hosts with `opencodeHost.bindAddress` set, `home-manager switch` restarts the opencode systemd service to pick up config changes. OpenChamber restarts too because it is bound to the opencode service.
 
-## omp Provider Config
+## omp Config
 
-The omp `models.yml` and `config.yml` with API keys are user-managed outside Nix (in `~/.omp/`). The Nix config only installs extensions — provider credentials stay local.
+The omp `config.yml`, `models.yml`, and plugins are user-managed outside Nix (in `~/.omp/`). Use `omp config set` / `omp plugin install` to configure. Provider credentials stay local.
 
 ## Fish Abbreviations
 
