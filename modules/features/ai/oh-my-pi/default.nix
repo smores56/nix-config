@@ -50,8 +50,8 @@ in
           fi
         }
 
-        install_plugin "v2nic/pi-caveman"
-        install_plugin "npm:pi-context-usage"
+        install_plugin "pi-caveman"
+        install_plugin "pi-context-usage"
       '';
     };
 
