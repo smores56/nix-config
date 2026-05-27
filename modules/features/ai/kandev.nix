@@ -26,10 +26,9 @@ let
     };
     sourceRoot = "kandev";
     dontBuild = true;
+    dontFixup = true;
     installPhase = ''
-      mkdir -p $out/bin $out/lib/kandev
-      cp -r . $out/lib/kandev/
-      ln -s $out/lib/kandev/kandev $out/bin/kandev
+      cp -r . $out
     '';
   };
 
