@@ -8,7 +8,7 @@ echo "==> Building ACP UI..."
 if [ ! -d "$ACP_UI_DIR" ]; then
     git clone https://github.com/formulahendry/acp-ui.git "$ACP_UI_DIR"
 fi
-(cd "$ACP_UI_DIR" && git pull --ff-only && npm install && npm run build:web)
+(cd "$ACP_UI_DIR" && git checkout -- . && git pull --ff-only && npm install && npm run build:web)
 
 echo "==> Deploying to smoresnet..."
 
