@@ -1,9 +1,9 @@
-pi.sammohr.dev {
+omp.sammohr.dev {
     basic_auth {
-        smores {$PI_WEB_BASIC_AUTH_HASH}
+        smores {$OMP_ACP_BASIC_AUTH_HASH}
     }
 
-    reverse_proxy smortress:8192 {
+    reverse_proxy smortress:8193 {
         transport http {
             keepalive_idle_conns_per_host 0
             dial_timeout 5s

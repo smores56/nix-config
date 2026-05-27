@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-echo "Deploying pi-web proxy block on smoresnet..."
+echo "Deploying omp-acp proxy block on smoresnet..."
 
 remote_script='#!/bin/sh
 set -e
@@ -14,20 +14,20 @@ else
     echo "Neither sudo nor doas found"
     exit 1
 fi
-MANAGED_BEGIN="# BEGIN managed pi-web proxy"
-MANAGED_END="# END managed pi-web proxy"
-TMP="$HOME/Caddyfile.pi-web.$$"
-BACKUP="/etc/caddy/Caddyfile.bak.pi-web"
+MANAGED_BEGIN="# BEGIN managed omp-acp proxy"
+MANAGED_END="# END managed omp-acp proxy"
+TMP="$HOME/Caddyfile.omp-acp.$$"
+BACKUP="/etc/caddy/Caddyfile.bak.omp-acp"
 
 if [ -r /etc/conf.d/caddy ]; then
     . /etc/conf.d/caddy
 fi
 
-if [ -z "${PI_WEB_BASIC_AUTH_HASH:-}" ]; then
-    echo "PI_WEB_BASIC_AUTH_HASH is not set for Caddy."
+if [ -z "${OMP_ACP_BASIC_AUTH_HASH:-}" ]; then
+    echo "OMP_ACP_BASIC_AUTH_HASH is not set for Caddy."
     echo "On smoresnet, run: caddy hash-password"
     echo "Then add the resulting hash to /etc/conf.d/caddy as:"
-    echo "  export PI_WEB_BASIC_AUTH_HASH='\''<hash>'\''"
+    echo "  export OMP_ACP_BASIC_AUTH_HASH='\''<hash>'\''"
     exit 1
 fi
 
@@ -54,7 +54,7 @@ mode == "oldblock" {
     if (depth <= 0) mode = ""
     next
 }
-$0 ~ /^[[:space:]]*pi[.]sammohr[.]dev[[:space:]]*[{]/ {
+$0 ~ /^[[:space:]]*omp[.]sammohr[.]dev[[:space:]]*[{]/ {
     mode = "oldblock"
     depth = brace_delta($0)
     if (depth <= 0) mode = ""
@@ -67,7 +67,7 @@ $0 ~ /^[[:space:]]*pi[.]sammohr[.]dev[[:space:]]*[{]/ {
 
 {
     printf "\n%s\n" "$MANAGED_BEGIN"
-    cat "$HOME/pi-web-Caddyfile"
+    cat "$HOME/omp-acp-Caddyfile"
     printf "%s\n" "$MANAGED_END"
 } >> "$TMP"
 
@@ -79,10 +79,10 @@ if ! $SUDO rc-service caddy reload; then
     echo "Caddy reload failed; restoring previous Caddyfile."
     $SUDO cp "$BACKUP" /etc/caddy/Caddyfile
     $SUDO rc-service caddy reload || true
-    echo "Make sure PI_WEB_BASIC_AUTH_HASH is set in Caddy'\''s service environment."
+    echo "Make sure OMP_ACP_BASIC_AUTH_HASH is set in Caddy'\''s service environment."
     exit 1
 fi
-echo "Done. Test: curl -sI https://pi.sammohr.dev | head -5"'
+echo "Done. Test: curl -sI https://omp.sammohr.dev | head -5"'
 
-scp Caddyfile "smores@smoresnet:~/pi-web-Caddyfile"
+scp Caddyfile "smores@smoresnet:~/omp-acp-Caddyfile"
 printf '%s\n' "$remote_script" | ssh smores@smoresnet sh -s
