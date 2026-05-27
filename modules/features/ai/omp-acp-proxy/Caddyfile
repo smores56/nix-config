@@ -7,9 +7,13 @@ omp.sammohr.dev {
         header Connection *Upgrade*
         header Upgrade websocket
     }
-    reverse_proxy @websocket smortress:8193
+    handle @websocket {
+        reverse_proxy smortress:8193
+    }
 
-    root * /home/smores/acp-ui-dist
-    try_files {path} /index.html
-    file_server
+    handle {
+        root * /home/smores/acp-ui-dist
+        try_files {path} /index.html
+        file_server
+    }
 }
