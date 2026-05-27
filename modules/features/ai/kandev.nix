@@ -18,10 +18,19 @@ let
   ] + ":${homeDir}/.nix-profile/bin:/run/current-system/sw/bin:/run/wrappers/bin";
 
   kandevStart = pkgs.writeShellScript "kandev-start" ''
-    # Apply auto-approve to existing profiles before launch.
-    # Kandev's startup reconciler may reset these, so we also retry in background.
-    (sleep 10 && ${pkgs.sqlite}/bin/sqlite3 "${dbPath}" \
-      "UPDATE agent_profiles SET auto_approve = 1, dangerously_skip_permissions = 1 WHERE deleted_at IS NULL;") &
+    # After Kandev finishes initializing, force auto-approve on all profiles
+    # and patch any running session snapshots that still have the old defaults.
+    (sleep 10 && ${pkgs.sqlite}/bin/sqlite3 "${dbPath}" "
+      UPDATE agent_profiles SET auto_approve = 1, dangerously_skip_permissions = 1 WHERE deleted_at IS NULL;
+      UPDATE task_sessions SET agent_profile_snapshot = json_set(
+        json_set(agent_profile_snapshot, '\$.auto_approve', json('true')),
+        '\$.dangerously_skip_permissions', json('true')
+      ) WHERE state NOT IN ('COMPLETED', 'FAILED');
+      UPDATE task_sessions SET agent_profile_snapshot = json_set(
+        json_set(agent_profile_snapshot, '\$.AutoApprove', json('true')),
+        '\$.DangerouslySkipPermissions', json('true')
+      ) WHERE state NOT IN ('COMPLETED', 'FAILED');
+    ") &
 
     exec npx kandev@latest run --headless --backend-port ${port}
   '';
