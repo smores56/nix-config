@@ -77,6 +77,7 @@ let
             sevenqlLspPath = null;
             opencodeHost = null;
             piWeb = null;
+            ompWeb = null;
             herdrServe = null;
             herdrHost = null;
             ohMyPi = null;
@@ -167,6 +168,7 @@ in
           bindAddress = "0.0.0.0";
         };
         ohMyPi.enable = true;
+        ompWeb.enable = true;
       };
       "smores@smoresnet" = mkHome { };
       "smohr@smoreswork" = mkHome {

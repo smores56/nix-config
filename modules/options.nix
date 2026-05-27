@@ -247,6 +247,29 @@ in
       default = { };
       description = "pi-web settings for oh-my-pi browser access. Serves the Pi coding agent via a React web UI.";
     };
+    ompWeb = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkOption {
+            type = lib.types.bool;
+            default = false;
+            description = "Enable the ACP WebSocket bridge for oh-my-pi, accessible via ACP UI from a phone browser.";
+          };
+          port = lib.mkOption {
+            type = lib.types.port;
+            default = 8193;
+            description = "Port for the stdio-to-ws ACP bridge.";
+          };
+          gracePeriod = lib.mkOption {
+            type = lib.types.int;
+            default = -1;
+            description = "Seconds to keep the omp process alive after WebSocket disconnect. -1 keeps it alive indefinitely.";
+          };
+        };
+      };
+      default = { };
+      description = "ACP WebSocket bridge for oh-my-pi. Exposes omp via the Agent Client Protocol over WebSocket for use with ACP UI or other ACP clients.";
+    };
     herdrHost = lib.mkOption {
       type = lib.types.submodule {
         options = {
