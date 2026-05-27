@@ -85,4 +85,4 @@ fi
 echo "Done. Test: curl -sI https://omp.sammohr.dev | head -5"'
 
 scp Caddyfile "smores@smoresnet:~/omp-acp-Caddyfile"
-ssh -t smores@smoresnet "$remote_script"
+printf '%s\n' "$remote_script" | ssh -tt smores@smoresnet sh -s
