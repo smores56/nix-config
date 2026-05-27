@@ -17,7 +17,7 @@ let
   ] + ":${homeDir}/.nix-profile/bin:/run/current-system/sw/bin:/run/wrappers/bin";
 
   kandevStart = pkgs.writeShellScript "kandev-start" ''
-    exec npx kandev@latest start --backend-port ${port}
+    exec npx kandev@latest run --headless --backend-port ${port}
   '';
 in
 {
