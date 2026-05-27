@@ -26,8 +26,9 @@ let
   ]
   ++ [
     "- Create worktrees with `wt switch --create ${branchPrefix}/${branchSlug}`"
+    "- **CRITICAL**: `wt switch` cannot cd in non-interactive shells. Always use `wt switch --format json` to get the worktree path as JSON. After switching, you MUST pass `cwd: \"<worktree_path>\"` to ALL subsequent bash commands — never rely on `cd` within bash scripts"
     "- Worktree directories live inside the canonical checkout at `.worktrees/${branchSlug}` (worktrunk strips the `${branchPrefix}/` prefix)"
-    "- Switch between worktrees: `wt switch <branch>` to jump directly"
+    "- Switch between worktrees: `wt switch --format json <branch>` to get the path, then use `cwd:` in bash calls"
     "- To return to the canonical (non-worktree) checkout: `cd ${cfg.codeRoot}/github.com/<owner>/<repo>`"
     "- Do NOT use `git clone`, `git worktree add`, `git checkout -b`, or Claude's built-in EnterWorktree"
     "- List worktrees: `wt list`"
