@@ -146,7 +146,6 @@ in
       file = {
         ".goosehints".text = aiHints;
         ".claude/CLAUDE.md".text = aiHints;
-        ".omp/agent/extensions/pi-supervisor.ts".source = ./pi-supervisor.ts;
         ".omp/agent/extensions/caveman/index.ts".source = pkgs.fetchFromGitHub {
           owner = "v2nic";
           repo = "pi-caveman";
