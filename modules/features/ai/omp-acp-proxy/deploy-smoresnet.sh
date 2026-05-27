@@ -75,10 +75,10 @@ $SUDO cp /etc/caddy/Caddyfile "$BACKUP"
 $SUDO cp "$TMP" /etc/caddy/Caddyfile
 rm -f "$TMP"
 
-if ! $SUDO rc-service caddy reload; then
+if ! $SUDO /sbin/rc-service caddy reload; then
     echo "Caddy reload failed; restoring previous Caddyfile."
     $SUDO cp "$BACKUP" /etc/caddy/Caddyfile
-    $SUDO rc-service caddy reload || true
+    $SUDO /sbin/rc-service caddy reload || true
     echo "Make sure OMP_ACP_BASIC_AUTH_HASH is set in Caddy'\''s service environment."
     exit 1
 fi
