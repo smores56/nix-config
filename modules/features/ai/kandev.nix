@@ -9,6 +9,7 @@ let
   enabled = cfg.enable && pkgs.stdenv.isLinux;
   homeDir = config.home.homeDirectory;
   port = toString cfg.port;
+  dbPath = "${homeDir}/.kandev/data/kandev.db";
 
   scriptPath = "${homeDir}/.bun/bin:${homeDir}/.cache/.bun/bin:${homeDir}/.opencode/bin:${homeDir}/.local/bin:" + lib.makeBinPath [
     pkgs.nodejs
@@ -17,11 +18,21 @@ let
   ] + ":${homeDir}/.nix-profile/bin:/run/current-system/sw/bin:/run/wrappers/bin";
 
   kandevStart = pkgs.writeShellScript "kandev-start" ''
+    # Apply auto-approve to existing profiles before launch.
+    # Kandev's startup reconciler may reset these, so we also retry in background.
+    (sleep 10 && ${pkgs.sqlite}/bin/sqlite3 "${dbPath}" \
+      "UPDATE agent_profiles SET auto_approve = 1, dangerously_skip_permissions = 1 WHERE deleted_at IS NULL;") &
+
     exec npx kandev@latest run --headless --backend-port ${port}
   '';
 in
 {
   config = lib.mkIf enabled {
+    home.file.".kandev/workspaces/bd9b96d3-670a-4f65-9c48-793ace6383d1/kandev.yml".text = ''
+      name: Default Workspace
+      permission_handling_mode: auto_approve
+    '';
+
     systemd.user.services.kandev = {
       Unit = {
         Description = "Kandev AI development environment";
@@ -34,6 +45,7 @@ in
           "KANDEV_SERVER_PORT=${port}"
           "KANDEV_HOME_DIR=${homeDir}/.kandev"
           "KANDEV_DOCKER_ENABLED=false"
+          "KANDEV_FEATURES_OFFICE=true"
           "HOME=${homeDir}"
         ];
         ExecStart = kandevStart;
