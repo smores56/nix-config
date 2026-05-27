@@ -4,8 +4,7 @@ omp.sammohr.dev {
     }
 
     @websocket {
-        header Connection *Upgrade*
-        header Upgrade websocket
+        header Sec-WebSocket-Version *
     }
     handle @websocket {
         reverse_proxy smortress:8193
