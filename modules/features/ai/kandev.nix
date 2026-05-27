@@ -56,7 +56,7 @@ in
           "KANDEV_DOCKER_ENABLED=false"
           "HOME=${homeDir}"
         ];
-        ExecStart = "${kandev}/bin/kandev start --backend-port ${toString cfg.port} --web-port ${toString (cfg.port - 1000)}";
+        ExecStart = "${pkgs.nodejs}/bin/node ${kandev}/cli/dist/cli.bundle.js start --backend-port ${toString cfg.port} --web-port ${toString (cfg.port - 1000)}";
         WorkingDirectory = "${kandev}";
         Restart = "always";
         RestartSec = 5;
