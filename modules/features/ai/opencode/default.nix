@@ -20,11 +20,11 @@ let
       prune = true;
       reserved = 16384;
       preserve_recent_tokens = 12000;
-      tail_turns = 1;
+      tail_turns = 4;
     };
     tool_output = {
-      max_lines = 1000;
-      max_bytes = 25600;
+      max_lines = 150;
+      max_bytes = 5000;
     };
     provider = {
       minimax.options.setCacheKey = true;
@@ -32,7 +32,6 @@ let
     };
     plugin = [
       "oh-my-openagent"
-      "opencode-plugin-openspec"
       "@tarquinen/opencode-smart-title"
       "@tarquinen/opencode-dcp"
       "caveman-opencode-plugin"
@@ -54,7 +53,8 @@ let
   };
 
   ohMyOpenagentConfig = {
-    "$schema" = "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json";
+    "$schema" =
+      "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json";
     preset = "smores";
     fallback = {
       enabled = false;
@@ -101,7 +101,6 @@ in
           }
 
           install_plugin "oh-my-openagent"
-          install_plugin "opencode-plugin-openspec"
           install_plugin "@tarquinen/opencode-smart-title"
           install_plugin "@tarquinen/opencode-dcp"
           install_plugin "caveman-opencode-plugin"
