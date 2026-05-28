@@ -59,6 +59,16 @@ let
     fallback = {
       enabled = false;
     };
+    categories = {
+      deep = { model = minimax-m27; };
+      ultrabrain = { model = minimax-m27; };
+      artistry = { model = minimax-m27; };
+      visual-engineering = { model = minimax-m27; };
+      quick = { model = minimax-m27; };
+      unspecified-high = { model = minimax-m27; };
+      unspecified-low = { model = minimax-m27; };
+      writing = { model = minimax-m27; };
+    };
   };
 
   opencodeTui = {
