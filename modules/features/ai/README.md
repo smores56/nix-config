@@ -18,32 +18,11 @@
 4. Enter provider ID: `minimax`
 5. Paste your API key
 
-### DeepSeek
-
-1. Sign up at [DeepSeek](https://platform.deepseek.com)
-2. Get your API key
-3. In the OpenCode TUI, run `/connect`, search for "Other"
-4. Enter provider ID: `deepseek`
-5. Paste your API key
-
 Auth is stored in `~/.local/share/opencode/auth.json` (not in the nix store).
 
-## Model Routing (oh-my-opencode-slim)
+## Model Routing
 
-Configured in `oh-my-opencode-slim.json` via the `"smores"` preset.
-
-| Agent | Model | Provider |
-|-------|-------|----------|
-| Orchestrator | `minimax/MiniMax-M2.7` | MiniMax |
-| Oracle | `deepseek/deepseek-v4-pro` (high) | DeepSeek |
-| Council | `deepseek/deepseek-v4-pro` | DeepSeek |
-| Explorer | `minimax/MiniMax-M2.7` | MiniMax |
-| Librarian | `minimax/MiniMax-M2.7` | MiniMax |
-| Designer | `minimax/MiniMax-M2.7` | MiniMax |
-| Fixer | `deepseek/deepseek-v4-flash` (high) | DeepSeek |
-| Observer | `minimax/MiniMax-M2.7` | MiniMax |
-
-Orchestrator, Designer, and Observer fall back to `deepseek/deepseek-v4-pro` if MiniMax is unavailable.
+All agents use `minimax/MiniMax-M2.7` via oh-my-openagent. Fallback chains disabled — all-in on MiniMax Token Plan.
 
 ## Primary Agents
 
@@ -99,7 +78,7 @@ You can skip the picker from a shell:
 
 ```bash
 herdr-hosted
-herdr-hosted nix-config
+herdr-hosted work
 herdr-hosted ~/code/github.com/smores56/nix-config
 ```
 
@@ -120,7 +99,7 @@ hot                  # short shell alias for herdr-omp-tab
 
 Inside Herdr, these extra bindings are configured:
 
-```text
+```
 prefix+shift+o       start omp in a new tab of the current workspace
 ctrl+shift+up        previous workspace
 ctrl+shift+down      next workspace
@@ -137,8 +116,17 @@ On Linux hosts with `opencodeHost.bindAddress` set, `home-manager switch` restar
 Managed by `oh-my-pi.nix` (set `dotfiles.ohMyPi.enable = true`). On `home-manager switch`:
 
 - Installs `pi-caveman` and `pi-context-usage` plugins via `omp plugin install`
+- Generates `models.yml` and `config.yml` from `dotfiles.ohMyPi.minimaxApiKeyFile` option
 - Applies aggressive compaction settings via `omp config set` (respects omp's own config management)
 - Sets `steeringMode: one-at-a-time`
+
+### oh-my-pi Model Config
+
+Set `dotfiles.ohMyPi.minimaxApiKeyFile` to a file containing your MiniMax Token Plan key (`sk-cp-...`).
+
+When set, home-manager generates:
+- `~/.omp/agent/models.yml` — minimax provider with `MiniMax-M2.7`, `reasoning_split: true` in `extraBody`
+- `~/.omp/agent/config.yml` — all model roles (`default`, `slow`, `plan`, `smol`) → `minimax/MiniMax-M2.7`
 
 Compaction settings are tunable via `dotfiles.ohMyPi.compaction.*` options.
 

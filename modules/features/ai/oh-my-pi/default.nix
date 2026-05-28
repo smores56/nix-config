@@ -74,6 +74,74 @@ in
       '';
     };
 
+    home.activation.configureOmpMinimax = {
+      after = [ "linkGeneration" ];
+      before = [ ];
+      data = ''
+        KEY_FILE="$HOME/.config/omp/minimax-key"
+        AGENT_DIR="$HOME/.omp/agent"
+
+        if [ ! -f "$KEY_FILE" ]; then
+          echo "[oh-my-pi] No MiniMax API key at $KEY_FILE, skipping minimax config"
+          exit 0
+        fi
+
+        # Read key and replace sentinel in templates
+        API_KEY=$(cat "$KEY_FILE")
+
+        # Provider "minimax-code" triggers the built-in thinking tag parser in pi-ai
+        sed -e "s/__API_KEY__/$API_KEY/g" << 'MODELS' > "$AGENT_DIR/models.yml"
+providers:
+  minimax-code:
+    baseUrl: https://api.minimax.io/v1
+    apiKey: __API_KEY__
+    api: openai-completions
+    auth: apiKey
+    models:
+      - id: MiniMax-M2.7
+        name: MiniMax M2.7
+        reasoning: false
+        input: [text]
+        contextWindow: 204800
+        maxTokens: 32000
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+        compat: { supportsDeveloperRole: false }
+MODELS
+
+        cat << 'CONFIG' > "$AGENT_DIR/config.yml"
+lastChangelogVersion: 15.3.2
+modelRoles:
+  default: minimax-code/MiniMax-M2.7
+  slow: minimax-code/MiniMax-M2.7
+  plan: minimax-code/MiniMax-M2.7
+  smol: minimax-code/MiniMax-M2.7
+theme:
+  dark: dark-lavender
+display:
+  showTokenUsage: true
+  shimmer: classic
+hideThinkingBlock: false
+memory:
+  backend: local
+exa:
+  enableResearcher: true
+compaction:
+  keepRecentTokens: 12000
+  enabled: true
+  reserveTokens: 16384
+  autoContinue: true
+steeringMode: one-at-a-time
+extensions: []
+disabledServers:
+  - beads
+tools:
+  discoveryMode: mcp-only
+CONFIG
+
+        echo "[oh-my-pi] MiniMax M2.7 configured"
+      '';
+    };
+
     home.file.".omp/agent/extensions/wt-switch-cd.ts".source = ./wt-switch-cd.ts;
 
     programs.fish.shellAbbrs = {
