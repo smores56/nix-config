@@ -146,6 +146,7 @@ On Linux hosts with `opencodeHost.bindAddress` set, `home-manager switch` restar
 
 Managed by `oh-my-pi.nix` (set `dotfiles.ohMyPi.enable = true`). On `home-manager switch`:
 
+- Installs the oh-my-pi CLI package under `~/.local/share/oh-my-pi-cli` if it is missing
 - Installs `pi-caveman` via `omp plugin install`
 - Generates `~/.omp/agent/models.yml` and `~/.omp/agent/config.yml` from `~/.config/omp/crofai-key`
 - Applies large-context compaction settings, because CrofAI is request-capped rather than token-capped

@@ -14,7 +14,11 @@ let
     ++ (lib.optionals cfg.claude.enable [ "anthropic" ])
     ++ (lib.optionals cfg.codex.enable [ "openai-codex" ])
   );
-  ompEntrypoint = "$HOME/.bun/install/global/node_modules/@oh-my-pi/pi-coding-agent/src/cli.ts";
+  ompPackage = "@oh-my-pi/pi-coding-agent";
+  ompPrivateDir = "$HOME/.local/share/oh-my-pi-cli";
+  ompPrivateEntrypoint = "${ompPrivateDir}/node_modules/${ompPackage}/src/cli.ts";
+  ompLegacyEntrypoint = "$HOME/.bun/install/global/node_modules/${ompPackage}/src/cli.ts";
+  ompEarendilEntrypoint = "$HOME/.bun/install/global/node_modules/@earendil-works/pi-coding-agent/src/cli.ts";
   ompWrapper = pkgs.writeShellScriptBin "omp" ''
     set -euo pipefail
 
@@ -34,7 +38,14 @@ let
       fi
     fi
 
-    exec "$HOME/.bun/bin/bun" "${ompEntrypoint}" "$@"
+    for entrypoint in "${ompPrivateEntrypoint}" "${ompLegacyEntrypoint}" "${ompEarendilEntrypoint}"; do
+      if [ -r "$entrypoint" ]; then
+        exec "$HOME/.bun/bin/bun" "$entrypoint" "$@"
+      fi
+    done
+
+    echo "oh-my-pi CLI not installed. Re-run home-manager switch, or install ${ompPackage} into ${ompPrivateDir}." >&2
+    exit 127
   '';
 in
 {
@@ -82,14 +93,50 @@ in
       source = "${ompWrapper}/bin/omp";
     };
 
-    home.activation.installOmpPlugins = {
+    home.activation.installOmpCli = {
       after = [ "linkGeneration" ];
+      before = [
+        "configureOmpClaude"
+        "configureOmpCompaction"
+        "configureOmpModelProviderOrder"
+        "installOmpPlugins"
+      ];
+      data = ''
+        export PATH="$HOME/.bun/bin:$HOME/.cache/.bun/bin:$PATH"
+        CLI_DIR="${ompPrivateDir}"
+        ENTRYPOINT="${ompPrivateEntrypoint}"
+
+        if [ -r "$ENTRYPOINT" ]; then
+          echo "[oh-my-pi] OMP CLI already installed"
+        elif ! command -v bun >/dev/null 2>&1; then
+          echo "[oh-my-pi] bun not found in PATH, cannot install ${ompPackage}" >&2
+        else
+          echo "[oh-my-pi] Installing ${ompPackage} into $CLI_DIR"
+          mkdir -p "$CLI_DIR"
+          printf '%s\n' '{"private":true,"dependencies":{"${ompPackage}":"latest"}}' > "$CLI_DIR/package.json"
+          if ! (
+            cd "$CLI_DIR"
+            bun install
+          ); then
+            echo "[oh-my-pi] Failed to install ${ompPackage}; OMP plugin/config commands will be skipped" >&2
+          fi
+        fi
+      '';
+    };
+
+    home.activation.installOmpPlugins = {
+      after = [
+        "linkGeneration"
+        "installOmpCli"
+      ];
       before = [ ];
       data = ''
         export PATH="$HOME/.bun/bin:$HOME/.cache/.bun/bin:$PATH"
 
         if ! command -v omp >/dev/null 2>&1; then
           echo "[oh-my-pi] omp not found in PATH, skipping plugin install"
+        elif ! omp plugin list >/dev/null 2>&1; then
+          echo "[oh-my-pi] omp is not runnable, skipping plugin install"
         else
           install_plugin() {
             local name="$1"
@@ -114,6 +161,7 @@ in
     home.activation.configureOmpCompaction = {
       after = [
         "linkGeneration"
+        "installOmpCli"
         "configureOmpCrofAI"
       ];
       before = [ ];
@@ -135,6 +183,7 @@ in
     home.activation.configureOmpModelProviderOrder = {
       after = [
         "linkGeneration"
+        "installOmpCli"
         "configureOmpCrofAI"
       ];
       before = [ ];
