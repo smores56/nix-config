@@ -67,7 +67,10 @@
             set -a fish_function_path $p/share/fish/vendor_functions.d
             set -a fish_complete_path $p/share/fish/vendor_completions.d
         end
-        pfetch
+        # Skip pfetch in OpenChamber - ANSI codes corrupt fenv.main parsing
+        if not set -q TERM_PROGRAM; or ! string match -q "*OpenChamber*" $TERM_PROGRAM
+            pfetch
+        end
         function __deferred_zellij_tabname --on-event fish_prompt
             functions --erase __deferred_zellij_tabname
             __auto_zellij_update_tabname
