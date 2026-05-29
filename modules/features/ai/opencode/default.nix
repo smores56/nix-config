@@ -124,13 +124,6 @@ let
     };
   };
 
-  opencodeTui = {
-    "$schema" = "https://opencode.ai/tui.json";
-    plugin = [
-      "oh-my-opencode-slim"
-      "caveman-opencode-plugin"
-    ];
-  };
 in
 {
   home = {
@@ -184,7 +177,6 @@ in
 
   xdg.configFile = {
     "opencode/opencode.json".text = builtins.toJSON opencodeSettings;
-    "opencode/tui.json".text = builtins.toJSON opencodeTui;
     "opencode/AGENTS.md".text = cfg.aiHints;
     "opencode/oh-my-opencode-slim.json".text = builtins.toJSON ohMyOpencodeSlimConfig;
     "opencode/caveman.json".text = builtins.toJSON {
