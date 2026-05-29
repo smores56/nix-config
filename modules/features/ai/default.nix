@@ -8,7 +8,6 @@ let
   cfg = config.dotfiles;
   inherit (cfg) branchPrefix;
 
-
   hasTicket = cfg.ticketPrefix != null;
   branchSlug =
     if hasTicket then "${cfg.ticketPrefix}-<ticket-number>-<kebab-slug>" else "<kebab-slug>";
@@ -110,6 +109,5 @@ in
     };
 
     dotfiles.aiHints = aiHints;
-
   };
 }

@@ -15,10 +15,13 @@ let
   ompBin = "${cacheBinDir}/omp";
   stdioToWsBin = "${cacheBinDir}/stdio-to-ws";
 
-  scriptPath = "${bunBinDir}:${cacheBinDir}:" + lib.makeBinPath [
-    pkgs.nodejs
-    pkgs.coreutils
-  ] + ":${homeDir}/.local/bin:${homeDir}/.nix-profile/bin:/run/current-system/sw/bin:/run/wrappers/bin";
+  scriptPath =
+    "${bunBinDir}:${cacheBinDir}:"
+    + lib.makeBinPath [
+      pkgs.nodejs
+      pkgs.coreutils
+    ]
+    + ":${homeDir}/.local/bin:${homeDir}/.nix-profile/bin:/run/current-system/sw/bin:/run/wrappers/bin";
 
   bridgeScript = pkgs.writeShellScript "omp-acp-bridge" ''
     exec ${stdioToWsBin} \

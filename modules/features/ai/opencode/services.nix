@@ -22,7 +22,7 @@ in
       };
       Service = {
         Environment = [
-          "OPENCODE_HOST=http://localhost:4000"
+          "OPENCODE_HOST=${opencodeBackendUrl}"
         ];
         ExecStart = "${config.home.homeDirectory}/.opencode/bin/opencode serve --hostname ${opencodeHost.bindAddress} --port ${toString opencodeHost.opencodePort}";
         WorkingDirectory = config.home.homeDirectory;

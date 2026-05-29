@@ -11,11 +11,14 @@ let
   port = toString cfg.port;
   dbPath = "${homeDir}/.kandev/data/kandev.db";
 
-  scriptPath = "${homeDir}/.bun/bin:${homeDir}/.cache/.bun/bin:${homeDir}/.opencode/bin:${homeDir}/.local/bin:" + lib.makeBinPath [
-    pkgs.nodejs
-    pkgs.coreutils
-    pkgs.git
-  ] + ":${homeDir}/.nix-profile/bin:/run/current-system/sw/bin:/run/wrappers/bin";
+  scriptPath =
+    "${homeDir}/.bun/bin:${homeDir}/.cache/.bun/bin:${homeDir}/.opencode/bin:${homeDir}/.local/bin:"
+    + lib.makeBinPath [
+      pkgs.nodejs
+      pkgs.coreutils
+      pkgs.git
+    ]
+    + ":${homeDir}/.nix-profile/bin:/run/current-system/sw/bin:/run/wrappers/bin";
 
   kandevStart = pkgs.writeShellScript "kandev-start" ''
     # After Kandev finishes initializing, force auto-approve on all profiles
