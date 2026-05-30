@@ -1,0 +1,24 @@
+paseo.sammohr.dev {
+    # API and WebSocket → daemon
+    handle /api/* {
+        reverse_proxy smortress:6767 {
+            transport http {
+                keepalive_idle_conns_per_host 0
+            }
+        }
+    }
+    handle /ws* {
+        reverse_proxy smortress:6767 {
+            transport http {
+                keepalive_idle_conns_per_host 0
+            }
+        }
+    }
+
+    # SPA static files
+    handle {
+        root * /home/smores/paseo-web/dist
+        try_files {path} /index.html
+        file_server
+    }
+}

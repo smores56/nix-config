@@ -25,6 +25,10 @@
     };
     flake-parts.url = "github:hercules-ci/flake-parts";
     import-tree.url = "github:vic/import-tree";
+    paseo = {
+      url = "github:jms830/paseo/d343ec15e137e34b8f81ca4664afef6486c3efb1";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =

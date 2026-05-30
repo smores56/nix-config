@@ -331,6 +331,24 @@ in
       default = { };
       description = "Host and port settings for the Herdr Tailscale Serve bridge.";
     };
+    paseo = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkOption {
+            type = lib.types.bool;
+            default = false;
+            description = "Enable the Paseo daemon for remote agent access.";
+          };
+          manageAcp = lib.mkOption {
+            type = lib.types.bool;
+            default = true;
+            description = "Paseo manages the omp ACP subprocess instead of the standalone stdio-to-ws bridge.";
+          };
+        };
+      };
+      default = { };
+      description = "Paseo settings. Paseo is a self-hosted daemon for AI coding agents, accessible via web/CLI/mobile.";
+    };
     aiHints = lib.mkOption {
       type = lib.types.str;
       readOnly = true;

@@ -60,16 +60,16 @@ let
     };
   };
 
-  ompModelYaml = model: ''
-    - id: ${model.id}
-      name: ${model.name}
-      reasoning: ${lib.boolToString model.reasoning}
-      input: [${lib.concatStringsSep ", " model.input}]
-      contextWindow: ${toString model.context}
-      maxTokens: ${toString model.output}
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
-      compat: { supportsDeveloperRole: false }
-  '';
+  ompModelYaml = model: lib.concatStringsSep "\n" [
+    "      - id: ${model.id}"
+    "        name: ${model.name}"
+    "        reasoning: ${lib.boolToString model.reasoning}"
+    "        input: [${lib.concatStringsSep ", " model.input}]"
+    "        contextWindow: ${toString model.context}"
+    "        maxTokens: ${toString model.output}"
+    "        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }"
+    "        compat: { supportsDeveloperRole: false }"
+  ] + "\n";
 
   roleYaml = name: modelRef: "  ${name}: ${modelRef}";
 in

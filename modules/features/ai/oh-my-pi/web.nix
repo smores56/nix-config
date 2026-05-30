@@ -7,7 +7,8 @@
 let
   cfg = config.dotfiles;
   inherit (cfg) ompWeb;
-  enabled = ompWeb.enable && pkgs.stdenv.isLinux;
+  paseoAcpManaged = cfg.paseo.enable && cfg.paseo.manageAcp && pkgs.stdenv.isLinux;
+  enabled = ompWeb.enable && pkgs.stdenv.isLinux && !paseoAcpManaged;
   port = toString ompWeb.port;
   homeDir = config.home.homeDirectory;
   bunBinDir = "${homeDir}/.bun/bin";

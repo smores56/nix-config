@@ -236,7 +236,7 @@ in
               ${pkgs.jq}/bin/jq '{
                 type: "claude",
                 access_token: .claudeAiOauth.accessToken,
-                refresh_token: .claudeAiOauth.refreshToken,
+p               refresh_token: .claudeAiOauth.refreshToken,
                 expired: (.claudeAiOauth.expiresAt / 1000 | floor | todateiso8601)
               }' "$CREDENTIALS_FILE" > "$tmp"
               chmod 600 "$tmp" 2>/dev/null || true

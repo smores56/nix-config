@@ -82,6 +82,7 @@ let
             herdrServe = null;
             herdrHost = null;
             ohMyPi = null;
+            paseo = null;
           } args;
           home.username = username;
           home.homeDirectory =
@@ -170,6 +171,7 @@ in
         };
         ohMyPi.enable = true;
         ompWeb.enable = true;
+        paseo.enable = true;
         kandev.enable = true;
       };
       "smores@smoresnet" = mkHome { };
