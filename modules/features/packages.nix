@@ -70,7 +70,6 @@
           nodejs_24
           typst
           cargo
-          odin
           tree-sitter
 
           # compilation
@@ -82,6 +81,9 @@
         ]
         ++ lib.optionals pkgs.stdenv.isDarwin [
           pkgs.apple-sdk_15
+        ]
+        ++ lib.optionals pkgs.stdenv.isLinux [
+          odin
         ]
         ++ [
 

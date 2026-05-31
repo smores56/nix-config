@@ -186,6 +186,11 @@ in
         ticketPrefix = "7AI";
         workGithubOrgs = [ "OkamiAI" ];
         sevenqlLspPath = "/Users/smohr/dev/okami/typescript/tools/sevenql-lsp/main.ts";
+        ohMyPi = {
+          enable = true;
+          codex.enable = true;
+          claude.enable = true;
+        };
       };
     };
 

@@ -7,8 +7,9 @@
 let
   cfg = config.dotfiles;
   hasSevenql = pkgs.stdenv.isDarwin && cfg.sevenqlLspPath != null;
+  hasOdinTools = pkgs.stdenv.isLinux;
   campPath = "${cfg.codeRoot}/github.com/camp-language/camp";
-  hasCamp = builtins.pathExists campPath;
+  hasCamp = hasOdinTools && builtins.pathExists campPath;
 
   camp-src =
     if hasCamp then
@@ -30,25 +31,29 @@ let
       null;
 in
 {
-  home.packages = with pkgs; [
-    ols
-    nixd
-    ruff
-    taplo
-    gopls
-    nixfmt
-    mdformat
-    marksman
-    harper
-    basedpyright
-    lua-language-server
-    dockerfile-language-server
-    yaml-language-server
-    svelte-language-server
-    typescript-language-server
-    vscode-langservers-extracted
-    graphql-language-service-cli
-  ];
+  home.packages =
+    with pkgs;
+    lib.optionals hasOdinTools [
+      ols
+    ]
+    ++ [
+      nixd
+      ruff
+      taplo
+      gopls
+      nixfmt
+      mdformat
+      marksman
+      harper
+      basedpyright
+      lua-language-server
+      dockerfile-language-server
+      yaml-language-server
+      svelte-language-server
+      typescript-language-server
+      vscode-langservers-extracted
+      graphql-language-service-cli
+    ];
 
   home.file = lib.mkMerge [
     (lib.mkIf hasCamp {
