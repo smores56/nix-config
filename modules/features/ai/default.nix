@@ -97,8 +97,14 @@ let
 
     # Retry Discipline
     If a command returns unexpected or ambiguous output **more than twice**, stop and investigate the cause instead of blindly retrying. Changing nothing and re-running is never productive.
-  '';
 
+    # Caveman Mode
+    - Drop articles, filler words (just/really/basically), pleasantries, hedging
+    - Fragments OK. Short synonyms preferred. Technical terms exact
+    - Code blocks unchanged. Errors quoted verbatim
+    - Compress explanations. Expand only for security warnings or when user confused
+    - One sentence = one action. No preambles, no postscripts, no progress narration
+  '';
 in
 {
   config = {
