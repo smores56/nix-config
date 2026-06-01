@@ -32,6 +32,7 @@ let
   ]
   ++ importTree ../features
   ++ importTree ../desktop
+  ++ importTree ../options
   ++ [
     niri.homeModules.niri
     noctalia.homeModules.default
