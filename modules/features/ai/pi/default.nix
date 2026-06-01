@@ -13,6 +13,28 @@ let
   piPrivateDir = "${homeDir}/.local/share/pi-cli";
   piEntrypoint = "${piPrivateDir}/node_modules/${piPackage}/src/cli.ts";
 
+  stylixColors = config.lib.stylix.colors;
+  powerlineTheme = builtins.toJSON {
+    colors = {
+      model = "#${stylixColors.base0D}";
+      shellMode = "accent";
+      path = "#${stylixColors.base0C}";
+      gitDirty = "warning";
+      gitClean = "success";
+      thinking = "thinkingOff";
+      thinkingMinimal = "thinkingMinimal";
+      thinkingLow = "thinkingLow";
+      thinkingMedium = "thinkingMedium";
+      context = "dim";
+      contextWarn = "warning";
+      contextError = "error";
+      cost = "text";
+      tokens = "muted";
+      separator = "dim";
+      border = "borderMuted";
+    };
+  };
+
   # Resolve at build time for activation scripts
   bunBin = "${homeDir}/.bun/bin";
   piCli = "${bunBin}/pi";
@@ -44,7 +66,6 @@ let
     echo "Pi CLI not installed. Run home-manager switch or install ${piPackage} into ${piPrivateDir}." >&2
     exit 127
   '';
-
 in
 {
   config = lib.mkIf cfg.enable {
@@ -106,7 +127,7 @@ in
     };
     home.activation.installPiPackages = {
       after = [ "linkGeneration" "installPiCli" ];
-      before = [ ];
+      before = [ "writePowerlineTheme" ];
       data = ''
         if [ ! -x "${piCli}" ]; then
           echo "[pi] pi CLI not found at ${piCli}, skipping package install"
@@ -124,6 +145,16 @@ in
           }
           ${lib.concatStringsSep "\n" (map (pkg: "          install_pkg \"${pkg}\"") cfg.packages)}
         fi
+      '';
+    };
+    home.activation.writePowerlineTheme = {
+      after = [ "installPiPackages" ];
+      before = [ ];
+      data = ''
+        mkdir -p "${agentDir}/npm/node_modules/pi-powerline-footer"
+        cat > "${agentDir}/npm/node_modules/pi-powerline-footer/theme.json" << 'EOF'
+${powerlineTheme}
+EOF
       '';
     };
 
