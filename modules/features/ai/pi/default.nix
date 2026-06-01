@@ -104,8 +104,6 @@ in
         fi
       '';
     };
-
-    # Install pi packages
     home.activation.installPiPackages = {
       after = [ "linkGeneration" "installPiCli" ];
       before = [ ];
@@ -124,22 +122,7 @@ in
               "${piCli}" install "$name" 2>&1 || true
             fi
           }
-
-          install_pkg "npm:pi-rules"
-          install_pkg "git:github.com/code-yeongyu/pi-nested-agents-md"
-          install_pkg "npm:@juicesharp/rpiv-ask-user-question"
-          install_pkg "npm:@juicesharp/rpiv-todo"
-          install_pkg "npm:pi-codex-goal"
-          install_pkg "npm:pi-memory"
-          install_pkg "npm:pi-context-usage"
-          install_pkg "npm:@marckrenn/pi-sub-bar"
-          install_pkg "npm:pi-context-prune"
-          install_pkg "npm:pi-lens"
-          install_pkg "npm:pi-multiagent"
-          install_pkg "npm:@juicesharp/rpiv-advisor"
-          install_pkg "npm:pi-web-access"
-          install_pkg "git:github.com/mitsuhiko/agent-stuff"
-          install_pkg "npm:@aliou/pi-processes"
+          ${lib.concatStringsSep "\n" (map (pkg: "          install_pkg \"${pkg}\"") cfg.packages)}
         fi
       '';
     };
