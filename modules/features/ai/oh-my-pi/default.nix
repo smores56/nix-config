@@ -52,6 +52,7 @@ in
   options.dotfiles.ohMyPi = {
     enable = lib.mkEnableOption "oh-my-pi token-efficient config" // {
       description = "Enable aggressive compaction, plugin installation, and tool-pinned abbreviation for omp.";
+      default = true;
     };
 
     compaction = {
@@ -318,7 +319,7 @@ in
     };
 
     home.file.".omp/agent/extensions/wt-switch-cd.ts".source = ./wt-switch-cd.ts;
-    home.file.".omp/agent/extensions/plan-mode.ts".source = ../pi/extensions/plan-mode.ts;
+    home.file.".omp/agent/extensions/plan-mode.ts".source = ./plan-mode.ts;
 
     programs.fish.shellAbbrs = {
       oc = "omp --tools read,edit,write,search,find,bash,lsp,todo_write,ask";

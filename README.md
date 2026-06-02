@@ -200,7 +200,6 @@ to a loopback service on smortress:
 | Subdomain | Service |
 |---|---|
 | `opencode.sammohr.dev` | OpenChamber (`127.0.0.1:3000`) |
-| `kandev.sammohr.dev`   | Kandev (`127.0.0.1:38429`) |
 | `keep.sammohr.dev`     | keep (`127.0.0.1:9804`) |
 | `hermes.sammohr.dev`   | Hermes dashboard (`127.0.0.1:9119`) — **requires Cloudflare Access** |
 
@@ -251,7 +250,7 @@ step is safe.
 `<UUID>.cfargotunnel.com`):
 
 ```bash
-for s in opencode kandev keep hermes; do
+for s in opencode keep hermes; do
   cloudflared tunnel route dns smortress "$s.sammohr.dev"
 done
 ```

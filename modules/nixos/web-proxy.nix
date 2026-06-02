@@ -23,7 +23,6 @@ in
         default = "http_status:404";
         ingress = {
           ${fqdn "opencode"} = upstream d.opencodeHost.openchamberPort;
-          ${fqdn "kandev"} = upstream d.kandev.port;
           # keep is an external service on smortress (no Nix module here).
           ${fqdn "keep"} = upstream 9804;
         }

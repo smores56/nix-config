@@ -32,7 +32,6 @@ let
   ]
   ++ importTree ../features
   ++ importTree ../desktop
-  ++ importTree ../options
   ++ [
     niri.homeModules.niri
     noctalia.homeModules.default
@@ -78,8 +77,6 @@ let
             sevenqlLspPath = null;
             opencodeHost = null;
             piWeb = null;
-            ompWeb = null;
-            kandev = null;
             herdrServe = null;
             herdrHost = null;
             ohMyPi = null;
@@ -173,9 +170,7 @@ in
           port = 8192;
           bindAddress = "0.0.0.0";
         };
-        ohMyPi.enable = true;
         paseo.enable = true;
-        kandev.enable = true;
         hermes.enable = true;
       };
       "smohr@smoreswork" = mkHome {
@@ -190,7 +185,6 @@ in
         workGithubOrgs = [ "OkamiAI" ];
         sevenqlLspPath = "/Users/smohr/dev/okami/typescript/tools/sevenql-lsp/main.ts";
         ohMyPi = {
-          enable = true;
           codex.enable = true;
           claude.enable = true;
         };
