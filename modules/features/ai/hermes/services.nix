@@ -43,6 +43,9 @@ in
           # so the dashboard can't reconstruct its public URL and rejects the
           # Host header. Tell it the canonical public URL explicitly.
           "HERMES_DASHBOARD_PUBLIC_URL=https://hermes.${config.dotfiles.webProxy.domain}"
+          # Disable Hermes' own OAuth/host gate: Cloudflare Access is the auth
+          # layer in front; without this the dashboard rejects any non-bind Host.
+          "HERMES_DASHBOARD_INSECURE=1"
         ];
         # Bound to localhost on purpose — expose only via `hermes-dashboard-serve`
         # (Tailscale Serve). The dashboard has no auth and reads/writes .env.
