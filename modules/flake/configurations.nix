@@ -213,8 +213,7 @@ in
         hermes.enable = true;
         webProxy = {
           enable = true;
-          # Fill after `cloudflared tunnel create smortress` (see README "Public Web Exposure"):
-          # tunnelId = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
+          tunnelId = "f2284d1b-5038-447b-ab50-e18dc1dba8c5";
         };
       };
     };
