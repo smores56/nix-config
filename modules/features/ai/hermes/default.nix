@@ -251,6 +251,26 @@ in
                 "$HERMES" config set terminal.container_cpu ${toString cfg.containerCpu} || true
                 "$HERMES" config set terminal.container_memory ${toString cfg.containerMemory} || true
                 "$HERMES" config set terminal.container_disk ${toString cfg.containerDisk} || true
+                # ── CrofAI provider ───────────────────────────────────────────
+                CROFAI_KEY_FILE="$HOME/.config/omp/crofai-key"
+                if [ -f "$CROFAI_KEY_FILE" ] && [ -s "$CROFAI_KEY_FILE" ]; then
+                  CROFAI_KEY=$(cat "$CROFAI_KEY_FILE")
+                  echo "[hermes] configuring CrofAI provider..."
+                  "$HERMES" config set crofai_api_key "$CROFAI_KEY" || true
+                  "$HERMES" config set model crofai/glm-5.1.base_url https://crof.ai/v1 || true
+                  "$HERMES" config set model crofai/glm-5.1 || true
+                  "$HERMES" config set model crofai/deepseek-v4-pro.base_url https://crof.ai/v1 || true
+                  "$HERMES" config set model crofai/deepseek-v4-pro || true
+                  "$HERMES" config set model crofai/deepseek-v4-flash.base_url https://crof.ai/v1 || true
+                  "$HERMES" config set model crofai/deepseek-v4-flash || true
+                  "$HERMES" config set model crofai/glm-4.7-flash.base_url https://crof.ai/v1 || true
+                  "$HERMES" config set model crofai/glm-4.7-flash || true
+                  "$HERMES" config set model crofai/kimi-k2.6.base_url https://crof.ai/v1 || true
+                  "$HERMES" config set model crofai/kimi-k2.6 || true
+                  echo "[hermes] CrofAI provider configured"
+                else
+                  echo "[hermes] no CrofAI key at $CROFAI_KEY_FILE — skipping CrofAI setup"
+                fi
                 "$HERMES" config set approvals.mode smart || true
                 echo "[hermes] configured Docker sandbox backend (image ${imageRef})"
               fi
