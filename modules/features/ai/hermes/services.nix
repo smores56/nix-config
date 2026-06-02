@@ -47,9 +47,10 @@ in
           # layer in front; without this the dashboard rejects any non-bind Host.
           "HERMES_DASHBOARD_INSECURE=1"
         ];
-        # Bound to localhost on purpose — expose only via `hermes-dashboard-serve`
-        # (Tailscale Serve). The dashboard has no auth and reads/writes .env.
-        ExecStart = "${hermesBin} dashboard --tui --no-open --host 127.0.0.1 --port ${toString cfg.dashboard.port}";
+        # Bound to 0.0.0.0 to accept requests from any Host header (cloudflared
+        # forwards Host: hermes.<domain>). Cloudflare Access gates the hostname
+        # at the edge; the tunnel only reaches loopback, so no IP bypass.
+        ExecStart = "${hermesBin} dashboard --tui --no-open --host 0.0.0.0 --port ${toString cfg.dashboard.port}";
         WorkingDirectory = homeDir;
         Restart = "always";
         RestartSec = 5;
