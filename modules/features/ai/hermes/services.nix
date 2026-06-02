@@ -47,10 +47,11 @@ in
           # layer in front; without this the dashboard rejects any non-bind Host.
           "HERMES_DASHBOARD_INSECURE=1"
         ];
-        # Bound to 0.0.0.0 to accept requests from any Host header (cloudflared
-        # forwards Host: hermes.<domain>). Cloudflare Access gates the hostname
-        # at the edge; the tunnel only reaches loopback, so no IP bypass.
-        ExecStart = "${hermesBin} dashboard --tui --no-open --host 0.0.0.0 --port ${toString cfg.dashboard.port}";
+        # Loopback only + --insecure: Cloudflare Access is the auth layer, but
+        # binding 127.0.0.1 prevents LAN discovery. The CLI --insecure flag is
+        # required because the auth gate also checks the bind host (env var
+        # HERMES_DASHBOARD_INSECURE isn't read early enough for the bind check).
+        ExecStart = "${hermesBin} dashboard --tui --no-open --insecure --host 127.0.0.1 --port ${toString cfg.dashboard.port}";
         WorkingDirectory = homeDir;
         Restart = "always";
         RestartSec = 5;
