@@ -26,12 +26,13 @@ in
           # keep is an external service on smortress (no Nix module here).
           ${fqdn "keep"} = upstream 9804;
         }
-        # SECURITY: the Hermes dashboard has no auth of its own and serves
-        # ~/.hermes/.env (every API key) plus a terminal-capable agent. This
-        # hostname MUST be gated by a Cloudflare Access policy — see README
-        # "Public Web Exposure".
         // lib.optionalAttrs (d.hermes.enable && d.hermes.dashboard.enable) {
-          ${fqdn "hermes"} = upstream d.hermes.dashboard.port;
+          ${fqdn "hermes"} = {
+            service = "http://127.0.0.1:${toString d.hermes.dashboard.port}";
+            # The dashboard validates Host against its bind address (127.0.0.1).
+            # Rewrite so it sees Host: 127.0.0.1:<port> instead of hermes.<domain>.
+            originRequest.httpHostHeader = "127.0.0.1:${toString d.hermes.dashboard.port}";
+          };
         };
       };
     };
