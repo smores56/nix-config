@@ -259,7 +259,7 @@ in
     hermes = lib.mkOption {
       type = lib.types.submodule {
         options = {
-          enable = lib.mkEnableOption "the sandboxed Hermes Agent deployment (Docker terminal backend, web dashboard, optional messaging gateway)";
+          enable = lib.mkEnableOption "the sandboxed Hermes Agent deployment (Docker terminal backend, optional messaging gateway)";
           useNixImage = lib.mkOption {
             type = lib.types.bool;
             default = true;
@@ -289,24 +289,6 @@ in
             type = lib.types.int;
             default = 51200;
             description = "Disk (MB) per sandbox container (only enforced on overlay2 + XFS pquota).";
-          };
-          dashboard = lib.mkOption {
-            type = lib.types.submodule {
-              options = {
-                enable = lib.mkOption {
-                  type = lib.types.bool;
-                  default = true;
-                  description = "Run the Hermes web dashboard (chat + management) as a user service bound to localhost.";
-                };
-                port = lib.mkOption {
-                  type = lib.types.port;
-                  default = 9119;
-                  description = "Localhost port for the web dashboard.";
-                };
-              };
-            };
-            default = { };
-            description = "Hermes web dashboard settings. The dashboard has no auth of its own; expose it only via the Cloudflare Tunnel (dotfiles.webProxy) gated by a Cloudflare Access policy on the hermes.<domain> hostname.";
           };
           gateway = lib.mkOption {
             type = lib.types.submodule {

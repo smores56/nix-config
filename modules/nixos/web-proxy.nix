@@ -26,7 +26,7 @@ in
           # keep is an external service on smortress (no Nix module here).
           ${fqdn "keep"} = upstream 9804;
         }
-        // lib.optionalAttrs (d.hermes.enable && d.hermes.dashboard.enable) {
+        // lib.optionalAttrs d.hermes.enable {
           ${fqdn "hermes"} = upstream 8787;
         };
       };
