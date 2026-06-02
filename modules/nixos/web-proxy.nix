@@ -27,7 +27,7 @@ in
           ${fqdn "keep"} = upstream 9804;
         }
         // lib.optionalAttrs (d.hermes.enable && d.hermes.dashboard.enable) {
-          ${fqdn "hermes"} = upstream d.hermes.dashboard.port;
+          ${fqdn "hermes"} = upstream 8787;
         };
       };
     };
