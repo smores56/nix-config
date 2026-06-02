@@ -284,16 +284,25 @@ zero-knowledge and end-to-end encrypted — it only routes ciphertext. The daemo
 listens on `127.0.0.1:6767` for local clients; remote access goes through the
 relay, so no port or custom domain is needed.
 
-Pair a client once to bind it to this daemon (transfers the daemon's public key
-via QR):
+Apply the committed config first so the daemon actually runs with the relay
+enabled, then pair:
 
 ```bash
-paseo daemon pair        # on smortress; prints a pairing QR / code
+home-manager switch --no-write-lock-file   # restarts paseo without --no-relay
+systemctl --user restart paseo             # if it didn't restart automatically
+paseo daemon pair                          # prints a QR + pairing offer URL
 ```
 
-Scan it from the Paseo app or `app.paseo.sh`, then reach the daemon at its
-personal URL in the Paseo web app (the `/h/<serverId>` route). Optionally set a
-relay password with `paseo daemon set-password`. See <https://paseo.sh/docs>.
+`pair` emits a `https://app.paseo.sh/#offer=<…>` URL (and a matching QR). That
+offer URL **is** your personal access link — it embeds the daemon's public key
+for the end-to-end channel, so treat it like a password. Open it in the Paseo
+web app, scan the QR from the mobile app, or drive it from the CLI with
+`paseo --host '<offer-url>' ls`. Optionally set a relay password with
+`paseo daemon set-password`.
+
+If `pair` reports `Relay pairing is disabled for this daemon config`, the running
+daemon is still on `--no-relay` — `home-manager switch` and restart it. See
+<https://paseo.sh/docs>.
 
 ### Decommissioning smoresnet
 
