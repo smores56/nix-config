@@ -39,6 +39,10 @@ in
         Environment = [
           "PATH=${svcPath}"
           "HERMES_DASHBOARD_TUI=1"
+          # Cloudflared forwards Host: hermes.<domain> but not X-Forwarded-Host,
+          # so the dashboard can't reconstruct its public URL and rejects the
+          # Host header. Tell it the canonical public URL explicitly.
+          "HERMES_DASHBOARD_PUBLIC_URL=https://hermes.${config.dotfiles.webProxy.domain}"
         ];
         # Bound to localhost on purpose — expose only via `hermes-dashboard-serve`
         # (Tailscale Serve). The dashboard has no auth and reads/writes .env.
