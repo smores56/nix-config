@@ -202,6 +202,7 @@ to a loopback service on smortress:
 | `opencode.sammohr.dev` | OpenChamber (`127.0.0.1:3000`) |
 | `kandev.sammohr.dev`   | Kandev (`127.0.0.1:38429`) |
 | `keep.sammohr.dev`     | keep (`127.0.0.1:9804`) |
+| `hermes.sammohr.dev`   | Hermes dashboard (`127.0.0.1:9119`) — **requires Cloudflare Access** |
 
 ### One-time setup
 
@@ -250,12 +251,30 @@ step is safe.
 `<UUID>.cfargotunnel.com`):
 
 ```bash
-for s in opencode kandev keep; do
+for s in opencode kandev keep hermes; do
   cloudflared tunnel route dns smortress "$s.sammohr.dev"
 done
 ```
 
 Verify: `curl -sI https://opencode.sammohr.dev`.
+
+### Cloudflare Access (required for the Hermes dashboard)
+
+Unlike the other tunnelled apps, the Hermes dashboard (`hermes.sammohr.dev`) has
+**no authentication of its own** and serves `~/.hermes/.env` — every API key —
+plus a terminal-capable agent. It must never be reachable by URL alone. Gate it
+with a Cloudflare Access (Zero Trust) policy *before* the tunnel goes live:
+
+1. Cloudflare dashboard → Zero Trust → Access → Applications → add a self-hosted
+   application for `hermes.sammohr.dev`.
+2. Attach an Allow policy scoped to your identity (emails = your address, or a
+   Google/GitHub IdP). Everyone else is blocked at the Cloudflare edge before
+   the request ever reaches the loopback dashboard.
+
+The dashboard stays bound to `127.0.0.1` on smortress, so the tunnel hostname is
+its only ingress. Reach it at `https://hermes.sammohr.dev`; the in-browser Chat
+tab runs the sandboxed default profile, while per-repo sandboxes are driven from
+a shell with `hermes-repo` (abbr `hr`).
 
 ### Paseo remote access (hosted relay)
 

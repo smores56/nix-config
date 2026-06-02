@@ -180,34 +180,6 @@ let
     echo "$ids" | xargs -r ${dockerBin} rm -f
   '';
 
-  tailscaleHttpsPort = toString cfg.dashboard.tailscaleHttpsPort;
-  dashboardUrl = "http://127.0.0.1:${toString cfg.dashboard.port}";
-  hermesDashboardServe = pkgs.writeShellScriptBin "hermes-dashboard-serve" ''
-    set -euo pipefail
-    export PATH="/run/current-system/sw/bin:/run/wrappers/bin:${
-      lib.makeBinPath [ pkgs.coreutils ]
-    }:$PATH"
-
-    systemctl --user restart hermes-dashboard.service
-    systemctl --user is-active --quiet hermes-dashboard.service
-
-    set +e
-    ${pkgs.coreutils}/bin/timeout 30s ${pkgs.tailscale}/bin/tailscale serve \
-      --yes \
-      --bg \
-      --https=${tailscaleHttpsPort} \
-      ${lib.escapeShellArg dashboardUrl}
-    serve_status="$?"
-    set -e
-    if [ "$serve_status" -ne 0 ]; then
-      if [ "$serve_status" -eq 124 ]; then
-        echo "tailscale serve timed out. If Serve is disabled, enable it in the Tailscale admin console, then rerun hermes-dashboard-serve." >&2
-      fi
-      exit "$serve_status"
-    fi
-
-    ${pkgs.tailscale}/bin/tailscale serve status
-  '';
 in
 {
   config = lib.mkIf enabled {
@@ -216,8 +188,7 @@ in
         pkgs.uv
         hermesRepo
         hermesSandboxGc
-      ]
-      ++ lib.optional cfg.dashboard.tailscaleServe hermesDashboardServe;
+      ];
 
       # Bootstrap the upstream Hermes installer (uv venv + hash-locked deps,
       # node, ripgrep, ffmpeg) when the checkout is missing. Skips the wizard and

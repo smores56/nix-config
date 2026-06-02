@@ -420,20 +420,10 @@ in
                   default = 9119;
                   description = "Localhost port for the web dashboard.";
                 };
-                tailscaleServe = lib.mkOption {
-                  type = lib.types.bool;
-                  default = true;
-                  description = "Provide the hermes-dashboard-serve helper to expose the dashboard over Tailscale Serve (identity + TLS).";
-                };
-                tailscaleHttpsPort = lib.mkOption {
-                  type = lib.types.port;
-                  default = 8443;
-                  description = "Tailscale Serve HTTPS port for the dashboard.";
-                };
               };
             };
             default = { };
-            description = "Hermes web dashboard settings. The dashboard has no auth of its own; only expose it via Tailscale Serve or an authenticated proxy.";
+            description = "Hermes web dashboard settings. The dashboard has no auth of its own; expose it only via the Cloudflare Tunnel (dotfiles.webProxy) gated by a Cloudflare Access policy on the hermes.<domain> hostname.";
           };
           gateway = lib.mkOption {
             type = lib.types.submodule {

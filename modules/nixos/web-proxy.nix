@@ -26,6 +26,13 @@ in
           ${fqdn "kandev"} = upstream d.kandev.port;
           # keep is an external service on smortress (no Nix module here).
           ${fqdn "keep"} = upstream 9804;
+        }
+        # SECURITY: the Hermes dashboard has no auth of its own and serves
+        # ~/.hermes/.env (every API key) plus a terminal-capable agent. This
+        # hostname MUST be gated by a Cloudflare Access policy — see README
+        # "Public Web Exposure".
+        // lib.optionalAttrs (d.hermes.enable && d.hermes.dashboard.enable) {
+          ${fqdn "hermes"} = upstream d.hermes.dashboard.port;
         };
       };
     };
