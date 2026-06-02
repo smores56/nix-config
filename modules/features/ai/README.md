@@ -95,49 +95,6 @@ Smortress is the sole host for OpenCode/OpenChamber services, accessible at `htt
 
 Exposed publicly at `https://opencode.sammohr.dev` via Cloudflare Tunnel (see the repo README, "Public Web Exposure").
 
-## Herdr Hosted Bridge
-
-On `smortress`, Home Manager installs Herdr, a local-only `ttyd` bridge, and scripts for Tailscale Serve.
-
-```bash
-herdr-hosted-serve
-```
-
-The hosted bridge uses one Herdr runtime namespace, `hosted`. When the web terminal opens, it prompts for a workspace target using a mouse-aware picker that shows `Home` or repo labels like `github.com/smores56/nix-config`. Choosing a target focuses an existing Herdr workspace for that folder or creates one.
-
-You can skip the picker from a shell:
-
-```bash
-herdr-hosted
-herdr-hosted work
-herdr-hosted ~/code/github.com/smores56/nix-config
-```
-
-The bridge serves Herdr through `ttyd` on `127.0.0.1:7681` and configures Tailscale Serve on HTTPS port 443. It requires Tailscale Serve's `Tailscale-User-Login` identity header, so direct requests to the local `ttyd` port are not accepted.
-
-The browser terminal defaults to a larger mobile-friendly font size. Override it per visit with a query string, for example `https://smortress.<tailnet>.ts.net/?fontSize=24`, or set `dotfiles.herdrHost.webTerminalFontSize`.
-
-Useful commands:
-
-```bash
-herdr-hosted          # pick Home or a ghq repo, then attach locally
-herdr-hosted work     # focus/create a matching ghq repo workspace
-herdr-hosted-status
-herdr-hosted-logs
-herdr-omp-tab        # start omp in a new tab of the current Herdr workspace
-hot                  # short shell alias for herdr-omp-tab
-```
-
-Inside Herdr, these extra bindings are configured:
-
-```
-prefix+shift+o       start omp in a new tab of the current workspace
-ctrl+shift+up        previous workspace
-ctrl+shift+down      next workspace
-ctrl+up              previous agent
-ctrl+down            next agent
-```
-
 ## Config Reload
 
 On Linux hosts with `opencodeHost.bindAddress` set, `home-manager switch` restarts the opencode systemd service to pick up config changes. OpenChamber restarts too because it is bound to the opencode service.

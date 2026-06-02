@@ -76,9 +76,6 @@ let
             workGithubOrgs = null;
             sevenqlLspPath = null;
             opencodeHost = null;
-            piWeb = null;
-            herdrServe = null;
-            herdrHost = null;
             ohMyPi = null;
             paseo = null;
             hermes = null;
@@ -116,7 +113,6 @@ let
             noSleep = args.noSleep or false;
             persist = args.persist or false;
             opencodeHost = args.opencodeHost or { };
-            piWeb = args.piWeb or { };
             hermes = args.hermes or { };
             webProxy = args.webProxy or { };
           };
@@ -152,7 +148,6 @@ in
         displayManager = "niri";
         nixos = true;
         polarity = "time-of-day";
-        herdrServe = true;
         primaryMonitor = "DP-2";
         monitorSize = {
           width = 5120;
@@ -164,11 +159,6 @@ in
           bindAddress = "0.0.0.0";
           opencodePort = 4000;
           openchamberPort = 3000;
-        };
-        piWeb = {
-          enable = true;
-          port = 8192;
-          bindAddress = "0.0.0.0";
         };
         paseo.enable = true;
         hermes.enable = true;
@@ -219,11 +209,6 @@ in
           bindAddress = "0.0.0.0";
           opencodePort = 4000;
           openchamberPort = 3000;
-        };
-        piWeb = {
-          enable = true;
-          port = 8192;
-          bindAddress = "0.0.0.0";
         };
         hermes.enable = true;
         webProxy = {
