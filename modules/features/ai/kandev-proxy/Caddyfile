@@ -1,3 +1,0 @@
-kandev.sammohr.dev {
-    reverse_proxy smortress:38429
-}

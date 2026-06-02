@@ -51,7 +51,6 @@
         nsr = "nix-store --repair --verify --check-contents";
         ng = "nix-collect-garbage";
 
-        sl = "ssh smores@smoresnet -t fish";
         sm = "ssh smores@smortress -t fish";
         st = "ssh smores@(tailscale-hosts | fzf) -t fish";
 

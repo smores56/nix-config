@@ -93,7 +93,7 @@ Commands: `/caveman` (toggle), `/caveman lite`, `/caveman full`, `/caveman ultra
 
 Smortress is the sole host for OpenCode/OpenChamber services, accessible at `http://smortress:3000` over Tailscale.
 
-Proxied at `https://opencode.sammohr.dev` via Caddy on smoresnet (see `openchamber-proxy/`).
+Exposed publicly at `https://opencode.sammohr.dev` via Cloudflare Tunnel (see the repo README, "Public Web Exposure").
 
 ## Herdr Hosted Bridge
 

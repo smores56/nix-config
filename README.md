@@ -13,7 +13,6 @@ Personal NixOS and Home Manager configs for my machines. The flake follows the
 | `smoresbook` | NixOS | Niri + Noctalia | NixOS + Home Manager |
 | `smorestux` | NixOS | Niri + Noctalia | NixOS + Home Manager |
 | `smortress` | NixOS | Niri + Noctalia | NixOS + Home Manager |
-| `smoresnet` | Linux | headless | Home Manager |
 
 ## Commands
 
@@ -162,7 +161,7 @@ sudo fprintd-enroll smores
 ### OpenChamber (OpenCode Web UI)
 
 OpenChamber runs on `smortress` (port 3000) alongside the OpenCode server (port 4000).
-Exposed publicly via a Caddy reverse proxy on `smoresnet` at `https://opencode.sammohr.dev`.
+Exposed publicly at `https://opencode.sammohr.dev` via Cloudflare Tunnel (see [Public Web Exposure](#public-web-exposure-cloudflare-tunnel)).
 Auth is handled by OpenChamber's `--ui-password`.
 
 The work host runs its own local-only OpenChamber/OpenCode pair at:
@@ -186,16 +185,104 @@ echo "$PASSWORD" > ~/.config/openchamber/ui-password
 systemctl --user restart openchamber  # Linux hosts
 ```
 
-**Deploy Caddy config to smoresnet:**
+Public exposure (HTTPS + DNS) is handled by Cloudflare Tunnel — see
+[Public Web Exposure](#public-web-exposure-cloudflare-tunnel).
+
+## Public Web Exposure (Cloudflare Tunnel)
+
+`smortress` sits behind home NAT. Public subdomains of `sammohr.dev` reach it
+through a Cloudflare Tunnel (`services.cloudflared`, declared in
+`modules/nixos/web-proxy.nix`, gated by `dotfiles.webProxy`). The tunnel is
+outbound-only: TLS terminates at the Cloudflare edge, no inbound ports are
+opened, and there is no VPS or port-forwarding. Each subdomain proxies straight
+to a loopback service on smortress:
+
+| Subdomain | Service |
+|---|---|
+| `opencode.sammohr.dev` | OpenChamber (`127.0.0.1:3000`) |
+| `kandev.sammohr.dev`   | Kandev (`127.0.0.1:38429`) |
+| `keep.sammohr.dev`     | keep (`127.0.0.1:9804`) |
+
+### One-time setup
+
+**1. Delegate `sammohr.dev` DNS to Cloudflare** (nameserver change, *not* a
+registrar transfer — registration stays at Namecheap, $0):
+
+1. Add `sammohr.dev` to a free Cloudflare account; it auto-imports the existing
+   Namecheap records. **Verify every record carried over** before flipping —
+   especially `bootstrap.sammohr.dev` and any MX/TXT (SPF/DKIM) for email.
+2. Cloudflare assigns two nameservers (`*.ns.cloudflare.com`). In Namecheap →
+   Domain → Nameservers, switch "Namecheap BasicDNS" → "Custom DNS" and enter
+   both. Cloudflare emails when the zone goes live (minutes, up to 24–48h).
+
+**2. Create the tunnel** (on smortress, or any machine logged into the account):
 
 ```bash
-scp modules/features/ai/openchamber-proxy/Caddyfile \
-    modules/features/ai/openchamber-proxy/deploy-smoresnet.sh \
-    smores@smoresnet:~
-ssh smores@smoresnet 'bash ~/deploy-smoresnet.sh'
+cloudflared tunnel login              # browser auth → ~/.cloudflared/cert.pem
+cloudflared tunnel create smortress   # prints the tunnel UUID, writes <UUID>.json
 ```
 
-**DNS:** Point `opencode.sammohr.dev` to smoresnet's public IP (`45.79.90.184`) via Namecheap.
+**3. Install the credentials on smortress** (kept out of the Nix store):
+
+```bash
+sudo install -D -m 600 ~/.cloudflared/<UUID>.json \
+  /var/lib/cloudflared/credentials.json
+```
+
+**4. Set the UUID** in the smortress `webProxy` block of
+`modules/flake/configurations.nix`, then rebuild:
+
+```nix
+webProxy = {
+  enable = true;
+  tunnelId = "<UUID>";
+};
+```
+
+```bash
+sudo nixos-rebuild switch --flake ~/.config/home-manager
+```
+
+Until `tunnelId` is set the tunnel daemon stays off, so a rebuild before this
+step is safe.
+
+**5. Route each subdomain** to the tunnel (creates proxied CNAMEs →
+`<UUID>.cfargotunnel.com`):
+
+```bash
+for s in opencode kandev keep; do
+  cloudflared tunnel route dns smortress "$s.sammohr.dev"
+done
+```
+
+Verify: `curl -sI https://opencode.sammohr.dev`.
+
+### Paseo remote access (hosted relay)
+
+Paseo is **not** exposed through the tunnel. The daemon
+(`modules/features/ai/paseo`) runs with the relay enabled (no `--no-relay`),
+connecting outbound to Paseo's hosted relay (`app.paseo.sh`). The relay is
+zero-knowledge and end-to-end encrypted — it only routes ciphertext. The daemon
+listens on `127.0.0.1:6767` for local clients; remote access goes through the
+relay, so no port or custom domain is needed.
+
+Pair a client once to bind it to this daemon (transfers the daemon's public key
+via QR):
+
+```bash
+paseo daemon pair        # on smortress; prints a pairing QR / code
+```
+
+Scan it from the Paseo app or `app.paseo.sh`, then reach the daemon at its
+personal URL in the Paseo web app (the `/h/<serverId>` route). Optionally set a
+relay password with `paseo daemon set-password`. See <https://paseo.sh/docs>.
+
+### Decommissioning smoresnet
+
+The Linode VPS (`45.79.90.184`) that ran Caddy is no longer used: destroy it and
+delete its `*.sammohr.dev` A-records in Cloudflare. The per-service
+`Caddyfile`/`deploy-smoresnet.sh` scripts and the `smores@smoresnet` Home Manager
+config have been removed from the repo.
 
 ## Architecture
 

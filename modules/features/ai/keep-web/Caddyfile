@@ -1,7 +1,0 @@
-keep.sammohr.dev {
-    reverse_proxy smortress:9804 {
-        transport http {
-            keepalive_idle_conns_per_host 0
-        }
-    }
-}

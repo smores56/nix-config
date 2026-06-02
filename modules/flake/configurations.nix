@@ -84,6 +84,7 @@ let
             herdrHost = null;
             ohMyPi = null;
             paseo = null;
+            hermes = null;
           } args;
           home.username = username;
           home.homeDirectory =
@@ -119,6 +120,8 @@ let
             persist = args.persist or false;
             opencodeHost = args.opencodeHost or { };
             piWeb = args.piWeb or { };
+            hermes = args.hermes or { };
+            webProxy = args.webProxy or { };
           };
         }
       ]
@@ -171,11 +174,10 @@ in
           bindAddress = "0.0.0.0";
         };
         ohMyPi.enable = true;
-        ompWeb.enable = true;
         paseo.enable = true;
         kandev.enable = true;
+        hermes.enable = true;
       };
-      "smores@smoresnet" = mkHome { };
       "smohr@smoreswork" = mkHome {
         displayManager = "osx";
         windowManager = "aerospace";
@@ -228,6 +230,12 @@ in
           enable = true;
           port = 8192;
           bindAddress = "0.0.0.0";
+        };
+        hermes.enable = true;
+        webProxy = {
+          enable = true;
+          # Fill after `cloudflared tunnel create smortress` (see README "Public Web Exposure"):
+          # tunnelId = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
         };
       };
     };

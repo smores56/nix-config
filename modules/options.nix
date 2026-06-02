@@ -349,12 +349,116 @@ in
       default = { };
       description = "Paseo settings. Paseo is a self-hosted daemon for AI coding agents, accessible via web/CLI/mobile.";
     };
+    webProxy = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkEnableOption "public exposure of smortress services via Cloudflare Tunnel (NixOS-only)";
+          domain = lib.mkOption {
+            type = lib.types.str;
+            default = "sammohr.dev";
+            description = "Apex domain whose subdomains are exposed (e.g. opencode.<domain>).";
+          };
+          tunnelId = lib.mkOption {
+            type = lib.types.str;
+            default = "";
+            description = "Cloudflare Tunnel UUID from `cloudflared tunnel create`. Empty leaves the tunnel daemon off until credentials are provisioned.";
+          };
+          credentialsFile = lib.mkOption {
+            type = lib.types.str;
+            default = "/var/lib/cloudflared/credentials.json";
+            description = "Path to the tunnel credentials JSON on the host. Kept out of the Nix store; provisioned out-of-band.";
+          };
+        };
+      };
+      default = { };
+      description = "Public exposure of smortress HTTP services over Cloudflare Tunnel. TLS terminates at the Cloudflare edge; cloudflared proxies each subdomain straight to its loopback service.";
+    };
+    hermes = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkEnableOption "the sandboxed Hermes Agent deployment (Docker terminal backend, web dashboard, optional messaging gateway)";
+          useNixImage = lib.mkOption {
+            type = lib.types.bool;
+            default = true;
+            description = "Use a Nix-built (dockerTools) sandbox image as the Docker terminal backend image. When false, registryImage is used.";
+          };
+          registryImage = lib.mkOption {
+            type = lib.types.str;
+            default = "nikolaik/python-nodejs:python3.11-nodejs20";
+            description = "Registry image used as the Docker sandbox when useNixImage is false.";
+          };
+          extraPackages = lib.mkOption {
+            type = lib.types.listOf lib.types.package;
+            default = [ ];
+            description = "Extra packages baked into the Nix sandbox image (e.g. language toolchains). Only used when useNixImage is true.";
+          };
+          containerCpu = lib.mkOption {
+            type = lib.types.int;
+            default = 2;
+            description = "CPU cores allotted to each sandbox container.";
+          };
+          containerMemory = lib.mkOption {
+            type = lib.types.int;
+            default = 6144;
+            description = "Memory (MB) allotted to each sandbox container.";
+          };
+          containerDisk = lib.mkOption {
+            type = lib.types.int;
+            default = 51200;
+            description = "Disk (MB) per sandbox container (only enforced on overlay2 + XFS pquota).";
+          };
+          dashboard = lib.mkOption {
+            type = lib.types.submodule {
+              options = {
+                enable = lib.mkOption {
+                  type = lib.types.bool;
+                  default = true;
+                  description = "Run the Hermes web dashboard (chat + management) as a user service bound to localhost.";
+                };
+                port = lib.mkOption {
+                  type = lib.types.port;
+                  default = 9119;
+                  description = "Localhost port for the web dashboard.";
+                };
+                tailscaleServe = lib.mkOption {
+                  type = lib.types.bool;
+                  default = true;
+                  description = "Provide the hermes-dashboard-serve helper to expose the dashboard over Tailscale Serve (identity + TLS).";
+                };
+                tailscaleHttpsPort = lib.mkOption {
+                  type = lib.types.port;
+                  default = 8443;
+                  description = "Tailscale Serve HTTPS port for the dashboard.";
+                };
+              };
+            };
+            default = { };
+            description = "Hermes web dashboard settings. The dashboard has no auth of its own; only expose it via Tailscale Serve or an authenticated proxy.";
+          };
+          gateway = lib.mkOption {
+            type = lib.types.submodule {
+              options = {
+                enable = lib.mkOption {
+                  type = lib.types.bool;
+                  default = true;
+                  description = "Run the Hermes messaging gateway (Discord, etc.) as a user service. Requires platform tokens and allowlists in ~/.hermes/.env.";
+                };
+              };
+            };
+            default = { };
+            description = "Hermes messaging gateway settings.";
+          };
+        };
+      };
+      default = { };
+      description = "Sandboxed Hermes Agent deployment: Docker terminal backend with per-repo profile sandboxes, a web dashboard, and an optional messaging gateway.";
+    };
     aiHints = lib.mkOption {
       type = lib.types.str;
       readOnly = true;
       description = "AI coding assistant context/rules, shared across pi and opencode.";
     };
-    };
+  };
   config = {
     assertions =
       let

@@ -27,14 +27,13 @@ in
       };
       Service = {
         Type = "simple";
-        ExecStart = "${paseoPkg}/bin/paseo-server --no-relay";
+        ExecStart = "${paseoPkg}/bin/paseo-server";
         Restart = "on-failure";
         RestartSec = 5;
         Environment = [
           "NODE_ENV=production"
           "PASEO_HOME=${homeDir}/.paseo"
-          "PASEO_LISTEN=0.0.0.0:6767"
-          "PASEO_HOSTNAMES=true"
+          "PASEO_LISTEN=127.0.0.1:6767"
           "PATH=${scriptPath}"
         ];
       };
