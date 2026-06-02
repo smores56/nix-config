@@ -251,17 +251,12 @@ in
                 "$HERMES" config set terminal.container_cpu ${toString cfg.containerCpu} || true
                 "$HERMES" config set terminal.container_memory ${toString cfg.containerMemory} || true
                 "$HERMES" config set terminal.container_disk ${toString cfg.containerDisk} || true
-                # CrofAI API key. Models + base_url must be set via `hermes model`
-                # (interactive) or the dashboard — `hermes config set` doesn't accept
-                # nested keys like model.<name>.base_url.
+                # CrofAI API key (also set inline in config.yaml via setup_crofai.py
+                # with provider: custom + base_url + bare model IDs).
                 CROFAI_KEY_FILE="$HOME/.config/omp/crofai-key"
                 if [ -f "$CROFAI_KEY_FILE" ] && [ -s "$CROFAI_KEY_FILE" ]; then
                   CROFAI_KEY=$(cat "$CROFAI_KEY_FILE")
-                  echo "[hermes] configuring CrofAI API key..."
                   "$HERMES" config set crofai_api_key "$CROFAI_KEY" || true
-                  echo "[hermes] CrofAI API key set. Run 'hermes model' to add provider + models interactively, or use the dashboard Config tab."
-                else
-                  echo "[hermes] no CrofAI key at $CROFAI_KEY_FILE — skipping CrofAI setup"
                 fi
                 "$HERMES" config set approvals.mode smart || true
                 echo "[hermes] configured Docker sandbox backend (image ${imageRef})"
