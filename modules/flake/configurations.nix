@@ -121,6 +121,9 @@ let
       ++ (if dm == "niri" then [ niri.nixosModules.niri ] else [ ]);
     };
 in
+let
+  x86Pkgs = pkgsForSystem "x86_64-linux";
+in
 {
   flake = {
     homeConfigurations = {
@@ -161,7 +164,14 @@ in
           openchamberPort = 3000;
         };
         paseo.enable = true;
-        hermes.enable = true;
+        hermes = {
+          enable = true;
+          extraPackages = with x86Pkgs; [
+            go
+            cargo
+            rustup
+          ];
+        };
       };
       "smohr@smoreswork" = mkHome {
         displayManager = "osx";
