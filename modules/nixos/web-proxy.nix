@@ -27,12 +27,7 @@ in
           ${fqdn "keep"} = upstream 9804;
         }
         // lib.optionalAttrs (d.hermes.enable && d.hermes.dashboard.enable) {
-          ${fqdn "hermes"} = {
-            service = "http://127.0.0.1:${toString d.hermes.dashboard.port}";
-            # The dashboard validates Host against its bind address (127.0.0.1).
-            # Rewrite so it sees Host: 127.0.0.1:<port> instead of hermes.<domain>.
-            originRequest.httpHostHeader = "127.0.0.1:${toString d.hermes.dashboard.port}";
-          };
+          ${fqdn "hermes"} = upstream d.hermes.dashboard.port;
         };
       };
     };

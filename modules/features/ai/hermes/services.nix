@@ -46,15 +46,13 @@ in
           # so the dashboard can't reconstruct its public URL and rejects the
           # Host header. Tell it the canonical public URL explicitly.
           "HERMES_DASHBOARD_PUBLIC_URL=https://hermes.${config.dotfiles.webProxy.domain}"
-          # Disable Hermes' own OAuth/host gate: Cloudflare Access is the auth
-          # layer in front; without this the dashboard rejects any non-bind Host.
           "HERMES_DASHBOARD_INSECURE=1"
         ];
-        # Loopback only + --insecure: Cloudflare Access is the auth layer, but
-        # binding 127.0.0.1 prevents LAN discovery. The CLI --insecure flag is
-        # required because the auth gate also checks the bind host (env var
-        # HERMES_DASHBOARD_INSECURE isn't read early enough for the bind check).
-        ExecStart = "${hermesBin} dashboard --tui --no-open --insecure --host 127.0.0.1 --port ${toString cfg.dashboard.port}";
+        # 0.0.0.0 bind: required because the WS Origin guard rejects non-loopback
+        # Origins (like hermes.sammohr.dev) when bound to 127.0.0.1, even with
+        # --insecure (the guard doesn't check auth_required). Safe because
+        # Cloudflare Access gates the hostname and the tunnel is localhost-only.
+        ExecStart = "${hermesBin} dashboard --tui --no-open --insecure --host 0.0.0.0 --port ${toString cfg.dashboard.port}";
         WorkingDirectory = homeDir;
         Restart = "always";
         RestartSec = 5;
