@@ -39,6 +39,9 @@ in
         Environment = [
           "PATH=${svcPath}"
           "HERMES_DASHBOARD_TUI=1"
+          # The Python ssl module can't find the system CA bundle on NixOS
+          # without this pointer (hermes model catalog fetches fail otherwise).
+          "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
           # Cloudflared forwards Host: hermes.<domain> but not X-Forwarded-Host,
           # so the dashboard can't reconstruct its public URL and rejects the
           # Host header. Tell it the canonical public URL explicitly.
