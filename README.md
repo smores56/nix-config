@@ -264,11 +264,30 @@ Unlike the other tunnelled apps, the Hermes dashboard (`hermes.sammohr.dev`) has
 plus a terminal-capable agent. It must never be reachable by URL alone. Gate it
 with a Cloudflare Access (Zero Trust) policy *before* the tunnel goes live:
 
-1. Cloudflare dashboard → Zero Trust → Access → Applications → add a self-hosted
-   application for `hermes.sammohr.dev`.
-2. Attach an Allow policy scoped to your identity (emails = your address, or a
-   Google/GitHub IdP). Everyone else is blocked at the Cloudflare edge before
-   the request ever reaches the loopback dashboard.
+**One-Time PIN (email OTP) is the simplest gate** — no IdP, no extra account,
+free for ≤50 users. Access apps/policies are an edge concern and are *not*
+expressible in `web-proxy.nix`; configure them in the Cloudflare dashboard (or
+the Cloudflare Terraform provider — `cloudflare_zero_trust_access_application` +
+`cloudflare_zero_trust_access_policy` — if you want them in code).
+
+1. **Enable Zero Trust** (one-time): `one.dash.cloudflare.com` → Zero Trust →
+   pick a team name (gives you `<team>.cloudflareaccess.com`). One-Time PIN is on
+   by default under Settings → Authentication.
+2. **Create the Access app _before_ the DNS route is live**: Zero Trust → Access
+   controls → Applications → Create new application → Self-hosted → Add public
+   hostname → subdomain `hermes`, domain `sammohr.dev`, path blank.
+3. **Add the policy** (apps are deny-by-default): Action **Allow**; **Include →
+   Emails →** your address; **Require → Login Method → One-Time PIN** (without an
+   explicit login-method require, OTP setups sometimes fail to gate). Save.
+4. The route (`cloudflared tunnel route dns smortress hermes.sammohr.dev`) is
+   already in the setup loop above — just ensure step 2 happened first. Verify in
+   a private window: `https://hermes.sammohr.dev` redirects to
+   `<team>.cloudflareaccess.com`, accepts an emailed PIN, and blocks any
+   non-listed address at the edge.
+
+**If `hermes` was ever routed before the Access app existed, it served every API
+key unauthenticated — rotate `~/.hermes/.env` if so.** If your mail provider
+scans links, allowlist `noreply@notify.cloudflare.com`.
 
 The dashboard stays bound to `127.0.0.1` on smortress, so the tunnel hostname is
 its only ingress. Reach it at `https://hermes.sammohr.dev`; the in-browser Chat
