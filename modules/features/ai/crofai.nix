@@ -24,6 +24,9 @@ let
     glm47Flash = model "glm-4.7-flash" "CrofAI GLM 4.7 Flash" "fp8" 202752 131072 [
       "text"
     ] false "0.5";
+    minimaxM25 = model "minimax-m2.5" "CrofAI MiniMax M2.5" "Q4_K_M" 205000 32768 [
+      "text"
+    ] false "0.11";
     kimiK26 = model "kimi-k2.6" "CrofAI Kimi K2.6" "Q3_K_L" 262144 262144 [
       "text"
       "image"
@@ -49,6 +52,7 @@ let
     models.deepseekV4Pro
     models.deepseekV4Flash
     models.glm47Flash
+    models.minimaxM25
     models.kimiK26
   ];
 

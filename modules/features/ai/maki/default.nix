@@ -20,11 +20,15 @@ in
       (lib.optionals cfg.rtk.enable [ pkgs.rtk ])
       ++ (lib.optionals cfg.monty.enable [ pkgs.python313Packages.pydantic-monty ]);
 
-    # Disable maki's built-in memory plugin
+    # Disable maki's built-in memory plugin.
+    # Set CrofAI as default provider so Copilot is never auto-selected.
     home.file.".config/maki/init.lua".text = ''
       maki.setup({
           tools = {
               memory = { enabled = false },
+          },
+          provider = {
+              default_model = "crofai/glm-5.1",
           },
       })
     '';

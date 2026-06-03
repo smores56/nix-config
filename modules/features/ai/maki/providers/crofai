@@ -4,7 +4,7 @@
 # Responds to:
 #   info     → provider metadata
 #   resolve  → API key + base URL from ~/.config/omp/crofai-key
-#   models   → model catalog (matches oh-my-pi's CrofAI model set)
+#   models   → model catalog with tier assignments
 
 set -euo pipefail
 
@@ -36,20 +36,33 @@ models)
   cat <<'MODELSJSON'
 [
   {
-    "id": "glm-5.1",
-    "name": "CrofAI GLM 5.1",
+    "id": "glm-4.7-flash",
+    "name": "CrofAI GLM 4.7 Flash",
+    "tier": "weak",
     "context": 202752,
-    "output": 202752,
+    "output": 131072,
     "input": ["text"],
-    "reasoning": true,
-    "request_cost": "1",
-    "quantization": "Q6_K"
+    "reasoning": false,
+    "request_cost": "0.5",
+    "quantization": "fp8"
   },
   {
-    "id": "deepseek-v4-pro",
-    "name": "CrofAI DeepSeek V4 Pro",
-    "context": 1000000,
-    "output": 131072,
+    "id": "minimax-m2.5",
+    "name": "CrofAI MiniMax M2.5",
+    "tier": "medium",
+    "context": 205000,
+    "output": 32768,
+    "input": ["text"],
+    "reasoning": false,
+    "request_cost": "0.11",
+    "quantization": "Q4_K_M"
+  },
+  {
+    "id": "glm-5.1",
+    "name": "CrofAI GLM 5.1",
+    "tier": "strong",
+    "context": 202752,
+    "output": 202752,
     "input": ["text"],
     "reasoning": true,
     "request_cost": "1",
@@ -66,14 +79,14 @@ models)
     "quantization": "Q6_K"
   },
   {
-    "id": "glm-4.7-flash",
-    "name": "CrofAI GLM 4.7 Flash",
-    "context": 202752,
+    "id": "deepseek-v4-pro",
+    "name": "CrofAI DeepSeek V4 Pro",
+    "context": 1000000,
     "output": 131072,
     "input": ["text"],
-    "reasoning": false,
-    "request_cost": "0.5",
-    "quantization": "fp8"
+    "reasoning": true,
+    "request_cost": "1",
+    "quantization": "Q6_K"
   },
   {
     "id": "kimi-k2.6",
