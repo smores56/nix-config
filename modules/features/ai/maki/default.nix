@@ -21,14 +21,14 @@ in
       ++ (lib.optionals cfg.monty.enable [ pkgs.python313Packages.pydantic-monty ]);
 
     # Disable maki's built-in memory plugin.
-    # Set CrofAI as default provider so Copilot is never auto-selected.
+    # Use DeepSeek as default provider (avoids Copilot auto-selection).
     home.file.".config/maki/init.lua".text = ''
       maki.setup({
           tools = {
               memory = { enabled = false },
           },
           provider = {
-              default_model = "crofai/glm-5.1",
+              default_model = "ds/deepseek-v4-pro",
           },
       })
     '';
@@ -47,9 +47,15 @@ in
       - Keep entries short and current. Do not store transient or trivial details.
     '';
 
-    # CrofAI dynamic provider script
-    home.file.".config/maki/providers/crofai" = {
-      source = ./providers/crofai;
+    # CrofAI disabled temporarily while testing DeepSeek
+    # home.file.".config/maki/providers/crofai" = {
+    #   source = ./providers/crofai;
+    #   executable = true;
+    # };
+
+    # DeepSeek dynamic provider script (custom tier assignments)
+    home.file.".config/maki/providers/ds" = {
+      source = ./providers/ds;
       executable = true;
     };
 
