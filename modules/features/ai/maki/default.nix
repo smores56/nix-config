@@ -13,6 +13,10 @@ let
   serverScript = "${makiHome}/mem0_mcp_server.py";
   chromaDir = "${makiHome}/chroma";
   makiExtrasDir = "${homeDir}/code/github.com/smores56/maki-extras";
+
+  modelsJSON =
+    if cfg.models == [] then null
+    else lib.escapeNixString (builtins.toJSON cfg.models);
 in
 {
   config = lib.mkIf enabled {
@@ -25,7 +29,7 @@ in
     home.file.".config/maki/init.lua".text = ''
       maki.setup({
           tools = { memory = { enabled = false } },
-          provider = { default_model = "ds/deepseek-v4-pro" },
+          provider = { default_model = "${cfg.defaultModel}" },
       })
     '';
     home.file.".config/maki/AGENTS.md".text = ''
@@ -38,6 +42,11 @@ in
     home.file.".config/maki/providers/ds" = {
       source = ./providers/ds;
       executable = true;
+    };
+
+    # ── models.json (served via GET /api/models for web UI model picker) ──
+    home.file.".config/maki/models.json" = lib.mkIf (cfg.models != []) {
+      text = builtins.toJSON cfg.models;
     };
 
     # ── Mem0 MCP ───────────────────────────────────

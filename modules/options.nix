@@ -329,6 +329,26 @@ in
               description = "Embeddings model for mem0 (Ollama).";
             };
           };
+          defaultModel = lib.mkOption {
+            type = lib.types.str;
+            default = "crofai/deepseek-v4-pro";
+            description = "Default model spec for maki-serve (format: provider/model-id).";
+          };
+          models = lib.mkOption {
+            type = lib.types.listOf (lib.types.submodule {
+              options = {
+                spec = lib.mkOption { type = lib.types.str; description = "Model spec (provider/model-id)."; };
+                name = lib.mkOption { type = lib.types.str; description = "Display name."; };
+              };
+            });
+            default = [
+              { spec = "crofai/deepseek-v4-pro"; name = "CrofAI DeepSeek V4 Pro"; }
+              { spec = "crofai/deepseek-v4-flash"; name = "CrofAI DeepSeek V4 Flash"; }
+              { spec = "crofai/glm-5.1"; name = "CrofAI GLM 5.1"; }
+              { spec = "crofai/glm-4.7-flash"; name = "CrofAI GLM 4.7 Flash"; }
+            ];
+            description = "Available models exposed via GET /api/models and shown in the web UI model dropdown.";
+          };
           rtk = {
             enable = lib.mkEnableOption "rtk (bash output filter) in PATH" // {
               default = true;
@@ -342,7 +362,6 @@ in
         };
       };
       default = { };
-      description = "maki terminal AI coding agent config: CLI agent with local Mem0 memory backend and CrofAI provider.";
     };
     aiHints = lib.mkOption {
       type = lib.types.str;
