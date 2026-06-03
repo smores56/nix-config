@@ -45,6 +45,12 @@ in
     };
 
     # ── models.json (served via GET /api/models for web UI model picker) ──
+    home.file.".config/maki/providers/crofai" = {
+      source = ./providers/crofai;
+      executable = true;
+    };
+
+    # ── models.json (served via GET /api/models for web UI model picker) ──
     home.file.".config/maki/models.json" = lib.mkIf (cfg.models != []) {
       text = builtins.toJSON cfg.models;
     };
