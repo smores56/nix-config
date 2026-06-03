@@ -1,13 +1,27 @@
 { pkgs, ... }:
 {
-  home.packages = [
-    pkgs.osc
-    pkgs.pfetch-rs
-  ];
+  home = {
+    packages = [
+      pkgs.osc
+      pkgs.pfetch-rs
+    ];
 
-  home.sessionVariables = {
-    async_prompt_functions = "_pure_prompt_git";
-    fish_greeting = "";
+    sessionVariables = {
+      async_prompt_functions = "_pure_prompt_git";
+      fish_greeting = "";
+    };
+
+    sessionPath = [
+      "/opt/homebrew/bin"
+      "/usr/local/bin"
+      "~/.local/bin"
+      "~/.deno/bin"
+      "~/.cargo/bin"
+      "~/.bun/bin"
+      "~/.cache/.bun/bin"
+      "~/.opencode/bin"
+      "~/.wasmtime/bin"
+    ];
   };
 
   manual.manpages.enable = false;
@@ -56,10 +70,6 @@
 
         o = "opencode";
       };
-
-      shellInit = ''
-        fish_add_path /opt/homebrew/bin /usr/local/bin ~/.local/bin ~/.deno/bin ~/.cargo/bin ~/.opencode/bin ~/.wasmtime/bin ~/.bun/bin ~/.cache/.bun/bin
-      '';
 
       interactiveShellInit = ''
         for p in $NIX_PROFILES
