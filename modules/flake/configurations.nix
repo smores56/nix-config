@@ -79,6 +79,7 @@ let
             ohMyPi = null;
             paseo = null;
             hermes = null;
+            maki = null;
           } args;
           home.username = username;
           home.homeDirectory =

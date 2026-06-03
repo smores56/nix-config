@@ -308,6 +308,42 @@ in
       default = { };
       description = "Sandboxed Hermes Agent deployment: Docker terminal backend with per-repo profile sandboxes, a web dashboard, and an optional messaging gateway.";
     };
+    maki = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkEnableOption "maki terminal AI coding agent config" // {
+            default = true;
+          };
+          mem0 = {
+            enable = lib.mkEnableOption "mem0 memory backend (Python venv + MCP server)" // {
+              default = true;
+            };
+            llmModel = lib.mkOption {
+              type = lib.types.str;
+              default = "llama3.2";
+              description = "Fact extraction model for mem0 (Ollama).";
+            };
+            embedModel = lib.mkOption {
+              type = lib.types.str;
+              default = "nomic-embed-text";
+              description = "Embeddings model for mem0 (Ollama).";
+            };
+          };
+          rtk = {
+            enable = lib.mkEnableOption "rtk (bash output filter) in PATH" // {
+              default = true;
+            };
+          };
+          monty = {
+            enable = lib.mkEnableOption "pydantic-monty (code execution sandbox) in PATH" // {
+              default = true;
+            };
+          };
+        };
+      };
+      default = { };
+      description = "maki terminal AI coding agent config: CLI agent with local Mem0 memory backend and CrofAI provider.";
+    };
     aiHints = lib.mkOption {
       type = lib.types.str;
       readOnly = true;

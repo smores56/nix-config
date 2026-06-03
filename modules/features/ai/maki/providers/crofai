@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# Dynamic CrofAI provider for maki.
+#
+# Responds to:
+#   info     → provider metadata
+#   resolve  → API key + base URL from ~/.config/omp/crofai-key
+#   models   → model catalog (matches oh-my-pi's CrofAI model set)
+
+set -euo pipefail
+
+KEY_FILE="$HOME/.config/omp/crofai-key"
+
+case "${1:-}" in
+info)
+  cat <<'INFOJSON'
+{
+  "display_name": "CrofAI",
+  "base": "openai",
+  "has_auth": true
+}
+INFOJSON
+  ;;
+resolve)
+  if [ ! -f "$KEY_FILE" ]; then
+    echo '{"error": "CrofAI API key not found at ~/.config/omp/crofai-key"}' >&2
+    exit 1
+  fi
+  KEY=$(cat "$KEY_FILE")
+  KEY=${KEY%"${KEY##*[![:space:]]}"}  # trim trailing whitespace
+  jq -n --arg key "$KEY" '{
+    base_url: "https://crof.ai/v1",
+    headers: { Authorization: "Bearer \($key)" }
+  }'
+  ;;
+models)
+  cat <<'MODELSJSON'
+[
+  {
+    "id": "glm-5.1",
+    "name": "CrofAI GLM 5.1",
+    "context": 202752,
+    "output": 202752,
+    "input": ["text"],
+    "reasoning": true,
+    "request_cost": "1",
+    "quantization": "Q6_K"
+  },
+  {
+    "id": "deepseek-v4-pro",
+    "name": "CrofAI DeepSeek V4 Pro",
+    "context": 1000000,
+    "output": 131072,
+    "input": ["text"],
+    "reasoning": true,
+    "request_cost": "1",
+    "quantization": "Q6_K"
+  },
+  {
+    "id": "deepseek-v4-flash",
+    "name": "CrofAI DeepSeek V4 Flash",
+    "context": 1000000,
+    "output": 131072,
+    "input": ["text"],
+    "reasoning": true,
+    "request_cost": "0.75",
+    "quantization": "Q6_K"
+  },
+  {
+    "id": "glm-4.7-flash",
+    "name": "CrofAI GLM 4.7 Flash",
+    "context": 202752,
+    "output": 131072,
+    "input": ["text"],
+    "reasoning": false,
+    "request_cost": "0.5",
+    "quantization": "fp8"
+  },
+  {
+    "id": "kimi-k2.6",
+    "name": "CrofAI Kimi K2.6",
+    "context": 262144,
+    "output": 262144,
+    "input": ["text", "image"],
+    "reasoning": true,
+    "request_cost": "1",
+    "quantization": "Q3_K_L"
+  }
+]
+MODELSJSON
+  ;;
+*)
+  echo "Usage: ${0##*/} {info|resolve|models}" >&2
+  exit 1
+  ;;
+esac
