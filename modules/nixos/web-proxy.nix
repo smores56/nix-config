@@ -23,13 +23,10 @@ in
         default = "http_status:404";
         ingress = {
           ${fqdn "opencode"} = upstream d.opencodeHost.openchamberPort;
-          # keep is an external service on smortress (no Nix module here).
           ${fqdn "keep"} = upstream 9804;
+          ${fqdn "maki"} = upstream 8080;
         }
         // lib.optionalAttrs d.hermes.enable {
           ${fqdn "hermes"} = upstream 8787;
         };
-      };
-    };
-  };
 }
