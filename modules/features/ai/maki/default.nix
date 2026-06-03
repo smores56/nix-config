@@ -82,6 +82,7 @@ in
         ExecStart = "${homeDir}/.cargo/bin/maki-serve";
         Restart = "on-failure";
         RestartSec = 5;
+        EnvironmentFile = "%h/.config/maki/env";
         Environment = "RUST_LOG=info";
       };
       Install = { WantedBy = [ "default.target" ]; };
