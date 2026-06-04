@@ -92,9 +92,9 @@ DASHBOARD_CFG
       };
 
       Service = {
-        Type = "exec";
-        Environment = "PATH=${bunBin}:%h/.cache/.bun/bin:%h/.local/share/pi-cli/node_modules/.bin:/run/wrappers/bin";
-        ExecStart = "${bunBin}/pi-dashboard start";
+        Type = "simple";
+        Environment = "PATH=${pkgs.nodejs}/bin:${bunBin}:%h/.cache/.bun/bin:%h/.local/share/pi-cli/node_modules/.bin:/run/wrappers/bin";
+        ExecStart = "${pkgs.nodejs}/bin/node --import file://${agentDir}/npm/node_modules/jiti/lib/jiti-register.mjs ${agentDir}/npm/node_modules/@blackbelt-technology/pi-agent-dashboard/packages/server/src/cli.ts";
         Restart = "on-failure";
         RestartSec = 5;
       };
