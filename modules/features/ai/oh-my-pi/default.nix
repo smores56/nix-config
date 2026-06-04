@@ -48,6 +48,13 @@ let
     echo "oh-my-pi CLI not installed. Re-run home-manager switch, or install ${ompPackage} into ${ompPrivateDir}." >&2
     exit 127
   '';
+  tauServiceScript = pkgs.writeShellScriptBin "omp-tau-service" ''
+    exec "$HOME/.local/bin/omp" \
+      --extension "$HOME/.omp/agent/extensions/tau-mirror.js" \
+      --mode rpc \
+      --continue
+  '';
+
 in
 {
   options.dotfiles.ohMyPi = {
@@ -382,7 +389,7 @@ in
       };
       Service = {
         Type = "simple";
-        ExecStart = "${ompWrapper}/bin/omp --extension %h/.omp/agent/extensions/tau-mirror.js --mode rpc --continue";
+        ExecStart = "${tauServiceScript}/bin/omp-tau-service";
         Restart = "always";
         RestartSec = 10;
       };
