@@ -242,6 +242,9 @@ in
           enable = true;
           tunnelId = "f2284d1b-5038-447b-ab50-e18dc1dba8c5";
         };
+        tau = {
+          enable = true;
+        };
       };
     };
   };
