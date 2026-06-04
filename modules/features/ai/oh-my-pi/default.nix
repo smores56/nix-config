@@ -373,6 +373,23 @@ in
     };
     home.file.".omp/agent/extensions/plan-mode.ts".source = ./plan-mode.ts;
 
+
+    systemd.user.services.omp-tau = lib.mkIf tauCfg.enable {
+      Unit = {
+        Description = "OMP with Tau web mirror";
+        After = "network-online.target";
+        Wants = "network-online.target";
+      };
+      Service = {
+        Type = "simple";
+        ExecStart = "${ompWrapper}/bin/omp --extension %h/.omp/agent/extensions/tau-mirror.js --mode rpc --continue";
+        Restart = "always";
+        RestartSec = 10;
+      };
+      Install = {
+        WantedBy = [ "default.target" ];
+      };
+    };
     programs.fish.shellAbbrs = {
       oc = "omp --tools read,edit,write,search,find,bash,lsp,todo_write,ask";
     };
