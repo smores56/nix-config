@@ -17,14 +17,21 @@ in
       tunnels.${cfg.tunnelId} = {
         credentialsFile = cfg.credentialsFile;
         default = "http_status:404";
-        ingress = {
-          ${fqdn "opencode"} = upstream d.opencodeHost.openchamberPort;
-          ${fqdn "keep"} = upstream 9804;
-          ${fqdn "maki"} = upstream 10530;
-        }
-        // lib.optionalAttrs d.hermes.enable {
-          ${fqdn "hermes"} = upstream 8787;
-        };
+        ingress =
+          {
+            ${fqdn "opencode"} = upstream d.opencodeHost.openchamberPort;
+            ${fqdn "keep"} = upstream 9804;
+            ${fqdn "maki"} = upstream 10530;
+          }
+          // lib.optionalAttrs d.hermes.enable {
+            ${fqdn "hermes"} = upstream 8787;
+          }
+          // lib.optionalAttrs d.piDashboard.enable {
+            ${fqdn "pi"} = upstream 12321;
+          }
+          // lib.optionalAttrs d.tau.enable {
+            ${fqdn "omp"} = upstream d.tau.port;
+          };
       };
     };
   };

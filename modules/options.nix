@@ -363,6 +363,118 @@ in
       };
       default = { };
     };
+    pi = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkEnableOption "Pi coding agent (@earendil-works/pi-coding-agent)" // {
+            default = false;
+          };
+          defaultProvider = lib.mkOption {
+            type = lib.types.str;
+            default = "crofai";
+            description = "Default LLM provider for pi.";
+          };
+          defaultModel = lib.mkOption {
+            type = lib.types.str;
+            default = "crofai/glm-5.1";
+            description = "Default model for pi.";
+          };
+          defaultThinkingLevel = lib.mkOption {
+            type = lib.types.str;
+            default = "high";
+            description = "Default thinking level for pi (none/low/medium/high).";
+          };
+          packages = lib.mkOption {
+            type = lib.types.listOf lib.types.str;
+            default = [
+              "npm:pi-rules"
+              "git:github.com/code-yeongyu/pi-nested-agents-md"
+              "npm:@juicesharp/rpiv-ask-user-question"
+              "npm:@juicesharp/rpiv-todo"
+              "npm:pi-codex-goal"
+              "npm:pi-memory"
+              "npm:pi-context-usage"
+              "npm:@marckrenn/pi-sub-bar"
+              "npm:pi-context-prune"
+              "npm:pi-lens"
+              "npm:pi-multiagent"
+              "npm:@juicesharp/rpiv-advisor"
+              "npm:pi-web-access"
+              "git:github.com/mitsuhiko/agent-stuff"
+              "npm:@aliou/pi-processes"
+              "npm:@blackbelt-technology/pi-agent-dashboard"
+            ];
+            description = "Pi packages to install via `pi install`.";
+          };
+          compaction = {
+            reserveTokens = lib.mkOption {
+              type = lib.types.int;
+              default = 32768;
+              description = "Token budget reserved for agent output after compaction.";
+            };
+            keepRecentTokens = lib.mkOption {
+              type = lib.types.int;
+              default = 48000;
+              description = "Number of recent tokens preserved during compaction.";
+            };
+          };
+          fishAbbrs = lib.mkOption {
+            type = lib.types.bool;
+            default = true;
+            description = "Register fish abbreviations for pi commands.";
+          };
+        };
+      };
+      default = { };
+      description = "Pi coding agent settings.";
+    };
+    piDashboard = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkEnableOption "pi-agent-dashboard systemd user service" // {
+            default = false;
+          };
+          port = lib.mkOption {
+            type = lib.types.int;
+            default = 12321;
+            description = "Port for the pi-agent-dashboard server.";
+          };
+        };
+      };
+      default = { };
+      description = "Pi agent dashboard settings (pi.sammohr.dev).";
+    };
+    tau = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkEnableOption "Tau web UI (mirrors OMP session in browser)" // {
+            default = false;
+          };
+          port = lib.mkOption {
+            type = lib.types.port;
+            default = 3001;
+            description = "Port for the Tau mirror server.";
+          };
+          host = lib.mkOption {
+            type = lib.types.str;
+            default = "127.0.0.1";
+            description = "Bind address for the Tau server. Only 127.0.0.1 needed since cloudflared tunnels localhost.";
+          };
+          user = lib.mkOption {
+            type = lib.types.str;
+            default = "omp";
+            description = "HTTP Basic Auth username for Tau.";
+          };
+          passwordFile = lib.mkOption {
+            type = lib.types.str;
+            default = "";
+            description = "Path to file containing the HTTP Basic Auth password for Tau. Empty = no auth. Managed by oh-my-pi activation when set.";
+          };
+        };
+      };
+      default = { };
+      description = "Tau web UI mirror for OMP sessions.";
+    };
     aiHints = lib.mkOption {
       type = lib.types.str;
       readOnly = true;

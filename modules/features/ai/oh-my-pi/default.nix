@@ -7,6 +7,7 @@
 }:
 let
   cfg = config.dotfiles.ohMyPi;
+  tauCfg = config.dotfiles.tau;
   modelProviderOrder = builtins.toJSON (
     # Keep CrofAI first even when Codex/Claude credentials are imported. Those
     # providers are available for manual overrides, but CrofAI owns default roles.
@@ -319,6 +320,40 @@ in
     };
 
     home.file.".omp/agent/extensions/wt-switch-cd.ts".source = ./wt-switch-cd.ts;
+
+    home.activation.installTauPlugin = lib.mkIf tauCfg.enable {
+      after = [
+        "linkGeneration"
+        "installOmpCli"
+        "installOmpPlugins"
+      ];
+      before = [ ];
+      data = ''
+        export PATH="$HOME/.bun/bin:$HOME/.cache/.bun/bin:$PATH"
+
+        TAU_PLUGIN="git:github.com/smores56/tau"
+        if ! omp plugin list 2>/dev/null | grep -q "tau"; then
+          echo "[oh-my-pi] Installing Tau web UI plugin..."
+          omp plugin install "$TAU_PLUGIN" 2>&1 || echo "[oh-my-pi] Failed to install Tau plugin" >&2
+        fi
+
+        TAU_PASS_FILE="${lib.escapeShellArg tauCfg.passwordFile}"
+        if [ -n "$TAU_PASS_FILE" ] && [ -r "$TAU_PASS_FILE" ]; then
+          PASSWORD="$(cat "$TAU_PASS_FILE")"
+          SETTINGS_FILE="$HOME/.omp/agent/settings.json"
+          mkdir -p "$(dirname "$SETTINGS_FILE")" 2>/dev/null || true
+
+          if [ -r "$SETTINGS_FILE" ]; then
+            tmp="$(${pkgs.coreutils}/bin/mktemp)"
+            ${pkgs.jq}/bin/jq --arg user "${tauCfg.user}" --arg pass "$PASSWORD" '.tau = (.tau // {}) | .tau.user = $user | .tau.pass = $pass' "$SETTINGS_FILE" > "$tmp" && mv "$tmp" "$SETTINGS_FILE"
+          else
+            printf '{"tau":{"user":"%s","pass":"%s"}}\n' "${tauCfg.user}" "$PASSWORD" > "$SETTINGS_FILE"
+          fi
+          chmod 600 "$SETTINGS_FILE" 2>/dev/null || true
+          echo "[oh-my-pi] Tau auth credentials written to settings.json"
+        fi
+      '';
+    };
     home.file.".omp/agent/extensions/plan-mode.ts".source = ./plan-mode.ts;
 
     programs.fish.shellAbbrs = {

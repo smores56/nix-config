@@ -80,6 +80,10 @@ let
             paseo = null;
             hermes = null;
             maki = null;
+            tau = null;
+
+            pi = null;
+            piDashboard = null;
           } args;
           home.username = username;
           home.homeDirectory =
@@ -115,7 +119,9 @@ let
             persist = args.persist or false;
             opencodeHost = args.opencodeHost or { };
             hermes = args.hermes or { };
+            piDashboard = args.piDashboard or { };
             webProxy = args.webProxy or { };
+            tau = args.tau or { };
           };
         }
       ]
@@ -152,7 +158,7 @@ in
         primaryMonitor = "DP-2";
         monitorSize = {
           width = 5120;
-          height = 2160;
+          height = 1080;
         };
         noSleep = true;
         opencodeHost = {
@@ -163,6 +169,16 @@ in
         };
         paseo.enable = true;
         hermes.enable = true;
+        pi = {
+          enable = true;
+        };
+        piDashboard = {
+          enable = true;
+        };
+        tau = {
+          enable = true;
+          passwordFile = "/home/smores/.config/omp/tau-password";
+        };
       };
       "smohr@smoreswork" = mkHome {
         displayManager = "osx";
@@ -219,6 +235,9 @@ in
           openchamberPort = 3000;
         };
         hermes.enable = true;
+        piDashboard = {
+          enable = true;
+        };
         webProxy = {
           enable = true;
           tunnelId = "f2284d1b-5038-447b-ab50-e18dc1dba8c5";
