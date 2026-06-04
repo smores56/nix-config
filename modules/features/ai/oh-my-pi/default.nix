@@ -351,7 +351,6 @@ in
           ln -sfn "$TAU_DIR/public" "$EXT_DIR/public"
           echo "[oh-my-pi] Tau extension linked to $EXT_DIR"
         fi
-        fi
         TAU_PASS_FILE="${lib.escapeShellArg tauCfg.passwordFile}"
         if [ -n "$TAU_PASS_FILE" ] && [ -r "$TAU_PASS_FILE" ]; then
           PASSWORD="$(cat "$TAU_PASS_FILE")"
