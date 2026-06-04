@@ -49,10 +49,9 @@ let
     exit 127
   '';
   tauServiceScript = pkgs.writeShellScriptBin "omp-tau-service" ''
-    exec "$HOME/.local/bin/omp" \
+    exec sleep infinity | exec "$HOME/.local/bin/omp" \
       --extension "$HOME/.omp/agent/extensions/tau-mirror.js" \
-      --mode rpc \
-      
+      --continue
   '';
 
 in
