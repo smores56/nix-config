@@ -84,6 +84,7 @@
         ]
         ++ lib.optionals pkgs.stdenv.isLinux [
           odin
+          bubblewrap
         ]
         ++ [
 
