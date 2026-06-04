@@ -331,12 +331,27 @@ in
       data = ''
         export PATH="$HOME/.bun/bin:$HOME/.cache/.bun/bin:$PATH"
 
-        TAU_PLUGIN="git:github.com/smores56/tau"
-        if ! omp plugin list 2>/dev/null | grep -q "tau"; then
-          echo "[oh-my-pi] Installing Tau web UI plugin..."
-          omp plugin install "$TAU_PLUGIN" 2>&1 || echo "[oh-my-pi] Failed to install Tau plugin" >&2
+        TAU_REPO="https://github.com/smores56/tau.git"
+        TAU_DIR="$HOME/.local/share/tau"
+        EXT_DIR="$HOME/.omp/agent/extensions"
+        mkdir -p "$TAU_DIR" "$EXT_DIR" 2>/dev/null || true
+
+        if [ ! -d "$TAU_DIR/.git" ]; then
+          echo "[oh-my-pi] Cloning Tau mirror to $TAU_DIR..."
+          ${pkgs.git}/bin/git clone "$TAU_REPO" "$TAU_DIR" 2>&1 || echo "[oh-my-pi] Failed to clone Tau repo" >&2
+        else
+          echo "[oh-my-pi] Pulling Tau updates..."
+          ${pkgs.git}/bin/git -C "$TAU_DIR" pull --ff-only 2>&1 || true
         fi
 
+        if [ -d "$TAU_DIR" ]; then
+          echo "[oh-my-pi] Installing Tau dependencies..."
+          (cd "$TAU_DIR" && bun install) 2>&1 || true
+          ln -sf "$TAU_DIR/extensions/mirror-server.ts" "$EXT_DIR/tau-mirror.ts"
+          ln -sfn "$TAU_DIR/public" "$EXT_DIR/public"
+          echo "[oh-my-pi] Tau extension linked to $EXT_DIR"
+        fi
+        fi
         TAU_PASS_FILE="${lib.escapeShellArg tauCfg.passwordFile}"
         if [ -n "$TAU_PASS_FILE" ] && [ -r "$TAU_PASS_FILE" ]; then
           PASSWORD="$(cat "$TAU_PASS_FILE")"
