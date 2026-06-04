@@ -462,7 +462,7 @@ in
           };
           user = lib.mkOption {
             type = lib.types.str;
-            default = "omp";
+            default = "smores";
             description = "HTTP Basic Auth username for Tau.";
           };
           passwordFile = lib.mkOption {
