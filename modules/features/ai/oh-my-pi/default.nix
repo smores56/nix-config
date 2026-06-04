@@ -347,9 +347,12 @@ in
         if [ -d "$TAU_DIR" ]; then
           echo "[oh-my-pi] Installing Tau dependencies..."
           (cd "$TAU_DIR" && bun install) 2>&1 || true
-          ln -sf "$TAU_DIR/extensions/mirror-server.ts" "$EXT_DIR/tau-mirror.ts"
+          (cd "$TAU_DIR" && bun build extensions/mirror-server.ts --outfile=extensions/mirror-bundled.js --target=bun --external '@oh-my-pi/pi-coding-agent') 2>&1 || true
+          ln -sf "$TAU_DIR/extensions/mirror-bundled.js" "$EXT_DIR/tau-mirror.js"
           ln -sfn "$TAU_DIR/public" "$EXT_DIR/public"
-          echo "[oh-my-pi] Tau extension linked to $EXT_DIR"
+          rm -f "$EXT_DIR/tau-mirror.ts"
+          omp config set extensions '["/home/smores/.omp/agent/extensions/tau-mirror.js"]' 2>/dev/null || true
+          echo "[oh-my-pi] Tau extension built and linked to $EXT_DIR"
         fi
         TAU_PASS_FILE="${lib.escapeShellArg tauCfg.passwordFile}"
         if [ -n "$TAU_PASS_FILE" ] && [ -r "$TAU_PASS_FILE" ]; then

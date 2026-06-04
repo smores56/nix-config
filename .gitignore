@@ -1,2 +1,5 @@
+bun.lock
+node_modules/
+package.json
 result
 result-*
