@@ -89,19 +89,34 @@ in
       commands =
         let
           # Network commands: ip, nft, sysctl
-          netCmds = map (c: { command = c; options = [ "NOPASSWD" ]; }) [
-            (bin "ip")
-            (bin "nft")
-            (bin "sysctl")
-          ];
+          netCmds =
+            map
+              (c: {
+                command = c;
+                options = [ "NOPASSWD" ];
+              })
+              [
+                (bin "ip")
+                (bin "nft")
+                (bin "sysctl")
+              ];
           # VM commands: firecracker, kill
-          vmCmds = map (c: { command = c; options = [ "NOPASSWD" ]; }) [
-            (bin "firecracker")
-            (bin "kill")
-          ];
+          vmCmds =
+            map
+              (c: {
+                command = c;
+                options = [ "NOPASSWD" ];
+              })
+              [
+                (bin "firecracker")
+                (bin "kill")
+              ];
           # Image build helper
           imgCmds = [
-            { command = bin "smolvm-loopfs-helper"; options = [ "NOPASSWD" ]; }
+            {
+              command = bin "smolvm-loopfs-helper";
+              options = [ "NOPASSWD" ];
+            }
           ];
         in
         netCmds ++ vmCmds ++ imgCmds;

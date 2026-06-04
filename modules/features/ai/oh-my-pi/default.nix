@@ -8,13 +8,11 @@
 let
   cfg = config.dotfiles.ohMyPi;
   tauCfg = config.dotfiles.tau;
-  modelProviderOrder = builtins.toJSON (
-    # Keep CrofAI first even when Codex/Claude credentials are imported. Those
-    # providers are available for manual overrides, but CrofAI owns default roles.
-    [ aiCrofai.providerId ]
-    ++ (lib.optionals cfg.claude.enable [ "anthropic" ])
-    ++ (lib.optionals cfg.codex.enable [ "openai-codex" ])
-  );
+  modelProviderOrder = [
+    aiCrofai.providerId
+  ]
+  ++ lib.optionals cfg.claude.enable [ "anthropic" ]
+  ++ lib.optionals cfg.codex.enable [ "openai-codex" ];
   ompPackage = "@oh-my-pi/pi-coding-agent";
   ompPrivateDir = "$HOME/.local/share/oh-my-pi-cli";
   ompPrivateEntrypoint = "${ompPrivateDir}/node_modules/${ompPackage}/src/cli.ts";
@@ -90,6 +88,77 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # Declarative config.yml — generated from nix, no procedural omp config set
+    home.file.".omp/agent/config.yml".text = ''
+      lastChangelogVersion: 15.5.11
+      modelRoles:
+      ${aiCrofai.ompModelRolesYaml}
+      theme:
+        dark: dark-gruvbox
+        light: light-gruvbox
+      display:
+        showTokenUsage: true
+        shimmer: classic
+      hideThinkingBlock: false
+      memory:
+        backend: mnemopi
+      exa:
+        enableResearcher: false
+      compaction:
+        keepRecentTokens: ${toString cfg.compaction.keepRecentTokens}
+        enabled: true
+        reserveTokens: ${toString cfg.compaction.reserveTokens}
+        autoContinue: ${lib.boolToString cfg.compaction.autoContinue}
+        handoffSaveToDisk: true
+      steeringMode: one-at-a-time
+      setupVersion: 1
+      extensions: ${
+        builtins.toJSON (
+          lib.optionals tauCfg.enable [ "${config.home.homeDirectory}/.omp/agent/extensions/tau-mirror.js" ]
+        )
+      }
+      disabledServers:
+        - beads
+      tools:
+        discoveryMode: all
+      modelProviderOrder: ${builtins.toJSON modelProviderOrder}
+      symbolPreset: nerd
+      task:
+        showResolvedModelBadge: true
+        isolation:
+          mode: auto
+        eager: true
+      stt:
+        enabled: true
+      collapseChangelog: true
+      tui:
+        textSizing: true
+      readLineNumbers: true
+      read:
+        summarize:
+          prose: false
+      lsp:
+        formatOnWrite: true
+        diagnosticsOnEdit: true
+      bashInterceptor:
+        enabled: true
+      renderMermaid:
+        enabled: true
+      checkpoint:
+        enabled: true
+      github:
+        enabled: true
+      async:
+        enabled: true
+      bash:
+        autoBackground:
+          enabled: true
+      mcp:
+        discoveryMode: true
+      secrets:
+        enabled: true
+    '';
+
     home.packages = [ ompWrapper ];
 
     home.file.".local/bin/omp" = {
@@ -104,9 +173,7 @@ in
     home.activation.installOmpCli = {
       after = [ "linkGeneration" ];
       before = [
-        "configureOmpClaude"
-        "configureOmpCompaction"
-        "configureOmpModelProviderOrder"
+        "configureOmpCrofAI"
         "installOmpPlugins"
       ];
       data = ''
@@ -166,45 +233,7 @@ in
       '';
     };
 
-    home.activation.configureOmpCompaction = {
-      after = [
-        "linkGeneration"
-        "installOmpCli"
-        "configureOmpCrofAI"
-      ];
-      before = [ ];
-      data = ''
-        export PATH="$HOME/.bun/bin:$HOME/.cache/.bun/bin:$PATH"
-
-        if ! command -v omp >/dev/null 2>&1; then
-          echo "[oh-my-pi] omp not found in PATH, skipping config"
-        else
-          omp config set compaction.enabled true 2>/dev/null || true
-          omp config set compaction.reserveTokens ${toString cfg.compaction.reserveTokens} 2>/dev/null || true
-          omp config set compaction.keepRecentTokens ${toString cfg.compaction.keepRecentTokens} 2>/dev/null || true
-          omp config set compaction.autoContinue ${lib.boolToString cfg.compaction.autoContinue} 2>/dev/null || true
-          omp config set steeringMode one-at-a-time 2>/dev/null || true
-        fi
-      '';
-    };
-
-    home.activation.configureOmpModelProviderOrder = {
-      after = [
-        "linkGeneration"
-        "installOmpCli"
-        "configureOmpCrofAI"
-      ];
-      before = [ ];
-      data = ''
-        export PATH="$HOME/.bun/bin:$HOME/.cache/.bun/bin:$PATH"
-
-        if ! command -v omp >/dev/null 2>&1; then
-          echo "[oh-my-pi] omp not found in PATH, skipping model provider order config"
-        else
-          omp config set modelProviderOrder '${modelProviderOrder}' 2>/dev/null || true
-        fi
-      '';
-    };
+    # config.yml and modelProviderOrder are now declarative via home.file
 
     home.activation.configureOmpClaude = lib.mkIf cfg.claude.enable {
       after = [ "linkGeneration" ];
@@ -288,38 +317,6 @@ in
             models:
         ${aiCrofai.ompModelsYaml}MODELS_BODY
                   } > "$AGENT_DIR/models.yml"
-
-                  cat > "$AGENT_DIR/config.yml" << 'CONFIG'
-        lastChangelogVersion: 15.3.2
-        # Request budget is scarcer than tokens on CrofAI Scale. Planning/default roles
-        # use GLM 5.1; hard debugging gets DeepSeek V4 Pro; routine work uses
-        # half/three-quarter-request models. Vision is isolated to Kimi because Kimi is
-        # vision-capable but heavily quantized for text-only coding.
-        modelRoles:
-        ${aiCrofai.ompModelRolesYaml}
-        theme:
-          dark: dark-lavender
-        display:
-          showTokenUsage: true
-          shimmer: classic
-        hideThinkingBlock: false
-        memory:
-          backend: local
-        exa:
-          enableResearcher: false
-        compaction:
-          keepRecentTokens: ${toString cfg.compaction.keepRecentTokens}
-          enabled: true
-          reserveTokens: ${toString cfg.compaction.reserveTokens}
-          autoContinue: ${lib.boolToString cfg.compaction.autoContinue}
-        steeringMode: one-at-a-time
-        extensions: []
-        disabledServers:
-          - beads
-        tools:
-          discoveryMode: mcp-only
-        CONFIG
-
                   echo "[oh-my-pi] CrofAI models configured"
                 fi
       '';
@@ -357,7 +354,6 @@ in
           ln -sf "$TAU_DIR/extensions/mirror-bundled.js" "$EXT_DIR/tau-mirror.js"
           ln -sfn "$TAU_DIR/public" "$EXT_DIR/public"
           rm -f "$EXT_DIR/tau-mirror.ts"
-          omp config set extensions '["/home/smores/.omp/agent/extensions/tau-mirror.js"]' 2>/dev/null || true
           echo "[oh-my-pi] Tau extension built and linked to $EXT_DIR"
         fi
         TAU_PASS_FILE="${lib.escapeShellArg tauCfg.passwordFile}"
@@ -378,7 +374,6 @@ in
       '';
     };
     home.file.".omp/agent/extensions/plan-mode.ts".source = ./plan-mode.ts;
-
 
     systemd.user.services.omp-tau = lib.mkIf tauCfg.enable {
       Unit = {

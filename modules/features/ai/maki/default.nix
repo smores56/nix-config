@@ -14,15 +14,16 @@ let
   chromaDir = "${makiHome}/chroma";
   makiExtrasDir = "${homeDir}/code/github.com/smores56/maki-extras";
 
-  modelsJSON =
-    if cfg.models == [] then null
-    else lib.escapeNixString (builtins.toJSON cfg.models);
+  modelsJSON = if cfg.models == [ ] then null else lib.escapeNixString (builtins.toJSON cfg.models);
 in
 {
   config = lib.mkIf enabled {
-    home.packages = with pkgs; [
-      cloudflared
-    ] ++ (lib.optionals cfg.rtk.enable [ pkgs.rtk ])
+    home.packages =
+      with pkgs;
+      [
+        cloudflared
+      ]
+      ++ (lib.optionals cfg.rtk.enable [ pkgs.rtk ])
       ++ (lib.optionals cfg.monty.enable [ pkgs.python313Packages.pydantic-monty ]);
 
     # ── maki agent config ──────────────────────────
@@ -51,7 +52,7 @@ in
     };
 
     # ── models.json (served via GET /api/models for web UI model picker) ──
-    home.file.".config/maki/models.json" = lib.mkIf (cfg.models != []) {
+    home.file.".config/maki/models.json" = lib.mkIf (cfg.models != [ ]) {
       text = builtins.toJSON cfg.models;
     };
 
@@ -100,7 +101,9 @@ in
         EnvironmentFile = "%h/.config/maki/env";
         Environment = "RUST_LOG=info";
       };
-      Install = { WantedBy = [ "default.target" ]; };
+      Install = {
+        WantedBy = [ "default.target" ];
+      };
     };
 
     # ── shell ──────────────────────────────────────

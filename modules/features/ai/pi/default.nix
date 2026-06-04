@@ -72,15 +72,15 @@ let
       after = [ "linkGeneration" ];
       before = [ ];
       data = ''
-        CONFIG_DIR="$HOME/.pi/dashboard"
-        mkdir -p "$CONFIG_DIR"
-        cat > "$CONFIG_DIR/config.json" << 'DASHBOARD_CFG'
-    {
-      "port": ${toString dashboardCfg.port},
-      "host": "127.0.0.1",
-      "disableZrokTunnel": true
-    }
-DASHBOARD_CFG
+                CONFIG_DIR="$HOME/.pi/dashboard"
+                mkdir -p "$CONFIG_DIR"
+                cat > "$CONFIG_DIR/config.json" << 'DASHBOARD_CFG'
+            {
+              "port": ${toString dashboardCfg.port},
+              "host": "127.0.0.1",
+              "disableZrokTunnel": true
+            }
+        DASHBOARD_CFG
       '';
     };
 
@@ -93,7 +93,9 @@ DASHBOARD_CFG
 
       Service = {
         Type = "simple";
-        Environment = "PATH=${pkgs.nodejs}/bin:${bunBin}:%h/.cache/.bun/bin:%h/.local/share/pi-cli/node_modules/.bin:/run/wrappers/bin";
+        Environment =
+          "PATH=${pkgs.nodejs}/bin:${bunBin}:%h/.cache/.bun/bin:%h/.local/share/pi-cli/node_modules/.bin:/run/wrappers/bin"
+          + " PUBLIC_URL=https://pi.sammohr.dev";
         ExecStart = "${pkgs.nodejs}/bin/node --import file://${agentDir}/npm/node_modules/jiti/lib/jiti-register.mjs ${agentDir}/npm/node_modules/@blackbelt-technology/pi-agent-dashboard/packages/server/src/cli.ts";
         Restart = "on-failure";
         RestartSec = 5;
@@ -168,7 +170,10 @@ in
 
       # Install pi packages
       home.activation.installPiPackages = {
-        after = [ "linkGeneration" "installPiCli" ];
+        after = [
+          "linkGeneration"
+          "installPiCli"
+        ];
         before = [ "writePowerlineTheme" ];
         data = ''
           if [ ! -x "${piCli}" ]; then
@@ -196,10 +201,10 @@ in
         after = [ "installPiPackages" ];
         before = [ ];
         data = ''
-          mkdir -p "${agentDir}/npm/node_modules/pi-powerline-footer"
-          cat > "${agentDir}/npm/node_modules/pi-powerline-footer/theme.json" << 'PLTHEME'
-  ${powerlineTheme}
-PLTHEME
+                    mkdir -p "${agentDir}/npm/node_modules/pi-powerline-footer"
+                    cat > "${agentDir}/npm/node_modules/pi-powerline-footer/theme.json" << 'PLTHEME'
+            ${powerlineTheme}
+          PLTHEME
         '';
       };
 

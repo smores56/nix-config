@@ -193,9 +193,18 @@ in
         sevenqlLspPath = "/Users/smohr/dev/okami/typescript/tools/sevenql-lsp/main.ts";
         maki = {
           models = [
-            { spec = "anthropic/claude-sonnet-4-20250514"; name = "Anthropic Claude Sonnet 4"; }
-            { spec = "anthropic/claude-haiku-3-5-20241022"; name = "Anthropic Claude Haiku 3.5"; }
-            { spec = "copilot/copilot-gpt-4o"; name = "GitHub Copilot GPT-4o"; }
+            {
+              spec = "anthropic/claude-sonnet-4-20250514";
+              name = "Anthropic Claude Sonnet 4";
+            }
+            {
+              spec = "anthropic/claude-haiku-3-5-20241022";
+              name = "Anthropic Claude Haiku 3.5";
+            }
+            {
+              spec = "copilot/copilot-gpt-4o";
+              name = "GitHub Copilot GPT-4o";
+            }
           ];
           defaultModel = "anthropic/claude-sonnet-4-20250514";
         };
