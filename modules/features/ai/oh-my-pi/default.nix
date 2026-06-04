@@ -353,7 +353,7 @@ in
         if [ -d "$TAU_DIR" ]; then
           echo "[oh-my-pi] Installing Tau dependencies..."
           (cd "$TAU_DIR" && bun install) 2>&1 || true
-          (cd "$TAU_DIR" && bun build extensions/mirror-server.ts --outfile=extensions/mirror-bundled.js --target=bun --external '@oh-my-pi/pi-coding-agent') 2>&1 || true
+          (cd "$TAU_DIR" && bun build extensions/mirror-server.ts --outfile=extensions/mirror-bundled.js --target=node --format=esm --external '@oh-my-pi/pi-coding-agent') 2>&1 || true
           ln -sf "$TAU_DIR/extensions/mirror-bundled.js" "$EXT_DIR/tau-mirror.js"
           ln -sfn "$TAU_DIR/public" "$EXT_DIR/public"
           rm -f "$EXT_DIR/tau-mirror.ts"
