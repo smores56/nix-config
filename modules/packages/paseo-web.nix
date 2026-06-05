@@ -46,6 +46,7 @@ buildNpmPackage {
   env = {
     EXPO_NO_TELEMETRY = "1";
     CI = "1";
+    EXPO_PUBLIC_LOCAL_DAEMON = "paseo.sammohr.dev:443";
   };
 
   buildPhase = ''
@@ -64,6 +65,12 @@ buildNpmPackage {
 
     mkdir -p $out
     cp -r packages/app/dist/* $out/
+
+    # Force TLS for daemon WS connections from the web SPA.
+    # Browser blocks ws:// from https://, and Cloudflare edge only accepts wss://.
+    find "$out" -name '*.js' -exec sed -i \
+      -e 's/ws:\/\/paseo\.sammohr\.dev:443\/ws/wss:\/\/paseo.sammohr.dev:443\/ws/g' \
+      {} +
 
     runHook postInstall
   '';

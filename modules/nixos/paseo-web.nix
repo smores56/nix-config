@@ -27,11 +27,11 @@ in
         extraConfig = ''
           root * ${paseoWebPkg}
 
-          handle_path /api/* {
+          handle /api/* {
             reverse_proxy 127.0.0.1:6767
           }
 
-          handle_path /ws {
+          handle /ws* {
             reverse_proxy 127.0.0.1:6767
           }
 
