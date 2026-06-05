@@ -101,6 +101,7 @@ let
       username = args.username or "smores";
     in
     inputs.nixpkgs.lib.nixosSystem {
+      specialArgs = { inherit inputs; };
       modules = [
         { nixpkgs.overlays = [ niri.overlays.niri ]; }
       ]
@@ -249,7 +250,13 @@ in
           opencodePort = 4000;
           openchamberPort = 3000;
         };
-        paseo.enable = true;
+        paseo = {
+          enable = true;
+          web = {
+            enable = true;
+            port = 8080;
+          };
+        };
         hermes.enable = true;
         piDashboard = {
           enable = true;

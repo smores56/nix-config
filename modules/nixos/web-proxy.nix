@@ -9,6 +9,14 @@ let
 
   fqdn = sub: "${sub}.${cfg.domain}";
   upstream = port: "http://127.0.0.1:${toString port}";
+
+  paseoIngress =
+    if d.paseo.enable && d.paseo.web.enable then
+      { ${fqdn "paseo"} = upstream 8080; }
+    else if d.paseo.enable then
+      { ${fqdn "paseo"} = upstream 6767; }
+    else
+      { };
 in
 {
   config = lib.mkIf (cfg.enable && cfg.tunnelId != "") {
@@ -31,9 +39,7 @@ in
         // lib.optionalAttrs d.tau.enable {
           ${fqdn "omp"} = upstream d.tau.port;
         }
-        // lib.optionalAttrs d.paseo.enable {
-          ${fqdn "paseo"} = upstream 6767;
-        }
+        // paseoIngress
         // lib.optionalAttrs d.agentOfEmpires.enable {
           ${fqdn "aoe"} = upstream d.agentOfEmpires.port;
         };

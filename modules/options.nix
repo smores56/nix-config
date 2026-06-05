@@ -227,6 +227,24 @@ in
             default = false;
             description = "Enable the Paseo daemon for remote agent access.";
           };
+          web = lib.mkOption {
+            type = lib.types.submodule {
+              options = {
+                enable = lib.mkOption {
+                  type = lib.types.bool;
+                  default = false;
+                  description = "Serve the Paseo web app (Expo SPA) via Caddy reverse proxy.";
+                };
+                port = lib.mkOption {
+                  type = lib.types.port;
+                  default = 8080;
+                  description = "HTTP port for Caddy to serve the web app on.";
+                };
+              };
+            };
+            default = { };
+            description = "Paseo web app settings. Requires a NixOS host with Caddy.";
+          };
         };
       };
       default = { };
