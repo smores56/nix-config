@@ -30,6 +30,12 @@ in
         }
         // lib.optionalAttrs d.tau.enable {
           ${fqdn "omp"} = upstream d.tau.port;
+        }
+        // lib.optionalAttrs d.paseo.enable {
+          ${fqdn "paseo"} = upstream 6767;
+        }
+        // lib.optionalAttrs d.agentOfEmpires.enable {
+          ${fqdn "aoe"} = upstream d.agentOfEmpires.port;
         };
       };
     };

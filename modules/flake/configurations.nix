@@ -84,6 +84,7 @@ let
 
             pi = null;
             piDashboard = null;
+            agentOfEmpires = null;
           } args;
           home.username = username;
           home.homeDirectory =
@@ -118,9 +119,11 @@ let
             noSleep = args.noSleep or false;
             persist = args.persist or false;
             opencodeHost = args.opencodeHost or { };
+            paseo = args.paseo or { };
             hermes = args.hermes or { };
             piDashboard = args.piDashboard or { };
             webProxy = args.webProxy or { };
+            agentOfEmpires = args.agentOfEmpires or { };
             tau = args.tau or { };
           };
         }
@@ -178,6 +181,9 @@ in
         tau = {
           enable = true;
           passwordFile = "/home/smores/.config/omp/tau-password";
+        };
+        agentOfEmpires = {
+          enable = true;
         };
       };
       "smohr@smoreswork" = mkHome {
@@ -243,6 +249,7 @@ in
           opencodePort = 4000;
           openchamberPort = 3000;
         };
+        paseo.enable = true;
         hermes.enable = true;
         piDashboard = {
           enable = true;
@@ -252,6 +259,9 @@ in
           tunnelId = "f2284d1b-5038-447b-ab50-e18dc1dba8c5";
         };
         tau = {
+          enable = true;
+        };
+        agentOfEmpires = {
           enable = true;
         };
       };
