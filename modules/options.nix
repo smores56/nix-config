@@ -495,6 +495,22 @@ in
       default = { };
       description = "Tau web UI mirror for OMP sessions.";
     };
+    agentOfEmpires = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkEnableOption "Agent of Empires session manager" // {
+            default = false;
+          };
+          port = lib.mkOption {
+            type = lib.types.port;
+            default = 8080;
+            description = "Port for the AoE web dashboard.";
+          };
+        };
+      };
+      default = { };
+      description = "Agent of Empires multi-agent session manager.";
+    };
     aiHints = lib.mkOption {
       type = lib.types.str;
       readOnly = true;
