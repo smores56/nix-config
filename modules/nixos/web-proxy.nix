@@ -12,7 +12,7 @@ let
 
   paseoIngress =
     if d.paseo.enable && d.paseo.web.enable then
-      { ${fqdn "paseo"} = upstream 8080; }
+      { ${fqdn "paseo"} = upstream d.paseo.web.port; }
     else if d.paseo.enable then
       { ${fqdn "paseo"} = upstream 6767; }
     else

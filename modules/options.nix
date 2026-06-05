@@ -237,7 +237,7 @@ in
                 };
                 port = lib.mkOption {
                   type = lib.types.port;
-                  default = 8080;
+                  default = 8765;
                   description = "HTTP port for Caddy to serve the web app on.";
                 };
               };
