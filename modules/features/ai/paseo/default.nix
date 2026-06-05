@@ -34,6 +34,7 @@ in
           "NODE_ENV=production"
           "PASEO_HOME=${homeDir}/.paseo"
           "PASEO_LISTEN=127.0.0.1:6767"
+          "PASEO_HOSTNAMES=.sammohr.dev"
           "PATH=${scriptPath}"
         ];
       };
