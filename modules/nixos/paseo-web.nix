@@ -27,13 +27,15 @@ in
         extraConfig = ''
           root * ${paseoWebPkg}
 
-          handle /api/* {
-            reverse_proxy 127.0.0.1:6767
+          @api {
+            path /api/*
           }
+          reverse_proxy @api 127.0.0.1:6767
 
-          handle /ws* {
-            reverse_proxy 127.0.0.1:6767
+          @ws {
+            path /ws*
           }
+          reverse_proxy @ws 127.0.0.1:6767
 
           try_files {path} /index.html
           file_server
