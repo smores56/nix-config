@@ -25,20 +25,27 @@ in
       enable = true;
       virtualHosts.":${toString webCfg.port}" = {
         extraConfig = ''
-          root * ${paseoWebPkg}
-
           @api {
             path /api/*
           }
-          reverse_proxy @api 127.0.0.1:6767
+
+          handle @api {
+            reverse_proxy 127.0.0.1:6767
+          }
 
           @ws {
             path /ws*
           }
-          reverse_proxy @ws 127.0.0.1:6767
 
-          try_files {path} /index.html
-          file_server
+          handle @ws {
+            reverse_proxy 127.0.0.1:6767
+          }
+
+          handle {
+            root * ${paseoWebPkg}
+            try_files {path} /index.html
+            file_server
+          }
         '';
       };
     };
