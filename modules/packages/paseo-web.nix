@@ -49,6 +49,15 @@ buildNpmPackage {
     EXPO_PUBLIC_LOCAL_DAEMON = "paseo.sammohr.dev:443";
   };
 
+  preBuild = ''
+    # Force TLS for daemon WS connections from web SPA.
+    # Browser blocks ws:// from https:// origin; Cloudflare only accepts wss://.
+    # Default useTls: true for external hosts via EXPO_PUBLIC_LOCAL_DAEMON.
+    sed -i \
+      's/useTls: connection.useTls ?? false/useTls: connection.useTls ?? true/' \
+      packages/app/src/utils/test-daemon-connection.ts
+  '';
+
   buildPhase = ''
     runHook preBuild
 
@@ -65,12 +74,6 @@ buildNpmPackage {
 
     mkdir -p $out
     cp -r packages/app/dist/* $out/
-
-    # Force TLS for daemon WS connections from the web SPA.
-    # Browser blocks ws:// from https://, and Cloudflare edge only accepts wss://.
-    find "$out" -name '*.js' -exec sed -i \
-      -e 's/ws:\/\/paseo\.sammohr\.dev:443\/ws/wss:\/\/paseo.sammohr.dev:443\/ws/g' \
-      {} +
 
     runHook postInstall
   '';
