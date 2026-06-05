@@ -252,10 +252,7 @@ in
         };
         paseo = {
           enable = true;
-          web = {
-            enable = true;
-            port = 8080;
-          };
+          web.enable = true;
         };
         hermes.enable = true;
         piDashboard = {
