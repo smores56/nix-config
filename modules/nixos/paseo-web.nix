@@ -13,7 +13,7 @@ let
   webCfg = cfg.web or { };
   enabled = cfg.enable && webCfg.enable;
 
-  paseoWebPkg = pkgs.callPackage ../../packages/paseo-web.nix {
+  paseoWebPkg = pkgs.callPackage ../packages/paseo-web.nix {
     paseoSrc = inputs.paseo;
     paseoVersion = (builtins.fromJSON (builtins.readFile "${inputs.paseo}/package.json")).version;
     npmDeps = inputs.paseo.packages.${pkgs.stdenv.hostPlatform.system}.default.npmDeps;
