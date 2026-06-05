@@ -25,8 +25,6 @@ in
       enable = true;
       virtualHosts.":${toString webCfg.port}" = {
         extraConfig = ''
-          tls off
-
           root * ${paseoWebPkg}
 
           handle_path /api/* {
