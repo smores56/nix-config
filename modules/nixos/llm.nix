@@ -12,8 +12,10 @@ let
     file = "gemma-4-31B-it-qat-UD-Q4_K_XL.gguf";
   };
 
-  # ik-llama fork supports gemma4-assistant architecture (MTP head for Gemma 4)
-  # GCC 14 is too strict — force GCC 13 + force-include cstdint
+  # ik-llama fork supports gemma4-assistant (MTP) architecture — mainline doesn't.
+  # GCC 14 is too strict for this codebase; force GCC 13 + force-include cstdint.
+  # Build only llama-server target to avoid iqk quantize compilation units
+  # that rely on AVX2 intrinsics stripped by NIX_ENFORCE_NO_NATIVE.
   ik-llama = pkgs.gcc13Stdenv.mkDerivation {
     pname = "ik-llama-cpp";
     version = "ik-master";
@@ -23,6 +25,7 @@ let
       rev = "6b9de3dbaa21ae95ea80638e5ee836795cc48c93";
       hash = "sha256-ihzg0nomnn4eVCPcy4rcENIcbOAnYzfcJvd8gApzT0w=";
     };
+    NIX_ENFORCE_NO_NATIVE = "0";
     CUDAHOSTCXX = "${pkgs.gcc13Stdenv.cc}/bin/g++";
     nativeBuildInputs = with pkgs; [
       cmake
@@ -44,11 +47,11 @@ let
         -DCMAKE_CXX_FLAGS="-include cstdint"
     '';
     buildPhase = ''
-      cmake --build build --config Release -j$(nproc)
+      cmake --build build --target llama-server --config Release -j$(nproc)
     '';
     installPhase = ''
-      cmake --install build --prefix $out
-      mkdir -p $out/include
+      mkdir -p $out/bin $out/include
+      cp build/bin/llama-server $out/bin/
       cp include/llama.h $out/include/
     '';
     outputs = [
