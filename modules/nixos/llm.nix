@@ -7,11 +7,6 @@
 let
   cfg = config.dotfiles;
 
-  model = {
-    repo = "unsloth/gemma-4-31B-it-qat-GGUF";
-    file = "gemma-4-31B-it-qat-UD-Q4_K_XL.gguf";
-  };
-
   ik-llama = pkgs.gcc13Stdenv.mkDerivation {
     pname = "ik-llama-cpp";
     version = "ik-master";
@@ -59,8 +54,13 @@ let
     ];
   };
 
-  # MTP draft model — just the MTP head weights, quantized Q8_0 (514 MB).
-  # Loaded alongside the main model for speculative decoding with MTP.
+  # Main model fetched via Nix — avoids DynamicUser sandbox rename issues.
+  mainModel = pkgs.fetchurl {
+    url = "https://huggingface.co/unsloth/gemma-4-31B-it-qat-GGUF/resolve/main/gemma-4-31B-it-qat-UD-Q4_K_XL.gguf";
+    hash = "sha256-AkP9wVpZ6VcoF1RyJv+LVkYUBjtodqgQRmLdgHSRV4Q=";
+  };
+
+  # MTP draft model — MTP head weights quantized Q8_0 (514 MB).
   mtpModel = pkgs.fetchurl {
     url = "https://huggingface.co/unsloth/gemma-4-31B-it-GGUF/resolve/main/MTP/gemma-4-31B-it-MTP-Q8_0.gguf";
     hash = "sha256-WuiwEXvtYB6JJMYwW9WwWF3jYdUfDncJG8tCUs8fJ94=";
@@ -83,10 +83,8 @@ in
       extraFlags = [
         "--alias"
         cfg.defaultModel
-        "--hf-repo"
-        model.repo
-        "--hf-file"
-        model.file
+        "--model"
+        mainModel
         "-ngl"
         "99"
         "-c"
@@ -101,7 +99,7 @@ in
         "--spec-type"
         "mtp:n_max=1,p_min=0.0"
         "--model-draft"
-        "${mtpModel}"
+        mtpModel
         "-ngld"
         "99"
         "--reasoning-format"
