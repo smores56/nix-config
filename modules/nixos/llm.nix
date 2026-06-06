@@ -25,6 +25,9 @@ let
       hash = "sha256-ihzg0nomnn4eVCPcy4rcENIcbOAnYzfcJvd8gApzT0w=";
     };
     CUDAHOSTCXX = "${pkgs.gcc13Stdenv.cc}/bin/g++";
+    postPatch = ''
+      sed -i '1i#include <cstdint>' ggml/src/iqk/iqk_common.h
+    '';
     nativeBuildInputs = with pkgs; [
       cmake
       ninja
