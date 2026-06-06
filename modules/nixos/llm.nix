@@ -31,16 +31,17 @@ let
     ];
     buildInputs = with pkgs; [
       openssl
+      curl
       cudaPackages.cuda_cudart
       cudaPackages.libcublas
     ];
     configurePhase = ''
       echo "unknown" > COMMIT
-      cmake -B build \
         -DGGML_CUDA=ON \
         -DGGML_AVX2=ON \
         -DGGML_FMA=ON \
         -DGGML_F16C=ON \
+        -DLLAMA_CURL=ON \
         -DCMAKE_INSTALL_LIBDIR=lib \
         -DLLAMA_BUILD_EXAMPLES=ON \
         -DCMAKE_CXX_FLAGS="-include cstdint"
