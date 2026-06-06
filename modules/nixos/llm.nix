@@ -6,11 +6,10 @@
 }:
 let
   # VRAM: 17.3GB(model) + 1.5GB(scratch) + KV_cache
-  # KV: 50 sliding (1024 window) × 4608 B/t + 10 global × 2304 × ctx × slots
-  # 2 slots @ 100K ctx: 4.73 GB KV → 23.53 GB total, 0.47 GB headroom
-  # 2 slots @  75K ctx: 3.66 GB KV → 22.46 GB total, 1.54 GB headroom
-  # 3 slots @  50K ctx: 3.88 GB KV → 22.68 GB total, 1.32 GB headroom
-  # 4 slots @  32K ctx: 3.69 GB KV → 22.49 GB total, 1.51 GB headroom
+  # KV = 50 sliding × 4608 + 10 global × 2304 × ctx_total
+  # KV: 50×4608 = 225 KB (sliding fixed) + 23,040 B × ctx_total
+  # 2 slots @ 100K = 200K total ctx: 4.59 GB KV → 23.39 GB total, 1.15 GB headroom
+  # 3 slots @ 67K  = 200K total ctx: 4.59 GB KV → 23.39 GB total, 1.15 GB headroom
   cfg = config.dotfiles;
   model = {
     repo = "unsloth/gemma-4-31B-it-qat-GGUF";
@@ -42,7 +41,7 @@ in
         "-ngl"
         "99"
         "-c"
-        "102400"
+        "200000"
         "--cache-type-k"
         "q4_0"
         "--cache-type-v"
