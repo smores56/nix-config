@@ -51,9 +51,9 @@ in
         "--spec-type"
         "draft-mtp"
         "--hf-repo-draft"
-        "unsloth/gemma-4-31B-it-GGUF"
-        "--hf-file-draft"
-        "MTP/gemma-4-31B-it-MTP-Q8_0.gguf"
+        "unsloth/gemma-4-31B-it-GGUF:MTP/gemma-4-31B-it-MTP-Q8_0.gguf"
+        "--spec-draft-ngl"
+        "99"
         "--reasoning-format"
         "none"
       ];
