@@ -12,9 +12,6 @@ let
     file = "gemma-4-31B-it-qat-UD-Q4_K_XL.gguf";
   };
 
-  # ik-llama fork for gemma4-assistant (MTP) architecture.
-  # GCC 14 too strict → gcc13Stdenv.  nvcc needs CUDAHOSTCXX override.
-  # Nix strips -march=native → AVX2 never detected → explicit GGML_AVX2=ON etc.
   ik-llama = pkgs.gcc13Stdenv.mkDerivation {
     pname = "ik-llama-cpp";
     version = "ik-master";
@@ -48,7 +45,7 @@ let
         -DCMAKE_CXX_FLAGS="-include cstdint"
     '';
     buildPhase = ''
-      cmake --build build --target llama-server --config Release -j$(nproc)
+      cmake --build build --config Release -j$(nproc)
     '';
     installPhase = ''
       cmake --install build --prefix $out
