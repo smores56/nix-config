@@ -13,7 +13,8 @@ let
   };
 
   # ik-llama fork supports gemma4-assistant architecture (MTP head for Gemma 4)
-  ik-llama = pkgs.stdenv.mkDerivation {
+  # Built with gcc13Stdenv — GCC 14 is too strict for this codebase.
+  ik-llama = pkgs.gcc13Stdenv.mkDerivation {
     pname = "ik-llama-cpp";
     version = "ik-master";
     src = pkgs.fetchFromGitHub {
@@ -22,11 +23,6 @@ let
       rev = "6b9de3dbaa21ae95ea80638e5ee836795cc48c93";
       hash = "sha256-ihzg0nomnn4eVCPcy4rcENIcbOAnYzfcJvd8gApzT0w=";
     };
-    postPatch = ''
-      # ik-llama targets GCC 13; GCC 14 stricter -> -fpermissive + disable Werror
-      sed -i '/add_compile_options(-Werror)/d' CMakeLists.txt
-    '';
-    NIX_CFLAGS_COMPILE = "-fpermissive";
     nativeBuildInputs = with pkgs; [
       cmake
       ninja
