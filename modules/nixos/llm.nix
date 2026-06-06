@@ -5,14 +5,51 @@
   ...
 }:
 let
-  # VRAM: 17.3GB(model) + 1.5GB(scratch) + KV_cache
-  # KV = 50 sliding × 4608 + 10 global × 2304 × ctx_total
-  # KV: 50×4608 = 225 KB (sliding fixed) + 23,040 B × ctx_total
-  # 2 slots @ 100K = 200000 total ctx: 4.59 GB KV → 23.39 GB total, 1.15 GB headroom
   cfg = config.dotfiles;
+
   model = {
     repo = "unsloth/gemma-4-31B-it-qat-GGUF";
     file = "gemma-4-31B-it-qat-UD-Q4_K_XL.gguf";
+  };
+
+  # ik-llama fork supports gemma4-assistant architecture (MTP head for Gemma 4)
+  ik-llama = pkgs.stdenv.mkDerivation {
+    pname = "ik-llama-cpp";
+    version = "ik-master";
+    src = pkgs.fetchFromGitHub {
+      owner = "ikawrakow";
+      repo = "ik_llama.cpp";
+      rev = "6b9de3dbaa21ae95ea80638e5ee836795cc48c93";
+      hash = "sha256-ihzg0nomnn4eVCPcy4rcENIcbOAnYzfcJvd8gApzT0w=";
+    };
+    nativeBuildInputs = with pkgs; [
+      cmake
+      ninja
+      pkg-config
+      cudaPackages.cuda_nvcc
+      autoAddDriverRunpath
+    ];
+    buildInputs = with pkgs; [
+      openssl
+      cudaPackages.cuda_cudart
+      cudaPackages.libcublas
+    ];
+    configurePhase = ''
+      echo "unknown" > COMMIT
+      cmake -B build -DGGML_CUDA=ON -DLLAMA_BUILD_EXAMPLES=ON
+    '';
+    buildPhase = ''
+      cmake --build build --config Release -j$(nproc)
+    '';
+    installPhase = ''
+      cmake --install build --prefix $out
+      mkdir -p $out/include
+      cp include/llama.h $out/include/
+    '';
+    outputs = [
+      "out"
+      "dev"
+    ];
   };
 in
 {
@@ -26,7 +63,7 @@ in
 
     services.llama-cpp = {
       enable = true;
-      package = pkgs.llama-cpp.override { cudaSupport = true; };
+      package = ik-llama;
       host = "0.0.0.0";
       port = 8081;
       extraFlags = [
@@ -50,31 +87,19 @@ in
         "--cont-batching"
         "--spec-type"
         "draft-mtp"
-        "--spec-draft-model"
-        "/var/cache/llama-cpp/gemma-4-31B-it-MTP-Q8_0.gguf"
+        "--hf-repo-draft"
+        "unsloth/gemma-4-31B-it-GGUF:MTP/gemma-4-31B-it-MTP-Q8_0.gguf"
         "--spec-draft-ngl"
         "99"
         "--reasoning-format"
         "none"
       ];
     };
+
     systemd.services.llama-cpp = {
       requires = [ "nvidia-uvm.service" ];
       after = [ "nvidia-uvm.service" ];
-      path = [ pkgs.curl ] ++ lib.optional pkgs.stdenv.isLinux pkgs.util-linuxMinimal;
-      preStart = ''
-        MTP_PATH="/var/cache/llama-cpp/gemma-4-31B-it-MTP-Q8_0.gguf"
-        if [ ! -s "$MTP_PATH" ]; then
-          mkdir -p "$(dirname "$MTP_PATH")"
-          echo "Downloading MTP draft model..."
-          curl -L -o "$MTP_PATH" \
-            "https://huggingface.co/unsloth/gemma-4-31B-it-GGUF/resolve/main/MTP/gemma-4-31B-it-MTP-Q8_0.gguf"
-        fi
-      '';
-      serviceConfig = {
-        TimeoutStartSec = "1h";
-      };
+      serviceConfig.TimeoutStartSec = "1h";
     };
-
   };
 }
