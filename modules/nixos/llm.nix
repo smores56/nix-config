@@ -48,6 +48,12 @@ in
         "-np"
         "2"
         "--cont-batching"
+        "--spec-type"
+        "draft-mtp"
+        "--hf-repo-draft"
+        "unsloth/gemma-4-31B-it-GGUF"
+        "--hf-file-draft"
+        "MTP/gemma-4-31B-it-MTP-Q8_0.gguf"
         "--reasoning-format"
         "none"
       ];
