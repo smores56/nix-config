@@ -377,12 +377,16 @@ in
                 name = "CrofAI DeepSeek V4 Flash";
               }
               {
-                spec = "crofai/glm-5.1";
-                name = "CrofAI GLM 5.1";
+                spec = "crofai/mimo-v2.5-pro";
+                name = "CrofAI MiMo V2.5 Pro";
               }
               {
                 spec = "crofai/glm-4.7-flash";
                 name = "CrofAI GLM 4.7 Flash";
+              }
+              {
+                spec = "crofai/kimi-k2.5";
+                name = "CrofAI Kimi K2.5";
               }
             ];
             description = "Available models exposed via GET /api/models and shown in the web UI model dropdown.";
@@ -414,7 +418,7 @@ in
           };
           defaultModel = lib.mkOption {
             type = lib.types.str;
-            default = "crofai/glm-5.1";
+            default = "crofai/mimo-v2.5-pro";
             description = "Default model for pi.";
           };
           defaultThinkingLevel = lib.mkOption {

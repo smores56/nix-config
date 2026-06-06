@@ -58,15 +58,15 @@ models)
     "quantization": "Q4_K_M"
   },
   {
-    "id": "glm-5.1",
-    "name": "CrofAI GLM 5.1",
+    "id": "mimo-v2.5-pro",
+    "name": "CrofAI MiMo V2.5 Pro",
     "tier": "strong",
-    "context": 202752,
-    "output": 202752,
+    "context": 1000000,
+    "output": 131072,
     "input": ["text"],
     "reasoning": true,
-    "request_cost": "1",
-    "quantization": "Q6_K"
+    "request_cost": "2",
+    "quantization": "Q8_0"
   },
   {
     "id": "deepseek-v4-flash",
@@ -87,6 +87,16 @@ models)
     "reasoning": true,
     "request_cost": "1",
     "quantization": "Q6_K"
+  },
+  {
+    "id": "kimi-k2.5",
+    "name": "CrofAI Kimi K2.5",
+    "context": 262144,
+    "output": 262144,
+    "input": ["text"],
+    "reasoning": true,
+    "request_cost": "1",
+    "quantization": "Q4_K_M"
   },
   {
     "id": "kimi-k2.6",

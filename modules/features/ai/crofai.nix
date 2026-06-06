@@ -14,7 +14,9 @@ let
   };
 
   models = {
-    glm51 = model "glm-5.1" "CrofAI GLM 5.1" "Q6_K" 202752 202752 [ "text" ] true "1";
+    mimoV25Pro = model "mimo-v2.5-pro" "CrofAI MiMo-V2.5-Pro" "Q8_0" 1000000 131072 [
+      "text"
+    ] true "2";
     deepseekV4Pro = model "deepseek-v4-pro" "CrofAI DeepSeek V4 Pro" "Q6_K" 1000000 131072 [
       "text"
     ] true "1";
@@ -27,6 +29,9 @@ let
     minimaxM25 = model "minimax-m2.5" "CrofAI MiniMax M2.5" "Q4_K_M" 205000 32768 [
       "text"
     ] false "0.11";
+    kimiK25 = model "kimi-k2.5" "CrofAI Kimi K2.5" "Q4_K_M" 262144 262144 [
+      "text"
+    ] true "1";
     kimiK26 = model "kimi-k2.6" "CrofAI Kimi K2.6" "Q3_K_L" 262144 262144 [
       "text"
       "image"
@@ -37,22 +42,23 @@ let
   modelRef = model: "${providerId}/${model.id}";
 
   roles = {
-    default = modelRef models.glm51;
+    default = modelRef models.mimoV25Pro;
     slow = modelRef models.deepseekV4Pro;
-    plan = modelRef models.glm51;
+    plan = modelRef models.mimoV25Pro;
     smol = modelRef models.glm47Flash;
     vision = modelRef models.kimiK26;
     designer = modelRef models.kimiK26;
     commit = modelRef models.glm47Flash;
-    task = modelRef models.deepseekV4Flash;
+    task = modelRef models.kimiK25;
   };
 
   selectedModels = [
-    models.glm51
+    models.mimoV25Pro
     models.deepseekV4Pro
     models.deepseekV4Flash
     models.glm47Flash
     models.minimaxM25
+    models.kimiK25
     models.kimiK26
   ];
 

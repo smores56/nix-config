@@ -45,12 +45,11 @@ OpenCode and oh-my-pi route to CrofAI with request-minimized defaults:
 
 | Role | Model | Why |
 |------|-------|-----|
-| Default / orchestrator / plan | `crofai/glm-5.1` | Strong planning/instruction following, Q6_K, 1 request |
+| Default / orchestrator / plan | `crofai/mimo-v2.5-pro` | Strong coding/reasoning, Q8_0, 1M context, 2 requests |
 | Slow / oracle / hard debug | `crofai/deepseek-v4-pro` | Best CrofAI coding model, Q6_K, 1M context, 1 request |
-| Task / bounded implementation | `crofai/deepseek-v4-flash` | Good coding fallback, Q6_K, 0.75 request |
+| Task / bounded implementation | `crofai/kimi-k2.5` | Good reasoning/vision, Q4_K_M, 262K context, 1 request |
 | Smol / explorer / librarian / commit | `crofai/glm-4.7-flash` | Cheap routine work, fp8, 0.5 request |
-| Vision / designer | `crofai/kimi-k2.6` | Vision support, 1 request; avoid unless image/UI judgment matters |
-
+| Vision / designer | `crofai/kimi-k2.6` | Vision support, 2 requests; avoid unless image/UI judgment matters |
 Avoid precision/lightning models by default. The UI marks `*-precision` as 3 requests and `*-lightning` as 10 requests; the quality gain is not worth the request burn on Scale.
 
 OpenCode uses `oh-my-opencode-slim` instead of `oh-my-openagent` to reduce automatic subagent/council traffic. `@tarquinen/opencode-smart-title` is intentionally not installed because title generation costs extra model requests.
@@ -120,7 +119,7 @@ chmod 600 ~/.config/omp/crofai-key
 ```
 
 When present, home-manager generates:
-- `~/.omp/agent/models.yml` — CrofAI provider with GLM 5.1, DeepSeek V4 Pro/Flash, GLM 4.7 Flash, and Kimi K2.6
+- `~/.omp/agent/models.yml` — CrofAI provider with MiMo V2.5 Pro, DeepSeek V4 Pro/Flash, GLM 4.7 Flash, Kimi K2.5, and Kimi K2.6
 - `~/.omp/agent/config.yml` — model roles mapped to the request-minimized CrofAI distribution above
 
 Compaction settings are tuned to spend tokens instead of requests:
