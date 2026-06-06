@@ -36,7 +36,7 @@ let
     ];
     configurePhase = ''
       echo "unknown" > COMMIT
-      cmake -B build -DGGML_CUDA=ON -DLLAMA_BUILD_EXAMPLES=ON
+      cmake -B build -DGGML_CUDA=ON
     '';
     buildPhase = ''
       cmake --build build --config Release -j$(nproc)
