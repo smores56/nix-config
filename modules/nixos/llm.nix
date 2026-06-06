@@ -88,7 +88,7 @@ in
         "-ngl"
         "99"
         "-c"
-        "200000"
+        "24000"
         "--cache-type-k"
         "q4_0"
         "--cache-type-v"
