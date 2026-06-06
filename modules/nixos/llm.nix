@@ -48,7 +48,7 @@ in
         "q4_0"
         "--cache-type-v"
         "q4_0"
-        "--parallel-slots"
+        "-np"
         "2"
         "--cont-batching"
       ];
