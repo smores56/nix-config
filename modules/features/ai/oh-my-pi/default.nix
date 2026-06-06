@@ -17,11 +17,6 @@ let
   ompPrivateDir = "$HOME/.local/share/oh-my-pi-cli";
   ompPrivateEntrypoint = "${ompPrivateDir}/node_modules/${ompPackage}/src/cli.ts";
   ompLegacyEntrypoint = "$HOME/.bun/install/global/node_modules/${ompPackage}/src/cli.ts";
-  localModelRef = "smortress/gemma-4-31b";
-  smortressRolesOverride = ''
-    smol: ${localModelRef}
-    commit: ${localModelRef}
-  '';
   smortressProviderBlock = ''
     providers:
       smortress:
@@ -102,12 +97,12 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    # Declarative config.yml — generated from nix, no procedural omp config set
     home.file.".omp/agent/config.yml".text = ''
       lastChangelogVersion: 15.5.11
       modelRoles:
       ${aiCrofai.ompModelRolesYaml}
-      ${smortressRolesOverride}
+        smol: smortress/gemma-4-31b
+        commit: smortress/gemma-4-31b
       theme:
         dark: dark-gruvbox
         light: light-gruvbox
