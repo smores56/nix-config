@@ -38,6 +38,7 @@ let
         -DGGML_FMA=ON \
         -DGGML_F16C=ON \
         -DLLAMA_CURL=ON \
+        -DCMAKE_CUDA_ARCHITECTURES="86" \
         -DCMAKE_INSTALL_LIBDIR=lib \
         -DLLAMA_BUILD_EXAMPLES=ON \
         -DCMAKE_CXX_FLAGS="-include cstdint"
@@ -54,7 +55,6 @@ let
     ];
   };
 
-  # Main model.  Nix-fetched to avoid DynamicUser sandbox rename issues.
   mainModel = pkgs.fetchurl {
     url = "https://huggingface.co/unsloth/gemma-4-31B-it-qat-GGUF/resolve/main/gemma-4-31B-it-qat-UD-Q4_K_XL.gguf";
     hash = "sha256-kYinEFVVDx5guHXQK3q7Y2JawRtKbxSNayKzsouj0zU=";
