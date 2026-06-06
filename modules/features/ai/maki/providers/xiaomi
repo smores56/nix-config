@@ -6,7 +6,7 @@
 
 set -euo pipefail
 
-API_URL="https://api.xiaomi.com/v1"
+API_URL="https://token-plan-sgp.xiaomimimo.com/v1"
 
 case "${1:-}" in
 info)

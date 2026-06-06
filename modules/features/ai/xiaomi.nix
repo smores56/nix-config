@@ -73,7 +73,7 @@ in
       selectedModels
       ;
 
-    baseUrl = "https://api.xiaomi.com/v1";
+    baseUrl = "https://token-plan-sgp.xiaomimimo.com/v1";
 
     opencodeModels = builtins.listToAttrs (
       map (model: {
