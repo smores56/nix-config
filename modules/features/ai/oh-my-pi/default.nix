@@ -2,6 +2,7 @@
   config,
   lib,
   pkgs,
+  aiDeepseek,
   aiXiaomi,
   ...
 }:
@@ -87,6 +88,13 @@ let
                 };
               }
             ];
+          };
+          ${aiDeepseek.providerId} = {
+            baseUrl = aiDeepseek.baseUrl;
+            apiKey = "DEEPSEEK_API_KEY";
+            api = "openai-completions";
+            auth = "apiKey";
+            models = aiDeepseek.ompModelsList;
           };
         };
       };
