@@ -74,6 +74,7 @@ let
             branchPrefix = null;
             ticketPrefix = null;
             workGithubOrgs = null;
+            workModels = null;
             sevenqlLspPath = null;
             opencodeHost = null;
             ohMyPi = null;
@@ -186,23 +187,20 @@ in
         branchPrefix = "sam.mohr";
         ticketPrefix = "7AI";
         workGithubOrgs = [ "OkamiAI" ];
+        workModels = true;
         sevenqlLspPath = "/Users/smohr/dev/okami/typescript/tools/sevenql-lsp/main.ts";
         maki = {
           models = [
             {
-              spec = "anthropic/claude-sonnet-4-20250514";
-              name = "Anthropic Claude Sonnet 4";
+              spec = "openai/gpt-5.5-codex";
+              name = "GPT 5.5 Codex";
             }
             {
-              spec = "anthropic/claude-haiku-3-5-20241022";
-              name = "Anthropic Claude Haiku 3.5";
-            }
-            {
-              spec = "copilot/copilot-gpt-4o";
-              name = "GitHub Copilot GPT-4o";
+              spec = "anthropic/claude-opus-4-8";
+              name = "Claude Opus 4.8";
             }
           ];
-          defaultModel = "anthropic/claude-sonnet-4-20250514";
+          defaultModel = "openai/gpt-5.5-codex";
         };
         ohMyPi = {
           codex.enable = true;

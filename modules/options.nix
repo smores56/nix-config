@@ -354,7 +354,7 @@ in
           };
           defaultModel = lib.mkOption {
             type = lib.types.str;
-            default = "crofai/deepseek-v4-pro";
+            default = "xiaomi/mimo-v2.5-pro";
             description = "Default model spec for maki-serve (format: provider/model-id).";
           };
           models = lib.mkOption {
@@ -374,24 +374,16 @@ in
             );
             default = [
               {
-                spec = "crofai/deepseek-v4-pro";
-                name = "CrofAI DeepSeek V4 Pro";
+                spec = "xiaomi/mimo-v2.5-pro";
+                name = "MiMo V2.5 Pro";
               }
               {
-                spec = "crofai/deepseek-v4-flash";
-                name = "CrofAI DeepSeek V4 Flash";
+                spec = "xiaomi/mimo-v2.5";
+                name = "MiMo V2.5";
               }
               {
-                spec = "crofai/mimo-v2.5-pro";
-                name = "CrofAI MiMo V2.5 Pro";
-              }
-              {
-                spec = "crofai/glm-4.7-flash";
-                name = "CrofAI GLM 4.7 Flash";
-              }
-              {
-                spec = "crofai/kimi-k2.5";
-                name = "CrofAI Kimi K2.5";
+                spec = "smortress/gemma-4-31b";
+                name = "Gemma 4 31B (smortress)";
               }
             ];
             description = "Available models exposed via GET /api/models and shown in the web UI model dropdown.";
@@ -418,12 +410,12 @@ in
           };
           defaultProvider = lib.mkOption {
             type = lib.types.str;
-            default = "crofai";
+            default = "xiaomi";
             description = "Default LLM provider for pi.";
           };
           defaultModel = lib.mkOption {
             type = lib.types.str;
-            default = "crofai/mimo-v2.5-pro";
+            default = "xiaomi/mimo-v2.5-pro";
             description = "Default model for pi.";
           };
           defaultThinkingLevel = lib.mkOption {

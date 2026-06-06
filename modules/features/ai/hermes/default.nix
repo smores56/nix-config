@@ -251,12 +251,9 @@ in
                 "$HERMES" config set terminal.container_cpu ${toString cfg.containerCpu} || true
                 "$HERMES" config set terminal.container_memory ${toString cfg.containerMemory} || true
                 "$HERMES" config set terminal.container_disk ${toString cfg.containerDisk} || true
-                # CrofAI API key (also set inline in config.yaml via setup_crofai.py
-                # with provider: custom + base_url + bare model IDs).
-                CROFAI_KEY_FILE="$HOME/.config/omp/crofai-key"
-                if [ -f "$CROFAI_KEY_FILE" ] && [ -s "$CROFAI_KEY_FILE" ]; then
-                  CROFAI_KEY=$(cat "$CROFAI_KEY_FILE")
-                  "$HERMES" config set crofai_api_key "$CROFAI_KEY" || true
+                # Xiaomi MiMo API key for model access.
+                if [ -n "''${XIAOMI_MIMO_API_KEY:-}" ]; then
+                  "$HERMES" config set xiaomi_api_key "$XIAOMI_MIMO_API_KEY" || true
                 fi
                 "$HERMES" config set approvals.mode smart || true
                 echo "[hermes] configured Docker sandbox backend (image ${imageRef})"

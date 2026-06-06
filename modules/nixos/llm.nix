@@ -56,6 +56,13 @@ let
       "dev"
     ];
   };
+
+  # MTP draft model — just the MTP head weights, quantized Q8_0 (514 MB).
+  # Loaded alongside the main model for speculative decoding with MTP.
+  mtpModel = pkgs.fetchurl {
+    url = "https://huggingface.co/unsloth/gemma-4-31B-it-GGUF/resolve/main/MTP/gemma-4-31B-it-MTP-Q8_0.gguf";
+    hash = "sha256-1pi73z7m4hnb3c4pf3hzsmhy6paqn3amnc664j4iwq7dgc8v1s2s";
+  };
 in
 {
   config = lib.mkIf cfg.llm {
@@ -78,7 +85,6 @@ in
         model.repo
         "--hf-file"
         model.file
-        "--no-mmproj"
         "-ngl"
         "99"
         "-c"
@@ -91,10 +97,10 @@ in
         "2"
         "--cont-batching"
         "--spec-type"
-        "draft-mtp"
-        "--hf-repo-draft"
-        "unsloth/gemma-4-31B-it-GGUF:MTP/gemma-4-31B-it-MTP-Q8_0.gguf"
-        "--spec-draft-ngl"
+        "mtp:n_max=1,p_min=0.0"
+        "--model-draft"
+        mtpModel
+        "-ngld"
         "99"
         "--reasoning-format"
         "none"

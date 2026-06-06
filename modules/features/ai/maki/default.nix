@@ -46,8 +46,8 @@ in
     };
 
     # ── models.json (served via GET /api/models for web UI model picker) ──
-    home.file.".config/maki/providers/crofai" = {
-      source = ./providers/crofai;
+    home.file.".config/maki/providers/xiaomi" = {
+      source = ./providers/xiaomi;
       executable = true;
     };
 

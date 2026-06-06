@@ -2,35 +2,99 @@
   config,
   lib,
   pkgs,
-  aiCrofai,
+  aiXiaomi,
   ...
 }:
 let
   cfg = config.dotfiles.ohMyPi;
-  modelProviderOrder = [
-    "smortress"
-    aiCrofai.providerId
-  ]
-  ++ lib.optionals cfg.claude.enable [ "anthropic" ]
-  ++ lib.optionals cfg.codex.enable [ "openai-codex" ];
+  workModels = config.dotfiles.workModels;
+
+  modelProviderOrder =
+    if workModels then
+      [
+        "openai-codex"
+        "anthropic"
+      ]
+    else
+      [
+        "smortress"
+        aiXiaomi.providerId
+        "deepseek"
+      ]
+      ++ lib.optionals cfg.claude.enable [ "anthropic" ]
+      ++ lib.optionals cfg.codex.enable [ "openai-codex" ];
+
+  workRolesYaml = ''
+    default: openai-codex/gpt-5.5-codex
+    slow: anthropic/claude-opus-4-8
+    plan: openai-codex/gpt-5.5-codex
+    smol: openai-codex/gpt-5.5-codex
+    vision: openai-codex/gpt-5.5-codex
+    designer: openai-codex/gpt-5.5-codex
+    commit: openai-codex/gpt-5.5-codex
+    task: openai-codex/gpt-5.5-codex'';
+
+  personalRolesYaml =
+    lib.concatStringsSep "\n" (
+      map (name: "  ${name}: ${aiXiaomi.roles.${name}}") [
+        "default"
+        "slow"
+        "plan"
+        "smol"
+        "vision"
+        "designer"
+        "commit"
+        "task"
+      ]
+    )
+    + "\n  smol: smortress/gemma-4-31b\n  commit: smortress/gemma-4-31b";
+
+  modelRolesYaml = if workModels then workRolesYaml else personalRolesYaml;
+
+  modelsConfig =
+    if workModels then
+      { }
+    else
+      {
+        providers = {
+          ${aiXiaomi.providerId} = {
+            baseUrl = aiXiaomi.baseUrl;
+            apiKey = "XIAOMI_MIMO_API_KEY";
+            api = "openai-completions";
+            auth = "apiKey";
+            models = aiXiaomi.ompModelsList;
+          };
+          smortress = {
+            baseUrl = "http://smortress:8081/v1";
+            api = "openai-completions";
+            auth = "none";
+            models = [
+              {
+                id = "gemma-4-31b";
+                name = "Gemma 4 31B (smortress)";
+                reasoning = true;
+                input = [ "text" ];
+                contextWindow = 131072;
+                maxTokens = 131072;
+                cost = {
+                  input = 0;
+                  output = 0;
+                  cacheRead = 0;
+                  cacheWrite = 0;
+                };
+                compat = {
+                  supportsDeveloperRole = false;
+                };
+              }
+            ];
+          };
+        };
+      };
+
   ompPackage = "@oh-my-pi/pi-coding-agent";
   ompPrivateDir = "$HOME/.local/share/oh-my-pi-cli";
   ompPrivateEntrypoint = "${ompPrivateDir}/node_modules/${ompPackage}/src/cli.ts";
   ompLegacyEntrypoint = "$HOME/.bun/install/global/node_modules/${ompPackage}/src/cli.ts";
-  smortressProviderBlock = ''
-    providers:
-      smortress:
-        baseUrl: http://smortress:8081/v1
-        api: openai-completions
-        auth: none
-        models:
-          - id: gemma-4-31b
-            name: Gemma 4 31B (smortress)
-            contextWindow: 131072
-            maxTokens: 131072
-            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
-            compat: { supportsDeveloperRole: false }
-  '';
   ompEarendilEntrypoint = "$HOME/.bun/install/global/node_modules/@earendil-works/pi-coding-agent/src/cli.ts";
   ompWrapper = pkgs.writeShellScriptBin "omp" ''
     set -euo pipefail
@@ -100,9 +164,7 @@ in
     home.file.".omp/agent/config.yml".text = ''
       lastChangelogVersion: 15.5.11
       modelRoles:
-      ${aiCrofai.ompModelRolesYaml}
-        smol: smortress/gemma-4-31b
-        commit: smortress/gemma-4-31b
+      ${modelRolesYaml}
       theme:
         dark: dark-gruvbox
         light: light-gruvbox
@@ -163,8 +225,8 @@ in
         discoveryMode: true
       secrets:
         enabled: true
-      ${smortressProviderBlock}
     '';
+    home.file.".omp/agent/models.yml".text = builtins.toJSON modelsConfig;
     home.packages = [ ompWrapper ];
 
     home.file.".local/bin/omp" = {
@@ -178,10 +240,7 @@ in
 
     home.activation.installOmpCli = {
       after = [ "linkGeneration" ];
-      before = [
-        "configureOmpCrofAI"
-        "installOmpPlugins"
-      ];
+      before = [ "installOmpPlugins" ];
       data = ''
         export PATH="$HOME/.bun/bin:$HOME/.cache/.bun/bin:$PATH"
         CLI_DIR="${ompPrivateDir}"
@@ -239,8 +298,6 @@ in
       '';
     };
 
-    # config.yml and modelProviderOrder are now declarative via home.file
-
     home.activation.configureOmpClaude = lib.mkIf cfg.claude.enable {
       after = [ "linkGeneration" ];
       before = [ ];
@@ -296,52 +353,6 @@ in
     };
 
     home.file.".omp/agent/extensions/plan-mode.ts".source = ./plan-mode.ts;
-    home.activation.configureOmpCrofAI = {
-      after = [ "linkGeneration" ];
-      before = [ ];
-      data = ''
-        KEY_FILE="$HOME/.config/omp/crofai-key"
-        AGENT_DIR="$HOME/.omp/agent"
-        mkdir -p "$AGENT_DIR"
-        chmod 700 "$AGENT_DIR" 2>/dev/null || true
-
-        {
-          echo "providers:"
-          echo "  ${aiCrofai.providerId}:"
-          echo "    baseUrl: ${aiCrofai.baseUrl}"
-          echo "    # Precision/lightning models are intentionally omitted: they cost 3x/10x"
-          echo "    # subscription requests, which is the scarce resource on CrofAI Scale."
-          if [ -r "$KEY_FILE" ]; then
-            echo "    apiKey: $(cat "$KEY_FILE")"
-          else
-            echo "    apiKey: ''''"
-          fi
-          echo "    api: openai-completions"
-          echo "    auth: apiKey"
-          echo "    models:"
-          echo '${aiCrofai.ompModelsYaml}'
-          echo "  smortress:"
-          echo "    baseUrl: http://smortress:8081/v1"
-          echo "    api: openai-completions"
-          echo "    auth: none"
-          echo "    models:"
-          echo "      - id: gemma-4-31b"
-          echo "        name: Gemma 4 31B (smortress)"
-          echo "        reasoning: true"
-          echo "        input: [text]"
-          echo "        contextWindow: 131072"
-          echo "        maxTokens: 131072"
-          echo "        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }"
-          echo "        compat: { supportsDeveloperRole: false }"
-        } > "$AGENT_DIR/models.yml"
-
-        if [ -r "$KEY_FILE" ]; then
-          echo "[oh-my-pi] CrofAI + Smortress providers configured"
-        else
-          echo "[oh-my-pi] No CrofAI API key; models.yml written without apiKey"
-        fi
-      '';
-    };
     programs.fish.shellAbbrs = {
       oc = "omp --tools read,edit,write,search,find,bash,lsp,todo_write,ask";
     };

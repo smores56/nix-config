@@ -2,16 +2,14 @@
   config,
   lib,
   pkgs,
-  aiCrofai,
+  aiXiaomi,
   ...
 }:
 let
   cfg = config.dotfiles;
   inherit (cfg) opencodeHost;
-  roles = aiCrofai.roles;
-
-  # CrofAI Scale is request-capped, not token-capped. Shared routing lives in
-  # ../crofai.nix so OpenCode and oh-my-pi cannot drift.
+  workModels = cfg.workModels;
+  roles = aiXiaomi.roles;
 
   opencodeSettings = {
     "$schema" = "https://opencode.ai/config.json";
@@ -29,12 +27,12 @@ let
       max_lines = 300;
       max_bytes = 20000;
     };
-    provider = {
-      ${aiCrofai.providerId} = {
+    provider = lib.optionalAttrs (!workModels) {
+      ${aiXiaomi.providerId} = {
         npm = "@ai-sdk/openai-compatible";
-        name = "CrofAI";
-        options.baseURL = aiCrofai.baseUrl;
-        models = aiCrofai.opencodeModels;
+        name = "Xiaomi MiMo";
+        options.baseURL = aiXiaomi.baseUrl;
+        models = aiXiaomi.opencodeModels;
       };
     };
     plugin = [
@@ -63,7 +61,7 @@ let
   # empty response cannot silently multiply requests.
   ohMyOpencodeSlimConfig = {
     "$schema" = "https://unpkg.com/oh-my-opencode-slim@latest/oh-my-opencode-slim.schema.json";
-    preset = "crofai-scale";
+    preset = "default";
     autoUpdate = false;
     disabled_agents = [
       "observer"
@@ -81,7 +79,7 @@ let
     };
     # Agent roles mirror oh-my-pi modelRoles so both harnesses spend requests
     # predictably. Use more context per call instead of spawning helper calls.
-    presets.crofai-scale = {
+    presets.default = {
       orchestrator = {
         model = roles.default;
         variant = "medium";

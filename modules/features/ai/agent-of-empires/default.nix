@@ -1,4 +1,9 @@
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
   cfg = config.dotfiles.agentOfEmpires;
 
@@ -15,9 +20,10 @@ let
     cpu_limit = "4"
     memory_limit = "8g"
     environment = [
+      "XIAOMI_MIMO_API_KEY",
+      "DEEPSEEK_API_KEY",
       "ANTHROPIC_API_KEY",
       "OPENAI_API_KEY",
-      "DEEPSEEK_API_KEY",
     ]
     volume_ignores = ["node_modules", ".venv", "target"]
 
@@ -33,7 +39,10 @@ in
     systemd.user.services.aoe-serve = {
       Unit = {
         Description = "Agent of Empires web dashboard";
-        After = [ "network-online.target" "docker.service" ];
+        After = [
+          "network-online.target"
+          "docker.service"
+        ];
         Wants = [ "network-online.target" ];
       };
       Service = {

@@ -1,4 +1,4 @@
-{ lib, ... }:
+{ ... }:
 let
   model = id: name: context: output: reasoning: {
     inherit
@@ -42,23 +42,27 @@ let
     };
   };
 
-  ompModelYaml =
-    model:
-    lib.concatStringsSep "\n" [
-      "      - id: ${model.id}"
-      "        name: ${model.name}"
-      "        reasoning: ${lib.boolToString model.reasoning}"
-      "        input: [text]"
-      "        contextWindow: ${toString model.context}"
-      "        maxTokens: ${toString model.output}"
-      "        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }"
-      "        compat: { supportsDeveloperRole: true }"
-      "        params:"
-      "          reasoning_effort: high"
-    ]
-    + "\n";
+  ompModelAttrs = model: {
+    id = model.id;
+    name = model.name;
+    reasoning = model.reasoning;
+    input = [ "text" ];
+    contextWindow = model.context;
+    maxTokens = model.output;
+    cost = {
+      input = 0;
+      output = 0;
+      cacheRead = 0;
+      cacheWrite = 0;
+    };
+    compat = {
+      supportsDeveloperRole = true;
+    };
+    params = {
+      reasoning_effort = "high";
+    };
+  };
 
-  roleYaml = name: modelRef: "  ${name}: ${modelRef}";
 in
 {
   _module.args.aiXiaomi = {
@@ -78,18 +82,6 @@ in
       }) selectedModels
     );
 
-    ompModelsYaml = lib.concatStringsSep "" (map ompModelYaml selectedModels);
-    ompModelRolesYaml = lib.concatStringsSep "\n" (
-      map (name: roleYaml name roles.${name}) [
-        "default"
-        "slow"
-        "plan"
-        "smol"
-        "vision"
-        "designer"
-        "commit"
-        "task"
-      ]
-    );
+    ompModelsList = map ompModelAttrs selectedModels;
   };
 }

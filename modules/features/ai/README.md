@@ -1,69 +1,87 @@
-# OpenCode Setup
+# AI Tools Setup
 
-## Provider Auth
+## API Keys
 
-### OpenCode Go
+API keys are loaded from environment variables defined in `~/.config/fish/conf.d/api-keys.fish`:
 
-1. Sign up at [opencode.ai/auth](https://opencode.ai/auth)
-2. Subscribe to OpenCode Go ($5 first month, then $10/month)
-3. Copy your API key
-4. In the OpenCode TUI, run `/connect` and select "OpenCode Go"
-5. Paste your API key
-
-### CrofAI
-
-1. Sign up at [CrofAI](https://crof.ai) and subscribe to Scale or higher.
-2. OpenCode: run `/connect`, search for "Other", enter provider ID `crofai`, then paste the CrofAI key.
-3. oh-my-pi: write the key to `~/.config/omp/crofai-key` with mode `0600`.
-
-Auth is stored outside the nix store:
-- OpenCode: `~/.local/share/opencode/auth.json`
-- oh-my-pi: `~/.config/omp/crofai-key`
-
-### CrofAI Key Setup
-
-OpenCode stores the key through `/connect`; do not put it in Nix:
-
-```text
-/connect → Other → provider ID: crofai → paste key
+```fish
+set -gx XIAOMI_MIMO_API_KEY "sk-..."
+set -gx DEEPSEEK_API_KEY "sk-..."
 ```
 
-oh-my-pi reads the key from a local file that Home Manager never copies into the Nix store:
+These are sourced by fish automatically and available to all AI tools.
 
-```bash
-install -m 700 -d ~/.config/omp
-printf '%s' 'sk-...' > ~/.config/omp/crofai-key
-chmod 600 ~/.config/omp/crofai-key
-```
+## Model Hierarchy
 
-Run `home-manager switch --no-update-lock-file` after creating the file. Without it, activation logs
-`No CrofAI API key at ~/.config/omp/crofai-key` and leaves the previous OMP model config untouched.
+### Personal Machines (all except smoreswork)
+
+| Tier | Provider / Model | Role |
+|------|-----------------|------|
+| Smartest | `xiaomi/mimo-v2.5-pro` | Default, plan, slow, task — highest reasoning effort |
+| Middle | `xiaomi/mimo-v2.5` | Smol, commit, vision, designer |
+| Cheap / Local | `smortress/gemma-4-31b` | Free, self-hosted on smortress via llama.cpp |
+| Backup | DeepSeek (via API) | Available but not used by default |
+
+No minimax, CrofAI, or other providers are configured.
+
+### Work Machine (smoreswork)
+
+| Tier | Provider / Model | Role |
+|------|-----------------|------|
+| Primary | `openai-codex/gpt-5.5-codex` | All model roles |
+| Backup | `anthropic/claude-opus-4-8` | Available but not used by default |
+
+No other models are available on the work machine.
+
+## Provider Setup
+
+### Xiaomi MiMo
+
+1. Get API key from Xiaomi Token Plan
+2. Add to `~/.config/fish/conf.d/api-keys.fish`: `set -gx XIAOMI_MIMO_API_KEY "sk-..."`
+3. OpenCode: run `/connect`, search for "Other", enter provider ID `xiaomi`, paste key
+4. oh-my-pi: key is read from `XIAOMI_MIMO_API_KEY` env var at activation time
+
+### DeepSeek (Backup)
+
+1. Get API key from [DeepSeek](https://platform.deepseek.com)
+2. Add to `~/.config/fish/conf.d/api-keys.fish`: `set -gx DEEPSEEK_API_KEY "sk-..."`
+3. Available in `modelProviderOrder` but not assigned to any default role
 
 ## Model Routing
 
-OpenCode and oh-my-pi route to CrofAI with request-minimized defaults:
+OpenCode and oh-my-pi use these role assignments:
+
+### Personal
 
 | Role | Model | Why |
 |------|-------|-----|
-| Default / orchestrator / plan | `crofai/mimo-v2.5-pro` | Strong coding/reasoning, Q8_0, 1M context, 2 requests |
-| Slow / oracle / hard debug | `crofai/deepseek-v4-pro` | Best CrofAI coding model, Q6_K, 1M context, 1 request |
-| Task / bounded implementation | `crofai/kimi-k2.5` | Good reasoning/vision, Q4_K_M, 262K context, 1 request |
-| Smol / explorer / librarian / commit | `crofai/glm-4.7-flash` | Cheap routine work, fp8, 0.5 request |
-| Vision / designer | `crofai/kimi-k2.6` | Vision support, 2 requests; avoid unless image/UI judgment matters |
-Avoid precision/lightning models by default. The UI marks `*-precision` as 3 requests and `*-lightning` as 10 requests; the quality gain is not worth the request burn on Scale.
+| Default / orchestrator / plan | `xiaomi/mimo-v2.5-pro` | Best reasoning, 1M context, high effort |
+| Slow / oracle | `xiaomi/mimo-v2.5-pro` | Same as default for complex debugging |
+| Task | `xiaomi/mimo-v2.5-pro` | Bounded implementation work |
+| Smol / commit | `smortress/gemma-4-31b` | Free local model for routine work |
+| Vision / designer | `xiaomi/mimo-v2.5` | Mid-tier for visual/design tasks |
 
-OpenCode uses `oh-my-opencode-slim` instead of `oh-my-openagent` to reduce automatic subagent/council traffic. `@tarquinen/opencode-smart-title` is intentionally not installed because title generation costs extra model requests.
+### Work
 
-## Primary Agents
+| Role | Model |
+|------|-------|
+| All roles | `openai-codex/gpt-5.5-codex` |
 
-OpenCode also exposes primary agents for direct model switching:
+## OpenCode
+
+OpenCode uses `oh-my-opencode-slim` instead of `oh-my-openagent` to reduce automatic subagent/council traffic.
+
+### Primary Agents
+
+OpenCode exposes primary agents for direct model switching:
 
 | Agent | Model |
 |-------|-------|
-| Codex | `openai/gpt-5.3-codex` |
-| Claude | `anthropic/claude-sonnet-4-5` |
+| Codex | `openai/gpt-5.5-codex` |
+| Claude | `anthropic/claude-opus-4-8` |
 
-## OCX Workspace Profile
+### OCX Workspace Profile
 
 Auto-installed on first `home-manager switch`. If it fails, run manually:
 
@@ -104,37 +122,30 @@ Managed by `oh-my-pi.nix` (set `dotfiles.ohMyPi.enable = true`). On `home-manage
 
 - Installs the oh-my-pi CLI package under `~/.local/share/oh-my-pi-cli` if it is missing
 - Installs `pi-caveman` via `omp plugin install`
-- Generates `~/.omp/agent/models.yml` and `~/.omp/agent/config.yml` from `~/.config/omp/crofai-key`
-- Applies large-context compaction settings, because CrofAI is request-capped rather than token-capped
+- Generates `~/.omp/agent/models.yml` and `~/.omp/agent/config.yml` from env vars and Nix config
 - Sets `steeringMode: one-at-a-time`
 
 ### oh-my-pi Model Config
 
-Create the key file after subscribing:
+On personal machines, home-manager generates:
+- `~/.omp/agent/models.yml` — Xiaomi provider with MiMo V2.5 Pro and MiMo V2.5, plus smortress with Gemma 4 31B
+- `~/.omp/agent/config.yml` — model roles mapped to the Xiaomi/smortress distribution above
 
-```bash
-install -m 700 -d ~/.config/omp
-printf '%s' 'sk-...' > ~/.config/omp/crofai-key
-chmod 600 ~/.config/omp/crofai-key
-```
+On work machines (`dotfiles.workModels = true`):
+- `~/.omp/agent/models.yml` — minimal, OAuth-discovered providers
+- `~/.omp/agent/config.yml` — all roles mapped to GPT 5.5 Codex, Claude Opus 4.8 available
 
-When present, home-manager generates:
-- `~/.omp/agent/models.yml` — CrofAI provider with MiMo V2.5 Pro, DeepSeek V4 Pro/Flash, GLM 4.7 Flash, Kimi K2.5, and Kimi K2.6
-- `~/.omp/agent/config.yml` — model roles mapped to the request-minimized CrofAI distribution above
-
-Compaction settings are tuned to spend tokens instead of requests:
+Compaction settings:
 - `keepRecentTokens = 48000`
 - `reserveTokens = 32768`
-- large OpenCode tool output windows
 
-To expose Codex OAuth credentials to OMP without making Codex the default:
+To expose Codex OAuth credentials to OMP:
 
 ```nix
 dotfiles.ohMyPi.codex.enable = true;
 ```
 
-The wrapper exports the current Codex access token from `~/.codex/auth.json`. CrofAI remains first in `modelProviderOrder`
-and all model roles remain mapped to CrofAI.
+The wrapper exports the current Codex access token from `~/.codex/auth.json`.
 
 To also expose Claude Code OAuth credentials to OMP:
 
@@ -143,7 +154,7 @@ dotfiles.ohMyPi.claude.enable = true;
 ```
 
 The wrapper exports the current Claude Code access token from `~/.claude/.credentials.json`, and activation imports the
-Claude OAuth credential into OMP's local auth store when no Anthropic credential exists yet. CrofAI remains the default.
+Claude OAuth credential into OMP's local auth store when no Anthropic credential exists yet.
 
 ### Plugin Selection Rationale
 
