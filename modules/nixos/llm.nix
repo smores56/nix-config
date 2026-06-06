@@ -37,6 +37,7 @@ let
     ];
     configurePhase = ''
       echo "unknown" > COMMIT
+      cmake -B build \
         -DGGML_CUDA=ON \
         -DGGML_AVX2=ON \
         -DGGML_FMA=ON \
