@@ -23,8 +23,10 @@ let
       hash = "sha256-ihzg0nomnn4eVCPcy4rcENIcbOAnYzfcJvd8gApzT0w=";
     };
     postPatch = ''
-      sed -i '1i#include <cstdint>' ggml/src/iqk/iqk_common.h
+      # ik-llama targets GCC 13; GCC 14 stricter -> -fpermissive + disable Werror
+      sed -i '/add_compile_options(-Werror)/d' CMakeLists.txt
     '';
+    NIX_CFLAGS_COMPILE = "-fpermissive";
     nativeBuildInputs = with pkgs; [
       cmake
       ninja
