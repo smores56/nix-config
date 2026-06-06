@@ -61,7 +61,7 @@ let
   # Loaded alongside the main model for speculative decoding with MTP.
   mtpModel = pkgs.fetchurl {
     url = "https://huggingface.co/unsloth/gemma-4-31B-it-GGUF/resolve/main/MTP/gemma-4-31B-it-MTP-Q8_0.gguf";
-    hash = "1pi73z7m4hnb3c4pf3hzsmhy6paqn3amnc664j4iwq7dgc8v1s2s";
+    hash = "sha256-WuiwEXvtYB6JJMYwW9WwWF3jYdUfDncJG8tCUs8fJ94=";
   };
 in
 {
