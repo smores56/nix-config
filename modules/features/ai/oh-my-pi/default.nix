@@ -8,6 +8,7 @@
 let
   cfg = config.dotfiles.ohMyPi;
   modelProviderOrder = [
+    "smortress"
     aiCrofai.providerId
   ]
   ++ lib.optionals cfg.claude.enable [ "anthropic" ]
@@ -16,6 +17,25 @@ let
   ompPrivateDir = "$HOME/.local/share/oh-my-pi-cli";
   ompPrivateEntrypoint = "${ompPrivateDir}/node_modules/${ompPackage}/src/cli.ts";
   ompLegacyEntrypoint = "$HOME/.bun/install/global/node_modules/${ompPackage}/src/cli.ts";
+  localModelRef = "smortress/gemma-4-31b";
+  smortressRolesOverride = ''
+    smol: ${localModelRef}
+    commit: ${localModelRef}
+  '';
+  smortressProviderBlock = ''
+    providers:
+      smortress:
+        baseUrl: http://smortress:8081/v1
+        api: openai-completions
+        auth: none
+        models:
+          - id: gemma-4-31b
+            name: Gemma 4 31B (smortress)
+            contextWindow: 131072
+            maxTokens: 131072
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+            compat: { supportsDeveloperRole: false }
+  '';
   ompEarendilEntrypoint = "$HOME/.bun/install/global/node_modules/@earendil-works/pi-coding-agent/src/cli.ts";
   ompWrapper = pkgs.writeShellScriptBin "omp" ''
     set -euo pipefail
@@ -87,6 +107,7 @@ in
       lastChangelogVersion: 15.5.11
       modelRoles:
       ${aiCrofai.ompModelRolesYaml}
+      ${smortressRolesOverride}
       theme:
         dark: dark-gruvbox
         light: light-gruvbox
@@ -147,8 +168,8 @@ in
         discoveryMode: true
       secrets:
         enabled: true
+      ${smortressProviderBlock}
     '';
-
     home.packages = [ ompWrapper ];
 
     home.file.".local/bin/omp" = {
