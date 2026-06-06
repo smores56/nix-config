@@ -13,8 +13,7 @@ let
   };
 
   # ik-llama fork supports gemma4-assistant architecture (MTP head for Gemma 4)
-  # GCC 14 is too strict for this codebase — force GCC 13 everywhere.
-  # nvcc ignores stdenv so CUDAHOSTCXX overrides its host compiler too.
+  # GCC 14 is too strict — force GCC 13 + force-include cstdint
   ik-llama = pkgs.gcc13Stdenv.mkDerivation {
     pname = "ik-llama-cpp";
     version = "ik-master";
@@ -25,12 +24,6 @@ let
       hash = "sha256-ihzg0nomnn4eVCPcy4rcENIcbOAnYzfcJvd8gApzT0w=";
     };
     CUDAHOSTCXX = "${pkgs.gcc13Stdenv.cc}/bin/g++";
-    postPatch = ''
-      for f in ggml/src/iqk/iqk_common.h ggml/src/iqk/iqk_cpu_ops.cpp ggml/src/iqk/iqk_quantize.cpp; do
-        sed -i '1i#include <cstdint>' "$f"
-      done
-      sed -i '1i#include "ggml.h"' ggml/src/iqk/iqk_cpu_ops.cpp
-    '';
     nativeBuildInputs = with pkgs; [
       cmake
       ninja
@@ -45,7 +38,10 @@ let
     ];
     configurePhase = ''
       echo "unknown" > COMMIT
-      cmake -B build -DGGML_CUDA=ON -DLLAMA_BUILD_EXAMPLES=ON
+      cmake -B build \
+        -DGGML_CUDA=ON \
+        -DLLAMA_BUILD_EXAMPLES=ON \
+        -DCMAKE_CXX_FLAGS="-include cstdint"
     '';
     buildPhase = ''
       cmake --build build --config Release -j$(nproc)
