@@ -5,10 +5,16 @@
   ...
 }:
 let
+  # VRAM: 17.3GB(model) + 1.5GB(scratch) + KV_cache
+  # KV: 50 sliding (1024 window) × 4608 B/t + 10 global × 2304 × ctx × slots
+  # 2 slots @ 100K ctx: 4.73 GB KV → 23.53 GB total, 0.47 GB headroom
+  # 2 slots @  75K ctx: 3.66 GB KV → 22.46 GB total, 1.54 GB headroom
+  # 3 slots @  50K ctx: 3.88 GB KV → 22.68 GB total, 1.32 GB headroom
+  # 4 slots @  32K ctx: 3.69 GB KV → 22.49 GB total, 1.51 GB headroom
   cfg = config.dotfiles;
   model = {
-    repo = "unsloth/Qwen3.6-27B-GGUF";
-    file = "Qwen3.6-27B-Q4_K_M.gguf";
+    repo = "unsloth/gemma-4-31B-it-qat-GGUF";
+    file = "gemma-4-31B-it-qat-UD-Q4_K_XL.gguf";
   };
 in
 {
@@ -37,14 +43,16 @@ in
         "-ngl"
         "99"
         "-c"
-        "131072"
+        "102400"
         "--cache-type-k"
         "q4_0"
         "--cache-type-v"
         "q4_0"
+        "--parallel-slots"
+        "2"
+        "--cont-batching"
       ];
     };
-
     systemd.services.llama-cpp = {
       requires = [ "nvidia-uvm.service" ];
       after = [ "nvidia-uvm.service" ];

@@ -156,15 +156,8 @@ in
         noSleep = true;
       };
       "smores@smortress" = mkHome {
-        displayManager = "niri";
+        displayManager = "none";
         nixos = true;
-        polarity = "time-of-day";
-        primaryMonitor = "DP-2";
-        monitorSize = {
-          width = 5120;
-          height = 1080;
-        };
-        noSleep = true;
         opencodeHost = {
           hostname = "smortress";
           bindAddress = "0.0.0.0";
@@ -178,10 +171,6 @@ in
         };
         piDashboard = {
           enable = true;
-        };
-        tau = {
-          enable = true;
-          passwordFile = "/home/smores/.config/omp/tau-password";
         };
         agentOfEmpires = {
           enable = true;
@@ -239,9 +228,7 @@ in
       };
       "smortress" = mkNixos {
         hostname = "smortress";
-        displayManager = "niri";
-        polarity = "time-of-day";
-        exposeSsh = true;
+        displayManager = "none";
         nvidia = true;
         noSleep = true;
         opencodeHost = {
@@ -261,9 +248,6 @@ in
         webProxy = {
           enable = true;
           tunnelId = "f2284d1b-5038-447b-ab50-e18dc1dba8c5";
-        };
-        tau = {
-          enable = true;
         };
         agentOfEmpires = {
           enable = true;

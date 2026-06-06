@@ -584,7 +584,7 @@ in
       font = "CaskaydiaCove Nerd Font";
       fontPackage = pkgs.nerd-fonts.caskaydia-cove;
       shellPath = "${pkgs.${config.dotfiles.shell}}/bin/${config.dotfiles.shell}";
-      defaultModel = "qwen3.6-27b";
+      defaultModel = "gemma-4-31b";
     };
   };
 }

@@ -7,7 +7,6 @@
 }:
 let
   cfg = config.dotfiles.ohMyPi;
-  tauCfg = config.dotfiles.tau;
   modelProviderOrder = [
     aiCrofai.providerId
   ]
@@ -45,13 +44,8 @@ let
 
     echo "oh-my-pi CLI not installed. Re-run home-manager switch, or install ${ompPackage} into ${ompPrivateDir}." >&2
     exit 127
-  '';
-  tauServiceScript = pkgs.writeShellScriptBin "omp-tau-service" ''
-    exec sleep infinity | exec "$HOME/.local/bin/omp" \
-      --extension "$HOME/.omp/agent/extensions/tau-mirror.js" \
-      --continue
-  '';
 
+  '';
 in
 {
   options.dotfiles.ohMyPi = {
@@ -112,11 +106,7 @@ in
         handoffSaveToDisk: true
       steeringMode: one-at-a-time
       setupVersion: 1
-      extensions: ${
-        builtins.toJSON (
-          lib.optionals tauCfg.enable [ "${config.home.homeDirectory}/.omp/agent/extensions/tau-mirror.js" ]
-        )
-      }
+      extensions: []
       disabledServers:
         - beads
       tools:
@@ -320,76 +310,6 @@ in
                   echo "[oh-my-pi] CrofAI models configured"
                 fi
       '';
-    };
-
-    home.file.".omp/agent/extensions/wt-switch-cd.ts".source = ./wt-switch-cd.ts;
-
-    home.activation.installTauPlugin = lib.mkIf tauCfg.enable {
-      after = [
-        "linkGeneration"
-        "installOmpCli"
-        "installOmpPlugins"
-      ];
-      before = [ ];
-      data = ''
-        export PATH="$HOME/.bun/bin:$HOME/.cache/.bun/bin:$PATH"
-
-        TAU_REPO="https://github.com/smores56/tau.git"
-        TAU_DIR="$HOME/.local/share/tau"
-        EXT_DIR="$HOME/.omp/agent/extensions"
-        mkdir -p "$TAU_DIR" "$EXT_DIR" 2>/dev/null || true
-
-        if [ ! -d "$TAU_DIR/.git" ]; then
-          echo "[oh-my-pi] Cloning Tau mirror to $TAU_DIR..."
-          ${pkgs.git}/bin/git clone "$TAU_REPO" "$TAU_DIR" 2>&1 || echo "[oh-my-pi] Failed to clone Tau repo" >&2
-        else
-          echo "[oh-my-pi] Pulling Tau updates..."
-          ${pkgs.git}/bin/git -C "$TAU_DIR" pull --ff-only 2>&1 || true
-        fi
-
-        if [ -d "$TAU_DIR" ]; then
-          echo "[oh-my-pi] Installing Tau dependencies..."
-          (cd "$TAU_DIR" && bun install) 2>&1 || true
-          (cd "$TAU_DIR" && bun build extensions/mirror-server.ts --outfile=extensions/mirror-bundled.js --target=node --format=esm --external '@oh-my-pi/pi-coding-agent') 2>&1 || true
-          ln -sf "$TAU_DIR/extensions/mirror-bundled.js" "$EXT_DIR/tau-mirror.js"
-          ln -sfn "$TAU_DIR/public" "$EXT_DIR/public"
-          rm -f "$EXT_DIR/tau-mirror.ts"
-          echo "[oh-my-pi] Tau extension built and linked to $EXT_DIR"
-        fi
-        TAU_PASS_FILE="${lib.escapeShellArg tauCfg.passwordFile}"
-        if [ -n "$TAU_PASS_FILE" ] && [ -r "$TAU_PASS_FILE" ]; then
-          PASSWORD="$(cat "$TAU_PASS_FILE")"
-          SETTINGS_FILE="$HOME/.omp/agent/settings.json"
-          mkdir -p "$(dirname "$SETTINGS_FILE")" 2>/dev/null || true
-
-          if [ -r "$SETTINGS_FILE" ]; then
-            tmp="$(${pkgs.coreutils}/bin/mktemp)"
-            ${pkgs.jq}/bin/jq --arg user "${tauCfg.user}" --arg pass "$PASSWORD" '.tau = (.tau // {}) | .tau.user = $user | .tau.pass = $pass' "$SETTINGS_FILE" > "$tmp" && mv "$tmp" "$SETTINGS_FILE"
-          else
-            printf '{"tau":{"user":"%s","pass":"%s"}}\n' "${tauCfg.user}" "$PASSWORD" > "$SETTINGS_FILE"
-          fi
-          chmod 600 "$SETTINGS_FILE" 2>/dev/null || true
-          echo "[oh-my-pi] Tau auth credentials written to settings.json"
-        fi
-      '';
-    };
-    home.file.".omp/agent/extensions/plan-mode.ts".source = ./plan-mode.ts;
-
-    systemd.user.services.omp-tau = lib.mkIf tauCfg.enable {
-      Unit = {
-        Description = "OMP with Tau web mirror";
-        After = "network-online.target";
-        Wants = "network-online.target";
-      };
-      Service = {
-        Type = "simple";
-        ExecStart = "${tauServiceScript}/bin/omp-tau-service";
-        Restart = "always";
-        RestartSec = 10;
-      };
-      Install = {
-        WantedBy = [ "default.target" ];
-      };
     };
     programs.fish.shellAbbrs = {
       oc = "omp --tools read,edit,write,search,find,bash,lsp,todo_write,ask";
