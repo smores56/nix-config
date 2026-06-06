@@ -279,6 +279,7 @@ in
       '';
     };
 
+    home.file.".omp/agent/extensions/plan-mode.ts".source = ./plan-mode.ts;
     home.activation.configureOmpCrofAI = {
       after = [ "linkGeneration" ];
       before = [ ];

@@ -230,6 +230,7 @@ in
         hostname = "smortress";
         displayManager = "none";
         nvidia = true;
+        llm = true;
         noSleep = true;
         opencodeHost = {
           hostname = "smortress";
