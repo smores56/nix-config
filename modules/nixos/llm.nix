@@ -50,8 +50,8 @@ in
         "--cont-batching"
         "--spec-type"
         "draft-mtp"
-        "--hf-repo-draft"
-        "unsloth/gemma-4-31B-it-GGUF:MTP/gemma-4-31B-it-MTP-Q8_0.gguf"
+        "--spec-draft-model"
+        "/var/cache/llama-cpp/gemma-4-31B-it-MTP-Q8_0.gguf"
         "--spec-draft-ngl"
         "99"
         "--reasoning-format"
@@ -61,6 +61,16 @@ in
     systemd.services.llama-cpp = {
       requires = [ "nvidia-uvm.service" ];
       after = [ "nvidia-uvm.service" ];
+      path = [ pkgs.curl ] ++ lib.optional pkgs.stdenv.isLinux pkgs.util-linuxMinimal;
+      preStart = ''
+        MTP_PATH="/var/cache/llama-cpp/gemma-4-31B-it-MTP-Q8_0.gguf"
+        if [ ! -s "$MTP_PATH" ]; then
+          mkdir -p "$(dirname "$MTP_PATH")"
+          echo "Downloading MTP draft model..."
+          curl -L -o "$MTP_PATH" \
+            "https://huggingface.co/unsloth/gemma-4-31B-it-GGUF/resolve/main/MTP/gemma-4-31B-it-MTP-Q8_0.gguf"
+        fi
+      '';
       serviceConfig = {
         TimeoutStartSec = "1h";
       };
