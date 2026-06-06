@@ -48,6 +48,8 @@ in
         "-np"
         "2"
         "--cont-batching"
+        "--reasoning-format"
+        "none"
       ];
     };
     systemd.services.llama-cpp = {
