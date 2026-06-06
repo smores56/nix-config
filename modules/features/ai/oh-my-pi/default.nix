@@ -305,32 +305,47 @@ in
       after = [ "linkGeneration" ];
       before = [ ];
       data = ''
-                KEY_FILE="$HOME/.config/omp/crofai-key"
-                AGENT_DIR="$HOME/.omp/agent"
+                                KEY_FILE="$HOME/.config/omp/crofai-key"
+                                AGENT_DIR="$HOME/.omp/agent"
 
-                if [ ! -f "$KEY_FILE" ]; then
-                  echo "[oh-my-pi] No CrofAI API key at $KEY_FILE; create it with: install -m 700 -d ~/.config/omp && printf '%s' '<key>' > ~/.config/omp/crofai-key && chmod 600 ~/.config/omp/crofai-key"
-                else
-                  API_KEY=$(cat "$KEY_FILE")
-                  mkdir -p "$AGENT_DIR"
-                  chmod 700 "$AGENT_DIR" 2>/dev/null || true
-                  {
-                    cat << 'MODELS_HEAD'
-        providers:
-          ${aiCrofai.providerId}:
-            baseUrl: ${aiCrofai.baseUrl}
-            # Precision/lightning models are intentionally omitted: they cost 3x/10x
-            # subscription requests, which is the scarce resource on CrofAI Scale.
-        MODELS_HEAD
-                    printf '    apiKey: %s\n' "$API_KEY"
-                    cat << 'MODELS_BODY'
-            api: openai-completions
-            auth: apiKey
-            models:
-        ${aiCrofai.ompModelsYaml}MODELS_BODY
-                  } > "$AGENT_DIR/models.yml"
-                  echo "[oh-my-pi] CrofAI models configured"
-                fi
+                        if [ ! -f "$KEY_FILE" ]; then
+                          echo "[oh-my-pi] No CrofAI API key at $KEY_FILE; create it with: install -m 700 -d ~/.config/omp && printf '%s' '<key>' > ~/.config/omp/crofai-key && chmod 600 ~/.config/omp/crofai-key"
+                        else
+                          API_KEY=$(cat "$KEY_FILE")
+                          mkdir -p "$AGENT_DIR"
+                          chmod 700 "$AGENT_DIR" 2>/dev/null || true
+                          {
+                            cat << 'MODELS_HEAD'
+                providers:
+                  ${aiCrofai.providerId}:
+                    baseUrl: ${aiCrofai.baseUrl}
+                    # Precision/lightning models are intentionally omitted: they cost 3x/10x
+                    # subscription requests, which is the scarce resource on CrofAI Scale.
+                MODELS_HEAD
+                            printf '    apiKey: %s\n' "$API_KEY"
+                            cat << 'MODELS_BODY'
+                    api: openai-completions
+                    auth: apiKey
+                    models:
+                ${aiCrofai.ompModelsYaml}MODELS_BODY
+                          } > "$AGENT_DIR/models.yml"
+                          echo "[oh-my-pi] CrofAI models configured"
+                        fi
+                        # Append smortress local provider
+                        cat >> "$AGENT_DIR/models.yml" << 'SMORTRESS_END'
+              smortress:
+                baseUrl: http://smortress:8081/v1
+                api: openai-completions
+                auth: none
+                models:
+                  - id: gemma-4-31b
+                    name: Gemma 4 31B (smortress)
+                    contextWindow: 131072
+                    maxTokens: 131072
+                    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+                    compat: { supportsDeveloperRole: false }
+        SMORTRESS_END
+                        echo "[oh-my-pi] Smortress provider configured"
       '';
     };
     programs.fish.shellAbbrs = {
