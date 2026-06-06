@@ -57,7 +57,7 @@ let
   # Main model.  Nix-fetched to avoid DynamicUser sandbox rename issues.
   mainModel = pkgs.fetchurl {
     url = "https://huggingface.co/unsloth/gemma-4-31B-it-qat-GGUF/resolve/main/gemma-4-31B-it-qat-UD-Q4_K_XL.gguf";
-    hash = "sha256-AkP9wVpZ6VcoF1RyJv+LVkYUBjtodqgQRmLdgHSRV4Q=";
+    hash = "sha256-kYinEFVVDx5guHXQK3q7Y2JawRtKbxSNayKzsouj0zU=";
   };
 
   # MTP draft model — MTP head weights quantized Q8_0 (514 MB).  Nix-fetched.
