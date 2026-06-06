@@ -22,6 +22,9 @@ let
       rev = "6b9de3dbaa21ae95ea80638e5ee836795cc48c93";
       hash = "sha256-ihzg0nomnn4eVCPcy4rcENIcbOAnYzfcJvd8gApzT0w=";
     };
+    postPatch = ''
+      sed -i '1i#include <cstdint>' ggml/src/iqk/iqk_common.h
+    '';
     nativeBuildInputs = with pkgs; [
       cmake
       ninja
