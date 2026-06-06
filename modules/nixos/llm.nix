@@ -30,8 +30,7 @@ in
       enable = true;
       package = pkgs.llama-cpp.override { cudaSupport = true; };
       host = "0.0.0.0";
-      port = 8080;
-      openFirewall = false;
+      port = 8081;
       extraFlags = [
         "--alias"
         cfg.defaultModel
