@@ -1,9 +1,4 @@
-{
-  config,
-  lib,
-  pkgs,
-  ...
-}:
+{ config, lib, pkgs, ... }:
 let
   cfg = config.dotfiles;
 
@@ -25,18 +20,8 @@ let
       hash = "sha256-ihzg0nomnn4eVCPcy4rcENIcbOAnYzfcJvd8gApzT0w=";
     };
     CUDAHOSTCXX = "${pkgs.gcc13Stdenv.cc}/bin/g++";
-    nativeBuildInputs = with pkgs; [
-      cmake
-      ninja
-      pkg-config
-      cudaPackages.cuda_nvcc
-      autoAddDriverRunpath
-    ];
-    buildInputs = with pkgs; [
-      openssl
-      cudaPackages.cuda_cudart
-      cudaPackages.libcublas
-    ];
+    nativeBuildInputs = with pkgs; [ cmake ninja pkg-config cudaPackages.cuda_nvcc autoAddDriverRunpath ];
+    buildInputs = with pkgs; [ openssl cudaPackages.cuda_cudart cudaPackages.libcublas ];
     configurePhase = ''
       echo "unknown" > COMMIT
       cmake -B build \
@@ -51,24 +36,17 @@ let
       cmake --build build --target llama-server --config Release -j$(nproc)
     '';
     installPhase = ''
-      mkdir -p $out/bin $out/include
-      cp build/bin/llama-server $out/bin/
-      cp include/llama.h $out/include/
+      cmake --install build --prefix $out
     '';
-    outputs = [
-      "out"
-      "dev"
-    ];
+    outputs = [ "out" "dev" ];
   };
 in
 {
   config = lib.mkIf cfg.llm {
-    assertions = [
-      {
-        assertion = cfg.nvidia;
-        message = "llm requires nvidia = true for CUDA support";
-      }
-    ];
+    assertions = [{
+      assertion = cfg.nvidia;
+      message = "llm requires nvidia = true for CUDA support";
+    }];
 
     services.llama-cpp = {
       enable = true;
@@ -76,32 +54,20 @@ in
       host = "0.0.0.0";
       port = 8081;
       extraFlags = [
-        "--alias"
-        cfg.defaultModel
-        "--hf-repo"
-        model.repo
-        "--hf-file"
-        model.file
+        "--alias" cfg.defaultModel
+        "--hf-repo" model.repo
+        "--hf-file" model.file
         "--no-mmproj"
-        "-ngl"
-        "99"
-        "-c"
-        "200000"
-        "--cache-type-k"
-        "q4_0"
-        "--cache-type-v"
-        "q4_0"
-        "-np"
-        "2"
+        "-ngl" "99"
+        "-c" "200000"
+        "--cache-type-k" "q4_0"
+        "--cache-type-v" "q4_0"
+        "-np" "2"
         "--cont-batching"
-        "--spec-type"
-        "draft-mtp"
-        "--hf-repo-draft"
-        "unsloth/gemma-4-31B-it-GGUF:MTP/gemma-4-31B-it-MTP-Q8_0.gguf"
-        "--spec-draft-ngl"
-        "99"
-        "--reasoning-format"
-        "none"
+        "--spec-type" "draft-mtp"
+        "--hf-repo-draft" "unsloth/gemma-4-31B-it-GGUF:MTP/gemma-4-31B-it-MTP-Q8_0.gguf"
+        "--spec-draft-ngl" "99"
+        "--reasoning-format" "none"
       ];
     };
 
@@ -111,4 +77,4 @@ in
       serviceConfig.TimeoutStartSec = "1h";
     };
   };
-}
+};
