@@ -41,6 +41,7 @@ let
         -DGGML_AVX2=ON \
         -DGGML_FMA=ON \
         -DGGML_F16C=ON \
+        -DCMAKE_INSTALL_LIBDIR=lib \
         -DLLAMA_BUILD_EXAMPLES=ON \
         -DCMAKE_CXX_FLAGS="-include cstdint"
     '';

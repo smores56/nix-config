@@ -82,6 +82,11 @@ in
       default = [ ];
       description = "GitHub organizations that should use `~/.ssh/id_work` for Git while keeping canonical `github.com` remotes.";
     };
+    workModels = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Use work-specific models (OpenAI Codex GPT 5.5 + Claude Opus 4.8) instead of personal models (Xiaomi MiMo + smortress + DeepSeek).";
+    };
     ticketPrefix = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
