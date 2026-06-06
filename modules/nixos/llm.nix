@@ -8,7 +8,7 @@ let
   # VRAM: 17.3GB(model) + 1.5GB(scratch) + KV_cache
   # KV = 50 sliding × 4608 + 10 global × 2304 × ctx_total
   # KV: 50×4608 = 225 KB (sliding fixed) + 23,040 B × ctx_total
-  # 2 slots @ 131K = 262144 total ctx: 5.49 GB KV → 23.78 GB total, 800 MB headroom
+  # 2 slots @ 100K = 200000 total ctx: 4.59 GB KV → 23.39 GB total, 1.15 GB headroom
   cfg = config.dotfiles;
   model = {
     repo = "unsloth/gemma-4-31B-it-qat-GGUF";
@@ -40,7 +40,7 @@ in
         "-ngl"
         "99"
         "-c"
-        "262144"
+        "200000"
         "--cache-type-k"
         "q4_0"
         "--cache-type-v"
