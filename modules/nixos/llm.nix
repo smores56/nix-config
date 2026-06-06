@@ -54,13 +54,11 @@ let
     ];
   };
 
-  # Main model fetched via Nix — avoids DynamicUser sandbox rename issues.
-  mainModel = pkgs.fetchurl {
-    url = "https://huggingface.co/unsloth/gemma-4-31B-it-qat-GGUF/resolve/main/gemma-4-31B-it-qat-UD-Q4_K_XL.gguf";
-    hash = "sha256-AkP9wVpZ6VcoF1RyJv+LVkYUBjtodqgQRmLdgHSRV4Q=";
-  };
+  # Main model pre-downloaded to Nix store.  For fresh setups, replace with
+  # pkgs.fetchurl { url = "..."; hash = "sha256-AkP9wVpZ6VcoF1RyJv+LVkYUBjtodqgQRmLdgHSRV4Q="; };
+  mainModel = builtins.storePath "/nix/store/rzvavy1k5sby8hp38xky0a4qnv2m1ag8-gemma-4-31B-it-qat-UD-Q4_K_XL.gguf";
 
-  # MTP draft model — MTP head weights quantized Q8_0 (514 MB).
+  # MTP draft model — MTP head weights quantized Q8_0 (514 MB).  Nix-fetched.
   mtpModel = pkgs.fetchurl {
     url = "https://huggingface.co/unsloth/gemma-4-31B-it-GGUF/resolve/main/MTP/gemma-4-31B-it-MTP-Q8_0.gguf";
     hash = "sha256-WuiwEXvtYB6JJMYwW9WwWF3jYdUfDncJG8tCUs8fJ94=";
