@@ -99,7 +99,7 @@ in
         "--spec-type"
         "mtp:n_max=1,p_min=0.0"
         "--model-draft"
-        mtpModel
+        "${mtpModel}"
         "-ngld"
         "99"
         "--reasoning-format"
