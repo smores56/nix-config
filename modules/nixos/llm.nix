@@ -7,16 +7,15 @@
 let
   cfg = config.dotfiles;
 
-  ik-llama = pkgs.gcc13Stdenv.mkDerivation {
-    pname = "ik-llama-cpp";
-    version = "ik-master";
+  llama-cpp = pkgs.stdenv.mkDerivation {
+    pname = "llama-cpp";
+    version = "gemma4-mtp-efd651a";
     src = pkgs.fetchFromGitHub {
-      owner = "ikawrakow";
-      repo = "ik_llama.cpp";
-      rev = "6b9de3dbaa21ae95ea80638e5ee836795cc48c93";
-      hash = "sha256-ihzg0nomnn4eVCPcy4rcENIcbOAnYzfcJvd8gApzT0w=";
+      owner = "am17an";
+      repo = "llama.cpp";
+      rev = "efd651a8ef2cd13d6c7bb22358659fb64f9e3b18";
+      hash = "sha256-Hay2cs4lt/oqzP9BpZ+oy3YBYvYnimm5F5XgS7o20k0=";
     };
-    CUDAHOSTCXX = "${pkgs.gcc13Stdenv.cc}/bin/g++";
     nativeBuildInputs = with pkgs; [
       cmake
       ninja
@@ -40,8 +39,7 @@ let
         -DLLAMA_CURL=ON \
         -DCMAKE_CUDA_ARCHITECTURES="86" \
         -DCMAKE_INSTALL_LIBDIR=lib \
-        -DLLAMA_BUILD_EXAMPLES=ON \
-        -DCMAKE_CXX_FLAGS="-include cstdint"
+        -DLLAMA_BUILD_EXAMPLES=ON
     '';
     buildPhase = ''
       cmake --build build --config Release -j$(nproc)
@@ -49,10 +47,6 @@ let
     installPhase = ''
       cmake --install build --prefix $out
     '';
-    outputs = [
-      "out"
-      "dev"
-    ];
   };
 
   mainModel = pkgs.fetchurl {
@@ -65,6 +59,14 @@ let
     url = "https://huggingface.co/unsloth/gemma-4-31B-it-GGUF/resolve/main/MTP/gemma-4-31B-it-MTP-Q8_0.gguf";
     hash = "sha256-WuiwEXvtYB6JJMYwW9WwWF3jYdUfDncJG8tCUs8fJ94=";
   };
+
+  # RTX 3090 VRAM budget (24,576 MiB):
+  #   Model weights (Q4_K_XL): 16,487 MiB
+  #   MTP drafter (Q8_0):         490 MiB
+  #   Runtime/CUDA overhead:    1,200 MiB
+  #   KV cache budget:          6,543 MiB → ~128K ctx with Q4_0 KV
+  #   Actual max ctx: ~140K (num_global_kv_heads=16 assumption)
+  #   Push -c higher if stable; 262K only if gkv≤8
 in
 {
   config = lib.mkIf cfg.llm {
@@ -77,7 +79,7 @@ in
 
     services.llama-cpp = {
       enable = true;
-      package = ik-llama;
+      package = llama-cpp;
       host = "0.0.0.0";
       port = 8081;
       extraFlags = [
@@ -88,7 +90,7 @@ in
         "-ngl"
         "99"
         "-c"
-        "48000"
+        "128000"
         "--cache-type-k"
         "q4_0"
         "--cache-type-v"
@@ -96,14 +98,20 @@ in
         "-np"
         "1"
         "--cont-batching"
+        "--flash-attn"
+        "on"
         "--spec-type"
-        "mtp:n_max=1,p_min=0.0"
+        "draft-mtp"
+        "--spec-draft-n-max"
+        "2"
+        "--spec-draft-p-min"
+        "0.0"
         "--model-draft"
         "${mtpModel}"
         "-ngld"
         "99"
         "--reasoning-format"
-        "none"
+        "deepseek"
       ];
     };
 
