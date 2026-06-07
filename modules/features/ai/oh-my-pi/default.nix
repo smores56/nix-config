@@ -75,8 +75,8 @@ let
                 name = "Gemma 4 31B (smortress)";
                 reasoning = true;
                 input = [ "text" ];
-                contextWindow = 131072;
-                maxTokens = 131072;
+                contextWindow = 102400;
+                maxTokens = 102400;
                 cost = {
                   input = 0;
                   output = 0;
