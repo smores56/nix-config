@@ -105,7 +105,7 @@ in
         "--spec-draft-n-max"
         "2"
         "--spec-draft-p-min"
-        "0.0"
+        "0.5"
         "--model-draft"
         "${mtpModel}"
         "-ngld"
