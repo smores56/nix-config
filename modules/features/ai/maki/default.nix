@@ -40,11 +40,6 @@ in
       - **After** learning something durable, call `mem0__add_memory`.
       - Keep entries short and current. Do not store transient or trivial details.
     '';
-    home.file.".config/maki/providers/ds" = {
-      source = ./providers/ds;
-      executable = true;
-    };
-
     # ── models.json (served via GET /api/models for web UI model picker) ──
     home.file.".config/maki/providers/xiaomi" = {
       source = ./providers/xiaomi;
