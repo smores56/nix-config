@@ -56,7 +56,7 @@ let
       cacheWrite = 0;
     };
     compat = {
-      supportsDeveloperRole = true;
+      supportsDeveloperRole = false;
     };
   };
 

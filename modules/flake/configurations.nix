@@ -86,6 +86,7 @@ let
             pi = null;
             piDashboard = null;
             agentOfEmpires = null;
+            llmTokenBucketProxy = null;
           } args;
           home.username = username;
           home.homeDirectory =
@@ -176,6 +177,7 @@ in
         agentOfEmpires = {
           enable = true;
         };
+        llmTokenBucketProxy.enable = true;
       };
       "smohr@smoreswork" = mkHome {
         displayManager = "osx";
