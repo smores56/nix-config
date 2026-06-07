@@ -68,7 +68,8 @@
         sm = "ssh smores@smortress -t fish";
         st = "ssh smores@(tailscale-hosts | fzf) -t fish";
 
-        o = "opencode";
+        o = "omp";
+        m = "maki --yolo";
       };
 
       interactiveShellInit = ''
@@ -79,10 +80,6 @@
         # Skip pfetch in OpenChamber - ANSI codes corrupt fenv.main parsing
         if not set -q TERM_PROGRAM; or ! string match -q "*OpenChamber*" $TERM_PROGRAM
             pfetch
-        end
-        function __deferred_zellij_tabname --on-event fish_prompt
-            functions --erase __deferred_zellij_tabname
-            __auto_zellij_update_tabname
         end
       '';
 

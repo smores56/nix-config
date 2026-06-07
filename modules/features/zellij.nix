@@ -150,6 +150,11 @@ let
     doInstallCheck = false;
   });
 
+  smart-tabs-wasm = pkgs.fetchurl {
+    url = "https://github.com/YesYouKenSpace/zellij-smart-tabs/releases/download/v0.2.1/zellij-smart-tabs.wasm";
+    hash = "sha256-l1BQPvIH5yqbm6qoyhMxxcoUcOrpOFR3T0tI/YL7Wpk=";
+  };
+
   baseIsDark = cfg.polarity != "light";
 in
 {
@@ -168,5 +173,21 @@ in
       themes.dark = zellijTheme darkColors;
       themes.light = zellijTheme lightColors;
     };
+    extraConfig = ''
+      plugins {
+          smart-tabs location="file:${smart-tabs-wasm}" {
+              format "{% if short_git_root and short_git_root != short_dir %}{{ short_git_root }}/{{ short_dir }}{% else %}{{ short_dir }}{% endif %}"
+              // Hide the shell from tab names — only show meaningful programs
+              sub {
+                  program {
+                      fish ""
+                  }
+              }
+          }
+      }
+      load_plugins {
+          smart-tabs
+      }
+    '';
   };
 }
