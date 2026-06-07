@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Dynamic smortress provider for maki (local llama.cpp OpenAI-compatible endpoint).
+# SMORTRESS_API_URL overrides the default http://localhost:8081/v1.
+#
+# Subcommands: info, resolve, models
+
+set -euo pipefail
+
+API_URL="${SMORTRESS_API_URL:-http://localhost:8081/v1}"
+
+case "${1:-}" in
+info)
+  cat <<'JSON'
+{
+  "display_name": "Smortress (llama.cpp)",
+  "base": "openai",
+  "has_auth": false
+}
+JSON
+  ;;
+resolve)
+  jq -n --arg url "$API_URL" '{
+    base_url: $url,
+    headers: {}
+  }'
+  ;;
+models)
+  cat <<'JSON'
+[
+  {
+    "id": "gemma-4-31b",
+    "name": "Gemma 4 31B",
+    "tier": "weak",
+    "context_window": 128000,
+    "max_output_tokens": 8192,
+    "supports_tool_examples": true
+  }
+]
+JSON
+  ;;
+*)
+  echo "Usage: ${0##*/} {info|resolve|models}" >&2
+  exit 1
+  ;;
+esac

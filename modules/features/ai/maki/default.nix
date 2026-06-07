@@ -50,6 +50,10 @@ in
       source = ./providers/xiaomi;
       executable = true;
     };
+    home.file.".config/maki/providers/smortress" = {
+      source = ./providers/smortress;
+      executable = true;
+    };
 
     # ── models.json (served via GET /api/models for web UI model picker) ──
     home.file.".config/maki/models.json" = lib.mkIf (cfg.models != [ ]) {
