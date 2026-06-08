@@ -146,6 +146,8 @@ in
         '';
         ExecStart = pkgs.writeShellScript "goosed-start" ''
           export GOOSE_SERVER__SECRET_KEY="$(cat ${secretKeyFile})"
+          export GOOSE_PROVIDER="xiaomi"
+          export GOOSE_MODEL="mimo-v2.5-pro"
           exec ${pkgs.goose-cli}/bin/goosed agent
         '';
         Restart = "on-failure";
