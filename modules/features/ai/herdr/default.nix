@@ -17,21 +17,24 @@ in
   config = lib.mkIf enabled {
     home.packages = [ pkgs.ttyd ];
 
-    home.file.".config/herdr/config.toml".text = ''
-      onboarding = false
+    home.file.".config/herdr/config.toml" = {
+      text = ''
+        onboarding = false
 
-      [keys]
-      previous_workspace = "ctrl+alt+left"
-      next_workspace = "ctrl+alt+right"
-      previous_agent = "ctrl+alt+up"
-      next_agent = "ctrl+alt+down"
+        [keys]
+        previous_workspace = "ctrl+alt+left"
+        next_workspace = "ctrl+alt+right"
+        previous_agent = "ctrl+alt+up"
+        next_agent = "ctrl+alt+down"
 
-      [[keys.command]]
-      key = "prefix+o"
-      type = "pane"
-      command = "omp"
-      description = "new omp agent tab"
-    '';
+        [[keys.command]]
+        key = "prefix+o"
+        type = "pane"
+        command = "omp"
+        description = "new omp agent tab"
+      '';
+      force = true;
+    };
 
     systemd.user.services.herdr-ttyd = {
       Unit = {
