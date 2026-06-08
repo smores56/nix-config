@@ -162,7 +162,7 @@ in
         Description = "goose-web — Goose PWA + API reverse proxy";
         After = [ "network-online.target" "goosed.service" ];
         Wants = [ "network-online.target" ];
-        BindsTo = [ "goosed.service" ];
+        Requires = [ "goosed.service" ];
       };
       Service = {
         ExecStart = pkgs.writeShellScript "goose-caddy-start" ''
