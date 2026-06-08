@@ -195,8 +195,6 @@ async function connect() {
   const url = document.getElementById('server-url').value.trim();
   const secret = document.getElementById('server-secret').value.trim();
   if (!url) return;
-  // When running behind the Caddy proxy (secret injected server-side),
-  // we don't need a client-side secret.
   try {
     const headers = {};
     if (secret) headers['X-Secret-Key'] = secret;
@@ -213,9 +211,7 @@ async function connect() {
 async function init() {
   document.getElementById('status-dot').classList.remove('err');
   try {
-    const res = await api('GET', '/status');
-    const status = await res.json();
-    document.getElementById('model-name').textContent = status.provider + '/' + status.model || '';
+    await api('GET', '/status');
   } catch (e) {
     document.getElementById('status-dot').classList.add('err');
   }
@@ -225,39 +221,21 @@ async function init() {
 async function loadSessions() {
   try {
     const res = await api('GET', '/sessions');
-    const sessions = await res.json();
+    const data = await res.json();
+    const list = data.sessions || (Array.isArray(data) ? data : []);
     const sel = document.getElementById('session-select');
     sel.innerHTML = '<option value="">+ New session</option>';
-    if (Array.isArray(sessions)) {
-      sessions.reverse().forEach(s => {
-        sel.innerHTML += `<option value="${s.id}">${escapeHtml(s.name || s.id.slice(0,8))}</option>`;
+    if (Array.isArray(list)) {
+      list.reverse().forEach(s => {
+        sel.innerHTML += `<option value="${s.id}">${escapeHtml(s.name || s.id)}</option>`;
       });
     }
   } catch (e) { /* ignore */ }
 }
 
 async function switchSession(id) {
-  if (!id) {
-    sessionId = crypto.randomUUID();
-    document.getElementById('chat').innerHTML = '<div class="empty">New session started. Send a message.</div>';
-    document.getElementById('model-name').textContent = '';
-    return;
-  }
+  if (!id) { sessionId = crypto.randomUUID(); return; }
   sessionId = id;
-  document.getElementById('chat').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
-  try {
-    const res = await api('GET', `/sessions/${id}`);
-    const sesh = await res.json();
-    document.getElementById('chat').innerHTML = '';
-    if (sesh.messages) {
-      sesh.messages.forEach(m => appendMessage(m.role, m.content, false));
-    }
-    if (sesh.provider && sesh.model) {
-      document.getElementById('model-name').textContent = sesh.provider + '/' + sesh.model;
-    }
-  } catch (e) {
-    document.getElementById('chat').innerHTML = `<div class="empty">Failed to load session: ${escapeHtml(e.message)}</div>`;
-  }
 }
 
 // ── Send message ──
@@ -269,25 +247,20 @@ async function sendMessage() {
   input.style.height = 'auto';
 
   const chat = document.getElementById('chat');
-  // Remove empty state
   chat.querySelector('.empty')?.remove();
 
   abortCtrl = new AbortController();
 
-  // Add user message
   appendMessage('user', text, false);
 
-  // Create assistant message placeholder
   currentAssistantMsg = appendMessage('assistant', '', true);
 
-  // Add thinking indicator
   const thinking = document.createElement('div');
   thinking.className = 'thinking';
   thinking.textContent = 'Thinking…';
   chat.appendChild(thinking);
   scrollDown();
 
-  // Swap send/stop buttons
   document.getElementById('send-btn').textContent = 'Stop';
   document.getElementById('send-btn').className = 'stop';
   document.getElementById('send-btn').onclick = stopStream;
@@ -310,12 +283,8 @@ async function sendMessage() {
       signal: abortCtrl.signal,
     });
 
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`${res.status}: ${errText}`);
-    }
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
 
-    // Remove thinking indicator
     thinking.remove();
 
     const reader = res.body.getReader();
@@ -326,18 +295,11 @@ async function sendMessage() {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
-
       for (const line of lines) {
         if (line.startsWith('data: ')) {
-          try {
-            const event = JSON.parse(line.slice(6));
-            handleEvent(event, chat);
-          } catch (e) {
-            // skip unparseable events
-          }
+          try { handleEvent(JSON.parse(line.slice(6)), chat); } catch(e) {}
         }
       }
     }
@@ -353,7 +315,6 @@ async function sendMessage() {
     }
   }
 
-  // Reset UI
   currentAssistantMsg = null;
   abortCtrl = null;
   document.getElementById('send-btn').textContent = 'Send';
@@ -361,16 +322,8 @@ async function sendMessage() {
   document.getElementById('send-btn').onclick = sendMessage;
   document.getElementById('prompt').focus();
 
-  // Update session list
   await loadSessions();
   document.getElementById('session-select').value = sessionId;
-
-  // Update model name from status
-  try {
-    const statusRes = await api('GET', '/status');
-    const st = await statusRes.json();
-    document.getElementById('model-name').textContent = (st.provider || '') + '/' + (st.model || '');
-  } catch (e) { /* ignore */ }
 }
 
 function stopStream() {
@@ -380,39 +333,21 @@ function stopStream() {
 function handleEvent(event, chat) {
   switch (event.type) {
     case 'Message': {
-      if (!currentAssistantMsg) {
-        currentAssistantMsg = appendMessage('assistant', '', true);
-      }
-      const content = event.message?.content;
-      if (Array.isArray(content)) {
-        currentAssistantMsg.innerHTML = '';
-        content.forEach(c => {
-          if (c.type === 'text') currentAssistantMsg.innerHTML += renderMarkdown(c.text);
-        });
-      } else if (typeof event.message?.content === 'string') {
-        currentAssistantMsg.innerHTML = renderMarkdown(event.message.content);
+      if (!currentAssistantMsg) currentAssistantMsg = appendMessage('assistant', '', true);
+      const c = event.message?.content;
+      if (Array.isArray(c)) {
+        currentAssistantMsg.innerHTML = c.map(x => x.type === 'text' ? renderMarkdown(x.text) : '').join('');
+      } else if (typeof c === 'string') {
+        currentAssistantMsg.innerHTML = renderMarkdown(c);
       }
       scrollDown();
       break;
     }
-    case 'ModelChange': {
-      const thinking = document.createElement('div');
-      thinking.className = 'thinking';
-      thinking.textContent = `Switching to ${event.provider}/${event.model}…`;
-      chat.appendChild(thinking);
+    case 'Finish':
+      currentAssistantMsg?.classList.remove('streaming');
       break;
-    }
-    case 'Finish': {
-      if (currentAssistantMsg) {
-        currentAssistantMsg.classList.remove('streaming');
-      }
-      break;
-    }
     case 'Error': {
-      if (currentAssistantMsg) {
-        currentAssistantMsg.classList.remove('streaming');
-        currentAssistantMsg.style.borderColor = 'var(--red)';
-      }
+      if (currentAssistantMsg) { currentAssistantMsg.classList.remove('streaming'); currentAssistantMsg.style.borderColor = 'var(--red)'; }
       const err = document.createElement('div');
       err.className = 'msg system';
       err.textContent = 'Error: ' + (event.error || 'unknown');
@@ -420,6 +355,15 @@ function handleEvent(event, chat) {
       chat.appendChild(err);
       break;
     }
+    case 'ModelChange': {
+      const el = document.createElement('div');
+      el.className = 'thinking';
+      el.textContent = `Using ${event.model || '…'}`;
+      chat.appendChild(el);
+      document.getElementById('model-name').textContent = event.model || '';
+      break;
+    }
+    // Ping, Notification, UpdateConversation — silently ignored
   }
 }
 
@@ -440,17 +384,11 @@ function appendMessage(role, content, streaming) {
 
 function renderMarkdown(text) {
   let html = escapeHtml(text);
-  // Code blocks
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
-  // Inline code
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-  // Bold
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  // Italic
   html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-  // Links
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color:var(--accent)">$1</a>');
-  // Line breaks
   html = html.replace(/\n/g, '<br>');
   return html;
 }
@@ -471,14 +409,9 @@ function openSettings() {
   document.getElementById('set-secret').value = SECRET;
   document.getElementById('settings').classList.add('open');
 }
-function closeSettings() {
-  document.getElementById('settings').classList.remove('open');
-}
+function closeSettings() { document.getElementById('settings').classList.remove('open'); }
 function saveSettings() {
-  saveAuth(
-    document.getElementById('set-url').value.trim(),
-    document.getElementById('set-secret').value.trim()
-  );
+  saveAuth(document.getElementById('set-url').value.trim(), document.getElementById('set-secret').value.trim());
   closeSettings();
 }
 
@@ -490,8 +423,6 @@ document.getElementById('prompt').addEventListener('input', function() {
 
 // ── Startup ──
 loadAuth();
-// When served from the Caddy proxy (same origin), the secret is injected
-// server-side, so we don't need a client-side secret.
 if (BASE) {
   document.getElementById('auth-overlay').style.display = 'none';
   init();
@@ -499,10 +430,7 @@ if (BASE) {
   document.getElementById('auth-overlay').style.display = 'flex';
 }
 
-// ── Register service worker ──
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js');
-}
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
 </script>
 </body>
 </html>
