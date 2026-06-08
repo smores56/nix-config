@@ -126,9 +126,9 @@ in
     };
 
     programs.fish.shellAbbrs = {
-      gs = "goose session";
-      gr = "goose run";
-      gc = "goose configure";
+      go = "goose session";
+      gor = "goose run";
+      goc = "goose configure";
     };
   };
 }
