@@ -148,6 +148,15 @@ in
           export GOOSE_SERVER__SECRET_KEY="$(cat ${secretKeyFile})"
           export GOOSE_PROVIDER="xiaomi"
           export GOOSE_MODEL="mimo-v2.5-pro"
+          # Load API keys from fish env file
+          if [ -r "$HOME/.config/fish/conf.d/api-keys.fish" ]; then
+            while IFS= read -r line; do
+              case "$line" in
+                "set -gx XIAOMI_MIMO_API_KEY "*) export XIAOMI_MIMO_API_KEY="''${line#set -gx XIAOMI_MIMO_API_KEY }" ;;
+                "set -gx DEEPSEEK_API_KEY "*) export DEEPSEEK_API_KEY="''${line#set -gx DEEPSEEK_API_KEY }" ;;
+              esac
+            done < "$HOME/.config/fish/conf.d/api-keys.fish"
+          fi
           exec ${pkgs.goose-cli}/bin/goosed agent
         '';
         Restart = "on-failure";
