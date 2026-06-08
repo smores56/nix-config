@@ -17,6 +17,22 @@ in
   config = lib.mkIf enabled {
     home.packages = [ pkgs.ttyd ];
 
+    home.file.".config/herdr/config.toml".text = ''
+      onboarding = false
+
+      [keys]
+      previous_workspace = "ctrl+alt+left"
+      next_workspace = "ctrl+alt+right"
+      previous_agent = "ctrl+alt+up"
+      next_agent = "ctrl+alt+down"
+
+      [[keys.command]]
+      key = "prefix+o"
+      type = "pane"
+      command = "omp"
+      description = "new omp agent tab"
+    '';
+
     systemd.user.services.herdr-ttyd = {
       Unit = {
         Description = "Herdr web terminal (ttyd + herdr session attach default)";
