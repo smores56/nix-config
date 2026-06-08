@@ -75,15 +75,57 @@ let
     cp ${gooseIcon 512} $out/icon-512.png
   '';
 
+  # Caddy reverse proxy: serves PWA at / and proxies API calls to goosed on :3000.
+  # The PWA JS makes fetch() calls to /reply, /sessions, /status, etc. — all
+  # on the same origin, so Caddy routes API paths to goosed and serves the PWA
+  # for everything else. The X-Secret-Key is injected server-side so the PWA
+  # never sees it and the user doesn't need to enter it.
+  caddyConfig = pkgs.writeText "goose-caddy.json" (builtins.toJSON {
+    apps.http.servers.goose = {
+      listen = [ "127.0.0.1:${toString cfg.web.port}" ];
+      routes = [
+        {
+          match = [{
+            path = [
+              "/reply" "/sessions" "/sessions/*"
+              "/status" "/setup" "/setup/*"
+              "/config/*" "/agent/*" "/gateway/*"
+              "/tunnel/*" "/mcp_ui_proxy/*" "/mcp_app_proxy/*"
+              "/prompts/*" "/recipe/*" "/schedule/*"
+              "/telemetry/*" "/dictation/*" "/action_required/*"
+              "/sampling/*"
+            ];
+          }];
+          handle = [{
+            handler = "reverse_proxy";
+            upstreams = [{ dial = "127.0.0.1:3000"; }];
+            headers = {
+              request = {
+                set = {
+                  "X-Secret-Key" = [ "{env.GOOSE_SERVER_SECRET}" ];
+                };
+              };
+            };
+          }];
+        }
+        {
+          handle = [{
+            handler = "file_server";
+            root = webDir;
+          }];
+        }
+      ];
+    };
+  });
+
 in
 {
   config = lib.mkIf enabled {
-    home.packages = [ pkgs.goose-cli ];
+    home.packages = [ pkgs.goose-cli pkgs.caddy ];
 
     home.file."${configDir}/custom_providers/xiaomi.json".text = xiaomiProviderJSON;
     home.file."${configDir}/custom_providers/deepseek.json".text = deepseekProviderJSON;
 
-    # ── goosed agent server ─────────────────────────
     systemd.user.services.goosed = lib.mkIf cfg.server.enable {
       Unit = {
         Description = "goosed — Goose agent server";
@@ -108,18 +150,21 @@ in
       Install = { WantedBy = [ "default.target" ]; };
     };
 
-    # ── goose-web PWA ───────────────────────────────
     systemd.user.services.goose-web = lib.mkIf cfg.web.enable {
       Unit = {
-        Description = "goose-web — Goose PWA";
+        Description = "goose-web — Goose PWA + API reverse proxy";
         After = [ "network-online.target" "goosed.service" ];
         Wants = [ "network-online.target" ];
         BindsTo = [ "goosed.service" ];
       };
       Service = {
-        ExecStart = "${pkgs.darkhttpd}/bin/darkhttpd ${webDir} --addr 127.0.0.1 --port ${toString cfg.web.port} --no-listing";
+        ExecStart = "${pkgs.caddy}/bin/caddy run --config ${caddyConfig}";
         Restart = "on-failure";
         RestartSec = 5;
+        Environment = [
+          "HOME=%h"
+          "GOOSE_SERVER_SECRET=$(cat ${secretKeyFile})"
+        ];
       };
       Install = { WantedBy = [ "default.target" ]; };
     };
