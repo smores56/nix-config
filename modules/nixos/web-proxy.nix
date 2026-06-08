@@ -42,6 +42,9 @@ in
         // paseoIngress
         // lib.optionalAttrs d.agentOfEmpires.enable {
           ${fqdn "aoe"} = upstream d.agentOfEmpires.port;
+        }
+        // lib.optionalAttrs d.goose.web.enable {
+          ${fqdn "goose"} = upstream d.goose.web.port;
         };
       };
     };

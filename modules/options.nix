@@ -535,6 +535,37 @@ in
       readOnly = true;
       description = "AI coding assistant context/rules, shared across pi and opencode.";
     };
+    goose = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkEnableOption "goose AI agent (CLI + MiMo & DeepSeek providers)" // {
+            default = true;
+          };
+          server = lib.mkOption {
+            type = lib.types.submodule {
+              options = {
+                enable = lib.mkEnableOption "goosed agent server (systemd user service)" // { default = false; };
+              };
+            };
+            default = { };
+          };
+          web = lib.mkOption {
+            type = lib.types.submodule {
+              options = {
+                enable = lib.mkEnableOption "goose-web PWA" // { default = false; };
+                port = lib.mkOption {
+                  type = lib.types.port;
+                  default = 2999;
+                };
+              };
+            };
+            default = { };
+          };
+        };
+      };
+      default = { };
+      description = "Goose AI agent settings.";
+    };
   };
   config = {
     assertions =

@@ -178,6 +178,10 @@ in
           enable = true;
         };
         llmTokenBucketProxy.enable = true;
+        goose = {
+          server.enable = true;
+          web.enable = true;
+        };
       };
       "smohr@smoreswork" = mkHome {
         displayManager = "osx";

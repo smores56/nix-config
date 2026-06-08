@@ -105,6 +105,7 @@
           kubectx
         ]
         ++ lib.optionals pkgs.stdenv.isLinux [
+          bubblewrap
           concord
         ];
     };
