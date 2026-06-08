@@ -144,12 +144,14 @@ in
             chmod 600 "${secretKeyFile}"
           fi
         '';
-        ExecStart = "${pkgs.goose-cli}/bin/goosed agent";
+        ExecStart = pkgs.writeShellScript "goosed-start" ''
+          export GOOSE_SERVER__SECRET_KEY="$(cat ${secretKeyFile})"
+          exec ${pkgs.goose-cli}/bin/goosed agent
+        '';
         Restart = "on-failure";
         RestartSec = 5;
         Environment = [
           "HOME=%h"
-          "GOOSE_SERVER__SECRET_KEY=$(cat ${secretKeyFile})"
         ];
       };
       Install = { WantedBy = [ "default.target" ]; };
