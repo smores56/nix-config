@@ -276,7 +276,7 @@ async function sendMessage() {
           role: 'user',
           content: [{ type: 'text', text }],
           created: Math.floor(Date.now() / 1000),
-          metadata: { user_visible: true, agent_visible: true }
+          metadata: { userVisible: true, agentVisible: true }
         },
         session_id: sessionId
       }),
