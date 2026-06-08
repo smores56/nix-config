@@ -77,8 +77,9 @@ let
             workModels = null;
             sevenqlLspPath = null;
             opencodeHost = null;
-            ohMyPi = null;
             paseo = null;
+            ohMyPi = null;
+            herdr = null;
             hermes = null;
             maki = null;
             tau = null;
@@ -124,6 +125,7 @@ let
             persist = args.persist or false;
             opencodeHost = args.opencodeHost or { };
             paseo = args.paseo or { };
+            herdr = args.herdr or { };
             hermes = args.hermes or { };
             piDashboard = args.piDashboard or { };
             webProxy = args.webProxy or { };
@@ -169,6 +171,7 @@ in
           openchamberPort = 3000;
         };
         paseo.enable = true;
+        herdr.enable = true;
         hermes.enable = true;
         pi = {
           enable = true;
@@ -248,6 +251,7 @@ in
           enable = true;
           web.enable = true;
         };
+        herdr.enable = true;
         hermes.enable = true;
         piDashboard = {
           enable = true;

@@ -255,6 +255,20 @@ in
       default = { };
       description = "Paseo settings. Paseo is a self-hosted daemon for AI coding agents, accessible via web/CLI/mobile.";
     };
+    herdr = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkEnableOption "Cloudflare Zero Trust-protected web terminal for herdr (ttyd + herdr session attach default)";
+          port = lib.mkOption {
+            type = lib.types.port;
+            default = 5955;
+            description = "Port for ttyd web terminal serving herdr.";
+          };
+        };
+      };
+      default = { };
+      description = "Herdr web terminal settings. Exposes herdr session attach default via ttyd at herdr.<domain> through Cloudflare Tunnel.";
+    };
     webProxy = lib.mkOption {
       type = lib.types.submodule {
         options = {

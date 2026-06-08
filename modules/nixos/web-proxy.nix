@@ -40,6 +40,9 @@ in
           ${fqdn "omp"} = upstream d.tau.port;
         }
         // paseoIngress
+        // lib.optionalAttrs d.herdr.enable {
+          ${fqdn "herdr"} = upstream d.herdr.port;
+        }
         // lib.optionalAttrs d.agentOfEmpires.enable {
           ${fqdn "aoe"} = upstream d.agentOfEmpires.port;
         }
