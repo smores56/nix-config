@@ -141,8 +141,12 @@ in
         echo "GOOSE_PROVIDER=xiaomi"
         echo "GOOSE_MODEL=mimo-v2.5-pro"
         if [ -r "$api_keys" ]; then
-          awk '/^set -gx XIAOMI_MIMO_API_KEY /{print "XIAOMI_MIMO_API_KEY="$NF}' "$api_keys"
-          awk '/^set -gx DEEPSEEK_API_KEY /{print "DEEPSEEK_API_KEY="$NF}' "$api_keys"
+          while IFS= read -r line; do
+            case "$line" in
+              "set -gx XIAOMI_MIMO_API_KEY "*) echo "XIAOMI_MIMO_API_KEY=''${line#set -gx XIAOMI_MIMO_API_KEY }" ;;
+              "set -gx DEEPSEEK_API_KEY "*) echo "DEEPSEEK_API_KEY=''${line#set -gx DEEPSEEK_API_KEY }" ;;
+            esac
+          done < "$api_keys"
         fi
       } > "$env_file"
       chmod 600 "$env_file"
