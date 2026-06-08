@@ -60,10 +60,9 @@ let
       nativeBuildInputs = [ pkgs.imagemagick ];
     } ''
     convert -size ${toString size}x${toString size} \
-      -define 'gradient:radii=256,256' \
       'radial-gradient:#3b82f6-#1d4ed8' \
-      -fill white -font Helvetica-Bold -pointsize ${toString (size / 3)} -gravity center \
-      -annotate 0 '🪿' \
+      -fill none -stroke white -strokewidth ${toString (size / 8)} \
+      -draw "circle ${toString (size / 2)},${toString (size / 2)} ${toString (size / 2)},${toString (size / 4)}" \
       $out
   '';
 
