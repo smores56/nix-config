@@ -34,7 +34,17 @@ in
       Service = {
         Type = "simple";
         ExecStart = "${paseoPkg}/bin/paseo-server";
-        ExecStartPre = "${stripPassword}";
+        ExecStartPre = [
+          "${stripPassword}"
+          (pkgs.writeShellScript "paseo-reset-stale-agents" ''
+            agents_dir="${homeDir}/.paseo/agents"
+            [ -d "$agents_dir" ] || exit 0
+            for agent_file in "$agents_dir"/*/*.json; do
+              [ -f "$agent_file" ] || continue
+              ${pkgs.jq}/bin/jq '.lastStatus = "closed" | .requiresAttention = false' "$agent_file" > "$agent_file.tmp" && mv "$agent_file.tmp" "$agent_file"
+            done
+          '')
+        ];
         Restart = "on-failure";
         RestartSec = 5;
         Environment = [
