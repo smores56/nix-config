@@ -70,6 +70,7 @@
 
         o = "omp";
         m = "maki --yolo";
+        h = "herdr session attach default";
       };
 
       interactiveShellInit = ''

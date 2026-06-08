@@ -103,11 +103,6 @@ let
     - Code blocks unchanged. Errors quoted verbatim
     - Compress explanations. Expand only for security warnings or when user confused
     - One sentence = one action. No preambles, no postscripts, no progress narration
-
-    # Pi CLI Commands
-    - `pi` — run Pi coding agent
-    - `pip` — `pi -p` (plan mode, no destructive tools)
-    - `pic` — `pi -c` (compact mode)
   '';
 in
 {

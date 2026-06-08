@@ -44,6 +44,7 @@ in
           "PASEO_HOSTNAMES=.sammohr.dev"
           "PATH=${scriptPath}"
         ];
+        EnvironmentFile = "${homeDir}/.config/paseo/provider-env";
       };
       Install = {
         WantedBy = [ "default.target" ];
