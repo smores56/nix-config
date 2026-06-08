@@ -210,12 +210,14 @@ async function connect() {
 // ── Init ──
 async function init() {
   document.getElementById('status-dot').classList.remove('err');
-  try {
-    await api('GET', '/status');
-  } catch (e) {
-    document.getElementById('status-dot').classList.add('err');
-  }
+  try { await api('GET', '/status'); } catch (e) { document.getElementById('status-dot').classList.add('err'); }
   await loadSessions();
+  // Auto-select the most recent session
+  const sel = document.getElementById('session-select');
+  if (sel.options.length > 1) {
+    sel.selectedIndex = 1; // first non-"New session" option
+    sessionId = sel.value;
+  }
 }
 
 async function loadSessions() {
@@ -309,7 +311,7 @@ async function sendMessage() {
       currentAssistantMsg?.remove();
       const err = document.createElement('div');
       err.className = 'msg assistant';
-      err.textContent = 'Error: ' + e.message;
+      err.textContent = 'Error: ' + (e.message || e);
       err.style.borderColor = 'var(--red)';
       chat.appendChild(err);
     }
@@ -336,7 +338,11 @@ function handleEvent(event, chat) {
       if (!currentAssistantMsg) currentAssistantMsg = appendMessage('assistant', '', true);
       const c = event.message?.content;
       if (Array.isArray(c)) {
-        currentAssistantMsg.innerHTML = c.map(x => x.type === 'text' ? renderMarkdown(x.text) : '').join('');
+        currentAssistantMsg.innerHTML = c.map(x => {
+          if (x.type === 'text' || x.type === 'reasoning') return renderMarkdown(x.text);
+          if (x.type === 'tool_request') return '<div class="tool-call">🔧 ' + escapeHtml(x.name || 'tool') + '</div>';
+          return '';
+        }).join('');
       } else if (typeof c === 'string') {
         currentAssistantMsg.innerHTML = renderMarkdown(c);
       }
