@@ -24,7 +24,7 @@ in
       };
       Service = {
         Type = "simple";
-        ExecStart = "${pkgs.ttyd}/bin/ttyd --port ${toString cfg.port} herdr session attach default";
+        ExecStart = "${pkgs.ttyd}/bin/ttyd --writable --port ${toString cfg.port} herdr session attach default";
         Restart = "on-failure";
         RestartSec = 5;
         Environment = [ "PATH=${scriptPath}" ];
