@@ -129,6 +129,7 @@ let
             webProxy = args.webProxy or { };
             agentOfEmpires = args.agentOfEmpires or { };
             tau = args.tau or { };
+            goose = args.goose or { };
           };
         }
       ]
@@ -258,6 +259,7 @@ in
         agentOfEmpires = {
           enable = true;
         };
+        goose.web.enable = true;
       };
     };
   };
