@@ -131,6 +131,23 @@ in
     home.file."${configDir}/custom_providers/xiaomi.json".text = xiaomiProviderJSON;
     home.file."${configDir}/custom_providers/deepseek.json".text = deepseekProviderJSON;
 
+    # ── API key env file for systemd EnvironmentFile ──
+    # Generated at activation time so keys don't end up in the Nix store.
+    home.activation.gooseEnv = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+      api_keys="$HOME/.config/fish/conf.d/api-keys.fish"
+      env_file="${configDir}/env"
+      mkdir -p "${configDir}"
+      {
+        echo "GOOSE_PROVIDER=xiaomi"
+        echo "GOOSE_MODEL=mimo-v2.5-pro"
+        if [ -r "$api_keys" ]; then
+          awk '/^set -gx XIAOMI_MIMO_API_KEY /{print "XIAOMI_MIMO_API_KEY="$NF}' "$api_keys"
+          awk '/^set -gx DEEPSEEK_API_KEY /{print "DEEPSEEK_API_KEY="$NF}' "$api_keys"
+        fi
+      } > "$env_file"
+      chmod 600 "$env_file"
+    '';
+
     systemd.user.services.goosed = lib.mkIf cfg.server.enable {
       Unit = {
         Description = "goosed — Goose agent server";
@@ -146,21 +163,11 @@ in
         '';
         ExecStart = pkgs.writeShellScript "goosed-start" ''
           export GOOSE_SERVER__SECRET_KEY="$(cat ${secretKeyFile})"
-          export GOOSE_PROVIDER="xiaomi"
-          export GOOSE_MODEL="mimo-v2.5-pro"
-          # Load API keys from fish env file
-          if [ -r "$HOME/.config/fish/conf.d/api-keys.fish" ]; then
-            while IFS= read -r line; do
-              case "$line" in
-                "set -gx XIAOMI_MIMO_API_KEY "*) export XIAOMI_MIMO_API_KEY="''${line#set -gx XIAOMI_MIMO_API_KEY }" ;;
-                "set -gx DEEPSEEK_API_KEY "*) export DEEPSEEK_API_KEY="''${line#set -gx DEEPSEEK_API_KEY }" ;;
-              esac
-            done < "$HOME/.config/fish/conf.d/api-keys.fish"
-          fi
           exec ${pkgs.goose-cli}/bin/goosed agent
         '';
         Restart = "on-failure";
         RestartSec = 5;
+        EnvironmentFile = "${configDir}/env";
         Environment = [
           "HOME=%h"
         ];
