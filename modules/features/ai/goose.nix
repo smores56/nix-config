@@ -76,11 +76,10 @@ let
   '';
 
   # Caddy reverse proxy: serves PWA at / and proxies API calls to goosed on :3000.
-  # The PWA JS makes fetch() calls to /reply, /sessions, /status, etc. — all
-  # on the same origin, so Caddy routes API paths to goosed and serves the PWA
-  # for everything else. The X-Secret-Key is injected server-side so the PWA
-  # never sees it and the user doesn't need to enter it.
+  # Disables admin API to avoid port conflicts. The X-Secret-Key is injected
+  # server-side so the PWA never needs to handle it.
   caddyConfig = pkgs.writeText "goose-caddy.json" (builtins.toJSON {
+    admin = { disabled = true; };
     apps.http.servers.goose = {
       listen = [ "127.0.0.1:${toString cfg.web.port}" ];
       routes = [
@@ -158,12 +157,14 @@ in
         BindsTo = [ "goosed.service" ];
       };
       Service = {
-        ExecStart = "${pkgs.caddy}/bin/caddy run --config ${caddyConfig}";
+        ExecStart = pkgs.writeShellScript "goose-caddy-start" ''
+          export GOOSE_SERVER_SECRET="$(cat ${secretKeyFile})"
+          exec ${pkgs.caddy}/bin/caddy run --config ${caddyConfig}
+        '';
         Restart = "on-failure";
         RestartSec = 5;
         Environment = [
           "HOME=%h"
-          "GOOSE_SERVER_SECRET=$(cat ${secretKeyFile})"
         ];
       };
       Install = { WantedBy = [ "default.target" ]; };
