@@ -87,6 +87,7 @@ let
             piDashboard = null;
             agentOfEmpires = null;
             llmTokenBucketProxy = null;
+            goose = null;
           } args;
           home.username = username;
           home.homeDirectory =
