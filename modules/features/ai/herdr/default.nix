@@ -28,7 +28,7 @@ in
         next_agent = "ctrl+alt+down"
 
         [[keys.command]]
-        key = "prefix+o"
+        key = "prefix+O"
         type = "pane"
         command = "omp"
         description = "new omp agent tab"
