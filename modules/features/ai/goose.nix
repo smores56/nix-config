@@ -98,6 +98,12 @@ let
           handle = [{
             handler = "reverse_proxy";
             upstreams = [{ dial = "127.0.0.1:3000"; }];
+            transport = {
+              protocol = "http";
+              tls = {
+                insecure_skip_verify = true;
+              };
+            };
             headers = {
               request = {
                 set = {
