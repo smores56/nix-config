@@ -101,10 +101,10 @@ in
         ExecStart = "${pkgs.goose-cli}/bin/goosed agent";
         Restart = "on-failure";
         RestartSec = 5;
-        Environment = {
-          HOME = "%h";
-          GOOSE_SERVER__SECRET_KEY = "$(cat ${secretKeyFile})";
-        };
+        Environment = [
+          "HOME=%h"
+          "GOOSE_SERVER__SECRET_KEY=$(cat ${secretKeyFile})"
+        ];
       };
       Install = { WantedBy = [ "default.target" ]; };
     };
