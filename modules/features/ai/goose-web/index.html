@@ -301,7 +301,8 @@ async function sendMessage() {
       body: JSON.stringify({
         user_message: {
           role: 'user',
-          content: [{ type: 'text', text }]
+          content: [{ type: 'text', text }],
+          created: Math.floor(Date.now() / 1000)
         },
         session_id: sessionId
       }),
