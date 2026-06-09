@@ -69,6 +69,51 @@ let
     else
       s;
 
+  # Two-tier subagent hierarchy for the pi-subagents plugin's builtin agents.
+  # The parent session (cfg.defaultModel) is the strong tier; cheap/scout work
+  # is delegated to the weak tier. deepseek + crofai stay available as failover
+  # backups via fallbackModels.
+  strongModel = cfg.defaultModel;
+  weakModel =
+    if workModels then "anthropic/claude-sonnet-4-6" else "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25.id}";
+
+  strongBackups = [
+    "${aiDeepseek.providerId}/${aiDeepseek.models.v4Pro.id}"
+    "${aiCrofai.providerId}/${aiCrofai.models.glm51.id}"
+    "smortress/gemma-4-31b"
+  ];
+  weakBackups = [
+    "${aiDeepseek.providerId}/${aiDeepseek.models.v4Flash.id}"
+    "${aiCrofai.providerId}/${aiCrofai.models.glm51.id}"
+    "smortress/gemma-4-31b"
+  ];
+
+  mkAgentOverride = model: fallbackModels: { inherit model fallbackModels; };
+
+  # Aggressive tiering mirrors oh-my-pi: scouts + general implementation
+  # (scout/researcher/worker/delegate) go weak; planning, review, oracle, and
+  # the stronger context pass stay on the strong tier.
+  subagentOverrides = builtins.listToAttrs (
+    map (name: {
+      inherit name;
+      value = mkAgentOverride weakModel weakBackups;
+    }) [
+      "scout"
+      "researcher"
+      "worker"
+      "delegate"
+    ]
+    ++ map (name: {
+      inherit name;
+      value = mkAgentOverride strongModel strongBackups;
+    }) [
+      "planner"
+      "reviewer"
+      "oracle"
+      "context-builder"
+    ]
+  );
+
   modelsConfig =
     if workModels then
       { }
@@ -186,6 +231,9 @@ in
           steeringMode = "one-at-a-time";
           followUpMode = "one-at-a-time";
           packages = piPackages;
+          subagents = {
+            agentOverrides = subagentOverrides;
+          };
         };
       };
 

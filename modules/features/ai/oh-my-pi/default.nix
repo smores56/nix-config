@@ -11,48 +11,44 @@ let
   cfg = config.dotfiles.ohMyPi;
   workModels = config.dotfiles.workModels;
 
+  # Two-tier subagent hierarchy: a strong model drives the main session and the
+  # deep-reasoning roles; a weak/cheap model handles everything that gets
+  # routinely delegated. Subagent roles prefer the weak tier wherever reasonable
+  # so cheap delegation happens as often as possible.
+  strongModel =
+    if workModels then "anthropic/claude-opus-4-8" else "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25Pro.id}";
+  weakModel =
+    if workModels then "anthropic/claude-sonnet-4-6" else "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25.id}";
+
+  # Strong: main session + planning + review/oracle. Weak: general task agent,
+  # scouts (smol/quick_task/explore/librarian), vision, designer, commit.
+  modelRoles = {
+    default = strongModel;
+    plan = strongModel;
+    slow = strongModel;
+    task = weakModel;
+    smol = weakModel;
+    vision = weakModel;
+    designer = weakModel;
+    commit = weakModel;
+  };
+
+  # Provider priority: primary tier provider first, then backups for failover.
   modelProviderOrder =
     if workModels then
       [
-        "openai-codex"
         "anthropic"
+        "openai-codex"
       ]
     else
       [
-        "smortress"
         aiXiaomi.providerId
-        "deepseek"
+        aiDeepseek.providerId
         aiCrofai.providerId
+        "smortress"
       ]
       ++ lib.optionals cfg.claude.enable [ "anthropic" ]
       ++ lib.optionals cfg.codex.enable [ "openai-codex" ];
-
-  workRolesYaml = ''
-    default: openai-codex/gpt-5.5-codex
-    slow: anthropic/claude-opus-4-8
-    plan: openai-codex/gpt-5.5-codex
-    smol: openai-codex/gpt-5.5-codex
-    vision: openai-codex/gpt-5.5-codex
-    designer: openai-codex/gpt-5.5-codex
-    commit: openai-codex/gpt-5.5-codex
-    task: openai-codex/gpt-5.5-codex'';
-
-  personalRolesYaml =
-    lib.concatStringsSep "\n" (
-      map (name: "  ${name}: ${aiXiaomi.roles.${name}}") [
-        "default"
-        "slow"
-        "plan"
-        "smol"
-        "vision"
-        "designer"
-        "commit"
-        "task"
-      ]
-    )
-    + "\n  smol: smortress/gemma-4-31b\n  commit: smortress/gemma-4-31b";
-
-  modelRolesYaml = if workModels then workRolesYaml else personalRolesYaml;
 
   modelsConfig =
     if workModels then
@@ -108,40 +104,93 @@ let
         };
       };
 
+  ompConfig = {
+    lastChangelogVersion = "15.5.11";
+    inherit modelRoles;
+    theme = {
+      dark = "dark-gruvbox";
+      light = "light-gruvbox";
+    };
+    display = {
+      showTokenUsage = true;
+      shimmer = "classic";
+    };
+    hideThinkingBlock = false;
+    memory = {
+      backend = "mnemopi";
+    };
+    exa = {
+      enableResearcher = false;
+    };
+    compaction = {
+      keepRecentTokens = cfg.compaction.keepRecentTokens;
+      enabled = true;
+      reserveTokens = cfg.compaction.reserveTokens;
+      autoContinue = cfg.compaction.autoContinue;
+      handoffSaveToDisk = true;
+    };
+    steeringMode = "one-at-a-time";
+    setupVersion = 1;
+    extensions = [ ];
+    disabledServers = [ "beads" ];
+    tools = {
+      discoveryMode = "all";
+    };
+    inherit modelProviderOrder;
+    symbolPreset = "nerd";
+    task = {
+      showResolvedModelBadge = true;
+      isolation = {
+        mode = "auto";
+      };
+      eager = true;
+    };
+    stt = {
+      enabled = true;
+    };
+    collapseChangelog = true;
+    tui = {
+      textSizing = true;
+    };
+    readLineNumbers = true;
+    read = {
+      summarize = {
+        prose = false;
+      };
+    };
+    lsp = {
+      formatOnWrite = true;
+      diagnosticsOnEdit = true;
+    };
+    bashInterceptor = {
+      enabled = true;
+    };
+    renderMermaid = {
+      enabled = true;
+    };
+    checkpoint = {
+      enabled = true;
+    };
+    github = {
+      enabled = true;
+    };
+    async = {
+      enabled = true;
+    };
+    bash = {
+      autoBackground = {
+        enabled = true;
+      };
+    };
+    mcp = {
+      discoveryMode = true;
+    };
+    secrets = {
+      enabled = true;
+    };
+  };
+
   ompPackage = "@oh-my-pi/pi-coding-agent";
-  ompPrivateDir = "$HOME/.local/share/oh-my-pi-cli";
-  ompPrivateEntrypoint = "${ompPrivateDir}/node_modules/${ompPackage}/src/cli.ts";
-  ompLegacyEntrypoint = "$HOME/.bun/install/global/node_modules/${ompPackage}/src/cli.ts";
-  ompEarendilEntrypoint = "$HOME/.bun/install/global/node_modules/@earendil-works/pi-coding-agent/src/cli.ts";
-  ompWrapper = pkgs.writeShellScriptBin "omp" ''
-    set -euo pipefail
-
-    export PATH="$HOME/.bun/bin:$HOME/.cache/.bun/bin:$PATH"
-
-    if [ -z "''${OPENAI_CODEX_OAUTH_TOKEN:-}" ] && [ -r "$HOME/.codex/auth.json" ]; then
-      token="$(${pkgs.jq}/bin/jq -r '.tokens.access_token // empty' "$HOME/.codex/auth.json" 2>/dev/null || true)"
-      if [ -n "$token" ] && [ "$token" != "null" ]; then
-        export OPENAI_CODEX_OAUTH_TOKEN="$token"
-      fi
-    fi
-
-    if [ -z "''${ANTHROPIC_OAUTH_TOKEN:-}" ] && [ -r "$HOME/.claude/.credentials.json" ]; then
-      token="$(${pkgs.jq}/bin/jq -r '.claudeAiOauth.accessToken // empty' "$HOME/.claude/.credentials.json" 2>/dev/null || true)"
-      if [ -n "$token" ] && [ "$token" != "null" ]; then
-        export ANTHROPIC_OAUTH_TOKEN="$token"
-      fi
-    fi
-
-    for entrypoint in "${ompPrivateEntrypoint}" "${ompLegacyEntrypoint}" "${ompEarendilEntrypoint}"; do
-      if [ -r "$entrypoint" ]; then
-        exec "$HOME/.bun/bin/bun" "$entrypoint" "$@"
-      fi
-    done
-
-    echo "oh-my-pi CLI not installed. Re-run home-manager switch, or install ${ompPackage} into ${ompPrivateDir}." >&2
-    exit 127
-
-  '';
 in
 {
   options.dotfiles.ohMyPi = {
@@ -178,103 +227,22 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    home.file.".omp/agent/config.yml".text = ''
-      lastChangelogVersion: 15.5.11
-      modelRoles:
-      ${modelRolesYaml}
-      theme:
-        dark: dark-gruvbox
-        light: light-gruvbox
-      display:
-        showTokenUsage: true
-        shimmer: classic
-      hideThinkingBlock: false
-      memory:
-        backend: mnemopi
-      exa:
-        enableResearcher: false
-      compaction:
-        keepRecentTokens: ${toString cfg.compaction.keepRecentTokens}
-        enabled: true
-        reserveTokens: ${toString cfg.compaction.reserveTokens}
-        autoContinue: ${lib.boolToString cfg.compaction.autoContinue}
-        handoffSaveToDisk: true
-      steeringMode: one-at-a-time
-      setupVersion: 1
-      extensions: []
-      disabledServers:
-        - beads
-      tools:
-        discoveryMode: all
-      modelProviderOrder: ${builtins.toJSON modelProviderOrder}
-      symbolPreset: nerd
-      task:
-        showResolvedModelBadge: true
-        isolation:
-          mode: auto
-        eager: true
-      stt:
-        enabled: true
-      collapseChangelog: true
-      tui:
-        textSizing: true
-      readLineNumbers: true
-      read:
-        summarize:
-          prose: false
-      lsp:
-        formatOnWrite: true
-        diagnosticsOnEdit: true
-      bashInterceptor:
-        enabled: true
-      renderMermaid:
-        enabled: true
-      checkpoint:
-        enabled: true
-      github:
-        enabled: true
-      async:
-        enabled: true
-      bash:
-        autoBackground:
-          enabled: true
-      mcp:
-        discoveryMode: true
-      secrets:
-        enabled: true
-    '';
+    home.file.".omp/agent/config.yml".text = builtins.toJSON ompConfig + "\n";
     home.file.".omp/agent/models.yml".text = builtins.toJSON modelsConfig;
-    home.packages = [ ompWrapper ];
-
-    home.file.".local/bin/omp" = {
-      source = "${ompWrapper}/bin/omp";
-    };
-
-    home.file.".bun/bin/omp" = {
-      force = true;
-      source = "${ompWrapper}/bin/omp";
-    };
 
     home.activation.installOmpCli = {
       after = [ "linkGeneration" ];
       before = [ "installOmpPlugins" ];
       data = ''
         export PATH="$HOME/.bun/bin:$HOME/.cache/.bun/bin:$PATH"
-        CLI_DIR="${ompPrivateDir}"
-        ENTRYPOINT="${ompPrivateEntrypoint}"
 
-        if [ -r "$ENTRYPOINT" ]; then
-          echo "[oh-my-pi] OMP CLI already installed"
+        if command -v omp >/dev/null 2>&1; then
+          echo "[oh-my-pi] omp already installed"
         elif ! command -v bun >/dev/null 2>&1; then
           echo "[oh-my-pi] bun not found in PATH, cannot install ${ompPackage}" >&2
         else
-          echo "[oh-my-pi] Installing ${ompPackage} into $CLI_DIR"
-          mkdir -p "$CLI_DIR"
-          printf '%s\n' '{"private":true,"dependencies":{"${ompPackage}":"latest"}}' > "$CLI_DIR/package.json"
-          if ! (
-            cd "$CLI_DIR"
-            bun install
-          ); then
+          echo "[oh-my-pi] Installing ${ompPackage} globally with bun"
+          if ! bun add -g ${ompPackage}; then
             echo "[oh-my-pi] Failed to install ${ompPackage}; OMP plugin/config commands will be skipped" >&2
           fi
         fi
@@ -362,6 +330,66 @@ in
                 echo "[oh-my-pi] Claude OAuth credentials imported for Anthropic models"
               else
                 echo "[oh-my-pi] Failed to import Claude OAuth credentials into OMP"
+              fi
+            fi
+          fi
+        fi
+      '';
+    };
+
+    home.activation.configureOmpCodex = lib.mkIf cfg.codex.enable {
+      after = [ "linkGeneration" ];
+      before = [ ];
+      data = ''
+        export PATH="$HOME/.bun/bin:$HOME/.cache/.bun/bin:$PATH"
+
+        if ! command -v omp >/dev/null 2>&1; then
+          echo "[oh-my-pi] omp not found in PATH, skipping Codex OAuth import"
+        else
+          AUTH_FILE="$HOME/.codex/auth.json"
+          if [ ! -r "$AUTH_FILE" ]; then
+            echo "[oh-my-pi] No Codex credentials at $AUTH_FILE, skipping Codex OAuth import"
+          elif ! ${pkgs.jq}/bin/jq -e '.tokens.access_token and .tokens.refresh_token' "$AUTH_FILE" >/dev/null 2>&1; then
+            echo "[oh-my-pi] Codex credentials are missing OAuth token fields, skipping Codex OAuth import"
+          else
+            should_import=1
+            AGENT_DB="$HOME/.omp/agent/agent.db"
+            if [ -r "$AGENT_DB" ]; then
+              active_count="$(${pkgs.sqlite}/bin/sqlite3 "$AGENT_DB" "select count(*) from auth_credentials where provider = 'openai-codex' and disabled_cause is null;" 2>/dev/null || echo 0)"
+              case "$active_count" in
+                0|"") ;;
+                *)
+                  echo "[oh-my-pi] Codex credentials already present, skipping Codex OAuth import"
+                  should_import=0
+                  ;;
+              esac
+            fi
+
+            if [ "$should_import" = 1 ]; then
+              expired="$(${pkgs.jq}/bin/jq -r '.tokens.access_token | split(".")[1] | gsub("-";"+") | gsub("_";"/") | @base64d | fromjson | .exp | todateiso8601' "$AUTH_FILE" 2>/dev/null || true)"
+              if [ -z "$expired" ]; then
+                echo "[oh-my-pi] Could not derive Codex token expiry, skipping Codex OAuth import" >&2
+              else
+                tmp="$(${pkgs.coreutils}/bin/mktemp "''${TMPDIR:-/tmp}/omp-codex-auth.XXXXXX.json")"
+                cleanup() {
+                  rm -f "$tmp"
+                }
+                trap cleanup EXIT
+
+                ${pkgs.jq}/bin/jq --arg expired "$expired" '{
+                  type: "openai-codex",
+                  access_token: .tokens.access_token,
+                  refresh_token: .tokens.refresh_token,
+                  account_id: .tokens.account_id,
+                  expired: $expired
+                }' "$AUTH_FILE" > "$tmp"
+                chmod 600 "$tmp" 2>/dev/null || true
+
+                if omp auth-broker import "$tmp" --provider openai-codex >/dev/null 2>&1; then
+                  echo "[oh-my-pi] Codex OAuth credentials imported for openai-codex models"
+                else
+                  echo "[oh-my-pi] Failed to import Codex OAuth credentials into OMP"
+                fi
               fi
             fi
           fi
