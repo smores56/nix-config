@@ -273,7 +273,7 @@ in
         pic = "pi -c";
       };
       programs.fish.shellAliases = lib.mkIf cfg.fishAbbrs {
-        p = "gmux pi";
+        p = "FISH_TERMINAL_SKIP_DSR=1 gmux pi";
       };
     })
     dashboardConfig
