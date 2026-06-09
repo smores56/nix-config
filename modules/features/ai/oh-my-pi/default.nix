@@ -4,6 +4,7 @@
   pkgs,
   aiDeepseek,
   aiXiaomi,
+  aiCrofai,
   ...
 }:
 let
@@ -21,6 +22,7 @@ let
         "smortress"
         aiXiaomi.providerId
         "deepseek"
+        aiCrofai.providerId
       ]
       ++ lib.optionals cfg.claude.enable [ "anthropic" ]
       ++ lib.optionals cfg.codex.enable [ "openai-codex" ];
@@ -95,6 +97,13 @@ let
             api = "openai-completions";
             auth = "apiKey";
             models = aiDeepseek.ompModelsList;
+          };
+          ${aiCrofai.providerId} = {
+            baseUrl = aiCrofai.baseUrl;
+            apiKey = "CROFAI_API_KEY";
+            api = "openai-completions";
+            auth = "apiKey";
+            models = aiCrofai.ompModelsList;
           };
         };
       };
