@@ -29,6 +29,7 @@ in
           ${fqdn "opencode"} = upstream d.opencodeHost.openchamberPort;
           ${fqdn "keep"} = upstream 9804;
           ${fqdn "maki"} = upstream 10530;
+          ${fqdn "gmux"} = upstream 8790;
         }
         // lib.optionalAttrs d.hermes.enable {
           ${fqdn "hermes"} = upstream 8787;

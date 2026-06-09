@@ -272,6 +272,9 @@ in
         pip = "pi -p";
         pic = "pi -c";
       };
+      programs.fish.shellAliases = lib.mkIf cfg.fishAbbrs {
+        p = "gmux pi";
+      };
     })
     dashboardConfig
   ];

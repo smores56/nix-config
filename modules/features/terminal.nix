@@ -4,8 +4,9 @@ let
 in
 {
   fonts.fontconfig.enable = lib.mkIf (cfg.displayManager != "none") true;
-  home.sessionVariables = lib.mkIf (cfg.displayManager != "none") {
+  home.sessionVariables = {
     TERMINAL = cfg.terminal;
+    FISH_TERMINAL_SKIP_DSR = "1";
   };
 
   programs.kitty = {
