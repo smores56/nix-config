@@ -312,6 +312,21 @@ in
         };
       };
 
+      home.file."${agentDir}/context-prune/settings.json" = {
+        force = true;
+        text = builtins.toJSON {
+          enabled = true;
+          showPruneStatusLine = true;
+          summarizerModel = "anthropic/claude-sonnet-4-6";
+          summarizerThinking = "default";
+          pruneOn = "agent-message";
+          remindUnprunedCount = true;
+          # "turn" mode produces summaries larger than tiny raw tool outputs;
+          # see https://github.com/championswimmer/pi-context-prune/issues/11
+          batchingMode = "agent-message";
+        };
+      };
+
       home.file."${agentDir}/models.json" = {
         force = true;
         text = builtins.toJSON modelsConfig;
