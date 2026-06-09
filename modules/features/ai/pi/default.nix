@@ -203,6 +203,18 @@ in
       # APPEND_SYSTEM.md
       home.file."${agentDir}/APPEND_SYSTEM.md".source = ./APPEND_SYSTEM.md;
       home.file."${agentDir}/extensions/code-execution.ts".source = ./extensions/code-execution.ts;
+
+      home.file."${homeDir}/.config/fish/conf.d/pi-aliases.fish".text = ''
+        function p --wraps 'gmux pi' --description 'p: gmux pi'
+          FISH_TERMINAL_SKIP_DSR=1 gmux pi $argv
+        end
+        function pip --wraps 'pi -p' --description 'pip: pi -p'
+          pi -p $argv
+        end
+        function pic --wraps 'pi -c' --description 'pic: pi -c'
+          pi -c $argv
+        end
+      '';
       home.activation.installPiCli = {
         after = [ "linkGeneration" ];
         before = [ "installPiPackages" ];
@@ -265,15 +277,6 @@ in
             ${powerlineTheme}
           PLTHEME
         '';
-      };
-
-      programs.fish.shellAbbrs = lib.mkIf cfg.fishAbbrs {
-        pi = "pi";
-        pip = "pi -p";
-        pic = "pi -c";
-      };
-      programs.fish.shellAliases = lib.mkIf cfg.fishAbbrs {
-        p = "FISH_TERMINAL_SKIP_DSR=1 gmux pi";
       };
     })
     dashboardConfig
