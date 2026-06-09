@@ -75,7 +75,10 @@ let
   # backups via fallbackModels.
   strongModel = if workModels then "anthropic/claude-fable-5" else cfg.defaultModel;
   weakModel =
-    if workModels then "anthropic/claude-sonnet-4-6" else "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25.id}";
+    if workModels then
+      "anthropic/claude-sonnet-4-6"
+    else
+      "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25.id}";
 
   strongBackups = [
     "${aiDeepseek.providerId}/${aiDeepseek.models.v4Pro.id}"
@@ -94,29 +97,62 @@ let
   # (scout/researcher/worker/delegate) go weak; planning, review, oracle, and
   # the stronger context pass stay on the strong tier.
   subagentOverrides = builtins.listToAttrs (
-    map (name: {
-      inherit name;
-      value = mkAgentOverride weakModel weakBackups;
-    }) [
-      "scout"
-      "researcher"
-      "worker"
-      "delegate"
-    ]
-    ++ map (name: {
-      inherit name;
-      value = mkAgentOverride strongModel strongBackups;
-    }) [
-      "planner"
-      "reviewer"
-      "oracle"
-      "context-builder"
-    ]
+    map
+      (name: {
+        inherit name;
+        value = mkAgentOverride weakModel weakBackups;
+      })
+      [
+        "scout"
+        "researcher"
+        "worker"
+        "delegate"
+      ]
+    ++
+      map
+        (name: {
+          inherit name;
+          value = mkAgentOverride strongModel strongBackups;
+        })
+        [
+          "planner"
+          "reviewer"
+          "oracle"
+          "context-builder"
+        ]
   );
 
   modelsConfig =
     if workModels then
-      { }
+      {
+        # Fable 5 (released 2026-06-09) isn't in pi's bundled model catalog yet.
+        # Merge it into the built-in anthropic provider so the endpoint and OAuth
+        # auth are inherited; fields mirror the native claude-opus-4-8 entry, the
+        # model Fable's safeguards fall back to. Pricing per Anthropic's launch
+        # post ($10/$50 per Mtok; 0.1x cache read, 1.25x cache write).
+        providers.anthropic.models = [
+          {
+            id = "claude-fable-5";
+            name = "Claude Fable 5";
+            api = "anthropic-messages";
+            reasoning = true;
+            thinkingLevelMap.xhigh = "xhigh";
+            compat.forceAdaptiveThinking = true;
+            input = [
+              "text"
+              "image"
+            ];
+            contextWindow = 1000000;
+            maxTokens = 128000;
+            cost = {
+              input = 10;
+              output = 50;
+              cacheRead = 1;
+              cacheWrite = 12.5;
+            };
+          }
+        ];
+      }
     else
       {
         providers = {
@@ -214,6 +250,7 @@ in
           defaultProvider = cfg.defaultProvider;
           defaultModel = cfg.defaultModel;
           defaultThinkingLevel = cfg.defaultThinkingLevel;
+          theme = "noctis-bordo";
           enableInstallTelemetry = false;
           quietStartup = true;
           collapseChangelog = true;
@@ -244,6 +281,9 @@ in
 
       # Skills
       home.file."${agentDir}/skills/grill-me/SKILL.md".source = ./skills/grill-me/SKILL.md;
+
+      # Themes
+      home.file."${agentDir}/themes/noctis-bordo.json".source = ./themes/noctis-bordo.json;
 
       # Extensions
       home.file."${agentDir}/extensions/plan-mode.ts".source = ../oh-my-pi/plan-mode.ts;
