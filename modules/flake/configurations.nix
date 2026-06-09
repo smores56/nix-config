@@ -217,6 +217,11 @@ in
           codex.enable = true;
           claude.enable = true;
         };
+        pi = {
+          enable = true;
+          defaultProvider = "anthropic";
+          defaultModel = "claude-fable-5";
+        };
       };
     };
     nixosConfigurations = {
