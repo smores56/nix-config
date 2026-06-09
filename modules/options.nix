@@ -439,19 +439,7 @@ in
           };
           packages = lib.mkOption {
             type = lib.types.listOf lib.types.str;
-            default = [
-              "npm:pi-total-recall"
-              "npm:pi-rtk-optimizer"
-              "npm:pi-subagents"
-              "npm:pi-mcp-adapter"
-              "npm:pi-web-access"
-              "npm:pi-intercom"
-              "npm:pi-powerline-footer"
-              "npm:pi-context-prune"
-              "npm:pi-autoresearch"
-              "npm:pi-review-loop"
-              "npm:@juicesharp/rpiv-ask-user-question"
-            ];
+            default = [ ];
             description = "Pi packages to install via `pi install`.";
           };
           compaction = {

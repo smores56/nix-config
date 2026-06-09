@@ -13,14 +13,13 @@ let
   workModels = config.dotfiles.workModels;
   homeDir = config.home.homeDirectory;
   agentDir = "${homeDir}/.pi/agent";
+  npmDir = "${agentDir}/npm";
 
   piPackage = "@earendil-works/pi-coding-agent";
   piPrivateDir = "${homeDir}/.local/share/pi-cli";
   piEntrypoint = "${piPrivateDir}/node_modules/${piPackage}/src/cli.ts";
 
   bunBin = "${homeDir}/.bun/bin";
-  piCli = "${bunBin}/pi";
-  jqBin = "${pkgs.jq}/bin/jq";
 
   stylixColors = config.lib.stylix.colors;
   powerlineTheme = builtins.toJSON {
@@ -44,32 +43,31 @@ let
     };
   };
 
-  piWrapper = pkgs.writeShellScriptBin "pi" ''
-    set -euo pipefail
+  piPackages = [
+    "npm:pi-total-recall"
+    "npm:pi-rtk-optimizer"
+    "npm:pi-subagents"
+    "npm:pi-mcp-adapter"
+    "npm:pi-web-access"
+    "npm:pi-intercom"
+    "npm:pi-powerline-footer"
+    "npm:pi-context-prune"
+    "npm:pi-autoresearch"
+    "npm:pi-review-loop"
+    "npm:@juicesharp/rpiv-ask-user-question"
+  ]
+  ++ cfg.packages;
 
-    export PATH="${bunBin}:$HOME/.cache/.bun/bin:$PATH"
-
-    if [ -z "''${OPENAI_CODEX_OAUTH_TOKEN:-}" ] && [ -r "$HOME/.codex/auth.json" ]; then
-      token="$(${jqBin} -r '.tokens.access_token // empty' "$HOME/.codex/auth.json" 2>/dev/null || true)"
-      if [ -n "$token" ] && [ "$token" != "null" ]; then
-        export OPENAI_CODEX_OAUTH_TOKEN="$token"
-      fi
-    fi
-
-    if [ -z "''${ANTHROPIC_OAUTH_TOKEN:-}" ] && [ -r "$HOME/.claude/.credentials.json" ]; then
-      token="$(${jqBin} -r '.claudeAiOauth.accessToken // empty' "$HOME/.claude/.credentials.json" 2>/dev/null || true)"
-      if [ -n "$token" ] && [ "$token" != "null" ]; then
-        export ANTHROPIC_OAUTH_TOKEN="$token"
-      fi
-    fi
-
-    if [ -r "${piEntrypoint}" ]; then
-      exec "${bunBin}/bun" "${piEntrypoint}" "$@"
-    fi
-
-    echo "Pi CLI not installed. Run home-manager switch or install ${piPackage} into ${piPrivateDir}." >&2
-    exit 127
-  '';
+  # Extract npm package name from source (strip npm: prefix, take last segment after /)
+  pkgName =
+    source:
+    let
+      s = lib.last (builtins.split "/" source);
+    in
+    if lib.hasPrefix "npm:" source then
+      builtins.substring 4 (builtins.stringLength source) source
+    else
+      s;
 
   modelsConfig =
     if workModels then
@@ -161,33 +159,34 @@ let
       };
     };
   };
-
 in
 {
   config = lib.mkMerge [
     (lib.mkIf cfg.enable {
-      home.packages = [ piWrapper ];
-
-      home.file."${agentDir}/settings.json".text = builtins.toJSON {
-        defaultProvider = cfg.defaultProvider;
-        defaultModel = cfg.defaultModel;
-        defaultThinkingLevel = cfg.defaultThinkingLevel;
-        enableInstallTelemetry = false;
-        quietStartup = true;
-        collapseChangelog = true;
-        doubleEscapeAction = "tree";
-        compaction = {
-          enabled = true;
-          reserveTokens = cfg.compaction.reserveTokens;
-          keepRecentTokens = cfg.compaction.keepRecentTokens;
+      home.file."${agentDir}/settings.json" = {
+        force = true;
+        text = builtins.toJSON {
+          defaultProvider = cfg.defaultProvider;
+          defaultModel = cfg.defaultModel;
+          defaultThinkingLevel = cfg.defaultThinkingLevel;
+          enableInstallTelemetry = false;
+          quietStartup = true;
+          collapseChangelog = true;
+          doubleEscapeAction = "tree";
+          compaction = {
+            enabled = true;
+            reserveTokens = cfg.compaction.reserveTokens;
+            keepRecentTokens = cfg.compaction.keepRecentTokens;
+          };
+          retry = {
+            enabled = true;
+            maxRetries = 2;
+            baseDelayMs = 2000;
+          };
+          steeringMode = "one-at-a-time";
+          followUpMode = "one-at-a-time";
+          packages = piPackages;
         };
-        retry = {
-          enabled = true;
-          maxRetries = 2;
-          baseDelayMs = 2000;
-        };
-        steeringMode = "one-at-a-time";
-        followUpMode = "one-at-a-time";
       };
 
       home.file."${agentDir}/models.json" = {
@@ -206,7 +205,7 @@ in
       home.file."${agentDir}/extensions/code-execution.ts".source = ./extensions/code-execution.ts;
       home.activation.installPiCli = {
         after = [ "linkGeneration" ];
-        before = [ "installPiMonty" ];
+        before = [ "installPiPackages" ];
         data = ''
           if [ -r "${piEntrypoint}" ]; then
             echo "[pi] CLI already installed"
@@ -222,9 +221,30 @@ in
           fi
         '';
       };
+
+      # Install pi npm packages into agent npm dir
+      # settings.json is nix-managed (store path), so pi install can't write to it
+      # We install via bun add + inline packages in settings.json
+      home.activation.installPiPackages = {
+        after = [ "linkGeneration" ];
+        before = [ "installPiMonty" ];
+        data = ''
+          NPM_DIR="${npmDir}"
+          mkdir -p "$NPM_DIR"
+          ${lib.concatStringsSep "\n" (
+            map (source: ''
+              NAME="${pkgName source}"
+              if ! [ -d "$NPM_DIR/node_modules/$NAME" ]; then
+                echo "[pi] Installing $NAME"
+                (cd "$NPM_DIR" && "${bunBin}/bun" add "$NAME" 2>&1) || true
+              fi
+            '') piPackages
+          )}
+        '';
+      };
       home.activation.installPiMonty = {
-        after = [ "installPiCli" ];
-        before = [ "installPiPackages" ];
+        after = [ "installPiPackages" ];
+        before = [ ];
         data = ''
           if [ ! -d "${piPrivateDir}" ]; then
             echo "[pi] piPrivateDir missing, skipping monty install"
@@ -234,36 +254,10 @@ in
           fi
         '';
       };
-      # Install pi packages
-      home.activation.installPiPackages = {
-        after = [
-          "linkGeneration"
-          "installPiMonty"
-        ];
-        before = [ "writePowerlineTheme" ];
-        data = ''
-          if [ ! -x "${piCli}" ]; then
-            echo "[pi] pi CLI not found at ${piCli}, skipping package install"
-          elif ! "${piCli}" list >/dev/null 2>&1; then
-            echo "[pi] pi CLI not runnable, skipping package install"
-          else
-            install_pkg() {
-              local name="$1"
-              local short
-              short="$(echo "$name" | sed 's|.*/||')"
-              if ! "${piCli}" list 2>/dev/null | grep -q "$short"; then
-                echo "[pi] Installing $name"
-                "${piCli}" install "$name" 2>&1 || true
-              fi
-            }
-            ${lib.concatStringsSep "\n" (map (pkg: "            install_pkg \"${pkg}\"") cfg.packages)}
-          fi
-        '';
-      };
 
       # Write powerline theme
       home.activation.writePowerlineTheme = {
-        after = [ "installPiPackages" ];
+        after = [ "installPiMonty" ];
         before = [ ];
         data = ''
                     mkdir -p "${agentDir}/npm/node_modules/pi-powerline-footer"
