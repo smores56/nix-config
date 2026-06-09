@@ -73,7 +73,7 @@ let
   # The parent session (cfg.defaultModel) is the strong tier; cheap/scout work
   # is delegated to the weak tier. deepseek + crofai stay available as failover
   # backups via fallbackModels.
-  strongModel = cfg.defaultModel;
+  strongModel = if workModels then "anthropic/claude-fable-5" else cfg.defaultModel;
   weakModel =
     if workModels then "anthropic/claude-sonnet-4-6" else "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25.id}";
 

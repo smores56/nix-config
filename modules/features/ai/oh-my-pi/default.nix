@@ -16,7 +16,7 @@ let
   # routinely delegated. Subagent roles prefer the weak tier wherever reasonable
   # so cheap delegation happens as often as possible.
   strongModel =
-    if workModels then "anthropic/claude-opus-4-8" else "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25Pro.id}";
+    if workModels then "anthropic/claude-fable-5" else "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25Pro.id}";
   weakModel =
     if workModels then "anthropic/claude-sonnet-4-6" else "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25.id}";
 
