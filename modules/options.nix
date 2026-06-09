@@ -440,22 +440,17 @@ in
           packages = lib.mkOption {
             type = lib.types.listOf lib.types.str;
             default = [
-              "npm:pi-rules"
-              "git:github.com/code-yeongyu/pi-nested-agents-md"
-              "npm:@juicesharp/rpiv-ask-user-question"
-              "npm:@juicesharp/rpiv-todo"
-              "npm:pi-codex-goal"
-              "npm:pi-memory"
-              "npm:pi-context-usage"
-              "npm:@marckrenn/pi-sub-bar"
-              "npm:pi-context-prune"
-              "npm:pi-lens"
-              "npm:pi-multiagent"
-              "npm:@juicesharp/rpiv-advisor"
+              "npm:pi-total-recall"
+              "npm:pi-rtk-optimizer"
+              "npm:pi-subagents"
+              "npm:pi-mcp-adapter"
               "npm:pi-web-access"
-              "git:github.com/mitsuhiko/agent-stuff"
-              "npm:@aliou/pi-processes"
-              "npm:@blackbelt-technology/pi-agent-dashboard"
+              "npm:pi-intercom"
+              "npm:pi-powerline-footer"
+              "npm:pi-context-prune"
+              "npm:pi-autoresearch"
+              "npm:pi-review-loop"
+              "npm:@juicesharp/rpiv-ask-user-question"
             ];
             description = "Pi packages to install via `pi install`.";
           };
@@ -558,7 +553,9 @@ in
           server = lib.mkOption {
             type = lib.types.submodule {
               options = {
-                enable = lib.mkEnableOption "goosed agent server (systemd user service)" // { default = false; };
+                enable = lib.mkEnableOption "goosed agent server (systemd user service)" // {
+                  default = false;
+                };
               };
             };
             default = { };
@@ -566,7 +563,9 @@ in
           web = lib.mkOption {
             type = lib.types.submodule {
               options = {
-                enable = lib.mkEnableOption "goose-web PWA" // { default = false; };
+                enable = lib.mkEnableOption "goose-web PWA" // {
+                  default = false;
+                };
                 port = lib.mkOption {
                   type = lib.types.port;
                   default = 2999;

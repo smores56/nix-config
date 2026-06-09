@@ -194,23 +194,19 @@ in
         force = true;
         text = builtins.toJSON modelsConfig;
       };
-      # Extensions
-      home.file."${agentDir}/extensions/terminal-bell.ts".source = ./extensions/terminal-bell.ts;
-      home.file."${agentDir}/extensions/filter-output.ts".source = ./extensions/filter-output.ts;
-      home.file."${agentDir}/extensions/handoff.ts".source = ./extensions/handoff.ts;
-      home.file."${agentDir}/extensions/plan-mode.ts".source = ../oh-my-pi/plan-mode.ts;
-      home.file."${agentDir}/extensions/cost.ts".source = ./extensions/cost.ts;
 
       # Skills
       home.file."${agentDir}/skills/grill-me/SKILL.md".source = ./skills/grill-me/SKILL.md;
 
+      # Extensions
+      home.file."${agentDir}/extensions/plan-mode.ts".source = ../oh-my-pi/plan-mode.ts;
+
       # APPEND_SYSTEM.md
       home.file."${agentDir}/APPEND_SYSTEM.md".source = ./APPEND_SYSTEM.md;
-
-      # Install CLI on activation
+      home.file."${agentDir}/extensions/code-execution.ts".source = ./extensions/code-execution.ts;
       home.activation.installPiCli = {
         after = [ "linkGeneration" ];
-        before = [ "installPiPackages" ];
+        before = [ "installPiMonty" ];
         data = ''
           if [ -r "${piEntrypoint}" ]; then
             echo "[pi] CLI already installed"
@@ -226,12 +222,23 @@ in
           fi
         '';
       };
-
+      home.activation.installPiMonty = {
+        after = [ "installPiCli" ];
+        before = [ "installPiPackages" ];
+        data = ''
+          if [ ! -d "${piPrivateDir}" ]; then
+            echo "[pi] piPrivateDir missing, skipping monty install"
+          else
+            echo "[pi] Installing @pydantic/monty into pi node_modules"
+            (cd "${piPrivateDir}" && "${bunBin}/bun" add @pydantic/monty 2>&1) || true
+          fi
+        '';
+      };
       # Install pi packages
       home.activation.installPiPackages = {
         after = [
           "linkGeneration"
-          "installPiCli"
+          "installPiMonty"
         ];
         before = [ "writePowerlineTheme" ];
         data = ''
@@ -249,7 +256,6 @@ in
                 "${piCli}" install "$name" 2>&1 || true
               fi
             }
-
             ${lib.concatStringsSep "\n" (map (pkg: "            install_pkg \"${pkg}\"") cfg.packages)}
           fi
         '';
