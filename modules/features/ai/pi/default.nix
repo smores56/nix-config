@@ -2,11 +2,15 @@
   config,
   lib,
   pkgs,
+  aiXiaomi,
+  aiDeepseek,
+  aiCrofai,
   ...
 }:
 let
   cfg = config.dotfiles.pi;
   dashboardCfg = config.dotfiles.piDashboard;
+  workModels = config.dotfiles.workModels;
   homeDir = config.home.homeDirectory;
   agentDir = "${homeDir}/.pi/agent";
 
@@ -66,6 +70,57 @@ let
     echo "Pi CLI not installed. Run home-manager switch or install ${piPackage} into ${piPrivateDir}." >&2
     exit 127
   '';
+
+  modelsConfig =
+    if workModels then
+      { }
+    else
+      {
+        providers = {
+          ${aiXiaomi.providerId} = {
+            baseUrl = aiXiaomi.baseUrl;
+            apiKey = "$XIAOMI_MIMO_API_KEY";
+            api = "openai-completions";
+            models = aiXiaomi.ompModelsList;
+          };
+          smortress = {
+            baseUrl = "http://smortress:8081/v1";
+            api = "openai-completions";
+            apiKey = "none";
+            compat = {
+              supportsDeveloperRole = false;
+            };
+            models = [
+              {
+                id = "gemma-4-31b";
+                name = "Gemma 4 31B (smortress)";
+                reasoning = true;
+                input = [ "text" ];
+                contextWindow = 102400;
+                maxTokens = 102400;
+                cost = {
+                  input = 0;
+                  output = 0;
+                  cacheRead = 0;
+                  cacheWrite = 0;
+                };
+              }
+            ];
+          };
+          ${aiDeepseek.providerId} = {
+            baseUrl = aiDeepseek.baseUrl;
+            apiKey = "$DEEPSEEK_API_KEY";
+            api = "openai-completions";
+            models = aiDeepseek.ompModelsList;
+          };
+          ${aiCrofai.providerId} = {
+            baseUrl = aiCrofai.baseUrl;
+            apiKey = "$CROFAI_API_KEY";
+            api = "openai-completions";
+            models = aiCrofai.ompModelsList;
+          };
+        };
+      };
 
   dashboardConfig = lib.mkIf dashboardCfg.enable {
     home.activation.configurePiDashboard = {
@@ -135,6 +190,10 @@ in
         followUpMode = "one-at-a-time";
       };
 
+      home.file."${agentDir}/models.json" = {
+        force = true;
+        text = builtins.toJSON modelsConfig;
+      };
       # Extensions
       home.file."${agentDir}/extensions/terminal-bell.ts".source = ./extensions/terminal-bell.ts;
       home.file."${agentDir}/extensions/filter-output.ts".source = ./extensions/filter-output.ts;
