@@ -21,12 +21,12 @@ let
 
   bunBin = "${homeDir}/.bun/bin";
 
-  stylixColors = config.lib.stylix.colors;
+  bordoVars = (builtins.fromJSON (builtins.readFile ./themes/noctis-bordo.json)).vars;
   powerlineTheme = builtins.toJSON {
     colors = {
-      model = "#${stylixColors.base0D}";
+      model = bordoVars.rose;
       shellMode = "accent";
-      path = "#${stylixColors.base0C}";
+      path = bordoVars.cyan;
       gitDirty = "warning";
       gitClean = "success";
       thinking = "thinkingOff";
