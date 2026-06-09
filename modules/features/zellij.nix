@@ -174,6 +174,26 @@ in
       themes.light = zellijTheme lightColors;
     };
     extraConfig = ''
+      // Remap default plain-Alt actions to Ctrl+Alt to free up Alt for other programs
+      keybinds {
+          shared_except "locked" {
+              unbind "Alt f" "Alt n" "Alt i" "Alt o" "Alt h" "Alt l" "Alt j" "Alt k" "Alt Left" "Alt Right" "Alt Down" "Alt Up" "Alt =" "Alt +" "Alt -" "Alt [" "Alt ]" "Alt p" "Alt Shift p"
+              bind "Ctrl Alt f" { ToggleFloatingPanes; }
+              bind "Ctrl Alt n" { NewPane; }
+              bind "Ctrl Alt i" { MoveTab "Left"; }
+              bind "Ctrl Alt o" { MoveTab "Right"; }
+              bind "Ctrl Alt Left" { MoveFocusOrTab "Left"; }
+              bind "Ctrl Alt Right" { MoveFocusOrTab "Right"; }
+              bind "Ctrl Alt Down" { MoveFocus "Down"; }
+              bind "Ctrl Alt Up" { MoveFocus "Up"; }
+              bind "Ctrl Alt =" "Ctrl Alt +" { Resize "Increase"; }
+              bind "Ctrl Alt -" { Resize "Decrease"; }
+              bind "Ctrl Alt [" { PreviousSwapLayout; }
+              bind "Ctrl Alt ]" { NextSwapLayout; }
+              bind "Ctrl Alt p" { TogglePaneInGroup; }
+              bind "Ctrl Alt Shift p" { ToggleGroupMarking; }
+          }
+      }
       plugins {
           smart-tabs location="file:${smart-tabs-wasm}" {
               format "{% if short_git_root and short_git_root != short_dir %}{{ short_git_root }}/{{ short_dir }}{% else %}{{ short_dir }}{% endif %}"
