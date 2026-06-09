@@ -1,4 +1,3 @@
-# code_execution extension — Monty sandboxed Python interpreter for pi coding agent
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join } from "node:path";
