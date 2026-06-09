@@ -6,7 +6,7 @@ in
   fonts.fontconfig.enable = lib.mkIf (cfg.displayManager != "none") true;
   home.sessionVariables = {
     TERMINAL = cfg.terminal;
-    FISH_TERMINAL_SKIP_DSR = "1";
+    fish_terminal_skip_dsr = "1";
   };
 
   programs.kitty = {
