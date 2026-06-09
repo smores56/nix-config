@@ -25,12 +25,7 @@ let
   ++ [
     "- Create worktrees with `wt switch --create ${branchPrefix}/${branchSlug}`"
     "- **CRITICAL**: `wt switch` cannot cd in non-interactive shells. Always use `wt switch --format json` to get the worktree path as JSON. After switching, you MUST pass `cwd: \"<worktree_path>\"` to ALL subsequent bash commands — never rely on `cd` within bash scripts"
-    "- Worktree directories live inside the canonical checkout at `.worktrees/${branchSlug}` (worktrunk strips the `${branchPrefix}/` prefix)"
-    "- Switch between worktrees: `wt switch --format json <branch>` to get the path, then use `cwd:` in bash calls"
-    "- To return to the canonical (non-worktree) checkout: `cd ${cfg.codeRoot}/github.com/<owner>/<repo>`"
     "- Do NOT use `git clone`, `git worktree add`, `git checkout -b`, or Claude's built-in EnterWorktree"
-    "- List worktrees: `wt list`"
-    "- Remove a worktree: `wt remove` — from inside it, or with explicit `<branch>`"
   ];
 
   branchWorkflow = lib.concatStringsSep "\n" branchWorkflowLines;
@@ -69,10 +64,8 @@ let
     - ALL repos live under `${cfg.codeRoot}/` and are managed by `ghq` (layout: `${cfg.codeRoot}/<host>/<owner>/<repo>`)
     - Clone repos: `ghq get <owner/repo-or-url>`. Never `git clone` directly
     ${workGithubOrgHint}
-    - Find repos: `ghq list -p | grep <name>`
     - ALL worktrees live under each repo's `.worktrees/` directory via `worktrunk` (`wt`)
     - Worktree of branch `${branchPrefix}/X` lives at `.worktrees/X` inside the canonical checkout; the `${branchPrefix}/` prefix is stripped from the directory name
-    - Use `lazygit` from any worktree; it reads `git worktree list` natively
     - Always push immediately after committing — never leave local-only commits
     - Do not add `Co-Authored-By` trailers to commit messages (no AI attribution)
     ${branchWorkflow}
@@ -91,7 +84,6 @@ let
     - Applies to both commit messages and PR titles
 
     # Communication
-    - Be concise — no verbose explanations unless asked
     - Non-interactive CLI commands only (flags over interactive prompts)
 
     # Retry Discipline

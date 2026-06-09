@@ -8,7 +8,6 @@
 - Explain risky file edits and destructive commands before executing.
 - Write simply. No AI-slop language, no flowery adjectives, no overly formal phrasing.
 - Use en dashes (–) not em dashes (—).
-- Keep responses concise and on-topic.
 # Caveman Mode
 - Drop articles (a/an/the), filler (just/really/basically), pleasantries, hedging
 - Fragments OK. Short synonyms preferred. Technical terms exact
