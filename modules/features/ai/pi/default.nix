@@ -213,6 +213,15 @@ let
     borderStyle = "rounded";
     countdown = -1; # no auto-dismiss timer; keypress or agent activity dismisses
     showInfoPanel = true;
+    # drop generic keyboard tips + verbose per-extension resource listing
+    infoPanelSections = [
+      "version"
+      "model"
+      "loaded"
+      "sessions"
+    ];
+    showTips = false;
+    showResources = false;
   };
 
   # pi-autoname: first-dialogue + periodic session naming on the weak tier.
@@ -426,6 +435,20 @@ in
                     enabled = true;
                   }
                 }' > "$ANIM_CFG"
+              fi
+            '';
+          };
+
+          # pi-welcome-screen checks Esc as bare \x1b or \x1b[27, but Ghostty
+          # (Kitty keyboard protocol) sends \x1b[27u - Esc never dismisses.
+          # Patch to a startsWith check. No-ops once applied or if fixed upstream.
+          patchPiWelcomeScreenEsc = {
+            after = [ "installPiPackages" ];
+            before = [ ];
+            data = ''
+              WS="${npmDir}/node_modules/@codesook/pi-welcome-screen/src/WelcomeOverlay.ts"
+              if [ -f "$WS" ]; then
+                ${pkgs.perl}/bin/perl -pi -e 's/data === "\\x1b\[27"/data.startsWith("\\x1b[27")/' "$WS" || true
               fi
             '';
           };
