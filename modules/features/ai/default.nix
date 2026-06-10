@@ -5,28 +5,36 @@
 }:
 let
   cfg = config.dotfiles;
-  inherit (cfg) branchPrefix;
+  personalPrefix = cfg.branchPrefix;
+  workPrefix = cfg.workBranchPrefix;
+  hasWork = cfg.workGithubOrgs != [ ] && workPrefix != null;
+  hasTicket = hasWork && cfg.ticketPrefix != null;
+  workOrgList = lib.concatStringsSep ", " cfg.workGithubOrgs;
+  workBranchExample =
+    if hasTicket then
+      "${workPrefix}/${cfg.ticketPrefix}-12345-fix-auth-flow"
+    else
+      "${workPrefix}/fix-auth-flow";
 
-  hasTicket = cfg.ticketPrefix != null;
-  branchSlug =
-    if hasTicket then "${cfg.ticketPrefix}-<ticket-number>-<kebab-slug>" else "<kebab-slug>";
-  exampleSlug = if hasTicket then "${cfg.ticketPrefix}-12345-fix-auth-flow" else "fix-auth-flow";
-
-  branchWorkflowLines = [
-    "- Branch format: `${branchPrefix}/${branchSlug}`"
-    "- Example: `${branchPrefix}/${exampleSlug}`"
-  ]
-  ++ lib.optionals hasTicket [
-    "- Every change must reference a ${cfg.ticketPrefix} Linear ticket"
-    "- To create a ticket: `linear issue create -t \"Title\" --team ${cfg.ticketPrefix} --assignee self --start`"
-    "- To list your tickets: `linear issue mine`"
-    "- To view a ticket: `linear issue view ${cfg.ticketPrefix}-<number>`"
-  ]
-  ++ [
-    "- Create worktrees with `wt switch --create ${branchPrefix}/${branchSlug}`"
-    "- **CRITICAL**: `wt switch` cannot cd in non-interactive shells. Always use `wt switch --format json` to get the worktree path as JSON. After switching, you MUST pass `cwd: \"<worktree_path>\"` to ALL subsequent bash commands — never rely on `cd` within bash scripts"
-    "- Do NOT use `git clone`, `git worktree add`, `git checkout -b`, or Claude's built-in EnterWorktree"
-  ];
+  branchWorkflowLines =
+    [
+      "- Branch prefix is per-repo, resolved from the `origin` GitHub org — run `git-branch-prefix` in the repo to get it; never hardcode the prefix"
+      "- Personal repos: `${personalPrefix}/<kebab-slug>` (e.g. `${personalPrefix}/fix-auth-flow`)"
+    ]
+    ++ lib.optionals hasWork [
+      "- Work-org repos (${workOrgList}): `${workBranchExample}`"
+    ]
+    ++ lib.optionals hasTicket [
+      "- Every work-org change references a ${cfg.ticketPrefix} Linear ticket"
+      "- To create a ticket: `linear issue create -t \"Title\" --team ${cfg.ticketPrefix} --assignee self --start`"
+      "- To list your tickets: `linear issue mine`; to view one: `linear issue view ${cfg.ticketPrefix}-<number>`"
+    ]
+    ++ [
+      "- Resolve a full branch for a task with `agent-branch-name --slug <kebab-slug> --task \"<description>\"` (auto-creates a Linear ticket for work-org repos when none is supplied)"
+      "- Create worktrees with `wt switch --create $(git-branch-prefix)<rest-of-branch>`"
+      "- **CRITICAL**: `wt switch` cannot cd in non-interactive shells. Always use `wt switch --format json` to get the worktree path as JSON. After switching, you MUST pass `cwd: \"<worktree_path>\"` to ALL subsequent bash commands — never rely on `cd` within bash scripts"
+      "- Do NOT use `git clone`, `git worktree add`, `git checkout -b`, or Claude's built-in EnterWorktree"
+    ];
 
   branchWorkflow = lib.concatStringsSep "\n" branchWorkflowLines;
   workGithubOrgHint = lib.optionalString (cfg.workGithubOrgs != [ ]) ''
@@ -65,19 +73,17 @@ let
     - Clone repos: `ghq get <owner/repo-or-url>`. Never `git clone` directly
     ${workGithubOrgHint}
     - ALL worktrees live under each repo's `.worktrees/` directory via `worktrunk` (`wt`)
-    - Worktree of branch `${branchPrefix}/X` lives at `.worktrees/X` inside the canonical checkout; the `${branchPrefix}/` prefix is stripped from the directory name
+    - Worktree of branch `<prefix>/X` lives at `.worktrees/X` inside the canonical checkout; everything up to and including the last `/` is stripped from the directory name
     - Always push immediately after committing — never leave local-only commits
     - Do not add `Co-Authored-By` trailers to commit messages (no AI attribution)
     ${branchWorkflow}
-    ${lib.optionalString (!hasTicket) ''
-      - For personal projects: do all work in a worktree, commit and push after each meaningful change, merge back to main when all work is done, then clean up the worktree, local branch, and remote branch
-    ''}
+    - For personal repos: do all work in a worktree, commit and push after each meaningful change, merge back to main when all work is done, then clean up the worktree, local branch, and remote branch
     # Commits and PRs
     - Follow Conventional Commits: <https://www.conventionalcommits.org/en/v1.0.0/>
     - Types: feat, fix, refactor, chore, docs, test, perf, ci
     ${
       if hasTicket then
-        "- Scope is the Linear ticket: `type(${cfg.ticketPrefix}-<number>): description` (e.g. `fix(${cfg.ticketPrefix}-123): resolve token refresh`)"
+        "- Work-org repos: scope is the Linear ticket `type(${cfg.ticketPrefix}-<number>): description` (e.g. `fix(${cfg.ticketPrefix}-123): resolve token refresh`); other repos: `type(scope): description`"
       else
         "- Scope is the affected module or area: `type(scope): description`"
     }

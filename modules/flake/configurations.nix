@@ -72,6 +72,7 @@ let
             primaryMonitor = null;
             monitorSize = null;
             branchPrefix = null;
+            workBranchPrefix = null;
             ticketPrefix = null;
             workGithubOrgs = null;
             workModels = null;
@@ -164,7 +165,7 @@ in
         system = "aarch64-darwin";
         terminalFontSize = 14;
         email = "sam.mohr@sevenai.com";
-        branchPrefix = "sam.mohr";
+        workBranchPrefix = "sam.mohr";
         ticketPrefix = "7AI";
         workGithubOrgs = [ "OkamiAI" ];
         workModels = true;

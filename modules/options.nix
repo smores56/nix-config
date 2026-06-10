@@ -70,7 +70,12 @@ in
     branchPrefix = lib.mkOption {
       type = lib.types.str;
       default = "smores";
-      description = "Prefix for git branch names (e.g. 'sam.mohr').";
+      description = "Branch prefix for personal (non-work-org) repos (e.g. 'smores').";
+    };
+    workBranchPrefix = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Branch prefix for work-org repos (e.g. 'sam.mohr'). Null falls back to branchPrefix. Work is detected per-repo via workGithubOrgs.";
     };
     codeRoot = lib.mkOption {
       type = lib.types.str;
@@ -90,7 +95,7 @@ in
     ticketPrefix = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
-      description = "Ticket ID prefix for branch names (e.g. '7AI'). Null for no ticket requirement.";
+      description = "Linear team/ticket prefix for work-org repos (e.g. '7AI'). Null = no ticket in work branches.";
     };
     sevenqlLspPath = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
