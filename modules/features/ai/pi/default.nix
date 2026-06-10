@@ -387,6 +387,30 @@ in
               )}
             '';
           };
+          # pi-agent-board hardcodes a Tailwind slate/sky palette in its
+          # dashboard chrome (no theme hook). Remap those exact RGB triplets to
+          # noctis-uva. Idempotent: no-ops once applied or if upstream changes.
+          themePiAgentBoard = {
+            after = [ "installPiPackages" ];
+            before = [ ];
+            data = ''
+              BOARD="${npmDir}/node_modules/pi-agent-board/src"
+              if [ -d "$BOARD" ]; then
+                ${pkgs.findutils}/bin/find "$BOARD" -name '*.ts' -print0 | ${pkgs.findutils}/bin/xargs -0 ${pkgs.perl}/bin/perl -pi -e '
+                  s/ansiFg\(248, 250, 252/ansiFg(224, 222, 238/g;  # slate-50  -> uva bright fg
+                  s/ansiFg\(226, 232, 240/ansiFg(197, 194, 214/g;  # slate-200 -> fg
+                  s/ansiFg\(148, 163, 184/ansiFg(141, 136, 174/g;  # slate-400 -> fgMuted
+                  s/ansiFg\(100, 116, 139/ansiFg(92, 89, 115/g;    # slate-500 -> fgDim
+                  s/ansiFg\(51, 65, 85/ansiFg(58, 54, 84/g;        # slate-700 -> borderMuted
+                  s/ansiFg\(56, 189, 248/ansiFg(153, 142, 241/g;   # sky-400   -> periwinkle
+                  s/ansiBg\(56, 189, 248/ansiBg(153, 142, 241/g;   # sky badge -> periwinkle
+                  s/ansiFg\(15, 23, 42/ansiFg(41, 38, 64/g;        # slate-900 text -> uva bg
+                  s/ansiBg\(15, 23, 42/ansiBg(41, 38, 64/g;        # slate-900 bg   -> uva bg
+                  s/ansiBg\(30, 41, 59/ansiBg(52, 48, 82/g;        # slate-800 -> bgLight
+                ' || true
+              fi
+            '';
+          };
           installPiMonty = {
             after = [ "installPiPackages" ];
             before = [ ];
