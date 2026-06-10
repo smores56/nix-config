@@ -34,7 +34,8 @@ let
     "npm:pi-mcp-adapter"
     "npm:pi-vision-proxy"
     # UX
-    "npm:pi-bar" # footer; renders extension statuses incl. rtk
+    "npm:@wierdbytes/pi-statusline" # footer; renders extension statuses + subagent chips
+    "npm:@thinkscape/pi-status" # terminal title + Ghostty native progress bar
     "npm:@juicesharp/rpiv-ask-user-question" # structured questions w/ previews
     "npm:@juicesharp/rpiv-todo"
     "npm:@juicesharp/rpiv-btw"
@@ -279,6 +280,8 @@ in
               enableInstallTelemetry = false;
               quietStartup = true;
               collapseChangelog = true;
+              # OAuth subscription billing notice on every session start – known, noisy
+              warnings.anthropicExtraUsage = false;
               doubleEscapeAction = "tree";
               compaction = {
                 enabled = true;
@@ -367,7 +370,7 @@ in
               NPM_DIR="${npmDir}"
               mkdir -p "$NPM_DIR"
               # Replaced by the June 2026 stack review (see EXTENSIONS.md)
-              for STALE in pi-total-recall pi-rtk-optimizer pi-powerline-footer pi-pokepet pi-emote; do
+              for STALE in pi-total-recall pi-rtk-optimizer pi-powerline-footer pi-pokepet pi-emote pi-bar; do
                 if [ -d "$NPM_DIR/node_modules/$STALE" ]; then
                   echo "[pi] Removing replaced package $STALE"
                   (cd "$NPM_DIR" && "${bunBin}/bun" remove "$STALE" 2>&1) || true

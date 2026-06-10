@@ -13,7 +13,7 @@ reading pi.dev package pages + GitHub repos, then picked deliberately. Managed i
 | Multi-session orchestration | `pi-agent-board` (rutvik308) | Claude Code agent-view clone: dispatch/monitor/peek/reply/attach to background pi sessions from one TUI. Workers are real headless `pi` processes (full extension stack loads). Auto git-worktree isolation for same-repo parallel writers. No tmux needed – zellij stays untouched. |
 | RTK integration | `@sherif-fanous/pi-rtk` | Rewrites bash commands through `rtk` inside the bash tool (spawnHook) – invisible to the LLM, and safety/permission hooks still see the original command. No guard rules = max coverage. Single-file, zero deps. |
 | Memory | `pi-hermes-memory` (chandra447) | Policy-only injection (~200-500 tokens/turn, content retrieved on demand), passive auto-learning + correction detection + auto-consolidation, built-in session search (FTS5), secret scanning before writes. 368 tests. |
-| Status bar | `pi-bar` (tianrendong) | Minimal, debounced (no flicker – pi-powerline-footer was dropped for flashing), renders third-party extension statuses (incl. rtk ✓) with per-status toggles via `/bar status`. AI progress line optional. |
+| Status bar | `@wierdbytes/pi-statusline` + `@thinkscape/pi-status` | statusline: clean reorderable blocks, renders extension statuses + subagent chips, optional fixed-editor mode. pi-status: terminal title + Ghostty-native OSC 9;4 progress, zero flicker risk. History: pi-powerline-footer flickered on a recent version (despite its v0.2.2x fixedEditor/debounce fixes); pi-bar served fine but lacks git segment. Fallbacks: pi-bar (proven), wobondar `pi-footer` (max customization, medium flicker risk). |
 | Structured questions | `@juicesharp/rpiv-ask-user-question` | Option previews (side-by-side code/mockups), multi-question tabs, multi-select, per-option notes. Documented headless behavior (clean `no_ui` error – board workers safe). Distinct tool name avoids the crowded `ask_user` collision family. 52K/mo. |
 | Todo overlay | `@juicesharp/rpiv-todo` | Survives reload + compaction. Its state is what pi-kanban and pi-agent-hub read – ecosystem interop. |
 | Side questions | `@juicesharp/rpiv-btw` | `/btw` one-off side question to same model, zero main-context pollution. rpiv suite consistency. |
@@ -64,8 +64,10 @@ stacks on pi-bar since overlay doesn't replace the footer).
 
 - **bash tool**: owned solely by `@sherif-fanous/pi-rtk`. Never install another
   bash-tool override (lean-ctx, hashline bash, tmux-bash, sandboxes).
-- **footer**: owned by `pi-bar`; it renders other extensions' `setStatus`
-  entries (rtk indicator etc.). One footer extension max.
+- **footer**: owned by `@wierdbytes/pi-statusline`; it renders other
+  extensions' `setStatus` entries (rtk indicator etc.) and pi-subagents chips.
+  One footer extension max. `@thinkscape/pi-status` is title-bar-only – stacks
+  safely.
 - **tool names**: no collisions – `ask_user_question` (rpiv), `memory*`/
   `session_search`/`skill` (hermes), `subagent`/`chain`/`parallel`
   (pi-subagents), `code_execution` (custom).
