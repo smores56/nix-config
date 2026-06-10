@@ -19,7 +19,7 @@ reading pi.dev package pages + GitHub repos, then picked deliberately. Managed i
 | Side questions | `@juicesharp/rpiv-btw` | `/btw` one-off side question to same model, zero main-context pollution. rpiv suite consistency. |
 | Web access | `pi-web-access` (nicopreme) | Required by pi-subagents' `researcher` builtin. Search/fetch/YouTube/GitHub. |
 | Checkpoints/undo | `pi-rewind` (arpagon) | Per-tool snapshots, `/rewind`, redo stack. The yolo-mode safety net: no permission gates, instant recovery. |
-| LSP/lint feedback | `pi-lens` (apmantza) | Diagnostics/type errors surfaced to the agent same-turn after edits. |
+| LSP/lint feedback | *(none)* | `pi-lens` dropped: +3.5s of the ~4s cold start (63KB entry + LSP/ast-grep clients parsed by jiti every launch, even in quick mode). Re-evaluate lighter LSP options if diagnostics are missed. |
 | Notifications | `pi-notify` (ferologics) | OSC 777/99/9 terminal notifications when a turn finishes – pairs with background board workers. |
 | Vision | `pi-vision-proxy` (ngsoftware) | Routes images to a vision model for non-vision primaries (already assumed by APPEND_SYSTEM.md rules). |
 | Programmatic tool calling | *(custom)* `extensions/code-execution.ts` | Our own Monty sandbox extension (`code_execution` tool). pi-subagents does NOT bundle one – verified. Nothing extra installed (runline etc. = second paradigm + prompt overhead for a "maybe"). |
@@ -106,7 +106,7 @@ stacks on pi-bar since overlay doesn't replace the footer).
 | Git/VCS | *(none yet)* | User is on plain git (not jj). Category deferred – see rejections + safe options below. `pi-jj-git-align` is the pick IF jj is ever adopted. |
 | Background tasks | `pi-background-tasks` (ismailsaleekh) | `bg_run`/`bg_status`/`bg_logs`/`bg_kill` + completion wakeups + Shift+Down dock + child-pi telemetry. New tools, NOT a bash override → rtk-safe. No tmux. Headless-safe. |
 | Web remote | *(keep)* `@blackbelt-technology/pi-agent-dashboard` | Incumbent won its own category review: most mature (151 stars), non-TUI-interfering SSE mirror, sees board sessions. Optional later: `tau-mirror` read-only PWA. |
-| Session browse | `pisesh` | Favorites/Today/Here tabs, fuzzy search, inline rename, arrow keys, zero deps/LLM cost. |
+| Session browse | *(built-in)* | `pisesh` dropped: +1.5s startup for features mostly covered by pi's `/resume` picker + hermes `session_search`. |
 | Session naming | `pi-autoname` | Light auto-naming: first dialogue + 30min cooldown re-names, weak-tier model + fallbacks (nix-managed `pi-autoname.json`), `respectManualName: true` so `/name` stays sticky, `/autoname` for manual. Caveat: MIT + auditable source in tarball, but no public repo. Rejected `@agnishc/edb-auto-name-session` (hardcoded opencode/big-pickle – provider we don't run) and running two naming tools (`@tifan/pi-rename` dropped – naming tools race). |
 | Tool rendering | `pi-tool-display` | Display-only (verified: execute delegates to SDK untouched → model sees raw results, rtk-safe), rich diffs, per-tool ownership toggles, RTK-compaction hints, best tested. |
 | Steering | `@agnishc/edb-agent-steer` | Native one-at-a-time steering already covers queueing; this only adds Enter→s/q/d/e menu (discard option), no keybindings/widgets. All queue extensions rejected as redundant. |

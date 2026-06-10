@@ -41,14 +41,12 @@ let
     "npm:@juicesharp/rpiv-todo"
     "npm:@juicesharp/rpiv-btw"
     "npm:pi-rewind" # yolo-mode undo (use /rewind; Esc+Esc stays "tree")
-    "npm:pi-lens" # LSP/lint feedback to agent
     "npm:pi-notify"
     # Workflow carryovers
     "npm:pi-autoresearch"
     "npm:pi-review-loop"
     # Round 2 (see EXTENSIONS.md "Round 2")
     "npm:pi-background-tasks" # bg_run/status/logs/kill, rtk-safe, headless-safe
-    "npm:pisesh" # session browse/favorites/resume TUI, zero LLM cost
     "npm:pi-autoname" # light auto-naming on weak tier; /autoname for manual (MIT, source in tarball, no public repo)
     "npm:pi-tool-display" # display-only tool rendering, RTK-aware hints
     "npm:@agnishc/edb-agent-steer" # mid-turn Enter -> steer/queue/discard/edit menu
@@ -372,7 +370,7 @@ in
               NPM_DIR="${npmDir}"
               mkdir -p "$NPM_DIR"
               # Replaced by the June 2026 stack review (see EXTENSIONS.md)
-              for STALE in pi-total-recall pi-rtk-optimizer pi-powerline-footer pi-pokepet pi-emote pi-bar @codesook/pi-welcome-screen; do
+              for STALE in pi-total-recall pi-rtk-optimizer pi-powerline-footer pi-pokepet pi-emote pi-bar @codesook/pi-welcome-screen pi-lens pisesh; do
                 if [ -d "$NPM_DIR/node_modules/$STALE" ]; then
                   echo "[pi] Removing replaced package $STALE"
                   (cd "$NPM_DIR" && "${bunBin}/bun" remove "$STALE" 2>&1) || true
@@ -401,14 +399,27 @@ in
                 mkdir -p "$(dirname "$ANIM_CFG")"
                 printf '%s' '${
                   builtins.toJSON {
-                    workingAnim = "pacman";
-                    thinkingAnim = "plasma-wave";
-                    toolAnim = "pipeline";
+                    workingAnim = "accordion";
+                    thinkingAnim = "orbit-dots";
+                    toolAnim = "conveyor";
                     width = "full";
                     randomMode = false;
                     enabled = true;
                   }
                 }' > "$ANIM_CFG"
+              fi
+            '';
+          };
+
+          # pi-animations ticks at a hardcoded 60ms (~17fps) - too busy.
+          # Slow both animation timers to 120ms. No-ops once applied.
+          patchPiAnimationsTick = {
+            after = [ "installPiPackages" ];
+            before = [ ];
+            data = ''
+              ANIM="${npmDir}/node_modules/pi-animations/animations.ts"
+              if [ -f "$ANIM" ]; then
+                ${pkgs.perl}/bin/perl -pi -e 's/\}, 60\);/}, 120);/g' "$ANIM" || true
               fi
             '';
           };
