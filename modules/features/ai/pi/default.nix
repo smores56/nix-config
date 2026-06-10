@@ -407,6 +407,14 @@ in
                   s/ansiFg\(15, 23, 42/ansiFg(41, 38, 64/g;        # slate-900 text -> uva bg
                   s/ansiBg\(15, 23, 42/ansiBg(41, 38, 64/g;        # slate-900 bg   -> uva bg
                   s/ansiBg\(30, 41, 59/ansiBg(52, 48, 82/g;        # slate-800 -> bgLight
+                  # STAGE_RGB per-state row colors
+                  s/queued: \[148, 163, 184\]/queued: [141, 136, 174]/;      # -> fgMuted
+                  s/working: \[56, 189, 248\]/working: [73, 172, 233]/;      # -> uva blue
+                  s/needs_input: \[245, 158, 11\]/needs_input: [230, 149, 51]/; # -> warnOrange
+                  s/idle: \[129, 140, 248\]/idle: [153, 142, 241]/;          # -> periwinkle
+                  s/completed: \[34, 197, 94\]/completed: [73, 233, 166]/;   # -> uva green
+                  s/failed: \[248, 113, 113\]/failed: [227, 78, 28]/;        # -> errorRed
+                  s/stopped: \[100, 116, 139\]/stopped: [92, 89, 115]/;      # -> fgDim
                 ' || true
               fi
             '';
