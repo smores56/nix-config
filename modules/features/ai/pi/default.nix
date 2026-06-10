@@ -35,6 +35,8 @@ let
     "npm:pi-vision-proxy"
     # UX
     "npm:@wierdbytes/pi-statusline" # footer; renders extension statuses + subagent chips
+    "npm:@codesook/pi-welcome-screen" # startup splash: banner + model/sessions info panel
+    "npm:pi-animations" # working-indicator animations (1-line modes safe with statusline)
     "npm:@thinkscape/pi-status" # terminal title + Ghostty native progress bar
     "npm:@juicesharp/rpiv-ask-user-question" # structured questions w/ previews
     "npm:@juicesharp/rpiv-todo"
@@ -202,6 +204,17 @@ let
     providers = commonProviders // (if workModels then workProviders else personalProviders);
   };
 
+  # pi-welcome-screen: startup splash overlay; dismisses on keypress/activity
+  welcomeScreenConfig = builtins.toJSON {
+    mainText = "smores";
+    url = "https://github.com/smores56";
+    animationStyle = "wave";
+    animationColor = "lavender"; # closest catppuccin color to uva periwinkle
+    borderStyle = "rounded";
+    countdown = -1; # no auto-dismiss timer; keypress or agent activity dismisses
+    showInfoPanel = true;
+  };
+
   # pi-autoname: first-dialogue + periodic session naming on the weak tier.
   # respectManualName keeps /name sticky; text-extraction fallback if AI fails.
   autonameConfig = builtins.toJSON {
@@ -317,6 +330,12 @@ in
             text = autonameConfig;
           };
 
+          "${homeDir}/.pi/welcome-screen.config.json" = {
+            force = true;
+            text = welcomeScreenConfig;
+          };
+          "${agentDir}/pi-welcome-screen/banner.txt".source = ./welcome-banner.txt;
+
           # Skills, themes, custom extensions, global rules
           "${agentDir}/skills/grill-me/SKILL.md".source = ./skills/grill-me/SKILL.md;
           "${agentDir}/themes/noctis-uva.json".source = ./themes/noctis-uva.json;
@@ -387,6 +406,30 @@ in
               )}
             '';
           };
+          # Seed pi-animations defaults (1-line animations only - multi-line
+          # ones fight pi-statusline for above-editor space). Seed-if-missing so
+          # /animation changes persist; delete the file to re-seed.
+          seedPiAnimations = {
+            after = [ "writeBoundary" ];
+            before = [ ];
+            data = ''
+              ANIM_CFG="$HOME/.pi/agent/extensions/pi-tui-animations.json"
+              if [ ! -f "$ANIM_CFG" ]; then
+                mkdir -p "$(dirname "$ANIM_CFG")"
+                printf '%s' '${
+                  builtins.toJSON {
+                    workingAnim = "pacman";
+                    thinkingAnim = "plasma-wave";
+                    toolAnim = "pipeline";
+                    width = "full";
+                    randomMode = false;
+                    enabled = true;
+                  }
+                }' > "$ANIM_CFG"
+              fi
+            '';
+          };
+
           # pi-agent-board hardcodes a Tailwind slate/sky palette in its
           # dashboard chrome (no theme hook). Remap those exact RGB triplets to
           # noctis-uva. Idempotent: no-ops once applied or if upstream changes.
