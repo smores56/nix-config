@@ -35,7 +35,6 @@ let
     "npm:pi-vision-proxy"
     # UX
     "npm:@wierdbytes/pi-statusline" # footer; renders extension statuses + subagent chips
-    "npm:@codesook/pi-welcome-screen" # startup splash: banner + model/sessions info panel
     "npm:pi-animations" # working-indicator animations (1-line modes safe with statusline)
     "npm:@thinkscape/pi-status" # terminal title + Ghostty native progress bar
     "npm:@juicesharp/rpiv-ask-user-question" # structured questions w/ previews
@@ -204,26 +203,6 @@ let
     providers = commonProviders // (if workModels then workProviders else personalProviders);
   };
 
-  # pi-welcome-screen: startup splash overlay; dismisses on keypress/activity
-  welcomeScreenConfig = builtins.toJSON {
-    mainText = "smores";
-    url = "https://github.com/smores56";
-    animationStyle = "static"; # no movement
-    animationColor = "lavender"; # closest catppuccin color to uva periwinkle
-    borderStyle = "rounded";
-    countdown = -1; # no auto-dismiss timer; keypress or agent activity dismisses
-    showInfoPanel = true;
-    # drop generic keyboard tips + verbose per-extension resource listing
-    infoPanelSections = [
-      "version"
-      "model"
-      "loaded"
-      "sessions"
-    ];
-    showTips = false;
-    showResources = false;
-  };
-
   # pi-autoname: first-dialogue + periodic session naming on the weak tier.
   # respectManualName keeps /name sticky; text-extraction fallback if AI fails.
   autonameConfig = builtins.toJSON {
@@ -339,17 +318,12 @@ in
             text = autonameConfig;
           };
 
-          "${homeDir}/.pi/welcome-screen.config.json" = {
-            force = true;
-            text = welcomeScreenConfig;
-          };
-          "${agentDir}/pi-welcome-screen/banner.txt".source = ./welcome-banner.txt;
-
           # Skills, themes, custom extensions, global rules
           "${agentDir}/skills/grill-me/SKILL.md".source = ./skills/grill-me/SKILL.md;
           "${agentDir}/themes/noctis-uva.json".source = ./themes/noctis-uva.json;
           "${agentDir}/extensions/plan-mode.ts".source = ../oh-my-pi/plan-mode.ts;
           "${agentDir}/extensions/code-execution.ts".source = ./extensions/code-execution.ts;
+          "${agentDir}/extensions/splash.ts".source = ./extensions/splash.ts;
           "${agentDir}/APPEND_SYSTEM.md".source = ./APPEND_SYSTEM.md;
 
           "${homeDir}/.config/fish/conf.d/pi-aliases.fish".text = ''
@@ -398,7 +372,7 @@ in
               NPM_DIR="${npmDir}"
               mkdir -p "$NPM_DIR"
               # Replaced by the June 2026 stack review (see EXTENSIONS.md)
-              for STALE in pi-total-recall pi-rtk-optimizer pi-powerline-footer pi-pokepet pi-emote pi-bar; do
+              for STALE in pi-total-recall pi-rtk-optimizer pi-powerline-footer pi-pokepet pi-emote pi-bar @codesook/pi-welcome-screen; do
                 if [ -d "$NPM_DIR/node_modules/$STALE" ]; then
                   echo "[pi] Removing replaced package $STALE"
                   (cd "$NPM_DIR" && "${bunBin}/bun" remove "$STALE" 2>&1) || true
@@ -435,20 +409,6 @@ in
                     enabled = true;
                   }
                 }' > "$ANIM_CFG"
-              fi
-            '';
-          };
-
-          # pi-welcome-screen checks Esc as bare \x1b or \x1b[27, but Ghostty
-          # (Kitty keyboard protocol) sends \x1b[27u - Esc never dismisses.
-          # Patch to a startsWith check. No-ops once applied or if fixed upstream.
-          patchPiWelcomeScreenEsc = {
-            after = [ "installPiPackages" ];
-            before = [ ];
-            data = ''
-              WS="${npmDir}/node_modules/@codesook/pi-welcome-screen/src/WelcomeOverlay.ts"
-              if [ -f "$WS" ]; then
-                ${pkgs.perl}/bin/perl -pi -e 's/data === "\\x1b\[27"/data.startsWith("\\x1b[27")/' "$WS" || true
               fi
             '';
           };
