@@ -440,6 +440,21 @@ in
             '';
           };
 
+          # pi-animations restores pi's default "Working..." text at agent_end
+          # and session_switch, which flashes for a beat while the loader row is
+          # still visible. Blank it instead (/animation off keeps the default).
+          patchPiAnimationsEndFlash = {
+            after = [ "installPiPackages" ];
+            before = [ ];
+            data = ''
+              ANIM="${npmDir}/node_modules/pi-animations/animations.ts"
+              if [ -f "$ANIM" ]; then
+                ${pkgs.perl}/bin/perl -0777 -pi -e 's/(stopThinkingTicker\(\);\n\t\tctx\.ui\.setWorkingMessage\()\); \/\/ restore default/$1""); \/\/ blank, not default "Working..." - avoids end-of-turn flash/' "$ANIM" || true
+                ${pkgs.perl}/bin/perl -0777 -pi -e 's/("session_switch", async \(_e, ctx\) => \{\n\t\tstopWorkingAnimation\(ctx\);\n\t\tstopThinkingTicker\(\);\n\t\tctx\.ui\.setWorkingMessage\()\)/$1"")/' "$ANIM" || true
+              fi
+            '';
+          };
+
           # pi-statusline replaces pi's editor with its own component that
           # hardcodes PROMPT_PADDING = 0 and overrides setPaddingX to ignore the
           # editorPaddingX setting. Patch the constant to 2, then overdraw the
