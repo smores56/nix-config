@@ -50,8 +50,6 @@ let
     "npm:pi-autoname" # light auto-naming on weak tier; /autoname for manual (MIT, source in tarball, no public repo)
     "npm:pi-tool-display" # display-only tool rendering, RTK-aware hints
     "npm:@agnishc/edb-agent-steer" # mid-turn Enter -> steer/queue/discard/edit menu
-    "npm:pi-emote" # pixel avatar reacting to agent state, zero tokens
-    "npm:pi-pokepet" # desktop pet reacting to tests/builds/commits, zero tokens
   ]
   ++ cfg.packages;
 
@@ -369,7 +367,7 @@ in
               NPM_DIR="${npmDir}"
               mkdir -p "$NPM_DIR"
               # Replaced by the June 2026 stack review (see EXTENSIONS.md)
-              for STALE in pi-total-recall pi-rtk-optimizer pi-powerline-footer; do
+              for STALE in pi-total-recall pi-rtk-optimizer pi-powerline-footer pi-pokepet pi-emote; do
                 if [ -d "$NPM_DIR/node_modules/$STALE" ]; then
                   echo "[pi] Removing replaced package $STALE"
                   (cd "$NPM_DIR" && "${bunBin}/bun" remove "$STALE" 2>&1) || true

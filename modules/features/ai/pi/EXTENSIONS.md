@@ -108,7 +108,7 @@ stacks on pi-bar since overlay doesn't replace the footer).
 | Session naming | `pi-autoname` | Light auto-naming: first dialogue + 30min cooldown re-names, weak-tier model + fallbacks (nix-managed `pi-autoname.json`), `respectManualName: true` so `/name` stays sticky, `/autoname` for manual. Caveat: MIT + auditable source in tarball, but no public repo. Rejected `@agnishc/edb-auto-name-session` (hardcoded opencode/big-pickle – provider we don't run) and running two naming tools (`@tifan/pi-rename` dropped – naming tools race). |
 | Tool rendering | `pi-tool-display` | Display-only (verified: execute delegates to SDK untouched → model sees raw results, rtk-safe), rich diffs, per-tool ownership toggles, RTK-compaction hints, best tested. |
 | Steering | `@agnishc/edb-agent-steer` | Native one-at-a-time steering already covers queueing; this only adds Enter→s/q/d/e menu (discard option), no keybindings/widgets. All queue extensions rejected as redundant. |
-| Fun | `pi-emote` + `pi-pokepet` | Both react to real session events, zero LLM cost, footer-safe (top-right corner / separate Electron window). |
+| Fun | *(none)* | Both tried and removed: `pi-pokepet` (not worth it), `pi-emote` (rendered incorrectly alongside pi-agent-board; zellij gets ASCII-only anyway). Exhaustive alternatives search confirmed nothing better exists in this niche – category closed. |
 
 ### Round 2 rejections worth remembering
 
