@@ -24,6 +24,12 @@ export default function splash(pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event: any, ctx: any) => {
     if (!ctx.hasUI) return;
+
+    // pi-animations replaces the working *message*, but pi core still draws
+    // its braille spinner prefix next to it (and pushes the full-width
+    // animation into a wrap). Hide the built-in indicator entirely.
+    ctx.ui.setWorkingIndicator?.({ frames: [] });
+
     // Fresh sessions only - skip resumes/branches that already have messages.
     const branch = ctx.sessionManager?.getBranch?.() ?? [];
     if (branch.some((e: any) => e.type === "message")) return;
