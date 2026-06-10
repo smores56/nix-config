@@ -266,11 +266,15 @@ let
       };
     };
   };
+  # Token setup helper for the Slack MCP server (see slack-mcp-auth.sh).
+  slackMcpAuth = pkgs.writeShellScriptBin "slack-mcp-auth" (builtins.readFile ./slack-mcp-auth.sh);
 in
 {
   config = lib.mkMerge [
     (lib.mkIf cfg.enable {
       home = {
+        packages = lib.mkIf (cfg.mcpServers ? slack) [ slackMcpAuth ];
+
         file = {
           "${agentDir}/settings.json" = {
             force = true;
@@ -432,6 +436,20 @@ in
               LSPC="${npmDir}/node_modules/pi-lsp-lite/src/client.ts"
               if [ -f "$LSPC" ]; then
                 ${pkgs.perl}/bin/perl -pi -e 's{from "vscode-languageserver-protocol/node\.js"}{from "vscode-languageserver-protocol/node"}' "$LSPC" || true
+              fi
+            '';
+          };
+
+          # pi-statusline replaces pi's editor with its own component that
+          # hardcodes PROMPT_PADDING = 0 and overrides setPaddingX to ignore the
+          # editorPaddingX setting. Patch the constant to 2.
+          patchPiStatuslinePadding = {
+            after = [ "installPiPackages" ];
+            before = [ ];
+            data = ''
+              SL="${npmDir}/node_modules/@wierdbytes/pi-statusline/index.ts"
+              if [ -f "$SL" ]; then
+                ${pkgs.perl}/bin/perl -pi -e 's/const PROMPT_PADDING = 0;/const PROMPT_PADDING = 2;/' "$SL" || true
               fi
             '';
           };

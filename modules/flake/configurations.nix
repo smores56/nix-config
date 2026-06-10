@@ -222,9 +222,10 @@ in
           defaultProvider = "anthropic";
           defaultModel = "claude-fable-5";
           # Slack via korotovsky/slack-mcp-server, read-only (no
-          # SLACK_MCP_ADD_MESSAGE_TOOL). Auth: browser session tokens, set in
-          # ~/.config/fish/conf.d/api-keys.fish as SLACK_MCP_XOXC_TOKEN /
-          # SLACK_MCP_XOXD_TOKEN; the adapter interpolates them at runtime.
+          # SLACK_MCP_ADD_MESSAGE_TOOL). Auth: browser session tokens in
+          # ~/.config/fish/conf.d/api-keys.fish, set up via `slack-mcp-auth`
+          # (auto-extracts from Slack.app; re-run when the session expires).
+          # The adapter interpolates ${...} from the environment at runtime.
           mcpServers.slack = {
             command = "npx";
             args = [
