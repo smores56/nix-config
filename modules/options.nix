@@ -442,6 +442,17 @@ in
             default = [ ];
             description = "Pi packages to install via `pi install`.";
           };
+          mcpServers = lib.mkOption {
+            type = lib.types.attrsOf (lib.types.attrsOf lib.types.anything);
+            default = { };
+            description = ''
+              MCP server definitions written to ~/.pi/agent/mcp.json for
+              pi-mcp-adapter. Standard mcp.json schema (command/args/env or
+              url/headers). Values in env/headers may reference secrets via
+              ''${ENV_VAR} interpolation, resolved by the adapter at runtime
+              so tokens stay out of the Nix store.
+            '';
+          };
           compaction = {
             reserveTokens = lib.mkOption {
               type = lib.types.int;

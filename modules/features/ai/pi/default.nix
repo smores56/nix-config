@@ -34,6 +34,7 @@ let
     "npm:pi-mcp-adapter"
     "npm:pi-vision-proxy"
     # UX
+    "npm:pi-lsp-lite" # same-turn diagnostics on write/edit; lazy server spawn
     "npm:@wierdbytes/pi-statusline" # footer; renders extension statuses + subagent chips
     "npm:pi-animations" # working-indicator animations (1-line modes safe with statusline)
     "npm:@thinkscape/pi-status" # terminal title + Ghostty native progress bar
@@ -306,6 +307,14 @@ in
             text = builtins.toJSON modelsConfig;
           };
 
+          # MCP servers for pi-mcp-adapter. Pi-only scope: the agent-dir file
+          # isn't picked up by other MCP hosts (unlike ~/.config/mcp/mcp.json).
+          # Adapter-side overrides from /mcp get clobbered on next switch.
+          "${agentDir}/mcp.json" = lib.mkIf (cfg.mcpServers != { }) {
+            force = true;
+            text = builtins.toJSON { mcpServers = cfg.mcpServers; };
+          };
+
           "${agentDir}/hermes-memory-config.json" = {
             force = true;
             text = hermesMemoryConfig;
@@ -399,9 +408,9 @@ in
                 mkdir -p "$(dirname "$ANIM_CFG")"
                 printf '%s' '${
                   builtins.toJSON {
-                    workingAnim = "accordion";
-                    thinkingAnim = "orbit-dots";
-                    toolAnim = "conveyor";
+                    workingAnim = "neural-pulse";
+                    thinkingAnim = "typewriter";
+                    toolAnim = "starfield";
                     width = "full";
                     randomMode = false;
                     enabled = true;
@@ -411,15 +420,17 @@ in
             '';
           };
 
-          # pi-animations ticks at a hardcoded 60ms (~17fps) - too busy.
-          # Slow both animation timers to 120ms. No-ops once applied.
-          patchPiAnimationsTick = {
+          # pi-lsp-lite imports vscode-languageserver-protocol/node.js, but bun
+          # resolves protocol 3.18 (satisfies ^3.17.5) whose exports map only has
+          # ./node - extension fails to load. Patch the subpath. No-ops once
+          # applied or when upstream fixes the import/pins the dep.
+          patchPiLspLiteImport = {
             after = [ "installPiPackages" ];
             before = [ ];
             data = ''
-              ANIM="${npmDir}/node_modules/pi-animations/animations.ts"
-              if [ -f "$ANIM" ]; then
-                ${pkgs.perl}/bin/perl -pi -e 's/\}, 60\);/}, 120);/g' "$ANIM" || true
+              LSPC="${npmDir}/node_modules/pi-lsp-lite/src/client.ts"
+              if [ -f "$LSPC" ]; then
+                ${pkgs.perl}/bin/perl -pi -e 's{from "vscode-languageserver-protocol/node\.js"}{from "vscode-languageserver-protocol/node"}' "$LSPC" || true
               fi
             '';
           };
