@@ -208,7 +208,7 @@ let
   welcomeScreenConfig = builtins.toJSON {
     mainText = "smores";
     url = "https://github.com/smores56";
-    animationStyle = "wave";
+    animationStyle = "static"; # no movement
     animationColor = "lavender"; # closest catppuccin color to uva periwinkle
     borderStyle = "rounded";
     countdown = -1; # no auto-dismiss timer; keypress or agent activity dismisses
