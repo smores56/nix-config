@@ -25,7 +25,7 @@ let
   piPackages = [
     # Orchestration
     "npm:pi-subagents" # curated subagents, chains/parallel, acceptance contracts
-    "npm:pi-agent-board" # agent-view: dispatch/monitor/attach background pi sessions
+    "npm:pi-agent-hub" # standalone pi-hub TUI: spawns/manages real pi sessions in tmux
     "npm:pi-intercom" # child->parent comms for pi-subagents
     # Core capability
     "npm:@sherif-fanous/pi-rtk" # bash->rtk rewriting (sole bash tool owner)
@@ -214,7 +214,7 @@ let
 
   # pi-hermes-memory: policy-only injection (~200-500 tokens/turn, content
   # retrieved on demand), background reviews routed to the weak tier so
-  # auto-learning stays cheap (incl. inside headless agent-board workers).
+  # auto-learning stays cheap (incl. inside pi-hub worker sessions).
   hermesMemoryConfig = builtins.toJSON {
     memoryMode = "policy-only";
     memoryPolicyStyle = "compact";
@@ -339,8 +339,8 @@ in
           "${agentDir}/APPEND_SYSTEM.md".source = ./APPEND_SYSTEM.md;
 
           "${homeDir}/.config/fish/conf.d/pi-aliases.fish".text = ''
-            # pi-agent-board row summaries on the weak tier ("off" disables)
-            set -gx AGENT_BOARD_SUMMARY_MODEL ${weakModel}
+            # pi packages' CLI binaries (pi-hub etc.)
+            fish_add_path --append ${npmDir}/node_modules/.bin
 
             function p --wraps 'gmux pi' --description 'p: gmux pi'
               FISH_TERMINAL_SKIP_DSR=1 gmux pi $argv
@@ -384,7 +384,7 @@ in
               NPM_DIR="${npmDir}"
               mkdir -p "$NPM_DIR"
               # Replaced by the June 2026 stack review (see EXTENSIONS.md)
-              for STALE in pi-total-recall pi-rtk-optimizer pi-powerline-footer pi-pokepet pi-emote pi-bar @codesook/pi-welcome-screen pi-lens pisesh; do
+              for STALE in pi-total-recall pi-rtk-optimizer pi-powerline-footer pi-pokepet pi-emote pi-bar @codesook/pi-welcome-screen pi-lens pisesh pi-agent-board; do
                 if [ -d "$NPM_DIR/node_modules/$STALE" ]; then
                   echo "[pi] Removing replaced package $STALE"
                   (cd "$NPM_DIR" && "${bunBin}/bun" remove "$STALE" 2>&1) || true
@@ -473,38 +473,6 @@ in
             '';
           };
 
-          # pi-agent-board hardcodes a Tailwind slate/sky palette in its
-          # dashboard chrome (no theme hook). Remap those exact RGB triplets to
-          # noctis-uva. Idempotent: no-ops once applied or if upstream changes.
-          themePiAgentBoard = {
-            after = [ "installPiPackages" ];
-            before = [ ];
-            data = ''
-              BOARD="${npmDir}/node_modules/pi-agent-board/src"
-              if [ -d "$BOARD" ]; then
-                ${pkgs.findutils}/bin/find "$BOARD" -name '*.ts' -print0 | ${pkgs.findutils}/bin/xargs -0 ${pkgs.perl}/bin/perl -pi -e '
-                  s/ansiFg\(248, 250, 252/ansiFg(224, 222, 238/g;  # slate-50  -> uva bright fg
-                  s/ansiFg\(226, 232, 240/ansiFg(197, 194, 214/g;  # slate-200 -> fg
-                  s/ansiFg\(148, 163, 184/ansiFg(141, 136, 174/g;  # slate-400 -> fgMuted
-                  s/ansiFg\(100, 116, 139/ansiFg(92, 89, 115/g;    # slate-500 -> fgDim
-                  s/ansiFg\(51, 65, 85/ansiFg(58, 54, 84/g;        # slate-700 -> borderMuted
-                  s/ansiFg\(56, 189, 248/ansiFg(153, 142, 241/g;   # sky-400   -> periwinkle
-                  s/ansiBg\(56, 189, 248/ansiBg(153, 142, 241/g;   # sky badge -> periwinkle
-                  s/ansiFg\(15, 23, 42/ansiFg(41, 38, 64/g;        # slate-900 text -> uva bg
-                  s/ansiBg\(15, 23, 42/ansiBg(41, 38, 64/g;        # slate-900 bg   -> uva bg
-                  s/ansiBg\(30, 41, 59/ansiBg(52, 48, 82/g;        # slate-800 -> bgLight
-                  # STAGE_RGB per-state row colors
-                  s/queued: \[148, 163, 184\]/queued: [141, 136, 174]/;      # -> fgMuted
-                  s/working: \[56, 189, 248\]/working: [73, 172, 233]/;      # -> uva blue
-                  s/needs_input: \[245, 158, 11\]/needs_input: [230, 149, 51]/; # -> warnOrange
-                  s/idle: \[129, 140, 248\]/idle: [153, 142, 241]/;          # -> periwinkle
-                  s/completed: \[34, 197, 94\]/completed: [73, 233, 166]/;   # -> uva green
-                  s/failed: \[248, 113, 113\]/failed: [227, 78, 28]/;        # -> errorRed
-                  s/stopped: \[100, 116, 139\]/stopped: [92, 89, 115]/;      # -> fgDim
-                ' || true
-              fi
-            '';
-          };
           installPiMonty = {
             after = [ "installPiPackages" ];
             before = [ ];

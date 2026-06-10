@@ -7,7 +7,7 @@
 let
   cfg = config.dotfiles;
 
-  zellij = config.programs.zellij.package;
+  tmux = config.programs.tmux.package;
 
   isOsx = cfg.displayManager == "osx";
   isAutoSwitch = cfg.polarity == "time-of-day";
@@ -42,11 +42,11 @@ let
         if [ "$IS_DARK" = "false" ]; then
           HELIX_THEME="${cfg.lightTheme.helix}"
           LAZYGIT_LIGHT="true"
-          ZELLIJ_ACTION="set-light-theme"
+          TMUX_THEME="light"
         else
           HELIX_THEME="${cfg.darkTheme.helix}"
           LAZYGIT_LIGHT="false"
-          ZELLIJ_ACTION="set-dark-theme"
+          TMUX_THEME="dark"
         fi
 
         mkdir -p "$HOME/.config/helix/themes"
@@ -60,9 +60,8 @@ let
         lightTheme: $LAZYGIT_LIGHT
     EOF
 
-        ${zellij}/bin/zellij list-sessions --short 2>/dev/null | while IFS= read -r session; do
-          ${zellij}/bin/zellij --session "$session" action "$ZELLIJ_ACTION" 2>/dev/null || true
-        done
+        # tmux options are server-wide; one source-file call themes every session
+        ${tmux}/bin/tmux source-file "$HOME/.config/tmux/theme-$TMUX_THEME.conf" 2>/dev/null || true
 
         mkdir -p "$HOME/.cache"
         if [ "$IS_DARK" = "true" ]; then
@@ -177,7 +176,7 @@ in
         helix.enable = false;
         lazygit.enable = false;
         opencode.enable = false;
-        zellij.enable = false;
+        tmux.enable = false;
         gtk.enable = false;
         gnome.enable = lib.mkDefault false;
         gnome-text-editor.enable = false;
