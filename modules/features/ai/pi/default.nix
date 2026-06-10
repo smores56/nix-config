@@ -21,39 +21,37 @@ let
 
   bunBin = "${homeDir}/.bun/bin";
 
-  bordoVars = (builtins.fromJSON (builtins.readFile ./themes/noctis-bordo.json)).vars;
-  powerlineTheme = builtins.toJSON {
-    colors = {
-      model = bordoVars.rose;
-      shellMode = "accent";
-      path = bordoVars.cyan;
-      gitDirty = "warning";
-      gitClean = "success";
-      thinking = "thinkingOff";
-      thinkingMinimal = "thinkingMinimal";
-      thinkingLow = "thinkingLow";
-      thinkingMedium = "thinkingMedium";
-      context = "dim";
-      contextWarn = "warning";
-      contextError = "error";
-      cost = "text";
-      tokens = "muted";
-      separator = "dim";
-      border = "borderMuted";
-    };
-  };
-
+  # Extension stack. Decision record + conflict map: ./EXTENSIONS.md
   piPackages = [
-    "npm:pi-total-recall"
-    "npm:pi-rtk-optimizer"
-    "npm:pi-subagents"
+    # Orchestration
+    "npm:pi-subagents" # curated subagents, chains/parallel, acceptance contracts
+    "npm:pi-agent-board" # agent-view: dispatch/monitor/attach background pi sessions
+    "npm:pi-intercom" # child->parent comms for pi-subagents
+    # Core capability
+    "npm:@sherif-fanous/pi-rtk" # bash->rtk rewriting (sole bash tool owner)
+    "npm:pi-hermes-memory" # policy-only memory + session search + secret scanning
+    "npm:pi-web-access" # required by the researcher builtin
     "npm:pi-mcp-adapter"
-    "npm:pi-web-access"
-    "npm:pi-intercom"
-    "npm:pi-powerline-footer"
+    "npm:pi-vision-proxy"
+    # UX
+    "npm:pi-bar" # footer; renders extension statuses incl. rtk
+    "npm:@juicesharp/rpiv-ask-user-question" # structured questions w/ previews
+    "npm:@juicesharp/rpiv-todo"
+    "npm:@juicesharp/rpiv-btw"
+    "npm:pi-rewind" # yolo-mode undo (use /rewind; Esc+Esc stays "tree")
+    "npm:pi-lens" # LSP/lint feedback to agent
+    "npm:pi-notify"
+    # Workflow carryovers
     "npm:pi-autoresearch"
     "npm:pi-review-loop"
-    "npm:@juicesharp/rpiv-ask-user-question"
+    # Round 2 (see EXTENSIONS.md "Round 2")
+    "npm:pi-background-tasks" # bg_run/status/logs/kill, rtk-safe, headless-safe
+    "npm:pisesh" # session browse/favorites/resume TUI, zero LLM cost
+    "npm:pi-autoname" # light auto-naming on weak tier; /autoname for manual (MIT, source in tarball, no public repo)
+    "npm:pi-tool-display" # display-only tool rendering, RTK-aware hints
+    "npm:@agnishc/edb-agent-steer" # mid-turn Enter -> steer/queue/discard/edit menu
+    "npm:pi-emote" # pixel avatar reacting to agent state, zero tokens
+    "npm:pi-pokepet" # desktop pet reacting to tests/builds/commits, zero tokens
   ]
   ++ cfg.packages;
 
@@ -121,122 +119,114 @@ let
         ]
   );
 
-  modelsConfig =
-    if workModels then
+  # Providers available regardless of workModels; the conditional providers
+  # below add the per-context primary tier on top.
+  commonProviders = {
+    smortress = {
+      baseUrl = "http://smortress:8081/v1";
+      api = "openai-completions";
+      apiKey = "none";
+      compat = {
+        supportsDeveloperRole = false;
+      };
+      models = [
+        {
+          id = "gemma-4-31b";
+          name = "Gemma 4 31B (smortress)";
+          reasoning = true;
+          input = [ "text" ];
+          contextWindow = 102400;
+          maxTokens = 102400;
+          cost = {
+            input = 0;
+            output = 0;
+            cacheRead = 0;
+            cacheWrite = 0;
+          };
+        }
+      ];
+    };
+    ${aiDeepseek.providerId} = {
+      inherit (aiDeepseek) baseUrl;
+      apiKey = "$DEEPSEEK_API_KEY";
+      api = "openai-completions";
+      models = aiDeepseek.ompModelsList;
+    };
+    ${aiCrofai.providerId} = {
+      inherit (aiCrofai) baseUrl;
+      apiKey = "$CROFAI_API_KEY";
+      api = "openai-completions";
+      models = aiCrofai.ompModelsList;
+    };
+  };
+
+  workProviders = {
+    # Fable 5 (released 2026-06-09) isn't in pi's bundled model catalog yet.
+    # Merge it into the built-in anthropic provider so the endpoint and OAuth
+    # auth are inherited; fields mirror the native claude-opus-4-8 entry, the
+    # model Fable's safeguards fall back to. Pricing per Anthropic's launch
+    # post ($10/$50 per Mtok; 0.1x cache read, 1.25x cache write).
+    anthropic.models = [
       {
-        providers = {
-          # Fable 5 (released 2026-06-09) isn't in pi's bundled model catalog yet.
-          # Merge it into the built-in anthropic provider so the endpoint and OAuth
-          # auth are inherited; fields mirror the native claude-opus-4-8 entry, the
-          # model Fable's safeguards fall back to. Pricing per Anthropic's launch
-          # post ($10/$50 per Mtok; 0.1x cache read, 1.25x cache write).
-          anthropic.models = [
-            {
-              id = "claude-fable-5";
-              name = "Claude Fable 5";
-              api = "anthropic-messages";
-              reasoning = true;
-              thinkingLevelMap.xhigh = "xhigh";
-              compat.forceAdaptiveThinking = true;
-              input = [
-                "text"
-                "image"
-              ];
-              contextWindow = 1000000;
-              maxTokens = 128000;
-              cost = {
-                input = 10;
-                output = 50;
-                cacheRead = 1;
-                cacheWrite = 12.5;
-              };
-            }
-          ];
-          smortress = {
-            baseUrl = "http://smortress:8081/v1";
-            api = "openai-completions";
-            apiKey = "none";
-            compat = {
-              supportsDeveloperRole = false;
-            };
-            models = [
-              {
-                id = "gemma-4-31b";
-                name = "Gemma 4 31B (smortress)";
-                reasoning = true;
-                input = [ "text" ];
-                contextWindow = 102400;
-                maxTokens = 102400;
-                cost = {
-                  input = 0;
-                  output = 0;
-                  cacheRead = 0;
-                  cacheWrite = 0;
-                };
-              }
-            ];
-          };
-          ${aiDeepseek.providerId} = {
-            baseUrl = aiDeepseek.baseUrl;
-            apiKey = "$DEEPSEEK_API_KEY";
-            api = "openai-completions";
-            models = aiDeepseek.ompModelsList;
-          };
-          ${aiCrofai.providerId} = {
-            baseUrl = aiCrofai.baseUrl;
-            apiKey = "$CROFAI_API_KEY";
-            api = "openai-completions";
-            models = aiCrofai.ompModelsList;
-          };
+        id = "claude-fable-5";
+        name = "Claude Fable 5";
+        api = "anthropic-messages";
+        reasoning = true;
+        thinkingLevelMap.xhigh = "xhigh";
+        compat.forceAdaptiveThinking = true;
+        input = [
+          "text"
+          "image"
+        ];
+        contextWindow = 1000000;
+        maxTokens = 128000;
+        cost = {
+          input = 10;
+          output = 50;
+          cacheRead = 1;
+          cacheWrite = 12.5;
         };
       }
-    else
-      {
-        providers = {
-          ${aiXiaomi.providerId} = {
-            baseUrl = aiXiaomi.baseUrl;
-            apiKey = "$XIAOMI_MIMO_API_KEY";
-            api = "openai-completions";
-            models = aiXiaomi.ompModelsList;
-          };
-          smortress = {
-            baseUrl = "http://smortress:8081/v1";
-            api = "openai-completions";
-            apiKey = "none";
-            compat = {
-              supportsDeveloperRole = false;
-            };
-            models = [
-              {
-                id = "gemma-4-31b";
-                name = "Gemma 4 31B (smortress)";
-                reasoning = true;
-                input = [ "text" ];
-                contextWindow = 102400;
-                maxTokens = 102400;
-                cost = {
-                  input = 0;
-                  output = 0;
-                  cacheRead = 0;
-                  cacheWrite = 0;
-                };
-              }
-            ];
-          };
-          ${aiDeepseek.providerId} = {
-            baseUrl = aiDeepseek.baseUrl;
-            apiKey = "$DEEPSEEK_API_KEY";
-            api = "openai-completions";
-            models = aiDeepseek.ompModelsList;
-          };
-          ${aiCrofai.providerId} = {
-            baseUrl = aiCrofai.baseUrl;
-            apiKey = "$CROFAI_API_KEY";
-            api = "openai-completions";
-            models = aiCrofai.ompModelsList;
-          };
-        };
-      };
+    ];
+  };
+
+  personalProviders = {
+    ${aiXiaomi.providerId} = {
+      inherit (aiXiaomi) baseUrl;
+      apiKey = "$XIAOMI_MIMO_API_KEY";
+      api = "openai-completions";
+      models = aiXiaomi.ompModelsList;
+    };
+  };
+
+  modelsConfig = {
+    providers = commonProviders // (if workModels then workProviders else personalProviders);
+  };
+
+  # pi-autoname: first-dialogue + periodic session naming on the weak tier.
+  # respectManualName keeps /name sticky; text-extraction fallback if AI fails.
+  autonameConfig = builtins.toJSON {
+    enabled = true;
+    model = weakModel;
+    fallbackModels = weakBackups;
+    cooldownMinutes = 30;
+    respectManualName = true;
+  };
+
+  # pi-hermes-memory: policy-only injection (~200-500 tokens/turn, content
+  # retrieved on demand), background reviews routed to the weak tier so
+  # auto-learning stays cheap (incl. inside headless agent-board workers).
+  hermesMemoryConfig = builtins.toJSON {
+    memoryMode = "policy-only";
+    memoryPolicyStyle = "compact";
+    llmModelOverride = weakModel;
+    llmThinkingOverride = "off";
+    memoryOverflowStrategy = "auto-consolidate";
+    autoConsolidate = true;
+    correctionDetection = true;
+    flushOnCompact = true;
+    flushOnShutdown = true;
+  };
 
   dashboardConfig = lib.mkIf dashboardCfg.enable {
     home.activation.configurePiDashboard = {
@@ -281,127 +271,134 @@ in
 {
   config = lib.mkMerge [
     (lib.mkIf cfg.enable {
-      home.file."${agentDir}/settings.json" = {
-        force = true;
-        text = builtins.toJSON {
-          defaultProvider = cfg.defaultProvider;
-          defaultModel = cfg.defaultModel;
-          defaultThinkingLevel = cfg.defaultThinkingLevel;
-          theme = "noctis-bordo";
-          enableInstallTelemetry = false;
-          quietStartup = true;
-          collapseChangelog = true;
-          doubleEscapeAction = "tree";
-          compaction = {
-            enabled = true;
-            reserveTokens = cfg.compaction.reserveTokens;
-            keepRecentTokens = cfg.compaction.keepRecentTokens;
+      home = {
+        file = {
+          "${agentDir}/settings.json" = {
+            force = true;
+            text = builtins.toJSON {
+              inherit (cfg) defaultProvider defaultModel defaultThinkingLevel;
+              theme = "noctis-uva";
+              enableInstallTelemetry = false;
+              quietStartup = true;
+              collapseChangelog = true;
+              doubleEscapeAction = "tree";
+              compaction = {
+                enabled = true;
+                reserveTokens = cfg.compaction.reserveTokens;
+                keepRecentTokens = cfg.compaction.keepRecentTokens;
+              };
+              retry = {
+                enabled = true;
+                maxRetries = 2;
+                baseDelayMs = 2000;
+              };
+              steeringMode = "one-at-a-time";
+              followUpMode = "one-at-a-time";
+              packages = piPackages;
+              subagents = {
+                agentOverrides = subagentOverrides;
+              };
+            };
           };
-          retry = {
-            enabled = true;
-            maxRetries = 2;
-            baseDelayMs = 2000;
+
+          "${agentDir}/models.json" = {
+            force = true;
+            text = builtins.toJSON modelsConfig;
           };
-          steeringMode = "one-at-a-time";
-          followUpMode = "one-at-a-time";
-          packages = piPackages;
-          subagents = {
-            agentOverrides = subagentOverrides;
+
+          "${agentDir}/hermes-memory-config.json" = {
+            force = true;
+            text = hermesMemoryConfig;
+          };
+
+          "${agentDir}/pi-autoname.json" = {
+            force = true;
+            text = autonameConfig;
+          };
+
+          # Skills, themes, custom extensions, global rules
+          "${agentDir}/skills/grill-me/SKILL.md".source = ./skills/grill-me/SKILL.md;
+          "${agentDir}/themes/noctis-uva.json".source = ./themes/noctis-uva.json;
+          "${agentDir}/extensions/plan-mode.ts".source = ../oh-my-pi/plan-mode.ts;
+          "${agentDir}/extensions/code-execution.ts".source = ./extensions/code-execution.ts;
+          "${agentDir}/APPEND_SYSTEM.md".source = ./APPEND_SYSTEM.md;
+
+          "${homeDir}/.config/fish/conf.d/pi-aliases.fish".text = ''
+            # pi-agent-board row summaries on the weak tier ("off" disables)
+            set -gx AGENT_BOARD_SUMMARY_MODEL ${weakModel}
+
+            function p --wraps 'gmux pi' --description 'p: gmux pi'
+              FISH_TERMINAL_SKIP_DSR=1 gmux pi $argv
+            end
+            function pip --wraps 'pi -p' --description 'pip: pi -p'
+              pi -p $argv
+            end
+            function pic --wraps 'pi -c' --description 'pic: pi -c'
+              pi -c $argv
+            end
+          '';
+        };
+
+        activation = {
+          installPiCli = {
+            after = [ "linkGeneration" ];
+            before = [ "installPiPackages" ];
+            data = ''
+              if [ -r "${piEntrypoint}" ]; then
+                echo "[pi] CLI already installed"
+              elif ! command -v "${bunBin}/bun" >/dev/null 2>&1; then
+                echo "[pi] bun not found at ${bunBin}/bun, cannot install ${piPackage}" >&2
+              else
+                echo "[pi] Installing ${piPackage} into ${piPrivateDir}"
+                mkdir -p "${piPrivateDir}"
+                printf '%s\n' '{"private":true,"dependencies":{"${piPackage}":"latest"}}' > "${piPrivateDir}/package.json"
+                if ! (cd "${piPrivateDir}" && "${bunBin}/bun" install); then
+                  echo "[pi] Failed to install ${piPackage}" >&2
+                fi
+              fi
+            '';
+          };
+
+          # Install pi npm packages into agent npm dir
+          # settings.json is nix-managed (store path), so pi install can't write to it
+          # We install via bun add + inline packages in settings.json
+          installPiPackages = {
+            after = [ "linkGeneration" ];
+            before = [ "installPiMonty" ];
+            data = ''
+              NPM_DIR="${npmDir}"
+              mkdir -p "$NPM_DIR"
+              # Replaced by the June 2026 stack review (see EXTENSIONS.md)
+              for STALE in pi-total-recall pi-rtk-optimizer pi-powerline-footer; do
+                if [ -d "$NPM_DIR/node_modules/$STALE" ]; then
+                  echo "[pi] Removing replaced package $STALE"
+                  (cd "$NPM_DIR" && "${bunBin}/bun" remove "$STALE" 2>&1) || true
+                fi
+              done
+              ${lib.concatStringsSep "\n" (
+                map (source: ''
+                  NAME="${pkgName source}"
+                  if ! [ -d "$NPM_DIR/node_modules/$NAME" ]; then
+                    echo "[pi] Installing $NAME"
+                    (cd "$NPM_DIR" && "${bunBin}/bun" add "$NAME" 2>&1) || true
+                  fi
+                '') piPackages
+              )}
+            '';
+          };
+          installPiMonty = {
+            after = [ "installPiPackages" ];
+            before = [ ];
+            data = ''
+              if [ ! -d "${piPrivateDir}" ]; then
+                echo "[pi] piPrivateDir missing, skipping monty install"
+              else
+                echo "[pi] Installing @pydantic/monty into pi node_modules"
+                (cd "${piPrivateDir}" && "${bunBin}/bun" add @pydantic/monty 2>&1) || true
+              fi
+            '';
           };
         };
-      };
-
-      home.file."${agentDir}/models.json" = {
-        force = true;
-        text = builtins.toJSON modelsConfig;
-      };
-
-      # Skills
-      home.file."${agentDir}/skills/grill-me/SKILL.md".source = ./skills/grill-me/SKILL.md;
-
-      # Themes
-      home.file."${agentDir}/themes/noctis-bordo.json".source = ./themes/noctis-bordo.json;
-
-      # Extensions
-      home.file."${agentDir}/extensions/plan-mode.ts".source = ../oh-my-pi/plan-mode.ts;
-
-      # APPEND_SYSTEM.md
-      home.file."${agentDir}/APPEND_SYSTEM.md".source = ./APPEND_SYSTEM.md;
-      home.file."${agentDir}/extensions/code-execution.ts".source = ./extensions/code-execution.ts;
-
-      home.file."${homeDir}/.config/fish/conf.d/pi-aliases.fish".text = ''
-        function p --wraps 'gmux pi' --description 'p: gmux pi'
-          FISH_TERMINAL_SKIP_DSR=1 gmux pi $argv
-        end
-        function pip --wraps 'pi -p' --description 'pip: pi -p'
-          pi -p $argv
-        end
-        function pic --wraps 'pi -c' --description 'pic: pi -c'
-          pi -c $argv
-        end
-      '';
-      home.activation.installPiCli = {
-        after = [ "linkGeneration" ];
-        before = [ "installPiPackages" ];
-        data = ''
-          if [ -r "${piEntrypoint}" ]; then
-            echo "[pi] CLI already installed"
-          elif ! command -v "${bunBin}/bun" >/dev/null 2>&1; then
-            echo "[pi] bun not found at ${bunBin}/bun, cannot install ${piPackage}" >&2
-          else
-            echo "[pi] Installing ${piPackage} into ${piPrivateDir}"
-            mkdir -p "${piPrivateDir}"
-            printf '%s\n' '{"private":true,"dependencies":{"${piPackage}":"latest"}}' > "${piPrivateDir}/package.json"
-            if ! (cd "${piPrivateDir}" && "${bunBin}/bun" install); then
-              echo "[pi] Failed to install ${piPackage}" >&2
-            fi
-          fi
-        '';
-      };
-
-      # Install pi npm packages into agent npm dir
-      # settings.json is nix-managed (store path), so pi install can't write to it
-      # We install via bun add + inline packages in settings.json
-      home.activation.installPiPackages = {
-        after = [ "linkGeneration" ];
-        before = [ "installPiMonty" ];
-        data = ''
-          NPM_DIR="${npmDir}"
-          mkdir -p "$NPM_DIR"
-          ${lib.concatStringsSep "\n" (
-            map (source: ''
-              NAME="${pkgName source}"
-              if ! [ -d "$NPM_DIR/node_modules/$NAME" ]; then
-                echo "[pi] Installing $NAME"
-                (cd "$NPM_DIR" && "${bunBin}/bun" add "$NAME" 2>&1) || true
-              fi
-            '') piPackages
-          )}
-        '';
-      };
-      home.activation.installPiMonty = {
-        after = [ "installPiPackages" ];
-        before = [ ];
-        data = ''
-          if [ ! -d "${piPrivateDir}" ]; then
-            echo "[pi] piPrivateDir missing, skipping monty install"
-          else
-            echo "[pi] Installing @pydantic/monty into pi node_modules"
-            (cd "${piPrivateDir}" && "${bunBin}/bun" add @pydantic/monty 2>&1) || true
-          fi
-        '';
-      };
-
-      # Write powerline theme
-      home.activation.writePowerlineTheme = {
-        after = [ "installPiMonty" ];
-        before = [ ];
-        data = ''
-                    mkdir -p "${agentDir}/npm/node_modules/pi-powerline-footer"
-                    cat > "${agentDir}/npm/node_modules/pi-powerline-footer/theme.json" << 'PLTHEME'
-            ${powerlineTheme}
-          PLTHEME
-        '';
       };
     })
     dashboardConfig

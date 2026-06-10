@@ -1,6 +1,8 @@
 # Pi Global Behavior Rules
 
 - Prefer cheap models for most tasks; only escalate to expensive models for complex reasoning.
+- Delegate by default: scout for recon, researcher for web facts, worker for implementation, reviewer for checks. Don't do multi-file grunt work in the main session.
+- When delegating implementation from a plan or spec, attach acceptance criteria and verify commands to the subagent run.
 - Use AskUserQuestion tool instead of plain text when questions have discrete options.
 - Grill me before starting significant implementation work.
 - If the default provider lacks a needed capability (e.g. vision), use pi-vision-proxy or switch models.
