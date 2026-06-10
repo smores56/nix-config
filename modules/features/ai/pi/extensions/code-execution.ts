@@ -17,7 +17,7 @@ const execAsync = promisify(exec);
 const params = Type.Object({
   code: Type.String({
     description:
-      "Python code to execute. Tools: await read(path='file'), grep(pattern='...', [path='...']), bash(command='...'), write(path='...', content='...'), ls([dir='.']). Use asyncio.gather() for parallel calls. Intermediate results stay in sandbox, not context.",
+      "Python code to execute. Tools (call directly, NO await): read(path='file'), grep(pattern='...', [path='...']), bash(command='...'), write(path='...', content='...'), ls([dir='.']). Calls resolve sequentially at the call site. Intermediate results stay in sandbox, not context.",
   }),
   timeout: Type.Optional(
     Type.Number({ default: 30, description: "Timeout in seconds (max 300)" }),
@@ -104,19 +104,28 @@ export default function (pi: ExtensionAPI) {
     name: "code_execution",
     label: "Python",
     description:
-      "Execute Python code in a sandboxed interpreter (Monty). Tools available as async functions: read(path='...'), grep(pattern='...', [path='...']), bash(command='...'), write(path='...', content='...'), ls([dir='.']). Use asyncio.gather() for parallel calls. Intermediate tool results stay inside the sandbox, not in LLM context.",
+      "Execute Python code in a sandboxed interpreter (Monty). Tools (call directly, NO await/async): read(path='...'), grep(pattern='...', [path='...']), bash(command='...'), write(path='...', content='...'), ls([dir='.']). Calls resolve sequentially. Intermediate tool results stay inside the sandbox, not in LLM context.",
     promptSnippet:
       "Python code execution sandbox — chain tool calls, filter/transform data, batch parallel operations without polluting context.",
     promptGuidelines: [
-      "Use code_execution to chain dependent tool calls: filter read results, transform data, batch parallel ops with asyncio.gather(). Dramatically improves performance over sequential tool calls.",
+      "Use code_execution to chain dependent tool calls: filter read results, transform data, loop over many files. Keeps intermediate data out of context.",
+      "Call bridge tools directly - NO await, NO asyncio. They return strings synchronously at the call site.",
       "All bridge tools return strings, not objects. Parse output yourself.",
-      "Available modules: re, asyncio, sys, os, json. No other imports, no filesystem/network access outside bridge tools.",
+      "Available modules: re, sys, os, json. No other imports, no filesystem/network access outside bridge tools.",
       "Avoid calling a tool when no transformation of its output is performed — let the agent call the tool directly.",
       "NOT a thinking scratchpad. Reason in your text, not in the code block.",
     ],
     parameters: params,
     async execute(_id, params, _signal, _onUpdate, _ctx) {
-      const code = `import re\nimport asyncio\nimport sys\nimport os\nimport json\n${params.code}`;
+      // Monty's start/resume loop awaits external functions implicitly:
+      // explicit `await` raises an internal error ("Invalid exception type:
+      // 'MontyRuntimeError'"), and asyncio doesn't exist. Models habitually
+      // write await/asyncio.gather anyway - rewrite to the supported forms.
+      const userCode = params.code
+        .replace(/\bawait\s+/g, "")
+        .replace(/^\s*import asyncio\s*$/gm, "")
+        .replace(/\basyncio\.gather\b/g, "_gather");
+      const code = `import re\nimport sys\nimport os\nimport json\n\ndef _gather(*args):\n    return list(args)\n\n${userCode}`;
       const timeout = Math.min(params.timeout ?? 30, 300);
 
       const stdout: string[] = [];
@@ -138,7 +147,7 @@ export default function (pi: ExtensionAPI) {
         const joined = stdout.join("").trimEnd();
         if (joined) parts.push(joined);
         const val = String(output);
-        if (val && val !== "None") parts.push(val);
+        if (val && val !== "None" && val !== "null" && val !== "undefined") parts.push(val);
         const result = parts.length > 0 ? parts.join("\n") : "(no output)";
 
         return { content: [{ type: "text" as const, text: result }], details: {} };
