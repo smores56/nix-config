@@ -76,19 +76,11 @@ let
             workGithubOrgs = null;
             workModels = null;
             sevenqlLspPath = null;
-            opencodeHost = null;
-            paseo = null;
             ohMyPi = null;
-            herdr = null;
-            hermes = null;
-            maki = null;
-            tau = null;
 
             pi = null;
             piDashboard = null;
-            agentOfEmpires = null;
             llmTokenBucketProxy = null;
-            goose = null;
           } args;
           home.username = username;
           home.homeDirectory =
@@ -123,15 +115,8 @@ let
             llm = args.llm or false;
             noSleep = args.noSleep or false;
             persist = args.persist or false;
-            opencodeHost = args.opencodeHost or { };
-            paseo = args.paseo or { };
-            herdr = args.herdr or { };
-            hermes = args.hermes or { };
             piDashboard = args.piDashboard or { };
             webProxy = args.webProxy or { };
-            agentOfEmpires = args.agentOfEmpires or { };
-            tau = args.tau or { };
-            goose = args.goose or { };
           };
         }
       ]
@@ -164,29 +149,13 @@ in
       "smores@smortress" = mkHome {
         displayManager = "none";
         nixos = true;
-        opencodeHost = {
-          hostname = "smortress";
-          bindAddress = "0.0.0.0";
-          opencodePort = 4000;
-          openchamberPort = 3000;
-        };
-        paseo.enable = true;
-        herdr.enable = true;
-        hermes.enable = true;
         pi = {
           enable = true;
         };
         piDashboard = {
           enable = true;
         };
-        agentOfEmpires = {
-          enable = true;
-        };
         llmTokenBucketProxy.enable = true;
-        goose = {
-          server.enable = true;
-          web.enable = true;
-        };
       };
       "smohr@smoreswork" = mkHome {
         displayManager = "osx";
@@ -200,19 +169,6 @@ in
         workGithubOrgs = [ "OkamiAI" ];
         workModels = true;
         sevenqlLspPath = "/Users/smohr/dev/okami/typescript/tools/sevenql-lsp/main.ts";
-        maki = {
-          models = [
-            {
-              spec = "openai/gpt-5.5-codex";
-              name = "GPT 5.5 Codex";
-            }
-            {
-              spec = "anthropic/claude-opus-4-8";
-              name = "Claude Opus 4.8";
-            }
-          ];
-          defaultModel = "openai/gpt-5.5-codex";
-        };
         ohMyPi = {
           codex.enable = true;
           claude.enable = true;
@@ -264,18 +220,6 @@ in
         nvidia = true;
         llm = true;
         noSleep = true;
-        opencodeHost = {
-          hostname = "smortress";
-          bindAddress = "0.0.0.0";
-          opencodePort = 4000;
-          openchamberPort = 3000;
-        };
-        paseo = {
-          enable = true;
-          web.enable = true;
-        };
-        herdr.enable = true;
-        hermes.enable = true;
         piDashboard = {
           enable = true;
         };
@@ -283,10 +227,6 @@ in
           enable = true;
           tunnelId = "f2284d1b-5038-447b-ab50-e18dc1dba8c5";
         };
-        agentOfEmpires = {
-          enable = true;
-        };
-        goose.web.enable = true;
       };
     };
   };

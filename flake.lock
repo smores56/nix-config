@@ -531,27 +531,6 @@
         "type": "github"
       }
     },
-    "paseo": {
-      "inputs": {
-        "nixpkgs": [
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1779846607,
-        "narHash": "sha256-U7zQKkE2qDBeJE9RAraWMpA/uBSJiy4SQMFoS9+GrGI=",
-        "owner": "jms830",
-        "repo": "paseo",
-        "rev": "d343ec15e137e34b8f81ca4664afef6486c3efb1",
-        "type": "github"
-      },
-      "original": {
-        "owner": "jms830",
-        "repo": "paseo",
-        "rev": "d343ec15e137e34b8f81ca4664afef6486c3efb1",
-        "type": "github"
-      }
-    },
     "root": {
       "inputs": {
         "concord": "concord",
@@ -562,7 +541,6 @@
         "nixpkgs": "nixpkgs_2",
         "noctalia": "noctalia",
         "paneru": "paneru",
-        "paseo": "paseo",
         "stylix": "stylix"
       }
     },

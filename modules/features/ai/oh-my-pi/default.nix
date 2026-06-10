@@ -16,9 +16,15 @@ let
   # routinely delegated. Subagent roles prefer the weak tier wherever reasonable
   # so cheap delegation happens as often as possible.
   strongModel =
-    if workModels then "anthropic/claude-fable-5" else "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25Pro.id}";
+    if workModels then
+      "anthropic/claude-fable-5"
+    else
+      "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25Pro.id}";
   weakModel =
-    if workModels then "anthropic/claude-sonnet-4-6" else "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25.id}";
+    if workModels then
+      "anthropic/claude-sonnet-4-6"
+    else
+      "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25.id}";
 
   # Strong: main session + planning + review/oracle. Weak: general task agent,
   # scouts (smol/quick_task/explore/librarian), vision, designer, commit.
@@ -263,13 +269,6 @@ in
         elif ! omp plugin list >/dev/null 2>&1; then
           echo "[oh-my-pi] omp is not runnable, skipping plugin install"
         else
-          install_plugin() {
-            local name="$1"
-            if ! omp plugin list 2>/dev/null | grep -q "$name"; then
-              omp plugin install "$name" 2>&1 || true
-            fi
-          }
-
           uninstall_plugin() {
             local name="$1"
             if omp plugin list 2>/dev/null | grep -q "$name"; then
@@ -277,7 +276,8 @@ in
             fi
           }
 
-          install_plugin "pi-caveman"
+          # omp is the minimal backup agent: agent config only, no plugins
+          uninstall_plugin "pi-caveman"
           uninstall_plugin "pi-context-usage"
         fi
       '';
@@ -397,7 +397,6 @@ in
       '';
     };
 
-    home.file.".omp/agent/extensions/plan-mode.ts".source = ./plan-mode.ts;
     programs.fish.shellAbbrs = {
       oc = "omp --tools read,edit,write,search,find,bash,lsp,todo_write,ask";
     };

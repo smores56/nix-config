@@ -34,14 +34,6 @@ let
     models.mimoV25
   ];
 
-  opencodeModel = model: {
-    name = model.name;
-    limit = {
-      context = model.context;
-      output = model.output;
-    };
-  };
-
   ompModelAttrs = model: {
     id = model.id;
     name = model.name;
@@ -74,13 +66,6 @@ in
       ;
 
     baseUrl = "https://token-plan-sgp.xiaomimimo.com/v1";
-
-    opencodeModels = builtins.listToAttrs (
-      map (model: {
-        name = model.id;
-        value = opencodeModel model;
-      }) selectedModels
-    );
 
     ompModelsList = map ompModelAttrs selectedModels;
   };

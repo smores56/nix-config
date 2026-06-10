@@ -333,7 +333,7 @@ in
           # Skills, themes, custom extensions, global rules
           "${agentDir}/skills/grill-me/SKILL.md".source = ./skills/grill-me/SKILL.md;
           "${agentDir}/themes/noctis-uva.json".source = ./themes/noctis-uva.json;
-          "${agentDir}/extensions/plan-mode.ts".source = ../oh-my-pi/plan-mode.ts;
+          "${agentDir}/extensions/plan-mode.ts".source = ./extensions/plan-mode.ts;
           "${agentDir}/extensions/code-execution.ts".source = ./extensions/code-execution.ts;
           "${agentDir}/extensions/splash.ts".source = ./extensions/splash.ts;
           "${agentDir}/APPEND_SYSTEM.md".source = ./APPEND_SYSTEM.md;
@@ -342,8 +342,8 @@ in
             # pi packages' CLI binaries (pi-hub etc.)
             fish_add_path --append ${npmDir}/node_modules/.bin
 
-            function p --wraps 'gmux pi' --description 'p: gmux pi'
-              FISH_TERMINAL_SKIP_DSR=1 gmux pi $argv
+            function p --wraps 'pi' --description 'p: pi'
+              FISH_TERMINAL_SKIP_DSR=1 pi $argv
             end
             function pip --wraps 'pi -p' --description 'pip: pi -p'
               pi -p $argv

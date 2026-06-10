@@ -34,14 +34,6 @@ let
     models.v4Flash
   ];
 
-  opencodeModel = model: {
-    name = model.name;
-    limit = {
-      context = model.context;
-      output = model.output;
-    };
-  };
-
   ompModelAttrs = model: {
     id = model.id;
     name = model.name;
@@ -71,13 +63,6 @@ in
       ;
 
     baseUrl = "https://api.deepseek.com/v1";
-
-    opencodeModels = builtins.listToAttrs (
-      map (model: {
-        name = model.id;
-        value = opencodeModel model;
-      }) selectedModels
-    );
 
     ompModelsList = map ompModelAttrs selectedModels;
   };

@@ -1,7 +1,8 @@
 { pkgs, lib, ... }:
 {
-  # Workaround: Stylix's opencode module references programs.opencode.tui
-  # which may not exist in the current home-manager version
+  # Workaround: Stylix's opencode module defines programs.opencode.tui even
+  # with targets.opencode disabled and no opencode installed. Declare the
+  # option so evaluation succeeds. (We do not use opencode.)
   options.programs.opencode.tui = lib.mkOption {
     type = lib.types.anything;
     default = { };

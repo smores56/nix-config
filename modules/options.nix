@@ -196,79 +196,6 @@ in
       readOnly = true;
       description = "Default local LLM model for AI coding tools.";
     };
-    opencodeHost = lib.mkOption {
-      type = lib.types.submodule {
-        options = {
-          hostname = lib.mkOption {
-            type = lib.types.str;
-            default = "smortress";
-            description = "Hostname clients should use to reach the hosted opencode server.";
-          };
-          bindAddress = lib.mkOption {
-            type = lib.types.nullOr lib.types.str;
-            default = null;
-            description = "Address the opencode and OpenChamber services bind to. Null means this host does not run opencode services.";
-          };
-          opencodePort = lib.mkOption {
-            type = lib.types.port;
-            default = 4000;
-            description = "Port for the opencode server.";
-          };
-          openchamberPort = lib.mkOption {
-            type = lib.types.port;
-            default = 3000;
-            description = "Port for the OpenChamber web UI.";
-          };
-        };
-      };
-      default = { };
-      description = "Host and port settings for a hosted opencode/OpenChamber pair. Set bindAddress to enable services.";
-    };
-    paseo = lib.mkOption {
-      type = lib.types.submodule {
-        options = {
-          enable = lib.mkOption {
-            type = lib.types.bool;
-            default = false;
-            description = "Enable the Paseo daemon for remote agent access.";
-          };
-          web = lib.mkOption {
-            type = lib.types.submodule {
-              options = {
-                enable = lib.mkOption {
-                  type = lib.types.bool;
-                  default = false;
-                  description = "Serve the Paseo web app (Expo SPA) via Caddy reverse proxy.";
-                };
-                port = lib.mkOption {
-                  type = lib.types.port;
-                  default = 8765;
-                  description = "HTTP port for Caddy to serve the web app on.";
-                };
-              };
-            };
-            default = { };
-            description = "Paseo web app settings. Requires a NixOS host with Caddy.";
-          };
-        };
-      };
-      default = { };
-      description = "Paseo settings. Paseo is a self-hosted daemon for AI coding agents, accessible via web/CLI/mobile.";
-    };
-    herdr = lib.mkOption {
-      type = lib.types.submodule {
-        options = {
-          enable = lib.mkEnableOption "Cloudflare Zero Trust-protected web terminal for herdr (ttyd + herdr session attach default)";
-          port = lib.mkOption {
-            type = lib.types.port;
-            default = 5955;
-            description = "Port for ttyd web terminal serving herdr.";
-          };
-        };
-      };
-      default = { };
-      description = "Herdr web terminal settings. Exposes herdr session attach default via ttyd at herdr.<domain> through Cloudflare Tunnel.";
-    };
     webProxy = lib.mkOption {
       type = lib.types.submodule {
         options = {
@@ -292,129 +219,6 @@ in
       };
       default = { };
       description = "Public exposure of smortress HTTP services over Cloudflare Tunnel. TLS terminates at the Cloudflare edge; cloudflared proxies each subdomain straight to its loopback service.";
-    };
-    hermes = lib.mkOption {
-      type = lib.types.submodule {
-        options = {
-          enable = lib.mkEnableOption "the sandboxed Hermes Agent deployment (Docker terminal backend, optional messaging gateway)";
-          useNixImage = lib.mkOption {
-            type = lib.types.bool;
-            default = true;
-            description = "Use a Nix-built (dockerTools) sandbox image as the Docker terminal backend image. When false, registryImage is used.";
-          };
-          registryImage = lib.mkOption {
-            type = lib.types.str;
-            default = "nikolaik/python-nodejs:python3.11-nodejs20";
-            description = "Registry image used as the Docker sandbox when useNixImage is false.";
-          };
-          extraPackages = lib.mkOption {
-            type = lib.types.listOf lib.types.package;
-            default = [ ];
-            description = "Extra packages baked into the Nix sandbox image (e.g. language toolchains). Only used when useNixImage is true.";
-          };
-          containerCpu = lib.mkOption {
-            type = lib.types.int;
-            default = 2;
-            description = "CPU cores allotted to each sandbox container.";
-          };
-          containerMemory = lib.mkOption {
-            type = lib.types.int;
-            default = 6144;
-            description = "Memory (MB) allotted to each sandbox container.";
-          };
-          containerDisk = lib.mkOption {
-            type = lib.types.int;
-            default = 51200;
-            description = "Disk (MB) per sandbox container (only enforced on overlay2 + XFS pquota).";
-          };
-          gateway = lib.mkOption {
-            type = lib.types.submodule {
-              options = {
-                enable = lib.mkOption {
-                  type = lib.types.bool;
-                  default = true;
-                  description = "Run the Hermes messaging gateway (Discord, etc.) as a user service. Requires platform tokens and allowlists in ~/.hermes/.env.";
-                };
-              };
-            };
-            default = { };
-            description = "Hermes messaging gateway settings.";
-          };
-        };
-      };
-      default = { };
-      description = "Sandboxed Hermes Agent deployment: Docker terminal backend with per-repo profile sandboxes, a web dashboard, and an optional messaging gateway.";
-    };
-    maki = lib.mkOption {
-      type = lib.types.submodule {
-        options = {
-          enable = lib.mkEnableOption "maki terminal AI coding agent config" // {
-            default = true;
-          };
-          mem0 = {
-            enable = lib.mkEnableOption "mem0 memory backend (Python venv + MCP server)" // {
-              default = true;
-            };
-            llmModel = lib.mkOption {
-              type = lib.types.str;
-              default = "llama3.2";
-              description = "Fact extraction model for mem0 (Ollama).";
-            };
-            embedModel = lib.mkOption {
-              type = lib.types.str;
-              default = "nomic-embed-text";
-              description = "Embeddings model for mem0 (Ollama).";
-            };
-          };
-          defaultModel = lib.mkOption {
-            type = lib.types.str;
-            default = "xiaomi/mimo-v2.5-pro";
-            description = "Default model spec for maki-serve (format: provider/model-id).";
-          };
-          models = lib.mkOption {
-            type = lib.types.listOf (
-              lib.types.submodule {
-                options = {
-                  spec = lib.mkOption {
-                    type = lib.types.str;
-                    description = "Model spec (provider/model-id).";
-                  };
-                  name = lib.mkOption {
-                    type = lib.types.str;
-                    description = "Display name.";
-                  };
-                };
-              }
-            );
-            default = [
-              {
-                spec = "xiaomi/mimo-v2.5-pro";
-                name = "MiMo V2.5 Pro";
-              }
-              {
-                spec = "xiaomi/mimo-v2.5";
-                name = "MiMo V2.5";
-              }
-              {
-                spec = "smortress/gemma-4-31b";
-                name = "Gemma 4 31B (smortress)";
-              }
-            ];
-            description = "Available models exposed via GET /api/models and shown in the web UI model dropdown.";
-          };
-          rtk = {
-            enable = lib.mkEnableOption "rtk (bash output filter) in PATH" // {
-              default = true;
-            };
-          };
-          monty = {
-            enable = lib.mkEnableOption "pydantic-monty (code execution sandbox) in PATH" // {
-              default = true;
-            };
-          };
-        };
-      };
-      default = { };
     };
     pi = lib.mkOption {
       type = lib.types.submodule {
@@ -491,92 +295,10 @@ in
       default = { };
       description = "Pi agent dashboard settings (pi.sammohr.dev).";
     };
-    tau = lib.mkOption {
-      type = lib.types.submodule {
-        options = {
-          enable = lib.mkEnableOption "Tau web UI (mirrors OMP session in browser)" // {
-            default = false;
-          };
-          port = lib.mkOption {
-            type = lib.types.port;
-            default = 3001;
-            description = "Port for the Tau mirror server.";
-          };
-          host = lib.mkOption {
-            type = lib.types.str;
-            default = "127.0.0.1";
-            description = "Bind address for the Tau server. Only 127.0.0.1 needed since cloudflared tunnels localhost.";
-          };
-          user = lib.mkOption {
-            type = lib.types.str;
-            default = "smores";
-            description = "HTTP Basic Auth username for Tau.";
-          };
-          passwordFile = lib.mkOption {
-            type = lib.types.str;
-            default = "";
-            description = "Path to file containing the HTTP Basic Auth password for Tau. Empty = no auth. Managed by oh-my-pi activation when set.";
-          };
-        };
-      };
-      default = { };
-      description = "Tau web UI mirror for OMP sessions.";
-    };
-    agentOfEmpires = lib.mkOption {
-      type = lib.types.submodule {
-        options = {
-          enable = lib.mkEnableOption "Agent of Empires session manager" // {
-            default = false;
-          };
-          port = lib.mkOption {
-            type = lib.types.port;
-            default = 8080;
-            description = "Port for the AoE web dashboard.";
-          };
-        };
-      };
-      default = { };
-      description = "Agent of Empires multi-agent session manager.";
-    };
     aiHints = lib.mkOption {
       type = lib.types.str;
       readOnly = true;
       description = "AI coding assistant context/rules, shared across pi and opencode.";
-    };
-    goose = lib.mkOption {
-      type = lib.types.submodule {
-        options = {
-          enable = lib.mkEnableOption "goose AI agent (CLI + MiMo & DeepSeek providers)" // {
-            default = true;
-          };
-          server = lib.mkOption {
-            type = lib.types.submodule {
-              options = {
-                enable = lib.mkEnableOption "goosed agent server (systemd user service)" // {
-                  default = false;
-                };
-              };
-            };
-            default = { };
-          };
-          web = lib.mkOption {
-            type = lib.types.submodule {
-              options = {
-                enable = lib.mkEnableOption "goose-web PWA" // {
-                  default = false;
-                };
-                port = lib.mkOption {
-                  type = lib.types.port;
-                  default = 2999;
-                };
-              };
-            };
-            default = { };
-          };
-        };
-      };
-      default = { };
-      description = "Goose AI agent settings.";
     };
   };
   config = {
@@ -607,12 +329,6 @@ in
             || config.dotfiles.displayManager == "osx"
             || config.dotfiles.displayManager == "niri";
           message = "polarity 'time-of-day' requires displayManager 'osx' or 'niri' for automatic switching";
-        }
-        {
-          assertion =
-            config.dotfiles.opencodeHost.bindAddress == null
-            || config.dotfiles.opencodeHost.opencodePort != config.dotfiles.opencodeHost.openchamberPort;
-          message = "opencodeHost opencodePort and openchamberPort must be different";
         }
       ];
 

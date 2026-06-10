@@ -22,7 +22,6 @@ in
       "${homeDir}/.cargo/bin"
       "${homeDir}/.bun/bin"
       "${homeDir}/.cache/.bun/bin"
-      "${homeDir}/.opencode/bin"
       "${homeDir}/.wasmtime/bin"
     ];
   };
