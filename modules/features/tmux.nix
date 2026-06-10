@@ -67,6 +67,7 @@ in
       set -as terminal-features ",*:RGB"
       set -g allow-passthrough on
       set -s extended-keys on
+      set -s extended-keys-format csi-u
       set -g renumber-windows on
       set -g detach-on-destroy off
       set -g set-titles on
