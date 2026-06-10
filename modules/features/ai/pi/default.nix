@@ -51,7 +51,6 @@ let
     "npm:pi-web-access"
     "npm:pi-intercom"
     "npm:pi-powerline-footer"
-    "npm:pi-context-prune"
     "npm:pi-autoresearch"
     "npm:pi-review-loop"
     "npm:@juicesharp/rpiv-ask-user-question"
@@ -309,21 +308,6 @@ in
           subagents = {
             agentOverrides = subagentOverrides;
           };
-        };
-      };
-
-      home.file."${agentDir}/context-prune/settings.json" = {
-        force = true;
-        text = builtins.toJSON {
-          enabled = true;
-          showPruneStatusLine = true;
-          summarizerModel = "anthropic/claude-sonnet-4-6";
-          summarizerThinking = "default";
-          pruneOn = "agent-message";
-          remindUnprunedCount = true;
-          # "turn" mode produces summaries larger than tiny raw tool outputs;
-          # see https://github.com/championswimmer/pi-context-prune/issues/11
-          batchingMode = "agent-message";
         };
       };
 
