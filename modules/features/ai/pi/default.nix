@@ -442,14 +442,18 @@ in
 
           # pi-statusline replaces pi's editor with its own component that
           # hardcodes PROMPT_PADDING = 0 and overrides setPaddingX to ignore the
-          # editorPaddingX setting. Patch the constant to 2.
-          patchPiStatuslinePadding = {
+          # editorPaddingX setting. Patch the constant to 2, then overdraw the
+          # first line's two padding spaces with a periwinkle nerd-font pi logo
+          # (U+E22C) + space - same visual width, so cursor math stays correct.
+          # Both substitutions are idempotent.
+          patchPiStatuslinePrompt = {
             after = [ "installPiPackages" ];
             before = [ ];
             data = ''
               SL="${npmDir}/node_modules/@wierdbytes/pi-statusline/index.ts"
               if [ -f "$SL" ]; then
                 ${pkgs.perl}/bin/perl -pi -e 's/const PROMPT_PADDING = 0;/const PROMPT_PADDING = 2;/' "$SL" || true
+                ${pkgs.perl}/bin/perl -0777 -pi -e 's/(            break;\n          \}\n        \}\n)\n        return lines;/$1\n        if (lines.length > 0 \&\& lines[0].startsWith("  ")) {\n          lines[0] = "\\x1b[38;2;153;142;241m\xee\x88\xac\\x1b[39m " + lines[0].slice(2);\n        }\n\n        return lines;/' "$SL" || true
               fi
             '';
           };
