@@ -283,6 +283,7 @@ in
               # OAuth subscription billing notice on every session start – known, noisy
               warnings.anthropicExtraUsage = false;
               doubleEscapeAction = "tree";
+              editorPaddingX = 2; # breathing room - no typing on the bare terminal edge
               compaction = {
                 enabled = true;
                 reserveTokens = cfg.compaction.reserveTokens;
