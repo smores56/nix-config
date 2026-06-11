@@ -21,6 +21,12 @@ let
 
   bunBin = "${homeDir}/.bun/bin";
 
+  # Pinned pi-agent-hub fork (smores56/pi-agent-hub). dist/ is vendored at this
+  # commit so bun installs it directly (git deps skip build scripts); both the
+  # pi-hub CLI and the hub extension come from this install. Bump after pushing
+  # a new built commit, then `home-manager switch`.
+  piAgentHubRev = "d930f98a362e215c57c8a683f86986a4417ce76d";
+
   # Extension stack. Decision record + conflict map: ./EXTENSIONS.md
   piPackages = [
     # Orchestration
@@ -374,6 +380,41 @@ in
             '';
           };
 
+          # Install the pinned pi-agent-hub fork from git into the agent npm
+          # dir, providing both the pi-hub CLI and the hub extension. Runs
+          # before installPiPackages so its npm:pi-agent-hub entry is treated as
+          # already satisfied (the dir exists) and not pulled from the registry.
+          installPiAgentHubFork = {
+            after = [ "installPiCli" ];
+            before = [ "installPiPackages" ];
+            data = ''
+              NPM_DIR="${npmDir}"
+              REV="${piAgentHubRev}"
+              MARKER="$NPM_DIR/.pi-agent-hub-rev"
+              # bun shells out to git/ssh to clone the git dep; the activation
+              # PATH is minimal, so provide them explicitly. SSH key selection
+              # comes from the user's git core.sshCommand (absolute store path).
+              export PATH="${pkgs.git}/bin:${pkgs.openssh}/bin:$PATH"
+              mkdir -p "$NPM_DIR"
+              if ! command -v "${bunBin}/bun" >/dev/null 2>&1; then
+                echo "[pi] bun not found; cannot install pi-agent-hub fork" >&2
+              elif [ "$(cat "$MARKER" 2>/dev/null)" = "$REV" ] && [ -d "$NPM_DIR/node_modules/pi-agent-hub" ]; then
+                echo "[pi] pi-agent-hub fork already at $REV"
+              else
+                echo "[pi] Installing pi-agent-hub fork @ $REV"
+                rm -rf "$NPM_DIR/node_modules/pi-agent-hub" "$NPM_DIR/node_modules/pi-agent-hub.npm-backup"
+                # Clear any prior registry entry so the git spec does not
+                # collide with a leftover pi-agent-hub@^x (bun DependencyLoop).
+                (cd "$NPM_DIR" && "${bunBin}/bun" remove pi-agent-hub 2>/dev/null) || true
+                if (cd "$NPM_DIR" && "${bunBin}/bun" add "git+ssh://git@github.com/smores56/pi-agent-hub.git#$REV" 2>&1); then
+                  printf '%s\n' "$REV" > "$MARKER"
+                else
+                  echo "[pi] Failed to install pi-agent-hub fork" >&2
+                fi
+              fi
+            '';
+          };
+
           # Install pi npm packages into agent npm dir
           # settings.json is nix-managed (store path), so pi install can't write to it
           # We install via bun add + inline packages in settings.json
@@ -397,7 +438,7 @@ in
                     echo "[pi] Installing $NAME"
                     (cd "$NPM_DIR" && "${bunBin}/bun" add "$NAME" 2>&1) || true
                   fi
-                '') piPackages
+                '') (builtins.filter (source: source != "npm:pi-agent-hub") piPackages)
               )}
             '';
           };
