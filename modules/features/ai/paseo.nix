@@ -10,7 +10,22 @@ let
   homeDir = config.home.homeDirectory;
 
   fqdn = "${cfg.subdomain}.${d.webProxy.domain}";
-  binDir = if cfg.binDir != "" then cfg.binDir else "${homeDir}/.npm-global/bin";
+  # The paseo binary and the agents it spawns (maki, brv) are installed manually
+  # to assorted user bin dirs; resolve them all via PATH rather than hardcoding.
+  binDir = if cfg.binDir != "" then cfg.binDir else "${homeDir}/.cache/.bun/bin";
+  servicePath = lib.concatStringsSep ":" [
+    "${pkgs.nodejs}/bin"
+    binDir
+    "${homeDir}/.bun/bin"
+    "${homeDir}/.cache/.bun/bin"
+    "${homeDir}/.npm-global/bin"
+    "${homeDir}/.nix-profile/bin"
+    "${homeDir}/.cargo/bin"
+    "${homeDir}/.brv-cli/bin"
+    "${homeDir}/.local/bin"
+    "/run/current-system/sw/bin"
+    "/run/wrappers/bin"
+  ];
 
   # Daemon binds to loopback; web-proxy.nix fronts it at ${fqdn} with edge TLS.
   # hostnames clears the DNS-rebinding guard for that host; cors lets the hosted
@@ -63,10 +78,12 @@ in
       };
       Service = {
         Type = "simple";
-        # paseo (npm) and maki (ACP provider) are installed manually; both must
-        # be on PATH here. node powers the npm-installed paseo CLI.
-        Environment = "PATH=${pkgs.nodejs}/bin:${binDir}:${homeDir}/.local/bin:/run/wrappers/bin";
-        ExecStart = "${binDir}/paseo daemon start";
+        # paseo, maki (ACP provider), and brv (maki's memory MCP) are installed
+        # manually to various user bin dirs; servicePath unions them. ExecStart
+        # runs through bash so `paseo` resolves via PATH (systemd does no PATH
+        # lookup for ExecStart itself).
+        Environment = "PATH=${servicePath}";
+        ExecStart = "${pkgs.bash}/bin/bash -c 'exec paseo daemon start'";
         Restart = "on-failure";
         RestartSec = 5;
       }
