@@ -300,6 +300,51 @@ in
       default = { };
       description = "Pi agent dashboard settings (pi.sammohr.dev).";
     };
+    paseo = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkEnableOption "Paseo daemon (config.json + systemd user service; binary installed manually)";
+          port = lib.mkOption {
+            type = lib.types.int;
+            default = 6767;
+            description = "Loopback port the Paseo daemon listens on.";
+          };
+          subdomain = lib.mkOption {
+            type = lib.types.str;
+            default = "paseo";
+            description = "Subdomain under webProxy.domain for the Cloudflare-tunnelled daemon.";
+          };
+          binDir = lib.mkOption {
+            type = lib.types.str;
+            default = "";
+            description = "Directory with the manually npm-installed `paseo` binary. Empty -> ~/.npm-global/bin.";
+          };
+          environmentFile = lib.mkOption {
+            type = lib.types.str;
+            default = "";
+            description = "Required systemd EnvironmentFile for the daemon (PASEO_PASSWORD + provider API keys). Kept out of the Nix store; the service fails closed until it exists. Empty -> no env file (auth must come from Cloudflare Access).";
+          };
+        };
+      };
+      default = { };
+      description = "Paseo agent-orchestration daemon (paseo.<domain>).";
+    };
+    herdr = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkEnableOption "Herdr terminal multiplexer config (binary installed manually)" // {
+            default = true;
+          };
+          theme = lib.mkOption {
+            type = lib.types.str;
+            default = "gruvbox";
+            description = "Herdr built-in theme name.";
+          };
+        };
+      };
+      default = { };
+      description = "Herdr terminal workspace manager settings.";
+    };
     aiHints = lib.mkOption {
       type = lib.types.str;
       readOnly = true;

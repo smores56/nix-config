@@ -82,6 +82,8 @@ let
             pi = null;
             piDashboard = null;
             llmTokenBucketProxy = null;
+            paseo = null;
+            maki = null;
           } args;
           home.username = username;
           home.homeDirectory =
@@ -118,6 +120,7 @@ let
             persist = args.persist or false;
             piDashboard = args.piDashboard or { };
             webProxy = args.webProxy or { };
+            paseo = args.paseo or { };
           };
         }
       ]
@@ -157,6 +160,11 @@ in
           enable = true;
         };
         llmTokenBucketProxy.enable = true;
+        maki.byteroverMemory = true;
+        paseo = {
+          enable = true;
+          environmentFile = "/home/smores/.config/paseo/secrets.env";
+        };
       };
       "smohr@smoreswork" = mkHome {
         displayManager = "osx";
@@ -177,7 +185,7 @@ in
         pi = {
           enable = true;
           defaultProvider = "anthropic";
-          defaultModel = "claude-fable-5";
+          defaultModel = "claude-opus-4-8";
           # Slack via korotovsky/slack-mcp-server, read-only (no
           # SLACK_MCP_ADD_MESSAGE_TOOL). Auth: browser session tokens in
           # ~/.config/fish/conf.d/api-keys.fish, set up via `slack-mcp-auth`
@@ -227,6 +235,9 @@ in
         webProxy = {
           enable = true;
           tunnelId = "f2284d1b-5038-447b-ab50-e18dc1dba8c5";
+        };
+        paseo = {
+          enable = true;
         };
       };
     };

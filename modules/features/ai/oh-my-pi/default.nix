@@ -17,7 +17,7 @@ let
   # so cheap delegation happens as often as possible.
   strongModel =
     if workModels then
-      "anthropic/claude-fable-5"
+      "anthropic/claude-opus-4-8"
     else
       "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25Pro.id}";
   weakModel =

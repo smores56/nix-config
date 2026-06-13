@@ -33,8 +33,10 @@ These are sourced by fish automatically and available to all AI tools.
 
 | Tier | Provider / Model |
 |------|-----------------|
-| Strong | `anthropic/claude-fable-5` |
+| Strong | `anthropic/claude-opus-4-8` |
 | Weak | `anthropic/claude-sonnet-4-6` |
+
+`anthropic/claude-fable-5` stays selectable via `/model`; it is no longer the default.
 
 ## Provider Modules
 
@@ -61,14 +63,71 @@ On `home-manager switch`:
 
 Fish shortcuts: `o` = `omp`, `oc` = omp with a pinned minimal toolset.
 
+## maki (config-only)
+
+Managed by `maki/default.nix` (`dotfiles.maki.enable`, default on). The maki
+binary is installed manually (`maki.sh/install.sh`); home-manager only writes
+`~/.config/maki/`:
+
+- `init.lua` - `maki.setup` with `always_yolo`, `always_thinking`, and a
+  `provider.default_model` mirroring pi/omp: `anthropic/claude-opus-4-8` on the
+  work machine, `deepseek/deepseek-v4-pro` elsewhere. `bash` tool enabled.
+  `anthropic/claude-fable-5` stays in maki's built-in strong tier (`/model`).
+- `plugin.toml` - grants config Lua plugins `run`/`env` (absent manifest =
+  every plugin capability denied).
+- `lua/spawn_session.lua` - custom Lua tool that spawns a new maki session as a
+  detached Paseo agent (`paseo run --provider maki`) behind a confirmation
+  dialog, attachable from the CLI or app.paseo.sh. Self-disables without `paseo`.
+- `mcp.toml` (only when `maki.byteroverMemory`, on for smortress) - registers
+  byterover (`brv mcp`) as an MCP server and disables maki's built-in `memory`
+  tool, so memory runs through byterover's `byterover__*` tools. `brv` must be
+  installed and on maki's PATH (manual; smortress only).
+
+Editor/remote use is over ACP (`maki acp`). See Paseo and Herdr below for the
+two ways to reach a live maki session from another device.
+
+## Paseo (orchestrator + remote UI)
+
+Managed by `paseo.nix` (`dotfiles.paseo.enable`, off by default; on for the
+smortress server). The `paseo` binary is installed manually (npm `@getpaseo/cli`
+under `~/.npm-global/bin`); home-manager writes `~/.paseo/config.json` and runs
+the daemon as a systemd user service. It registers maki as an ACP provider
+(`agents.providers.maki = maki acp`), binds the daemon to `127.0.0.1:6767`, and
+web-proxy.nix tunnels it to `paseo.sammohr.dev`.
+
+- Paseo renders its OWN UI (web/mobile/CLI) over a headless `maki acp`; you do
+  not see maki's native TUI through it. Use it for orchestration and a phone UI,
+  and to share one live session across CLI (`paseo attach`) and app.paseo.sh
+  without teardown/resume (the daemon is the single ACP client to maki).
+- Auth: the daemon is unauthenticated by default. `dotfiles.paseo.environmentFile`
+  is a required (fail-closed) systemd EnvironmentFile holding `PASEO_PASSWORD`
+  plus the provider key the spawned maki needs (`DEEPSEEK_API_KEY`, or
+  `ANTHROPIC_API_KEY` for opus). Cloudflare gives edge TLS; put Cloudflare
+  Access in front of `paseo.sammohr.dev` for a stronger gate on a code-executing
+  daemon. The relay (QR pairing, E2E) needs no tunnel and is the simplest mobile
+  path.
+
+## Herdr (maki's real TUI, multiplexed)
+
+Managed by `herdr/default.nix` (`dotfiles.herdr.enable`, default on). The herdr
+binary is installed manually; home-manager writes `~/.config/herdr/config.toml`
+(gruvbox, fish panes, `prefix+alt+m` -> maki pane) and installs herdr's agent
+`SKILL.md` into `~/.config/maki/skills/herdr/` so maki can drive herdr from
+inside a pane. Herdr runs the ACTUAL maki TUI in a persistent pane, reachable
+from any terminal (ssh/Tailscale or a browser terminal) with detach/reattach and
+live handoff. Herdr's binary has no maki detector, so maki panes show as plain
+terminals unless maki reports state over the socket API.
+
 ## Web Access (smortress)
 
 - `pi.sammohr.dev` - pi-agent-dashboard (`dotfiles.piDashboard`), the
   phone-accessible web UI for pi sessions
+- `paseo.sammohr.dev` - Paseo daemon (`dotfiles.paseo`), web/mobile UI driving a
+  headless `maki acp`; see Paseo above
 - Local TUI access from any device: ssh (Tailscale) + `pi-hub` (tmux-backed
   session dashboard, see `pi/EXTENSIONS.md`)
-- If a browser terminal is ever needed again: ttyd + `tmux attach` behind
-  the web proxy was the agreed fallback (herdr was removed in favor of this)
+- For the actual maki TUI on the web: run maki inside Herdr (or tmux) and reach
+  it over ssh or a browser terminal behind the web proxy (see Herdr above)
 
 ## Claude Code
 
@@ -78,8 +137,8 @@ footprint.
 
 ## History
 
-OpenCode (+ OpenChamber/OCX), goose (+ web PWA), maki, pinano, paseo,
-herdr, Agent of Empires, and the Hermes Agent deployment (Docker sandbox +
+OpenCode (+ OpenChamber/OCX), goose (+ web PWA), pinano,
+Agent of Empires, and the Hermes Agent deployment (Docker sandbox +
 Discord gateway) were removed in June 2026 after consolidating on pi.
 `git log -- modules/features/ai` has the receipts if anything needs
 resurrecting.

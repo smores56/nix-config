@@ -22,6 +22,9 @@ in
         }
         // lib.optionalAttrs d.piDashboard.enable {
           ${fqdn "pi"} = upstream 12321;
+        }
+        // lib.optionalAttrs d.paseo.enable {
+          ${fqdn d.paseo.subdomain} = upstream d.paseo.port;
         };
       };
     };

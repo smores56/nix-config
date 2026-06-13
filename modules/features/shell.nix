@@ -23,6 +23,7 @@ in
       "${homeDir}/.bun/bin"
       "${homeDir}/.cache/.bun/bin"
       "${homeDir}/.wasmtime/bin"
+      "${homeDir}/.brv-cli/bin"
     ];
   };
 
@@ -71,7 +72,7 @@ in
         st = "ssh smores@(tailscale-hosts | fzf) -t fish";
 
         o = "omp";
-        m = "maki --yolo";
+        m = if config.dotfiles.paseo.enable then "paseo run --provider maki" else "maki";
         h = "herdr session attach default";
       };
 
