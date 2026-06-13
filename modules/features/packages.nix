@@ -51,6 +51,7 @@
           aws-sso-cli
           _1password-cli
           just
+          zellij
 
           # networking
           tailscale
