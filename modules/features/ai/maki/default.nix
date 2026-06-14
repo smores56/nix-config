@@ -2,7 +2,6 @@
   config,
   lib,
   pkgs,
-  aiDeepseek,
   aiXiaomi,
   aiCrofai,
   ...
@@ -11,15 +10,15 @@ let
   cfg = config.dotfiles.maki;
   workModels = config.dotfiles.workModels;
 
-  # Mirror pi/oh-my-pi: Anthropic Opus drives the work machine, the DeepSeek
-  # tier (a provider maki supports natively, key already in api-keys.fish)
-  # everywhere else. claude-fable-5 stays selectable from maki's built-in
-  # anthropic strong-tier catalog (/model or --model anthropic/claude-fable-5).
+  # Mirror pi/oh-my-pi's personal default: Anthropic Opus on the work machine,
+  # Xiaomi MiMo Pro (registered via the custom provider below) elsewhere. The
+  # DeepSeek / CrofAI / gemma tiers stay selectable as backups via /model, never
+  # the default. claude-fable-5 stays in maki's built-in anthropic strong catalog.
   defaultModel =
     if workModels then
       "anthropic/claude-opus-4-8"
     else
-      "${aiDeepseek.providerId}/${aiDeepseek.models.v4Pro.id}";
+      "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25Pro.id}";
 
   # byterover (brv) replaces the built-in memory tool when enabled.
   makiTools = [
