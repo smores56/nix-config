@@ -68,6 +68,7 @@ in
 
   home.file.".gitignore".text = ''
     .worktrees/
+    **/.claude/settings.local.json
   '';
 
   programs = {
