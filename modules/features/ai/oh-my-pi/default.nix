@@ -11,28 +11,33 @@ let
   cfg = config.dotfiles.ohMyPi;
   workModels = config.dotfiles.workModels;
 
-  # Two-tier subagent hierarchy: a strong model drives the main session and the
-  # deep-reasoning roles; a weak/cheap model handles everything that gets
-  # routinely delegated. Subagent roles prefer the weak tier wherever reasonable
-  # so cheap delegation happens as often as possible.
+  # Three-tier subagent hierarchy. Work: Codex-only via the built-in openai-codex
+  # provider — smart gpt-5.5 (main session + deep-reasoning roles), middle gpt-5.4
+  # (general task agent), dumb gpt-5.4-mini (scouts/vision/designer/commit).
+  # Personal: Xiaomi MiMo Pro/base. Delegation prefers the cheaper tiers.
   strongModel =
     if workModels then
-      "anthropic/claude-opus-4-8"
+      "openai-codex/gpt-5.5"
     else
       "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25Pro.id}";
+  midModel =
+    if workModels then
+      "openai-codex/gpt-5.4"
+    else
+      "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25.id}";
   weakModel =
     if workModels then
-      "anthropic/claude-sonnet-4-6"
+      "openai-codex/gpt-5.4-mini"
     else
       "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25.id}";
 
-  # Strong: main session + planning + review/oracle. Weak: general task agent,
-  # scouts (smol/quick_task/explore/librarian), vision, designer, commit.
+  # Smart: main session + planning + slow/deep reasoning. Middle: general task
+  # agent. Dumb: scouts (smol), vision, designer, commit.
   modelRoles = {
     default = strongModel;
     plan = strongModel;
     slow = strongModel;
-    task = weakModel;
+    task = midModel;
     smol = weakModel;
     vision = weakModel;
     designer = weakModel;
@@ -42,10 +47,7 @@ let
   # Provider priority: primary tier provider first, then backups for failover.
   modelProviderOrder =
     if workModels then
-      [
-        "anthropic"
-        "openai-codex"
-      ]
+      [ "openai-codex" ]
     else
       [
         aiXiaomi.providerId

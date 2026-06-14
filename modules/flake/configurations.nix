@@ -185,12 +185,12 @@ in
         sevenqlLspPath = "/Users/smohr/dev/okami/typescript/tools/sevenql-lsp/main.ts";
         ohMyPi = {
           codex.enable = true;
-          claude.enable = true;
+          claude.enable = false;
         };
         pi = {
           enable = true;
-          defaultProvider = "anthropic";
-          defaultModel = "claude-opus-4-8";
+          defaultProvider = "openai-codex";
+          defaultModel = "gpt-5.5";
           # Slack via korotovsky/slack-mcp-server, read-only (no
           # SLACK_MCP_ADD_MESSAGE_TOOL). Auth: browser session tokens in
           # ~/.config/fish/conf.d/api-keys.fish, set up via `slack-mcp-auth`

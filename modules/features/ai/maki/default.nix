@@ -10,15 +10,12 @@ let
   cfg = config.dotfiles.maki;
   workModels = config.dotfiles.workModels;
 
-  # Mirror pi/oh-my-pi's personal default: Anthropic Opus on the work machine,
-  # Xiaomi MiMo Pro (registered via the custom provider below) elsewhere. The
-  # DeepSeek / CrofAI / gemma tiers stay selectable as backups via /model, never
-  # the default. claude-fable-5 stays in maki's built-in anthropic strong catalog.
+  # Codex GPT-5.5 (smart tier) on the work machine via the built-in `openai`
+  # provider, whose OAuth creds are mirrored from omp by maki-codex-sync below;
+  # Xiaomi MiMo Pro elsewhere. The full openai/gpt-5.* catalog (gpt-5.4 middle,
+  # gpt-5.4-mini dumb) plus DeepSeek / CrofAI / gemma stay selectable via /model.
   defaultModel =
-    if workModels then
-      "anthropic/claude-opus-4-8"
-    else
-      "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25Pro.id}";
+    if workModels then "openai/gpt-5.5" else "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25Pro.id}";
 
   # byterover (brv) replaces the built-in memory tool when enabled.
   makiTools = [
@@ -168,6 +165,14 @@ let
           ;;
       esac
     '';
+  # maki's only OpenAI login is device-code, blocked by the work ChatGPT
+  # workspace; omp's browser PKCE login works. Mirror omp's Codex OAuth token
+  # into maki's store on switch and on demand (`maki-codex-sync`). No-op when
+  # omp has no Codex credential. Work Mac only.
+  codexCredSync = pkgs.writeShellScriptBin "maki-codex-sync" ''
+    exec ${pkgs.python3}/bin/python3 ${./codex-cred-sync.py}
+  '';
+
 in
 {
   options.dotfiles.maki = {
@@ -208,6 +213,12 @@ in
           text = mkProviderScript p;
         }
       ) makiProviders
+    );
+    home.packages = lib.optional workModels codexCredSync;
+    home.activation.makiCodexCreds = lib.mkIf workModels (
+      lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+        ${codexCredSync}/bin/maki-codex-sync || true
+      ''
     );
   };
 }

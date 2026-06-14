@@ -71,33 +71,49 @@ let
     else
       s;
 
-  # Two-tier subagent hierarchy for the pi-subagents plugin's builtin agents.
-  # The parent session (cfg.defaultModel) is the strong tier; cheap/scout work
-  # is delegated to the weak tier. deepseek + crofai stay available as failover
-  # backups via fallbackModels.
-  strongModel = if workModels then "anthropic/claude-opus-4-8" else cfg.defaultModel;
+  # Subagent tier hierarchy for the pi-subagents plugin. Work: Codex-only via the
+  # built-in openai-codex provider — strong/smart gpt-5.5 (parent + planning/
+  # review/oracle), middle gpt-5.4 (general implementation), weak/dumb
+  # gpt-5.4-mini (scouts, naming, memory). Personal: Xiaomi MiMo Pro/base.
+  # Codex tiers carry no cross-provider backups (single plan/auth); personal
+  # keeps deepseek/crofai/gemma failover.
+  strongModel = if workModels then "openai-codex/gpt-5.5" else cfg.defaultModel;
+  midModel =
+    if workModels then
+      "openai-codex/gpt-5.4"
+    else
+      "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25.id}";
   weakModel =
     if workModels then
-      "anthropic/claude-sonnet-4-6"
+      "openai-codex/gpt-5.4-mini"
     else
       "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25.id}";
 
-  strongBackups = [
-    "${aiDeepseek.providerId}/${aiDeepseek.models.v4Pro.id}"
-    "${aiCrofai.providerId}/${aiCrofai.models.kimiK27Code.id}"
-    "smortress/gemma-4-31b"
-  ];
-  weakBackups = [
-    "${aiDeepseek.providerId}/${aiDeepseek.models.v4Flash.id}"
-    "${aiCrofai.providerId}/${aiCrofai.models.kimiK27Code.id}"
-    "smortress/gemma-4-31b"
-  ];
+  strongBackups =
+    if workModels then
+      [ ]
+    else
+      [
+        "${aiDeepseek.providerId}/${aiDeepseek.models.v4Pro.id}"
+        "${aiCrofai.providerId}/${aiCrofai.models.kimiK27Code.id}"
+        "smortress/gemma-4-31b"
+      ];
+  midBackups =
+    if workModels then
+      [ ]
+    else
+      [
+        "${aiDeepseek.providerId}/${aiDeepseek.models.v4Flash.id}"
+        "${aiCrofai.providerId}/${aiCrofai.models.kimiK27Code.id}"
+        "smortress/gemma-4-31b"
+      ];
+  weakBackups = midBackups;
 
   mkAgentOverride = model: fallbackModels: { inherit model fallbackModels; };
 
-  # Aggressive tiering mirrors oh-my-pi: scouts + general implementation
-  # (scout/researcher/worker/delegate) go weak; planning, review, oracle, and
-  # the stronger context pass stay on the strong tier.
+  # Codex-only tiers on work (personal mirrors with MiMo): scouts go weak/dumb,
+  # general implementation (worker/delegate) goes middle, planning/review/oracle/
+  # context stay strong/smart.
   subagentOverrides = builtins.listToAttrs (
     map
       (name: {
@@ -107,9 +123,17 @@ let
       [
         "scout"
         "researcher"
-        "worker"
-        "delegate"
       ]
+    ++
+      map
+        (name: {
+          inherit name;
+          value = mkAgentOverride midModel midBackups;
+        })
+        [
+          "worker"
+          "delegate"
+        ]
     ++
       map
         (name: {
@@ -165,35 +189,11 @@ let
     };
   };
 
-  workProviders = {
-    # Fable 5 (released 2026-06-09) isn't in pi's bundled model catalog yet.
-    # Merge it into the built-in anthropic provider so the endpoint and OAuth
-    # auth are inherited; fields mirror the native claude-opus-4-8 entry, the
-    # model Fable's safeguards fall back to. Pricing per Anthropic's launch
-    # post ($10/$50 per Mtok; 0.1x cache read, 1.25x cache write).
-    anthropic.models = [
-      {
-        id = "claude-fable-5";
-        name = "Claude Fable 5";
-        api = "anthropic-messages";
-        reasoning = true;
-        thinkingLevelMap.xhigh = "xhigh";
-        compat.forceAdaptiveThinking = true;
-        input = [
-          "text"
-          "image"
-        ];
-        contextWindow = 1000000;
-        maxTokens = 128000;
-        cost = {
-          input = 10;
-          output = 50;
-          cacheRead = 1;
-          cacheWrite = 12.5;
-        };
-      }
-    ];
-  };
+  # Work: Codex-only. pi's built-in openai-codex provider (ChatGPT Coding Plan,
+  # OAuth) already carries gpt-5.5 / gpt-5.4 / gpt-5.4-mini, so no extra provider
+  # entries are needed here. Sign in once with pi's browser login (`/login` ->
+  # openai-codex); the work workspace permits the PKCE browser flow.
+  workProviders = { };
 
   personalProviders = {
     ${aiXiaomi.providerId} = {
