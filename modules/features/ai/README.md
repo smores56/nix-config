@@ -78,10 +78,17 @@ escape it either):
   `gh/hosts.yml` for a token and 403s on every launch otherwise; with the read
   blocked it skips Copilot. `gh` itself runs outside the sandbox, unaffected.
 
-Network is left at nono's default (allowed) so LLM/API calls work; tighten later
-with a nono network profile + domain allowlist. Verified end-to-end on smortress
-(Landlock) and macOS (Seatbelt): maki/pi/omp all run while `~/.ssh`,
-`~/.config/gh`, and `sudo` are blocked.
+Network egress is default-deny via `restrictNetwork` (default on): `agent-base`
+sets nono's built-in `developer` profile (`llm_apis`, `package_registries`,
+`github`, `sigstore`, `documentation`) plus an `allow_domain` list for the
+endpoints no group covers - mimo (personal default LLM), crofai, the byterover
+MCP (`*.byterover.dev`), and the smortress host. Two consequences: agents get
+**no general web/search** (only the curated `documentation` hosts), and nono's
+proxy is HTTPS-CONNECT-only so the local plain-HTTP gemma backend is
+unreachable - set `dotfiles.nono.restrictNetwork = false` for unrestricted
+egress. Verified end-to-end on smortress (Landlock) and macOS (Seatbelt):
+maki/pi/omp run, allowed LLMs reach (mimo/deepseek/crofai), unlisted hosts get
+a 403 CONNECT block, and `~/.ssh`, `~/.config/gh`, `sudo` stay blocked.
 
 ## oh-my-pi (Backup Agent)
 
