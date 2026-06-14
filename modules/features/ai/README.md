@@ -24,7 +24,7 @@ These are sourced by fish automatically and available to all AI tools.
 |------|-----------------|------|
 | Strong | `xiaomi/mimo-v2.5-pro` | Default + strong-tier subagents |
 | Weak | `xiaomi/mimo-v2.5` | Weak-tier subagents, naming, summaries |
-| Fallbacks | DeepSeek v4 -> CrofAI GLM -> `smortress/gemma-4-31b` | Failover chain on both tiers |
+| Fallbacks | DeepSeek v4 -> CrofAI Kimi K2.7 -> `smortress/gemma-4-31b` | Failover chain on both tiers |
 
 `smortress/gemma-4-31b` is free and self-hosted via llama.cpp
 (`modules/nixos/llm.nix`, enabled by the `llm` host flag).
@@ -82,6 +82,14 @@ binary is installed manually (`maki.sh/install.sh`); home-manager only writes
   byterover (`brv mcp`) as an MCP server and disables maki's built-in `memory`
   tool, so memory runs through byterover's `byterover__*` tools. `brv` must be
   installed and on maki's PATH (manual; smortress only).
+- `providers/{xiaomi,crofai,smortress}` - executable dynamic-provider scripts
+  (personal hosts only) registering the custom OpenAI-compatible endpoints maki
+  has no built-in for: Xiaomi MiMo, CrofAI (Kimi K2.7 Code), and the self-hosted
+  `smortress/gemma-4-31b`. Each answers `info`/`models`/`resolve`; `resolve`
+  injects the bearer token from the env key (`XIAOMI_MIMO_API_KEY` /
+  `CROFAI_API_KEY`; gemma is keyless), and `info`'s `has_auth` gates the provider
+  on the key being present. base `llama-cpp` is the plain OpenAI-compatible
+  dialect; maki auto-discovers each endpoint's live `/v1/models` list.
 
 Editor/remote use is over ACP (`maki acp`). See Paseo and Herdr below for the
 two ways to reach a live maki session from another device.
@@ -89,9 +97,12 @@ two ways to reach a live maki session from another device.
 ## Paseo (orchestrator + remote UI)
 
 Managed by `paseo.nix` (`dotfiles.paseo.enable`, off by default; on for the
-smortress server). The `paseo` binary is installed manually (npm `@getpaseo/cli`
-under `~/.npm-global/bin`); home-manager writes `~/.paseo/config.json` and runs
-the daemon as a systemd user service. It registers maki as an ACP provider
+smortress server). The `paseo` binary is installed manually (bun/npm global);
+home-manager writes `~/.paseo/config.json` and runs the daemon as a systemd user
+service whose PATH unions the manual-install bin dirs (bun/npm/nix-profile/cargo/
+brv-cli) so it finds `paseo`, the `maki acp` it spawns, and `brv`. The unit runs
+`paseo daemon start --foreground` so Type=simple supervises it. It registers maki
+as an ACP provider
 (`agents.providers.maki = maki acp`), binds the daemon to `127.0.0.1:6767`, and
 web-proxy.nix tunnels it to `paseo.sammohr.dev`.
 

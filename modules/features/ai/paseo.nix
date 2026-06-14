@@ -81,9 +81,11 @@ in
         # paseo, maki (ACP provider), and brv (maki's memory MCP) are installed
         # manually to various user bin dirs; servicePath unions them. ExecStart
         # runs through bash so `paseo` resolves via PATH (systemd does no PATH
-        # lookup for ExecStart itself).
+        # lookup for ExecStart itself). --foreground keeps the daemon attached so
+        # Type=simple supervises it; a bare `daemon start` self-backgrounds and
+        # the foreground process exits, which systemd reads as a crash loop.
         Environment = "PATH=${servicePath}";
-        ExecStart = "${pkgs.bash}/bin/bash -c 'exec paseo daemon start'";
+        ExecStart = "${pkgs.bash}/bin/bash -c 'exec paseo daemon start --foreground'";
         Restart = "on-failure";
         RestartSec = 5;
       }

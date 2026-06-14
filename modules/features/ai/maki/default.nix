@@ -1,7 +1,10 @@
 {
   config,
   lib,
+  pkgs,
   aiDeepseek,
+  aiXiaomi,
+  aiCrofai,
   ...
 }:
 let
@@ -61,6 +64,111 @@ let
     [mcp.byterover]
     command = ["brv", "mcp"]
   '';
+
+  # mimo / crofai / gemma are OpenAI-compatible endpoints maki ships no built-in
+  # for. maki discovers custom providers as executable scripts in
+  # ~/.config/maki/providers/<slug> answering info/models/resolve. base
+  # "llama-cpp" selects the plain OpenAI /v1 chat-completions dialect (no
+  # Responses API / developer role) that all three speak; resolve injects the
+  # bearer token and info's has_auth reflects whether the key env var is set, so
+  # a provider only lights up when its creds are available. Personal hosts only —
+  # work hosts drive anthropic/openai-codex.
+  makiProviders = {
+    ${aiXiaomi.providerId} = {
+      displayName = "Xiaomi MiMo";
+      baseUrl = aiXiaomi.baseUrl;
+      keyEnv = "XIAOMI_MIMO_API_KEY";
+      models = [
+        {
+          id = aiXiaomi.models.mimoV25Pro.id;
+          tier = "strong";
+          context_window = aiXiaomi.models.mimoV25Pro.context;
+          max_output_tokens = aiXiaomi.models.mimoV25Pro.output;
+        }
+        {
+          id = aiXiaomi.models.mimoV25.id;
+          tier = "weak";
+          context_window = aiXiaomi.models.mimoV25.context;
+          max_output_tokens = aiXiaomi.models.mimoV25.output;
+        }
+      ];
+    };
+    ${aiCrofai.providerId} = {
+      displayName = "CrofAI";
+      baseUrl = aiCrofai.baseUrl;
+      keyEnv = "CROFAI_API_KEY";
+      models = [
+        {
+          id = aiCrofai.models.kimiK27Code.id;
+          tier = "strong";
+          context_window = aiCrofai.models.kimiK27Code.context;
+          max_output_tokens = aiCrofai.models.kimiK27Code.output;
+        }
+      ];
+    };
+    smortress = {
+      displayName = "Gemma (smortress)";
+      baseUrl = "http://smortress:8081/v1";
+      keyEnv = null;
+      models = [
+        {
+          id = "gemma-4-31b";
+          tier = "medium";
+          context_window = 102400;
+          max_output_tokens = 102400;
+        }
+      ];
+    };
+  };
+
+  mkProviderScript =
+    p:
+    let
+      hasKey = p.keyEnv != null;
+      infoCmd =
+        if hasKey then
+          ''
+            if [ -n "''${${p.keyEnv}:-}" ]; then ha=true; else ha=false; fi
+            printf '{"display_name":%s,"base":"llama-cpp","has_auth":%s}\n' ${lib.escapeShellArg (builtins.toJSON p.displayName)} "$ha"''
+        else
+          ''printf '%s\n' ${
+            lib.escapeShellArg (
+              builtins.toJSON {
+                display_name = p.displayName;
+                base = "llama-cpp";
+                has_auth = true;
+              }
+            )
+          }'';
+      resolveCmd =
+        if hasKey then
+          ''printf '{"base_url":%s,"headers":{"Authorization":"Bearer %s"}}\n' ${lib.escapeShellArg (builtins.toJSON p.baseUrl)} "''${${p.keyEnv}:-}"''
+        else
+          ''printf '%s\n' ${
+            lib.escapeShellArg (
+              builtins.toJSON {
+                base_url = p.baseUrl;
+                headers = { };
+              }
+            )
+          }'';
+    in
+    ''
+      #!${pkgs.bash}/bin/bash
+      # Managed by home-manager (modules/features/ai/maki). Manual edits are clobbered.
+      set -euo pipefail
+      case "''${1:-}" in
+        info)
+          ${infoCmd}
+          ;;
+        models)
+          printf '%s\n' ${lib.escapeShellArg (builtins.toJSON p.models)}
+          ;;
+        resolve)
+          ${resolveCmd}
+          ;;
+      esac
+    '';
 in
 {
   options.dotfiles.maki = {
@@ -91,6 +199,16 @@ in
         force = true;
         text = mcpToml;
       };
-    };
+    }
+    // lib.optionalAttrs (!workModels) (
+      lib.mapAttrs' (
+        slug: p:
+        lib.nameValuePair ".config/maki/providers/${slug}" {
+          force = true;
+          executable = true;
+          text = mkProviderScript p;
+        }
+      ) makiProviders
+    );
   };
 }

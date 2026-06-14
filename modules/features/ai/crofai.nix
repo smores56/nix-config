@@ -11,25 +11,25 @@ let
   };
 
   models = {
-    glm51 = model "glm-5.1" "GLM 5.1" 202752 202752 true;
+    kimiK27Code = model "kimi-k2.7-code" "Kimi K2.7 Code" 262144 262144 true;
   };
 
   providerId = "crofai";
   modelRef = model: "${providerId}/${model.id}";
 
   roles = {
-    default = modelRef models.glm51;
-    slow = modelRef models.glm51;
-    plan = modelRef models.glm51;
-    smol = modelRef models.glm51;
-    vision = modelRef models.glm51;
-    designer = modelRef models.glm51;
-    commit = modelRef models.glm51;
-    task = modelRef models.glm51;
+    default = modelRef models.kimiK27Code;
+    slow = modelRef models.kimiK27Code;
+    plan = modelRef models.kimiK27Code;
+    smol = modelRef models.kimiK27Code;
+    vision = modelRef models.kimiK27Code;
+    designer = modelRef models.kimiK27Code;
+    commit = modelRef models.kimiK27Code;
+    task = modelRef models.kimiK27Code;
   };
 
   selectedModels = [
-    models.glm51
+    models.kimiK27Code
   ];
 
   ompModelAttrs = model: {

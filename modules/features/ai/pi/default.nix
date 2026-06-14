@@ -84,12 +84,12 @@ let
 
   strongBackups = [
     "${aiDeepseek.providerId}/${aiDeepseek.models.v4Pro.id}"
-    "${aiCrofai.providerId}/${aiCrofai.models.glm51.id}"
+    "${aiCrofai.providerId}/${aiCrofai.models.kimiK27Code.id}"
     "smortress/gemma-4-31b"
   ];
   weakBackups = [
     "${aiDeepseek.providerId}/${aiDeepseek.models.v4Flash.id}"
-    "${aiCrofai.providerId}/${aiCrofai.models.glm51.id}"
+    "${aiCrofai.providerId}/${aiCrofai.models.kimiK27Code.id}"
     "smortress/gemma-4-31b"
   ];
 
