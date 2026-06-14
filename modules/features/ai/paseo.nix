@@ -10,8 +10,10 @@ let
   homeDir = config.home.homeDirectory;
 
   fqdn = "${cfg.subdomain}.${d.webProxy.domain}";
-  # The paseo binary and the agents it spawns (maki, brv) are installed manually
-  # to assorted user bin dirs; resolve them all via PATH rather than hardcoding.
+  # The paseo binary and the agents it spawns (maki, brv) -- plus the toolchains
+  # those agents shell out to (just, odin via nix, and the wasmer/wasmtime WASM
+  # runtimes camp uses) -- are installed to assorted user bin dirs; resolve them
+  # all via PATH rather than hardcoding. The nono profile grants matching reads.
   binDir = if cfg.binDir != "" then cfg.binDir else "${homeDir}/.cache/.bun/bin";
   servicePath = lib.concatStringsSep ":" [
     "${pkgs.nodejs}/bin"
@@ -21,6 +23,8 @@ let
     "${homeDir}/.npm-global/bin"
     "${homeDir}/.nix-profile/bin"
     "${homeDir}/.cargo/bin"
+    "${homeDir}/.wasmer/bin"
+    "${homeDir}/.wasmtime/bin"
     "${homeDir}/.brv-cli/bin"
     "${homeDir}/.local/bin"
     "/run/current-system/sw/bin"

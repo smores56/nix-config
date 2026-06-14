@@ -45,7 +45,14 @@ let
       ];
       # bun runtime + bun-installed agents (pi/omp live in ~/.bun/bin on macOS;
       # on Linux they sit under $XDG_CACHE_HOME/.bun, already covered above).
-      read = [ "$HOME/.bun" ];
+      # wasmer/wasmtime are manually-installed WASM runtimes (outside /nix and
+      # .cargo) that camp drives via its justfile; a read grant is exec here.
+      # Hosts without them are a no-op — nono silently skips absent paths.
+      read = [
+        "$HOME/.bun"
+        "$HOME/.wasmer"
+        "$HOME/.wasmtime"
+      ];
       deny = [ "$XDG_CONFIG_HOME/gh" ];
     };
   };
