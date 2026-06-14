@@ -91,20 +91,49 @@ let
     };
   };
 
+  # Egress allowlist layered on the `developer` network profile (llm_apis,
+  # package_registries, github, sigstore, documentation). These endpoints are
+  # NOT covered by any developer group: mimo is the personal default LLM,
+  # crofai is a backup, byterover is the brv MCP. anthropic + deepseek (work)
+  # already live in llm_apis. Two trade-offs of default-deny egress: (1) no
+  # general web search / arbitrary webfetch; (2) nono's proxy only CONNECT-
+  # tunnels HTTPS, so the local plain-HTTP gemma backend (smortress:8081) is
+  # unreachable here — reach it via dotfiles.nono.restrictNetwork = false, or
+  # on-host with localhost + `--open-port 8081`.
+  agentDomains = [
+    "token-plan-sgp.xiaomimimo.com" # xiaomi/mimo — personal default LLM
+    "crof.ai" # crofai — kimi-k2.7-code backup
+    "smortress" # smortress host (HTTPS CONNECT only; gemma is plain-HTTP, see note)
+    "*.byterover.dev" # brv MCP (iam/app/llm/hub/...)
+  ];
+  networkAttrs = lib.optionalAttrs cfg.restrictNetwork {
+    network = {
+      network_profile = "developer";
+      allow_domain = agentDomains;
+    };
+  };
+
   profileFiles = lib.mapAttrs' (
     name: profile:
     lib.nameValuePair ".config/nono/profiles/${name}.json" {
       force = true;
       text = builtins.toJSON profile;
     }
-  ) ({ agent-base = baseProfile; } // agentProfiles);
+  ) ({ agent-base = baseProfile // networkAttrs; } // agentProfiles);
 in
 {
-  options.dotfiles.nono.enable =
-    lib.mkEnableOption "the nono cross-platform agent sandbox (Landlock on Linux, Seatbelt on macOS)"
-    // {
-      default = true;
-    };
+  options.dotfiles.nono = {
+    enable =
+      lib.mkEnableOption "the nono cross-platform agent sandbox (Landlock on Linux, Seatbelt on macOS)"
+      // {
+        default = true;
+      };
+    restrictNetwork =
+      lib.mkEnableOption "default-deny agent egress via nono's developer network profile plus this config's LLM/MCP endpoints; disabling restores unrestricted network (web search, arbitrary webfetch)"
+      // {
+        default = true;
+      };
+  };
 
   config = lib.mkIf cfg.enable {
     home.packages = [ pkgs.nono ];
