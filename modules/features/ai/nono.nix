@@ -94,8 +94,10 @@ let
   # Egress allowlist layered on the `developer` network profile (llm_apis,
   # package_registries, github, sigstore, documentation). These endpoints are
   # NOT covered by any developer group: mimo is the personal default LLM,
-  # crofai is a backup, byterover is the brv MCP. anthropic + deepseek (work)
-  # already live in llm_apis. Two trade-offs of default-deny egress: (1) no
+  # crofai is a backup, byterover is the brv MCP, and auth.openai.com +
+  # chatgpt.com are maki's Codex (`maki auth login openai`) device-login/refresh
+  # and Coding-Plan API hosts. anthropic + deepseek (work) live in llm_apis.
+  # Two trade-offs of default-deny egress: (1) no
   # general web search / arbitrary webfetch; (2) nono's proxy only CONNECT-
   # tunnels HTTPS, so the local plain-HTTP gemma backend (smortress:8081) is
   # unreachable here — reach it via dotfiles.nono.restrictNetwork = false, or
@@ -105,6 +107,8 @@ let
     "crof.ai" # crofai — kimi-k2.7-code backup
     "smortress" # smortress host (HTTPS CONNECT only; gemma is plain-HTTP, see note)
     "*.byterover.dev" # brv MCP (iam/app/llm/hub/...)
+    "auth.openai.com" # maki codex — OAuth device login + token refresh
+    "chatgpt.com" # maki codex — Coding Plan API (backend-api/codex)
   ];
   networkAttrs = lib.optionalAttrs cfg.restrictNetwork {
     network = {
