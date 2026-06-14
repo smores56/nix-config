@@ -22,6 +22,11 @@ let
         noctalia.overlays.default
         (final: prev: {
           concord = concord.packages.${system}.default;
+          # pkgs.nono's test suite fails to build on darwin: the Nix sandbox sets
+          # $HOME under /nix and nono's system_read_macos group grants /nix, so the
+          # deprecated_schema dry-run tests refuse to start (state root .nono under
+          # /nix overlaps the granted /nix). The binary is fine; skip its checks.
+          nono = prev.nono.overrideAttrs (_: lib.optionalAttrs prev.stdenv.isDarwin { doCheck = false; });
         })
       ];
     };
