@@ -53,6 +53,12 @@ let
           [
             "${pkgs.nono}/bin/nono"
             "run"
+            # ACP is JSON-RPC over stdout; nono otherwise leaks tracing WARN
+            # lines (missing GITHUB_TOKEN/GITLAB_TOKEN managed creds for the
+            # developer net profile's github/gitlab routes) onto stdout, which
+            # corrupts the stream -> paseo can't refresh maki (30s model-picker
+            # timeout). -s silences all nono output; the sandbox still enforces.
+            "-s"
             "-p"
             "maki"
             "--allow-cwd"
