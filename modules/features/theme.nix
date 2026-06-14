@@ -7,8 +7,6 @@
 let
   cfg = config.dotfiles;
 
-  tmux = config.programs.tmux.package;
-
   isOsx = cfg.displayManager == "osx";
   isAutoSwitch = cfg.polarity == "time-of-day";
   baseIsDark = cfg.polarity != "light";
@@ -42,11 +40,9 @@ let
         if [ "$IS_DARK" = "false" ]; then
           HELIX_THEME="${cfg.lightTheme.helix}"
           LAZYGIT_LIGHT="true"
-          TMUX_THEME="light"
         else
           HELIX_THEME="${cfg.darkTheme.helix}"
           LAZYGIT_LIGHT="false"
-          TMUX_THEME="dark"
         fi
 
         mkdir -p "$HOME/.config/helix/themes"
@@ -60,8 +56,10 @@ let
         lightTheme: $LAZYGIT_LIGHT
     EOF
 
-        # tmux options are server-wide; one source-file call themes every session
-        ${tmux}/bin/tmux source-file "$HOME/.config/tmux/theme-$TMUX_THEME.conf" 2>/dev/null || true
+        # Zellij theme is managed via the stylix specialisation (theme files
+        # are regenerated and config.kdl points to the right one). The new
+        # theme applies on next zellij attach (or `zellij kill-all-sessions`
+        # + re-attach for a running session).
 
         mkdir -p "$HOME/.cache"
         if [ "$IS_DARK" = "true" ]; then
@@ -176,7 +174,6 @@ in
         helix.enable = false;
         lazygit.enable = false;
         opencode.enable = false;
-        tmux.enable = false;
         gtk.enable = false;
         gnome.enable = lib.mkDefault false;
         gnome-text-editor.enable = false;
@@ -187,16 +184,22 @@ in
     specialisation =
       if baseIsDark then
         {
-          light.configuration.stylix = {
-            polarity = lib.mkForce "light";
-            base16Scheme = lib.mkForce "${pkgs.base16-schemes}/share/themes/${cfg.lightTheme.system}.yaml";
+          light.configuration = {
+            stylix = {
+              polarity = lib.mkForce "light";
+              base16Scheme = lib.mkForce "${pkgs.base16-schemes}/share/themes/${cfg.lightTheme.system}.yaml";
+            };
+            programs.zellij.settings.theme = lib.mkForce "stylix-light";
           };
         }
       else
         {
-          dark.configuration.stylix = {
-            polarity = lib.mkForce "dark";
-            base16Scheme = lib.mkForce "${pkgs.base16-schemes}/share/themes/${cfg.darkTheme.system}.yaml";
+          dark.configuration = {
+            stylix = {
+              polarity = lib.mkForce "dark";
+              base16Scheme = lib.mkForce "${pkgs.base16-schemes}/share/themes/${cfg.darkTheme.system}.yaml";
+            };
+            programs.zellij.settings.theme = lib.mkForce "stylix-dark";
           };
         };
 

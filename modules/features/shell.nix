@@ -53,7 +53,7 @@ in
         ef = "tv | read -l f; and hx $f";
         et = "tv text | read -l f; and hx $f";
         l = "eza --icons -lh";
-        t = "tmux new-session -A -s main";
+        t = "zellij";
         a = "mkdir -p";
         f = "yazi";
         b = "bat";
