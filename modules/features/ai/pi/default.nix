@@ -148,9 +148,11 @@ let
         ]
   );
 
-  # Providers available regardless of workModels; the conditional providers
-  # below add the per-context primary tier on top.
-  commonProviders = {
+  # Personal-only backup providers (deepseek / crofai / gemma / mimo). NEVER on
+  # the work machine — smoreswork is Codex-only via pi's built-in openai-codex
+  # provider (+ built-in anthropic). Sign in to Codex once with pi's browser
+  # login (`/login` -> openai-codex); the work workspace permits the PKCE flow.
+  personalProviders = {
     smortress = {
       baseUrl = "http://smortress:8081/v1";
       api = "openai-completions";
@@ -187,15 +189,6 @@ let
       api = "openai-completions";
       models = aiCrofai.ompModelsList;
     };
-  };
-
-  # Work: Codex-only. pi's built-in openai-codex provider (ChatGPT Coding Plan,
-  # OAuth) already carries gpt-5.5 / gpt-5.4 / gpt-5.4-mini, so no extra provider
-  # entries are needed here. Sign in once with pi's browser login (`/login` ->
-  # openai-codex); the work workspace permits the PKCE browser flow.
-  workProviders = { };
-
-  personalProviders = {
     ${aiXiaomi.providerId} = {
       inherit (aiXiaomi) baseUrl;
       apiKey = "$XIAOMI_MIMO_API_KEY";
@@ -205,7 +198,7 @@ let
   };
 
   modelsConfig = {
-    providers = commonProviders // (if workModels then workProviders else personalProviders);
+    providers = lib.optionalAttrs (!workModels) personalProviders;
   };
 
   # pi-autoname: first-dialogue + periodic session naming on the weak tier.

@@ -6,6 +6,7 @@
 }:
 let
   cfg = config.dotfiles.nono;
+  workModels = config.dotfiles.workModels;
 
   # Least-privilege base every agent profile extends. nono's built-in `default`
   # already denies ~/.ssh, cloud creds, shell configs/history and keychains; on
@@ -91,25 +92,32 @@ let
     };
   };
 
-  # Egress allowlist layered on the `developer` network profile (llm_apis,
-  # package_registries, github, sigstore, documentation). These endpoints are
-  # NOT covered by any developer group: mimo is the personal default LLM,
-  # crofai is a backup, byterover is the brv MCP, and auth.openai.com +
-  # chatgpt.com are maki's Codex (`maki auth login openai`) device-login/refresh
-  # and Coding-Plan API hosts. anthropic + deepseek (work) live in llm_apis.
-  # Two trade-offs of default-deny egress: (1) no
-  # general web search / arbitrary webfetch; (2) nono's proxy only CONNECT-
-  # tunnels HTTPS, so the local plain-HTTP gemma backend (smortress:8081) is
-  # unreachable here — reach it via dotfiles.nono.restrictNetwork = false, or
-  # on-host with localhost + `--open-port 8081`.
+  # Per-host egress allowlist layered on the `developer` network profile
+  # (llm_apis, package_registries, github, sigstore, documentation). brv's MCP
+  # (*.byterover.dev) is allowed everywhere. The work machine adds only Codex
+  # (auth.openai.com login/refresh + chatgpt.com Coding-Plan API; anthropic is
+  # already in llm_apis) and NOT the personal LLM endpoints. Personal hosts
+  # instead allow mimo / crofai / the local gemma host. Two trade-offs of
+  # default-deny egress: (1) no general web search / arbitrary webfetch;
+  # (2) nono's proxy only CONNECT-tunnels HTTPS, so the local plain-HTTP gemma
+  # backend (smortress:8081) is unreachable — reach it via
+  # dotfiles.nono.restrictNetwork = false, or on-host with `--open-port 8081`.
   agentDomains = [
-    "token-plan-sgp.xiaomimimo.com" # xiaomi/mimo — personal default LLM
-    "crof.ai" # crofai — kimi-k2.7-code backup
-    "smortress" # smortress host (HTTPS CONNECT only; gemma is plain-HTTP, see note)
-    "*.byterover.dev" # brv MCP (iam/app/llm/hub/...)
-    "auth.openai.com" # maki codex — OAuth device login + token refresh
-    "chatgpt.com" # maki codex — Coding Plan API (backend-api/codex)
-  ];
+    "*.byterover.dev"
+  ] # brv MCP — all hosts
+  ++ (
+    if workModels then
+      [
+        "auth.openai.com" # codex — OAuth login + token refresh
+        "chatgpt.com" # codex — Coding-Plan API (backend-api/codex)
+      ]
+    else
+      [
+        "token-plan-sgp.xiaomimimo.com" # xiaomi/mimo — personal default LLM
+        "crof.ai" # crofai — kimi-k2.7-code backup
+        "smortress" # local gemma host (HTTPS CONNECT only; gemma is plain-HTTP)
+      ]
+  );
   networkAttrs = lib.optionalAttrs cfg.restrictNetwork {
     network = {
       network_profile = "developer";
