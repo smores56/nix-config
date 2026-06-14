@@ -82,7 +82,7 @@ in
       after = [ "linkGeneration" ];
       before = [ ];
       data = ''
-        mkdir -p "$HOME/.paseo"
+        mkdir -p "$HOME/.paseo/cwd"
         cat > "$HOME/.paseo/config.json" <<'PASEO_EOF'
         ${builtins.toJSON paseoConfig}
         PASEO_EOF
@@ -97,6 +97,14 @@ in
       };
       Service = {
         Type = "simple";
+        # The daemon's cwd becomes the default cwd for spawned ACP agents (e.g.
+        # the model-picker provider snapshot). nono's --allow-cwd grants that dir
+        # read+write; when it is $HOME (the systemd user-service default) it
+        # overlaps the profile's ~/.aws/~/.ssh/... deny rules, which Linux
+        # Landlock cannot enforce, so nono refuses to start and the snapshot
+        # times out (30s). Anchor it to an empty dir; real agent runs still
+        # override cwd to their own project directory.
+        WorkingDirectory = "${homeDir}/.paseo/cwd";
         # paseo, maki (ACP provider), and brv (maki's memory MCP) are installed
         # manually to various user bin dirs; servicePath unions them. ExecStart
         # runs through bash so `paseo` resolves via PATH (systemd does no PATH
