@@ -6,6 +6,9 @@
 let
   cfg = config.dotfiles.herdr;
   shell = config.dotfiles.shellPath;
+  # maki panes run inside their nono sandbox profile when nono is enabled.
+  makiPaneCmd =
+    if config.dotfiles.nono.enable then "nono run -p maki --allow-cwd -- maki" else "maki";
 
   configToml = ''
     # Managed by home-manager (modules/features/ai/herdr). Manual edits are clobbered.
@@ -27,7 +30,7 @@ let
     [[keys.command]]
     key = "prefix+alt+m"
     type = "pane"
-    command = "maki"
+    command = "${makiPaneCmd}"
     description = "new maki session"
   '';
 in

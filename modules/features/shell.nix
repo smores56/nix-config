@@ -1,6 +1,9 @@
 { config, pkgs, ... }:
 let
   homeDir = config.home.homeDirectory;
+  sandbox = config.dotfiles.nono.enable;
+  # Wrap an agent launcher in its nono sandbox profile when nono is enabled.
+  wrapAgent = profile: cmd: if sandbox then "nono run -p ${profile} --allow-cwd -- ${cmd}" else cmd;
 in
 {
   home = {
@@ -71,8 +74,9 @@ in
         sm = "ssh smores@smortress -t fish";
         st = "ssh smores@(tailscale-hosts | fzf) -t fish";
 
-        o = "omp";
-        m = if config.dotfiles.paseo.enable then "paseo run --provider maki" else "maki";
+        o = wrapAgent "omp" "omp";
+        m = if config.dotfiles.paseo.enable then "paseo run --provider maki" else wrapAgent "maki" "maki";
+        pi = wrapAgent "pi" "pi";
         h = "herdr session attach default";
       };
 

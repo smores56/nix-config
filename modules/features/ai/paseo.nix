@@ -48,10 +48,23 @@ let
     agents.providers.maki = {
       extends = "acp";
       label = "Maki";
-      command = [
-        "maki"
-        "acp"
-      ];
+      command =
+        if d.nono.enable then
+          [
+            "${pkgs.nono}/bin/nono"
+            "run"
+            "-p"
+            "maki"
+            "--allow-cwd"
+            "--"
+            "maki"
+            "acp"
+          ]
+        else
+          [
+            "maki"
+            "acp"
+          ];
     };
   };
 in

@@ -49,6 +49,40 @@ These are sourced by fish automatically and available to all AI tools.
   baseUrl through it or replace it with an off-the-shelf budget proxy
   (e.g. LiteLLM budgets) and delete this module.
 
+## Sandboxing (nono)
+
+Managed by `nono.nix` (`dotfiles.nono.enable`, default on, every host). Every
+agent runs inside a kernel-enforced sandbox via
+[nono](https://github.com/always-further/nono) (`pkgs.nono`) - one tool, both
+OSes: **Landlock** on Linux, **Seatbelt** on macOS. The launchers are wrapped:
+the `m`/`o`/`pi` fish abbrs, the paseo `maki` ACP provider command, and herdr's
+maki pane all run as `nono run -p <profile> --allow-cwd -- <agent>`.
+
+Profiles live at `~/.config/nono/profiles/` (generated JSON):
+
+- `agent-base` extends nono's built-in `default` (which already denies `~/.ssh`,
+  cloud creds, shell configs/history, keychains). On top it grants the language
+  toolchains read-only (`nix_runtime` covers almost everything on NixOS, plus
+  node/rust/python/go/git/user_tools), a read-write workdir + `~/.bun` read (for
+  bun-installed agents), and denies `~/.config/gh`.
+- `maki`/`pi`/`omp` extend `agent-base` and add only their own state dirs (rw).
+
+Enforced kernel-level and inherited by every child (so maki's `bash` tool can't
+escape it either):
+
+- **Read-only** toolchains/config; **read-write** only the workdir + each agent's
+  state. SSH keys, cloud creds, and the rest of `$HOME` are invisible.
+- **No sudo** - `/run/wrappers` (the setuid sudo) is never granted, so no child
+  can exec it, with or without `NoNewPrivileges`.
+- **Denying `~/.config/gh`** also hides maki's Copilot provider: maki probes
+  `gh/hosts.yml` for a token and 403s on every launch otherwise; with the read
+  blocked it skips Copilot. `gh` itself runs outside the sandbox, unaffected.
+
+Network is left at nono's default (allowed) so LLM/API calls work; tighten later
+with a nono network profile + domain allowlist. Verified end-to-end on smortress
+(Landlock) and macOS (Seatbelt): maki/pi/omp all run while `~/.ssh`,
+`~/.config/gh`, and `sudo` are blocked.
+
 ## oh-my-pi (Backup Agent)
 
 Managed by `oh-my-pi/default.nix` (`dotfiles.ohMyPi.enable`, default on).
@@ -61,7 +95,7 @@ On `home-manager switch`:
   `ohMyPi.claude.enable` are set (work machine)
 - Uninstalls previously-installed plugins (minimal backup = no plugins)
 
-Fish shortcuts: `o` = `omp`, `oc` = omp with a pinned minimal toolset.
+Fish shortcut: `o` = `omp` (wrapped in its nono sandbox; see Sandboxing above).
 
 ## maki (config-only)
 
