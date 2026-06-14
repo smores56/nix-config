@@ -26,6 +26,7 @@ in
       "${homeDir}/.bun/bin"
       "${homeDir}/.cache/.bun/bin"
       "${homeDir}/.wasmtime/bin"
+      "${homeDir}/.wasmer/bin"
       "${homeDir}/.brv-cli/bin"
     ];
   };
