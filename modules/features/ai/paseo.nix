@@ -99,6 +99,11 @@ in
         # the foreground process exits, which systemd reads as a crash loop.
         Environment = "PATH=${servicePath}";
         ExecStart = "${pkgs.bash}/bin/bash -c 'exec paseo daemon start --foreground'";
+        # A daemon started outside this unit (an interactive `paseo` or
+        # `paseo onboard` also starts one) owns ~/.paseo + the port, making
+        # ExecStart fail with "Another Paseo daemon is already running" and
+        # crash-loop. Stop any such daemon first so this unit is the sole owner.
+        ExecStartPre = "${pkgs.bash}/bin/bash -c 'paseo daemon stop || true'";
         Restart = "on-failure";
         RestartSec = 5;
       }
