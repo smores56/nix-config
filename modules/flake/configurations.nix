@@ -171,32 +171,21 @@ in
           environmentFile = "/home/smores/.config/paseo/secrets.env";
         };
       };
-      "smohr@smoreswork" = mkHome {
-        displayManager = "osx";
-        windowManager = "aerospace";
-        username = "smohr";
-        system = "aarch64-darwin";
-        terminalFontSize = 14;
-        email = "sam.mohr@sevenai.com";
-        workBranchPrefix = "sam.mohr";
-        ticketPrefix = "7AI";
-        workGithubOrgs = [ "OkamiAI" ];
-        workModels = true;
-        sevenqlLspPath = "/Users/smohr/dev/okami/typescript/tools/sevenql-lsp/main.ts";
-        ohMyPi = {
-          codex.enable = true;
-          claude.enable = false;
-        };
-        pi = {
-          enable = true;
-          defaultProvider = "openai-codex";
-          defaultModel = "gpt-5.5";
-          # Slack via korotovsky/slack-mcp-server, read-only (no
-          # SLACK_MCP_ADD_MESSAGE_TOOL). Auth: browser session tokens in
-          # ~/.config/fish/conf.d/api-keys.fish, set up via `slack-mcp-auth`
-          # (auto-extracts from Slack.app; re-run when the session expires).
-          # The adapter interpolates ${...} from the environment at runtime.
-          mcpServers.slack = {
+      "smohr@smoreswork" =
+        let
+          gleanServerUrl = "https://sevenai-be.glean.com";
+          gleanMcpServer = {
+            command = "npx";
+            args = [
+              "-y"
+              "@gleanwork/local-mcp-server"
+            ];
+            env = {
+              GLEAN_SERVER_URL = gleanServerUrl;
+              GLEAN_API_TOKEN = "\${GLEAN_API_TOKEN}";
+            };
+          };
+          slackMcpServer = {
             command = "npx";
             args = [
               "-y"
@@ -209,8 +198,52 @@ in
               SLACK_MCP_XOXD_TOKEN = "\${SLACK_MCP_XOXD_TOKEN}";
             };
           };
+        in
+        mkHome {
+          displayManager = "osx";
+          windowManager = "aerospace";
+          username = "smohr";
+          system = "aarch64-darwin";
+          terminalFontSize = 14;
+          email = "sam.mohr@sevenai.com";
+          workBranchPrefix = "sam.mohr";
+          ticketPrefix = "7AI";
+          workGithubOrgs = [ "OkamiAI" ];
+          workModels = true;
+          sevenqlLspPath = "/Users/smohr/dev/okami/typescript/tools/sevenql-lsp/main.ts";
+          ohMyPi = {
+            codex.enable = true;
+            claude.enable = false;
+            mcpServers.glean = gleanMcpServer;
+          };
+          maki.mcpServers = {
+            glean.command = [
+              "env"
+              "GLEAN_SERVER_URL=${gleanServerUrl}"
+              "npx"
+              "-y"
+              "@gleanwork/local-mcp-server"
+            ];
+            slack.command = [
+              "npx"
+              "-y"
+              "slack-mcp-server@latest"
+              "--transport"
+              "stdio"
+            ];
+          };
+          pi = {
+            enable = true;
+            defaultProvider = "openai-codex";
+            defaultModel = "gpt-5.5";
+            # Slack via korotovsky/slack-mcp-server, read-only (no
+            # SLACK_MCP_ADD_MESSAGE_TOOL). Auth: browser session tokens in
+            # ~/.config/fish/conf.d/api-keys.fish, set up via `slack-mcp-auth`
+            # (auto-extracts from Slack.app; re-run when the session expires).
+            # The adapter interpolates ${...} from the environment at runtime.
+            mcpServers.slack = slackMcpServer;
+          };
         };
-      };
     };
     nixosConfigurations = {
       "campfire" = mkNixos {

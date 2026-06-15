@@ -56,11 +56,15 @@ let
   # brv's MCP server (`brv mcp`) supplies memory tools (byterover__curate /
   # byterover__query / ...) in place of the disabled built-in memory. brv must
   # be on maki's PATH; tools are namespaced `byterover__*`.
-  mcpToml = ''
-    # Managed by home-manager (modules/features/ai/maki). Manual edits are clobbered.
-    [mcp.byterover]
-    command = ["brv", "mcp"]
-  '';
+  mcpServers =
+    cfg.mcpServers
+    // lib.optionalAttrs cfg.byteroverMemory {
+      byterover.command = [
+        "brv"
+        "mcp"
+      ];
+    };
+  mcpToml = pkgs.writers.writeTOML "maki-mcp.toml" { mcp = mcpServers; };
 
   # mimo / crofai / gemma are OpenAI-compatible endpoints maki ships no built-in
   # for. maki discovers custom providers as executable scripts in
@@ -182,6 +186,14 @@ in
       default = true;
     };
     byteroverMemory = lib.mkEnableOption "byterover (brv) as maki's memory backend instead of the built-in memory tool";
+    mcpServers = lib.mkOption {
+      type = lib.types.attrsOf (lib.types.attrsOf lib.types.anything);
+      default = { };
+      description = ''
+        MCP server definitions written to ~/.config/maki/mcp.toml. Maki uses
+        TOML sections under [mcp.<name>]; stdio servers use command arrays.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -199,10 +211,10 @@ in
         source = ./lua/spawn_session.lua;
       };
     }
-    // lib.optionalAttrs cfg.byteroverMemory {
+    // lib.optionalAttrs (mcpServers != { }) {
       ".config/maki/mcp.toml" = {
         force = true;
-        text = mcpToml;
+        source = mcpToml;
       };
     }
     // lib.optionalAttrs (!workModels) (

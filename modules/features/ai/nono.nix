@@ -40,6 +40,7 @@ let
       allow = [
         "$XDG_CACHE_HOME"
         "$HOME/.cargo"
+        "$HOME/.npm"
         "$TMPDIR"
         "/tmp"
       ];
@@ -117,6 +118,9 @@ let
       [
         "auth.openai.com" # codex — OAuth login + token refresh
         "chatgpt.com" # codex — Coding-Plan API (backend-api/codex)
+        "sevenai-be.glean.com" # Glean MCP — work knowledge search/chat
+        "slack.com" # Slack MCP — Web API
+        "*.slack.com" # Slack MCP — workspace/API subdomains
       ]
     else
       [
