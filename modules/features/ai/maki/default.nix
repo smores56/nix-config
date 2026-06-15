@@ -11,7 +11,8 @@ let
   workModels = config.dotfiles.workModels;
 
   # Codex GPT-5.5 (smart tier) on the work machine via the built-in `openai`
-  # provider, whose OAuth creds are mirrored from omp by maki-codex-sync below;
+  # provider, whose OAuth creds are mirrored from Codex CLI by maki-codex-sync
+  # below;
   # Xiaomi MiMo Pro elsewhere. The full openai/gpt-5.* catalog (gpt-5.4 middle,
   # gpt-5.4-mini dumb) plus DeepSeek / CrofAI / gemma stay selectable via /model.
   defaultModel =
@@ -165,10 +166,10 @@ let
           ;;
       esac
     '';
-  # maki's only OpenAI login is device-code, blocked by the work ChatGPT
-  # workspace; omp's browser PKCE login works. Mirror omp's Codex OAuth token
-  # into maki's store on switch and on demand (`maki-codex-sync`). No-op when
-  # omp has no Codex credential. Work Mac only.
+  # maki's OpenAI login is device-code, blocked by the work ChatGPT workspace;
+  # standard Codex browser login works. Mirror Codex's OAuth token into maki's
+  # store on switch and on demand (`maki-codex-sync`). No-op when Codex has no
+  # ChatGPT credential. Work Mac only.
   codexCredSync = pkgs.writeShellScriptBin "maki-codex-sync" ''
     exec ${pkgs.python3}/bin/python3 ${./codex-cred-sync.py}
   '';

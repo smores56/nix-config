@@ -1,60 +1,91 @@
 #!/usr/bin/env python3
-"""Mirror omp's active openai-codex OAuth credential into maki's token store.
+"""Mirror Codex CLI OAuth credentials into maki's token store.
 
-maki's only OpenAI login path is device-code, which the work ChatGPT workspace
-blocks. omp completes the browser PKCE flow fine, and both share the Codex
-client_id (app_EMoamEEZ73f0CkXaXp7hrann) with an identical token shape, so omp's
-{access,refresh,expires(ms),accountId} maps 1:1 onto maki's OAuthTokens
+maki's OpenAI login path is device-code, which the work ChatGPT workspace
+blocks. The standard Codex browser login works and shares the same OAuth client
+id (app_EMoamEEZ73f0CkXaXp7hrann), so Codex's
+{access_token,refresh_token,account_id} maps onto maki's OAuthTokens
 {access,refresh,expires,account_id} at ~/.local/state/maki/auth/openai.json.
 
-Tolerant by design: a missing omp store or credential is a no-op (exit 0) so it
-never breaks `home-manager switch`. Re-run `maki-codex-sync` after using omp if
-maki's Codex calls start returning 401 (shared refresh-token drift).
+Tolerant by design: a missing Codex auth file or non-ChatGPT login is a no-op
+(exit 0) so it never breaks `home-manager switch`. Re-run `maki-codex-sync`
+after `codex login` or if maki's Codex calls start returning 401.
 """
+import base64
 import json
 import os
 import pathlib
-import sqlite3
 import sys
+import tempfile
+
+
+def jwt_exp_ms(token):
+    parts = token.split(".")
+    if len(parts) != 3:
+        return None
+    payload = parts[1]
+    payload += "=" * ((4 - len(payload) % 4) % 4)
+    try:
+        claims = json.loads(base64.urlsafe_b64decode(payload))
+    except (ValueError, json.JSONDecodeError):
+        return None
+    exp = claims.get("exp")
+    if not isinstance(exp, (int, float)):
+        return None
+    return int(exp * 1000)
+
+
+def write_private_json(dst, data):
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=".openai.", suffix=".tmp", dir=dst.parent)
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f)
+            f.write("\n")
+        os.chmod(tmp_name, 0o600)
+        os.replace(tmp_name, dst)
+    finally:
+        if os.path.exists(tmp_name):
+            os.unlink(tmp_name)
+
 
 home = os.path.expanduser("~")
-src_db = pathlib.Path(home, ".omp", "agent", "agent.db")
-if not src_db.exists():
-    print(f"maki-codex-sync: no omp store at {src_db}; skipping")
+src = pathlib.Path(home, ".codex", "auth.json")
+if not src.exists():
+    print(
+        f"maki-codex-sync: no Codex auth file at {src}; "
+        "run `codex login`; skipping"
+    )
     sys.exit(0)
 
-con = sqlite3.connect(f"file:{src_db}?mode=ro", uri=True)
 try:
-    row = con.execute(
-        "SELECT data FROM auth_credentials "
-        "WHERE provider='openai-codex' AND credential_type='oauth' "
-        "AND disabled_cause IS NULL "
-        "ORDER BY updated_at DESC LIMIT 1"
-    ).fetchone()
-finally:
-    con.close()
-
-if not row:
-    print("maki-codex-sync: no active openai-codex credential in omp; "
-          "run `omp` and sign in to Codex first; skipping")
+    auth = json.loads(src.read_text())
+except (OSError, json.JSONDecodeError) as e:
+    print(f"maki-codex-sync: cannot read Codex auth file: {e}; skipping")
     sys.exit(0)
 
-d = json.loads(row[0])
+if auth.get("auth_mode") != "chatgpt":
+    print(
+        "maki-codex-sync: Codex is not using ChatGPT auth; "
+        "run `codex login`; skipping"
+    )
+    sys.exit(0)
+
+codex_tokens = auth.get("tokens") or {}
+access = codex_tokens.get("access_token")
+refresh = codex_tokens.get("refresh_token")
+expires = jwt_exp_ms(access or "")
 tokens = {
-    "access": d.get("access"),
-    "refresh": d.get("refresh"),
-    "expires": d.get("expires"),
-    "account_id": d.get("accountId"),
+    "access": access,
+    "refresh": refresh,
+    "expires": expires,
+    "account_id": codex_tokens.get("account_id"),
 }
 if not all(tokens[k] for k in ("access", "refresh", "expires")):
-    print("maki-codex-sync: omp credential missing required fields; skipping")
+    print("maki-codex-sync: Codex auth missing required OAuth fields; skipping")
     sys.exit(0)
 
-dst_dir = pathlib.Path(home, ".local", "state", "maki", "auth")
-dst_dir.mkdir(parents=True, exist_ok=True)
-dst = dst_dir / "openai.json"
-tmp = dst_dir / ".openai.json.tmp"
-tmp.write_text(json.dumps(tokens))
-os.chmod(tmp, 0o600)
-os.replace(tmp, dst)
-print(f"maki-codex-sync: wrote {dst} (account_id={tokens['account_id']})")
+dst = pathlib.Path(home, ".local", "state", "maki", "auth", "openai.json")
+write_private_json(dst, tokens)
+account = "present" if tokens.get("account_id") else "absent"
+print(f"maki-codex-sync: wrote {dst} (account_id={account})")

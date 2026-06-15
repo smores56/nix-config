@@ -123,6 +123,10 @@ binary is installed manually (`maki.sh/install.sh`); home-manager only writes
   byterover (`brv mcp`) as an MCP server and disables maki's built-in `memory`
   tool, so memory runs through byterover's `byterover__*` tools. `brv` must be
   installed and on maki's PATH (manual; smortress only).
+- `maki-codex-sync` (work machine) - mirrors standard Codex CLI ChatGPT OAuth
+  credentials from `~/.codex/auth.json` into Maki's
+  `~/.local/state/maki/auth/openai.json`. Run `codex login`, then
+  `maki-codex-sync` before starting Maki.
 - `providers/{xiaomi,crofai,smortress}` - executable dynamic-provider scripts
   (personal hosts only) registering the custom OpenAI-compatible endpoints maki
   has no built-in for: Xiaomi MiMo, CrofAI (Kimi K2.7 Code), and the self-hosted
