@@ -21,15 +21,6 @@ local function shell_quote(s)
   return "'" .. s:gsub("'", "'\\''") .. "'"
 end
 
-local function double_quote_escape(s)
-  -- Escape for $'...' syntax in bash (backslash, single-quote, newline, tab)
-  local result = s:gsub("\\", "\\\\")
-  result = result:gsub("'", "\\'")
-  result = result:gsub("\n", "\\n")
-  result = result:gsub("\t", "\\t")
-  return result
-end
-
 maki.api.register_tool({
   name = "start_worktree_session",
   kind = "execute",
@@ -91,13 +82,13 @@ agent-branch-name --slug <slug> --task "<task>" --dry-run]],
     end
 
     -- Shell script: create worktree, extract path, open Zellij tab, run maki.
-    -- Uses $'...' syntax + M_PROMPT env to avoid nested shell quoting issues
-    -- with the inner `maki` call. Outputs OK:<path> on success, ERR:<msg> on failure.
-    local escaped_prompt = double_quote_escape(prompt)
-
+    -- Uses --cwd for the worktree dir + ${var@Q} quoting for the prompt to
+    -- avoid nested shell quoting issues with `zellij run`. Outputs OK:<path>
+    -- on success, ERR:<msg> on failure.
     local script = string.format(
       [[
 branch=%s
+M_PROMPT=%s
 
 wt_output=$(wt switch --create "$branch" --format json 2>&1) || {
   echo "ERR:$wt_output"
@@ -118,16 +109,14 @@ if [ -z "$path" ]; then
   exit 1
 fi
 
-M_PROMPT=$'%s'
-export M_PROMPT
 zellij action new-tab -n %s
 sleep 0.1
-zellij run --in-place -- bash -c 'cd "$path" && exec maki "$M_PROMPT"'
+zellij run --in-place --cwd "$path" -- bash -c 'exec maki '"${M_PROMPT@Q}"
 echo "OK:$path"
 ]],
       shell_quote(branch),
+      shell_quote(prompt),
       worktree_name,
-      escaped_prompt,
       shell_quote(worktree_name)
     )
 
