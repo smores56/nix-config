@@ -106,6 +106,12 @@ let
           context_window = aiCrofai.models.kimiK27Code.context;
           max_output_tokens = aiCrofai.models.kimiK27Code.output;
         }
+        {
+          id = aiCrofai.models.glm52.id;
+          tier = "strong";
+          context_window = aiCrofai.models.glm52.context;
+          max_output_tokens = aiCrofai.models.glm52.output;
+        }
       ];
     };
     smortress = {

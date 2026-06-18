@@ -12,6 +12,7 @@ let
 
   models = {
     kimiK27Code = model "kimi-k2.7-code" "Kimi K2.7 Code" 262144 262144 true;
+    glm52 = model "glm-5.2" "GLM 5.2" 1000000 131072 true;
   };
 
   providerId = "crofai";
@@ -30,6 +31,7 @@ let
 
   selectedModels = [
     models.kimiK27Code
+    models.glm52
   ];
 
   ompModelAttrs = model: {
