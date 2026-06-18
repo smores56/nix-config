@@ -42,6 +42,7 @@ let
     })
 
     require("spawn_session")
+    require("start_worktree_session")
   '';
 
   # Grants this config's Lua plugins process-spawn (`run`) and env access,
@@ -206,9 +207,44 @@ in
         force = true;
         text = pluginToml;
       };
+      ".config/maki/AGENTS.md" = {
+        force = true;
+        text = ''
+           # Delegation
+           - Decompose every non-trivial task into subtasks and delegate them. This is your default workflow.
+           - Use `task(subagent_type="research")` for codebase exploration before making changes.
+           - Use `task(subagent_type="general")` for implementation work: refactors, features, multi-file changes.
+           - For complex work, decompose into subtasks, launch research subagents first, then implementation subagents — all in parallel using **batch**.
+           - Use `task(model_tier="weak")` for cheap work: search, summarize, name things, simple edits.
+           - Use `task(model_tier="medium")` for standard work: refactors, features, multi-file changes.
+           - Use `task(model_tier="strong")` only for deep reasoning, complex architecture, subtle bugs, and the most critical sections.
+           - Subagents are isolated — each gets a fresh context. Use this to avoid context bloat from unrelated work.
+           - When you need the user to confirm before spawning, use `spawn_session` instead of `task`.
+           - For long-running feature work that deserves its own worktree and Zellij tab, use `start_worktree_session`.
+             First run `agent-branch-name --slug <slug> --task "<task>" --dry-run` to generate a branch name,
+             prepare the session prompt, then call the tool with the branch and prompt.
+           - Launch multiple tasks in a **batch** when you can. Parallel is the default, sequential is the exception.
+
+          # Tool efficiency
+          - Use **batch** for parallel tool calls (reads, greps, globs) within a single phase.
+          - Use **code_execution** for chained/filtered tool calls (e.g. glob then filter, grep then read matches).
+          - Use **task** for anything that can run independently. Combine with **batch** to parallelize research and implementation.
+
+          # Workflow
+          - Multi-step task → todo_write to plan → decompose → batch of task subagents → collect results → repeat.
+          - Update todo_write after each step, not all at once.
+          - Never commit or push unless asked.
+          - Return concise summaries with `file_path:line_number` references. No code dumps.
+        '';
+      };
+
       ".config/maki/lua/spawn_session.lua" = {
         force = true;
         source = ./lua/spawn_session.lua;
+      };
+      ".config/maki/lua/start_worktree_session.lua" = {
+        force = true;
+        source = ./lua/start_worktree_session.lua;
       };
     }
     // lib.optionalAttrs (mcpServers != { }) {
