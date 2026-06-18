@@ -9,14 +9,24 @@
 let
   cfg = config.dotfiles.maki;
   workModels = config.dotfiles.workModels;
+  # When set, Cloudflare Workers AI is the SOLE provider: only its models are
+  # selectable, Codex/openai sync is skipped, and no other custom providers are
+  # written. Per-host (smoreswork) — see cloudflareProviders below.
+  cfEnabled = cfg.cloudflareWorkersAi.enable;
 
-  # Codex GPT-5.5 (smart tier) on the work machine via the built-in `openai`
-  # provider, whose OAuth creds are mirrored from Codex CLI by maki-codex-sync
-  # below;
-  # Xiaomi MiMo Pro elsewhere. The full openai/gpt-5.* catalog (gpt-5.4 middle,
-  # gpt-5.4-mini dumb) plus DeepSeek / CrofAI / gemma stay selectable via /model.
+  # cfEnabled: GLM 5.2 (strong) via Cloudflare Workers AI, the only provider.
+  # Otherwise Codex GPT-5.5 (smart tier) on the work machine via the built-in
+  # `openai` provider, whose OAuth creds are mirrored from Codex CLI by
+  # maki-codex-sync below; Xiaomi MiMo Pro elsewhere. The full openai/gpt-5.*
+  # catalog (gpt-5.4 middle, gpt-5.4-mini dumb) plus DeepSeek / CrofAI / gemma
+  # stay selectable via /model.
   defaultModel =
-    if workModels then "openai/gpt-5.5" else "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25Pro.id}";
+    if cfEnabled then
+      "cloudflare/@cf/zai-org/glm-5.2"
+    else if workModels then
+      "openai/gpt-5.5"
+    else
+      "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25Pro.id}";
 
   # byterover (brv) replaces the built-in memory tool when enabled.
   makiTools = [
@@ -129,14 +139,82 @@ let
     };
   };
 
+  # Cloudflare Workers AI via its OpenAI-compatible endpoint
+  # (.../ai/v1/chat/completions; the @cf/... model id rides in the request body,
+  # the documented equivalent of the /ai/run/<model> REST path). The account id
+  # is interpolated into base_url at runtime (dynamicBaseUrl), and both the
+  # account id and token must be present for the provider to light up. Tiers map
+  # strong/medium/weak -> glm-5.2 / gpt-oss-120b / glm-4.7-flash. pricing is USD
+  # per 1M tokens (drives maki's live per-session cost readout and the
+  # maki-cf-cost monthly rollup — keep in sync with cf-cost-report.py). smoreswork
+  # only; all built-ins stay dark because they have no creds there.
+  cloudflareProviders.cloudflare = {
+    displayName = "Cloudflare Workers AI";
+    baseUrl = "https://api.cloudflare.com/client/v4/accounts/\${CLOUDFLARE_ACCOUNT_ID}/ai/v1";
+    keyEnv = "CLOUDFLARE_WORKERS_AI_API_TOKEN";
+    extraAuthEnv = [ "CLOUDFLARE_ACCOUNT_ID" ];
+    dynamicBaseUrl = true;
+    models = [
+      {
+        id = "@cf/zai-org/glm-5.2";
+        tier = "strong";
+        context_window = 131072;
+        max_output_tokens = 32768;
+        pricing = {
+          input = 1.40;
+          output = 4.40;
+          cache_write = 0.0;
+          cache_read = 0.0;
+        };
+      }
+      {
+        id = "@cf/openai/gpt-oss-120b";
+        tier = "medium";
+        context_window = 128000;
+        max_output_tokens = 32768;
+        pricing = {
+          input = 0.35;
+          output = 0.75;
+          cache_write = 0.0;
+          cache_read = 0.0;
+        };
+      }
+      {
+        id = "@cf/zai-org/glm-4.7-flash";
+        tier = "weak";
+        context_window = 131072;
+        max_output_tokens = 16384;
+        pricing = {
+          input = 0.06;
+          output = 0.40;
+          cache_write = 0.0;
+          cache_read = 0.0;
+        };
+      }
+    ];
+  };
+
+  providersToWrite =
+    if cfEnabled then
+      cloudflareProviders
+    else if workModels then
+      { }
+    else
+      makiProviders;
+
   mkProviderScript =
     p:
     let
       hasKey = p.keyEnv != null;
+      # has_auth requires every credential env var (the key plus any extras, e.g.
+      # Cloudflare's account id) to be non-empty.
+      authEnvs = [ p.keyEnv ] ++ (p.extraAuthEnv or [ ]);
+      authCheck = lib.concatMapStringsSep " && " (e: ''[ -n "''${${e}:-}" ]'') authEnvs;
+      dynamicBaseUrl = p.dynamicBaseUrl or false;
       infoCmd =
         if hasKey then
           ''
-            if [ -n "''${${p.keyEnv}:-}" ]; then ha=true; else ha=false; fi
+            if ${authCheck}; then ha=true; else ha=false; fi
             printf '{"display_name":%s,"base":"llama-cpp","has_auth":%s}\n' ${lib.escapeShellArg (builtins.toJSON p.displayName)} "$ha"''
         else
           ''printf '%s\n' ${
@@ -149,9 +227,7 @@ let
             )
           }'';
       resolveCmd =
-        if hasKey then
-          ''printf '{"base_url":%s,"headers":{"Authorization":"Bearer %s"}}\n' ${lib.escapeShellArg (builtins.toJSON p.baseUrl)} "''${${p.keyEnv}:-}"''
-        else
+        if !hasKey then
           ''printf '%s\n' ${
             lib.escapeShellArg (
               builtins.toJSON {
@@ -159,7 +235,12 @@ let
                 headers = { };
               }
             )
-          }'';
+          }''
+        else if dynamicBaseUrl then
+          # baseUrl carries shell ''${VAR} refs expanded by bash at runtime.
+          ''printf '{"base_url":"%s","headers":{"Authorization":"Bearer %s"}}\n' "${p.baseUrl}" "''${${p.keyEnv}:-}"''
+        else
+          ''printf '{"base_url":%s,"headers":{"Authorization":"Bearer %s"}}\n' ${lib.escapeShellArg (builtins.toJSON p.baseUrl)} "''${${p.keyEnv}:-}"'';
     in
     ''
       #!${pkgs.bash}/bin/bash
@@ -185,6 +266,14 @@ let
     exec ${pkgs.python3}/bin/python3 ${./codex-cred-sync.py}
   '';
 
+  # maki stores per-session token counts but never the dollar cost, and has no
+  # cross-session rollup. maki-cf-cost scans the session JSONL logs and reports
+  # Cloudflare Workers AI spend per month, applying the same per-1M pricing as
+  # cloudflareProviders above.
+  cfCostReport = pkgs.writeShellScriptBin "maki-cf-cost" ''
+    exec ${pkgs.python3}/bin/python3 ${./cf-cost-report.py} "$@"
+  '';
+
 in
 {
   options.dotfiles.maki = {
@@ -193,6 +282,17 @@ in
       default = true;
     };
     byteroverMemory = lib.mkEnableOption "byterover (brv) as maki's memory backend instead of the built-in memory tool";
+    cloudflareWorkersAi.enable =
+      lib.mkEnableOption "Cloudflare Workers AI as the sole maki provider"
+      // {
+        description = ''
+          Make Cloudflare Workers AI the only selectable maki provider: write just
+          its provider script (GLM 5.2 strong / gpt-oss-120b medium / GLM 4.7
+          Flash weak), default to GLM 5.2, skip Codex/openai credential sync, and
+          install the maki-cf-cost monthly spend report. Requires CLOUDFLARE_ACCOUNT_ID
+          and CLOUDFLARE_WORKERS_AI_API_TOKEN in the environment.
+        '';
+      };
     mcpServers = lib.mkOption {
       type = lib.types.attrsOf (lib.types.attrsOf lib.types.anything);
       default = { };
@@ -259,7 +359,7 @@ in
         source = mcpToml;
       };
     }
-    // lib.optionalAttrs (!workModels) (
+    // lib.optionalAttrs (providersToWrite != { }) (
       lib.mapAttrs' (
         slug: p:
         lib.nameValuePair ".config/maki/providers/${slug}" {
@@ -267,12 +367,21 @@ in
           executable = true;
           text = mkProviderScript p;
         }
-      ) makiProviders
+      ) providersToWrite
     );
-    home.packages = lib.optional workModels codexCredSync;
-    home.activation.makiCodexCreds = lib.mkIf workModels (
+    home.packages =
+      lib.optional (workModels && !cfEnabled) codexCredSync
+      ++ lib.optional cfEnabled cfCostReport;
+    home.activation.makiCodexCreds = lib.mkIf (workModels && !cfEnabled) (
       lib.hm.dag.entryAfter [ "writeBoundary" ] ''
         ${codexCredSync}/bin/maki-codex-sync || true
+      ''
+    );
+    # Cloudflare-only: drop the previously-synced Codex/openai credential so the
+    # openai built-in has no creds and stays out of /model selection.
+    home.activation.makiCloudflareOnly = lib.mkIf cfEnabled (
+      lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+        rm -f "$HOME/.local/state/maki/auth/openai.json"
       ''
     );
   };

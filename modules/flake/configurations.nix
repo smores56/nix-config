@@ -216,21 +216,24 @@ in
             claude.enable = false;
             mcpServers.glean = gleanMcpServer;
           };
-          maki.mcpServers = {
-            glean.command = [
-              "env"
-              "GLEAN_SERVER_URL=${gleanServerUrl}"
-              "npx"
-              "-y"
-              "@gleanwork/local-mcp-server"
-            ];
-            slack.command = [
-              "npx"
-              "-y"
-              "slack-mcp-server@latest"
-              "--transport"
-              "stdio"
-            ];
+          maki = {
+            cloudflareWorkersAi.enable = true;
+            mcpServers = {
+              glean.command = [
+                "env"
+                "GLEAN_SERVER_URL=${gleanServerUrl}"
+                "npx"
+                "-y"
+                "@gleanwork/local-mcp-server"
+              ];
+              slack.command = [
+                "npx"
+                "-y"
+                "slack-mcp-server@latest"
+                "--transport"
+                "stdio"
+              ];
+            };
           };
           pi = {
             enable = true;
