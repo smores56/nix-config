@@ -3,7 +3,8 @@ let
   homeDir = config.home.homeDirectory;
   sandbox = config.dotfiles.nono.enable;
   # Wrap an agent launcher in its nono sandbox profile when nono is enabled.
-  wrapAgent = profile: cmd: if sandbox then "nono run -p ${profile} --allow-cwd -- ${cmd}" else cmd;
+  # -s silences nono's banner/summary/status output.
+  wrapAgent = profile: cmd: if sandbox then "nono run -s -p ${profile} --allow-cwd -- ${cmd}" else cmd;
 in
 {
   home = {
