@@ -112,6 +112,7 @@ let
   # backend (smortress:8081) is unreachable — reach it via
   # dotfiles.nono.restrictNetwork = false, or on-host with `--open-port 8081`.
   agentDomains = [
+    "api.exa.ai" # maki websearch (Exa AI)
     "*.byterover.dev"
   ] # brv MCP — all hosts
   ++ lib.optional cfWorkersAi "api.cloudflare.com" # maki — Cloudflare Workers AI inference
@@ -128,6 +129,7 @@ let
       [
         "token-plan-sgp.xiaomimimo.com" # xiaomi/mimo — personal default LLM
         "crof.ai" # crofai — kimi-k2.7-code backup
+        "api.neuralwatt.com" # neuralwatt — energy-based LLM
         "smortress" # local gemma host (HTTPS CONNECT only; gemma is plain-HTTP)
       ]
   );

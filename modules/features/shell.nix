@@ -77,7 +77,7 @@ in
         st = "ssh smores@(tailscale-hosts | fzf) -t fish";
 
         o = wrapAgent "omp" "omp";
-        m = if config.dotfiles.paseo.enable then "paseo run --provider maki" else wrapAgent "maki" "maki";
+        m = wrapAgent "maki" "maki";
         pi = wrapAgent "pi" "pi";
         h = "herdr session attach default";
       };
