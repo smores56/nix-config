@@ -7,6 +7,7 @@
 let
   cfg = config.dotfiles.nono;
   workModels = config.dotfiles.workModels;
+  cfWorkersAi = config.dotfiles.maki.cloudflareWorkersAi.enable;
 
   # Least-privilege base every agent profile extends. nono's built-in `default`
   # already denies ~/.ssh, cloud creds, shell configs/history and keychains; on
@@ -113,6 +114,7 @@ let
   agentDomains = [
     "*.byterover.dev"
   ] # brv MCP — all hosts
+  ++ lib.optional cfWorkersAi "api.cloudflare.com" # maki — Cloudflare Workers AI inference
   ++ (
     if workModels then
       [
