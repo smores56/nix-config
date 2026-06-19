@@ -117,9 +117,60 @@ let
     };
   };
 
-  # Egress allowlist on the `developer` network profile. proxy CONNECT-tunnels
-  # HTTPS only, so the plain-HTTP local gemma host (smortress:8081) is
-  # unreachable unless restrictNetwork=false or `--open-port 8081` on host.
+  # LLM API routes that get TLS-intercepted by nono (PR #856, v0.53+).
+  # Nono generates an ephemeral per-session CA, auto-injects it into the
+  # child's env vars (SSL_CERT_FILE, etc.), and applies endpoint_rules
+  # before forwarding.  No manual CA management needed.
+  credentialRoutes = {
+    neuralwatt = {
+      upstream = "https://api.neuralwatt.com/v1";
+      credential_key = "env://NEURALWATT_API_KEY";
+      endpoint_rules = [{ method = "*"; path = "/**"; }];
+    };
+    exa = {
+      upstream = "https://mcp.exa.ai/mcp";
+      credential_key = "env://EXA_API_KEY";
+      endpoint_rules = [{ method = "*"; path = "/**"; }];
+    };
+  }
+  // lib.optionalAttrs cfWorkersAi {
+    cloudflare = {
+      upstream = "https://api.cloudflare.com";
+      credential_key = "env://CLOUDFLARE_API_KEY";
+      endpoint_rules = [{ method = "*"; path = "/**"; }];
+    };
+  }
+  // (if workModels then {
+    openai = {
+      upstream = "https://api.openai.com";
+      credential_key = "env://OPENAI_API_KEY";
+      endpoint_rules = [{ method = "*"; path = "/**"; }];
+    };
+    anthropic = {
+      upstream = "https://api.anthropic.com";
+      credential_key = "env://ANTHROPIC_API_KEY";
+      endpoint_rules = [{ method = "*"; path = "/**"; }];
+    };
+  } else {
+    mimo = {
+      upstream = "https://token-plan-sgp.xiaomimimo.com/v1";
+      credential_key = "env://XIAOMI_MIMO_API_KEY";
+      endpoint_rules = [{ method = "*"; path = "/**"; }];
+    };
+    crofai = {
+      upstream = "https://crof.ai/v1";
+      credential_key = "env://CROFAI_API_KEY";
+      endpoint_rules = [{ method = "*"; path = "/**"; }];
+    };
+  });
+
+  # Domains allowed through nono's developer proxy CONNECT tunnel.
+  # Credential routes are automatically removed from NO_PROXY by nono's
+  # smart NO_PROXY (PR #518), forcing them through the credential proxy
+  # where TLS intercept (PR #856) applies endpoint_rules.
+  # Non-credential domains stay in NO_PROXY and go direct; the
+  # mitmproxy service (modules/nixos/mitmproxy.nix) chains as an
+  # upstream proxy so all CONNECT traffic is also method-filtered.
   agentDomains = [
     "api.exa.ai" # maki websearch (REST)
     "mcp.exa.ai" # maki websearch (MCP/SSE)
@@ -147,6 +198,10 @@ let
     network = {
       network_profile = "developer";
       allow_domain = agentDomains;
+      # All proxy traffic (CONNECT tunnels + credential routes) chains
+      # through mitmproxy for L7 method filtering.
+      upstream_proxy = "127.0.0.1:8080";
+      custom_credentials = credentialRoutes;
     };
   };
 
