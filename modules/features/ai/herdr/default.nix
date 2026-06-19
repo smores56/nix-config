@@ -8,8 +8,7 @@ let
   shell = config.dotfiles.shellPath;
   # maki panes run inside their nono sandbox profile via the shared
   # nono-agent wrapper (modules/features/ai/nono.nix).
-  makiPaneCmd =
-    if config.dotfiles.nono.enable then "${config.dotfiles.nono.agentWrapper}/bin/nono-agent maki maki" else "maki";
+  makiPaneCmd = "nono-agent maki";
 
   configToml = ''
     # Managed by home-manager (modules/features/ai/herdr). Manual edits are clobbered.

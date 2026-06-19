@@ -51,12 +51,16 @@ These are sourced by fish automatically and available to all AI tools.
 
 ## Sandboxing (nono)
 
-Managed by `nono.nix` (`dotfiles.nono.enable`, default on, every host). Every
-agent runs inside a kernel-enforced sandbox via
+Managed by `nono.nix` (the `dotfiles.nono.*` options; nono is always
+installed, every host — the option was made unconditional when no host ever
+disabled it). Every agent runs inside a kernel-enforced sandbox via
 [nono](https://github.com/always-further/nono) (`pkgs.nono`) - one tool, both
-OSes: **Landlock** on Linux, **Seatbelt** on macOS. The launchers are wrapped:
-the `m`/`o`/`pi` fish abbrs, the paseo `maki` ACP provider command, and herdr's
-maki pane all run as `nono run -p <profile> --allow-cwd -- <agent>`.
+OSes: **Landlock** on Linux, **Seatbelt** on macOS. The launchers all go
+through a shared `nono-agent` wrapper (a `writeShellScriptBin` in `nono.nix`)
+that runs `nono run -s --allow-cwd --allow-connect-port 22/443 -p <profile>
+-- <agent>`. Call sites: the `m`/`o`/`pi` fish abbrs (`nono-agent maki`,
+etc.), the paseo `maki` ACP provider command, herdr's maki pane
+(`nono-agent maki`), and `start_worktree_session.lua`.
 
 Profiles live at `~/.config/nono/profiles/` (generated JSON):
 

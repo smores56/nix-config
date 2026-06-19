@@ -52,29 +52,18 @@ let
     agents.providers.maki = {
       extends = "acp";
       label = "Maki";
-      command =
-        if d.nono.enable then
-          [
-            "${pkgs.nono}/bin/nono"
-            "run"
-            # ACP is JSON-RPC over stdout; nono otherwise leaks tracing WARN
-            # lines (missing GITHUB_TOKEN/GITLAB_TOKEN managed creds for the
-            # developer net profile's github/gitlab routes) onto stdout, which
-            # corrupts the stream -> paseo can't refresh maki (30s model-picker
-            # timeout). -s silences all nono output; the sandbox still enforces.
-            "-s"
-            "-p"
-            "maki"
-            "--allow-cwd"
-            "--"
-            "maki"
-            "acp"
-          ]
-        else
-          [
-            "maki"
-            "acp"
-          ];
+      # nono-agent wraps `nono run -s --allow-cwd --allow-connect-port 22/443
+      # -p maki -- <cmd>`. -s silences nono's tracing WARN lines (missing
+      # GITHUB_TOKEN/GITLAB_TOKEN managed creds for the developer net profile's
+      # github/gitlab routes) that would otherwise land on stdout and corrupt
+      # the ACP JSON-RPC stream (paseo can't refresh maki; 30s model-picker
+      # timeout). The sandbox still enforces either way.
+      command = [
+        "${config.dotfiles.nono.agentWrapper}/bin/nono-agent"
+        "maki"
+        "maki"
+        "acp"
+      ];
     };
   };
 in

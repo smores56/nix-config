@@ -16,10 +16,19 @@ let
   # be blocked at the TCP layer, so sandboxed agents couldn't git push/pull.
   # The known_hosts + ssh-agent grants that complete the ssh-picture live in
   # modules/features/ai/nono.nix (filesystem) and modules/features/ssh.nix.
+  #
+  # Usage: `nono-agent <profile> [cmd...]`. If cmd is empty OR starts with a
+  # flag (e.g. `nono-agent maki --continue`), the profile name is used as the
+  # command — so the common case reads `nono-agent maki`, and flag-passing
+  # reads `nono-agent maki --continue` (no duplication).
   agentWrapper = pkgs.writeShellScriptBin "nono-agent" ''
+    profile="$1"; shift
+    if [ "$#" -eq 0 ] || [[ "$1" == -* ]]; then
+      set -- "$profile" "$@"
+    fi
     exec nono run -s --allow-cwd \
       --allow-connect-port 22 --allow-connect-port 443 \
-      -p "$1" -- "''${@:2}"
+      -p "$profile" -- "$@"
   '';
 
   # Least-privilege base every agent profile extends. nono's built-in `default`
@@ -184,11 +193,6 @@ let
 in
 {
   options.dotfiles.nono = {
-    enable =
-      lib.mkEnableOption "the nono cross-platform agent sandbox (Landlock on Linux, Seatbelt on macOS)"
-      // {
-        default = true;
-      };
     restrictNetwork =
       lib.mkEnableOption "default-deny agent egress via nono's developer network profile plus this config's LLM/MCP endpoints; disabling restores unrestricted network (web search, arbitrary webfetch)"
       // {
@@ -201,7 +205,7 @@ in
     };
   };
 
-  config = lib.mkIf cfg.enable {
+  config = {
     home.packages = [
       pkgs.nono
       agentWrapper

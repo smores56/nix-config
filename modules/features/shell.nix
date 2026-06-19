@@ -1,12 +1,6 @@
 { config, pkgs, ... }:
 let
   homeDir = config.home.homeDirectory;
-  sandbox = config.dotfiles.nono.enable;
-  # Wrap an agent launcher in its nono sandbox profile when nono is enabled.
-  # Real flags live in the wrapper (modules/features/ai/nono.nix) so this
-  # stays a short one-liner; `m`, `o`, `pi` expand to e.g. `nono-agent maki maki`.
-  wrapAgent = profile: cmd:
-    if sandbox then "${config.dotfiles.nono.agentWrapper}/bin/nono-agent ${profile} ${cmd}" else cmd;
 in
 {
   home = {
@@ -78,9 +72,9 @@ in
         sm = "ssh smores@smortress -t fish";
         st = "ssh smores@(tailscale-hosts | fzf) -t fish";
 
-        o = wrapAgent "omp" "omp";
-        m = wrapAgent "maki" "maki";
-        pi = wrapAgent "pi" "pi";
+        o = "nono-agent omp";
+        m = "nono-agent maki";
+        pi = "nono-agent pi";
         h = "herdr session attach default";
       };
 
