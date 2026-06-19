@@ -67,10 +67,14 @@ let
       read_file = [
         "$HOME/.ssh/id_personal.pub"
         "$HOME/.ssh/id_work.pub"
+        # known_hosts is non-secret (public host-key fingerprints); ssh needs it
+        # to verify github's host key during the ssh transport for git push.
+        "$HOME/.ssh/known_hosts"
       ];
       bypass_protection = [
         "$HOME/.ssh/id_personal.pub"
         "$HOME/.ssh/id_work.pub"
+        "$HOME/.ssh/known_hosts"
       ];
       deny = [ "$XDG_CONFIG_HOME/gh" ];
     };

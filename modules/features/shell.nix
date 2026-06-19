@@ -4,7 +4,15 @@ let
   sandbox = config.dotfiles.nono.enable;
   # Wrap an agent launcher in its nono sandbox profile when nono is enabled.
   # -s silences nono's banner/summary/status output.
-  wrapAgent = profile: cmd: if sandbox then "nono run -s -p ${profile} --allow-cwd -- ${cmd}" else cmd;
+  # --allow-connect-port 22 + 443 lets ssh reach github.com:22 (and the
+  # ssh.github.com:443 fallback) directly — the developer network profile only
+  # CONNECT-tunnels HTTPS, so plain-ssh port 22 would otherwise be blocked at
+  # the TCP layer. Used together with the known_hosts + ssh-agent grants in
+  # modules/features/ai/nono.nix and ssh.nix, this lets sandboxed agents git
+  # push/pull over ssh using the host agent's keys, with no credential exposed.
+  allowConnectPorts = "--allow-connect-port 22 --allow-connect-port 443";
+  wrapAgent = profile: cmd:
+    if sandbox then "nono run -s -p ${profile} --allow-cwd ${allowConnectPorts} -- ${cmd}" else cmd;
 in
 {
   home = {

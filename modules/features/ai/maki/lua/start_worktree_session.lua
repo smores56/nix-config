@@ -100,7 +100,9 @@ agent-branch-name --slug <slug> --task "<task>" --dry-run]],
     -- containing $VAR / `cmd` / $(...) / unmatched quotes would otherwise be
     -- re-expanded or mis-parsed by fish. An env var is never re-parsed, so the
     -- prompt survives verbatim; maki reads it as an argv element on the far side.
-    local maki_cmd = "nono run -s -p maki --allow-cwd -- maki"
+    -- --allow-connect-port 22 + 443 matches wrapAgent in shell.nix: ssh transport
+    -- for git push/pull using the host agent's keys.
+    local maki_cmd = "nono run -s -p maki --allow-cwd --allow-connect-port 22 --allow-connect-port 443 -- maki"
     if maki.fn.executable("nono") == 0 then
       maki_cmd = "exec maki"
     end
