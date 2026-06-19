@@ -3,26 +3,11 @@
   lib,
   ...
 }:
-let
-  # Socket under a dedicated subdir of the runtime dir so nono can grant
-  # just that path (see modules/features/ai/nono.nix) without exposing every
-  # other runtime socket.
-  socketSuffix = "ssh-agent/socket";
-in
 {
   # Host ssh-agent holds the SSH keys so sandboxed agents can sign commits
   # and auth to git remotes WITHOUT reading ~/.ssh — they reach the agent
   # over $SSH_AUTH_SOCK (inherited by nono) and only ask it to sign blobs.
-  services.ssh-agent = {
-    enable = true;
-    socket = socketSuffix;
-  };
-
-  # services.ssh-agent ships no ExecStartPre, so the socket's parent dir
-  # doesn't exist and ssh-agent exits 1. RuntimeDirectory makes systemd
-  # mkdir it (and chown + rmdir on stop).
-  systemd.user.services.ssh-agent.Service.RuntimeDirectory = "ssh-agent";
-  systemd.user.services.ssh-agent.Service.RuntimeDirectoryMode = "0700";
+  services.ssh-agent.enable = true;
 
   programs.ssh = {
     enable = true;
@@ -38,7 +23,6 @@ in
       "*" = {
         identityFile = "~/.ssh/id_personal.pub";
         forwardAgent = false;
-        addKeysToAgent = "yes";
         compression = false;
         serverAliveInterval = 0;
         serverAliveCountMax = 3;

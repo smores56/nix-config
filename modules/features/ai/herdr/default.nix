@@ -6,14 +6,10 @@
 let
   cfg = config.dotfiles.herdr;
   shell = config.dotfiles.shellPath;
-  # maki panes run inside their nono sandbox profile when nono is enabled.
-  # --allow-connect-port 22 + 443 match the wrapAgent abbrs in shell.nix: ssh
-  # transport for git push/pull using the host agent's keys.
+  # maki panes run inside their nono sandbox profile via the shared
+  # nono-agent wrapper (modules/features/ai/nono.nix).
   makiPaneCmd =
-    if config.dotfiles.nono.enable then
-      "nono run -p maki --allow-cwd --allow-connect-port 22 --allow-connect-port 443 -- maki"
-    else
-      "maki";
+    if config.dotfiles.nono.enable then "${config.dotfiles.nono.agentWrapper}/bin/nono-agent maki maki" else "maki";
 
   configToml = ''
     # Managed by home-manager (modules/features/ai/herdr). Manual edits are clobbered.

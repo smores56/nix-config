@@ -9,6 +9,19 @@ let
   workModels = config.dotfiles.workModels;
   cfWorkersAi = config.dotfiles.maki.cloudflareWorkersAi.enable;
 
+  # One wrapper for every agent launch so the m/pi/o abbrs and herdr's maki
+  # pane all agree on the nono flags. The connect-port grants are needed
+  # because nono's `developer` network profile only CONNECT-tunnels HTTPS;
+  # plain-ssh port 22 (and the ssh.github.com:443 fallback) would otherwise
+  # be blocked at the TCP layer, so sandboxed agents couldn't git push/pull.
+  # The known_hosts + ssh-agent grants that complete the ssh-picture live in
+  # modules/features/ai/nono.nix (filesystem) and modules/features/ssh.nix.
+  agentWrapper = pkgs.writeShellScriptBin "nono-agent" ''
+    exec nono run -s --allow-cwd \
+      --allow-connect-port 22 --allow-connect-port 443 \
+      -p "$1" -- "''${@:2}"
+  '';
+
   # Least-privilege base every agent profile extends. nono's built-in `default`
   # already denies ~/.ssh, cloud creds, shell configs/history and keychains; on
   # top we grant the toolchains agents need (read-only, almost entirely /nix on
@@ -181,10 +194,19 @@ in
       // {
         default = true;
       };
+    agentWrapper = lib.mkOption {
+      type = lib.types.package;
+      readOnly = true;
+      description = "nono-agent wrapper: runs `nono run -s --allow-cwd --allow-connect-port 22 --allow-connect-port 443 -p <profile> -- <cmd>` so agent-launch sites (abbrs, herdr pane, worktree spawns) stay one-liners.";
+    };
   };
 
   config = lib.mkIf cfg.enable {
-    home.packages = [ pkgs.nono ];
+    home.packages = [
+      pkgs.nono
+      agentWrapper
+    ];
     home.file = profileFiles;
+    dotfiles.nono.agentWrapper = agentWrapper;
   };
 }
