@@ -15,7 +15,7 @@ let
 
   githubSsh = pkgs.writeShellScriptBin "git-github-ssh" ''
     is_github=false
-    key="$HOME/.ssh/id_personal"
+    key="$HOME/.ssh/id_personal.pub"
 
     for arg in "$@"; do
       case "$arg" in
@@ -30,13 +30,17 @@ let
         for arg in "$@"; do
           case "$arg" in
             *"$org"/*|*"$org":*)
-              key="$HOME/.ssh/id_work"
+              key="$HOME/.ssh/id_work.pub"
               ;;
           esac
         done
       done
 
-      exec ${pkgs.openssh}/bin/ssh -F /dev/null -i "$key" -o IdentitiesOnly=yes "$@"
+      # Point IdentityFile at the .pub so ssh resolves the key via the
+      # ssh-agent (SSH_AUTH_SOCK inherited from the launching fish shell) rather
+      # than reading the private key file, which the nono sandbox denies. The
+      # agent holds the private side; ssh asks it to sign, never reads ~/.ssh.
+      exec ${pkgs.openssh}/bin/ssh -F /dev/null -o "IdentityFile=$key" -o IdentitiesOnly=yes "$@"
     fi
 
     exec ${pkgs.openssh}/bin/ssh "$@"
