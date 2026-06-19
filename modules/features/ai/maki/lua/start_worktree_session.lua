@@ -102,8 +102,9 @@ agent-branch-name --slug <slug> --task "<task>" --dry-run]],
     -- prompt survives verbatim; maki reads it as an argv element on the far side.
     -- nono-agent (from modules/features/ai/nono.nix, on PATH via home.packages)
     -- wraps `nono run -s --allow-cwd --allow-connect-port 22/443 -p maki -- maki`,
-    -- matching the `m`/herdr launches.
-    local maki_cmd = "nono-agent maki maki"
+    -- matching the `m`/herdr launches. `exec` at the front so nono receives
+    -- signals directly as the supervisor.
+    local maki_cmd = "exec nono-agent maki maki"
     if maki.fn.executable("nono-agent") == 0 then
       maki_cmd = "exec maki"
     end

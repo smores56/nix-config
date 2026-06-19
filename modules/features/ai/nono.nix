@@ -12,15 +12,15 @@ let
   # Shared launcher for every agent site (abbrs, herdr pane, worktree spawns).
   # --allow-connect-port 22/443 has no JSON-profile equivalent (nono's `developer`
   # network profile only CONNECT-tunnels HTTPS; plain-ssh 22 + ssh.github.com:443
-  # would otherwise be TCP-denied, blocking git push/pull). `exec` so nono
-  # receives signals directly as the supervisor.
+  # would otherwise be TCP-denied, blocking git push/pull). Callers (abbrs, Lua
+  # plugins) add `exec` so nono receives signals directly as the supervisor.
   # Usage: `nono-agent <profile> [cmd...]`; empty/flag cmd defaults to profile.
   agentWrapper = pkgs.writeShellScriptBin "nono-agent" ''
     profile="$1"; shift
     if [ "$#" -eq 0 ] || [[ "$1" == -* ]]; then
       set -- "$profile" "$@"
     fi
-    exec nono run -s --allow-cwd \
+    nono run -s --allow-cwd \
       --allow-connect-port 22 --allow-connect-port 443 \
       -p "$profile" -- "$@"
   '';
