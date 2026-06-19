@@ -54,28 +54,16 @@ let
         "$HOME/.bun"
         "$HOME/.wasmer"
         "$HOME/.wasmtime"
-        # Reach the host ssh-agent socket at $XDG_RUNTIME_DIR/ssh-agent/socket
-        # (set up by services.ssh-agent in modules/features/ssh.nix) so sandboxed
-        # agents can sign git commits via the agent WITHOUT ~/.ssh being readable.
-        # Granted as the parent runtime dir rather than the ssh-agent subdir:
-        # nono skips grants on paths that don't exist yet, and the socket is only
-        # created by the ssh-agent service at login — a subdir grant would fail
-        # to resolve until the service runs first. Landlock/Seatbelt read on a
-        # directory is recursive, so the socket (a child file) is reachable. This
-        # does expose other runtime sockets (dbus/pipewire/wayland) to a connect()
-        # attempt, but agent signing is the only one with a path to a secret — and
-        # it's gated server-side (the key only signs blobs it's asked to sign).
-        # $HOME/.ssh stays denied by deny_credentials; only the public keys below
-        # are bypassed.
+        # Host ssh-agent socket: granted as the parent runtime dir because nono
+        # skips grants on paths that don't exist yet, and the socket is only
+        # created by ssh-agent at login. Read on a dir is recursive, so the
+        # socket (a child) is reachable. $HOME/.ssh stays denied by
+        # deny_credentials; only the public keys below are bypassed.
         "$XDG_RUNTIME_DIR"
       ];
-      # The public keys are non-secret; grant them read-only so git's ssh-format
-      # commit signing and the git-github-ssh wrapper (modules/features/git.nix)
-      # can resolve which key to use. bypass_protection is required because
-      # deny_credentials (a required group) denies all of ~/.ssh; the private
-      # keys (id_personal / id_work) have no bypass entry, so they stay
-      # unreadable — signing/auth flows through the ssh-agent socket granted
-      # above instead.
+      # Public keys are non-secret; needed so git ssh-format commit signing and
+      # the git-github-ssh wrapper can resolve which key to use. Private keys
+      # have no bypass entry, so signing/auth flows through the agent socket.
       read_file = [
         "$HOME/.ssh/id_personal.pub"
         "$HOME/.ssh/id_work.pub"

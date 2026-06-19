@@ -37,9 +37,7 @@ let
       done
 
       # Point IdentityFile at the .pub so ssh resolves the key via the
-      # ssh-agent (SSH_AUTH_SOCK inherited from the launching fish shell) rather
-      # than reading the private key file, which the nono sandbox denies. The
-      # agent holds the private side; ssh asks it to sign, never reads ~/.ssh.
+      # ssh-agent rather than the private key file (denied by nono).
       exec ${pkgs.openssh}/bin/ssh -F /dev/null -o "IdentityFile=$key" -o IdentitiesOnly=yes "$@"
     fi
 
