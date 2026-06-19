@@ -66,11 +66,9 @@ in
         hs = "home-manager switch --no-write-lock-file";
 
         ns = "sudo nixos-rebuild --flake ~/.config/home-manager switch --upgrade";
-        nsr = "nix-store --repair --verify --check-contents";
-        ng = "nix-collect-garbage";
+        ng = "nix-collect-garbage --delete-old";
 
         sm = "ssh smores@smortress -t fish";
-        st = "ssh smores@(tailscale-hosts | fzf) -t fish";
 
         o = "nono-agent omp";
         m = "nono-agent maki";
