@@ -5,6 +5,7 @@
   aiDeepseek,
   aiXiaomi,
   aiCrofai,
+  aiNeuralwatt,
   ...
 }:
 let
@@ -14,22 +15,22 @@ let
   # Three-tier subagent hierarchy. Work: Codex-only via the built-in openai-codex
   # provider — smart gpt-5.5 (main session + deep-reasoning roles), middle gpt-5.4
   # (general task agent), dumb gpt-5.4-mini (scouts/vision/designer/commit).
-  # Personal: Xiaomi MiMo Pro/base. Delegation prefers the cheaper tiers.
+  # Personal: Neuralwatt GLM-5.2 / Qwen3.5-397B / Qwen3.6-35B. Delegation prefers the cheaper tiers.
   strongModel =
     if workModels then
       "openai-codex/gpt-5.5"
     else
-      "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25Pro.id}";
+      "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.glm52.id}";
   midModel =
     if workModels then
       "openai-codex/gpt-5.4"
     else
-      "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25.id}";
+      "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.qwen35.id}";
   weakModel =
     if workModels then
       "openai-codex/gpt-5.4-mini"
     else
-      "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25.id}";
+      "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.qwen36.id}";
 
   # Smart: main session + planning + slow/deep reasoning. Middle: general task
   # agent. Dumb: scouts (smol), vision, designer, commit.
@@ -50,6 +51,7 @@ let
       [ "openai-codex" ]
     else
       [
+        aiNeuralwatt.providerId
         aiXiaomi.providerId
         aiDeepseek.providerId
         aiCrofai.providerId
@@ -108,6 +110,13 @@ let
             api = "openai-completions";
             auth = "apiKey";
             models = aiCrofai.ompModelsList;
+          };
+          ${aiNeuralwatt.providerId} = {
+            baseUrl = aiNeuralwatt.baseUrl;
+            apiKey = "NEURALWATT_API_KEY";
+            api = "openai-completions";
+            auth = "apiKey";
+            models = aiNeuralwatt.ompModelsList;
           };
         };
       };
