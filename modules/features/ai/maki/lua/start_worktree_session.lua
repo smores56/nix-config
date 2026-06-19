@@ -85,10 +85,29 @@ agent-branch-name --slug <slug> --task "<task>" --dry-run]],
     -- Uses --cwd for the worktree dir + ${var@Q} quoting for the prompt to
     -- avoid nested shell quoting issues with `zellij run`. Outputs OK:<path>
     -- on success, ERR:<msg> on failure.
+    --
+    -- Launch via a LOGIN fish shell (matches the `m` abbr) so conf.d is sourced
+    -- and API-key env vars are present at provider `has_auth` time. `zellij run
+    -- -- bash -c` instead starts a non-login shell with a stripped env: bash never
+    -- sources fish's conf.d/api-keys.fish, so the custom providers' bearer tokens
+    -- are absent, has_auth returns false, and maki falls back to OAuth and errors
+    -- "Token expired. Run `maki auth login`" even though the user is logged in.
+    -- Wrap in nono when enabled to match `m`/herdr's sandbox profile (nono does
+    -- not strip env vars; ${VAR:-} expansions still resolve inside the sandbox).
+    --
+    -- The prompt is handed to maki via the MAKI_PROMPT env var rather than a
+    -- shell-quoted argv token: it crosses a bash -> fish -c handoff, and a prompt
+    -- containing $VAR / `cmd` / $(...) / unmatched quotes would otherwise be
+    -- re-expanded or mis-parsed by fish. An env var is never re-parsed, so the
+    -- prompt survives verbatim; maki reads it as an argv element on the far side.
+    local maki_cmd = "nono run -s -p maki --allow-cwd -- maki"
+    if maki.fn.executable("nono") == 0 then
+      maki_cmd = "exec maki"
+    end
     local script = string.format(
       [[
 branch=%s
-M_PROMPT=%s
+export MAKI_PROMPT=%s
 
 wt_output=$(wt switch --create "$branch" --format json 2>&1) || {
   echo "ERR:$wt_output"
@@ -111,13 +130,14 @@ fi
 
 zellij action new-tab -n %s
 sleep 0.1
-zellij run --in-place --cwd "$path" -- bash -c 'exec maki '"${M_PROMPT@Q}"
+zellij run --in-place --cwd "$path" -- fish -l -c %s
 echo "OK:$path"
 ]],
       shell_quote(branch),
       shell_quote(prompt),
       worktree_name,
-      shell_quote(worktree_name)
+      shell_quote(worktree_name),
+      shell_quote(maki_cmd .. ' "$MAKI_PROMPT"')
     )
 
     -- Run the script and capture output
