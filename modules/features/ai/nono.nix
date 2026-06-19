@@ -121,7 +121,8 @@ let
   # HTTPS only, so the plain-HTTP local gemma host (smortress:8081) is
   # unreachable unless restrictNetwork=false or `--open-port 8081` on host.
   agentDomains = [
-    "api.exa.ai" # maki websearch
+    "api.exa.ai" # maki websearch (REST)
+    "mcp.exa.ai" # maki websearch (MCP/SSE)
     "*.byterover.dev" # brv MCP
   ]
   ++ lib.optional cfWorkersAi "api.cloudflare.com" # Cloudflare Workers AI
