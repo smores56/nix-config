@@ -4,7 +4,6 @@
   pkgs,
   aiXiaomi,
   aiDeepseek,
-  aiCrofai,
   ...
 }:
 let
@@ -76,7 +75,7 @@ let
   # review/oracle), middle gpt-5.4 (general implementation), weak/dumb
   # gpt-5.4-mini (scouts, naming, memory). Personal: Xiaomi MiMo Pro/base.
   # Codex tiers carry no cross-provider backups (single plan/auth); personal
-  # keeps deepseek/crofai/gemma failover.
+  # keeps deepseek/gemma failover.
   strongModel = if workModels then "openai-codex/gpt-5.5" else cfg.defaultModel;
   midModel =
     if workModels then
@@ -95,7 +94,6 @@ let
     else
       [
         "${aiDeepseek.providerId}/${aiDeepseek.models.v4Pro.id}"
-        "${aiCrofai.providerId}/${aiCrofai.models.kimiK27Code.id}"
         "smortress/gemma-4-31b"
       ];
   midBackups =
@@ -104,7 +102,6 @@ let
     else
       [
         "${aiDeepseek.providerId}/${aiDeepseek.models.v4Flash.id}"
-        "${aiCrofai.providerId}/${aiCrofai.models.kimiK27Code.id}"
         "smortress/gemma-4-31b"
       ];
   weakBackups = midBackups;
@@ -148,7 +145,7 @@ let
         ]
   );
 
-  # Personal-only backup providers (deepseek / crofai / gemma / mimo). NEVER on
+  # Personal-only backup providers (deepseek / gemma / mimo). NEVER on
   # the work machine — smoreswork is Codex-only via pi's built-in openai-codex
   # provider (+ built-in anthropic). Sign in to Codex once with pi's browser
   # login (`/login` -> openai-codex); the work workspace permits the PKCE flow.
@@ -182,12 +179,6 @@ let
       apiKey = "$DEEPSEEK_API_KEY";
       api = "openai-completions";
       models = aiDeepseek.ompModelsList;
-    };
-    ${aiCrofai.providerId} = {
-      inherit (aiCrofai) baseUrl;
-      apiKey = "$CROFAI_API_KEY";
-      api = "openai-completions";
-      models = aiCrofai.ompModelsList;
     };
     ${aiXiaomi.providerId} = {
       inherit (aiXiaomi) baseUrl;

@@ -4,7 +4,6 @@
   pkgs,
   aiDeepseek,
   aiXiaomi,
-  aiCrofai,
   aiNeuralwatt,
   ...
 }:
@@ -54,7 +53,6 @@ let
         aiNeuralwatt.providerId
         aiXiaomi.providerId
         aiDeepseek.providerId
-        aiCrofai.providerId
         "smortress"
       ]
       ++ lib.optionals cfg.claude.enable [ "anthropic" ]
@@ -103,13 +101,6 @@ let
             api = "openai-completions";
             auth = "apiKey";
             models = aiDeepseek.ompModelsList;
-          };
-          ${aiCrofai.providerId} = {
-            baseUrl = aiCrofai.baseUrl;
-            apiKey = "CROFAI_API_KEY";
-            api = "openai-completions";
-            auth = "apiKey";
-            models = aiCrofai.ompModelsList;
           };
           ${aiNeuralwatt.providerId} = {
             baseUrl = aiNeuralwatt.baseUrl;

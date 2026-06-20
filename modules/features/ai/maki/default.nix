@@ -3,7 +3,6 @@
   lib,
   pkgs,
   aiXiaomi,
-  aiCrofai,
   ...
 }:
 let
@@ -16,9 +15,9 @@ let
 
   # cfEnabled: GLM 5.2 (strong) via Cloudflare Workers AI, the only provider.
   # Otherwise Codex GPT-5.5 (smart tier) on the work machine via the built-in
-  # `openai` provider, whose OAuth creds are mirrored from Codex CLI by
-  # maki-codex-sync below; Xiaomi MiMo Pro elsewhere. The full openai/gpt-5.*
-  # catalog (gpt-5.4 middle, gpt-5.4-mini dumb) plus DeepSeek / CrofAI / gemma
+    # `openai` provider, whose OAuth creds are mirrored from Codex CLI by
+    # maki-codex-sync below; Xiaomi MiMo Pro elsewhere. The full openai/gpt-5.*
+    # catalog (gpt-5.4 middle, gpt-5.4-mini dumb) plus DeepSeek / gemma
   # stay selectable via /model.
   defaultModel =
     if cfEnabled then
@@ -74,7 +73,7 @@ let
     };
   mcpToml = pkgs.writers.writeTOML "maki-mcp.toml" { mcp = mcpServers; };
 
-  # mimo / crofai / gemma are OpenAI-compatible endpoints maki ships no built-in
+  # mimo / gemma are OpenAI-compatible endpoints maki ships no built-in
   # for. maki discovers custom providers as executable scripts in
   # ~/.config/maki/providers/<slug> answering info/models/resolve. base
   # "llama-cpp" selects the plain OpenAI /v1 chat-completions dialect (no
@@ -99,25 +98,6 @@ let
           tier = "weak";
           context_window = aiXiaomi.models.mimoV25.context;
           max_output_tokens = aiXiaomi.models.mimoV25.output;
-        }
-      ];
-    };
-    ${aiCrofai.providerId} = {
-      displayName = "CrofAI";
-      baseUrl = aiCrofai.baseUrl;
-      keyEnv = "CROFAI_API_KEY";
-      models = [
-        {
-          id = aiCrofai.models.kimiK27Code.id;
-          tier = "strong";
-          context_window = aiCrofai.models.kimiK27Code.context;
-          max_output_tokens = aiCrofai.models.kimiK27Code.output;
-        }
-        {
-          id = aiCrofai.models.glm52.id;
-          tier = "strong";
-          context_window = aiCrofai.models.glm52.context;
-          max_output_tokens = aiCrofai.models.glm52.output;
         }
       ];
     };

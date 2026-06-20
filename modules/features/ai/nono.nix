@@ -117,7 +117,6 @@ let
       "SSH_AUTH_SOCK"
       # LLM/MCP provider keys read by maki/pi/omp (union across personal+work).
       "NEURALWATT_API_KEY"
-      "CROFAI_API_KEY"
       "XIAOMI_MIMO_API_KEY"
       "DEEPSEEK_API_KEY"
       "CLOUDFLARE_WORKERS_AI_API_TOKEN"

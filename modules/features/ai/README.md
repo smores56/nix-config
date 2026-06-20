@@ -24,7 +24,7 @@ These are sourced by fish automatically and available to all AI tools.
 |------|-----------------|------|
 | Strong | `xiaomi/mimo-v2.5-pro` | Default + strong-tier subagents |
 | Weak | `xiaomi/mimo-v2.5` | Weak-tier subagents, naming, summaries |
-| Fallbacks | DeepSeek v4 -> CrofAI Kimi K2.7 -> `smortress/gemma-4-31b` | Failover chain on both tiers |
+| Fallbacks | DeepSeek v4 -> `smortress/gemma-4-31b` | Failover chain on both tiers |
 
 `smortress/gemma-4-31b` is free and self-hosted via llama.cpp
 (`modules/nixos/llm.nix`, enabled by the `llm` host flag).
@@ -40,7 +40,7 @@ These are sourced by fish automatically and available to all AI tools.
 
 ## Provider Modules
 
-- `xiaomi.nix`, `deepseek.nix`, `crofai.nix` - shared provider/model
+- `xiaomi.nix`, `deepseek.nix` - shared provider/model
   definitions consumed by pi and omp via `_module.args`
 - `llm-token-bucket-proxy/` - user service on smortress meant to meter all
   Xiaomi MiMo traffic against the monthly token bucket.
@@ -82,7 +82,7 @@ The secret-control surface is:
 - **Env-var allow-list** (`environment.allow_vars`): a curated set — `PATH`,
   `HOME`, `TERM`, `LANG`, `LC_ALL`, `USER`, `SHELL`, `XDG_*`, `TMPDIR`,
   `SSH_AUTH_SOCK`, plus the LLM/MCP API keys the agents actually read
-  (`NEURALWATT_API_KEY`/`CROFAI_API_KEY`/`XIAOMI_MIMO_API_KEY`/
+  (`NEURALWATT_API_KEY`/`XIAOMI_MIMO_API_KEY`/
   `DEEPSEEK_API_KEY`/`CLOUDFLARE_*`/`GLEAN_*`/`SLACK_MCP_*`). Everything else
   is stripped before the sandbox is applied; nono's non-overridable built-in
   blocklist also blocks `LD_PRELOAD`, `DYLD_*`, `PYTHONPATH`, `NODE_OPTIONS`
@@ -153,12 +153,12 @@ binary is installed manually (`maki.sh/install.sh`); home-manager only writes
   credentials from `~/.codex/auth.json` into Maki's
   `~/.local/state/maki/auth/openai.json`. Run `codex login`, then
   `maki-codex-sync` before starting Maki.
-- `providers/{xiaomi,crofai,smortress}` - executable dynamic-provider scripts
+- `providers/{xiaomi,smortress}` - executable dynamic-provider scripts
   (personal hosts only) registering the custom OpenAI-compatible endpoints maki
-  has no built-in for: Xiaomi MiMo, CrofAI (Kimi K2.7 Code), and the self-hosted
+  has no built-in for: Xiaomi MiMo, and the self-hosted
   `smortress/gemma-4-31b`. Each answers `info`/`models`/`resolve`; `resolve`
-  injects the bearer token from the env key (`XIAOMI_MIMO_API_KEY` /
-  `CROFAI_API_KEY`; gemma is keyless), and `info`'s `has_auth` gates the provider
+  injects the bearer token from the env key (`XIAOMI_MIMO_API_KEY`;
+  gemma is keyless), and `info`'s `has_auth` gates the provider
   on the key being present. base `llama-cpp` is the plain OpenAI-compatible
   dialect; maki auto-discovers each endpoint's live `/v1/models` list.
 
