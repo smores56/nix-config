@@ -8,21 +8,18 @@
 let
   cfg = config.dotfiles.maki;
   workModels = config.dotfiles.workModels;
-  # When set, Cloudflare Workers AI is the SOLE provider: only its models are
-  # selectable, Codex/openai sync is skipped, and no other custom providers are
-  # written. Per-host (smoreswork) — see cloudflareProviders below.
+  # When set, install Cloudflare Workers AI as an additional custom provider.
+  # It is intentionally never the generated default; the work machine defaults
+  # to Codex-backed OpenAI, and personal hosts keep their normal Xiaomi default.
   cfEnabled = cfg.cloudflareWorkersAi.enable;
 
-  # cfEnabled: GLM 5.2 (strong) via Cloudflare Workers AI, the only provider.
-  # Otherwise Codex GPT-5.5 (smart tier) on the work machine via the built-in
-    # `openai` provider, whose OAuth creds are mirrored from Codex CLI by
-    # maki-codex-sync below; Xiaomi MiMo Pro elsewhere. The full openai/gpt-5.*
-    # catalog (gpt-5.4 middle, gpt-5.4-mini dumb) plus DeepSeek / gemma
-  # stay selectable via /model.
+  # Work: Codex-backed GPT-5.5 via Maki's built-in `openai` provider, whose
+  # OAuth creds are mirrored from Codex CLI by maki-codex-sync below. The rest
+  # of the Codex cascade stays selectable in Maki's built-in catalog:
+  # strong = openai/gpt-5.5, medium = openai/gpt-5.4, weak = openai/gpt-5.4-mini.
+  # Personal hosts keep Xiaomi MiMo Pro as the default.
   defaultModel =
-    if cfEnabled then
-      "cloudflare/@cf/zai-org/glm-5.2"
-    else if workModels then
+    if workModels then
       "openai/gpt-5.5"
     else
       "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25Pro.id}";
@@ -79,8 +76,8 @@ let
   # "llama-cpp" selects the plain OpenAI /v1 chat-completions dialect (no
   # Responses API / developer role) that all three speak; resolve injects the
   # bearer token and info's has_auth reflects whether the key env var is set, so
-  # a provider only lights up when its creds are available. Personal hosts only —
-  # work hosts drive anthropic/openai-codex.
+  # a provider only lights up when its creds are available. Personal hosts only;
+  # work hosts drive Codex-backed OpenAI, with optional Cloudflare.
   makiProviders = {
     ${aiXiaomi.providerId} = {
       displayName = "Xiaomi MiMo";
@@ -172,8 +169,7 @@ let
   # account id and token must be present for the provider to light up. Tiers map
   # strong/medium/weak -> glm-5.2 / gpt-oss-120b / glm-4.7-flash. pricing is USD
   # per 1M tokens (drives maki's live per-session cost readout and the
-  # maki-cf-cost monthly rollup — keep in sync with cf-cost-report.py). smoreswork
-  # only; all built-ins stay dark because they have no creds there.
+  # maki-cf-cost monthly rollup — keep in sync with cf-cost-report.py).
   cloudflareProviders.cloudflare = {
     displayName = "Cloudflare Workers AI";
     baseUrl = "https://api.cloudflare.com/client/v4/accounts/\${CLOUDFLARE_ACCOUNT_ID}/ai/v1";
@@ -221,12 +217,8 @@ let
   };
 
   providersToWrite =
-    if cfEnabled then
-      cloudflareProviders
-    else if workModels then
-      { }
-    else
-      makiProviders;
+    lib.optionalAttrs (!workModels) makiProviders
+    // lib.optionalAttrs cfEnabled cloudflareProviders;
 
   mkProviderScript =
     p:
@@ -309,14 +301,15 @@ in
     };
     byteroverMemory = lib.mkEnableOption "byterover (brv) as maki's memory backend instead of the built-in memory tool";
     cloudflareWorkersAi.enable =
-      lib.mkEnableOption "Cloudflare Workers AI as the sole maki provider"
+      lib.mkEnableOption "Cloudflare Workers AI as an extra maki provider"
       // {
         description = ''
-          Make Cloudflare Workers AI the only selectable maki provider: write just
-          its provider script (GLM 5.2 strong / gpt-oss-120b medium / GLM 4.7
-          Flash weak), default to GLM 5.2, skip Codex/openai credential sync, and
-          install the maki-cf-cost monthly spend report. Requires CLOUDFLARE_ACCOUNT_ID
-          and CLOUDFLARE_WORKERS_AI_API_TOKEN in the environment.
+          Install Cloudflare Workers AI as an extra selectable maki provider
+          (GLM 5.2 strong / gpt-oss-120b medium / GLM 4.7 Flash weak) and the
+          maki-cf-cost monthly spend report. This never changes the generated
+          default model or disables Codex/OpenAI credential sync. Requires
+          CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_WORKERS_AI_API_TOKEN in the
+          environment.
         '';
       };
     mcpServers = lib.mkOption {
@@ -403,18 +396,11 @@ in
       ) providersToWrite
     );
     home.packages =
-      lib.optional (workModels && !cfEnabled) codexCredSync
+      lib.optional workModels codexCredSync
       ++ lib.optional cfEnabled cfCostReport;
-    home.activation.makiCodexCreds = lib.mkIf (workModels && !cfEnabled) (
+    home.activation.makiCodexCreds = lib.mkIf workModels (
       lib.hm.dag.entryAfter [ "writeBoundary" ] ''
         ${codexCredSync}/bin/maki-codex-sync || true
-      ''
-    );
-    # Cloudflare-only: drop the previously-synced Codex/openai credential so the
-    # openai built-in has no creds and stays out of /model selection.
-    home.activation.makiCloudflareOnly = lib.mkIf cfEnabled (
-      lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-        rm -f "$HOME/.local/state/maki/auth/openai.json"
       ''
     );
   };

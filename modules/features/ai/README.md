@@ -135,9 +135,10 @@ binary is installed manually (`maki.sh/install.sh`); home-manager only writes
 `~/.config/maki/`:
 
 - `init.lua` - `maki.setup` with `always_yolo`, `always_thinking`, and a
-  `provider.default_model` mirroring pi/omp: `anthropic/claude-opus-4-8` on the
-  work machine, `deepseek/deepseek-v4-pro` elsewhere. `bash` tool enabled.
-  `anthropic/claude-fable-5` stays in maki's built-in strong tier (`/model`).
+  `provider.default_model` mirroring pi/omp: Codex-backed `openai/gpt-5.5` on
+  the work machine, Xiaomi MiMo Pro elsewhere. The work cascade is
+  `openai/gpt-5.5` strong, `openai/gpt-5.4` medium, and `openai/gpt-5.4-mini`
+  weak through Maki's built-in OpenAI catalog. `bash` tool enabled.
 - `plugin.toml` - grants config Lua plugins `run`/`env` (absent manifest =
   every plugin capability denied).
 - `mcp.toml` (only when `maki.byteroverMemory`, on for smortress) - registers
@@ -148,14 +149,16 @@ binary is installed manually (`maki.sh/install.sh`); home-manager only writes
   credentials from `~/.codex/auth.json` into Maki's
   `~/.local/state/maki/auth/openai.json`. Run `codex login`, then
   `maki-codex-sync` before starting Maki.
-- `providers/{xiaomi,smortress}` - executable dynamic-provider scripts
-  (personal hosts only) registering the custom OpenAI-compatible endpoints maki
-  has no built-in for: Xiaomi MiMo, and the self-hosted
-  `smortress/gemma-4-31b`. Each answers `info`/`models`/`resolve`; `resolve`
-  injects the bearer token from the env key (`XIAOMI_MIMO_API_KEY`;
-  gemma is keyless), and `info`'s `has_auth` gates the provider
-  on the key being present. base `llama-cpp` is the plain OpenAI-compatible
-  dialect; maki auto-discovers each endpoint's live `/v1/models` list.
+- `providers/{xiaomi,smortress,cloudflare}` - executable dynamic-provider scripts
+  registering OpenAI-compatible endpoints maki has no built-in for: Xiaomi
+  MiMo, the self-hosted `smortress/gemma-4-31b`, and Cloudflare Workers AI.
+  Each answers `info`/`models`/`resolve`; `resolve` injects the bearer token
+  from the configured env key (`XIAOMI_MIMO_API_KEY`,
+  `CLOUDFLARE_WORKERS_AI_API_TOKEN`, etc.), and `info`'s `has_auth` gates the
+  provider on required credentials being present. base `llama-cpp` is the
+  plain OpenAI-compatible dialect; maki auto-discovers each endpoint's live
+  `/v1/models` list. Cloudflare can be installed as an extra selectable
+  provider on any host without becoming the generated default.
 
 Editor/remote use is over ACP (`maki acp`). See Herdr below for the other way
 to reach a live maki session from another device.
