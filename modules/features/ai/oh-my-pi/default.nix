@@ -253,6 +253,16 @@ in
       text = builtins.toJSON { mcpServers = cfg.mcpServers; };
     };
 
+    # `start_worktree_session` omp tool, mirroring maki's lua tool
+    # (modules/features/ai/maki/lua/start_worktree_session.lua) on omp's native
+    # extension surface. omp auto-loads ~/.omp/agent/extensions/<dir>/index.ts,
+    # and ompConfig's `tools.discoveryMode = "all"` force-includes the tool —
+    # no build/bun install step (imports resolve against omp's host bundle).
+    home.file.".omp/agent/extensions/start_worktree_session/index.ts" = {
+      force = true;
+      source = ./extensions/start_worktree_session/index.ts;
+    };
+
     home.activation.installOmpCli = {
       after = [ "linkGeneration" ];
       before = [ "installOmpPlugins" ];
