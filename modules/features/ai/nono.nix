@@ -28,7 +28,7 @@ let
     extends = "default";
     meta = {
       name = "agent";
-      description = "Shared least-privilege profile for coding agents (maki/pi/omp): open network, filtered env, denied creds/sudo";
+      description = "Shared least-privilege profile for coding agents (maki/pi/omp): open network, filtered env, denied creds/sudo, gh token passthrough";
     };
     groups.include = [
       "nix_runtime"
@@ -90,7 +90,9 @@ let
       ];
       # Defense in depth over default's deny_shell_configs. gh/hosts.yml
       # holds the OAuth token AND triggers maki's Copilot probe on launch;
-      # denying it hides both. gh itself runs outside the sandbox.
+      # denying it hides both. gh inside the sandbox authenticates via the
+      # allowlisted GH_TOKEN env var instead (see environment.allow_vars),
+      # so it never needs to read hosts.yml.
       deny = [
         "$XDG_CONFIG_HOME/fish/conf.d"
         "$XDG_CONFIG_HOME/gh"
@@ -99,8 +101,13 @@ let
     # With network open, inherited shell secrets are both readable and
     # exfiltrable, so this allow-list is the primary secret control. nono's
     # non-overridable blocklist (LD_PRELOAD, DYLD_*, PYTHONPATH, NODE_OPTIONS)
-    # is enforced regardless. Agents don't read GH_TOKEN/GITHUB_TOKEN (git
-    # auth is ssh-agent signing + gh outside the sandbox).
+    # is enforced regardless. Git push auth stays ssh-agent signing; gh runs
+    # *inside* the sandbox via GH_TOKEN passthrough (see the gh-token.fish
+    # snippet that exports GH_TOKEN from `gh auth token`). ~/.config/gh is
+    # still denied below, so gh authenticates from GH_TOKEN alone with an
+    # isolated GH_CONFIG_DIR — the on-disk OAuth token in hosts.yml is never
+    # exposed. Token-theft-via-env is an accepted risk (operator watches
+    # home-hosted agents running only reasonably-trusted code).
     environment.allow_vars = [
       "PATH"
       "HOME"
@@ -116,6 +123,11 @@ let
       "XDG_RUNTIME_DIR"
       "TMPDIR"
       "SSH_AUTH_SOCK"
+      # gh CLI passthrough: gh reads GH_TOKEN (preferred) or GITHUB_TOKEN.
+      # Sourced from `gh auth token` in conf.d/gh-token.fish; real gho_ token
+      # lives in env (exfiltrable) but hosts.yml stays denied.
+      "GH_TOKEN"
+      "GITHUB_TOKEN"
       # LLM/MCP provider keys read by maki/pi/omp (union across personal+work).
       "NEURALWATT_API_KEY"
       "XIAOMI_MIMO_API_KEY"
@@ -135,6 +147,21 @@ let
       text = builtins.toJSON agentProfile;
     };
   };
+
+  # Sourced by fish into the host shell env so the `m`/`o`/`pi`/herdr abbrs
+  # (which call `nono run -s -- <agent>`) inherit GH_TOKEN; the agent profile
+  # allowlists it for passthrough into the sandbox (gh inside the sandbox
+  # authenticates from this env var, never from ~/.config/gh/hosts.yml, which
+  # stays denied). `command -v gh` + the login check guard against breaking a
+  # shell on hosts without gh or before `gh auth login`. Export via
+  # GITHUB_TOKEN too, since some tooling checks that name first.
+  ghTokenFish = pkgs.writeText "gh-token.fish" ''
+    if command -v gh >/dev/null 2>&1
+        and gh auth status >/dev/null 2>&1
+        set -gx GH_TOKEN (gh auth token)
+        set -gx GITHUB_TOKEN $GH_TOKEN
+    end
+  '';
 in
 {
   options.dotfiles.nono = {
@@ -145,7 +172,9 @@ in
 
   config = lib.mkIf cfg.enable {
     home.packages = [ pkgs.nono ];
-    home.file = profileFiles;
+    home.file = profileFiles // {
+      ".config/fish/conf.d/gh-token.fish".source = ghTokenFish;
+    };
     # NONO_PROFILE selects the `agent` profile so per-call `-p agent` flags
     # aren't needed. This is read by the nono binary from its launching shell's
     # environment *before* the sandbox is applied; it isn't an agent env var, so
