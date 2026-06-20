@@ -132,22 +132,32 @@ if [ -z "$path" ]; then
   exit 1
 fi
 
-# Write the prompt into the temp file. The new fish pane reads this into
-# maki's stdin, then deletes it once maki exits. Cleanup cannot be a trap:
+# Write the prompt into the temp file. The new fish pane reads it into a
+# variable, deletes the file, then pipes it to maki. Cleanup cannot be a trap:
 # the script returns right after `zellij action new-tab` (the tab is spawned
 # asynchronously by the zellij server), so an EXIT trap would race — and win
 # against — the pane opening the file. Each error branch rm's explicitly.
 printf '%%s' "$START_PROMPT" > "$prompt_file"
 
-# fish loads conf.d (provider auth) via -l, pipes the prompt file to maki's
-# stdin via cat, and removes it unconditionally after maki exits.
-fish_cmd="cat \"$prompt_file\" | $maki_cmd; rm -f \"$prompt_file\""
+# fish loads conf.d (provider auth) via -l. It then:
+#  1. renames the pane to a clean label — otherwise Zellij shows the raw
+#     `fish -l -c '...'` command as the pane border title;
+#  2. reads the prompt file into a variable and deletes the file BEFORE
+#     running maki, so cleanup always runs (file is gone before maki starts,
+#     so even a kill -9 of maki leaves no leak);
+#  3. runs maki fed from the variable, then explicitly closes the pane via
+#     `zellij action close-pane`. Without close-pane, maki's exit leaves its
+#     session-id stdout visible in a live fish pane, forcing a second ctrl-c
+#     to close the tab. close-pane shuts the pane (and the tab, being its
+#     only pane) the instant maki exits — one ctrl-c, clean exit, no leftover.
+fish_cmd="zellij action rename-pane %s; set -l p (cat \"$prompt_file\"); rm -f \"$prompt_file\"; printf '%%s' \"$p\" | $maki_cmd; zellij action close-pane"
 zellij action new-tab -n %s -c "$path" -- fish -l -c "$fish_cmd"
 echo "OK:$path"
 ]],
       shell_quote(maki_cmd),
       shell_quote(branch),
       worktree_name,
+      shell_quote(worktree_name),
       shell_quote(worktree_name)
     )
 
