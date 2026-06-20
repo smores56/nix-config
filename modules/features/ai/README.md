@@ -44,12 +44,6 @@ These are sourced by fish automatically and available to all AI tools.
 
 - `xiaomi.nix`, `deepseek.nix` - shared provider/model
   definitions consumed by pi and omp via `_module.args`
-- `llm-token-bucket-proxy/` - user service on smortress meant to meter all
-  Xiaomi MiMo traffic against the monthly token bucket.
-  **Follow-up:** xiaomi.nix currently points straight at the MiMo API, so
-  the proxy is not yet in the request path. Either route the provider
-  baseUrl through it or replace it with an off-the-shelf budget proxy
-  (e.g. LiteLLM budgets) and delete this module.
 
 ## Sandboxing (nono)
 

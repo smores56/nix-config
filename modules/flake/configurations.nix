@@ -86,7 +86,6 @@ let
 
             pi = null;
             piDashboard = null;
-            llmTokenBucketProxy = null;
             maki = null;
             zerostack = null;
           } args;
@@ -163,7 +162,6 @@ in
         piDashboard = {
           enable = true;
         };
-        llmTokenBucketProxy.enable = true;
         maki.byteroverMemory = true;
       };
       "smohr@smoreswork" =
