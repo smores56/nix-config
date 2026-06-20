@@ -47,7 +47,7 @@ let
         "$HOME/.npm"
         "$TMPDIR"
         "/tmp"
-        # Agent state dirs (union across maki/pi/omp).
+        # Agent state dirs (union across maki/pi/omp/zerostack).
         "$XDG_CONFIG_HOME/maki"
         "$XDG_DATA_HOME/maki"
         "$XDG_STATE_HOME/maki"
@@ -61,6 +61,12 @@ let
         "$XDG_DATA_HOME/oh-my-pi-cli"
         "$HOME/code"
         "$XDG_CONFIG_HOME/home-manager"
+        # zerostack: config.toml + AGENTS.md (config dir) and sessions/themes
+        # (data dir). Without these allowlisted, zerostack aborts at startup
+        # with "Permission denied (os error 13)" reading its config.
+        "$XDG_CONFIG_HOME/zerostack"
+        "$XDG_DATA_HOME/zerostack"
+        "$XDG_STATE_HOME/zerostack"
       ];
       read = [
         "$HOME/.bun"

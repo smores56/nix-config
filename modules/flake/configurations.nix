@@ -88,6 +88,7 @@ let
             piDashboard = null;
             llmTokenBucketProxy = null;
             maki = null;
+            zerostack = null;
           } args;
           home.username = username;
           home.homeDirectory =
