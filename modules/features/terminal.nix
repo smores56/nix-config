@@ -6,6 +6,7 @@ in
   fonts.fontconfig.enable = lib.mkIf (cfg.displayManager != "none") true;
   home.sessionVariables = {
     TERMINAL = cfg.terminal;
+    COLORTERM = "truecolor";
     fish_terminal_skip_dsr = "1";
   };
 
