@@ -1,5 +1,5 @@
 -- start_worktree_session: create a worktree and spawn a new maki session in a
--- new Zellij tab, gated behind a confirmation dialog.
+-- new Zellij tab, gated behind a confirmation question.
 --
 -- Caller (the LLM) is expected to generate the branch name beforehand:
 --   agent-branch-name --slug <slug> --task "<task>" --dry-run
@@ -8,7 +8,7 @@
 --
 -- Prerequisites on PATH: wt (worktrunk), zellij, python3
 
-local ListPicker = require("maki.list_picker")
+local QuestionForm = require("question_form")
 
 if maki.fn.executable("wt") == 0
   or maki.fn.executable("zellij") == 0
@@ -31,7 +31,7 @@ BEFORE calling this, generate the branch name via:
 and prepare the session prompt.
 
 Workflow:
-1. Shows a confirmation dialog with the branch name and task description
+1. Shows a confirmation question (bottom of window) with the branch name and task description
 2. Creates the worktree via `wt switch --create <branch> --format json`
 3. Opens a new Zellij tab and runs maki in the worktree directory
 
@@ -51,7 +51,7 @@ agent-branch-name --slug <slug> --task "<task>" --dry-run]],
       },
       task = {
         type = "string",
-        description = "Short display label for the confirmation dialog (defaults to the worktree name, derived from the branch)",
+        description = "Short display label for the confirmation question (defaults to the worktree name, derived from the branch)",
       },
     },
   },
@@ -70,14 +70,32 @@ agent-branch-name --slug <slug> --task "<task>" --dry-run]],
     local worktree_name = branch:match("([^/]+)$") or branch
     local display_label = input.task or worktree_name
 
-    -- Show confirmation dialog
-    local confirm = ListPicker.open({
-      { label = ("Start: %s"):format(display_label), detail = branch },
-      { label = "Cancel" },
-    }, {
-      title = "New worktree session?",
+    local start_label = ("Start: %s"):format(display_label)
+    local prompt_preview = (prompt:match("^([^\n]+)") or prompt):gsub("%s+", " ")
+    if #prompt_preview > 120 then
+      prompt_preview = prompt_preview:sub(1, 117) .. "..."
+    end
+    local question_text = ("Start a new worktree session?\n\n"
+      .. "- **Branch:** `%s`\n"
+      .. "- **Worktree:** `%s`\n"
+      .. "- **Prompt:** %s")
+      :format(branch, worktree_name, prompt_preview)
+
+    -- Bottom-of-window question form. Escape/Ctrl-C/close dismisses
+    -- (result.type == "dismiss"); no explicit Cancel option needed.
+    local result = QuestionForm.open({
+      {
+        question = question_text,
+        options = {
+          { label = start_label, description = branch },
+        },
+      },
     })
-    if not confirm or confirm.type ~= "choice" or confirm.index ~= 1 then
+    if result.type ~= "submit" then
+      return { llm_output = "(cancelled by user)" }
+    end
+    local chosen = result.answers and result.answers[1] and result.answers[1][1]
+    if chosen ~= start_label then
       return { llm_output = "(cancelled by user)" }
     end
 
@@ -96,7 +114,7 @@ fi
 if [ -z "$path" ]; then
   root=$(git rev-parse --show-toplevel 2>/dev/null) || root=""
   if [ -n "$root" ]; then
-    path="$root/.worktrees/%s"
+    path=$root/.worktrees/%s
   fi
 fi
 if [ -z "$path" ]; then
@@ -108,7 +126,7 @@ fi
 zellij action new-tab -n %s -c "$path" --close-on-exit -- nono run -s -- maki -- "$START_PROMPT"
 ]],
       shell_quote(branch),
-      worktree_name,
+      shell_quote(worktree_name),
       shell_quote(worktree_name)
     )
 
