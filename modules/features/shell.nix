@@ -70,9 +70,9 @@ in
 
         sm = "ssh smores@smortress -t fish";
 
-        o = "nono-agent omp";
-        m = "nono-agent maki";
-        pi = "nono-agent pi";
+        o = "nono run -s -- omp";
+        m = "nono run -s -- maki";
+        pi = "nono run -s -- pi";
         h = "herdr session attach default";
       };
 

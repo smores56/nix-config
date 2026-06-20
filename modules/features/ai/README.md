@@ -54,14 +54,13 @@ These are sourced by fish automatically and available to all AI tools.
 Managed by `nono.nix` (`dotfiles.nono.*`; on by default, every host). Every
 agent runs inside a kernel-enforced sandbox via
 [nono](https://github.com/always-further/nono) (`pkgs.nono`) - one tool, both
-OSes: **Landlock** on Linux, **Seatbelt** on macOS. The launchers all go
-through a shared `nono-agent` wrapper (a `writeShellScriptBin` in `nono.nix`)
-that runs `nono run -s --allow-cwd -p agent -- <cmd>`. Call sites: the
-`m`/`o`/`pi` fish abbrs (`nono-agent maki`, etc.), herdr's maki pane
-(`nono-agent maki`), and `start_worktree_session.lua` (which prepends `exec`
-so nono becomes the detached worktree's session leader for signal/job-control
-— the only `exec` site; abbrs and the herdr pane spawn nono-agent as a reaped
-child, not a shell replacement).
+OSes: **Landlock** on Linux, **Seatbelt** on macOS. Launchers call
+`nono run -s -- <cmd>` directly — the `m`/`o`/`pi` fish abbrs, herdr's maki
+pane, and `start_worktree_session.lua`. `NONO_PROFILE=agent` is set via
+home-manager's `home.sessionVariables`, so the `agent` profile is selected
+without a per-call `-p` flag; the profile's `workdir.access = "readwrite"`
+already makes cwd writable from inside the sandbox, so `--allow-cwd` isn't
+needed.
 
 There is a **single shared `agent` profile** at `~/.config/nono/profiles/agent.json`
 (generated JSON) shared by maki/pi/omp — the per-agent profile split was dropped

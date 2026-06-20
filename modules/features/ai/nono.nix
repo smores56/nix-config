@@ -7,18 +7,13 @@
 let
   cfg = config.dotfiles.nono;
 
-  # Shared launcher for every agent site (abbrs, herdr pane, worktree spawns).
-  # First arg is the command, not a profile name. For dangerous/unsubnetted
-  # edits, run `exec maki` directly (shorter than the safe path, on purpose).
-  # Only the worktree-spawn caller prepends `exec` (so nono becomes the
-  # detached session leader for signal/job-control).
-  agentWrapper = pkgs.writeShellScriptBin "nono-agent" ''
-    if [ "$#" -eq 0 ]; then
-      echo "nono-agent: missing command (e.g. \`nono-agent maki\`)" >&2
-      exit 64
-    fi
-    nono run -s --allow-cwd -p agent -- "$@"
-  '';
+  # Shared launch pattern across every agent site (abbrs, herdr pane,
+  # worktree spawns): callers invoke `nono run -s -- <cmd>` directly — no
+  # wrapper, no `--allow-cwd` (the profile's workdir.access = "readwrite" below
+  # already makes cwd writable from inside the sandbox), and no `-p agent`
+  # flag (NONO_PROFILE is set in home.sessionVariables below). For
+  # dangerous/unsubnetted edits, run `exec maki` directly (shorter than the
+  # safe path, on purpose).
 
   # Single shared profile for maki/pi/omp. Extends nono's built-in `default`,
   # which denies ~/.ssh, ~/.aws, ~/.gnupg, ~/.kube, ~/.docker, keychains,
@@ -140,19 +135,15 @@ in
     enable = lib.mkEnableOption "nono sandbox for coding agents (maki/pi/omp) with open networking and env-var filtering" // {
       default = true;
     };
-    agentWrapper = lib.mkOption {
-      type = lib.types.package;
-      readOnly = true;
-      description = "nono-agent wrapper: `nono run -s --allow-cwd -p agent -- <cmd>`.";
-    };
   };
 
   config = lib.mkIf cfg.enable {
-    home.packages = [
-      pkgs.nono
-      agentWrapper
-    ];
+    home.packages = [ pkgs.nono ];
     home.file = profileFiles;
-    dotfiles.nono.agentWrapper = agentWrapper;
+    # NONO_PROFILE selects the `agent` profile so per-call `-p agent` flags
+    # aren't needed. This is read by the nono binary from its launching shell's
+    # environment *before* the sandbox is applied; it isn't an agent env var, so
+    # it doesn't appear in agentProfile.environment.allow_vars.
+    home.sessionVariables.NONO_PROFILE = "agent";
   };
 }

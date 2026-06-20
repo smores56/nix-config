@@ -101,8 +101,8 @@ agent-branch-name --slug <slug> --task "<task>" --dry-run]],
     -- echoing anything. The success-path cleanup runs in the pane itself: fish
     -- cats the file into maki's stdin, then rm's it once maki exits. There is no
     -- `exec` — exec would replace fish before the rm could run, leaking the file.
-    local maki_cmd = "nono-agent maki"
-    if maki.fn.executable("nono-agent") == 0 then
+    local maki_cmd = "nono run -s -- maki"
+    if maki.fn.executable("nono") == 0 then
       maki_cmd = "maki"
     end
     local script = string.format(
