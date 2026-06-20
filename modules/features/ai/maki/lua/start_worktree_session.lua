@@ -81,21 +81,38 @@ agent-branch-name --slug <slug> --task "<task>" --dry-run]],
       return { llm_output = "(cancelled by user)" }
     end
 
-    -- Shell script: create worktree, extract path, open Zellij tab, run maki.
+    -- Shell script: create worktree, extract path, and open a new Zellij tab
+    -- running maki with the prompt piped via stdin (maki reads stdin as the
+    -- initial prompt when no positional arg is given).
     --
-    -- Login fish so conf.d/api-keys.fish is sourced at provider has_auth time
-    -- (a non-login bash -c would skip it and maki would error "Token expired").
-    -- MAKI_PROMPT avoids $VAR/`cmd`/$(...)/quote re-expansion across bash→fish.
-    local maki_cmd = "exec nono-agent maki"
+    -- Login fish (-l) so conf.d/api-keys.fish is sourced at provider has_auth
+    -- time (a non-login shell would skip it and maki would error "Token expired").
+    --
+    -- The prompt reaches the new pane through a temp file (not an env var)
+    -- because `zellij action new-tab` spawns the pane in the zellij *server*
+    -- process, which does NOT inherit the caller's exported environment
+    -- (zellij #4031). A file survives that process boundary and sidesteps all
+    -- bash→fish quoting.
+    --
+    -- The temp file is created by `mktemp` *inside the script* (maki's Lua
+    -- sandbox forbids os.* — os.tmpname is nil — so the path cannot be
+    -- generated in Lua). The script writes START_PROMPT to the file, bakes its
+    -- path into the fish command, and rm -f's it on every failure-exit before
+    -- echoing anything. The success-path cleanup runs in the pane itself: fish
+    -- cats the file into maki's stdin, then rm's it once maki exits. There is no
+    -- `exec` — exec would replace fish before the rm could run, leaking the file.
+    local maki_cmd = "nono-agent maki"
     if maki.fn.executable("nono-agent") == 0 then
-      maki_cmd = "exec maki"
+      maki_cmd = "maki"
     end
     local script = string.format(
       [[
+prompt_file=$(mktemp) || { echo "ERR:mktemp failed"; exit 1; }
+maki_cmd=%s
 branch=%s
-export MAKI_PROMPT=%s
 
 wt_output=$(wt switch --create "$branch" --format json 2>&1) || {
+  rm -f "$prompt_file"
   echo "ERR:$wt_output"
   exit 1
 }
@@ -110,25 +127,34 @@ if [ -z "$path" ]; then
   fi
 fi
 if [ -z "$path" ]; then
+  rm -f "$prompt_file"
   echo "ERR:could not determine worktree path"
   exit 1
 fi
 
-zellij action new-tab -n %s
-sleep 0.1
-zellij run --in-place --cwd "$path" -- fish -l -c %s
+# Write the prompt into the temp file. The new fish pane reads this into
+# maki's stdin, then deletes it once maki exits. Cleanup cannot be a trap:
+# the script returns right after `zellij action new-tab` (the tab is spawned
+# asynchronously by the zellij server), so an EXIT trap would race — and win
+# against — the pane opening the file. Each error branch rm's explicitly.
+printf '%%s' "$START_PROMPT" > "$prompt_file"
+
+# fish loads conf.d (provider auth) via -l, pipes the prompt file to maki's
+# stdin via cat, and removes it unconditionally after maki exits.
+fish_cmd="cat \"$prompt_file\" | $maki_cmd; rm -f \"$prompt_file\""
+zellij action new-tab -n %s -c "$path" -- fish -l -c "$fish_cmd"
 echo "OK:$path"
 ]],
+      shell_quote(maki_cmd),
       shell_quote(branch),
-      shell_quote(prompt),
       worktree_name,
-      shell_quote(worktree_name),
-      shell_quote(maki_cmd .. ' "$MAKI_PROMPT"')
+      shell_quote(worktree_name)
     )
 
     -- Run the script and capture output
     local output_lines = {}
     maki.fn.jobstart(script, {
+      env = { START_PROMPT = prompt },
       on_stdout = function(_, line)
         table.insert(output_lines, line)
       end,
@@ -138,6 +164,7 @@ echo "OK:$path"
       on_exit = function(_, code)
         local combined = table.concat(output_lines, "\n")
         if code ~= 0 then
+          -- The script rm's the prompt file itself on every failure-exit.
           local err_msg = combined:match("^ERR:(.+)") or combined
           ctx:finish({
             llm_output = "error creating worktree session: " .. err_msg,
