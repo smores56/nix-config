@@ -55,7 +55,6 @@ let
         aiDeepseek.providerId
         "smortress"
       ]
-      ++ lib.optionals cfg.claude.enable [ "anthropic" ]
       ++ lib.optionals cfg.codex.enable [ "openai-codex" ];
 
   modelsConfig =
@@ -113,12 +112,7 @@ let
       };
 
   ompConfig = {
-    lastChangelogVersion = "15.5.11";
     inherit modelRoles;
-    theme = {
-      dark = "dark-gruvbox";
-      light = "light-gruvbox";
-    };
     display = {
       showTokenUsage = true;
       shimmer = "classic";
@@ -138,9 +132,6 @@ let
       handoffSaveToDisk = true;
     };
     steeringMode = "one-at-a-time";
-    setupVersion = 1;
-    extensions = [ ];
-    disabledServers = [ "beads" ];
     tools = {
       discoveryMode = "all";
     };
@@ -161,11 +152,6 @@ let
       textSizing = true;
     };
     readLineNumbers = true;
-    read = {
-      summarize = {
-        prose = false;
-      };
-    };
     lsp = {
       formatOnWrite = true;
       diagnosticsOnEdit = true;
@@ -202,11 +188,6 @@ let
 in
 {
   options.dotfiles.ohMyPi = {
-    enable = lib.mkEnableOption "oh-my-pi token-efficient config" // {
-      description = "Enable aggressive compaction, Nix-enforced mutable config, and tool-pinned abbreviation for omp.";
-      default = true;
-    };
-
     compaction = {
       reserveTokens = lib.mkOption {
         type = lib.types.int;
@@ -229,10 +210,6 @@ in
       enable = lib.mkEnableOption "OpenAI Codex OAuth credentials for oh-my-pi";
     };
 
-    claude = {
-      enable = lib.mkEnableOption "Anthropic Claude OAuth credentials for oh-my-pi";
-    };
-
     mcpServers = lib.mkOption {
       type = lib.types.attrsOf (lib.types.attrsOf lib.types.anything);
       default = { };
@@ -245,7 +222,7 @@ in
     };
   };
 
-  config = lib.mkIf cfg.enable {
+  config = {
     # `config.yml` is omp-owned and mutable (so omp's Settings writer —
     # settings.ts:#saveNow, which reads-modifies-writes via Bun.write + YAML
     # stringify on every in-app setting toggle — actually works, instead of
@@ -331,61 +308,6 @@ in
       '';
     };
 
-
-    home.activation.configureOmpClaude = lib.mkIf cfg.claude.enable {
-      after = [ "linkGeneration" ];
-      before = [ ];
-      data = ''
-        export PATH="$HOME/.bun/bin:$HOME/.cache/.bun/bin:$PATH"
-
-        if ! command -v omp >/dev/null 2>&1; then
-          echo "[oh-my-pi] omp not found in PATH, skipping Claude OAuth import"
-        else
-          CREDENTIALS_FILE="$HOME/.claude/.credentials.json"
-          if [ ! -r "$CREDENTIALS_FILE" ]; then
-            echo "[oh-my-pi] No Claude credentials at $CREDENTIALS_FILE, skipping Claude OAuth import"
-          elif ! ${pkgs.jq}/bin/jq -e '.claudeAiOauth.accessToken and .claudeAiOauth.refreshToken and .claudeAiOauth.expiresAt' "$CREDENTIALS_FILE" >/dev/null 2>&1; then
-            echo "[oh-my-pi] Claude credentials are missing OAuth token fields, skipping Claude OAuth import"
-          else
-            should_import=1
-            AGENT_DB="$HOME/.omp/agent/agent.db"
-            if [ -r "$AGENT_DB" ]; then
-              active_count="$(${pkgs.sqlite}/bin/sqlite3 "$AGENT_DB" "select count(*) from auth_credentials where provider = 'anthropic' and disabled_cause is null;" 2>/dev/null || echo 0)"
-              case "$active_count" in
-                0|"") ;;
-                *)
-                  echo "[oh-my-pi] Anthropic credentials already present, skipping Claude OAuth import"
-                  should_import=0
-                  ;;
-              esac
-            fi
-
-            if [ "$should_import" = 1 ]; then
-              tmp="$(${pkgs.coreutils}/bin/mktemp "''${TMPDIR:-/tmp}/omp-claude-auth.XXXXXX.json")"
-              cleanup() {
-                rm -f "$tmp"
-              }
-              trap cleanup EXIT
-
-              ${pkgs.jq}/bin/jq '{
-                type: "claude",
-                access_token: .claudeAiOauth.accessToken,
-                refresh_token: .claudeAiOauth.refreshToken,
-                expired: (.claudeAiOauth.expiresAt / 1000 | floor | todateiso8601)
-              }' "$CREDENTIALS_FILE" > "$tmp"
-              chmod 600 "$tmp" 2>/dev/null || true
-
-              if omp auth-broker import "$tmp" --provider anthropic >/dev/null 2>&1; then
-                echo "[oh-my-pi] Claude OAuth credentials imported for Anthropic models"
-              else
-                echo "[oh-my-pi] Failed to import Claude OAuth credentials into OMP"
-              fi
-            fi
-          fi
-        fi
-      '';
-    };
-
     home.activation.configureOmpCodex = lib.mkIf cfg.codex.enable {
       after = [ "linkGeneration" ];
       before = [ ];
@@ -447,9 +369,5 @@ in
     };
 
     home.packages = [ pkgs.yq ];
-
-    programs.fish.shellAbbrs = {
-      oc = "omp --tools read,edit,write,search,find,bash,lsp,todo_write,ask";
-    };
   };
 }

@@ -205,7 +205,6 @@ in
           sevenqlLspPath = "/Users/smohr/dev/okami/typescript/tools/sevenql-lsp/main.ts";
           ohMyPi = {
             codex.enable = true;
-            claude.enable = false;
             mcpServers.glean = gleanMcpServer;
           };
           maki = {

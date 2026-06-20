@@ -122,15 +122,16 @@ need it. The safe path is shorter to type, on purpose (pit of success).
 
 ## oh-my-pi (Backup Agent)
 
-Managed by `oh-my-pi/default.nix` (`dotfiles.ohMyPi.enable`, default on).
+Managed by `oh-my-pi/default.nix` (always on).
 On `home-manager switch`:
 
-- Installs the omp CLI under `~/.local/share/oh-my-pi-cli` if missing
-- Generates `~/.omp/agent/models.yml` and `~/.omp/agent/config.yml` from
-  the shared provider modules
-- Imports Codex/Claude OAuth credentials when `ohMyPi.codex.enable` /
-  `ohMyPi.claude.enable` are set (work machine)
-- Uninstalls previously-installed plugins (minimal backup = no plugins)
+- Installs the omp CLI via `bun add -g` if missing
+- Writes `~/.omp/agent/models.yml` from the shared provider modules
+- Seeds `~/.omp/agent/config.yml` from Nix on first run, then deep-merges
+  Nix-declared keys onto the omp-owned file on every switch (runtime-only
+  keys survive; `yq` is added to PATH for hand-editing)
+- Imports Codex OAuth credentials when `ohMyPi.codex.enable` is set (work
+  machine)
 
 Fish shortcut: `o` = `omp` (wrapped in its nono sandbox; see Sandboxing above).
 
