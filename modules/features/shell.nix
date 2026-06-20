@@ -87,6 +87,44 @@ in
         end
       '';
 
+      # Auto-name Zellij tabs. Renames only the default "Tab #N" title (so
+      # manually named tabs — e.g. `start_worktree_session`'s explicit `-n` —
+      # are left alone). Fired on fish_prompt (covers `cd`/zoxide `c`) and
+      # fish_preexec (shows running command). No-op outside Zellij.
+      functions._zellij_tab_name = {
+        body = ''
+          set current (zellij action list-tabs --json --state 2>/dev/null \
+            | jq -r '.[] | select(.active) | .name // ""' 2>/dev/null)
+          if not test -n "$current"; or not string match -qr '^Tab #[0-9]+$' -- "$current"
+              return
+          end
+          set name (basename $PWD)
+          test "$PWD" = "$HOME"; and set name "~"
+          set root (${pkgs.coreutils}/bin/timeout 1 git rev-parse --show-toplevel 2>/dev/null)
+          if test $status -eq 0; and test -n "$root"
+              set name (basename "$root")
+          end
+          zellij action rename-tab -- "$name" 2>/dev/null
+        '';
+        onEvent = [ "fish_prompt" ];
+      };
+
+      functions._zellij_tab_name_preexec = {
+        body = ''
+          set current (zellij action list-tabs --json --state 2>/dev/null \
+            | jq -r '.[] | select(.active) | .name // ""' 2>/dev/null)
+          if not test -n "$current"; or not string match -qr '^Tab #[0-9]+$' -- "$current"
+              return
+          end
+          set cmd (string split ' ' -- $argv)[1]
+          if test (string length -- "$cmd") -gt 20
+              set cmd (string sub --length 17 -- "$cmd")"..."
+          end
+          zellij action rename-tab -- "$cmd" 2>/dev/null
+        '';
+        onEvent = [ "fish_preexec" ];
+      };
+
       plugins =
         map
           (name: {
