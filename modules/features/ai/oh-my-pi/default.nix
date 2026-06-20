@@ -246,11 +246,60 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    home.file.".omp/agent/config.yml".text = builtins.toJSON ompConfig + "\n";
+    # `config.yml` is omp-owned and mutable (so omp's Settings writer —
+    # settings.ts:#saveNow, which reads-modifies-writes via Bun.write + YAML
+    # stringify on every in-app setting toggle — actually works, instead of
+    # hitting /nix/store EROFS on a symlink). Nix still *enforces* its
+    # declared `ompConfig` keys every activation via a `yq` deep-merge
+    # (`. * $nix`): Nix-declared values win, omp/runtime-only keys survive.
+    # Edit at runtime with `yq` (YAML-native jq, added to home.packages
+    # below) — `jq` breaks once omp rewrites the file as YAML.
     home.file.".omp/agent/models.yml".text = builtins.toJSON modelsConfig;
     home.file.".omp/agent/mcp.json" = lib.mkIf (cfg.mcpServers != { }) {
       force = true;
       text = builtins.toJSON { mcpServers = cfg.mcpServers; };
+    };
+
+    home.activation.enforceOmpConfig = {
+      after = [ "linkGeneration" ];
+      before = [ "installOmpCli" ];
+      data =
+        let
+          ompConfigJson = builtins.toJSON ompConfig;
+          nixConfigYaml = pkgs.writeText "omp-config-nix.yml" ompConfigJson;
+        in
+        ''
+          export PATH="${pkgs.yq}/bin:$PATH"
+          CONFIG="$HOME/.omp/agent/config.yml"
+          NIX_CONFIG="${nixConfigYaml}"
+
+          mkdir -p "$(dirname "$CONFIG")"
+
+          # If config.yml is missing or still a Nix-managed symlink into the
+          # store, seed it fresh from the Nix-declared config. From here on omp
+          # owns the real file.
+          if [ ! -e "$CONFIG" ] || [ -L "$CONFIG" ]; then
+            echo "[oh-my-pi] Seeding $CONFIG from Nix"
+            rm -f "$CONFIG"
+            yq -y '.' "$NIX_CONFIG" > "$CONFIG"
+            exit 0
+          fi
+
+          # Otherwise: omp already owns the file. Deep-merge the Nix-declared
+          # config on top so declared keys are re-enforced on every switch,
+          # while runtime-only keys (auth tokens captured at runtime, etc.)
+          # survive. `. * $nix` is a shallow-on-arrays / deep-on-objects merge:
+          # an array value in Nix replaces the runtime array (intentional —
+          # e.g. `disabledServers`, `extensions`), object values merge recursively.
+          echo "[oh-my-pi] Re-enforcing Nix-declared config onto $CONFIG"
+          tmp="$(mktemp "''${TMPDIR:-/tmp}/omp-config.XXXXXX.yml")"
+          if yq -y --slurpfile nix "$NIX_CONFIG" '. * $nix[0]' "$CONFIG" > "$tmp"; then
+            mv -f "$tmp" "$CONFIG"
+          else
+            echo "[oh-my-pi] yq merge failed, leaving $CONFIG untouched" >&2
+            rm -f "$tmp"
+          fi
+        '';
     };
 
     # `start_worktree_session` omp tool, mirroring maki's lua tool
@@ -423,6 +472,8 @@ in
         fi
       '';
     };
+
+    home.packages = [ pkgs.yq ];
 
     programs.fish.shellAbbrs = {
       oc = "omp --tools read,edit,write,search,find,bash,lsp,todo_write,ask";
