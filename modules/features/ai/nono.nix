@@ -47,7 +47,7 @@ let
         "$HOME/.npm"
         "$TMPDIR"
         "/tmp"
-        # Agent state dirs (union across maki/pi/omp/zerostack).
+        # Agent state dirs (union across maki/pi/omp).
         "$XDG_CONFIG_HOME/maki"
         "$XDG_DATA_HOME/maki"
         "$XDG_STATE_HOME/maki"
@@ -61,12 +61,6 @@ let
         "$XDG_DATA_HOME/oh-my-pi-cli"
         "$HOME/code"
         "$XDG_CONFIG_HOME/home-manager"
-        # zerostack: config.toml + AGENTS.md (config dir) and sessions/themes
-        # (data dir). Without these allowlisted, zerostack aborts at startup
-        # with "Permission denied (os error 13)" reading its config.
-        "$XDG_CONFIG_HOME/zerostack"
-        "$XDG_DATA_HOME/zerostack"
-        "$XDG_STATE_HOME/zerostack"
       ];
       read = [
         "$HOME/.bun"
@@ -165,9 +159,11 @@ let
 in
 {
   options.dotfiles.nono = {
-    enable = lib.mkEnableOption "nono sandbox for coding agents (maki/pi/omp) with open networking and env-var filtering" // {
-      default = true;
-    };
+    enable =
+      lib.mkEnableOption "nono sandbox for coding agents (maki/pi/omp) with open networking and env-var filtering"
+      // {
+        default = true;
+      };
   };
 
   config = lib.mkIf cfg.enable {

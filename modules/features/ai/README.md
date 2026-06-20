@@ -3,8 +3,6 @@
 Pi is the primary coding agent on every machine (see `pi/EXTENSIONS.md` for
 the full extension stack and decision record). oh-my-pi (omp) is kept as a
 minimal backup agent for when pi breaks - agent config only, no plugins.
-zerostack is a third agent (Rust, minimal) configured the same way; see its
-section below.
 
 ## API Keys
 
@@ -191,54 +189,6 @@ terminals unless maki reports state over the socket API.
 - For the actual maki TUI on the web: run maki inside Herdr (or tmux) and reach
   it over ssh or a browser terminal behind the web proxy (see Herdr above)
 
-## zerostack
-
-Managed by `zerostack/default.nix` (`dotfiles.zerostack.enable`, default on).
-The zerostack binary is installed manually (`cargo install`/Homebrew) and must
-be on `$PATH` (it lives at `~/.cargo/bin/zerostack`). home-manager writes
-`~/.config/zerostack/`:
-
-- `config.toml` - generated from the shared provider modules via
-  `custom_providers` (Neuralwatt, DeepSeek, Xiaomi as OpenAI-compatible), plus
-  `quick_models` for the three tiers and `subagent_model`/`subagent_provider`
-  pinning read-only subagents to the cheap tier. The advisor tool is enabled
-  (strong tier escalation). yolo permission mode; compaction at 0.80 mid-turn.
-- `AGENTS.md` - per-agent rules (delegation, tier switching, worktree handoff).
-- MCP server `zerostack_session` (a stdio JSON-RPC server at
-  `mcp/zellij_session_server.py` in this repo, pinned into the Nix store) that
-  exposes a `start_zerostack_session` tool: a running zerostack can hand off a
-  long-horizon subtask to a NEW zerostack session in a fresh Zellij tab on a
-  dedicated git worktree. This is zerostack's analog of maki's
-  `start_worktree_session.lua`, but on zerostack's extension surface (MCP)
-  since zerostack has no Lua plugin registry.
-
-The nono `agent` profile allowlists `~/.config/zerostack` and
-`~/.local/share/zerostack` so the sandboxed agent can read its config and write
-sessions (without this zerostack aborts at startup with `Permission denied`).
-API keys (`NEURALWATT_API_KEY`/`DEEPSEEK_API_KEY`/`XIAOMI_MIMO_API_KEY`) are
-already in the env-var allow-list.
-
-Fish shortcut: `z` = `nono run -s -- zerostack` (mirrors `m`/`o`/`pi`).
-
-**Model tiering** (personal hosts; zerostack has no per-task tier overrides,
-only one subagent model + switchable quick_models + an advisor):
-
-| Slot | Provider / Model | How |
-|------|-----------------|-----|
-| Main (strong) | `neuralwatt/glm-5.2` | default; `/models strong` |
-| Implementation (medium) | `deepseek/deepseek-v4-pro` | `/models medium` |
-| Scouts/naming (weak) | `xiaomi/mimo-v2.5` | `/models weak`; also the subagent tier |
-| Advisor (escalation) | `neuralwatt/glm-5.2` | `/advisor` |
-
-**Work machine (smoreswork):** provider/model are left unset in the generated
-config; pick via `/model` (Codex/Anthropic OAuth isn't wired into zerostack the
-way pi/omp do it — follow-up). The MCP session-spawn tool still works.
-**Prerequisite:** zerostack must be built with the `mcp` feature (default cargo
-install includes it). Run `/mcp` inside zerostack to confirm
-`zerostack_session` is connected; if the `/mcp` slash command is missing, the
-binary was installed without `mcp` and the handoff tool won't be available
-(everything else still works).
-
 ## Claude Code
 
 `default.nix` writes shared agent guidelines (`dotfiles.aiHints`) to
@@ -248,7 +198,7 @@ footprint.
 ## History
 
 OpenCode (+ OpenChamber/OCX), goose (+ web PWA), pinano,
-Agent of Empires, and the Hermes Agent deployment (Docker sandbox +
+Agent of Empires, zerostack, and the Hermes Agent deployment (Docker sandbox +
 Discord gateway) were removed in June 2026 after consolidating on pi.
 `git log -- modules/features/ai` has the receipts if anything needs
 resurrecting.
