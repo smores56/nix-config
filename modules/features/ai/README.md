@@ -51,48 +51,73 @@ These are sourced by fish automatically and available to all AI tools.
 
 ## Sandboxing (nono)
 
-Managed by `nono.nix` (the `dotfiles.nono.*` options; nono is always
-installed, every host — the option was made unconditional when no host ever
-disabled it). Every agent runs inside a kernel-enforced sandbox via
+Managed by `nono.nix` (`dotfiles.nono.*`; on by default, every host). Every
+agent runs inside a kernel-enforced sandbox via
 [nono](https://github.com/always-further/nono) (`pkgs.nono`) - one tool, both
 OSes: **Landlock** on Linux, **Seatbelt** on macOS. The launchers all go
 through a shared `nono-agent` wrapper (a `writeShellScriptBin` in `nono.nix`)
-that runs `nono run -s --allow-cwd --allow-connect-port 22/443 -p <profile>
--- <agent>`. Call sites: the `m`/`o`/`pi` fish abbrs (`nono-agent maki`,
-etc.), the paseo `maki` ACP provider command, herdr's maki pane
-(`nono-agent maki`), and `start_worktree_session.lua`.
+that runs `nono run -s --allow-cwd -p agent -- <cmd>`. Call sites: the
+`m`/`o`/`pi` fish abbrs (`nono-agent maki`, etc.), herdr's maki pane
+(`nono-agent maki`), and `start_worktree_session.lua` (which prepends `exec`
+so nono becomes the detached worktree's session leader for signal/job-control
+— the only `exec` site; abbrs and the herdr pane spawn nono-agent as a reaped
+child, not a shell replacement).
 
-Profiles live at `~/.config/nono/profiles/` (generated JSON):
+There is a **single shared `agent` profile** at `~/.config/nono/profiles/agent.json`
+(generated JSON) shared by maki/pi/omp — the per-agent profile split was dropped
+once the network block went away (the only remaining differences were which
+agent-state dirs and which API-key env vars to expose, both thin enough to
+union into one profile).
 
-- `agent-base` extends nono's built-in `default` (which already denies `~/.ssh`,
-  cloud creds, shell configs/history, keychains). On top it grants the language
-  toolchains read-only (`nix_runtime` covers almost everything on NixOS, plus
-  node/rust/python/go/git/user_tools), a read-write workdir + `~/.bun` read (for
-  bun-installed agents), and denies `~/.config/gh`.
-- `maki`/`pi`/`omp` extend `agent-base` and add only their own state dirs (rw).
+**Isolation model: open network, filtered env + filesystem.** Network is
+left unrestricted (nono `AllowAll`) — no `--network-profile`, no
+`--allow-domain`, no credential routes, no `--allow-connect-port`. Raw-TCP
+SSH on `:22` works again on both Linux and macOS (the old `--allow-connect-port`
+flag was Linux-only and a hard error at apply time on macOS Seatbelt, which
+broke the work host until now). mitmproxy and its L7 method filtering were
+deleted as dead weight once nono's egress gate was dropped.
 
-Enforced kernel-level and inherited by every child (so maki's `bash` tool can't
-escape it either):
+The secret-control surface is:
 
-- **Read-only** toolchains/config; **read-write** only the workdir + each agent's
-  state. SSH keys, cloud creds, and the rest of `$HOME` are invisible.
-- **No sudo** - `/run/wrappers` (the setuid sudo) is never granted, so no child
-  can exec it, with or without `NoNewPrivileges`.
-- **Denying `~/.config/gh`** also hides maki's Copilot provider: maki probes
-  `gh/hosts.yml` for a token and 403s on every launch otherwise; with the read
-  blocked it skips Copilot. `gh` itself runs outside the sandbox, unaffected.
+- **Env-var allow-list** (`environment.allow_vars`): a curated set — `PATH`,
+  `HOME`, `TERM`, `LANG`, `LC_ALL`, `USER`, `SHELL`, `XDG_*`, `TMPDIR`,
+  `SSH_AUTH_SOCK`, plus the LLM/MCP API keys the agents actually read
+  (`NEURALWATT_API_KEY`/`CROFAI_API_KEY`/`XIAOMI_MIMO_API_KEY`/
+  `DEEPSEEK_API_KEY`/`CLOUDFLARE_*`/`GLEAN_*`/`SLACK_MCP_*`). Everything else
+  is stripped before the sandbox is applied; nono's non-overridable built-in
+  blocklist also blocks `LD_PRELOAD`, `DYLD_*`, `PYTHONPATH`, `NODE_OPTIONS`
+  regardless. With network open, any secret in the shell env would be both
+  readable and exfiltrable, so the allow-list is the primary secret control.
+  Agents do **not** read `GH_TOKEN`/`GITHUB_TOKEN` (git auth is ssh-agent
+  signing + `gh` running outside the sandbox), so those stay stripped.
+- **Filesystem denies** layered on top of nono's built-in `default` (which
+  already denies `~/.ssh`/`~/.aws`/`~/.gnupg`/`~/.kube`/`~/.docker`,
+  keychains, browser data, shell history/configs): denies
+  `~/.config/fish/conf.d` (the `api-keys.fish` file, defense in depth on top
+  of `deny_shell_configs`) and `~/.config/gh` (gh OAuth token — also silences
+  maki's Copilot provider probe, which 403s on every launch otherwise; `gh`
+  itself runs outside the sandbox, unaffected).
+- **No sudo** — `/run/wrappers` is never granted, so no child can exec the
+  setuid sudo.
+- **Read-only** toolchains/config; **read-write** only the workdir + each
+  agent's own state dirs.
 
-Network egress is default-deny via `restrictNetwork` (default on): `agent-base`
-sets nono's built-in `developer` profile (`llm_apis`, `package_registries`,
-`github`, `sigstore`, `documentation`) plus an `allow_domain` list for the
-endpoints no group covers - mimo (personal default LLM), crofai, the byterover
-MCP (`*.byterover.dev`), and the smortress host. Two consequences: agents get
-**no general web/search** (only the curated `documentation` hosts), and nono's
-proxy is HTTPS-CONNECT-only so the local plain-HTTP gemma backend is
-unreachable - set `dotfiles.nono.restrictNetwork = false` for unrestricted
-egress. Verified end-to-end on smortress (Landlock) and macOS (Seatbelt):
-maki/pi/omp run, allowed LLMs reach (mimo/deepseek/crofai), unlisted hosts get
-a 403 CONNECT block, and `~/.ssh`, `~/.config/gh`, `sudo` stay blocked.
+`~/code` (incl. this nix-config repo and its `~/.config/home-manager`
+symlink target) is **writable from inside the sandbox**. This is safe because
+a running nono session's capability set is kernel-fixed at startup and
+**irreversible** — there is no live-reload, file-watch, or in-process config
+refresh that could widen it. Editing `~/.config/nono/profiles/agent.json`
+from inside the sandbox has zero effect on the running session (it only
+influences the *next* `nono run`), and that profile JSON is a `home.file`
+symlink into the read-only Nix store, so a sandboxed process can't even
+overwrite it (at most it replaces the symlink, which only changes the next
+run). Supervisor-mode widening exists but requires operator `/dev/tty`
+approval via the seccomp notify fd, never a silent config write.
+
+**Dangerous-mode escape hatch by design:** occasionally an agent needs to edit
+sensitive personal config that's explicitly denied. There's *no* abbr for that
+— type `exec maki` / `exec pi` / `exec omp` directly (no wrapper) when you
+need it. The safe path is shorter to type, on purpose (pit of success).
 
 ## oh-my-pi (Backup Agent)
 
@@ -120,9 +145,6 @@ binary is installed manually (`maki.sh/install.sh`); home-manager only writes
   `anthropic/claude-fable-5` stays in maki's built-in strong tier (`/model`).
 - `plugin.toml` - grants config Lua plugins `run`/`env` (absent manifest =
   every plugin capability denied).
-- `lua/spawn_session.lua` - custom Lua tool that spawns a new maki session as a
-  detached Paseo agent (`paseo run --provider maki`) behind a confirmation
-  dialog, attachable from the CLI or app.paseo.sh. Self-disables without `paseo`.
 - `mcp.toml` (only when `maki.byteroverMemory`, on for smortress) - registers
   byterover (`brv mcp`) as an MCP server and disables maki's built-in `memory`
   tool, so memory runs through byterover's `byterover__*` tools. `brv` must be
@@ -140,32 +162,8 @@ binary is installed manually (`maki.sh/install.sh`); home-manager only writes
   on the key being present. base `llama-cpp` is the plain OpenAI-compatible
   dialect; maki auto-discovers each endpoint's live `/v1/models` list.
 
-Editor/remote use is over ACP (`maki acp`). See Paseo and Herdr below for the
-two ways to reach a live maki session from another device.
-
-## Paseo (orchestrator + remote UI)
-
-Managed by `paseo.nix` (`dotfiles.paseo.enable`, off by default; on for the
-smortress server). The `paseo` binary is installed manually (bun/npm global);
-home-manager writes `~/.paseo/config.json` and runs the daemon as a systemd user
-service whose PATH unions the manual-install bin dirs (bun/npm/nix-profile/cargo/
-brv-cli) so it finds `paseo`, the `maki acp` it spawns, and `brv`. The unit runs
-`paseo daemon start --foreground` so Type=simple supervises it. It registers maki
-as an ACP provider
-(`agents.providers.maki = maki acp`), binds the daemon to `127.0.0.1:6767`, and
-web-proxy.nix tunnels it to `paseo.sammohr.dev`.
-
-- Paseo renders its OWN UI (web/mobile/CLI) over a headless `maki acp`; you do
-  not see maki's native TUI through it. Use it for orchestration and a phone UI,
-  and to share one live session across CLI (`paseo attach`) and app.paseo.sh
-  without teardown/resume (the daemon is the single ACP client to maki).
-- Auth: the daemon is unauthenticated by default. `dotfiles.paseo.environmentFile`
-  is a required (fail-closed) systemd EnvironmentFile holding `PASEO_PASSWORD`
-  plus the provider key the spawned maki needs (`DEEPSEEK_API_KEY`, or
-  `ANTHROPIC_API_KEY` for opus). Cloudflare gives edge TLS; put Cloudflare
-  Access in front of `paseo.sammohr.dev` for a stronger gate on a code-executing
-  daemon. The relay (QR pairing, E2E) needs no tunnel and is the simplest mobile
-  path.
+Editor/remote use is over ACP (`maki acp`). See Herdr below for the other way
+to reach a live maki session from another device.
 
 ## Herdr (maki's real TUI, multiplexed)
 
@@ -182,8 +180,6 @@ terminals unless maki reports state over the socket API.
 
 - `pi.sammohr.dev` - pi-agent-dashboard (`dotfiles.piDashboard`), the
   phone-accessible web UI for pi sessions
-- `paseo.sammohr.dev` - Paseo daemon (`dotfiles.paseo`), web/mobile UI driving a
-  headless `maki acp`; see Paseo above
 - Local TUI access from any device: ssh (Tailscale) + `pi-hub` (tmux-backed
   session dashboard, see `pi/EXTENSIONS.md`)
 - For the actual maki TUI on the web: run maki inside Herdr (or tmux) and reach

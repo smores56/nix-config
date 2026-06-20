@@ -6,30 +6,34 @@
 }:
 let
   cfg = config.dotfiles.nono;
-  workModels = config.dotfiles.workModels;
-  cfWorkersAi = config.dotfiles.maki.cloudflareWorkersAi.enable;
 
   # Shared launcher for every agent site (abbrs, herdr pane, worktree spawns).
-  # --allow-connect-port 22/443 has no JSON-profile equivalent (nono's `developer`
-  # network profile only CONNECT-tunnels HTTPS; plain-ssh 22 + ssh.github.com:443
-  # would otherwise be TCP-denied, blocking git push/pull). Callers (abbrs, Lua
-  # plugins) add `exec` so nono receives signals directly as the supervisor.
-  # Usage: `nono-agent <profile> [cmd...]`; empty/flag cmd defaults to profile.
+  # First arg is the command, not a profile name. For dangerous/unsubnetted
+  # edits, run `exec maki` directly (shorter than the safe path, on purpose).
+  # Only the worktree-spawn caller prepends `exec` (so nono becomes the
+  # detached session leader for signal/job-control).
   agentWrapper = pkgs.writeShellScriptBin "nono-agent" ''
-    profile="$1"; shift
-    if [ "$#" -eq 0 ] || [[ "$1" == -* ]]; then
-      set -- "$profile" "$@"
+    if [ "$#" -eq 0 ]; then
+      echo "nono-agent: missing command (e.g. \`nono-agent maki\`)" >&2
+      exit 64
     fi
-    nono run -s --allow-cwd \
-      --allow-connect-port 22 --allow-connect-port 443 \
-      -p "$profile" -- "$@"
+    nono run -s --allow-cwd -p agent -- "$@"
   '';
 
-  baseProfile = {
+  # Single shared profile for maki/pi/omp. Extends nono's built-in `default`,
+  # which denies ~/.ssh, ~/.aws, ~/.gnupg, ~/.kube, ~/.docker, keychains,
+  # browser data, shell history/configs, and blocks dangerous_commands
+  # (rm -rf, dd, sudo, kill, chmod, shred).
+  #
+  # ~/code is writable: a running nono session's capability set is
+  # kernel-fixed at startup (no live-reload of profile JSON), and this profile
+  # is a home.file symlink into the read-only Nix store, so a sandboxed
+  # process can't widen the running session OR overwrite the next-run profile.
+  agentProfile = {
     extends = "default";
     meta = {
-      name = "agent-base";
-      description = "Least-privilege base for coding agents: ro toolchains, rw workdir, no creds/sudo";
+      name = "agent";
+      description = "Shared least-privilege profile for coding agents (maki/pi/omp): open network, filtered env, denied creds/sudo";
     };
     groups.include = [
       "nix_runtime"
@@ -48,19 +52,31 @@ let
         "$HOME/.npm"
         "$TMPDIR"
         "/tmp"
+        # Agent state dirs (union across maki/pi/omp).
+        "$XDG_CONFIG_HOME/maki"
+        "$XDG_DATA_HOME/maki"
+        "$XDG_STATE_HOME/maki"
+        "$HOME/.local/logs/maki"
+        "$HOME/.brv-cli"
+        "$HOME/.pi"
+        "$XDG_CONFIG_HOME/pi"
+        "$XDG_DATA_HOME/pi"
+        "$XDG_STATE_HOME/pi"
+        "$HOME/.omp"
+        "$XDG_DATA_HOME/oh-my-pi-cli"
+        "$HOME/code"
+        "$XDG_CONFIG_HOME/home-manager"
       ];
       read = [
         "$HOME/.bun"
         "$HOME/.wasmer"
         "$HOME/.wasmtime"
-        # ssh-agent socket lives here; granted as parent since nono skips
-        # absent paths and the socket is created at login. ~/.ssh stays
-        # denied by deny_credentials; only the public keys below are bypassed.
+        # ssh-agent socket parent dir. ~/.ssh itself stays denied by
+        # deny_credentials; only the .pub files below are bypassed.
         "$XDG_RUNTIME_DIR"
       ];
-      # Public keys non-secret; needed for git ssh-format signing + github host
-      # verification. Private keys have no bypass, so signing/auth flows
-      # through the agent socket.
+      # .pub + known_hosts for git ssh-format signing + host verification.
+      # Private keys stay denied; signing goes through SSH_AUTH_SOCK.
       read_file = [
         "$HOME/.ssh/id_personal.pub"
         "$HOME/.ssh/id_work.pub"
@@ -71,163 +87,68 @@ let
         "$HOME/.ssh/id_work.pub"
         "$HOME/.ssh/known_hosts"
       ];
-      # Hides gh OAuth token; also suppresses maki's copilot provider probing.
-      deny = [ "$XDG_CONFIG_HOME/gh" ];
-    };
-  };
-
-  agentProfiles = {
-    maki = {
-      extends = "agent-base";
-      meta = {
-        name = "maki";
-        description = "maki coding agent";
-      };
-      filesystem.allow = [
-        "$XDG_CONFIG_HOME/maki"
-        "$XDG_DATA_HOME/maki"
-        "$XDG_STATE_HOME/maki"
-        "$HOME/.local/logs/maki"
-        "$HOME/.brv-cli"
+      # Defense in depth over default's deny_shell_configs. gh/hosts.yml
+      # holds the OAuth token AND triggers maki's Copilot probe on launch;
+      # denying it hides both. gh itself runs outside the sandbox.
+      deny = [
+        "$XDG_CONFIG_HOME/fish/conf.d"
+        "$XDG_CONFIG_HOME/gh"
       ];
     };
-    pi = {
-      extends = "agent-base";
-      meta = {
-        name = "pi";
-        description = "pi primary agent";
-      };
-      filesystem.allow = [
-        "$HOME/.pi"
-        "$XDG_CONFIG_HOME/pi"
-        "$XDG_DATA_HOME/pi"
-        "$XDG_STATE_HOME/pi"
-      ];
-    };
-    omp = {
-      extends = "agent-base";
-      meta = {
-        name = "omp";
-        description = "oh-my-pi backup agent";
-      };
-      filesystem.allow = [
-        "$HOME/.omp"
-        "$XDG_DATA_HOME/oh-my-pi-cli"
-      ];
-    };
+    # With network open, inherited shell secrets are both readable and
+    # exfiltrable, so this allow-list is the primary secret control. nono's
+    # non-overridable blocklist (LD_PRELOAD, DYLD_*, PYTHONPATH, NODE_OPTIONS)
+    # is enforced regardless. Agents don't read GH_TOKEN/GITHUB_TOKEN (git
+    # auth is ssh-agent signing + gh outside the sandbox).
+    environment.allow_vars = [
+      "PATH"
+      "HOME"
+      "TERM"
+      "LANG"
+      "LC_ALL"
+      "USER"
+      "SHELL"
+      "XDG_CONFIG_HOME"
+      "XDG_DATA_HOME"
+      "XDG_STATE_HOME"
+      "XDG_CACHE_HOME"
+      "XDG_RUNTIME_DIR"
+      "TMPDIR"
+      "SSH_AUTH_SOCK"
+      # LLM/MCP provider keys read by maki/pi/omp (union across personal+work).
+      "NEURALWATT_API_KEY"
+      "CROFAI_API_KEY"
+      "XIAOMI_MIMO_API_KEY"
+      "DEEPSEEK_API_KEY"
+      "CLOUDFLARE_WORKERS_AI_API_TOKEN"
+      "CLOUDFLARE_ACCOUNT_ID"
+      "GLEAN_SERVER_URL"
+      "GLEAN_API_TOKEN"
+      "SLACK_MCP_XOXC_TOKEN"
+      "SLACK_MCP_XOXD_TOKEN"
+    ];
   };
 
-  # LLM API routes that get TLS-intercepted by nono (PR #856, v0.53+).
-  # Nono generates an ephemeral per-session CA, auto-injects it into the
-  # child's env vars (SSL_CERT_FILE, etc.), and applies endpoint_rules
-  # before forwarding.  No manual CA management needed.
-  credentialRoutes = {
-    neuralwatt = {
-      upstream = "https://api.neuralwatt.com/v1";
-      credential_key = "env://NEURALWATT_API_KEY";
-      endpoint_rules = [{ method = "*"; path = "/**"; }];
-    };
-    exa = {
-      upstream = "https://mcp.exa.ai/mcp";
-      credential_key = "env://EXA_API_KEY";
-      endpoint_rules = [{ method = "*"; path = "/**"; }];
-    };
-  }
-  // lib.optionalAttrs cfWorkersAi {
-    cloudflare = {
-      upstream = "https://api.cloudflare.com";
-      credential_key = "env://CLOUDFLARE_API_KEY";
-      endpoint_rules = [{ method = "*"; path = "/**"; }];
-    };
-  }
-  // (if workModels then {
-    openai = {
-      upstream = "https://api.openai.com";
-      credential_key = "env://OPENAI_API_KEY";
-      endpoint_rules = [{ method = "*"; path = "/**"; }];
-    };
-    anthropic = {
-      upstream = "https://api.anthropic.com";
-      credential_key = "env://ANTHROPIC_API_KEY";
-      endpoint_rules = [{ method = "*"; path = "/**"; }];
-    };
-  } else {
-    mimo = {
-      upstream = "https://token-plan-sgp.xiaomimimo.com/v1";
-      credential_key = "env://XIAOMI_MIMO_API_KEY";
-      endpoint_rules = [{ method = "*"; path = "/**"; }];
-    };
-    crofai = {
-      upstream = "https://crof.ai/v1";
-      credential_key = "env://CROFAI_API_KEY";
-      endpoint_rules = [{ method = "*"; path = "/**"; }];
-    };
-  });
-
-  # Domains allowed through nono's developer proxy CONNECT tunnel.
-  # Credential routes are automatically removed from NO_PROXY by nono's
-  # smart NO_PROXY (PR #518), forcing them through the credential proxy
-  # where TLS intercept (PR #856) applies endpoint_rules.
-  # Non-credential domains stay in NO_PROXY and go direct; the
-  # mitmproxy service (modules/nixos/mitmproxy.nix) chains as an
-  # upstream proxy so all CONNECT traffic is also method-filtered.
-  agentDomains = [
-    "api.exa.ai" # maki websearch (REST)
-    "mcp.exa.ai" # maki websearch (MCP/SSE)
-    "*.byterover.dev" # brv MCP
-  ]
-  ++ lib.optional cfWorkersAi "api.cloudflare.com" # Cloudflare Workers AI
-  ++ (
-    if workModels then
-      [
-        "auth.openai.com" # codex OAuth
-        "chatgpt.com" # codex Coding-Plan API
-        "sevenai-be.glean.com" # Glean MCP
-        "slack.com"
-        "*.slack.com"
-      ]
-    else
-      [
-        "token-plan-sgp.xiaomimimo.com" # mimo
-        "crof.ai" # crofai kimi-k2.7-code
-        "api.neuralwatt.com" # neuralwatt
-        "smortress" # local gemma (HTTPS CONNECT only)
-      ]
-  );
-  networkAttrs = lib.optionalAttrs cfg.restrictNetwork {
-    network = {
-      network_profile = "developer";
-      allow_domain = agentDomains;
-      # All proxy traffic (CONNECT tunnels + credential routes) chains
-      # through mitmproxy for L7 method filtering.
-      upstream_proxy = "127.0.0.1:8080";
-      custom_credentials = credentialRoutes;
-    };
-  };
-
-  profileFiles = lib.mapAttrs' (
-    name: profile:
-    lib.nameValuePair ".config/nono/profiles/${name}.json" {
+  profileFiles = {
+    ".config/nono/profiles/agent.json" = {
       force = true;
-      text = builtins.toJSON profile;
-    }
-  ) ({ agent-base = baseProfile // networkAttrs; } // agentProfiles);
+      text = builtins.toJSON agentProfile;
+    };
+  };
 in
 {
   options.dotfiles.nono = {
-    restrictNetwork =
-      lib.mkEnableOption "default-deny agent egress via nono's developer network profile plus this config's LLM/MCP endpoints; disabling restores unrestricted network"
-      // {
-        default = true;
-      };
+    enable = lib.mkEnableOption "nono sandbox for coding agents (maki/pi/omp) with open networking and env-var filtering" // {
+      default = true;
+    };
     agentWrapper = lib.mkOption {
       type = lib.types.package;
       readOnly = true;
-      description = "nono-agent wrapper: `nono run -s --allow-cwd --allow-connect-port 22 --allow-connect-port 443 -p <profile> -- <cmd>`.";
+      description = "nono-agent wrapper: `nono run -s --allow-cwd -p agent -- <cmd>`.";
     };
   };
 
-  config = {
+  config = lib.mkIf cfg.enable {
     home.packages = [
       pkgs.nono
       agentWrapper

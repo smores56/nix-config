@@ -1,16 +1,3 @@
-# Home-manager module for the llm-token-bucket-proxy user service.
-#
-# Drop-in install into smores56/nix-config:
-#   1. Copy this file to modules/features/ai/llm-token-bucket-proxy/default.nix.
-#   2. This module DECLARES `dotfiles.llmTokenBucketProxy` itself — do NOT also
-#      add the option to modules/options.nix (Nix forbids declaring it twice).
-#   3. Enable per host:
-#        dotfiles.llmTokenBucketProxy = {
-#          enable = true;
-#        };
-#   4. Provide ~/.config/llm-token-bucket-proxy/config.yaml (see
-#      config.yaml.example) and, if used, an env file exporting
-#      LITELLM_VIRTUAL_KEY / TOKEN_BUCKET_ADMIN_KEY / TOKEN_BUCKET_CLIENT_KEY.
 {
   config,
   lib,

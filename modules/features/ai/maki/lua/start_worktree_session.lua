@@ -82,29 +82,11 @@ agent-branch-name --slug <slug> --task "<task>" --dry-run]],
     end
 
     -- Shell script: create worktree, extract path, open Zellij tab, run maki.
-    -- Uses --cwd for the worktree dir + ${var@Q} quoting for the prompt to
-    -- avoid nested shell quoting issues with `zellij run`. Outputs OK:<path>
-    -- on success, ERR:<msg> on failure.
     --
-    -- Launch via a LOGIN fish shell (matches the `m` abbr) so conf.d is sourced
-    -- and API-key env vars are present at provider `has_auth` time. `zellij run
-    -- -- bash -c` instead starts a non-login shell with a stripped env: bash never
-    -- sources fish's conf.d/api-keys.fish, so the custom providers' bearer tokens
-    -- are absent, has_auth returns false, and maki falls back to OAuth and errors
-    -- "Token expired. Run `maki auth login`" even though the user is logged in.
-    -- Wrap in nono when enabled to match `m`/herdr's sandbox profile (nono does
-    -- not strip env vars; ${VAR:-} expansions still resolve inside the sandbox).
-    --
-    -- The prompt is handed to maki via the MAKI_PROMPT env var rather than a
-    -- shell-quoted argv token: it crosses a bash -> fish -c handoff, and a prompt
-    -- containing $VAR / `cmd` / $(...) / unmatched quotes would otherwise be
-    -- re-expanded or mis-parsed by fish. An env var is never re-parsed, so the
-    -- prompt survives verbatim; maki reads it as an argv element on the far side.
-    -- nono-agent (from modules/features/ai/nono.nix, on PATH via home.packages)
-    -- wraps `nono run -s --allow-cwd --allow-connect-port 22/443 -p maki -- maki`,
-    -- matching the `m`/herdr launches. `exec` at the front so nono receives
-    -- signals directly as the supervisor.
-    local maki_cmd = "exec nono-agent maki maki"
+    -- Login fish so conf.d/api-keys.fish is sourced at provider has_auth time
+    -- (a non-login bash -c would skip it and maki would error "Token expired").
+    -- MAKI_PROMPT avoids $VAR/`cmd`/$(...)/quote re-expansion across bash→fish.
+    local maki_cmd = "exec nono-agent maki"
     if maki.fn.executable("nono-agent") == 0 then
       maki_cmd = "exec maki"
     end

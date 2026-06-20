@@ -51,17 +51,14 @@ let
       },
     })
 
-    require("spawn_session")
     require("start_worktree_session")
   '';
 
-  # Grants this config's Lua plugins process-spawn (`run`) and env access,
-  # needed by spawn_session's `paseo run`. With no manifest maki denies every
-  # plugin capability, so the file must exist even for a single tool.
+  # Permissions manifest for the Lua plugins under ./lua. `run` is needed by
+  # start_worktree_session's maki.fn.jobstart (process spawn).
   pluginToml = ''
     [permissions]
     run = true
-    env = true
   '';
 
   # brv's MCP server (`brv mcp`) supplies memory tools (byterover__curate /
@@ -381,7 +378,7 @@ in
            - Use `task(model_tier="strong")` only for deep reasoning, complex architecture, subtle bugs,
              and the most critical sections.
            - Subagents are isolated — each gets a fresh context. Use this to avoid context bloat from unrelated work.
-           - When you need the user to confirm before spawning, use `spawn_session` instead of `task`.
+           - When you need the user to confirm before spawning a delegated session, use `start_worktree_session` instead of `task`.
            - For long-running feature work that deserves its own worktree and Zellij tab, use `start_worktree_session`.
              First run `agent-branch-name --slug <slug> --task "<task>" --dry-run` to generate a branch name,
              prepare the session prompt, then call the tool with the branch and prompt.
@@ -400,10 +397,6 @@ in
         '';
       };
 
-      ".config/maki/lua/spawn_session.lua" = {
-        force = true;
-        source = ./lua/spawn_session.lua;
-      };
       ".config/maki/lua/start_worktree_session.lua" = {
         force = true;
         source = ./lua/start_worktree_session.lua;
