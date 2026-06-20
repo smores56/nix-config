@@ -76,28 +76,35 @@ The secret-control surface is:
   `HOME`, `TERM`, `LANG`, `LC_ALL`, `USER`, `SHELL`, `XDG_*`, `TMPDIR`,
   `SSH_AUTH_SOCK`, plus the LLM/MCP API keys the agents actually read
   (`NEURALWATT_API_KEY`/`XIAOMI_MIMO_API_KEY`/
-  `DEEPSEEK_API_KEY`/`CLOUDFLARE_*`/`GLEAN_*`/`SLACK_MCP_*`), and `GH_TOKEN`/
-  `GITHUB_TOKEN` for the `gh` CLI. Everything else is stripped before the
-  sandbox is applied; nono's non-overridable built-in blocklist also blocks
-  `LD_PRELOAD`, `DYLD_*`, `PYTHONPATH`, `NODE_OPTIONS` regardless. With
-  network open, any secret in the shell env would be both readable and
-  exfiltrable, so the allow-list is the primary secret control. `gh` runs
-  **inside** the sandbox via `GH_TOKEN` passthrough: `conf.d/gh-token.fish`
-  exports `GH_TOKEN`/`GITHUB_TOKEN` from `gh auth token` into the host shell
-  (so the `m`/`o`/`pi`/herdr launchers inherit it), and the agent profile
-  allowlists the vars for sandbox passthrough. The on-disk OAuth token in
-  `~/.config/gh/hosts.yml` stays denied (see below), so `gh` authenticates
-  from the env var alone with an isolated `GH_CONFIG_DIR`. Git push auth is
-  still ssh-agent signing. Token-theft-via-env is an accepted risk (operator
-  watches home-hosted agents running only reasonably-trusted code).
+  `DEEPSEEK_API_KEY`/`CLOUDFLARE_*`/`GLEAN_*`/`SLACK_MCP_*`). Everything else is
+  stripped before the sandbox is applied; nono's non-overridable built-in
+  blocklist also blocks `LD_PRELOAD`, `DYLD_*`, `PYTHONPATH`, `NODE_OPTIONS`
+  regardless. With network open, any secret in the shell env would be both
+  readable and exfiltrable, so the allow-list is the primary secret control.
+  **`gh` authenticates without any env-var entry:** `GH_TOKEN` and
+  `GH_CONFIG_DIR` are NOT in `allow_vars` (and never in the host shell env).
+  Instead, `session_hooks.before` (runs outside the sandbox with host
+  privileges) reads the OAuth token from the denied-inside-sandbox
+  `~/.config/gh/hosts.yml` via `gh auth token`, then writes
+  `GH_TOKEN=<token>` and `GH_CONFIG_DIR=<per-session empty dir>` into the
+  child's env via `$NONO_ENV_FILE`. nono applies `NONO_ENV_FILE` entries
+  *after* the `allow_vars` filter (verified empirically: an injected var
+  reaches the child even with `allow_vars: []`), so they bypass it. This
+  means the token lives only for the sandboxed session (no `/proc/<shell>/
+  environ` leakage, no inheritance by non-agent children), and `gh` inside
+  the sandbox never needs to read `hosts.yml`. `session_hooks.after` rm-rf's
+  the per-session `GH_CONFIG_DIR` on exit. Git push auth is still ssh-agent
+  signing. Token-theft-via-env while the session is live is an accepted risk
+  (operator watches home-hosted agents running only reasonably-trusted code).
 - **Filesystem denies** layered on top of nono's built-in `default` (which
   already denies `~/.ssh`/`~/.aws`/`~/.gnupg`/`~/.kube`/`~/.docker`,
   keychains, browser data, shell history/configs): denies
   `~/.config/fish/conf.d` (the `api-keys.fish` file, defense in depth on top
   of `deny_shell_configs`) and `~/.config/gh` (gh OAuth token — also silences
   maki's Copilot provider probe, which 403s on every launch otherwise).
-  `gh` inside the sandbox never reads `hosts.yml`; it authenticates from the
-  allowlisted `GH_TOKEN` env var with an isolated `GH_CONFIG_DIR`.
+  `gh` inside the sandbox never reads `hosts.yml`; it authenticates from
+  `GH_TOKEN` injected by `session_hooks.before` via `$NONO_ENV_FILE` (see
+  above), with an isolated per-session `GH_CONFIG_DIR`.
 - **No sudo** — `/run/wrappers` is never granted, so no child can exec the
   setuid sudo.
 - **Read-only** toolchains/config; **read-write** only the workdir + each

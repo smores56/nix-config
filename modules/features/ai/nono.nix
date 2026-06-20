@@ -28,7 +28,7 @@ let
     extends = "default";
     meta = {
       name = "agent";
-      description = "Shared least-privilege profile for coding agents (maki/pi/omp): open network, filtered env, denied creds/sudo, gh token passthrough";
+      description = "Shared least-privilege profile for coding agents (maki/pi/omp): open network, filtered env, denied creds/sudo, gh token injected per-session via NONO_ENV_FILE";
     };
     groups.include = [
       "nix_runtime"
@@ -82,11 +82,11 @@ let
         "$HOME/.ssh/id_work.pub"
         "$HOME/.ssh/known_hosts"
       ];
-      # Defense in depth over default's deny_shell_configs. gh/hosts.yml
-      # holds the OAuth token AND triggers maki's Copilot probe on launch;
-      # denying it hides both. gh inside the sandbox authenticates via the
-      # allowlisted GH_TOKEN env var instead (see environment.allow_vars),
-      # so it never needs to read hosts.yml.
+      # Defense in depth over default's deny_shell_configs. ~/.config/gh
+      # (hosts.yml) holds the OAuth token AND triggers maki's Copilot probe
+      # on every launch; denying it hides both. gh inside the sandbox can't
+      # read hosts.yml, so the before hook injects GH_TOKEN + an isolated
+      # GH_CONFIG_DIR via NONO_ENV_FILE (see session_hooks below).
       deny = [
         "$XDG_CONFIG_HOME/fish/conf.d"
         "$XDG_CONFIG_HOME/gh"
@@ -95,13 +95,10 @@ let
     # With network open, inherited shell secrets are both readable and
     # exfiltrable, so this allow-list is the primary secret control. nono's
     # non-overridable blocklist (LD_PRELOAD, DYLD_*, PYTHONPATH, NODE_OPTIONS)
-    # is enforced regardless. Git push auth stays ssh-agent signing; gh runs
-    # *inside* the sandbox via GH_TOKEN passthrough (see the gh-token.fish
-    # snippet that exports GH_TOKEN from `gh auth token`). ~/.config/gh is
-    # still denied below, so gh authenticates from GH_TOKEN alone with an
-    # isolated GH_CONFIG_DIR — the on-disk OAuth token in hosts.yml is never
-    # exposed. Token-theft-via-env is an accepted risk (operator watches
-    # home-hosted agents running only reasonably-trusted code).
+    # is enforced regardless. Critically, GH_TOKEN and GH_CONFIG_DIR are NOT
+    # listed here: they are never in the host shell env (no fish exporter) and
+    # reach the sandboxed child only via session_hooks.before + NONO_ENV_FILE,
+    # which bypasses this filter. Git push auth stays ssh-agent signing.
     environment.allow_vars = [
       "PATH"
       "HOME"
@@ -117,11 +114,6 @@ let
       "XDG_RUNTIME_DIR"
       "TMPDIR"
       "SSH_AUTH_SOCK"
-      # gh CLI passthrough: gh reads GH_TOKEN (preferred) or GITHUB_TOKEN.
-      # Sourced from `gh auth token` in conf.d/gh-token.fish; real gho_ token
-      # lives in env (exfiltrable) but hosts.yml stays denied.
-      "GH_TOKEN"
-      "GITHUB_TOKEN"
       # LLM/MCP provider keys read by maki/pi/omp (union across personal+work).
       "NEURALWATT_API_KEY"
       "XIAOMI_MIMO_API_KEY"
@@ -133,6 +125,17 @@ let
       "SLACK_MCP_XOXC_TOKEN"
       "SLACK_MCP_XOXD_TOKEN"
     ];
+    # Per-session setup/teardown that runs OUTSIDE the sandbox with host
+    # privileges. The before hook reads the gh OAuth token from the (denied
+    # inside-sandbox) hosts.yml and injects GH_TOKEN + an isolated
+    # GH_CONFIG_DIR into the child env via NONO_ENV_FILE; the after hook
+    # cleans up the per-session GH_CONFIG_DIR. Scripts live in the read-only
+    # nix store (same trust model as this profile), so a sandboxed process
+    # can't tamper with the next run's hooks.
+    session_hooks = {
+      before = { script = "${ghBeforeHook}"; timeout_secs = 10; };
+      after = { script = "${ghAfterHook}"; timeout_secs = 10; };
+    };
   };
 
   profileFiles = {
@@ -142,19 +145,46 @@ let
     };
   };
 
-  # Sourced by fish into the host shell env so the `m`/`o`/`pi`/herdr abbrs
-  # (which call `nono run -s -- <agent>`) inherit GH_TOKEN; the agent profile
-  # allowlists it for passthrough into the sandbox (gh inside the sandbox
-  # authenticates from this env var, never from ~/.config/gh/hosts.yml, which
-  # stays denied). `command -v gh` + the login check guard against breaking a
-  # shell on hosts without gh or before `gh auth login`. Export via
-  # GITHUB_TOKEN too, since some tooling checks that name first.
-  ghTokenFish = pkgs.writeText "gh-token.fish" ''
-    if command -v gh >/dev/null 2>&1
-        and gh auth status >/dev/null 2>&1
-        set -gx GH_TOKEN (gh auth token)
-        set -gx GITHUB_TOKEN $GH_TOKEN
-    end
+  # gh token + isolated GH_CONFIG_DIR are injected per-session via
+  # session_hooks.before (below), NOT exported into the host shell env.
+  # Why: ~/.config/gh is denied inside the sandbox (defense in depth on
+  # top of deny_shell_configs, plus it silences maki's Copilot probe on
+  # every launch). gh inside the sandbox therefore can't read hosts.yml.
+  # The `before` hook runs OUTSIDE the sandbox with host privileges, reads
+  # the OAuth token via `gh auth token`, and writes `GH_TOKEN=<token>` into
+  # $NONO_ENV_FILE. nono applies NONO_ENV_FILE entries to the child AFTER the
+  # environment.allow_vars filter, so they bypass it — verified empirically
+  # (a var injected via NONO_ENV_FILE reaches the child even with
+  # allow_vars=[]). This means:
+  #   - GH_TOKEN/GITHUB_TOKEN are NEVER in the host shell env (no
+  #     /proc/<shell>/environ leakage, no inheritance by non-agent children).
+  #   - GH_TOKEN reaches the sandboxed agent for this session only, then is
+  #     gone (the child env dies with the session).
+  #   - GH_CONFIG_DIR points at a per-session empty writable dir under
+  #     $XDG_CACHE_HOME (already in filesystem.allow), so gh never touches the
+  #     denied ~/.config/gh. The `after` hook rm -rf's it on exit.
+  # Token-theft-via-env while the session is live is an accepted risk
+  # (operator watches home-hosted agents running only reasonably-trusted code).
+  ghBeforeHook = pkgs.writeShellScript "nono-agent-before" ''
+    # Reads the gh OAuth token host-side and injects GH_TOKEN + an isolated
+    # GH_CONFIG_DIR into the sandboxed child's env via NONO_ENV_FILE. Runs
+    # outside the sandbox (host privileges); everything written to
+    # NONO_ENV_FILE as KEY=VALUE becomes child env, bypassing allow_vars.
+    if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+      tok=$(gh auth token 2>/dev/null) || tok=""
+      if [ -n "$tok" ]; then
+        printf 'GH_TOKEN=%s\n' "$tok" >> "$NONO_ENV_FILE"
+      fi
+    fi
+    gh_dir="$XDG_CACHE_HOME/nono/gh-config/$NONO_SESSION_ID"
+    mkdir -p "$gh_dir"
+    printf 'GH_CONFIG_DIR=%s\n' "$gh_dir" >> "$NONO_ENV_FILE"
+  '';
+
+  ghAfterHook = pkgs.writeShellScript "nono-agent-after" ''
+    # Cleans up the per-session isolated GH_CONFIG_DIR. Runs outside the
+    # sandbox after the child exits. Best-effort; no failure if absent.
+    rm -rf "$XDG_CACHE_HOME/nono/gh-config/$NONO_SESSION_ID" 2>/dev/null || true
   '';
 in
 {
@@ -168,9 +198,7 @@ in
 
   config = lib.mkIf cfg.enable {
     home.packages = [ pkgs.nono ];
-    home.file = profileFiles // {
-      ".config/fish/conf.d/gh-token.fish".source = ghTokenFish;
-    };
+    home.file = profileFiles;
     # NONO_PROFILE selects the `agent` profile so per-call `-p agent` flags
     # aren't needed. This is read by the nono binary from its launching shell's
     # environment *before* the sandbox is applied; it isn't an agent env var, so
