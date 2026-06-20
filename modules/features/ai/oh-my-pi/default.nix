@@ -203,7 +203,7 @@ in
 {
   options.dotfiles.ohMyPi = {
     enable = lib.mkEnableOption "oh-my-pi token-efficient config" // {
-      description = "Enable aggressive compaction, plugin installation, and tool-pinned abbreviation for omp.";
+      description = "Enable aggressive compaction, Nix-enforced mutable config, and tool-pinned abbreviation for omp.";
       default = true;
     };
 
@@ -314,7 +314,7 @@ in
 
     home.activation.installOmpCli = {
       after = [ "linkGeneration" ];
-      before = [ "installOmpPlugins" ];
+      before = [ ];
       data = ''
         export PATH="$HOME/.bun/bin:$HOME/.cache/.bun/bin:$PATH"
 
@@ -331,33 +331,6 @@ in
       '';
     };
 
-    home.activation.installOmpPlugins = {
-      after = [
-        "linkGeneration"
-        "installOmpCli"
-      ];
-      before = [ ];
-      data = ''
-        export PATH="$HOME/.bun/bin:$HOME/.cache/.bun/bin:$PATH"
-
-        if ! command -v omp >/dev/null 2>&1; then
-          echo "[oh-my-pi] omp not found in PATH, skipping plugin install"
-        elif ! omp plugin list >/dev/null 2>&1; then
-          echo "[oh-my-pi] omp is not runnable, skipping plugin install"
-        else
-          uninstall_plugin() {
-            local name="$1"
-            if omp plugin list 2>/dev/null | grep -q "$name"; then
-              omp plugin uninstall "$name" 2>&1 || true
-            fi
-          }
-
-          # omp is the minimal backup agent: agent config only, no plugins
-          uninstall_plugin "pi-caveman"
-          uninstall_plugin "pi-context-usage"
-        fi
-      '';
-    };
 
     home.activation.configureOmpClaude = lib.mkIf cfg.claude.enable {
       after = [ "linkGeneration" ];
