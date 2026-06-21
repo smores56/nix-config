@@ -121,6 +121,9 @@ let
     memory = {
       backend = "mnemopi";
     };
+    mnemopi = {
+      llmMode = "none";
+    };
     exa = {
       enableResearcher = false;
     };
