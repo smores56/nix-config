@@ -39,7 +39,9 @@ Workflow:
 2. Creates the worktree via `wt switch --create <branch> --format json`
 3. Opens a new Zellij tab and runs maki in the worktree directory
 
-Use for long-running feature work that deserves its own isolated session.]],
+Use for long-running feature work that deserves its own isolated session.
+
+This tool cannot be batched.]],
   schema = {
     type = "object",
     required = { "branch", "prompt" },

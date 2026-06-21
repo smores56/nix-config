@@ -48,6 +48,8 @@ export default function spawnSessionExtension(pi: ExtensionAPI): void {
 			"3. Opens a new Zellij tab and runs omp in the worktree directory",
 			"",
 				"Use for long-running feature work that deserves its own isolated session.",
+			"",
+			"This tool cannot be batched.",
 		].join("\n"),
 		parameters: z.object({
 			branch: z
