@@ -114,6 +114,10 @@ let
       "XDG_RUNTIME_DIR"
       "TMPDIR"
       "SSH_AUTH_SOCK"
+      # Zellij tab naming (zellij-tab-status extension/plugin)
+      "ZELLIJ"
+      "ZELLIJ_PANE_ID"
+      "ZELLIJ_SESSION_NAME"
       # LLM/MCP provider keys read by maki/pi/omp (union across personal+work).
       "NEURALWATT_API_KEY"
       "XIAOMI_MIMO_API_KEY"

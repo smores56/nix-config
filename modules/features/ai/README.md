@@ -50,7 +50,7 @@ agent runs inside a kernel-enforced sandbox via
 [nono](https://github.com/always-further/nono) (`pkgs.nono`) - one tool, both
 OSes: **Landlock** on Linux, **Seatbelt** on macOS. Launchers call
 `nono run -s -- <cmd>` directly — the `m`/`o`/`pi` fish abbrs, herdr's maki
-pane, and `start_worktree_session.lua`. `NONO_PROFILE=agent` is set via
+pane, and `spawn_session.lua`. `NONO_PROFILE=agent` is set via
 home-manager's `home.sessionVariables`, so the `agent` profile is selected
 without a per-call `-p` flag; the profile's `workdir.access = "readwrite"`
 already makes cwd writable from inside the sandbox, so `--allow-cwd` isn't

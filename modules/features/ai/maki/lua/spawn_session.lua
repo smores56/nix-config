@@ -1,4 +1,4 @@
--- start_worktree_session: create a worktree and spawn a new maki session in a
+-- spawn_session: create a worktree and spawn a new maki session in a
 -- new Zellij tab, gated behind a confirmation question.
 --
 -- Caller (the LLM) is expected to generate the branch name beforehand:
@@ -22,9 +22,9 @@ local function shell_quote(s)
 end
 
 maki.api.register_tool({
-  name = "start_worktree_session",
+  name = "spawn_session",
   kind = "execute",
-  description = [[Create a worktree and spawn a new interactive maki session in a new Zellij tab.
+  description = [[Spawn a new interactive maki session in a new Zellij tab (with a worktree).
 
 BEFORE calling this, generate the branch name via:
   agent-branch-name --slug <slug> --task "<task>" --dry-run
@@ -35,7 +35,7 @@ Workflow:
 2. Creates the worktree via `wt switch --create <branch> --format json`
 3. Opens a new Zellij tab and runs maki in the worktree directory
 
-Use for long-running feature work that deserves its own isolated session and worktree.]],
+Use for long-running feature work that deserves its own isolated session.]],
   schema = {
     type = "object",
     required = { "branch", "prompt" },
@@ -58,7 +58,7 @@ agent-branch-name --slug <slug> --task "<task>" --dry-run]],
   audiences = { "main" },
   timeout = false,
   header = function(input)
-    return input.task or input.branch or "start worktree session"
+    return input.task or input.branch or "spawn session"
   end,
   handler = function(input, ctx)
     local branch = input.branch or ""
@@ -75,7 +75,7 @@ agent-branch-name --slug <slug> --task "<task>" --dry-run]],
     if #prompt_preview > 120 then
       prompt_preview = prompt_preview:sub(1, 117) .. "..."
     end
-    local question_text = ("Start a new worktree session?\n\n"
+    local question_text = ("Start a new session?\n\n"
       .. "- **Branch:** `%s`\n"
       .. "- **Worktree:** `%s`\n"
       .. "- **Prompt:** %s")
@@ -146,7 +146,7 @@ zellij action new-tab -n %s -c "$path" --close-on-exit -- nono run -s -- maki --
           -- The script rm's the prompt file itself on every failure-exit.
           local err_msg = combined:match("^ERR:(.+)") or combined
           ctx:finish({
-            llm_output = "error creating worktree session: " .. err_msg,
+            llm_output = "error spawning session: " .. err_msg,
             is_error = true,
           })
           return

@@ -1,7 +1,7 @@
 /**
- * start_worktree_session: create a worktree and spawn a new omp session in a
+ * spawn_session: create a worktree and spawn a new omp session in a
  * new Zellij tab, behind a confirmation dialog. oh-my-pi port of maki's
- * modules/features/ai/maki/lua/start_worktree_session.lua.
+ * modules/features/ai/maki/lua/spawn_session.lua.
  *
  * Caller resolves the branch name first:
  *   agent-branch-name --slug <slug> --task "<task>" --dry-run
@@ -29,14 +29,14 @@ function previewPrompt(prompt: string): string {
 	return preview;
 }
 
-export default function startWorktreeSessionExtension(pi: ExtensionAPI): void {
+export default function spawnSessionExtension(pi: ExtensionAPI): void {
 	const { z } = pi.zod;
 
 	pi.registerTool({
-		name: "start_worktree_session",
-		label: "Start Worktree Session",
-		description: [
-			"Create a worktree and spawn a new interactive omp session in a new Zellij tab.",
+		name: "spawn_session",
+		label: "Spawn Session",
+			description: [
+				"Spawn a new interactive omp session in a new Zellij tab (with a worktree).",
 			"",
 			"BEFORE calling this, generate the branch name via:",
 			'  agent-branch-name --slug <slug> --task "<task>" --dry-run',
@@ -47,7 +47,7 @@ export default function startWorktreeSessionExtension(pi: ExtensionAPI): void {
 			"2. Creates the worktree via `wt switch --create <branch> --format json`",
 			"3. Opens a new Zellij tab and runs omp in the worktree directory",
 			"",
-			"Use for long-running feature work that deserves its own isolated session and worktree.",
+				"Use for long-running feature work that deserves its own isolated session.",
 		].join("\n"),
 		parameters: z.object({
 			branch: z
@@ -85,7 +85,7 @@ export default function startWorktreeSessionExtension(pi: ExtensionAPI): void {
 			const displayLabel = (params.task ?? "").trim() || worktreeName;
 
 			const message = [
-				"Start a new worktree session?",
+				"Start a new session?",
 				"",
 				`- **Branch:** \`${branch}\``,
 				`- **Worktree:** \`${worktreeName}\``,
@@ -95,7 +95,7 @@ export default function startWorktreeSessionExtension(pi: ExtensionAPI): void {
 			// Fail-closed: dismiss/abort → cancelled.
 			let confirmed = false;
 			try {
-				confirmed = await ctx.ui.confirm("Start worktree session?", message, { signal });
+				confirmed = await ctx.ui.confirm("Spawn session?", message, { signal });
 			} catch {
 				confirmed = false;
 			}
@@ -148,7 +148,7 @@ export default function startWorktreeSessionExtension(pi: ExtensionAPI): void {
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err);
 				return {
-					content: [{ type: "text", text: `error creating worktree session: ${msg}` }],
+					content: [{ type: "text", text: `error spawning session: ${msg}` }],
 					isError: true,
 					details: { error: msg, phase: "exec-wt" },
 				};
@@ -164,7 +164,7 @@ export default function startWorktreeSessionExtension(pi: ExtensionAPI): void {
 				const err = (out.startsWith("ERR:") ? out.slice(4) : out) ||
 					resolve.stderr || "unknown wt error";
 				return {
-					content: [{ type: "text", text: `error creating worktree session: ${err.trim()}` }],
+					content: [{ type: "text", text: `error spawning session: ${err.trim()}` }],
 					isError: true,
 					details: { error: err.trim(), phase: "wt", code: resolve.code },
 				};

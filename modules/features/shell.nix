@@ -88,7 +88,7 @@ in
       '';
 
       # Auto-name Zellij tabs. Renames only the default "Tab #N" title (so
-      # manually named tabs — e.g. `start_worktree_session`'s explicit `-n` —
+      #       manually named tabs — e.g. `spawn_session`'s explicit `-n` —
       # are left alone). Fired on fish_prompt (covers `cd`/zoxide `c`) and
       # fish_preexec (shows running command). No-op outside Zellij.
       functions._zellij_tab_name = {
