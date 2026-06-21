@@ -92,6 +92,7 @@
 
           # fun stuff
           cbonsai
+          cowsay
           musikcube
           clock-rs
           ttyper
