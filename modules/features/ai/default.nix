@@ -16,25 +16,24 @@ let
     else
       "${workPrefix}/fix-auth-flow";
 
-  branchWorkflowLines =
-    [
-      "- Branch prefix is per-repo, resolved from the `origin` GitHub org — run `git-branch-prefix` in the repo to get it; never hardcode the prefix"
-      "- Personal repos: `${personalPrefix}/<kebab-slug>` (e.g. `${personalPrefix}/fix-auth-flow`)"
-    ]
-    ++ lib.optionals hasWork [
-      "- Work-org repos (${workOrgList}): `${workBranchExample}`"
-    ]
-    ++ lib.optionals hasTicket [
-      "- Every work-org change references a ${cfg.ticketPrefix} Linear ticket"
-      "- To create a ticket: `linear issue create -t \"Title\" --team ${cfg.ticketPrefix} --assignee self --start`"
-      "- To list your tickets: `linear issue mine`; to view one: `linear issue view ${cfg.ticketPrefix}-<number>`"
-    ]
-    ++ [
-      "- Resolve a full branch for a task with `agent-branch-name --slug <kebab-slug> --task \"<description>\"` (auto-creates a Linear ticket for work-org repos when none is supplied)"
-      "- Create worktrees with `wt switch --create $(git-branch-prefix)<rest-of-branch>`"
-      "- **CRITICAL**: `wt switch` cannot cd in non-interactive shells. Always use `wt switch --format json` to get the worktree path as JSON. After switching, you MUST pass `cwd: \"<worktree_path>\"` to ALL subsequent bash commands — never rely on `cd` within bash scripts"
-      "- Do NOT use `git clone`, `git worktree add`, `git checkout -b`, or Claude's built-in EnterWorktree"
-    ];
+  branchWorkflowLines = [
+    "- Branch prefix is per-repo, resolved from the `origin` GitHub org — run `git-branch-prefix` in the repo to get it; never hardcode the prefix"
+    "- Personal repos: `${personalPrefix}/<kebab-slug>` (e.g. `${personalPrefix}/fix-auth-flow`)"
+  ]
+  ++ lib.optionals hasWork [
+    "- Work-org repos (${workOrgList}): `${workBranchExample}`"
+  ]
+  ++ lib.optionals hasTicket [
+    "- Every work-org change references a ${cfg.ticketPrefix} Linear ticket"
+    "- To create a ticket: `linear issue create -t \"Title\" --team ${cfg.ticketPrefix} --assignee self --start`"
+    "- To list your tickets: `linear issue mine`; to view one: `linear issue view ${cfg.ticketPrefix}-<number>`"
+  ]
+  ++ [
+    "- Resolve a full branch for a task with `agent-branch-name --slug <kebab-slug> --task \"<description>\"` (auto-creates a Linear ticket for work-org repos when none is supplied)"
+    "- Create worktrees with `wt switch --create $(git-branch-prefix)<rest-of-branch>`"
+    "- **CRITICAL**: `wt switch` cannot cd in non-interactive shells. Always use `wt switch --format json` to get the worktree path as JSON. After switching, you MUST pass `cwd: \"<worktree_path>\"` to ALL subsequent bash commands — never rely on `cd` within bash scripts"
+    "- Do NOT use `git clone`, `git worktree add`, `git checkout -b`, or Claude's built-in EnterWorktree"
+  ];
 
   branchWorkflow = lib.concatStringsSep "\n" branchWorkflowLines;
   workGithubOrgHint = lib.optionalString (cfg.workGithubOrgs != [ ]) ''
@@ -91,9 +90,6 @@ let
 
     # Communication
     - Non-interactive CLI commands only (flags over interactive prompts)
-
-    # Retry Discipline
-    If a command returns unexpected or ambiguous output **more than twice**, stop and investigate the cause instead of blindly retrying. Changing nothing and re-running is never productive.
 
     # Caveman Mode
     - Drop articles, filler words (just/really/basically), pleasantries, hedging

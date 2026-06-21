@@ -19,10 +19,7 @@ let
   # strong = openai/gpt-5.5, medium = openai/gpt-5.4, weak = openai/gpt-5.4-mini.
   # Personal hosts keep Xiaomi MiMo Pro as the default.
   defaultModel =
-    if workModels then
-      "openai/gpt-5.5"
-    else
-      "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25Pro.id}";
+    if workModels then "openai/gpt-5.5" else "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25Pro.id}";
 
   # byterover (brv) replaces the built-in memory tool when enabled.
   makiTools = [
@@ -217,8 +214,7 @@ let
   };
 
   providersToWrite =
-    lib.optionalAttrs (!workModels) makiProviders
-    // lib.optionalAttrs cfEnabled cloudflareProviders;
+    lib.optionalAttrs (!workModels) makiProviders // lib.optionalAttrs cfEnabled cloudflareProviders;
 
   mkProviderScript =
     p:
@@ -335,22 +331,13 @@ in
       ".config/maki/AGENTS.md" = {
         force = true;
         text = ''
-           # Delegation
+          # Delegation
+          - For non-trivial work, load `orchestrate` before planning with `skill(name="orchestrate")`.
+          - Non-trivial means multi-step, multi-file, ambiguous, risky, parallelizable, or requiring research before implementation.
+          - Maki has native `task` and `batch`; use them directly for small, obvious delegation when full orchestration is unnecessary.
 
-           For non-trivial work, load `orchestrate` before planning with
-           `skill(name="orchestrate")`.
-
-           Non-trivial means multi-step, multi-file, ambiguous, risky,
-           parallelizable, or requiring research before implementation.
-           Do not load it at startup for simple questions, trivial lookups, or
-           one-file mechanical edits.
-
-           Maki has native `task` and `batch`; use them directly for small,
-           obvious delegation when the full orchestration workflow is unnecessary.
-
-           Never commit or push unless asked.
-
-        '' + config.dotfiles.aiHints;
+          ${config.dotfiles.aiHints}
+        '';
       };
 
       ".config/maki/lua/spawn_session.lua" = {
@@ -378,9 +365,7 @@ in
         }
       ) providersToWrite
     );
-    home.packages =
-      lib.optional workModels codexCredSync
-      ++ lib.optional cfEnabled cfCostReport;
+    home.packages = lib.optional workModels codexCredSync ++ lib.optional cfEnabled cfCostReport;
     home.activation.makiCodexCreds = lib.mkIf workModels (
       lib.hm.dag.entryAfter [ "writeBoundary" ] ''
         ${codexCredSync}/bin/maki-codex-sync || true
