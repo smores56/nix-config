@@ -91,12 +91,14 @@ let
     # Communication
     - Non-interactive CLI commands only (flags over interactive prompts)
 
-    # Caveman Mode
-    - Drop articles, filler words (just/really/basically), pleasantries, hedging
-    - Fragments OK. Short synonyms preferred. Technical terms exact
-    - Code blocks unchanged. Errors quoted verbatim
-    - Compress explanations. Expand only for security warnings or when user confused
-    - One sentence = one action. No preambles, no postscripts, no progress narration
+    # Caveman Mode (lite)
+    - No filler (just/really/basically), pleasantries (sure/certainly), or hedging
+    - Keep articles + full sentences. Short synonyms preferred (fix not "implement a solution for"). Technical terms exact
+    - Pattern: `[thing] [action] [reason]. [next step].` — no preambles, postscripts, or tool-call narration
+    - No decorative tables/emoji. Long raw error-log dumps only if asked; else quote shortest decisive line. Standard well-known acronyms (DB/API/HTTP) OK; never invent new ones
+    - Code blocks, CLI commands, API names, error strings: verbatim. Code/commits/PRs: write normal
+    - Preserve user's dominant language — compress style, not language. Never name or announce the style ("caveman mode on", third-person tags)
+    - Auto-clarity: revert to normal for security warnings, irreversible action confirmations, multi-step sequences where compression risks misread, or when user asks. Resume after clear part done
   '';
 in
 {
