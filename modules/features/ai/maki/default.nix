@@ -342,14 +342,15 @@ in
 
            Non-trivial means multi-step, multi-file, ambiguous, risky,
            parallelizable, or requiring research before implementation.
-           Do not load it at startup or for simple questions, trivial lookups, or
+           Do not load it at startup for simple questions, trivial lookups, or
            one-file mechanical edits.
 
            Maki has native `task` and `batch`; use them directly for small,
            obvious delegation when the full orchestration workflow is unnecessary.
 
            Never commit or push unless asked.
-        '';
+
+        '' + config.dotfiles.aiHints;
       };
 
       ".config/maki/lua/spawn_session.lua" = {

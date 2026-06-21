@@ -42,15 +42,6 @@ let
   '';
 
   aiHints = ''
-    # Delegation
-    - Strongly prefer delegation. Any multi-step or complex task should be broken into subtasks and delegated
-    - Use subagents aggressively for independent work. Sequential work is the failure mode; parallel is the default
-    - Before starting work, decompose it into independent subtasks and launch subagents for each in parallel
-    - When exploring code, use a research subagent before the implementation subagent starts
-    - If work item A and work item B don't depend on each other — launch both as subagents concurrently
-    - Skip subagents only when: steps are strictly dependent, single targeted edit, or trivially small (one tool call)
-    - Subagents keep context isolated — use them to limit context bloat
-
     # Code Style
     - Strongly prefer functional programming: pure functions, immutability, composition over inheritance
     - Single-purpose functions — no flag parameters, no multi-mode behavior
