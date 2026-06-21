@@ -10,6 +10,10 @@
 
 local QuestionForm = require("question_form")
 
+-- Nerd Font sushi glyph (nf-fae-sushi, U+E21A) prefixing the Zellij tab name,
+-- so maki tabs read " - <worktree> — matching oh-my-pi's "π - <worktree>".
+local sushi_icon = "\238\136\154"
+
 if maki.fn.executable("wt") == 0
   or maki.fn.executable("zellij") == 0
   or maki.fn.executable("python3") == 0
@@ -127,7 +131,7 @@ zellij action new-tab -n %s -c "$path" --close-on-exit -- nono run -s -- maki --
 ]],
       shell_quote(branch),
       shell_quote(worktree_name),
-      shell_quote(worktree_name)
+      shell_quote(sushi_icon .. " - " .. worktree_name)
     )
 
     -- Run the script and capture output

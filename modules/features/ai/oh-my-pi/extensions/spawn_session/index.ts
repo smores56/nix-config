@@ -184,7 +184,7 @@ export default function spawnSessionExtension(pi: ExtensionAPI): void {
 			// doesn't reliably propagate the caller's env to daemon-spawned tabs.
 			// The spawned omp re-enters nono (same sandbox as the `o` abbr).
 			const spawnScript =
-				`exec zellij action new-tab -n ${shellQuote(displayLabel)} -c ${shellQuote(path)}` +
+				`exec zellij action new-tab -n ${shellQuote(`π - ${displayLabel}`)} -c ${shellQuote(path)}` +
 				` --close-on-exit -- nono run -s -- omp -- "$OMP_START_PROMPT"`;
 
 			let proc: import("bun").Subprocess<"ignore", "pipe", "pipe">;

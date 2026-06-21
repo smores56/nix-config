@@ -90,51 +90,63 @@ in
       # Auto-name Zellij tabs on every prompt (covers `cd`/zoxide `c`/manual
       # navigations). Renames only the default "Tab #N" title and our own
       # previously-set names — manually named tabs (e.g. `spawn_session`'s
-      # explicit `-n`) are left alone. Two hooks: fish_prompt (cwd/git root)
-      # and fish_preexec (running command). No-op outside Zellij.
-      functions._zellij_tab_name = {
+      # explicit `-n`, which embeds a sushi/π prefix) are left alone. Two hooks:
+      # fish_prompt (cwd/git root) and fish_preexec (appends " - <cmd>"). The
+      # folder part is shared via _zellij_tab_folder; running commands are
+      # cleared at the next prompt. No-op outside Zellij.
+      functions._zellij_tab_folder = {
         body = ''
-          set current (zellij action list-tabs --json --state 2>/dev/null \
-            | jq -r '.[] | select(.active) | .name // ""' 2>/dev/null)
-          if not test -n "$current"
-              return
-          end
-          # Take over default ("Tab #N") tabs and our own previously-set
-          # names; leave manually-renamed tabs alone (so spawn_session's
-          # explicit -n persists across navigations).
-          if not string match -qr '^Tab #[0-9]+$' -- "$current"
-              and not test "$current" = "$_zellij_tab_name_last"
-              return
-          end
           set name (basename $PWD)
           test "$PWD" = "$HOME"; and set name "~"
           set root (${pkgs.coreutils}/bin/timeout 1 git rev-parse --show-toplevel 2>/dev/null)
           if test $status -eq 0; and test -n "$root"
               set name (basename "$root")
           end
-          zellij action rename-tab -- "$name" 2>/dev/null
-          set -g _zellij_tab_name_last "$name"
+          echo "$name"
+        '';
+      };
+
+      functions._zellij_tab_takeover = {
+        body = ''
+          set current (zellij action list-tabs --json --state 2>/dev/null \
+            | jq -r '.[] | select(.active) | .name // ""' 2>/dev/null)
+          if not test -n "$current"
+              return 1
+          end
+          # Take over default ("Tab #N") tabs and our own previously-set
+          # names; leave manually-renamed tabs alone (so spawn_session's
+          # explicit -n persists across navigations).
+          if not string match -qr '^Tab #[0-9]+$' -- "$current"
+              and not test "$current" = "$_zellij_tab_name_last"
+              return 1
+          end
+          return 0
+        '';
+      };
+
+      functions._zellij_tab_name = {
+        body = ''
+          not _zellij_tab_takeover; and return
+          set folder (_zellij_tab_folder)
+          # No running command at the prompt → folder name only.
+          set -g _zellij_tab_name_cmd ""
+          zellij action rename-tab -- "$folder" 2>/dev/null
+          set -g _zellij_tab_name_last "$folder"
         '';
         onEvent = [ "fish_prompt" ];
       };
 
       functions._zellij_tab_name_preexec = {
         body = ''
-          set current (zellij action list-tabs --json --state 2>/dev/null \
-            | jq -r '.[] | select(.active) | .name // ""' 2>/dev/null)
-          if not test -n "$current"
-              return
-          end
-          if not string match -qr '^Tab #[0-9]+$' -- "$current"
-              and not test "$current" = "$_zellij_tab_name_last"
-              return
-          end
+          not _zellij_tab_takeover; and return
           set cmd (string split ' ' -- $argv)[1]
           if test (string length -- "$cmd") -gt 20
               set cmd (string sub --length 17 -- "$cmd")"..."
           end
-          zellij action rename-tab -- "$cmd" 2>/dev/null
-          set -g _zellij_tab_name_last "$cmd"
+          set -g _zellij_tab_name_cmd "$cmd"
+          set folder (_zellij_tab_folder)
+          zellij action rename-tab -- "$folder - $cmd" 2>/dev/null
+          set -g _zellij_tab_name_last "$folder - $cmd"
         '';
         onEvent = [ "fish_preexec" ];
       };
