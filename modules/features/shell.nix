@@ -50,7 +50,7 @@ in
         ef = "tv | read -l f; and hx $f";
         et = "tv text | read -l f; and hx $f";
         l = "eza --icons -lh";
-        t = "zellij";
+        t = "zellij a -c main";
         a = "mkdir -p";
         f = "yazi";
         b = "bat";
