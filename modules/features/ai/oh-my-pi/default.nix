@@ -289,11 +289,6 @@ in
       source = ./extensions/spawn_session/index.ts;
     };
 
-    home.file.".omp/agent/extensions/zellij-tab-status/index.ts" = {
-      force = true;
-      source = ./extensions/zellij-tab-status/index.ts;
-    };
-
     home.activation.installOmpCli = {
       after = [ "linkGeneration" ];
       before = [ ];

@@ -48,11 +48,10 @@ let
     })
 
     require("spawn_session")
-    require("zellij_tab_status")
   '';
 
   # Permissions manifest for the Lua plugins under ./lua. `run` is needed by
-  # spawn_session's and zellij_tab_status's maki.fn.jobstart (process spawn).
+  # spawn_session's maki.fn.jobstart (process spawn).
   pluginToml = ''
     [permissions]
     run = true
@@ -356,10 +355,6 @@ in
       ".config/maki/lua/spawn_session.lua" = {
         force = true;
         source = ./lua/spawn_session.lua;
-      };
-      ".config/maki/lua/zellij_tab_status.lua" = {
-        force = true;
-        source = ./lua/zellij_tab_status.lua;
       };
       ".config/maki/skills/orchestrate/SKILL.md" = {
         force = true;
