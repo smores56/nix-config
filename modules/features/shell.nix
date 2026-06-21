@@ -87,15 +87,23 @@ in
         end
       '';
 
-      # Auto-name Zellij tabs. Renames only the default "Tab #N" title (so
-      #       manually named tabs — e.g. `spawn_session`'s explicit `-n` —
-      # are left alone). Fired on fish_prompt (covers `cd`/zoxide `c`) and
-      # fish_preexec (shows running command). No-op outside Zellij.
+      # Auto-name Zellij tabs on every prompt (covers `cd`/zoxide `c`/manual
+      # navigations). Renames only the default "Tab #N" title and our own
+      # previously-set names — manually named tabs (e.g. `spawn_session`'s
+      # explicit `-n`) are left alone. Two hooks: fish_prompt (cwd/git root)
+      # and fish_preexec (running command). No-op outside Zellij.
       functions._zellij_tab_name = {
         body = ''
           set current (zellij action list-tabs --json --state 2>/dev/null \
             | jq -r '.[] | select(.active) | .name // ""' 2>/dev/null)
-          if not test -n "$current"; or not string match -qr '^Tab #[0-9]+$' -- "$current"
+          if not test -n "$current"
+              return
+          end
+          # Take over default ("Tab #N") tabs and our own previously-set
+          # names; leave manually-renamed tabs alone (so spawn_session's
+          # explicit -n persists across navigations).
+          if not string match -qr '^Tab #[0-9]+$' -- "$current"
+              and not test "$current" = "$_zellij_tab_name_last"
               return
           end
           set name (basename $PWD)
@@ -105,6 +113,7 @@ in
               set name (basename "$root")
           end
           zellij action rename-tab -- "$name" 2>/dev/null
+          set -g _zellij_tab_name_last "$name"
         '';
         onEvent = [ "fish_prompt" ];
       };
@@ -113,7 +122,11 @@ in
         body = ''
           set current (zellij action list-tabs --json --state 2>/dev/null \
             | jq -r '.[] | select(.active) | .name // ""' 2>/dev/null)
-          if not test -n "$current"; or not string match -qr '^Tab #[0-9]+$' -- "$current"
+          if not test -n "$current"
+              return
+          end
+          if not string match -qr '^Tab #[0-9]+$' -- "$current"
+              and not test "$current" = "$_zellij_tab_name_last"
               return
           end
           set cmd (string split ' ' -- $argv)[1]
@@ -121,6 +134,7 @@ in
               set cmd (string sub --length 17 -- "$cmd")"..."
           end
           zellij action rename-tab -- "$cmd" 2>/dev/null
+          set -g _zellij_tab_name_last "$cmd"
         '';
         onEvent = [ "fish_preexec" ];
       };
