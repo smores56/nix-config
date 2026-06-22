@@ -197,7 +197,6 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    home.packages = [ pkgs.nono ];
     home.file = profileFiles;
     # NONO_PROFILE selects the `agent` profile so per-call `-p agent` flags
     # aren't needed. This is read by the nono binary from its launching shell's

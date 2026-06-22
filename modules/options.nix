@@ -358,8 +358,8 @@ in
       terminal = "kitty";
       shell = "fish";
       browser = "firefox";
-      font = "CaskaydiaCove Nerd Font";
-      fontPackage = pkgs.nerd-fonts.caskaydia-cove;
+      font = "Google Sans Code";
+      fontPackage = pkgs.googlesans-code;
       shellPath = "${pkgs.${config.dotfiles.shell}}/bin/${config.dotfiles.shell}";
       defaultModel = "gemma-4-31b";
     };

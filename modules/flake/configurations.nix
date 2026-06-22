@@ -12,23 +12,61 @@ let
 
   importTree = path: (inputs.import-tree path).imports;
 
+  localOverlays = system: [
+    niri.overlays.niri
+    (final: prev: {
+      googlesans-code = prev.stdenv.mkDerivation (finalAttrs: {
+        pname = "googlesans-code";
+        version = "7.000";
+
+        src = prev.fetchFromGitHub {
+          owner = "googlefonts";
+          repo = "googlesans-code";
+          tag = "v${finalAttrs.version}";
+          hash = "sha256-XjsjBMCA1RraXhQiNq/D0mb//VnRKOWl1X4XpGzifNA=";
+        };
+
+        nativeBuildInputs = [ prev.fontc ];
+
+        buildPhase = ''
+          runHook preBuild
+
+          mkdir -p fonts/variable
+          fontc sources/GoogleSansCode.glyphspackage --flatten-components --decompose-transformed-components --output-file "fonts/variable/GoogleSansCode[MONO,wght].ttf"
+          fontc sources/GoogleSansCode-Italic.glyphspackage --flatten-components --decompose-transformed-components --output-file "fonts/variable/GoogleSansCode-Italic[MONO,wght].ttf"
+
+          runHook postBuild
+        '';
+
+        installPhase = ''
+          runHook preInstall
+
+          mkdir -p $out/share/fonts/googlesans-code
+          cp fonts/variable/* $out/share/fonts/googlesans-code/
+
+          runHook postInstall
+        '';
+
+        meta = {
+          description = "Google Sans Code font family";
+          homepage = "https://github.com/googlefonts/googlesans-code";
+          changelog = "https://github.com/googlefonts/googlesans-code/blob/${finalAttrs.src.tag}/CHANGELOG.md";
+          license = lib.licenses.ofl;
+          maintainers = with lib.maintainers; [ shiphan ];
+          platforms = lib.platforms.all;
+        };
+      });
+
+      concord = concord.packages.${system}.default;
+    })
+  ];
+
   pkgsForSystem =
     system:
     import inputs.nixpkgs {
       inherit system;
       config.allowUnfree = true;
-      overlays = [
-        niri.overlays.niri
-        noctalia.overlays.default
-        (final: prev: {
-          concord = concord.packages.${system}.default;
-          # pkgs.nono's test suite fails to build on darwin: the Nix sandbox sets
-          # $HOME under /nix and nono's system_read_macos group grants /nix, so the
-          # deprecated_schema dry-run tests refuse to start (state root .nono under
-          # /nix overlaps the granted /nix). The binary is fine; skip its checks.
-          nono = prev.nono.overrideAttrs (_: lib.optionalAttrs prev.stdenv.isDarwin { doCheck = false; });
-        })
-      ];
+      overlays = localOverlays system ++ [ noctalia.overlays.default ];
     };
 
   homeModules = [
@@ -105,7 +143,7 @@ let
     inputs.nixpkgs.lib.nixosSystem {
       specialArgs = { inherit inputs; };
       modules = [
-        { nixpkgs.overlays = [ niri.overlays.niri ]; }
+        { nixpkgs.overlays = localOverlays (args.system or "x86_64-linux"); }
       ]
       ++ nixosModules
       ++ [
@@ -196,7 +234,7 @@ in
           windowManager = "aerospace";
           username = "smohr";
           system = "aarch64-darwin";
-          terminalFontSize = 14;
+          terminalFontSize = 16;
           email = "sam.mohr@sevenai.com";
           workBranchPrefix = "sam.mohr";
           ticketPrefix = "7AI";

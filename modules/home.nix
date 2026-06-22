@@ -32,18 +32,21 @@ in
       accept-flake-config = true
       experimental-features = nix-command flakes
     '';
-    file."Library/Fonts/.home-manager-fonts-version" = lib.mkIf isDarwin (
-      lib.mkForce {
-        text = "${darwinFontsEnv}";
-        onChange = ''
-          run mkdir -p ${lib.escapeShellArg darwinFontsInstallDir}
-          run /usr/bin/rsync $VERBOSE_ARG -acL --chmod=u+w --delete \
-            ${lib.escapeShellArgs [
-              "${darwinFonts}/"
-              darwinFontsInstallDir
-            ]}
-        '';
-      }
+    file."Library/Fonts/.home-manager-fonts-version" = lib.mkIf isDarwin (lib.mkForce { text = "${darwinFontsEnv}"; });
+
+    activation.syncDarwinFonts = lib.mkIf isDarwin (
+      lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+        run mkdir -p ${lib.escapeShellArg darwinFontsInstallDir}
+        run /bin/chmod -R u+w ${lib.escapeShellArg darwinFontsInstallDir} || true
+        run ${pkgs.rsync}/bin/rsync $VERBOSE_ARG -acL --chmod=u+w --delete \
+          ${lib.escapeShellArgs [
+            "${darwinFonts}/"
+            "${darwinFontsInstallDir}/"
+          ]}
+        run /usr/bin/find ${lib.escapeShellArg "${config.home.homeDirectory}/Library/Fonts"} \
+          \( -iname '*CaskaydiaCove*' -o -iname '*CascadiaCove*' -o -iname '*CascadiaCode*' \) \
+          -exec rm -rf {} +
+      ''
     );
 
     activation.checkAppManagementPermission = lib.mkIf isDarwin (

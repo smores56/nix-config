@@ -171,6 +171,8 @@ in
       };
 
       targets = {
+        kitty.fonts.enable = false;
+        kitty.opacity.enable = false;
         helix.enable = false;
         lazygit.enable = false;
         opencode.enable = false;
