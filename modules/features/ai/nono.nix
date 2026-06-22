@@ -47,6 +47,9 @@ let
         "$HOME/.npm"
         "$TMPDIR"
         "/tmp"
+        # Runtime dir: just, gh, and other tools use XDG_RUNTIME_DIR for temp
+        # files and sockets. Also needed for ssh-agent socket access.
+        "$XDG_RUNTIME_DIR"
         # Agent state dirs (union across maki/pi/omp).
         "$XDG_CONFIG_HOME/maki"
         "$XDG_DATA_HOME/maki"
@@ -61,14 +64,13 @@ let
         "$XDG_DATA_HOME/oh-my-pi-cli"
         "$HOME/code"
         "$XDG_CONFIG_HOME/home-manager"
+        # gh extensions + state (hosts.yml token still hidden via deny below).
+        "$XDG_DATA_HOME/gh"
       ];
       read = [
         "$HOME/.bun"
         "$HOME/.wasmer"
         "$HOME/.wasmtime"
-        # ssh-agent socket parent dir. ~/.ssh itself stays denied by
-        # deny_credentials; only the .pub files below are bypassed.
-        "$XDG_RUNTIME_DIR"
       ];
       # .pub + known_hosts for git ssh-format signing + host verification.
       # Private keys stay denied; signing goes through SSH_AUTH_SOCK.
@@ -170,7 +172,10 @@ let
     # GH_CONFIG_DIR into the sandboxed child's env via NONO_ENV_FILE. Runs
     # outside the sandbox (host privileges); everything written to
     # NONO_ENV_FILE as KEY=VALUE becomes child env, bypassing allow_vars.
-    if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    #
+    # Always attempt token extraction — `gh auth status` has transient
+    # failures (network blip, etc.) that would skip injection entirely.
+    if command -v gh >/dev/null 2>&1; then
       tok=$(gh auth token 2>/dev/null) || tok=""
       if [ -n "$tok" ]; then
         printf 'GH_TOKEN=%s\n' "$tok" >> "$NONO_ENV_FILE"
