@@ -121,9 +121,6 @@ let
             workModels = null;
             sevenqlLspPath = null;
             ohMyPi = null;
-
-            pi = null;
-            piDashboard = null;
             maki = null;
           } args;
           home.username = username;
@@ -159,7 +156,6 @@ let
             llm = args.llm or false;
             noSleep = args.noSleep or false;
             persist = args.persist or false;
-            piDashboard = args.piDashboard or { };
             webProxy = args.webProxy or { };
           };
         }
@@ -193,12 +189,6 @@ in
       "smores@smortress" = mkHome {
         displayManager = "none";
         nixos = true;
-        pi = {
-          enable = true;
-        };
-        piDashboard = {
-          enable = true;
-        };
         maki.byteroverMemory = true;
       };
       "smohr@smoreswork" =
@@ -213,19 +203,6 @@ in
             env = {
               GLEAN_SERVER_URL = gleanServerUrl;
               GLEAN_API_TOKEN = "\${GLEAN_API_TOKEN}";
-            };
-          };
-          slackMcpServer = {
-            command = "npx";
-            args = [
-              "-y"
-              "slack-mcp-server@latest"
-              "--transport"
-              "stdio"
-            ];
-            env = {
-              SLACK_MCP_XOXC_TOKEN = "\${SLACK_MCP_XOXC_TOKEN}";
-              SLACK_MCP_XOXD_TOKEN = "\${SLACK_MCP_XOXD_TOKEN}";
             };
           };
         in
@@ -256,24 +233,17 @@ in
                 "@gleanwork/local-mcp-server"
               ];
               slack.command = [
-                "npx"
-                "-y"
-                "slack-mcp-server@latest"
-                "--transport"
-                "stdio"
+                "sh"
+                "-lc"
+                ''
+                  cache_dir="''${XDG_CACHE_HOME:-$HOME/.cache}/slack-mcp-server"
+                  mkdir -p "$cache_dir"
+                  export SLACK_MCP_USERS_CACHE="$cache_dir/users_cache.json"
+                  export SLACK_MCP_CHANNELS_CACHE="$cache_dir/channels_cache_v2.json"
+                  exec npx -y slack-mcp-server@latest --transport stdio
+                ''
               ];
             };
-          };
-          pi = {
-            enable = true;
-            defaultProvider = "openai-codex";
-            defaultModel = "gpt-5.5";
-            # Slack via korotovsky/slack-mcp-server, read-only (no
-            # SLACK_MCP_ADD_MESSAGE_TOOL). Auth: browser session tokens in
-            # ~/.config/fish/conf.d/api-keys.fish, set up via `slack-mcp-auth`
-            # (auto-extracts from Slack.app; re-run when the session expires).
-            # The adapter interpolates ${...} from the environment at runtime.
-            mcpServers.slack = slackMcpServer;
           };
         };
     };
@@ -299,9 +269,6 @@ in
         nvidia = true;
         llm = true;
         noSleep = true;
-        piDashboard = {
-          enable = true;
-        };
         webProxy = {
           enable = true;
           tunnelId = "f2284d1b-5038-447b-ab50-e18dc1dba8c5";

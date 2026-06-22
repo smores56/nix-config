@@ -72,7 +72,6 @@ in
 
         o = "nono run -s -- omp";
         m = "nono run -s -- maki";
-        pi = "nono run -s -- pi";
         h = "herdr session attach default";
       };
 

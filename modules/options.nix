@@ -225,81 +225,6 @@ in
       default = { };
       description = "Public exposure of smortress HTTP services over Cloudflare Tunnel. TLS terminates at the Cloudflare edge; cloudflared proxies each subdomain straight to its loopback service.";
     };
-    pi = lib.mkOption {
-      type = lib.types.submodule {
-        options = {
-          enable = lib.mkEnableOption "Pi coding agent (@earendil-works/pi-coding-agent)" // {
-            default = false;
-          };
-          defaultProvider = lib.mkOption {
-            type = lib.types.str;
-            default = "xiaomi";
-            description = "Default LLM provider for pi.";
-          };
-          defaultModel = lib.mkOption {
-            type = lib.types.str;
-            default = "xiaomi/mimo-v2.5-pro";
-            description = "Default model for pi.";
-          };
-          defaultThinkingLevel = lib.mkOption {
-            type = lib.types.str;
-            default = "high";
-            description = "Default thinking level for pi (none/low/medium/high).";
-          };
-          packages = lib.mkOption {
-            type = lib.types.listOf lib.types.str;
-            default = [ ];
-            description = "Pi packages to install via `pi install`.";
-          };
-          mcpServers = lib.mkOption {
-            type = lib.types.attrsOf (lib.types.attrsOf lib.types.anything);
-            default = { };
-            description = ''
-              MCP server definitions written to ~/.pi/agent/mcp.json for
-              pi-mcp-adapter. Standard mcp.json schema (command/args/env or
-              url/headers). Values in env/headers may reference secrets via
-              ''${ENV_VAR} interpolation, resolved by the adapter at runtime
-              so tokens stay out of the Nix store.
-            '';
-          };
-          compaction = {
-            reserveTokens = lib.mkOption {
-              type = lib.types.int;
-              default = 32768;
-              description = "Token budget reserved for agent output after compaction.";
-            };
-            keepRecentTokens = lib.mkOption {
-              type = lib.types.int;
-              default = 48000;
-              description = "Number of recent tokens preserved during compaction.";
-            };
-          };
-          fishAbbrs = lib.mkOption {
-            type = lib.types.bool;
-            default = true;
-            description = "Register fish abbreviations for pi commands.";
-          };
-        };
-      };
-      default = { };
-      description = "Pi coding agent settings.";
-    };
-    piDashboard = lib.mkOption {
-      type = lib.types.submodule {
-        options = {
-          enable = lib.mkEnableOption "pi-agent-dashboard systemd user service" // {
-            default = false;
-          };
-          port = lib.mkOption {
-            type = lib.types.int;
-            default = 12321;
-            description = "Port for the pi-agent-dashboard server.";
-          };
-        };
-      };
-      default = { };
-      description = "Pi agent dashboard settings (pi.sammohr.dev).";
-    };
     herdr = lib.mkOption {
       type = lib.types.submodule {
         options = {
@@ -319,7 +244,7 @@ in
     aiHints = lib.mkOption {
       type = lib.types.str;
       readOnly = true;
-      description = "AI coding assistant context/rules, shared across pi and opencode.";
+      description = "AI coding assistant context/rules, shared across maki and opencode.";
     };
   };
   config = {

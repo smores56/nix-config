@@ -50,8 +50,7 @@ in
   programs.tmux = {
     enable = true;
     # Prefix: Ctrl+N - on Hands Down Neu w/ home-row mods this is hold-E (right
-    # ctrl) + tap-N: cross-hand, both middle fingers on home row. Costs pi's
-    # cursorDown *alias* (arrows remain) - double-tap C-n to pass through.
+    # ctrl) + tap-N: cross-hand, both middle fingers on home row.
     prefix = "C-n";
     keyMode = "emacs"; # arrow-friendly; no hjkl (not a QWERTY layout)
     mouse = true;
@@ -118,7 +117,7 @@ in
       bind -n C-M-t new-window -c "#{pane_current_path}"
 
       # ── Prefix keys (arrow-centric) ────────────────────────────────────
-      # Double-tap prefix to send a literal C-n to the program (pi etc.)
+      # Double-tap prefix to send a literal C-n to the program.
       bind C-n send-prefix
       bind Left  select-pane -L
       bind Right select-pane -R

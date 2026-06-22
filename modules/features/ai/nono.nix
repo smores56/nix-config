@@ -15,7 +15,7 @@ let
   # dangerous/unsubnetted edits, run `exec maki` directly (shorter than the
   # safe path, on purpose).
 
-  # Single shared profile for maki/pi/omp. Extends nono's built-in `default`,
+  # Single shared profile for maki/omp. Extends nono's built-in `default`,
   # which denies ~/.ssh, ~/.aws, ~/.gnupg, ~/.kube, ~/.docker, keychains,
   # browser data, shell history/configs, and blocks dangerous_commands
   # (rm -rf, dd, sudo, kill, chmod, shred).
@@ -28,7 +28,7 @@ let
     extends = "default";
     meta = {
       name = "agent";
-      description = "Shared least-privilege profile for coding agents (maki/pi/omp): open network, filtered env, denied creds/sudo, gh token injected per-session via NONO_ENV_FILE";
+      description = "Shared least-privilege profile for coding agents (maki/omp): open network, filtered env, denied creds/sudo, gh token injected per-session via NONO_ENV_FILE";
     };
     groups.include = [
       "nix_runtime"
@@ -50,16 +50,12 @@ let
         # Runtime dir: just, gh, and other tools use XDG_RUNTIME_DIR for temp
         # files and sockets. Also needed for ssh-agent socket access.
         "$XDG_RUNTIME_DIR"
-        # Agent state dirs (union across maki/pi/omp).
+        # Agent state dirs (union across maki/omp).
         "$XDG_CONFIG_HOME/maki"
         "$XDG_DATA_HOME/maki"
         "$XDG_STATE_HOME/maki"
         "$HOME/.local/logs/maki"
         "$HOME/.brv-cli"
-        "$HOME/.pi"
-        "$XDG_CONFIG_HOME/pi"
-        "$XDG_DATA_HOME/pi"
-        "$XDG_STATE_HOME/pi"
         "$HOME/.omp"
         "$XDG_DATA_HOME/oh-my-pi-cli"
         "$HOME/code"
@@ -116,7 +112,7 @@ let
       "XDG_RUNTIME_DIR"
       "TMPDIR"
       "SSH_AUTH_SOCK"
-      # LLM/MCP provider keys read by maki/pi/omp (union across personal+work).
+      # LLM/MCP provider keys read by maki/omp (union across personal+work).
       "NEURALWATT_API_KEY"
       "XIAOMI_MIMO_API_KEY"
       "DEEPSEEK_API_KEY"
@@ -135,8 +131,14 @@ let
     # nix store (same trust model as this profile), so a sandboxed process
     # can't tamper with the next run's hooks.
     session_hooks = {
-      before = { script = "${ghBeforeHook}"; timeout_secs = 10; };
-      after = { script = "${ghAfterHook}"; timeout_secs = 10; };
+      before = {
+        script = "${ghBeforeHook}";
+        timeout_secs = 10;
+      };
+      after = {
+        script = "${ghAfterHook}";
+        timeout_secs = 10;
+      };
     };
   };
 
@@ -195,7 +197,7 @@ in
 {
   options.dotfiles.nono = {
     enable =
-      lib.mkEnableOption "nono sandbox for coding agents (maki/pi/omp) with open networking and env-var filtering"
+      lib.mkEnableOption "nono sandbox for coding agents (maki/omp) with open networking and env-var filtering"
       // {
         default = true;
       };

@@ -31,7 +31,7 @@ let
   # init.lua is a Lua script that calls maki.setup() once, then loads custom
   # tools. always_yolo skips permission prompts (deny rules still apply);
   # always_thinking turns on adaptive extended thinking. bash is off by default
-  # in maki, so enable it to match pi/oh-my-pi's coding-agent toolset.
+  # in maki, so enable it to match oh-my-pi's coding-agent toolset.
   initLua = ''
     -- Managed by home-manager (modules/features/ai/maki). Manual edits are clobbered.
     maki.setup({
