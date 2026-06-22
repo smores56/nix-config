@@ -73,6 +73,7 @@ in
 
     settings = {
       show_startup_tips = false;
+      session_serialization = false;
       theme = if baseIsDark then "stylix-dark" else "stylix-light";
     };
 
