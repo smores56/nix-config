@@ -106,6 +106,7 @@ in
     home = {
       file = {
         ".claude/CLAUDE.md".text = aiHints;
+        ".codex/AGENTS.md".text = aiHints;
       };
     };
 
