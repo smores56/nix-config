@@ -5,6 +5,7 @@
 # Usage: bash ci-watch.sh [PR] [--interval N] [--known-threads "id1,id2,..."]
 #
 # Events (single JSON line on stdout):
+#   {"event":"merge_conflict","merge_state":"DIRTY","base":"main"}
 #   {"event":"ci_complete","conclusion":"success"|"failure","failures":[{name,link}],"passed":N}
 #   {"event":"new_comments","threads":[...],"known_threads":"id1,id2,..."}
 #
@@ -33,7 +34,10 @@ fi
 
 OWNER=$(gh repo view --json owner -q '.owner.login')
 NAME=$(gh repo view --json name -q '.name')
-SHA=$(gh pr view "$PR" --json headRefOid -q '.headRefOid')
+PR_INFO=$(gh pr view "$PR" --json headRefOid,baseRefName,mergeStateStatus)
+SHA=$(echo "$PR_INFO" | jq -r '.headRefOid')
+BASE=$(echo "$PR_INFO" | jq -r '.baseRefName')
+MERGE_STATE=$(echo "$PR_INFO" | jq -r '.mergeStateStatus')
 
 echo "[ci-watch] PR #$PR ($OWNER/$NAME) HEAD ${SHA:0:8} — poll every ${interval}s" >&2
 
@@ -65,6 +69,12 @@ last_comment=0
 
 while true; do
 	now=$(date +%s)
+
+	MERGE_STATE=$(gh pr view "$PR" --json mergeStateStatus -q '.mergeStateStatus' 2>/dev/null || echo UNKNOWN)
+	if [[ "$MERGE_STATE" == "DIRTY" ]]; then
+		echo "{\"event\":\"merge_conflict\",\"merge_state\":\"$MERGE_STATE\",\"base\":\"$BASE\"}"
+		exit 0
+	fi
 
 	# --- CI check-runs ---
 	raw_runs=$(gh api "repos/$OWNER/$NAME/commits/$SHA/check-runs?per_page=100" 2>/dev/null) || {

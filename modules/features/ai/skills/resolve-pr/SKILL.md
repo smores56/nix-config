@@ -21,11 +21,12 @@ Copy and track as you go:
 Resolve PR Progress:
 - [ ] Setup — resolve PR number, owner, repo
 - [ ] Handle events from watcher (loop until done):
+  - [ ] merge_conflict → merge base, resolve conflicts, push
   - [ ] new_comments → resolve each thread (validate, fix or rebut)
   - [ ] ci_complete with failures → fix actionable failures via subagents
   - [ ] ci_complete with no failures → final comment check, then done
 - [ ] Push changes and re-launch watcher (max 10 iterations)
-- [ ] Final verification — CI green, no unresolved threads
+- [ ] Final verification — mergeable, CI green, no unresolved threads
 ```
 
 ## 1. Setup
@@ -75,14 +76,53 @@ The agent is now idle — zero token consumption. It will be automatically notif
 
 When the background task completes, read the output. The last stdout line is a JSON event:
 
-- **`new_comments`** — extract `threads`, run **Step 5** (Review Comments). Update `KNOWN_THREADS` from the event's
-  `known_threads` field. After handling, go to **Step 7** (Re-launch).
-- **`ci_complete` with `"conclusion":"failure"`** — run **Step 4** (CI Failures). After fixing, push and re-launch (Step
-  7).
-- **`ci_complete` with `"conclusion":"success"`** — CI passed. Do a final one-shot comment check (Step 5) then go to
-  **Step 6** (Verify).
+- **`merge_conflict`** — PR cannot merge cleanly. Run **Step 4** (Merge Conflicts). After resolving, push and re-launch
+  (Step 8).
+- **`new_comments`** — extract `threads`, run **Step 6** (Review Comments). Update `KNOWN_THREADS` from the event's
+  `known_threads` field. After handling, go to **Step 8** (Re-launch).
+- **`ci_complete` with `"conclusion":"failure"`** — run **Step 5** (CI Failures). After fixing, push and re-launch (Step
+  8).
+- **`ci_complete` with `"conclusion":"success"`** — CI passed. Do a final one-shot comment check (Step 6) then go to
+  **Step 7** (Verify).
 
-## 4. CI Failures
+## 4. Merge Conflicts
+
+When GitHub reports merge conflicts, resolve them before CI or review comments. Do not wait for CI: conflicted PRs often
+stop or hide useful checks.
+
+1. Confirm the worktree is clean except for intentional agent changes:
+   ```bash
+   git status --short
+   ```
+   If unrelated user changes exist, ask before touching them.
+2. Fetch and merge the PR base branch into the PR branch:
+   ```bash
+   git fetch origin "$BASE"
+   git merge --no-edit "origin/$BASE"
+   ```
+3. If the merge exits with conflicts, list conflicted files:
+   ```bash
+   git diff --name-only --diff-filter=U
+   git status --short
+   ```
+4. Resolve every conflict in the smallest safe way:
+   - Preserve the PR's intended behavior unless the base branch clearly supersedes it.
+   - Read both sides and nearby code before choosing.
+   - Run focused tests, formatters, or type checks for touched areas.
+   - If a conflict requires product/design judgment, stop and ask the user with the file path and conflicting choices.
+5. Verify no unmerged entries remain:
+   ```bash
+   git diff --check
+   test -z "$(git diff --name-only --diff-filter=U)"
+   ```
+6. Commit and push the merge resolution:
+   ```bash
+   git add <resolved-files>
+   git commit -m "fix: resolve merge conflicts"
+   git push
+   ```
+
+## 5. CI Failures
 
 For each failed check in `failures`:
 
@@ -94,7 +134,7 @@ For each failed check in `failures`:
    - **Actionable** (lint, type error, test failure, format, stale generated code) — delegate a bounded implementation task if available. Provide: truncated failure logs, check name, changed file paths (`git diff --name-only origin/$BASE...HEAD`), and verification command.
 4. After all fixes complete, `git push` once.
 
-## 5. Review Comments
+## 6. Review Comments
 
 ### Fetch threads
 
@@ -123,7 +163,7 @@ gh api graphql \
 BASH
 ```
 
-If empty, skip to Step 6.
+If empty, skip to Step 7.
 
 ### Validate and act
 
@@ -144,13 +184,18 @@ For each unresolved thread:
 
 After all threads processed, `git push` once if any fixes were made.
 
-## 6. Final Verification
+## 7. Final Verification
 
-1. Fetch all unresolved threads (Step 5 one-shot fetch).
-2. If any remain, handle them (Step 5) and push.
-3. Report final status: CI state, remaining threads (if any), total iterations used.
+1. Check mergeability:
+   ```bash
+   gh pr view "$PR" --json mergeStateStatus -q '.mergeStateStatus'
+   ```
+   If it is `DIRTY`, run Step 4.
+2. Fetch all unresolved threads (Step 6 one-shot fetch).
+3. If any remain, handle them (Step 6) and push.
+4. Report final status: merge state, CI state, remaining threads (if any), total iterations used.
 
-## 7. Re-launch Cycle
+## 8. Re-launch Cycle
 
 After handling an event and pushing any changes:
 
@@ -162,6 +207,7 @@ After handling an event and pushing any changes:
 ## Rules
 
 - Prefix all GitHub comments with `[agent]`
+- Merge conflicts: resolve before CI/review-comment work
 - Infra/flaky failures: skip and report, never retry
 - Delegation failures: skip the item and report, do not block
 - Max 10 total iterations through the fix cycle
