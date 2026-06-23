@@ -30,8 +30,8 @@ let
   ]
   ++ [
     "- Resolve a full branch for a task with `agent-branch-name --slug <kebab-slug> --task \"<description>\"` (auto-creates a Linear ticket for work-org repos when none is supplied)"
-    "- Create worktrees with `wt switch --create $(git-branch-prefix)<rest-of-branch>`"
-    "- **CRITICAL**: `wt switch` cannot cd in non-interactive shells. Always use `wt switch --format json` to get the worktree path as JSON. After switching, you MUST pass `cwd: \"<worktree_path>\"` to ALL subsequent bash commands — never rely on `cd` within bash scripts"
+    "- Create worktrees with `wt switch --create --no-hooks --no-cd $(git-branch-prefix)<rest-of-branch>`"
+    "- **CRITICAL**: use `wt switch --no-cd --format json` in non-interactive shells to get the worktree path as JSON. After switching, you MUST pass `cwd: \"<worktree_path>\"` to ALL subsequent bash commands — never rely on `cd` within bash scripts"
     "- Do NOT use `git clone`, `git worktree add`, `git checkout -b`, or Claude's built-in EnterWorktree"
   ];
 

@@ -36,7 +36,7 @@ and prepare the session prompt.
 
 Workflow:
 1. Shows a confirmation question (bottom of window) with the branch name and task description
-2. Creates the worktree via `wt switch --create <branch> --format json`
+2. Creates the worktree via `wt switch --create --no-hooks --no-cd <branch> --format json`
 3. Opens a new Zellij tab and runs maki in the worktree directory
 
 Use for long-running feature work that deserves its own isolated session.
@@ -109,7 +109,7 @@ agent-branch-name --slug <slug> --task "<task>"]],
       [[
 branch=%s
 
-wt_output=$(wt switch --create "$branch" --format json 2>&1) || {
+wt_output=$(wt switch --create --no-hooks --no-cd "$branch" --format json 2>&1) || {
   echo "ERR:$wt_output"
   exit 1
 }

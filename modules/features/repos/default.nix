@@ -186,7 +186,7 @@ in
     # follows the per-repo (origin org) identity rather than a per-host prefix.
     functions.__wa_expand = ''
       set -l prefix (git-branch-prefix 2>/dev/null)
-      echo "wt switch --create $prefix%"
+      echo "wt switch --create --no-hooks $prefix%"
     '';
 
     interactiveShellInit = ''
@@ -197,7 +197,7 @@ in
     shellAbbrs = {
       r = "tv repos | read -l s; and c $s";
       w = "tv worktrees | read -l s; and c $s";
-      wc = "wt switch --create";
+      wc = "wt switch --create --no-hooks";
       wm = "wt merge";
       wx = "wt remove";
       wl = "wt list";
