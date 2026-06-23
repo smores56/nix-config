@@ -74,6 +74,7 @@ let
       # .pub + known_hosts for git ssh-format signing + host verification.
       # Private keys stay denied; signing goes through SSH_AUTH_SOCK.
       read_file = [
+        "$HOME/.gitignore"
         "$HOME/.ssh/id_personal.pub"
         "$HOME/.ssh/id_work.pub"
         "$HOME/.ssh/known_hosts"
