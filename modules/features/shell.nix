@@ -31,6 +31,12 @@ in
   manual.manpages.enable = false;
 
   programs = {
+    mise = {
+      enable = true;
+      enableFishIntegration = true;
+      enableBashIntegration = true;
+    };
+
     zoxide = {
       enable = true;
       options = [

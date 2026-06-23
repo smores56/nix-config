@@ -45,6 +45,9 @@ let
         "$XDG_CACHE_HOME"
         "$HOME/.cargo"
         "$HOME/.npm"
+        "$HOME/.local/share/mise"
+        "$HOME/.local/state/mise"
+        "$HOME/Library/Caches/mise"
         "$TMPDIR"
         "/tmp"
         # Runtime dir: just, gh, and other tools use XDG_RUNTIME_DIR for temp
@@ -112,6 +115,8 @@ let
       "XDG_RUNTIME_DIR"
       "TMPDIR"
       "SSH_AUTH_SOCK"
+      "MISE_*"
+      "__MISE_*"
       # LLM/MCP provider keys read by maki/omp (union across personal+work).
       "NEURALWATT_API_KEY"
       "XIAOMI_MIMO_API_KEY"
@@ -186,6 +191,11 @@ let
     gh_dir="$XDG_CACHE_HOME/nono/gh-config/$NONO_SESSION_ID"
     mkdir -p "$gh_dir"
     printf 'GH_CONFIG_DIR=%s\n' "$gh_dir" >> "$NONO_ENV_FILE"
+
+    case ":$PATH:" in
+      *:"$HOME/.local/share/mise/shims":*) ;;
+      *) printf 'PATH=%s:%s\n' "$HOME/.local/share/mise/shims" "$PATH" >> "$NONO_ENV_FILE" ;;
+    esac
   '';
 
   ghAfterHook = pkgs.writeShellScript "nono-agent-after" ''
