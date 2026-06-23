@@ -2,7 +2,7 @@
 -- new Zellij tab, gated behind a confirmation question.
 --
 -- Caller (the LLM) is expected to generate the branch name beforehand:
---   agent-branch-name --slug <slug> --task "<task>" --dry-run
+--   agent-branch-name --slug <slug> --task "<task>"
 -- and prepare the session prompt. This tool handles the interactive parts
 -- (confirmation, worktree creation, Zellij tab spawning).
 --
@@ -31,7 +31,7 @@ maki.api.register_tool({
   description = [[Spawn a new interactive maki session in a new Zellij tab (with a worktree).
 
 BEFORE calling this, generate the branch name via:
-  agent-branch-name --slug <slug> --task "<task>" --dry-run
+  agent-branch-name --slug <slug> --task "<task>"
 and prepare the session prompt.
 
 Workflow:
@@ -49,7 +49,7 @@ This tool cannot be batched.]],
       branch = {
         type = "string",
         description = [[Full branch name (e.g. "smores/my-feature"). Generate via:
-agent-branch-name --slug <slug> --task "<task>" --dry-run]],
+agent-branch-name --slug <slug> --task "<task>"]],
       },
       prompt = {
         type = "string",

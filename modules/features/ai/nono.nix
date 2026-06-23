@@ -61,6 +61,7 @@ let
         "$HOME/.brv-cli"
         "$HOME/.omp"
         "$XDG_DATA_HOME/oh-my-pi-cli"
+        "$XDG_CONFIG_HOME/worktrunk"
         "$HOME/code"
         "$XDG_CONFIG_HOME/home-manager"
         # gh extensions + state (hosts.yml token still hidden via deny below).
@@ -70,6 +71,7 @@ let
         "$HOME/.bun"
         "$HOME/.wasmer"
         "$HOME/.wasmtime"
+        "$XDG_CONFIG_HOME/linear"
       ];
       # .pub + known_hosts for git ssh-format signing + host verification.
       # Private keys stay denied; signing goes through SSH_AUTH_SOCK.
@@ -83,6 +85,7 @@ let
         "$HOME/.ssh/id_personal.pub"
         "$HOME/.ssh/id_work.pub"
         "$HOME/.ssh/known_hosts"
+        "$XDG_CONFIG_HOME/linear"
       ];
       # Defense in depth over default's deny_shell_configs. ~/.config/gh
       # (hosts.yml) holds the OAuth token AND triggers maki's Copilot probe

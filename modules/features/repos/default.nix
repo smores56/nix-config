@@ -69,6 +69,7 @@ let
   # Resolve a full branch name from an agent-supplied slug. For work repos a
   # Linear ticket id is required: taken from --ticket, extracted from --task,
   # or created via the Linear CLI. Personal repos get `<personalPrefix>/<slug>`.
+  # --dry-run is optional test-only behavior and is not used by spawn tools.
   #
   #   agent-branch-name --slug <slug> [--task <text>] [--ticket <id>] [--dry-run]
   agentBranchName = pkgs.writeShellApplication {
@@ -163,10 +164,22 @@ in
   programs.git.settings.ghq.root = cfg.codeRoot;
 
   home.file = {
-    ".config/worktrunk/config.toml".source = ../worktrunk/config.toml;
     ".config/television/cable/repos.toml".source = ./tv-repos.toml;
     ".config/television/cable/worktrees.toml".source = ./tv-worktrees.toml;
   };
+
+  home.activation.seedWorktrunkConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    target="$HOME/.config/worktrunk/config.toml"
+    source=${../worktrunk/config.toml}
+
+    run mkdir -p "$HOME/.config/worktrunk"
+    if [ -L "$target" ]; then
+      run rm "$target"
+    fi
+    if [ ! -e "$target" ]; then
+      run install -m 0644 "$source" "$target"
+    fi
+  '';
 
   programs.fish = {
     # Resolve the branch prefix from the current repo at expansion time so `wa`

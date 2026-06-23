@@ -4,7 +4,7 @@
  * modules/features/ai/maki/lua/spawn_session.lua.
  *
  * Caller resolves the branch name first:
- *   agent-branch-name --slug <slug> --task "<task>" --dry-run
+ *   agent-branch-name --slug <slug> --task "<task>"
  * then passes branch + prompt. The prompt rides in OMP_START_PROMPT (never
  * argv) and is expanded by the outer bash spawned below, so it can't leak via
  * `ps`/history — mirroring maki's START_PROMPT pattern.
@@ -39,7 +39,7 @@ export default function spawnSessionExtension(pi: ExtensionAPI): void {
 				"Spawn a new interactive omp session in a new Zellij tab (with a worktree).",
 			"",
 			"BEFORE calling this, generate the branch name via:",
-			'  agent-branch-name --slug <slug> --task "<task>" --dry-run',
+			'  agent-branch-name --slug <slug> --task "<task>"',
 			"and prepare the session prompt.",
 			"",
 			"Workflow:",
@@ -56,7 +56,7 @@ export default function spawnSessionExtension(pi: ExtensionAPI): void {
 				.string()
 				.describe(
 					'Full branch name (e.g. "smores/my-feature"). Generate via:\n' +
-						'agent-branch-name --slug <slug> --task "<task>" --dry-run',
+						'agent-branch-name --slug <slug> --task "<task>"',
 				),
 			prompt: z
 				.string()
