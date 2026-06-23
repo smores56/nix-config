@@ -40,6 +40,22 @@ let
     - Work GitHub orgs (${lib.concatStringsSep ", " cfg.workGithubOrgs}) use canonical `github.com` remotes and paths
   '';
 
+  sharedSkillNames = lib.attrNames (
+    lib.filterAttrs (_: type: type == "directory") (builtins.readDir ./skills)
+  );
+  sharedSkillTargets = lib.flatten (
+    map (skillName: [
+      ".claude/skills/${skillName}"
+      ".codex/skills/${skillName}"
+      ".config/maki/skills/${skillName}"
+      ".omp/agent/skills/${skillName}"
+    ]) sharedSkillNames
+  );
+  sharedSkillFiles = lib.genAttrs sharedSkillTargets (target: {
+    force = true;
+    source = ./skills/${baseNameOf target};
+  });
+
   aiHints = ''
     # Code Style
     - Strongly prefer functional programming: pure functions, immutability, composition over inheritance
@@ -107,7 +123,9 @@ in
       file = {
         ".claude/CLAUDE.md".text = aiHints;
         ".codex/AGENTS.md".text = aiHints;
-      };
+        ".omp/agent/AGENTS.md".text = aiHints;
+      }
+      // sharedSkillFiles;
     };
 
     dotfiles.aiHints = aiHints;

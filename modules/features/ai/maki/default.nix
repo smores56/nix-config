@@ -344,10 +344,6 @@ in
         force = true;
         source = ./lua/spawn_session.lua;
       };
-      ".config/maki/skills/orchestrate/SKILL.md" = {
-        force = true;
-        source = ./skills/orchestrate/SKILL.md;
-      };
     }
     // lib.optionalAttrs (mcpServers != { }) {
       ".config/maki/mcp.toml" = {

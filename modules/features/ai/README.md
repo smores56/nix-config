@@ -1,8 +1,6 @@
 # AI Tools Setup
 
-Pi is the primary coding agent on every machine (see `pi/EXTENSIONS.md` for
-the full extension stack and decision record). oh-my-pi (omp) is kept as a
-minimal backup agent for when pi breaks - agent config only, no plugins.
+Maki is the primary coding agent. oh-my-pi (omp) is kept as a minimal backup agent for when Maki breaks - agent config only, no plugins.
 
 ## API Keys
 
@@ -41,7 +39,7 @@ These are sourced by fish automatically and available to all AI tools.
 ## Provider Modules
 
 - `xiaomi.nix`, `deepseek.nix` - shared provider/model
-  definitions consumed by pi and omp via `_module.args`
+  definitions consumed by maki and omp via `_module.args`
 
 ## Sandboxing (nono)
 
@@ -49,7 +47,7 @@ Managed by `nono.nix` (`dotfiles.nono.*`; on by default, every host). Every
 agent runs inside a kernel-enforced sandbox via
 [nono](https://github.com/always-further/nono) (`pkgs.nono`) - one tool, both
 OSes: **Landlock** on Linux, **Seatbelt** on macOS. Launchers call
-`nono run -s -- <cmd>` directly — the `m`/`o`/`pi` fish abbrs, herdr's maki
+`nono run -s -- <cmd>` directly — the `m`/`o` fish abbrs, herdr's maki
 pane, and `spawn_session.lua`. `NONO_PROFILE=agent` is set via
 home-manager's `home.sessionVariables`, so the `agent` profile is selected
 without a per-call `-p` flag; the profile's `workdir.access = "readwrite"`
@@ -57,7 +55,7 @@ already makes cwd writable from inside the sandbox, so `--allow-cwd` isn't
 needed.
 
 There is a **single shared `agent` profile** at `~/.config/nono/profiles/agent.json`
-(generated JSON) shared by maki/pi/omp — the per-agent profile split was dropped
+(generated JSON) shared by maki/omp — the per-agent profile split was dropped
 once the network block went away (the only remaining differences were which
 agent-state dirs and which API-key env vars to expose, both thin enough to
 union into one profile).
@@ -124,7 +122,7 @@ approval via the seccomp notify fd, never a silent config write.
 
 **Dangerous-mode escape hatch by design:** occasionally an agent needs to edit
 sensitive personal config that's explicitly denied. There's *no* abbr for that
-— type `exec maki` / `exec pi` / `exec omp` directly (no wrapper) when you
+— type `exec maki` / `exec omp` directly (no wrapper) when you
 need it. The safe path is shorter to type, on purpose (pit of success).
 
 ## oh-my-pi (Backup Agent)
@@ -149,7 +147,7 @@ binary is installed manually (`maki.sh/install.sh`); home-manager only writes
 `~/.config/maki/`:
 
 - `init.lua` - `maki.setup` with `always_yolo`, `always_thinking`, and a
-  `provider.default_model` mirroring pi/omp: Codex-backed `openai/gpt-5.5` on
+  `provider.default_model` mirroring omp: Codex-backed `openai/gpt-5.5` on
   the work machine, Xiaomi MiMo Pro elsewhere. The work cascade is
   `openai/gpt-5.5` strong, `openai/gpt-5.4` medium, and `openai/gpt-5.4-mini`
   weak through Maki's built-in OpenAI catalog. `bash` tool enabled.
@@ -188,12 +186,8 @@ from any terminal (ssh/Tailscale or a browser terminal) with detach/reattach and
 live handoff. Herdr's binary has no maki detector, so maki panes show as plain
 terminals unless maki reports state over the socket API.
 
-## Web Access (smortress)
+## Web Access
 
-- `pi.sammohr.dev` - pi-agent-dashboard (`dotfiles.piDashboard`), the
-  phone-accessible web UI for pi sessions
-- Local TUI access from any device: ssh (Tailscale) + `pi-hub` (tmux-backed
-  session dashboard, see `pi/EXTENSIONS.md`)
 - For the actual maki TUI on the web: run maki inside Herdr (or tmux) and reach
   it over ssh or a browser terminal behind the web proxy (see Herdr above)
 
@@ -206,7 +200,7 @@ footprint.
 ## History
 
 OpenCode (+ OpenChamber/OCX), goose (+ web PWA), pinano,
-Agent of Empires, zerostack, and the Hermes Agent deployment (Docker sandbox +
-Discord gateway) were removed in June 2026 after consolidating on pi.
+Agent of Empires, zerostack, Hermes Agent (Docker sandbox + Discord gateway),
+and Pi were removed after consolidating on Maki/OMP.
 `git log -- modules/features/ai` has the receipts if anything needs
 resurrecting.
