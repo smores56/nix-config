@@ -110,19 +110,44 @@ let
     };
     # Neuralwatt (https://portal.neuralwatt.com) — OpenAI-compatible inference with
     # energy-based pricing ($5/kWh flat). Energy benchmarks from portal models page;
-    # actual billing is metered per-request. GLM-5.2 is the strong tier (1M context,
-    # reasoning); Qwen3.5-397B is medium (262K MoE, very efficient); Qwen3.6-35B is
-    # weak (cheapest, vision+tool support). Token pricing is for maki's per-session
-    # cost readout; actual billing is energy-based.
+    # actual billing is metered per-request. Token pricing is USD per 1M tokens (for
+    # maki's per-session cost readout; actual billing is energy-based). Context and
+    # pricing from https://portal.neuralwatt.com/models. Ordering matters: maki's
+    # dynamic provider lookup uses starts_with prefix matching with first-match-wins,
+    # so longer/suffixed ids (e.g. glm-5.2-short) must precede their prefix (glm-5.2).
     neuralwatt = {
       displayName = "Neuralwatt";
       baseUrl = "https://api.neuralwatt.com/v1";
       keyEnv = "NEURALWATT_API_KEY";
       models = [
         {
+          id = "glm-5.2-short-fast";
+          tier = "weak";
+          context_window = 200000;
+          max_output_tokens = 32768;
+          pricing = {
+            input = 1.45;
+            output = 4.50;
+            cache_write = 0.0;
+            cache_read = 0.36;
+          };
+        }
+        {
           id = "glm-5.2-short";
           tier = "strong";
           context_window = 200000;
+          max_output_tokens = 32768;
+          pricing = {
+            input = 1.45;
+            output = 4.50;
+            cache_write = 0.0;
+            cache_read = 0.36;
+          };
+        }
+        {
+          id = "glm-5.2-fast";
+          tier = "weak";
+          context_window = 1048576;
           max_output_tokens = 32768;
           pricing = {
             input = 1.45;
@@ -144,6 +169,54 @@ let
           };
         }
         {
+          id = "kimi-k2.6-fast";
+          tier = "weak";
+          context_window = 262144;
+          max_output_tokens = 32768;
+          pricing = {
+            input = 0.69;
+            output = 3.22;
+            cache_write = 0.0;
+            cache_read = 0.0;
+          };
+        }
+        {
+          id = "kimi-k2.6";
+          tier = "medium";
+          context_window = 262144;
+          max_output_tokens = 32768;
+          pricing = {
+            input = 0.69;
+            output = 3.22;
+            cache_write = 0.0;
+            cache_read = 0.0;
+          };
+        }
+        {
+          id = "kimi-k2.7-code";
+          tier = "medium";
+          context_window = 262144;
+          max_output_tokens = 32768;
+          pricing = {
+            input = 0.95;
+            output = 4.00;
+            cache_write = 0.0;
+            cache_read = 0.0;
+          };
+        }
+        {
+          id = "qwen3.5-397b-fast";
+          tier = "weak";
+          context_window = 262144;
+          max_output_tokens = 32768;
+          pricing = {
+            input = 0.69;
+            output = 4.14;
+            cache_write = 0.0;
+            cache_read = 0.17;
+          };
+        }
+        {
           id = "qwen3.5-397b";
           tier = "medium";
           context_window = 262144;
@@ -153,6 +226,18 @@ let
             output = 4.14;
             cache_write = 0.0;
             cache_read = 0.17;
+          };
+        }
+        {
+          id = "qwen3.6-35b-fast";
+          tier = "weak";
+          context_window = 131072;
+          max_output_tokens = 16384;
+          pricing = {
+            input = 0.29;
+            output = 1.15;
+            cache_write = 0.0;
+            cache_read = 0.07;
           };
         }
         {
