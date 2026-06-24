@@ -333,32 +333,23 @@ in
         text = ''
           ${config.dotfiles.aiHints}
 
-          ## Delegation
-          - Maki has native `task` and `batch`; use them directly for small, obvious delegation when full orchestration
-            is unnecessary.
-          - For non-trivial work, delegate with the following workflow (non-trivial means multi-step, multi-file,
-            ambiguous, risky, parallelizable, or requiring research before implementation):
-            1. Decide whether the request can be split into useful lanes. If not, do it directly.
-            2. Run read-only discovery first when context is missing: `task` with `subagent_type="research"`.
-            3. Delegate bounded implementation with `subagent_type="general"`. Put independent `task` calls in `batch`;
-               keep dependent steps sequential.
-            4. Synthesize results yourself, resolve conflicts, verify, and give the user the integrated answer.
-          - Default to `model_tier="weak"`. Use it for search, grep, glob, reads, summaries, names, boilerplate,
-            mechanical edits, formatting, test runs, and anything where the steps are well-specified. Most subtasks
-            belong here.
-          - Use `model_tier="medium"` only when the task needs real implementation judgment: multi-file refactors,
-            non-trivial feature work, bug fixes that require diagnosis, or writing logic the weak model would likely
-            get wrong.
-          - Use `model_tier="strong"` only as a last resort, for: architecture and system design, subtle or cross-file
-            bugs, security review, high-risk irreversible changes, or synthesizing conflicting subagent results. If you
-            reach for strong, name the specific reason in your planned approach before delegating.
-          - Escalation order: try weak first. Re-delegate at medium only if weak output is demonstrably insufficient — not
-            preemptively "just in case." Re-delegate at strong only after medium has failed on a hard part.
-          - The parent (you) stays on its current model for planning, delegation, and synthesis — that is where strong
-            reasoning earns its price. The workers should almost never be strong. Maki caps child tiers at the parent's
-            tier, so weak workers are always available and cheap.
-          - Each `task` starts fresh, so include paths, constraints, expected output, and whether edits are allowed.
-          - Ask subagents for concise `file_path:line_number` summaries, not code dumps.
+          ## Delegation Decision Tree
+          - Small, obvious work (single bounded task, no research needed): delegate with one `task` call, or wrap several
+            independent ones in `batch`
+          - Non-trivial work (multi-step, multi-file, ambiguous, risky, parallelizable, or requiring research): split into
+            useful lanes first; if it won't split cleanly, do it directly rather than forcing delegation
+          - For each lane, check context: missing? Run a read-only `task` with `subagent_type="research"` first
+          - Then delegate the bounded implementation per lane: `task` with `subagent_type="general"`; parallelize independent
+            calls in `batch`, run dependent ones sequentially
+          - After delegation: synthesize results yourself, resolve conflicts, verify, deliver the integrated answer
+          - Default `model_tier="medium"` for implementation, refactors, features, bug diagnosis, logic, anything needing
+            real code judgment — most subtasks land here
+          - Drop to `model_tier="weak"` when the task is mechanical and fully specified: search, grep, glob, reads,
+            summaries, names, boilerplate edits, formatting, test runs
+          - Reach for `model_tier="strong"` when the task is hard or high-stakes: architecture, system design, subtle or
+            cross-file bugs, security review, irreversible changes, synthesizing conflicting subagent results
+          - Every `task` starts fresh: include paths, constraints, expected output, and whether edits are allowed
+          - Ask subagents for concise `file_path:line_number` summaries, not code dumps
         '';
       };
 
