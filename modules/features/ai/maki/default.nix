@@ -115,6 +115,11 @@ let
     # pricing from https://portal.neuralwatt.com/models. Ordering matters: maki's
     # dynamic provider lookup uses starts_with prefix matching with first-match-wins,
     # so longer/suffixed ids (e.g. glm-5.2-short) must precede their prefix (glm-5.2).
+    # Tiers track active MoE parameters per token (proxy for per-token capability):
+    #   strong  = GLM-5.2 (744B/40B active), Kimi K2.6/K2.7 (1T/32B active)
+    #   medium  = Qwen3.5-397B (397B/17B active)
+    #   weak    = Qwen3.6-35B (35B/3B active)
+    # Fast/short variants share their base model's weights, so they inherit its tier.
     neuralwatt = {
       displayName = "Neuralwatt";
       baseUrl = "https://api.neuralwatt.com/v1";
@@ -122,7 +127,7 @@ let
       models = [
         {
           id = "glm-5.2-short-fast";
-          tier = "weak";
+          tier = "strong";
           context_window = 200000;
           max_output_tokens = 32768;
           pricing = {
@@ -146,7 +151,7 @@ let
         }
         {
           id = "glm-5.2-fast";
-          tier = "weak";
+          tier = "strong";
           context_window = 1048576;
           max_output_tokens = 32768;
           pricing = {
@@ -170,7 +175,7 @@ let
         }
         {
           id = "kimi-k2.6-fast";
-          tier = "weak";
+          tier = "strong";
           context_window = 262144;
           max_output_tokens = 32768;
           pricing = {
@@ -182,7 +187,7 @@ let
         }
         {
           id = "kimi-k2.6";
-          tier = "medium";
+          tier = "strong";
           context_window = 262144;
           max_output_tokens = 32768;
           pricing = {
@@ -194,7 +199,7 @@ let
         }
         {
           id = "kimi-k2.7-code";
-          tier = "medium";
+          tier = "strong";
           context_window = 262144;
           max_output_tokens = 32768;
           pricing = {
@@ -206,7 +211,7 @@ let
         }
         {
           id = "qwen3.5-397b-fast";
-          tier = "weak";
+          tier = "medium";
           context_window = 262144;
           max_output_tokens = 32768;
           pricing = {
