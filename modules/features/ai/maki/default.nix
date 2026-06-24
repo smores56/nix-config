@@ -120,6 +120,18 @@ let
       keyEnv = "NEURALWATT_API_KEY";
       models = [
         {
+          id = "glm-5.2-short";
+          tier = "strong";
+          context_window = 200000;
+          max_output_tokens = 32768;
+          pricing = {
+            input = 1.45;
+            output = 4.50;
+            cache_write = 0.0;
+            cache_read = 0.36;
+          };
+        }
+        {
           id = "glm-5.2";
           tier = "strong";
           context_window = 1048576;
