@@ -13,7 +13,10 @@ in
   programs.kitty = {
     enable = true;
     settings = {
-      font_family = "family='Google Sans Code' variable_name=GoogleSansCode style=GoogleSansCode-Regular";
+      font_family = "family='Google Sans Code' style=Regular";
+      bold_font = "family='Google Sans Code' style=Bold";
+      italic_font = "family='Google Sans Code' style=Italic";
+      bold_italic_font = "family='Google Sans Code' style='Bold Italic'";
       font_size = cfg.terminalFontSize;
       background_opacity = lib.mkForce "0.8";
       shell = cfg.shellPath;
