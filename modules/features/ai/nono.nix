@@ -58,7 +58,6 @@ let
         "$XDG_DATA_HOME/maki"
         "$XDG_STATE_HOME/maki"
         "$HOME/.local/logs/maki"
-        "$HOME/.brv-cli"
         "$HOME/.omp"
         "$XDG_DATA_HOME/oh-my-pi-cli"
         "$XDG_CONFIG_HOME/worktrunk"

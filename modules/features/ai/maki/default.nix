@@ -21,11 +21,9 @@ let
   defaultModel =
     if workModels then "openai/gpt-5.5" else "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25Pro.id}";
 
-  # byterover (brv) replaces the built-in memory tool when enabled.
   makiTools = [
     "bash = { enabled = true }"
-  ]
-  ++ lib.optional cfg.byteroverMemory "memory = { enabled = false }";
+  ];
   toolsBlock = lib.concatMapStrings (t: "\n        " + t + ",") makiTools;
 
   # init.lua is a Lua script that calls maki.setup() once, then loads custom
@@ -54,17 +52,7 @@ let
     run = true
   '';
 
-  # brv's MCP server (`brv mcp`) supplies memory tools (byterover__curate /
-  # byterover__query / ...) in place of the disabled built-in memory. brv must
-  # be on maki's PATH; tools are namespaced `byterover__*`.
-  mcpServers =
-    cfg.mcpServers
-    // lib.optionalAttrs cfg.byteroverMemory {
-      byterover.command = [
-        "brv"
-        "mcp"
-      ];
-    };
+  mcpServers = cfg.mcpServers;
   mcpToml = pkgs.writers.writeTOML "maki-mcp.toml" { mcp = mcpServers; };
 
   # mimo / gemma are OpenAI-compatible endpoints maki ships no built-in
@@ -397,7 +385,6 @@ in
       description = "Write ~/.config/maki config (init.lua, plugin.toml, custom Lua tools). The maki binary is installed manually.";
       default = true;
     };
-    byteroverMemory = lib.mkEnableOption "byterover (brv) as maki's memory backend instead of the built-in memory tool";
     cloudflareWorkersAi.enable =
       lib.mkEnableOption "Cloudflare Workers AI as an extra maki provider"
       // {

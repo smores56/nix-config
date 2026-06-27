@@ -189,7 +189,6 @@ in
       "smores@smortress" = mkHome {
         displayManager = "none";
         nixos = true;
-        maki.byteroverMemory = true;
       };
       "smohr@smoreswork" =
         let

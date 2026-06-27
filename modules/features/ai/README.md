@@ -162,12 +162,10 @@ binary is installed manually (`maki.sh/install.sh`); home-manager only writes
   weak through Maki's built-in OpenAI catalog. `bash` tool enabled.
 - `plugin.toml` - grants config Lua plugins `run`/`env` (absent manifest =
   every plugin capability denied).
-- `mcp.toml` (when `maki.mcpServers` or `maki.byteroverMemory` is non-empty)
-  registers configured MCP servers under `[mcp.<name>]`. On smoreswork this
-  includes Glean, Slack, and Basic Memory (`uvx basic-memory mcp` with
-  `BASIC_MEMORY_HOME=~/basic-memory` and FastEmbed semantic search); `uvx`
-  must be on maki's PATH. On smortress, byterover (`brv mcp`) replaces the
-  built-in `memory` tool; `brv` must be installed and on maki's PATH.
+- `mcp.toml` (when `maki.mcpServers` is non-empty) registers configured MCP
+  servers under `[mcp.<name>]`. On smoreswork this includes Glean, Slack, and
+  Basic Memory (`uvx basic-memory mcp` with `BASIC_MEMORY_HOME=~/basic-memory`
+  and FastEmbed semantic search); `uvx` must be on maki's PATH.
 - `maki-codex-sync` (work machine) - mirrors standard Codex CLI ChatGPT OAuth
   credentials from `~/.codex/auth.json` into Maki's
   `~/.local/state/maki/auth/openai.json`. Run `codex login`, then
