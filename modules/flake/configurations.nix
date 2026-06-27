@@ -4,7 +4,6 @@ let
     home-manager
     niri
     noctalia
-    paneru
     concord
     stylix
     ;
@@ -78,7 +77,6 @@ let
   ++ [
     niri.homeModules.niri
     noctalia.homeModules.default
-    paneru.homeModules.paneru
     stylix.homeModules.stylix
   ];
 
@@ -108,13 +106,10 @@ let
             exposeSsh = null;
             nixos = null;
             email = null;
-            darkTheme = null;
-            lightTheme = null;
             llm = null;
             noSleep = null;
             primaryMonitor = null;
             monitorSize = null;
-            branchPrefix = null;
             workBranchPrefix = null;
             ticketPrefix = null;
             workGithubOrgs = null;

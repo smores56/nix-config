@@ -36,7 +36,6 @@ in
       type = lib.types.enum [
         "none"
         "aerospace"
-        "paneru"
       ];
       default = "none";
       description = "macOS tiling window manager. Only meaningful when displayManager is 'osx'.";
@@ -69,8 +68,8 @@ in
     };
     branchPrefix = lib.mkOption {
       type = lib.types.str;
-      default = "smores";
-      description = "Branch prefix for personal (non-work-org) repos (e.g. 'smores').";
+      readOnly = true;
+      description = "Branch prefix for personal (non-work-org) repos.";
     };
     workBranchPrefix = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
@@ -153,19 +152,11 @@ in
     };
     darkTheme = lib.mkOption {
       type = themeType;
-      default = {
-        system = "rose-pine-moon";
-        helix = "rose_pine_moon";
-        noctalia = "Rose Pine";
-      };
+      readOnly = true;
     };
     lightTheme = lib.mkOption {
       type = themeType;
-      default = {
-        system = "rose-pine-dawn";
-        helix = "rose_pine_dawn";
-        noctalia = "Rose Pine";
-      };
+      readOnly = true;
     };
     darkModeHook = lib.mkOption {
       type = lib.types.path;
@@ -228,9 +219,6 @@ in
     herdr = lib.mkOption {
       type = lib.types.submodule {
         options = {
-          enable = lib.mkEnableOption "Herdr terminal multiplexer config (binary installed manually)" // {
-            default = true;
-          };
           theme = lib.mkOption {
             type = lib.types.str;
             default = "gruvbox";
@@ -287,6 +275,17 @@ in
       fontPackage = pkgs.googlesans-code;
       shellPath = "${pkgs.${config.dotfiles.shell}}/bin/${config.dotfiles.shell}";
       defaultModel = "gemma-4-31b";
+      branchPrefix = "smores";
+      darkTheme = {
+        system = "rose-pine-moon";
+        helix = "rose_pine_moon";
+        noctalia = "Rose Pine";
+      };
+      lightTheme = {
+        system = "rose-pine-dawn";
+        helix = "rose_pine_dawn";
+        noctalia = "Rose Pine";
+      };
     };
   };
 }
