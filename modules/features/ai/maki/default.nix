@@ -382,10 +382,6 @@ let
 in
 {
   options.dotfiles.maki = {
-    enable = lib.mkEnableOption "maki coding agent config" // {
-      description = "Write ~/.config/maki config (init.lua, plugin.toml, custom Lua tools). The maki binary is installed manually.";
-      default = true;
-    };
     cloudflareWorkersAi.enable =
       lib.mkEnableOption "Cloudflare Workers AI as an extra maki provider"
       // {
@@ -408,7 +404,7 @@ in
     };
   };
 
-  config = lib.mkIf cfg.enable {
+  config = {
     dotfiles.maki.mcpServers = {
       "basic-memory" = {
         command = [
