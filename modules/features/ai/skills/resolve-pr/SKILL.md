@@ -11,7 +11,7 @@ Priority: merge conflicts → review threads → CI. Use the watcher; it runs `g
 ## Setup
 
 ```bash
-WATCH_PR="/Users/smohr/code/github.com/smores56/nix-config/modules/features/ai/skills/resolve-pr/scripts/watch-pr.sh"
+WATCH_PR="$HOME/code/github.com/smores56/nix-config/modules/features/ai/skills/resolve-pr/scripts/watch-pr.sh"
 PR_ARG="${1:-}"
 PR=$(gh pr view ${PR_ARG:+"$PR_ARG"} --json number -q .number 2>/dev/null) || {
   echo "No PR found for current branch. Provide a PR number."
