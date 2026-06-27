@@ -11,10 +11,6 @@
       url = "github:noctalia-dev/noctalia-shell/2c1808f9f8937fc0b82c54af513f7620fec56d71";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    paneru = {
-      url = "github:karinushka/paneru";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     concord = {
       url = "github:chojs23/concord";
       inputs.nixpkgs.follows = "nixpkgs";

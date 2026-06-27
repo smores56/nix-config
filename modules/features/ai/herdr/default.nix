@@ -1,6 +1,5 @@
 {
   config,
-  lib,
   ...
 }:
 let
@@ -34,7 +33,7 @@ let
   '';
 in
 {
-  config = lib.mkIf cfg.enable {
+  config = {
     home.file = {
       ".config/herdr/config.toml" = {
         force = true;
