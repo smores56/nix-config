@@ -34,7 +34,7 @@ Resolve PR Progress:
 Resolve the scripts directory path first. Prefer the current tool's installed skill path; fall back to the common user skill locations:
 
 ```bash
-SKILL_DIR="$(dirname "$(find ~/.claude/skills ~/.codex/skills ~/.config/maki/skills ~/.omp/agent/skills -path '*/resolve-pr/SKILL.md' -print -quit 2>/dev/null)")"
+SKILL_DIR="$(dirname "$(find -L ~/.claude/skills ~/.codex/skills ~/.config/maki/skills ~/.omp/agent/skills -path '*/resolve-pr/SKILL.md' -print -quit 2>/dev/null)")"
 SCRIPTS="$SKILL_DIR/scripts"
 test -n "$SKILL_DIR" && test -d "$SCRIPTS"
 ```
