@@ -6,40 +6,38 @@ argument-hint: [pr-number]
 
 # Resolve PR
 
-Priority: merge conflicts → review threads → CI. Use the watcher; it runs `gh pr checks --watch --fail-fast` and checks comments every 20 seconds while CI is pending.
+Priority: merge conflicts → review threads → CI.
 
-## Setup
+Use the helper for GitHub API work, replies, thread resolution, CI log extraction, and final verification:
 
 ```bash
 WATCH_PR="$HOME/code/github.com/smores56/nix-config/modules/features/ai/skills/resolve-pr/scripts/watch-pr.sh"
-PR_ARG="${1:-}"
-PR=$(gh pr view ${PR_ARG:+"$PR_ARG"} --json number -q .number 2>/dev/null) || {
-  echo "No PR found for current branch. Provide a PR number."
-  exit 1
-}
-BASE=$(gh pr view "$PR" --json baseRefName -q .baseRefName)
+PR="${1:-}"
 ITERATION=0
 ```
 
 ## Loop
 
-Run the watcher and handle the JSON event on its last stdout line. The watcher exits immediately for merge conflicts or unresolved comments; otherwise it waits on CI while checking comments every 20 seconds.
+Run:
 
 ```bash
-COMMENT_INTERVAL=20 bash "$WATCH_PR" "$PR"
+COMMENT_INTERVAL=20 bash "$WATCH_PR" watch $PR
 ```
 
-Events:
+Handle the JSON event from the last stdout line:
 
-- `merge_conflict`: merge `origin/$BASE`, resolve conflicts, test touched areas, commit, push, restart loop.
-- `new_comments`: handle every thread in `threads`; push once if code changed, restart loop.
-- `ci_ready` + `conclusion=failure`: fetch failed logs, fix actionable failures, test, push, restart loop.
-- `ci_ready` + `conclusion=success`: run final verification.
+- `merge_conflict`: merge `origin/<base>`, resolve conflicts, test, commit, push, restart.
+- `new_comments`: handle every thread in `threads`; push once if code changed, restart.
+- `ci_ready` + `conclusion=failure`: fetch logs, fix actionable failures, test, push, restart.
+- `ci_ready` + `conclusion=success`: run `verify`.
 - `ci_ready` + `conclusion=pending|no_checks`: report state; rerun watcher only if continued monitoring is desired.
+- `ready`: done.
 
-After any push, increment `ITERATION`; stop after 10 iterations and report remaining blockers.
+After any push, increment `ITERATION`; stop after 10 iterations and report blockers.
 
 ## Merge conflicts
+
+Use `base` from the `merge_conflict` event:
 
 ```bash
 git status --short
@@ -65,7 +63,7 @@ Ask before touching unrelated user changes. Preserve PR intent unless base clear
 For each unresolved thread:
 
 1. Read the referenced file around `path:line`.
-2. Classify the thread:
+2. Classify it:
    - `VALID`: fix it.
    - `INVALID`: already fixed, false positive, removed code, or intentional design.
    - `BLOCKED`: needs user/reviewer judgment.
@@ -73,26 +71,17 @@ For each unresolved thread:
 4. Resolve valid/invalid threads; leave blocked threads open.
 5. Push once if code changed.
 
-Use GraphQL variables so reply bodies do not break shell quoting:
-
 ```bash
-gh api graphql \
-  -F thread="THREAD_ID" \
-  -f body='[agent] BODY' \
-  -f query='mutation($thread: ID!, $body: String!) { addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $thread, body: $body}) { comment { url } } }'
-
-gh api graphql \
-  -F thread="THREAD_ID" \
-  -f query='mutation($thread: ID!) { resolveReviewThread(input: {threadId: $thread}) { thread { isResolved } } }'
+bash "$WATCH_PR" reply THREAD_ID '[agent] BODY'
+bash "$WATCH_PR" resolve THREAD_ID
 ```
 
 ## CI failures
 
-For each failed check in `failures`:
+For each failed check in `failures`, prefer `run_id`; otherwise pass `link`:
 
 ```bash
-RUN_ID=$(echo "$link" | sed -n 's|.*/runs/\([0-9]*\).*|\1|p')
-test -n "$RUN_ID" && gh run view "$RUN_ID" --log-failed 2>&1 | tail -200
+bash "$WATCH_PR" log "$RUN_ID_OR_LINK"
 ```
 
 - infra/flaky: report; do not retry blindly.
@@ -102,8 +91,7 @@ test -n "$RUN_ID" && gh run view "$RUN_ID" --log-failed 2>&1 | tail -200
 ## Final verification
 
 ```bash
-gh pr view "$PR" --json mergeStateStatus -q .mergeStateStatus
-COMMENT_INTERVAL=20 bash "$WATCH_PR" "$PR"
+bash "$WATCH_PR" verify $PR
 ```
 
-Done only when merge state is not `DIRTY`, the watcher reports no unresolved threads, and CI has no `fail` or `pending` buckets.
+Done only when it emits `{"event":"ready"}`.
