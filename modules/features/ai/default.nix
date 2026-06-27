@@ -40,6 +40,10 @@ let
     - Work GitHub orgs (${lib.concatStringsSep ", " cfg.workGithubOrgs}) use canonical `github.com` remotes and paths
   '';
 
+  # Skills auto-discovered from ./skills/<name>/SKILL.md and symlinked into all
+  # agent dirs. Design and refinement skills adapted from addyosmani/agent-skills
+  # (https://github.com/addyosmani/agent-skills). Tool-specific skills (resolve-pr,
+  # restish, herdr) are customized for this config.
   sharedSkillNames = lib.attrNames (
     lib.filterAttrs (_: type: type == "directory") (builtins.readDir ./skills)
   );
