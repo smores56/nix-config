@@ -42,7 +42,7 @@ in
       taplo
       gopls
       nixfmt
-      mdformat
+      (mdformat.withPlugins (p: [ p.mdformat-gfm ]))
       marksman
       harper
       basedpyright
