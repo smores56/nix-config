@@ -78,11 +78,6 @@ let
     - Prefer Result/Option/Either types and typed error variants over exceptions or string messages
     - Error messages must include enough context to debug without a stack trace
 
-    # Testing
-    - Add tests when the change warrants it TODO
-    - Prefer real dependencies over mocks
-    - Match test scope to the change being made
-
     # Git Workflow
     - ALL repos live under `${cfg.codeRoot}/` and are managed by `ghq` (layout: `${cfg.codeRoot}/<host>/<owner>/<repo>`)
     - Clone repos: `ghq get <owner/repo-or-url>`. Never `git clone` directly
