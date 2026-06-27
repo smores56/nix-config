@@ -205,7 +205,6 @@ in
             };
           };
           basicMemoryMcpEnv = {
-            BASIC_MEMORY_HOME = "/Users/smohr/basic-memory";
             BASIC_MEMORY_SEMANTIC_SEARCH_ENABLED = "true";
             BASIC_MEMORY_SEMANTIC_EMBEDDING_PROVIDER = "fastembed";
           };

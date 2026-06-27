@@ -135,9 +135,9 @@ On `home-manager switch`:
 - Installs the omp CLI via `bun add -g` if missing
 - Writes `~/.omp/agent/models.yml` from the shared provider modules
 - Writes `~/.omp/agent/mcp.json` when servers are configured. On smoreswork
-  this registers Glean and Basic Memory (`uvx basic-memory mcp`,
-  `BASIC_MEMORY_HOME=~/basic-memory`, FastEmbed semantic search); `uvx` must
-  be on omp's PATH.
+  this registers Glean and Basic Memory (`uvx basic-memory mcp`, using
+  Basic Memory's default `~/.basic-memory` config/storage root with FastEmbed
+  semantic search); `uvx` must be on omp's PATH.
 - Seeds `~/.omp/agent/config.yml` from Nix on first run, then deep-merges
   Nix-declared keys onto the omp-owned file on every switch (runtime-only
   keys survive; `yq` is added to PATH for hand-editing) and forces
@@ -164,8 +164,9 @@ binary is installed manually (`maki.sh/install.sh`); home-manager only writes
   every plugin capability denied).
 - `mcp.toml` (when `maki.mcpServers` is non-empty) registers configured MCP
   servers under `[mcp.<name>]`. On smoreswork this includes Glean, Slack, and
-  Basic Memory (`uvx basic-memory mcp` with `BASIC_MEMORY_HOME=~/basic-memory`
-  and FastEmbed semantic search); `uvx` must be on maki's PATH.
+  Basic Memory (`uvx basic-memory mcp`, using Basic Memory's default
+  `~/.basic-memory` config/storage root with FastEmbed semantic search);
+  `uvx` must be on maki's PATH.
 - `maki-codex-sync` (work machine) - mirrors standard Codex CLI ChatGPT OAuth
   credentials from `~/.codex/auth.json` into Maki's
   `~/.local/state/maki/auth/openai.json`. Run `codex login`, then
