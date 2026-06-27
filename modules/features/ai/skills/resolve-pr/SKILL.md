@@ -1,216 +1,109 @@
 ---
 name: resolve-pr
-description: Monitor CI checks, fix actionable failures, and resolve PR review comments until merge-ready. Works in any GitHub repo. Loops until CI is green and all review threads are resolved.
+description: Resolve a GitHub PR by handling merge conflicts, unresolved review threads, and actionable CI failures until ready.
 argument-hint: [pr-number]
 ---
 
 # Resolve PR
 
-Automates the CI-wait, fix, review-comment loop until a PR is merge-ready. Uses an exit-on-event watcher script: the agent is idle while waiting and wakes only on actionable events. Works in any GitHub repository.
+Priority: merge conflicts → review threads → CI. Use the watcher; it runs `gh pr checks --watch --fail-fast` and checks comments every 20 seconds while CI is pending.
 
-Scripts (relative to this skill's directory):
-
-- `scripts/ci-watch.sh` — polls CI check-runs and review comments via `gh api`; exits on first actionable event. Run as a background shell task when the harness supports it.
-- `scripts/run-bash.sh` — pipe complex bash (GraphQL mutations, JSON bodies) through this to avoid shell-escaping issues.
-
-## Progress Checklist
-
-Copy and track as you go:
-
-```
-Resolve PR Progress:
-- [ ] Setup — resolve PR number, owner, repo
-- [ ] Handle events from watcher (loop until done):
-  - [ ] merge_conflict → merge base, resolve conflicts, push
-  - [ ] new_comments → resolve each thread (validate, fix or rebut)
-  - [ ] ci_complete with failures → fix actionable failures via subagents
-  - [ ] ci_complete with no failures → final comment check, then done
-- [ ] Push changes and re-launch watcher (max 10 iterations)
-- [ ] Final verification — mergeable, CI green, no unresolved threads
-```
-
-## 1. Setup
-
-Resolve the scripts directory path first. Prefer the current tool's installed skill path; fall back to the common user skill locations:
+## Setup
 
 ```bash
-SKILL_DIR="$(dirname "$(find -L ~/.claude/skills ~/.codex/skills ~/.config/maki/skills ~/.omp/agent/skills -path '*/resolve-pr/SKILL.md' -print -quit 2>/dev/null)")"
-SCRIPTS="$SKILL_DIR/scripts"
-test -n "$SKILL_DIR" && test -d "$SCRIPTS"
-```
-
-Then resolve PR metadata:
-
-```bash
-PR=$(gh pr view --json number -q '.number' 2>/dev/null || echo "$1")
-PR_URL=$(gh pr view "$PR" --json url -q '.url')
-OWNER=$(gh repo view --json owner -q '.owner.login')
-NAME=$(gh repo view --json name -q '.name')
-BASE=$(gh pr view "$PR" --json baseRefName -q '.baseRefName')
-echo "PR=$PR PR_URL=$PR_URL OWNER=$OWNER NAME=$NAME BASE=$BASE"
-```
-
-If `gh pr view` fails (no PR for current branch), tell the user to create a PR first and **stop**.
-
-Capture `PR`, `PR_URL`, `OWNER`, `NAME`, and `BASE`. Initialize state:
-
-```
-CI_INTERVAL=30
-KNOWN_THREADS=""
+WATCH_PR="/Users/smohr/code/github.com/smores56/nix-config/modules/features/ai/skills/resolve-pr/scripts/watch-pr.sh"
+PR_ARG="${1:-}"
+PR=$(gh pr view ${PR_ARG:+"$PR_ARG"} --json number -q .number 2>/dev/null) || {
+  echo "No PR found for current branch. Provide a PR number."
+  exit 1
+}
+BASE=$(gh pr view "$PR" --json baseRefName -q .baseRefName)
 ITERATION=0
 ```
 
-Print `Resolving PR #<number> — <url>` to confirm.
+## Loop
 
-## 2. Launch Watcher
-
-Run as a background shell task when available, with a long timeout:
+Run the watcher and handle the JSON event on its last stdout line. The watcher exits immediately for merge conflicts or unresolved comments; otherwise it waits on CI while checking comments every 20 seconds.
 
 ```bash
-bash $SCRIPTS/ci-watch.sh $PR --interval $CI_INTERVAL --known-threads "$KNOWN_THREADS"
+COMMENT_INTERVAL=20 bash "$WATCH_PR" "$PR"
 ```
 
-The agent is now idle — zero token consumption. It will be automatically notified when the script exits.
+Events:
 
-## 3. Handle Event
+- `merge_conflict`: merge `origin/$BASE`, resolve conflicts, test touched areas, commit, push, restart loop.
+- `new_comments`: handle every thread in `threads`; push once if code changed, restart loop.
+- `ci_ready` + `conclusion=failure`: fetch failed logs, fix actionable failures, test, push, restart loop.
+- `ci_ready` + `conclusion=success`: run final verification.
+- `ci_ready` + `conclusion=pending|no_checks`: report state; rerun watcher only if continued monitoring is desired.
 
-When the background task completes, read the output. The last stdout line is a JSON event:
+After any push, increment `ITERATION`; stop after 10 iterations and report remaining blockers.
 
-- **`merge_conflict`** — PR cannot merge cleanly. Run **Step 4** (Merge Conflicts). After resolving, push and re-launch
-  (Step 8).
-- **`new_comments`** — extract `threads`, run **Step 6** (Review Comments). Update `KNOWN_THREADS` from the event's
-  `known_threads` field. After handling, go to **Step 8** (Re-launch).
-- **`ci_complete` with `"conclusion":"failure"`** — run **Step 5** (CI Failures). After fixing, push and re-launch (Step
-  8).
-- **`ci_complete` with `"conclusion":"success"`** — CI passed. Do a final one-shot comment check (Step 6) then go to
-  **Step 7** (Verify).
-
-## 4. Merge Conflicts
-
-When GitHub reports merge conflicts, resolve them before CI or review comments. Do not wait for CI: conflicted PRs often
-stop or hide useful checks.
-
-1. Confirm the worktree is clean except for intentional agent changes:
-   ```bash
-   git status --short
-   ```
-   If unrelated user changes exist, ask before touching them.
-2. Fetch and merge the PR base branch into the PR branch:
-   ```bash
-   git fetch origin "$BASE"
-   git merge --no-edit "origin/$BASE"
-   ```
-3. If the merge exits with conflicts, list conflicted files:
-   ```bash
-   git diff --name-only --diff-filter=U
-   git status --short
-   ```
-4. Resolve every conflict in the smallest safe way:
-   - Preserve the PR's intended behavior unless the base branch clearly supersedes it.
-   - Read both sides and nearby code before choosing.
-   - Run focused tests, formatters, or type checks for touched areas.
-   - If a conflict requires product/design judgment, stop and ask the user with the file path and conflicting choices.
-5. Verify no unmerged entries remain:
-   ```bash
-   git diff --check
-   test -z "$(git diff --name-only --diff-filter=U)"
-   ```
-6. Commit and push the merge resolution:
-   ```bash
-   git add <resolved-files>
-   git commit -m "fix: resolve merge conflicts"
-   git push
-   ```
-
-## 5. CI Failures
-
-For each failed check in `failures`:
-
-1. Extract run ID from `link`: `echo "$link" | sed -n 's|.*/runs/\([0-9]*\)/.*|\1|p'`
-2. Fetch logs: `gh run view <run-id> --log-failed 2>&1 | tail -100`
-3. Classify:
-   - **Infra** (runner timeout, service down, rate limit, OOM, network error) — skip and report to user
-   - **Flaky** (identical failure on retry with no code change between attempts) — skip and report to user
-   - **Actionable** (lint, type error, test failure, format, stale generated code) — delegate a bounded implementation task if available. Provide: truncated failure logs, check name, changed file paths (`git diff --name-only origin/$BASE...HEAD`), and verification command.
-4. After all fixes complete, `git push` once.
-
-## 6. Review Comments
-
-### Fetch threads
-
-Use threads from the `new_comments` event (already filtered to new-only by the watcher). For a final one-shot check
-after CI passes, fetch directly:
+## Merge conflicts
 
 ```bash
-cat <<'BASH' | bash $SCRIPTS/run-bash.sh
-gh api graphql \
-  -F owner="$OWNER" -F repo="$NAME" -F pr="$PR" \
-  -f query='query($owner: String!, $repo: String!, $pr: Int!) {
-    repository(owner: $owner, name: $repo) {
-      pullRequest(number: $pr) {
-        reviewThreads(first: 100) {
-          nodes {
-            id isResolved isOutdated path line startLine diffSide
-            comments(first: 10) {
-              nodes { body author { login } url createdAt }
-            }
-          }
-        }
-      }
-    }
-  }' \
-| jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)]'
-BASH
+git status --short
+git fetch origin "$BASE"
+git merge --no-edit "origin/$BASE"
+git diff --name-only --diff-filter=U
 ```
 
-If empty, skip to Step 7.
+Resolve conflicts, then verify and push:
 
-### Validate and act
+```bash
+git diff --check
+test -z "$(git diff --name-only --diff-filter=U)"
+git add <resolved-files>
+git commit -m "fix: resolve merge conflicts"
+git push
+```
+
+Ask before touching unrelated user changes. Preserve PR intent unless base clearly supersedes it.
+
+## Review threads
 
 For each unresolved thread:
 
-1. Read the file at `path` around `line` (~20 lines context).
-2. Classify as **VALID** (issue still exists in code) or **INVALID** (already fixed, code removed, false positive, or
-   intentional design). **Do NOT trust `isOutdated`** — always read the code.
-3. Reply and resolve using `run-bash.sh` (bodies may contain special characters):
-   ```bash
-   cat <<'BASH' | bash $SCRIPTS/run-bash.sh
-   gh api graphql -f query='mutation { addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: "THREAD_ID", body: "BODY"}) { comment { url } } }'
-   gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "THREAD_ID"}) { thread { isResolved } } }'
-   BASH
-   ```
-   - **Invalid** — body: `[agent] <reason>`
-   - **Valid** — fix directly or delegate a bounded implementation task if available. Provide: the comment body, file path + line range, ~20 lines surrounding context, and the PR diff for that file. After fix, reply: `[agent] Fixed in <sha> — <explanation>`.
+1. Read the referenced file around `path:line`.
+2. Classify the thread:
+   - `VALID`: fix it.
+   - `INVALID`: already fixed, false positive, removed code, or intentional design.
+   - `BLOCKED`: needs user/reviewer judgment.
+3. Reply with `[agent] ...`.
+4. Resolve valid/invalid threads; leave blocked threads open.
+5. Push once if code changed.
 
-After all threads processed, `git push` once if any fixes were made.
+Use GraphQL variables so reply bodies do not break shell quoting:
 
-## 7. Final Verification
+```bash
+gh api graphql \
+  -F thread="THREAD_ID" \
+  -f body='[agent] BODY' \
+  -f query='mutation($thread: ID!, $body: String!) { addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $thread, body: $body}) { comment { url } } }'
 
-1. Check mergeability:
-   ```bash
-   gh pr view "$PR" --json mergeStateStatus -q '.mergeStateStatus'
-   ```
-   If it is `DIRTY`, run Step 4.
-2. Fetch all unresolved threads (Step 6 one-shot fetch).
-3. If any remain, handle them (Step 6) and push.
-4. Report final status: merge state, CI state, remaining threads (if any), total iterations used.
+gh api graphql \
+  -F thread="THREAD_ID" \
+  -f query='mutation($thread: ID!) { resolveReviewThread(input: {threadId: $thread}) { thread { isResolved } } }'
+```
 
-## 8. Re-launch Cycle
+## CI failures
 
-After handling an event and pushing any changes:
+For each failed check in `failures`:
 
-1. Increment `ITERATION`.
-2. If code was pushed, reset `KNOWN_THREADS=""` (new commits invalidate prior thread state).
-3. If `ITERATION >= 10`, report remaining issues and **stop** (max 10 full cycles).
-4. Otherwise, go back to **Step 2** with updated `KNOWN_THREADS`.
+```bash
+RUN_ID=$(echo "$link" | sed -n 's|.*/runs/\([0-9]*\).*|\1|p')
+test -n "$RUN_ID" && gh run view "$RUN_ID" --log-failed 2>&1 | tail -200
+```
 
-## Rules
+- infra/flaky: report; do not retry blindly.
+- human gate: report; do not wait forever.
+- lint/type/test/format/generated-code: fix root cause, verify locally, push once.
 
-- Prefix all GitHub comments with `[agent]`
-- Merge conflicts: resolve before CI/review-comment work
-- Infra/flaky failures: skip and report, never retry
-- Delegation failures: skip the item and report, do not block
-- Max 10 total iterations through the fix cycle
-- Always push once at the end of a fix batch, not per-fix
-- Use `scripts/run-bash.sh` for multi-line GraphQL or JSON-body commands
-- If no PR exists for the current branch, tell the user and stop
+## Final verification
+
+```bash
+gh pr view "$PR" --json mergeStateStatus -q .mergeStateStatus
+COMMENT_INTERVAL=20 bash "$WATCH_PR" "$PR"
+```
+
+Done only when merge state is not `DIRTY`, the watcher reports no unresolved threads, and CI has no `fail` or `pending` buckets.
