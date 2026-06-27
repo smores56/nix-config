@@ -40,15 +40,6 @@ in
         force = true;
         text = configToml;
       };
-    }
-    // lib.optionalAttrs config.dotfiles.maki.enable {
-      # Teaches maki to drive Herdr (split panes, spawn agents, wait) from inside
-      # a HERDR_ENV pane. maki discovers ~/.config/maki/skills/<name>/SKILL.md;
-      # loadable via its `skill` tool as "herdr". Refresh from upstream on bumps.
-      ".config/maki/skills/herdr/SKILL.md" = {
-        force = true;
-        source = ./SKILL.md;
-      };
     };
   };
 }
