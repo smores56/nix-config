@@ -11,13 +11,13 @@ let
   cfg = config.dotfiles.ohMyPi;
   workModels = config.dotfiles.workModels;
 
-  # Three-tier subagent hierarchy. Work: Codex-only via the built-in openai-codex
-  # provider — smart gpt-5.5 (main session + deep-reasoning roles), middle gpt-5.4
-  # (general task agent), dumb gpt-5.4-mini (scouts/vision/designer/commit).
-  # Personal: Neuralwatt GLM-5.2 / Qwen3.5-397B / Qwen3.6-35B. Delegation prefers the cheaper tiers.
+  # Three-tier model hierarchy. Work: Codex-only via the built-in openai-codex
+  # provider — strong gpt-5.5:xhigh (plan/slow), balanced gpt-5.4 (default),
+  # cheap gpt-5.4-mini (task/smol/vision/designer/commit/title). Personal:
+  # Neuralwatt GLM-5.2 / Qwen3.5-397B / Qwen3.6-35B.
   strongModel =
     if workModels then
-      "openai-codex/gpt-5.5"
+      "openai-codex/gpt-5.5:xhigh"
     else
       "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.glm52.id}";
   midModel =
@@ -31,17 +31,18 @@ let
     else
       "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.qwen36.id}";
 
-  # Smart: main session + planning + slow/deep reasoning. Middle: general task
-  # agent. Dumb: scouts (smol), vision, designer, commit.
+  # Strong: plan + slow. Balanced: main session. Cheap: subagents and utility
+  # roles.
   modelRoles = {
-    default = strongModel;
+    default = midModel;
     plan = strongModel;
     slow = strongModel;
-    task = midModel;
+    task = weakModel;
     smol = weakModel;
     vision = weakModel;
     designer = weakModel;
     commit = weakModel;
+    title = weakModel;
   };
 
   # Provider priority: primary tier provider first, then backups for failover.
@@ -119,24 +120,32 @@ let
     };
     hideThinkingBlock = false;
     memory = {
-      backend = "mnemopi";
-    };
-    mnemopi = {
-      llmMode = "none";
+      backend = "off";
     };
     exa = {
       enableResearcher = false;
     };
     compaction = {
-      keepRecentTokens = cfg.compaction.keepRecentTokens;
+      strategy = "context-full";
+      keepRecentTokens = if workModels then 20000 else cfg.compaction.keepRecentTokens;
       enabled = true;
-      reserveTokens = cfg.compaction.reserveTokens;
+      reserveTokens = if workModels then 16384 else cfg.compaction.reserveTokens;
       autoContinue = cfg.compaction.autoContinue;
+      idleEnabled = true;
+      idleThresholdTokens = 200000;
+      idleTimeoutSeconds = 300;
       handoffSaveToDisk = true;
     };
     steeringMode = "one-at-a-time";
     tools = {
       discoveryMode = "all";
+    }
+    // lib.optionalAttrs workModels {
+      artifactSpillThreshold = 30;
+      artifactTailBytes = 10;
+      artifactHeadBytes = 10;
+      artifactTailLines = 250;
+      outputMaxColumns = 512;
     };
     inherit modelProviderOrder;
     symbolPreset = "nerd";
@@ -145,7 +154,11 @@ let
       isolation = {
         mode = "auto";
       };
-      eager = true;
+      eager = if workModels then "preferred" else true;
+    }
+    // lib.optionalAttrs workModels {
+      softRequestBudget = 40;
+      maxRecursionDepth = 1;
     };
     stt = {
       enabled = true;
@@ -184,6 +197,17 @@ let
     };
     secrets = {
       enabled = true;
+    };
+  }
+  // lib.optionalAttrs workModels {
+    enabledModels = [
+      "openai-codex/gpt-5.5"
+      "openai-codex/gpt-5.4"
+      "openai-codex/gpt-5.4-mini"
+    ];
+    defaultThinkingLevel = "medium";
+    read = {
+      defaultLimit = 200;
     };
   };
 
@@ -269,11 +293,11 @@ in
           # config on top so declared keys are re-enforced on every switch,
           # while runtime-only keys (auth tokens captured at runtime, etc.)
           # survive. `. * $nix` is a shallow-on-arrays / deep-on-objects merge:
-          # an array value in Nix replaces the runtime array (intentional —
-          # e.g. `disabledServers`, `extensions`), object values merge recursively.
+          # arrays in Nix replace runtime arrays, objects merge recursively.
+          # Mnemopi stays deleted because memory is disabled here.
           echo "[oh-my-pi] Re-enforcing Nix-declared config onto $CONFIG"
           tmp="$(mktemp "''${TMPDIR:-/tmp}/omp-config.XXXXXX.yml")"
-          if yq -y --slurpfile nix "$NIX_CONFIG" '. * $nix[0]' "$CONFIG" > "$tmp"; then
+          if yq -y --slurpfile nix "$NIX_CONFIG" '. * $nix[0] | del(.mnemopi)' "$CONFIG" > "$tmp"; then
             mv -f "$tmp" "$CONFIG"
           else
             echo "[oh-my-pi] yq merge failed, leaving $CONFIG untouched" >&2

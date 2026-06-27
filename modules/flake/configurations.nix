@@ -205,6 +205,11 @@ in
               GLEAN_API_TOKEN = "\${GLEAN_API_TOKEN}";
             };
           };
+          basicMemoryMcpEnv = {
+            BASIC_MEMORY_HOME = "/Users/smohr/basic-memory";
+            BASIC_MEMORY_SEMANTIC_SEARCH_ENABLED = "true";
+            BASIC_MEMORY_SEMANTIC_EMBEDDING_PROVIDER = "fastembed";
+          };
         in
         mkHome {
           displayManager = "osx";
@@ -220,7 +225,17 @@ in
           sevenqlLspPath = "/Users/smohr/dev/okami/typescript/tools/sevenql-lsp/main.ts";
           ohMyPi = {
             codex.enable = true;
-            mcpServers.glean = gleanMcpServer;
+            mcpServers = {
+              glean = gleanMcpServer;
+              "basic-memory" = {
+                command = "uvx";
+                args = [
+                  "basic-memory"
+                  "mcp"
+                ];
+                env = basicMemoryMcpEnv;
+              };
+            };
           };
           maki = {
             cloudflareWorkersAi.enable = true;
@@ -232,6 +247,14 @@ in
                 "-y"
                 "@gleanwork/local-mcp-server"
               ];
+              "basic-memory" = {
+                command = [
+                  "uvx"
+                  "basic-memory"
+                  "mcp"
+                ];
+                env = basicMemoryMcpEnv;
+              };
               slack.command = [
                 "sh"
                 "-lc"

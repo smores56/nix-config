@@ -29,12 +29,14 @@ These are sourced by fish automatically and available to all AI tools.
 
 ### Work Machine (smoreswork)
 
-| Tier | Provider / Model |
-|------|-----------------|
-| Strong | `anthropic/claude-opus-4-8` |
-| Weak | `anthropic/claude-sonnet-4-6` |
+| Tier | Provider / Model | Role |
+|------|------------------|------|
+| Strong | `openai-codex/gpt-5.5:xhigh` | `plan`, `slow` |
+| Default | `openai-codex/gpt-5.4` | `default` (medium thinking) |
+| Weak | `openai-codex/gpt-5.4-mini` | `task`, `smol`, `vision`, `designer`, `commit`, `title` |
 
-`anthropic/claude-fable-5` stays selectable via `/model`; it is no longer the default.
+Only `openai-codex/gpt-5.5`, `openai-codex/gpt-5.4`, and
+`openai-codex/gpt-5.4-mini` stay selectable via `/model` on work hosts.
 
 ## Provider Modules
 
@@ -132,9 +134,16 @@ On `home-manager switch`:
 
 - Installs the omp CLI via `bun add -g` if missing
 - Writes `~/.omp/agent/models.yml` from the shared provider modules
+- Writes `~/.omp/agent/mcp.json` when servers are configured. On smoreswork
+  this registers Glean and Basic Memory (`uvx basic-memory mcp`,
+  `BASIC_MEMORY_HOME=~/basic-memory`, FastEmbed semantic search); `uvx` must
+  be on omp's PATH.
 - Seeds `~/.omp/agent/config.yml` from Nix on first run, then deep-merges
   Nix-declared keys onto the omp-owned file on every switch (runtime-only
-  keys survive; `yq` is added to PATH for hand-editing)
+  keys survive; `yq` is added to PATH for hand-editing) and forces
+  `compaction.strategy = context-full` over omp's installed default.
+- Disables OMP memory (`memory.backend = off`) and removes stale `mnemopi`
+  config during activation
 - Imports Codex OAuth credentials when `ohMyPi.codex.enable` is set (work
   machine)
 
@@ -153,10 +162,12 @@ binary is installed manually (`maki.sh/install.sh`); home-manager only writes
   weak through Maki's built-in OpenAI catalog. `bash` tool enabled.
 - `plugin.toml` - grants config Lua plugins `run`/`env` (absent manifest =
   every plugin capability denied).
-- `mcp.toml` (only when `maki.byteroverMemory`, on for smortress) - registers
-  byterover (`brv mcp`) as an MCP server and disables maki's built-in `memory`
-  tool, so memory runs through byterover's `byterover__*` tools. `brv` must be
-  installed and on maki's PATH (manual; smortress only).
+- `mcp.toml` (when `maki.mcpServers` or `maki.byteroverMemory` is non-empty)
+  registers configured MCP servers under `[mcp.<name>]`. On smoreswork this
+  includes Glean, Slack, and Basic Memory (`uvx basic-memory mcp` with
+  `BASIC_MEMORY_HOME=~/basic-memory` and FastEmbed semantic search); `uvx`
+  must be on maki's PATH. On smortress, byterover (`brv mcp`) replaces the
+  built-in `memory` tool; `brv` must be installed and on maki's PATH.
 - `maki-codex-sync` (work machine) - mirrors standard Codex CLI ChatGPT OAuth
   credentials from `~/.codex/auth.json` into Maki's
   `~/.local/state/maki/auth/openai.json`. Run `codex login`, then

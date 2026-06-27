@@ -30,7 +30,7 @@ let
   ]
   ++ [
     "- Resolve a full branch for a task with `agent-branch-name --slug <kebab-slug> --task \"<description>\"` (auto-creates a Linear ticket for work-org repos when none is supplied)"
-    "- Create worktrees with `wt switch --create --no-hooks --no-cd $(git-branch-prefix)<rest-of-branch>`"
+    "- Create worktrees with `wt switch --create --no-cd $(git-branch-prefix)<rest-of-branch>`"
     "- **CRITICAL**: use `wt switch --no-cd --format json` in non-interactive shells to get the worktree path as JSON. After switching, you MUST pass `cwd: \"<worktree_path>\"` to ALL subsequent bash commands — never rely on `cd` within bash scripts"
     "- Do NOT use `git clone`, `git worktree add`, `git checkout -b`, or Claude's built-in EnterWorktree"
   ];
@@ -79,7 +79,7 @@ let
     - Error messages must include enough context to debug without a stack trace
 
     # Testing
-    - Add tests when the change warrants it
+    - Add tests when the change warrants it TODO
     - Prefer real dependencies over mocks
     - Match test scope to the change being made
 
@@ -92,7 +92,8 @@ let
     - Always push immediately after committing — never leave local-only commits
     - Do not add `Co-Authored-By` trailers to commit messages (no AI attribution)
     ${branchWorkflow}
-    - For personal repos: do all work in a worktree, commit and push after each meaningful change, merge back to main when all work is done, then clean up the worktree, local branch, and remote branch
+    - For personal repos: do all work in a worktree, commit and push after each meaningful change, merge back to main when all work is done, then clean up the worktree, local branch, and remote branch TODO
+
     # Commits and PRs
     - Follow Conventional Commits: <https://www.conventionalcommits.org/en/v1.0.0/>
     - Types: feat, fix, refactor, chore, docs, test, perf, ci
@@ -104,16 +105,20 @@ let
     }
     - Applies to both commit messages and PR titles
 
+    # Memory
+    - MCP servers are available tools, but durable memory use is intentional: recall before relying on prior user/project decisions; retain only durable preferences, workflow decisions, and completed config outcomes that should survive future sessions.
+    - Do not store secrets, tokens, credentials, raw logs, transient debug notes, or facts already obvious from tracked files. Prefer repo docs/config as source of truth.
+
     # Communication
     - Non-interactive CLI commands only (flags over interactive prompts)
 
-    # Caveman Mode (lite)
+    # Terseness
     - No filler (just/really/basically), pleasantries (sure/certainly), or hedging
     - Keep articles + full sentences. Short synonyms preferred (fix not "implement a solution for"). Technical terms exact
-    - Pattern: `[thing] [action] [reason]. [next step].` — no preambles, postscripts, or tool-call narration
+    - Pattern: `[thing] [action] [reason]. [next step].` no preambles, postscripts, or tool-call narration
     - No decorative tables/emoji. Long raw error-log dumps only if asked; else quote shortest decisive line. Standard well-known acronyms (DB/API/HTTP) OK; never invent new ones
     - Code blocks, CLI commands, API names, error strings: verbatim. Code/commits/PRs: write normal
-    - Preserve user's dominant language — compress style, not language. Never name or announce the style ("caveman mode on", third-person tags)
+    - Preserve user's dominant language — compress style, not language
     - Auto-clarity: revert to normal for security warnings, irreversible action confirmations, multi-step sequences where compression risks misread, or when user asks. Resume after clear part done
   '';
 in
