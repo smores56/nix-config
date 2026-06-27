@@ -23,6 +23,7 @@ let
 
   makiTools = [
     "bash = { enabled = true }"
+    "memory = { enabled = false }"
   ];
   toolsBlock = lib.concatMapStrings (t: "\n        " + t + ",") makiTools;
 
@@ -408,6 +409,20 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    dotfiles.maki.mcpServers = {
+      "basic-memory" = {
+        command = [
+          "uvx"
+          "basic-memory"
+          "mcp"
+        ];
+        env = {
+          BASIC_MEMORY_SEMANTIC_SEARCH_ENABLED = "true";
+          BASIC_MEMORY_SEMANTIC_EMBEDDING_PROVIDER = "fastembed";
+        };
+      };
+    };
+
     home.file = {
       ".config/maki/init.lua" = {
         force = true;

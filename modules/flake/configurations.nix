@@ -245,14 +245,6 @@ in
                 "-y"
                 "@gleanwork/local-mcp-server"
               ];
-              "basic-memory" = {
-                command = [
-                  "uvx"
-                  "basic-memory"
-                  "mcp"
-                ];
-                env = basicMemoryMcpEnv;
-              };
               slack.command = [
                 "sh"
                 "-lc"
