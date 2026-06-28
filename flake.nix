@@ -21,6 +21,8 @@
     };
     flake-parts.url = "github:hercules-ci/flake-parts";
     import-tree.url = "github:vic/import-tree";
+    smolvm.url = "github:smol-machines/smolvm";
+    smolvm.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs =

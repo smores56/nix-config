@@ -5,8 +5,8 @@
 let
   cfg = config.dotfiles.herdr;
   shell = config.dotfiles.shellPath;
-  # maki panes run inside their nono sandbox profile
-  makiPaneCmd = "nono run -s -- maki";
+  # maki panes run inside their smolvm sandbox
+  makiPaneCmd = "smolvm-agent maki";
 
   configToml = ''
     # Managed by home-manager (modules/features/ai/herdr). Manual edits are clobbered.

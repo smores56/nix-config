@@ -6,7 +6,7 @@
 {
   # Host ssh-agent holds the SSH keys so sandboxed agents can sign commits
   # and auth to git remotes WITHOUT reading ~/.ssh — they reach the agent
-  # over $SSH_AUTH_SOCK (inherited by nono) and only ask it to sign blobs.
+  # over $SSH_AUTH_SOCK (inherited by smolvm) and only ask it to sign blobs.
   services.ssh-agent.enable = true;
 
   programs.ssh = {

@@ -75,8 +75,8 @@ in
 
         sm = "ssh smores@smortress -t fish";
 
-        o = "nono run -s -- omp";
-        m = "nono run -s -- maki";
+        o = "smolvm-agent omp";
+        m = "smolvm-agent maki";
         h = "herdr session attach default";
       };
 

@@ -6,6 +6,7 @@ let
     noctalia
     concord
     stylix
+    smolvm
     ;
   inherit (inputs.nixpkgs) lib;
 
@@ -13,7 +14,36 @@ let
 
   localOverlays = system: [
     niri.overlays.niri
+    smolvm.overlays.default
     (final: prev: {
+      # Override libkrun to build without GPU support. The upstream flake
+      # builds with withGpu=isLinux, producing a libkrun.so with undefined
+      # virgl_renderer_* symbols (libkrun.so doesn't list libvirglrenderer
+      # as NEEDED, and the rpath lacks it). No-GPU is correct for headless
+      # agent VMs anyway.
+      smolvm-libkrun = prev.smolvm-libkrun.override {
+        withGpu = false;
+      };
+
+      # Patch the smolvm release tarball:
+      # 1. Replace the bundled libkrun.so (GPU-enabled, broken virgl symbols)
+      #    with our no-GPU build from smolvm-libkrun.
+      # 2. Create missing /mnt mount points in agent-rootfs that
+      #    setup_persistent_rootfs() needs at boot (the 0.8.2 release
+      #    tarball wasn't rebuilt with the build-agent-rootfs.sh fix).
+      smolvm = prev.smolvm.overrideAttrs (old: {
+        postInstall = (old.postInstall or "") + ''
+          rm -f $out/libexec/smolvm/lib/libkrun.so $out/libexec/smolvm/lib/libkrun.so.1 $out/libexec/smolvm/lib/libkrun.so.2
+          cp -f ${final.smolvm-libkrun}/lib64/libkrun.so.1.17.3 $out/libexec/smolvm/lib/libkrun.so.1.17.3
+          ln -sf libkrun.so.1.17.3 $out/libexec/smolvm/lib/libkrun.so.1
+          ln -sf libkrun.so.1 $out/libexec/smolvm/lib/libkrun.so
+
+          for d in overlay storage newroot virtiofs rosetta; do
+            mkdir -p $out/libexec/smolvm/agent-rootfs/mnt/$d
+          done
+        '';
+      });
+
       googlesans-code = prev.stdenv.mkDerivation (finalAttrs: {
         pname = "googlesans-code";
         version = "7.000";
