@@ -14,22 +14,48 @@ let
 
   # Smolfile for the persistent agent VM. No `cmd` — agents run via
   # `machine exec`, so `machine start` returns immediately after boot.
+  #
+  # Image is debian (not alpine): omp's native addons (pi_natives) are
+  # glibc-linked and need glibc symbols that musl/gcompat can't provide.
+  # maki is a static binary, so it works under any libc.
+  #
   # Shared bin mounts to /root/.local/bin (NOT /usr/local/bin, which
   # would shadow the agent rootfs's crane binary and break image pulls).
   smolfile = tomlFormat.generate "agent.smolfile" {
-    image = "alpine:3.21";
+    image = "debian:bookworm-slim";
     net = true;
     cpus = 2;
     memory = 1024;
     overlay = 10;
     env = [
-      "PATH=/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      "BUN_INSTALL=/root/.bun"
+      "PATH=/root/.bun/bin:/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     ];
     volumes = [
       "${sharedBinDir}:/root/.local/bin"
       "${codeRoot}:/root/code"
     ];
   };
+
+  # Idempotent provisioning command run inside the VM. Ensures bun and
+  # omp are installed into the persistent overlay (/root/.bun), so the
+  # install survives VM stop/start. maki lives in the shared virtiofs
+  # mount (/root/.local/bin), installed separately via `maki update`.
+  #
+  # smolvm machine exec doesn't pipe stdin reliably, so we pass the
+  # script via `bash -c`.
+  provisionScript = ''
+    set -e
+    export DEBIAN_FRONTEND=noninteractive
+    if [ ! -x /root/.bun/bin/bun ]; then
+      apt-get update -qq
+      apt-get install -y -qq curl unzip bash
+      curl -fsSL https://bun.sh/install | bash
+    fi
+    export BUN_INSTALL=/root/.bun
+    export PATH="$BUN_INSTALL/bin:$PATH"
+    command -v omp >/dev/null 2>&1 || bun add -g @oh-my-pi/pi-coding-agent
+  '';
 
   launcher = pkgs.writeShellScriptBin "smolvm-agent" ''
     set -euo pipefail
@@ -49,8 +75,11 @@ let
       $smolvm machine start --name "$name" >/dev/null
     fi
 
+    # Provision bun + omp inside the VM (idempotent — skips when present).
+    $smolvm machine exec --name "$name" -- /bin/bash -c ${lib.escapeShellArg provisionScript}
+
     exec $smolvm machine exec --name "$name" -i -t -- "$@"
-''
+  ''
   ;
 in
 {
@@ -69,9 +98,7 @@ in
     ];
 
     # Shared bin dir mounted writable into every agent VM at /root/.local/bin.
-    # maki/omp are installed here via `maki update` / `omp update` (self-updates
-    # swap the binary in place via current_exe()). The dir is on the virtiofs
-    # mount, so updates persist to the host.
+    # maki lives here as a static binary, self-updated via `maki update`.
     home.activation.createSmolvmSharedBin = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       mkdir -p ${sharedBinDir}
     '';
