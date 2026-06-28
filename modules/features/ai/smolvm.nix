@@ -10,11 +10,13 @@ let
   codeRoot = config.dotfiles.codeRoot;
   sharedBinDir = "${config.xdg.dataHome}/smolvm-shared/bin";
 
+  tomlFormat = pkgs.formats.toml { };
+
   # Smolfile for the persistent agent VM. No `cmd` — agents run via
   # `machine exec`, so `machine start` returns immediately after boot.
   # Shared bin mounts to /root/.local/bin (NOT /usr/local/bin, which
   # would shadow the agent rootfs's crane binary and break image pulls).
-  smolfile = pkgs.writeText "agent.smolfile" (builtins.toJSON {
+  smolfile = tomlFormat.generate "agent.smolfile" {
     image = "alpine:3.21";
     net = true;
     cpus = 2;
@@ -27,7 +29,7 @@ let
       "${sharedBinDir}:/root/.local/bin"
       "${codeRoot}:/root/code"
     ];
-  });
+  };
 
   launcher = pkgs.writeShellScriptBin "smolvm-agent" ''
     set -euo pipefail
