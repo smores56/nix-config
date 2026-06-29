@@ -19,6 +19,9 @@ in
         default = "http_status:404";
         ingress = {
           ${fqdn "keep"} = upstream 9804;
+        }
+        // lib.optionalAttrs d.calibre.enable {
+          ${fqdn "calibre"} = upstream d.calibre.port;
         };
       };
     };

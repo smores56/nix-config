@@ -147,6 +147,7 @@ let
             sevenqlLspPath = null;
             ohMyPi = null;
             maki = null;
+            calibre = null;
           } args;
           home.username = username;
           home.homeDirectory =
@@ -182,6 +183,7 @@ let
             noSleep = args.noSleep or false;
             persist = args.persist or false;
             webProxy = args.webProxy or { };
+            calibre = args.calibre or { };
           };
         }
       ]
@@ -214,6 +216,7 @@ in
       "smores@smortress" = mkHome {
         displayManager = "none";
         nixos = true;
+        calibre.enable = true;
       };
       "smohr@smoreswork" =
         let
@@ -311,6 +314,7 @@ in
           enable = true;
           tunnelId = "f2284d1b-5038-447b-ab50-e18dc1dba8c5";
         };
+        calibre.enable = true;
       };
     };
   };

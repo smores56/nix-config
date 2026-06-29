@@ -216,6 +216,20 @@ in
       default = { };
       description = "Public exposure of smortress HTTP services over Cloudflare Tunnel. TLS terminates at the Cloudflare edge; cloudflared proxies each subdomain straight to its loopback service.";
     };
+    calibre = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkEnableOption "calibre-server OPDS as a user systemd service";
+          port = lib.mkOption {
+            type = lib.types.port;
+            default = 8181;
+            description = "Loopback port for calibre-server.";
+          };
+        };
+      };
+      default = { };
+      description = "calibre OPDS content server exposed over the Cloudflare Tunnel.";
+    };
     herdr = lib.mkOption {
       type = lib.types.submodule {
         options = {
