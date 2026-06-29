@@ -33,6 +33,7 @@ let
     overlay = 10;
     env = [
       "BUN_INSTALL=/root/.bun"
+      "MAKI_INSTALL_DIR=/root/.local/bin"
       "PATH=/root/.bun/bin:/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     ];
     volumes = [
@@ -103,11 +104,14 @@ let
     # Provision bun + omp + maki inside the VM (idempotent — skips when present).
     $smolvm machine exec --name "$name" -- /bin/bash -c ${lib.escapeShellArg provisionScript}
 
+    # Forward MAKI_INSTALL_DIR so `maki update` writes to the shared
+    # virtiofs bin mount, not the default /usr/local/bin.
+    env_args=(--env "MAKI_INSTALL_DIR=/root/.local/bin")
+
     # Forward API key env vars from the host shell into the VM. Both
     # omp (models.yml references env var names like "apiKey":"FOO_API_KEY")
     # and maki (provider scripts resolve env vars at runtime) use env-var-
     # based auth, so no secret files need to be mounted.
-    env_args=()
     for var in $(env | sed -n 's/^\([A-Z][A-Z0-9_]*_API_KEY\)=.*/\1/p'); do
       env_args+=(--env "$var=$(printenv "$var")")
     done
