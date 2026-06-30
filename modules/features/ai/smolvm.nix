@@ -139,8 +139,8 @@ let
   '';
 
   # Shared shell snippet: creates the VM if missing, starts it if stopped.
-  # Inlined into both the launcher and the manager to avoid duplicating
-  # the create-or-start sequence.
+  # Inlined into the launcher to avoid duplicating the create-or-start
+  # sequence across scripts.
   ensureVm = ''
     if ! $smolvm machine status --name "$name" >/dev/null 2>&1; then
       $smolvm machine create "$name" --smolfile ${smolfile}
@@ -211,55 +211,6 @@ let
     exec $smolvm machine exec --name "$name" --workdir "$guest_pwd" -i -t "''${env_args[@]}" -- "$@"
   ''
   ;
-  manager = pkgs.writeShellScriptBin "smolvm-vm" ''
-    set -euo pipefail
-
-    smolvm=${pkgs.smolvm}/bin/smolvm
-    name="agent"
-
-    usage() {
-      cat <<'EOF'
-Usage: smolvm-vm <command>
-
-Commands:
-  status    Show VM state
-  stop      Stop the VM (keeps disk/state)
-  restart   Stop then start the VM
-  reset     Remove the VM entirely (recreated fresh on next smolvm-agent run)
-  shell     Drop into an interactive shell in the VM
-EOF
-    }
-
-    cmd="''${1:-}"
-    [ -n "$cmd" ] || { usage; exit 1; }
-    case "$cmd" in
-      -h|--help|help) usage; exit 0 ;;
-      status)
-        $smolvm machine status --name "$name"
-        ;;
-      stop)
-        $smolvm machine stop --name "$name"
-        ;;
-      restart)
-        $smolvm machine stop --name "$name" 2>/dev/null || true
-        $smolvm machine start --name "$name"
-        ;;
-      reset)
-        $smolvm machine rm "$name" --force 2>/dev/null || true
-        echo "VM removed. It will be recreated on the next smolvm-agent run."
-        ;;
-      shell)
-        ${ensureVm}
-        exec $smolvm machine shell --name "$name"
-        ;;
-      *)
-        echo "unknown command: $cmd" >&2
-        usage
-        exit 1
-        ;;
-    esac
-  ''
-  ;
 in
 {
   options.dotfiles.smolvm = {
@@ -274,7 +225,6 @@ in
     home.packages = [
       pkgs.smolvm
       launcher
-      manager
     ];
 
     # Shared bin dir mounted writable into every agent VM at /root/.local/bin.

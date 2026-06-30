@@ -77,7 +77,8 @@ in
 
         o = "smolvm-agent omp";
         m = "smolvm-agent maki";
-        svm = "smolvm-vm";
+        svmr = "smolvm machine rm agent --force";
+        svms = "smolvm machine shell --name agent";
         h = "herdr session attach default";
       };
 
