@@ -8,6 +8,7 @@ let
   cfg = config.dotfiles.smolvm;
 
   codeRoot = config.dotfiles.codeRoot;
+  devRoot = "${config.home.homeDirectory}/dev";
   sharedDir = "${config.xdg.dataHome}/smolvm-shared";
   sharedBinDir = "${sharedDir}/bin";
   configDir = "${sharedDir}/config";
@@ -25,12 +26,17 @@ let
   # would shadow the agent rootfs's crane binary and break image pulls).
   # Config dir mounts read-only at /mnt/host-config — Nix-managed config
   # dereference (symlinks into /nix/store resolved on the host side).
+  #
+  # ssh_agent forwards the host ssh-agent socket into the VM, so git
+  # push (ssh) and ssh-format commit signing work without exposing
+  # private key files. The host ssh-agent holds the keys (see ssh.nix).
   smolfile = tomlFormat.generate "agent.smolfile" {
     image = "debian:bookworm-slim";
     net = true;
     cpus = 2;
     memory = 1024;
     overlay = 10;
+    auth.ssh_agent = true;
     env = [
       "BUN_INSTALL=/root/.bun"
       "MAKI_INSTALL_DIR=/root/.local/bin"
@@ -40,6 +46,7 @@ let
       "${sharedBinDir}:/root/.local/bin"
       "${configDir}:/mnt/host-config:ro"
       "${codeRoot}:/root/code"
+      "${devRoot}:/root/dev"
     ];
   };
 
@@ -64,11 +71,59 @@ let
     }
     sync_config /mnt/host-config/maki /root/.config/maki
     sync_config /mnt/host-config/omp /root/.omp
+    sync_config /mnt/host-config/git /root/.config/git
+    sync_config /mnt/host-config/gh /root/.config/gh
+
+    # SSH public keys for git ssh-format commit signing. The private
+    # keys stay on the host; only the .pub files are synced (the agent
+    # signs via the forwarded ssh-agent socket, git just needs the .pub
+    # to know which key to request).
+    mkdir -p /root/.ssh
+    cp -ruL /mnt/host-config/ssh/. /root/.ssh/ 2>/dev/null || true
+
+    # System packages: git + openssh-client (for ssh-format commit
+    # signing via the forwarded ssh-agent) + ca-certificates for https
+    # git remotes and gh API calls. apt-get update is always run because
+    # the package lists don't persist in the overlay across VM resets.
+    dpkg -s git openssh-client ca-certificates >/dev/null 2>&1 || {
+      apt-get update -qq
+      apt-get install -y -qq git openssh-client ca-certificates >/dev/null 2>&1
+    }
+
+    # gh CLI (static-ish binary tarball). Installed into the shared
+    # virtiofs bin mount so it persists on the host across VM resets.
+    if [ ! -x /root/.local/bin/gh ]; then
+      apt-get install -y -qq curl >/dev/null 2>&1 || true
+      gh_version=$(curl -fsSL https://api.github.com/repos/cli/cli/releases/latest \
+        | sed -n 's/.*"tag_name":.*"v\([^"]*\)".*/\1/p' | head -1)
+      curl -fsSL "https://github.com/cli/cli/releases/download/v''${gh_version}/gh_''${gh_version}_linux_amd64.tar.gz" \
+        | tar xz -C /tmp
+      install -m 0755 /tmp/gh_''${gh_version}_linux_amd64/bin/gh /root/.local/bin/gh
+      rm -rf /tmp/gh_''${gh_version}_linux_amd64
+    fi
+
+    # Patch git config for the VM: the host config references
+    # /nix/store/.../gh for the credential helper and may set
+    # core.sshCommand to a host-only wrapper (git-github-ssh). Rewrite
+    # the credential helper to the VM's gh path and drop sshCommand.
+    # Runs after git is installed (above).
+    git config --file /root/.config/git/config --unset-all \
+      "credential.https://github.com.helper" 2>/dev/null || true
+    git config --file /root/.config/git/config --add \
+      "credential.https://github.com.helper" ""
+    git config --file /root/.config/git/config --add \
+      "credential.https://github.com.helper" "/root/.local/bin/gh auth git-credential"
+    git config --file /root/.config/git/config --unset-all \
+      "credential.https://gist.github.com.helper" 2>/dev/null || true
+    git config --file /root/.config/git/config --add \
+      "credential.https://gist.github.com.helper" ""
+    git config --file /root/.config/git/config --add \
+      "credential.https://gist.github.com.helper" "/root/.local/bin/gh auth git-credential"
+    git config --file /root/.config/git/config --unset-all core.sshCommand 2>/dev/null || true
 
     # Bun + omp (glibc-linked native addons, not static).
     if [ ! -x /root/.bun/bin/bun ]; then
-      apt-get update -qq
-      apt-get install -y -qq curl unzip bash
+      apt-get install -y -qq curl unzip bash >/dev/null 2>&1 || true
       curl -fsSL https://bun.sh/install | bash
     fi
     export BUN_INSTALL=/root/.bun
@@ -108,6 +163,16 @@ let
     # virtiofs bin mount, not the default /usr/local/bin.
     env_args=(--env "MAKI_INSTALL_DIR=/root/.local/bin")
 
+    # Forward GitHub OAuth token so `gh` auth works inside the VM without
+    # reading the denied ~/.config/gh/hosts.yml (which lives in /nix/store
+    # anyway and isn't reachable in the VM). Read host-side via `gh auth token`.
+    if command -v gh >/dev/null 2>&1; then
+      gh_tok=$(gh auth token 2>/dev/null) || gh_tok=""
+      if [ -n "$gh_tok" ]; then
+        env_args+=(--env "GH_TOKEN=$gh_tok")
+      fi
+    fi
+
     # Forward API key env vars from the host shell into the VM. Both
     # omp (models.yml references env var names like "apiKey":"FOO_API_KEY")
     # and maki (provider scripts resolve env vars at runtime) use env-var-
@@ -116,7 +181,88 @@ let
       env_args+=(--env "$var=$(printenv "$var")")
     done
 
-    exec $smolvm machine exec --name "$name" -i -t "''${env_args[@]}" -- "$@"
+    # Map the host working directory to the guest. codeRoot mounts at
+    # /root/code, devRoot at /root/dev — strip the matching prefix to get
+    # the guest path. Falls back to /root/code for paths outside both.
+    guest_pwd="/root/code"
+    pwd_real=$(cd "$PWD" && pwd -P)
+    code_root_real=$(cd ${lib.escapeShellArg codeRoot} && pwd -P)
+    dev_root_real=$(cd ${lib.escapeShellArg devRoot} && pwd -P)
+    case "$pwd_real" in
+      "$code_root_real")
+        guest_pwd="/root/code"
+        ;;
+      "$code_root_real"/*)
+        guest_pwd="/root/code''${pwd_real#$code_root_real}"
+        ;;
+      "$dev_root_real")
+        guest_pwd="/root/dev"
+        ;;
+      "$dev_root_real"/*)
+        guest_pwd="/root/dev''${pwd_real#$dev_root_real}"
+        ;;
+    esac
+
+    exec $smolvm machine exec --name "$name" --workdir "$guest_pwd" -i -t "''${env_args[@]}" -- "$@"
+  ''
+  ;
+  manager = pkgs.writeShellScriptBin "smolvm-vm" ''
+    set -euo pipefail
+
+    smolvm=${pkgs.smolvm}/bin/smolvm
+    name="agent"
+
+    usage() {
+      cat <<'EOF'
+Usage: smolvm-vm <command>
+
+Commands:
+  status    Show VM state
+  stop      Stop the VM (keeps disk/state)
+  restart   Stop then start the VM
+  reset     Remove the VM entirely (recreated fresh on next smolvm-agent run)
+  shell     Drop into an interactive shell in the VM
+EOF
+    }
+
+    ensure_vm() {
+      if ! $smolvm machine status --name "$name" >/dev/null 2>&1; then
+        $smolvm machine create "$name" --smolfile ${smolfile}
+      fi
+      state=$($smolvm machine status --name "$name" --json 2>/dev/null | sed -n 's/.*"state":"\([^"]*\)".*/\1/p')
+      if [ "$state" != "running" ]; then
+        $smolvm machine start --name "$name" >/dev/null
+      fi
+    }
+
+    cmd="''${1:-}"
+    [ -n "$cmd" ] || { usage; exit 1; }
+    case "$cmd" in
+      -h|--help|help) usage; exit 0 ;;
+      status)
+        $smolvm machine status --name "$name"
+        ;;
+      stop)
+        $smolvm machine stop --name "$name"
+        ;;
+      restart)
+        $smolvm machine stop --name "$name" 2>/dev/null || true
+        $smolvm machine start --name "$name"
+        ;;
+      reset)
+        $smolvm machine rm "$name" --force 2>/dev/null || true
+        echo "VM removed. It will be recreated on the next smolvm-agent run."
+        ;;
+      shell)
+        ensure_vm
+        exec $smolvm machine shell --name "$name"
+        ;;
+      *)
+        echo "unknown command: $cmd" >&2
+        usage
+        exit 1
+        ;;
+    esac
   ''
   ;
 in
@@ -133,24 +279,31 @@ in
     home.packages = [
       pkgs.smolvm
       launcher
+      manager
     ];
 
     # Shared bin dir mounted writable into every agent VM at /root/.local/bin.
     # maki lives here as a static binary, self-updated via `maki update`.
     home.activation.createSmolvmSharedBin = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       mkdir -p ${sharedBinDir}
+      mkdir -p ${devRoot}
     '';
 
     # Dereference Nix-managed config symlinks (into /nix/store) into a
     # staging dir, mounted read-only into the VM at /mnt/host-config.
     # The /nix/store paths don't exist inside the VM, so symlinks would
     # be broken. This runs on every home-manager switch to pick up
-    # config changes.
+    # config changes. Includes git, gh, maki, and omp config.
     home.activation.syncSmolvmConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       rm -rf ${configDir}
-      mkdir -p ${configDir}/maki ${configDir}/omp
+      mkdir -p ${configDir}/maki ${configDir}/omp ${configDir}/git ${configDir}/gh ${configDir}/ssh
       cp -rL ${config.home.homeDirectory}/.config/maki/. ${configDir}/maki/ 2>/dev/null || true
       cp -rL ${config.home.homeDirectory}/.omp/. ${configDir}/omp/ 2>/dev/null || true
+      cp -rL ${config.home.homeDirectory}/.config/git/. ${configDir}/git/ 2>/dev/null || true
+      cp -rL ${config.home.homeDirectory}/.config/gh/. ${configDir}/gh/ 2>/dev/null || true
+      # Public keys only — private keys never enter the VM.
+      cp -rL ${config.home.homeDirectory}/.ssh/*.pub ${configDir}/ssh/ 2>/dev/null || true
+      cp -rL ${config.home.homeDirectory}/.ssh/known_hosts ${configDir}/ssh/ 2>/dev/null || true
       chmod -R u+w ${configDir}
     '';
   };

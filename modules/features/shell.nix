@@ -77,6 +77,7 @@ in
 
         o = "smolvm-agent omp";
         m = "smolvm-agent maki";
+        svm = "smolvm-vm";
         h = "herdr session attach default";
       };
 

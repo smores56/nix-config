@@ -5,8 +5,9 @@
 }:
 {
   # Host ssh-agent holds the SSH keys so sandboxed agents can sign commits
-  # and auth to git remotes WITHOUT reading ~/.ssh — they reach the agent
-  # over $SSH_AUTH_SOCK (inherited by smolvm) and only ask it to sign blobs.
+  # and auth to git remotes WITHOUT reading ~/.ssh — smolvm's `ssh_agent`
+  # Smolfile flag forwards the agent socket into the VM, and agents only
+  # ask the agent to sign blobs (private keys never enter the guest).
   services.ssh-agent.enable = true;
 
   programs.ssh = {
