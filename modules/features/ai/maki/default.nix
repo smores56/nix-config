@@ -348,8 +348,10 @@ let
           ''printf '{"base_url":%s,"headers":{"Authorization":"Bearer %s"}}\n' ${lib.escapeShellArg (builtins.toJSON p.baseUrl)} "''${${p.keyEnv}:-}"'';
     in
     ''
-      #!${pkgs.bash}/bin/bash
-      # Managed by home-manager (modules/features/ai/maki). Manual edits are clobbered.
+      #!/usr/bin/env bash
+      # Managed by home-manager (modules/features/ai/maki). Manual edits are
+      # clobbered. /usr/bin/env shebang (not a /nix/store bash path) so the
+      # script also executes inside the smolvm agent VM, where /nix/store is absent.
       set -euo pipefail
       case "''${1:-}" in
         info)
