@@ -50,9 +50,10 @@ let
     ];
   };
 
-  # Idempotent provisioning command run inside the VM. Ensures bun,
-  # omp, and maki are installed into the persistent overlay (/root/.bun,
-  # /root/.local/bin), so the install survives VM stop/start.
+  # Idempotent provisioning command run inside the VM. Installs git,
+  # gh, bun, omp, and maki into the persistent overlay (/root/.bun) and
+  # shared virtiofs bin mount (/root/.local/bin), so installs survive
+  # VM stop/start.
   #
   # smolvm machine exec doesn't pipe stdin reliably, so we pass the
   # script via `bash -c`.
@@ -60,10 +61,11 @@ let
     set -e
     export DEBIAN_FRONTEND=noninteractive
 
-    # Seed config from the read-only host mount into the overlay, so
+    # Sync config from the read-only host mount into the overlay, so
     # Nix-managed symlinks (into /nix/store, which doesn't exist in the
-    # VM) are dereferenced and the real files land in /root/.config and
-    # /root/.omp. Only copies files that are missing or changed.
+    # VM) are dereferenced and the real files land in /root/.config,
+    # /root/.omp, and /root/.ssh. Only copies files that are missing or
+    # changed.
     sync_config() {
       local src="$1" dst="$2"
       mkdir -p "$dst"
@@ -75,11 +77,9 @@ let
     sync_config /mnt/host-config/gh /root/.config/gh
 
     # SSH public keys for git ssh-format commit signing. The private
-    # keys stay on the host; only the .pub files are synced (the agent
-    # signs via the forwarded ssh-agent socket, git just needs the .pub
-    # to know which key to request).
-    mkdir -p /root/.ssh
-    cp -ruL /mnt/host-config/ssh/. /root/.ssh/ 2>/dev/null || true
+    # keys stay on the host; the agent signs via the forwarded ssh-agent
+    # socket, git just needs the .pub to know which key to request.
+    sync_config /mnt/host-config/ssh /root/.ssh
 
     # System packages: git + openssh-client (for ssh-format commit
     # signing via the forwarded ssh-agent) + ca-certificates for https
@@ -138,25 +138,30 @@ let
     fi
   '';
 
+  # Shared shell snippet: creates the VM if missing, starts it if stopped.
+  # Inlined into both the launcher and the manager to avoid duplicating
+  # the create-or-start sequence.
+  ensureVm = ''
+    if ! $smolvm machine status --name "$name" >/dev/null 2>&1; then
+      $smolvm machine create "$name" --smolfile ${smolfile}
+    fi
+
+    state=$($smolvm machine status --name "$name" --json 2>/dev/null \
+      | sed -n 's/.*"state":"\([^"]*\)".*/\1/p')
+    if [ "$state" != "running" ]; then
+      $smolvm machine start --name "$name" >/dev/null
+    fi
+  '';
+
   launcher = pkgs.writeShellScriptBin "smolvm-agent" ''
     set -euo pipefail
 
     smolvm=${pkgs.smolvm}/bin/smolvm
     name="agent"
 
-    # Create the persistent VM if it doesn't exist.
-    if ! $smolvm machine status --name "$name" >/dev/null 2>&1; then
-      $smolvm machine create "$name" --smolfile ${smolfile}
-    fi
+    ${ensureVm}
 
-    # Start if not running. `machine start` returns immediately for VMs
-    # without a cmd (our Smolfile has none — agents run via `machine exec`).
-    state=$($smolvm machine status --name "$name" --json 2>/dev/null | sed -n 's/.*"state":"\([^"]*\)".*/\1/p')
-    if [ "$state" != "running" ]; then
-      $smolvm machine start --name "$name" >/dev/null
-    fi
-
-    # Provision bun + omp + maki inside the VM (idempotent — skips when present).
+    # Provision git, gh, bun, omp, and maki inside the VM (idempotent).
     $smolvm machine exec --name "$name" -- /bin/bash -c ${lib.escapeShellArg provisionScript}
 
     # Forward MAKI_INSTALL_DIR so `maki update` writes to the shared
@@ -225,16 +230,6 @@ Commands:
 EOF
     }
 
-    ensure_vm() {
-      if ! $smolvm machine status --name "$name" >/dev/null 2>&1; then
-        $smolvm machine create "$name" --smolfile ${smolfile}
-      fi
-      state=$($smolvm machine status --name "$name" --json 2>/dev/null | sed -n 's/.*"state":"\([^"]*\)".*/\1/p')
-      if [ "$state" != "running" ]; then
-        $smolvm machine start --name "$name" >/dev/null
-      fi
-    }
-
     cmd="''${1:-}"
     [ -n "$cmd" ] || { usage; exit 1; }
     case "$cmd" in
@@ -254,7 +249,7 @@ EOF
         echo "VM removed. It will be recreated on the next smolvm-agent run."
         ;;
       shell)
-        ensure_vm
+        ${ensureVm}
         exec $smolvm machine shell --name "$name"
         ;;
       *)
@@ -283,8 +278,9 @@ in
     ];
 
     # Shared bin dir mounted writable into every agent VM at /root/.local/bin.
-    # maki lives here as a static binary, self-updated via `maki update`.
-    home.activation.createSmolvmSharedBin = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    # maki + gh live here as static binaries, self-updated in place.
+    # Also ensures ~/dev exists as a virtiofs mount target.
+    home.activation.setupSmolvmDirs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       mkdir -p ${sharedBinDir}
       mkdir -p ${devRoot}
     '';
@@ -292,8 +288,8 @@ in
     # Dereference Nix-managed config symlinks (into /nix/store) into a
     # staging dir, mounted read-only into the VM at /mnt/host-config.
     # The /nix/store paths don't exist inside the VM, so symlinks would
-    # be broken. This runs on every home-manager switch to pick up
-    # config changes. Includes git, gh, maki, and omp config.
+    # be broken. This runs on every home-manager switch to pick up config
+    # changes. Includes maki, omp, git, gh config, and SSH public keys.
     home.activation.syncSmolvmConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       rm -rf ${configDir}
       mkdir -p ${configDir}/maki ${configDir}/omp ${configDir}/git ${configDir}/gh ${configDir}/ssh
