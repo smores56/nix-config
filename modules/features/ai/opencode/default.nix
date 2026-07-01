@@ -123,10 +123,7 @@ let
       auto = true;
       prune = true;
     };
-    permission = {
-      edit = "ask";
-      bash = "ask";
-    };
+    permission."*" = "allow";
     default_agent = "orchestrator";
     provider = providerConfig;
     agent = {
@@ -139,10 +136,9 @@ let
     "$schema" = "https://unpkg.com/oh-my-opencode-slim@latest/oh-my-opencode-slim.schema.json";
     preset = activePreset;
     setDefaultAgent = true;
-    autoUpdate = false;
     disabled_agents = [ "observer" ];
     multiplexer = {
-      type = "none";
+      type = "zellij";
       layout = "main-vertical";
     };
     presets.${activePreset} = if workModels then cloudflarePreset else neuralwattPreset;
