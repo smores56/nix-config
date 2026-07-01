@@ -226,8 +226,7 @@ let
     esac
 
     exec $smolvm machine exec --name "$name" --workdir "$guest_pwd" -i -t "''${env_args[@]}" -- "$@"
-  ''
-  ;
+  '';
 in
 {
   options.dotfiles.smolvm = {
@@ -256,7 +255,7 @@ in
     # staging dir, mounted read-only into the VM at /mnt/host-config.
     # The /nix/store paths don't exist inside the VM, so symlinks would
     # be broken. This runs on every home-manager switch to pick up config
-     # changes. Includes maki, opencode, omp, git, gh config, and SSH public keys.
+    # changes. Includes maki, opencode, omp, git, gh config, and SSH public keys.
     home.activation.syncSmolvmConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       rm -rf ${configDir}
       mkdir -p ${configDir}/maki ${configDir}/opencode ${configDir}/omp ${configDir}/git ${configDir}/gh ${configDir}/ssh
