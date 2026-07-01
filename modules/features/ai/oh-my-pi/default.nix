@@ -10,23 +10,33 @@
 let
   cfg = config.dotfiles.ohMyPi;
   workModels = config.dotfiles.workModels;
+  cfEnabled = cfg.cloudflareWorkersAi.enable;
+  cfProviderId = "cloudflare";
+  cfStrongModel = "${cfProviderId}/@cf/zai-org/glm-5.2";
+  cfMidModel = "${cfProviderId}/@cf/openai/gpt-oss-120b";
+  cfWeakModel = "${cfProviderId}/@cf/zai-org/glm-4.7-flash";
 
-  # Three-tier model hierarchy. Work: Codex-only via the built-in openai-codex
-  # provider — strong gpt-5.5:xhigh (plan/slow), balanced gpt-5.4 (default),
-  # cheap gpt-5.4-mini (task/smol/vision/designer/commit/title). Personal:
-  # Neuralwatt GLM-5.2 / Qwen3.5-397B / Qwen3.6-35B.
+  # Three-tier model hierarchy. Smoreswork uses Cloudflare Workers AI as the
+  # primary provider with Codex models left as backup options. Personal hosts use
+  # Neuralwatt GLM-5.2 / Qwen3.5-397B / Qwen3.6-35B and never include Codex.
   strongModel =
-    if workModels then
+    if cfEnabled then
+      cfStrongModel
+    else if workModels then
       "openai-codex/gpt-5.5:xhigh"
     else
       "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.glm52.id}";
   midModel =
-    if workModels then
+    if cfEnabled then
+      cfMidModel
+    else if workModels then
       "openai-codex/gpt-5.4"
     else
       "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.qwen35.id}";
   weakModel =
-    if workModels then
+    if cfEnabled then
+      cfWeakModel
+    else if workModels then
       "openai-codex/gpt-5.4-mini"
     else
       "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.qwen36.id}";
@@ -48,19 +58,80 @@ let
   # Provider priority: primary tier provider first, then backups for failover.
   modelProviderOrder =
     if workModels then
-      [ "openai-codex" ]
+      lib.optionals cfEnabled [ cfProviderId ] ++ lib.optionals cfg.codex.enable [ "openai-codex" ]
     else
       [
         aiNeuralwatt.providerId
         aiXiaomi.providerId
         aiDeepseek.providerId
         "smortress"
-      ]
-      ++ lib.optionals cfg.codex.enable [ "openai-codex" ];
+      ];
+
+  cloudflareModels = [
+    {
+      id = "@cf/zai-org/glm-5.2";
+      name = "GLM 5.2 (Cloudflare)";
+      reasoning = true;
+      input = [ "text" ];
+      contextWindow = 131072;
+      maxTokens = 32768;
+      cost = {
+        input = 1.40;
+        output = 4.40;
+        cacheRead = 0;
+        cacheWrite = 0;
+      };
+      compat = {
+        supportsDeveloperRole = false;
+      };
+    }
+    {
+      id = "@cf/openai/gpt-oss-120b";
+      name = "GPT OSS 120B (Cloudflare)";
+      reasoning = true;
+      input = [ "text" ];
+      contextWindow = 128000;
+      maxTokens = 32768;
+      cost = {
+        input = 0.35;
+        output = 0.75;
+        cacheRead = 0;
+        cacheWrite = 0;
+      };
+      compat = {
+        supportsDeveloperRole = false;
+      };
+    }
+    {
+      id = "@cf/zai-org/glm-4.7-flash";
+      name = "GLM 4.7 Flash (Cloudflare)";
+      reasoning = true;
+      input = [ "text" ];
+      contextWindow = 131072;
+      maxTokens = 16384;
+      cost = {
+        input = 0.06;
+        output = 0.40;
+        cacheRead = 0;
+        cacheWrite = 0;
+      };
+      compat = {
+        supportsDeveloperRole = false;
+      };
+    }
+  ];
 
   modelsConfig =
     if workModels then
-      { }
+      lib.optionalAttrs cfEnabled {
+        providers.${cfProviderId} = {
+          baseUrl = "https://api.cloudflare.com/client/v4/accounts/\${CLOUDFLARE_ACCOUNT_ID}/ai/v1";
+          apiKey = "CLOUDFLARE_WORKERS_AI_API_TOKEN";
+          api = "openai-completions";
+          auth = "apiKey";
+          models = cloudflareModels;
+        };
+      }
     else
       {
         providers = {
@@ -200,11 +271,17 @@ let
     };
   }
   // lib.optionalAttrs workModels {
-    enabledModels = [
-      "openai-codex/gpt-5.5"
-      "openai-codex/gpt-5.4"
-      "openai-codex/gpt-5.4-mini"
-    ];
+    enabledModels =
+      lib.optionals cfEnabled [
+        cfStrongModel
+        cfMidModel
+        cfWeakModel
+      ]
+      ++ lib.optionals cfg.codex.enable [
+        "openai-codex/gpt-5.5"
+        "openai-codex/gpt-5.4"
+        "openai-codex/gpt-5.4-mini"
+      ];
     defaultThinkingLevel = "medium";
     read = {
       defaultLimit = 200;
@@ -232,6 +309,8 @@ in
         description = "Automatically continue after compaction instead of prompting.";
       };
     };
+
+    cloudflareWorkersAi.enable = lib.mkEnableOption "Cloudflare Workers AI as the primary oh-my-pi provider";
 
     codex = {
       enable = lib.mkEnableOption "OpenAI Codex OAuth credentials for oh-my-pi";
@@ -335,7 +414,7 @@ in
       '';
     };
 
-    home.activation.configureOmpCodex = lib.mkIf cfg.codex.enable {
+    home.activation.configureOmpCodex = lib.mkIf (workModels && cfg.codex.enable) {
       after = [ "linkGeneration" ];
       before = [ ];
       data = ''

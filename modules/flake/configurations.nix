@@ -32,16 +32,25 @@ let
       #    setup_persistent_rootfs() needs at boot (the 0.8.2 release
       #    tarball wasn't rebuilt with the build-agent-rootfs.sh fix).
       smolvm = prev.smolvm.overrideAttrs (old: {
-        postInstall = (old.postInstall or "") + ''
-          rm -f $out/libexec/smolvm/lib/libkrun.so $out/libexec/smolvm/lib/libkrun.so.1 $out/libexec/smolvm/lib/libkrun.so.2
-          cp -f ${final.smolvm-libkrun}/lib64/libkrun.so.1.17.3 $out/libexec/smolvm/lib/libkrun.so.1.17.3
-          ln -sf libkrun.so.1.17.3 $out/libexec/smolvm/lib/libkrun.so.1
-          ln -sf libkrun.so.1 $out/libexec/smolvm/lib/libkrun.so
-
-          for d in overlay storage newroot virtiofs rosetta; do
-            mkdir -p $out/libexec/smolvm/agent-rootfs/mnt/$d
-          done
-        '';
+        postInstall =
+          (old.postInstall or "")
+          + lib.optionalString final.stdenv.hostPlatform.isLinux ''
+            rm -f $out/libexec/smolvm/lib/libkrun.so $out/libexec/smolvm/lib/libkrun.so.1 $out/libexec/smolvm/lib/libkrun.so.2
+            cp -f ${final.smolvm-libkrun}/lib64/libkrun.so.1.17.3 $out/libexec/smolvm/lib/libkrun.so.1.17.3
+            ln -sf libkrun.so.1.17.3 $out/libexec/smolvm/lib/libkrun.so.1
+            ln -sf libkrun.so.1 $out/libexec/smolvm/lib/libkrun.so
+          ''
+          + lib.optionalString final.stdenv.hostPlatform.isDarwin ''
+            rm -f $out/libexec/smolvm/lib/libkrun.dylib $out/libexec/smolvm/lib/libkrun.1.dylib
+            cp -f ${final.smolvm-libkrun}/lib/libkrun.1.17.3.dylib $out/libexec/smolvm/lib/libkrun.1.17.3.dylib
+            ln -sf libkrun.1.17.3.dylib $out/libexec/smolvm/lib/libkrun.1.dylib
+            ln -sf libkrun.1.dylib $out/libexec/smolvm/lib/libkrun.dylib
+          ''
+          + ''
+            for d in overlay storage newroot virtiofs rosetta; do
+              mkdir -p $out/libexec/smolvm/agent-rootfs/mnt/$d
+            done
+          '';
       });
 
       googlesans-code = prev.stdenv.mkDerivation (finalAttrs: {
@@ -250,6 +259,7 @@ in
           workModels = true;
           sevenqlLspPath = "/Users/smohr/dev/okami/typescript/tools/sevenql-lsp/main.ts";
           ohMyPi = {
+            cloudflareWorkersAi.enable = true;
             codex.enable = true;
             mcpServers = {
               glean = gleanMcpServer;
