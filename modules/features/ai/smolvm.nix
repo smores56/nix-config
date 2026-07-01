@@ -139,14 +139,19 @@ let
     fi
 
     # opencode (static binary). Same shared bin mount pattern as maki;
-    # self-updates via `opencode upgrade`. Install dir pinned via
-    # OPENCODE_INSTALL_DIR to match maki's /root/.local/bin placement.
-    # Env var goes on `bash` (the right side of the pipe), not `curl` —
-    # vars prefixing curl only apply to curl, not the shell reading its
-    # stdout. Same pattern as the maki install above.
+    # self-updates via `opencode upgrade`.
+    #
+    # The opencode install script hardcodes INSTALL_DIR=$HOME/.opencode/bin
+    # and ignores OPENCODE_INSTALL_DIR entirely (unlike maki's installer,
+    # which honors MAKI_INSTALL_DIR). So we install to the default location
+    # then relocate the binary into the shared /root/.local/bin mount,
+    # mirroring how gh is installed above. Also pass --no-modify-path so
+    # it doesn't litter /root/.bashrc with a PATH entry for the temp dir.
     if [ ! -x /root/.local/bin/opencode ]; then
-      apt-get install -y -qq curl unzip >/dev/null 2>&1 || true
-      curl -fsSL https://opencode.ai/install | OPENCODE_INSTALL_DIR=/root/.local/bin bash
+      apt-get install -y -qq curl tar >/dev/null 2>&1 || true
+      curl -fsSL https://opencode.ai/install | bash -s -- --no-modify-path
+      install -m 0755 /root/.opencode/bin/opencode /root/.local/bin/opencode
+      rm -rf /root/.opencode
     fi
   '';
 
