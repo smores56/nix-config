@@ -183,7 +183,10 @@ let
 
     # Forward MAKI_INSTALL_DIR so `maki update` writes to the shared
     # virtiofs bin mount, not the default /usr/local/bin.
-    env_args=(--env "MAKI_INSTALL_DIR=/root/.local/bin")
+    env_args=(
+      --env "MAKI_INSTALL_DIR=/root/.local/bin"
+      --env "OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true"
+    )
 
     # Forward GitHub OAuth token so `gh` auth works inside the VM without
     # reading the denied ~/.config/gh/hosts.yml (which lives in /nix/store
