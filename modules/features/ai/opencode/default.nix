@@ -14,8 +14,8 @@ let
   cloudflareWeakModel = "${cloudflareProviderId}/@cf/zai-org/glm-4.7-flash";
 
   openaiModel = id: variant: { inherit id variant; };
-  openaiStrongModel = openaiModel "openai/gpt-5.5" "medium";
-  openaiStrongHighModel = openaiModel "openai/gpt-5.5" "high";
+  openaiStrongModel = openaiModel "openai/gpt-5.5" "xhigh";
+  openaiStrongHighModel = openaiModel "openai/gpt-5.5" "xhigh";
   openaiStrongLowModel = openaiModel "openai/gpt-5.5" "low";
   openaiMidModel = openaiModel "openai/gpt-5.4" "medium";
   openaiWeakLowModel = openaiModel "openai/gpt-5.4-mini" "low";
