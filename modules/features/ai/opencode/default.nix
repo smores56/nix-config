@@ -6,33 +6,35 @@
 }:
 let
   workModels = config.dotfiles.workModels;
-  cloudflareWorkersAiEnabled = config.dotfiles.maki.cloudflareWorkersAi.enable;
   cloudflareProviderId = "cloudflare-workers-ai";
   cloudflareStrongModel = "${cloudflareProviderId}/@cf/zai-org/glm-5.2";
   cloudflareMidModel = "${cloudflareProviderId}/@cf/openai/gpt-oss-120b";
   cloudflareWeakModel = "${cloudflareProviderId}/@cf/zai-org/glm-4.7-flash";
+  openaiStrongModel = "openai/gpt-5.5";
+  openaiMidModel = "openai/gpt-5.4";
+  openaiWeakModel = "openai/gpt-5.4-mini";
 
   strongModel =
-    if workModels && cloudflareWorkersAiEnabled then
+    if workModels then
       cloudflareStrongModel
-    else if workModels then
-      "openai/gpt-5.5"
     else
       "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.glm52.id}";
   midModel =
-    if workModels && cloudflareWorkersAiEnabled then
+    if workModels then
       cloudflareMidModel
-    else if workModels then
-      "openai/gpt-5.4"
     else
       "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.qwen35.id}";
   weakModel =
-    if workModels && cloudflareWorkersAiEnabled then
+    if workModels then
       cloudflareWeakModel
-    else if workModels then
-      "openai/gpt-5.4-mini"
     else
       "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.qwen36.id}";
+
+  openaiModel = id: variant: { inherit id variant; };
+  fallbackModel = primary: backup: [
+    primary
+    backup
+  ];
 
   modelAttrs = model: {
     name = model.name;
@@ -70,7 +72,7 @@ let
 
   providerConfig =
     if workModels then
-      lib.optionalAttrs cloudflareWorkersAiEnabled {
+      {
         ${cloudflareProviderId}.models = cloudflareModels;
       }
     else
@@ -112,13 +114,7 @@ let
 
   slimConfig = {
     "$schema" = "https://unpkg.com/oh-my-opencode-slim@latest/oh-my-opencode-slim.schema.json";
-    preset =
-      if workModels && cloudflareWorkersAiEnabled then
-        "cloudflare"
-      else if workModels then
-        "openai"
-      else
-        "neuralwatt";
+    preset = if workModels then "cloudflare" else "neuralwatt";
     setDefaultAgent = true;
     autoUpdate = false;
     disabled_agents = [ "observer" ];
@@ -129,7 +125,7 @@ let
     presets = {
       cloudflare = {
         orchestrator = {
-          model = strongModel;
+          model = fallbackModel strongModel (openaiModel openaiStrongModel "medium");
           skills = [ "*" ];
           mcps = [
             "*"
@@ -137,17 +133,17 @@ let
           ];
         };
         oracle = {
-          model = strongModel;
+          model = fallbackModel strongModel (openaiModel openaiStrongModel "high");
           skills = [ "simplify" ];
           mcps = [ ];
         };
         council = {
-          model = midModel;
+          model = fallbackModel midModel (openaiModel openaiMidModel "medium");
           skills = [ ];
           mcps = [ ];
         };
         librarian = {
-          model = weakModel;
+          model = fallbackModel weakModel (openaiModel openaiWeakModel "low");
           skills = [ ];
           mcps = [
             "websearch"
@@ -156,62 +152,17 @@ let
           ];
         };
         explorer = {
-          model = weakModel;
+          model = fallbackModel weakModel (openaiModel openaiWeakModel "low");
           skills = [ ];
           mcps = [ ];
         };
         designer = {
-          model = weakModel;
+          model = fallbackModel weakModel (openaiModel openaiWeakModel "medium");
           skills = [ ];
           mcps = [ ];
         };
         fixer = {
-          model = strongModel;
-          skills = [ ];
-          mcps = [ ];
-        };
-      };
-      openai = {
-        orchestrator = {
-          model = "openai/gpt-5.5";
-          variant = "medium";
-          skills = [ "*" ];
-          mcps = [
-            "*"
-            "!context7"
-          ];
-        };
-        oracle = {
-          model = "openai/gpt-5.5";
-          variant = "high";
-          skills = [ "simplify" ];
-          mcps = [ ];
-        };
-        librarian = {
-          model = "openai/gpt-5.4-mini";
-          variant = "low";
-          skills = [ ];
-          mcps = [
-            "websearch"
-            "context7"
-            "gh_grep"
-          ];
-        };
-        explorer = {
-          model = "openai/gpt-5.4-mini";
-          variant = "low";
-          skills = [ ];
-          mcps = [ ];
-        };
-        designer = {
-          model = "openai/gpt-5.4-mini";
-          variant = "medium";
-          skills = [ ];
-          mcps = [ ];
-        };
-        fixer = {
-          model = "openai/gpt-5.5";
-          variant = "low";
+          model = fallbackModel strongModel (openaiModel openaiStrongModel "low");
           skills = [ ];
           mcps = [ ];
         };
