@@ -51,9 +51,9 @@ let
   };
 
   # Idempotent provisioning command run inside the VM. Installs git,
-  # gh, bun, omp, and maki into the persistent overlay (/root/.bun) and
-  # shared virtiofs bin mount (/root/.local/bin), so installs survive
-  # VM stop/start.
+  # gh, bun, omp, maki, and opencode into the persistent overlay
+  # (/root/.bun) and shared virtiofs bin mount (/root/.local/bin), so
+  # installs survive VM stop/start.
   #
   # smolvm machine exec doesn't pipe stdin reliably, so we pass the
   # script via `bash -c`.
@@ -73,6 +73,7 @@ let
     }
     sync_config /mnt/host-config/maki /root/.config/maki
     sync_config /mnt/host-config/omp /root/.omp
+    sync_config /mnt/host-config/opencode /root/.config/opencode
     sync_config /mnt/host-config/git /root/.config/git
     sync_config /mnt/host-config/gh /root/.config/gh
 
@@ -136,6 +137,14 @@ let
       apt-get install -y -qq curl >/dev/null 2>&1 || true
       curl -fsSL https://maki.sh/install.sh | MAKI_INSTALL_DIR=/root/.local/bin sh
     fi
+
+    # opencode (static binary). Same shared bin mount pattern as maki;
+    # self-updates via `opencode upgrade`. Install dir pinned via
+    # OPENCODE_INSTALL_DIR to match maki's /root/.local/bin placement.
+    if [ ! -x /root/.local/bin/opencode ]; then
+      apt-get install -y -qq curl unzip >/dev/null 2>&1 || true
+      OPENCODE_INSTALL_DIR=/root/.local/bin curl -fsSL https://opencode.ai/install | bash
+    fi
   '';
 
   # Shared shell snippet: creates the VM if missing, starts it if stopped.
@@ -161,7 +170,7 @@ let
 
     ${ensureVm}
 
-    # Provision git, gh, bun, omp, and maki inside the VM (idempotent).
+    # Provision git, gh, bun, omp, maki, and opencode inside the VM (idempotent).
     $smolvm machine exec --name "$name" -- /bin/bash -c ${lib.escapeShellArg provisionScript}
 
     # Forward MAKI_INSTALL_DIR so `maki update` writes to the shared
@@ -215,7 +224,7 @@ in
 {
   options.dotfiles.smolvm = {
     enable =
-      lib.mkEnableOption "smolvm sandbox for coding agents (maki/omp) with per-instance kernel tmpfs"
+      lib.mkEnableOption "smolvm sandbox for coding agents (maki/omp/opencode) with per-instance kernel tmpfs"
       // {
         default = true;
       };
@@ -239,11 +248,12 @@ in
     # staging dir, mounted read-only into the VM at /mnt/host-config.
     # The /nix/store paths don't exist inside the VM, so symlinks would
     # be broken. This runs on every home-manager switch to pick up config
-    # changes. Includes maki, omp, git, gh config, and SSH public keys.
+     # changes. Includes maki, opencode, omp, git, gh config, and SSH public keys.
     home.activation.syncSmolvmConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       rm -rf ${configDir}
-      mkdir -p ${configDir}/maki ${configDir}/omp ${configDir}/git ${configDir}/gh ${configDir}/ssh
+      mkdir -p ${configDir}/maki ${configDir}/opencode ${configDir}/omp ${configDir}/git ${configDir}/gh ${configDir}/ssh
       cp -rL ${config.home.homeDirectory}/.config/maki/. ${configDir}/maki/ 2>/dev/null || true
+      cp -rL ${config.home.homeDirectory}/.config/opencode/. ${configDir}/opencode/ 2>/dev/null || true
       cp -rL ${config.home.homeDirectory}/.omp/. ${configDir}/omp/ 2>/dev/null || true
       cp -rL ${config.home.homeDirectory}/.config/git/. ${configDir}/git/ 2>/dev/null || true
       cp -rL ${config.home.homeDirectory}/.config/gh/. ${configDir}/gh/ 2>/dev/null || true
