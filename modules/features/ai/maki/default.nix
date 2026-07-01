@@ -261,14 +261,14 @@ let
   cloudflareProviders.cloudflare = {
     displayName = "Cloudflare Workers AI";
     baseUrl = "https://api.cloudflare.com/client/v4/accounts/\${CLOUDFLARE_ACCOUNT_ID}/ai/v1";
-    keyEnv = "CLOUDFLARE_WORKERS_AI_API_TOKEN";
+    keyEnv = "CLOUDFLARE_API_KEY";
     extraAuthEnv = [ "CLOUDFLARE_ACCOUNT_ID" ];
     dynamicBaseUrl = true;
     models = [
       {
         id = "@cf/zai-org/glm-5.2";
         tier = "strong";
-        context_window = 131072;
+        context_window = 262144;
         max_output_tokens = 32768;
         pricing = {
           input = 1.40;
@@ -392,8 +392,7 @@ in
           (GLM 5.2 strong / gpt-oss-120b medium / GLM 4.7 Flash weak) and the
           maki-cf-cost monthly spend report. This never changes the generated
           default model or disables Codex/OpenAI credential sync. Requires
-          CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_WORKERS_AI_API_TOKEN in the
-          environment.
+          CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_KEY in the environment.
         '';
       };
     mcpServers = lib.mkOption {

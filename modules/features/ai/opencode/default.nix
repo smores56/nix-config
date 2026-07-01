@@ -6,25 +6,32 @@
 }:
 let
   workModels = config.dotfiles.workModels;
+  cloudflareWorkersAiEnabled = config.dotfiles.maki.cloudflareWorkersAi.enable;
+  cloudflareGlm52 = "cloudflare-workers-ai/@cf/zai-org/glm-5.2";
 
-  # Three-tier model hierarchy mirroring oh-my-pi and maki. Work: Codex-backed
-  # OpenAI tiers (strong gpt-5.5, medium gpt-5.4, weak gpt-5.4-mini). Personal:
-  # Neuralwatt GLM-5.2 / Qwen3.5-397B / Qwen3.6-35B. Personal hosts only; work
-  # hosts drive Codex-backed OpenAI through the built-in openai provider and
-  # configure OpenCode separately. GLM-5.2 is the primary model (matches maki's
-  # roles.default and oh-my-pi's strongModel).
+  # Three-tier model hierarchy mirroring oh-my-pi and maki. Work hosts use
+  # Cloudflare Workers AI when enabled; otherwise Codex-backed OpenAI tiers.
+  # Personal hosts use Neuralwatt GLM-5.2 / Qwen3.5-397B / Qwen3.6-35B.
+  # GLM-5.2 is the primary model (matches maki's roles.default and oh-my-pi's
+  # strongModel).
   strongModel =
-    if workModels then
+    if workModels && cloudflareWorkersAiEnabled then
+      cloudflareGlm52
+    else if workModels then
       "openai/gpt-5.5"
     else
       "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.glm52.id}";
   midModel =
-    if workModels then
+    if workModels && cloudflareWorkersAiEnabled then
+      cloudflareGlm52
+    else if workModels then
       "openai/gpt-5.4"
     else
       "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.qwen35.id}";
   weakModel =
-    if workModels then
+    if workModels && cloudflareWorkersAiEnabled then
+      cloudflareGlm52
+    else if workModels then
       "openai/gpt-5.4-mini"
     else
       "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.qwen36.id}";
@@ -44,7 +51,15 @@ let
 
   providerConfig =
     if workModels then
-      { }
+      lib.optionalAttrs cloudflareWorkersAiEnabled {
+        cloudflare-workers-ai.models."@cf/zai-org/glm-5.2" = {
+          name = "GLM-5.2";
+          limit = {
+            context = 262144;
+            output = 262144;
+          };
+        };
+      }
     else
       {
         ${aiNeuralwatt.providerId} = {
@@ -60,8 +75,8 @@ let
 
   # Mirror of oh-my-pi's ompConfig: three-tier agents with strong on plan/
   # oracle, medium on build/fixer/librarian, weak on explorer. small_model
-  # offloads titles/summaries to the weak tier. No-op on work hosts (empty
-  # providerConfig; OpenCode's built-in openai provider is used instead).
+  # offloads titles/summaries to the weak tier. Work hosts use OpenCode's
+  # built-in providers.
   opencodeConfig = {
     "$schema" = "https://opencode.ai/config.json";
     model = strongModel;

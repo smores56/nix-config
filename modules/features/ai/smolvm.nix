@@ -202,6 +202,9 @@ let
     for var in $(env | sed -n 's/^\([A-Z][A-Z0-9_]*_API_KEY\)=.*/\1/p'); do
       env_args+=(--env "$var=$(printenv "$var")")
     done
+    if [ -n "''${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+      env_args+=(--env "CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID")
+    fi
 
     # Map the host working directory to the guest. codeRoot mounts at
     # /root/code, devRoot at /root/dev — strip the matching prefix to get

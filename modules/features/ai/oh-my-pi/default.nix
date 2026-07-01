@@ -73,7 +73,7 @@ let
       name = "GLM 5.2 (Cloudflare)";
       reasoning = true;
       input = [ "text" ];
-      contextWindow = 131072;
+      contextWindow = 262144;
       maxTokens = 32768;
       cost = {
         input = 1.40;
@@ -126,7 +126,7 @@ let
       lib.optionalAttrs cfEnabled {
         providers.${cfProviderId} = {
           baseUrl = "https://api.cloudflare.com/client/v4/accounts/\${CLOUDFLARE_ACCOUNT_ID}/ai/v1";
-          apiKey = "CLOUDFLARE_WORKERS_AI_API_TOKEN";
+          apiKey = "CLOUDFLARE_API_KEY";
           api = "openai-completions";
           auth = "apiKey";
           models = cloudflareModels;
