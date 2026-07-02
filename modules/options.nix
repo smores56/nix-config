@@ -89,7 +89,7 @@ in
     workModels = lib.mkOption {
       type = lib.types.bool;
       default = false;
-      description = "Use work-specific models (OpenAI Codex tiers: GPT-5.5 / GPT-5.4 / GPT-5.4-mini) instead of personal models (Xiaomi MiMo + smortress + DeepSeek).";
+      description = "Use work-specific models (OpenAI Codex tiers: GPT-5.5 / GPT-5.4 / GPT-5.4-mini) instead of personal models (Neuralwatt GLM-5.2 + smortress + DeepSeek).";
     };
     ticketPrefix = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
