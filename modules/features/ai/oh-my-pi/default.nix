@@ -128,7 +128,13 @@ let
     if workModels then
       lib.optionalAttrs cfEnabled {
         providers.${cfProviderId} = {
-          baseUrl = "https://api.cloudflare.com/client/v4/accounts/\${CLOUDFLARE_ACCOUNT_ID}/ai/v1";
+          # omp takes provider `baseUrl` literally — no ${VAR} expansion
+          # (unlike maki's dynamicBaseUrl), and only `apiKey`/`headers` get
+          # env-name/`!cmd` resolution. So the account id can't be a runtime
+          # env var in the URL. Emit a @CLOUDFLARE_ACCOUNT_ID@ placeholder and
+          # substitute it from the activation env when models.yml is written
+          # (enforceOmpModels below) — keeps the id out of the Nix store.
+          baseUrl = "https://api.cloudflare.com/client/v4/accounts/@CLOUDFLARE_ACCOUNT_ID@/ai/v1";
           apiKey = "CLOUDFLARE_API_KEY";
           api = "openai-completions";
           auth = "apiKey";
@@ -340,7 +346,48 @@ in
     # (`. * $nix`): Nix-declared values win, omp/runtime-only keys survive.
     # Edit at runtime with `yq` (YAML-native jq, added to home.packages
     # below) — `jq` breaks once omp rewrites the file as YAML.
-    home.file.".omp/agent/models.yml".text = builtins.toJSON modelsConfig;
+    # `models.yml` is Nix-owned (omp only reads it, never writes), so unlike
+    # config.yml it's regenerated fresh every switch rather than deep-merged.
+    # It must be activation-written (not a read-only home.file symlink) because
+    # the Cloudflare account id is substituted from the env at write time —
+    # keeping it out of the Nix store. See the baseUrl placeholder above.
+    home.activation.enforceOmpModels = {
+      after = [ "linkGeneration" ];
+      before = [ "installOmpCli" ];
+      data =
+        let
+          modelsTemplate = pkgs.writeText "omp-models-nix.json" (builtins.toJSON modelsConfig);
+        in
+        ''
+          MODELS="$HOME/.omp/agent/models.yml"
+          TEMPLATE="${modelsTemplate}"
+          ACCT="''${CLOUDFLARE_ACCOUNT_ID:-}"
+
+          mkdir -p "$(dirname "$MODELS")"
+
+          # Drop a stale Nix-managed symlink from before models.yml became
+          # activation-written, so the real file can replace it.
+          if [ -L "$MODELS" ]; then
+            rm -f "$MODELS"
+          fi
+
+          if [ -n "$ACCT" ]; then
+            # Substitute the @CLOUDFLARE_ACCOUNT_ID@ placeholder from the
+            # activation env (precedent: smolvm.nix reads the same var here).
+            # Regenerates every switch so Nix-side model changes land too.
+            content="$(<"$TEMPLATE")"
+            printf '%s' "''${content//@CLOUDFLARE_ACCOUNT_ID@/$ACCT}" > "$MODELS"
+          elif [ ! -e "$MODELS" ]; then
+            # No env var and no prior file: seed the template verbatim. The
+            # Cloudflare provider will 404 until the env var is present (same
+            # failure mode as a missing CLOUDFLARE_API_KEY). Don't clobber an
+            # existing file — a switch without the env var must not regress a
+            # working setup.
+            cp -f "$TEMPLATE" "$MODELS"
+            echo "[oh-my-pi] CLOUDFLARE_ACCOUNT_ID unset; Cloudflare models will 404 until it is in the environment" >&2
+          fi
+        '';
+    };
     home.file.".omp/agent/mcp.json" = lib.mkIf (cfg.mcpServers != { }) {
       force = true;
       text = builtins.toJSON { mcpServers = cfg.mcpServers; };
