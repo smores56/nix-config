@@ -14,7 +14,7 @@ let
   cfProviderId = "cloudflare";
   cfStrongModel = "${cfProviderId}/@cf/zai-org/glm-5.2";
   cfMidModel = "${cfProviderId}/@cf/openai/gpt-oss-120b";
-  cfWeakModel = "${cfProviderId}/@cf/zai-org/glm-4.7-flash";
+  cfWeakModel = "${cfProviderId}/@cf/openai/gpt-oss-20b";
 
   # Three-tier model hierarchy. Smoreswork uses Cloudflare Workers AI as the
   # primary provider with Codex models left as backup options. Personal hosts use
@@ -41,13 +41,15 @@ let
     else
       "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.qwen36.id}";
 
-  # Strong: plan + slow. Balanced: main session. Cheap: subagents and utility
-  # roles.
+  # Strong: default + plan + slow. Mid: task subagents. Weak: smol/vision and
+  # other utility roles. gpt-oss-20b is the weak tier — glm-4.7-flash stalls on
+  # CF (HTTP 200, zero-byte body), so gpt-oss-20b (same family, lower latency)
+  # backs the cheap/utility roles instead.
   modelRoles = {
-    default = midModel;
+    default = strongModel;
     plan = strongModel;
     slow = strongModel;
-    task = weakModel;
+    task = midModel;
     smol = weakModel;
     vision = weakModel;
     designer = weakModel;
@@ -105,17 +107,17 @@ let
       };
     }
     {
-      id = "@cf/zai-org/glm-4.7-flash";
-      name = "GLM 4.7 Flash (Cloudflare)";
+      id = "@cf/openai/gpt-oss-20b";
+      name = "GPT OSS 20B (Cloudflare)";
       reasoning = true;
       input = [ "text" ];
-      contextWindow = 131072;
-      maxTokens = 16384;
+      contextWindow = 128000;
+      maxTokens = 32768;
       cost = {
-        input = 0.06;
-        output = 0.40;
+        input = 0.20;
+        output = 0.30;
         # No published cached rate; price cached reads as input (conservative).
-        cacheRead = 0.06;
+        cacheRead = 0.20;
         cacheWrite = 0;
       };
       compat = {
@@ -204,6 +206,11 @@ let
     };
     exa = {
       enableResearcher = false;
+    };
+    # Pin the advisor runtime off. It's off by default, but declaring it here
+    # re-enforces the disable on every switch so an in-app toggle can't persist.
+    advisor = {
+      enabled = false;
     };
     compaction = {
       strategy = "context-full";
