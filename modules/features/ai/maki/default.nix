@@ -274,7 +274,9 @@ let
           input = 1.40;
           output = 4.40;
           cache_write = 0.0;
-          cache_read = 0.0;
+          # Cloudflare does automatic prefix caching; GLM-5.2 publishes a
+          # discounted cached-input rate ($0.26/1M) on its model page.
+          cache_read = 0.26;
         };
       }
       {
@@ -286,7 +288,9 @@ let
           input = 0.35;
           output = 0.75;
           cache_write = 0.0;
-          cache_read = 0.0;
+          # No published cached-input rate; price cached reads as input
+          # (conservative — never under-counts).
+          cache_read = 0.35;
         };
       }
       {
@@ -298,7 +302,9 @@ let
           input = 0.06;
           output = 0.40;
           cache_write = 0.0;
-          cache_read = 0.0;
+          # No published cached-input rate; price cached reads as input
+          # (conservative — never under-counts).
+          cache_read = 0.06;
         };
       }
     ];

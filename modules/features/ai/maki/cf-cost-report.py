@@ -7,6 +7,11 @@ same per-1M-token pricing as the maki cloudflare provider config, and prints a
 monthly summary. Estimate only — Cloudflare's dashboard is the billing source of
 truth.
 
+Cloudflare does automatic prefix caching and reports cached input separately;
+maki records it as `cache_read_input_tokens` (and cache writes as
+`cache_creation_input_tokens`). Cached reads are billed at a discount, so they
+are priced separately here — ignoring them would under-count real spend.
+
 Managed by home-manager (modules/features/ai/maki). Manual edits are clobbered.
 """
 
@@ -17,12 +22,15 @@ import sys
 from collections import defaultdict
 from datetime import datetime, timezone
 
-# USD per 1,000,000 tokens (input, output). Keep in sync with cloudflareProviders
-# in modules/features/ai/maki/default.nix.
+# USD per 1,000,000 tokens: (input, output, cache_read). Keep in sync with
+# cloudflareProviders in modules/features/ai/maki/default.nix. Only GLM-5.2
+# publishes a discounted cached-input rate ($0.26/1M); gpt-oss-120b and
+# glm-4.7-flash publish none, so their cached reads are priced at the input rate
+# (conservative — never under-counts). cache_creation is priced as normal input.
 PRICING = {
-    "@cf/zai-org/glm-5.2": (1.40, 4.40),
-    "@cf/openai/gpt-oss-120b": (0.35, 0.75),
-    "@cf/zai-org/glm-4.7-flash": (0.06, 0.40),
+    "@cf/zai-org/glm-5.2": (1.40, 4.40, 0.26),
+    "@cf/openai/gpt-oss-120b": (0.35, 0.75, 0.35),
+    "@cf/zai-org/glm-4.7-flash": (0.06, 0.40, 0.06),
 }
 
 
@@ -111,6 +119,17 @@ def month_of(ts):
         return "unknown"
 
 
+def cost_for(usage, rates):
+    """(input, cache_creation) priced at the input rate; cache_read at the cached
+    rate; output at the output rate. Returns USD."""
+    in_rate, out_rate, cache_rate = rates
+    inp = int(usage.get("input_tokens", 0) or 0)
+    out = int(usage.get("output_tokens", 0) or 0)
+    cache_read = int(usage.get("cache_read_input_tokens", 0) or 0)
+    cache_creation = int(usage.get("cache_creation_input_tokens", 0) or 0)
+    return (inp * in_rate + cache_creation * in_rate + cache_read * cache_rate + out * out_rate) / 1_000_000
+
+
 def main():
     files = session_files()
     if not files:
@@ -120,8 +139,8 @@ def main():
         print("Set MAKI_SESSIONS_DIR to point at the sessions directory.", file=sys.stderr)
         return 1
 
-    months = defaultdict(lambda: {"in": 0, "out": 0, "cost": 0.0, "sessions": 0, "unpriced": 0})
-    per_model = defaultdict(lambda: {"in": 0, "out": 0, "cost": 0.0})
+    months = defaultdict(lambda: {"in": 0, "cached": 0, "out": 0, "cost": 0.0, "sessions": 0, "unpriced": 0})
+    per_model = defaultdict(lambda: {"in": 0, "cached": 0, "out": 0, "cost": 0.0})
 
     for path in files:
         s = parse_session(path)
@@ -130,44 +149,60 @@ def main():
         u = s["usage"]
         inp = int(u.get("input_tokens", 0) or 0)
         out = int(u.get("output_tokens", 0) or 0)
+        cached = int(u.get("cache_read_input_tokens", 0) or 0)
         m = months[month_of(s["ts"])]
         m["sessions"] += 1
         m["in"] += inp
         m["out"] += out
+        m["cached"] += cached
         rates = price_for(s["model"])
         label = s["model"] or "unknown"
         per_model[label]["in"] += inp
         per_model[label]["out"] += out
+        per_model[label]["cached"] += cached
         if rates:
-            cost = (inp * rates[0] + out * rates[1]) / 1_000_000
+            cost = cost_for(u, rates)
             m["cost"] += cost
             per_model[label]["cost"] += cost
         else:
             m["unpriced"] += 1
 
     print("Cloudflare Workers AI spend (estimated from maki session logs)\n")
-    header = f"{'Month':<9} {'Sessions':>8} {'Input tok':>14} {'Output tok':>14} {'Cost (USD)':>12}"
+    header = (
+        f"{'Month':<9} {'Sessions':>8} {'Input tok':>14} {'Cached tok':>14} "
+        f"{'Output tok':>14} {'Cost (USD)':>12}"
+    )
     print(header)
     print("-" * len(header))
-    total = {"in": 0, "out": 0, "cost": 0.0, "sessions": 0, "unpriced": 0}
+    total = {"in": 0, "cached": 0, "out": 0, "cost": 0.0, "sessions": 0, "unpriced": 0}
     for month in sorted(months):
         r = months[month]
         flag = f"  ({r['unpriced']} unpriced)" if r["unpriced"] else ""
-        print(f"{month:<9} {r['sessions']:>8} {r['in']:>14,} {r['out']:>14,} {'$' + format(r['cost'], '.2f'):>12}{flag}")
+        print(
+            f"{month:<9} {r['sessions']:>8} {r['in']:>14,} {r['cached']:>14,} "
+            f"{r['out']:>14,} {'$' + format(r['cost'], '.2f'):>12}{flag}"
+        )
         for k in total:
             total[k] += r[k]
     print("-" * len(header))
-    print(f"{'TOTAL':<9} {total['sessions']:>8} {total['in']:>14,} {total['out']:>14,} {'$' + format(total['cost'], '.2f'):>12}")
+    print(
+        f"{'TOTAL':<9} {total['sessions']:>8} {total['in']:>14,} {total['cached']:>14,} "
+        f"{total['out']:>14,} {'$' + format(total['cost'], '.2f'):>12}"
+    )
 
     print("\nBy model:")
     for model in sorted(per_model, key=lambda k: per_model[k]["cost"], reverse=True):
         r = per_model[model]
         priced = "" if price_for(model) else "  (no pricing entry)"
-        print(f"  {model:<32} in {r['in']:>12,}  out {r['out']:>12,}  ${r['cost']:.2f}{priced}")
+        print(
+            f"  {model:<32} in {r['in']:>12,}  cached {r['cached']:>12,}  "
+            f"out {r['out']:>12,}  ${r['cost']:.2f}{priced}"
+        )
 
     if total["unpriced"]:
         print(f"\n{total['unpriced']} session(s) used a model with no pricing entry; their cost is $0.00 above.")
-    print("\nEstimate only — see the Cloudflare dashboard for authoritative billing.")
+    print("\nCached reads are billed at the model's discounted cached rate (GLM-5.2: $0.26/1M).")
+    print("Estimate only — see the Cloudflare dashboard for authoritative billing.")
     return 0
 
 

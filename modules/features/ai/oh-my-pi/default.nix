@@ -78,7 +78,8 @@ let
       cost = {
         input = 1.40;
         output = 4.40;
-        cacheRead = 0;
+        # Cloudflare auto prefix-caches; GLM-5.2 publishes a $0.26/1M cached-input rate.
+        cacheRead = 0.26;
         cacheWrite = 0;
       };
       compat = {
@@ -95,7 +96,8 @@ let
       cost = {
         input = 0.35;
         output = 0.75;
-        cacheRead = 0;
+        # No published cached rate; price cached reads as input (conservative).
+        cacheRead = 0.35;
         cacheWrite = 0;
       };
       compat = {
@@ -112,7 +114,8 @@ let
       cost = {
         input = 0.06;
         output = 0.40;
-        cacheRead = 0;
+        # No published cached rate; price cached reads as input (conservative).
+        cacheRead = 0.06;
         cacheWrite = 0;
       };
       compat = {
