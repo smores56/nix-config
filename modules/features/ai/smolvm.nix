@@ -64,18 +64,28 @@ let
     # Sync config from the read-only host mount into the overlay, so
     # Nix-managed symlinks (into /nix/store, which doesn't exist in the
     # VM) are dereferenced and the real files land in /root/.config,
-    # /root/.omp, and /root/.ssh. Only copies files that are missing or
-    # changed.
+    # /root/.omp, and /root/.ssh. Bulk sync uses `cp -u` so VM-side
+    # state (agent.db with codex auth, etc.) survives across launches.
     sync_config() {
       local src="$1" dst="$2"
       mkdir -p "$dst"
       cp -ruL "$src"/. "$dst"/ 2>/dev/null || true
     }
     sync_config /mnt/host-config/maki /root/.config/maki
-    sync_config /mnt/host-config/omp /root/.omp
     sync_config /mnt/host-config/opencode /root/.config/opencode
     sync_config /mnt/host-config/git /root/.config/git
     sync_config /mnt/host-config/gh /root/.config/gh
+
+    # omp config.yml + models.yml are Nix-owned (host-side
+    # `enforceOmpConfig` deep-merges and `enforceOmpModels` regenerates
+    # every switch). omp rewrites config.yml in-app to capture runtime
+    # toggles, advancing its mtime past the staging copy so `cp -u`
+    # silently skips the fresh Nix version. Force-copy these two so
+    # Nix-declared keys always land; runtime auth (env-var API keys,
+    # GH_TOKEN) is forwarded by the launcher, not stored in these files.
+    sync_config /mnt/host-config/omp /root/.omp
+    cp -fL /mnt/host-config/omp/agent/config.yml /root/.omp/agent/config.yml 2>/dev/null || true
+    cp -fL /mnt/host-config/omp/agent/models.yml /root/.omp/agent/models.yml 2>/dev/null || true
 
     # SSH public keys for git ssh-format commit signing. The private
     # keys stay on the host; the agent signs via the forwarded ssh-agent
