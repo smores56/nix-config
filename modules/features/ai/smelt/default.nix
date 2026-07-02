@@ -2,7 +2,6 @@
   config,
   lib,
   pkgs,
-  aiXiaomi,
   aiNeuralwatt,
   aiDeepseek,
   ...
@@ -11,25 +10,25 @@ let
   cfg = config.dotfiles.smelt;
   workModels = config.dotfiles.workModels;
   # Cloudflare Workers AI is an extra provider, never the default. Work hosts
-  # default to Codex-backed OpenAI; personal hosts keep Xiaomi MiMo Pro.
+  # default to Codex-backed OpenAI; personal hosts default to Neuralwatt GLM-5.2.
   cfEnabled = cfg.cloudflareWorkersAi.enable;
 
   # Work: Codex (ChatGPT subscription) registered via the `codex` provider type.
   # OAuth tokens live in $XDG_STATE_HOME/smelt/codex_auth.json after `smelt auth`,
-  # so no api_key_env is needed. Personal hosts keep Xiaomi MiMo Pro as the default.
+  # so no api_key_env is needed. Personal hosts default to Neuralwatt GLM-5.2.
   defaultModel =
-    if workModels then "codex/gpt-5.5" else "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25Pro.id}";
+    if workModels then "codex/gpt-5.5" else "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.glm52.id}";
 
   # model.preferred helper-model overrides. Names are read by the bundled
   # plugins: title, compact, predict, btw, web_fetch. Each reference resolves
   # through the same provider/model lookup as the primary model, so the model
   # must be registered under a provider below.
   preferredBlock = ''
-    smelt.model.preferred("title", "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25.id}")
-    smelt.model.preferred("compact", "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25.id}")
-    smelt.model.preferred("predict", "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25.id}")
-    smelt.model.preferred("btw", "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25.id}")
-    smelt.model.preferred("web_fetch", "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25.id}")
+    smelt.model.preferred("title", "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.qwen36.id}")
+    smelt.model.preferred("compact", "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.qwen36.id}")
+    smelt.model.preferred("predict", "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.qwen36.id}")
+    smelt.model.preferred("btw", "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.qwen36.id}")
+    smelt.model.preferred("web_fetch", "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.qwen36.id}")
   '';
 
   # Render one model entry's per-model override fields as a Lua table line.
@@ -75,25 +74,6 @@ let
       ${models}      },
       })
     '';
-
-  # Personal Xiaomi provider (work hosts skip and use Codex).
-  xiaomiProvider = {
-    type = "openai-compatible";
-    apiBase = aiXiaomi.baseUrl;
-    apiKeyEnv = "XIAOMI_MIMO_API_KEY";
-    models = [
-      {
-        id = aiXiaomi.models.mimoV25Pro.id;
-        context_window = aiXiaomi.models.mimoV25Pro.context;
-        max_output_tokens = aiXiaomi.models.mimoV25Pro.output;
-      }
-      {
-        id = aiXiaomi.models.mimoV25.id;
-        context_window = aiXiaomi.models.mimoV25.context;
-        max_output_tokens = aiXiaomi.models.mimoV25.output;
-      }
-    ];
-  };
 
   # Neuralwatt (https://portal.neuralwatt.com): OpenAI-compatible inference
   # with energy-based pricing. Token pricing is USD per 1M tokens (drives
@@ -209,12 +189,12 @@ let
         };
       }
       {
-        id = "@cf/zai-org/glm-4.7-flash";
-        context_window = 131072;
-        max_output_tokens = 16384;
+        id = "@cf/openai/gpt-oss-20b";
+        context_window = 128000;
+        max_output_tokens = 32768;
         pricing = {
-          input = 0.06;
-          output = 0.40;
+          input = 0.20;
+          output = 0.30;
           cache_read = 0.0;
           cache_write = 0.0;
         };
@@ -224,7 +204,6 @@ let
 
   providers =
     lib.optionalAttrs (!workModels) {
-      ${aiXiaomi.providerId} = xiaomiProvider;
       neuralwatt = neuralwattProvider;
       smortress = smortressProvider;
       deepseek = deepseekProvider;

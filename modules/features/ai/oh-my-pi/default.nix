@@ -3,7 +3,6 @@
   lib,
   pkgs,
   aiDeepseek,
-  aiXiaomi,
   aiNeuralwatt,
   ...
 }:
@@ -64,7 +63,6 @@ let
     else
       [
         aiNeuralwatt.providerId
-        aiXiaomi.providerId
         aiDeepseek.providerId
         "smortress"
       ];
@@ -146,13 +144,6 @@ let
     else
       {
         providers = {
-          ${aiXiaomi.providerId} = {
-            baseUrl = aiXiaomi.baseUrl;
-            apiKey = "XIAOMI_MIMO_API_KEY";
-            api = "openai-completions";
-            auth = "apiKey";
-            models = aiXiaomi.ompModelsList;
-          };
           smortress = {
             baseUrl = "http://smortress:8081/v1";
             api = "openai-completions";

@@ -2,7 +2,6 @@
   config,
   lib,
   pkgs,
-  aiXiaomi,
   ...
 }:
 let
@@ -10,16 +9,16 @@ let
   workModels = config.dotfiles.workModels;
   # When set, install Cloudflare Workers AI as an additional custom provider.
   # It is intentionally never the generated default; the work machine defaults
-  # to Codex-backed OpenAI, and personal hosts keep their normal Xiaomi default.
+  # to Codex-backed OpenAI, and personal hosts default to Neuralwatt GLM-5.2.
   cfEnabled = cfg.cloudflareWorkersAi.enable;
 
   # Work: Codex-backed GPT-5.5 via Maki's built-in `openai` provider, whose
   # OAuth creds are mirrored from Codex CLI by maki-codex-sync below. The rest
   # of the Codex cascade stays selectable in Maki's built-in catalog:
   # strong = openai/gpt-5.5, medium = openai/gpt-5.4, weak = openai/gpt-5.4-mini.
-  # Personal hosts keep Xiaomi MiMo Pro as the default.
+  # Personal hosts default to Neuralwatt GLM-5.2.
   defaultModel =
-    if workModels then "openai/gpt-5.5" else "${aiXiaomi.providerId}/${aiXiaomi.models.mimoV25Pro.id}";
+    if workModels then "openai/gpt-5.5" else "neuralwatt/glm-5.2";
 
   makiTools = [
     "bash = { enabled = true }"
@@ -56,34 +55,15 @@ let
   mcpServers = cfg.mcpServers;
   mcpToml = pkgs.writers.writeTOML "maki-mcp.toml" { mcp = mcpServers; };
 
-  # mimo / gemma are OpenAI-compatible endpoints maki ships no built-in
+  # gemma / Neuralwatt are OpenAI-compatible endpoints maki ships no built-in
   # for. maki discovers custom providers as executable scripts in
   # ~/.config/maki/providers/<slug> answering info/models/resolve. base
   # "llama-cpp" selects the plain OpenAI /v1 chat-completions dialect (no
-  # Responses API / developer role) that all three speak; resolve injects the
+  # Responses API / developer role) that both speak; resolve injects the
   # bearer token and info's has_auth reflects whether the key env var is set, so
   # a provider only lights up when its creds are available. Personal hosts only;
   # work hosts drive Codex-backed OpenAI, with optional Cloudflare.
   makiProviders = {
-    ${aiXiaomi.providerId} = {
-      displayName = "Xiaomi MiMo";
-      baseUrl = aiXiaomi.baseUrl;
-      keyEnv = "XIAOMI_MIMO_API_KEY";
-      models = [
-        {
-          id = aiXiaomi.models.mimoV25Pro.id;
-          tier = "strong";
-          context_window = aiXiaomi.models.mimoV25Pro.context;
-          max_output_tokens = aiXiaomi.models.mimoV25Pro.output;
-        }
-        {
-          id = aiXiaomi.models.mimoV25.id;
-          tier = "weak";
-          context_window = aiXiaomi.models.mimoV25.context;
-          max_output_tokens = aiXiaomi.models.mimoV25.output;
-        }
-      ];
-    };
     smortress = {
       displayName = "Gemma (smortress)";
       baseUrl = "http://smortress:8081/v1";
@@ -255,7 +235,7 @@ let
   # the documented equivalent of the /ai/run/<model> REST path). The account id
   # is interpolated into base_url at runtime (dynamicBaseUrl), and both the
   # account id and token must be present for the provider to light up. Tiers map
-  # strong/medium/weak -> glm-5.2 / gpt-oss-120b / glm-4.7-flash. pricing is USD
+  # strong/medium/weak -> glm-5.2 / gpt-oss-120b / gpt-oss-20b. pricing is USD
   # per 1M tokens (drives maki's live per-session cost readout and the
   # maki-cf-cost monthly rollup — keep in sync with cf-cost-report.py).
   cloudflareProviders.cloudflare = {
@@ -294,17 +274,17 @@ let
         };
       }
       {
-        id = "@cf/zai-org/glm-4.7-flash";
+        id = "@cf/openai/gpt-oss-20b";
         tier = "weak";
-        context_window = 131072;
-        max_output_tokens = 16384;
+        context_window = 128000;
+        max_output_tokens = 32768;
         pricing = {
-          input = 0.06;
-          output = 0.40;
+          input = 0.20;
+          output = 0.30;
           cache_write = 0.0;
           # No published cached-input rate; price cached reads as input
           # (conservative — never under-counts).
-          cache_read = 0.06;
+          cache_read = 0.20;
         };
       }
     ];
