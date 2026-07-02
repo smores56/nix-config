@@ -22,7 +22,6 @@ in
       "${homeDir}/.cargo/bin"
       "${homeDir}/.bun/bin"
       "${homeDir}/.cache/.bun/bin"
-      "${homeDir}/.wasmtime/bin"
       "${homeDir}/.wasmer/bin"
     ];
   };
@@ -87,10 +86,6 @@ in
         for p in $NIX_PROFILES
             set -a fish_function_path $p/share/fish/vendor_functions.d
             set -a fish_complete_path $p/share/fish/vendor_completions.d
-        end
-        # Skip pfetch in OpenChamber - ANSI codes corrupt fenv.main parsing
-        if not set -q TERM_PROGRAM; or ! string match -q "*OpenChamber*" $TERM_PROGRAM
-            pfetch
         end
       '';
 
