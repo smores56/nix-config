@@ -7,7 +7,6 @@
     type = lib.types.anything;
     default = { };
   };
-
   config = {
     programs = {
       bat.enable = true;

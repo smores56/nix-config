@@ -77,7 +77,6 @@ in
 
         o = "smolvm-agent omp";
         m = "smolvm-agent maki";
-        p = "smolvm-agent opencode";
         s = "smolvm-agent smelt";
         svmr = "smolvm machine rm agent --force";
         svms = "smolvm machine shell --name agent";

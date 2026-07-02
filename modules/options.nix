@@ -199,7 +199,7 @@ in
           domain = lib.mkOption {
             type = lib.types.str;
             default = "sammohr.dev";
-            description = "Apex domain whose subdomains are exposed (e.g. opencode.<domain>).";
+            description = "Apex domain whose subdomains are exposed (e.g. git.<domain>).";
           };
           tunnelId = lib.mkOption {
             type = lib.types.str;
@@ -246,7 +246,7 @@ in
     aiHints = lib.mkOption {
       type = lib.types.str;
       readOnly = true;
-      description = "AI coding assistant context/rules, shared across maki and opencode.";
+      description = "AI coding assistant context/rules, shared across AI coding assistants.";
     };
   };
   config = {

@@ -51,7 +51,7 @@ let
   };
 
   # Idempotent provisioning command run inside the VM. Installs git,
-  # gh, bun, omp, maki, and opencode into the persistent overlay
+  # gh, bun, omp, maki into the persistent overlay
   # (/root/.bun) and shared virtiofs bin mount (/root/.local/bin), so
   # installs survive VM stop/start.
   #
@@ -72,7 +72,6 @@ let
       cp -ruL "$src"/. "$dst"/ 2>/dev/null || true
     }
     sync_config /mnt/host-config/maki /root/.config/maki
-    sync_config /mnt/host-config/opencode /root/.config/opencode
     sync_config /mnt/host-config/git /root/.config/git
     sync_config /mnt/host-config/gh /root/.config/gh
 
@@ -148,21 +147,6 @@ let
       curl -fsSL https://maki.sh/install.sh | MAKI_INSTALL_DIR=/root/.local/bin sh
     fi
 
-    # opencode (static binary). Same shared bin mount pattern as maki;
-    # self-updates via `opencode upgrade`.
-    #
-    # The opencode install script hardcodes INSTALL_DIR=$HOME/.opencode/bin
-    # and ignores OPENCODE_INSTALL_DIR entirely (unlike maki's installer,
-    # which honors MAKI_INSTALL_DIR). So we install to the default location
-    # then relocate the binary into the shared /root/.local/bin mount,
-    # mirroring how gh is installed above. Also pass --no-modify-path so
-    # it doesn't litter /root/.bashrc with a PATH entry for the temp dir.
-    if [ ! -x /root/.local/bin/opencode ]; then
-      apt-get install -y -qq curl tar >/dev/null 2>&1 || true
-      curl -fsSL https://opencode.ai/install | bash -s -- --no-modify-path
-      install -m 0755 /root/.opencode/bin/opencode /root/.local/bin/opencode
-      rm -rf /root/.opencode
-    fi
   '';
 
   # Shared shell snippet: creates the VM if missing, starts it if stopped.
@@ -188,14 +172,13 @@ let
 
     ${ensureVm}
 
-    # Provision git, gh, bun, omp, maki, and opencode inside the VM (idempotent).
+    # Provision git, gh, bun, omp, maki inside the VM (idempotent).
     $smolvm machine exec --name "$name" -- /bin/bash -c ${lib.escapeShellArg provisionScript}
 
     # Forward MAKI_INSTALL_DIR so `maki update` writes to the shared
     # virtiofs bin mount, not the default /usr/local/bin.
     env_args=(
       --env "MAKI_INSTALL_DIR=/root/.local/bin"
-      --env "OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true"
     )
 
     # Forward GitHub OAuth token so `gh` auth works inside the VM without
@@ -247,7 +230,7 @@ in
 {
   options.dotfiles.smolvm = {
     enable =
-      lib.mkEnableOption "smolvm sandbox for coding agents (maki/omp/opencode) with per-instance kernel tmpfs"
+      lib.mkEnableOption "smolvm sandbox for coding agents (maki/omp)"
       // {
         default = true;
       };
@@ -271,12 +254,11 @@ in
     # staging dir, mounted read-only into the VM at /mnt/host-config.
     # The /nix/store paths don't exist inside the VM, so symlinks would
     # be broken. This runs on every home-manager switch to pick up config
-    # changes. Includes maki, opencode, omp, git, gh config, and SSH public keys.
+    # changes. Includes maki, omp, git, gh config, and SSH public keys.
     home.activation.syncSmolvmConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       rm -rf ${configDir}
-      mkdir -p ${configDir}/maki ${configDir}/opencode ${configDir}/omp ${configDir}/git ${configDir}/gh ${configDir}/ssh
+      mkdir -p ${configDir}/maki ${configDir}/omp ${configDir}/git ${configDir}/gh ${configDir}/ssh
       cp -rL ${config.home.homeDirectory}/.config/maki/. ${configDir}/maki/ 2>/dev/null || true
-      cp -rL ${config.home.homeDirectory}/.config/opencode/. ${configDir}/opencode/ 2>/dev/null || true
       cp -rL ${config.home.homeDirectory}/.omp/. ${configDir}/omp/ 2>/dev/null || true
       cp -rL ${config.home.homeDirectory}/.config/git/. ${configDir}/git/ 2>/dev/null || true
       cp -rL ${config.home.homeDirectory}/.config/gh/. ${configDir}/gh/ 2>/dev/null || true

@@ -7,7 +7,6 @@ let
   shell = config.dotfiles.shellPath;
   # maki panes run inside their smolvm sandbox
   makiPaneCmd = "smolvm-agent maki";
-  opencodePaneCmd = "smolvm-agent opencode";
 
   configToml = ''
     # Managed by home-manager (modules/features/ai/herdr). Manual edits are clobbered.
@@ -32,12 +31,6 @@ let
   command = "${makiPaneCmd}"
   description = "new maki session"
 
-  # prefix+alt+p opens an opencode session in a temporary pane (closes on exit).
-  [[keys.command]]
-  key = "prefix+alt+p"
-  type = "pane"
-  command = "${opencodePaneCmd}"
-  description = "new opencode session"
   '';
 in
 {
