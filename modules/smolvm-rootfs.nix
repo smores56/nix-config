@@ -63,7 +63,7 @@ let
     networks:  files dns
   '';
   profileScript = pkgs.writeText "nix-bin.sh" ''
-    export PATH="/root/.bun/bin:/root/.local/bin:/nix/var/nix/profiles/default/bin:/usr/bin:/bin"
+    export PATH="/root/.bun/bin:/mnt/smolvm-shared/bin:/nix/var/nix/profiles/default/bin:/usr/bin:/bin"
   '';
 in
 

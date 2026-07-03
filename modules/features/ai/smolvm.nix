@@ -8,10 +8,9 @@ let
   cfg = config.dotfiles.smolvm;
 
   codeRoot = config.dotfiles.codeRoot;
-  devRoot = "${config.home.homeDirectory}/dev";
   sharedDir = "${config.xdg.dataHome}/smolvm-shared";
-  sharedBinDir = "${sharedDir}/bin";
   configDir = "${sharedDir}/config";
+  sharedBinDir = "${sharedDir}/bin";
 
   tomlFormat = pkgs.formats.toml { };
   smolvmRootfs = pkgs.smolvm-agent-rootfs;
@@ -31,9 +30,9 @@ let
   # Nix's immutability — those stay on their installer flow in the
   # persistent overlay, installed by provisionScript below.
   #
-  # Shared bin mounts to /root/.local/bin for tier-2 tools (maki etc).
-  # Config dir mounts read-only at /mnt/host-config — Nix-managed config
-  # dereference (symlinks into /nix/store resolved on the host side).
+  # Shared dir mounts at /mnt/smolvm-shared (writable, for tier-2 tools
+  # like maki). Config dir mounts read-only at /mnt/host-config — Nix-
+  # managed config dereference (symlinks into /nix/store resolved on host).
   #
   # ssh_agent forwards the host ssh-agent socket into the VM, so git
   # push (ssh) and ssh-format commit signing work without exposing
@@ -130,8 +129,8 @@ let
 
     # maki (static musl binary). Installed into the shared virtiofs bin
     # mount, so it persists on the host and self-updates via `maki update`.
-    if [ ! -x /root/.local/bin/maki ]; then
-      curl -fsSL https://maki.sh/install.sh | MAKI_INSTALL_DIR=/root/.local/bin sh
+    if [ ! -x /mnt/smolvm-shared/bin/maki ]; then
+      curl -fsSL https://maki.sh/install.sh | MAKI_INSTALL_DIR=/mnt/smolvm-shared/bin sh
     fi
 
   '';
@@ -165,7 +164,7 @@ let
     # Forward MAKI_INSTALL_DIR so `maki update` writes to the shared
     # virtiofs bin mount, not the default /usr/local/bin.
     env_args=(
-      --env "MAKI_INSTALL_DIR=/root/.local/bin"
+      --env "MAKI_INSTALL_DIR=/mnt/smolvm-shared/bin"
     )
 
     # Forward GitHub OAuth token so `gh` auth works inside the VM without
@@ -190,24 +189,17 @@ let
     fi
 
     # Map the host working directory to the guest. codeRoot mounts at
-    # /root/code, devRoot at /root/dev — strip the matching prefix to get
-    # the guest path. Falls back to /root/code for paths outside both.
+    # /root/code — strip the prefix to get the guest path. Falls back
+    # to /root/code for paths outside codeRoot.
     guest_pwd="/root/code"
     pwd_real=$(cd "$PWD" && pwd -P)
     code_root_real=$(cd ${lib.escapeShellArg codeRoot} && pwd -P)
-    dev_root_real=$(cd ${lib.escapeShellArg devRoot} && pwd -P)
     case "$pwd_real" in
       "$code_root_real")
         guest_pwd="/root/code"
         ;;
       "$code_root_real"/*)
         guest_pwd="/root/code''${pwd_real#$code_root_real}"
-        ;;
-      "$dev_root_real")
-        guest_pwd="/root/dev"
-        ;;
-      "$dev_root_real"/*)
-        guest_pwd="/root/dev''${pwd_real#$dev_root_real}"
         ;;
     esac
 
@@ -227,19 +219,12 @@ in
       launcher
     ];
 
-    # Shared bin dir mounted writable into every agent VM at /root/.local/bin.
-    # maki + gh live here as static binaries, self-updated in place.
-    # Also ensures ~/dev exists as a virtiofs mount target.
+    # Shared bin dir mounted writable into every agent VM at
+    # /mnt/smolvm-shared/bin. maki lives here as a static binary,
+    # self-updated in place.
     home.activation.setupSmolvmDirs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       mkdir -p ${sharedBinDir}
-      mkdir -p ${devRoot}
     '';
-
-    # Dereference Nix-managed config symlinks (into /nix/store) into a
-    # staging dir, mounted read-only into the VM at /mnt/host-config.
-    # The /nix/store paths don't exist inside the VM, so symlinks would
-    # be broken. This runs on every home-manager switch to pick up config
-    # changes. Includes maki, omp, git, gh config, and SSH public keys.
     home.activation.syncSmolvmConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       rm -rf ${configDir}
       mkdir -p ${configDir}/maki ${configDir}/omp ${configDir}/git ${configDir}/gh ${configDir}/ssh

@@ -248,21 +248,6 @@
         "type": "github"
       }
     },
-    "libkrun-src": {
-      "flake": false,
-      "locked": {
-        "owner": "smol-machines",
-        "repo": "libkrun",
-        "rev": "0cf11546d6e0f534f9fe293d1623c30348fbda58",
-        "type": "github"
-      },
-      "original": {
-        "owner": "smol-machines",
-        "repo": "libkrun",
-        "rev": "0cf11546d6e0f534f9fe293d1623c30348fbda58",
-        "type": "github"
-      }
-    },
     "libkrunfw-src": {
       "flake": false,
       "locked": {
@@ -504,11 +489,11 @@
     },
     "smolvm": {
       "inputs": {
-        "libkrun-src": "libkrun-src",
         "libkrunfw-src": "libkrunfw-src",
         "nixpkgs": [
           "nixpkgs"
-        ]
+        ],
+        "libkrun-src": "libkrun-src"
       },
       "locked": {
         "lastModified": 1783039660,
@@ -719,6 +704,22 @@
       "original": {
         "owner": "Supreeeme",
         "repo": "xwayland-satellite",
+        "type": "github"
+      }
+    },
+    "libkrun-src": {
+      "inputs": {},
+      "locked": {
+        "lastModified": 1717525769,
+        "narHash": "sha256-8oWHvHnFmVITBRgZyVzmf0J4hUV6mQX6Z7TQpJEkPpE=",
+        "owner": "smol-machines",
+        "repo": "libkrun",
+        "rev": "98163265197caa24a789699f16a68b98e917b65b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "smol-machines",
+        "repo": "libkrun",
         "type": "github"
       }
     }
