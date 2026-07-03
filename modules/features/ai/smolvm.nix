@@ -14,7 +14,15 @@ let
   agentRootfs = "${config.xdg.dataHome}/smolvm/agent-rootfs";
 
   tomlFormat = pkgs.formats.toml { };
-  smolvmRootfs = pkgs.smolvm-agent-rootfs;
+  # Platform-conditional image source. On Linux, use the Nix-built
+  # rootfs directory (pre-baked tools, no apt-get). On macOS, fall back
+  # to debian:bookworm-slim — the nix rootfs can't build on darwin
+  # (pkgs.glibc missing) and no Linux builder is configured.
+  smolvmImage =
+    if pkgs.stdenv.hostPlatform.isLinux then
+      toString pkgs.smolvm-agent-rootfs
+    else
+      "debian:bookworm-slim";
 
   # Smolfile for the persistent agent VM. The `cmd` keeps the container
   # alive (sleep infinity) so `machine start` succeeds — agents run via
@@ -49,8 +57,8 @@ let
     auth.ssh_agent = true;
     env = [
       "BUN_INSTALL=/root/.bun"
-      "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
-      "CURL_CA_BUNDLE=/etc/ssl/certs/ca-bundle.crt"
+      "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"
+      "CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt"
       "MAKI_INSTALL_DIR=/mnt/smolvm-shared/bin"
       "PATH=/root/.bun/bin:/mnt/smolvm-shared/bin:/nix/var/nix/profiles/default/bin:/usr/bin:/bin"
     ];
@@ -71,6 +79,16 @@ let
   # script via `bash -c`.
   provisionScript = ''
     set -e
+    ${lib.optionalString pkgs.stdenv.hostPlatform.isDarwin ''
+      # Debian rootfs: install tier-1 tools via apt-get (the nix rootfs
+      # with pre-baked tools is only available on Linux hosts).
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update -qq
+      apt-get install -y -qq git gh python3 openssh-client ca-certificates \
+        curl bash tar gzip coreutils grep sed gawk findutils diffutils \
+        patch unzip > /dev/null 2>&1 || true
+    ''}
+
 
     # Sync config from the read-only host mount into the overlay, so
     # Nix-managed symlinks (into /nix/store, which doesn't exist in the
@@ -141,7 +159,7 @@ let
   # sequence across scripts.
   ensureVm = ''
     if ! $smolvm machine status --name "$name" >/dev/null 2>&1; then
-      $smolvm machine create --name "$name" --smolfile ${smolfile} --image ${smolvmRootfs}
+      $smolvm machine create --name "$name" --smolfile ${smolfile} --image ${smolvmImage}
     fi
 
     state=$($smolvm machine status --name "$name" --json 2>/dev/null \

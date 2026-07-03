@@ -93,7 +93,8 @@ let
       });
 
       concord = concord.packages.${system}.default;
-      smolvm-agent-rootfs = final.callPackage ../smolvm-rootfs.nix { };
+      smolvm-agent-rootfs =
+        if final.stdenv.hostPlatform.isLinux then final.callPackage ../smolvm-rootfs.nix { } else null;
     })
   ];
 
