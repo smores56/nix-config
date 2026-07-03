@@ -4,8 +4,8 @@ Guidance for AI coding agents working in this repository.
 
 ## Working branch
 
-Work directly on `main`. Commit and push after each meaningful change.
-Do not create feature branches or PRs for this repo unless explicitly asked.
+Work directly on `main`. No worktrees, feature branches, or PRs unless
+explicitly asked.
 
 ## Documentation
 
@@ -46,23 +46,15 @@ patterns.
 2. `modules/flake/configurations.nix` — add `nixosConfigurations` (via
    `mkNixos`) and `homeConfigurations` (via `mkHome`) entries
 
-## Code quality
+## Repo-specific code quality
 
-- **Nix style**: `nix fmt` before committing. Run `nix eval
-  .#checks.x86_64-linux.eval-home-smores-smortress --apply 'x: true'` to
-  verify after changes.
+- **Nix style**: `nix fmt` before committing.
 - **No `enable` options**: every module is imported on every host. Gate
   behavior on `config.dotfiles.*` values (e.g. `lib.mkIf isLinux`), not on
   `lib.mkEnableOption`. The dendritic pattern explicitly rejects `enable`
   options.
 - **Cross-cutting values** flow through `config.dotfiles.*` options
   declared in `modules/options.nix`, not through `specialArgs`.
-- **Functional style**: pure functions, composition, immutability. Early
-  returns and guard clauses over nesting.
-- **Comments explain WHY, never WHAT.** No comments on self-explanatory code.
-- **No comments** on self-explanatory code; no multi-line comment blocks.
-- **Conventional Commits**: `type(scope): description` (feat, fix, refactor,
-  chore, docs, test, perf, ci). No `Co-Authored-By` trailers.
 - **Delete dead code** — no leftover aliases, re-exports, or stale TODOs.
   If a file is unused, delete it; `import-tree` handles removals automatically.
 
@@ -87,7 +79,4 @@ to verify activation succeeds (not just evaluation).
 
 ## Repo conventions
 
-- All git repos live under `~/code/<host>/<owner>/<repo>`, managed by `ghq`.
-- Commits in this repo use prefix `smores/` for branches (but we work on `main`).
 - Wallpapers are LFS-tracked (`.gitattributes`).
-- Gitignored: `bun.lock`, `node_modules/`, `package.json`, `result*`.
