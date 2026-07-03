@@ -16,8 +16,9 @@ let
   tomlFormat = pkgs.formats.toml { };
   smolvmRootfs = pkgs.smolvm-agent-rootfs;
 
-  # Smolfile for the persistent agent VM. No `cmd` — agents run via
-  # `machine exec`, so `machine start` returns immediately after boot.
+  # Smolfile for the persistent agent VM. The `cmd` keeps the container
+  # alive (sleep infinity) so `machine start` succeeds — agents run via
+  # `machine exec`, which joins the running container via `crun exec`.
   #
   # Image is a Nix-built rootfs directory (not a registry OCI image),
   # passed via `--image` on `machine create` (not in the smolfile)
@@ -38,21 +39,25 @@ let
   # push (ssh) and ssh-format commit signing work without exposing
   # private key files. The host ssh-agent holds the keys (see ssh.nix).
   smolfile = tomlFormat.generate "agent.smolfile" {
+    cmd = [
+      "sleep"
+      "infinity"
+    ];
     net = true;
     cpus = 2;
     memory = 1024;
-    overlay = 10;
     auth.ssh_agent = true;
     env = [
       "BUN_INSTALL=/root/.bun"
-      "MAKI_INSTALL_DIR=/root/.local/bin"
-      "PATH=/root/.bun/bin:/root/.local/bin:/nix/var/nix/profiles/default/bin:/usr/bin:/bin"
+      "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+      "CURL_CA_BUNDLE=/etc/ssl/certs/ca-bundle.crt"
+      "MAKI_INSTALL_DIR=/mnt/smolvm-shared/bin"
+      "PATH=/root/.bun/bin:/mnt/smolvm-shared/bin:/nix/var/nix/profiles/default/bin:/usr/bin:/bin"
     ];
     volumes = [
-      "${sharedBinDir}:/root/.local/bin"
+      "${sharedDir}:/mnt/smolvm-shared"
       "${configDir}:/mnt/host-config:ro"
       "${codeRoot}:/root/code"
-      "${devRoot}:/root/dev"
     ];
   };
 

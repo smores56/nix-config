@@ -18,6 +18,8 @@ let
     pkgs.python3
     pkgs.curl
     pkgs.unzip
+    pkgs.gnutar
+    pkgs.gzip
     pkgs.bash
     pkgs.coreutils
     pkgs.gnugrep
@@ -83,6 +85,10 @@ pkgs.runCommand "smolvm-agent-rootfs" { } ''
   cp -r "${profile}"/* "$rootfs/nix/var/nix/profiles/default/"
 
   # 3. FHS scaffolding: smolvm's is_rootfs_dir checks for bin/usr/etc/sbin.
+  # FHS dynamic linker path so glibc-linked binaries (bun, etc.) resolve.
+  mkdir -p "$rootfs/lib64" "$rootfs/lib"
+  ln -sf "${pkgs.glibc}/lib/ld-linux-x86-64.so.2" "$rootfs/lib64/ld-linux-x86-64.so.2"
+  ln -sf "${pkgs.glibc}/lib/ld-linux-aarch64.so.1" "$rootfs/lib/ld-linux-aarch64.so.1"
   mkdir -p "$rootfs/bin" "$rootfs/usr/bin" "$rootfs/usr/sbin" "$rootfs/sbin"
   mkdir -p "$rootfs/etc" "$rootfs/root" "$rootfs/tmp" "$rootfs/var"
   mkdir -p "$rootfs/root/.local/bin" "$rootfs/root/.bun/bin"
@@ -103,8 +109,8 @@ pkgs.runCommand "smolvm-agent-rootfs" { } ''
   cp "${group}" "$rootfs/etc/group"
   cp "${nsswitch}" "$rootfs/etc/nsswitch.conf"
   mkdir -p "$rootfs/etc/ssl/certs" "$rootfs/etc/profile.d"
-  ln -sf "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" "$rootfs/etc/ssl/certs/ca-certificates.crt"
-  ln -sf "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" "$rootfs/etc/ssl/certs/ca-bundle.crt"
+  cp -fL "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" "$rootfs/etc/ssl/certs/ca-certificates.crt"
+  cp -fL "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" "$rootfs/etc/ssl/certs/ca-bundle.crt"
   cp "${profileScript}" "$rootfs/etc/profile.d/nix-bin.sh"
   echo "nameserver 1.1.1.1" > "$rootfs/etc/resolv.conf"
 

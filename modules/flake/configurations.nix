@@ -16,24 +16,10 @@ let
     niri.overlays.niri
     smolvm.overlays.default
     (final: prev: {
-      # Override libkrun to build without GPU support. The upstream flake
-      # builds with withGpu=isLinux, producing a libkrun.so with undefined
-      # virgl_renderer_* symbols (libkrun.so doesn't list libvirglrenderer
-      # as NEEDED, and the rpath lacks it). No-GPU is correct for headless
-      # agent VMs anyway.
-      smolvm-libkrun = prev.smolvm-libkrun.override {
-        withGpu = false;
-      };
-
-      # Patch the smolvm release tarball: replace the bundled GPU-enabled
-      # libkrun.so with our no-GPU build. The upstream tarball's libkrun has
-      # undefined virgl_renderer_* symbols (libkrun.so doesn't list
-      # libvirglrenderer as NEEDED, and the rpath lacks it). No-GPU is correct
-      # for headless agent VMs anyway.
-      #
-      # 1.3.8 ships libkrun.so.2; the nix-built no-GPU libkrun produces
-      # libkrun.so.1.17.3. smolvm dlopens libkrun by path (not soname), so a
-      # symlink libkrun.so.2 -> libkrun.so.1.17.3 makes it find the no-GPU lib.
+      # smolvm 1.3.8 release: the bundled libkrun.so.2 has undefined
+      # virgl_renderer_* symbols, but build.rs links with -z lazy so
+      # dlopen succeeds on GPU-less hosts (virgl symbols are never called).
+      # No no-GPU patch needed for 1.3.8.
       smolvm = prev.smolvm.overrideAttrs (old: {
         version = "1.3.8";
         src = prev.fetchurl {
@@ -62,20 +48,6 @@ let
               "smolvm-1.3.8-linux-x86_64"
           else
             "smolvm-1.3.8-darwin-arm64";
-        postInstall =
-          (old.postInstall or "")
-          + lib.optionalString final.stdenv.hostPlatform.isLinux ''
-            rm -f $out/libexec/smolvm/lib/libkrun.so $out/libexec/smolvm/lib/libkrun.so.2
-            cp -f ${final.smolvm-libkrun}/lib64/libkrun.so.2.0.0 $out/libexec/smolvm/lib/libkrun.so.2.0.0
-            ln -sf libkrun.so.2.0.0 $out/libexec/smolvm/lib/libkrun.so.2
-            ln -sf libkrun.so.2 $out/libexec/smolvm/lib/libkrun.so
-          ''
-          + lib.optionalString final.stdenv.hostPlatform.isDarwin ''
-            rm -f $out/libexec/smolvm/lib/libkrun.dylib $out/libexec/smolvm/lib/libkrun.2.dylib
-            cp -f ${final.smolvm-libkrun}/lib/libkrun.2.0.0.dylib $out/libexec/smolvm/lib/libkrun.2.0.0.dylib
-            ln -sf libkrun.2.0.0.dylib $out/libexec/smolvm/lib/libkrun.2.dylib
-            ln -sf libkrun.2.dylib $out/libexec/smolvm/lib/libkrun.dylib
-          '';
       });
 
       googlesans-code = prev.stdenv.mkDerivation (finalAttrs: {
