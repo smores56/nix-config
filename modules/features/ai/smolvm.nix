@@ -11,6 +11,7 @@ let
   sharedDir = "${config.xdg.dataHome}/smolvm-shared";
   configDir = "${sharedDir}/config";
   sharedBinDir = "${sharedDir}/bin";
+  agentRootfs = "${config.xdg.dataHome}/smolvm/agent-rootfs";
 
   tomlFormat = pkgs.formats.toml { };
   smolvmRootfs = pkgs.smolvm-agent-rootfs;
@@ -154,6 +155,11 @@ let
     set -euo pipefail
 
     smolvm=${pkgs.smolvm}/bin/smolvm
+    # Use a writable copy of the agent rootfs, not the read-only nix store
+    # path. The guest agent writes a ready-marker to the rootfs (via
+    # virtiofs); on a read-only path the write fails and the host falls
+    # back to a 5-second socket probe, delaying every boot.
+    export SMOLVM_AGENT_ROOTFS=${agentRootfs}
     name="agent"
 
     ${ensureVm}
@@ -221,9 +227,17 @@ in
 
     # Shared bin dir mounted writable into every agent VM at
     # /mnt/smolvm-shared/bin. maki lives here as a static binary,
-    # self-updated in place.
     home.activation.setupSmolvmDirs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       mkdir -p ${sharedBinDir}
+      # Copy the agent rootfs to a writable location if missing or stale.
+      # The nix store path is read-only; the guest agent writes a
+      # ready-marker to the rootfs via virtiofs, so it must be writable.
+      src=${pkgs.smolvm}/libexec/smolvm/agent-rootfs
+      if [ ! -d ${agentRootfs} ] || [ "$src/usr/local/bin/smolvm-agent" -nt "${agentRootfs}/usr/local/bin/smolvm-agent" ]; then
+        rm -rf ${agentRootfs}
+        cp -r "$src" ${agentRootfs}
+        chmod -R u+w ${agentRootfs}
+      fi
     '';
     home.activation.syncSmolvmConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       rm -rf ${configDir}
