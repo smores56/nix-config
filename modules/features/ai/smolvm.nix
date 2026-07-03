@@ -15,6 +15,9 @@ let
 
   tomlFormat = pkgs.formats.toml { };
 
+  jqBin = "${lib.getBin pkgs.jq}/bin/jq";
+  coreutilsBin = "${lib.getBin pkgs.coreutils}/bin";
+
   # Smolfile for the persistent agent VM. No `cmd` — agents run via
   # `machine exec`, so `machine start` returns immediately after boot.
   #
@@ -175,7 +178,7 @@ let
     fi
 
     state=$($smolvm machine status --name "$name" --json 2>/dev/null \
-      | sed -n 's/.*"state":"\([^"]*\)".*/\1/p')
+      | ${jqBin} -r '.state')
     if [ "$state" != "running" ]; then
       $smolvm machine start --name "$name" >/dev/null
     fi
@@ -260,7 +263,7 @@ let
         repo_root="$dir"
         break
       fi
-      dir="$(dirname "$dir")"
+      dir="$($coreutilsBin/dirname "$dir")"
     done
 
     if [ -z "$repo_root" ]; then
@@ -269,14 +272,14 @@ let
     fi
 
     # Derive stable VM name from repo path
-    hash=$(echo -n "$repo_root" | ${lib.getBin pkgs.coreutils}/bin/sha256sum | cut -c1-12)
-    base=$(basename "$repo_root")
+    hash=$(echo -n "$repo_root" | $coreutilsBin/sha256sum | $coreutilsBin/cut -c1-12)
+    base=$($coreutilsBin/basename "$repo_root")
     vm_name="dev-''${base}-''${hash}"
 
     # Check VM state
     vm_state="absent"
     if $smolvm machine status --name "$vm_name" --json >/dev/null 2>&1; then
-      vm_state="$($smolvm machine status --name "$vm_name" --json 2>/dev/null | ${lib.getBin pkgs.jq}/bin/jq -r '.state')"
+      vm_state="$($smolvm machine status --name "$vm_name" --json 2>/dev/null | ${jqBin} -r '.state')"
     fi
 
     if [ "$vm_state" = "running" ]; then
