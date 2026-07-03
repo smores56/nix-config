@@ -2,11 +2,11 @@
   config,
   lib,
   pkgs,
-  aiNeuralwatt,
-  aiCloudflare,
+  aiProviders,
   ...
 }:
 let
+  inherit (aiProviders) neuralwatt cloudflare;
   cfg = config.dotfiles.maki;
   workModels = config.dotfiles.workModels;
   # When set, install Cloudflare Workers AI as an additional custom provider.
@@ -74,21 +74,21 @@ let
         }
       ];
     };
-    ${aiNeuralwatt.providerId} = {
+    ${neuralwatt.providerId} = {
       displayName = "Neuralwatt";
-      baseUrl = aiNeuralwatt.baseUrl;
-      keyEnv = aiNeuralwatt.keyEnv;
-      models = aiNeuralwatt.makiModels;
+      baseUrl = neuralwatt.baseUrl;
+      keyEnv = neuralwatt.keyEnv;
+      models = neuralwatt.makiModels;
     };
   };
 
-  cloudflareProviders.${aiCloudflare.providerId} = {
+  cloudflareProviders.${cloudflare.providerId} = {
     displayName = "Cloudflare Workers AI";
-    baseUrl = aiCloudflare.makiBaseUrl;
-    keyEnv = aiCloudflare.keyEnv;
-    extraAuthEnv = aiCloudflare.extraAuthEnv;
+    baseUrl = cloudflare.makiBaseUrl;
+    keyEnv = cloudflare.keyEnv;
+    extraAuthEnv = cloudflare.extraAuthEnv;
     dynamicBaseUrl = true;
-    models = aiCloudflare.makiModels;
+    models = cloudflare.makiModels;
   };
 
   providersToWrite =

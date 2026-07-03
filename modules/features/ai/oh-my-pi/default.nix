@@ -2,42 +2,45 @@
   config,
   lib,
   pkgs,
-  aiDeepseek,
-  aiNeuralwatt,
-  aiCloudflare,
-  aiCodex,
+  aiProviders,
   ...
 }:
 let
   cfg = config.dotfiles.ohMyPi;
   workModels = config.dotfiles.workModels;
   cfEnabled = cfg.cloudflareWorkersAi.enable;
-  cfProviderId = aiCloudflare.providerId;
+  inherit (aiProviders)
+    cloudflare
+    neuralwatt
+    deepseek
+    codex
+    ;
+  cfProviderId = cloudflare.providerId;
 
   # Three-tier model hierarchy. Smoreswork uses Cloudflare Workers AI as the
   # primary provider with Codex models left as backup options. Personal hosts use
   # Neuralwatt GLM-5.2 / Qwen3.5-397B / Qwen3.6-35B and never include Codex.
   strongModel =
     if cfEnabled then
-      aiCloudflare.roles.strong
+      cloudflare.roles.strong
     else if workModels then
-      aiCodex.models.gpt55Xhigh
+      codex.models.gpt55Xhigh
     else
-      "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.glm52.id}";
+      "${neuralwatt.providerId}/${neuralwatt.models.glm52.id}";
   midModel =
     if cfEnabled then
-      aiCloudflare.roles.medium
+      cloudflare.roles.medium
     else if workModels then
-      aiCodex.models.gpt54
+      codex.models.gpt54
     else
-      "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.qwen35.id}";
+      "${neuralwatt.providerId}/${neuralwatt.models.qwen35.id}";
   weakModel =
     if cfEnabled then
-      aiCloudflare.roles.weak
+      cloudflare.roles.weak
     else if workModels then
-      aiCodex.models.gpt54Mini
+      codex.models.gpt54Mini
     else
-      "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.qwen36.id}";
+      "${neuralwatt.providerId}/${neuralwatt.models.qwen36.id}";
 
   # Strong: default + plan + slow. Mid: task subagents. Weak: smol/vision and
   # other utility roles. gpt-oss-20b is the weak tier — glm-4.7-flash stalls on
@@ -61,8 +64,8 @@ let
       lib.optionals cfEnabled [ cfProviderId ] ++ lib.optionals cfg.codex.enable [ "openai-codex" ]
     else
       [
-        aiNeuralwatt.providerId
-        aiDeepseek.providerId
+        neuralwatt.providerId
+        deepseek.providerId
         "smortress"
       ];
 
@@ -76,11 +79,11 @@ let
           # env var in the URL. Emit a @CLOUDFLARE_ACCOUNT_ID@ placeholder and
           # substitute it from the activation env when models.yml is written
           # (enforceOmpModels below) — keeps the id out of the Nix store.
-          baseUrl = aiCloudflare.ompBaseUrl;
-          apiKey = aiCloudflare.keyEnv;
+          baseUrl = cloudflare.ompBaseUrl;
+          apiKey = cloudflare.keyEnv;
           api = "openai-completions";
           auth = "apiKey";
-          models = aiCloudflare.ompModelsList;
+          models = cloudflare.ompModelsList;
         };
       }
     else
@@ -110,19 +113,19 @@ let
               }
             ];
           };
-          ${aiDeepseek.providerId} = {
-            baseUrl = aiDeepseek.baseUrl;
+          ${deepseek.providerId} = {
+            baseUrl = deepseek.baseUrl;
             apiKey = "DEEPSEEK_API_KEY";
             api = "openai-completions";
             auth = "apiKey";
-            models = aiDeepseek.ompModelsList;
+            models = deepseek.ompModelsList;
           };
-          ${aiNeuralwatt.providerId} = {
-            baseUrl = aiNeuralwatt.baseUrl;
+          ${neuralwatt.providerId} = {
+            baseUrl = neuralwatt.baseUrl;
             apiKey = "NEURALWATT_API_KEY";
             api = "openai-completions";
             auth = "apiKey";
-            models = aiNeuralwatt.ompModelsList;
+            models = neuralwatt.ompModelsList;
           };
         };
       };
@@ -222,14 +225,14 @@ let
   // lib.optionalAttrs workModels {
     enabledModels =
       lib.optionals cfEnabled [
-        aiCloudflare.roles.strong
-        aiCloudflare.roles.medium
-        aiCloudflare.roles.weak
+        cloudflare.roles.strong
+        cloudflare.roles.medium
+        cloudflare.roles.weak
       ]
       ++ lib.optionals cfg.codex.enable [
-        aiCodex.models.gpt55
-        aiCodex.models.gpt54
-        aiCodex.models.gpt54Mini
+        codex.models.gpt55
+        codex.models.gpt54
+        codex.models.gpt54Mini
       ];
     defaultThinkingLevel = "medium";
     read = {
