@@ -152,11 +152,24 @@ let
     fi
 
   '';
-
   # Shared shell snippet: creates the VM if missing, starts it if stopped.
   # Inlined into the launcher to avoid duplicating the create-or-start
   # sequence across scripts.
+  #
+  # Concurrent smolvm-agent invocations (e.g. several spawn_session calls
+  # fired in one batch) race on `machine status` → `machine create` →
+  # `machine start` and on the idempotent provisioning exec, wedging the VM
+  # and killing every spawned Zellij tab with EIO (terminal_bytes.rs:58).
+  # Serialize create/start/provision under an flock on a stable path; the
+  # final interactive `machine exec` (the agent session itself) runs
+  # outside the lock so it never blocks on a sibling's session.
   ensureVm = ''
+    flock=${pkgs.util-linux.bin}/bin/flock
+    lock=/run/user/$(id -u)/smolvm-agent-''${name}.lock
+    mkdir -p "$(dirname "$lock")"
+    exec 9>"$lock"
+    $flock 9
+
     if ! $smolvm machine status --name "$name" >/dev/null 2>&1; then
       $smolvm machine create "$name" --smolfile ${smolfile}
     fi
@@ -166,6 +179,11 @@ let
     if [ "$state" != "running" ]; then
       $smolvm machine start --name "$name" >/dev/null
     fi
+
+    # Provision git, gh, bun, omp, maki inside the VM (idempotent).
+    $smolvm machine exec --name "$name" -- /bin/bash -c ${lib.escapeShellArg provisionScript}
+
+    exec 9>&-
   '';
 
   launcher = pkgs.writeShellScriptBin "smolvm-agent" ''
@@ -175,9 +193,6 @@ let
     name="agent"
 
     ${ensureVm}
-
-    # Provision git, gh, bun, omp, maki inside the VM (idempotent).
-    $smolvm machine exec --name "$name" -- /bin/bash -c ${lib.escapeShellArg provisionScript}
 
     # Forward MAKI_INSTALL_DIR so `maki update` writes to the shared
     # virtiofs bin mount, not the default /usr/local/bin.
