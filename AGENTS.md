@@ -9,11 +9,12 @@ Do not create feature branches or PRs for this repo unless explicitly asked.
 
 ## Documentation
 
-Always keep `README.md` up-to-date when structure, installation, or
-conventions change. Keep fragile content out of it — no exhaustive file
-trees, host tables, or package lists that go stale on every rename. Link
-to source files (e.g. `modules/flake/configurations.nix`) as the source of
-truth for volatile details.
+Always keep `README.md` and `AGENTS.md` up-to-date when structure,
+installation, or conventions change. Keep fragile content out of them — no
+exhaustive file trees, host tables, or package lists that go stale on
+every rename. Link to source files (e.g.
+`modules/flake/configurations.nix`) as the source of truth for volatile
+details.
 
 ## Where things go
 
