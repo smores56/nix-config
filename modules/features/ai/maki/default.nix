@@ -2,6 +2,8 @@
   config,
   lib,
   pkgs,
+  aiNeuralwatt,
+  aiCloudflare,
   ...
 }:
 let
@@ -17,8 +19,7 @@ let
   # of the Codex cascade stays selectable in Maki's built-in catalog:
   # strong = openai/gpt-5.5, medium = openai/gpt-5.4, weak = openai/gpt-5.4-mini.
   # Personal hosts default to Neuralwatt GLM-5.2.
-  defaultModel =
-    if workModels then "openai/gpt-5.5" else "neuralwatt/glm-5.2";
+  defaultModel = if workModels then "openai/gpt-5.5" else "neuralwatt/glm-5.2";
 
   makiTools = [
     "bash = { enabled = true }"
@@ -55,14 +56,10 @@ let
   mcpServers = cfg.mcpServers;
   mcpToml = pkgs.writers.writeTOML "maki-mcp.toml" { mcp = mcpServers; };
 
-  # gemma / Neuralwatt are OpenAI-compatible endpoints maki ships no built-in
-  # for. maki discovers custom providers as executable scripts in
-  # ~/.config/maki/providers/<slug> answering info/models/resolve. base
-  # "llama-cpp" selects the plain OpenAI /v1 chat-completions dialect (no
-  # Responses API / developer role) that both speak; resolve injects the
-  # bearer token and info's has_auth reflects whether the key env var is set, so
-  # a provider only lights up when its creds are available. Personal hosts only;
-  # work hosts drive Codex-backed OpenAI, with optional Cloudflare.
+  # Custom providers for maki: Neuralwatt + local smortress (personal hosts),
+  # Cloudflare Workers AI (optional). Model catalogs and pricing live in
+  # providers/ and are projected into maki's shape (id, tier, context_window,
+  # max_output_tokens, pricing) via each provider's makiModels attribute.
   makiProviders = {
     smortress = {
       displayName = "Gemma (smortress)";
@@ -77,217 +74,21 @@ let
         }
       ];
     };
-    # Neuralwatt (https://portal.neuralwatt.com) — OpenAI-compatible inference with
-    # energy-based pricing ($5/kWh flat). Energy benchmarks from portal models page;
-    # actual billing is metered per-request. Token pricing is USD per 1M tokens (for
-    # maki's per-session cost readout; actual billing is energy-based). Context and
-    # pricing from https://portal.neuralwatt.com/models. Ordering matters: maki's
-    # dynamic provider lookup uses starts_with prefix matching with first-match-wins,
-    # so longer/suffixed ids (e.g. glm-5.2-short) must precede their prefix (glm-5.2).
-    # Tiers track active MoE parameters per token (proxy for per-token capability):
-    #   strong  = GLM-5.2 (744B/40B active), Kimi K2.6/K2.7 (1T/32B active)
-    #   medium  = Qwen3.5-397B (397B/17B active)
-    #   weak    = Qwen3.6-35B (35B/3B active)
-    # Fast/short variants share their base model's weights, so they inherit its tier.
-    neuralwatt = {
+    ${aiNeuralwatt.providerId} = {
       displayName = "Neuralwatt";
-      baseUrl = "https://api.neuralwatt.com/v1";
-      keyEnv = "NEURALWATT_API_KEY";
-      models = [
-        {
-          id = "glm-5.2-short-fast";
-          tier = "strong";
-          context_window = 200000;
-          max_output_tokens = 32768;
-          pricing = {
-            input = 1.45;
-            output = 4.50;
-            cache_write = 0.0;
-            cache_read = 0.36;
-          };
-        }
-        {
-          id = "glm-5.2-short";
-          tier = "strong";
-          context_window = 200000;
-          max_output_tokens = 32768;
-          pricing = {
-            input = 1.45;
-            output = 4.50;
-            cache_write = 0.0;
-            cache_read = 0.36;
-          };
-        }
-        {
-          id = "glm-5.2-fast";
-          tier = "strong";
-          context_window = 1048576;
-          max_output_tokens = 32768;
-          pricing = {
-            input = 1.45;
-            output = 4.50;
-            cache_write = 0.0;
-            cache_read = 0.36;
-          };
-        }
-        {
-          id = "glm-5.2";
-          tier = "strong";
-          context_window = 1048576;
-          max_output_tokens = 32768;
-          pricing = {
-            input = 1.45;
-            output = 4.50;
-            cache_write = 0.0;
-            cache_read = 0.36;
-          };
-        }
-        {
-          id = "kimi-k2.6-fast";
-          tier = "strong";
-          context_window = 262144;
-          max_output_tokens = 32768;
-          pricing = {
-            input = 0.69;
-            output = 3.22;
-            cache_write = 0.0;
-            cache_read = 0.0;
-          };
-        }
-        {
-          id = "kimi-k2.6";
-          tier = "strong";
-          context_window = 262144;
-          max_output_tokens = 32768;
-          pricing = {
-            input = 0.69;
-            output = 3.22;
-            cache_write = 0.0;
-            cache_read = 0.0;
-          };
-        }
-        {
-          id = "kimi-k2.7-code";
-          tier = "strong";
-          context_window = 262144;
-          max_output_tokens = 32768;
-          pricing = {
-            input = 0.95;
-            output = 4.00;
-            cache_write = 0.0;
-            cache_read = 0.0;
-          };
-        }
-        {
-          id = "qwen3.5-397b-fast";
-          tier = "medium";
-          context_window = 262144;
-          max_output_tokens = 32768;
-          pricing = {
-            input = 0.69;
-            output = 4.14;
-            cache_write = 0.0;
-            cache_read = 0.17;
-          };
-        }
-        {
-          id = "qwen3.5-397b";
-          tier = "medium";
-          context_window = 262144;
-          max_output_tokens = 32768;
-          pricing = {
-            input = 0.69;
-            output = 4.14;
-            cache_write = 0.0;
-            cache_read = 0.17;
-          };
-        }
-        {
-          id = "qwen3.6-35b-fast";
-          tier = "weak";
-          context_window = 131072;
-          max_output_tokens = 16384;
-          pricing = {
-            input = 0.29;
-            output = 1.15;
-            cache_write = 0.0;
-            cache_read = 0.07;
-          };
-        }
-        {
-          id = "qwen3.6-35b";
-          tier = "weak";
-          context_window = 131072;
-          max_output_tokens = 16384;
-          pricing = {
-            input = 0.29;
-            output = 1.15;
-            cache_write = 0.0;
-            cache_read = 0.07;
-          };
-        }
-      ];
+      baseUrl = aiNeuralwatt.baseUrl;
+      keyEnv = aiNeuralwatt.keyEnv;
+      models = aiNeuralwatt.makiModels;
     };
   };
 
-  # Cloudflare Workers AI via its OpenAI-compatible endpoint
-  # (.../ai/v1/chat/completions; the @cf/... model id rides in the request body,
-  # the documented equivalent of the /ai/run/<model> REST path). The account id
-  # is interpolated into base_url at runtime (dynamicBaseUrl), and both the
-  # account id and token must be present for the provider to light up. Tiers map
-  # strong/medium/weak -> glm-5.2 / gpt-oss-120b / gpt-oss-20b. pricing is USD
-  # per 1M tokens (drives maki's live per-session cost readout and the
-  # maki-cf-cost monthly rollup — keep in sync with cf-cost-report.py).
-  cloudflareProviders.cloudflare = {
+  cloudflareProviders.${aiCloudflare.providerId} = {
     displayName = "Cloudflare Workers AI";
-    baseUrl = "https://api.cloudflare.com/client/v4/accounts/\${CLOUDFLARE_ACCOUNT_ID}/ai/v1";
-    keyEnv = "CLOUDFLARE_API_KEY";
-    extraAuthEnv = [ "CLOUDFLARE_ACCOUNT_ID" ];
+    baseUrl = aiCloudflare.makiBaseUrl;
+    keyEnv = aiCloudflare.keyEnv;
+    extraAuthEnv = aiCloudflare.extraAuthEnv;
     dynamicBaseUrl = true;
-    models = [
-      {
-        id = "@cf/zai-org/glm-5.2";
-        tier = "strong";
-        context_window = 262144;
-        max_output_tokens = 32768;
-        pricing = {
-          input = 1.40;
-          output = 4.40;
-          cache_write = 0.0;
-          # Cloudflare does automatic prefix caching; GLM-5.2 publishes a
-          # discounted cached-input rate ($0.26/1M) on its model page.
-          cache_read = 0.26;
-        };
-      }
-      {
-        id = "@cf/openai/gpt-oss-120b";
-        tier = "medium";
-        context_window = 128000;
-        max_output_tokens = 32768;
-        pricing = {
-          input = 0.35;
-          output = 0.75;
-          cache_write = 0.0;
-          # No published cached-input rate; price cached reads as input
-          # (conservative — never under-counts).
-          cache_read = 0.35;
-        };
-      }
-      {
-        id = "@cf/openai/gpt-oss-20b";
-        tier = "weak";
-        context_window = 128000;
-        max_output_tokens = 32768;
-        pricing = {
-          input = 0.20;
-          output = 0.30;
-          cache_write = 0.0;
-          # No published cached-input rate; price cached reads as input
-          # (conservative — never under-counts).
-          cache_read = 0.20;
-        };
-      }
-    ];
+    models = aiCloudflare.makiModels;
   };
 
   providersToWrite =

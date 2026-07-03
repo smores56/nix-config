@@ -32,7 +32,9 @@ in
       accept-flake-config = true
       experimental-features = nix-command flakes
     '';
-    file."Library/Fonts/.home-manager-fonts-version" = lib.mkIf isDarwin (lib.mkForce { text = "${darwinFontsEnv}"; });
+    file."Library/Fonts/.home-manager-fonts-version" = lib.mkIf isDarwin (
+      lib.mkForce { text = "${darwinFontsEnv}"; }
+    );
 
     activation.syncDarwinFonts = lib.mkIf isDarwin (
       lib.hm.dag.entryAfter [ "writeBoundary" ] ''

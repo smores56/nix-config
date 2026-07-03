@@ -4,39 +4,38 @@
   pkgs,
   aiDeepseek,
   aiNeuralwatt,
+  aiCloudflare,
+  aiCodex,
   ...
 }:
 let
   cfg = config.dotfiles.ohMyPi;
   workModels = config.dotfiles.workModels;
   cfEnabled = cfg.cloudflareWorkersAi.enable;
-  cfProviderId = "cloudflare";
-  cfStrongModel = "${cfProviderId}/@cf/zai-org/glm-5.2";
-  cfMidModel = "${cfProviderId}/@cf/openai/gpt-oss-120b";
-  cfWeakModel = "${cfProviderId}/@cf/openai/gpt-oss-20b";
+  cfProviderId = aiCloudflare.providerId;
 
   # Three-tier model hierarchy. Smoreswork uses Cloudflare Workers AI as the
   # primary provider with Codex models left as backup options. Personal hosts use
   # Neuralwatt GLM-5.2 / Qwen3.5-397B / Qwen3.6-35B and never include Codex.
   strongModel =
     if cfEnabled then
-      cfStrongModel
+      aiCloudflare.roles.strong
     else if workModels then
-      "openai-codex/gpt-5.5:xhigh"
+      aiCodex.models.gpt55Xhigh
     else
       "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.glm52.id}";
   midModel =
     if cfEnabled then
-      cfMidModel
+      aiCloudflare.roles.medium
     else if workModels then
-      "openai-codex/gpt-5.4"
+      aiCodex.models.gpt54
     else
       "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.qwen35.id}";
   weakModel =
     if cfEnabled then
-      cfWeakModel
+      aiCloudflare.roles.weak
     else if workModels then
-      "openai-codex/gpt-5.4-mini"
+      aiCodex.models.gpt54Mini
     else
       "${aiNeuralwatt.providerId}/${aiNeuralwatt.models.qwen36.id}";
 
@@ -67,63 +66,6 @@ let
         "smortress"
       ];
 
-  cloudflareModels = [
-    {
-      id = "@cf/zai-org/glm-5.2";
-      name = "GLM 5.2 (Cloudflare)";
-      reasoning = true;
-      input = [ "text" ];
-      contextWindow = 262144;
-      maxTokens = 32768;
-      cost = {
-        input = 1.40;
-        output = 4.40;
-        # Cloudflare auto prefix-caches; GLM-5.2 publishes a $0.26/1M cached-input rate.
-        cacheRead = 0.26;
-        cacheWrite = 0;
-      };
-      compat = {
-        supportsDeveloperRole = false;
-      };
-    }
-    {
-      id = "@cf/openai/gpt-oss-120b";
-      name = "GPT OSS 120B (Cloudflare)";
-      reasoning = true;
-      input = [ "text" ];
-      contextWindow = 128000;
-      maxTokens = 32768;
-      cost = {
-        input = 0.35;
-        output = 0.75;
-        # No published cached rate; price cached reads as input (conservative).
-        cacheRead = 0.35;
-        cacheWrite = 0;
-      };
-      compat = {
-        supportsDeveloperRole = false;
-      };
-    }
-    {
-      id = "@cf/openai/gpt-oss-20b";
-      name = "GPT OSS 20B (Cloudflare)";
-      reasoning = true;
-      input = [ "text" ];
-      contextWindow = 128000;
-      maxTokens = 32768;
-      cost = {
-        input = 0.20;
-        output = 0.30;
-        # No published cached rate; price cached reads as input (conservative).
-        cacheRead = 0.20;
-        cacheWrite = 0;
-      };
-      compat = {
-        supportsDeveloperRole = false;
-      };
-    }
-  ];
-
   modelsConfig =
     if workModels then
       lib.optionalAttrs cfEnabled {
@@ -134,11 +76,11 @@ let
           # env var in the URL. Emit a @CLOUDFLARE_ACCOUNT_ID@ placeholder and
           # substitute it from the activation env when models.yml is written
           # (enforceOmpModels below) — keeps the id out of the Nix store.
-          baseUrl = "https://api.cloudflare.com/client/v4/accounts/@CLOUDFLARE_ACCOUNT_ID@/ai/v1";
-          apiKey = "CLOUDFLARE_API_KEY";
+          baseUrl = aiCloudflare.ompBaseUrl;
+          apiKey = aiCloudflare.keyEnv;
           api = "openai-completions";
           auth = "apiKey";
-          models = cloudflareModels;
+          models = aiCloudflare.ompModelsList;
         };
       }
     else
@@ -280,14 +222,14 @@ let
   // lib.optionalAttrs workModels {
     enabledModels =
       lib.optionals cfEnabled [
-        cfStrongModel
-        cfMidModel
-        cfWeakModel
+        aiCloudflare.roles.strong
+        aiCloudflare.roles.medium
+        aiCloudflare.roles.weak
       ]
       ++ lib.optionals cfg.codex.enable [
-        "openai-codex/gpt-5.5"
-        "openai-codex/gpt-5.4"
-        "openai-codex/gpt-5.4-mini"
+        aiCodex.models.gpt55
+        aiCodex.models.gpt54
+        aiCodex.models.gpt54Mini
       ];
     defaultThinkingLevel = "medium";
     read = {

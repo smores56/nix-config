@@ -1,3 +1,7 @@
+# Canonical Neuralwatt spec: model catalog + energy-based pricing, consumed by
+# both oh-my-pi (models.yml) and maki (provider scripts).
+# Ordering matters for maki's starts_with prefix matching — longer/suffixed
+# ids must precede their prefix (e.g. glm-5.2-short-fast before glm-5.2).
 { ... }:
 let
   model = id: name: context: output: reasoning: inPrice: outPrice: cachePrice: {
@@ -49,6 +53,7 @@ let
     models.qwen36Fast
   ];
 
+  # oh-my-pi models.yml shape
   ompModelAttrs = model: {
     id = model.id;
     name = model.name;
@@ -67,6 +72,50 @@ let
     };
   };
 
+  # maki custom-provider shape, ordered for starts_with prefix matching.
+  # Tiers track active MoE parameters per token (proxy for per-token capability):
+  #   strong  = GLM-5.2 (744B/40B active), Kimi K2.6/K2.7 (1T/32B active)
+  #   medium  = Qwen3.5-397B (397B/17B active)
+  #   weak    = Qwen3.6-35B (35B/3B active)
+  # Fast/short variants share their base model's weights, so they inherit its tier.
+  makiTier =
+    m:
+    if builtins.match "glm-5.2.*|kimi-k2.*" m.id != null then
+      "strong"
+    else if builtins.match "qwen3.5.*" m.id != null then
+      "medium"
+    else
+      "weak";
+
+  # Full catalog (maki exposes all selectable models, not just the omp-selected ones)
+  makiModels =
+    map
+      (m: {
+        inherit (m) id;
+        tier = makiTier m;
+        context_window = m.context;
+        max_output_tokens = m.output;
+        pricing = {
+          input = m.inPrice;
+          output = m.outPrice;
+          cache_write = 0.0;
+          cache_read = m.cachePrice;
+        };
+      })
+      [
+        # Order: longer/suffixed ids first for maki prefix matching
+        models.glm52ShortFast
+        models.glm52Short
+        models.glm52Fast
+        models.glm52
+        models.kimiK27Code
+        models.kimiK26Fast
+        models.kimiK26
+        models.qwen35Fast
+        models.qwen35
+        models.qwen36Fast
+        models.qwen36
+      ];
 in
 {
   _module.args.aiNeuralwatt = {
@@ -75,10 +124,10 @@ in
       providerId
       roles
       selectedModels
+      makiModels
       ;
-
     baseUrl = "https://api.neuralwatt.com/v1";
-
+    keyEnv = "NEURALWATT_API_KEY";
     ompModelsList = map ompModelAttrs selectedModels;
   };
 }
