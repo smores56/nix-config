@@ -124,18 +124,12 @@ let
     # core.sshCommand to a host-only wrapper (git-github-ssh). Rewrite
     # the credential helper to the VM's gh path and drop sshCommand.
     # Runs after git is installed (above).
-    git config --file /root/.config/git/config --unset-all \
-      "credential.https://github.com.helper" 2>/dev/null || true
-    git config --file /root/.config/git/config --add \
-      "credential.https://github.com.helper" ""
-    git config --file /root/.config/git/config --add \
-      "credential.https://github.com.helper" "/root/.local/bin/gh auth git-credential"
-    git config --file /root/.config/git/config --unset-all \
-      "credential.https://gist.github.com.helper" 2>/dev/null || true
-    git config --file /root/.config/git/config --add \
-      "credential.https://gist.github.com.helper" ""
-    git config --file /root/.config/git/config --add \
-      "credential.https://gist.github.com.helper" "/root/.local/bin/gh auth git-credential"
+    for host in github.com gist.github.com; do
+      key="credential.https://''${host}.helper"
+      git config --file /root/.config/git/config --unset-all "$key" 2>/dev/null || true
+      git config --file /root/.config/git/config --add "$key" ""
+      git config --file /root/.config/git/config --add "$key" "/root/.local/bin/gh auth git-credential"
+    done
     git config --file /root/.config/git/config --unset-all core.sshCommand 2>/dev/null || true
 
     # Bun + omp (glibc-linked native addons, not static).

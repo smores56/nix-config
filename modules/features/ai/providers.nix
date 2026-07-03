@@ -12,9 +12,9 @@
 #   baseUrl/keyEnv/extraAuthEnv — auth/connection params
 { ... }:
 let
-  # ── DeepSeek ──────────────────────────────────────────────────────────────
-  # No published cached-input pricing; all reads price as input (conservative).
-  mkDeepseekModel = id: name: context: output: reasoning: inPrice: outPrice: {
+  # ── Shared helpers ─────────────────────────────────────────────────────────
+  # Unified model constructor: cachePrice is explicit (DeepSeek passes inPrice as cachePrice).
+  mkModel = id: name: context: output: reasoning: inPrice: outPrice: cachePrice: {
     inherit
       id
       name
@@ -23,13 +23,70 @@ let
       reasoning
       inPrice
       outPrice
+      cachePrice
       ;
-    cachePrice = inPrice;
   };
 
+  # Pricing accessor: handles both flat-pricing (inPrice/outPrice/cachePrice)
+  # and nested-pricing (m.pricing.input/output/cacheRead/cacheWrite) models.
+  getPricing =
+    m:
+    if m ? pricing then
+      m.pricing
+    else
+      {
+        input = m.inPrice;
+        output = m.outPrice;
+        cacheRead = m.cachePrice;
+        cacheWrite = 0;
+      };
+
+  # Maps any model record to omp models.yml shape.
+  mkOmpModel =
+    m:
+    let
+      p = getPricing m;
+    in
+    {
+      id = m.id;
+      name = m.name;
+      reasoning = m.reasoning;
+      input = m.input or [ "text" ];
+      contextWindow = m.context;
+      maxTokens = m.output;
+      cost = {
+        inherit (p)
+          input
+          output
+          cacheRead
+          cacheWrite
+          ;
+      };
+      compat.supportsDeveloperRole = false;
+    };
+
+  # Maps any model record to maki provider-script shape.
+  mkMakiModel =
+    m: tier:
+    let
+      p = getPricing m;
+    in
+    {
+      inherit (m) id;
+      inherit tier;
+      context_window = m.context;
+      max_output_tokens = m.output;
+      pricing = {
+        inherit (p) input output cacheWrite;
+        cache_read = p.cacheRead;
+      };
+    };
+
+  # ── DeepSeek ──────────────────────────────────────────────────────────────
+  # No published cached-input pricing; all reads price as input (conservative).
   deepseekModels = {
-    v4Pro = mkDeepseekModel "deepseek-v4-pro" "DeepSeek V4 Pro" 1000000 131072 true 1.10 4.40;
-    v4Flash = mkDeepseekModel "deepseek-v4-flash" "DeepSeek V4 Flash" 1000000 131072 false 0.28 0.42;
+    v4Pro = mkModel "deepseek-v4-pro" "DeepSeek V4 Pro" 1000000 131072 true 1.10 4.40 1.10;
+    v4Flash = mkModel "deepseek-v4-flash" "DeepSeek V4 Flash" 1000000 131072 false 0.28 0.42 0.28;
   };
 
   deepseek = rec {
@@ -52,73 +109,27 @@ let
     ];
     baseUrl = "https://api.deepseek.com/v1";
     keyEnv = "DEEPSEEK_API_KEY";
-    ompModelsList = map (m: {
-      id = m.id;
-      name = m.name;
-      reasoning = m.reasoning;
-      input = [ "text" ];
-      contextWindow = m.context;
-      maxTokens = m.output;
-      cost = {
-        input = m.inPrice;
-        output = m.outPrice;
-        cacheRead = m.cachePrice;
-        cacheWrite = 0;
-      };
-      compat.supportsDeveloperRole = false;
-    }) selectedModels;
-    makiModels = map (m: {
-      inherit (m) id;
-      tier = if m.reasoning then "strong" else "medium";
-      context_window = m.context;
-      max_output_tokens = m.output;
-      pricing = {
-        input = m.inPrice;
-        output = m.outPrice;
-        cache_write = 0.0;
-        cache_read = m.cachePrice;
-      };
-    }) selectedModels;
+    ompModelsList = map mkOmpModel selectedModels;
+    makiModels = map (m: mkMakiModel m (if m.reasoning then "strong" else "medium")) selectedModels;
   };
 
   # ── Neuralwatt ────────────────────────────────────────────────────────────
   # Ordering matters for maki's starts_with prefix matching — longer/suffixed
   # ids must precede their prefix (e.g. glm-5.2-short-fast before glm-5.2).
-  mkNeuralwattModel = id: name: context: output: reasoning: inPrice: outPrice: cachePrice: {
-    inherit
-      id
-      name
-      context
-      output
-      reasoning
-      inPrice
-      outPrice
-      cachePrice
-      ;
-  };
-
   neuralwattModels = {
-    glm52 = mkNeuralwattModel "glm-5.2" "GLM 5.2" 1048576 32768 true 1.45 4.50 0.3625;
-    glm52Fast = mkNeuralwattModel "glm-5.2-fast" "GLM 5.2 (fast)" 1048576 32768 false 1.45 4.50 0.3625;
-    glm52Short = mkNeuralwattModel "glm-5.2-short" "GLM 5.2 (short)" 200000 32768 true 1.45 4.50 0.3625;
+    glm52 = mkModel "glm-5.2" "GLM 5.2" 1048576 32768 true 1.45 4.50 0.3625;
+    glm52Fast = mkModel "glm-5.2-fast" "GLM 5.2 (fast)" 1048576 32768 false 1.45 4.50 0.3625;
+    glm52Short = mkModel "glm-5.2-short" "GLM 5.2 (short)" 200000 32768 true 1.45 4.50 0.3625;
     glm52ShortFast =
-      mkNeuralwattModel "glm-5.2-short-fast" "GLM 5.2 (short, fast)" 200000 32768 false 1.45 4.50
+      mkModel "glm-5.2-short-fast" "GLM 5.2 (short, fast)" 200000 32768 false 1.45 4.50
         0.3625;
-    kimiK26 = mkNeuralwattModel "kimi-k2.6" "Kimi K2.6" 262144 32768 true 0.69 3.22 0.1725;
-    kimiK26Fast =
-      mkNeuralwattModel "kimi-k2.6-fast" "Kimi K2.6 Fast" 262144 32768 false 0.69 3.22
-        0.1725;
-    kimiK27Code =
-      mkNeuralwattModel "kimi-k2.7-code" "Kimi K2.7 Code" 262144 32768 true 0.95 4.00
-        0.2375;
-    qwen35 = mkNeuralwattModel "qwen3.5-397b" "Qwen3.5 397B" 262144 32768 true 0.69 4.14 0.1725;
-    qwen35Fast =
-      mkNeuralwattModel "qwen3.5-397b-fast" "Qwen3.5 397B Fast" 262144 32768 false 0.69 4.14
-        0.1725;
-    qwen36 = mkNeuralwattModel "qwen3.6-35b" "Qwen3.6 35B" 131072 16384 true 0.29 1.15 0.0725;
-    qwen36Fast =
-      mkNeuralwattModel "qwen3.6-35b-fast" "Qwen3.6 35B Fast" 131072 16384 false 0.29 1.15
-        0.0725;
+    kimiK26 = mkModel "kimi-k2.6" "Kimi K2.6" 262144 32768 true 0.69 3.22 0.1725;
+    kimiK26Fast = mkModel "kimi-k2.6-fast" "Kimi K2.6 Fast" 262144 32768 false 0.69 3.22 0.1725;
+    kimiK27Code = mkModel "kimi-k2.7-code" "Kimi K2.7 Code" 262144 32768 true 0.95 4.00 0.2375;
+    qwen35 = mkModel "qwen3.5-397b" "Qwen3.5 397B" 262144 32768 true 0.69 4.14 0.1725;
+    qwen35Fast = mkModel "qwen3.5-397b-fast" "Qwen3.5 397B Fast" 262144 32768 false 0.69 4.14 0.1725;
+    qwen36 = mkModel "qwen3.6-35b" "Qwen3.6 35B" 131072 16384 true 0.29 1.15 0.0725;
+    qwen36Fast = mkModel "qwen3.6-35b-fast" "Qwen3.6 35B Fast" 131072 16384 false 0.29 1.15 0.0725;
   };
 
   # Tiers track active MoE parameters per token:
@@ -155,49 +166,21 @@ let
     ];
     baseUrl = "https://api.neuralwatt.com/v1";
     keyEnv = "NEURALWATT_API_KEY";
-    ompModelsList = map (m: {
-      id = m.id;
-      name = m.name;
-      reasoning = m.reasoning;
-      input = [ "text" ];
-      contextWindow = m.context;
-      maxTokens = m.output;
-      cost = {
-        input = m.inPrice;
-        output = m.outPrice;
-        cacheRead = m.cachePrice;
-        cacheWrite = 0;
-      };
-      compat.supportsDeveloperRole = false;
-    }) selectedModels;
+    ompModelsList = map mkOmpModel selectedModels;
     # Full catalog (maki exposes all selectable models), ordered for prefix matching.
-    makiModels =
-      map
-        (m: {
-          inherit (m) id;
-          tier = neuralwattTier m;
-          context_window = m.context;
-          max_output_tokens = m.output;
-          pricing = {
-            input = m.inPrice;
-            output = m.outPrice;
-            cache_write = 0.0;
-            cache_read = m.cachePrice;
-          };
-        })
-        [
-          models.glm52ShortFast
-          models.glm52Short
-          models.glm52Fast
-          models.glm52
-          models.kimiK27Code
-          models.kimiK26Fast
-          models.kimiK26
-          models.qwen35Fast
-          models.qwen35
-          models.qwen36Fast
-          models.qwen36
-        ];
+    makiModels = map (m: mkMakiModel m (neuralwattTier m)) [
+      models.glm52ShortFast
+      models.glm52Short
+      models.glm52Fast
+      models.glm52
+      models.kimiK27Code
+      models.kimiK26Fast
+      models.kimiK26
+      models.qwen35Fast
+      models.qwen35
+      models.qwen36Fast
+      models.qwen36
+    ];
   };
 
   # ── Cloudflare Workers AI ─────────────────────────────────────────────────
@@ -284,32 +267,30 @@ let
     # write time; maki uses shell \${CLOUDFLARE_ACCOUNT_ID} expanded at runtime.
     ompBaseUrl = "https://api.cloudflare.com/client/v4/accounts/@CLOUDFLARE_ACCOUNT_ID@/ai/v1";
     makiBaseUrl = "https://api.cloudflare.com/client/v4/accounts/\${CLOUDFLARE_ACCOUNT_ID}/ai/v1";
-    ompModelsList = map (m: {
-      inherit (m)
-        id
-        name
-        reasoning
-        input
-        ;
-      contextWindow = m.context;
-      maxTokens = m.output;
-      cost = {
-        inherit (m.pricing)
-          input
-          output
-          cacheRead
-          cacheWrite
-          ;
-      };
-      compat.supportsDeveloperRole = false;
-    }) selectedModels;
-    makiModels = map (m: {
-      inherit (m) id;
-      tier = cloudflareTier m;
-      context_window = m.context;
-      max_output_tokens = m.output;
-      pricing = m.pricing;
-    }) selectedModels;
+    ompModelsList = map mkOmpModel selectedModels;
+    makiModels = map (m: mkMakiModel m (cloudflareTier m)) selectedModels;
+  };
+
+  # ── Smortress ─────────────────────────────────────────────────────────────
+  # Local network provider; no auth needed (keyEnv = null).
+  smortressModels = {
+    gemma431b = mkModel "gemma-4-31b" "Gemma 4 31B (smortress)" 102400 102400 true 0.0 0.0 0.0;
+  };
+
+  smortress = rec {
+    providerId = "smortress";
+    models = smortressModels;
+    modelRef = m: "${providerId}/${m.id}";
+    roles = {
+      default = modelRef models.gemma431b;
+    };
+    selectedModels = [
+      models.gemma431b
+    ];
+    baseUrl = "http://smortress:8081/v1";
+    keyEnv = null;
+    ompModelsList = map mkOmpModel selectedModels;
+    makiModels = map (m: mkMakiModel m "medium") selectedModels;
   };
 
   # ── Codex ─────────────────────────────────────────────────────────────────
@@ -333,6 +314,7 @@ in
       neuralwatt
       cloudflare
       codex
+      smortress
       ;
   };
 }

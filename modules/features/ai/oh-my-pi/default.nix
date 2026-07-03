@@ -13,6 +13,7 @@ let
     cloudflare
     neuralwatt
     deepseek
+    smortress
     codex
     ;
   cfProviderId = cloudflare.providerId;
@@ -20,42 +21,40 @@ let
   # Three-tier model hierarchy. Smoreswork uses Cloudflare Workers AI as the
   # primary provider with Codex models left as backup options. Personal hosts use
   # Neuralwatt GLM-5.2 / Qwen3.5-397B / Qwen3.6-35B and never include Codex.
-  strongModel =
+  tierModels =
     if cfEnabled then
-      cloudflare.roles.strong
+      {
+        strong = cloudflare.roles.strong;
+        mid = cloudflare.roles.medium;
+        weak = cloudflare.roles.weak;
+      }
     else if workModels then
-      codex.models.gpt55Xhigh
+      {
+        strong = codex.models.gpt55Xhigh;
+        mid = codex.models.gpt54;
+        weak = codex.models.gpt54Mini;
+      }
     else
-      "${neuralwatt.providerId}/${neuralwatt.models.glm52.id}";
-  midModel =
-    if cfEnabled then
-      cloudflare.roles.medium
-    else if workModels then
-      codex.models.gpt54
-    else
-      "${neuralwatt.providerId}/${neuralwatt.models.qwen35.id}";
-  weakModel =
-    if cfEnabled then
-      cloudflare.roles.weak
-    else if workModels then
-      codex.models.gpt54Mini
-    else
-      "${neuralwatt.providerId}/${neuralwatt.models.qwen36.id}";
+      {
+        strong = "${neuralwatt.providerId}/${neuralwatt.models.glm52.id}";
+        mid = "${neuralwatt.providerId}/${neuralwatt.models.qwen35.id}";
+        weak = "${neuralwatt.providerId}/${neuralwatt.models.qwen36.id}";
+      };
 
   # Strong: default + plan + slow. Mid: task subagents. Weak: smol/vision and
   # other utility roles. gpt-oss-20b is the weak tier — glm-4.7-flash stalls on
   # CF (HTTP 200, zero-byte body), so gpt-oss-20b (same family, lower latency)
   # backs the cheap/utility roles instead.
   modelRoles = {
-    default = strongModel;
-    plan = strongModel;
-    slow = strongModel;
-    task = midModel;
-    smol = weakModel;
-    vision = weakModel;
-    designer = weakModel;
-    commit = weakModel;
-    title = weakModel;
+    default = tierModels.strong;
+    plan = tierModels.strong;
+    slow = tierModels.strong;
+    task = tierModels.mid;
+    smol = tierModels.weak;
+    vision = tierModels.weak;
+    designer = tierModels.weak;
+    commit = tierModels.weak;
+    title = tierModels.weak;
   };
 
   # Provider priority: primary tier provider first, then backups for failover.
@@ -66,7 +65,7 @@ let
       [
         neuralwatt.providerId
         deepseek.providerId
-        "smortress"
+        smortress.providerId
       ];
 
   modelsConfig =
@@ -89,29 +88,11 @@ let
     else
       {
         providers = {
-          smortress = {
-            baseUrl = "http://smortress:8081/v1";
+          ${smortress.providerId} = {
+            baseUrl = smortress.baseUrl;
             api = "openai-completions";
             auth = "none";
-            models = [
-              {
-                id = "gemma-4-31b";
-                name = "Gemma 4 31B (smortress)";
-                reasoning = true;
-                input = [ "text" ];
-                contextWindow = 102400;
-                maxTokens = 102400;
-                cost = {
-                  input = 0;
-                  output = 0;
-                  cacheRead = 0;
-                  cacheWrite = 0;
-                };
-                compat = {
-                  supportsDeveloperRole = false;
-                };
-              }
-            ];
+            models = smortress.ompModelsList;
           };
           ${deepseek.providerId} = {
             baseUrl = deepseek.baseUrl;

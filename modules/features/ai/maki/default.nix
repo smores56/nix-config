@@ -6,7 +6,7 @@
   ...
 }:
 let
-  inherit (aiProviders) neuralwatt cloudflare;
+  inherit (aiProviders) neuralwatt cloudflare smortress;
   cfg = config.dotfiles.maki;
   workModels = config.dotfiles.workModels;
   # When set, install Cloudflare Workers AI as an additional custom provider.
@@ -56,23 +56,15 @@ let
   mcpServers = cfg.mcpServers;
   mcpToml = pkgs.writers.writeTOML "maki-mcp.toml" { mcp = mcpServers; };
 
-  # Custom providers for maki: Neuralwatt + local smortress (personal hosts),
-  # Cloudflare Workers AI (optional). Model catalogs and pricing live in
-  # providers/ and are projected into maki's shape (id, tier, context_window,
-  # max_output_tokens, pricing) via each provider's makiModels attribute.
+  # Custom providers for maki (personal hosts only). Model catalogs and pricing
+  # live in providers.nix and are projected into maki's shape via each
+  # provider's makiModels attribute. displayName is maki-specific.
   makiProviders = {
-    smortress = {
+    ${smortress.providerId} = {
       displayName = "Gemma (smortress)";
-      baseUrl = "http://smortress:8081/v1";
-      keyEnv = null;
-      models = [
-        {
-          id = "gemma-4-31b";
-          tier = "medium";
-          context_window = 102400;
-          max_output_tokens = 102400;
-        }
-      ];
+      baseUrl = smortress.baseUrl;
+      keyEnv = smortress.keyEnv;
+      models = smortress.makiModels;
     };
     ${neuralwatt.providerId} = {
       displayName = "Neuralwatt";
@@ -176,7 +168,7 @@ in
       // {
         description = ''
           Install Cloudflare Workers AI as an extra selectable maki provider
-          (GLM 5.2 strong / gpt-oss-120b medium / GLM 4.7 Flash weak) and the
+          (GLM 5.2 strong / gpt-oss-120b medium / gpt-oss-20b weak) and the
           maki-cf-cost monthly spend report. This never changes the generated
           default model or disables Codex/OpenAI credential sync. Requires
           CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_KEY in the environment.
