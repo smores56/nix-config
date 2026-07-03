@@ -21,6 +21,11 @@ let
       };
     };
   };
+
+  themeAssertion = kind: name: path: {
+    assertion = builtins.pathExists path;
+    message = "'${name}' not found in ${kind}";
+  };
 in
 {
   options.dotfiles = {
@@ -242,22 +247,18 @@ in
         helixThemes = "${pkgs.helix-unwrapped.src}/runtime/themes";
       in
       [
-        {
-          assertion = builtins.pathExists "${pkgs.base16-schemes}/share/themes/${config.dotfiles.darkTheme.system}.yaml";
-          message = "darkTheme.system '${config.dotfiles.darkTheme.system}' not found in base16-schemes";
-        }
-        {
-          assertion = builtins.pathExists "${pkgs.base16-schemes}/share/themes/${config.dotfiles.lightTheme.system}.yaml";
-          message = "lightTheme.system '${config.dotfiles.lightTheme.system}' not found in base16-schemes";
-        }
-        {
-          assertion = builtins.pathExists "${helixThemes}/${config.dotfiles.darkTheme.helix}.toml";
-          message = "darkTheme.helix '${config.dotfiles.darkTheme.helix}' not found in helix themes";
-        }
-        {
-          assertion = builtins.pathExists "${helixThemes}/${config.dotfiles.lightTheme.helix}.toml";
-          message = "lightTheme.helix '${config.dotfiles.lightTheme.helix}' not found in helix themes";
-        }
+        (themeAssertion "base16-schemes" config.dotfiles.darkTheme.system
+          "${pkgs.base16-schemes}/share/themes/${config.dotfiles.darkTheme.system}.yaml"
+        )
+        (themeAssertion "base16-schemes" config.dotfiles.lightTheme.system
+          "${pkgs.base16-schemes}/share/themes/${config.dotfiles.lightTheme.system}.yaml"
+        )
+        (themeAssertion "helix themes" config.dotfiles.darkTheme.helix
+          "${helixThemes}/${config.dotfiles.darkTheme.helix}.toml"
+        )
+        (themeAssertion "helix themes" config.dotfiles.lightTheme.helix
+          "${helixThemes}/${config.dotfiles.lightTheme.helix}.toml"
+        )
         {
           assertion =
             config.dotfiles.polarity != "time-of-day"

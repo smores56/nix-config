@@ -196,7 +196,7 @@ let
           };
         }
       ]
-      ++ (if dm == "niri" then [ niri.nixosModules.niri ] else [ ]);
+      ++ lib.optionals (dm == "niri") [ niri.nixosModules.niri ];
     };
 in
 {

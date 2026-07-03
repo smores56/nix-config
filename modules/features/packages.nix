@@ -83,10 +83,6 @@
         ++ lib.optionals pkgs.stdenv.isDarwin [
           pkgs.apple-sdk_15
         ]
-        ++ lib.optionals pkgs.stdenv.isLinux [
-          odin
-          bubblewrap
-        ]
         ++ [
 
           # fun stuff
@@ -106,7 +102,9 @@
           kubectx
         ]
         ++ lib.optionals pkgs.stdenv.isLinux [
+          bubblewrap
           concord
+          odin
         ];
     };
   };

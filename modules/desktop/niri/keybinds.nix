@@ -7,6 +7,15 @@
 let
   isNiri = config.dotfiles.displayManager == "niri";
 
+  noctaliaCall =
+    cmds:
+    [
+      "noctalia-shell"
+      "ipc"
+      "call"
+    ]
+    ++ cmds;
+
   niriEqualize = pkgs.writeShellScript "niri-equalize" ''
     exec ${pkgs.python3}/bin/python3 ${./niri-equalize.py}
   '';
@@ -63,10 +72,7 @@ in
     '';
 
     programs.niri.settings = {
-      switch-events.lid-close.action.spawn = [
-        "noctalia-shell"
-        "ipc"
-        "call"
+      switch-events.lid-close.action.spawn = noctaliaCall [
         "lockScreen"
         "lock"
       ];
@@ -74,17 +80,11 @@ in
       binds = {
         "Mod+T".action.spawn = [ config.dotfiles.terminal ];
         "Mod+B".action.spawn = [ config.dotfiles.browser ];
-        "Mod+Space".action.spawn = [
-          "noctalia-shell"
-          "ipc"
-          "call"
+        "Mod+Space".action.spawn = noctaliaCall [
           "launcher"
           "toggle"
         ];
-        "Mod+S".action.spawn = [
-          "noctalia-shell"
-          "ipc"
-          "call"
+        "Mod+S".action.spawn = noctaliaCall [
           "controlCenter"
           "toggle"
         ];
@@ -169,10 +169,7 @@ in
         "Mod+Escape".action.toggle-keyboard-shortcuts-inhibit = [ ];
         "Mod+Shift+Slash".action.show-hotkey-overlay = [ ];
         "Mod+Shift+P".action.power-off-monitors = [ ];
-        "Mod+L".action.spawn = [
-          "noctalia-shell"
-          "ipc"
-          "call"
+        "Mod+L".action.spawn = noctaliaCall [
           "lockScreen"
           "lock"
         ];

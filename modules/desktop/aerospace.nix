@@ -38,19 +38,13 @@ let
   ];
 
   mkServiceAction =
-    action: message:
-    (if action == "" then [ ] else [ action ])
+    command: action: message:
+    (if command != null then [ command ] else [ ])
+    ++ (if action == "" then [ ] else [ action ])
     ++ [
       "exec-and-forget noti -t aerospace -m \"${message}\""
       "mode main"
     ];
-
-  mkServiceActionWithCommand =
-    command: action: message:
-    [
-      command
-    ]
-    ++ mkServiceAction action message;
 in
 {
   config = lib.mkIf enabled {
@@ -122,16 +116,18 @@ in
           };
 
           service.binding = {
-            esc = mkServiceAction "reload-config" "Config reloaded! Back to main mode.";
+            esc = mkServiceAction null "reload-config" "Config reloaded! Back to main mode.";
             p = [
               "exec-and-forget noti -t aerospace -m \"Disabled Aerospace\""
               "enable toggle"
             ];
             b =
-              mkServiceActionWithCommand "exec-and-forget brew services restart borders" ""
+              mkServiceAction "exec-and-forget brew services restart borders" ""
                 "Restarted borders! Back to main mode.";
-            r = mkServiceAction "flatten-workspace-tree" "Reset layout tree! Back to main mode.";
-            backspace = mkServiceAction "close-all-windows-but-current" "Closed all other windows! Back to main mode.";
+            r = mkServiceAction null "flatten-workspace-tree" "Reset layout tree! Back to main mode.";
+            backspace =
+              mkServiceAction null "close-all-windows-but-current"
+                "Closed all other windows! Back to main mode.";
           };
         };
       };

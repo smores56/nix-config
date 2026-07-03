@@ -1,7 +1,4 @@
 { config, pkgs, ... }:
-let
-  homeDir = config.home.homeDirectory;
-in
 {
   home = {
     packages = [
@@ -17,12 +14,12 @@ in
     sessionPath = [
       "/opt/homebrew/bin"
       "/usr/local/bin"
-      "${homeDir}/.local/bin"
-      "${homeDir}/.deno/bin"
-      "${homeDir}/.cargo/bin"
-      "${homeDir}/.bun/bin"
-      "${homeDir}/.cache/.bun/bin"
-      "${homeDir}/.wasmer/bin"
+      "${config.home.homeDirectory}/.local/bin"
+      "${config.home.homeDirectory}/.deno/bin"
+      "${config.home.homeDirectory}/.cargo/bin"
+      "${config.home.homeDirectory}/.bun/bin"
+      "${config.home.homeDirectory}/.cache/.bun/bin"
+      "${config.home.homeDirectory}/.wasmer/bin"
     ];
   };
 

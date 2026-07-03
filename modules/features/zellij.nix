@@ -6,7 +6,6 @@
 }:
 let
   cfg = config.dotfiles;
-  baseIsDark = cfg.polarity != "light";
 
   base16 = import ../lib/base16.nix { inherit lib; };
   darkColors = base16.parseScheme "${pkgs.base16-schemes}/share/themes/${cfg.darkTheme.system}.yaml";
@@ -74,7 +73,7 @@ in
     settings = {
       show_startup_tips = false;
       session_serialization = false;
-      theme = if baseIsDark then "stylix-dark" else "stylix-light";
+      theme = if cfg.polarity != "light" then "stylix-dark" else "stylix-light";
     };
 
     themes = {

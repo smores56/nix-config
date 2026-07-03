@@ -7,6 +7,11 @@
 let
   cfg = config.dotfiles;
   hasSevenql = pkgs.stdenv.isDarwin && cfg.sevenqlLspPath != null;
+  tsJsRoots = [
+    "deno.json"
+    "deno.jsonc"
+    "package.json"
+  ];
 in
 {
   home.packages = with pkgs; [
@@ -28,25 +33,21 @@ in
     graphql-language-service-cli
   ];
 
-  home.file = lib.mkMerge [
-    {
-      ".config/helix/runtime/queries/yaml/injections.scm".source =
-        pkgs.runCommand "helix-yaml-injections" { }
-          ''
-            cat ${pkgs.helix.passthru.runtime}/queries/yaml/injections.scm > $out
-            cat >> $out << 'EXTRA'
+  home.file.".config/helix/runtime/queries/yaml/injections.scm".source =
+    pkgs.runCommand "helix-yaml-injections" { }
+      ''
+        cat ${pkgs.helix.passthru.runtime}/queries/yaml/injections.scm > $out
+        cat >> $out << 'EXTRA'
 
-            ((block_scalar) @injection.content
-             (#match? @injection.content "function handler")
-             (#set! injection.language "typescript"))
+        ((block_scalar) @injection.content
+         (#match? @injection.content "function handler")
+         (#set! injection.language "typescript"))
 
-            ((block_scalar) @injection.content
-             (#match? @injection.content "query.*\\{")
-             (#set! injection.language "graphql"))
-            EXTRA
-          '';
-    }
-  ];
+        ((block_scalar) @injection.content
+         (#match? @injection.content "query.*\\{")
+         (#set! injection.language "graphql"))
+        EXTRA
+      '';
 
   programs.helix = {
     enable = true;
@@ -110,11 +111,7 @@ in
       }
       {
         name = "typescript";
-        roots = [
-          "deno.json"
-          "deno.jsonc"
-          "package.json"
-        ];
+        roots = tsJsRoots;
         file-types = [
           "ts"
           "tsx"
@@ -124,11 +121,7 @@ in
       }
       {
         name = "javascript";
-        roots = [
-          "deno.json"
-          "deno.jsonc"
-          "package.json"
-        ];
+        roots = tsJsRoots;
         file-types = [
           "js"
           "jsx"

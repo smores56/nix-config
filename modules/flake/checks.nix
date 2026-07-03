@@ -29,6 +29,13 @@ in
 
       src = inputs.self;
 
+      mkEvalChecks =
+        prefix: configs:
+        lib.mapAttrs' (
+          name: cfg:
+          lib.nameValuePair "${prefix}-${safeName name}" (evalCheck "${prefix}-${safeName name}" cfg)
+        ) configs;
+
       evalCheck =
         name: evaluated:
         pkgs.runCommand name
@@ -39,19 +46,13 @@ in
             touch $out
           '';
 
-      homeChecks = lib.mapAttrs' (
-        name: home:
-        lib.nameValuePair "eval-home-${safeName name}" (
-          evalCheck "eval-home-${safeName name}" home.activationPackage.drvPath
-        )
-      ) config.flake.homeConfigurations;
+      homeChecks = mkEvalChecks "eval-home" (
+        lib.mapAttrs (_: home: home.activationPackage.drvPath) config.flake.homeConfigurations
+      );
 
-      nixosChecks = lib.mapAttrs' (
-        name: nixos:
-        lib.nameValuePair "eval-nixos-${safeName name}" (
-          evalCheck "eval-nixos-${safeName name}" nixos.config.system.build.toplevel.drvPath
-        )
-      ) config.flake.nixosConfigurations;
+      nixosChecks = mkEvalChecks "eval-nixos" (
+        lib.mapAttrs (_: nixos: nixos.config.system.build.toplevel.drvPath) config.flake.nixosConfigurations
+      );
     in
     {
       checks = {
