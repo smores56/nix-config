@@ -35,8 +35,8 @@ export default function spawnSessionExtension(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "spawn_session",
 		label: "Spawn Session",
-			description: [
-				"Spawn a new interactive omp session in a new Zellij tab (with a worktree).",
+		description: [
+			"Spawn a new interactive omp session in a new Zellij tab (with a worktree).",
 			"",
 			"BEFORE calling this, generate the branch name via:",
 			'  agent-branch-name --slug <slug> --task "<task>"',
@@ -47,7 +47,7 @@ export default function spawnSessionExtension(pi: ExtensionAPI): void {
 			"2. Creates the worktree via `wt switch --create --no-hooks --no-cd <branch> --format json`",
 			"3. Opens a new Zellij tab and runs omp in the worktree directory",
 			"",
-				"Use for long-running feature work that deserves its own isolated session.",
+			"Use for long-running feature work that deserves its own isolated session.",
 			"",
 			"This tool cannot be batched.",
 		].join("\n"),
@@ -77,7 +77,10 @@ export default function spawnSessionExtension(pi: ExtensionAPI): void {
 			const prompt = params.prompt ?? "";
 			if (!branch || !prompt) {
 				return {
-					content: [{ type: "text", text: "error: branch and prompt are required" }],
+					content: [{
+						type: "text",
+						text: "error: branch and prompt are required",
+					}],
 					isError: true,
 					details: { error: "missing branch or prompt" },
 				};
@@ -140,7 +143,12 @@ export default function spawnSessionExtension(pi: ExtensionAPI): void {
 				`printf '%s' "$path"`,
 			].join("\n");
 
-			let resolve: { stdout: string; stderr: string; code: number; killed: boolean };
+			let resolve: {
+				stdout: string;
+				stderr: string;
+				code: number;
+				killed: boolean;
+			};
 			try {
 				resolve = await pi.exec("bash", ["-c", resolveScript], {
 					cwd: ctx.cwd,
@@ -166,7 +174,10 @@ export default function spawnSessionExtension(pi: ExtensionAPI): void {
 				const err = (out.startsWith("ERR:") ? out.slice(4) : out) ||
 					resolve.stderr || "unknown wt error";
 				return {
-					content: [{ type: "text", text: `error spawning session: ${err.trim()}` }],
+					content: [{
+						type: "text",
+						text: `error spawning session: ${err.trim()}`,
+					}],
 					isError: true,
 					details: { error: err.trim(), phase: "wt", code: resolve.code },
 				};
@@ -175,7 +186,10 @@ export default function spawnSessionExtension(pi: ExtensionAPI): void {
 			const path = resolve.stdout.trim();
 			if (!path) {
 				return {
-					content: [{ type: "text", text: "error: worktree path came back empty" }],
+					content: [{
+						type: "text",
+						text: "error: worktree path came back empty",
+					}],
 					isError: true,
 					details: { error: "empty worktree path", phase: "wt" },
 				};
@@ -186,8 +200,10 @@ export default function spawnSessionExtension(pi: ExtensionAPI): void {
 			// doesn't reliably propagate the caller's env to daemon-spawned tabs.
 			// The spawned omp re-enters the smolvm sandbox (same as the `o` abbr).
 			const spawnScript =
-				`exec zellij action new-tab -n ${shellQuote(`π - ${displayLabel}`)} -c ${shellQuote(path)}` +
-				` --close-on-exit -- smolvm-agent omp -- "$OMP_START_PROMPT"`;
+				`exec zellij action new-tab -n ${
+					shellQuote(`π - ${displayLabel}`)
+				} -c ${shellQuote(path)}` +
+				` --close-on-exit -- exec smolvm-agent omp -- "$OMP_START_PROMPT"`;
 
 			let proc: import("bun").Subprocess<"ignore", "pipe", "pipe">;
 			try {
@@ -202,7 +218,10 @@ export default function spawnSessionExtension(pi: ExtensionAPI): void {
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err);
 				return {
-					content: [{ type: "text", text: `error spawning zellij tab: ${msg}` }],
+					content: [{
+						type: "text",
+						text: `error spawning zellij tab: ${msg}`,
+					}],
 					isError: true,
 					details: { error: msg, phase: "spawn", branch, path },
 				};
@@ -213,7 +232,10 @@ export default function spawnSessionExtension(pi: ExtensionAPI): void {
 			const outcome = await Promise.race([
 				proc.exited.then((code) => ({ code, timedOut: false })),
 				new Promise<{ code: number | null; timedOut: true }>((resolve) =>
-					setTimeout(() => resolve({ code: null, timedOut: true }), TAB_TIMEOUT_MS),
+					setTimeout(
+						() => resolve({ code: null, timedOut: true }),
+						TAB_TIMEOUT_MS,
+					)
 				),
 			]);
 
@@ -232,13 +254,18 @@ export default function spawnSessionExtension(pi: ExtensionAPI): void {
 					content: [
 						{
 							type: "text",
-							text:
-								`Opened Zellij tab **${displayLabel}** running omp ` +
+							text: `Opened Zellij tab **${displayLabel}** running omp ` +
 								`(\`zellij action\` did not return in 10s; tab likely live).\n` +
 								`- Branch: \`${branch}\`\n- Worktree: \`${path}\``,
 						},
 					],
-					details: { branch, path, worktreeName, tabOpened: true, softTimeout: true },
+					details: {
+						branch,
+						path,
+						worktreeName,
+						tabOpened: true,
+						softTimeout: true,
+					},
 				};
 			}
 
@@ -275,8 +302,7 @@ export default function spawnSessionExtension(pi: ExtensionAPI): void {
 				content: [
 					{
 						type: "text",
-						text:
-							`Started omp session in Zellij tab **${displayLabel}**\n` +
+						text: `Started omp session in Zellij tab **${displayLabel}**\n` +
 							`- Worktree: \`${path}\`\n- Branch: \`${branch}\``,
 					},
 				],

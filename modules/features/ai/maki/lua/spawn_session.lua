@@ -129,7 +129,7 @@ if [ -z "$path" ]; then
   exit 1
 fi
 
-zellij action new-tab -n %s -c "$path" --close-on-exit -- smolvm-agent maki -- "$START_PROMPT"
+zellij action new-tab -n %s -c "$path" --close-on-exit -- exec smolvm-agent maki -- "$START_PROMPT"
 ]],
       shell_quote(branch),
       shell_quote(worktree_name),
