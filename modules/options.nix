@@ -230,19 +230,6 @@ in
       default = { };
       description = "calibre OPDS content server exposed over the Cloudflare Tunnel.";
     };
-    herdr = lib.mkOption {
-      type = lib.types.submodule {
-        options = {
-          theme = lib.mkOption {
-            type = lib.types.str;
-            default = "gruvbox";
-            description = "Herdr built-in theme name.";
-          };
-        };
-      };
-      default = { };
-      description = "Herdr terminal workspace manager settings.";
-    };
     aiHints = lib.mkOption {
       type = lib.types.str;
       readOnly = true;
