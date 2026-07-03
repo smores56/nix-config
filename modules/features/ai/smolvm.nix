@@ -93,11 +93,15 @@ let
 
     # System packages: git + openssh-client (for ssh-format commit
     # signing via the forwarded ssh-agent) + ca-certificates for https
-    # git remotes and gh API calls. apt-get update is always run because
-    # the package lists don't persist in the overlay across VM resets.
-    dpkg -s git openssh-client ca-certificates >/dev/null 2>&1 || {
+    # git remotes and gh API calls. python3 is required by omp's Python
+    # eval backend (the runner script is embedded, stdlib-only — no
+    # ipykernel/jupyter). Bookworm-slim ships no python, so without it
+    # the Python kernel is unavailable in-session.
+    # apt-get update is always run because the package lists don't
+    # persist in the overlay across VM resets.
+    dpkg -s git openssh-client ca-certificates python3 >/dev/null 2>&1 || {
       apt-get update -qq
-      apt-get install -y -qq git openssh-client ca-certificates >/dev/null 2>&1
+      apt-get install -y -qq git openssh-client ca-certificates python3 >/dev/null 2>&1
     }
 
     # gh CLI (static-ish binary tarball). Installed into the shared
