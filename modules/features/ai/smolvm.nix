@@ -14,16 +14,23 @@ let
   configDir = "${sharedDir}/config";
 
   tomlFormat = pkgs.formats.toml { };
+  smolvmRootfs = pkgs.smolvm-agent-rootfs;
 
   # Smolfile for the persistent agent VM. No `cmd` — agents run via
   # `machine exec`, so `machine start` returns immediately after boot.
   #
-  # Image is debian (not alpine): omp's native addons (pi_natives) are
-  # glibc-linked and need glibc symbols that musl/gcompat can't provide.
-  # maki is a static binary, so it works under any libc.
+  # Image is a Nix-built rootfs directory (not a registry OCI image),
+  # passed via `--image` on `machine create` (not in the smolfile)
+  # because smolvm's image_source::classify/resolve — which detects
+  # local directory paths — runs on the CLI path, not on smolfile
+  # values. smolvm's ImageSource::Directory path mounts it via virtiofs
+  # and treats it as a single-layer rootfs — no crane pull, no registry.
   #
-  # Shared bin mounts to /root/.local/bin (NOT /usr/local/bin, which
-  # would shadow the agent rootfs's crane binary and break image pulls).
+  # Tier-2 tools (bun, omp, maki) have self-update mechanisms that fight
+  # Nix's immutability — those stay on their installer flow in the
+  # persistent overlay, installed by provisionScript below.
+  #
+  # Shared bin mounts to /root/.local/bin for tier-2 tools (maki etc).
   # Config dir mounts read-only at /mnt/host-config — Nix-managed config
   # dereference (symlinks into /nix/store resolved on the host side).
   #
@@ -31,7 +38,6 @@ let
   # push (ssh) and ssh-format commit signing work without exposing
   # private key files. The host ssh-agent holds the keys (see ssh.nix).
   smolfile = tomlFormat.generate "agent.smolfile" {
-    image = "debian:bookworm-slim";
     net = true;
     cpus = 2;
     memory = 1024;
@@ -40,7 +46,7 @@ let
     env = [
       "BUN_INSTALL=/root/.bun"
       "MAKI_INSTALL_DIR=/root/.local/bin"
-      "PATH=/root/.bun/bin:/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      "PATH=/root/.bun/bin:/root/.local/bin:/nix/var/nix/profiles/default/bin:/usr/bin:/bin"
     ];
     volumes = [
       "${sharedBinDir}:/root/.local/bin"
@@ -50,16 +56,16 @@ let
     ];
   };
 
-  # Idempotent provisioning command run inside the VM. Installs git,
-  # gh, bun, omp, maki into the persistent overlay
-  # (/root/.bun) and shared virtiofs bin mount (/root/.local/bin), so
-  # installs survive VM stop/start.
+  # Idempotent provisioning command run inside the VM. Tier-1 tools
+  # (git, gh, python3, openssh, ca-certs, curl, bash, coreutils) are
+  # pre-baked into the Nix rootfs image — no apt-get needed. Only
+  # tier-2 tools (bun, omp, maki) are installed here, plus config sync
+  # and git credential helper patching.
   #
   # smolvm machine exec doesn't pipe stdin reliably, so we pass the
   # script via `bash -c`.
   provisionScript = ''
     set -e
-    export DEBIAN_FRONTEND=noninteractive
 
     # Sync config from the read-only host mount into the overlay, so
     # Nix-managed symlinks (into /nix/store, which doesn't exist in the
@@ -91,53 +97,26 @@ let
     # socket, git just needs the .pub to know which key to request.
     sync_config /mnt/host-config/ssh /root/.ssh
 
-    # System packages: git + openssh-client (for ssh-format commit
-    # signing via the forwarded ssh-agent) + ca-certificates for https
-    # git remotes and gh API calls. python3 is required by omp's Python
-    # eval backend (the runner script is embedded, stdlib-only — no
-    # ipykernel/jupyter). Bookworm-slim ships no python, so without it
-    # the Python kernel is unavailable in-session.
-    # apt-get update is always run because the package lists don't
-    # persist in the overlay across VM resets.
-    dpkg -s git openssh-client ca-certificates python3 >/dev/null 2>&1 || {
-      apt-get update -qq
-      apt-get install -y -qq git openssh-client ca-certificates python3 >/dev/null 2>&1
-    }
-
-    # gh CLI (static-ish binary tarball). Installed into the shared
-    # virtiofs bin mount so it persists on the host across VM resets.
-    if [ ! -x /root/.local/bin/gh ]; then
-      apt-get install -y -qq curl >/dev/null 2>&1 || true
-      gh_version=$(curl -fsSL https://api.github.com/repos/cli/cli/releases/latest \
-        | sed -n 's/.*"tag_name":.*"v\([^"]*\)".*/\1/p' | head -1)
-      curl -fsSL "https://github.com/cli/cli/releases/download/v''${gh_version}/gh_''${gh_version}_linux_amd64.tar.gz" \
-        | tar xz -C /tmp
-      install -m 0755 /tmp/gh_''${gh_version}_linux_amd64/bin/gh /root/.local/bin/gh
-      rm -rf /tmp/gh_''${gh_version}_linux_amd64
-    fi
-
-    # Patch git config for the VM: the host config references
-    # /nix/store/.../gh for the credential helper and may set
-    # core.sshCommand to a host-only wrapper (git-github-ssh). Rewrite
-    # the credential helper to the VM's gh path and drop sshCommand.
-    # Runs after git is installed (above).
+    # Patch git config: the host config references /nix/store/.../gh
+    # for the credential helper and may set core.sshCommand to a
+    # host-only wrapper (git-github-ssh). Rewrite the credential helper
+    # to use `gh` from PATH (nix profile) and drop sshCommand.
     git config --file /root/.config/git/config --unset-all \
       "credential.https://github.com.helper" 2>/dev/null || true
     git config --file /root/.config/git/config --add \
       "credential.https://github.com.helper" ""
     git config --file /root/.config/git/config --add \
-      "credential.https://github.com.helper" "/root/.local/bin/gh auth git-credential"
+      "credential.https://github.com.helper" "gh auth git-credential"
     git config --file /root/.config/git/config --unset-all \
       "credential.https://gist.github.com.helper" 2>/dev/null || true
     git config --file /root/.config/git/config --add \
       "credential.https://gist.github.com.helper" ""
     git config --file /root/.config/git/config --add \
-      "credential.https://gist.github.com.helper" "/root/.local/bin/gh auth git-credential"
+      "credential.https://gist.github.com.helper" "gh auth git-credential"
     git config --file /root/.config/git/config --unset-all core.sshCommand 2>/dev/null || true
 
     # Bun + omp (glibc-linked native addons, not static).
     if [ ! -x /root/.bun/bin/bun ]; then
-      apt-get install -y -qq curl unzip bash >/dev/null 2>&1 || true
       curl -fsSL https://bun.sh/install | bash
     fi
     export BUN_INSTALL=/root/.bun
@@ -147,7 +126,6 @@ let
     # maki (static musl binary). Installed into the shared virtiofs bin
     # mount, so it persists on the host and self-updates via `maki update`.
     if [ ! -x /root/.local/bin/maki ]; then
-      apt-get install -y -qq curl >/dev/null 2>&1 || true
       curl -fsSL https://maki.sh/install.sh | MAKI_INSTALL_DIR=/root/.local/bin sh
     fi
 
@@ -158,7 +136,7 @@ let
   # sequence across scripts.
   ensureVm = ''
     if ! $smolvm machine status --name "$name" >/dev/null 2>&1; then
-      $smolvm machine create "$name" --smolfile ${smolfile}
+      $smolvm machine create --name "$name" --smolfile ${smolfile} --image ${smolvmRootfs}
     fi
 
     state=$($smolvm machine status --name "$name" --json 2>/dev/null \
@@ -233,11 +211,9 @@ let
 in
 {
   options.dotfiles.smolvm = {
-    enable =
-      lib.mkEnableOption "smolvm sandbox for coding agents (maki/omp)"
-      // {
-        default = true;
-      };
+    enable = lib.mkEnableOption "smolvm sandbox for coding agents (maki/omp)" // {
+      default = true;
+    };
   };
 
   config = lib.mkIf cfg.enable {

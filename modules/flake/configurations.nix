@@ -25,31 +25,56 @@ let
         withGpu = false;
       };
 
-      # Patch the smolvm release tarball:
-      # 1. Replace the bundled libkrun.so (GPU-enabled, broken virgl symbols)
-      #    with our no-GPU build from smolvm-libkrun.
-      # 2. Create missing /mnt mount points in agent-rootfs that
-      #    setup_persistent_rootfs() needs at boot (the 0.8.2 release
-      #    tarball wasn't rebuilt with the build-agent-rootfs.sh fix).
+      # Patch the smolvm release tarball: replace the bundled GPU-enabled
+      # libkrun.so with our no-GPU build. The upstream tarball's libkrun has
+      # undefined virgl_renderer_* symbols (libkrun.so doesn't list
+      # libvirglrenderer as NEEDED, and the rpath lacks it). No-GPU is correct
+      # for headless agent VMs anyway.
+      #
+      # 1.3.8 ships libkrun.so.2; the nix-built no-GPU libkrun produces
+      # libkrun.so.1.17.3. smolvm dlopens libkrun by path (not soname), so a
+      # symlink libkrun.so.2 -> libkrun.so.1.17.3 makes it find the no-GPU lib.
       smolvm = prev.smolvm.overrideAttrs (old: {
+        version = "1.3.8";
+        src = prev.fetchurl {
+          url =
+            if final.stdenv.hostPlatform.isLinux then
+              if final.stdenv.hostPlatform.isAarch64 then
+                "https://github.com/smol-machines/smolvm/releases/download/v1.3.8/smolvm-1.3.8-linux-arm64.tar.gz"
+              else
+                "https://github.com/smol-machines/smolvm/releases/download/v1.3.8/smolvm-1.3.8-linux-x86_64.tar.gz"
+            else
+              "https://github.com/smol-machines/smolvm/releases/download/v1.3.8/smolvm-1.3.8-darwin-arm64.tar.gz";
+          hash =
+            if final.stdenv.hostPlatform.isLinux then
+              if final.stdenv.hostPlatform.isAarch64 then
+                "sha256-214tjfCntQbk40FiX3TleC9c2xQA0GuTAzJ1QDisn18="
+              else
+                "sha256-nHhPpmbiuznDv52B3+5NULuhGgplS4C4VWyBA6nliXk="
+            else
+              "sha256-QrdtdAKMwYjkU08xWpxxpYStyDkipzNO2FQXnZD1Ltc=";
+        };
+        sourceRoot =
+          if final.stdenv.hostPlatform.isLinux then
+            if final.stdenv.hostPlatform.isAarch64 then
+              "smolvm-1.3.8-linux-arm64"
+            else
+              "smolvm-1.3.8-linux-x86_64"
+          else
+            "smolvm-1.3.8-darwin-arm64";
         postInstall =
           (old.postInstall or "")
           + lib.optionalString final.stdenv.hostPlatform.isLinux ''
-            rm -f $out/libexec/smolvm/lib/libkrun.so $out/libexec/smolvm/lib/libkrun.so.1 $out/libexec/smolvm/lib/libkrun.so.2
-            cp -f ${final.smolvm-libkrun}/lib64/libkrun.so.1.17.3 $out/libexec/smolvm/lib/libkrun.so.1.17.3
-            ln -sf libkrun.so.1.17.3 $out/libexec/smolvm/lib/libkrun.so.1
-            ln -sf libkrun.so.1 $out/libexec/smolvm/lib/libkrun.so
+            rm -f $out/libexec/smolvm/lib/libkrun.so $out/libexec/smolvm/lib/libkrun.so.2
+            cp -f ${final.smolvm-libkrun}/lib64/libkrun.so.2.0.0 $out/libexec/smolvm/lib/libkrun.so.2.0.0
+            ln -sf libkrun.so.2.0.0 $out/libexec/smolvm/lib/libkrun.so.2
+            ln -sf libkrun.so.2 $out/libexec/smolvm/lib/libkrun.so
           ''
           + lib.optionalString final.stdenv.hostPlatform.isDarwin ''
-            rm -f $out/libexec/smolvm/lib/libkrun.dylib $out/libexec/smolvm/lib/libkrun.1.dylib
-            cp -f ${final.smolvm-libkrun}/lib/libkrun.1.17.3.dylib $out/libexec/smolvm/lib/libkrun.1.17.3.dylib
-            ln -sf libkrun.1.17.3.dylib $out/libexec/smolvm/lib/libkrun.1.dylib
-            ln -sf libkrun.1.dylib $out/libexec/smolvm/lib/libkrun.dylib
-          ''
-          + ''
-            for d in overlay storage newroot virtiofs rosetta; do
-              mkdir -p $out/libexec/smolvm/agent-rootfs/mnt/$d
-            done
+            rm -f $out/libexec/smolvm/lib/libkrun.dylib $out/libexec/smolvm/lib/libkrun.2.dylib
+            cp -f ${final.smolvm-libkrun}/lib/libkrun.2.0.0.dylib $out/libexec/smolvm/lib/libkrun.2.0.0.dylib
+            ln -sf libkrun.2.0.0.dylib $out/libexec/smolvm/lib/libkrun.2.dylib
+            ln -sf libkrun.2.dylib $out/libexec/smolvm/lib/libkrun.dylib
           '';
       });
 
@@ -96,6 +121,7 @@ let
       });
 
       concord = concord.packages.${system}.default;
+      smolvm-agent-rootfs = final.callPackage ../smolvm-rootfs.nix { };
     })
   ];
 
