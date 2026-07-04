@@ -69,42 +69,51 @@ in
     };
     email = lib.mkOption {
       type = lib.types.str;
-      default = "sam@sammohr.dev";
+      default =
+        if config.dotfiles.work.email != null then config.dotfiles.work.email else "sam@sammohr.dev";
     };
     branchPrefix = lib.mkOption {
       type = lib.types.str;
       readOnly = true;
       description = "Branch prefix for personal (non-work-org) repos.";
     };
-    workBranchPrefix = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
-      default = null;
-      description = "Branch prefix for work-org repos (e.g. 'sam.mohr'). Null falls back to branchPrefix. Work is detected per-repo via workGithubOrgs.";
+    work = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkOption {
+            type = lib.types.bool;
+            default = false;
+            description = "Enable work-specific identity, repo, model, and MCP defaults.";
+          };
+          email = lib.mkOption {
+            type = lib.types.nullOr lib.types.str;
+            default = null;
+            description = "Work email address. Null leaves dotfiles.email at its personal default.";
+          };
+          branchPrefix = lib.mkOption {
+            type = lib.types.nullOr lib.types.str;
+            default = null;
+            description = "Branch prefix for work-org repos. Null falls back to dotfiles.branchPrefix.";
+          };
+          ticketPrefix = lib.mkOption {
+            type = lib.types.nullOr lib.types.str;
+            default = null;
+            description = "Linear team/ticket prefix for work-org repos. Null = no ticket in work branches.";
+          };
+          githubOrgs = lib.mkOption {
+            type = lib.types.listOf lib.types.str;
+            default = [ ];
+            description = "GitHub organizations that should use work repo identity and ~/.ssh/id_work.";
+          };
+        };
+      };
+      default = { };
+      description = "Work profile configuration shared by Git, repo helpers, AI tools, and MCPs.";
     };
     codeRoot = lib.mkOption {
       type = lib.types.str;
       default = "${config.home.homeDirectory}/code";
       description = "Root directory under which all git repos live (ghq's root). Layout: <codeRoot>/<host>/<owner>/<repo>.";
-    };
-    workGithubOrgs = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
-      default = [ ];
-      description = "GitHub organizations that should use `~/.ssh/id_work` for Git while keeping canonical `github.com` remotes.";
-    };
-    workModels = lib.mkOption {
-      type = lib.types.bool;
-      default = false;
-      description = "Use work-specific models (OpenAI Codex tiers: GPT-5.5 / GPT-5.4 / GPT-5.4-mini) instead of personal models (Neuralwatt GLM-5.2 + smortress + DeepSeek).";
-    };
-    ticketPrefix = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
-      default = null;
-      description = "Linear team/ticket prefix for work-org repos (e.g. '7AI'). Null = no ticket in work branches.";
-    };
-    sevenqlLspPath = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
-      default = null;
-      description = "Absolute path to the SevenQL LSP entrypoint on hosts that use it.";
     };
     exposeSsh = lib.mkOption {
       type = lib.types.bool;

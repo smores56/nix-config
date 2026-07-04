@@ -6,7 +6,7 @@
 }:
 let
   cfg = config.dotfiles;
-  hasWorkGithubOrgs = cfg.workGithubOrgs != [ ];
+  work = cfg.work;
 
   hunk = pkgs.writeShellScriptBin "hunk" ''
     export PATH="${pkgs.nodejs}/bin:$PATH"
@@ -26,7 +26,7 @@ let
     done
 
     if $is_github; then
-      for org in ${lib.escapeShellArgs cfg.workGithubOrgs}; do
+      for org in ${lib.escapeShellArgs work.githubOrgs}; do
         for arg in "$@"; do
           case "$arg" in
             *"$org"/*|*"$org":*)
@@ -50,7 +50,7 @@ let
       value.insteadOf = [
         "https://github.com/${org}/"
       ];
-    }) cfg.workGithubOrgs
+    }) work.githubOrgs
   );
 in
 {
@@ -64,7 +64,7 @@ in
       lazyjj
       hunk
     ])
-    ++ lib.optionals hasWorkGithubOrgs [
+    ++ lib.optionals (work.githubOrgs != [ ]) [
       githubSsh
     ];
 
@@ -133,7 +133,7 @@ in
           user.signingkey = "~/.ssh/id_personal.pub";
           fetch.prune = true;
         }
-        (lib.mkIf hasWorkGithubOrgs {
+        (lib.mkIf (work.githubOrgs != [ ]) {
           core.sshCommand = "${githubSsh}/bin/git-github-ssh";
           url = workGithubUrlRewrites;
         })

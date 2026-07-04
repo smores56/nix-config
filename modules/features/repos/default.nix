@@ -8,14 +8,14 @@ let
   cfg = config.dotfiles;
 
   # Shared shell prelude that resolves whether the repo at $PWD is a work-org
-  # repo (origin GitHub org in workGithubOrgs) and exports the resulting
+  # repo (origin GitHub org in work.githubOrgs) and exports the resulting
   # identity. This is the per-repo replacement for the old per-host branch
   # prefix; it mirrors the org signal used by git-github-ssh.
   resolvePrelude = ''
-    WORK_ORGS=(${lib.escapeShellArgs cfg.workGithubOrgs})
+    WORK_ORGS=(${lib.escapeShellArgs cfg.work.githubOrgs})
     PERSONAL_PREFIX=${lib.escapeShellArg cfg.branchPrefix}
-    WORK_PREFIX=${lib.escapeShellArg (toString (cfg.workBranchPrefix or ""))}
-    TICKET_PREFIX=${lib.escapeShellArg (toString (cfg.ticketPrefix or ""))}
+    WORK_PREFIX=${lib.escapeShellArg (toString (cfg.work.branchPrefix or ""))}
+    TICKET_PREFIX=${lib.escapeShellArg (toString (cfg.work.ticketPrefix or ""))}
 
     origin_org() {
       local url path

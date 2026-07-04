@@ -7,19 +7,16 @@
 }:
 let
   inherit (aiProviders) neuralwatt cloudflare smortress;
-  cfg = config.dotfiles.maki;
-  workModels = config.dotfiles.workModels;
-  # When set, install Cloudflare Workers AI as an additional custom provider.
-  # It is intentionally never the generated default; the work machine defaults
-  # to Codex-backed OpenAI, and personal hosts default to Neuralwatt GLM-5.2.
-  cfEnabled = cfg.cloudflareWorkersAi.enable;
+  cfg = config.dotfiles;
+  work = cfg.work;
+  isWork = work.enable;
 
   # Work: Codex-backed GPT-5.5 via Maki's built-in `openai` provider, whose
   # OAuth creds are mirrored from Codex CLI by maki-codex-sync below. The rest
   # of the Codex cascade stays selectable in Maki's built-in catalog:
   # strong = openai/gpt-5.5, medium = openai/gpt-5.4, weak = openai/gpt-5.4-mini.
   # Personal hosts default to Neuralwatt GLM-5.2.
-  defaultModel = if workModels then "openai/gpt-5.5" else "neuralwatt/glm-5.2";
+  defaultModel = if isWork then "openai/gpt-5.5" else "neuralwatt/glm-5.2";
 
   makiTools = [
     "bash = { enabled = true }"
@@ -112,7 +109,7 @@ let
   };
 
   providersToWrite =
-    lib.optionalAttrs (!workModels) makiProviders // lib.optionalAttrs cfEnabled cloudflareProviders;
+    lib.optionalAttrs (!isWork) makiProviders // lib.optionalAttrs isWork cloudflareProviders;
 
   mkProviderScript =
     p:
@@ -190,20 +187,6 @@ let
 
 in
 {
-  options.dotfiles.maki = {
-    cloudflareWorkersAi.enable =
-      lib.mkEnableOption "Cloudflare Workers AI as an extra maki provider"
-      // {
-        description = ''
-          Install Cloudflare Workers AI as an extra selectable maki provider
-          (GLM 5.2 strong / gpt-oss-120b medium / gpt-oss-20b weak) and the
-          maki-cf-cost monthly spend report. This never changes the generated
-          default model or disables Codex/OpenAI credential sync. Requires
-          CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_KEY in the environment.
-        '';
-      };
-  };
-
   config = {
     home.file = {
       ".config/maki/init.lua" = {
@@ -259,8 +242,8 @@ in
         }
       ) providersToWrite
     );
-    home.packages = lib.optional workModels codexCredSync ++ lib.optional cfEnabled cfCostReport;
-    home.activation.makiCodexCreds = lib.mkIf workModels (
+    home.packages = lib.optional isWork codexCredSync ++ lib.optional isWork cfCostReport;
+    home.activation.makiCodexCreds = lib.mkIf isWork (
       lib.hm.dag.entryAfter [ "writeBoundary" ] ''
         ${codexCredSync}/bin/maki-codex-sync || true
       ''

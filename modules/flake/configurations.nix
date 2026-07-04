@@ -107,6 +107,18 @@ let
       overlays = localOverlays system ++ [ noctalia.overlays.default ];
     };
 
+  homeProfiles = {
+    work = {
+      work = {
+        enable = true;
+        email = "sam.mohr@sevenai.com";
+        branchPrefix = "sam.mohr";
+        ticketPrefix = "7AI";
+        githubOrgs = [ "OkamiAI" ];
+      };
+    };
+  };
+
   homeModules = [
     ../options.nix
     ../home.nix
@@ -126,6 +138,8 @@ let
     let
       system = args.system or "x86_64-linux";
       username = args.username or "smores";
+      profile = homeProfiles.${args.profile or "default"} or { };
+      homeArgs = lib.recursiveUpdate profile (builtins.removeAttrs args [ "profile" ]);
     in
     home-manager.lib.homeManagerConfiguration {
       pkgs = pkgsForSystem system;
@@ -149,15 +163,10 @@ let
             noSleep = null;
             primaryMonitor = null;
             monitorSize = null;
-            workBranchPrefix = null;
-            ticketPrefix = null;
-            workGithubOrgs = null;
-            workModels = null;
-            sevenqlLspPath = null;
+            work = null;
             ohMyPi = null;
-            maki = null;
             calibre = null;
-          } args;
+          } homeArgs;
           home.username = username;
           home.homeDirectory =
             args.homeDirectory
@@ -233,17 +242,7 @@ in
         username = "smohr";
         system = "aarch64-darwin";
         terminalFontSize = 16;
-        email = "sam.mohr@sevenai.com";
-        workBranchPrefix = "sam.mohr";
-        ticketPrefix = "7AI";
-        workGithubOrgs = [ "OkamiAI" ];
-        workModels = true;
-        sevenqlLspPath = "/Users/smohr/dev/okami/typescript/tools/sevenql-lsp/main.ts";
-        ohMyPi = {
-          cloudflareWorkersAi.enable = true;
-          codex.enable = true;
-        };
-        maki.cloudflareWorkersAi.enable = true;
+        profile = "work";
       };
     };
     nixosConfigurations = {

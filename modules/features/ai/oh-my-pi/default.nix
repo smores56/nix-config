@@ -7,9 +7,9 @@
 }:
 let
   cfg = config.dotfiles.ohMyPi;
+  work = config.dotfiles.work;
   mcpServers = config.dotfiles.ai.mcpServers;
-  workModels = config.dotfiles.workModels;
-  cfEnabled = cfg.cloudflareWorkersAi.enable;
+  isWork = work.enable;
   inherit (aiProviders)
     cloudflare
     neuralwatt
@@ -23,17 +23,11 @@ let
   # primary provider with Codex models left as backup options. Personal hosts use
   # Neuralwatt GLM-5.2 / Qwen3.5-397B / Qwen3.6-35B and never include Codex.
   tierModels =
-    if cfEnabled then
+    if isWork then
       {
         strong = cloudflare.roles.strong;
         mid = cloudflare.roles.medium;
         weak = cloudflare.roles.weak;
-      }
-    else if workModels then
-      {
-        strong = codex.models.gpt55Xhigh;
-        mid = codex.models.gpt54;
-        weak = codex.models.gpt54Mini;
       }
     else
       {
@@ -60,8 +54,11 @@ let
 
   # Provider priority: primary tier provider first, then backups for failover.
   modelProviderOrder =
-    if workModels then
-      lib.optionals cfEnabled [ cfProviderId ] ++ lib.optionals cfg.codex.enable [ "openai-codex" ]
+    if isWork then
+      [
+        cfProviderId
+        "openai-codex"
+      ]
     else
       [
         neuralwatt.providerId
@@ -70,8 +67,8 @@ let
       ];
 
   modelsConfig =
-    if workModels then
-      lib.optionalAttrs cfEnabled {
+    if isWork then
+      {
         providers.${cfProviderId} = {
           # omp takes provider `baseUrl` literally — no ${VAR} expansion
           # (unlike maki's dynamicBaseUrl), and only `apiKey`/`headers` get
@@ -132,9 +129,9 @@ let
     };
     compaction = {
       strategy = "context-full";
-      keepRecentTokens = if workModels then 20000 else cfg.compaction.keepRecentTokens;
+      keepRecentTokens = if isWork then 20000 else cfg.compaction.keepRecentTokens;
       enabled = true;
-      reserveTokens = if workModels then 16384 else cfg.compaction.reserveTokens;
+      reserveTokens = if isWork then 16384 else cfg.compaction.reserveTokens;
       autoContinue = cfg.compaction.autoContinue;
       idleEnabled = true;
       idleThresholdTokens = 200000;
@@ -145,7 +142,7 @@ let
     tools = {
       discoveryMode = "all";
     }
-    // lib.optionalAttrs workModels {
+    // lib.optionalAttrs isWork {
       artifactSpillThreshold = 30;
       artifactTailBytes = 10;
       artifactHeadBytes = 10;
@@ -159,9 +156,9 @@ let
       isolation = {
         mode = "auto";
       };
-      eager = if workModels then "preferred" else true;
+      eager = if isWork then "preferred" else true;
     }
-    // lib.optionalAttrs workModels {
+    // lib.optionalAttrs isWork {
       softRequestBudget = 40;
       maxRecursionDepth = 1;
     };
@@ -204,18 +201,15 @@ let
       enabled = true;
     };
   }
-  // lib.optionalAttrs workModels {
-    enabledModels =
-      lib.optionals cfEnabled [
-        cloudflare.roles.strong
-        cloudflare.roles.medium
-        cloudflare.roles.weak
-      ]
-      ++ lib.optionals cfg.codex.enable [
-        codex.models.gpt55
-        codex.models.gpt54
-        codex.models.gpt54Mini
-      ];
+  // lib.optionalAttrs isWork {
+    enabledModels = [
+      cloudflare.roles.strong
+      cloudflare.roles.medium
+      cloudflare.roles.weak
+      codex.models.gpt55
+      codex.models.gpt54
+      codex.models.gpt54Mini
+    ];
     defaultThinkingLevel = "medium";
     read = {
       defaultLimit = 200;
@@ -244,11 +238,6 @@ in
       };
     };
 
-    cloudflareWorkersAi.enable = lib.mkEnableOption "Cloudflare Workers AI as the primary oh-my-pi provider";
-
-    codex = {
-      enable = lib.mkEnableOption "OpenAI Codex OAuth credentials for oh-my-pi";
-    };
   };
 
   config = {
@@ -378,7 +367,7 @@ in
       '';
     };
 
-    home.activation.configureOmpCodex = lib.mkIf (workModels && cfg.codex.enable) {
+    home.activation.configureOmpCodex = lib.mkIf isWork {
       after = [ "linkGeneration" ];
       before = [ ];
       data = ''

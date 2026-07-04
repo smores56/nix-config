@@ -5,14 +5,15 @@
 }:
 let
   cfg = config.dotfiles;
+  work = cfg.work;
   personalPrefix = cfg.branchPrefix;
-  workPrefix = cfg.workBranchPrefix;
-  hasWork = cfg.workGithubOrgs != [ ] && workPrefix != null;
-  hasTicket = hasWork && cfg.ticketPrefix != null;
-  workOrgList = lib.concatStringsSep ", " cfg.workGithubOrgs;
+  workPrefix = work.branchPrefix;
+  hasWork = work.githubOrgs != [ ] && workPrefix != null;
+  hasTicket = hasWork && work.ticketPrefix != null;
+  workOrgList = lib.concatStringsSep ", " work.githubOrgs;
   workBranchExample =
     if hasTicket then
-      "${workPrefix}/${cfg.ticketPrefix}-12345-fix-auth-flow"
+      "${workPrefix}/${work.ticketPrefix}-12345-fix-auth-flow"
     else
       "${workPrefix}/fix-auth-flow";
 
@@ -24,9 +25,9 @@ let
     "- Work-org repos (${workOrgList}): `${workBranchExample}`"
   ]
   ++ lib.optionals hasTicket [
-    "- Every work-org change references a ${cfg.ticketPrefix} Linear ticket"
-    "- To create a ticket: `linear issue create -t \"Title\" --team ${cfg.ticketPrefix} --assignee self --start`"
-    "- To list your tickets: `linear issue mine`; to view one: `linear issue view ${cfg.ticketPrefix}-<number>`"
+    "- Every work-org change references a ${work.ticketPrefix} Linear ticket"
+    "- To create a ticket: `linear issue create -t \"Title\" --team ${work.ticketPrefix} --assignee self --start`"
+    "- To list your tickets: `linear issue mine`; to view one: `linear issue view ${work.ticketPrefix}-<number>`"
   ]
   ++ [
     "- Resolve a full branch for a task with `agent-branch-name --slug <kebab-slug> --task \"<description>\"` (auto-creates a Linear ticket for work-org repos when none is supplied)"
@@ -36,8 +37,8 @@ let
   ];
 
   branchWorkflow = lib.concatStringsSep "\n" branchWorkflowLines;
-  workGithubOrgHint = lib.optionalString (cfg.workGithubOrgs != [ ]) ''
-    - Work GitHub orgs (${lib.concatStringsSep ", " cfg.workGithubOrgs}) use canonical `github.com` remotes and paths
+  workGithubOrgHint = lib.optionalString (work.githubOrgs != [ ]) ''
+    - Work GitHub orgs (${lib.concatStringsSep ", " work.githubOrgs}) use canonical `github.com` remotes and paths
   '';
 
   aiHints = ''
@@ -78,7 +79,7 @@ let
     - Types: feat, fix, refactor, chore, docs, test, perf, ci
     ${
       if hasTicket then
-        "- Work-org repos: scope is the Linear ticket `type(${cfg.ticketPrefix}-<number>): description` (e.g. `fix(${cfg.ticketPrefix}-123): resolve token refresh`); other repos: `type(scope): description`"
+        "- Work-org repos: scope is the Linear ticket `type(${work.ticketPrefix}-<number>): description` (e.g. `fix(${work.ticketPrefix}-123): resolve token refresh`); other repos: `type(scope): description`"
       else
         "- Scope is the affected module or area: `type(scope): description`"
     }
@@ -104,9 +105,11 @@ in
 {
   config = {
     home.file = {
+      ".omp/agent/AGENTS.md".text = aiHints;
+    }
+    // lib.optionalAttrs cfg.work.enable {
       ".claude/CLAUDE.md".text = aiHints;
       ".codex/AGENTS.md".text = aiHints;
-      ".omp/agent/AGENTS.md".text = aiHints;
     };
 
     dotfiles.aiHints = aiHints;

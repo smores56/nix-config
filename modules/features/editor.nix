@@ -1,12 +1,8 @@
 {
-  config,
-  lib,
   pkgs,
   ...
 }:
 let
-  cfg = config.dotfiles;
-  hasSevenql = pkgs.stdenv.isDarwin && cfg.sevenqlLspPath != null;
   tsJsRoots = [
     "deno.json"
     "deno.jsonc"
@@ -161,8 +157,7 @@ in
             name = "yaml-language-server";
             except-features = [ "format" ];
           }
-        ]
-        ++ lib.optionals hasSevenql [ "sevenql-lsp" ];
+        ];
       }
     ];
 
@@ -189,16 +184,6 @@ in
       codebook = {
         command = "codebook-lsp";
         args = [ "serve" ];
-      };
-    }
-    // lib.optionalAttrs hasSevenql {
-      sevenql-lsp = {
-        command = "deno";
-        args = [
-          "run"
-          "-A"
-          cfg.sevenqlLspPath
-        ];
       };
     };
   };

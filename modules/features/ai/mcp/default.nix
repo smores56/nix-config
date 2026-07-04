@@ -5,7 +5,7 @@
   ...
 }:
 let
-  workModels = config.dotfiles.workModels;
+  isWork = config.dotfiles.work.enable;
 
   basicMemoryEnv = {
     BASIC_MEMORY_SEMANTIC_SEARCH_ENABLED = "true";
@@ -52,7 +52,7 @@ let
     "basic-memory" = basicMemory;
   };
 
-  workMcpServers = lib.optionalAttrs workModels {
+  workMcpServers = lib.optionalAttrs isWork {
     inherit glean slack;
   };
 in
