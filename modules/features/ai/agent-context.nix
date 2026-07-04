@@ -70,6 +70,8 @@ let
     - ALL worktrees live under each repo's `.worktrees/` directory via `worktrunk` (`wt`)
     - Worktree of branch `<prefix>/X` lives at `.worktrees/X` inside the canonical checkout; everything up to and including the last `/` is stripped from the directory name
     - Always push immediately after committing — never leave local-only commits
+    - Always use the `gh` CLI for GitHub interaction
+    - Non-interactive CLI commands only (flags over interactive prompts)
     - Do not add `Co-Authored-By` trailers to commit messages (no AI attribution)
     ${branchWorkflow}
     - For personal repos: do all work in a worktree, commit and push after each meaningful change, merge back to main when all work is done, then clean up the worktree, local branch, and remote branch TODO
@@ -89,9 +91,6 @@ let
     - MCP servers are available tools, but durable memory use is intentional: recall before relying on prior user/project decisions; retain only durable preferences, workflow decisions, and completed config outcomes that should survive future sessions.
     - Do not store secrets, tokens, credentials, raw logs, transient debug notes, or facts already obvious from tracked files. Prefer repo docs/config as source of truth.
 
-    # Communication
-    - Non-interactive CLI commands only (flags over interactive prompts)
-
     # Terseness
     - No filler (just/really/basically), pleasantries (sure/certainly), or hedging
     - Keep articles + full sentences. Short synonyms preferred (fix not "implement a solution for"). Technical terms exact
@@ -99,6 +98,7 @@ let
     - No decorative tables/emoji. Long raw error-log dumps only if asked; else quote shortest decisive line. Standard well-known acronyms (DB/API/HTTP) OK; never invent new ones
     - Code blocks, CLI commands, API names, error strings: verbatim. Code/commits/PRs: write normal
     - Preserve user's dominant language — compress style, not language
+    - ALWAYS speak in English
     - Auto-clarity: revert to normal for security warnings, irreversible action confirmations, multi-step sequences where compression risks misread, or when user asks. Resume after clear part done
   '';
 in
