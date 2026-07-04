@@ -41,12 +41,12 @@ let
     {
       link = "code";
       hostPath = codeRoot;
-      guestPath = "/root/code";
+      guestPath = codeRoot;
     }
     {
       link = "dev";
       hostPath = devRoot;
-      guestPath = "/root/dev";
+      guestPath = devRoot;
     }
     {
       link = "host-config";
@@ -90,8 +90,10 @@ let
     e: "ln -sfn ${lib.escapeShellArg e.hostPath} ${hostLinksDir}/${e.link}"
   ) entries;
 
-  # Linux: in-VM guest symlinks → `ln -sfn /root/host/<link> <guestPath>`
+  # Linux: in-VM guest symlinks → `ln -sfn /root/host/<link> <guestPath>`.
   # Pre-creates each guestPath's parent (wolfi-base is minimal).
+  # code/dev keep their literal host guestPath so session cwd values
+  # recorded by maki match across host and VM.
   guestSymlinks = lib.concatMapStringsSep "\n" (
     e:
     "mkdir -p \"$(dirname ${lib.escapeShellArg e.guestPath})\"\n"
@@ -221,13 +223,13 @@ let
     $flock 9
 
     ${lib.optionalString isLinux ''
-      # Wait for the bindfs mount to repopulate after a home-manager
-      # switch (brief window where the FUSE mount exists but reads return
-      # empty). Otherwise provision misreads an empty /root/host.
+      # Wait for the bindfs mount to serve fresh contents after a
+      # home-manager switch. Verifies a known Nix-managed file reads
+      # non-empty (catches both a stale daemon and an in-progress
+      # in-place update), not just that the entry exists.
+      probe=${bindfsMount}/host-config/git/config
       for _ in $(seq 1 50); do
-        [ -e ${bindfsMount}/maki-config ] \
-          && [ -e ${bindfsMount}/nix-store ] \
-          && [ -e ${bindfsMount}/bin ] && break
+        [ -s "$probe" ] && break
         sleep 0.1
       done
     ''}
@@ -268,17 +270,10 @@ let
     [ -n "''${CLOUDFLARE_ACCOUNT_ID:-}" ] \
       && env_args+=(--env "CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID")
 
-    # Map host cwd to guest path under /root/code or /root/dev.
-    pwd_real=$(cd "$PWD" && pwd -P)
-    code_root_real=$(cd ${lib.escapeShellArg codeRoot} && pwd -P)
-    dev_root_real=$(cd ${lib.escapeShellArg devRoot} && pwd -P)
-    guest_pwd="/root/code"
-    case "$pwd_real" in
-      "$code_root_real") guest_pwd="/root/code" ;;
-      "$code_root_real"/*) guest_pwd="/root/code''${pwd_real#$code_root_real}" ;;
-      "$dev_root_real") guest_pwd="/root/dev" ;;
-      "$dev_root_real"/*) guest_pwd="/root/dev''${pwd_real#$dev_root_real}" ;;
-    esac
+    # guest cwd mirrors host cwd: code/dev are mounted at their
+    # literal host paths (see entries), so maki session history
+    # (indexed by cwd) matches across host and VM.
+    guest_pwd=$(cd "$PWD" && pwd -P)
 
     exec $smolvm machine exec --name "$name" --workdir "$guest_pwd" -i -t "''${env_args[@]}" -- "$@"
   '';
@@ -320,26 +315,32 @@ in
       chmod -R u+w ${configDir}
     '';
 
-    # Linux only: build the symlink farm and restart the bindfs daemon.
-    # The restart is important — `rm -rf + mkdir` gives the dir a new
-    # inode, so the running bindfs's cwd still points at the deleted
-    # old inode (reads return empty). The restart picks up the new dir.
+    # Linux only: update the symlink farm in place. Preserving the
+    # dir inode keeps the running bindfs daemon's cwd valid, so reads
+    # keep succeeding with no restart and no disruption to in-flight
+    # VMs. Stale links (removed entries) are pruned by scanning the
+    # dir against the current entry set.
     home.activation.smolvmHostLinks = lib.mkIf isLinux (
       lib.hm.dag.entryAfter [ "writeBoundary" "setupSmolvmDirs" "syncSmolvmConfig" ] ''
-        rm -rf ${hostLinksDir}
         mkdir -p ${hostLinksDir}
         ${farmSymlinks}
+        for link in ${hostLinksDir}/*; do
+          [ -L "$link" ] || continue
+          case "''${link##*/}" in
+            ${lib.concatMapStringsSep "|" (e: e.link) entries}) ;;
+            *) rm -f "$link" ;;
+          esac
+        done
         mkdir -p ${bindfsMount}
-        PATH="${lib.getBin pkgs.systemd}/bin:$PATH" \
-          systemctl --user restart smolvm-bindfs.service 2>/dev/null || true
       ''
     );
 
     # Linux only: bindfs daemon serving the symlink farm as one FUSE
-    # mount. No ExecStartPre: systemd sends SIGTERM to the old bindfs
-    # before starting the new one, and bindfs releases the FUSE mount
-    # on exit. fusermount3 from a user service lacks the setuid bit
-    # needed to unmount a stale FUSE mount, so we rely on clean shutdown.
+    # mount. Long-lived: home-manager switches update the farm in place
+    # (smolvmHostLinks) without restarting this service, since a restart
+    # would disrupt in-flight VMs with a brief empty-read window.
+    # fusermount3 from a user service lacks the setuid bit needed to
+    # unmount a stale FUSE mount, so we rely on clean shutdown.
     systemd.user.services.smolvm-bindfs = lib.mkIf isLinux {
       Unit = {
         Description = "bindfs symlink-farm mount for smolvm agent VMs";
