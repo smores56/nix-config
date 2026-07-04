@@ -77,7 +77,8 @@ let
       context_window = m.context;
       max_output_tokens = m.output;
       pricing = {
-        inherit (p) input output cacheWrite;
+        inherit (p) input output;
+        cache_write = p.cacheWrite;
         cache_read = p.cacheRead;
       };
     };
