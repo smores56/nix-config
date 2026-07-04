@@ -316,13 +316,13 @@ in
     # per switch and per smolvm-agent invoke dominates startup.
     home.activation.syncSmolvmConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       rm -rf ${configDir}
-      mkdir -p ${configDir}/omp/agent ${configDir}/git ${configDir}/gh ${configDir}/ssh
+      mkdir -p ${configDir}/omp/agent/extensions ${configDir}/git ${configDir}/gh ${configDir}/ssh
       cp -rL \${config.home.homeDirectory}/.omp/agent/AGENTS.md ${configDir}/omp/agent/ 2>/dev/null || true
       cp -rL \${config.home.homeDirectory}/.omp/agent/mcp.json ${configDir}/omp/agent/ 2>/dev/null || true
       cp -rL \${config.home.homeDirectory}/.omp/agent/config.yml ${configDir}/omp/agent/ 2>/dev/null || true
       cp -rL \${config.home.homeDirectory}/.omp/agent/models.yml ${configDir}/omp/agent/ 2>/dev/null || true
       cp -rL \${config.home.homeDirectory}/.omp/agent/skills ${configDir}/omp/agent/ 2>/dev/null || true
-      cp -rL \${config.home.homeDirectory}/.omp/agent/extensions ${configDir}/omp/agent/ 2>/dev/null || true
+      cp -rL \${config.home.homeDirectory}/.omp/agent/extensions/spawn_session ${configDir}/omp/agent/extensions/ 2>/dev/null || true
       cp -rL \${config.home.homeDirectory}/.config/git/config ${configDir}/git/ 2>/dev/null || true
       cp -rL \${config.home.homeDirectory}/.config/gh/config.yml ${configDir}/gh/ 2>/dev/null || true
       cp -rL \${config.home.homeDirectory}/.ssh/config ${configDir}/ssh/ 2>/dev/null || true
