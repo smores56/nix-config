@@ -131,26 +131,38 @@ let
 
     # Staged config (Nix symlinks dereffed host-side via `cp -rL`)
     # into the overlay so omp/git/gh/ssh can rewrite their config at
-    # runtime. maki config is mounted directly (no staging).
-    sync_config() {
+    # runtime. maki config is mounted directly (no staging). Only the
+    # Nix-managed subpaths are staged — the activation hook excludes
+    # the GBs of omp runtime data (sessions, cache, puppeteer).
+    # config.yml and models.yml are activation-written regular files
+    # (not Nix symlinks) that hold the enforced omp config; staging
+    # them bootstraps the VM so omp starts with declared providers
+    # rather than empty defaults. omp rewrites config.yml in-app after
+    # first boot, advancing its mtime past the staged copy.
+    sync_file() {
+      local src="$1" dst="$2"
+      mkdir -p "$(dirname "$dst")"
+      cp -fL "$src" "$dst" 2>/dev/null || true
+    }
+    sync_dir() {
       local src="$1" dst="$2"
       mkdir -p "$dst"
-      cp -ruL "$src"/. "$dst"/ 2>/dev/null || true
+      cp -rfL "$src"/. "$dst"/ 2>/dev/null || true
     }
-    sync_config /mnt/host-config/git /root/.config/git
-    sync_config /mnt/host-config/gh /root/.config/gh
+    sync_dir /mnt/host-config/git /root/.config/git
+    sync_file /mnt/host-config/gh/config.yml /root/.config/gh/config.yml
 
-    # omp rewrites config.yml in-app, advancing its mtime past the
-    # staging copy so `cp -u` skips the fresh Nix version. Force-copy
-    # these two so Nix-declared keys always land; runtime auth (env-var
-    # API keys, GH_TOKEN) is forwarded by the launcher, not in files.
-    sync_config /mnt/host-config/omp /root/.omp
-    cp -fL /mnt/host-config/omp/agent/config.yml /root/.omp/agent/config.yml 2>/dev/null || true
-    cp -fL /mnt/host-config/omp/agent/models.yml /root/.omp/agent/models.yml 2>/dev/null || true
+    # omp: Nix-managed agent files + activation-enforced config.
+    sync_dir /mnt/host-config/omp/agent/skills /root/.omp/agent/skills
+    sync_dir /mnt/host-config/omp/agent/extensions /root/.omp/agent/extensions
+    sync_file /mnt/host-config/omp/agent/AGENTS.md /root/.omp/agent/AGENTS.md
+    sync_file /mnt/host-config/omp/agent/mcp.json /root/.omp/agent/mcp.json
+    sync_file /mnt/host-config/omp/agent/config.yml /root/.omp/agent/config.yml
+    sync_file /mnt/host-config/omp/agent/models.yml /root/.omp/agent/models.yml
 
-    # SSH public keys for git ssh-format commit signing. Private keys
-    # stay on the host; the agent signs via the forwarded ssh-agent.
-    sync_config /mnt/host-config/ssh /root/.ssh
+    # SSH config + public keys for git ssh-format commit signing. Private
+    # keys stay on the host; the agent signs via the forwarded ssh-agent.
+    sync_dir /mnt/host-config/ssh /root/.ssh
 
     # System packages. python-3 is required by omp's Python eval
     # backend (stdlib-only runner script). apk indexes don't persist
@@ -299,14 +311,23 @@ in
     # (Darwin) or via the bindfs symlink farm (Linux). Private ssh keys
     # are never staged — only *.pub and known_hosts. gh's hosts.yml
     # (oauth token) is excluded: the launcher forwards GH_TOKEN instead.
+    # Only Nix-managed subpaths are staged, not the entire runtime dir —
+    # ~/.omp is ~1.4GB of sessions/cache/puppeteer; staging all of it
+    # per switch and per smolvm-agent invoke dominates startup.
     home.activation.syncSmolvmConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       rm -rf ${configDir}
-      mkdir -p ${configDir}/omp ${configDir}/git ${configDir}/gh ${configDir}/ssh
-      cp -rL ${config.home.homeDirectory}/.omp/. ${configDir}/omp/ 2>/dev/null || true
-      cp -rL ${config.home.homeDirectory}/.config/git/. ${configDir}/git/ 2>/dev/null || true
-      cp -rL ${config.home.homeDirectory}/.config/gh/config.yml ${configDir}/gh/ 2>/dev/null || true
-      cp -rL ${config.home.homeDirectory}/.ssh/*.pub ${configDir}/ssh/ 2>/dev/null || true
-      cp -rL ${config.home.homeDirectory}/.ssh/known_hosts ${configDir}/ssh/ 2>/dev/null || true
+      mkdir -p ${configDir}/omp/agent ${configDir}/git ${configDir}/gh ${configDir}/ssh
+      cp -rL \${config.home.homeDirectory}/.omp/agent/AGENTS.md ${configDir}/omp/agent/ 2>/dev/null || true
+      cp -rL \${config.home.homeDirectory}/.omp/agent/mcp.json ${configDir}/omp/agent/ 2>/dev/null || true
+      cp -rL \${config.home.homeDirectory}/.omp/agent/config.yml ${configDir}/omp/agent/ 2>/dev/null || true
+      cp -rL \${config.home.homeDirectory}/.omp/agent/models.yml ${configDir}/omp/agent/ 2>/dev/null || true
+      cp -rL \${config.home.homeDirectory}/.omp/agent/skills ${configDir}/omp/agent/ 2>/dev/null || true
+      cp -rL \${config.home.homeDirectory}/.omp/agent/extensions ${configDir}/omp/agent/ 2>/dev/null || true
+      cp -rL \${config.home.homeDirectory}/.config/git/config ${configDir}/git/ 2>/dev/null || true
+      cp -rL \${config.home.homeDirectory}/.config/gh/config.yml ${configDir}/gh/ 2>/dev/null || true
+      cp -rL \${config.home.homeDirectory}/.ssh/config ${configDir}/ssh/ 2>/dev/null || true
+      cp -rL \${config.home.homeDirectory}/.ssh/*.pub ${configDir}/ssh/ 2>/dev/null || true
+      cp -rL \${config.home.homeDirectory}/.ssh/known_hosts ${configDir}/ssh/ 2>/dev/null || true
       chmod -R u+w ${configDir}
     '';
 
