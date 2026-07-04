@@ -23,14 +23,14 @@ from collections import defaultdict
 from datetime import datetime, timezone
 
 # USD per 1,000,000 tokens: (input, output, cache_read). Keep in sync with
-# cloudflareProviders in modules/features/ai/maki/default.nix. Only GLM-5.2
-# publishes a discounted cached-input rate ($0.26/1M); gpt-oss-120b and
-# glm-4.7-flash publish none, so their cached reads are priced at the input rate
-# (conservative — never under-counts). cache_creation is priced as normal input.
+# cloudflareModels in modules/features/ai/providers.nix. Only GLM-5.2 publishes
+# a discounted cached-input rate ($0.26/1M); gpt-oss models publish none, so
+# their cached reads are priced at the input rate (conservative — never
+# under-counts). cache_creation is priced as normal input.
 PRICING = {
     "@cf/zai-org/glm-5.2": (1.40, 4.40, 0.26),
     "@cf/openai/gpt-oss-120b": (0.35, 0.75, 0.35),
-    "@cf/zai-org/glm-4.7-flash": (0.06, 0.40, 0.06),
+    "@cf/openai/gpt-oss-20b": (0.20, 0.30, 0.20),
 }
 
 

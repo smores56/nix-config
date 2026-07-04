@@ -83,10 +83,12 @@ let
     };
 
   # ── DeepSeek ──────────────────────────────────────────────────────────────
-  # No published cached-input pricing; all reads price as input (conservative).
+  # DeepSeek publishes discounted cache-hit input pricing (1/10 of cache-miss).
+  # Both models: 1M context, 384K max output, dual thinking/non-thinking modes.
+  # V4-Pro launch promo (75% off $1.74/$3.48 reference) became permanent 2026-05-22.
   deepseekModels = {
-    v4Pro = mkModel "deepseek-v4-pro" "DeepSeek V4 Pro" 1000000 131072 true 1.10 4.40 1.10;
-    v4Flash = mkModel "deepseek-v4-flash" "DeepSeek V4 Flash" 1000000 131072 false 0.28 0.42 0.28;
+    v4Pro = mkModel "deepseek-v4-pro" "DeepSeek V4 Pro" 1000000 384000 true 0.435 0.87 0.003625;
+    v4Flash = mkModel "deepseek-v4-flash" "DeepSeek V4 Flash" 1000000 384000 true 0.14 0.28 0.0028;
   };
 
   deepseek = rec {
@@ -110,7 +112,8 @@ let
     baseUrl = "https://api.deepseek.com/v1";
     keyEnv = "DEEPSEEK_API_KEY";
     ompModelsList = map mkOmpModel selectedModels;
-    makiModels = map (m: mkMakiModel m (if m.reasoning then "strong" else "medium")) selectedModels;
+    # V4-Pro (1.6T/49B active) = strong; V4-Flash (284B/13B active) = medium.
+    makiModels = map (m: mkMakiModel m (if m.id == "deepseek-v4-pro" then "strong" else "medium")) selectedModels;
   };
 
   # ── Neuralwatt ────────────────────────────────────────────────────────────
