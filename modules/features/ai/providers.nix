@@ -113,7 +113,9 @@ let
     keyEnv = "DEEPSEEK_API_KEY";
     ompModelsList = map mkOmpModel selectedModels;
     # V4-Pro (1.6T/49B active) = strong; V4-Flash (284B/13B active) = medium.
-    makiModels = map (m: mkMakiModel m (if m.id == "deepseek-v4-pro" then "strong" else "medium")) selectedModels;
+    makiModels = map (
+      m: mkMakiModel m (if m.id == "deepseek-v4-pro" then "strong" else "medium")
+    ) selectedModels;
   };
 
   # ── Neuralwatt ────────────────────────────────────────────────────────────

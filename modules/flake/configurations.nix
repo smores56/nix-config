@@ -227,76 +227,24 @@ in
         nixos = true;
         calibre.enable = true;
       };
-      "smohr@smoreswork" =
-        let
-          gleanServerUrl = "https://sevenai-be.glean.com";
-          gleanMcpServer = {
-            command = "npx";
-            args = [
-              "-y"
-              "@gleanwork/local-mcp-server"
-            ];
-            env = {
-              GLEAN_SERVER_URL = gleanServerUrl;
-              GLEAN_API_TOKEN = "\${GLEAN_API_TOKEN}";
-            };
-          };
-          basicMemoryMcpEnv = {
-            BASIC_MEMORY_SEMANTIC_SEARCH_ENABLED = "true";
-            BASIC_MEMORY_SEMANTIC_EMBEDDING_PROVIDER = "fastembed";
-          };
-        in
-        mkHome {
-          displayManager = "osx";
-          windowManager = "aerospace";
-          username = "smohr";
-          system = "aarch64-darwin";
-          terminalFontSize = 16;
-          email = "sam.mohr@sevenai.com";
-          workBranchPrefix = "sam.mohr";
-          ticketPrefix = "7AI";
-          workGithubOrgs = [ "OkamiAI" ];
-          workModels = true;
-          sevenqlLspPath = "/Users/smohr/dev/okami/typescript/tools/sevenql-lsp/main.ts";
-          ohMyPi = {
-            cloudflareWorkersAi.enable = true;
-            codex.enable = true;
-            mcpServers = {
-              glean = gleanMcpServer;
-              "basic-memory" = {
-                command = "uvx";
-                args = [
-                  "basic-memory"
-                  "mcp"
-                ];
-                env = basicMemoryMcpEnv;
-              };
-            };
-          };
-          maki = {
-            cloudflareWorkersAi.enable = true;
-            mcpServers = {
-              glean.command = [
-                "env"
-                "GLEAN_SERVER_URL=${gleanServerUrl}"
-                "npx"
-                "-y"
-                "@gleanwork/local-mcp-server"
-              ];
-              slack.command = [
-                "sh"
-                "-lc"
-                ''
-                  cache_dir="''${XDG_CACHE_HOME:-$HOME/.cache}/slack-mcp-server"
-                  mkdir -p "$cache_dir"
-                  export SLACK_MCP_USERS_CACHE="$cache_dir/users_cache.json"
-                  export SLACK_MCP_CHANNELS_CACHE="$cache_dir/channels_cache_v2.json"
-                  exec npx -y slack-mcp-server@latest --transport stdio
-                ''
-              ];
-            };
-          };
+      "smohr@smoreswork" = mkHome {
+        displayManager = "osx";
+        windowManager = "aerospace";
+        username = "smohr";
+        system = "aarch64-darwin";
+        terminalFontSize = 16;
+        email = "sam.mohr@sevenai.com";
+        workBranchPrefix = "sam.mohr";
+        ticketPrefix = "7AI";
+        workGithubOrgs = [ "OkamiAI" ];
+        workModels = true;
+        sevenqlLspPath = "/Users/smohr/dev/okami/typescript/tools/sevenql-lsp/main.ts";
+        ohMyPi = {
+          cloudflareWorkersAi.enable = true;
+          codex.enable = true;
         };
+        maki.cloudflareWorkersAi.enable = true;
+      };
     };
     nixosConfigurations = {
       "campfire" = mkNixos {

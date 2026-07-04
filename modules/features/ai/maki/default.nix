@@ -53,8 +53,36 @@ let
     run = true
   '';
 
-  mcpServers = cfg.mcpServers;
-  mcpToml = pkgs.writers.writeTOML "maki-mcp.toml" { mcp = mcpServers; };
+  mcpServers = config.dotfiles.ai.mcpServers;
+  shellQuote = lib.escapeShellArg;
+  mkEnvExport = name: value: "export ${name}=${shellQuote value}";
+  mkMakiMcpServer =
+    server:
+    let
+      args = server.args or [ ];
+      command = server.command;
+      commandList = if builtins.isList command then command else [ command ] ++ args;
+      env = server.env or { };
+      envExports = lib.concatStringsSep "\n" (lib.mapAttrsToList mkEnvExport env);
+      execCommand = lib.concatMapStringsSep " " shellQuote commandList;
+    in
+    builtins.removeAttrs server [ "args" ]
+    // {
+      command =
+        if env == { } then
+          commandList
+        else
+          [
+            "sh"
+            "-lc"
+            ''
+              ${envExports}
+              exec ${execCommand}
+            ''
+          ];
+    };
+  makiMcpServers = lib.mapAttrs (_: mkMakiMcpServer) mcpServers;
+  mcpToml = pkgs.writers.writeTOML "maki-mcp.toml" { mcp = makiMcpServers; };
 
   # Custom providers for maki (personal hosts only). Model catalogs and pricing
   # live in providers.nix and are projected into maki's shape via each
@@ -174,31 +202,9 @@ in
           CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_KEY in the environment.
         '';
       };
-    mcpServers = lib.mkOption {
-      type = lib.types.attrsOf (lib.types.attrsOf lib.types.anything);
-      default = { };
-      description = ''
-        MCP server definitions written to ~/.config/maki/mcp.toml. Maki uses
-        TOML sections under [mcp.<name>]; stdio servers use command arrays.
-      '';
-    };
   };
 
   config = {
-    dotfiles.maki.mcpServers = {
-      "basic-memory" = {
-        command = [
-          "uvx"
-          "basic-memory"
-          "mcp"
-        ];
-        env = {
-          BASIC_MEMORY_SEMANTIC_SEARCH_ENABLED = "true";
-          BASIC_MEMORY_SEMANTIC_EMBEDDING_PROVIDER = "fastembed";
-        };
-      };
-    };
-
     home.file = {
       ".config/maki/init.lua" = {
         force = true;

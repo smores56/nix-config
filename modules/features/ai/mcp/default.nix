@@ -1,0 +1,67 @@
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
+let
+  workModels = config.dotfiles.workModels;
+
+  basicMemoryEnv = {
+    BASIC_MEMORY_SEMANTIC_SEARCH_ENABLED = "true";
+    BASIC_MEMORY_SEMANTIC_EMBEDDING_PROVIDER = "fastembed";
+  };
+
+  basicMemory = {
+    command = "uvx";
+    args = [
+      "basic-memory"
+      "mcp"
+    ];
+    env = basicMemoryEnv;
+  };
+
+  gleanServerUrl = "https://sevenai-be.glean.com";
+  glean = {
+    command = "npx";
+    args = [
+      "-y"
+      "@gleanwork/local-mcp-server"
+    ];
+    env = {
+      GLEAN_SERVER_URL = gleanServerUrl;
+      GLEAN_API_TOKEN = "\${GLEAN_API_TOKEN}";
+    };
+  };
+
+  slack = {
+    command = "sh";
+    args = [
+      "-lc"
+      ''
+        cache_dir="''${XDG_CACHE_HOME:-$HOME/.cache}/slack-mcp-server"
+        mkdir -p "$cache_dir"
+        export SLACK_MCP_USERS_CACHE="$cache_dir/users_cache.json"
+        export SLACK_MCP_CHANNELS_CACHE="$cache_dir/channels_cache_v2.json"
+        exec ${pkgs.nodejs}/bin/node ${./mcp-schema-sanitizer.mjs} npx -y slack-mcp-server@latest --transport stdio
+      ''
+    ];
+  };
+
+  commonMcpServers = {
+    "basic-memory" = basicMemory;
+  };
+
+  workMcpServers = lib.optionalAttrs workModels {
+    inherit glean slack;
+  };
+in
+{
+  options.dotfiles.ai.mcpServers = lib.mkOption {
+    type = lib.types.attrsOf (lib.types.attrsOf lib.types.anything);
+    readOnly = true;
+    description = "Shared MCP server definitions for AI coding agents.";
+  };
+
+  config.dotfiles.ai.mcpServers = commonMcpServers // workMcpServers;
+}

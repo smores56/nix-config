@@ -7,6 +7,7 @@
 }:
 let
   cfg = config.dotfiles.ohMyPi;
+  mcpServers = config.dotfiles.ai.mcpServers;
   workModels = config.dotfiles.workModels;
   cfEnabled = cfg.cloudflareWorkersAi.enable;
   inherit (aiProviders)
@@ -248,17 +249,6 @@ in
     codex = {
       enable = lib.mkEnableOption "OpenAI Codex OAuth credentials for oh-my-pi";
     };
-
-    mcpServers = lib.mkOption {
-      type = lib.types.attrsOf (lib.types.attrsOf lib.types.anything);
-      default = { };
-      description = ''
-        MCP server definitions written to ~/.omp/agent/mcp.json. Standard
-        mcp.json schema (command/args/env or url/headers). Values may reference
-        secrets via ''${ENV_VAR} interpolation, resolved by oh-my-pi at runtime
-        so tokens stay out of the Nix store.
-      '';
-    };
   };
 
   config = {
@@ -312,9 +302,9 @@ in
           fi
         '';
     };
-    home.file.".omp/agent/mcp.json" = lib.mkIf (cfg.mcpServers != { }) {
+    home.file.".omp/agent/mcp.json" = lib.mkIf (mcpServers != { }) {
       force = true;
-      text = builtins.toJSON { mcpServers = cfg.mcpServers; };
+      text = builtins.toJSON { inherit mcpServers; };
     };
 
     home.activation.enforceOmpConfig = {
