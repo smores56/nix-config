@@ -24,9 +24,27 @@ let
   coreutilsBin = "${lib.getBin pkgs.coreutils}/bin";
   image = "cgr.dev/chainguard/wolfi-base";
 
-  # host→guest path mappings. Each entry drives: the bindfs symlink-farm
-  # entry name (Linux), the in-VM symlink from guest path onto
-  # /root/host/<link> (Linux), and the direct virtiofs volume (Darwin).
+  # Direct virtiofs volumes: mounted as real directory mount points
+  # (not symlinks) at their literal host paths. code/dev must be real
+  # mounts so getcwd() returns the host path verbatim — maki indexes
+  # session history by cwd, and all sessions were recorded with
+  # /home/smores/code/... as the cwd on the host. Plain host dirs (no
+  # Nix store symlinks), so they mount cleanly via virtiofs on both
+  # Linux and Darwin.
+  directVolumes = [
+    {
+      hostPath = codeRoot;
+      guestPath = codeRoot;
+    }
+    {
+      hostPath = devRoot;
+      guestPath = devRoot;
+    }
+  ];
+
+  # host→guest path mappings — bindfs symlink-farm entries. Each goes
+  # through the single bindfs volume on Linux (needs --resolve-symlinks
+  # for Nix store symlinks) or a direct virtiofs volume on Darwin.
   #   link      : bindfs symlink-farm entry name
   #   hostPath  : absolute host path (resolved host-side via bindfs)
   #   guestPath : absolute guest path the agent sees
@@ -37,16 +55,6 @@ let
       link = "bin";
       hostPath = sharedBinDir;
       guestPath = "/root/.local/bin";
-    }
-    {
-      link = "code";
-      hostPath = codeRoot;
-      guestPath = codeRoot;
-    }
-    {
-      link = "dev";
-      hostPath = devRoot;
-      guestPath = devRoot;
     }
     {
       link = "host-config";
@@ -79,11 +87,18 @@ let
 
   roOpt = e: if e ? ro && e.ro then ":ro" else "";
 
-  # Linux: single bindfs mount → 1 volume
-  linuxVolume = "${bindfsMount}:/root/host";
+  # Linux: 1 bindfs volume + direct volumes for code/dev = 3 total,
+  # at libkrun's stock IRQ ceiling of 3.
+  linuxVolumes = [
+    "${bindfsMount}:/root/host"
+  ]
+  ++ map (e: "${e.hostPath}:${e.guestPath}") directVolumes;
 
-  # Darwin: no IRQ ceiling; bind each entry directly.
-  darwinVolumes = map (e: "${e.hostPath}:${e.guestPath}${roOpt e}") entries;
+  # Darwin: no IRQ ceiling; bind every entry directly. code/dev come
+  # first (as direct volumes), then the farm entries.
+  darwinVolumes =
+    (map (e: "${e.hostPath}:${e.guestPath}") directVolumes)
+    ++ (map (e: "${e.hostPath}:${e.guestPath}${roOpt e}") entries);
 
   # Linux: symlink farm entries → `ln -sfn <hostPath> <hostLinksDir>/<link>`
   farmSymlinks = lib.concatMapStringsSep "\n" (
@@ -92,8 +107,6 @@ let
 
   # Linux: in-VM guest symlinks → `ln -sfn /root/host/<link> <guestPath>`.
   # Pre-creates each guestPath's parent (wolfi-base is minimal).
-  # code/dev keep their literal host guestPath so session cwd values
-  # recorded by maki match across host and VM.
   guestSymlinks = lib.concatMapStringsSep "\n" (
     e:
     "mkdir -p \"$(dirname ${lib.escapeShellArg e.guestPath})\"\n"
@@ -101,15 +114,15 @@ let
   ) entries;
 
   # Linux: a single bindfs `--resolve-symlinks` rw mount over the
-  # symlink farm serves every host path. bindfs resolves symlinks
-  # host-side, so `maki-config -> ~/.config/maki -> /nix/store/...`
-  # reads correctly without a separate /nix/store mount. ro on
-  # Nix-managed paths is enforced by /nix/store's own a-w perms.
-  # One virtiofs volume stays under libkrun's stock IRQ ceiling of 3.
+  # symlink farm serves every host path that needs symlink resolution
+  # (Nix store paths). code/dev are excluded — they're direct virtiofs
+  # volumes (see directVolumes) so getcwd() returns the literal host
+  # path for maki session matching. 1 bindfs + 2 direct = 3 volumes,
+  # at libkrun's stock IRQ ceiling of 3.
   # Darwin: libkrun's GIC has no IRQ ceiling, so direct per-entry
   # volumes are fine (bindfs would need macFUSE).
   isLinux = pkgs.stdenv.isLinux;
-  smolfileVolumes = if isLinux then [ linuxVolume ] else darwinVolumes;
+  smolfileVolumes = if isLinux then linuxVolumes else darwinVolumes;
 
   smolfile = tomlFormat.generate "agent.smolfile" {
     inherit image;
