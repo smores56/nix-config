@@ -244,7 +244,11 @@ in
         }
       ) providersToWrite
     );
-    home.packages = [ pkgs.rtk ] ++ lib.optional isWork codexCredSync ++ lib.optional isWork cfCostReport;
+    home.packages = [
+      pkgs.rtk
+    ]
+    ++ lib.optional isWork codexCredSync
+    ++ lib.optional isWork cfCostReport;
     home.activation.makiCodexCreds = lib.mkIf isWork (
       lib.hm.dag.entryAfter [ "writeBoundary" ] ''
         ${codexCredSync}/bin/maki-codex-sync || true

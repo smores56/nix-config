@@ -337,7 +337,7 @@ in
       };
       Service = {
         Type = "simple";
-        ExecStart = "${lib.getExe pkgs.bindfs} -f --resolve-symlinks --no-allow-other ${hostLinksDir} ${bindfsMount}";
+        ExecStart = "${lib.getExe' pkgs.bindfs "bindfs"} -f --resolve-symlinks --no-allow-other ${hostLinksDir} ${bindfsMount}";
         Restart = "on-failure";
         RestartSec = 2;
       };
