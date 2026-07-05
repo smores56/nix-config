@@ -21,7 +21,6 @@ let
   tomlFormat = pkgs.formats.toml { };
   jqBin = "${lib.getBin pkgs.jq}/bin/jq";
   smolvmBin = "${pkgs.smolvm}/bin/smolvm";
-  coreutilsBin = "${lib.getBin pkgs.coreutils}/bin";
   image = "cgr.dev/chainguard/wolfi-base";
 
   # Direct virtiofs volumes: mounted as real directory mount points
