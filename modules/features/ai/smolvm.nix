@@ -37,6 +37,19 @@ let
     bun = "latest"
   '';
 
+  # Env vars baked into every agentbox VM (base and clones). Per-invocation
+  # secrets (GH_TOKEN, *_API_KEY) are forwarded on `machine exec`, not here.
+  baseEnv = [
+    "BUN_INSTALL=/root/.bun"
+    "MAKI_INSTALL_DIR=/root/.local/bin"
+    "MISE_DATA_DIR=/root/.local/share/mise"
+    "CARGO_TARGET_DIR=/root/.cargo-target"
+    # mise shims first → per-repo pins override the shared bin mount;
+    # then shared bin (maki/gh/mise), then /root/.bun/bin (omp global
+    # shim). The latter two live in the overlay.
+    "PATH=/root/.local/share/mise/shims:/root/.local/bin:/root/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  ];
+
   # Direct virtiofs volumes: mounted as real directory mount points
   # (not symlinks) at their literal host paths. code/dev must be real
   # mounts so getcwd() returns the host path verbatim — maki indexes
@@ -118,60 +131,44 @@ let
     (map (e: "${e.hostPath}:${e.guestPath}") directVolumes)
     ++ (map (e: "${e.hostPath}:${e.guestPath}${roOpt e}") entries);
 
-  # Linux: symlink farm entries → `ln -sfn <hostPath> <hostLinksDir>/<link>`
-  farmSymlinks = lib.concatMapStringsSep "\n" (
-    e: "ln -sfn ${lib.escapeShellArg e.hostPath} ${hostLinksDir}/${e.link}"
-  ) entries;
-
-  # Linux: in-VM guest symlinks → `ln -sfn /root/host/<link> <guestPath>`.
-  # Pre-creates each guestPath's parent (wolfi-base is minimal).
-  guestSymlinks = lib.concatMapStringsSep "\n" (
-    e:
-    "mkdir -p \"$(dirname ${lib.escapeShellArg e.guestPath})\"\n"
-    + "ln -sfn /root/host/${e.link} ${lib.escapeShellArg e.guestPath}"
-  ) entries;
-
   isLinux = pkgs.stdenv.isLinux;
   smolfileVolumes = if isLinux then linuxVolumes else darwinVolumes;
 
-  smolfile = tomlFormat.generate "agentbox.smolfile" {
+  # Single source of truth for VM config. The Smolfile (base VM creation
+  # during snapshot regen) and the CLI arg list (clone creation via
+  # --from) both derive from this. smolvm rejects combining --from with
+  # --smolfile, so clones get these as CLI flags.
+  vmConfig = {
     inherit image;
     net = true;
-    cpus = 4;
-    memory = 8192;
+    cpus = 16;
+    memory = 16384;
     overlay = 20;
-    # Forwards the host ssh-agent socket into the VM, so git push (ssh)
-    # and ssh-format commit signing work without exposing private keys.
     auth.ssh_agent = true;
-    env = [
-      "BUN_INSTALL=/root/.bun"
-      "MAKI_INSTALL_DIR=/root/.local/bin"
-      "MISE_DATA_DIR=/root/.local/share/mise"
-      # mise shims first → per-repo pins override the shared bin mount;
-      # then shared bin (maki/gh/mise), then /root/.bun/bin (omp global
-      # shim). The latter two live in the overlay.
-      "PATH=/root/.local/share/mise/shims:/root/.local/bin:/root/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-    ];
+    env = baseEnv;
     volumes = smolfileVolumes;
   };
 
-  # Idempotent provisioning run inside the VM on every start. mise installs
-  # the bun runtime and the default global toolset (rust/just/python/deno)
-  # into the overlay (MISE_DATA_DIR). Global bun packages (omp) go to
-  # /root/.bun (BUN_INSTALL), also in the overlay — both persist across
-  # VM restarts but not across VM delete/recreate. maki + gh + the mise
-  # binary itself live in the shared bin mount (host-persistent).
-  provisionScript = ''
-    set -e
-    export BUN_INSTALL=/root/.bun
-    export MISE_DATA_DIR=/root/.local/share/mise
-    export PATH="/root/.local/share/mise/shims:/root/.local/bin:/root/.bun/bin:$PATH"
+  smolfile = tomlFormat.generate "agentbox.smolfile" vmConfig;
 
-    ${lib.optionalString isLinux guestSymlinks}
+  # Clone-create CLI args mirroring vmConfig. Used when creating a
+  # per-name VM from the snapshot (--from + --smolfile is rejected,
+  # and --from + --image is rejected since the snapshot already has
+  # the image baked in).
+  cloneCreateArgs = lib.cli.toGNUCommandLine { } {
+    inherit (vmConfig) net cpus;
+    mem = vmConfig.memory;
+    overlay = vmConfig.overlay;
+    ssh-agent = vmConfig.auth.ssh_agent;
+    env = vmConfig.env;
+    volume = vmConfig.volumes;
+  };
 
-    # Nix-managed config (git/gh/ssh/mise) staged into the overlay via
-    # `cp -rL` so they can rewrite at runtime. omp agent/ (~/.omp/agent)
-    # and maki config/state are bindfs-mounted directly — no staging.
+  # Config-staging block, shared by base + per-VM provision. Copies the
+  # ro host-config mount (config, *.pub, known_hosts — never privates)
+  # into /root so runtime rewrites work. omp/maki config/state are
+  # bindfs-mounted directly and not staged here.
+  syncConfig = ''
     sync_file() {
       local src="$1" dst="$2"
       mkdir -p "$(dirname "$dst")"
@@ -186,6 +183,21 @@ let
     sync_file /mnt/host-config/gh/config.yml /root/.config/gh/config.yml
     sync_file /mnt/host-config/mise/config.toml /root/.config/mise/config.toml
     sync_dir /mnt/host-config/ssh /root/.ssh
+  '';
+
+  # Heavy installs. Runs once during snapshot regen; clones created from
+  # the snapshot inherit all of this and skip it. Idempotent guards mean
+  # a re-run on the same base VM is a no-op. Stages config first so mise
+  # install picks up the toolset from config.toml.
+  baseProvisionScript = ''
+    set -e
+    export BUN_INSTALL=/root/.bun
+    export MISE_DATA_DIR=/root/.local/share/mise
+    export PATH="/root/.local/share/mise/shims:/root/.local/bin:/root/.bun/bin:$PATH"
+
+    ${lib.optionalString isLinux guestSymlinks}
+
+    ${syncConfig}
 
     # System packages. python-3 is required by omp's Python eval
     # backend; bash by mise's python backend; curl by rustup-init and
@@ -233,17 +245,6 @@ let
       rm -rf /tmp/gh_''${gh_version}_linux_amd64
     fi
 
-    # Host git config references host-only paths (/nix/store/.../gh,
-    # git-github-ssh wrapper). Rewrite credential helper to the VM's gh
-    # path and drop sshCommand.
-    for host in github.com gist.github.com; do
-      key="credential.https://''${host}.helper"
-      git config --file /root/.config/git/config --unset-all "$key" 2>/dev/null || true
-      git config --file /root/.config/git/config --add "$key" ""
-      git config --file /root/.config/git/config --add "$key" "/root/.local/bin/gh auth git-credential"
-    done
-    git config --file /root/.config/git/config --unset-all core.sshCommand 2>/dev/null || true
-
     # mise: installs bun runtime + default global toolset (rust/cargo,
     # just, python, deno) into the overlay (MISE_DATA_DIR). The mise
     # binary lands in the shared bin mount (host-persistent). Global
@@ -277,13 +278,109 @@ let
     fi
   '';
 
-  # Shared create-or-start-or-provision snippet, inlined into the
-  # launcher. Serialized under flock so concurrent agentbox invocations
-  # (e.g. several spawn_session calls in one batch) don't race on
-  # `machine create`/`machine start`/provision and wedge the VM
-  # (which would EIO-kill every spawned Zellij tab). The final
-  # interactive `machine exec` runs outside the lock so it never blocks
-  # on a sibling's session.
+  # Light provisioning: runs on every agentbox launch. Restages config
+  # from the ro host-config mount (catches home-manager switches) and
+  # rewrites the host git config's credential helper + sshCommand for
+  # in-VM paths. No installs — the snapshot has them; if the snapshot
+  # is stale w.r.t. Smolfile, snapshotVersion bumps and lazy-regen
+  # fires before reaching here.
+  perVmProvisionScript = ''
+    set -e
+
+    ${lib.optionalString isLinux guestSymlinks}
+
+    ${syncConfig}
+
+    # Host git config references host-only paths (/nix/store/.../gh,
+    # git-github-ssh wrapper). Rewrite credential helper to the VM's gh
+    # path and drop sshCommand.
+    for host in github.com gist.github.com; do
+      key="credential.https://''${host}.helper"
+      git config --file /root/.config/git/config --unset-all "$key" 2>/dev/null || true
+      git config --file /root/.config/git/config --add "$key" ""
+      git config --file /root/.config/git/config --add "$key" "/root/.local/bin/gh auth git-credential"
+    done
+    git config --file /root/.config/git/config --unset-all core.sshCommand 2>/dev/null || true
+  '';
+
+  # Linux: symlink farm entries → `ln -sfn <hostPath> <hostLinksDir>/<link>`
+  farmSymlinks = lib.concatMapStringsSep "\n" (
+    e: "ln -sfn ${lib.escapeShellArg e.hostPath} ${hostLinksDir}/${e.link}"
+  ) entries;
+
+  # Linux: in-VM guest symlinks → `ln -sfn /root/host/<link> <guestPath>`.
+  # Pre-creates each guestPath's parent (wolfi-base is minimal).
+  guestSymlinks = lib.concatMapStringsSep "\n" (
+    e:
+    "mkdir -p \"$(dirname ${lib.escapeShellArg e.guestPath})\"\n"
+    + "ln -sfn /root/host/${e.link} ${lib.escapeShellArg e.guestPath}"
+  ) entries;
+
+  # Snapshot version: regenerates only when inputs that affect the
+  # snapshot's installed state change. Captured at Nix eval time and
+  # baked into the launcher, so no `nix` calls in the launcher path.
+  # Changes to baseProvisionScript, defaultMiseConfig, image, or the
+  # smolvm package version bump the version and trigger lazy regen.
+  # All inputs must be strings — derivations don't coerce for hashing.
+  snapshotVersion = builtins.substring 0 12 (
+    builtins.hashString "sha256" (
+      baseProvisionScript + (lib.fileContents defaultMiseConfig) + image + pkgs.smolvm.version
+    )
+  );
+  snapshotDir = "${sharedDir}/snapshots";
+  snapshotPath = "${snapshotDir}/base-${snapshotVersion}.smolmachine";
+
+  # Lazy snapshot regen. Serialized under its own flock so concurrent
+  # agentbox invocations racing on a missing/stale snapshot don't
+  # double-regen. After acquiring the lock, re-checks existence
+  # (another process may have just regenerated it). Regen flow:
+  #   create base VM (Smolfile) → start → heavy provision → stop →
+  #   pack → delete base → atomic rename into place.
+  # Prunes older snapshots best-effort after a successful regen.
+  ensureBaseSnapshot = ''
+    snapshot=${snapshotPath}
+    snapshot_dir=${snapshotDir}
+
+    if [ ! -f "$snapshot" ]; then
+      regen_lock=/run/user/$(id -u)/agentbox-snapshot.lock
+      mkdir -p "$(dirname "$regen_lock")" "$snapshot_dir"
+      # Use fd 8 for the regen lock — fd 9 holds the per-VM lock
+      # (ensureVm). `exec 9>` would drop the per-VM open file
+      # description and release that lock prematurely.
+      exec 8>"$regen_lock"
+      $flock 8
+
+      if [ ! -f "$snapshot" ]; then
+        echo "agentbox: snapshot ${snapshotVersion} missing, regenerating (~2 min)…" >&2
+        base_tmp=agentbox-base-$$
+        $smolvm machine create "$base_tmp" --smolfile ${smolfile} >&2
+        $smolvm machine start --name "$base_tmp" >&2
+        $smolvm machine exec --name "$base_tmp" -- /bin/sh -c ${lib.escapeShellArg baseProvisionScript} >&2
+        $smolvm machine stop --name "$base_tmp" >&2
+        # pack create emits <output> (stub) + <output>.smolmachine
+        # (sidecar). machine create --from needs the sidecar. Stage
+        # both as base.tmp(+.smolmachine), then atomically rename to
+        # the versioned names so a concurrent reader never sees a
+        # half-written snapshot.
+        $smolvm pack create --from-vm "$base_tmp" --output "$snapshot_dir/base.tmp" >&2
+        $smolvm machine delete "$base_tmp" -f >&2
+        mv "$snapshot_dir/base.tmp.smolmachine" "$snapshot"
+        rm -f "$snapshot_dir/base.tmp"
+        # Best-effort prune: keep only the just-regenerated version.
+        find "$snapshot_dir" -name 'base-*.smolmachine' ! -name "$(basename "$snapshot")" -delete 2>/dev/null || true
+      fi
+
+      exec 8>&-
+    fi
+  '';
+
+  # Per-VM ensure: create from snapshot (with CLI args mirroring
+  # vmConfig, since --from + --smolfile is rejected by smolvm) if
+  # missing, start if stopped, run light provision. Serialized per
+  # `name` so concurrent agentbox invocations against the same VM
+  # don't race on create/start/provision. The final interactive
+  # `machine exec` runs outside the lock so it never blocks on a
+  # sibling's session.
   ensureVm = ''
     flock=${pkgs.util-linux.bin}/bin/flock
     runtime_dir="''${XDG_RUNTIME_DIR:-}"
@@ -307,15 +404,17 @@ let
       done
     ''}
 
+    ${ensureBaseSnapshot}
+
     if ! $smolvm machine status --name "$name" >/dev/null 2>&1; then
-      $smolvm machine create "$name" --smolfile ${smolfile}
+      $smolvm machine create "$name" --from "$snapshot" ${lib.concatStringsSep " " cloneCreateArgs}
     fi
 
     state=$($smolvm machine status --name "$name" --json 2>/dev/null \
       | ${jqBin} -r '.state')
     [ "$state" = running ] || $smolvm machine start --name "$name" >/dev/null
 
-    $smolvm machine exec --name "$name" -- /bin/sh -c ${lib.escapeShellArg provisionScript}
+    $smolvm machine exec --name "$name" -- /bin/sh -c ${lib.escapeShellArg perVmProvisionScript}
 
     exec 9>&-
   '';
@@ -325,6 +424,26 @@ let
 
     smolvm=${smolvmBin}
     name="agentbox"
+
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --name)
+          name="$2"
+          shift 2
+          ;;
+        --name=*)
+          name="''${1#--name=}"
+          shift
+          ;;
+        --)
+          shift
+          break
+          ;;
+        *)
+          break
+          ;;
+      esac
+    done
 
     ${ensureVm}
 
@@ -366,6 +485,7 @@ in
     home.activation.setupAgentboxDirs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       mkdir -p ${sharedBinDir}
       mkdir -p ${devRoot}
+      mkdir -p ${snapshotDir}
     '';
 
     # Stage Nix-managed config (git/gh/ssh/mise) into a dir mounted ro
@@ -380,7 +500,7 @@ in
       mkdir -p ${configDir}/git ${configDir}/gh ${configDir}/ssh ${configDir}/mise ${configDir}/bin
       cp -rL \${config.home.homeDirectory}/.config/git/config ${configDir}/git/ 2>/dev/null || true
       cp -rL \${config.home.homeDirectory}/.config/gh/config.yml ${configDir}/gh/ 2>/dev/null || true
-      cp -rL \${config.home.homeDirectory}/.ssh/config ${configDir}/ssh/ 2>/dev/null || true
+      cp -rL \${config.home.homeDirectory}/.config/ssh/config ${configDir}/ssh/ 2>/dev/null || true
       cp -rL \${config.home.homeDirectory}/.ssh/*.pub ${configDir}/ssh/ 2>/dev/null || true
       cp -rL \${config.home.homeDirectory}/.ssh/known_hosts ${configDir}/ssh/ 2>/dev/null || true
       cp -fL ${defaultMiseConfig} ${configDir}/mise/config.toml
