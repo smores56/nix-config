@@ -198,12 +198,12 @@ export default function spawnSessionExtension(pi: ExtensionAPI): void {
 			// Prompt via OMP_START_PROMPT, expanded by this outer bash (which has
 			// the env injected) rather than inside the new-tab process — Zellij
 			// doesn't reliably propagate the caller's env to daemon-spawned tabs.
-			// The spawned omp re-enters the smolvm sandbox (same as the `o` abbr).
+			// The spawned omp re-enters the agentbox sandbox (same as the `o` abbr).
 			const spawnScript =
 				`exec zellij action new-tab -n ${
 					shellQuote(`π - ${displayLabel}`)
 				} -c ${shellQuote(path)}` +
-				` --close-on-exit -- exec smolvm-agent omp -- "$OMP_START_PROMPT"`;
+				` --close-on-exit -- exec agentbox omp -- "$OMP_START_PROMPT"`;
 
 			let proc: import("bun").Subprocess<"ignore", "pipe", "pipe">;
 			try {

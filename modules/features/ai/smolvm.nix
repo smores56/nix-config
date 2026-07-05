@@ -9,7 +9,7 @@ let
 
   codeRoot = config.dotfiles.codeRoot;
   devRoot = "${config.home.homeDirectory}/dev";
-  sharedDir = "${config.xdg.dataHome}/smolvm-shared";
+  sharedDir = "${config.xdg.dataHome}/agentbox";
   sharedBinDir = "${sharedDir}/bin";
   configDir = "${sharedDir}/config";
   hostLinksDir = "${sharedDir}/host-links";
@@ -22,6 +22,17 @@ let
   jqBin = "${lib.getBin pkgs.jq}/bin/jq";
   smolvmBin = "${pkgs.smolvm}/bin/smolvm";
   image = "cgr.dev/chainguard/wolfi-base";
+
+  # Default global mise toolset. Per-repo mise.toml/.tool-versions overrides
+  # per-cwd. rust backend uses rustup under the hood and provides rustc+cargo.
+  defaultMiseConfig = pkgs.writeText "mise-config.toml" ''
+    [tools]
+    rust = "latest"
+    just = "latest"
+    python = "3.12"
+    deno = "latest"
+    bun = "latest"
+  '';
 
   # Direct virtiofs volumes: mounted as real directory mount points
   # (not symlinks) at their literal host paths. code/dev must be real
@@ -112,46 +123,47 @@ let
     + "ln -sfn /root/host/${e.link} ${lib.escapeShellArg e.guestPath}"
   ) entries;
 
-  # Linux: a single bindfs `--resolve-symlinks` rw mount over the
-  # symlink farm serves every host path that needs symlink resolution
-  # (Nix store paths). code/dev are excluded — they're direct virtiofs
-  # volumes (see directVolumes) so getcwd() returns the literal host
-  # path for maki session matching. 1 bindfs + 2 direct = 3 volumes,
-  # at libkrun's stock IRQ ceiling of 3.
-  # Darwin: libkrun's GIC has no IRQ ceiling, so direct per-entry
-  # volumes are fine (bindfs would need macFUSE).
   isLinux = pkgs.stdenv.isLinux;
   smolfileVolumes = if isLinux then linuxVolumes else darwinVolumes;
 
-  smolfile = tomlFormat.generate "agent.smolfile" {
+  smolfile = tomlFormat.generate "agentbox.smolfile" {
     inherit image;
     net = true;
-    cpus = 2;
-    memory = 1024;
-    overlay = 10;
+    cpus = 4;
+    memory = 8192;
+    overlay = 20;
     # Forwards the host ssh-agent socket into the VM, so git push (ssh)
     # and ssh-format commit signing work without exposing private keys.
     auth.ssh_agent = true;
     env = [
       "BUN_INSTALL=/root/.bun"
       "MAKI_INSTALL_DIR=/root/.local/bin"
-      "PATH=/root/.bun/bin:/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      "MISE_DATA_DIR=/root/.local/share/mise"
+      # mise shims first → per-repo pins override the shared bin mount;
+      # then shared bin (maki/gh/mise), then /root/.bun/bin (omp global
+      # shim). The latter two live in the overlay.
+      "PATH=/root/.local/share/mise/shims:/root/.local/bin:/root/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     ];
     volumes = smolfileVolumes;
   };
 
-  # Idempotent provisioning run inside the VM on every start: installs
-  # git, gh, bun, omp, maki into the persistent overlay (/root/.bun)
-  # and shared bin mount (/root/.local/bin). On Linux the first step
-  # symlinks each natural guest path onto the single /root/host mount.
+  # Idempotent provisioning run inside the VM on every start. mise installs
+  # the bun runtime and the default global toolset (rust/just/python/deno)
+  # into the overlay (MISE_DATA_DIR). Global bun packages (omp) go to
+  # /root/.bun (BUN_INSTALL), also in the overlay — both persist across
+  # VM restarts but not across VM delete/recreate. maki + gh + the mise
+  # binary itself live in the shared bin mount (host-persistent).
   provisionScript = ''
     set -e
+    export BUN_INSTALL=/root/.bun
+    export MISE_DATA_DIR=/root/.local/share/mise
+    export PATH="/root/.local/share/mise/shims:/root/.local/bin:/root/.bun/bin:$PATH"
 
     ${lib.optionalString isLinux guestSymlinks}
 
-    # Nix-managed config (git/gh/ssh) staged via `cp -rL` into the
-    # overlay so they can rewrite at runtime. omp agent/ and maki
-    # config are bindfs rw/ro-mounted directly (no staging).
+    # Nix-managed config (git/gh/ssh/mise) staged into the overlay via
+    # `cp -rL` so they can rewrite at runtime. omp agent/ (~/.omp/agent)
+    # and maki config/state are bindfs-mounted directly — no staging.
     sync_file() {
       local src="$1" dst="$2"
       mkdir -p "$(dirname "$dst")"
@@ -164,26 +176,20 @@ let
     }
     sync_dir /mnt/host-config/git /root/.config/git
     sync_file /mnt/host-config/gh/config.yml /root/.config/gh/config.yml
-
-    # omp agent/ is bindfs rw-mounted from the host (~/.omp/agent);
-    # config.yml, models.yml, AGENTS.md, mcp.json, skills, extensions
-    # all read/write through the mount. No staging or copy needed.
-
-    # SSH config + public keys for git ssh-format commit signing. Private
-    # keys stay on the host; the agent signs via the forwarded ssh-agent.
+    sync_file /mnt/host-config/mise/config.toml /root/.config/mise/config.toml
     sync_dir /mnt/host-config/ssh /root/.ssh
 
     # System packages. python-3 is required by omp's Python eval
-    # backend (stdlib-only runner script). apk indexes don't persist
+    # backend; bash by mise's python backend; curl by rustup-init and
+    # the gh/mise/maki installers below. apk indexes don't persist
     # across VM resets, so update is always run.
-    apk info -e git openssh-client ca-certificates python-3 >/dev/null 2>&1 || {
+    apk info -e git openssh-client ca-certificates python-3 bash curl >/dev/null 2>&1 || {
       apk update -q
-      apk add -q git openssh-client ca-certificates python-3
+      apk add -q git openssh-client ca-certificates python-3 bash curl
     }
 
     # gh CLI tarball into the shared bin mount (persists on host).
     if [ ! -x /root/.local/bin/gh ]; then
-      apk add -q curl
       gh_version=$(curl -fsSL https://api.github.com/repos/cli/cli/releases/latest \
         | sed -n 's/.*"tag_name":.*"v\([^"]*\)".*/\1/p' | head -1)
       curl -fsSL "https://github.com/cli/cli/releases/download/v''${gh_version}/gh_''${gh_version}_linux_amd64.tar.gz" \
@@ -203,33 +209,49 @@ let
     done
     git config --file /root/.config/git/config --unset-all core.sshCommand 2>/dev/null || true
 
-    # Bun + omp (glibc-linked native addons, not static).
-    if [ ! -x /root/.bun/bin/bun ]; then
-      apk add -q curl unzip bash
-      curl -fsSL https://bun.sh/install | bash
+    # mise: installs bun runtime + default global toolset (rust/cargo,
+    # just, python, deno) into the overlay (MISE_DATA_DIR). The mise
+    # binary lands in the shared bin mount (host-persistent). Global
+    # bun packages (omp) go to /root/.bun (BUN_INSTALL), also in the
+    # overlay — BUN_INSTALL pins where global packages + bin shims live
+    # so omp survives a bun version bump within mise.
+    if [ ! -x /root/.local/bin/mise ]; then
+      curl -fsSL https://mise.run | MISE_QUIET=1 sh
     fi
-    export BUN_INSTALL=/root/.bun
-    export PATH="$BUN_INSTALL/bin:$PATH"
-    command -v omp >/dev/null 2>&1 || bun add -g @oh-my-pi/pi-coding-agent
+    # mise activate in .bashrc gives cd-driven per-repo reactivation
+    # for interactive shells; the shim dir on PATH covers non-interactive
+    # maki spawns (no shell sourcing).
+    grep -q 'mise activate' /root/.bashrc 2>/dev/null || {
+      echo 'eval "$(mise activate bash)"' >> /root/.bashrc
+    }
+    # Install/refresh the default global toolset. Idempotent — mise
+    # skips tools already at the pinned version.
+    mise install -y
+
+    # omp (bun global install) into /root/.bun (BUN_INSTALL, overlay).
+    # The bun runtime itself is mise-managed; BUN_INSTALL pins where
+    # global packages + bin shims live so omp survives a bun version bump.
+    if ! command -v omp >/dev/null 2>&1; then
+      /root/.local/share/mise/shims/bun add -g @oh-my-pi/pi-coding-agent
+    fi
 
     # maki (static musl binary) into the shared bin mount; self-updates
     # via `maki update` (uses current_exe()).
     if [ ! -x /root/.local/bin/maki ]; then
-      apk add -q curl
       curl -fsSL https://maki.sh/install.sh | MAKI_INSTALL_DIR=/root/.local/bin sh
     fi
   '';
 
   # Shared create-or-start-or-provision snippet, inlined into the
-  # launcher. Serialized under flock so concurrent smolvm-agent
-  # invocations (e.g. several spawn_session calls in one batch) don't
-  # race on `machine create`/`machine start`/provision and wedge the VM
+  # launcher. Serialized under flock so concurrent agentbox invocations
+  # (e.g. several spawn_session calls in one batch) don't race on
+  # `machine create`/`machine start`/provision and wedge the VM
   # (which would EIO-kill every spawned Zellij tab). The final
   # interactive `machine exec` runs outside the lock so it never blocks
   # on a sibling's session.
   ensureVm = ''
     flock=${pkgs.util-linux.bin}/bin/flock
-    lock=/run/user/$(id -u)/smolvm-agent-''${name}.lock
+    lock=/run/user/$(id -u)/agentbox-''${name}.lock
     mkdir -p "$(dirname "$lock")"
     exec 9>"$lock"
     $flock 9
@@ -259,11 +281,11 @@ let
     exec 9>&-
   '';
 
-  launcher = pkgs.writeShellScriptBin "smolvm-agent" ''
+  launcher = pkgs.writeShellScriptBin "agentbox" ''
     set -euo pipefail
 
     smolvm=${smolvmBin}
-    name="agent"
+    name="agentbox"
 
     ${ensureVm}
 
@@ -291,10 +313,8 @@ let
   '';
 in
 {
-  imports = [ ./smolvm-enter.nix ];
-
   options.dotfiles.smolvm = {
-    enable = lib.mkEnableOption "smolvm sandbox for coding agents (maki/omp)" // {
+    enable = lib.mkEnableOption "agentbox sandbox for coding agents (maki/omp)" // {
       default = true;
     };
   };
@@ -304,26 +324,27 @@ in
       pkgs.smolvm
       launcher
     ];
-    home.activation.setupSmolvmDirs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    home.activation.setupAgentboxDirs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       mkdir -p ${sharedBinDir}
       mkdir -p ${devRoot}
     '';
 
-    # Stage Nix-managed config (git/gh/ssh) into a dir mounted ro
+    # Stage Nix-managed config (git/gh/ssh/mise) into a dir mounted ro
     # (Darwin) or via the bindfs symlink farm (Linux). Private ssh keys
     # are never staged — only config, *.pub and known_hosts. gh's
     # hosts.yml (oauth token) is excluded: the launcher forwards
     # GH_TOKEN instead. omp agent/{config.yml,models.yml,AGENTS.md,
     # mcp.json,skills,extensions} are bindfs rw-mounted directly from
     # ~/.omp/agent (see entries list) — no staging needed.
-    home.activation.syncSmolvmConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    home.activation.syncAgentboxConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       rm -rf ${configDir}
-      mkdir -p ${configDir}/git ${configDir}/gh ${configDir}/ssh
+      mkdir -p ${configDir}/git ${configDir}/gh ${configDir}/ssh ${configDir}/mise
       cp -rL \${config.home.homeDirectory}/.config/git/config ${configDir}/git/ 2>/dev/null || true
       cp -rL \${config.home.homeDirectory}/.config/gh/config.yml ${configDir}/gh/ 2>/dev/null || true
       cp -rL \${config.home.homeDirectory}/.ssh/config ${configDir}/ssh/ 2>/dev/null || true
       cp -rL \${config.home.homeDirectory}/.ssh/*.pub ${configDir}/ssh/ 2>/dev/null || true
       cp -rL \${config.home.homeDirectory}/.ssh/known_hosts ${configDir}/ssh/ 2>/dev/null || true
+      cp -fL ${defaultMiseConfig} ${configDir}/mise/config.toml
       chmod -R u+w ${configDir}
     '';
 
@@ -332,8 +353,8 @@ in
     # keep succeeding with no restart and no disruption to in-flight
     # VMs. Stale links (removed entries) are pruned by scanning the
     # dir against the current entry set.
-    home.activation.smolvmHostLinks = lib.mkIf isLinux (
-      lib.hm.dag.entryAfter [ "writeBoundary" "setupSmolvmDirs" "syncSmolvmConfig" ] ''
+    home.activation.agentboxHostLinks = lib.mkIf isLinux (
+      lib.hm.dag.entryAfter [ "writeBoundary" "setupAgentboxDirs" "syncAgentboxConfig" ] ''
         mkdir -p ${hostLinksDir}
         ${farmSymlinks}
         for link in ${hostLinksDir}/*; do
@@ -349,13 +370,13 @@ in
 
     # Linux only: bindfs daemon serving the symlink farm as one FUSE
     # mount. Long-lived: home-manager switches update the farm in place
-    # (smolvmHostLinks) without restarting this service, since a restart
+    # (agentboxHostLinks) without restarting this service, since a restart
     # would disrupt in-flight VMs with a brief empty-read window.
     # fusermount3 from a user service lacks the setuid bit needed to
     # unmount a stale FUSE mount, so we rely on clean shutdown.
-    systemd.user.services.smolvm-bindfs = lib.mkIf isLinux {
+    systemd.user.services.agentbox-bindfs = lib.mkIf isLinux {
       Unit = {
-        Description = "bindfs symlink-farm mount for smolvm agent VMs";
+        Description = "bindfs symlink-farm mount for agentbox VMs";
         After = [ "default.target" ];
       };
       Service = {

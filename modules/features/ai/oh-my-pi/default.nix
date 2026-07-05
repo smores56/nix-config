@@ -276,7 +276,7 @@ in
 
           if [ -n "$ACCT" ]; then
             # Substitute the @CLOUDFLARE_ACCOUNT_ID@ placeholder from the
-            # activation env (precedent: smolvm.nix reads the same var here).
+            # activation env (precedent: agentbox launcher reads the same var here).
             # Regenerates every switch so Nix-side model changes land too.
             content="$(<"$TEMPLATE")"
             printf '%s' "''${content//@CLOUDFLARE_ACCOUNT_ID@/$ACCT}" > "$MODELS"

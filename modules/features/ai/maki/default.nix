@@ -155,7 +155,7 @@ let
       #!/usr/bin/env bash
       # Managed by home-manager (modules/features/ai/maki). Manual edits are
       # clobbered. /usr/bin/env shebang (not a /nix/store bash path) so the
-      # script also executes inside the smolvm agent VM, where the bindfs
+      # script also executes inside the agentbox VM, where the bindfs
       # mount resolves Nix symlinks host-side but /usr/bin/env is a stable
       # path in the wolfi-base image.
       set -euo pipefail
