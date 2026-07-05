@@ -226,7 +226,7 @@ let
     }
     # Install/refresh the default global toolset. Idempotent — mise
     # skips tools already at the pinned version.
-    mise install -y
+    mise install -q -y
 
     # omp (bun global install) into /root/.bun (BUN_INSTALL, overlay).
     # The bun runtime itself is mise-managed; BUN_INSTALL pins where
