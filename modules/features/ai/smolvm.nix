@@ -17,11 +17,14 @@ let
   makiConfig = "${config.home.homeDirectory}/.config/maki";
   makiState = "${config.home.homeDirectory}/.local/state/maki";
   ompAgent = "${config.home.homeDirectory}/.omp/agent";
+  worktrunkConfig = "${config.home.homeDirectory}/.config/worktrunk";
 
   tomlFormat = pkgs.formats.toml { };
   jqBin = "${lib.getBin pkgs.jq}/bin/jq";
   smolvmBin = "${pkgs.smolvm}/bin/smolvm";
   image = "cgr.dev/chainguard/wolfi-base";
+  worktrunkVersion = "0.65.0";
+  ghqVersion = "1.10.1";
 
   # Default global mise toolset. Per-repo mise.toml/.tool-versions overrides
   # per-cwd. rust backend uses rustup under the hood and provides rustc+cargo.
@@ -86,6 +89,11 @@ let
       link = "omp-agent";
       hostPath = ompAgent;
       guestPath = "/root/.omp/agent";
+    }
+    {
+      link = "worktrunk-config";
+      hostPath = worktrunkConfig;
+      guestPath = "/root/.config/worktrunk";
     }
     {
       link = "nix-store";
@@ -183,10 +191,37 @@ let
     # backend; bash by mise's python backend; curl by rustup-init and
     # the gh/mise/maki installers below. apk indexes don't persist
     # across VM resets, so update is always run.
-    apk info -e git openssh-client ca-certificates python-3 bash curl >/dev/null 2>&1 || {
+    apk info -e git openssh-client ca-certificates python-3 bash curl unzip xz >/dev/null 2>&1 || {
       apk update -q
-      apk add -q git openssh-client ca-certificates python-3 bash curl
+      apk add -q git openssh-client ca-certificates python-3 bash curl unzip xz
     }
+
+    # Worktree/repo tools into the shared bin mount (persists on host).
+    case "$(uname -m)" in
+      x86_64) worktrunk_target=x86_64-unknown-linux-musl; ghq_target=amd64 ;;
+      aarch64|arm64) worktrunk_target=aarch64-unknown-linux-musl; ghq_target=arm64 ;;
+      *) echo "unsupported agentbox arch: $(uname -m)" >&2; exit 1 ;;
+    esac
+
+    if ! /root/.local/bin/wt --version 2>/dev/null | grep -q ${lib.escapeShellArg worktrunkVersion}; then
+      tmp=$(mktemp -d)
+      curl -fsSL "https://github.com/max-sixty/worktrunk/releases/download/v${worktrunkVersion}/worktrunk-''${worktrunk_target}.tar.xz" \
+        | tar -xJ -C "$tmp"
+      install -m 0755 "$tmp/worktrunk-''${worktrunk_target}/wt" /root/.local/bin/wt
+      install -m 0755 "$tmp/worktrunk-''${worktrunk_target}/git-wt" /root/.local/bin/git-wt
+      rm -rf "$tmp"
+    fi
+
+    if ! /root/.local/bin/ghq --version 2>/dev/null | grep -q ${lib.escapeShellArg ghqVersion}; then
+      tmp=$(mktemp -d)
+      curl -fsSL "https://github.com/x-motemen/ghq/releases/download/v${ghqVersion}/ghq_linux_''${ghq_target}.zip" -o "$tmp/ghq.zip"
+      unzip -q "$tmp/ghq.zip" -d "$tmp"
+      install -m 0755 "$tmp/ghq_linux_''${ghq_target}/ghq" /root/.local/bin/ghq
+      rm -rf "$tmp"
+    fi
+
+    install -m 0755 /mnt/host-config/bin/git-branch-prefix /root/.local/bin/git-branch-prefix
+    install -m 0755 /mnt/host-config/bin/agent-branch-name /root/.local/bin/agent-branch-name
 
     # gh CLI tarball into the shared bin mount (persists on host).
     if [ ! -x /root/.local/bin/gh ]; then
@@ -251,8 +286,12 @@ let
   # on a sibling's session.
   ensureVm = ''
     flock=${pkgs.util-linux.bin}/bin/flock
-    lock=/run/user/$(id -u)/agentbox-''${name}.lock
-    mkdir -p "$(dirname "$lock")"
+    runtime_dir="''${XDG_RUNTIME_DIR:-}"
+    if [ -z "$runtime_dir" ] || ! mkdir -p "$runtime_dir" 2>/dev/null; then
+      runtime_dir="''${TMPDIR:-/tmp}"
+      mkdir -p "$runtime_dir"
+    fi
+    lock="$runtime_dir/agentbox-''${name}.lock"
     exec 9>"$lock"
     $flock 9
 
@@ -338,13 +377,166 @@ in
     # ~/.omp/agent (see entries list) — no staging needed.
     home.activation.syncAgentboxConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       rm -rf ${configDir}
-      mkdir -p ${configDir}/git ${configDir}/gh ${configDir}/ssh ${configDir}/mise
+      mkdir -p ${configDir}/git ${configDir}/gh ${configDir}/ssh ${configDir}/mise ${configDir}/bin
       cp -rL \${config.home.homeDirectory}/.config/git/config ${configDir}/git/ 2>/dev/null || true
       cp -rL \${config.home.homeDirectory}/.config/gh/config.yml ${configDir}/gh/ 2>/dev/null || true
       cp -rL \${config.home.homeDirectory}/.ssh/config ${configDir}/ssh/ 2>/dev/null || true
       cp -rL \${config.home.homeDirectory}/.ssh/*.pub ${configDir}/ssh/ 2>/dev/null || true
       cp -rL \${config.home.homeDirectory}/.ssh/known_hosts ${configDir}/ssh/ 2>/dev/null || true
       cp -fL ${defaultMiseConfig} ${configDir}/mise/config.toml
+      sed '1s|^#!.*|#!/usr/bin/env bash|; /^export PATH=/d' ${
+        pkgs.writeShellApplication {
+          name = "git-branch-prefix";
+          runtimeInputs = [ pkgs.git ];
+          text = ''
+            WORK_ORGS=(${lib.escapeShellArgs config.dotfiles.work.githubOrgs})
+            PERSONAL_PREFIX=${lib.escapeShellArg config.dotfiles.branchPrefix}
+            WORK_PREFIX=${lib.escapeShellArg (toString (config.dotfiles.work.branchPrefix or ""))}
+            TICKET_PREFIX=${lib.escapeShellArg (toString (config.dotfiles.work.ticketPrefix or ""))}
+
+            origin_org() {
+              local url path
+              url=$(git remote get-url origin 2>/dev/null) || url=""
+              case "$url" in
+                git@github.com:*) path=''${url#git@github.com:} ;;
+                ssh://git@github.com/*) path=''${url#ssh://git@github.com/} ;;
+                https://github.com/*) path=''${url#https://github.com/} ;;
+                http://github.com/*) path=''${url#http://github.com/} ;;
+                *) path="" ;;
+              esac
+              printf '%s' "''${path%%/*}"
+            }
+
+            is_work_repo() {
+              local org w
+              org=$(origin_org)
+              [ -n "$org" ] || return 1
+              for w in ''${WORK_ORGS[@]+"''${WORK_ORGS[@]}"}; do
+                [ "$org" = "$w" ] && return 0
+              done
+              return 1
+            }
+
+            if is_work_repo; then
+              if [ -n "$WORK_PREFIX" ]; then prefix=$WORK_PREFIX; else prefix=$PERSONAL_PREFIX; fi
+              if [ -n "$TICKET_PREFIX" ]; then printf '%s/%s-' "$prefix" "$TICKET_PREFIX"; else printf '%s/' "$prefix"; fi
+            else
+              printf '%s/' "$PERSONAL_PREFIX"
+            fi
+          '';
+        }
+      }/bin/git-branch-prefix > ${configDir}/bin/git-branch-prefix
+      chmod 0755 ${configDir}/bin/git-branch-prefix
+      sed '1s|^#!.*|#!/usr/bin/env bash|; /^export PATH=/d' ${
+        pkgs.writeShellApplication {
+          name = "agent-branch-name";
+          runtimeInputs = [
+            pkgs.git
+            pkgs.coreutils
+            pkgs.gnused
+          ];
+          text = ''
+            WORK_ORGS=(${lib.escapeShellArgs config.dotfiles.work.githubOrgs})
+            PERSONAL_PREFIX=${lib.escapeShellArg config.dotfiles.branchPrefix}
+            WORK_PREFIX=${lib.escapeShellArg (toString (config.dotfiles.work.branchPrefix or ""))}
+            TICKET_PREFIX=${lib.escapeShellArg (toString (config.dotfiles.work.ticketPrefix or ""))}
+
+            origin_org() {
+              local url path
+              url=$(git remote get-url origin 2>/dev/null) || url=""
+              case "$url" in
+                git@github.com:*) path=''${url#git@github.com:} ;;
+                ssh://git@github.com/*) path=''${url#ssh://git@github.com/} ;;
+                https://github.com/*) path=''${url#https://github.com/} ;;
+                http://github.com/*) path=''${url#http://github.com/} ;;
+                *) path="" ;;
+              esac
+              printf '%s' "''${path%%/*}"
+            }
+
+            is_work_repo() {
+              local org w
+              org=$(origin_org)
+              [ -n "$org" ] || return 1
+              for w in ''${WORK_ORGS[@]+"''${WORK_ORGS[@]}"}; do
+                [ "$org" = "$w" ] && return 0
+              done
+              return 1
+            }
+
+            work_branch_prefix() {
+              if [ -n "$WORK_PREFIX" ]; then printf '%s' "$WORK_PREFIX"; else printf '%s' "$PERSONAL_PREFIX"; fi
+            }
+
+            slug=""
+            task=""
+            ticket=""
+            dry_run=false
+            while [ $# -gt 0 ]; do
+              case "$1" in
+                --slug) slug=$2; shift 2 ;;
+                --task) task=$2; shift 2 ;;
+                --ticket) ticket=$2; shift 2 ;;
+                --dry-run) dry_run=true; shift ;;
+                *) printf 'agent-branch-name: unknown arg: %s\n' "$1" >&2; exit 2 ;;
+              esac
+            done
+
+            slugify() {
+              printf '%s' "$1" \
+                | tr '[:upper:]' '[:lower:]' \
+                | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' \
+                | cut -c1-50 \
+                | sed -E 's/-+$//'
+            }
+
+            if [ -z "$slug" ]; then
+              [ -n "$task" ] || { printf 'agent-branch-name: --slug or --task required\n' >&2; exit 2; }
+              clean=$(printf '%s' "$task" | tr '[:upper:]' '[:lower:]')
+              if [ -n "$TICKET_PREFIX" ]; then
+                tp_lower=$(printf '%s' "$TICKET_PREFIX" | tr '[:upper:]' '[:lower:]')
+                clean=$(printf '%s' "$clean" | sed -E "s/$tp_lower-[0-9]+//g")
+              fi
+              slug=$(slugify "$clean")
+            fi
+            [ -n "$slug" ] || { printf 'agent-branch-name: empty slug\n' >&2; exit 2; }
+
+            if ! is_work_repo; then
+              printf '%s/%s\n' "$PERSONAL_PREFIX" "$slug"
+              exit 0
+            fi
+
+            if [ -z "$ticket" ] && [ -n "$task" ] && [ -n "$TICKET_PREFIX" ]; then
+              ticket=$(printf '%s' "$task" | grep -oiE "$TICKET_PREFIX-[0-9]+" | head -1 || true)
+            fi
+
+            if [ -z "$ticket" ] && [ -n "$TICKET_PREFIX" ]; then
+              if $dry_run; then
+                ticket="$TICKET_PREFIX-DRYRUN"
+              else
+                title=$task
+                [ -n "$title" ] || title=$slug
+                created=$(linear issue create -t "$title" --team "$TICKET_PREFIX" --assignee self --start --no-interactive 2>&1) || {
+                  printf 'agent-branch-name: linear issue create failed:\n%s\n' "$created" >&2
+                  exit 1
+                }
+                ticket=$(printf '%s' "$created" | grep -oiE "$TICKET_PREFIX-[0-9]+" | head -1 || true)
+                [ -n "$ticket" ] || {
+                  printf 'agent-branch-name: could not parse ticket id from linear output:\n%s\n' "$created" >&2
+                  exit 1
+                }
+              fi
+            fi
+
+            if [ -n "$ticket" ]; then
+              printf '%s/%s-%s\n' "$(work_branch_prefix)" "$ticket" "$slug"
+            else
+              printf '%s/%s\n' "$(work_branch_prefix)" "$slug"
+            fi
+          '';
+        }
+      }/bin/agent-branch-name > ${configDir}/bin/agent-branch-name
+      chmod 0755 ${configDir}/bin/agent-branch-name
       chmod -R u+w ${configDir}
     '';
 
