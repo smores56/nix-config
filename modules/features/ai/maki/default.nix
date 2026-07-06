@@ -38,6 +38,9 @@ let
       },
       tools = {${toolsBlock}
       },
+      agent = {
+        compaction_idle_minutes = 30,
+      },
     })
 
     require("spawn_session")
@@ -63,7 +66,7 @@ let
       envExports = lib.concatStringsSep "\n" (lib.mapAttrsToList mkEnvExport env);
       execCommand = lib.concatMapStringsSep " " shellQuote commandList;
     in
-    builtins.removeAttrs server [ "args" ]
+    removeAttrs server [ "args" ]
     // {
       command =
         if env == { } then
