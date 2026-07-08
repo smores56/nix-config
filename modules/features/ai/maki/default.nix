@@ -11,12 +11,13 @@ let
   work = cfg.work;
   isWork = work.enable;
 
-  # Work: Codex-backed GPT-5.5 via Maki's built-in `openai` provider, whose
-  # OAuth creds are mirrored from Codex CLI by maki-codex-sync below. The rest
-  # of the Codex cascade stays selectable in Maki's built-in catalog:
+  # Work: Codex-backed GPT-5.6 Sol via Maki's built-in `openai` provider, whose
+  # OAuth creds are mirrored from Codex CLI by maki-codex-sync below. Maki
+  # accepts new model IDs before they reach its built-in catalog; the existing
+  # Codex cascade stays selectable there:
   # strong = openai/gpt-5.5, medium = openai/gpt-5.4, weak = openai/gpt-5.4-mini.
   # Personal hosts default to Neuralwatt GLM-5.2.
-  defaultModel = if isWork then "openai/gpt-5.5" else "neuralwatt/glm-5.2";
+  defaultModel = if isWork then "openai/gpt-5.6-sol" else "neuralwatt/glm-5.2";
 
   makiTools = [
     "bash = { enabled = true }"
