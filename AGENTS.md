@@ -33,6 +33,7 @@ manual `imports` lists. Place files by concern, not by host.
 | `modules/flake/` | flake-parts modules (configurations, checks, formatter) |
 | `modules/lib/` | helper libraries |
 | `modules/features/ai/` | AI tool config (oh-my-pi, maki, providers, smolvm) |
+| `modules/features/tv/` | Television repository and worktree cables |
 
 ### Adding a new feature
 

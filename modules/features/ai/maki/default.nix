@@ -45,9 +45,6 @@ let
       },
       tools = {${toolsBlock}
       },
-      agent = {
-        compaction_idle_minutes = 30,
-      },
     })
 
     require("spawn_session")
@@ -197,6 +194,21 @@ let
     exec ${pkgs.python3}/bin/python3 ${./cf-cost-report.py} "$@"
   '';
 
+  makiSessionSearch = "${pkgs.python3}/bin/python3 ${./maki-session-search.py}";
+  makiSessionCable = pkgs.writers.writeTOML "maki-sessions.toml" {
+    metadata = {
+      name = "maki-sessions";
+      description = "Maki session history";
+      requirements = [ "maki" ];
+    };
+    source = {
+      command = "${makiSessionSearch} list";
+      display = "{split: :1..}";
+      output = "{split: :0}";
+    };
+    preview.command = "${makiSessionSearch} show {split: :0}";
+  };
+
 in
 {
   config = {
@@ -237,6 +249,7 @@ in
         force = true;
         source = ./lua/spawn_session.lua;
       };
+      ".config/television/cable/maki-sessions.toml".source = makiSessionCable;
     }
     // lib.optionalAttrs (mcpServers != { }) {
       ".config/maki/mcp.toml" = {
@@ -269,5 +282,20 @@ in
         ${pkgs.coreutils}/bin/install -D -m 0600 ${workModelTiersJson} "$HOME/.local/state/maki/model-tiers"
       ''
     );
+    programs.fish = {
+      functions.__maki_session_resume = {
+        body = ''
+          set -l session_id $argv[1]
+          set -l cwd (${makiSessionSearch} cwd "$session_id")
+          if not test -d "$cwd"
+            printf 'maki session directory no longer exists: %s\n' "$cwd" >&2
+            return 1
+          end
+          cd "$cwd"
+          command maki --session "$session_id"
+        '';
+      };
+      shellAbbrs.ms = "tv maki-sessions | read -l s; and __maki_session_resume $s";
+    };
   };
 }
