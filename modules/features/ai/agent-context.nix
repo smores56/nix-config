@@ -18,8 +18,8 @@ let
       "${workPrefix}/fix-auth-flow";
 
   branchWorkflowLines = [
-    "- Branch prefix is per-repo, resolved from the `origin` GitHub org — run `git-branch-prefix` in the repo to get it; never hardcode the prefix"
-    "- Personal repos: `${personalPrefix}/<kebab-slug>` (e.g. `${personalPrefix}/fix-auth-flow`)"
+    "- Start task worktrees with `worktrees new --slug <kebab-slug> --task \"<description>\"`; it creates the branch, worktree, and any required Linear ticket"
+    "- Personal repos create branches like `${personalPrefix}/<kebab-slug>` (e.g. `${personalPrefix}/fix-auth-flow`)"
   ]
   ++ lib.optionals hasWork [
     "- Work-org repos (${workOrgList}): `${workBranchExample}`"
@@ -30,9 +30,8 @@ let
     "- To list your tickets: `linear issue mine`; to view one: `linear issue view ${work.ticketPrefix}-<number>`"
   ]
   ++ [
-    "- Resolve a full branch for a task with `agent-branch-name --slug <kebab-slug> --task \"<description>\"` (auto-creates a Linear ticket for work-org repos when none is supplied)"
-    "- Create worktrees with `wt switch --create --no-cd $(git-branch-prefix)<rest-of-branch>`"
-    "- **CRITICAL**: use `wt switch --no-cd --format json` in non-interactive shells to get the worktree path as JSON. After switching, you MUST pass `cwd: \"<worktree_path>\"` to ALL subsequent bash commands — never rely on `cd` within bash scripts"
+    "- `worktrees new` prints JSON; use its `path` field as cwd for subsequent commands — never rely on `cd` within bash scripts"
+    "- List worktrees non-interactively with `worktrees list`; prune merged task worktrees with `worktrees prune`"
     "- Do NOT use `git clone`, `git worktree add`, `git checkout -b`, or Claude's built-in EnterWorktree"
   ];
 
@@ -64,10 +63,10 @@ let
     - Error messages must include enough context to debug without a stack trace
 
     # Git Workflow
-    - ALL repos live under `${cfg.codeRoot}/` and are managed by `ghq` (layout: `${cfg.codeRoot}/<host>/<owner>/<repo>`)
-    - Clone repos: `ghq get <owner/repo-or-url>`. Never `git clone` directly
+    - ALL repos live under `${cfg.codeRoot}/` (layout: `${cfg.codeRoot}/<host>/<owner>/<repo>`)
+    - Clone repos with SSH using `repos get <owner/repo-or-url>`. List repos non-interactively with `repos list`. Never `git clone` directly
     ${workGithubOrgHint}
-    - ALL worktrees live under each repo's `.worktrees/` directory via `worktrunk` (`wt`)
+    - ALL worktrees live under each repo's `.worktrees/` directory via `worktrees new`
     - Worktree of branch `<prefix>/X` lives at `.worktrees/X` inside the canonical checkout; everything up to and including the last `/` is stripped from the directory name
     - Always push immediately after committing — never leave local-only commits
     - Always use the `gh` CLI for GitHub interaction

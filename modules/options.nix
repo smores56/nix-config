@@ -113,7 +113,7 @@ in
     codeRoot = lib.mkOption {
       type = lib.types.str;
       default = "${config.home.homeDirectory}/code";
-      description = "Root directory under which all git repos live (ghq's root). Layout: <codeRoot>/<host>/<owner>/<repo>.";
+      description = "Root directory under which all git repos live. Layout: <codeRoot>/<host>/<owner>/<repo>.";
     };
     exposeSsh = lib.mkOption {
       type = lib.types.bool;

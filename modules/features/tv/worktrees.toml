@@ -4,7 +4,7 @@ description = "Worktrees of the current repository (excludes bare entries)"
 requirements = ["git"]
 
 [source]
-command = "git worktree list --porcelain | awk '/^worktree /{ if (p) print p; sub(/^worktree /,\"\",$0); p=$0; next } /^bare$/{ p=\"\" } END{ if (p) print p }'"
+command = "worktrees list"
 display = "{split:/:4..}"
 output = "{}"
 
