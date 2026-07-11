@@ -32,7 +32,7 @@ manual `imports` lists. Place files by concern, not by host.
 | `modules/hosts/` | per-host hardware config only (filesystems, kernel modules) |
 | `modules/flake/` | flake-parts modules (configurations, checks, formatter) |
 | `modules/lib/` | helper libraries |
-| `modules/features/ai/` | AI tool config (oh-my-pi, maki, providers, smolvm) |
+| `modules/features/ai/` | AI tool config (maki, providers, smolvm) |
 | `modules/features/tv/` | Television repository and worktree cables |
 
 ### Adding a new feature

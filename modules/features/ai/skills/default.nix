@@ -8,12 +8,7 @@ let
     lib.filterAttrs (_: type: type == "directory") (builtins.readDir ./.)
   );
   sharedSkillTargets =
-    lib.flatten (
-      map (skillName: [
-        ".config/maki/skills/${skillName}"
-        ".omp/agent/skills/${skillName}"
-      ]) sharedSkillNames
-    )
+    map (skillName: ".config/maki/skills/${skillName}") sharedSkillNames
     ++ lib.optionals config.dotfiles.work.enable (
       lib.flatten (
         map (skillName: [

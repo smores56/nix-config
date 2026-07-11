@@ -164,7 +164,6 @@ let
             primaryMonitor = null;
             monitorSize = null;
             work = null;
-            ohMyPi = null;
             calibre = null;
           } homeArgs;
           home.username = username;

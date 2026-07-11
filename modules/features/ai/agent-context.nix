@@ -103,10 +103,7 @@ let
 in
 {
   config = {
-    home.file = {
-      ".omp/agent/AGENTS.md".text = aiHints;
-    }
-    // lib.optionalAttrs cfg.work.enable {
+    home.file = lib.optionalAttrs cfg.work.enable {
       ".claude/CLAUDE.md".text = aiHints;
       ".codex/AGENTS.md".text = aiHints;
     };

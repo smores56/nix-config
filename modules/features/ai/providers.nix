@@ -1,13 +1,12 @@
 # Canonical provider specs: model catalogs, pricing, and projections for
-# both oh-my-pi (models.yml) and maki (provider scripts). Injected as a
-# single `aiProviders` attrset so consumers never import individual providers.
+# maki provider scripts. Injected as a single `aiProviders` attrset so
+# consumers never import individual providers.
 #
 # Each provider exports:
 #   providerId    — slug used in model refs ("neuralwatt/glm-5.2")
 #   models        — full model catalog (provider-specific shape)
 #   roles         — model refs keyed by tier/role
-#   selectedModels — subset exposed in omp models.yml
-#   ompModelsList — models in oh-my-pi models.yml shape
+#   selectedModels — subset exposed to maki
 #   makiModels    — models in maki provider-script shape
 #   baseUrl/keyEnv/extraAuthEnv — auth/connection params
 { ... }:
@@ -41,30 +40,6 @@ let
         cacheWrite = 0;
       };
 
-  # Maps any model record to omp models.yml shape.
-  mkOmpModel =
-    m:
-    let
-      p = getPricing m;
-    in
-    {
-      id = m.id;
-      name = m.name;
-      reasoning = m.reasoning;
-      input = m.input or [ "text" ];
-      contextWindow = m.context;
-      maxTokens = m.output;
-      cost = {
-        inherit (p)
-          input
-          output
-          cacheRead
-          cacheWrite
-          ;
-      };
-      compat.supportsDeveloperRole = false;
-    };
-
   # Maps any model record to maki provider-script shape.
   mkMakiModel =
     m: tier:
@@ -82,42 +57,6 @@ let
         cache_read = p.cacheRead;
       };
     };
-
-  # ── DeepSeek ──────────────────────────────────────────────────────────────
-  # DeepSeek publishes discounted cache-hit input pricing (1/10 of cache-miss).
-  # Both models: 1M context, 384K max output, dual thinking/non-thinking modes.
-  # V4-Pro launch promo (75% off $1.74/$3.48 reference) became permanent 2026-05-22.
-  deepseekModels = {
-    v4Pro = mkModel "deepseek-v4-pro" "DeepSeek V4 Pro" 1000000 384000 true 0.435 0.87 0.003625;
-    v4Flash = mkModel "deepseek-v4-flash" "DeepSeek V4 Flash" 1000000 384000 true 0.14 0.28 0.0028;
-  };
-
-  deepseek = rec {
-    providerId = "deepseek";
-    models = deepseekModels;
-    modelRef = m: "${providerId}/${m.id}";
-    roles = {
-      default = modelRef models.v4Pro;
-      slow = modelRef models.v4Pro;
-      plan = modelRef models.v4Pro;
-      smol = modelRef models.v4Flash;
-      vision = modelRef models.v4Flash;
-      designer = modelRef models.v4Flash;
-      commit = modelRef models.v4Flash;
-      task = modelRef models.v4Flash;
-    };
-    selectedModels = [
-      models.v4Pro
-      models.v4Flash
-    ];
-    baseUrl = "https://api.deepseek.com/v1";
-    keyEnv = "DEEPSEEK_API_KEY";
-    ompModelsList = map mkOmpModel selectedModels;
-    # V4-Pro (1.6T/49B active) = strong; V4-Flash (284B/13B active) = medium.
-    makiModels = map (
-      m: mkMakiModel m (if m.id == "deepseek-v4-pro" then "strong" else "medium")
-    ) selectedModels;
-  };
 
   # ── Neuralwatt ────────────────────────────────────────────────────────────
   # Ordering matters for maki's starts_with prefix matching — longer/suffixed
@@ -172,7 +111,6 @@ let
     ];
     baseUrl = "https://api.neuralwatt.com/v1";
     keyEnv = "NEURALWATT_API_KEY";
-    ompModelsList = map mkOmpModel selectedModels;
     # Full catalog (maki exposes all selectable models), ordered for prefix matching.
     makiModels = map (m: mkMakiModel m (neuralwattTier m)) [
       models.glm52ShortFast
@@ -191,8 +129,8 @@ let
 
   # ── Cloudflare Workers AI ─────────────────────────────────────────────────
   # CF model ids are namespaced (@cf/...). The account id is interpolated
-  # into baseUrl at runtime (maki dynamicBaseUrl / omp placeholder
-  # substitution), keeping it out of the Nix store.
+  # into baseUrl at runtime (maki dynamicBaseUrl), keeping it out of the
+  # Nix store.
   # Three-tier cascade: GLM-5.2 strong, gpt-oss-120b medium, gpt-oss-20b weak.
   # gpt-oss-20b is the weak tier — glm-4.7-flash stalls on CF (HTTP 200,
   # zero-byte body), so gpt-oss-20b (same family, lower latency) backs the
@@ -269,11 +207,8 @@ let
     ];
     keyEnv = "CLOUDFLARE_API_KEY";
     extraAuthEnv = [ "CLOUDFLARE_ACCOUNT_ID" ];
-    # baseUrl placeholder — omp substitutes @CLOUDFLARE_ACCOUNT_ID@ at activation
-    # write time; maki uses shell \${CLOUDFLARE_ACCOUNT_ID} expanded at runtime.
-    ompBaseUrl = "https://api.cloudflare.com/client/v4/accounts/@CLOUDFLARE_ACCOUNT_ID@/ai/v1";
+    # baseUrl placeholder — maki uses shell \${CLOUDFLARE_ACCOUNT_ID} expanded at runtime.
     makiBaseUrl = "https://api.cloudflare.com/client/v4/accounts/\${CLOUDFLARE_ACCOUNT_ID}/ai/v1";
-    ompModelsList = map mkOmpModel selectedModels;
     makiModels = map (m: mkMakiModel m (cloudflareTier m)) selectedModels;
   };
 
@@ -295,31 +230,14 @@ let
     ];
     baseUrl = "http://smortress:8081/v1";
     keyEnv = null;
-    ompModelsList = map mkOmpModel selectedModels;
     makiModels = map (m: mkMakiModel m "medium") selectedModels;
-  };
-
-  # ── Codex ─────────────────────────────────────────────────────────────────
-  # Codex models use omp's built-in openai-codex provider (OAuth creds mirrored
-  # from Codex CLI). maki uses its built-in `openai` provider. No custom model
-  # defs — just the refs for modelRoles / enabledModels.
-  codex = rec {
-    providerId = "openai-codex";
-    models = {
-      gpt55 = "${providerId}/gpt-5.5";
-      gpt55Xhigh = "${providerId}/gpt-5.5:xhigh";
-      gpt54 = "${providerId}/gpt-5.4";
-      gpt54Mini = "${providerId}/gpt-5.4-mini";
-    };
   };
 in
 {
   _module.args.aiProviders = {
     inherit
-      deepseek
       neuralwatt
       cloudflare
-      codex
       smortress
       ;
   };

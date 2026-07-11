@@ -16,7 +16,6 @@ let
   bindfsMount = "${sharedDir}/host-mount";
   makiConfig = "${config.home.homeDirectory}/.config/maki";
   makiState = "${config.home.homeDirectory}/.local/state/maki";
-  ompAgent = "${config.home.homeDirectory}/.omp/agent";
 
   workflow = import ../../lib/repo-workflow.nix { inherit config lib pkgs; };
   tomlFormat = pkgs.formats.toml { };
@@ -38,14 +37,12 @@ let
   # Env vars baked into every agentbox VM (base and clones). Per-invocation
   # secrets (GH_TOKEN, *_API_KEY) are forwarded on `machine exec`, not here.
   baseEnv = [
-    "BUN_INSTALL=/root/.bun"
     "MAKI_INSTALL_DIR=/root/.local/bin"
     "MISE_DATA_DIR=/root/.local/share/mise"
     "CARGO_TARGET_DIR=/root/.cargo-target"
     # mise shims first → per-repo pins override the shared bin mount;
-    # then shared bin (maki/gh/mise), then /root/.bun/bin (omp global
-    # shim). The latter two live in the overlay.
-    "PATH=/root/.local/share/mise/shims:/root/.local/bin:/root/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    # then shared bin (maki/gh/mise). The latter lives in the overlay.
+    "PATH=/root/.local/share/mise/shims:/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
   ];
 
   # Direct virtiofs volumes: mounted as real directory mount points
@@ -95,11 +92,6 @@ let
       link = "maki-state";
       hostPath = makiState;
       guestPath = "/root/.local/state/maki";
-    }
-    {
-      link = "omp-agent";
-      hostPath = ompAgent;
-      guestPath = "/root/.omp/agent";
     }
     {
       link = "nix-store";
@@ -159,7 +151,7 @@ let
 
   # Config-staging block, shared by base + per-VM provision. Copies the
   # ro host-config mount (config, *.pub, known_hosts — never privates)
-  # into /root so runtime rewrites work. omp/maki config/state are
+  # into /root so runtime rewrites work. maki config/state are
   # bindfs-mounted directly and not staged here.
   syncConfig = ''
     sync_file() {
@@ -184,15 +176,14 @@ let
   # install picks up the toolset from config.toml.
   baseProvisionScript = ''
     set -e
-    export BUN_INSTALL=/root/.bun
     export MISE_DATA_DIR=/root/.local/share/mise
-    export PATH="/root/.local/share/mise/shims:/root/.local/bin:/root/.bun/bin:$PATH"
+    export PATH="/root/.local/share/mise/shims:/root/.local/bin:$PATH"
 
     ${lib.optionalString isLinux guestSymlinks}
 
     ${syncConfig}
 
-    # System packages. python-3 is required by omp's Python eval
+    # System packages. python-3 is required by maki's Python eval
     # backend; bash by mise's python backend; curl by rustup-init and
     # the gh/mise/maki installers below. apk indexes don't persist
     # across VM resets, so update is always run.
@@ -216,10 +207,7 @@ let
 
     # mise: installs bun runtime + default global toolset (rust/cargo,
     # just, python, deno) into the overlay (MISE_DATA_DIR). The mise
-    # binary lands in the shared bin mount (host-persistent). Global
-    # bun packages (omp) go to /root/.bun (BUN_INSTALL), also in the
-    # overlay — BUN_INSTALL pins where global packages + bin shims live
-    # so omp survives a bun version bump within mise.
+    # binary lands in the shared bin mount (host-persistent).
     if [ ! -x /root/.local/bin/mise ]; then
       curl -fsSL https://mise.run | MISE_QUIET=1 sh
     fi
@@ -232,13 +220,6 @@ let
     # Install/refresh the default global toolset. Idempotent — mise
     # skips tools already at the pinned version.
     mise install -q -y
-
-    # omp (bun global install) into /root/.bun (BUN_INSTALL, overlay).
-    # The bun runtime itself is mise-managed; BUN_INSTALL pins where
-    # global packages + bin shims live so omp survives a bun version bump.
-    if ! command -v omp >/dev/null 2>&1; then
-      /root/.local/share/mise/shims/bun add -g @oh-my-pi/pi-coding-agent
-    fi
 
     # maki (static musl binary) into the shared bin mount; self-updates
     # via `maki update` (uses current_exe()).
@@ -424,16 +405,15 @@ let
       [ -n "$gh_tok" ] && env_args+=(--env "GH_TOKEN=$gh_tok")
     fi
 
-    # omp and maki use env-var-based auth — no secret files mounted.
+    # maki uses env-var-based auth — no secret files mounted.
     for var in $(env | sed -n 's/^\([A-Z][A-Z0-9_]*_API_KEY\)=.*/\1/p'); do
       env_args+=(--env "$var=$(printenv "$var")")
     done
     [ -n "''${CLOUDFLARE_ACCOUNT_ID:-}" ] \
       && env_args+=(--env "CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID")
 
-    # guest cwd mirrors host cwd: code/dev are mounted at their
-    # literal host paths (see entries), so maki session history
-    # (indexed by cwd) matches across host and VM.
+    # guest cwd mounts at its host path (see directVolumes), so maki
+    # session history (indexed by cwd) matches across host and VM.
     guest_pwd=$(cd "$PWD" && pwd -P)
 
     exec $smolvm machine exec --name "$name" --workdir "$guest_pwd" -i -t "''${env_args[@]}" -- "$@"
@@ -441,7 +421,7 @@ let
 in
 {
   options.dotfiles.smolvm = {
-    enable = lib.mkEnableOption "agentbox sandbox for coding agents (maki/omp)" // {
+    enable = lib.mkEnableOption "agentbox sandbox for coding agents (maki)" // {
       default = true;
     };
   };
@@ -461,9 +441,9 @@ in
     # (Darwin) or via the bindfs symlink farm (Linux). Private ssh keys
     # are never staged — only config, *.pub and known_hosts. gh's
     # hosts.yml (oauth token) is excluded: the launcher forwards
-    # GH_TOKEN instead. omp agent/{config.yml,models.yml,AGENTS.md,
-    # mcp.json,skills,extensions} are bindfs rw-mounted directly from
-    # ~/.omp/agent (see entries list) — no staging needed.
+    # GH_TOKEN instead. maki config/state are bindfs rw-mounted directly
+    # from ~/.config/maki and ~/.local/state/maki (see entries list) —
+    # no staging needed.
     home.activation.syncAgentboxConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       rm -rf ${configDir}
       mkdir -p ${configDir}/git ${configDir}/gh ${configDir}/ssh ${configDir}/mise ${configDir}/bin

@@ -10,8 +10,7 @@
 
 local QuestionForm = require("question_form")
 
--- Nerd Font sushi glyph (nf-fae-sushi, U+E21A) prefixing the Zellij tab name,
--- so maki tabs read " - <worktree> — matching oh-my-pi's "π - <worktree>".
+-- Nerd Font sushi glyph (nf-fae-sushi, U+E21A) prefixing the Zellij tab name.
 local sushi_icon = "\238\136\154"
 
 if maki.fn.executable("wt") == 0
