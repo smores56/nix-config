@@ -33,19 +33,18 @@ in
       experimental-features = nix-command flakes
     '';
     file."Library/Fonts/.home-manager-fonts-version" = lib.mkIf isDarwin (
-      lib.mkForce { text = "${darwinFontsEnv}"; }
-    );
-
-    activation.syncDarwinFonts = lib.mkIf isDarwin (
-      lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-        run mkdir -p ${lib.escapeShellArg darwinFontsInstallDir}
-        run /bin/chmod -R u+w ${lib.escapeShellArg darwinFontsInstallDir} || true
-        run ${pkgs.rsync}/bin/rsync $VERBOSE_ARG -acL --chmod=u+w \
-          ${lib.escapeShellArgs [
-            "${darwinFonts}/"
-            "${darwinFontsInstallDir}/"
-          ]}
-      ''
+      lib.mkForce {
+        text = "${darwinFontsEnv}\nsync-version=2";
+        onChange = ''
+          run mkdir -p ${lib.escapeShellArg darwinFontsInstallDir}
+          run /bin/chmod -R u+w ${lib.escapeShellArg darwinFontsInstallDir} || true
+          run ${pkgs.rsync}/bin/rsync $VERBOSE_ARG -acL --chmod=u+w --delete \
+            ${lib.escapeShellArgs [
+              "${darwinFonts}/"
+              "${darwinFontsInstallDir}/"
+            ]}
+        '';
+      }
     );
 
     activation.checkAppManagementPermission = lib.mkIf isDarwin (
