@@ -27,6 +27,7 @@ let
 
   makiTools = [
     "bash = { enabled = true }"
+    "grep = { enabled = false }"
   ];
   toolsBlock = lib.concatMapStrings (t: "\n        " + t + ",") makiTools;
 
