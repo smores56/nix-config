@@ -1,6 +1,6 @@
 ---
 name: doubt-driven-development
-description: Subjects every non-trivial decision to a fresh-context adversarial review before it stands. Use when correctness matters more than speed, when working in unfamiliar code, when stakes are high (production, security-sensitive logic, irreversible operations), or any time a confident output would be cheaper to verify now than to debug later.
+description: Run a fresh-context adversarial review before any non-trivial decision stands. Use when correctness matters more than speed, in unfamiliar or high-stakes code (production, security, irreversible ops), or when a confident output is cheaper to verify now than debug later.
 ---
 
 # Doubt-Driven Development
@@ -43,8 +43,8 @@ If you doubt every keystroke, you ship nothing. The skill applies only to non-tr
 
 This skill is designed for the **main-session orchestrator**, where Step 3 (DOUBT, detailed below) can spawn a fresh-context reviewer.
 
-- **Do NOT add this skill to a persona's `skills:` frontmatter.** A persona that follows Step 3 would spawn another persona — the orchestration anti-pattern explicitly forbidden by `references/orchestration-patterns.md` ("personas do not invoke other personas").
-- **If you find yourself applying this skill from inside a subagent context** (where Claude Code prevents nested subagent spawn): the preferred path is to surface to the user that doubt-driven cannot run nested and let the main session handle it. As a last resort only, a degraded self-questioning fallback exists — rewrite ARTIFACT + CONTRACT as a fresh self-prompt with a hard mental separator from your prior reasoning, and walk Steps 1–5. This is **not fresh-context review** (you carry your own context with you), so flag the result as degraded and prefer escalation whenever the user is reachable.
+- **Do NOT add this skill to a persona's `skills:` frontmatter.** A persona that follows Step 3 would spawn another persona — a nested-subagent anti-pattern ("personas do not invoke other personas").
+- **If you find yourself applying this skill from inside a subagent context** (where the harness prevents nested subagent spawn): the preferred path is to surface to the user that doubt-driven cannot run nested and let the main session handle it. As a last resort only, a degraded self-questioning fallback exists — rewrite ARTIFACT + CONTRACT as a fresh self-prompt with a hard mental separator from your prior reasoning, and walk Steps 1–5. This is **not fresh-context review** (you carry your own context with you), so flag the result as degraded and prefer escalation whenever the user is reachable.
 
 ## The Process
 
@@ -105,7 +105,7 @@ CONTRACT: <paste contract>
 
 **Pass ARTIFACT + CONTRACT only. Do NOT pass the CLAIM.** Handing the reviewer your conclusion biases it toward agreement. The reviewer must independently determine whether the artifact satisfies the contract.
 
-In Claude Code, the role-based reviewers in `agents/` start with isolated context by design and are usable here — see `agents/` for the roster and per-domain match.
+Spawn a generic read-only subagent in isolated context — the isolation is what the fresh-context review depends on.
 
 **The adversarial prompt above takes precedence over the persona's default response shape.** Personas like `code-reviewer` are written to produce balanced verdicts with both strengths and weaknesses; doubt-driven needs issues-only output. Paste the adversarial prompt verbatim into the invocation so it overrides the persona's default. If a persona's response shape can't be overridden cleanly, fall back to a generic subagent with the adversarial prompt.
 
@@ -134,21 +134,7 @@ This question is mandatory in every interactive doubt cycle — even on artifact
 
 **Never interpolate the artifact into a shell-quoted argument.** Code, markdown, and review prompts routinely contain backticks, `$(...)`, and quote characters that will either truncate the prompt or execute embedded shell. Write the full prompt to a file and pipe it through stdin.
 
-Example shapes (verify flags against your installed tool — syntax differs across implementations and versions):
-
-```bash
-# Write the adversarial prompt + ARTIFACT + CONTRACT to a temp file first.
-# Then pipe via stdin so shell metacharacters in the artifact stay inert.
-
-# Codex (read-only sandbox keeps the CLI from writing to your workspace):
-codex exec --sandbox read-only -C <repo-path> - < /tmp/doubt-prompt.md
-
-# Gemini ('--approval-mode plan' is read-only; '-p ""' triggers non-interactive
-# mode and the prompt is read from stdin):
-gemini --approval-mode plan -p "" < /tmp/doubt-prompt.md
-```
-
-A read-only sandbox is the load-bearing detail: a doubt artifact may itself contain instructions (intentional or accidental prompt injection) that the cross-model CLI would otherwise execute against your workspace.
+Write the prompt + ARTIFACT + CONTRACT to a temp file and pipe via stdin (never inline-quoted — artifacts contain backticks and `$(...)` that would execute or truncate). Run the external CLI in a **read-only sandbox**: a doubt artifact may contain prompt injection the CLI would otherwise execute against your workspace. Verify exact flags with the user first — syntax differs across tools and versions.
 
 **Step 3: If the CLI is unavailable or fails**
 
@@ -196,13 +182,8 @@ If 3 cycles is "obviously insufficient" because the artifact is large: the artif
 |---|---|
 | "I'm confident, skip the doubt step" | Confidence correlates poorly with correctness on novel problems. Moments of certainty are exactly when blind spots hide. |
 | "Spawning a reviewer is expensive" | Debugging a wrong commit in production is more expensive. The check is bounded; the bug isn't. |
-| "The reviewer will just nitpick" | Only if unscoped. Constrain the prompt to "issues that would make this fail under the contract." |
-| "I'll do doubt at the end with `/review`" | `/review` is a final gate. Doubt-driven catches wrong directions early when course-correction is cheap. By PR time it's too late. |
-| "If I doubt every step I'll never ship" | The skill applies to non-trivial decisions, not every keystroke. Re-read "When NOT to Use." |
-| "Two opinions are always better than one" | Not when the second has less context and produces noise. Reconcile, don't defer. |
-| "The reviewer disagreed so I was wrong" | The reviewer lacks your context — disagreement is information, not verdict. Re-read the artifact, classify, then decide. |
-| "Cross-model is always better" | Cross-model catches blind spots a single model shares with itself, but it adds cost and tool fragility. Offer it every interactive doubt cycle — the user decides whether the artifact warrants it. The agent's job is to surface the choice, not to gate it. |
-| "User said yes once, so I can keep invoking the CLI" | Each invocation is its own authorization. The artifact, the prompt, and the flags change between calls — re-confirm the exact command with the user before every run. |
+| "I'll do doubt at the end with `/review`" | `/review` is a final gate. Doubt-driven catches wrong directions early when course-correction is cheap. |
+| "Cross-model is always better" | It catches blind spots a single model shares with itself, but adds cost and tool fragility. Offer it every interactive cycle — the user decides. |
 
 ## Red Flags
 
@@ -210,23 +191,18 @@ If 3 cycles is "obviously insufficient" because the artifact is large: the artif
 - Treating reviewer output as authoritative without re-reading the artifact text
 - Looping >3 cycles without escalating to the user
 - Prompting the reviewer with "is this good?" instead of "find issues"
-- Skipping doubt under time pressure on a high-stakes decision
-- Re-spawning fresh-context on an unchanged artifact (you'll get the same findings; you're stalling)
-- **Doubt theater (checkable signal)**: across 2 or more cycles where the reviewer surfaced substantive findings, zero findings were classified as actionable. You are validating, not doubting. Stop and escalate.
-- Doubting only after committing — that's `/review`, not doubt-driven development
-- Hardcoding an external CLI invocation without confirming with the user that the tool exists, is configured, and accepts that exact syntax
-- **Silently skipping cross-model in an interactive doubt cycle.** Even when not recommending it, the offer must be visible. Skipping is fine; silent skipping is not.
-- Falling back silently when an external CLI errors or is missing — surface the failure and let the user redirect
-- Stripping the contract from the reviewer's input
+- **Doubt theater**: across 2+ cycles with substantive findings, zero classified actionable — you are validating, not doubting. Stop and escalate.
+- Doubting only after committing — that's `/review`, not doubt-driven
+- Silently skipping cross-model in an interactive cycle — the offer must be visible even when not recommended
 - Passing the CLAIM to the reviewer (biases toward agreement)
 
 ## Interaction with Other Skills
 
 - **`code-review-and-quality` / `/review`**: complementary. `/review` is post-hoc PR verdict; doubt-driven is in-flight per-decision. Use both.
-- **`source-driven-development`**: SDD verifies *facts about frameworks* against official docs. Doubt-driven verifies *your reasoning about the artifact*. SDD checks the API exists; doubt-driven checks you used it correctly under the contract.
+- **`adversarial-review`**: the post-hoc multi-persona counterpart. Doubt-driven catches wrong directions in-flight; `adversarial-review` red-teams a finished diff or plan with parallel lenses.
+- **`spec-driven-development`**: SDD verifies *facts about frameworks* against official docs. Doubt-driven verifies *your reasoning about the artifact*. SDD checks the API exists; doubt-driven checks you used it correctly under the contract.
 - **`test-driven-development`**: TDD's RED step is doubt made concrete — a failing test is a disproof attempt. When TDD applies, that failing test *is* the doubt step for behavioral claims.
-- **`debugging-and-error-recovery`**: when the reviewer surfaces a real failure mode, drop into the debugging skill to localize and fix.
-- **Repo orchestration rules** (`references/orchestration-patterns.md`): this skill orchestrates from the main session. A persona calling another persona is anti-pattern B — see Loading Constraints above.
+- When the reviewer surfaces a real failure mode, localize and fix it directly — do not let the bug sit.
 
 ## Verification
 

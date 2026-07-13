@@ -1,6 +1,6 @@
 ---
 name: spec-driven-development
-description: Creates specs before coding. Use when starting a new project, feature, or significant change and no specification exists yet. Use when requirements are unclear, ambiguous, or only exist as a vague idea.
+description: Write a spec before coding. Use when starting a project, feature, or significant change with no spec, or when requirements are unclear, ambiguous, or only a vague idea.
 ---
 
 # Spec-Driven Development
@@ -164,7 +164,7 @@ Break the plan into discrete, implementable tasks:
 
 ### Phase 4: Implement
 
-Execute tasks one at a time following `skills/incremental-implementation/SKILL.md` (`incremental-implementation`) and `skills/test-driven-development/SKILL.md` (`test-driven-development`). Use `skills/context-engineering/SKILL.md` (`context-engineering`) to load the right spec sections and source files at each step rather than flooding the agent with the entire spec.
+Execute tasks one at a time following `test-driven-development` (write a failing test, make it pass, refactor) and take an incremental approach: one task per focused session, verify each before starting the next. Load the relevant spec sections and source files at each step rather than flooding the agent with the entire spec.
 
 ## Keeping the Spec Alive
 
@@ -180,10 +180,8 @@ The spec is a living document, not a one-time artifact:
 | Rationalization | Reality |
 |---|---|
 | "This is simple, I don't need a spec" | Simple tasks don't need *long* specs, but they still need acceptance criteria. A two-line spec is fine. |
-| "I'll write the spec after I code it" | That's documentation, not specification. The spec's value is in forcing clarity *before* code. |
+| "I'll write the spec after I code it" | That's documentation, not specification. The spec's value is forcing clarity *before* code. |
 | "The spec will slow us down" | A 15-minute spec prevents hours of rework. Waterfall in 15 minutes beats debugging in 15 hours. |
-| "Requirements will change anyway" | That's why the spec is a living document. An outdated spec is still better than no spec. |
-| "The user knows what they want" | Even clear requests have implicit assumptions. The spec surfaces those assumptions. |
 
 ## Red Flags
 
