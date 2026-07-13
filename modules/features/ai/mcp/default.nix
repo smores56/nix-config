@@ -7,20 +7,6 @@
 let
   isWork = config.dotfiles.work.enable;
 
-  basicMemoryEnv = {
-    BASIC_MEMORY_SEMANTIC_SEARCH_ENABLED = "true";
-    BASIC_MEMORY_SEMANTIC_EMBEDDING_PROVIDER = "fastembed";
-  };
-
-  basicMemory = {
-    command = "uvx";
-    args = [
-      "basic-memory"
-      "mcp"
-    ];
-    env = basicMemoryEnv;
-  };
-
   gleanServerUrl = "https://sevenai-be.glean.com";
   glean = {
     command = "npx";
@@ -48,10 +34,6 @@ let
     ];
   };
 
-  commonMcpServers = {
-    "basic-memory" = basicMemory;
-  };
-
   workMcpServers = lib.optionalAttrs isWork {
     inherit glean slack;
   };
@@ -63,5 +45,5 @@ in
     description = "Shared MCP server definitions for AI coding agents.";
   };
 
-  config.dotfiles.ai.mcpServers = commonMcpServers // workMcpServers;
+  config.dotfiles.ai.mcpServers = workMcpServers;
 }
