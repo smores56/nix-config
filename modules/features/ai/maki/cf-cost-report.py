@@ -22,16 +22,19 @@ import sys
 from collections import defaultdict
 from datetime import datetime, timezone
 
-# USD per 1,000,000 tokens: (input, output, cache_read). Keep in sync with
-# cloudflareModels in modules/features/ai/providers.nix. Only GLM-5.2 publishes
-# a discounted cached-input rate ($0.26/1M); gpt-oss models publish none, so
-# their cached reads are priced at the input rate (conservative — never
-# under-counts). cache_creation is priced as normal input.
-PRICING = {
-    "@cf/zai-org/glm-5.2": (1.40, 4.40, 0.26),
-    "@cf/openai/gpt-oss-120b": (0.35, 0.75, 0.35),
-    "@cf/openai/gpt-oss-20b": (0.20, 0.30, 0.20),
-}
+# USD per 1,000,000 tokens: (input, output, cache_read). Loaded from the
+# cloudflare provider in modules/features/ai/providers.nix via the
+# MAKI_CF_PRICING env var (set by the maki-cf-cost wrapper), so the cost
+# report never duplicates the pricing table. The cached-read rate already
+# reflects each model's published discount (gpt-oss models publish none, so
+# providers.nix prices their cached reads at the input rate — conservative,
+# never under-counts). cache_creation is priced as normal input.
+PRICING = {}
+_pricing_path = os.environ.get("MAKI_CF_PRICING")
+if _pricing_path and os.path.isfile(_pricing_path):
+    with open(_pricing_path) as _fh:
+        for _id, _rates in json.load(_fh).items():
+            PRICING[_id] = (_rates["input"], _rates["output"], _rates["cache_read"])
 
 
 def session_dirs():

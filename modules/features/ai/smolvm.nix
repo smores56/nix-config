@@ -2,9 +2,11 @@
   config,
   lib,
   pkgs,
+  aiProviders,
   ...
 }:
 let
+  inherit (aiProviders) cloudflare;
   cfg = config.dotfiles.smolvm;
 
   codeRoot = config.dotfiles.codeRoot;
@@ -409,8 +411,11 @@ let
     for var in $(env | sed -n 's/^\([A-Z][A-Z0-9_]*_API_KEY\)=.*/\1/p'); do
       env_args+=(--env "$var=$(printenv "$var")")
     done
-    [ -n "''${CLOUDFLARE_ACCOUNT_ID:-}" ] \
-      && env_args+=(--env "CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID")
+    # Forward the active provider's non-API-key auth envs (e.g. Cloudflare's
+    # account id). Declared per-provider in providers.nix.
+    ${lib.concatMapStrings (v: ''
+      [ -n "''${${v}:-}" ] && env_args+=(--env "${v}=''${${v}}")
+    '') cloudflare.extraAuthEnv}
 
     # guest cwd mounts at its host path (see directVolumes), so maki
     # session history (indexed by cwd) matches across host and VM.

@@ -196,6 +196,7 @@ let
     models = cloudflareModels;
     modelRef = m: "${providerId}/${m.id}";
     roles = {
+      default = modelRef models.glm52;
       strong = modelRef models.glm52;
       medium = modelRef models.gptOss120b;
       weak = modelRef models.gptOss20b;

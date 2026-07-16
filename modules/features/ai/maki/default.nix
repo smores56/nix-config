@@ -11,19 +11,12 @@ let
   work = cfg.work;
   isWork = work.enable;
 
-  # Work: Codex-backed GPT-5.6 via Maki's built-in `openai` provider, whose
-  # OAuth creds are mirrored from Codex CLI by maki-codex-sync below. Maki
-  # accepts new model IDs before they reach its built-in catalog. Sol is strong,
-  # Terra is the default, medium, and compaction model, and Luna is weak.
-  # Personal hosts default to Neuralwatt GLM-5.2.
-  defaultModel = if isWork then "openai/gpt-5.6-terra" else "neuralwatt/glm-5.2";
-  workModelTiers = {
-    strong = "openai/gpt-5.6-sol";
-    medium = "openai/gpt-5.6-terra";
-    compaction = "openai/gpt-5.6-terra";
-    weak = "openai/gpt-5.6-luna";
-  };
-  workModelTiersJson = pkgs.writeText "maki-model-tiers.json" (builtins.toJSON workModelTiers);
+  # Work defaults to the Cloudflare provider; personal defaults to Neuralwatt.
+  # The default model is the provider's `roles.default` (GLM-5.2 for both).
+  # strong/medium/weak tiers resolve from each provider model's `tier` field
+  # in providers.nix — no per-host tier-override file needed.
+  defaultProvider = if isWork then cloudflare else neuralwatt;
+  defaultModel = defaultProvider.roles.default;
 
   makiTools = [
     "bash = { enabled = true }"
@@ -188,10 +181,25 @@ let
 
   # maki stores per-session token counts but never the dollar cost, and has no
   # cross-session rollup. maki-cf-cost scans the session JSONL logs and reports
-  # Cloudflare Workers AI spend per month, applying the same per-1M pricing as
-  # cloudflareProviders above.
+  # Cloudflare Workers AI spend per month. Pricing is generated from the
+  # cloudflare provider in providers.nix (cfPricingJson) so the report never
+  # duplicates the pricing table.
+  cfPricingJson = pkgs.writeText "maki-cf-pricing.json" (
+    builtins.toJSON (
+      builtins.listToAttrs (
+        map (
+          m:
+          lib.nameValuePair m.id {
+            input = m.pricing.input;
+            output = m.pricing.output;
+            cache_read = m.pricing.cache_read;
+          }
+        ) cloudflare.makiModels
+      )
+    )
+  );
   cfCostReport = pkgs.writeShellScriptBin "maki-cf-cost" ''
-    exec ${pkgs.python3}/bin/python3 ${./cf-cost-report.py} "$@"
+    MAKI_CF_PRICING=${cfPricingJson} exec ${pkgs.python3}/bin/python3 ${./cf-cost-report.py} "$@"
   '';
 
   makiSessionSearch = "${pkgs.python3}/bin/python3 ${./maki-session-search.py}";
@@ -277,9 +285,13 @@ in
         ${codexCredSync}/bin/maki-codex-sync || true
       ''
     );
-    home.activation.makiModelTiers = lib.mkIf isWork (
+    # Remove the obsolete maki tier-override file. Tiers now resolve from
+    # each provider model's `tier` field (providers.nix); the old file was
+    # written with keys/values swapped so maki ignored it, but a stale
+    # valid-format leftover may pin compaction — clean it up on work hosts.
+    home.activation.makiModelTiersCleanup = lib.mkIf isWork (
       lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-        ${pkgs.coreutils}/bin/install -D -m 0600 ${workModelTiersJson} "$HOME/.local/state/maki/model-tiers"
+        rm -f "$HOME/.local/state/maki/model-tiers"
       ''
     );
     programs.fish = {
