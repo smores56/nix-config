@@ -140,7 +140,7 @@ let
       id = "@cf/zai-org/glm-5.2";
       name = "GLM 5.2 (Cloudflare)";
       reasoning = true;
-      context = 262144;
+      context = 256000;
       output = 32768;
       input = [ "text" ];
       pricing = {
