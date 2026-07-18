@@ -10,5 +10,4 @@ display = "{split:\t:0}"
 output = "{split:\t:1}"
 
 [preview]
-command = "git -C '{1}' log --oneline --decorate --graph -20 --color=always"
-delimiter = "\t"
+command = "git -C '{split:\t:1}' log --oneline --decorate --graph -20 --color=always"
