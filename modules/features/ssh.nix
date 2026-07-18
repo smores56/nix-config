@@ -10,6 +10,11 @@
   # ask the agent to sign blobs (private keys never enter the guest).
   services.ssh-agent.enable = true;
 
+  # HM restarts ssh-agent on each activation, but `ssh-agent -D -a %t/ssh-agent`
+  # leaves the socket file behind when killed, so the new instance fails with
+  # "Address already in use" and stays failed. Remove the stale socket first.
+  systemd.user.services.ssh-agent.Service.ExecStartPre = "-rm -f %t/ssh-agent";
+
   programs.ssh = {
     enable = true;
     enableDefaultConfig = false;
