@@ -1,12 +1,14 @@
 [metadata]
 name = "worktrees"
-description = "Worktrees of the current repository (excludes bare entries)"
+description = "Worktrees of the current repository (root plus .worktrees/)"
 requirements = ["git"]
 
 [source]
-command = "worktrees list"
-display = "{split:/:4..}"
-output = "{}"
+command = "worktrees list | awk 'BEGIN{FS=OFS=\"\\t\"} {p=$0; if (sub(/.*\\/\\.worktrees\\//, \"\", p)) label=p; else label=\"root\"; print label, $0}'"
+entry_delimiter = "\n"
+display = "{split:\t:0}"
+output = "{split:\t:1}"
 
 [preview]
-command = "git -C '{}' log --oneline --decorate --graph -20 --color=always"
+command = "git -C '{1}' log --oneline --decorate --graph -20 --color=always"
+delimiter = "\t"
