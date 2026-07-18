@@ -18,12 +18,6 @@ let
   defaultProvider = if isWork then cloudflare else neuralwatt;
   defaultModel = defaultProvider.roles.default;
 
-  makiTools = [
-    "bash = { enabled = true }"
-    "grep = { enabled = false }"
-  ];
-  toolsBlock = lib.concatMapStrings (t: "\n        " + t + ",") makiTools;
-
   # init.lua is a Lua script that calls maki.setup() once, then loads custom
   # tools. always_yolo skips permission prompts (deny rules still apply);
   # always_thinking turns on adaptive extended thinking. bash is off by default
@@ -36,7 +30,8 @@ let
       provider = {
         default_model = "${defaultModel}",
       },
-      tools = {${toolsBlock}
+      plugins = {
+        bash = { enabled = true },
       },
     })
 
