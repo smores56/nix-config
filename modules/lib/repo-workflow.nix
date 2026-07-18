@@ -299,13 +299,30 @@ let
         printf ',"base":%s}\n' "$(json_string "$base")"
       }
 
+      ref_sha() {
+        git rev-parse --verify --quiet "$1^{commit}" 2>/dev/null || true
+      }
+
       integrated_reason() {
-        local branch=$1 target=$2 merged_tree target_tree
+        local branch=$1 target=$2 branch_sha target_sha merge_base merged_tree target_tree diff
+        branch_sha=$(ref_sha "$branch")
+        target_sha=$(ref_sha "$target")
+        [ -n "$branch_sha" ] && [ -n "$target_sha" ] || return 1
+        if [ "$branch_sha" = "$target_sha" ]; then
+          printf 'same-commit\n'
+          return 0
+        fi
         if git merge-base --is-ancestor "$branch" "$target"; then
           printf 'ancestor\n'
           return 0
         fi
-        git merge-base "$target" "$branch" >/dev/null 2>&1 || return 1
+        if merge_base=$(git merge-base "$target" "$branch" 2>/dev/null) && [ -n "$merge_base" ]; then
+          diff=$(git diff --name-only "$merge_base..$branch" 2>/dev/null || true)
+          if [ -z "$diff" ]; then
+            printf 'no-added-changes\n'
+            return 0
+          fi
+        fi
         merged_tree=$(git merge-tree --write-tree "$target" "$branch" 2>/dev/null) || return 1
         target_tree=$(git rev-parse "$target^{tree}") || return 1
         if [ "$merged_tree" = "$target_tree" ]; then
@@ -315,35 +332,121 @@ let
         return 1
       }
 
+      delete_flag_for() {
+        case "$1" in
+          ancestor|same-commit|no-added-changes) printf '%s\n' -d ;;
+          *) printf '%s\n' -D ;;
+        esac
+      }
+
+      duration_seconds() {
+        local spec=$1
+        case "$spec" in
+          0s) printf '%s\n' 0 ;;
+          *s) printf '%s\n' "''${spec%s}" ;;
+          *m) printf '%s\n' $(( ''${spec%m} * 60 )) ;;
+          *h) printf '%s\n' $(( ''${spec%h} * 3600 )) ;;
+          *d) printf '%s\n' $(( ''${spec%d} * 86400 )) ;;
+          *) printf 'worktrees prune: invalid --min-age: %s\n' "$spec" >&2; exit 2 ;;
+        esac
+      }
+
+      worktree_age_seconds() {
+        local path=$1 git_dir meta
+        git_dir=$(git -C "$path" rev-parse --absolute-git-dir 2>/dev/null) || return 1
+        meta=$git_dir
+        [ -f "$git_dir/commondir" ] && meta="$git_dir/$(cat "$git_dir/commondir" 2>/dev/null)"
+        stat -c '%Y' "$meta" 2>/dev/null || stat -f '%m' "$meta" 2>/dev/null || return 1
+      }
+
+      branch_age_seconds() {
+        local branch=$1 refname created_epoch
+        refname="refs/heads/$branch"
+        created_epoch=$(git reflog show --format='%ct' "$refname" 2>/dev/null | tail -1)
+        [ -n "$created_epoch" ] || return 1
+        printf '%s\n' "$created_epoch"
+      }
+
       prune_worktrees() {
-        local dry_run=false target current main path branch reason delete_flag action
+        local dry_run=false min_age=0s min_age_secs now current main target target_branch
+        local path branch reason action delete_flag age created skip_reason
         while [ $# -gt 0 ]; do
           case "$1" in
             --dry-run) dry_run=true; shift ;;
+            --min-age) min_age=$2; shift 2 ;;
+            --min-age=*) min_age=''${1#--min-age=}; shift ;;
             *) printf 'worktrees prune: unknown arg: %s\n' "$1" >&2; exit 2 ;;
           esac
         done
-
-        git fetch origin
-        target=$(default_ref)
+        min_age_secs=$(duration_seconds "$min_age")
+        now=$(date +%s)
         current=$(current_worktree)
         main=$(main_worktree)
+        target=$(default_ref)
+        target_branch=''${target#origin/}
+
+        git fetch origin 2>/dev/null || true
 
         list_worktrees | while IFS= read -r path; do
           [ "$path" != "$main" ] || continue
-          [ "$path" != "$current" ] || continue
           branch=$(worktree_branch "$path")
           [ -n "$branch" ] || continue
+          [ "$branch" != "$target_branch" ] || continue
           reason=$(integrated_reason "$branch" "$target" || true)
           [ -n "$reason" ] || continue
+          if [ "$min_age_secs" -gt 0 ]; then
+            created=$(worktree_age_seconds "$path" 2>/dev/null) || continue
+            age=$(( now - created ))
+            if [ "$age" -lt "$min_age_secs" ]; then
+              printf 'skip %s branch %s reason younger-than-%s\n' "$path" "$branch" "$min_age" >&2
+              continue
+            fi
+          fi
           if $dry_run; then action=would-remove; else action=remove; fi
           printf '%s %s branch %s reason %s\n' "$action" "$path" "$branch" "$reason"
           if ! $dry_run; then
-            git worktree remove "$path"
-            if [ "$reason" = ancestor ]; then delete_flag=-d; else delete_flag=-D; fi
-            git branch "$delete_flag" "$branch" || true
+            if [ "$path" = "$current" ]; then skip_reason='current worktree'; else
+              if ! git worktree remove "$path" 2>/dev/null; then
+                skip_reason='removal blocked (dirty or locked)'
+              else
+                skip_reason=
+              fi
+            fi
+            if [ -n "$skip_reason" ]; then
+              printf 'skip %s branch %s reason %s\n' "$path" "$branch" "$skip_reason" >&2
+            else
+              delete_flag=$(delete_flag_for "$reason")
+              git branch "$delete_flag" "$branch" 2>/dev/null || true
+            fi
           fi
         done
+
+        # Orphan branches: local branches with no worktree, not the default.
+        local orphan_branches_with_worktree orphan_branch
+        orphan_branches_with_worktree=$(list_worktrees | while IFS= read -r wt_path; do
+          worktree_branch "$wt_path"
+        done)
+        for orphan_branch in $(git for-each-ref --format='%(refname:short)' refs/heads); do
+          [ "$orphan_branch" != "$target_branch" ] || continue
+          printf '%s\n' "$orphan_branches_with_worktree" | grep -qx "$orphan_branch" && continue
+          reason=$(integrated_reason "$orphan_branch" "$target" || true)
+          [ -n "$reason" ] || continue
+          if [ "$min_age_secs" -gt 0 ]; then
+            created=$(branch_age_seconds "$orphan_branch" 2>/dev/null) || continue
+            age=$(( now - created ))
+            if [ "$age" -lt "$min_age_secs" ]; then
+              printf 'skip branch %s reason younger-than-%s\n' "$orphan_branch" "$min_age" >&2
+              continue
+            fi
+          fi
+          if $dry_run; then action=would-remove; else action=remove; fi
+          printf '%s branch-only %s reason %s\n' "$action" "$orphan_branch" "$reason"
+          if ! $dry_run; then
+            delete_flag=$(delete_flag_for "$reason")
+            git branch "$delete_flag" "$orphan_branch" 2>/dev/null || true
+          fi
+        done
+
         if ! $dry_run; then git worktree prune; fi
       }
 
