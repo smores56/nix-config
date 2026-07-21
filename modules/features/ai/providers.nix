@@ -131,10 +131,14 @@ let
   # CF model ids are namespaced (@cf/...). The account id is interpolated
   # into baseUrl at runtime (maki dynamicBaseUrl), keeping it out of the
   # Nix store.
-  # Three-tier cascade: GLM-5.2 strong, gpt-oss-120b medium, gpt-oss-20b weak.
-  # gpt-oss-20b is the weak tier — glm-4.7-flash stalls on CF (HTTP 200,
-  # zero-byte body), so gpt-oss-20b (same family, lower latency) backs the
-  # cheap/utility roles instead.
+  # Three-tier cascade: GLM-5.2 strong, gpt-oss-120b medium,
+  # granite-4.0-h-micro weak. The weak tier is high-volume mechanical work
+  # (search/grep/read/summarize/format): it needs cheap, fast, reliable
+  # function calling, not reasoning. granite-4.0-h-micro is a 3B FC-native
+  # model at $0.017/$0.11 — no known CF serving bug. gpt-oss-20b (prior
+  # weak pick) is a reasoning model: too slow and pricey for the tier.
+  # glm-4.7-flash / gemma-4-26b were rejected — workers-sdk #13333 breaks
+  # their tool-call args on CF, and glm-4.7-flash also stalls (200/0-byte).
   cloudflareModels = {
     glm52 = {
       id = "@cf/zai-org/glm-5.2";
@@ -166,17 +170,18 @@ let
         cacheWrite = 0.0;
       };
     };
-    gptOss20b = {
-      id = "@cf/openai/gpt-oss-20b";
-      name = "GPT OSS 20B (Cloudflare)";
-      reasoning = true;
-      context = 128000;
+    graniteMicro = {
+      id = "@cf/ibm-granite/granite-4.0-h-micro";
+      name = "Granite 4.0 H Micro (Cloudflare)";
+      reasoning = false;
+      context = 131000;
       output = 32768;
       input = [ "text" ];
       pricing = {
-        input = 0.20;
-        output = 0.30;
-        cacheRead = 0.20;
+        input = 0.017;
+        output = 0.11;
+        # No published cached rate; price cached reads as input (conservative).
+        cacheRead = 0.017;
         cacheWrite = 0.0;
       };
     };
@@ -188,6 +193,8 @@ let
       "strong"
     else if m.id == "@cf/openai/gpt-oss-120b" then
       "medium"
+    else if m.id == "@cf/ibm-granite/granite-4.0-h-micro" then
+      "weak"
     else
       "weak";
 
@@ -199,12 +206,12 @@ let
       default = modelRef models.glm52;
       strong = modelRef models.glm52;
       medium = modelRef models.gptOss120b;
-      weak = modelRef models.gptOss20b;
+      weak = modelRef models.graniteMicro;
     };
     selectedModels = [
       models.glm52
       models.gptOss120b
-      models.gptOss20b
+      models.graniteMicro
     ];
     keyEnv = "CLOUDFLARE_API_KEY";
     extraAuthEnv = [ "CLOUDFLARE_ACCOUNT_ID" ];
