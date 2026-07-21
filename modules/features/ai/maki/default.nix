@@ -228,23 +228,66 @@ in
         force = true;
         text = ''
           ${config.dotfiles.aiHints}
-          # Delegation Decision Tree
-          - Small, obvious work (single bounded task, no research needed): delegate with one `task` call, or wrap several
-            independent ones in `batch`
-          - Non-trivial work (multi-step, multi-file, ambiguous, risky, parallelizable, or requiring research): split into
-            useful lanes first; if it won't split cleanly, do it directly rather than forcing delegation
-          - For each lane, check context: missing? Run a read-only `task` with `subagent_type="research"` first
-          - Then delegate the bounded implementation per lane: `task` with `subagent_type="general"`; parallelize independent
-            calls in `batch`, run dependent ones sequentially
-          - After delegation: synthesize results yourself, resolve conflicts, verify, deliver the integrated answer
-          - Default `model_tier="medium"` for implementation, refactors, features, bug diagnosis, logic, anything needing
-            real code judgment — most subtasks land here
-          - Drop to `model_tier="weak"` when the task is mechanical and fully specified: search, grep, glob, reads,
-            summaries, names, boilerplate edits, formatting, test runs
-          - Reach for `model_tier="strong"` when the task is hard or high-stakes: architecture, system design, subtle or
-            cross-file bugs, security review, irreversible changes, synthesizing conflicting subagent results
-          - Every `task` starts fresh: include paths, constraints, expected output, and whether edits are allowed
-          - Ask subagents for concise `file_path:line_number` summaries, not code dumps
+          # Delegation
+          This guidance is for the top-level coordinator (you, working with the user). If
+          you were spawned as a subagent, execute your assignment directly — do not
+          delegate further.
+
+          You are a workflow manager, not the default implementation worker. Default to
+          delegating implementation to a general (fixer) subagent, even for a single
+          bounded task. Handle directly only a trivial edit you can make faster than
+          describing it (a one-line fix with the change in hand); substantive work that
+          won't split into lanes is still delegated as one fixer task.
+
+          ## Lanes
+          subagent_type follows permissions; model_tier follows complexity and risk. Lane
+          defaults are weak/medium — override only when complexity or risk warrants.
+          - explorer (research/weak): codebase recon — glob/grep/index. "where is X?"
+            Bump to medium for structural or ambiguous queries. Don't when you know the
+            path and need the content, or are about to edit.
+          - librarian (research/weak): external docs, API refs, version-specific behavior.
+            Bump to medium for hard cross-source synthesis. Don't for standard usage
+            already in context.
+          - oracle (research/strong): architecture, risk, complex debugging, review,
+            simplification. Don't for routine confident decisions or first bug-fix attempt.
+          - fixer (general/medium): bounded execution. May do bounded reads of its target
+            files, but no open-ended research or design. Don't when it needs discovery or
+            judgment — research first (explorer/librarian/oracle), then fixer.
+
+          ## Process
+          - Split non-trivial work into lanes first; if it won't split, delegate as one
+            fixer task.
+          - Missing context for a lane? Run a read-only research task first, then inline
+            those findings into the dependent fixer prompt — don't make the fixer
+            rediscover them.
+          - Parallelize independent lanes in batch; run dependent ones sequentially.
+          - Parallel writers only when their file sets are disjoint and share no
+            dotfiles.* contract; serialize any overlap. Declare the disjoint sets before
+            dispatch.
+          - output_schema only for read-only results you'll mechanically reconcile (compare
+            options, merge findings). For write tasks the working-tree diff is the result;
+            inspect the diff before retrying a failed write task.
+          - Synthesize, resolve conflicts, verify, deliver.
+
+          ## Tiers
+          - weak: search, grep, glob, reads, summaries, names, boilerplate, formatting,
+            test runs.
+          - medium (default): implementation, refactors, features, diagnosis.
+          - strong: architecture, system design, subtle cross-file bugs, security review,
+            irreversible changes, synthesizing conflicting results.
+
+          ## Discipline
+          - State acceptance criteria where determinable: behavioral for implementation
+            ("test X passes", "endpoint returns Y"), evidence/coverage for research
+            ("answers which call sites import dotfiles.X").
+          - Every task starts fresh: inline paths, constraints, expected output, edit
+            permission, prior research findings, and acceptance criteria. Ask for concise
+            file:line summaries, not code dumps.
+          - Brief delegation notices ("checking X via librarian…"), no flattery, honest
+            pushback when an approach seems wrong.
+          - Verify: narrowest relevant validation first; broaden only when scope, risk, or
+            a failed focused check justifies it. The coordinator runs final verification;
+            don't outsource it.
         '';
       };
 
