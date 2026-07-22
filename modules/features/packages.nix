@@ -19,9 +19,11 @@
         DISABLE_NIX_SHELL_WELCOME = 1;
       }
       // lib.optionalAttrs pkgs.stdenv.isDarwin {
-        # Use Apple's clang for C compilation — Nix's GCC sysroot lacks macOS
-        # framework headers (CoreServices, Security, etc.) needed by native deps.
+        # Use Apple's clang for C/C++ compilation — Nix's GCC sysroot lacks macOS
+        # framework headers (CoreServices, Security, etc.) needed by native deps,
+        # and its libstdc++ ABI mismatches crates (e.g. mlua) that link libc++.
         CC = "/usr/bin/clang";
+        CXX = "/usr/bin/clang++";
       };
 
       packages =
