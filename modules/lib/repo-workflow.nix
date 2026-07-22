@@ -239,7 +239,7 @@ let
             else
               title=$task
               [ -n "$title" ] || title=$slug
-              created=$(linear issue create -t "$title" --team "$TICKET_PREFIX" --assignee self --start --no-interactive 2>&1) || {
+               created=$(linear issue create -t "$title" --team "$TICKET_PREFIX" --assignee self --state "In Progress" --no-interactive 2>&1) || {
                 printf 'worktrees new: linear issue create failed:\n%s\n' "$created" >&2
                 exit 1
               }

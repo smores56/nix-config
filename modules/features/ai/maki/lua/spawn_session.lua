@@ -1,19 +1,22 @@
 -- spawn_session: create a worktree and spawn a new maki session in a
 -- new Zellij tab, gated behind a confirmation question.
 --
--- Caller (the LLM) is expected to generate the branch name beforehand:
---   agent-branch-name --slug <slug> --task "<task>"
--- and prepare the session prompt. This tool handles the interactive parts
--- (confirmation, worktree creation, Zellij tab spawning).
+-- The worktree (and its branch, and any required Linear ticket) is created
+-- by the canonical `worktrees` tool — the same one AGENTS.md tells agents to
+-- use directly. That tool owns branch naming (sam.mohr/7AI-<n>-<slug> for
+-- work repos, smores/<slug> for personal), so the branch name is always
+-- well-formed. The agent supplies a slug/task/ticket, never a raw branch
+-- name — which previously let it hand-roll mangled names like
+-- `sammohr/7ai-...` via worktrunk's `wt switch --create`.
 --
--- Prerequisites on PATH: wt (worktrunk), zellij, python3
+-- Prerequisites on PATH: worktrees, zellij, python3
 
 local QuestionForm = require("question_form")
 
 -- Nerd Font sushi glyph (nf-fae-sushi, U+E21A) prefixing the Zellij tab name.
 local sushi_icon = "\238\136\154"
 
-if maki.fn.executable("wt") == 0
+if maki.fn.executable("worktrees") == 0
   or maki.fn.executable("zellij") == 0
   or maki.fn.executable("python3") == 0
 then
@@ -29,26 +32,23 @@ maki.api.register_tool({
   kind = "execute",
   description = [[Spawn a new interactive maki session in a new Zellij tab (with a worktree).
 
-BEFORE calling this, generate the branch name via:
-  agent-branch-name --slug <slug> --task "<task>"
-and prepare the session prompt.
+Provide a kebab `slug` and the session `prompt`; optionally a `task` (description, also the Linear ticket title), an explicit `ticket` (7AI-<n>), and a `base` ref. The worktree + branch + ticket are created by the canonical `worktrees` tool, which owns branch naming — do not supply a branch name.
 
 Workflow:
-1. Shows a confirmation question (bottom of window) with the branch name and task description
-2. Creates the worktree via `wt switch --create --no-hooks --no-cd <branch> --format json`
+1. Shows a confirmation question (bottom of window) with the slug, ticket, and prompt
+2. Creates the worktree via `worktrees new --slug <slug> [--task <task>] [--ticket <ticket>] [--base <base>]`
 3. Opens a new Zellij tab and runs maki in the worktree directory
 
-Use for long-running feature work that deserves its own isolated session.
+For work repos without a `ticket`, `worktrees` auto-creates a Linear ticket (requires the `linear` CLI on PATH). Use for long-running feature work that deserves its own isolated session.
 
 This tool cannot be batched.]],
   schema = {
     type = "object",
-    required = { "branch", "prompt" },
+    required = { "slug", "prompt" },
     properties = {
-      branch = {
+      slug = {
         type = "string",
-        description = [[Full branch name (e.g. "smores/my-feature"). Generate via:
-agent-branch-name --slug <slug> --task "<task>"]],
+        description = "Kebab-case worktree/branch slug (e.g. 'fix-auth-flow').",
       },
       prompt = {
         type = "string",
@@ -56,35 +56,48 @@ agent-branch-name --slug <slug> --task "<task>"]],
       },
       task = {
         type = "string",
-        description = "Short display label for the confirmation question (defaults to the worktree name, derived from the branch)",
+        description = "Task description; passed to `worktrees --task` (Linear ticket title + 7AI-<n> extraction). Defaults to the slug.",
+      },
+      ticket = {
+        type = "string",
+        description = "Explicit Linear ticket (e.g. '7AI-12345'). Skips auto-creation.",
+      },
+      base = {
+        type = "string",
+        description = "Base ref for the new branch (defaults to origin's default branch).",
       },
     },
   },
   audiences = { "main" },
   timeout = false,
   header = function(input)
-    return input.task or input.branch or "spawn session"
+    return input.task or input.slug or "spawn session"
   end,
   handler = function(input, ctx)
-    local branch = input.branch or ""
+    local slug = input.slug or ""
     local prompt = input.prompt or ""
-    if branch == "" or prompt == "" then
-      return { llm_output = "error: branch and prompt are required", is_error = true }
+    if slug == "" or prompt == "" then
+      return { llm_output = "error: slug and prompt are required", is_error = true }
     end
+    local task = input.task or ""
+    local ticket = input.ticket or ""
+    local base = input.base or ""
 
-    local worktree_name = branch:match("([^/]+)$") or branch
-    local display_label = input.task or worktree_name
+    -- Worktree directory name = <ticket>-<slug> or <slug>; also the Zellij tab label.
+    local worktree_name = (ticket ~= "" and ticket .. "-" or "") .. slug
+    local ticket_disp = (ticket ~= "") and ticket or "(new Linear ticket)"
 
-    local start_label = ("Start: %s"):format(display_label)
+    local start_label = ("Start: %s"):format(slug)
     local prompt_preview = (prompt:match("^([^\n]+)") or prompt):gsub("%s+", " ")
     if #prompt_preview > 120 then
       prompt_preview = prompt_preview:sub(1, 117) .. "..."
     end
     local question_text = ("Start a new session?\n\n"
-      .. "- **Branch:** `%s`\n"
-      .. "- **Worktree:** `%s`\n"
+      .. "- **Slug:** `%s`\n"
+      .. "- **Ticket:** %s\n"
+      .. "- **Worktree:** `.worktrees/%s`\n"
       .. "- **Prompt:** %s")
-      :format(branch, worktree_name, prompt_preview)
+      :format(slug, ticket_disp, worktree_name, prompt_preview)
 
     -- Bottom-of-window question form. Escape/Ctrl-C/close dismisses
     -- (result.type == "dismiss"); no explicit Cancel option needed.
@@ -92,7 +105,7 @@ agent-branch-name --slug <slug> --task "<task>"]],
       {
         question = question_text,
         options = {
-          { label = start_label, description = branch },
+          { label = start_label, description = slug },
         },
       },
     })
@@ -104,34 +117,45 @@ agent-branch-name --slug <slug> --task "<task>"]],
       return { llm_output = "(cancelled by user)" }
     end
 
+    -- Build the `worktrees new` arg list with each value shell-quoted.
+    local wt_args = "--slug " .. shell_quote(slug)
+    if task ~= "" then
+      wt_args = wt_args .. " --task " .. shell_quote(task)
+    end
+    if ticket ~= "" then
+      wt_args = wt_args .. " --ticket " .. shell_quote(ticket)
+    end
+    if base ~= "" then
+      wt_args = wt_args .. " --base " .. shell_quote(base)
+    end
+
     local script = string.format(
       [[
-branch=%s
-
-wt_output=$(wt switch --create --no-hooks --no-cd "$branch" --format json 2>&1) || {
-  echo "ERR:$wt_output"
+out=$(worktrees new %s 2>&1) || {
+  echo "ERR:$out"
   exit 1
 }
-path=$(printf "%%s" "$wt_output" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('path',''))" 2>/dev/null)
+# worktrees prints a single JSON line on stdout; isolate it from any git
+# fetch noise on stderr so JSON parsing is robust.
+json=$(printf "%%s" "$out" | grep -E '^\{' | tail -1)
+path=$(printf "%%s" "$json" | python3 -c "import sys,json; print(json.load(sys.stdin).get('path',''))" 2>/dev/null)
 if [ -z "$path" ]; then
-  path=$(printf "%%s" "$wt_output" | grep -o '"path":"[^"]*"' | head -1 | cut -d'"' -f4)
+  path=$(printf "%%s" "$json" | grep -o '"path":"[^"]*"' | head -1 | cut -d'"' -f4)
+fi
+branch=$(printf "%%s" "$json" | python3 -c "import sys,json; print(json.load(sys.stdin).get('branch',''))" 2>/dev/null)
+if [ -z "$branch" ]; then
+  branch=$(printf "%%s" "$json" | grep -o '"branch":"[^"]*"' | head -1 | cut -d'"' -f4)
 fi
 if [ -z "$path" ]; then
-  root=$(git rev-parse --show-toplevel 2>/dev/null) || root=""
-  if [ -n "$root" ]; then
-    path=$root/.worktrees/%s
-  fi
-fi
-if [ -z "$path" ]; then
-  rm -f "$prompt_file"
-  echo "ERR:could not determine worktree path"
+  echo "ERR:could not determine worktree path: $out"
   exit 1
 fi
 
 zellij action new-tab -n %s -c "$path" --close-on-exit -- exec agentbox maki -- "$START_PROMPT"
+echo "OK:$path"
+echo "BRANCH:$branch"
 ]],
-      shell_quote(branch),
-      shell_quote(worktree_name),
+      wt_args,
       shell_quote(sushi_icon .. " - " .. worktree_name)
     )
 
@@ -148,7 +172,6 @@ zellij action new-tab -n %s -c "$path" --close-on-exit -- exec agentbox maki -- 
       on_exit = function(_, code)
         local combined = table.concat(output_lines, "\n")
         if code ~= 0 then
-          -- The script rm's the prompt file itself on every failure-exit.
           local err_msg = combined:match("^ERR:(.+)") or combined
           ctx:finish({
             llm_output = "error spawning session: " .. err_msg,
@@ -156,17 +179,12 @@ zellij action new-tab -n %s -c "$path" --close-on-exit -- exec agentbox maki -- 
           })
           return
         end
-        local path = combined:match("^OK:(.+)$")
-        if path then
-          ctx:finish({
-            llm_output = ("Started session in Zellij tab **%s**\n- Worktree: `%s`\n- Branch: `%s`")
-              :format(worktree_name, path, branch),
-          })
-        else
-          ctx:finish({
-            llm_output = "Session started in branch `" .. branch .. "` (Zellij tab: " .. worktree_name .. ")",
-          })
-        end
+        local path = combined:match("OK:([^\n]+)") or ""
+        local branch = combined:match("BRANCH:([^\n]+)") or "(unknown)"
+        ctx:finish({
+          llm_output = ("Started session in Zellij tab **%s**\n- Worktree: `%s`\n- Branch: `%s`")
+            :format(worktree_name, path, branch),
+        })
       end,
     })
 

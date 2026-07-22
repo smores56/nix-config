@@ -26,7 +26,7 @@ let
   ]
   ++ lib.optionals hasTicket [
     "- Every work-org change references a ${work.ticketPrefix} Linear ticket"
-    "- To create a ticket: `linear issue create -t \"Title\" --team ${work.ticketPrefix} --assignee self --start`"
+    "- To create a ticket: `linear issue create -t \"Title\" --team ${work.ticketPrefix} --assignee self --state \"In Progress\"` (avoid `--start`: it creates and switches to a `<github-user>/<lowercase-ticket>` git branch in the current worktree — use `worktrees new` for ticket+worktree together)"
     "- To list your tickets: `linear issue mine`; to view one: `linear issue view ${work.ticketPrefix}-<number>`"
   ]
   ++ [
