@@ -1,8 +1,8 @@
 {
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/f83fc3c307e74bc5fd5adb7eb6b8b13ffd2a36e1";
+    nixpkgs.url = "github:nixos/nixpkgs/241313f4e8e508cb9b13278c2b0fa25b9ca27163";
     home-manager = {
-      url = "github:nix-community/home-manager/57d5560ee92a424fb71fde800acd6ed2c725dfce";
+      url = "github:nix-community/home-manager/041a999e8c1c5b731913855909e68d30ca69b8e0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     # Fork adds extraConfig (upstream calls it `config`). TODO: switch back to
@@ -22,7 +22,9 @@
     };
     flake-parts.url = "github:hercules-ci/flake-parts";
     import-tree.url = "github:vic/import-tree";
-    smolvm.url = "github:smol-machines/smolvm";
+    # Pinned to last working rev: the 2026-07-22 release (c0c7e98) shipped a
+    # truncated darwin-arm64 tarball. Revisit once upstream republishes.
+    smolvm.url = "github:smol-machines/smolvm/2fce46c21875a221a4934e75875170dea74478e3";
     smolvm.inputs.nixpkgs.follows = "nixpkgs";
   };
 

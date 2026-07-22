@@ -96,6 +96,17 @@ let
       });
 
       concord = concord.packages.${system}.default;
+
+      # musikcube's macosmediakeys plugin crashes the classic ld64 on the
+      # current nixpkgs pin (ld64 stubs-pass bug, unmerged nixpkgs#536365).
+      # Link with LLVM ld64.lld on Darwin; Linux is unaffected.
+      musikcube = prev.musikcube.overrideAttrs (
+        old:
+        lib.optionalAttrs final.stdenv.hostPlatform.isDarwin {
+          nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ final.llvmPackages.lld ];
+          NIX_CFLAGS_LINK = "-fuse-ld=lld";
+        }
+      );
     })
   ];
 
