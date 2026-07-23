@@ -5,9 +5,7 @@
 -- by the canonical `worktrees` tool — the same one AGENTS.md tells agents to
 -- use directly. That tool owns branch naming (sam.mohr/7AI-<n>-<slug> for
 -- work repos, smores/<slug> for personal), so the branch name is always
--- well-formed. The agent supplies a slug/task/ticket, never a raw branch
--- name — which previously let it hand-roll mangled names like
--- `sammohr/7ai-...` via worktrunk's `wt switch --create`.
+-- well-formed. The agent supplies a slug/task/ticket, never a raw branch name.
 --
 -- Prerequisites on PATH: worktrees, zellij, python3
 
@@ -151,7 +149,7 @@ if [ -z "$path" ]; then
   exit 1
 fi
 
-zellij action new-tab -n %s -c "$path" --close-on-exit -- exec agentbox maki -- "$START_PROMPT"
+zellij action new-tab -n %s -c "$path" --close-on-exit -- exec maki -- "$START_PROMPT"
 echo "OK:$path"
 echo "BRANCH:$branch"
 ]],
