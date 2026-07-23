@@ -142,7 +142,7 @@ let
   # per-name VM from the snapshot (--from + --smolfile is rejected,
   # and --from + --image is rejected since the snapshot already has
   # the image baked in).
-  cloneCreateArgs = lib.cli.toGNUCommandLine { } {
+  cloneCreateArgs = lib.cli.toCommandLineGNU { } {
     inherit (vmConfig) net cpus;
     mem = vmConfig.memory;
     overlay = vmConfig.overlay;

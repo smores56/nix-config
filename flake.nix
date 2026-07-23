@@ -17,7 +17,9 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     stylix = {
-      url = "github:nix-community/stylix/84971726c7ef0bb3669a5443e151cc226e65c518";
+      # Pinned to master HEAD tracking release 26.11 to match the HM 26.11
+      # pin below; stylix has no release-26.11 branch yet (HM is on master).
+      url = "github:nix-community/stylix/66714e5ce44269ecc58c20d9196da8dbe1b27a31";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     flake-parts.url = "github:hercules-ci/flake-parts";
