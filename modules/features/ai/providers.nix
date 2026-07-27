@@ -59,10 +59,12 @@ let
     };
 
   # ── Neuralwatt ────────────────────────────────────────────────────────────
-  # Every model runs on Neuralwatt Flex: 35% off standard rates in exchange
-  # for best-effort scheduling (work that can wait). The API routes flex via a
-  # "-flex" model-id suffix; pricing is derived (×0.65) from the standard
-  # rates so the base numbers below stay the single source of truth.
+  # Neuralwatt Flex: 35% off standard rates in exchange for best-effort
+  # scheduling (work that can wait). The API routes flex via a "-flex"
+  # model-id suffix; pricing is derived (×0.65) from standard rates so the
+  # base numbers below stay the single source of truth. At launch Flex only
+  # covers the GLM-5.2 and Kimi K2 families — other models (Qwen) 404 with the
+  # suffix and run at standard rates until Flex expands to them.
   # https://neuralwatt.com/post/introducing-neuralwatt-flex-even-more-affordable-inference-for-work-that-can-wait
   mkFlex =
     m:
@@ -73,9 +75,16 @@ let
       outPrice = m.outPrice * 0.65;
       cachePrice = m.cachePrice * 0.65;
     };
+  flexFamilies = "glm-5.2.*|kimi-k2.*";
+  applyFlexIfSupported =
+    m:
+    if builtins.match flexFamilies m.id != null then
+      mkFlex m
+    else
+      m;
   # Ordering matters for maki's starts_with prefix matching — longer/suffixed
   # ids must precede their prefix (e.g. glm-5.2-short-fast-flex before glm-5.2-flex).
-  neuralwattModels = builtins.mapAttrs (_: mkFlex) {
+  neuralwattModels = builtins.mapAttrs (_: applyFlexIfSupported) {
     glm52 = mkModel "glm-5.2" "GLM 5.2" 1048576 32768 true 1.45 4.50 0.3625;
     glm52Fast = mkModel "glm-5.2-fast" "GLM 5.2 (fast)" 1048576 32768 false 1.45 4.50 0.3625;
     glm52Short = mkModel "glm-5.2-short" "GLM 5.2 (short)" 200000 32768 true 1.45 4.50 0.3625;
