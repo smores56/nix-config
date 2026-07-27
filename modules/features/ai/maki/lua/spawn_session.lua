@@ -149,7 +149,7 @@ if [ -z "$path" ]; then
   exit 1
 fi
 
-zellij action new-tab -n %s -c "$path" --close-on-exit -- exec maki -- "$START_PROMPT"
+zellij action new-tab -n %s -c "$path" --close-on-exit -- maki -- "$START_PROMPT"
 echo "OK:$path"
 echo "BRANCH:$branch"
 ]],
