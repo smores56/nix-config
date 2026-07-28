@@ -106,13 +106,12 @@ end
 -- Open the fuzzy picker over sessions matching `query`. Returns the chosen
 -- session, or nil (no match / cancelled). Live sessions are listed first and
 -- marked so the user knows choosing them switches to the existing tab.
-local function open_picker(query)
+local function open_picker(query, live)
   local sessions, err = list_sessions_json()
   if not sessions then
     maki.ui.flash(err or "failed to list sessions")
     return nil
   end
-  local live = live_ids()
   local filtered = filter_by_query(sessions, query or "")
   local ordered = {}
   for _, s in ipairs(filtered) do
@@ -202,12 +201,12 @@ local function spawn_tab(ctx, session)
 end
 
 local function resume(query, ctx)
-  local session = open_picker(query)
+  local live = live_ids()
+  local session = open_picker(query, live)
   if not session then
     finish(ctx, { llm_output = "(no session selected)" })
     return
   end
-  local live = live_ids()
   if live[session.id] then
     local _, err = maki.session.focus(session.id)
     finish(ctx, {

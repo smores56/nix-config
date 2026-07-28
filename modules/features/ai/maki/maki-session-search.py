@@ -159,12 +159,12 @@ def _save_cache(entries):
             pass
 
 
-def _compute_entry(path, stat):
+def _compute_entry(path, st):
     session = load_session(path)
     search_text = sanitize(" ".join(" ".join(session.messages).split())[:MAX_SEARCH_TEXT_JSON])
     return {
-        "mtime": stat.st_mtime,
-        "size": stat.st_size,
+        "mtime": st.st_mtime,
+        "size": st.st_size,
         "id": session.id,
         "cwd": sanitize(session.cwd),
         "title": sanitize(" ".join(session.title.split())),
@@ -175,27 +175,26 @@ def _compute_entry(path, stat):
 
 def list_sessions():
     cache = _load_cache()
-    live_paths = {str(p) for p in session_files()}
     entries = {}
     results = []
-    for path_str in sorted(live_paths):
-        path = Path(path_str)
+    for path in sorted(session_files()):
+        path_str = str(path)
         try:
-            stat = path.stat()
+            st = path.stat()
         except OSError:
             continue
         cached = cache.get(path_str)
         if (
             isinstance(cached, dict)
-            and cached.get("mtime") == stat.st_mtime
-            and cached.get("size") == stat.st_size
+            and cached.get("mtime") == st.st_mtime
+            and cached.get("size") == st.st_size
             and "id" in cached
             and "search_text" in cached
         ):
             entry = cached
         else:
             try:
-                entry = _compute_entry(path, stat)
+                entry = _compute_entry(path, st)
             except (ValueError, OSError) as error:
                 print(f"cannot read {path}: {error}", file=sys.stderr)
                 continue
