@@ -36,6 +36,7 @@ let
     })
 
     require("spawn_session")
+    require("resume_session")
   '';
 
   # Permissions manifest for the Lua plugins under ./lua. `run` is needed by
@@ -198,6 +199,10 @@ let
   '';
 
   makiSessionSearch = "${pkgs.python3}/bin/python3 ${./maki-session-search.py}";
+  # PATH bin so the maki Lua plugin can invoke it by name via maki.fn.jobstart.
+  makiSessionSearchBin = pkgs.writeShellScriptBin "maki-session-search" ''
+    exec ${pkgs.python3}/bin/python3 ${./maki-session-search.py} "$@"
+  '';
   makiSessionCable = pkgs.writers.writeTOML "maki-sessions.toml" {
     metadata = {
       name = "maki-sessions";
@@ -295,6 +300,10 @@ in
         force = true;
         source = ./lua/spawn_session.lua;
       };
+      ".config/maki/lua/resume_session.lua" = {
+        force = true;
+        source = ./lua/resume_session.lua;
+      };
       ".config/television/cable/maki-sessions.toml".source = makiSessionCable;
     }
     // lib.optionalAttrs (mcpServers != { }) {
@@ -315,6 +324,7 @@ in
     );
     home.packages = [
       pkgs.rtk
+      makiSessionSearchBin
     ]
     ++ lib.optional isWork codexCredSync
     ++ lib.optional isWork cfCostReport;
