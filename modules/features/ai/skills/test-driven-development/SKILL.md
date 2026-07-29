@@ -1,6 +1,6 @@
 ---
 name: test-driven-development
-description: Drive development with tests: write a failing test, make it pass, refactor. Use when implementing logic, fixing a bug, or changing behavior. For bug fixes, reproduce with a test before fixing.
+description: Drive development with tests: failing test → make pass → refactor. Use when implementing logic, fixing a bug, or changing behavior; reproduce bugs with a test before fixing.
 ---
 
 # Test-Driven Development

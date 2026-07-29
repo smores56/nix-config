@@ -1,6 +1,6 @@
 ---
 name: code-review-and-quality
-description: Five-axis code review (correctness, readability, architecture, security, performance) before merge. Use when reviewing your own, another agent's, or a human's code, or assessing a change before it enters the main branch.
+description: Five-axis code review (correctness, readability, architecture, security, performance) before a change enters the main branch.
 ---
 
 # Code Review and Quality

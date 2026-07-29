@@ -1,6 +1,6 @@
 ---
 name: doubt-driven-development
-description: Run a fresh-context adversarial review before any non-trivial decision stands. Use when correctness matters more than speed, in unfamiliar or high-stakes code (production, security, irreversible ops), or when a confident output is cheaper to verify now than debug later.
+description: Run a fresh-context adversarial review before any non-trivial decision stands. Use when correctness outweighs speed, or in unfamiliar/high-stakes/irreversible code.
 ---
 
 # Doubt-Driven Development

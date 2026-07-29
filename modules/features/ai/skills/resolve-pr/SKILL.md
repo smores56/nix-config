@@ -1,6 +1,6 @@
 ---
 name: resolve-pr
-description: Resolve a GitHub PR — merge conflicts, unresolved review threads, actionable CI failures — until it is ready to merge.
+description: Resolve a GitHub PR — merge conflicts, unresolved review threads, actionable CI failures — until ready to merge.
 argument-hint: [pr-number]
 ---
 

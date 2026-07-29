@@ -1,6 +1,6 @@
 ---
 name: design-brainstorm
-description: Explore a wide set of solution or product options, then rigorously compare them. Use when brainstorming, weighing approaches, asking for "options" or "alternatives", refining a vague idea, or wanting a second design perspective. Breadth first, then comparison — prefer over a single approach for open-ended design.
+description: Explore a wide set of options, then rigorously compare them. Use for open-ended design, weighing approaches, or refining a vague idea — breadth first, then comparison.
 ---
 
 # Design Brainstorm

@@ -1,6 +1,6 @@
 ---
 name: spec-driven-development
-description: Write a spec before coding. Use when starting a project, feature, or significant change with no spec, or when requirements are unclear, ambiguous, or only a vague idea.
+description: Write a spec before coding. Use when starting a project/feature/significant change with no spec, or unclear/ambiguous/vague requirements.
 ---
 
 # Spec-Driven Development

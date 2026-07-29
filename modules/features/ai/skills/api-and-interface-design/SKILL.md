@@ -1,6 +1,6 @@
 ---
 name: api-and-interface-design
-description: Design stable, hard-to-misuse APIs and module boundaries. Use when creating REST or GraphQL endpoints, defining type contracts between modules, or establishing frontend/backend boundaries. Applies Hyrum's Law and the One-Version Rule.
+description: Design stable, hard-to-misuse APIs and module boundaries (REST/GraphQL endpoints, type contracts, frontend/backend seams). Applies Hyrum's Law and the One-Version Rule.
 ---
 
 # API and Interface Design

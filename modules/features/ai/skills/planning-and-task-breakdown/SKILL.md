@@ -1,6 +1,6 @@
 ---
 name: planning-and-task-breakdown
-description: Break work into small, ordered, verifiable tasks. Use with a spec or clear requirements when work feels too large to start, scope needs estimating, or parallelization is possible.
+description: Break work into small, ordered, verifiable tasks. Use when work feels too large to start, scope needs estimating, or parallelization is possible.
 ---
 
 # Planning and Task Breakdown

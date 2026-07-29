@@ -1,6 +1,6 @@
 ---
 name: grill-me
-description: Interrogate a plan or design one decision at a time until fully aligned. Use when stress-testing a plan before building. Triggers: "grill me", "interrogate this plan", "stress-test this design".
+description: Interrogate a plan or design one decision at a time until aligned. Use to stress-test a plan before building. Triggers: "grill me", "interrogate this plan", "stress-test this design".
 disable-model-invocation: true
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: code-simplification
-description: Simplify code for clarity without changing behavior. Use when working code is harder to read, maintain, or extend than it should be, or when reviewing code that accumulated unnecessary complexity.
+description: Simplify code for clarity without changing behavior, when it's harder to read, maintain, or extend than it should be.
 ---
 
 # Code Simplification

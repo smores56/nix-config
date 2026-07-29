@@ -49,9 +49,8 @@ let
     - Prefer structured types over untyped dictionaries/maps/objects
 
     # Comments
-    - No comments on self-explanatory code
-    - Comments explain WHY, never WHAT
-    - No multi-line comment blocks or verbose docstrings
+    - Match surrounding code's comment density
+    - Comments explain WHY, never WHAT; no self-evident or multi-line docstring comments
 
     # Data
     - Transform data at point of use — keep it in its richest form until the consumer needs a different shape
@@ -73,7 +72,7 @@ let
     - Non-interactive CLI commands only (flags over interactive prompts)
     - Do not add `Co-Authored-By` trailers to commit messages (no AI attribution)
     ${branchWorkflow}
-    - For personal repos: do all work in a worktree, commit and push after each meaningful change, merge back to main when all work is done, then clean up the worktree, local branch, and remote branch TODO
+    - For personal repos: do all work in a worktree, commit and push after each meaningful change, merge back to main when all work is done, then clean up the worktree, local branch, and remote branch
 
     # Commits and PRs
     - Follow Conventional Commits: <https://www.conventionalcommits.org/en/v1.0.0/>
@@ -87,8 +86,7 @@ let
     - Applies to both commit messages and PR titles
 
     # Memory
-    - MCP servers are available tools, but durable memory use is intentional: recall before relying on prior user/project decisions; retain only durable preferences, workflow decisions, and completed config outcomes that should survive future sessions.
-    - Do not store secrets, tokens, credentials, raw logs, transient debug notes, or facts already obvious from tracked files. Prefer repo docs/config as source of truth.
+    - Durable preferences and decisions only — no secrets, tokens, transient debug, or facts obvious from tracked files. Recall before relying on prior decisions; prefer repo docs/config as source of truth.
 
     # Terseness
     - No filler (just/really/basically), pleasantries (sure/certainly), or hedging

@@ -1,6 +1,6 @@
 ---
 name: adversarial-review
-description: Multi-persona adversarial review: parallel read-only subagents with orthogonal lenses cross-examine each other, then synthesize a consensus verdict. Use to red-team code or a plan before merge, or when self-review monoculture is a risk. Triggers: "adversarial review", "red-team this", "review from multiple angles".
+description: Red-team code or a plan before merge: parallel read-only subagents with orthogonal lenses cross-examine, then synthesize a verdict. Triggers: "adversarial review", "red-team this", "review from multiple angles".
 ---
 
 # Adversarial Review
