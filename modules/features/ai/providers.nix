@@ -68,7 +68,8 @@ let
   # https://neuralwatt.com/post/introducing-neuralwatt-flex-even-more-affordable-inference-for-work-that-can-wait
   mkFlex =
     m:
-    m // {
+    m
+    // {
       id = "${m.id}-flex";
       name = "${m.name} Flex";
       inPrice = m.inPrice * 0.65;
@@ -76,37 +77,40 @@ let
       cachePrice = m.cachePrice * 0.65;
     };
   flexFamilies = "glm-5.2.*|kimi-k2.*";
-  applyFlexIfSupported =
-    m:
-    if builtins.match flexFamilies m.id != null then
-      mkFlex m
-    else
-      m;
+  applyFlexIfSupported = m: if builtins.match flexFamilies m.id != null then mkFlex m else m;
   # Ordering matters for maki's starts_with prefix matching — longer/suffixed
   # ids must precede their prefix (e.g. glm-5.2-short-fast-flex before glm-5.2-flex).
   neuralwattModels = builtins.mapAttrs (_: applyFlexIfSupported) {
-    glm52 = mkModel "glm-5.2" "GLM 5.2" 1048576 32768 true 1.45 4.50 0.3625;
-    glm52Fast = mkModel "glm-5.2-fast" "GLM 5.2 (fast)" 1048576 32768 false 1.45 4.50 0.3625;
-    glm52Short = mkModel "glm-5.2-short" "GLM 5.2 (short)" 200000 32768 true 1.45 4.50 0.3625;
+    glm52 = mkModel "glm-5.2" "GLM 5.2" 1048576 32768 true 1.45 4.50 0.145;
+    glm52Fast = mkModel "glm-5.2-fast" "GLM 5.2 (fast)" 1048576 32768 false 1.45 4.50 0.145;
+    glm52Short = mkModel "glm-5.2-short" "GLM 5.2 (short)" 200000 32768 true 1.45 4.50 0.145;
     glm52ShortFast =
       mkModel "glm-5.2-short-fast" "GLM 5.2 (short, fast)" 200000 32768 false 1.45 4.50
-        0.3625;
-    kimiK26 = mkModel "kimi-k2.6" "Kimi K2.6" 262144 32768 true 0.69 3.22 0.1725;
-    kimiK26Fast = mkModel "kimi-k2.6-fast" "Kimi K2.6 Fast" 262144 32768 false 0.69 3.22 0.1725;
-    kimiK27Code = mkModel "kimi-k2.7-code" "Kimi K2.7 Code" 262144 32768 true 0.95 4.00 0.2375;
-    qwen35 = mkModel "qwen3.5-397b" "Qwen3.5 397B" 262144 32768 true 0.69 4.14 0.1725;
-    qwen35Fast = mkModel "qwen3.5-397b-fast" "Qwen3.5 397B Fast" 262144 32768 false 0.69 4.14 0.1725;
-    qwen36 = mkModel "qwen3.6-35b" "Qwen3.6 35B" 131072 16384 true 0.29 1.15 0.0725;
-    qwen36Fast = mkModel "qwen3.6-35b-fast" "Qwen3.6 35B Fast" 131072 16384 false 0.29 1.15 0.0725;
+        0.145;
+    kimiK26 = mkModel "kimi-k2.6" "Kimi K2.6" 262144 32768 true 0.69 3.22 0.069;
+    kimiK26Fast = mkModel "kimi-k2.6-fast" "Kimi K2.6 Fast" 262144 32768 false 0.69 3.22 0.069;
+    kimiK27Code = mkModel "kimi-k2.7-code" "Kimi K2.7 Code" 262144 32768 true 0.95 4.00 0.095;
+    qwen35 = mkModel "qwen3.5-397b" "Qwen3.5 397B" 262144 32768 true 0.69 4.14 0.069;
+    qwen35Fast = mkModel "qwen3.5-397b-fast" "Qwen3.5 397B Fast" 262144 32768 false 0.69 4.14 0.069;
+    qwen36 = mkModel "qwen3.6-35b" "Qwen3.6 35B" 131072 16384 true 0.29 1.15 0.029;
+    qwen36Fast = mkModel "qwen3.6-35b-fast" "Qwen3.6 35B Fast" 131072 16384 false 0.29 1.15 0.029;
+    deepseekV4Flash =
+      mkModel "deepseek-v4-flash" "DeepSeek V4 Flash" 1048560 65536 true 0.14 0.28
+        0.028;
+    kimiK27CodeFast =
+      mkModel "kimi-k2.7-code-fast" "Kimi K2.7 Code Fast" 262128 32768 false 0.95 4.00
+        0.095;
+    gemma431b = mkModel "gemma-4-31b" "Gemma 4 31B" 262128 16384 false 0.144 0.42 0.0144;
   };
 
   # Tiers track active MoE parameters per token:
-  #   strong  = GLM-5.2 (744B/40B active), Kimi K2.6/K2.7 (1T/32B active)
+  #   strong  = GLM-5.2 (744B/40B active), Kimi K2.6/K2.7 (1T/32B active),
+  #             DeepSeek V4 Flash (671B/37B active)
   #   medium  = Qwen3.5-397B (397B/17B active)
-  #   weak    = Qwen3.6-35B (35B/3B active)
+  #   weak    = Qwen3.6-35B (35B/3B active), Gemma 4 31B
   neuralwattTier =
     m:
-    if builtins.match "glm-5.2.*|kimi-k2.*" m.id != null then
+    if builtins.match "glm-5.2.*|kimi-k2.*|deepseek-v4.*" m.id != null then
       "strong"
     else if builtins.match "qwen3.5.*" m.id != null then
       "medium"
@@ -140,6 +144,7 @@ let
       models.glm52Short
       models.glm52Fast
       models.glm52
+      models.kimiK27CodeFast
       models.kimiK27Code
       models.kimiK26Fast
       models.kimiK26
@@ -147,6 +152,8 @@ let
       models.qwen35
       models.qwen36Fast
       models.qwen36
+      models.deepseekV4Flash
+      models.gemma431b
     ];
   };
 
