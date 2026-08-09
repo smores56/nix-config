@@ -3,10 +3,9 @@
 # consumers never import individual providers.
 #
 # Each provider exports:
-#   providerId    — slug used in model refs ("neuralwatt/glm-5.2")
+#   providerId    — slug used as the maki provider-script name ("neuralwatt")
 #   models        — full model catalog (provider-specific shape)
-#   roles         — model refs keyed by tier/role
-#   selectedModels — subset exposed to maki
+#   selectedModels — subset projected into makiModels
 #   makiModels    — models in maki provider-script shape
 #   baseUrl/keyEnv/extraAuthEnv — auth/connection params
 { ... }:
@@ -59,28 +58,7 @@ let
     };
 
   # ── Neuralwatt ────────────────────────────────────────────────────────────
-  # Neuralwatt Flex: 35% off standard rates in exchange for best-effort
-  # scheduling (work that can wait). The API routes flex via a "-flex"
-  # model-id suffix; pricing is derived (×0.65) from standard rates so the
-  # base numbers below stay the single source of truth. At launch Flex only
-  # covers the GLM-5.2 and Kimi K2 families — other models (Qwen) 404 with the
-  # suffix and run at standard rates until Flex expands to them.
-  # https://neuralwatt.com/post/introducing-neuralwatt-flex-even-more-affordable-inference-for-work-that-can-wait
-  mkFlex =
-    m:
-    m
-    // {
-      id = "${m.id}-flex";
-      name = "${m.name} Flex";
-      inPrice = m.inPrice * 0.65;
-      outPrice = m.outPrice * 0.65;
-      cachePrice = m.cachePrice * 0.65;
-    };
-  flexFamilies = "glm-5.2.*|kimi-k2.*";
-  applyFlexIfSupported = m: if builtins.match flexFamilies m.id != null then mkFlex m else m;
-  # Ordering matters for maki's starts_with prefix matching — longer/suffixed
-  # ids must precede their prefix (e.g. glm-5.2-short-fast-flex before glm-5.2-flex).
-  neuralwattModels = builtins.mapAttrs (_: applyFlexIfSupported) {
+  neuralwattModels = {
     glm52 = mkModel "glm-5.2" "GLM 5.2" 1048576 32768 true 1.45 4.50 0.145;
     glm52Fast = mkModel "glm-5.2-fast" "GLM 5.2 (fast)" 1048576 32768 false 1.45 4.50 0.145;
     glm52Short = mkModel "glm-5.2-short" "GLM 5.2 (short)" 200000 32768 true 1.45 4.50 0.145;
@@ -120,22 +98,6 @@ let
   neuralwatt = rec {
     providerId = "neuralwatt";
     models = neuralwattModels;
-    modelRef = m: "${providerId}/${m.id}";
-    roles = {
-      default = modelRef models.glm52;
-      slow = modelRef models.glm52;
-      plan = modelRef models.glm52;
-      smol = modelRef models.qwen36Fast;
-      vision = modelRef models.qwen36Fast;
-      designer = modelRef models.qwen36Fast;
-      commit = modelRef models.glm52ShortFast;
-      task = modelRef models.glm52ShortFast;
-    };
-    selectedModels = [
-      models.glm52
-      models.glm52ShortFast
-      models.qwen36Fast
-    ];
     baseUrl = "https://api.neuralwatt.com/v1";
     keyEnv = "NEURALWATT_API_KEY";
     # Full catalog (maki exposes all selectable models), ordered for prefix matching.
@@ -231,13 +193,6 @@ let
   cloudflare = rec {
     providerId = "cloudflare";
     models = cloudflareModels;
-    modelRef = m: "${providerId}/${m.id}";
-    roles = {
-      default = modelRef models.glm52;
-      strong = modelRef models.glm52;
-      medium = modelRef models.gptOss120b;
-      weak = modelRef models.graniteMicro;
-    };
     selectedModels = [
       models.glm52
       models.gptOss120b
@@ -259,10 +214,6 @@ let
   smortress = rec {
     providerId = "smortress";
     models = smortressModels;
-    modelRef = m: "${providerId}/${m.id}";
-    roles = {
-      default = modelRef models.gemma431b;
-    };
     selectedModels = [
       models.gemma431b
     ];

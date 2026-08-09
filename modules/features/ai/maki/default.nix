@@ -7,16 +7,10 @@
 }:
 let
   inherit (aiProviders) neuralwatt cloudflare smortress;
-  cfg = config.dotfiles;
-  work = cfg.work;
-  isWork = work.enable;
 
-  # Work defaults to the Cloudflare provider; personal defaults to Neuralwatt.
-  # The default model is the provider's `roles.default` (GLM-5.2 for both).
-  # strong/medium/weak tiers resolve from each provider model's `tier` field
-  # in providers.nix — no per-host tier-override file needed.
-  defaultProvider = if isWork then cloudflare else neuralwatt;
-  defaultModel = defaultProvider.roles.default;
+  # All providers are written on every host; each provider script's has_auth
+  # check reports availability based on which credential env vars are present,
+  # so maki only offers providers that actually have auth on that machine.
 
   # init.lua is a Lua script that calls maki.setup() once, then loads custom
   # tools. always_yolo skips permission prompts (deny rules still apply);
@@ -29,9 +23,6 @@ let
     maki.setup({
       always_yolo = true,
       always_thinking = "max",
-      provider = {
-        default_model = "${defaultModel}",
-      },
       plugins = {
         bash = { enabled = true },
       },
@@ -79,10 +70,10 @@ let
   makiMcpServers = lib.mapAttrs (_: mkMakiMcpServer) mcpServers;
   mcpToml = pkgs.writers.writeTOML "maki-mcp.toml" { mcp = makiMcpServers; };
 
-  # Custom providers for maki (personal hosts only). Model catalogs and pricing
-  # live in providers.nix and are projected into maki's shape via each
-  # provider's makiModels attribute. displayName is maki-specific.
-  makiProviders = {
+  # Custom providers for maki. Model catalogs and pricing live in providers.nix
+  # and are projected into maki's shape via each provider's makiModels
+  # attribute. displayName is maki-specific.
+  providersToWrite = {
     ${smortress.providerId} = {
       displayName = "Gemma (smortress)";
       baseUrl = smortress.baseUrl;
@@ -95,19 +86,15 @@ let
       keyEnv = neuralwatt.keyEnv;
       models = neuralwatt.makiModels;
     };
+    ${cloudflare.providerId} = {
+      displayName = "Cloudflare Workers AI";
+      baseUrl = cloudflare.makiBaseUrl;
+      keyEnv = cloudflare.keyEnv;
+      extraAuthEnv = cloudflare.extraAuthEnv;
+      dynamicBaseUrl = true;
+      models = cloudflare.makiModels;
+    };
   };
-
-  cloudflareProviders.${cloudflare.providerId} = {
-    displayName = "Cloudflare Workers AI";
-    baseUrl = cloudflare.makiBaseUrl;
-    keyEnv = cloudflare.keyEnv;
-    extraAuthEnv = cloudflare.extraAuthEnv;
-    dynamicBaseUrl = true;
-    models = cloudflare.makiModels;
-  };
-
-  providersToWrite =
-    lib.optionalAttrs (!isWork) makiProviders // lib.optionalAttrs isWork cloudflareProviders;
 
   mkProviderScript =
     p:
@@ -314,23 +301,19 @@ in
     home.packages = [
       pkgs.rtk
       makiSessionSearchBin
-    ]
-    ++ lib.optional isWork codexCredSync
-    ++ lib.optional isWork cfCostReport;
-    home.activation.makiCodexCreds = lib.mkIf isWork (
-      lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-        ${codexCredSync}/bin/maki-codex-sync || true
-      ''
-    );
+      codexCredSync
+      cfCostReport
+    ];
+    home.activation.makiCodexCreds = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      ${codexCredSync}/bin/maki-codex-sync || true
+    '';
     # Remove the obsolete maki tier-override file. Tiers now resolve from
     # each provider model's `tier` field (providers.nix); the old file was
     # written with keys/values swapped so maki ignored it, but a stale
-    # valid-format leftover may pin compaction — clean it up on work hosts.
-    home.activation.makiModelTiersCleanup = lib.mkIf isWork (
-      lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-        rm -f "$HOME/.local/state/maki/model-tiers"
-      ''
-    );
+    # valid-format leftover may pin compaction — clean it up.
+    home.activation.makiModelTiersCleanup = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      rm -f "$HOME/.local/state/maki/model-tiers"
+    '';
     programs.fish = {
       functions.__maki_session_resume = {
         body = ''
