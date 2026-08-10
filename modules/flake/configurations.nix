@@ -142,7 +142,14 @@ let
     stylix.homeModules.stylix
   ];
 
-  nixosModules = [ ../options.nix ] ++ importTree ../nixos;
+  # providers.nix injects `_module.args.aiProviders`, which options.nix's
+  # computed defaults (e.g. dotfiles.defaultModel) depend on.  Pure data — safe
+  # to import into NixOS evaluations too.
+  nixosModules = [
+    ../options.nix
+    ../features/ai/providers.nix
+  ]
+  ++ importTree ../nixos;
 
   mkHome =
     args:

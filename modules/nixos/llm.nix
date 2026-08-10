@@ -54,13 +54,13 @@ let
   # sweet spot (higher quants add size without quality).
   mainModel = pkgs.fetchurl {
     url = "https://huggingface.co/HauhauCS/Gemma4-31B-QAT-Uncensored-HauhauCS-Balanced-MTP/resolve/main/Gemma4-31B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M.gguf";
-    hash = "sha256-1ny7kx30gvpis7dn3mk0s8anw7vk1camjp22k1592jqsc2g7yrki";
+    hash = "sha256-cWZ/nmAaS5FKmEJcWRULcx9uFdJg1mHb0fHuB0afx9s=";
   };
 
   # MTP draft model — Unsloth's MTP head (280 MB), bundled with the HauhauCS release.
   mtpModel = pkgs.fetchurl {
     url = "https://huggingface.co/HauhauCS/Gemma4-31B-QAT-Uncensored-HauhauCS-Balanced-MTP/resolve/main/mtp-gemma-4-31B-it.gguf";
-    hash = "sha256-0qhv83ga61nnpvb974acklgkdv6sgqdvqjqih28470jrzj1ybi5m";
+    hash = "sha256-tcTlg/xZgkOQgBFLvBt+2uw2H51MkZPWvtYGo95AG2I=";
   };
 
   # RTX 3090 VRAM budget (24,576 MiB):
