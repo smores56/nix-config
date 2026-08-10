@@ -208,7 +208,9 @@ let
   # ── Smortress ─────────────────────────────────────────────────────────────
   # Local network provider; no auth needed (keyEnv = null).
   smortressModels = {
-    gemma431b = mkModel "gemma-4-31b" "Gemma 4 31B (smortress)" 102400 102400 true 0.0 0.0 0.0;
+    gemma431b =
+      mkModel "gemma-4-31b" "Gemma 4 31B uncensored (smortress)" 102400 102400 true 0.0 0.0
+        0.0;
   };
 
   smortress = rec {

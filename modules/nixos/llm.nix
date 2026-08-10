@@ -49,22 +49,25 @@ let
     '';
   };
 
+  # HauhauCS "Balanced" — uncensored (0/465 refusals) build of Google's QAT
+  # checkpoint, quantized Q4_K_M.  QAT-trained at 4-bit, so Q4_K_M is the
+  # sweet spot (higher quants add size without quality).
   mainModel = pkgs.fetchurl {
-    url = "https://huggingface.co/unsloth/gemma-4-31B-it-qat-GGUF/resolve/main/gemma-4-31B-it-qat-UD-Q4_K_XL.gguf";
-    hash = "sha256-kYinEFVVDx5guHXQK3q7Y2JawRtKbxSNayKzsouj0zU=";
+    url = "https://huggingface.co/HauhauCS/Gemma4-31B-QAT-Uncensored-HauhauCS-Balanced-MTP/resolve/main/Gemma4-31B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M.gguf";
+    hash = "sha256-1ny7kx30gvpis7dn3mk0s8anw7vk1camjp22k1592jqsc2g7yrki";
   };
 
-  # MTP draft model — MTP head weights quantized Q8_0 (514 MB).  Nix-fetched.
+  # MTP draft model — Unsloth's MTP head (280 MB), bundled with the HauhauCS release.
   mtpModel = pkgs.fetchurl {
-    url = "https://huggingface.co/unsloth/gemma-4-31B-it-GGUF/resolve/main/MTP/gemma-4-31B-it-MTP-Q8_0.gguf";
-    hash = "sha256-WuiwEXvtYB6JJMYwW9WwWF3jYdUfDncJG8tCUs8fJ94=";
+    url = "https://huggingface.co/HauhauCS/Gemma4-31B-QAT-Uncensored-HauhauCS-Balanced-MTP/resolve/main/mtp-gemma-4-31B-it.gguf";
+    hash = "sha256-0qhv83ga61nnpvb974acklgkdv6sgqdvqjqih28470jrzj1ybi5m";
   };
 
   # RTX 3090 VRAM budget (24,576 MiB):
-  #   Model weights (Q4_K_XL): 16,487 MiB
-  #   MTP drafter (Q8_0):         490 MiB
-  #   Runtime/CUDA overhead:    1,200 MiB
-  #   KV cache budget:          6,543 MiB → ~128K ctx with Q4_0 KV
+  #   Model weights (Q4_K_M): 17,821 MiB
+  #   MTP drafter:               267 MiB
+  #   Runtime/CUDA overhead:   1,200 MiB
+  #   KV cache budget:         5,288 MiB → ~128K ctx with Q4_0 KV
   #   Actual max ctx: ~140K (num_global_kv_heads=16 assumption)
   #   Push -c higher if stable; 262K only if gkv≤8
 in
@@ -112,6 +115,17 @@ in
         "99"
         "--reasoning-format"
         "deepseek"
+        # HauhauCS-recommended sampling (README): dialed in for this build
+        "--temp"
+        "0.6"
+        "--top-k"
+        "64"
+        "--top-p"
+        "0.9"
+        "--min-p"
+        "0.05"
+        "--repeat-penalty"
+        "1.1"
       ];
     };
 
