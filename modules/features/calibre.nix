@@ -1,3 +1,11 @@
+# calibre + FanFicFare CLI workflow (headless story downloads):
+#   1. install the FanFicFare plugin zip once:
+#      calibre-debug -c "from calibre.customize.ui import add_plugin; add_plugin('/tmp/FanFicFarePlugin.zip')"
+#   2. download: calibre-debug --run-plugin FanFicFare -- --with-library "$HOME/Calibre Library" <story-url>
+#      (writes the epub to CWD; does not add it to the library)
+#   3. calibredb add refuses while calibre-server holds the library:
+#      stop this unit, run calibredb --with-library "$HOME/Calibre Library" add <file>, start again.
+# Upstream: https://github.com/JimmXinu/FanFicFare
 {
   config,
   lib,
