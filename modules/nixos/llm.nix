@@ -83,50 +83,31 @@ in
     services.llama-cpp = {
       enable = true;
       package = llama-cpp;
-      host = "0.0.0.0";
-      port = 8081;
-      extraFlags = [
-        "--alias"
-        cfg.defaultModel
-        "--model"
-        "${mainModel}"
-        "-ngl"
-        "99"
-        "-c"
-        "128000"
-        "--cache-type-k"
-        "q4_0"
-        "--cache-type-v"
-        "q4_0"
-        "-np"
-        "1"
-        "--cont-batching"
-        "--flash-attn"
-        "on"
-        "--spec-type"
-        "draft-mtp"
-        "--spec-draft-n-max"
-        "2"
-        "--spec-draft-p-min"
-        "0.5"
-        "--model-draft"
-        "${mtpModel}"
-        "-ngld"
-        "99"
-        "--reasoning-format"
-        "deepseek"
+      settings = {
+        host = "0.0.0.0";
+        port = 8081;
+        alias = cfg.defaultModel;
+        model = mainModel;
+        n-gpu-layers = 99;
+        ctx-size = 128000;
+        cache-type-k = "q4_0";
+        cache-type-v = "q4_0";
+        parallel = 1;
+        cont-batching = true;
+        flash-attn = "on";
+        spec-type = "draft-mtp";
+        spec-draft-n-max = 2;
+        spec-draft-p-min = 0.5;
+        model-draft = mtpModel;
+        n-gpu-layers-draft = 99;
+        reasoning-format = "deepseek";
         # HauhauCS-recommended sampling (README): dialed in for this build
-        "--temp"
-        "0.6"
-        "--top-k"
-        "64"
-        "--top-p"
-        "0.9"
-        "--min-p"
-        "0.05"
-        "--repeat-penalty"
-        "1.1"
-      ];
+        temp = 0.6;
+        top-k = 64;
+        top-p = 0.9;
+        min-p = 0.05;
+        repeat-penalty = 1.1;
+      };
     };
 
     systemd.services.llama-cpp = {
