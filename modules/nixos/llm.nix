@@ -9,12 +9,12 @@ let
 
   llama-cpp = pkgs.stdenv.mkDerivation {
     pname = "llama-cpp";
-    version = "gemma4-mtp-efd651a";
+    version = "dflash2-1deefcca";
     src = pkgs.fetchFromGitHub {
-      owner = "am17an";
-      repo = "llama.cpp";
-      rev = "efd651a8ef2cd13d6c7bb22358659fb64f9e3b18";
-      hash = "sha256-Hay2cs4lt/oqzP9BpZ+oy3YBYvYnimm5F5XgS7o20k0=";
+      owner = "z-lab";
+      repo = "llama.cpp-fork";
+      rev = "1deefcca395743049c3820ab8f9b15043f3e9446";
+      hash = "sha256-3onl5XEYTTmXeLiv8/JHHMf4rKiPzGnYkJBdAM41Xho=";
     };
     nativeBuildInputs = with pkgs; [
       cmake
@@ -49,27 +49,30 @@ let
     '';
   };
 
-  # HauhauCS "Balanced" — uncensored (0/465 refusals) build of Google's QAT
-  # checkpoint, quantized Q4_K_M.  QAT-trained at 4-bit, so Q4_K_M is the
-  # sweet spot (higher quants add size without quality).
+  # Qwen3.8-27B — hybrid Gated DeltaNet + gated attention (qwen35), Unsloth
+  # Dynamic 3.0 IQ4_XS (14.3 GB). KV cache exists only on the 16 gated
+  # attention layers, so long context is cheap; IQ4_XS keeps weights light
+  # enough for the DFlash2 drafter's full-context KV at 200K on the 3090.
   mainModel = pkgs.fetchurl {
-    url = "https://huggingface.co/HauhauCS/Gemma4-31B-QAT-Uncensored-HauhauCS-Balanced-MTP/resolve/main/Gemma4-31B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M.gguf";
-    hash = "sha256-cWZ/nmAaS5FKmEJcWRULcx9uFdJg1mHb0fHuB0afx9s=";
+    url = "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-UD-IQ4_XS.gguf";
+    hash = "sha256-QPrEBQ6UA5fb8TCHr9UPRzShGAW/nWXvjd10g0cOYZk=";
   };
 
-  # MTP draft model — Unsloth's MTP head (280 MB), bundled with the HauhauCS release.
-  mtpModel = pkgs.fetchurl {
-    url = "https://huggingface.co/HauhauCS/Gemma4-31B-QAT-Uncensored-HauhauCS-Balanced-MTP/resolve/main/mtp-gemma-4-31B-it.gguf";
-    hash = "sha256-tcTlg/xZgkOQgBFLvBt+2uw2H51MkZPWvtYGo95AG2I=";
+  # DFlash2 block-diffusion drafter (z-lab, llama.cpp PR #27342). Q2_K is
+  # analogalok's 24 GB-card tuning (~705 MB; ~400 MB lighter than Q4_K_M).
+  draftModel = pkgs.fetchurl {
+    url = "https://huggingface.co/analogalok/Qwen3.8-27B-DFlash2-Q2_K-GGUF/resolve/main/Qwen3.8-27B-DFlash2-Q2_K.gguf";
+    hash = "sha256-u7zVtmtXH0OP8gGBhGSONyEaHYLEktMoNK8toscZN1U=";
   };
 
   # RTX 3090 VRAM budget (24,576 MiB):
-  #   Model weights (Q4_K_M): 17,821 MiB
-  #   MTP drafter:               267 MiB
-  #   Runtime/CUDA overhead:   1,200 MiB
-  #   KV cache budget:         5,288 MiB → ~128K ctx with Q4_0 KV
-  #   Actual max ctx: ~140K (num_global_kv_heads=16 assumption)
-  #   Push -c higher if stable; 262K only if gkv≤8
+  #   Model weights (UD-IQ4_XS): 13,594 MiB
+  #   DFlash2 drafter (Q2_K):       672 MiB
+  #   Runtime/CUDA overhead:       1,200 MiB
+  #   KV (target q4_0 + drafter, 200K ctx): ~7,500 MiB
+  #     (measured on 24 GB cards: 23.9 GB total at 170K with Q4_K_XL weights;
+  #     the drafter tracks the full context, so it dominates the KV budget)
+  #   Total: ~23.0 GiB — 200K is the ceiling; larger ctx needs lighter weights
 in
 {
   config = lib.mkIf cfg.llm {
@@ -89,24 +92,24 @@ in
         alias = cfg.defaultModel;
         model = mainModel;
         n-gpu-layers = 99;
-        ctx-size = 128000;
+        ctx-size = 200192;
         cache-type-k = "q4_0";
         cache-type-v = "q4_0";
         parallel = 1;
         cont-batching = true;
         flash-attn = "on";
-        spec-type = "draft-mtp";
-        spec-draft-n-max = 2;
-        spec-draft-p-min = 0.5;
-        model-draft = mtpModel;
+        spec-type = "draft-dflash";
+        spec-draft-n-max = 3;
+        model-draft = draftModel;
         n-gpu-layers-draft = 99;
         reasoning-format = "deepseek";
-        # HauhauCS-recommended sampling (README): dialed in for this build
-        temp = 0.6;
-        top-k = 64;
-        top-p = 0.9;
-        min-p = 0.05;
-        repeat-penalty = 1.1;
+        # Qwen3.8 model-card sampling (thinking mode; non-thinking: 0.7/0.8,
+        # presence-penalty 1.5)
+        temp = 1.0;
+        top-k = 20;
+        top-p = 0.95;
+        min-p = 0.0;
+        repeat-penalty = 1.0;
       };
     };
 

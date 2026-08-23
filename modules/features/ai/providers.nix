@@ -208,16 +208,14 @@ let
   # ── Smortress ─────────────────────────────────────────────────────────────
   # Local network provider; no auth needed (keyEnv = null).
   smortressModels = {
-    gemma431b =
-      mkModel "gemma-4-31b" "Gemma 4 31B uncensored (smortress)" 102400 102400 true 0.0 0.0
-        0.0;
+    qwen38 = mkModel "qwen3.8-27b" "Qwen3.8 27B (smortress)" 200192 200192 true 0.0 0.0 0.0;
   };
 
   smortress = rec {
     providerId = "smortress";
     models = smortressModels;
     selectedModels = [
-      models.gemma431b
+      models.qwen38
     ];
     baseUrl = "http://smortress:8081/v1";
     keyEnv = null;

@@ -287,7 +287,7 @@ in
       font = "Google Sans Code";
       fontPackage = pkgs.googlesans-code;
       shellPath = "${pkgs.${config.dotfiles.shell}}/bin/${config.dotfiles.shell}";
-      defaultModel = smortress.models.gemma431b.id;
+      defaultModel = smortress.models.qwen38.id;
       branchPrefix = "smores";
       darkTheme = {
         system = "rose-pine-moon";
