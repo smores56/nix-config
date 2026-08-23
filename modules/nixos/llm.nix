@@ -49,13 +49,14 @@ let
     '';
   };
 
-  # Qwen3.8-27B — hybrid Gated DeltaNet + gated attention (qwen35), Unsloth
-  # Dynamic 3.0 IQ4_XS (14.3 GB). KV cache exists only on the 16 gated
-  # attention layers, so long context is cheap; IQ4_XS keeps weights light
-  # enough for the DFlash2 drafter's full-context KV at 200K on the 3090.
+  # Qwen3.8-27B RVN Heretic — 0bserverx's double-refined abliteration, IQ4_XS
+  # multilingual. KL 0.0085 vs base keeps DFlash2 drafter acceptance near-full.
+  # KV cache exists only on the 16 gated attention layers, so long context is
+  # cheap; IQ4_XS keeps weights light enough for the drafter's full-context KV
+  # at 200K on the 3090.
   mainModel = pkgs.fetchurl {
-    url = "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-UD-IQ4_XS.gguf";
-    hash = "sha256-QPrEBQ6UA5fb8TCHr9UPRzShGAW/nWXvjd10g0cOYZk=";
+    url = "https://huggingface.co/0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF/resolve/main/RVN-IQ4_XS-multilingual.gguf";
+    hash = "sha256-8Ym3gWuBWTxRgHh4gfjQ1+gWamo=";
   };
 
   # DFlash2 block-diffusion drafter (z-lab, llama.cpp PR #27342). Q2_K is
@@ -66,13 +67,13 @@ let
   };
 
   # RTX 3090 VRAM budget (24,576 MiB):
-  #   Model weights (UD-IQ4_XS): 13,594 MiB
-  #   DFlash2 drafter (Q2_K):       672 MiB
-  #   Runtime/CUDA overhead:       1,200 MiB
+  #   Model weights (RVN IQ4_XS):  14,385 MiB
+  #   DFlash2 drafter (Q2_K):         672 MiB
+  #   Runtime/CUDA overhead:         1,200 MiB
   #   KV (target q4_0 + drafter, 200K ctx): ~7,500 MiB
   #     (measured on 24 GB cards: 23.9 GB total at 170K with Q4_K_XL weights;
   #     the drafter tracks the full context, so it dominates the KV budget)
-  #   Total: ~23.0 GiB — 200K is the ceiling; larger ctx needs lighter weights
+  #   Total: ~23.2 GiB — 200K is the ceiling; larger ctx needs lighter weights
 in
 {
   config = lib.mkIf cfg.llm {

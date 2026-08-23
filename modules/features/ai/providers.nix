@@ -208,7 +208,7 @@ let
   # ── Smortress ─────────────────────────────────────────────────────────────
   # Local network provider; no auth needed (keyEnv = null).
   smortressModels = {
-    qwen38 = mkModel "qwen3.8-27b" "Qwen3.8 27B (smortress)" 200192 200192 true 0.0 0.0 0.0;
+    qwen38 = mkModel "qwen3.8-27b" "Qwen3.8 27B uncensored (smortress)" 200192 200192 true 0.0 0.0 0.0;
   };
 
   smortress = rec {

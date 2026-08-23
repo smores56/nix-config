@@ -75,7 +75,7 @@ let
   # attribute. displayName is maki-specific.
   providersToWrite = {
     ${smortress.providerId} = {
-      displayName = "Qwen3.8 (smortress)";
+      displayName = "Qwen3.8 uncensored (smortress)";
       baseUrl = smortress.baseUrl;
       keyEnv = smortress.keyEnv;
       models = smortress.makiModels;
