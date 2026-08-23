@@ -56,7 +56,7 @@ let
   # at 200K on the 3090.
   mainModel = pkgs.fetchurl {
     url = "https://huggingface.co/0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF/resolve/main/RVN-IQ4_XS-multilingual.gguf";
-    hash = "sha256-8Ym3gWuBWTxRgHh4gfjQ1+gWamo=";
+    hash = "sha256-thWFa6SmINs74AT/XlxGs6bFw6F9JHvvLPbL4coyWqQ=";
   };
 
   # DFlash2 block-diffusion drafter (z-lab, llama.cpp PR #27342). Q2_K is
