@@ -41,13 +41,12 @@ let
 
   # Maps any model record to maki provider-script shape.
   mkMakiModel =
-    m: tier:
+    m:
     let
       p = getPricing m;
     in
     {
       inherit (m) id;
-      inherit tier;
       context_window = m.context;
       max_output_tokens = m.output;
       pricing = {
@@ -81,27 +80,13 @@ let
     gemma431b = mkModel "gemma-4-31b" "Gemma 4 31B" 262128 16384 false 0.144 0.42 0.0144;
   };
 
-  # Tiers track active MoE parameters per token:
-  #   strong  = GLM-5.2 (744B/40B active), Kimi K2.6/K2.7 (1T/32B active),
-  #             DeepSeek V4 Flash (671B/37B active)
-  #   medium  = Qwen3.5-397B (397B/17B active)
-  #   weak    = Qwen3.6-35B (35B/3B active), Gemma 4 31B
-  neuralwattTier =
-    m:
-    if builtins.match "glm-5.2.*|kimi-k2.*|deepseek-v4.*" m.id != null then
-      "strong"
-    else if builtins.match "qwen3.5.*" m.id != null then
-      "medium"
-    else
-      "weak";
-
   neuralwatt = rec {
     providerId = "neuralwatt";
     models = neuralwattModels;
     baseUrl = "https://api.neuralwatt.com/v1";
     keyEnv = "NEURALWATT_API_KEY";
     # Full catalog (maki exposes all selectable models), ordered for prefix matching.
-    makiModels = map (m: mkMakiModel m (neuralwattTier m)) [
+    makiModels = map mkMakiModel [
       models.glm52ShortFast
       models.glm52Short
       models.glm52Fast
@@ -123,27 +108,23 @@ let
   # CF model ids are namespaced (@cf/...). The account id is interpolated
   # into baseUrl at runtime (maki dynamicBaseUrl), keeping it out of the
   # Nix store.
-  # Three-tier cascade: GLM-5.2 strong, gpt-oss-120b medium,
-  # granite-4.0-h-micro weak. The weak tier is high-volume mechanical work
-  # (search/grep/read/summarize/format): it needs cheap, fast, reliable
-  # function calling, not reasoning. granite-4.0-h-micro is a 3B FC-native
-  # model at $0.017/$0.11 — no known CF serving bug. gpt-oss-20b (prior
-  # weak pick) is a reasoning model: too slow and pricey for the tier.
+  # granite-4.0-h-micro is a 3B function-calling-native model at $0.017/$0.112,
+  # making it suitable for high-volume mechanical work (search/grep/read/summarize/format).
+  # gpt-oss-20b was rejected because its reasoning makes it too slow and pricey for that work.
   # glm-4.7-flash / gemma-4-26b were rejected — workers-sdk #13333 breaks
   # their tool-call args on CF, and glm-4.7-flash also stalls (200/0-byte).
   cloudflareModels = {
-    glm52 = {
-      id = "@cf/zai-org/glm-5.2";
-      name = "GLM 5.2 (Cloudflare)";
+    glm53Flash = {
+      id = "@cf/zai-org/glm-5.3-flash";
+      name = "GLM 5.3 Flash (Cloudflare)";
       reasoning = true;
-      context = 256000;
+      context = 1048576;
       output = 32768;
       input = [ "text" ];
       pricing = {
-        input = 1.40;
-        output = 4.40;
-        # Cloudflare auto prefix-caches; GLM-5.2 publishes a $0.26/1M cached-input rate.
-        cacheRead = 0.26;
+        input = 0.15;
+        output = 0.50;
+        cacheRead = 0.03;
         cacheWrite = 0.0;
       };
     };
@@ -171,7 +152,7 @@ let
       input = [ "text" ];
       pricing = {
         input = 0.017;
-        output = 0.11;
+        output = 0.112;
         # No published cached rate; price cached reads as input (conservative).
         cacheRead = 0.017;
         cacheWrite = 0.0;
@@ -179,22 +160,11 @@ let
     };
   };
 
-  cloudflareTier =
-    m:
-    if m.id == "@cf/zai-org/glm-5.2" then
-      "strong"
-    else if m.id == "@cf/openai/gpt-oss-120b" then
-      "medium"
-    else if m.id == "@cf/ibm-granite/granite-4.0-h-micro" then
-      "weak"
-    else
-      "weak";
-
   cloudflare = rec {
     providerId = "cloudflare";
     models = cloudflareModels;
     selectedModels = [
-      models.glm52
+      models.glm53Flash
       models.gptOss120b
       models.graniteMicro
     ];
@@ -202,7 +172,7 @@ let
     extraAuthEnv = [ "CLOUDFLARE_ACCOUNT_ID" ];
     # baseUrl placeholder — maki uses shell \${CLOUDFLARE_ACCOUNT_ID} expanded at runtime.
     makiBaseUrl = "https://api.cloudflare.com/client/v4/accounts/\${CLOUDFLARE_ACCOUNT_ID}/ai/v1";
-    makiModels = map (m: mkMakiModel m (cloudflareTier m)) selectedModels;
+    makiModels = map mkMakiModel selectedModels;
   };
 
   # ── Smortress ─────────────────────────────────────────────────────────────
@@ -219,7 +189,7 @@ let
     ];
     baseUrl = "http://smortress:8081/v1";
     keyEnv = null;
-    makiModels = map (m: mkMakiModel m "medium") selectedModels;
+    makiModels = map mkMakiModel selectedModels;
   };
 in
 {

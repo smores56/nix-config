@@ -233,18 +233,17 @@ in
           it won't split, delegate as one fixer task.
 
           ## Lanes
-          subagent_type follows permissions; model_tier follows complexity/risk. Defaults
-          weak/medium — override only when warranted.
-          - explorer (research/weak): codebase recon — glob/grep/index. Bump to medium for
-            structural/ambiguous queries. Don't when you know the path or are about to edit.
-          - librarian (research/weak): external docs, API refs, version-specific behavior.
-            Bump to medium for hard cross-source synthesis.
-          - oracle (research/strong): architecture, risk, complex debugging, review,
-            simplification. Don't for routine or first bug-fix attempts.
-          - fixer (general/medium): bounded execution — bounded target reads, no open-ended
+          subagent_type follows permissions. Choose the lane based on task complexity and risk.
+          - explorer (research): codebase recon — glob/grep/index. Use for structural or
+            ambiguous queries; do not use when you know the path or are about to edit.
+          - librarian (research): external docs, API refs, version-specific behavior.
+          - oracle (research): architecture, risk, complex debugging, review, simplification.
+            Do not use for routine or first bug-fix attempts.
+          - fixer (general): bounded execution — bounded target reads, no open-ended
             research/design. Research first (explorer/librarian/oracle) if it needs discovery.
 
           ## Process
+
           - Missing context for a lane? Run a read-only research task first, then inline
             findings into the dependent fixer prompt.
           - Parallelize independent lanes in batch; run dependent ones sequentially.
@@ -254,11 +253,6 @@ in
             write tasks the working-tree diff is the result; inspect before retrying.
           - Synthesize, resolve conflicts, verify, deliver.
 
-          ## Tiers
-          - weak: search, grep, glob, reads, summaries, names, boilerplate, formatting, test runs.
-          - medium (default): implementation, refactors, features, diagnosis.
-          - strong: architecture, system design, subtle cross-file bugs, security review,
-            irreversible changes, synthesizing conflicting results.
 
           ## Discipline
           - State acceptance criteria where determinable: behavioral for implementation,
@@ -306,13 +300,6 @@ in
     ];
     home.activation.makiCodexCreds = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       ${codexCredSync}/bin/maki-codex-sync || true
-    '';
-    # Remove the obsolete maki tier-override file. Tiers now resolve from
-    # each provider model's `tier` field (providers.nix); the old file was
-    # written with keys/values swapped so maki ignored it, but a stale
-    # valid-format leftover may pin compaction — clean it up.
-    home.activation.makiModelTiersCleanup = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      rm -f "$HOME/.local/state/maki/model-tiers"
     '';
     programs.fish = {
       functions.__maki_session_resume = {
