@@ -143,6 +143,20 @@ let
         cacheWrite = 0.0;
       };
     };
+    deepseekV4Pro = {
+      id = "@cf/deepseek-ai/deepseek-v4-pro-0813";
+      name = "DeepSeek V4 Pro (Cloudflare)";
+      reasoning = true;
+      context = 1048576;
+      output = 32768;
+      input = [ "text" ];
+      pricing = {
+        input = 1.32;
+        output = 3.96;
+        cacheRead = 0.044;
+        cacheWrite = 0.0;
+      };
+    };
     graniteMicro = {
       id = "@cf/ibm-granite/granite-4.0-h-micro";
       name = "Granite 4.0 H Micro (Cloudflare)";
@@ -166,6 +180,7 @@ let
     selectedModels = [
       models.glm53Flash
       models.gptOss120b
+      models.deepseekV4Pro
       models.graniteMicro
     ];
     keyEnv = "CLOUDFLARE_API_KEY";
