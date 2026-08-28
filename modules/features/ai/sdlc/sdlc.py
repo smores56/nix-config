@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 
 TERMINAL = {"completed", "canceled", "duplicate"}
 PLAN_LABEL = "plan-approved"
@@ -19,6 +20,140 @@ _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 def clean(value):
     return _CONTROL.sub("", value) if isinstance(value, str) else value
+
+
+@dataclass(frozen=True)
+class Task:
+    identifier: str
+    title: str
+    url: str
+    state_name: str
+    state_type: str
+    blocks: tuple = ()
+    blocked_by: tuple = ()
+
+    @property
+    def done(self):
+        return self.state_type in TERMINAL
+
+
+@dataclass(frozen=True)
+class Blocker:
+    identifier: str
+    title: str
+    done: bool
+
+
+@dataclass
+class Dag:
+    identifier: str
+    title: str
+    description: str
+    labels: set
+    tasks: list
+
+    def __post_init__(self):
+        self._by_id = {t.identifier: t for t in self.tasks}
+
+    @classmethod
+    def from_issue(cls, parent):
+        tasks = []
+        for child in parent["children"]["nodes"]:
+            _no_trunc(f"{child['identifier']} relations", child["relations"])
+            _no_trunc(f"{child['identifier']} inverse-relations", child["inverseRelations"])
+            blocks = tuple(
+                rel["relatedIssue"]["identifier"]
+                for rel in child["relations"]["nodes"]
+                if rel["type"] == "blocks" and rel.get("relatedIssue")
+            )
+            blocked_by = tuple(
+                Blocker(
+                    identifier=rel["issue"]["identifier"],
+                    title=rel["issue"]["title"],
+                    done=rel["issue"]["state"]["type"] in TERMINAL,
+                )
+                for rel in child["inverseRelations"]["nodes"]
+                if rel["type"] == "blocks" and rel.get("issue")
+            )
+            tasks.append(
+                Task(
+                    identifier=child["identifier"],
+                    title=child["title"],
+                    url=child.get("url") or "",
+                    state_name=child["state"]["name"],
+                    state_type=child["state"]["type"],
+                    blocks=blocks,
+                    blocked_by=blocked_by,
+                )
+            )
+        return cls(
+            identifier=parent["identifier"],
+            title=parent["title"],
+            description=parent.get("description") or "",
+            labels={label["name"] for label in parent["labels"]["nodes"]},
+            tasks=tasks,
+        )
+
+    @property
+    def plan_approved(self):
+        return PLAN_LABEL in self.labels
+
+    @property
+    def design_approved(self):
+        return DESIGN_LABEL in self.labels
+
+    def find(self, identifier):
+        return self._by_id.get(identifier)
+
+    def workable(self):
+        return [
+            t for t in self.tasks if not t.done and all(b.done for b in t.blocked_by)
+        ]
+
+    def has_cycle(self):
+        nodes = {t.identifier for t in self.tasks}
+        for t in self.tasks:
+            nodes.update(t.blocks)
+        adj = {node: [] for node in nodes}
+        for t in self.tasks:
+            adj[t.identifier].extend(t.blocks)
+
+        state = {}
+
+        def dfs(node):
+            state[node] = 1
+            for nxt in adj[node]:
+                if nxt not in state:
+                    if dfs(nxt):
+                        return True
+                elif state[nxt] == 1:
+                    return True
+            state[node] = 2
+            return False
+
+        return any(node not in state and dfs(node) for node in nodes)
+
+    def render(self):
+        done = sum(1 for t in self.tasks if t.done)
+        lines = [
+            f"{clean(self.identifier)} — {clean(self.title)}",
+            f"gates: design-approved={'yes' if self.design_approved else 'no'} "
+            f"plan-approved={'yes' if self.plan_approved else 'no'}",
+            f"tasks: {done}/{len(self.tasks)} done",
+            "",
+        ]
+        for t in self.tasks:
+            mark = "x" if t.done else " "
+            lines.append(
+                f"- [{mark}] {clean(t.identifier)} {clean(t.title)} ({clean(t.state_name)})"
+            )
+        edges = sorted((t.identifier, b) for t in self.tasks for b in t.blocks)
+        if edges:
+            lines.append("")
+            lines.append("blocks:")
+            for src, dst in edges:
+                lines.append(f"  {clean(src)} -> {clean(dst)}")
+        return "\n".join(lines)
 
 
 DAG_QUERY = """
@@ -105,113 +240,29 @@ def load_dag(parent_id):
         sys.exit("sdlc: issue not found")
     _no_trunc("children", parent["children"])
     _no_trunc("labels", parent["labels"])
-    children = parent["children"]["nodes"]
-    blockers = {}
-    for child in children:
-        _no_trunc(f"{child['identifier']} relations", child["relations"])
-        _no_trunc(f"{child['identifier']} inverse-relations", child["inverseRelations"])
-        blockers[child["identifier"]] = [
-            {
-                "identifier": rel["issue"]["identifier"],
-                "title": rel["issue"]["title"],
-                "done": rel["issue"]["state"]["type"] in TERMINAL,
-            }
-            for rel in child["inverseRelations"]["nodes"]
-            if rel["type"] == "blocks" and rel.get("issue")
-        ]
-    return parent, children, blockers
-
-
-def labels_of(parent):
-    return {label["name"] for label in parent["labels"]["nodes"]}
-
-
-def block_edges(children):
-    edges = []
-    for child in children:
-        for rel in child["relations"]["nodes"]:
-            if rel["type"] == "blocks" and rel.get("relatedIssue"):
-                edges.append((child["identifier"], rel["relatedIssue"]["identifier"]))
-    return edges
-
-
-def has_cycle(children):
-    nodes = set()
-    for src, dst in block_edges(children):
-        nodes.add(src)
-        nodes.add(dst)
-    adj = {node: [] for node in nodes}
-    for src, dst in block_edges(children):
-        adj[src].append(dst)
-
-    state = {}
-
-    def dfs(node):
-        state[node] = 1
-        for nxt in adj[node]:
-            if nxt not in state:
-                if dfs(nxt):
-                    return True
-            elif state[nxt] == 1:
-                return True
-        state[node] = 2
-        return False
-
-    return any(node not in state and dfs(node) for node in nodes)
-
-
-def render_plan(parent, children, blockers):
-    labels = labels_of(parent)
-    done = sum(1 for c in children if c["state"]["type"] in TERMINAL)
-    lines = [
-        f"{clean(parent['identifier'])} — {clean(parent['title'])}",
-        f"gates: design-approved={'yes' if DESIGN_LABEL in labels else 'no'} "
-        f"plan-approved={'yes' if PLAN_LABEL in labels else 'no'}",
-        f"tasks: {done}/{len(children)} done",
-        "",
-    ]
-    for child in children:
-        mark = "x" if child["state"]["type"] in TERMINAL else " "
-        lines.append(
-            f"- [{mark}] {clean(child['identifier'])} {clean(child['title'])} "
-            f"({clean(child['state']['name'])})"
-        )
-    edges = block_edges(children)
-    if edges:
-        lines.append("")
-        lines.append("blocks:")
-        for src, dst in sorted(edges):
-            lines.append(f"  {clean(src)} -> {clean(dst)}")
-    return "\n".join(lines)
-
-
-def workable(parent, children, blockers):
-    if PLAN_LABEL not in labels_of(parent):
-        return None, "plan not approved (add plan-approved label)"
-    open_ = [c for c in children if c["state"]["type"] not in TERMINAL]
-    ready = [c for c in open_ if all(b["done"] for b in blockers[c["identifier"]])]
-    if not ready:
-        return None, "no workable tasks (blocked or done)"
-    return ready, None
+    return Dag.from_issue(parent)
 
 
 def cmd_next(args):
-    parent, children, blockers = load_dag(args.parent)
-    if has_cycle(children):
+    dag = load_dag(args.parent)
+    if dag.has_cycle():
         print("sdlc: plan has a dependency cycle", file=sys.stderr)
         return 1
-    ready, err = workable(parent, children, blockers)
-    if err:
-        print(f"sdlc: {err}", file=sys.stderr)
+    if not dag.plan_approved:
+        print("sdlc: plan not approved (add plan-approved label)", file=sys.stderr)
+        return 1
+    ready = dag.workable()
+    if not ready:
+        print("sdlc: no workable tasks (blocked or done)", file=sys.stderr)
         return 1
     if args.all:
         for task in ready:
-            print(f"{clean(task['identifier'])} {clean(task['title'])}")
+            print(f"{clean(task.identifier)} {clean(task.title)}")
     else:
         task = ready[0]
-        print(f"{clean(task['identifier'])} {clean(task['title'])}")
-        if task.get("url"):
-            print(clean(task["url"]))
+        print(f"{clean(task.identifier)} {clean(task.title)}")
+        if task.url:
+            print(clean(task.url))
     return 0
 
 
@@ -237,11 +288,11 @@ def _post_comment(parent_id, text):
 
 
 def cmd_plan(args):
-    parent, children, blockers = load_dag(args.parent)
-    if has_cycle(children):
+    dag = load_dag(args.parent)
+    if dag.has_cycle():
         print("sdlc: plan has a dependency cycle", file=sys.stderr)
         return 1
-    text = render_plan(parent, children, blockers)
+    text = dag.render()
     print(text)
     if args.post:
         return _post_comment(args.parent, text)
@@ -249,33 +300,28 @@ def cmd_plan(args):
 
 
 def cmd_status(args):
-    parent, children, blockers = load_dag(args.parent)
-    print(render_plan(parent, children, blockers))
+    print(load_dag(args.parent).render())
     return 0
 
 
-def _bootstrap_feature(feature):
-    parent, children, blockers = load_dag(feature["identifier"])
-    labels = labels_of(parent)
+def _bootstrap_feature(feature_id):
+    dag = load_dag(feature_id)
     out = [
-        f"# {clean(parent['identifier'])} — {clean(parent['title'])}",
-        f"design-approved={'yes' if DESIGN_LABEL in labels else 'no'} "
-        f"plan-approved={'yes' if PLAN_LABEL in labels else 'no'}",
+        f"# {clean(dag.identifier)} — {clean(dag.title)}",
+        f"design-approved={'yes' if dag.design_approved else 'no'} "
+        f"plan-approved={'yes' if dag.plan_approved else 'no'}",
         "",
         "## Design doc",
-        clean(parent.get("description") or "(empty)"),
+        clean(dag.description or "(empty)"),
         "",
         "## Plan",
-        render_plan(parent, children, blockers),
+        dag.render(),
     ]
     print("\n".join(out))
 
 
-def _bootstrap_task(task, parent_id):
-    parent, children, blockers = load_dag(parent_id)
-    labels = labels_of(parent)
-    task_blockers = blockers.get(task["identifier"], [])
-
+def _bootstrap_task(task, dag):
+    node = dag.find(task["identifier"])
     out = [
         f"# {clean(task['identifier'])} — {clean(task['title'])}",
         f"state: {clean(task['state']['name'])} ({clean(task['state']['type'])})",
@@ -284,30 +330,29 @@ def _bootstrap_task(task, parent_id):
         out.append(f"url: {clean(task['url'])}")
     out += [
         "",
-        f"## Feature: {clean(parent['identifier'])} — {clean(parent['title'])}",
-        f"design-approved={'yes' if DESIGN_LABEL in labels else 'no'} "
-        f"plan-approved={'yes' if PLAN_LABEL in labels else 'no'}",
+        f"## Feature: {clean(dag.identifier)} — {clean(dag.title)}",
+        f"design-approved={'yes' if dag.design_approved else 'no'} "
+        f"plan-approved={'yes' if dag.plan_approved else 'no'}",
         "",
         "## Blocked by",
     ]
-    if task_blockers:
-        for b in task_blockers:
+    if node and node.blocked_by:
+        for b in node.blocked_by:
             out.append(
-                f"- {clean(b['identifier'])} {clean(b['title'])} "
-                f"({'done' if b['done'] else 'open'})"
+                f"- {clean(b.identifier)} {clean(b.title)} ({'done' if b.done else 'open'})"
             )
     else:
         out.append("- (none)")
     out += [
         "",
         "## Design doc",
-        clean(parent.get("description") or "(empty)"),
+        clean(dag.description or "(empty)"),
         "",
         "## Task",
         clean(task.get("description") or "(empty)"),
         "",
         "## Plan",
-        render_plan(parent, children, blockers),
+        dag.render(),
     ]
     print("\n".join(out))
 
@@ -319,9 +364,9 @@ def cmd_bootstrap(args):
         return 1
     parent_id = (issue.get("parent") or {}).get("identifier")
     if parent_id:
-        _bootstrap_task(issue, parent_id)
+        _bootstrap_task(issue, load_dag(parent_id))
     else:
-        _bootstrap_feature(issue)
+        _bootstrap_feature(issue["identifier"])
     return 0
 
 

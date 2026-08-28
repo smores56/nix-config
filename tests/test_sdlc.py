@@ -11,77 +11,63 @@ def load_sdlc():
     return module
 
 
-def state(name, type_):
-    return {"name": name, "type": type_}
-
-
-def child(identifier, state_, relations=None, inverse=None):
-    return {
-        "identifier": identifier,
-        "title": identifier,
-        "url": None,
-        "state": state_,
-        "relations": {"nodes": relations or []},
-        "inverseRelations": {"nodes": inverse or []},
-    }
-
-
-def blocks(dst):
-    return {"type": "blocks", "relatedIssue": {"identifier": dst}}
-
-
-def parent(children, labels):
-    return {
-        "identifier": "FEAT-1",
-        "title": "Feature",
-        "description": "",
-        "state": state("Ready", "backlog"),
-        "labels": {"nodes": [{"name": l} for l in labels]},
-        "children": {"nodes": children},
-    }
-
-
-OPEN = state("Todo", "unstarted")
-DONE = state("Done", "completed")
-
-
 class SdlcTests(unittest.TestCase):
     def setUp(self):
         self.s = load_sdlc()
 
-    def test_block_edges_ignores_non_blocks(self):
-        children = [
-            child("A", OPEN, relations=[blocks("B"), {"type": "related", "relatedIssue": {"identifier": "C"}}]),
-            child("B", OPEN),
-        ]
-        self.assertEqual(self.s.block_edges(children), [("A", "B")])
+    def task(self, identifier, state_type="unstarted", blocks=(), blocked_by=()):
+        return self.s.Task(
+            identifier=identifier,
+            title=identifier,
+            url="",
+            state_name="Todo",
+            state_type=state_type,
+            blocks=blocks,
+            blocked_by=blocked_by,
+        )
+
+    def blocker(self, identifier, done=False):
+        return self.s.Blocker(identifier=identifier, title=identifier, done=done)
+
+    def dag(self, tasks, labels=()):
+        return self.s.Dag(
+            identifier="FEAT-1",
+            title="Feature",
+            description="",
+            labels=set(labels),
+            tasks=tasks,
+        )
 
     def test_has_cycle_detects_cycle(self):
-        children = [child("A", OPEN, relations=[blocks("B")]), child("B", OPEN, relations=[blocks("A")])]
-        self.assertTrue(self.s.has_cycle(children))
+        d = self.dag([
+            self.task("A", blocks=("B",)),
+            self.task("B", blocks=("A",)),
+        ])
+        self.assertTrue(d.has_cycle())
 
     def test_has_cycle_acyclic(self):
-        children = [child("A", OPEN, relations=[blocks("B")]), child("B", OPEN, relations=[blocks("C")]), child("C", OPEN)]
-        self.assertFalse(self.s.has_cycle(children))
+        d = self.dag([
+            self.task("A", blocks=("B",)),
+            self.task("B", blocks=("C",)),
+            self.task("C"),
+        ])
+        self.assertFalse(d.has_cycle())
 
-    def test_workable_requires_plan_approval(self):
-        p = parent([child("A", OPEN)], labels=[])
-        ready, err = self.s.workable(p, p["children"]["nodes"], {"A": []})
-        self.assertIsNone(ready)
-        self.assertIn("plan not approved", err)
+    def test_workable_excludes_done_tasks(self):
+        d = self.dag([self.task("A", "completed"), self.task("B")])
+        self.assertEqual([t.identifier for t in d.workable()], ["B"])
 
-    def test_workable_requires_terminal_blockers(self):
-        p = parent([child("A", OPEN)], labels=["plan-approved"])
-        blockers = {"A": [{"done": False}]}
-        ready, err = self.s.workable(p, p["children"]["nodes"], blockers)
-        self.assertIsNone(ready)
-        self.assertIn("no workable tasks", err)
+    def test_workable_excludes_tasks_with_open_blockers(self):
+        d = self.dag([self.task("A"), self.task("B", blocked_by=(self.blocker("A", done=False),))])
+        self.assertEqual([t.identifier for t in d.workable()], ["A"])
 
-    def test_workable_excludes_done_and_emits_ready(self):
-        children = [child("A", DONE), child("B", OPEN)]
-        p = parent(children, labels=["plan-approved"])
-        ready, _ = self.s.workable(p, children, {"A": [], "B": []})
-        self.assertEqual([c["identifier"] for c in ready], ["B"])
+    def test_workable_includes_tasks_with_done_blockers(self):
+        d = self.dag([self.task("A", "completed"), self.task("B", blocked_by=(self.blocker("A", done=True),))])
+        self.assertEqual([t.identifier for t in d.workable()], ["B"])
+
+    def test_plan_approved_reflects_label(self):
+        self.assertFalse(self.dag([]).plan_approved)
+        self.assertTrue(self.dag([], labels=["plan-approved"]).plan_approved)
 
 
 if __name__ == "__main__":
