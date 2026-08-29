@@ -40,6 +40,13 @@ let
     - Work GitHub orgs (${lib.concatStringsSep ", " work.githubOrgs}) use canonical `github.com` remotes and paths
   '';
 
+  sdlcHints = lib.optionalString hasTicket ''
+    # SDLC (${work.ticketPrefix})
+    - Feature work follows the `sdlc` workflow — Linear is the single source of truth for design, plan, and task state. Load the `sdlc` skill and drive it with the `sdlc` CLI.
+    - Commands: `sdlc bootstrap <feature-or-task>`, `sdlc plan <feature> [--post]`, `sdlc next <feature> [--all]`, `sdlc status <feature>`.
+    - No repo design docs. Design = feature ticket description; plan = child-ticket DAG (`blocks` relations); approval = `design-approved`/`plan-approved` labels.
+  '';
+
   aiHints = ''
     # Code Style
     - Strongly prefer functional programming: pure functions, immutability, composition over inheritance
@@ -84,6 +91,8 @@ let
         "- Scope is the affected module or area: `type(scope): description`"
     }
     - Applies to both commit messages and PR titles
+
+    ${sdlcHints}
 
     # Memory
     - Durable preferences and decisions only — no secrets, tokens, transient debug, or facts obvious from tracked files. Recall before relying on prior decisions; prefer repo docs/config as source of truth.
