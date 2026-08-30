@@ -14,6 +14,7 @@ from dataclasses import dataclass
 TERMINAL = {"completed", "canceled", "duplicate"}
 PLAN_LABEL = "plan-approved"
 DESIGN_LABEL = "design-approved"
+FEATURE_LABEL = "sdlc"
 
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
@@ -208,6 +209,27 @@ query($id: String!) {
 }
 """
 
+LIST_QUERY = f"""
+query {{
+  issues(
+    first: 100
+    filter: {{
+      labels: {{ some: {{ name: {{ eq: "{FEATURE_LABEL}" }} }} }}
+      state: {{ type: {{ nin: ["completed", "canceled", "duplicate"] }} }}
+    }}
+    orderBy: updatedAt
+  ) {{
+    nodes {{
+      identifier
+      title
+      labels(first: 100) {{ nodes {{ name }} pageInfo {{ hasNextPage }} }}
+      children(first: 200) {{ nodes {{ state {{ type }} }} pageInfo {{ hasNextPage }} }}
+    }}
+    pageInfo {{ hasNextPage }}
+  }}
+}}
+"""
+
 
 def gql(query, issue_id):
     if shutil.which("linear") is None:
@@ -227,6 +249,26 @@ def gql(query, issue_id):
     if data.get("errors"):
         sys.exit(f"sdlc: graphql: {data['errors'][0]['message']}")
     return (data.get("data") or {}).get("issue")
+
+
+def gql_query(query):
+    if shutil.which("linear") is None:
+        sys.exit("sdlc: `linear` not on PATH")
+    proc = subprocess.run(
+        ["linear", "api"],
+        input=query,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        sys.exit(f"sdlc: linear api failed: {proc.stderr.strip()}")
+    try:
+        data = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        sys.exit("sdlc: linear api returned non-JSON output")
+    if data.get("errors"):
+        sys.exit(f"sdlc: graphql: {data['errors'][0]['message']}")
+    return data.get("data") or {}
 
 
 def _no_trunc(name, conn):
@@ -357,6 +399,40 @@ def _bootstrap_task(task, dag):
     print("\n".join(out))
 
 
+def phase_of(labels, child_types):
+    if DESIGN_LABEL not in labels:
+        return "in design"
+    if PLAN_LABEL not in labels:
+        return "plan review"
+    if not child_types:
+        return "planned, no tasks"
+    done = sum(1 for t in child_types if t in TERMINAL)
+    if done == len(child_types):
+        return "finishing"
+    return f"implementing {done}/{len(child_types)}"
+
+
+def cmd_list(args):
+    conn = gql_query(LIST_QUERY)["issues"]
+    _no_trunc("features", conn)
+    rows = []
+    for issue in conn["nodes"]:
+        _no_trunc("labels", issue["labels"])
+        _no_trunc("children", issue["children"])
+        labels = {label["name"] for label in issue["labels"]["nodes"]}
+        child_types = [c["state"]["type"] for c in issue["children"]["nodes"]]
+        rows.append((issue["identifier"], clean(issue["title"]), phase_of(labels, child_types)))
+    if not rows:
+        print(f"no in-progress features (label: {FEATURE_LABEL})")
+        return 0
+    id_width = max(len(r[0]) for r in rows)
+    title_width = min(max(len(r[1]) for r in rows), 48)
+    for identifier, title, phase in rows:
+        shown = title if len(title) <= title_width else title[: title_width - 1] + "…"
+        print(f"{identifier:<{id_width}}  {shown:<{title_width}}  {phase}")
+    return 0
+
+
 def cmd_bootstrap(args):
     issue = gql(TASK_QUERY, args.issue)
     if issue is None:
@@ -373,6 +449,9 @@ def cmd_bootstrap(args):
 def main():
     parser = argparse.ArgumentParser(prog="sdlc", description="Linear-driven agentic SDLC")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    p = sub.add_parser("list", help="list in-progress features with phase")
+    p.set_defaults(func=cmd_list)
 
     p = sub.add_parser("plan", help="validate DAG and render the lean plan")
     p.add_argument("parent")

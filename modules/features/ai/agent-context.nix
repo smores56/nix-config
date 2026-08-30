@@ -12,13 +12,16 @@ let
   ticket = work.ticketPrefix;
 
   workflowLines = [
+    "- Start from the problem, not a solution — state what's wrong or needed; a suspected approach is context, not the goal"
+    "- First move on any request: classify aloud — quick fix, investigation, or feature — and act; a feature begins with the `sdlc` skill"
+    "- Resuming work: `sdlc list` shows in-progress features; pick one, then bootstrap and take the next task"
     "- Repos live under `${cfg.codeRoot}/<host>/<owner>/<repo>`; clone with `repos get <owner/repo-or-url>` — never `git clone`, `git worktree add`, `git checkout -b`, or Claude's EnterWorktree"
     "- Work orgs (${workOrgList}) use canonical `github.com` remotes and paths"
     "- Worktrees live under each repo's `.worktrees/` via `worktrees new`; it prints JSON — use its `path` as cwd, never `cd`"
     "- Start task worktrees with `worktrees new --slug <kebab-slug> --task \"<description>\"` (creates branch, worktree, and any Linear ticket)"
     "- Branches: personal `${personalPrefix}/<kebab-slug>`; work-org `${workPrefix}/${ticket}-<number>-<kebab-slug>`; every work-org change references a ${ticket} ticket"
     "- Create tickets with `linear issue create -t \"Title\" --team ${ticket} --assignee self --state \"In Progress\"` — avoid `--start` (creates a stray branch in the current worktree)"
-    "- Feature work follows the `sdlc` skill — Linear is the single source of truth for design, plan, and task state; never write repo design docs. Design = feature ticket description; plan = child-ticket DAG (`blocks` relations); approval = `design-approved`/`plan-approved` labels"
+    "- Feature work runs the `sdlc` skill — Linear is the single source of truth for design, plan, and task state; never write repo design docs. Design = feature ticket description; plan = child-ticket DAG (`blocks` relations); approval = `design-approved`/`plan-approved` labels"
     "- Run `research` before any non-trivial design; run `review` before merging non-trivial changes"
     "- Before a non-trivial decision stands, spawn a fresh read-only subagent to argue against it"
     "- Conventional Commits (feat, fix, refactor, chore, docs, test, perf, ci); work-org scope is the ticket — `fix(${ticket}-123): description` — otherwise `type(scope): description`; applies to commits and PR titles"

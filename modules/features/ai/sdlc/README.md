@@ -5,9 +5,9 @@ plan, and task state. No repo design docs.
 
 ## Conventions
 
-- **Feature parent** — a ticket labeled `feature` (human convention, not
-  enforced); its description is the design doc. Review via issue comments.
-  Approve with the `design-approved` label.
+- **Feature parent** — a ticket labeled `sdlc` (dedicated label, not the
+  generic `Feature`); its description is the design doc. Review via issue
+  comments. Approve with the `design-approved` label.
 - **Plan** — child tickets (`linear issue create --parent <feature>`) wired into
   a DAG with `blocks` relations (`linear issue relation add <a> blocks <b>`).
   Review the rendered plan, approve with the `plan-approved` label.
@@ -30,6 +30,7 @@ plan, and task state. No repo design docs.
 ## Commands
 
 ```sh
+sdlc list                     # in-progress features: ID, title, phase
 sdlc plan <feature> [--post]   # validate DAG (cycles), render lean plan
 sdlc next <feature> [--all]    # next workable task, or nonzero + reason
 sdlc status <feature>          # DAG + gate state

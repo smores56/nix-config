@@ -69,6 +69,18 @@ class SdlcTests(unittest.TestCase):
         self.assertFalse(self.dag([]).plan_approved)
         self.assertTrue(self.dag([], labels=["plan-approved"]).plan_approved)
 
+    def test_phase_of_derivation(self):
+        cases = [
+            (set(), [], "in design"),
+            ({"design-approved"}, [], "plan review"),
+            ({"design-approved", "plan-approved"}, [], "planned, no tasks"),
+            ({"design-approved", "plan-approved"}, ["unstarted"], "implementing 0/1"),
+            ({"design-approved", "plan-approved"}, ["completed", "unstarted"], "implementing 1/2"),
+            ({"design-approved", "plan-approved"}, ["completed", "canceled"], "finishing"),
+        ]
+        for labels, types, want in cases:
+            self.assertEqual(self.s.phase_of(labels, types), want)
+
 
 if __name__ == "__main__":
     unittest.main()
