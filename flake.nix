@@ -24,10 +24,6 @@
     };
     flake-parts.url = "github:hercules-ci/flake-parts";
     import-tree.url = "github:vic/import-tree";
-    # Pinned to last working rev: the 2026-07-22 release (c0c7e98) shipped a
-    # truncated darwin-arm64 tarball. Revisit once upstream republishes.
-    smolvm.url = "github:smol-machines/smolvm/2fce46c21875a221a4934e75875170dea74478e3";
-    smolvm.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs =

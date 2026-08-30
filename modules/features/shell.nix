@@ -72,8 +72,6 @@
         sm = "ssh smores@smortress -t fish";
 
         m = "maki";
-        ma = "agentbox maki";
-        ab = "agentbox";
       };
 
       interactiveShellInit = ''

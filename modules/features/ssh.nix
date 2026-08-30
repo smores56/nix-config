@@ -4,10 +4,9 @@
   ...
 }:
 {
-  # Host ssh-agent holds the SSH keys so sandboxed agents can sign commits
-  # and auth to git remotes WITHOUT reading ~/.ssh — smolvm's `ssh_agent`
-  # Smolfile flag forwards the agent socket into the VM, and agents only
-  # ask the agent to sign blobs (private keys never enter the guest).
+  # Host ssh-agent holds the SSH keys so tooling can sign commits and auth
+  # to git remotes WITHOUT reading ~/.ssh — agents only ask the agent to
+  # sign blobs (private keys are never on disk in agent contexts).
   services.ssh-agent.enable = true;
 
   # HM restarts ssh-agent on each activation, but `ssh-agent -D -a %t/ssh-agent`

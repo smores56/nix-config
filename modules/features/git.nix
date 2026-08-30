@@ -37,7 +37,7 @@ let
       done
 
       # Point IdentityFile at the .pub so ssh resolves the key via the
-      # ssh-agent rather than the private key file (hidden inside smolvm).
+      # ssh-agent rather than the private key file.
       exec ${pkgs.openssh}/bin/ssh -F /dev/null -o "IdentityFile=$key" -o IdentitiesOnly=yes "$@"
     fi
 
