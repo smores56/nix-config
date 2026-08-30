@@ -44,8 +44,9 @@ let
   # An env value that is exactly a ${VAR} reference expands at runtime (the
   # wrapper runs through sh -lc); anything else is a literal. Single-quoting
   # a ${VAR} value would pass the literal string to the server.
-  isEnvRef = value: builtins.match "\\$\\{[A-Za-z_][A-Za-z0-9_]*\\}" value != null;
-  mkEnvExport = name: value:
+  isEnvRef = value: builtins.match "\\$[{][A-Za-z_][A-Za-z0-9_]*[}]" value != null;
+  mkEnvExport =
+    name: value:
     if isEnvRef value then "export ${name}=\"${value}\"" else "export ${name}=${shellQuote value}";
   mkMakiMcpServer =
     server:
@@ -119,12 +120,12 @@ let
             printf '{"display_name":%s,"base":"llama-cpp","has_auth":%s}\n' ${lib.escapeShellArg (builtins.toJSON p.displayName)} "$ha"''
         else if tailnetOnly then
           ''
-            if ${pkgs.python3}/bin/python3 -c 'import ipaddress,socket,sys
-try:
-    sys.exit(0 if ipaddress.ip_address(socket.gethostbyname("${gateHost}")) in ipaddress.ip_network("100.64.0.0/10") else 1)
-except OSError:
-    sys.exit(1)'; then ha=true; else ha=false; fi
-            printf '{"display_name":%s,"base":"llama-cpp","has_auth":%s}\n' ${lib.escapeShellArg (builtins.toJSON p.displayName)} "$ha"''
+                        if ${pkgs.python3}/bin/python3 -c 'import ipaddress,socket,sys
+            try:
+                sys.exit(0 if ipaddress.ip_address(socket.gethostbyname("${gateHost}")) in ipaddress.ip_network("100.64.0.0/10") else 1)
+            except OSError:
+                sys.exit(1)'; then ha=true; else ha=false; fi
+                        printf '{"display_name":%s,"base":"llama-cpp","has_auth":%s}\n' ${lib.escapeShellArg (builtins.toJSON p.displayName)} "$ha"''
         else
           ''printf '%s\n' ${
             lib.escapeShellArg (
