@@ -44,6 +44,17 @@ let
     exec ${pkgs.openssh}/bin/ssh "$@"
   '';
 
+  # Work email applies automatically inside work-org repos (and their
+  # worktrees — a linked worktree's $GIT_DIR resolves under the main repo),
+  # via git includeIf. Global identity stays personal.
+  workEmailConf = pkgs.writeText "git-work-email" ''
+    [user]
+        email = ${work.email}
+  '';
+  workEmailIncludes = lib.genAttrs
+    (map (org: "gitdir:${cfg.codeRoot}/github.com/${org}/") work.githubOrgs)
+    (_: { path = "${workEmailConf}"; });
+
   workGithubUrlRewrites = lib.listToAttrs (
     map (org: {
       name = "git@github.com:${org}/";
@@ -64,9 +75,7 @@ in
       lazyjj
       hunk
     ])
-    ++ lib.optionals (work.githubOrgs != [ ]) [
-      githubSsh
-    ];
+    ++ [ githubSsh ];
 
   home.file.".gitignore".text = ''
     .worktrees/
@@ -132,11 +141,10 @@ in
           gpg.format = "ssh";
           user.signingkey = "~/.ssh/id_personal.pub";
           fetch.prune = true;
-        }
-        (lib.mkIf (work.githubOrgs != [ ]) {
           core.sshCommand = "${githubSsh}/bin/git-github-ssh";
           url = workGithubUrlRewrites;
-        })
+          includeIf = workEmailIncludes;
+        }
       ];
     };
 

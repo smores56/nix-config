@@ -79,18 +79,6 @@ let
       overlays = localOverlays system ++ [ noctalia.overlays.default ];
     };
 
-  homeProfiles = {
-    work = {
-      work = {
-        enable = true;
-        email = "sam.mohr@sevenai.com";
-        branchPrefix = "sam.mohr";
-        ticketPrefix = "7AI";
-        githubOrgs = [ "OkamiAI" ];
-      };
-    };
-  };
-
   homeModules = [
     ../options.nix
     ../home.nix
@@ -117,8 +105,6 @@ let
     let
       system = args.system or "x86_64-linux";
       username = args.username or "smores";
-      profile = homeProfiles.${args.profile or "default"} or { };
-      homeArgs = lib.recursiveUpdate profile (builtins.removeAttrs args [ "profile" ]);
     in
     home-manager.lib.homeManagerConfiguration {
       pkgs = pkgsForSystem system;
@@ -144,7 +130,7 @@ let
             monitorSize = null;
             work = null;
             calibre = null;
-          } homeArgs;
+          } args;
           home.username = username;
           home.homeDirectory =
             args.homeDirectory
@@ -220,7 +206,6 @@ in
         username = "smohr";
         system = "aarch64-darwin";
         terminalFontSize = 16;
-        profile = "work";
       };
     };
     nixosConfigurations = {

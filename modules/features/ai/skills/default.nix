@@ -14,12 +14,10 @@ let
     builtins.filter hasSkill (lib.attrNames entries);
 
   # ~/.agents/skills is the shared user-scope location: maki and codex both
-  # scan it. Claude Code reads ~/.claude/skills (work profile only).
+  # scan it. Claude Code reads ~/.claude/skills.
   sharedSkillTargets =
     map (skillName: ".agents/skills/${skillName}") sharedSkillNames
-    ++ lib.optionals config.dotfiles.work.enable (
-      map (skillName: ".claude/skills/${skillName}") sharedSkillNames
-    );
+    ++ map (skillName: ".claude/skills/${skillName}") sharedSkillNames;
   sharedSkillFiles = lib.genAttrs sharedSkillTargets (target: {
     force = true;
     source = ./${baseNameOf target};

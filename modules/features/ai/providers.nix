@@ -215,6 +215,9 @@ let
     ];
     baseUrl = "http://smortress:8081/v1";
     keyEnv = null;
+    # Offered only when the host resolves into the tailnet (100.64.0.0/10) —
+    # a disconnected tailnet must not fall back to untrusted local DNS.
+    tailnetOnly = true;
     makiModels = map mkMakiModel selectedModels;
   };
 in

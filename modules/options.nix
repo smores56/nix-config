@@ -71,8 +71,8 @@ in
     };
     email = lib.mkOption {
       type = lib.types.str;
-      default =
-        if config.dotfiles.work.email != null then config.dotfiles.work.email else "sam@sammohr.dev";
+      default = "sam@sammohr.dev";
+      description = "Default git identity. Work-org repos override via git includeIf.";
     };
     branchPrefix = lib.mkOption {
       type = lib.types.str;
@@ -80,37 +80,15 @@ in
       description = "Branch prefix for personal (non-work-org) repos.";
     };
     work = lib.mkOption {
-      type = lib.types.submodule {
-        options = {
-          enable = lib.mkOption {
-            type = lib.types.bool;
-            default = false;
-            description = "Enable work-specific identity, repo, model, and MCP defaults.";
-          };
-          email = lib.mkOption {
-            type = lib.types.nullOr lib.types.str;
-            default = null;
-            description = "Work email address. Null leaves dotfiles.email at its personal default.";
-          };
-          branchPrefix = lib.mkOption {
-            type = lib.types.nullOr lib.types.str;
-            default = null;
-            description = "Branch prefix for work-org repos. Null falls back to dotfiles.branchPrefix.";
-          };
-          ticketPrefix = lib.mkOption {
-            type = lib.types.nullOr lib.types.str;
-            default = null;
-            description = "Linear team/ticket prefix for work-org repos. Null = no ticket in work branches.";
-          };
-          githubOrgs = lib.mkOption {
-            type = lib.types.listOf lib.types.str;
-            default = [ ];
-            description = "GitHub organizations that should use work repo identity and ~/.ssh/id_work.";
-          };
-        };
+      type = lib.types.attrsOf lib.types.anything;
+      readOnly = true;
+      description = "Work identity constants — always on, identical on every host.";
+      default = {
+        email = "sam.mohr@sevenai.com";
+        branchPrefix = "sam.mohr";
+        ticketPrefix = "7AI";
+        githubOrgs = [ "OkamiAI" ];
       };
-      default = { };
-      description = "Work profile configuration shared by Git, repo helpers, AI tools, and MCPs.";
     };
     codeRoot = lib.mkOption {
       type = lib.types.str;

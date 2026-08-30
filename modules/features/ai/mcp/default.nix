@@ -5,8 +5,6 @@
   ...
 }:
 let
-  isWork = config.dotfiles.work.enable;
-
   gleanServerUrl = "https://sevenai-be.glean.com";
   glean = {
     command = "npx";
@@ -34,7 +32,7 @@ let
     ];
   };
 
-  workMcpServers = lib.optionalAttrs isWork {
+  workMcpServers = {
     inherit glean slack;
   };
 in

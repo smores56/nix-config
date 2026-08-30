@@ -9,8 +9,8 @@ let
   workflowPrelude = ''
     WORK_ORGS=(${lib.escapeShellArgs cfg.work.githubOrgs})
     PERSONAL_PREFIX=${lib.escapeShellArg cfg.branchPrefix}
-    WORK_PREFIX=${lib.escapeShellArg (toString (cfg.work.branchPrefix or ""))}
-    TICKET_PREFIX=${lib.escapeShellArg (toString (cfg.work.ticketPrefix or ""))}
+    WORK_PREFIX=${lib.escapeShellArg cfg.work.branchPrefix}
+    TICKET_PREFIX=${lib.escapeShellArg cfg.work.ticketPrefix}
 
     json_string() {
       printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/^/"/; s/$/"/'

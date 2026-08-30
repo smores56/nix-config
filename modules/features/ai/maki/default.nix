@@ -110,10 +110,20 @@ let
       authEnvs = [ p.keyEnv ] ++ (p.extraAuthEnv or [ ]);
       authCheck = lib.concatMapStringsSep " && " (e: ''[ -n "''${${e}:-}" ]'') authEnvs;
       dynamicBaseUrl = p.dynamicBaseUrl or false;
+      tailnetOnly = p.tailnetOnly or false;
+      gateHost = builtins.head (lib.splitString ":" (lib.removePrefix "http://" p.baseUrl));
       infoCmd =
         if hasKey then
           ''
             if ${authCheck}; then ha=true; else ha=false; fi
+            printf '{"display_name":%s,"base":"llama-cpp","has_auth":%s}\n' ${lib.escapeShellArg (builtins.toJSON p.displayName)} "$ha"''
+        else if tailnetOnly then
+          ''
+            if ${pkgs.python3}/bin/python3 -c 'import ipaddress,socket,sys
+try:
+    sys.exit(0 if ipaddress.ip_address(socket.gethostbyname("${gateHost}")) in ipaddress.ip_network("100.64.0.0/10") else 1)
+except OSError:
+    sys.exit(1)'; then ha=true; else ha=false; fi
             printf '{"display_name":%s,"base":"llama-cpp","has_auth":%s}\n' ${lib.escapeShellArg (builtins.toJSON p.displayName)} "$ha"''
         else
           ''printf '%s\n' ${
@@ -189,6 +199,35 @@ let
     MAKI_CF_PRICING=${cfPricingJson} exec ${pkgs.python3}/bin/python3 ${./cf-cost-report.py} "$@"
   '';
 
+  # Deny rules apply even under always_yolo — deny is consulted before
+  # yolo (yolo only skips prompting). Catastrophic-pattern backstop against
+  # a compromised model or prompt injection; not a sandbox — obfuscated
+  # forms can slip through.
+  permissionsToml = ''
+    [bash]
+    deny = [
+      "sudo",
+      "sudo *",
+      "rm -rf /",
+      "rm -rf /*",
+      "rm -fr /",
+      "rm -fr /*",
+      "rm -rf ~",
+      "rm -rf ~/*",
+      "rm -rf $HOME",
+      "rm -rf $HOME/*",
+      "sh",
+      "bash",
+      "git push --force *",
+      "git push -f *",
+      "git push * --force *",
+      "dd of=/dev/*",
+      "dd * of=/dev/*",
+      "mkfs*",
+      "mkfs *",
+    ]
+  '';
+
   makiSessionSearch = "${pkgs.python3}/bin/python3 ${./maki-session-search.py}";
   # PATH bin so the maki Lua plugin can invoke it by name via maki.fn.jobstart.
   makiSessionSearchBin = pkgs.writeShellScriptBin "maki-session-search" ''
@@ -220,51 +259,35 @@ in
         force = true;
         text = pluginToml;
       };
+      ".config/maki/permissions.toml" = {
+        force = true;
+        text = permissionsToml;
+      };
       ".config/maki/AGENTS.md" = {
         force = true;
         text = ''
           ${config.dotfiles.aiHints}
           # Delegation
-          This guidance is for the top-level coordinator (you, working with the user). If
-          you were spawned as a subagent, execute your assignment directly — do not
-          delegate further.
+          For the top-level coordinator — subagents execute their assignment
+          directly. You are a workflow manager: delegate implementation by
+          default; handle directly only what is faster to do than describe.
 
-          You are a workflow manager, not the default implementation worker. Default to
-          delegating implementation to a general (fixer) subagent; handle directly only a
-          trivial edit faster to make than describe. Split non-trivial work into lanes; if
-          it won't split, delegate as one fixer task.
+          ## Lanes (subagent_type follows permissions)
+          - explorer (research): codebase recon — not when you know the path or are about to edit
+          - librarian (research): external docs, API refs, version-specific behavior
+          - oracle (research): architecture, risk, complex debugging, review — not for routine fixes
+          - fixer (general): bounded execution — research first if it needs discovery
 
-          ## Lanes
-          subagent_type follows permissions. Choose the lane based on task complexity and risk.
-          - explorer (research): codebase recon — glob/grep/index. Use for structural or
-            ambiguous queries; do not use when you know the path or are about to edit.
-          - librarian (research): external docs, API refs, version-specific behavior.
-          - oracle (research): architecture, risk, complex debugging, review, simplification.
-            Do not use for routine or first bug-fix attempts.
-          - fixer (general): bounded execution — bounded target reads, no open-ended
-            research/design. Research first (explorer/librarian/oracle) if it needs discovery.
-
-          ## Process
-
-          - Missing context for a lane? Run a read-only research task first, then inline
-            findings into the dependent fixer prompt.
-          - Parallelize independent lanes in batch; run dependent ones sequentially.
-          - Parallel writers only when file sets are disjoint and share no dotfiles.*
-            contract; serialize any overlap.
-          - output_schema only for read-only results you'll mechanically reconcile. For
-            write tasks the working-tree diff is the result; inspect before retrying.
-          - Synthesize, resolve conflicts, verify, deliver.
-
-
-          ## Discipline
-          - State acceptance criteria where determinable: behavioral for implementation,
-            evidence/coverage for research.
-          - Every task starts fresh: inline paths, constraints, expected output, edit
-            permission, prior findings, and acceptance criteria. Ask for concise file:line
-            summaries, not code dumps.
-          - Brief delegation notices, no flattery, honest pushback when an approach is wrong.
-          - Verify: narrowest relevant validation first; broaden only when scope, risk, or a
-            failed focused check justifies it. The coordinator runs final verification.
+          ## Rules
+          - Missing context? Run a read-only research lane first, then inline
+            findings into the dependent fixer prompt — every task starts fresh
+            (paths, constraints, acceptance criteria); ask for file:line
+            summaries, not code dumps
+          - Parallelize independent lanes; serialize writers sharing files or
+            the dotfiles.* contract
+          - Acceptance criteria: behavioral for implementation, evidence for research
+          - The coordinator verifies — narrowest relevant validation first,
+            broaden only on failed focused checks
         '';
       };
 
