@@ -58,26 +58,15 @@ let
 
   # ── Neuralwatt ────────────────────────────────────────────────────────────
   neuralwattModels = {
-    glm52 = mkModel "glm-5.2" "GLM 5.2" 1048576 32768 true 1.45 4.50 0.145;
-    glm52Fast = mkModel "glm-5.2-fast" "GLM 5.2 (fast)" 1048576 32768 false 1.45 4.50 0.145;
-    glm52Short = mkModel "glm-5.2-short" "GLM 5.2 (short)" 200000 32768 true 1.45 4.50 0.145;
-    glm52ShortFast =
-      mkModel "glm-5.2-short-fast" "GLM 5.2 (short, fast)" 200000 32768 false 1.45 4.50
-        0.145;
-    kimiK26 = mkModel "kimi-k2.6" "Kimi K2.6" 262144 32768 true 0.69 3.22 0.069;
-    kimiK26Fast = mkModel "kimi-k2.6-fast" "Kimi K2.6 Fast" 262144 32768 false 0.69 3.22 0.069;
-    kimiK27Code = mkModel "kimi-k2.7-code" "Kimi K2.7 Code" 262144 32768 true 0.95 4.00 0.095;
-    qwen35 = mkModel "qwen3.5-397b" "Qwen3.5 397B" 262144 32768 true 0.69 4.14 0.069;
-    qwen35Fast = mkModel "qwen3.5-397b-fast" "Qwen3.5 397B Fast" 262144 32768 false 0.69 4.14 0.069;
-    qwen36 = mkModel "qwen3.6-35b" "Qwen3.6 35B" 131072 16384 true 0.29 1.15 0.029;
-    qwen36Fast = mkModel "qwen3.6-35b-fast" "Qwen3.6 35B Fast" 131072 16384 false 0.29 1.15 0.029;
+    glm53 = mkModel "glm-5.3" "GLM 5.3" 1048560 32768 true 1.45 4.50 0.145;
     deepseekV4Flash =
       mkModel "deepseek-v4-flash" "DeepSeek V4 Flash" 1048560 65536 true 0.14 0.28
         0.028;
-    kimiK27CodeFast =
-      mkModel "kimi-k2.7-code-fast" "Kimi K2.7 Code Fast" 262128 32768 false 0.95 4.00
-        0.095;
-    gemma431b = mkModel "gemma-4-31b" "Gemma 4 31B" 262128 16384 false 0.144 0.42 0.0144;
+    deepseekV4FlashFlex =
+      mkModel "deepseek-v4-flash-flex" "DeepSeek V4 Flash (flex)" 1048560 65536 true 0.14 0.28
+        0.028;
+    # Preview model (early access); absent from the public /v1/models scope.
+    qwen3827b = mkModel "qwen-3.8-27b" "Qwen 3.8 27B" 262144 32768 true 0.45 3.20 0.25;
   };
 
   neuralwatt = rec {
@@ -85,22 +74,11 @@ let
     models = neuralwattModels;
     baseUrl = "https://api.neuralwatt.com/v1";
     keyEnv = "NEURALWATT_API_KEY";
-    # Full catalog (maki exposes all selectable models), ordered for prefix matching.
     makiModels = map mkMakiModel [
-      models.glm52ShortFast
-      models.glm52Short
-      models.glm52Fast
-      models.glm52
-      models.kimiK27CodeFast
-      models.kimiK27Code
-      models.kimiK26Fast
-      models.kimiK26
-      models.qwen35Fast
-      models.qwen35
-      models.qwen36Fast
-      models.qwen36
+      models.glm53
       models.deepseekV4Flash
-      models.gemma431b
+      models.deepseekV4FlashFlex
+      models.qwen3827b
     ];
   };
 
@@ -128,18 +106,31 @@ let
         cacheWrite = 0.0;
       };
     };
-    gptOss120b = {
-      id = "@cf/openai/gpt-oss-120b";
-      name = "GPT OSS 120B (Cloudflare)";
+    glm53 = {
+      id = "@cf/zai-org/glm-5.3";
+      name = "GLM 5.3 (Cloudflare)";
       reasoning = true;
-      context = 128000;
+      context = 1048576;
       output = 32768;
       input = [ "text" ];
       pricing = {
-        input = 0.35;
-        output = 0.75;
-        # No published cached rate; price cached reads as input (conservative).
-        cacheRead = 0.35;
+        input = 1.40;
+        output = 4.40;
+        cacheRead = 0.26;
+        cacheWrite = 0.0;
+      };
+    };
+    deepseekV4Flash = {
+      id = "@cf/deepseek-ai/deepseek-v4-flash-0731";
+      name = "DeepSeek V4 Flash (Cloudflare)";
+      reasoning = true;
+      context = 1310720;
+      output = 32768;
+      input = [ "text" ];
+      pricing = {
+        input = 0.44;
+        output = 1.32;
+        cacheRead = 0.014;
         cacheWrite = 0.0;
       };
     };
@@ -154,6 +145,24 @@ let
         input = 1.32;
         output = 3.96;
         cacheRead = 0.044;
+        cacheWrite = 0.0;
+      };
+    };
+    qwen3827b = {
+      id = "@cf/qwen/qwen3.8-27b";
+      name = "Qwen 3.8 27B (Cloudflare)";
+      reasoning = true;
+      context = 262144;
+      output = 32768;
+      input = [
+        "text"
+        "image"
+      ];
+      pricing = {
+        input = 0.45;
+        output = 3.20;
+        # No published cached rate; price cached reads as input (conservative).
+        cacheRead = 0.45;
         cacheWrite = 0.0;
       };
     };
@@ -179,8 +188,10 @@ let
     models = cloudflareModels;
     selectedModels = [
       models.glm53Flash
-      models.gptOss120b
+      models.glm53
+      models.deepseekV4Flash
       models.deepseekV4Pro
+      models.qwen3827b
       models.graniteMicro
     ];
     keyEnv = "CLOUDFLARE_API_KEY";
