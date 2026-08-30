@@ -27,11 +27,9 @@ let
   ++ lib.optionals hasTicket [
     "- Every work-org change references a ${work.ticketPrefix} Linear ticket"
     "- To create a ticket: `linear issue create -t \"Title\" --team ${work.ticketPrefix} --assignee self --state \"In Progress\"` (avoid `--start`: it creates and switches to a `<github-user>/<lowercase-ticket>` git branch in the current worktree — use `worktrees new` for ticket+worktree together)"
-    "- To list your tickets: `linear issue mine`; to view one: `linear issue view ${work.ticketPrefix}-<number>`"
   ]
   ++ [
     "- `worktrees new` prints JSON; use its `path` field as cwd for subsequent commands — never rely on `cd` within bash scripts"
-    "- List worktrees non-interactively with `worktrees list`; prune merged task worktrees with `worktrees prune`"
     "- Do NOT use `git clone`, `git worktree add`, `git checkout -b`, or Claude's built-in EnterWorktree"
   ];
 
@@ -42,38 +40,32 @@ let
 
   sdlcHints = lib.optionalString hasTicket ''
     # SDLC (${work.ticketPrefix})
-    - Feature work follows the `sdlc` workflow — Linear is the single source of truth for design, plan, and task state. Load the `sdlc` skill and drive it with the `sdlc` CLI.
-    - Commands: `sdlc bootstrap <feature-or-task>`, `sdlc plan <feature> [--post]`, `sdlc next <feature> [--all]`, `sdlc status <feature>`.
-    - No repo design docs. Design = feature ticket description; plan = child-ticket DAG (`blocks` relations); approval = `design-approved`/`plan-approved` labels.
+    - Feature work follows the `sdlc` skill — Linear is the single source of truth for design, plan, and task state. Load it before starting any feature or planned task; never write repo design docs
+    - Design = feature ticket description; plan = child-ticket DAG (`blocks` relations); approval = `design-approved`/`plan-approved` labels
   '';
 
   aiHints = ''
+    # Skills
+    - Entry, situation-keyed: `research` before any non-trivial design (mandatory); then `design-brainstorm` and `grill-me` for large features; `sdlc` for planned tasks; one-offs need none
+    - Common core: `test-driven-development` while implementing; `review` before merging non-trivial changes; `resolve-pr` to land a PR
+    - Mid-work, run `research` scaled down whenever context is missing
+
     # Code Style
     - Strongly prefer functional programming: pure functions, immutability, composition over inheritance
     - Single-purpose functions — no flag parameters, no multi-mode behavior
-    - Prefer pattern matching and algebraic data types where available
-    - Prefer early returns and guard clauses over nested conditionals
-    - Prefer structured types over untyped dictionaries/maps/objects
-
-    # Comments
-    - Match surrounding code's comment density
-    - Comments explain WHY, never WHAT; no self-evident or multi-line docstring comments
-
-    # Data
-    - Transform data at point of use — keep it in its richest form until the consumer needs a different shape
-    - Avoid eager conversion (loses information prematurely) and lazy conversion (adds redundant intermediates)
+    - Prefer pattern matching, algebraic data types, and guard clauses over nested conditionals
+    - Prefer structured types over untyped dictionaries/maps/objects; transform data at point of use — no eager or lazy conversion
+    - Match surrounding comment density; comments explain WHY, never WHAT
 
     # Error Handling
-    - Errors must be explicit — never silently swallow or fall back
-    - Prefer Result/Option/Either types and typed error variants over exceptions or string messages
-    - Error messages must include enough context to debug without a stack trace
+    - Errors are explicit — never silently swallowed or fallen back from
+    - Prefer Result/Option/Either types and typed error variants over exceptions or string messages; include enough context to debug without a stack trace
 
     # Git Workflow
     - ALL repos live under `${cfg.codeRoot}/` (layout: `${cfg.codeRoot}/<host>/<owner>/<repo>`)
-    - Clone repos with SSH using `repos get <owner/repo-or-url>`. List repos non-interactively with `repos list`. Never `git clone` directly
+    - Clone repos with SSH using `repos get <owner/repo-or-url>`. Never `git clone` directly
     ${workGithubOrgHint}
-    - ALL worktrees live under each repo's `.worktrees/` directory via `worktrees new`
-    - Worktree of branch `<prefix>/X` lives at `.worktrees/X` inside the canonical checkout; everything up to and including the last `/` is stripped from the directory name
+    - Worktrees live under each repo's `.worktrees/` via `worktrees new`
     - Always push immediately after committing — never leave local-only commits
     - Always use the `gh` CLI for GitHub interaction
     - Non-interactive CLI commands only (flags over interactive prompts)
@@ -95,17 +87,15 @@ let
     ${sdlcHints}
 
     # Memory
-    - Durable preferences and decisions only — no secrets, tokens, transient debug, or facts obvious from tracked files. Recall before relying on prior decisions; prefer repo docs/config as source of truth.
+    - Durable preferences and decisions only — no secrets, tokens, transient debug, or facts obvious from tracked files. Prefer repo docs/config as source of truth.
 
     # Terseness
-    - No filler (just/really/basically), pleasantries (sure/certainly), or hedging
-    - Keep articles + full sentences. Short synonyms preferred (fix not "implement a solution for"). Technical terms exact
-    - Pattern: `[thing] [action] [reason]. [next step].` no preambles, postscripts, or tool-call narration
-    - No decorative tables/emoji. Long raw error-log dumps only if asked; else quote shortest decisive line. Standard well-known acronyms (DB/API/HTTP) OK; never invent new ones
+    - No filler (just/really/basically), pleasantries, or hedging; keep articles + full sentences and prefer short exact synonyms (fix, not "implement a solution for")
+    - Pattern: `[thing] [action] [reason]. [next step].` — no preambles, postscripts, or tool-call narration
+    - No decorative tables/emoji; quote the shortest decisive error line; standard acronyms (DB/API/HTTP) only
     - Code blocks, CLI commands, API names, error strings: verbatim. Code/commits/PRs: write normal
-    - Preserve user's dominant language — compress style, not language
-    - ALWAYS speak in English
-    - Auto-clarity: revert to normal for security warnings, irreversible action confirmations, multi-step sequences where compression risks misread, or when user asks. Resume after clear part done
+    - Preserve the user's dominant language — compress style, not language. Always speak in English
+    - Auto-clarity: revert to normal for security warnings, irreversible-action confirmations, multi-step sequences where compression risks misread, or when the user asks
   '';
 in
 {
