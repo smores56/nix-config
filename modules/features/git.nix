@@ -51,9 +51,11 @@ let
     [user]
         email = ${work.email}
   '';
-  workEmailIncludes = lib.genAttrs
-    (map (org: "gitdir:${cfg.codeRoot}/github.com/${org}/") work.githubOrgs)
-    (_: { path = "${workEmailConf}"; });
+  workEmailIncludes =
+    lib.genAttrs (map (org: "gitdir:${cfg.codeRoot}/github.com/${org}/") work.githubOrgs)
+      (_: {
+        path = "${workEmailConf}";
+      });
 
   workGithubUrlRewrites = lib.listToAttrs (
     map (org: {
