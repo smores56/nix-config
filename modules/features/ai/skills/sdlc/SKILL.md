@@ -1,6 +1,6 @@
 ---
 name: sdlc
-description: Full-lifecycle feature work — research, design, human-gated plan, implementation, and ship, with Linear as the single source of truth for design, plan, and task state. Triggers "begin SDLC", "kick off a new feature", "SDLC for X", starting any feature.
+description: Full-lifecycle feature work in Linear-tracked (work-org) repos — research, design, human-gated plan, implementation, and ship, with Linear as the single source of truth for design, plan, and task state. Triggers "begin SDLC", "kick off a new feature", "SDLC for X", starting any work-org feature.
 ---
 
 # SDLC
@@ -8,6 +8,12 @@ description: Full-lifecycle feature work — research, design, human-gated plan,
 One explicit opt-in starts the whole chain; each phase hands off to the
 next, with human gates at design and plan. Linear is the single source of
 truth — no repo design docs.
+
+## Scope
+
+Work-org repos only — Linear-tracked feature work. Personal repos design
+in conversation (brainstorm, grill, build) and never touch Linear; if you
+are in a personal repo, stop and confirm before creating any ticket.
 
 ## Lifecycle
 
