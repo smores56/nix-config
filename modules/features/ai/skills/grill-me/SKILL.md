@@ -1,7 +1,6 @@
 ---
 name: grill-me
-description: Interrogate a plan or design one decision at a time until aligned. Use to stress-test a plan before building. Triggers: "grill me", "interrogate this plan", "stress-test this design".
-disable-model-invocation: true
+description: Interrogate a plan or design one decision at a time until aligned. Use to stress-test a plan before building. Triggers "grill me", "interrogate this plan", "stress-test this design".
 ---
 
 # Grill Me
@@ -76,6 +75,11 @@ Shared understanding reached. Locked decisions:
 - ...
 Unresolved / deferred: [list, or "none"]
 ```
+
+Stateless by design — but if the locked decisions feed later sessions,
+offer to persist them (memory note, or the feature ticket for work)
+before the session ends. Grilling that evaporates at the session boundary
+is wasted interrogation.
 
 Do not begin implementation unless explicitly asked — grilling is the job.
 

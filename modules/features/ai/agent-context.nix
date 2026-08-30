@@ -46,9 +46,11 @@ let
 
   aiHints = ''
     # Skills
-    - Entry, situation-keyed: `research` before any non-trivial design (mandatory); then `design-brainstorm` and `grill-me` for large features; `sdlc` for planned tasks; one-offs need none
-    - Common core: `test-driven-development` while implementing; `review` before merging non-trivial changes; `resolve-pr` to land a PR
-    - Mid-work, run `research` scaled down whenever context is missing
+    - `research` — evidence before designing; mandatory for non-trivial design, scaled down mid-work when context is missing
+    - `design-brainstorm` + `grill-me` — large-feature design and decision stress-testing
+    - `sdlc` — work feature workflow (Linear SSOT)
+    - `test-driven-development` — implement; `review` — mandatory before merging non-trivial changes; `resolve-pr` — land a PR
+    - Before a non-trivial decision stands, spawn a fresh read-only subagent to argue against it
 
     # Code Style
     - Strongly prefer functional programming: pure functions, immutability, composition over inheritance
@@ -71,7 +73,7 @@ let
     - Non-interactive CLI commands only (flags over interactive prompts)
     - Do not add `Co-Authored-By` trailers to commit messages (no AI attribution)
     ${branchWorkflow}
-    - For personal repos: do all work in a worktree, commit and push after each meaningful change, merge back to main when all work is done, then clean up the worktree, local branch, and remote branch
+    - For personal repos: do all work in a worktree, commit and push after each meaningful change, `review` non-trivial changes before merging back to main, then clean up the worktree, local branch, and remote branch
 
     # Commits and PRs
     - Follow Conventional Commits: <https://www.conventionalcommits.org/en/v1.0.0/>
@@ -101,8 +103,14 @@ in
 {
   config = {
     home.file = lib.optionalAttrs cfg.work.enable {
-      ".claude/CLAUDE.md".text = aiHints;
-      ".codex/AGENTS.md".text = aiHints;
+      ".claude/CLAUDE.md" = {
+        force = true;
+        text = aiHints;
+      };
+      ".codex/AGENTS.md" = {
+        force = true;
+        text = aiHints;
+      };
     };
 
     dotfiles.aiHints = aiHints;

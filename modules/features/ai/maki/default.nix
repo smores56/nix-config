@@ -41,7 +41,12 @@ let
 
   mcpServers = config.dotfiles.ai.mcpServers;
   shellQuote = lib.escapeShellArg;
-  mkEnvExport = name: value: "export ${name}=${shellQuote value}";
+  # An env value that is exactly a ${VAR} reference expands at runtime (the
+  # wrapper runs through sh -lc); anything else is a literal. Single-quoting
+  # a ${VAR} value would pass the literal string to the server.
+  isEnvRef = value: builtins.match "\\$\\{[A-Za-z_][A-Za-z0-9_]*\\}" value != null;
+  mkEnvExport = name: value:
+    if isEnvRef value then "export ${name}=\"${value}\"" else "export ${name}=${shellQuote value}";
   mkMakiMcpServer =
     server:
     let
@@ -139,10 +144,7 @@ let
     ''
       #!/usr/bin/env bash
       # Managed by home-manager (modules/features/ai/maki). Manual edits are
-      # clobbered. /usr/bin/env shebang (not a /nix/store bash path) so the
-      # script also executes inside the agentbox VM, where the bindfs
-      # mount resolves Nix symlinks host-side but /usr/bin/env is a stable
-      # path in the wolfi-base image.
+      # clobbered.
       set -euo pipefail
       case "''${1:-}" in
         info)

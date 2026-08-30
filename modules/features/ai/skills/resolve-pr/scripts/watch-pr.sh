@@ -32,15 +32,19 @@ thread_query='query($owner: String!, $repo: String!, $pr: Int!, $endCursor: Stri
 
 threads() {
 	gh api graphql --paginate -F owner="$OWNER" -F repo="$REPO" -F pr="$PR" -f query="$thread_query" |
-		jq -s -c '[.[].data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)]'
+		# Skip threads whose latest comment is our own [agent] reply — handled,
+		# still unresolved (BLOCKED), and would otherwise re-emit forever.
+		jq -s -c '[.[].data.repository.pullRequest.reviewThreads.nodes[]
+			| select(.isResolved == false)
+			| select((.comments.nodes | length == 0) or ((.comments.nodes | last | .body | startswith("[agent]")) | not))'
 }
 
 checks() {
-	gh pr checks "$PR" --json name,state,bucket,link,workflow 2>/dev/null || echo '[]'
+	gh pr checks "$PR" --json name,state,bucket,link,workflow
 }
 
 emit_conflict() {
-	state=$(gh pr view "$PR" --json mergeStateStatus -q .mergeStateStatus 2>/dev/null || echo UNKNOWN)
+	state=$(gh pr view "$PR" --json mergeStateStatus -q .mergeStateStatus)
 	[[ "$state" != DIRTY ]] || { jq -nc --arg base "$BASE" '{event:"merge_conflict", base:$base}'; exit 0; }
 }
 
@@ -104,10 +108,9 @@ if [[ "$mode" == verify ]]; then
 	exit 0
 fi
 
-log_file=$(mktemp -t resolve-pr-checks.XXXXXX)
-gh pr checks "$PR" --watch --fail-fast >"$log_file" 2>&1 &
+gh pr checks "$PR" --watch --fail-fast >/dev/null 2>&1 &
 check_pid=$!
-trap 'kill "$check_pid" 2>/dev/null || true; rm -f "$log_file"' EXIT
+trap 'kill "$check_pid" 2>/dev/null || true' EXIT
 
 while kill -0 "$check_pid" 2>/dev/null; do
 	sleep "$COMMENT_INTERVAL"
@@ -116,7 +119,6 @@ while kill -0 "$check_pid" 2>/dev/null; do
 done
 
 wait "$check_pid" 2>/dev/null || true
-rm -f "$log_file"
 trap - EXIT
 emit_conflict
 emit_threads

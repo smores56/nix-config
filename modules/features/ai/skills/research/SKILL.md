@@ -29,15 +29,18 @@ the questions, ask the user before searching.
 
 ## Step 2 — Breadth (parallel read-only subagents)
 
-Fan out. Each subagent owns one question or subsystem and returns compressed
+Fan out (maki: research-lane subagents; harnesses without parallel
+subagents: sequential fresh passes; none at all: run the passes inline).
+Each subagent owns one question or subsystem and returns compressed
 findings — `file:line` references and summaries, never code dumps or raw
 pages.
 
-**Codebase** (explorer subagents): one per subsystem or question. Each maps
-the relevant files, conventions, and existing patterns — what is already
-built that the design must fit.
+**Codebase** (read-only recon): one subagent per subsystem or question.
+Each maps the relevant files, conventions, and existing patterns — what is
+already built that the design must fit.
 
-**Web** (librarian subagents): search for **lists first, items later**.
+**Web** (read-only research subagents): search for **lists first, items
+later**.
 
 - Target enumerations: awesome-lists, comparison tables, "X vs Y" posts,
   official docs' alternatives pages, survey articles

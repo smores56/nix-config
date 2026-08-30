@@ -4,18 +4,21 @@
   ...
 }:
 let
-  sharedSkillNames = lib.attrNames (
-    lib.filterAttrs (_: type: type == "directory") (builtins.readDir ./.)
-  );
+  # Only directories that are actually skills (contain SKILL.md) deploy —
+  # stray dirs (__pycache__, editor droppings) would ship as broken skills.
+  sharedSkillNames =
+    let
+      entries = lib.filterAttrs (_: type: type == "directory") (builtins.readDir ./.);
+      hasSkill = name: builtins.pathExists (./. + "/${name}/SKILL.md");
+    in
+    builtins.filter hasSkill (lib.attrNames entries);
+
+  # ~/.agents/skills is the shared user-scope location: maki and codex both
+  # scan it. Claude Code reads ~/.claude/skills (work profile only).
   sharedSkillTargets =
-    map (skillName: ".config/maki/skills/${skillName}") sharedSkillNames
+    map (skillName: ".agents/skills/${skillName}") sharedSkillNames
     ++ lib.optionals config.dotfiles.work.enable (
-      lib.flatten (
-        map (skillName: [
-          ".claude/skills/${skillName}"
-          ".codex/skills/${skillName}"
-        ]) sharedSkillNames
-      )
+      map (skillName: ".claude/skills/${skillName}") sharedSkillNames
     );
   sharedSkillFiles = lib.genAttrs sharedSkillTargets (target: {
     force = true;
