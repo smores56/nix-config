@@ -1,0 +1,4 @@
+# statix config: W20 ("repeated keys") fires on dotted attribute paths
+# (home.file."a", functions._x, ...) where each path is a distinct key in
+# the module system — a false positive; newer statix versions dropped it.
+disabled = [ "repeated_keys" ]

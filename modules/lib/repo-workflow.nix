@@ -7,10 +7,7 @@ let
   cfg = config.dotfiles;
 
   workflowPrelude = ''
-    WORK_ORGS=(${lib.escapeShellArgs cfg.work.githubOrgs})
     PERSONAL_PREFIX=${lib.escapeShellArg cfg.branchPrefix}
-    WORK_PREFIX=${lib.escapeShellArg cfg.work.branchPrefix}
-    TICKET_PREFIX=${lib.escapeShellArg cfg.work.ticketPrefix}
 
     json_string() {
       printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/^/"/; s/$/"/'
@@ -51,18 +48,6 @@ let
       repo=''${repo%%/*}
       [ -n "$host" ] && [ -n "$owner" ] && [ -n "$repo" ] || return 1
       printf '%s\t%s\t%s\n' "$host" "$owner" "$repo"
-    }
-
-    is_work_owner() {
-      local owner=$1 w
-      for w in ''${WORK_ORGS[@]+"''${WORK_ORGS[@]}"}; do
-        [ "$owner" = "$w" ] && return 0
-      done
-      return 1
-    }
-
-    work_branch_prefix() {
-      if [ -n "$WORK_PREFIX" ]; then printf '%s' "$WORK_PREFIX"; else printf '%s' "$PERSONAL_PREFIX"; fi
     }
   '';
 
@@ -195,23 +180,12 @@ let
         git -C "$1" symbolic-ref --quiet --short HEAD 2>/dev/null || true
       }
 
-      clean_task() {
-        local value=$1 lower_prefix
-        value=$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')
-        if [ -n "$TICKET_PREFIX" ]; then
-          lower_prefix=$(printf '%s' "$TICKET_PREFIX" | tr '[:upper:]' '[:lower:]')
-          value=$(printf '%s' "$value" | sed -E "s/$lower_prefix-[0-9]+//g")
-        fi
-        printf '%s' "$value"
-      }
-
       create_new() {
-        local slug="" task="" ticket="" base="" dry_run=false created title parts host owner repo clean prefix branch name root path default
+        local slug="" task="" base="" dry_run=false branch name root path default
         while [ $# -gt 0 ]; do
           case "$1" in
             --slug) slug=$2; shift 2 ;;
             --task) task=$2; shift 2 ;;
-            --ticket) ticket=$2; shift 2 ;;
             --base) base=$2; shift 2 ;;
             --dry-run) dry_run=true; shift ;;
             *) printf 'worktrees new: unknown arg: %s\n' "$1" >&2; exit 2 ;;
@@ -220,52 +194,15 @@ let
 
         [ -n "$slug" ] || {
           [ -n "$task" ] || { printf 'worktrees new: --slug or --task required\n' >&2; exit 2; }
-          clean=$(clean_task "$task")
-          slug=$(slugify "$clean")
+          slug=$(slugify "$task")
         }
         slug=$(slugify "$slug")
         [ -n "$slug" ] || { printf 'worktrees new: empty slug\n' >&2; exit 2; }
 
-        parts=$(origin_parts) || { printf 'worktrees new: could not parse origin remote\n' >&2; exit 1; }
-        IFS=$'\t' read -r host owner repo <<< "$parts"
+        origin_parts >/dev/null || { printf 'worktrees new: could not parse origin remote\n' >&2; exit 1; }
 
-        if is_work_owner "$owner"; then
-          if [ -z "$ticket" ] && [ -n "$task" ] && [ -n "$TICKET_PREFIX" ]; then
-            ticket=$(printf '%s' "$task" | grep -oiE "$TICKET_PREFIX-[0-9]+" | head -1 || true)
-          fi
-          if [ -z "$ticket" ] && [ -n "$TICKET_PREFIX" ]; then
-            if $dry_run; then
-              ticket="$TICKET_PREFIX-DRYRUN"
-            else
-              title=$task
-              [ -n "$title" ] || title=$slug
-               created=$(linear issue create -t "$title" --team "$TICKET_PREFIX" --assignee self --state "In Progress" --no-interactive 2>&1) || {
-                printf 'worktrees new: linear issue create failed:\n%s\n' "$created" >&2
-                exit 1
-              }
-              ticket=$(printf '%s' "$created" | grep -oiE "$TICKET_PREFIX-[0-9]+" | head -1 || true)
-              [ -n "$ticket" ] || {
-                printf 'worktrees new: could not parse ticket id from linear output:\n%s\n' "$created" >&2
-                exit 1
-              }
-            fi
-          fi
-          prefix=$(work_branch_prefix)
-          if [ -n "$ticket" ]; then
-            branch="$prefix/$ticket-$slug"
-            name="$ticket-$slug"
-          else
-            branch="$prefix/$slug"
-            name="$slug"
-          fi
-        else
-          if [ -n "$ticket" ]; then
-            printf 'worktrees new: --ticket is only valid for work repos\n' >&2
-            exit 2
-          fi
-          branch="$PERSONAL_PREFIX/$slug"
-          name="$slug"
-        fi
+        branch="$PERSONAL_PREFIX/$slug"
+        name="$slug"
 
         root=$(main_worktree)
         [ -n "$root" ] || { printf 'worktrees new: could not resolve main worktree\n' >&2; exit 1; }
@@ -276,9 +213,7 @@ let
             default=$(default_ref)
             base=$default
           fi
-          printf '{"branch":%s,"path":%s,"ticket":' "$(json_string "$branch")" "$(json_string "$path")"
-          if [ -n "$ticket" ]; then json_string "$ticket"; else printf 'null'; fi
-          printf ',"base":%s,"dry_run":true}\n' "$(json_string "$base")"
+          printf '{"branch":%s,"path":%s,"base":%s,"dry_run":true}\n' "$(json_string "$branch")" "$(json_string "$path")" "$(json_string "$base")"
           exit 0
         fi
 
@@ -294,9 +229,7 @@ let
         fi
         mkdir -p "$(dirname "$path")"
         git worktree add "$path" -b "$branch" "$base" >/dev/null
-        printf '{"branch":%s,"path":%s,"ticket":' "$(json_string "$branch")" "$(json_string "$path")"
-        if [ -n "$ticket" ]; then json_string "$ticket"; else printf 'null'; fi
-        printf ',"base":%s}\n' "$(json_string "$base")"
+        printf '{"branch":%s,"path":%s,"base":%s}\n' "$(json_string "$branch")" "$(json_string "$path")" "$(json_string "$base")"
       }
 
       ref_sha() {

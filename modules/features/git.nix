@@ -6,78 +6,22 @@
 }:
 let
   cfg = config.dotfiles;
-  work = cfg.work;
 
   hunk = pkgs.writeShellScriptBin "hunk" ''
     export PATH="${pkgs.nodejs}/bin:$PATH"
     exec npx hunkdiff "$@"
   '';
-
-  githubSsh = pkgs.writeShellScriptBin "git-github-ssh" ''
-    is_github=false
-    key="$HOME/.ssh/id_personal.pub"
-
-    for arg in "$@"; do
-      case "$arg" in
-        github.com|git@github.com)
-          is_github=true
-          ;;
-      esac
-    done
-
-    if $is_github; then
-      for org in ${lib.escapeShellArgs work.githubOrgs}; do
-        for arg in "$@"; do
-          case "$arg" in
-            *"$org"/*|*"$org":*)
-              key="$HOME/.ssh/id_work.pub"
-              ;;
-          esac
-        done
-      done
-
-      # Point IdentityFile at the .pub so ssh resolves the key via the
-      # ssh-agent rather than the private key file.
-      exec ${pkgs.openssh}/bin/ssh -F /dev/null -o "IdentityFile=$key" -o IdentitiesOnly=yes "$@"
-    fi
-
-    exec ${pkgs.openssh}/bin/ssh "$@"
-  '';
-
-  # Work email applies automatically inside work-org repos (and their
-  # worktrees — a linked worktree's $GIT_DIR resolves under the main repo),
-  # via git includeIf. Global identity stays personal.
-  workEmailConf = pkgs.writeText "git-work-email" ''
-    [user]
-        email = ${work.email}
-  '';
-  workEmailIncludes =
-    lib.genAttrs (map (org: "gitdir:${cfg.codeRoot}/github.com/${org}/") work.githubOrgs)
-      (_: {
-        path = "${workEmailConf}";
-      });
-
-  workGithubUrlRewrites = lib.listToAttrs (
-    map (org: {
-      name = "git@github.com:${org}/";
-      value.insteadOf = [
-        "https://github.com/${org}/"
-      ];
-    }) work.githubOrgs
-  );
 in
 {
-  home.packages =
-    (with pkgs; [
-      gnupg
-      delta
-      git-lfs
-      difftastic
-      jujutsu
-      lazyjj
-      hunk
-    ])
-    ++ [ githubSsh ];
+  home.packages = with pkgs; [
+    gnupg
+    delta
+    git-lfs
+    difftastic
+    jujutsu
+    lazyjj
+    hunk
+  ];
 
   home.file.".gitignore".text = ''
     .worktrees/
@@ -143,9 +87,6 @@ in
           gpg.format = "ssh";
           user.signingkey = "~/.ssh/id_personal.pub";
           fetch.prune = true;
-          core.sshCommand = "${githubSsh}/bin/git-github-ssh";
-          url = workGithubUrlRewrites;
-          includeIf = workEmailIncludes;
         }
       ];
     };

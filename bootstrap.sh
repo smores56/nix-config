@@ -25,10 +25,7 @@ USERNAME="${BOOTSTRAP_USER:-$(whoami)}"
 HOSTNAME="${BOOTSTRAP_HOST:-$(hostname -s 2>/dev/null || hostname)}"
 CONFIG_NAME="${USERNAME}@${HOSTNAME}"
 
-case "$USERNAME" in
-  smohr) EMAIL="sam.mohr@sevenai.com" ;;
-  *)     EMAIL="sam@sammohr.dev" ;;
-esac
+EMAIL="sam@sammohr.dev"
 
 info()  { printf '\033[1;34m[info]\033[0m  %s\n' "$*"; }
 ok()    { printf '\033[1;32m[ok]\033[0m    %s\n' "$*"; }

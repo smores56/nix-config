@@ -74,14 +74,17 @@ in
               nativeBuildInputs = [ pkgs.statix ];
             }
             ''
-              statix check ${src}
+              statix check -c ${src} ${src}
               touch $out
             '';
 
-        niri-equalize-tests =
-          pkgs.runCommand "niri-equalize-tests"
+        unit-tests =
+          pkgs.runCommand "unit-tests"
             {
-              nativeBuildInputs = [ pkgs.python3 ];
+              nativeBuildInputs = [
+                pkgs.python3
+                pkgs.git
+              ];
             }
             ''
               cp -R --no-preserve=mode,ownership ${src} source

@@ -71,12 +71,12 @@ For changes touching NixOS modules or home-manager base:
 
 ```sh
 nix eval .#checks.x86_64-linux.eval-nixos-smortress --apply 'x: true'
-nix eval .#checks.x86_64-linux.eval-home-smohr-smoreswork --apply 'x: true'
 nix eval .#checks.x86_64-linux.eval-nixos-smoresbook --apply 'x: true'
 ```
 
-For home-manager changes, run `home-manager switch --flake .#smores@smortress`
-to verify activation succeeds (not just evaluation).
+For home-manager changes, run `home-manager switch --flake .#smores@<host>`
+(e.g. `.#smores@smoresbook` on this machine) to verify activation succeeds
+(not just evaluation).
 
 ## Repo conventions
 

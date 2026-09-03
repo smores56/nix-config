@@ -17,6 +17,18 @@ class MakiSessionSearchTests(unittest.TestCase):
     def setUp(self):
         self.search = load_module()
 
+    @staticmethod
+    def _entry(session):
+        # Mirror `_compute_entry`: format_entry consumes the computed entry
+        # dict (sanitized fields + search_text), not the Session namedtuple.
+        return {
+            "id": session.id,
+            "title": " ".join(session.title.split()),
+            "cwd": session.cwd,
+            "updated_at": session.updated_at,
+            "search_text": " ".join(" ".join(session.messages).split()),
+        }
+
     def write_session(self, directory):
         path = Path(directory) / "session-1.jsonl"
         records = [
@@ -52,7 +64,7 @@ class MakiSessionSearchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             session = self.search.load_session(self.write_session(directory))
 
-        entry = self.search.format_entry(session)
+        entry = self.search.format_entry(self._entry(session))
         session_id, display = entry.split(" ", maxsplit=1)
         self.assertEqual(session_id, "session-1")
         self.assertIn("Fix parser · /work/example · 1970-01-01 00:00", display)
@@ -63,7 +75,7 @@ class MakiSessionSearchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             session = self.search.load_session(self.write_session(directory))
 
-        entry = self.search.format_entry(session._replace(title="Fix\nparser", messages=["line one\nline two"]))
+        entry = self.search.format_entry(self._entry(session._replace(title="Fix\nparser", messages=["line one\nline two"])))
         self.assertNotIn("\n", entry)
         self.assertIn("Fix parser", entry)
         self.assertIn("line one line two", entry)

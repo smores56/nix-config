@@ -6,7 +6,7 @@
 let
   workflow = import ../../lib/repo-workflow.nix {
     inherit config pkgs;
-    lib = pkgs.lib;
+    inherit (pkgs) lib;
   };
 in
 {

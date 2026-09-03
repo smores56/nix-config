@@ -72,23 +72,12 @@ in
     email = lib.mkOption {
       type = lib.types.str;
       default = "sam@sammohr.dev";
-      description = "Default git identity. Work-org repos override via git includeIf.";
+      description = "Default git identity.";
     };
     branchPrefix = lib.mkOption {
       type = lib.types.str;
       readOnly = true;
-      description = "Branch prefix for personal (non-work-org) repos.";
-    };
-    work = lib.mkOption {
-      type = lib.types.attrsOf lib.types.anything;
-      readOnly = true;
-      description = "Work identity constants — always on, identical on every host.";
-      default = {
-        email = "sam.mohr@sevenai.com";
-        branchPrefix = "sam.mohr";
-        ticketPrefix = "7AI";
-        githubOrgs = [ "OkamiAI" ];
-      };
+      description = "Branch prefix for personal repos.";
     };
     codeRoot = lib.mkOption {
       type = lib.types.str;
@@ -193,7 +182,7 @@ in
           domain = lib.mkOption {
             type = lib.types.str;
             default = "sammohr.dev";
-            description = "Apex domain whose subdomains are exposed (e.g. git.<domain>).";
+            description = "Apex domain whose subdomains are exposed (e.g. calibre.<domain>).";
           };
           tunnelId = lib.mkOption {
             type = lib.types.str;

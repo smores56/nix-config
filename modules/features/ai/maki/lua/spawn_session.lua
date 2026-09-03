@@ -1,11 +1,11 @@
 -- spawn_session: create a worktree and spawn a new maki session in a
 -- new Zellij tab, gated behind a confirmation question.
 --
--- The worktree (and its branch, and any required Linear ticket) is created
--- by the canonical `worktrees` tool — the same one AGENTS.md tells agents to
--- use directly. That tool owns branch naming (sam.mohr/7AI-<n>-<slug> for
--- work repos, smores/<slug> for personal), so the branch name is always
--- well-formed. The agent supplies a slug/task/ticket, never a raw branch name.
+-- The worktree (and its branch) is created by the canonical `worktrees`
+-- tool — the same one AGENTS.md tells agents to use directly. That tool owns
+-- branch naming (smores/<slug> for personal repos), so the branch name is
+-- always well-formed. The agent supplies a slug/task, never a raw branch
+-- name.
 --
 -- Prerequisites on PATH: worktrees, zellij, python3
 
@@ -30,14 +30,14 @@ maki.api.register_tool({
   kind = "execute",
   description = [[Spawn a new interactive maki session in a new Zellij tab (with a worktree).
 
-Provide a kebab `slug` and the session `prompt`; optionally a `task` (description, also the Linear ticket title), an explicit `ticket` (7AI-<n>), and a `base` ref. The worktree + branch + ticket are created by the canonical `worktrees` tool, which owns branch naming — do not supply a branch name.
+Provide a kebab `slug` and the session `prompt`; optionally a `task` (description) and a `base` ref. The worktree + branch are created by the canonical `worktrees` tool, which owns branch naming — do not supply a branch name.
 
 Workflow:
-1. Shows a confirmation question (bottom of window) with the slug, ticket, and prompt
-2. Creates the worktree via `worktrees new --slug <slug> [--task <task>] [--ticket <ticket>] [--base <base>]`
+1. Shows a confirmation question (bottom of window) with the slug and prompt
+2. Creates the worktree via `worktrees new --slug <slug> [--task <task>] [--base <base>]`
 3. Opens a new Zellij tab and runs maki in the worktree directory
 
-For work repos without a `ticket`, `worktrees` auto-creates a Linear ticket (requires the `linear` CLI on PATH). Use for long-running feature work that deserves its own isolated session.
+Use for long-running feature work that deserves its own isolated session.
 
 This tool cannot be batched.]],
   schema = {
@@ -54,11 +54,7 @@ This tool cannot be batched.]],
       },
       task = {
         type = "string",
-        description = "Task description; passed to `worktrees --task` (Linear ticket title + 7AI-<n> extraction). Defaults to the slug.",
-      },
-      ticket = {
-        type = "string",
-        description = "Explicit Linear ticket (e.g. '7AI-12345'). Skips auto-creation.",
+        description = "Task description; passed to `worktrees --task`. Defaults to the slug.",
       },
       base = {
         type = "string",
@@ -78,13 +74,10 @@ This tool cannot be batched.]],
       return { llm_output = "error: slug and prompt are required", is_error = true }
     end
     local task = input.task or ""
-    local ticket = input.ticket or ""
     local base = input.base or ""
 
-    -- Worktree directory name = <ticket>-<slug> or <slug>; also the Zellij tab label.
-    local worktree_name = (ticket ~= "" and ticket .. "-" or "") .. slug
-    local ticket_disp = (ticket ~= "") and ticket or "(new Linear ticket)"
-
+    -- Worktree directory name = <slug>; also the Zellij tab label.
+    local worktree_name = slug
     local start_label = ("Start: %s"):format(slug)
     local prompt_preview = (prompt:match("^([^\n]+)") or prompt):gsub("%s+", " ")
     if #prompt_preview > 120 then
@@ -92,10 +85,9 @@ This tool cannot be batched.]],
     end
     local question_text = ("Start a new session?\n\n"
       .. "- **Slug:** `%s`\n"
-      .. "- **Ticket:** %s\n"
       .. "- **Worktree:** `.worktrees/%s`\n"
       .. "- **Prompt:** %s")
-      :format(slug, ticket_disp, worktree_name, prompt_preview)
+      :format(slug, worktree_name, prompt_preview)
 
     -- Bottom-of-window question form. Escape/Ctrl-C/close dismisses
     -- (result.type == "dismiss"); no explicit Cancel option needed.
@@ -119,9 +111,6 @@ This tool cannot be batched.]],
     local wt_args = "--slug " .. shell_quote(slug)
     if task ~= "" then
       wt_args = wt_args .. " --task " .. shell_quote(task)
-    end
-    if ticket ~= "" then
-      wt_args = wt_args .. " --ticket " .. shell_quote(ticket)
     end
     if base ~= "" then
       wt_args = wt_args .. " --base " .. shell_quote(base)

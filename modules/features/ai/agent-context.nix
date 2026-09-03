@@ -5,28 +5,21 @@
 }:
 let
   cfg = config.dotfiles;
-  work = cfg.work;
   personalPrefix = cfg.branchPrefix;
-  workPrefix = work.branchPrefix;
-  workOrgList = lib.concatStringsSep ", " work.githubOrgs;
-  ticket = work.ticketPrefix;
 
   workflowLines = [
     "- Start from the problem, not a solution — state what's wrong or needed; a suspected approach is context, not the goal"
-    "- First move on any request: classify aloud — quick fix, investigation, or feature — and act; a feature in a work-org repo begins with the `sdlc` skill; personal-repo features: brainstorm, grill, build — no Linear"
-    "- Resuming work-org features: `sdlc list` shows in-progress features; pick one, then bootstrap and take the next task"
-    "- Repos live under `${cfg.codeRoot}/<host>/<owner>/<repo>`; clone with `repos get <owner/repo-or-url>` — never `git clone`, `git worktree add`, `git checkout -b`, or Claude's EnterWorktree"
-    "- Work orgs (${workOrgList}) use canonical `github.com` remotes and paths"
+    "- First move on any request: classify aloud — quick fix, investigation, or feature — and act. Features run the `sdlc` skill (research → brainstorm → [grill] → plan → build → review & fix); quick fixes skip the funnel; investigations run `research` and report"
+    "- Resuming: `sdlc list` shows in-flight features; pick one, then `sdlc bootstrap <feature>` and continue from the state repo — never from conversation memory"
+    "- Repos live under `${cfg.codeRoot}/github.com/<owner>/<repo>`; clone with `repos get <owner/repo>` — never `git clone`, `git worktree add`, `git checkout -b`, or Claude's EnterWorktree"
     "- Worktrees live under each repo's `.worktrees/` via `worktrees new`; it prints JSON — use its `path` as cwd, never `cd`"
-    "- Start task worktrees with `worktrees new --slug <kebab-slug> --task \"<description>\"` (creates branch, worktree, and any Linear ticket)"
-    "- Branches: personal `${personalPrefix}/<kebab-slug>`; work-org `${workPrefix}/${ticket}-<number>-<kebab-slug>`; every work-org change references a ${ticket} ticket"
-    "- Create tickets with `linear issue create -t \"Title\" --team ${ticket} --assignee self --state \"In Progress\"` — avoid `--start` (creates a stray branch in the current worktree)"
-    "- Feature work in work-org repos runs the `sdlc` skill — Linear is the single source of truth for design, plan, and task state; never write repo design docs. Design = feature ticket description; plan = child-ticket DAG (`blocks` relations); approval = `design-approved`/`plan-approved` labels"
+    "- Start task worktrees with `worktrees new --slug <kebab-slug> --task \"<description>\"` (creates branch + worktree)"
+    "- Branches: `${personalPrefix}/<kebab-slug>`"
     "- Run `research` before any non-trivial design; run `review` before merging non-trivial changes"
     "- Before a non-trivial decision stands, spawn a fresh read-only subagent to argue against it"
-    "- Conventional Commits (feat, fix, refactor, chore, docs, test, perf, ci); work-org scope is the ticket — `fix(${ticket}-123): description` — otherwise `type(scope): description`; applies to commits and PR titles"
+    "- Conventional Commits (feat, fix, refactor, chore, docs, test, perf, ci) with `type(scope): description`; applies to commits and PR titles"
     "- Push immediately after committing; no `Co-Authored-By` trailers"
-    "- Personal repos: worktree → commit and push per change → `review` → merge to main → clean up worktree and branches"
+    "- Personal flow: worktree → commit and push per change → `review` → merge to main → clean up with `worktrees prune`"
   ];
 
   aiHints = ''

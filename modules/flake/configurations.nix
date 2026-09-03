@@ -128,7 +128,6 @@ let
             noSleep = null;
             primaryMonitor = null;
             monitorSize = null;
-            work = null;
             calibre = null;
           } args;
           home.username = username;
@@ -199,13 +198,6 @@ in
         displayManager = "none";
         nixos = true;
         calibre.enable = true;
-      };
-      "smohr@smoreswork" = mkHome {
-        displayManager = "osx";
-        windowManager = "aerospace";
-        username = "smohr";
-        system = "aarch64-darwin";
-        terminalFontSize = 16;
       };
     };
     nixosConfigurations = {

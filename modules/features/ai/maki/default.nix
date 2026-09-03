@@ -6,7 +6,7 @@
   ...
 }:
 let
-  inherit (aiProviders) neuralwatt cloudflare smortress;
+  inherit (aiProviders) neuralwatt smortress;
 
   # All providers are written on every host; each provider script's has_auth
   # check reports availability based on which credential env vars are present,
@@ -39,66 +39,19 @@ let
     run = true
   '';
 
-  mcpServers = config.dotfiles.ai.mcpServers;
-  shellQuote = lib.escapeShellArg;
-  # An env value that is exactly a ${VAR} reference expands at runtime (the
-  # wrapper runs through sh -lc); anything else is a literal. Single-quoting
-  # a ${VAR} value would pass the literal string to the server.
-  isEnvRef = value: builtins.match "\\$[{][A-Za-z_][A-Za-z0-9_]*[}]" value != null;
-  mkEnvExport =
-    name: value:
-    if isEnvRef value then "export ${name}=\"${value}\"" else "export ${name}=${shellQuote value}";
-  mkMakiMcpServer =
-    server:
-    let
-      args = server.args or [ ];
-      command = server.command;
-      commandList = if builtins.isList command then command else [ command ] ++ args;
-      env = server.env or { };
-      envExports = lib.concatStringsSep "\n" (lib.mapAttrsToList mkEnvExport env);
-      execCommand = lib.concatMapStringsSep " " shellQuote commandList;
-    in
-    removeAttrs server [ "args" ]
-    // {
-      command =
-        if env == { } then
-          commandList
-        else
-          [
-            "sh"
-            "-lc"
-            ''
-              ${envExports}
-              exec ${execCommand}
-            ''
-          ];
-    };
-  makiMcpServers = lib.mapAttrs (_: mkMakiMcpServer) mcpServers;
-  mcpToml = pkgs.writers.writeTOML "maki-mcp.toml" { mcp = makiMcpServers; };
-
   # Custom providers for maki. Model catalogs and pricing live in providers.nix
   # and are projected into maki's shape via each provider's makiModels
   # attribute. displayName is maki-specific.
   providersToWrite = {
     ${smortress.providerId} = {
       displayName = "Qwen3.8 uncensored (smortress)";
-      baseUrl = smortress.baseUrl;
-      keyEnv = smortress.keyEnv;
+      inherit (smortress) baseUrl keyEnv;
       models = smortress.makiModels;
     };
     ${neuralwatt.providerId} = {
       displayName = "Neuralwatt";
-      baseUrl = neuralwatt.baseUrl;
-      keyEnv = neuralwatt.keyEnv;
+      inherit (neuralwatt) baseUrl keyEnv;
       models = neuralwatt.makiModels;
-    };
-    ${cloudflare.providerId} = {
-      displayName = "Cloudflare Workers AI";
-      baseUrl = cloudflare.makiBaseUrl;
-      keyEnv = cloudflare.keyEnv;
-      extraAuthEnv = cloudflare.extraAuthEnv;
-      dynamicBaseUrl = true;
-      models = cloudflare.makiModels;
     };
   };
 
@@ -106,11 +59,9 @@ let
     p:
     let
       hasKey = p.keyEnv != null;
-      # has_auth requires every credential env var (the key plus any extras, e.g.
-      # Cloudflare's account id) to be non-empty.
-      authEnvs = [ p.keyEnv ] ++ (p.extraAuthEnv or [ ]);
+      # has_auth requires every credential env var to be non-empty.
+      authEnvs = [ p.keyEnv ];
       authCheck = lib.concatMapStringsSep " && " (e: ''[ -n "''${${e}:-}" ]'') authEnvs;
-      dynamicBaseUrl = p.dynamicBaseUrl or false;
       tailnetOnly = p.tailnetOnly or false;
       gateHost = builtins.head (lib.splitString ":" (lib.removePrefix "http://" p.baseUrl));
       infoCmd =
@@ -146,9 +97,6 @@ let
               }
             )
           }''
-        else if dynamicBaseUrl then
-          # baseUrl carries shell ''${VAR} refs expanded by bash at runtime.
-          ''printf '{"base_url":"%s","headers":{"Authorization":"Bearer %s"}}\n' "${p.baseUrl}" "''${${p.keyEnv}:-}"''
         else
           ''printf '{"base_url":%s,"headers":{"Authorization":"Bearer %s"}}\n' ${lib.escapeShellArg (builtins.toJSON p.baseUrl)} "''${${p.keyEnv}:-}"'';
     in
@@ -169,37 +117,6 @@ let
           ;;
       esac
     '';
-  # maki's OpenAI login is device-code, blocked by the work ChatGPT workspace;
-  # standard Codex browser login works. Mirror Codex's OAuth token into maki's
-  # store on switch and on demand (`maki-codex-sync`). No-op when Codex has no
-  # ChatGPT credential. Work Mac only.
-  codexCredSync = pkgs.writeShellScriptBin "maki-codex-sync" ''
-    exec ${pkgs.python3}/bin/python3 ${./codex-cred-sync.py}
-  '';
-
-  # maki stores per-session token counts but never the dollar cost, and has no
-  # cross-session rollup. maki-cf-cost scans the session JSONL logs and reports
-  # Cloudflare Workers AI spend per month. Pricing is generated from the
-  # cloudflare provider in providers.nix (cfPricingJson) so the report never
-  # duplicates the pricing table.
-  cfPricingJson = pkgs.writeText "maki-cf-pricing.json" (
-    builtins.toJSON (
-      builtins.listToAttrs (
-        map (
-          m:
-          lib.nameValuePair m.id {
-            input = m.pricing.input;
-            output = m.pricing.output;
-            cache_read = m.pricing.cache_read;
-          }
-        ) cloudflare.makiModels
-      )
-    )
-  );
-  cfCostReport = pkgs.writeShellScriptBin "maki-cf-cost" ''
-    MAKI_CF_PRICING=${cfPricingJson} exec ${pkgs.python3}/bin/python3 ${./cf-cost-report.py} "$@"
-  '';
-
   # Deny rules apply even under always_yolo — deny is consulted before
   # yolo (yolo only skips prompting). Catastrophic-pattern backstop against
   # a compromised model or prompt injection; not a sandbox — obfuscated
@@ -302,12 +219,6 @@ in
       };
       ".config/television/cable/maki-sessions.toml".source = makiSessionCable;
     }
-    // lib.optionalAttrs (mcpServers != { }) {
-      ".config/maki/mcp.toml" = {
-        force = true;
-        source = mcpToml;
-      };
-    }
     // lib.optionalAttrs (providersToWrite != { }) (
       lib.mapAttrs' (
         slug: p:
@@ -321,12 +232,7 @@ in
     home.packages = [
       pkgs.rtk
       makiSessionSearchBin
-      codexCredSync
-      cfCostReport
     ];
-    home.activation.makiCodexCreds = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      ${codexCredSync}/bin/maki-codex-sync || true
-    '';
     programs.fish = {
       functions.__maki_session_resume = {
         body = ''

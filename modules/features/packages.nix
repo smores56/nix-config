@@ -11,7 +11,6 @@
     programs = {
       bat.enable = true;
       fzf.enable = true;
-      k9s.enable = true;
     };
 
     home = {
@@ -48,8 +47,6 @@
           lazysql
 
           # environment management
-          awscli2
-          aws-sso-cli
           _1password-cli
           just
           zellij
@@ -99,12 +96,8 @@
           # container tools
           lazydocker
           docker-compose
-          kubernetes-helm
-          kubectl
-          kubectx
         ]
         ++ lib.optionals pkgs.stdenv.isLinux [
-          bubblewrap
           concord
           odin
         ];

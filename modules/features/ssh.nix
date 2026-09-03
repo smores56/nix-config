@@ -56,14 +56,12 @@
     '')
 
     # Pre-load keys at shell init so git commit signing works before any
-    # interactive ssh auth. Idempotent via `ssh-add -l`; id_work is guarded by
-    # `test -f` (only on the work machine). The `begin; ... end` group is
-    # required: `A; or B; and C` in fish binds as `(A or B) and C`, which
-    # would run C whenever A succeeds.
+    # interactive ssh auth. Idempotent via `ssh-add -l`. The `begin; ... end`
+    # group is required: `A; or B; and C` in fish binds as `(A or B) and C`,
+    # which would run C whenever A succeeds.
     (lib.mkAfter ''
       if set -q SSH_AUTH_SOCK; and test -S "$SSH_AUTH_SOCK"
           ssh-add -l >/dev/null 2>&1; or begin; test -f ~/.ssh/id_personal; and ssh-add ~/.ssh/id_personal 2>/dev/null; end
-          test -f ~/.ssh/id_work; and ssh-add ~/.ssh/id_work 2>/dev/null
       end
     '')
   ];
