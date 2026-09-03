@@ -120,13 +120,13 @@ class StoreTest(unittest.TestCase):
         state = store.load(self._root, key)
         self.assertEqual(state["repo"], "smores56/nix-config")
         self.assertEqual(state["status"], "active")
-        self.assertEqual(state["tasks"], [])
+        self.assertEqual(state["plan"], "# Plan\n\n")
         self.assertEqual(state["design"], "# Demo\n\n")
         self.assertIsNone(state["approval"])
         # no git repo in the tempdir: mutations must not raise
-        state["tasks"].append({"id": "T1", "title": "t", "status": "todo", "needs": []})
-        store.save(self._root, key, state)
-        self.assertEqual(store.load(self._root, key)["tasks"][0]["id"], "T1")
+        store.write_plan(self._root, key, "# Plan\n\n- [ ] T1: t\n")
+        tasks, _, _ = sdlc_model.parse_plan(store.load(self._root, key)["plan"])
+        self.assertEqual(tasks[0]["id"], "T1")
 
     def test_design_roundtrip_and_sha_gate(self):
         key = "smores56--nix-config--demo"

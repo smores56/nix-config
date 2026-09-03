@@ -47,10 +47,9 @@ class ContractCliTest(CliTest):
 
     def test_bootstrap_reports_plan_problems(self):
         key = self._new_feature("badplan")
-        state_path = os.path.join(self._root, "features", key, "state.json")
-        state = json_load(state_path)
-        state["tasks"] = [{"id": "T1", "title": "t", "status": "todo", "needs": ["T9"]}]
-        json_dump(state_path, state)
+        plan_path = os.path.join(self._root, "features", key, "plan.md")
+        with open(plan_path, "w") as f:
+            f.write("- [ ] T1: t (needs: T9)\n")
         out = self.run_cli("bootstrap", key)
         self.assertNotEqual(out.returncode, 0)
         self.assertIn("plan problems", out.stdout)
@@ -67,13 +66,9 @@ class ContractCliTest(CliTest):
 
     def test_plan_invalid_exits_with_problem(self):
         key = self._new_feature("invalid")
-        state_path = os.path.join(self._root, "features", key, "state.json")
-        state = json_load(state_path)
-        state["tasks"] = [
-            {"id": "T1", "title": "a", "status": "todo", "needs": []},
-            {"id": "T1", "title": "b", "status": "todo", "needs": []},
-        ]
-        json_dump(state_path, state)
+        plan_path = os.path.join(self._root, "features", key, "plan.md")
+        with open(plan_path, "w") as f:
+            f.write("- [ ] T1: a\n- [ ] T1: b\n")
         out = self.run_cli("plan", key)
         self.assertNotEqual(out.returncode, 0)
         self.assertIn("duplicate task id", out.stderr)
@@ -170,7 +165,7 @@ class ContractCliTest(CliTest):
             env=env,
         )
         self.assertEqual(out.returncode, 0)
-        self.assertIn("design updated", out.stdout)
+        self.assertIn("design.md updated", out.stdout)
         log = _git(self._root, "log", "--oneline")
         self.assertIn("edit design", log.stdout)
 
@@ -179,7 +174,7 @@ class ContractCliTest(CliTest):
         noop = _write_script(self._tmp.name, "editor-noop.py", f"#!{sys.executable}\n")
         fail = _write_script(self._tmp.name, "editor-fail.py", f"#!{sys.executable}\nimport sys\nsys.exit(3)\n")
         for editor, want_rc, want_text in [
-            (noop, 0, "design unchanged"),
+            (noop, 0, "doc unchanged"),
             (fail, 1, "editor exited 3"),
         ]:
             env = dict(self._env)
@@ -243,22 +238,6 @@ class StoreContractTest(unittest.TestCase):
         clean = _sanitize_url(dirty)
         self.assertNotIn("sekret", clean)
         self.assertIn("https://***@github.com/smores56/sdlc-state.git", clean)
-
-
-def json_load(path):
-    import json
-
-    with open(path) as f:
-        return json.load(f)
-
-
-def json_dump(path, state):
-    import json
-
-    tmp = path + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(state, f)
-    os.replace(tmp, path)
 
 
 if __name__ == "__main__":

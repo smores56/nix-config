@@ -15,6 +15,90 @@ def clean(value):
     return _CONTROL.sub("", value) if isinstance(value, str) else value
 
 
+# plan.md grammar: only task-list lines parse; everything else is prose.
+#   - [ ] T1: Title
+#   - [x] T1: Title
+#   - [ ] T1: Title (needs: T2, T3)
+#   - [x] T1: Title (needs: T2) (canceled)
+TASK_LINE = re.compile(r"^\- \[( |x)\] (T[0-9]+): (.*?)( \(needs: [^)]+\))?( \(canceled\))?$")
+MARKER_LINE = re.compile(r"^\s*>\s*Sam:\s*(.*)$")
+
+
+def parse_plan(text):
+    """Parse plan.md text into (tasks, problems, lines).
+
+    Tasks carry file order plus a `line` index into `lines` so mutations can
+    rewrite a single line and leave prose (notes, markers) untouched.
+    Problems are line-anchored and only fire on task-shaped lines that do not
+    parse; semantic validation is separate (validate_tasks).
+    """
+    lines = text.split("\n")
+    tasks = []
+    problems = []
+    for idx, line in enumerate(lines):
+        match = TASK_LINE.match(line.rstrip())
+        if match:
+            status = "done" if match.group(1) == "x" else "todo"
+            tid = match.group(2)
+            title = (match.group(3) or "").strip()
+            needs = (
+                [n.strip().upper() for n in match.group(4)[len(" (needs: ") : -1].split(",") if n.strip()]
+                if match.group(4)
+                else []
+            )
+            if match.group(5):
+                status = "canceled"
+            if not title:
+                problems.append(f"line {idx + 1}: task {tid} has no title")
+                continue
+            tasks.append({"id": tid, "title": title, "status": status, "needs": needs, "line": idx})
+        elif line.startswith("- ["):
+            problems.append(f"line {idx + 1}: malformed task line: {line.strip()[:60]}")
+    return tasks, problems, lines
+
+
+def task_line(task):
+    """Render a task dict back to a canonical plan.md line."""
+    mark = "[x]" if task["status"] in ("done", "canceled") else "[ ]"
+    needs = task.get("needs", [])
+    suffix = f" (needs: {', '.join(needs)})" if needs else ""
+    canceled = " (canceled)" if task["status"] == "canceled" else ""
+    return f"- {mark} {task['id']}: {task['title']}{suffix}{canceled}"
+
+
+def replace_task_line(lines, task_id, new_task):
+    """Return lines with the task's line rewritten (prose untouched)."""
+    out = list(lines)
+    for idx, line in enumerate(out):
+        match = TASK_LINE.match(line.rstrip())
+        if match and match.group(2) == task_id:
+            out[idx] = task_line(new_task)
+            return out
+    raise ValueError(f"no task line for {task_id}")
+
+
+def append_task_line(lines, task):
+    """Insert a task line after the last task line (or at end)."""
+    out = list(lines)
+    last = -1
+    for idx, line in enumerate(out):
+        if TASK_LINE.match(line.rstrip()):
+            last = idx
+    new = task_line(task)
+    if last >= 0:
+        out.insert(last + 1, new)
+    else:
+        if out and out[-1] != "":
+            out.append("")
+        out.append(new)
+    return out
+
+
+def open_markers(text):
+    """Human review markers (`> Sam: ...`) addressed to the agent."""
+    return [m.group(1).strip() for m in map(MARKER_LINE.match, text.splitlines()) if m]
+
+
 def done(task):
     return task["status"] in TERMINAL
 

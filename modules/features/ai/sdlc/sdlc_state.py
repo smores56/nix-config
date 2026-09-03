@@ -134,14 +134,21 @@ def load(root, key):
             state = json.load(f)
     except json.JSONDecodeError as error:
         _fail(f"{key}: state.json is corrupt: {error}")
+    state.pop("tasks", None)  # legacy: tasks now live in plan.md
     state["key"] = key
     design_path_ = os.path.join(path, "design.md")
+    plan_path_ = os.path.join(path, "plan.md")
     state["design"] = _read_regular(design_path_, f"{key}: design.md") if os.path.exists(design_path_) else ""
+    state["plan"] = _read_regular(plan_path_, f"{key}: plan.md") if os.path.exists(plan_path_) else ""
     return state
 
 
 def design_path(root, key):
     return os.path.join(feature_dir(root, key), "design.md")
+
+
+def plan_path(root, key):
+    return os.path.join(feature_dir(root, key), "plan.md")
 
 
 def _write_new(path, content):
@@ -162,9 +169,15 @@ def _write_new(path, content):
 
 def save(root, key, state):
     state_path = os.path.join(feature_dir(root, key), "state.json")
-    payload = {k: v for k, v in state.items() if k not in ("key", "design")}
+    payload = {k: v for k, v in state.items() if k not in ("key", "design", "plan", "tasks")}
     _write_new(state_path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
     commit(root, f"{key}: update state")
+
+
+def write_plan(root, key, text):
+    """Replace plan.md and commit. Caller is responsible for valid content."""
+    _write_new(plan_path(root, key), text)
+    commit(root, f"{key}: update plan")
 
 
 def create(root, key, repo, title):
@@ -179,9 +192,9 @@ def create(root, key, repo, title):
         "status": "active",
         "approval": None,
         "claim": None,
-        "tasks": [],
     }
     _write_new(os.path.join(path, "design.md"), f"# {title}\n\n")
+    _write_new(os.path.join(path, "plan.md"), "# Plan\n\n")
     _write_new(os.path.join(path, "state.json"), json.dumps(state, indent=2, sort_keys=True) + "\n")
     commit(root, f"{key}: create feature")
     return state

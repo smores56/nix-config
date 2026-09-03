@@ -31,10 +31,12 @@ research → brainstorm → [grill] → plan → build → review & fix → comp
    as feature development. Skip only when the direction is obvious and the
    user did not ask.
 4. **Plan** — `sdlc new <slug> --repo <owner/repo>` from the feature's code
-   repo (cwd origin), write the design doc via `sdlc edit` (commits on
-   save), then decompose into ordered tasks:
-   `sdlc task <feature> add "<title>" [--needs T1]`. Run `sdlc plan
-   <feature>` to validate.
+   repo (cwd origin), write the design doc via `sdlc edit <feature>`
+   (commits on save), then decompose into ordered tasks in `plan.md` — by
+   hand or with `sdlc task <feature> add "<title>" [--needs T1]`. Run
+   `sdlc plan <feature>` to validate. plan.md is the source of truth for
+   tasks: reorders, removals, retitles, and `needs:` edits are plain doc
+   edits (`sdlc edit <feature> plan`), and are always free.
 5. **Approve** — show the human the design + rendered plan (`sdlc status` /
    `sdlc plan`). Only the human approves: `sdlc approve <feature>` (or an
    explicit verbal approval recorded by the agent). Never self-approve.
@@ -60,10 +62,16 @@ free — planning can change as the work teaches you.
 
 ## Review loop
 
-Design and plan reviews happen in the terminal: render with `sdlc status`
-or `sdlc bootstrap`, open `design.md` in the human's `$EDITOR` (`sdlc
-edit`) for inline annotation, or review doc diffs with hunk/tuicr. Apply
-comments, re-render, iterate. Approve only when the human is satisfied.
+Design and plan reviews happen in the terminal. Annotate inline while
+reading: put `> Sam: ...` marker lines in design.md or plan.md and the
+agent addresses them (revision or reply); `sdlc bootstrap` lists open
+markers for later sessions. Render with `sdlc status` or `sdlc bootstrap`,
+open a doc with `sdlc edit <feature> [design|plan]` (plan edits validate
+on save), or review doc diffs with hunk/tuicr. Approve only when the human
+is satisfied. Comment on design.md during design review only — after
+approval, design.md is frozen and any edit (markers included) demands
+re-approval; post-approval commentary goes in plan.md, which is never
+frozen.
 
 ## Resuming
 

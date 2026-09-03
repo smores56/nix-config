@@ -2,12 +2,17 @@
 """sdlc — file-backed agentic SDLC over the sdlc-state repo.
 
 Full lifecycle: research -> brainstorm -> [grill] -> plan -> build ->
-review & fix. The design doc lives at
-features/<owner>--<repo>--<slug>/design.md; tasks and gate state live in
-state.json beside it. Approval binds to the design revision
-(design-frozen-at-approval): edits after `sdlc approve` surface as an
-unapproved-diff and block `sdlc next` until re-approval. Task-level
-re-plans stay free.
+review & fix. A feature dir holds three files:
+
+    design.md   — design doc (human-reviewed; frozen at approval)
+    plan.md     — the plan: markdown task list, source of truth
+    state.json  — machine state: title, repo, status, approval, claim
+
+plan.md grammar: only `- [ ] T1: Title` task lines parse; everything else
+(`> Sam:` review markers, notes, headings) is prose. Approval binds to the
+design revision: edits after `sdlc approve` surface as an unapproved-diff
+and block `sdlc next` until re-approval. Task re-plans — hand-edits,
+reorders, new tasks — are free.
 """
 
 import argparse
@@ -20,6 +25,7 @@ import sdlc_state as store
 
 VALID_REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 VALID_SLUG = re.compile(r"^[A-Za-z0-9_-]+$")
+DOCS = ("design", "plan")
 
 
 def _fail(message, code=1):
@@ -33,6 +39,13 @@ def _open(args):
 
 def _load_feature(root, key):
     return store.load(root, key)
+
+
+def _plan_tasks(feature):
+    """Parse plan.md into (tasks, problems); problems are line-anchored."""
+    tasks, problems, _ = sdlc_model.parse_plan(feature.get("plan", ""))
+    problems += sdlc_model.validate_tasks(tasks)
+    return tasks, problems
 
 
 def _gate_blocker(feature):
@@ -62,6 +75,10 @@ def _report_problems(problems):
         print(f"sdlc: plan problem: {p}", file=sys.stderr)
 
 
+def _commit_doc(root, key, doc):
+    store.commit(root, f"{key}: edit {doc}")
+
+
 def cmd_list(_args):
     root = store.require_root()
     features = []
@@ -72,6 +89,7 @@ def cmd_list(_args):
             print(f"sdlc: skipping {key}: {error}", file=sys.stderr)
             continue
         if state.get("status") == "active":
+            state["tasks"], _ = _plan_tasks(state)
             features.append(state)
     print(sdlc_model.render_list(features))
     return 0
@@ -91,6 +109,17 @@ def cmd_new(args):
     store.create(root, key, repo, title)
     print(key)
     print(store.design_path(root, key))
+    print(store.plan_path(root, key))
+    return 0
+
+
+def cmd_path(args):
+    root = store.require_root()
+    key = _open(args)
+    if args.doc == "design" or args.doc is None:
+        print(store.design_path(root, key))
+    if args.doc == "plan" or args.doc is None:
+        print(store.plan_path(root, key))
     return 0
 
 
@@ -101,19 +130,28 @@ def cmd_edit(args):
     blocked = _ensure_mutable(feature, key)
     if blocked is not None:
         return blocked
-    path = store.design_path(root, key)
+    doc = args.doc or "design"
+    path = store.design_path(root, key) if doc == "design" else store.plan_path(root, key)
     if not os.path.isfile(path):
-        return _fail(f"{key}: design.md missing")
+        return _fail(f"{key}: {doc}.md missing")
     before = open(path).read()
     code = store.run_editor(path)
     if code != 0:
         return _fail(f"editor exited {code}")
     after = open(path).read()
     if after == before:
-        print("sdlc: design unchanged")
+        print("sdlc: doc unchanged")
         return 0
-    store.commit(root, f"{key}: edit design")
-    print(f"sdlc: design updated — {path}")
+    _commit_doc(root, key, doc)
+    print(f"sdlc: {doc}.md updated — {path}")
+    if doc == "plan":
+        # Strict save: an invalid plan is a failed edit (file kept, committed).
+        feature["plan"] = after
+        _, problems = _plan_tasks(feature)
+        if problems:
+            _report_problems(problems)
+            print(f"sdlc: {key}: plan invalid — fix the doc and re-run `sdlc edit {key} plan`", file=sys.stderr)
+            return 1
     return 0
 
 
@@ -121,10 +159,11 @@ def cmd_plan(args):
     root = store.require_root()
     key = _open(args)
     feature = _load_feature(root, key)
-    problems = sdlc_model.validate_tasks(feature.get("tasks", []))
+    tasks, problems = _plan_tasks(feature)
     if problems:
         _report_problems(problems)
         return 1
+    feature["tasks"] = tasks
     print(sdlc_model.render(feature))
     return 0
 
@@ -133,7 +172,8 @@ def cmd_status(args):
     root = store.require_root()
     key = _open(args)
     feature = _load_feature(root, key)
-    problems = sdlc_model.validate_tasks(feature.get("tasks", []))
+    tasks, problems = _plan_tasks(feature)
+    feature["tasks"] = tasks
     print(sdlc_model.render(feature))
     if problems:
         _report_problems(problems)
@@ -150,11 +190,11 @@ def cmd_approve(args):
         return blocked
     if not feature.get("design", "").strip():
         return _fail(f"{key}: design.md is empty — write the design first")
-    if not feature.get("tasks"):
-        return _fail(f"{key}: plan has no tasks — add tasks before approving")
-    problems = sdlc_model.validate_tasks(feature["tasks"])
+    tasks, problems = _plan_tasks(feature)
     if problems:
         return _fail(f"{key}: plan invalid: {'; '.join(problems)}")
+    if not tasks:
+        return _fail(f"{key}: plan has no tasks — add tasks before approving")
     feature["approval"] = {
         "at": store.now(),
         "by": store.who(),
@@ -169,15 +209,15 @@ def cmd_next(args):
     root = store.require_root()
     key = _open(args)
     feature = _load_feature(root, key)
-    problems = sdlc_model.validate_tasks(feature.get("tasks", []))
+    tasks, problems = _plan_tasks(feature)
     if problems:
         return _fail(f"{key}: plan invalid: {'; '.join(problems)}")
     block = _gate_blocker(feature)
     if block:
         return _fail(f"{key}: {block}")
-    ready = sdlc_model.workable(feature["tasks"])
+    ready = sdlc_model.workable(tasks)
     if not ready:
-        remaining = [t for t in feature["tasks"] if not sdlc_model.done(t)]
+        remaining = [t for t in tasks if not sdlc_model.done(t)]
         if not remaining:
             return _fail(f"{key}: all tasks terminal — run `sdlc complete {key}`")
         return _fail(f"{key}: no workable tasks (blocked)")
@@ -193,10 +233,12 @@ def cmd_bootstrap(args):
     root = store.require_root()
     key = _open(args)
     feature = _load_feature(root, key)
-    tasks = feature.get("tasks", [])
-    problems = sdlc_model.validate_tasks(tasks)
+    tasks, problems = _plan_tasks(feature)
     gates = sdlc_model.gate_status(feature)
     diff = "unapproved" if gates["design_changed"] else "clean"
+    markers = sdlc_model.open_markers(feature.get("design", "")) + sdlc_model.open_markers(
+        feature.get("plan", "")
+    )
     out = [
         f"# {key} — {sdlc_model.clean(feature.get('title', ''))}",
         f"repo: {sdlc_model.clean(feature.get('repo', ''))}",
@@ -210,11 +252,22 @@ def cmd_bootstrap(args):
         "## Plan",
     ]
     out += sdlc_model.render_tasks(tasks)
+    if markers:
+        out.append("")
+        out.append("## Open questions (Sam's markers)")
+        for marker in markers:
+            out.append(f"- {sdlc_model.clean(marker)}")
     if problems:
         out.append("")
         out.append("plan problems: " + "; ".join(problems))
     print("\n".join(out))
     return 1 if problems else 0
+
+
+def _plan_text(lines):
+    """Join parsed lines back to a doc that always ends with a newline."""
+    text = "\n".join(lines)
+    return text if text.endswith("\n") else text + "\n"
 
 
 def cmd_task(args):
@@ -224,21 +277,31 @@ def cmd_task(args):
     blocked = _ensure_mutable(feature, key)
     if blocked is not None:
         return blocked
-    tasks = feature.setdefault("tasks", [])
     sub = args.task_cmd
     if sub == "add":
         title = args.title_or_id
         if not title:
             return _fail("task add: title required")
+        tasks, problems, lines = sdlc_model.parse_plan(feature.get("plan", ""))
+        if problems:
+            return _fail(f"{key}: plan invalid: {'; '.join(problems)}")
         needs = [n.strip().upper() for n in (args.needs or "").split(",") if n.strip()]
-        tid = store.task_ids(feature)
-        tasks.append({"id": tid, "title": title, "status": "todo", "needs": needs})
-        store.save(root, key, feature)
+        known = {t["id"] for t in tasks}
+        for need in needs:
+            if need not in known:
+                return _fail(f"task add: unknown need {need!r} (no such task)")
+        tid = store.task_ids({"tasks": tasks})
+        new_task = {"id": tid, "title": title, "status": "todo", "needs": needs}
+        lines = sdlc_model.append_task_line(lines, new_task)
+        store.write_plan(root, key, _plan_text(lines))
         print(f"{tid} {sdlc_model.clean(title)}")
         return 0
-    task_id = args.title_or_id
-    if not re.match(r"^T[0-9]+$", task_id or ""):
+    task_id = (args.title_or_id or "").strip().upper()
+    if not re.match(r"^T[0-9]+$", task_id):
         return _fail(f"task {sub}: task id required (e.g. T1)")
+    tasks, problems, lines = sdlc_model.parse_plan(feature.get("plan", ""))
+    if problems:
+        return _fail(f"{key}: plan invalid: {'; '.join(problems)}")
     found = next((t for t in tasks if t["id"] == task_id), None)
     if not found:
         return _fail(f"task {sub}: no task {task_id}")
@@ -246,8 +309,11 @@ def cmd_task(args):
         target = "done" if sub == "done" else "canceled"
         if found["status"] == target:
             return _fail(f"task {task_id} already {target}")
+        if sub == "done" and found["status"] == "canceled":
+            return _fail(f"task {task_id} is canceled")
         found["status"] = target
-        store.save(root, key, feature)
+        lines = sdlc_model.replace_task_line(lines, task_id, found)
+        store.write_plan(root, key, _plan_text(lines))
         print(f"sdlc: {task_id} {target}")
         return 0
     return _fail(f"unknown task subcommand {sub!r}")
@@ -267,13 +333,16 @@ def cmd_complete(args):
     if blocked is not None:
         return blocked
     gates = sdlc_model.gate_status(feature)
-    if not feature.get("tasks"):
+    tasks, problems = _plan_tasks(feature)
+    if problems:
+        return _fail(f"{key}: plan invalid: {'; '.join(problems)}")
+    if not tasks:
         return _fail(f"{key}: plan has no tasks — nothing to complete")
     if not gates["approved"]:
         return _fail(f"{key}: not approved — nothing to complete without an approved plan")
     if gates["design_changed"]:
         return _fail(f"{key}: design changed since approval — re-approve before completing")
-    if not all(sdlc_model.done(t) for t in feature["tasks"]):
+    if not all(sdlc_model.done(t) for t in tasks):
         return _fail(f"{key}: tasks remain — finish or cancel them first")
     feature["status"] = "done"
     store.save(root, key, feature)
@@ -305,14 +374,20 @@ def main():
     p = sub.add_parser("list", help="list active features with phase and claim")
     p.set_defaults(func=cmd_list)
 
-    p = sub.add_parser("new", help="create a feature (design.md + empty plan)")
+    p = sub.add_parser("new", help="create a feature (design.md + plan.md + state)")
     p.add_argument("slug", help="kebab-case feature slug")
     p.add_argument("--repo", help="owner/repo the work lands in (default: cwd origin)")
     p.add_argument("--title", help="human title (default: slug)")
     p.set_defaults(func=cmd_new)
 
-    p = sub.add_parser("edit", help="open design.md in $EDITOR, then commit")
+    p = sub.add_parser("path", help="print design.md / plan.md paths")
     p.add_argument("feature")
+    p.add_argument("doc", nargs="?", choices=DOCS, help="design or plan (default: both)")
+    p.set_defaults(func=cmd_path)
+
+    p = sub.add_parser("edit", help="open a doc in $EDITOR, commit, validate plan")
+    p.add_argument("feature")
+    p.add_argument("doc", nargs="?", choices=DOCS, default="design", help="design or plan (default: design)")
     p.set_defaults(func=cmd_edit)
 
     p = sub.add_parser("plan", help="validate the plan and render it for review")
