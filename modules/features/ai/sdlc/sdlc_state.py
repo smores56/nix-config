@@ -11,9 +11,11 @@ SDLC_STATE_DIR to override the root; SDLC_NO_PUSH=1 disables pushes.
 """
 
 import getpass
+import hashlib
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -221,6 +223,10 @@ def _git(root, *args, check=True):
     return proc
 
 
+def git(root, *args, check=True):
+    return _git(root, *args, check=check)
+
+
 def _sanitize_url(text):
     # Strip userinfo from URLs in git error output (token-in-URL leakage).
     return re.sub(r"(https?://)[^/@\s]+@", r"\1***@", text)
@@ -244,6 +250,53 @@ def commit(root, message):
                 f"state committed locally but push failed: {_sanitize_url(push.stderr.strip())}\n"
                 f"  fix and re-run: git -C {root} push"
             )
+
+
+def _sha1_bytes(content):
+    return hashlib.sha1(content).hexdigest()  # noqa: S324 — change marker, not security
+
+
+def git_log_revs(root, relpath):
+    """Commits touching relpath, newest first."""
+    proc = _git(root, "log", "--format=%H", "--", relpath, check=False)
+    if proc.returncode != 0:
+        return []
+    return [line for line in proc.stdout.split() if line]
+
+
+def git_blob_sha(root, rev, relpath):
+    """sha1 of a file's bytes at rev, or None when the path did not exist."""
+    proc = subprocess.run(
+        ["git", "-C", root, "show", f"{rev}:{relpath}"],
+        capture_output=True,
+    )
+    if proc.returncode != 0:
+        return None
+    return _sha1_bytes(proc.stdout)
+
+
+def sync(root):
+    """Pull remote changes (rebase) and push anything local."""
+    branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    pull = _git(root, "pull", "--rebase", "origin", branch, check=False)
+    if pull.returncode != 0:
+        _fail(f"sync failed (rebase conflict or network): {_sanitize_url(pull.stderr.strip())}")
+    if not os.environ.get("SDLC_NO_PUSH") and _origin_url(root) is not None:
+        push = _git(root, "push", "-q", "origin", branch, check=False)
+        if push.returncode != 0:
+            _fail(f"sync: push failed: {_sanitize_url(push.stderr.strip())}")
+    print("sdlc: synced")
+
+
+def prune(root, key):
+    """Delete a terminal feature's directory and commit the removal."""
+    path = feature_dir(root, key)
+    if not os.path.isdir(path):
+        _fail(f"{key}: feature dir missing at {path}")
+    if os.path.islink(path):
+        _fail(f"{key}: feature dir is a symlink — refusing")
+    shutil.rmtree(path)
+    commit(root, f"prune {key}")
 
 
 def claim(root, key, release=False):

@@ -55,22 +55,33 @@ markers — is prose and survives untouched:
 ## Commands
 
 ```sh
-sdlc list                                   # active features: key, phase, claim
-sdlc new <slug> --repo <owner/repo>         # create a feature
-sdlc path <feature> [design|plan]           # print doc paths (for tooling)
-sdlc edit <feature> [design|plan]           # $EDITOR, commit; plan edits validate
-sdlc plan <feature>                         # validate + render the plan
-sdlc status <feature>                       # tasks, gates, design diff
-sdlc approve <feature>                      # human gate (design-frozen)
-sdlc next <feature> [--all]                 # next workable task or blocker
-sdlc bootstrap <feature>                    # session brief (+ open Sam: markers)
-sdlc task <feature> add|done|cancel ...     # plan conveniences (line-preserving)
-sdlc claim <feature> [--release]            # parallel-session guard
-sdlc complete|cancel <feature>              # terminal
+sdlc list [--all] [--status active|done|canceled] [--repo owner/repo]
+                                    # active features: key, phase, claim
+                                    # --path: machine format path<TAB>key<TAB>phase
+sdlc new <slug> --repo <owner/repo> # create a feature
+sdlc path <feature> [design|plan]   # print doc paths (for tooling)
+sdlc edit <feature> [design|plan]   # $EDITOR, commit; plan edits validate
+sdlc plan <feature>                 # validate + render the plan
+sdlc status <feature>               # tasks, gates, design diff
+sdlc diff <feature>                 # design.md changes since approval
+sdlc approve <feature>              # human gate (design-frozen)
+sdlc next <feature> [--all]         # next workable task or blocker
+sdlc bootstrap <feature>            # session brief (+ open Sam: markers)
+sdlc task <feature> add|done|cancel ...   # plan conveniences (line-preserving)
+sdlc claim <feature> [--release]    # parallel-session guard
+sdlc sync                           # pull remote state + push local (rebase)
+sdlc complete|cancel <feature>      # terminal states
+sdlc prune <feature>                # delete a terminal feature from state
 ```
 
 Features are addressed by full key `<owner>--<repo>--<slug>` or by slug when
 unambiguous.
+
+## Television
+
+`tv features` (abbr `sf`) browses active features — pick one to jump to its
+doc dir; `sfe` opens the chosen feature's plan.md in `$EDITOR`; `sfl` is
+`sdlc list`. Preview shows `sdlc status` for the highlighted feature.
 
 ## Notes
 

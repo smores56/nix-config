@@ -24,4 +24,12 @@ let
 in
 {
   home.packages = [ sdlcBin ];
+
+  home.file.".config/television/cable/features.toml".source = ./features.toml;
+
+  programs.fish.shellAbbrs = {
+    sf = "tv features | read -l f; and c $f";
+    sfe = "tv features | read -l f; and sdlc edit (string replace -r '^.*/' '' $f) plan";
+    sfl = "sdlc list";
+  };
 }

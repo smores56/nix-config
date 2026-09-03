@@ -75,17 +75,22 @@ frozen.
 
 ## Resuming
 
+- `sdlc sync` first — pulls remote state and pushes anything local
 - `sdlc list` — active features with phase and claim
 - Pick one, then `sdlc bootstrap <feature>` and `sdlc next <feature>`.
-- A fresh session needs only the state repo clone: pull, read the design
-  doc and gate markers, and continue. Never rely on conversation memory.
+- A fresh session needs only the state repo clone: read the design doc and
+  gate markers, and continue. Never rely on conversation memory.
 
 ## Conventions
 
 - Feature key: `<owner>--<repo>--<slug>`; address by slug when unambiguous.
 - Task ids are T1, T2, …; `needs:` lists tasks that must finish first.
-- Mutations auto-commit and push to the private sdlc-state origin. Pull
-  before resuming (session start) to avoid push races between machines.
+- Mutations auto-commit and push to the private sdlc-state origin. Run
+  `sdlc sync` before resuming (session start) to avoid push races between
+  machines.
+- `sdlc diff <feature>` shows design.md changes since approval — use it
+  when deciding whether a re-approval is warranted.
+- Prune only terminal features (`sdlc prune`); history stays in git.
 - The state repo is the only record of intent; if it diverges from the
   code repo, the state repo wins.
 

@@ -79,8 +79,9 @@ def _commit_doc(root, key, doc):
     store.commit(root, f"{key}: edit {doc}")
 
 
-def cmd_list(_args):
+def cmd_list(args):
     root = store.require_root()
+    statuses = {"active", "done", "canceled"} if args.all else {args.status}
     features = []
     for key in store.list_keys(root):
         try:
@@ -88,10 +89,17 @@ def cmd_list(_args):
         except SystemExit as error:
             print(f"sdlc: skipping {key}: {error}", file=sys.stderr)
             continue
-        if state.get("status") == "active":
-            state["tasks"], _ = _plan_tasks(state)
-            features.append(state)
-    print(sdlc_model.render_list(features))
+        if state.get("status") not in statuses:
+            continue
+        if args.repo and args.repo != state.get("repo") and args.repo not in key:
+            continue
+        state["tasks"], _ = _plan_tasks(state)
+        if args.path:
+            print(f"{store.feature_dir(root, key)}\t{key}\t{sdlc_model.phase(state)}")
+            continue
+        features.append(state)
+    if not args.path:
+        print(sdlc_model.render_list(features))
     return 0
 
 
@@ -319,6 +327,46 @@ def cmd_task(args):
     return _fail(f"unknown task subcommand {sub!r}")
 
 
+def cmd_diff(args):
+    root = store.require_root()
+    key = _open(args)
+    feature = store.load(root, key)
+    approval = feature.get("approval")
+    if not approval:
+        return _fail(f"{key}: not approved — nothing to diff against")
+    rel = os.path.join("features", key, "design.md")
+    base = None
+    for rev in store.git_log_revs(root, rel):
+        if store.git_blob_sha(root, rev, rel) == approval.get("design_sha"):
+            base = rev
+            break
+    if base is None:
+        return _fail(f"{key}: approved design revision not found in state history")
+    proc = store.git(root, "diff", "--no-color", base, "--", rel, check=False)
+    if not proc.stdout.strip():
+        print("no changes since approval")
+        return 0
+    print(proc.stdout.rstrip())
+    return 0
+
+
+def cmd_sync(_args):
+    root = store.require_root()
+    store.sync(root)
+    return 0
+
+
+def cmd_prune(args):
+    root = store.require_root()
+    key = _open(args)
+    feature = store.load(root, key)
+    if feature.get("status") not in ("done", "canceled"):
+        return _fail(f"{key}: only terminal features (done/canceled) can be pruned")
+    store.prune(root, key)
+    print(f"sdlc: pruned {key}")
+    return 0
+
+
 def cmd_claim(args):
     root = store.require_root()
     key = _open(args)
@@ -371,7 +419,11 @@ def main():
     parser = argparse.ArgumentParser(prog="sdlc", description="file-backed agentic SDLC")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("list", help="list active features with phase and claim")
+    p = sub.add_parser("list", help="list features with phase and claim")
+    p.add_argument("--all", action="store_true", help="include done and canceled features")
+    p.add_argument("--status", choices=["active", "done", "canceled"], default="active", help="status filter (default: active)")
+    p.add_argument("--repo", help="only features whose key contains this owner/repo")
+    p.add_argument("--path", action="store_true", help="machine format: path\\tkey\\tphase per line")
     p.set_defaults(func=cmd_list)
 
     p = sub.add_parser("new", help="create a feature (design.md + plan.md + state)")
@@ -430,6 +482,17 @@ def main():
     p = sub.add_parser("cancel", help="cancel a feature")
     p.add_argument("feature")
     p.set_defaults(func=cmd_cancel)
+
+    p = sub.add_parser("diff", help="show design.md changes since approval")
+    p.add_argument("feature")
+    p.set_defaults(func=cmd_diff)
+
+    p = sub.add_parser("sync", help="pull remote state changes and push local ones")
+    p.set_defaults(func=cmd_sync)
+
+    p = sub.add_parser("prune", help="delete a terminal (done/canceled) feature")
+    p.add_argument("feature")
+    p.set_defaults(func=cmd_prune)
 
     args = parser.parse_args()
     sys.exit(args.func(args))

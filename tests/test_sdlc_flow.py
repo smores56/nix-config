@@ -208,8 +208,13 @@ class CliTest(unittest.TestCase):
         self._env = os.environ.copy()
         self._env["SDLC_STATE_DIR"] = self._root
         self._env["SDLC_NO_PUSH"] = "1"
+        self._saved_env = os.environ.copy()
+        os.environ["SDLC_STATE_DIR"] = self._root
+        os.environ["SDLC_NO_PUSH"] = "1"
 
     def tearDown(self):
+        os.environ.clear()
+        os.environ.update(self._saved_env)
         self._tmp.cleanup()
 
     def run_cli(self, *args):
