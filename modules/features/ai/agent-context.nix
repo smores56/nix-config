@@ -16,6 +16,7 @@ let
     "- Start task worktrees with `worktrees new --slug <kebab-slug> --task \"<description>\"` (creates branch + worktree)"
     "- Branches: `${personalPrefix}/<kebab-slug>`"
     "- Run `research` before any non-trivial design; run `review` before merging non-trivial changes"
+    "- Behavior-changing work in testable code starts red: run the `test-driven-development` skill (failing test → minimal fix → refactor). Config or verification-only changes skip the loop — verify with the repo's checks instead"
     "- Before a non-trivial decision stands, spawn a fresh read-only subagent to argue against it"
     "- Conventional Commits (feat, fix, refactor, chore, docs, test, perf, ci) with `type(scope): description`; applies to commits and PR titles"
     "- Push immediately after committing; no `Co-Authored-By` trailers"
