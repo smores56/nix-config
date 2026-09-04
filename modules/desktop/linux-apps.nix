@@ -22,6 +22,7 @@ in
       transmission_4-gtk
       discord
       musescore
+      zoom-us
     ];
   };
 }
