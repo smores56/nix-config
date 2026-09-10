@@ -10,6 +10,26 @@
     programs.niri.package = pkgs.niri-unstable;
     environment.systemPackages = [ pkgs.xwayland-satellite-unstable ];
 
+    # portal-gnome (>=47) needs Nautilus for file pickers; route FileChooser to
+    # the GTK portal instead since we don't ship Nautilus. Overrides the
+    # niri-portals.conf `default=gnome;gtk;` shipped by the niri package.
+    xdg.portal = {
+      enable = true;
+      config.niri = {
+        default = [
+          "gnome"
+          "gtk"
+        ];
+        "org.freedesktop.impl.portal.FileChooser" = "gtk";
+        "org.freedesktop.impl.portal.Access" = "gtk";
+        "org.freedesktop.impl.portal.Notification" = "gtk";
+      };
+      extraPortals = [
+        pkgs.xdg-desktop-portal-gnome
+        pkgs.xdg-desktop-portal-gtk
+      ];
+    };
+
     services = {
       libinput.enable = true;
       upower.enable = true;
