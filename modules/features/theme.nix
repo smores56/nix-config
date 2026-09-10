@@ -115,6 +115,8 @@ in
     dotfiles.darkModeHook = darkModeHook;
 
     home = {
+      pointerCursor.enable = lib.mkIf (cfg.displayManager != "none") true;
+
       packages = [
         (pkgs.writeShellScriptBin "theme-switch" ''
           case "''${1:-}" in
