@@ -58,71 +58,53 @@ let
     }
     // (if m ? thinkingFields then { thinking_fields = m.thinkingFields; } else { });
 
+  # Pinned reasoning_effort for DeepSeek V4 Flash (standard + flex): every
+  # thinking mode emits "max" — the accepted literal neuralwatt documents as
+  # "Deepest reasoning" (adds an explicit maximum-effort instruction). Flex is
+  # the same model with the same mapping. Omitting reasoning_effort defaults to
+  # none on V4-Flash, hence the explicit pin. Declaring all modes means maki
+  # never falls back to thinking_budget_tokens.
+  deepseekThinkingFieldsMax = {
+    off = {
+      reasoning_effort = "max";
+    };
+    adaptive = {
+      reasoning_effort = "max";
+    };
+    minimal = {
+      reasoning_effort = "max";
+    };
+    low = {
+      reasoning_effort = "max";
+    };
+    medium = {
+      reasoning_effort = "max";
+    };
+    high = {
+      reasoning_effort = "max";
+    };
+    xhigh = {
+      reasoning_effort = "max";
+    };
+    max = {
+      reasoning_effort = "max";
+    };
+  };
+
   # ── Neuralwatt ────────────────────────────────────────────────────────────
   neuralwattModels = {
     glm53 = mkModel "glm-5.3" "GLM 5.3" 1048560 32768 true 1.45 4.50 0.145;
     deepseekV4Flash =
       mkModel "deepseek-v4-flash" "DeepSeek V4 Flash" 1048560 65536 true 0.14 0.28 0.028
       // {
-        # Neuralwatt's DeepSeek V4 Flash maps {max, xhigh}->max, {minimal..high}->high,
-        # omit->none. Declaring thinking_fields makes maki send reasoning_effort instead
-        # of thinking_budget_tokens, so always_thinking="max" reaches the model as max.
-        thinkingFields = {
-          off = {
-            reasoning_effort = "none";
-          };
-          adaptive = {
-            reasoning_effort = "high";
-          };
-          minimal = {
-            reasoning_effort = "high";
-          };
-          low = {
-            reasoning_effort = "low";
-          };
-          medium = {
-            reasoning_effort = "medium";
-          };
-          high = {
-            reasoning_effort = "high";
-          };
-          xhigh = {
-            reasoning_effort = "xhigh";
-          };
-          max = {
-            reasoning_effort = "xhigh";
-          };
-        };
+        # Baked in: always max reasoning (see deepseekThinkingFieldsMax).
+        thinkingFields = deepseekThinkingFieldsMax;
       };
     deepseekV4FlashFlex =
       mkModel "deepseek-v4-flash-flex" "DeepSeek V4 Flash (flex)" 1048560 65536 true 0.14 0.28 0.028
       // {
-        thinkingFields = {
-          off = {
-            reasoning_effort = "none";
-          };
-          adaptive = {
-            reasoning_effort = "high";
-          };
-          minimal = {
-            reasoning_effort = "high";
-          };
-          low = {
-            reasoning_effort = "low";
-          };
-          medium = {
-            reasoning_effort = "medium";
-          };
-          high = {
-            reasoning_effort = "high";
-          };
-          xhigh = {
-            reasoning_effort = "xhigh";
-          };
-          max = {
-            reasoning_effort = "xhigh";
-          };
-        };
+        # Flex is the same model — same reasoning_effort mapping (docs flex-tier).
+        thinkingFields = deepseekThinkingFieldsMax;
       };
     # Preview model (early access); absent from the public /v1/models scope.
     qwen3827b = mkModel "qwen-3.8-27b" "Qwen 3.8 27B" 262144 32768 true 0.45 3.20 0.25;
