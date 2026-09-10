@@ -46,6 +46,9 @@
           unzip
           lazysql
 
+          # documents
+          poppler-utils
+
           # environment management
           _1password-cli
           just
