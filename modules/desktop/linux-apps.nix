@@ -23,6 +23,7 @@ in
       discord
       musescore
       zoom-us
+      chromium
     ];
   };
 }
