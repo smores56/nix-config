@@ -37,6 +37,9 @@ let
     };
 
   # Maps any model record to maki provider-script shape.
+  # supports_thinking is projected from the model's reasoning flag; thinking_fields,
+  # when present, opts a llama-cpp-base model into sending native reasoning_effort
+  # instead of maki's default thinking_budget_tokens (see maki providers docs).
   mkMakiModel =
     m:
     let
@@ -46,22 +49,81 @@ let
       inherit (m) id;
       context_window = m.context;
       max_output_tokens = m.output;
+      supports_thinking = m.reasoning;
       pricing = {
         inherit (p) input output;
         cache_write = p.cacheWrite;
         cache_read = p.cacheRead;
       };
-    };
+    }
+    // (if m ? thinkingFields then { thinking_fields = m.thinkingFields; } else { });
 
   # ── Neuralwatt ────────────────────────────────────────────────────────────
   neuralwattModels = {
     glm53 = mkModel "glm-5.3" "GLM 5.3" 1048560 32768 true 1.45 4.50 0.145;
     deepseekV4Flash =
-      mkModel "deepseek-v4-flash" "DeepSeek V4 Flash" 1048560 65536 true 0.14 0.28
-        0.028;
+      mkModel "deepseek-v4-flash" "DeepSeek V4 Flash" 1048560 65536 true 0.14 0.28 0.028
+      // {
+        # Neuralwatt's DeepSeek V4 Flash maps {max, xhigh}->max, {minimal..high}->high,
+        # omit->none. Declaring thinking_fields makes maki send reasoning_effort instead
+        # of thinking_budget_tokens, so always_thinking="max" reaches the model as max.
+        thinkingFields = {
+          off = {
+            reasoning_effort = "none";
+          };
+          adaptive = {
+            reasoning_effort = "high";
+          };
+          minimal = {
+            reasoning_effort = "high";
+          };
+          low = {
+            reasoning_effort = "low";
+          };
+          medium = {
+            reasoning_effort = "medium";
+          };
+          high = {
+            reasoning_effort = "high";
+          };
+          xhigh = {
+            reasoning_effort = "xhigh";
+          };
+          max = {
+            reasoning_effort = "xhigh";
+          };
+        };
+      };
     deepseekV4FlashFlex =
-      mkModel "deepseek-v4-flash-flex" "DeepSeek V4 Flash (flex)" 1048560 65536 true 0.14 0.28
-        0.028;
+      mkModel "deepseek-v4-flash-flex" "DeepSeek V4 Flash (flex)" 1048560 65536 true 0.14 0.28 0.028
+      // {
+        thinkingFields = {
+          off = {
+            reasoning_effort = "none";
+          };
+          adaptive = {
+            reasoning_effort = "high";
+          };
+          minimal = {
+            reasoning_effort = "high";
+          };
+          low = {
+            reasoning_effort = "low";
+          };
+          medium = {
+            reasoning_effort = "medium";
+          };
+          high = {
+            reasoning_effort = "high";
+          };
+          xhigh = {
+            reasoning_effort = "xhigh";
+          };
+          max = {
+            reasoning_effort = "xhigh";
+          };
+        };
+      };
     # Preview model (early access); absent from the public /v1/models scope.
     qwen3827b = mkModel "qwen-3.8-27b" "Qwen 3.8 27B" 262144 32768 true 0.45 3.20 0.25;
   };

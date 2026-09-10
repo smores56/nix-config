@@ -23,6 +23,14 @@ let
     maki.setup({
       always_yolo = true,
       always_thinking = "max",
+      -- Only neuralwatt (+ smortress qwen as backup); exclude every other
+      -- provider, including the built-in deepseek that appears when the
+      -- DEEPSEEK_API_KEY env var is present. allowed_models wins for
+      -- selectors, CLI/API model changes, delegation, and `maki models`.
+      provider = {
+        default_model = "neuralwatt/deepseek-v4-flash",
+        allowed_models = { "neuralwatt/*", "smortress/*" },
+      },
       plugins = {
         bash = { enabled = true },
       },
