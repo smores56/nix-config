@@ -14,10 +14,8 @@ let
 
   # init.lua is a Lua script that calls maki.setup() once, then loads custom
   # tools. always_yolo skips permission prompts (deny rules still apply);
-  # always_thinking forces the max reasoning-effort level so the bundled
-  # deepseek provider sends reasoning_effort="max" (deepseek only accepts
-  # "max"; other providers snap to their dialect's ceiling). bash is off by
-  # default in maki, so enable it for the coding-agent toolset.
+  # always_thinking forces the max reasoning level. bash is off by default in
+  # maki, so enable it for the coding-agent toolset.
   initLua = ''
     -- Managed by home-manager (modules/features/ai/maki). Manual edits are clobbered.
     maki.setup({
@@ -28,7 +26,7 @@ let
       -- DEEPSEEK_API_KEY env var is present. allowed_models wins for
       -- selectors, CLI/API model changes, delegation, and `maki models`.
       provider = {
-        default_model = "neuralwatt/deepseek-v4-flash",
+        default_model = "neuralwatt/deepseek-v4.1-flash",
         allowed_models = { "neuralwatt/*", "smortress/*" },
       },
       plugins = {
