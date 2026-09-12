@@ -1,15 +1,12 @@
 # Canonical provider specs for maki provider scripts. Injected as a single
 # `aiProviders` attrset so consumers never import individual providers.
 #
-# Model specs are authored in maki's provider-script shape (see
-# modules/features/ai/maki/default.nix) via mkModel: they state only what
-# differs (id, context, output tokens, pricing); mkModel fills the shared
-# boilerplate (supports_thinking, write-side cache credit).
+# Models are authored via mkModel into maki's provider-script shape (see
+# modules/features/ai/maki/default.nix).
 _:
 let
-  # Emits a maki provider-script model record. Every model here reasons
-  # (reasoning defaults true) and none bill a write-side cache hit, so specs
-  # only state what differs. Prices are $/M tokens.
+  # Prices are $/M tokens. reasoning defaults true and write-cache credit is
+  # 0 for every model, so specs only state what differs.
   mkModel =
     {
       id,
@@ -63,9 +60,8 @@ let
   };
 
   # ── Smortress ─────────────────────────────────────────────────────────────
-  # Local network provider; no auth needed (keyEnv = null). qwen38Model is the
-  # single spec, shared between the maki provider script and the dotfiles
-  # default model (options.nix).
+  # Local network provider; no auth needed (keyEnv = null). models.qwen38
+  # feeds the dotfiles default model in options.nix.
   qwen38Model = mkModel {
     id = "qwen3.8-27b";
     context = 200192;

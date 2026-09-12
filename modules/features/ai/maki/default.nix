@@ -12,8 +12,7 @@ let
   # check reports availability based on which credential env vars are present,
   # so maki only offers providers that actually have auth on that machine.
 
-  # init.lua is a Lua script that calls maki.setup() once, then loads custom
-  # tools. always_yolo skips permission prompts (deny rules still apply);
+  # always_yolo skips permission prompts (deny rules still apply);
   # always_thinking forces the max reasoning level. bash is off by default in
   # maki, so enable it for the coding-agent toolset.
   initLua = ''
