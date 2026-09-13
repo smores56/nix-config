@@ -6,161 +6,160 @@
 }:
 let
   cfg = config.dotfiles;
-  inherit (cfg) polarity;
   isNiri = cfg.displayManager == "niri";
-  monitor = cfg.primaryMonitor;
   size = cfg.monitorSize;
-  hasWidgets = monitor != null && size != null;
+  hasWidgets = size != null;
 
-  # Reference resolution all widget positions/scales are authored against
-  refSize = {
-    width = 1920;
-    height = 1080;
+  clockFormat = "{:%-I:%M %p %a, %b %d}";
+
+  # cx/cy are the widget's centre in logical pixels; placement_width/height pin
+  # the authored resolution so v5 rescales proportionally on monitor changes.
+  mkWidget = type: cy: settings: {
+    inherit type;
+    cx = builtins.floor (size.width / 2.0);
+    cy = builtins.floor (size.height * cy);
+    placement_width = size.width;
+    placement_height = size.height;
+    inherit settings;
   };
 
-  # Scale a widget definition from refSize to the target monitor.
-  # Each widget carries a `refWidth` (measured pixel width at its authored scale)
-  # used to horizontally center it; this key is stripped from the output.
-  scaleWidget =
-    widget:
-    let
-      factor = (size.height * 1.0) / refSize.height;
-    in
-    (removeAttrs widget [ "refWidth" ])
-    // {
-      x = builtins.floor ((size.width - widget.refWidth * factor) / 2.0);
-      y = builtins.floor (widget.y * factor);
-      scale = widget.scale * factor;
+  desktopWidgets = {
+    enabled = hasWidgets;
+    widget_order = [
+      "clock_main"
+      "media_main"
+    ];
+  }
+  // lib.optionalAttrs hasWidgets {
+    widget.clock_main = mkWidget "clock" 0.13 {
+      clock_style = "digital";
+      format = clockFormat;
+      color = "tertiary";
     };
+    widget.media_main = mkWidget "media_player" 0.40 {
+      layout = "horizontal";
+      hide_when_no_media = true;
+    };
+  };
 
-  base = "#${config.lib.stylix.colors.base00}";
+  # The GUI writes overrides to the state dir, which loads after ~/.config and
+  # wins; clear it so this declarative config is authoritative for the session.
+  wipeState = pkgs.writeShellScript "noctalia-wipe-state" ''
+    rm -f "''${NOCTALIA_STATE_HOME:-''${XDG_STATE_HOME:-$HOME/.local/state}}/noctalia/settings.toml"
+  '';
+
+  lockOnStart = pkgs.writeShellScript "noctalia-lock-on-start" ''
+    for i in $(seq 1 60); do
+      ${lib.getExe config.programs.noctalia.package} msg session lock 2>/dev/null && exit 0
+      sleep 0.5
+    done
+    echo "lock-on-start: noctalia failed to respond after 30s" >&2
+    exit 1
+  '';
 in
 {
   config = lib.mkIf isNiri {
-    programs.noctalia-shell = {
+    # Palette and theme.mode come from stylix's Noctalia target.
+    programs.noctalia = {
       enable = true;
+      systemd.enable = true;
+
       settings = {
-        general = {
-          avatarImage = "${../../../pfp.png}";
-          autoStartAuth = true;
-          allowPasswordWithFprintd = true;
-          clockStyle = "digital";
-          dimmerOpacity = 0.3;
-          enableLockScreenMediaControls = true;
-          lockOnSuspend = true;
-          lockScreenAnimations = true;
-          lockScreenBlur = 0.4;
-          lockScreenTint = 0.4;
-          passwordChars = true;
-          showChangelogOnStartup = false;
+        shell = {
+          avatar_path = "${../../../pfp.png}";
+          font_family = lib.mkForce cfg.font;
+          time_format = "{:%-I:%M %p}";
+          clipboard_enabled = true;
+          clipboard_auto_paste = "auto";
         };
-        bar.widgets = {
-          left = [
-            { id = "Launcher"; }
-            {
-              id = "Clock";
-              formatHorizontal = "h:mm AP ddd, MMM dd";
-              formatVertical = "h:mm AP";
-              tooltipFormat = "h:mm AP ddd, MMM dd";
-            }
-            { id = "SystemMonitor"; }
-            { id = "ActiveWindow"; }
-            { id = "MediaMini"; }
+
+        location.auto_locate = true;
+
+        bar.main = {
+          position = "top";
+          start = [
+            "launcher"
+            "clock"
+            "sysmon"
+            "active_window"
+            "media"
           ];
-          center = [ { id = "Workspace"; } ];
-          right = [
-            { id = "Tray"; }
-            { id = "NotificationHistory"; }
-            { id = "Battery"; }
-            { id = "Volume"; }
-            { id = "Brightness"; }
-            { id = "ControlCenter"; }
+          center = [ "workspaces" ];
+          end = [
+            "tray"
+            "notifications"
+            "battery"
+            "volume"
+            "brightness"
+            "control-center"
           ];
         };
-        ui = {
-          fontDefault = lib.mkForce config.dotfiles.font;
-          fontFixed = lib.mkForce config.dotfiles.font;
+
+        widget.clock = {
+          format = clockFormat;
+          vertical_format = "{:%-I:%M %p}";
+          tooltip_format = clockFormat;
         };
-        location = {
-          useFahrenheit = true;
-          use12hourFormat = true;
-          analogClockInCalendar = true;
-          weatherTaliaMascotAlways = false;
-        };
-        appLauncher = {
-          enableClipboardHistory = true;
-          autoPasteClipboard = true;
-          terminalCommand = "${config.dotfiles.terminal} -e";
-        };
+
         wallpaper = {
-          automationEnabled = true;
-          fillColor = base;
-          solidColor = base;
+          enabled = true;
+          fill_color = "#${config.lib.stylix.colors.base00}";
+          automation.enabled = true;
         };
-        colorSchemes = {
-          predefinedScheme =
-            if polarity == "light" then
-              config.dotfiles.lightTheme.noctalia
-            else
-              config.dotfiles.darkTheme.noctalia;
-          schedulingMode = if polarity == "time-of-day" then "location" else "off";
-        }
-        // lib.optionalAttrs (polarity != "time-of-day") {
-          darkMode = polarity != "light";
+
+        weather = {
+          enabled = true;
+          unit = "fahrenheit";
         };
+
         audio = {
-          volumeOverdrive = true;
-          volumeFeedback = true;
+          enable_overdrive = true;
+          enable_sounds = true;
         };
-        notifications.enableMarkdown = true;
-        desktopWidgets = {
-          enabled = hasWidgets;
-          monitorWidgets = lib.optionals hasWidgets [
-            {
-              name = monitor;
-              widgets = map scaleWidget [
-                {
-                  id = "Clock";
-                  refWidth = 820;
-                  y = 24;
-                  scale = 3.5;
-                  showBackground = false;
-                  clockColor = "tertiary";
-                  clockStyle = "minimal";
-                  format = "h:mm AP\\nddd, MMM dd";
-                  roundedCorners = true;
-                }
-                {
-                  id = "MediaPlayer";
-                  refWidth = 904;
-                  y = 312;
-                  scale = 1.3;
-                  showBackground = true;
-                  showButtons = true;
-                  showAlbumArt = true;
-                  showVisualizer = true;
-                  visualizerType = "wave";
-                  hideMode = "idle";
-                  roundedCorners = true;
-                }
-              ];
-            }
-          ];
+
+        lockscreen = {
+          enabled = true;
+          lock_before_suspend = true;
+          # v5 drives fprintd itself; default true would claim the reader.
+          fingerprint = false;
+          blur_intensity = 0.4;
+          tint_intensity = 0.4;
         };
-        sessionMenu.countdownDuration = 5000;
+
+        nightlight.enabled = true;
         dock.enabled = false;
-        idle = {
-          enabled = true;
-        }
-        // lib.optionalAttrs (cfg.noSleep || cfg.llm) {
-          suspendTimeout = 0;
+
+        idle.behavior = {
+          lock = {
+            enabled = true;
+            timeout = 600;
+            action = "lock";
+          };
+          screen-off = {
+            enabled = true;
+            timeout = 660;
+            action = "screen_off";
+          };
         };
-        nightLight.enabled = true;
-        hooks = {
-          enabled = true;
-          darkModeChange = "${config.dotfiles.darkModeHook} $1";
-        };
+
+        # v5's table is snake_case; camelCase would be silently ignored.
+        desktop_widgets = desktopWidgets;
       };
+    };
+
+    systemd.user.services.noctalia.Service.ExecStartPre = "${wipeState}";
+
+    systemd.user.services.noctalia-lock-on-start = {
+      Unit = {
+        Description = "Lock the session once Noctalia is up";
+        After = [ "noctalia.service" ];
+        PartOf = [ config.wayland.systemd.target ];
+      };
+      Service = {
+        Type = "oneshot";
+        ExecStart = "${lockOnStart}";
+      };
+      Install.WantedBy = [ config.wayland.systemd.target ];
     };
   };
 }

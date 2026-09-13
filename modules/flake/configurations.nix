@@ -76,7 +76,7 @@ let
     import inputs.nixpkgs {
       inherit system;
       config.allowUnfree = true;
-      overlays = localOverlays system ++ [ noctalia.overlays.default ];
+      overlays = localOverlays system;
     };
 
   homeModules = [
@@ -126,7 +126,6 @@ let
             email = null;
             llm = null;
             noSleep = null;
-            primaryMonitor = null;
             monitorSize = null;
             calibre = null;
           } args;
@@ -158,7 +157,6 @@ let
             inherit username;
             displayManager = dm;
             exposeSsh = args.exposeSsh or false;
-            fingerprint = args.fingerprint or false;
             nvidia = args.nvidia or false;
             llm = args.llm or false;
             noSleep = args.noSleep or false;
@@ -181,8 +179,6 @@ in
       "smores@smoresbook" = mkHome {
         displayManager = "niri";
         nixos = true;
-        polarity = "time-of-day";
-        primaryMonitor = "eDP-1";
         monitorSize = {
           width = 1920;
           height = 1080;
@@ -191,7 +187,6 @@ in
       "smores@campfire" = mkHome {
         displayManager = "niri";
         nixos = true;
-        polarity = "time-of-day";
         noSleep = true;
       };
       "smores@smortress" = mkHome {
@@ -214,7 +209,6 @@ in
       "smoresbook" = mkNixos {
         hostname = "smoresbook";
         displayManager = "niri";
-        fingerprint = true;
       };
       "smortress" = mkNixos {
         hostname = "smortress";

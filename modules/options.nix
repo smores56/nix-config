@@ -17,10 +17,6 @@ let
         type = lib.types.str;
         description = "Helix theme name (must exist in helix runtime themes)";
       };
-      noctalia = lib.mkOption {
-        type = lib.types.str;
-        description = "Noctalia predefined color scheme name";
-      };
     };
   };
 
@@ -88,10 +84,6 @@ in
       type = lib.types.bool;
       default = false;
     };
-    fingerprint = lib.mkOption {
-      type = lib.types.bool;
-      default = false;
-    };
     nvidia = lib.mkOption {
       type = lib.types.bool;
       default = false;
@@ -111,11 +103,6 @@ in
       type = lib.types.bool;
       default = false;
       description = "Host uses /persist for impermanence. NixOS-only.";
-    };
-    primaryMonitor = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
-      default = null;
-      description = "Primary monitor name for desktop widgets (e.g. eDP-1, DP-1).";
     };
     monitorSize = lib.mkOption {
       type = lib.types.nullOr (
@@ -259,12 +246,10 @@ in
       darkTheme = {
         system = "rose-pine-moon";
         helix = "rose_pine_moon";
-        noctalia = "Rose Pine";
       };
       lightTheme = {
         system = "rose-pine-dawn";
         helix = "rose_pine_dawn";
-        noctalia = "Rose Pine";
       };
     };
   };

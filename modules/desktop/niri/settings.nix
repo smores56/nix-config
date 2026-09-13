@@ -16,7 +16,6 @@ in
 {
   config = lib.mkIf isNiri {
     home.packages = with pkgs; [
-      quickshell
       brightnessctl
       wl-clipboard
       grim
@@ -64,22 +63,6 @@ in
         hide-after-inactive-ms = 3000;
         hide-when-typing = true;
       };
-
-      spawn-at-startup = [
-        { command = [ "noctalia-shell" ]; }
-        {
-          command = [
-            "${pkgs.writeShellScript "lock-on-start" ''
-              for i in $(seq 1 60); do
-                noctalia-shell ipc call lockScreen lock 2>/dev/null && exit 0
-                sleep 0.5
-              done
-              echo "lock-on-start: noctalia-shell failed to respond after 30s" >&2
-              exit 1
-            ''}"
-          ];
-        }
-      ];
 
       input = {
         keyboard = {
