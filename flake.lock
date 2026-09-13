@@ -250,6 +250,26 @@
         "type": "github"
       }
     },
+    "maki-memory": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1789332704,
+        "narHash": "sha256-f/zV1kex9VqDpR4pUBtHb+JS/mkWHh9FFrIApg4G4/s=",
+        "ref": "refs/heads/main",
+        "rev": "0582a7af309df9776f455edb6c81954d5edf0046",
+        "revCount": 33,
+        "type": "git",
+        "url": "ssh://git@github.com/smores56/maki-memory"
+      },
+      "original": {
+        "type": "git",
+        "url": "ssh://git@github.com/smores56/maki-memory"
+      }
+    },
     "niri": {
       "inputs": {
         "niri-stable": "niri-stable",
@@ -431,6 +451,7 @@
         "flake-parts": "flake-parts",
         "home-manager": "home-manager",
         "import-tree": "import-tree",
+        "maki-memory": "maki-memory",
         "niri": "niri",
         "nixpkgs": "nixpkgs_2",
         "noctalia": "noctalia",

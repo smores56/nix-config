@@ -3,10 +3,16 @@
   lib,
   pkgs,
   aiProviders,
+  inputs,
   ...
 }:
 let
   inherit (aiProviders) neuralwatt smortress;
+
+  # maki-memory: the pooled agent-memory layer (Rust helper + Lua plugin).
+  # `helper` is the call-scoped binary the plugin spawns; `model` is the pinned
+  # static embedding artifact it loads; `plugin` is the Lua tree installed below.
+  makiMemory = inputs.maki-memory.packages.${pkgs.stdenv.hostPlatform.system};
 
   # All providers are written on every host; each provider script's has_auth
   # check reports availability based on which credential env vars are present,
@@ -30,18 +36,28 @@ let
       },
       plugins = {
         bash = { enabled = true },
+        -- The bundled memory plugin owns the `memory` tool and its own
+        -- after_instructions hint; disable it so maki-memory is the only
+        -- memory concept. Re-enable to roll back (see the rollback note below).
+        memory = { enabled = false },
       },
     })
 
     require("spawn_session")
     require("resume_session")
+    require("memory")
   '';
 
   # Permissions manifest for the Lua plugins under ./lua. `run` is needed by
   # spawn_session's maki.fn.jobstart (process spawn).
+  # `fs_read`/`fs_write` let the memory plugin read its own markdown store and
+  # the session transcript; `env` lets it resolve MAKI_MEMORY_HELPER/_MODEL_DIR.
   pluginToml = ''
     [permissions]
+    fs_read = true
+    fs_write = true
     run = true
+    env = true
   '';
 
   # Custom providers for maki. Model catalogs and pricing live in providers.nix
@@ -222,6 +238,28 @@ in
         force = true;
         source = ./lua/resume_session.lua;
       };
+
+      # maki-memory plugin. maki's require() searches bundled plugin dirs then
+      # ~/.config/maki/lua, so these flat names resolve to this store copy.
+      # ROLLBACK: set `memory = { enabled = true }` in init.lua, drop
+      # `require("memory")` here, and remove these four entries; the published
+      # helper/model/systemd-free state stays untouched on disk.
+      ".config/maki/lua/memory.lua" = {
+        force = true;
+        source = "${makiMemory.plugin}/lua/memory.lua";
+      };
+      ".config/maki/lua/child.lua" = {
+        force = true;
+        source = "${makiMemory.plugin}/lua/child.lua";
+      };
+      ".config/maki/lua/watch.lua" = {
+        force = true;
+        source = "${makiMemory.plugin}/lua/watch.lua";
+      };
+      ".config/maki/lua/inject.lua" = {
+        force = true;
+        source = "${makiMemory.plugin}/lua/inject.lua";
+      };
       ".config/television/cable/maki-sessions.toml".source = makiSessionCable;
     }
     // lib.optionalAttrs (providersToWrite != { }) (
@@ -237,7 +275,15 @@ in
     home.packages = [
       pkgs.rtk
       makiSessionSearchBin
+      makiMemory.helper
     ];
+
+    # The plugin resolves these via maki.uv.os_getenv (see child.lua). Set for
+    # every shell so a maki launched from one picks them up.
+    home.sessionVariables = {
+      MAKI_MEMORY_HELPER = "${makiMemory.helper}/bin/maki-memory-helper";
+      MAKI_MEMORY_MODEL_DIR = "${makiMemory.model}";
+    };
     programs.fish = {
       functions.__maki_session_resume = {
         body = ''
