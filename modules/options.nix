@@ -200,6 +200,55 @@ in
       default = { };
       description = "calibre OPDS content server exposed over the Cloudflare Tunnel.";
     };
+    chatbot = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkEnableOption "self-hosted Open WebUI chat bot with sandboxed read-only file access (NixOS-only)";
+          port = lib.mkOption {
+            type = lib.types.port;
+            default = 8080;
+            description = "Loopback port for Open WebUI. Fronted by `tailscale serve`; never bound publicly.";
+          };
+          searxPort = lib.mkOption {
+            type = lib.types.port;
+            default = 8888;
+            description = "Loopback port for the SearXNG web-search backend.";
+          };
+          readerPort = lib.mkOption {
+            type = lib.types.port;
+            default = 8099;
+            description = "Loopback port for the read-only filesystem tool server.";
+          };
+          fileRoots = lib.mkOption {
+            type = lib.types.listOf lib.types.path;
+            default = [
+              "/home/${config.dotfiles.username}/dev"
+              "/home/${config.dotfiles.username}/code"
+              "/home/${config.dotfiles.username}/Documents"
+              "/home/${config.dotfiles.username}/Downloads"
+            ];
+            description = "Directories exposed READ-ONLY to the model. Nothing outside these is reachable, and nothing is ever synced or vectorised.";
+          };
+          providerBaseUrl = lib.mkOption {
+            type = lib.types.str;
+            default = "https://api.neuralwatt.com/v1";
+            description = "OpenAI-compatible inference endpoint. Requests leave the host to reach it.";
+          };
+          secretsFile = lib.mkOption {
+            type = lib.types.str;
+            default = "/etc/open-webui/secrets.env";
+            description = "Root-owned 0600 systemd EnvironmentFile holding OPENAI_API_KEY and WEBUI_SECRET_KEY (and optionally SEARXNG_SECRET). Read by systemd before privileges drop, so the service user never reads it. Kept out of the Nix store; provisioned out-of-band.";
+          };
+          allowSignup = lib.mkOption {
+            type = lib.types.bool;
+            default = false;
+            description = "Allow new account registration. Set true only to bootstrap the first admin account, then rebuild with false.";
+          };
+        };
+      };
+      default = { };
+      description = "Self-hosted, phone-friendly chat bot: Open WebUI + SearXNG + a sandboxed read-only filesystem reader. No code execution, no agents.";
+    };
     aiHints = lib.mkOption {
       type = lib.types.str;
       readOnly = true;

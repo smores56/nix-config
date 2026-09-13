@@ -163,6 +163,7 @@ let
             persist = args.persist or false;
             webProxy = args.webProxy or { };
             calibre = args.calibre or { };
+            chatbot = args.chatbot or { };
           };
         }
       ]
@@ -221,6 +222,7 @@ in
           tunnelId = "f2284d1b-5038-447b-ab50-e18dc1dba8c5";
         };
         calibre.enable = true;
+        chatbot.enable = true;
       };
     };
   };
