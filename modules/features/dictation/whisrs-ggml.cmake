@@ -5,9 +5,11 @@
 # for one 11.2s phrase) and whisrs' phrase-level streaming degenerates into
 # something that only lands when you stop recording.
 #
-# GGML_NATIVE is off so the SIMD set is explicit rather than host-detected; every
-# host this config covers is AVX2-capable, and a fixed baseline keeps the build
-# reproducible.
+# GGML_NATIVE is off so the SIMD set is explicit rather than host-detected:
+# native mode only appends -march=native and does not define GGML_AVX2/FMA/F16C,
+# so the hand-written kernels stay disabled and the build stays slow. Every
+# x86_64 host this config targets is AVX2-capable (Haswell, 2013+); a pre-AVX2
+# host would need these flags relaxed.
 set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
 set(GGML_AVX ON CACHE BOOL "" FORCE)

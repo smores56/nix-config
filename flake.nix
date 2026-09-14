@@ -7,7 +7,10 @@
     };
     niri.url = "github:sodiboo/niri-flake";
     noctalia.url = "github:noctalia-dev/noctalia";
-    whisrs.url = "github:y0sif/whisrs";
+    whisrs = {
+      url = "github:y0sif/whisrs";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     concord = {
       url = "github:chojs23/concord";
       inputs.nixpkgs.follows = "nixpkgs";

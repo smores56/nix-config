@@ -42,9 +42,13 @@ let
     '';
   };
 
-  # Generated and read-only on purpose: whisrs anticipates Nix-templated configs.
-  # The silence auto-stop is raised well above the 2s default so a thinking pause
-  # does not end the session mid-dictation.
+  # Generated and read-only because whisrs anticipates Nix-templated configs.
+  # `whisrs config` and `whisrs setup` rewrite this file and will fail against
+  # the store symlink; edit this expression instead. Keep secrets (API keys) out:
+  # the store path is world-readable.
+  # The silence auto-stop is raised well above the 2s default (0 would stop on
+  # the first silent sample, it does not disable it) so a thinking pause does
+  # not end the session mid-dictation.
   configFile = pkgs.writeText "whisrs-config.toml" ''
     [general]
     backend = "local-whisper"
