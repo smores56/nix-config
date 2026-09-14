@@ -47,14 +47,32 @@ let
         [ "${nemotronStreamingEn}" "${pkgs.pipewire}/lib/alsa-lib" ]
         (builtins.readFile ./dictate.sh);
   };
+
+  # `maki` is user-installed (~/.local/bin), not a nix package; the script
+  # resolves it at runtime and buffers output so a failure keeps the selection.
+  mdStructure = pkgs.writeShellApplication {
+    name = "md-structure";
+    runtimeInputs = [ pkgs.coreutils ];
+    text = builtins.replaceStrings
+      [ "@PROMPT_FILE@" ]
+      [ "${./md-structure.prompt.md}" ]
+      (builtins.readFile ./md-structure.sh);
+  };
 in
 {
   config = lib.mkIf cfg.wayland {
-    home.packages = [ dictate ];
+    home.packages = [
+      dictate
+      mdStructure
+    ];
 
     programs.niri.settings.binds."Mod+Shift+D".action.spawn = [
       "${dictate}/bin/dictate"
       "toggle"
     ];
+
+    # Cleans the current selection in place; md-structure's non-zero exit on
+    # unselected/degenerate input leaves the buffer untouched.
+    programs.helix.settings.keys.normal.space.m = ":pipe md-structure";
   };
 }
