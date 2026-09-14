@@ -32,6 +32,13 @@ let
 in
 {
   config = lib.mkIf cfg.wayland {
-    home.packages = [ nemotronStreamingEn ];
+    home.packages = [
+      nemotronStreamingEn
+      pkgs.sherpa-onnx
+      # Text injection: wtype needs no daemon and works on niri today; ydotool
+      # is the fallback against compositor protocol regressions and is enabled
+      # system-side in modules/nixos/dictation.nix.
+      pkgs.wtype
+    ];
   };
 }
