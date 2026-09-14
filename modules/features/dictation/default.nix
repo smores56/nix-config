@@ -29,16 +29,32 @@ let
       runHook postInstall
     '';
   };
+  # wtype needs no daemon and works on niri today; ydotool goes through
+  # /dev/uinput and survives compositor virtual-keyboard regressions
+  # (modules/nixos/dictation.nix provides the ydotoold service and group).
+  dictate = pkgs.writeShellApplication {
+    name = "dictate";
+    runtimeInputs = with pkgs; [
+      coreutils
+      sherpa-onnx
+      util-linux # flock, guarding the toggle decision
+      wtype
+      ydotool
+    ];
+    text =
+      builtins.replaceStrings
+        [ "@MODEL_DIR@" "@ALSA_PLUGIN_DIR@" ]
+        [ "${nemotronStreamingEn}" "${pkgs.pipewire}/lib/alsa-lib" ]
+        (builtins.readFile ./dictate.sh);
+  };
 in
 {
   config = lib.mkIf cfg.wayland {
-    home.packages = [
-      nemotronStreamingEn
-      pkgs.sherpa-onnx
-      # Text injection: wtype needs no daemon and works on niri today; ydotool
-      # is the fallback against compositor protocol regressions and is enabled
-      # system-side in modules/nixos/dictation.nix.
-      pkgs.wtype
+    home.packages = [ dictate ];
+
+    programs.niri.settings.binds."Mod+Shift+D".action.spawn = [
+      "${dictate}/bin/dictate"
+      "toggle"
     ];
   };
 }
