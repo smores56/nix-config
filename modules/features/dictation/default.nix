@@ -9,11 +9,10 @@ let
   cfg = config.dotfiles;
   system = pkgs.stdenv.hostPlatform.system;
 
-  # Upstream's Nix build compiles the bundled whisper.cpp/ggml unoptimised, so a
-  # single phrase decode costs ~6x native whisper.cpp and the phrase-level
-  # streaming only lands when recording stops. The toolchain file pinned below
-  # is forwarded by whisper-rs-sys to its cmake invocation and turns the Release
-  # build and SIMD paths back on (12.5s -> 2.1s for one 11.2s phrase).
+  # Upstream's Nix build compiles the bundled ggml unoptimised, so a phrase
+  # decode costs ~6x native whisper.cpp and phrase-level streaming degenerates
+  # into batch. whisper-rs-sys forwards this toolchain file to cmake; see it for
+  # the numbers and the SIMD flags.
   whisrs = inputs.whisrs.packages.${system}.default.overrideAttrs (old: {
     env = (old.env or { }) // {
       CMAKE_TOOLCHAIN_FILE = "${./whisrs-ggml.cmake}";
@@ -57,12 +56,11 @@ in
       mdStructure
     ];
 
-    # Generated and read-only because whisrs anticipates Nix-templated configs.
-    # `whisrs config`/`setup` rewrite this file and will fail against the store
-    # symlink; edit this expression instead. Keep secrets out — the store path is
-    # world-readable. Only non-default keys are set: 0 is not "off" for the
-    # silence timeout, it stops on the first silent sample, so 30s keeps a
-    # thinking pause from ending a session mid-dictation.
+    # Read-only by design: `whisrs config`/`setup` rewrite this file and fail
+    # against the store symlink, so edit this expression instead (keep secrets
+    # out — store paths are world-readable). Only non-default keys are set; the
+    # silence timeout is raised because 0 stops on the first silent sample, not
+    # disables it, so 30s keeps a thinking pause from ending a session.
     xdg.configFile."whisrs/config.toml".text = ''
       [general]
       backend = "local-whisper"

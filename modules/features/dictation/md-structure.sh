@@ -15,8 +15,9 @@ model="${MD_STRUCTURE_MODEL:-neuralwatt/deepseek-v4.1-flash}"
 maki_bin="$(command -v maki 2>/dev/null || true)"
 [[ -n "$maki_bin" ]] || maki_bin="$HOME/.local/bin/maki"
 
-# maki's `--system-prompt` is SDK-only and silently ignored on the `-p` text
-# path, so the instruction is prepended to the prompt instead. `-p` otherwise
+# maki's `--system-prompt` and `--append-system-prompt` are both silently
+# ignored on the `-p` text path — the model falls back to its coding-agent
+# prompt — so the instruction is prepended to the prompt instead. `-p` otherwise
 # runs the full coding agent with tools enabled and permissions auto-approved
 # (always_yolo), so deny every tool and skip user/project plugins and commands:
 # this is a plain text transform, not an agent with shell access.
