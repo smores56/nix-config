@@ -42,33 +42,6 @@ let
     '';
   };
 
-  # Generated and read-only because whisrs anticipates Nix-templated configs.
-  # `whisrs config` and `whisrs setup` rewrite this file and will fail against
-  # the store symlink; edit this expression instead. Keep secrets (API keys) out:
-  # the store path is world-readable.
-  # The silence auto-stop is raised well above the 2s default (0 would stop on
-  # the first silent sample, it does not disable it) so a thinking pause does
-  # not end the session mid-dictation.
-  configFile = pkgs.writeText "whisrs-config.toml" ''
-    [general]
-    backend = "local-whisper"
-    language = "en"
-    silence_timeout_ms = 30000
-    notify = true
-    audio_feedback = true
-
-    [audio]
-    device = "default"
-
-    [input]
-    backend = "auto"
-    key_delay_ms = 2
-
-    [local-whisper]
-    model_path = "${whisperModel}/ggml-base.en.bin"
-    segmentation = "silence"
-  '';
-
   mdStructure = pkgs.writeShellApplication {
     name = "md-structure";
     runtimeInputs = [ pkgs.coreutils ];
@@ -84,7 +57,22 @@ in
       mdStructure
     ];
 
-    xdg.configFile."whisrs/config.toml".source = configFile;
+    # Generated and read-only because whisrs anticipates Nix-templated configs.
+    # `whisrs config`/`setup` rewrite this file and will fail against the store
+    # symlink; edit this expression instead. Keep secrets out — the store path is
+    # world-readable. Only non-default keys are set: 0 is not "off" for the
+    # silence timeout, it stops on the first silent sample, so 30s keeps a
+    # thinking pause from ending a session mid-dictation.
+    xdg.configFile."whisrs/config.toml".text = ''
+      [general]
+      backend = "local-whisper"
+      language = "en"
+      silence_timeout_ms = 30000
+      audio_feedback = true
+
+      [local-whisper]
+      model_path = "${whisperModel}/ggml-base.en.bin"
+    '';
 
     # The daemon tracks the focused window through the compositor env; keep it
     # in the graphical session so early key presses are not dropped.
@@ -99,14 +87,6 @@ in
         ExecStart = "${whisrs}/bin/whisrsd";
         Restart = "on-failure";
         RestartSec = 3;
-        PassEnvironment = [
-          "NIRI_SOCKET"
-          "WAYLAND_DISPLAY"
-          "DISPLAY"
-          "XDG_SESSION_TYPE"
-          "XDG_CURRENT_DESKTOP"
-          "XDG_RUNTIME_DIR"
-        ];
       };
 
       Install.WantedBy = [ config.wayland.systemd.target ];
