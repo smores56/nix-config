@@ -184,6 +184,14 @@ in
           height = 1080;
         };
       };
+      "smores@smorespro" = mkHome {
+        displayManager = "niri";
+        nixos = true;
+        monitorSize = {
+          width = 2880;
+          height = 1920;
+        };
+      };
       "smores@campfire" = mkHome {
         displayManager = "niri";
         nixos = true;
@@ -208,6 +216,10 @@ in
       };
       "smoresbook" = mkNixos {
         hostname = "smoresbook";
+        displayManager = "niri";
+      };
+      "smorespro" = mkNixos {
+        hostname = "smorespro";
         displayManager = "niri";
       };
       "smortress" = mkNixos {
