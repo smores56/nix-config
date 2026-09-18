@@ -7,38 +7,44 @@
 let
   cfg = config.dotfiles;
   isNiri = cfg.displayManager == "niri";
-  size = cfg.monitorSize;
-  hasWidgets = size != null;
 
   clockFormat = "{:%-I:%M %p %a, %b %d}";
 
-  # cx/cy are the widget's centre in logical pixels; placement_width/height pin
-  # the authored resolution so v5 rescales proportionally on monitor changes.
-  mkWidget = type: cy: settings: {
-    inherit type;
-    cx = builtins.floor (size.width / 2.0);
-    cy = builtins.floor (size.height * cy);
-    placement_width = size.width;
-    placement_height = size.height;
-    inherit settings;
-  };
+  # Noctalia's PlacementMapper rescales each widget's cx/cy by actual/placement
+  # logical size, so authoring against one nominal resolution keeps widgets
+  # centred on any monitor without a per-host resolution.
+  nominalWidth = 1920;
+  nominalHeight = 1080;
+
+  mkWidget =
+    type: cyFraction: settings:
+    {
+      inherit type;
+      cx = builtins.floor (nominalWidth / 2.0);
+      cy = builtins.floor (nominalHeight * cyFraction);
+      placement_width = nominalWidth;
+      placement_height = nominalHeight;
+      inherit settings;
+    }
+    // lib.optionalAttrs (cfg.desktopWidgetOutput != null) {
+      output = cfg.desktopWidgetOutput;
+    };
 
   desktopWidgets = {
-    enabled = hasWidgets;
+    enabled = true;
     widget_order = [
       "clock_main"
       "media_main"
     ];
-  }
-  // lib.optionalAttrs hasWidgets {
     widget.clock_main = mkWidget "clock" 0.13 {
       clock_style = "digital";
       format = clockFormat;
       color = "tertiary";
     };
-    widget.media_main = mkWidget "media_player" 0.40 {
+    widget.media_main = mkWidget "media_player" 0.30 {
       layout = "horizontal";
       hide_when_no_media = true;
+      color = "tertiary";
     };
   };
 

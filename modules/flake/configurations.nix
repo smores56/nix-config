@@ -127,7 +127,7 @@ let
             email = null;
             llm = null;
             noSleep = null;
-            monitorSize = null;
+            desktopWidgetOutput = null;
             calibre = null;
           } args;
           home.username = username;
@@ -181,19 +181,12 @@ in
       "smores@smoresbook" = mkHome {
         displayManager = "niri";
         nixos = true;
-        monitorSize = {
-          width = 1920;
-          height = 1080;
-        };
       };
       "smores@smorespro" = mkHome {
         displayManager = "niri";
         nixos = true;
         fingerprint = true;
-        monitorSize = {
-          width = 2880;
-          height = 1920;
-        };
+        desktopWidgetOutput = "DP-1";
       };
       "smores@campfire" = mkHome {
         displayManager = "niri";

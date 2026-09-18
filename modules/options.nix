@@ -104,17 +104,15 @@ in
       default = false;
       description = "Host uses /persist for impermanence. NixOS-only.";
     };
-    monitorSize = lib.mkOption {
-      type = lib.types.nullOr (
-        lib.types.submodule {
-          options = {
-            width = lib.mkOption { type = lib.types.int; };
-            height = lib.mkOption { type = lib.types.int; };
-          };
-        }
-      );
+    desktopWidgetOutput = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
       default = null;
-      description = "Primary monitor resolution. Used to compute desktop widget positions.";
+      description = ''
+        Connector name (e.g. "DP-1") to bind Noctalia desktop widgets to.
+        Noctalia pins widgets to whichever output was effective at launch, so
+        docking/clamshell transitions hide them; naming the target output keeps
+        them on the chosen monitor. null follows the effective primary output.
+      '';
     };
     nixos = lib.mkOption {
       type = lib.types.bool;
