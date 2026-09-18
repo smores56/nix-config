@@ -12,7 +12,6 @@ in
   config = lib.mkIf (hasDm && isLinux) {
     home.packages = with pkgs; [
       thunar
-      kdePackages.dolphin
       firefox
       evince
       feh
@@ -23,7 +22,8 @@ in
       discord
       musescore
       zoom-us
-      chromium
+      krita
+      steam
     ];
   };
 }
