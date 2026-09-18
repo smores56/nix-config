@@ -120,6 +120,11 @@ in
       type = lib.types.bool;
       default = false;
     };
+    fingerprint = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Host has a fingerprint reader; enables fprintd and the Noctalia lock screen reader.";
+    };
     darkTheme = lib.mkOption {
       type = themeType;
       readOnly = true;

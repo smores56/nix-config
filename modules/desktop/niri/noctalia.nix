@@ -120,8 +120,9 @@ in
         lockscreen = {
           enabled = true;
           lock_before_suspend = true;
-          # v5 drives fprintd itself; default true would claim the reader.
-          fingerprint = false;
+          # v5 drives fprintd over D-Bus (strips pam_fprintd from the login
+          # stack itself); requires services.fprintd from dotfiles.fingerprint.
+          fingerprint = cfg.fingerprint;
           blur_intensity = 0.4;
           tint_intensity = 0.4;
         };

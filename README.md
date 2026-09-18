@@ -55,6 +55,22 @@ On NixOS, apply the system config after home-manager:
 sudo nixos-rebuild switch --flake .#<host>
 ```
 
+### Fingerprint enrollment
+
+Hosts with `dotfiles.fingerprint = true` get `services.fprintd` and the
+Noctalia lock screen reader. Enroll a print once per machine after
+activating the config:
+
+```sh
+fprintd-enroll        # touch the reader ~5 times; defaults to right-index-finger
+fprintd-verify        # test
+fprintd-list "$USER"  # confirm enrolled prints
+```
+
+The lock screen talks to fprintd over D-Bus, so it needs no PAM setup.
+Fingerprint auth is deliberately disabled for `sudo`/`su` (see
+`modules/nixos/fprintd.nix`).
+
 ### Adding a new host
 
 1. Run `nixos-generate-config` on the target hardware, move the generated

@@ -123,6 +123,7 @@ let
             polarity = null;
             exposeSsh = null;
             nixos = null;
+            fingerprint = null;
             email = null;
             llm = null;
             noSleep = null;
@@ -160,6 +161,7 @@ let
             nvidia = args.nvidia or false;
             llm = args.llm or false;
             noSleep = args.noSleep or false;
+            fingerprint = args.fingerprint or false;
             persist = args.persist or false;
             webProxy = args.webProxy or { };
             calibre = args.calibre or { };
@@ -187,6 +189,7 @@ in
       "smores@smorespro" = mkHome {
         displayManager = "niri";
         nixos = true;
+        fingerprint = true;
         monitorSize = {
           width = 2880;
           height = 1920;
@@ -221,6 +224,7 @@ in
       "smorespro" = mkNixos {
         hostname = "smorespro";
         displayManager = "niri";
+        fingerprint = true;
       };
       "smortress" = mkNixos {
         hostname = "smortress";
