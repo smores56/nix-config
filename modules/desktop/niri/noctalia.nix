@@ -118,11 +118,16 @@ in
     systemd.user.services.noctalia-lock-on-start = {
       Unit = {
         Description = "Lock the session once Noctalia is up";
-        After = [ "noctalia.service" ];
+        # No After=noctalia.service: the script polls until noctalia answers,
+        # and ordering on it closes a cycle through the session target.
         PartOf = [ config.wayland.systemd.target ];
       };
       Service = {
         Type = "oneshot";
+        # Without RemainAfterExit the unit is dead once it runs, and sd-switch
+        # (Home Manager's default startServices) re-starts any inactive unit
+        # wanted by an active target — relocking on every switch.
+        RemainAfterExit = true;
         ExecStart = "${lockOnStart}";
       };
       Install.WantedBy = [ config.wayland.systemd.target ];
