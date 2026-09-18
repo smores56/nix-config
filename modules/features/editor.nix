@@ -27,27 +27,17 @@ in
     typescript-language-server
     vscode-langservers-extracted
     graphql-language-service-cli
+
+    flow-control
   ];
 
-  home.file.".config/helix/runtime/queries/yaml/injections.scm".source =
-    pkgs.runCommand "helix-yaml-injections" { }
-      ''
-        cat ${pkgs.helix.passthru.runtime}/queries/yaml/injections.scm > $out
-        cat >> $out << 'EXTRA'
-
-        ((block_scalar) @injection.content
-         (#match? @injection.content "function handler")
-         (#set! injection.language "typescript"))
-
-        ((block_scalar) @injection.content
-         (#match? @injection.content "query.*\\{")
-         (#set! injection.language "graphql"))
-        EXTRA
-      '';
+  home.sessionVariables = {
+    EDITOR = "flow";
+  };
 
   programs.helix = {
     enable = true;
-    defaultEditor = true;
+    # defaultEditor = true;
 
     settings = {
       theme = "active";
