@@ -71,6 +71,11 @@ The lock screen talks to fprintd over D-Bus, so it needs no PAM setup.
 Fingerprint auth is deliberately disabled for `sudo`/`su` (see
 `modules/nixos/fprintd.nix`).
 
+The reader can vanish after suspend/resume (Framework issue #102: its xHCI
+host controller fails to re-enumerate it). `modules/nixos/fprintd.nix`
+caches the host controller at boot and resets it after wake only if the
+reader is missing; watch `journalctl -t fp-rebind`.
+
 ### Adding a new host
 
 1. Run `nixos-generate-config` on the target hardware, move the generated
