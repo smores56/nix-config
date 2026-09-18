@@ -23,6 +23,16 @@ in
       playerctl
     ];
 
+    # Force Qt apps onto the Wayland platform plugin. Without this, Krita in
+    # particular falls back to XWayland, where drawing tablets receive no pen
+    # input. This must live in the systemd user environment rather than niri's
+    # `environment` block: the launcher (Noctalia) runs as a systemd user
+    # service, so apps it spawns never inherit niri's process environment.
+    xdg.configFile."environment.d/20-qt-wayland.conf".text = ''
+      QT_QPA_PLATFORM=wayland
+      NIXOS_OZONE_WL=1
+    '';
+
     programs.niri.package = pkgs.niri-unstable;
     programs.niri.settings = {
       prefer-no-csd = true;
@@ -75,11 +85,6 @@ in
           tap = true;
           scroll-factor = 0.5;
         };
-      };
-
-      environment = {
-        QT_QPA_PLATFORM = "wayland";
-        NIXOS_OZONE_WL = "1";
       };
 
       window-rules = [
