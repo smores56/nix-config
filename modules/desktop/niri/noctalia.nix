@@ -10,44 +10,6 @@ let
 
   clockFormat = "{:%-I:%M %p %a, %b %d}";
 
-  # Noctalia's PlacementMapper rescales each widget's cx/cy by actual/placement
-  # logical size, so authoring against one nominal resolution keeps widgets
-  # centred on any monitor without a per-host resolution.
-  nominalWidth = 1920;
-  nominalHeight = 1080;
-
-  mkWidget =
-    type: cyFraction: settings:
-    {
-      inherit type;
-      cx = builtins.floor (nominalWidth / 2.0);
-      cy = builtins.floor (nominalHeight * cyFraction);
-      placement_width = nominalWidth;
-      placement_height = nominalHeight;
-      inherit settings;
-    }
-    // lib.optionalAttrs (cfg.desktopWidgetOutput != null) {
-      output = cfg.desktopWidgetOutput;
-    };
-
-  desktopWidgets = {
-    enabled = true;
-    widget_order = [
-      "clock_main"
-      "media_main"
-    ];
-    widget.clock_main = mkWidget "clock" 0.13 {
-      clock_style = "digital";
-      format = clockFormat;
-      color = "tertiary";
-    };
-    widget.media_main = mkWidget "media_player" 0.30 {
-      layout = "horizontal";
-      hide_when_no_media = true;
-      color = "tertiary";
-    };
-  };
-
   # The GUI writes overrides to the state dir, which loads after ~/.config and
   # wins; clear it so this declarative config is authoritative for the session.
   wipeState = pkgs.writeShellScript "noctalia-wipe-state" ''
@@ -148,9 +110,6 @@ in
             action = "screen_off";
           };
         };
-
-        # v5's table is snake_case; camelCase would be silently ignored.
-        desktop_widgets = desktopWidgets;
       };
     };
 

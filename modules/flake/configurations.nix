@@ -127,7 +127,6 @@ let
             email = null;
             llm = null;
             noSleep = null;
-            desktopWidgetOutput = null;
             calibre = null;
           } args;
           home.username = username;
@@ -186,7 +185,6 @@ in
         displayManager = "niri";
         nixos = true;
         fingerprint = true;
-        desktopWidgetOutput = "DP-1";
       };
       "smores@campfire" = mkHome {
         displayManager = "niri";
