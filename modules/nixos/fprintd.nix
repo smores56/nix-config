@@ -109,9 +109,13 @@ in
 
     # services.fprintd.enable defaults fprintAuth to true on every PAM service.
     # Fingerprint has no user-attention guarantee (CVE-2024-37408), so keep it
-    # off sudo/su. The lock screen drives fprintd over D-Bus, not PAM.
+    # off sudo/su. The Noctalia lock screen drives fprintd over D-Bus and
+    # authenticates the typed password against the "login" stack; leaving
+    # pam_fprintd there makes it block for its 30s default timeout waiting for a
+    # finger before pam_unix ever sees the password.
     security.pam.services.sudo.fprintAuth = false;
     security.pam.services.su.fprintAuth = false;
+    security.pam.services.login.fprintAuth = false;
 
     systemd.services.fprintd-reader-cache = {
       description = "Cache the fingerprint reader's USB host controller";
