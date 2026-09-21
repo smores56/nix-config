@@ -75,6 +75,8 @@ in
         "Mod+Page_Down".action.focus-workspace-down = [ ];
         "Mod+Shift+Page_Up".action.move-workspace-up = [ ];
         "Mod+Shift+Page_Down".action.move-workspace-down = [ ];
+        "Mod+Ctrl+Page_Up".action.move-window-to-workspace-up = [ ];
+        "Mod+Ctrl+Page_Down".action.move-window-to-workspace-down = [ ];
 
         "Mod+Home".action.focus-column-first = [ ];
         "Mod+End".action.focus-column-last = [ ];
