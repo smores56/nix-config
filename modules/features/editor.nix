@@ -27,17 +27,10 @@ in
     typescript-language-server
     vscode-langservers-extracted
     graphql-language-service-cli
-
-    flow-control
   ];
-
-  home.sessionVariables = {
-    EDITOR = "flow";
-  };
 
   programs.helix = {
     enable = true;
-    # defaultEditor = true;
 
     settings = {
       theme = "active";
