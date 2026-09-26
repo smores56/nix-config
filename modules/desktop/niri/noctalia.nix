@@ -15,15 +15,6 @@ let
   wipeState = pkgs.writeShellScript "noctalia-wipe-state" ''
     rm -f "''${NOCTALIA_STATE_HOME:-''${XDG_STATE_HOME:-$HOME/.local/state}}/noctalia/settings.toml"
   '';
-
-  lockOnStart = pkgs.writeShellScript "noctalia-lock-on-start" ''
-    for i in $(seq 1 60); do
-      ${lib.getExe config.programs.noctalia.package} msg session lock 2>/dev/null && exit 0
-      sleep 0.5
-    done
-    echo "lock-on-start: noctalia failed to respond after 30s" >&2
-    exit 1
-  '';
 in
 {
   config = lib.mkIf isNiri {
@@ -114,23 +105,5 @@ in
     };
 
     systemd.user.services.noctalia.Service.ExecStartPre = "${wipeState}";
-
-    systemd.user.services.noctalia-lock-on-start = {
-      Unit = {
-        Description = "Lock the session once Noctalia is up";
-        # No After=noctalia.service: the script polls until noctalia answers,
-        # and ordering on it closes a cycle through the session target.
-        PartOf = [ config.wayland.systemd.target ];
-      };
-      Service = {
-        Type = "oneshot";
-        # Without RemainAfterExit the unit is dead once it runs, and sd-switch
-        # (Home Manager's default startServices) re-starts any inactive unit
-        # wanted by an active target — relocking on every switch.
-        RemainAfterExit = true;
-        ExecStart = "${lockOnStart}";
-      };
-      Install.WantedBy = [ config.wayland.systemd.target ];
-    };
   };
 }
