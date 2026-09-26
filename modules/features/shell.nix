@@ -75,6 +75,7 @@
       };
 
       interactiveShellInit = ''
+        pfetch
         for p in $NIX_PROFILES
             set -a fish_function_path $p/share/fish/vendor_functions.d
             set -a fish_complete_path $p/share/fish/vendor_completions.d
