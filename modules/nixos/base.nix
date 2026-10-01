@@ -50,7 +50,6 @@ in
     udisks2.enable = true;
   };
   environment.systemPackages = [
-    pkgs.pcloud
     pkgs.fuse
   ];
 
