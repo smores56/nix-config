@@ -1,5 +1,6 @@
 {
   pkgs,
+  lib,
   ...
 }:
 let
@@ -10,6 +11,20 @@ let
   ];
 in
 {
+  # NixOS defaults EDITOR to nano (environment.variables in nixpkgs), which
+  # leaks into login shells and, via the systemd user session, into
+  # GUI-spawned processes. home.sessionVariables covers shells; the systemd
+  # set is what environment.d needs to override the PAM-inherited value.
+  home.sessionVariables = {
+    EDITOR = "hx";
+    VISUAL = "hx";
+  };
+
+  systemd.user.sessionVariables = lib.mkIf pkgs.stdenv.isLinux {
+    EDITOR = "hx";
+    VISUAL = "hx";
+  };
+
   home.packages = with pkgs; [
     nixd
     ruff
