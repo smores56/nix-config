@@ -8,7 +8,7 @@ let
   cfg = config.dotfiles;
 
   hunk = pkgs.writeShellScriptBin "hunk" ''
-    export PATH="${pkgs.nodejs}/bin:$PATH"
+    export PATH="${pkgs.nodejs_24}/bin:$PATH"
     exec npx hunkdiff "$@"
   '';
 in

@@ -10,15 +10,17 @@ let
 
   clockFormat = "{:%-I:%M %p %a, %b %d}";
 
-  # The GUI writes overrides to the state dir, which loads after ~/.config and
-  # wins; clear it so this declarative config is authoritative for the session.
-  wipeState = pkgs.writeShellScript "noctalia-wipe-state" ''
-    rm -f "''${NOCTALIA_STATE_HOME:-''${XDG_STATE_HOME:-$HOME/.local/state}}/noctalia/settings.toml"
-  '';
+  # Noctalia's state file (~/.local/state/noctalia/settings.toml) is a sparse,
+  # self-pruning overlay holding only settings that deviate from this declarative
+  # base — so it is left in place, and Noctalia's own theme mode stays the source
+  # of truth for light/dark.
+  themeApply = import ../../lib/theme-apply.nix { inherit pkgs lib; };
 in
 {
   config = lib.mkIf isNiri {
-    # Palette and theme.mode come from stylix's Noctalia target.
+    # Stylix writes the base palette and theme.mode into config.toml; Noctalia's
+    # own toggle persists to settings.toml, which wins — so its mode is the
+    # source of truth and the hooks below propagate it to the rest of the system.
     programs.noctalia = {
       enable = true;
       systemd.enable = true;
@@ -33,6 +35,13 @@ in
         };
 
         location.auto_locate = true;
+
+        # Noctalia's theme mode drives the rest of the system: sync on start and
+        # follow every change, via the native push hooks.
+        hooks = {
+          started = "${themeApply}/bin/theme-apply \"$(noctalia msg theme-mode-get)\"";
+          theme_mode_changed = "${themeApply}/bin/theme-apply \"$NOCTALIA_THEME_MODE\"";
+        };
 
         bar.main = {
           position = "top";
@@ -81,7 +90,7 @@ in
           lock_before_suspend = true;
           # v5 drives fprintd over D-Bus (strips pam_fprintd from the login
           # stack itself); requires services.fprintd from dotfiles.fingerprint.
-          fingerprint = cfg.fingerprint;
+          inherit (cfg) fingerprint;
           blur_intensity = 0.4;
           tint_intensity = 0.4;
         };
@@ -103,7 +112,5 @@ in
         };
       };
     };
-
-    systemd.user.services.noctalia.Service.ExecStartPre = "${wipeState}";
   };
 }

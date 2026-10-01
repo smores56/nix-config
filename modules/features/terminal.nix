@@ -10,7 +10,7 @@ let
   kittyApp = "${config.home.homeDirectory}/Applications/Home Manager Apps/kitty.app";
 in
 {
-  fonts.fontconfig.enable = lib.mkIf (cfg.displayManager != "none") true;
+  fonts.fontconfig.enable = lib.mkIf cfg.graphical true;
   home.sessionVariables = {
     TERMINAL = cfg.terminal;
     COLORTERM = "truecolor";

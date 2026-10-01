@@ -5,6 +5,9 @@
   ...
 }:
 {
+  # The client lives with its config rather than in the shared package list.
+  home.packages = [ pkgs.openssh ];
+
   # Host ssh-agent holds the SSH keys so tooling can sign commits and auth
   # to git remotes WITHOUT reading ~/.ssh — agents only ask the agent to
   # sign blobs (private keys are never on disk in agent contexts).

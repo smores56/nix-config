@@ -27,6 +27,10 @@ let
 in
 {
   options.dotfiles = {
+    # ------------------------------------------------------------------
+    # Host-authored: per-host knobs. A host sets these in its mkHome /
+    # mkNixos call; defaults suit the common case.
+    # ------------------------------------------------------------------
     displayManager = lib.mkOption {
       type = lib.types.enum [
         "none"
@@ -47,38 +51,14 @@ in
       type = lib.types.enum [
         "dark"
         "light"
-        "time-of-day"
       ];
       default = "dark";
-      description = "Theme polarity. 'dark' and 'light' set a fixed theme; 'time-of-day' enables automatic switching via macOS auto-appearance or Noctalia location scheduling.";
-    };
-    terminalFontSize = lib.mkOption {
-      type = lib.types.int;
-      default = 12;
+      description = "Base theme polarity, before the native appearance setting (macOS / Noctalia) takes over at runtime.";
     };
     username = lib.mkOption {
       type = lib.types.str;
       default = "smores";
       description = "Primary local username for personal host-level configuration.";
-    };
-    wayland = lib.mkOption {
-      type = lib.types.bool;
-      readOnly = true;
-    };
-    email = lib.mkOption {
-      type = lib.types.str;
-      default = "sam@sammohr.dev";
-      description = "Default git identity.";
-    };
-    branchPrefix = lib.mkOption {
-      type = lib.types.str;
-      readOnly = true;
-      description = "Branch prefix for personal repos.";
-    };
-    codeRoot = lib.mkOption {
-      type = lib.types.str;
-      default = "${config.home.homeDirectory}/code";
-      description = "Root directory under which all git repos live. Layout: <codeRoot>/<host>/<owner>/<repo>.";
     };
     exposeSsh = lib.mkOption {
       type = lib.types.bool;
@@ -99,11 +79,6 @@ in
       default = false;
       description = "Disable automatic suspend/sleep at both desktop (noctalia idle) and systemd level. For always-on hosts.";
     };
-    persist = lib.mkOption {
-      type = lib.types.bool;
-      default = false;
-      description = "Host uses /persist for impermanence. NixOS-only.";
-    };
     nixos = lib.mkOption {
       type = lib.types.bool;
       default = false;
@@ -112,48 +87,6 @@ in
       type = lib.types.bool;
       default = false;
       description = "Host has a fingerprint reader; enables fprintd and the Noctalia lock screen reader.";
-    };
-    darkTheme = lib.mkOption {
-      type = themeType;
-      readOnly = true;
-    };
-    lightTheme = lib.mkOption {
-      type = themeType;
-      readOnly = true;
-    };
-    darkModeHook = lib.mkOption {
-      type = lib.types.path;
-      readOnly = true;
-      description = "Script path. Accepts optional $1: 'true' (dark) or 'false' (light). Falls back to gsettings detection if omitted.";
-    };
-    terminal = lib.mkOption {
-      type = lib.types.str;
-      readOnly = true;
-    };
-    shell = lib.mkOption {
-      type = lib.types.str;
-      readOnly = true;
-    };
-    browser = lib.mkOption {
-      type = lib.types.str;
-      readOnly = true;
-    };
-    font = lib.mkOption {
-      type = lib.types.str;
-      readOnly = true;
-    };
-    fontPackage = lib.mkOption {
-      type = lib.types.package;
-      readOnly = true;
-    };
-    shellPath = lib.mkOption {
-      type = lib.types.str;
-      readOnly = true;
-    };
-    defaultModel = lib.mkOption {
-      type = lib.types.str;
-      readOnly = true;
-      description = "Default local LLM model for AI coding tools.";
     };
     webProxy = lib.mkOption {
       type = lib.types.submodule {
@@ -193,6 +126,78 @@ in
       default = { };
       description = "calibre OPDS content server exposed over the Cloudflare Tunnel.";
     };
+
+    # ------------------------------------------------------------------
+    # Resolved: read-only values fixed for a given configuration. May be
+    # literals or computed from the authored knobs above. Kept as options
+    # so any module can read them through the dendritic pattern; a host
+    # cannot set them.
+    # ------------------------------------------------------------------
+    graphical = lib.mkOption {
+      type = lib.types.bool;
+      readOnly = true;
+      description = "Host runs a graphical session (any non-'none' displayManager).";
+    };
+    wayland = lib.mkOption {
+      type = lib.types.bool;
+      readOnly = true;
+    };
+    terminalFontSize = lib.mkOption {
+      type = lib.types.int;
+      readOnly = true;
+    };
+    email = lib.mkOption {
+      type = lib.types.str;
+      readOnly = true;
+      description = "Default git identity.";
+    };
+    branchPrefix = lib.mkOption {
+      type = lib.types.str;
+      readOnly = true;
+      description = "Branch prefix for personal repos.";
+    };
+    codeRoot = lib.mkOption {
+      type = lib.types.str;
+      readOnly = true;
+      description = "Root directory under which all git repos live. Layout: <codeRoot>/<host>/<owner>/<repo>.";
+    };
+    terminal = lib.mkOption {
+      type = lib.types.str;
+      readOnly = true;
+    };
+    shell = lib.mkOption {
+      type = lib.types.str;
+      readOnly = true;
+    };
+    browser = lib.mkOption {
+      type = lib.types.str;
+      readOnly = true;
+    };
+    font = lib.mkOption {
+      type = lib.types.str;
+      readOnly = true;
+    };
+    fontPackage = lib.mkOption {
+      type = lib.types.package;
+      readOnly = true;
+    };
+    shellPath = lib.mkOption {
+      type = lib.types.str;
+      readOnly = true;
+    };
+    defaultModel = lib.mkOption {
+      type = lib.types.str;
+      readOnly = true;
+      description = "Default local LLM model for AI coding tools.";
+    };
+    darkTheme = lib.mkOption {
+      type = themeType;
+      readOnly = true;
+    };
+    lightTheme = lib.mkOption {
+      type = themeType;
+      readOnly = true;
+    };
     aiHints = lib.mkOption {
       type = lib.types.str;
       readOnly = true;
@@ -217,17 +222,15 @@ in
         (themeAssertion "helix themes" config.dotfiles.lightTheme.helix
           "${helixThemes}/${config.dotfiles.lightTheme.helix}.toml"
         )
-        {
-          assertion =
-            config.dotfiles.polarity != "time-of-day"
-            || config.dotfiles.displayManager == "osx"
-            || config.dotfiles.displayManager == "niri";
-          message = "polarity 'time-of-day' requires displayManager 'osx' or 'niri' for automatic switching";
-        }
       ];
 
     dotfiles = {
+      graphical = config.dotfiles.displayManager != "none";
       wayland = config.dotfiles.displayManager == "niri";
+      terminalFontSize = 12;
+      email = "sam@sammohr.dev";
+      branchPrefix = "smores";
+      codeRoot = "${config.home.homeDirectory}/code";
       terminal = "kitty";
       shell = "fish";
       browser = "firefox";
@@ -235,7 +238,6 @@ in
       fontPackage = pkgs.googlesans-code;
       shellPath = "${pkgs.${config.dotfiles.shell}}/bin/${config.dotfiles.shell}";
       defaultModel = smortress.models.qwen38.id;
-      branchPrefix = "smores";
       darkTheme = {
         system = "rose-pine-moon";
         helix = "rose_pine_moon";

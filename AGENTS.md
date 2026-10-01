@@ -19,8 +19,12 @@ details.
 ## Where things go
 
 This repo follows the [dendritic pattern](https://github.com/mightyiam/dendritic):
-every `.nix` file under `modules/` is auto-imported by `import-tree`. No
-manual `imports` lists. Place files by concern, not by host.
+most `.nix` files under `modules/` are auto-imported by `import-tree`, which
+scans `modules/flake` (from `flake.nix`) and the `features`/`desktop`/`nixos`
+subtrees (from `modules/flake/configurations.nix`). A few entry points and
+pure-function helpers (`modules/options.nix`, `modules/home.nix`,
+`modules/features/ai/providers.nix`, `modules/lib/*`) are listed or imported
+explicitly. Place files by concern, not by host.
 
 | Location | What goes here |
 |---|---|
@@ -28,12 +32,13 @@ manual `imports` lists. Place files by concern, not by host.
 | `modules/home.nix` | home-manager base (fonts, nix.conf, darwin helpers) |
 | `modules/features/` | cross-platform home-manager modules (shell, editor, git, packages, theme, ai) |
 | `modules/desktop/` | desktop-environment modules (niri, aerospace) |
-| `modules/nixos/` | NixOS system modules (networking, sound, ssh, etc.) |
+| `modules/nixos/` | NixOS system modules (base, desktop, networking, ssh, etc.) |
 | `modules/hosts/` | per-host hardware config only (filesystems, kernel modules) |
 | `modules/flake/` | flake-parts modules (configurations, checks, formatter) |
 | `modules/lib/` | helper libraries |
-| `modules/features/ai/` | AI tool config (maki, providers) |
+| `modules/features/ai/` | AI tooling: assistant context, maki, providers, sdlc, skills |
 | `modules/features/tv/` | Television repository and worktree cables |
+| `tests/` | Python unit tests for the sdlc + maki tools (run via flake checks) |
 
 ### Adding a new feature
 
@@ -50,10 +55,12 @@ patterns.
 ## Repo-specific code quality
 
 - **Nix style**: `nix fmt` before committing.
-- **No `enable` options**: every module is imported on every host. Gate
-  behavior on `config.dotfiles.*` values (e.g. `lib.mkIf isLinux`), not on
-  `lib.mkEnableOption`. The dendritic pattern explicitly rejects `enable`
-  options.
+- **Gate on `dotfiles.*`, not `enable` flags**: every module is imported on
+  every host. Gate behavior on `config.dotfiles.*` values (e.g.
+  `lib.mkIf isLinux`, `lib.mkIf config.dotfiles.graphical`). `mkEnableOption`
+  is reserved for genuinely optional subfeatures that default to off
+  (`dotfiles.webProxy.enable`, `dotfiles.calibre.enable`); do not add a
+  top-level `enable` for a whole module.
 - **Cross-cutting values** flow through `config.dotfiles.*` options
   declared in `modules/options.nix`, not through `specialArgs`.
 - **Delete dead code** — no leftover aliases, re-exports, or stale TODOs.
@@ -73,6 +80,10 @@ For changes touching NixOS modules or home-manager base:
 nix eval .#checks.x86_64-linux.eval-nixos-smortress --apply 'x: true'
 nix eval .#checks.x86_64-linux.eval-nixos-smoresbook --apply 'x: true'
 ```
+
+The Python tools under `modules/features/ai/` have unit tests in `tests/`,
+run by the `checks` flake module (`python -m unittest discover -s tests`).
+Run them after touching `modules/features/ai/sdlc/` or maki session search.
 
 For home-manager changes, run `home-manager switch --flake .#smores@<host>`
 (e.g. `.#smores@smoresbook` on this machine) to verify activation succeeds

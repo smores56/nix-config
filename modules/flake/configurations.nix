@@ -117,15 +117,14 @@ let
             inherit username;
           }
           // builtins.intersectAttrs {
+            # Host-authored knobs a home configuration may pass. Read-only
+            # `dotfiles.*` values are resolved in options.nix and cannot be set
+            # here; anything not listed is silently dropped.
             displayManager = "none";
             windowManager = "none";
-            terminalFontSize = null;
             polarity = null;
-            exposeSsh = null;
             nixos = null;
             fingerprint = null;
-            email = null;
-            llm = null;
             noSleep = null;
             calibre = null;
           } args;
@@ -161,7 +160,6 @@ let
             llm = args.llm or false;
             noSleep = args.noSleep or false;
             fingerprint = args.fingerprint or false;
-            persist = args.persist or false;
             webProxy = args.webProxy or { };
             calibre = args.calibre or { };
           };

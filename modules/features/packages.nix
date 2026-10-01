@@ -1,109 +1,99 @@
 { pkgs, lib, ... }:
 {
-  # Workaround: Stylix's opencode module defines programs.opencode.tui even
-  # with targets.opencode disabled and no opencode installed. Declare the
-  # option so evaluation succeeds. (We do not use opencode.)
-  options.programs.opencode.tui = lib.mkOption {
-    type = lib.types.anything;
-    default = { };
+  programs = {
+    bat.enable = true;
+    fzf.enable = true;
   };
-  config = {
-    programs = {
-      bat.enable = true;
-      fzf.enable = true;
+
+  home = {
+    sessionVariables = {
+      DISABLE_NIX_SHELL_WELCOME = 1;
+    }
+    // lib.optionalAttrs pkgs.stdenv.isDarwin {
+      # Apple clang for native builds run outside cargo (uv, node-gyp,
+      # autotools); cargo's own CC/CXX live in ~/.cargo/config.toml. Nix's GCC
+      # sysroot lacks macOS framework headers and its libstdc++ ABI mismatches
+      # crates that link libc++.
+      CC = "/usr/bin/clang";
+      CXX = "/usr/bin/clang++";
     };
 
-    home = {
-      sessionVariables = {
-        DISABLE_NIX_SHELL_WELCOME = 1;
-      }
-      // lib.optionalAttrs pkgs.stdenv.isDarwin {
-        # Use Apple's clang for C/C++ compilation — Nix's GCC sysroot lacks macOS
-        # framework headers (CoreServices, Security, etc.) needed by native deps,
-        # and its libstdc++ ABI mismatches crates (e.g. mlua) that link libc++.
-        CC = "/usr/bin/clang";
-        CXX = "/usr/bin/clang++";
-      };
+    packages =
+      with pkgs;
+      [
+        # exploration
+        eza
+        fd
+        ripgrep
+        glow
+        television
 
-      packages =
-        with pkgs;
-        [
-          # exploration
-          eza
-          fd
-          ripgrep
-          glow
-          television
-          openssh
+        # data interaction
+        jq
+        eva
+        curl
+        sd
+        ouch
+        zip
+        unzip
+        lazysql
 
-          # data interaction
-          jq
-          eva
-          curl
-          sd
-          ouch
-          zip
-          unzip
-          lazysql
+        # documents
+        poppler-utils
 
-          # documents
-          poppler-utils
+        # environment management
+        _1password-cli
+        just
 
-          # environment management
-          _1password-cli
-          just
-          zellij
+        # networking
+        tailscale
 
-          # networking
-          tailscale
+        # monitoring
+        dua
+        tokei
+        bottom
+        watchexec
+        lsof
 
-          # monitoring
-          dua
-          tokei
-          bottom
-          watchexec
-          lsof
+        # languages
+        go
+        uv
+        python3
+        deno
+        bun
+        nodejs_24
+        typst
+        cargo
+        tree-sitter
 
-          # languages
-          go
-          uv
-          python3
-          deno
-          bun
-          nodejs_24
-          typst
-          cargo
-          tree-sitter
+        # compilation
+        gcc
+        pkg-config
+        openssl.dev
+        libiconv
+        wabt
+      ]
+      ++ lib.optionals pkgs.stdenv.isDarwin [
+        pkgs.apple-sdk_15
+      ]
+      ++ [
 
-          # compilation
-          gcc
-          pkg-config
-          openssl.dev
-          libiconv
-          wabt
-        ]
-        ++ lib.optionals pkgs.stdenv.isDarwin [
-          pkgs.apple-sdk_15
-        ]
-        ++ [
+        # fun stuff
+        cbonsai
+        musikcube
+        clock-rs
+        ttyper
 
-          # fun stuff
-          cbonsai
-          musikcube
-          clock-rs
-          ttyper
+        # TUI utilities
+        gum
 
-          # TUI utilities
-          gum
-
-          # container tools
-          lazydocker
-          docker-compose
-        ]
-        ++ lib.optionals pkgs.stdenv.isLinux [
-          concord
-          odin
-        ];
-    };
+        # container tools
+        lazydocker
+        docker-compose
+      ]
+      ++ lib.optionals pkgs.stdenv.isLinux [
+        concord
+        odin
+      ];
   };
 }
