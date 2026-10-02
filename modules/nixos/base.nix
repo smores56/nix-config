@@ -34,6 +34,7 @@ in
     extraGroups = [
       "networkmanager"
       "wheel"
+      "dialout"
     ];
     shell = pkgs.${cfg.shell};
   };
