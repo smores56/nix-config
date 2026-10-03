@@ -50,6 +50,10 @@ in
     gvfs.enable = true;
     udisks2.enable = true;
   };
+
+  # Device firmware updates via LVFS — BIOS/EC and the Goodix fingerprint reader
+  # (older 01000320 reader firmware emits spurious USB transport errors).
+  services.fwupd.enable = true;
   environment.systemPackages = [
     pkgs.fuse
   ];
