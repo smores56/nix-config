@@ -127,6 +127,7 @@ let
             fingerprint = null;
             noSleep = null;
             calibre = null;
+            photobucket = null;
           } args;
           home.username = username;
           home.homeDirectory =
@@ -184,6 +185,7 @@ in
         displayManager = "niri";
         nixos = true;
         fingerprint = true;
+        photobucket.enable = true;
       };
       "smores@campfire" = mkHome {
         displayManager = "niri";

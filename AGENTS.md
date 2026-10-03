@@ -38,7 +38,8 @@ explicitly. Place files by concern, not by host.
 | `modules/lib/` | helper libraries |
 | `modules/features/ai/` | AI tooling: assistant context, maki, providers, sdlc, skills |
 | `modules/features/tv/` | Television repository and worktree cables |
-| `tests/` | Python unit tests for the sdlc + maki tools (run via flake checks) |
+| `modules/features/photobucket/` | feh-based keyboard photo triage tool + its Python helper |
+| `tests/` | Python unit tests for the sdlc, maki, and photobucket tools (run via flake checks) |
 
 ### Adding a new feature
 

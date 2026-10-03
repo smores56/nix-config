@@ -136,6 +136,20 @@ in
       default = { };
       description = "calibre OPDS content server exposed over the Cloudflare Tunnel.";
     };
+    photobucket = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkEnableOption "photobucket feh-based photo triage reviewer";
+          root = lib.mkOption {
+            type = lib.types.str;
+            default = "";
+            description = "Root for photobucket decision logs and bucket folders. Empty means ~/Pictures/_triage.";
+          };
+        };
+      };
+      default = { };
+      description = "Keyboard-driven photo triage reviewer built on feh.";
+    };
 
     # ------------------------------------------------------------------
     # Resolved: read-only values fixed for a given configuration. May be
