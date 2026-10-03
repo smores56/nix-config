@@ -32,7 +32,7 @@ in
       settings = {
         server = {
           bind_address = "0.0.0.0";
-          port = 8888;
+          port = cfg.searchPort;
           secret_key = "$SEARX_SECRET_KEY";
           limiter = false;
         };

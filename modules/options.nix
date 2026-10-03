@@ -79,6 +79,11 @@ in
       default = false;
       description = "Host runs the self-hosted SearXNG service behind the agent's web search. NixOS-only.";
     };
+    searchPort = lib.mkOption {
+      type = lib.types.port;
+      default = 8899;
+      description = "TCP port the self-hosted SearXNG listens on. Single source of truth: the NixOS service and the templated maki websearch plugin both derive from it.";
+    };
     noSleep = lib.mkOption {
       type = lib.types.bool;
       default = false;

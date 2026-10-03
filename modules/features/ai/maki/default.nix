@@ -38,7 +38,7 @@ let
       -- addresses unless listed, and keeps plain http:// for a listed host.
       -- Port-scoped so the allowlist cannot reach anything else on the host.
       net = {
-        allowed_private_hosts = { "smortress:8888" },
+        allowed_private_hosts = { "smortress:${toString config.dotfiles.searchPort}" },
       },
       plugins = {
         bash = { enabled = true },
@@ -252,7 +252,9 @@ in
       };
       ".config/maki/lua/websearch_owned.lua" = {
         force = true;
-        source = ./lua/websearch_owned.lua;
+        text = builtins.replaceStrings [ "@SEARCH_PORT@" ] [ (toString config.dotfiles.searchPort) ] (
+          builtins.readFile ./lua/websearch_owned.lua
+        );
       };
 
       # maki-memory plugin. maki's require() searches bundled plugin dirs then

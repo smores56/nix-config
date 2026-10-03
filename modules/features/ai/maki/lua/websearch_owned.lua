@@ -3,11 +3,15 @@
 -- disabled in init.lua; this file reclaims its tool name, schema, and audiences
 -- so nothing downstream (delegation, the interpreter) changes.
 --
--- The endpoint is private: `net.allowed_private_hosts` in init.lua lists
--- "smortress:8888", which also keeps the plain http:// scheme that maki.net
--- would otherwise upgrade to https://.
+-- The endpoint is private: `net.allowed_private_hosts` in init.lua lists this
+-- host:port, which also keeps the plain http:// scheme that maki.net would
+-- otherwise upgrade to https://.
 
-local ENDPOINT = "http://smortress:8888/search"
+local HOST = "smortress"
+-- Substituted from dotfiles.searchPort at install time, so the service and this
+-- client cannot drift apart.
+local PORT = "@SEARCH_PORT@"
+local ENDPOINT = "http://" .. HOST .. ":" .. PORT .. "/search"
 local REQUEST_TIMEOUT_SECS = 25
 local DEFAULT_NUM_RESULTS = 8
 local MAX_OUTPUT_LINES = 40
