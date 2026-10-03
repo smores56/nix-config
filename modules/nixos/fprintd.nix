@@ -46,6 +46,23 @@ let
         return 0
       }
 
+      # Compact USB power-state summary of the reader, for post-resume diagnosis.
+      # The reader can stay on the bus yet stall; logging control/runtime_status
+      # at resume is what tells us whether stalls correlate with USB autosuspend.
+      reader_state() {
+        local dev
+        for dev in /sys/bus/usb/devices/*/; do
+          [ -r "$dev/idVendor" ] || continue
+          [ "$(cat "$dev/idVendor")" = "27c6" ] || continue
+          printf 'path=%s control=%s runtime=%s' \
+            "$(basename "$dev")" \
+            "$(cat "$dev/power/control" 2>/dev/null)" \
+            "$(cat "$dev/power/runtime_status" 2>/dev/null)"
+          return 0
+        done
+        printf 'absent'
+      }
+
       cache() {
         local pci
         pci=$(find_controller)
@@ -62,7 +79,7 @@ let
         sleep 2
         if [ -n "$(find_controller)" ]; then
           cache
-          log "reader present, no action needed"
+          log "reader present ($(reader_state)); no action needed"
           return 0
         fi
 
@@ -96,7 +113,12 @@ let
       case "''${1:-}" in
         cache) cache ;;
         restore) restore ;;
-        *) echo "usage: $0 {cache|restore}" >&2; exit 2 ;;
+        status)
+          printf 'reader: %s\n' "$(reader_state)"
+          printf 'fprintd: %s\n' "$(systemctl is-active fprintd.service 2>/dev/null)"
+          journalctl -u fprintd.service -n 5 --no-pager 2>/dev/null || true
+          ;;
+        *) echo "usage: $0 {cache|restore|status}" >&2; exit 2 ;;
       esac
     '';
   };
@@ -106,6 +128,9 @@ in
     # Goodix 27c6:609c is handled by libfprint's native goodixmoc driver; no
     # proprietary TOD package is needed.
     services.fprintd.enable = true;
+
+    # Expose the resume helper so its `status` diagnostic can be run by hand.
+    environment.systemPackages = [ resumeScript ];
 
     # services.fprintd.enable defaults fprintAuth to true on every PAM service.
     # Fingerprint has no user-attention guarantee (CVE-2024-37408), so keep it
