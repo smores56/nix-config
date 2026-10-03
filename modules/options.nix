@@ -160,10 +160,64 @@ in
             default = "/var/lib/immich";
             description = "Directory Immich stores its managed library in. The default is created by the Immich module.";
           };
+          backup = lib.mkOption {
+            type = lib.types.submodule {
+              options = {
+                enable = lib.mkEnableOption "daily Immich backup (restic snapshots + offsite copy)";
+                protonRemote = lib.mkOption {
+                  type = lib.types.str;
+                  default = "proton";
+                  description = "rclone remote name for the offsite mirror.";
+                };
+                protonPath = lib.mkOption {
+                  type = lib.types.str;
+                  default = "immich/restic";
+                  description = "Folder inside the remote holding the restic repo.";
+                };
+                rcloneConfig = lib.mkOption {
+                  type = lib.types.path;
+                  default = "/var/lib/immich/rclone.conf";
+                  description = "rclone config with the Proton remote (mode 600, owned by immich).";
+                };
+                passwordFile = lib.mkOption {
+                  type = lib.types.path;
+                  default = "/var/lib/immich/restic.pass";
+                  description = "restic repository password (mode 600, owned by immich).";
+                };
+                schedule = lib.mkOption {
+                  type = lib.types.str;
+                  default = "daily";
+                  description = "systemd OnCalendar expression for the backup timer.";
+                };
+              };
+            };
+            default = { };
+            description = "Backup of the Immich library and database into the local backup disk, mirrored offsite.";
+          };
         };
       };
       default = { };
       description = "Self-hosted Immich photo/video library and its Postgres/Redis backing services.";
+    };
+
+    backup = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkEnableOption "the local backup disk (versioned snapshot target)";
+          mountPoint = lib.mkOption {
+            type = lib.types.path;
+            default = "/var/backup";
+            description = "Where the backup disk is mounted. Tenants get their own folder beneath it.";
+          };
+          device = lib.mkOption {
+            type = lib.types.str;
+            default = "/dev/disk/by-label/backup";
+            description = "Block device or by-label/by-uuid path of the backup disk.";
+          };
+        };
+      };
+      default = { };
+      description = "Generic local backup disk; hosts mount it and backup features write beneath it.";
     };
 
     # ------------------------------------------------------------------

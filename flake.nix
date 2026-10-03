@@ -1,6 +1,10 @@
 {
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/241313f4e8e508cb9b13278c2b0fa25b9ca27163";
+    # Only for rclone: the pinned nixpkgs ships 1.74.4, which predates the
+    # Proton-API-Bridge v1.0.5 fix (rclone-created files were unreadable in
+    # Proton's apps; rclone#9844). Bump with `nix flake update nixpkgs-unstable`.
+    nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     home-manager = {
       url = "github:nix-community/home-manager/041a999e8c1c5b731913855909e68d30ca69b8e0";
       inputs.nixpkgs.follows = "nixpkgs";

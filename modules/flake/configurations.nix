@@ -58,6 +58,10 @@ let
 
       concord = concord.packages.${system}.default;
 
+      # See the nixpkgs-unstable input: rclone needs the protondrive fixes it
+      # carries (1.75.1) for a trustworthy Proton mirror.
+      rclone = inputs.nixpkgs-unstable.legacyPackages.${system}.rclone;
+
       # musikcube's macosmediakeys plugin crashes the classic ld64 on the
       # current nixpkgs pin (ld64 stubs-pass bug, unmerged nixpkgs#536365).
       # Link with LLVM ld64.lld on Darwin; Linux is unaffected.
@@ -165,6 +169,7 @@ let
             webProxy = args.webProxy or { };
             calibre = args.calibre or { };
             immich = args.immich or { };
+            backup = args.backup or { };
           };
         }
       ]
@@ -232,6 +237,8 @@ in
         };
         calibre.enable = true;
         immich.enable = true;
+        immich.backup.enable = true;
+        backup.enable = true;
       };
     };
   };
