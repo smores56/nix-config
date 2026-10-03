@@ -151,6 +151,21 @@ in
       description = "Keyboard-driven photo triage reviewer built on feh.";
     };
 
+    immich = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkEnableOption "self-hosted Immich photo library (NixOS-only)";
+          mediaLocation = lib.mkOption {
+            type = lib.types.path;
+            default = "/var/lib/immich";
+            description = "Directory Immich stores its managed library in. The default is created by the Immich module.";
+          };
+        };
+      };
+      default = { };
+      description = "Self-hosted Immich photo/video library and its Postgres/Redis backing services.";
+    };
+
     # ------------------------------------------------------------------
     # Resolved: read-only values fixed for a given configuration. May be
     # literals or computed from the authored knobs above. Kept as options

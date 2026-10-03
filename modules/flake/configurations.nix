@@ -164,6 +164,7 @@ let
             fingerprint = args.fingerprint or false;
             webProxy = args.webProxy or { };
             calibre = args.calibre or { };
+            immich = args.immich or { };
           };
         }
       ]
@@ -230,6 +231,7 @@ in
           tunnelId = "f2284d1b-5038-447b-ab50-e18dc1dba8c5";
         };
         calibre.enable = true;
+        immich.enable = true;
       };
     };
   };
