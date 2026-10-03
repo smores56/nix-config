@@ -22,7 +22,6 @@ let
     "--repo ${disk.mountPoint}/immich/restic"
     "--library ${cfg.mediaLocation}/library"
     "--dump-file ${disk.mountPoint}/immich/dump/immich.sql"
-    "--password-file ${bcfg.passwordFile}"
     "--rclone-config ${bcfg.rcloneConfig}"
     "--remote ${bcfg.protonRemote}"
     "--remote-path ${bcfg.protonPath}"

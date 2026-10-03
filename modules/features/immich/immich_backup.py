@@ -12,8 +12,9 @@ Two independent copies exist, and neither destroys the other:
   pack files left behind by `restic prune` are harmless: restic ignores packs
   its index does not reference.
 
-The rclone config and the restic password are read from files owned by the
-service user; they are never passed on the command line (argv leaks to `ps`).
+The rclone config (the Proton remote) is read from a file owned by the service
+user; it is never passed on the command line (argv leaks to `ps`). The restic
+repo is created in no-password mode, so there is no secret to lose.
 """
 
 import argparse
@@ -34,7 +35,6 @@ Repo = namedtuple(
         "repo",  # restic repository directory on the backup disk
         "library",  # Immich managed library to snapshot
         "dump_file",  # where pg_dump writes before the snapshot
-        "password_file",  # restic repo password
         "rclone_config",  # rclone config holding the Proton remote
         "remote",  # rclone remote name, e.g. "proton"
         "remote_path",  # folder inside the remote, e.g. "immich/restic"
@@ -46,7 +46,10 @@ Repo = namedtuple(
 
 
 def _restic(cfg, *args):
-    return ["restic", "-r", cfg.repo, "--password-file", cfg.password_file, *args]
+    # The library is not confidential, so the repo is created in restic's
+    # no-password mode: there is no secret to lose. A lost password would
+    # otherwise render every snapshot, local and offsite, permanently unreadable.
+    return ["restic", "-r", cfg.repo, "--insecure-no-password", *args]
 
 
 def build_steps(cfg, repo_initialized):
@@ -108,7 +111,7 @@ def _run(argv):
 
 def _repo_initialized(cfg, run):
     try:
-        run(["restic", "-r", cfg.repo, "--password-file", cfg.password_file, "cat", "config"])
+        run(_restic(cfg, "cat", "config"))
         return True
     except subprocess.CalledProcessError:
         return False
@@ -134,7 +137,6 @@ def main(argv=None):
     parser.add_argument("--repo", required=True, help="restic repo on the backup disk")
     parser.add_argument("--library", required=True, help="Immich managed library")
     parser.add_argument("--dump-file", required=True, help="pg_dump destination")
-    parser.add_argument("--password-file", required=True, help="restic password file")
     parser.add_argument("--rclone-config", required=True, help="rclone config path")
     parser.add_argument("--remote", default="proton", help="rclone remote name")
     parser.add_argument("--remote-path", default="immich/restic", help="folder on the remote")
@@ -148,7 +150,6 @@ def main(argv=None):
         repo=args.repo,
         library=args.library,
         dump_file=args.dump_file,
-        password_file=args.password_file,
         rclone_config=args.rclone_config,
         remote=args.remote,
         remote_path=args.remote_path,

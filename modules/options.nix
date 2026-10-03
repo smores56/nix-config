@@ -179,11 +179,6 @@ in
                   default = "/var/lib/immich/rclone.conf";
                   description = "rclone config with the Proton remote (mode 600, owned by immich).";
                 };
-                passwordFile = lib.mkOption {
-                  type = lib.types.path;
-                  default = "/var/lib/immich/restic.pass";
-                  description = "restic repository password (mode 600, owned by immich).";
-                };
                 schedule = lib.mkOption {
                   type = lib.types.str;
                   default = "daily";

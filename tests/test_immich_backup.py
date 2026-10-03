@@ -18,7 +18,6 @@ def cfg(module, base="/var/backup"):
         repo=f"{base}/immich/restic",
         library="/var/lib/immich/library",
         dump_file=f"{base}/immich/dump/immich.sql",
-        password_file="/var/lib/immich/restic.pass",
         rclone_config="/var/lib/immich/rclone.conf",
         remote="proton",
         remote_path="immich/restic",
@@ -66,7 +65,7 @@ class ImmichBackupTests(unittest.TestCase):
 
     def test_integrity_check_runs(self):
         check = self.find("restic", "check")
-        self.assertIn("/var/lib/immich/restic.pass", check)
+        self.assertIn("--insecure-no-password", check)
 
     def test_mirror_is_append_only_copy_not_sync(self):
         # Regression guard: `sync` would delete the offsite copy when a local
@@ -80,7 +79,15 @@ class ImmichBackupTests(unittest.TestCase):
 
     def test_password_never_on_command_line(self):
         for step in self.steps():
-            self.assertNotIn("--password", step)
+            self.assertNotIn("--password-file", step)
+            self.assertNotIn("--password-command", step)
+
+    def test_restic_runs_in_no_password_mode(self):
+        # The library is not confidential, so the repo carries no secret at all:
+        # losing a password would otherwise make every snapshot unreadable.
+        for step in self.steps():
+            if "restic" in step:
+                self.assertIn("--insecure-no-password", step)
 
     def test_init_only_when_repo_missing(self):
         with_init = self.mod.build_steps(cfg(self.mod), repo_initialized=False)
