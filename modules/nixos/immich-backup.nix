@@ -40,6 +40,7 @@ in
     environment.systemPackages = [
       immich-backup
       pkgs.restic
+      pkgs.rclone
     ];
 
     # The mount is root-owned; give the immich service user its tenant folder.
