@@ -56,6 +56,14 @@ in
       requires = [ "postgresql.service" ];
       unitConfig.RequiresMountsFor = [ disk.mountPoint ];
       onFailure = [ "immich-backup-alert.service" ];
+      # Put restic/rclone/pg_dump on the unit's PATH. This must be the service
+      # attribute (not serviceConfig.path, which systemd renders verbatim as an
+      # ignored `path=` directive and leaves the default PATH without them).
+      path = [
+        pkgs.restic
+        pkgs.rclone
+        config.services.postgresql.package
+      ];
       # One process at a time: Proton refresh tokens are single-use, so two
       # concurrent rclone clients on one credential blank the session
       # (rclone#9880). systemd never runs two instances of a oneshot at once,
@@ -73,11 +81,6 @@ in
         ];
         ExecStart = "${immich-backup}/bin/immich-backup ${args}";
         Environment = [ "HOME=/var/lib/immich" ];
-        path = [
-          pkgs.restic
-          pkgs.rclone
-          config.services.postgresql.package
-        ];
       };
     };
 
