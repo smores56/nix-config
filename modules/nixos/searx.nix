@@ -40,15 +40,36 @@ in
           "html"
           "json"
         ];
-        # Google and Bing ship disabled; enable them so a residential host has
-        # more than the DuckDuckGo/Brave defaults to fall back on.
+        # DuckDuckGo, Startpage and Brave CAPTCHA-wall this host, which also
+        # suspends them and muddies results; keep the engines that answer from
+        # here and add a couple more so one flaky engine cannot empty a search.
         engines = [
+          {
+            name = "duckduckgo";
+            disabled = true;
+          }
+          {
+            name = "startpage";
+            disabled = true;
+          }
+          {
+            name = "brave";
+            disabled = true;
+          }
           {
             name = "google";
             disabled = false;
           }
           {
             name = "bing";
+            disabled = false;
+          }
+          {
+            name = "mojeek";
+            disabled = false;
+          }
+          {
+            name = "wikipedia";
             disabled = false;
           }
         ];
