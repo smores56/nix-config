@@ -34,8 +34,17 @@ let
         default_model = "neuralwatt/deepseek-v4.1-flash",
         allowed_models = { "neuralwatt/*", "smortress/*" },
       },
+      -- Search runs on smortress over the tailnet. maki.net refuses private
+      -- addresses unless listed, and keeps plain http:// for a listed host.
+      -- Port-scoped so the allowlist cannot reach anything else on the host.
+      net = {
+        allowed_private_hosts = { "smortress:8888" },
+      },
       plugins = {
         bash = { enabled = true },
+        -- The bundled websearch only speaks Exa/You.com; the owned plugin
+        -- below finds results on the self-hosted SearXNG instead.
+        websearch = { enabled = false },
         -- The bundled memory plugin owns the `memory` tool and its own
         -- after_instructions hint; disable it so maki-memory is the only
         -- memory concept. Re-enable to roll back (see the rollback note below).
@@ -46,18 +55,21 @@ let
     require("spawn_session")
     require("resume_session")
     require("memory")
+    require("websearch_owned")
   '';
 
   # Permissions manifest for the Lua plugins under ./lua. `run` is needed by
   # spawn_session's maki.fn.jobstart (process spawn).
   # `fs_read`/`fs_write` let the memory plugin read its own markdown store and
-  # the session transcript; `env` lets it resolve MAKI_MEMORY_HELPER/_MODEL_DIR.
+  # the session transcript; `env` lets it resolve MAKI_MEMORY_HELPER/_MODEL_DIR;
+  # `net` lets websearch_owned reach the self-hosted SearXNG.
   pluginToml = ''
     [permissions]
     fs_read = true
     fs_write = true
     run = true
     env = true
+    net = true
   '';
 
   # Custom providers for maki. Model catalogs and pricing live in providers.nix
@@ -237,6 +249,10 @@ in
       ".config/maki/lua/resume_session.lua" = {
         force = true;
         source = ./lua/resume_session.lua;
+      };
+      ".config/maki/lua/websearch_owned.lua" = {
+        force = true;
+        source = ./lua/websearch_owned.lua;
       };
 
       # maki-memory plugin. maki's require() searches bundled plugin dirs then

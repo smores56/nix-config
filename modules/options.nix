@@ -74,6 +74,11 @@ in
       default = false;
       description = "Host runs the llama.cpp LLM service; also disables desktop/system sleep for availability.";
     };
+    search = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Host runs the self-hosted SearXNG service behind the agent's web search. NixOS-only.";
+    };
     noSleep = lib.mkOption {
       type = lib.types.bool;
       default = false;

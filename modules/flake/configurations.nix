@@ -158,6 +158,7 @@ let
             exposeSsh = args.exposeSsh or false;
             nvidia = args.nvidia or false;
             llm = args.llm or false;
+            search = args.search or false;
             noSleep = args.noSleep or false;
             fingerprint = args.fingerprint or false;
             webProxy = args.webProxy or { };
@@ -220,6 +221,7 @@ in
         displayManager = "none";
         nvidia = true;
         llm = true;
+        search = true;
         noSleep = true;
         webProxy = {
           enable = true;
