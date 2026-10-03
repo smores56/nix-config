@@ -27,10 +27,6 @@
     };
     flake-parts.url = "github:hercules-ci/flake-parts";
     import-tree.url = "github:vic/import-tree";
-    maki-memory = {
-      url = "git+ssh://git@github.com/smores56/maki-memory";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
   outputs =
