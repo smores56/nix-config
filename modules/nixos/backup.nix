@@ -9,7 +9,7 @@ in
 {
   config = lib.mkIf cfg.enable {
     fileSystems.${cfg.mountPoint} = {
-      device = cfg.device;
+      inherit (cfg) device;
       fsType = "ext4";
       options = [
         "noatime"

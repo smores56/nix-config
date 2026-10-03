@@ -64,6 +64,13 @@ in
         Type = "oneshot";
         User = "immich";
         Group = "immich";
+        # tmpfiles creates this at boot, but a mid-session `switch` can run it
+        # before the disk is mounted (the dir then lands on the shadowed root
+        # fs). The `+` makes this run privileged, after RequiresMountsFor, so
+        # the tenant folder always exists on the real disk.
+        ExecStartPre = [
+          "+${pkgs.coreutils}/bin/install -d -o immich -g immich -m 0700 ${disk.mountPoint}/immich"
+        ];
         ExecStart = "${immich-backup}/bin/immich-backup ${args}";
         Environment = [ "HOME=/var/lib/immich" ];
         path = [
@@ -88,6 +95,9 @@ in
       description = "Mark that the Immich backup failed";
       serviceConfig = {
         Type = "oneshot";
+        ExecStartPre = [
+          "+${pkgs.coreutils}/bin/mkdir -p ${disk.mountPoint}/immich"
+        ];
         ExecStart = pkgs.writeShellScript "immich-backup-alert" ''
           echo "$(date -Is) immich backup FAILED; run: journalctl -u immich-backup" \
             >> ${disk.mountPoint}/immich/BACKUP-FAILED
