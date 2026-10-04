@@ -24,6 +24,7 @@ in
       zoom-us
       krita
       steam
+      chromium
     ];
   };
 }

@@ -64,5 +64,7 @@ in
     };
 
     environment.systemPackages = [ cloudflare-sync ];
+    # Stable path so `sudo cloudflare-sync --check` needs no /nix/store argument.
+    environment.etc."cloudflare-sync/spec.json".source = specFile;
   };
 }

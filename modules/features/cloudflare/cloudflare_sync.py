@@ -30,6 +30,9 @@ from collections import namedtuple
 
 API_BASE = "https://api.cloudflare.com/client/v4"
 DEFAULT_TOKEN_FILE = "/var/lib/cloudflare/api-token"
+# Stable path the module installs the Nix-emitted spec at, so `cloudflare-sync
+# --check` works without the caller knowing a /nix/store path.
+DEFAULT_SPEC_FILE = "/etc/cloudflare-sync/spec.json"
 SESSION_DURATION = "24h"
 TUNNEL_SUFFIX = ".cfargotunnel.com"
 # Actions that mean the live state differs from the desired state.
@@ -255,7 +258,11 @@ def main(argv=None, client_factory=None):
         prog="cloudflare-sync",
         description="Reconcile Cloudflare DNS and Access for tunnel-exposed services.",
     )
-    parser.add_argument("--spec", required=True, help="desired-state JSON emitted by Nix")
+    parser.add_argument(
+        "--spec",
+        default=DEFAULT_SPEC_FILE,
+        help="desired-state JSON emitted by Nix (defaults to the module-installed /etc path)",
+    )
     parser.add_argument(
         "--token-file",
         default=DEFAULT_TOKEN_FILE,
