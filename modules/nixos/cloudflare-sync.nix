@@ -52,6 +52,7 @@ in
     systemd.services.cloudflare-sync = {
       description = "Reconcile Cloudflare Tunnel DNS records and Access applications";
       wantedBy = [ "multi-user.target" ];
+      wants = [ "network-online.target" ];
       after = [ "network-online.target" ];
       serviceConfig = {
         Type = "oneshot";
