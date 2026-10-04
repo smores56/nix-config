@@ -234,7 +234,11 @@ in
         noSleep = true;
         webProxy = {
           enable = true;
-          tunnelId = "f2284d1b-5038-447b-ab50-e18dc1dba8c5";
+          tunnelName = "smortress";
+          services = {
+            calibre.port = 8181;
+            immich.port = 2283;
+          };
         };
         calibre.enable = true;
         immich.enable = true;
