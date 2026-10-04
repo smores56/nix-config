@@ -89,6 +89,38 @@ place and nothing is removed. Access applications are the one exception —
 disabling `access.enable` deletes the app, which is what makes the endpoint
 public again.
 
+### Service failure alerts
+
+`dotfiles.notify` (declared in `modules/options.nix`, implemented by
+`modules/nixos/notify.nix`) runs a self-hosted [ntfy](https://ntfy.sh) listener
+on loopback and a templated handler that any unit can be pointed at:
+
+```nix
+systemd.services.my-thing.onFailure =
+  lib.optional config.dotfiles.notify.enable config.dotfiles.notify.unit;
+```
+
+Gate on the option (and read `dotfiles.notify.unit`) instead of hardcoding the
+unit name: a host that has not enabled notify has no such template, and a
+dangling `onFailure` reference fails activation. The handler journals the
+failing invocation's last lines and publishes them to the loopback listener, so
+alerts arrive even without the public `ntfy.<domain>` exposure — that only adds
+browser access, and it is gated behind Cloudflare Access (see
+`modules/nixos/notify.nix` for the assertion enforcing this).
+
+The topic is the only secret and never enters the Nix store; it is generated
+once at `/var/lib/ntfy-alert/topic` (mode 0600, dir 0700). Read and poll it
+from the host:
+
+```sh
+sudo cat /var/lib/ntfy-alert/topic                     # the topic
+curl -s "http://127.0.0.1:2586/$(sudo cat /var/lib/ntfy-alert/topic)"   # backlog
+```
+
+Known limits: ntfy runs on this host, so it cannot report the host itself
+being down; and the mobile app cannot pass Cloudflare Access, so consume
+alerts in the browser.
+
 ### Fingerprint enrollment
 
 Hosts with `dotfiles.fingerprint = true` get `services.fprintd` and the
