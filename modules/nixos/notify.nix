@@ -1,8 +1,18 @@
 # Service-failure alerting: a self-hosted ntfy server plus a template handler
-# any watched unit points at with `onFailure = [ "notify@%n.service" ]`. The
-# handler publishes to the loopback listener, so alerts work without the public
-# ntfy.<domain> exposure (that just adds browser access behind Cloudflare Access).
-# The topic is generated once on the host and never enters the Nix store.
+# any watched unit points at with `onFailure = [ "notify@%n.service" ]`. Do not
+# hardcode that string — read and gate on the option so a host that has not
+# enabled notify does not reference a template that does not exist:
+#
+#   systemd.services.my-thing.onFailure =
+#     lib.optional config.dotfiles.notify.enable config.dotfiles.notify.unit;
+#
+# The handler publishes to the loopback listener, so alerts work without the
+# public ntfy.<domain> exposure (that only adds browser access behind Cloudflare
+# Access). The topic is generated once at /var/lib/ntfy-alert/topic and never
+# enters the Nix store; read it as root and poll the loopback listener to fetch
+# alerts. Known limits: ntfy runs on this host, so it cannot report the host
+# itself being down; and the mobile app cannot pass Cloudflare Access, so
+# consume alerts in the browser.
 {
   config,
   lib,
