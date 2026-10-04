@@ -233,7 +233,7 @@ in
           unit = lib.mkOption {
             type = lib.types.str;
             readOnly = true;
-            description = "Unit name of the failure-alert handler template.";
+            description = "Reference watchers put in `onFailure` to trigger the failure-alert handler (the template instantiation string, `notify@%n.service`).";
           };
         };
       };
@@ -360,7 +360,7 @@ in
         system = "rose-pine-dawn";
         helix = "rose_pine_dawn";
       };
-      notify.unit = "notify@.service";
+      notify.unit = "notify@%n.service";
     };
   };
 }

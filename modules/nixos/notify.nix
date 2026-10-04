@@ -30,6 +30,9 @@ let
     if [ -n "''${MONITOR_SERVICE_RESULT:-}" ]; then
       title="$title (result=$MONITOR_SERVICE_RESULT)"
     fi
+    if [ -n "''${MONITOR_EXIT_CODE:-}" ]; then
+      title="$title exit=$MONITOR_EXIT_CODE"
+    fi
 
     topic="$(cat ${lib.escapeShellArg cfg.topicFile})"
     # Journal bytes are arbitrary, so they go in the body, never a header.
@@ -87,9 +90,6 @@ in
     systemd.services."notify@" = {
       description = "Push a unit-failure notification to ntfy";
       after = [ "ntfy-sh.service" ];
-      # curl on the unit's PATH: service attribute, not serviceConfig.path
-      # (systemd ignores the latter and leaves the default PATH).
-      path = [ pkgs.curl ];
       # %i is the full failing unit name including the .service suffix; do not
       # append it again.
       scriptArgs = "%i";
