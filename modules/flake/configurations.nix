@@ -238,6 +238,12 @@ in
           services = {
             calibre.port = 8181;
             immich.port = 2283;
+            # Unauthenticated loopback listener, so it must sit behind Access
+            # (enforced by an assertion in modules/nixos/notify.nix).
+            ntfy = {
+              port = 2586;
+              access.enable = true;
+            };
           };
         };
         calibre.enable = true;
