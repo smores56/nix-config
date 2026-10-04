@@ -45,15 +45,36 @@ let
     fi
 
     topic="$(cat ${lib.escapeShellArg cfg.topicFile})"
+
+    # The topic is the only secret guarding the listener, and any local user can
+    # read another process's argv via /proc, so it must never be a curl argument.
+    # Buffer URL and body in the unit's private tmp: a file also lets curl's
+    # retries re-read the journal (a retried pipe would POST an empty body, which
+    # ntfy renders as the useless literal "triggered").
+    scratch="$(mktemp -d)"
+    trap 'rm -rf "$scratch"' EXIT
+    chmod 700 "$scratch"
+    printf 'url = "http://127.0.0.1:%s/%s"\n' "${toString cfg.ntfyPort}" "$topic" > "$scratch/curl.conf"
+    printf '%s' "$log" > "$scratch/body"
+    chmod 600 "$scratch/curl.conf" "$scratch/body"
+
     # Journal bytes are arbitrary, so they go in the body, never a header.
-    printf '%s' "$log" | ${pkgs.curl}/bin/curl -s --max-time 15 --retry 3 --fail \
+    ${pkgs.curl}/bin/curl -s --max-time 15 --retry 3 --fail \
       -H "Title: $title" \
-      --data-binary @- \
-      "http://127.0.0.1:${toString cfg.ntfyPort}/$topic"
+      --data-binary @"$scratch/body" \
+      --config "$scratch/curl.conf"
   '';
 in
 {
   config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion =
+          !(config.dotfiles.webProxy.services ? ntfy) || config.dotfiles.webProxy.services.ntfy.access.enable;
+        message = "dotfiles.webProxy.services.ntfy must set access.enable = true: the local ntfy listener is unauthenticated, so exposing it publicly without Cloudflare Access would leave the topic open to anyone who learns it.";
+      }
+    ];
+
     services.ntfy-sh = {
       enable = true;
       settings = {
