@@ -84,24 +84,50 @@ class CloudflareClient:
                 payload = json.loads(response.read())
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode(errors="replace")
-            raise CloudflareError(f"{method} {path} -> HTTP {exc.code}: {detail}") from exc
+            hint = ""
+            if exc.code in (401, 403):
+                hint = (
+                    " (token is missing a required scope: needs Zone:DNS:Write and "
+                    "Access: Apps and Policies:Write; reading the zone also needs "
+                    "Zone:Read and fails earlier at GET /zones)"
+                )
+            raise CloudflareError(
+                f"{method} {path} -> HTTP {exc.code}: {detail}{hint}"
+            ) from exc
         except urllib.error.URLError as exc:
             raise CloudflareError(f"{method} {path} -> {exc.reason}") from exc
         if not payload.get("success"):
             raise CloudflareError(f"{method} {path} -> {payload.get('errors')}")
-        return payload["result"]
+        return payload
+
+    def _result(self, method, path, params=None, body=None):
+        return self._request(method, path, params=params, body=body)["result"]
 
     def get(self, path, params=None):
-        return self._request("GET", path, params=params)
+        return self._result("GET", path, params=params)
+
+    def paginate(self, path, params=None):
+        """Follow result_info.total_pages so >100 objects are all seen."""
+        items = []
+        page = 1
+        while True:
+            query = dict(params or {})
+            query["page"] = page
+            payload = self._request("GET", path, params=query)
+            items.extend(payload.get("result") or [])
+            info = payload.get("result_info") or {}
+            if page >= info.get("total_pages", 1):
+                return items
+            page += 1
 
     def post(self, path, body):
-        return self._request("POST", path, body=body)
+        return self._result("POST", path, body=body)
 
     def put(self, path, body):
-        return self._request("PUT", path, body=body)
+        return self._result("PUT", path, body=body)
 
     def delete(self, path):
-        return self._request("DELETE", path)
+        return self._result("DELETE", path)
 
 
 def resolve_account(client, zone):
@@ -120,7 +146,7 @@ def _dns_body(name, content):
 
 def reconcile_dns(client, zone_id, fqdn, tunnel_id, dry_run):
     content = tunnel_id + TUNNEL_SUFFIX
-    records = client.get(
+    records = client.paginate(
         f"/zones/{zone_id}/dns_records", params={"type": "CNAME", "name": fqdn}
     )
     if not records:
@@ -140,7 +166,9 @@ def reconcile_dns(client, zone_id, fqdn, tunnel_id, dry_run):
 def reconcile_access(client, account_id, fqdn, email, wanted, dry_run):
     apps = [
         app
-        for app in client.get(f"/accounts/{account_id}/access/apps", params={"per_page": 100})
+        for app in client.paginate(
+            f"/accounts/{account_id}/access/apps", params={"per_page": 100}
+        )
         if app.get("domain") == fqdn
     ]
 
@@ -153,7 +181,7 @@ def reconcile_access(client, account_id, fqdn, email, wanted, dry_run):
 
     results = []
     policy_name = f"allow {email}"
-    policies = client.get(
+    policies = client.paginate(
         f"/accounts/{account_id}/access/policies", params={"per_page": 100}
     )
     policy = next((p for p in policies if p.get("name") == policy_name), None)
@@ -166,6 +194,7 @@ def reconcile_access(client, account_id, fqdn, email, wanted, dry_run):
                     "name": policy_name,
                     "decision": "allow",
                     "include": [{"email": {"email": email}}],
+                    "precedence": 1,
                 },
             )
             policy_id = created["id"]
@@ -178,7 +207,7 @@ def reconcile_access(client, account_id, fqdn, email, wanted, dry_run):
         "session_duration": SESSION_DURATION,
     }
     if policy_id:
-        body["policies"] = [policy_id]
+        body["policies"] = [{"id": policy_id, "precedence": 1}]
 
     if not apps:
         if not dry_run:
@@ -187,10 +216,13 @@ def reconcile_access(client, account_id, fqdn, email, wanted, dry_run):
         return results
 
     app = apps[0]
+    policy_ids = {
+        p["id"] if isinstance(p, dict) else p for p in (app.get("policies") or [])
+    }
     already_correct = (
         app.get("session_duration") == SESSION_DURATION
         and policy_id is not None
-        and policy_id in (app.get("policies") or [])
+        and policy_id in policy_ids
     )
     if already_correct:
         results.append(Result("unchanged", f"Access app {fqdn}"))
