@@ -214,6 +214,32 @@ in
       default = { };
       description = "Generic local backup disk; hosts mount it and backup features write beneath it.";
     };
+    notify = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkEnableOption "service-failure push notifications via a self-hosted ntfy server";
+          ntfyPort = lib.mkOption {
+            type = lib.types.port;
+            default = 2586;
+            description = "Loopback port the local ntfy server listens on; the alert handler publishes here.";
+          };
+          topicFile = lib.mkOption {
+            type = lib.types.path;
+            default = "/var/lib/ntfy-alert/topic";
+            description = "Path to the generated-once ntfy topic. Kept out of the Nix store; the handler reads it at runtime.";
+          };
+          # Resolved: the handler template's unit name, so watchers reference it
+          # instead of hardcoding the string.
+          unit = lib.mkOption {
+            type = lib.types.str;
+            readOnly = true;
+            description = "Unit name of the failure-alert handler template.";
+          };
+        };
+      };
+      default = { };
+      description = "Push notifications when a watched systemd unit fails, delivered through ntfy.";
+    };
 
     # ------------------------------------------------------------------
     # Resolved: read-only values fixed for a given configuration. May be
@@ -334,6 +360,7 @@ in
         system = "rose-pine-dawn";
         helix = "rose_pine_dawn";
       };
+      notify.unit = "notify@.service";
     };
   };
 }
