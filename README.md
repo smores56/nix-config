@@ -81,10 +81,12 @@ One-time provisioning, out of band (nothing here enters the Nix store):
 
 `modules/nixos/cloudflare-sync.nix` runs the reconciler at boot and after every
 activation. Dry-run it with `sudo cloudflare-sync --check` — it prints the diff
-(created / updated / adopted / deleted / unchanged) and exits non-zero on
-drift. DNS is **adopt-never-delete**: a matching CNAME is left in place and
-nothing is removed. Access applications are the one exception — disabling
-`access.enable` deletes the app, which is what makes the endpoint public again.
+(created / updated / adopted / deleted / unchanged) and exits 0 when clean, 1
+on drift, and 2 when the API or spec fails (so a permission error is never
+mistaken for drift). DNS is **adopt-never-delete**: a matching CNAME is left in
+place and nothing is removed. Access applications are the one exception —
+disabling `access.enable` deletes the app, which is what makes the endpoint
+public again.
 
 ### Fingerprint enrollment
 

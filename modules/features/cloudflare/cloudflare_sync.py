@@ -16,7 +16,8 @@ file's `TunnelID` at runtime and used to build `<uuid>.cfargotunnel.com`.
 
 `--check` prints the diff, mutates nothing, and exits non-zero when drift
 exists, so CI or a rebuild can detect a dashboard edit that the next apply
-would revert.
+would revert. Exit codes: 0 clean, 1 drift, 2 an API or spec error (so a
+permission problem is never mistaken for drift).
 """
 
 import argparse
@@ -263,7 +264,7 @@ def main(argv=None, client_factory=None):
     parser.add_argument(
         "--check",
         action="store_true",
-        help="print the diff and exit non-zero on drift; mutate nothing",
+        help="print the diff, mutate nothing, and exit 0 clean / 1 drift / 2 error",
     )
     args = parser.parse_args(argv)
 
@@ -273,9 +274,9 @@ def main(argv=None, client_factory=None):
             spec = json.load(handle)
         client = factory(read_token(args.token_file))
         results = run(spec, client, dry_run=args.check)
-    except CloudflareError as exc:
+    except (CloudflareError, ValueError, KeyError) as exc:
         print(f"cloudflare-sync: {exc}", file=sys.stderr)
-        return 1
+        return 2
 
     for result in results:
         verb = f"would {result.action}" if args.check else result.action
