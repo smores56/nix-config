@@ -107,15 +107,35 @@ in
             default = "sammohr.dev";
             description = "Apex domain whose subdomains are exposed (e.g. calibre.<domain>).";
           };
-          tunnelId = lib.mkOption {
+          tunnelName = lib.mkOption {
             type = lib.types.str;
-            default = "";
-            description = "Cloudflare Tunnel UUID from `cloudflared tunnel create`. Empty leaves the tunnel daemon off until credentials are provisioned.";
+            default = "smortress";
+            description = "Stable human label for the tunnel. NOT the UUID: cloudflared resolves the real UUID from credentialsFile at runtime, and the reconciler reads it back out of that file. Empty leaves the tunnel daemon off.";
           };
           credentialsFile = lib.mkOption {
-            type = lib.types.str;
+            type = lib.types.path;
             default = "/var/lib/cloudflared/credentials.json";
             description = "Path to the tunnel credentials JSON on the host. Kept out of the Nix store; provisioned out-of-band.";
+          };
+          apiTokenFile = lib.mkOption {
+            type = lib.types.path;
+            default = "/var/lib/cloudflare/api-token";
+            description = "Path to the scoped Cloudflare API token (Zone:DNS:Write + Access: Apps and Policies:Write) on the host, mode 0600. Read by the reconciler at runtime; never enters the Nix store.";
+          };
+          services = lib.mkOption {
+            type = lib.types.attrsOf (
+              lib.types.submodule {
+                options = {
+                  port = lib.mkOption {
+                    type = lib.types.port;
+                    description = "Loopback port the service listens on.";
+                  };
+                  access.enable = lib.mkEnableOption "Cloudflare Access in front of this endpoint (account IdP, shared allow-list)";
+                };
+              }
+            );
+            default = { };
+            description = "Services to expose, keyed by subdomain: each becomes <sub>.<domain> -> http://127.0.0.1:<port>, with a proxied DNS CNAME to the tunnel reconciled on every activation.";
           };
         };
       };

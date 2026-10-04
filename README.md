@@ -57,6 +57,38 @@ On NixOS, apply the system config after home-manager:
 sudo nixos-rebuild switch --flake .#<host>
 ```
 
+### Cloudflare Tunnel exposure
+
+`dotfiles.webProxy` (declared in `modules/options.nix`, rendered by
+`modules/nixos/web-proxy.nix`) exposes services through a Cloudflare Tunnel.
+Declare a service once, keyed by subdomain; it becomes
+`<sub>.<domain>` → `http://127.0.0.1:<port>` with a proxied DNS CNAME
+reconciled on every activation and optional Cloudflare Access in front:
+
+```nix
+webProxy.services.ntfy = { port = 2586; access.enable = true; };
+```
+
+One-time provisioning, out of band (nothing here enters the Nix store):
+
+- Create a Cloudflare API token scoped to the apex zone with
+  **Zone:DNS:Write** and **Access: Apps and Policies:Write**.
+- `install -d -m 0700 /var/lib/cloudflare`, then write the token to
+  `/var/lib/cloudflare/api-token` (mode 0600). It is read at runtime.
+- The tunnel credentials at `dotfiles.webProxy.credentialsFile` are the
+  authoritative source of the tunnel UUID (`TunnelID`); no UUID is authored
+  anywhere in the repo. `tunnelName` is only a label and must be a non-UUID
+  string.
+
+`modules/nixos/cloudflare-sync.nix` runs the reconciler at boot and after every
+activation. Dry-run it with `sudo cloudflare-sync --check` — it prints the diff
+(created / updated / adopted / deleted / unchanged) and exits 0 when clean, 1
+on drift, and 2 when the API or spec fails (so a permission error is never
+mistaken for drift). DNS is **adopt-never-delete**: a matching CNAME is left in
+place and nothing is removed. Access applications are the one exception —
+disabling `access.enable` deletes the app, which is what makes the endpoint
+public again.
+
 ### Fingerprint enrollment
 
 Hosts with `dotfiles.fingerprint = true` get `services.fprintd` and the

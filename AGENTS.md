@@ -39,7 +39,8 @@ explicitly. Place files by concern, not by host.
 | `modules/features/ai/` | AI tooling: assistant context, maki, providers, sdlc, skills |
 | `modules/features/tv/` | Television repository and worktree cables |
 | `modules/features/photobucket/` | feh-based keyboard photo triage tool + its Python helper |
-| `tests/` | Python unit tests for the sdlc, maki, and photobucket tools (run via flake checks) |
+| `modules/features/cloudflare/` | Cloudflare Tunnel DNS/Access reconciler (Python helper) + manual `cloudflare-sync` CLI |
+| `tests/` | Python unit tests for the sdlc, maki, photobucket, and cloudflare tools (run via flake checks) |
 
 ### Adding a new feature
 
