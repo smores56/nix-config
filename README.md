@@ -77,7 +77,8 @@ One-time provisioning, out of band (nothing here enters the Nix store):
   `/var/lib/cloudflare/api-token` (mode 0600). It is read at runtime.
 - The tunnel credentials at `dotfiles.webProxy.credentialsFile` are the
   authoritative source of the tunnel UUID (`TunnelID`); no UUID is authored
-  anywhere in the repo. `tunnelName` is only a label.
+  anywhere in the repo. `tunnelName` is only a label and must be a non-UUID
+  string.
 
 `modules/nixos/cloudflare-sync.nix` runs the reconciler at boot and after every
 activation. Dry-run it with `sudo cloudflare-sync --check` — it prints the diff

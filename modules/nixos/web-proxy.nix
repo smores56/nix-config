@@ -1,3 +1,5 @@
+# `tunnelName` is a non-UUID label only: cloudflared resolves the real tunnel
+# UUID from `credentialsFile`, and the reconciler reads it back from that file.
 {
   config,
   lib,
