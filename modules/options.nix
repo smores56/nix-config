@@ -229,6 +229,51 @@ in
             default = "/dev/disk/by-label/backup";
             description = "Block device or by-label/by-uuid path of the backup disk.";
           };
+          rcloneConfig = lib.mkOption {
+            type = lib.types.path;
+            default = "/var/lib/backup/rclone.conf";
+            description = "rclone config holding the offsite remote (mode 0600, owned by root). Read at runtime; never placed in the Nix store.";
+          };
+          remote = lib.mkOption {
+            type = lib.types.str;
+            default = "proton";
+            description = "rclone remote name for offsite mirrors, e.g. \"proton\".";
+          };
+          datasets = lib.mkOption {
+            type = lib.types.attrsOf (
+              lib.types.submodule {
+                options = {
+                  source = lib.mkOption {
+                    type = lib.types.nullOr lib.types.path;
+                    default = null;
+                    description = "Directory to back up. Defaults to /var/lib/media/<Name>.";
+                  };
+                  offsite = lib.mkOption {
+                    type = lib.types.bool;
+                    default = true;
+                    description = "Mirror the local copy to the remote (append-only).";
+                  };
+                  preBackup = lib.mkOption {
+                    type = lib.types.nullOr lib.types.lines;
+                    default = null;
+                    description = "Shell snippet run before the copy. Its env exposes BACKUP_DATE, BACKUP_CURRENT, BACKUP_SOURCE.";
+                  };
+                  schedule = lib.mkOption {
+                    type = lib.types.str;
+                    default = "daily";
+                    description = "systemd OnCalendar expression for the backup timer.";
+                  };
+                  timeout = lib.mkOption {
+                    type = lib.types.str;
+                    default = "12h";
+                    description = "systemd TimeSpan cap on a run (TimeoutStartSec). Generous for the first seed run; shorten later.";
+                  };
+                };
+              }
+            );
+            default = { };
+            description = "Datasets backed up onto the disk by the generic rclone 3-2-1 mechanism.";
+          };
         };
       };
       default = { };
