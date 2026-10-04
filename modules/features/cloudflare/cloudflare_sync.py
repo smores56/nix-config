@@ -100,6 +100,10 @@ class CloudflareClient:
             ) from exc
         except urllib.error.URLError as exc:
             raise CloudflareError(f"{method} {path} -> {exc.reason}") from exc
+        except OSError as exc:
+            # Timeouts and other socket errors during read() bypass URLError; they
+            # are API failures (exit 2), never drift (exit 1).
+            raise CloudflareError(f"{method} {path} -> {exc}") from exc
         if not payload.get("success"):
             raise CloudflareError(f"{method} {path} -> {payload.get('errors')}")
         return payload
@@ -179,9 +183,12 @@ def reconcile_access(client, account_id, fqdn, email, wanted, dry_run):
     if not wanted:
         if not apps:
             return [Result("unchanged", f"Access {fqdn}: off")]
-        if not dry_run:
-            client.delete(f"/accounts/{account_id}/access/apps/{apps[0]['id']}")
-        return [Result("deleted", f"Access app {fqdn}")]
+        # Delete every app on this hostname, not just the first: a second app left
+        # behind would keep guarding the endpoint while we report it public.
+        for app in apps:
+            if not dry_run:
+                client.delete(f"/accounts/{account_id}/access/apps/{app['id']}")
+        return [Result("deleted", f"Access app {fqdn} ({app['id']})") for app in apps]
 
     results = []
     policy_name = f"allow {email}"
@@ -281,7 +288,7 @@ def main(argv=None, client_factory=None):
             spec = json.load(handle)
         client = factory(read_token(args.token_file))
         results = run(spec, client, dry_run=args.check)
-    except (CloudflareError, ValueError, KeyError) as exc:
+    except (CloudflareError, OSError, ValueError, KeyError) as exc:
         print(f"cloudflare-sync: {exc}", file=sys.stderr)
         return 2
 

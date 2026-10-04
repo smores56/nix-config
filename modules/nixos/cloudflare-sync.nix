@@ -59,8 +59,10 @@ in
         RemainAfterExit = true;
         ExecStart = "${cloudflare-sync}/bin/cloudflare-sync --spec ${specFile} --token-file ${cfg.apiTokenFile}";
       };
-      # onFailure is deliberately unwired here; the alerting feature binds it
-      # to its shared ntfy primitive.
+      # Route failures to the shared ntfy primitive, but only on hosts that have
+      # enabled notify: the template does not exist otherwise and a dangling
+      # `onFailure` reference fails activation.
+      onFailure = lib.optional config.dotfiles.notify.enable config.dotfiles.notify.unit;
     };
 
     environment.systemPackages = [ cloudflare-sync ];

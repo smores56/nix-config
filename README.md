@@ -85,7 +85,9 @@ activation. Dry-run it with `sudo cloudflare-sync --check` — it prints the dif
 (created / updated / adopted / deleted / unchanged) and exits 0 when clean, 1
 on drift, and 2 when the API or spec fails (so a permission error is never
 mistaken for drift). DNS is **adopt-never-delete**: a matching CNAME is left in
-place and nothing is removed. Access applications are the one exception —
+place and nothing is removed; a CNAME at a declared name pointing elsewhere is
+**updated** to the tunnel (it logs the previous target). Access applications are
+the one exception —
 disabling `access.enable` deletes the app, which is what makes the endpoint
 public again.
 

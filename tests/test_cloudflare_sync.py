@@ -266,6 +266,25 @@ class CloudflareSyncTests(unittest.TestCase):
             self.assertEqual(delete[0], "DELETE")
             self.assertEqual(delete[1], f"{APPS_PATH}/app1")
 
+    def test_access_disabled_deletes_every_matching_app(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = self.make_spec(tmp, {"immich": {"port": 2283, "access": False}})
+            client = FakeClient(
+                base_responses(
+                    **{
+                        DNS_PATH: [{"id": "rec1", "content": PROXY_TARGET, "proxied": True}],
+                        APPS_PATH: [
+                            {"id": "app1", "domain": f"immich.{ZONE}"},
+                            {"id": "app2", "domain": f"immich.{ZONE}"},
+                        ],
+                    }
+                )
+            )
+            results = self.module.run(spec, client)
+            self.assertEqual([r.action for r in results], ["adopted", "deleted", "deleted"])
+            deletes = [call[1] for call in client.writes() if call[0] == "DELETE"]
+            self.assertEqual(deletes, [f"{APPS_PATH}/app1", f"{APPS_PATH}/app2"])
+
     def test_access_never_deletes_when_absent(self):
         with tempfile.TemporaryDirectory() as tmp:
             spec = self.make_spec(tmp, {"immich": {"port": 2283, "access": False}})
@@ -350,6 +369,13 @@ class CloudflareSyncTests(unittest.TestCase):
             del spec["zone"]
             code = self.run_main(spec, FakeClient(base_responses()), check=False)
             self.assertEqual(code, 2)
+
+    def test_main_exits_two_when_spec_file_is_missing(self):
+        code = self.module.main(
+            ["--spec", "/nonexistent/spec.json", "--token-file", "/nonexistent/api-token"],
+            client_factory=lambda _: FakeClient(base_responses()),
+        )
+        self.assertEqual(code, 2)
 
     # -- token / credentials parsing -------------------------------------
 
@@ -457,6 +483,13 @@ class CloudflareClientTests(unittest.TestCase):
                 self.client.get("/zones")
         self.assertIn("HTTP 500", str(ctx.exception))
         self.assertNotIn("Zone:DNS:Write", str(ctx.exception))
+
+    def test_request_timeout_becomes_cloudflare_error(self):
+        with unittest.mock.patch.object(
+            self.module.urllib.request, "urlopen", side_effect=TimeoutError("timed out")
+        ):
+            with self.assertRaises(self.module.CloudflareError):
+                self.client.get("/zones")
 
     def test_request_success_false_becomes_cloudflare_error(self):
         payload = {"success": False, "errors": [{"code": 1000, "message": "bad"}]}
