@@ -170,6 +170,7 @@ let
             calibre = args.calibre or { };
             immich = args.immich or { };
             backup = args.backup or { };
+            notify = args.notify or { };
           };
         }
       ]
@@ -239,6 +240,7 @@ in
         immich.enable = true;
         immich.backup.enable = true;
         backup.enable = true;
+        notify.enable = true;
       };
     };
   };
