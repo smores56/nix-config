@@ -77,6 +77,13 @@ class ImmichBackupTests(unittest.TestCase):
         self.assertIn("proton:immich/restic", rclone)
         self.assertIn("--config", rclone)
 
+    def test_mirror_replaces_stale_proton_drafts(self):
+        # A failed Proton upload leaves a draft; the next attempt then dies with
+        # "a draft exist" (422) and the file is never mirrored. Overriding the
+        # draft makes re-runs converge instead of silently dropping files.
+        rclone = self.find("rclone", "copy")
+        self.assertIn("--protondrive-replace-existing-draft=true", rclone)
+
     def test_password_never_on_command_line(self):
         for step in self.steps():
             self.assertNotIn("--password-file", step)

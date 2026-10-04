@@ -93,6 +93,9 @@ def build_steps(cfg, repo_initialized):
             "rclone",
             "--config",
             cfg.rclone_config,
+            # A failed Proton upload leaves a draft; without this the retry dies
+            # with "a draft exist" and the file never reaches the mirror.
+            "--protondrive-replace-existing-draft=true",
             "copy",
             cfg.repo,
             f"{cfg.remote}:{cfg.remote_path}",
