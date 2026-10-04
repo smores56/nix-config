@@ -55,7 +55,7 @@ in
       ];
       requires = [ "postgresql.service" ];
       unitConfig.RequiresMountsFor = [ disk.mountPoint ];
-      onFailure = [ "immich-backup-alert.service" ];
+      onFailure = [ "notify@%n.service" ];
       # Put restic/rclone/pg_dump on the unit's PATH. This must be the service
       # attribute (not serviceConfig.path, which systemd renders verbatim as an
       # ignored `path=` directive and leaves the default PATH without them).
@@ -89,24 +89,6 @@ in
       timerConfig = {
         OnCalendar = bcfg.schedule;
         Persistent = true;
-      };
-    };
-
-    # A failed or stalled backup must not be silent: leave a marker on the disk
-    # and a journal error. A real notifier (ntfy/mail) is wired in T8.
-    systemd.services.immich-backup-alert = {
-      description = "Mark that the Immich backup failed";
-      serviceConfig = {
-        Type = "oneshot";
-        ExecStartPre = [
-          "+${pkgs.coreutils}/bin/mkdir -p ${disk.mountPoint}/immich"
-        ];
-        ExecStart = pkgs.writeShellScript "immich-backup-alert" ''
-          echo "$(date -Is) immich backup FAILED; run: journalctl -u immich-backup" \
-            >> ${disk.mountPoint}/immich/BACKUP-FAILED
-          ${pkgs.systemd}/bin/systemd-cat -t immich-backup -p err \
-            <<< "Immich backup FAILED"
-        '';
       };
     };
   };
