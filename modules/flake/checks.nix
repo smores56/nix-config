@@ -100,6 +100,29 @@ in
             '';
       };
 
+      allowedSignersChecks = lib.optionalAttrs (gitConfigHome != null) {
+        ssh-allowed-signers =
+          pkgs.runCommand "ssh-allowed-signers"
+            {
+              nativeBuildInputs = [
+                pkgs.bash
+                pkgs.openssh
+              ];
+              PERSONAL_EMAIL = gitConfigHome.config.dotfiles.email;
+              WORK_EMAIL = gitConfigHome.config.dotfiles.work.email;
+            }
+            ''
+              bash ${src}/tests/ssh_allowed_signers.sh ${
+                lib.getExe (
+                  lib.findFirst (
+                    p: lib.getName p == "ssh-allowed-signers"
+                  ) (throw "ssh-allowed-signers not in home.packages") gitConfigHome.config.home.packages
+                )
+              }
+              touch $out
+            '';
+      };
+
       nixosChecks = mkEvalChecks "eval-nixos" (
         lib.mapAttrs (_: nixos: nixos.config.system.build.toplevel.drvPath) config.flake.nixosConfigurations
       );
@@ -160,6 +183,7 @@ in
       // homeChecks
       // nixosChecks
       // gitRoutingChecks
-      // sshAgentChecks;
+      // sshAgentChecks
+      // allowedSignersChecks;
     };
 }
