@@ -47,6 +47,18 @@
     };
   };
 
+  # Work-org git remotes use this instead of ~/.ssh/config (via the git work
+  # include's core.sshCommand). Standalone on purpose: IdentityFile entries
+  # accumulate across config blocks, so layering on the main config would
+  # also offer id_personal and could authenticate as the personal account.
+  home.file.".ssh/config.work".text = ''
+    Host github.com
+      HostName github.com
+      User git
+      IdentityFile ~/.ssh/id_work.pub
+      IdentitiesOnly yes
+  '';
+
   programs.fish.shellInit = lib.mkMerge [
     # $XDG_RUNTIME_DIR is normally set by pam_systemd at login, but tailscale
     # SSH sessions don't run PAM, so it's absent — and HM's ssh-agent module

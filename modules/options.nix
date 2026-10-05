@@ -348,6 +348,27 @@ in
       readOnly = true;
       description = "Branch prefix for personal repos.";
     };
+    work = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          email = lib.mkOption { type = lib.types.str; };
+          githubOwnerGlob = lib.mkOption {
+            type = lib.types.str;
+            description = "GitHub owner pattern (git wildmatch) whose repos use the work identity.";
+          };
+          branchPrefix = lib.mkOption { type = lib.types.str; };
+          flow = lib.mkOption {
+            type = lib.types.enum [
+              "direct"
+              "pr"
+            ];
+            description = "How changes land: 'direct' merges to main, 'pr' goes through pull requests.";
+          };
+        };
+      };
+      readOnly = true;
+      description = "Work identity, applied per repo by remote URL on every host. A host without the work key fails loudly rather than pushing as the personal account.";
+    };
     codeRoot = lib.mkOption {
       type = lib.types.str;
       readOnly = true;
@@ -422,6 +443,12 @@ in
       terminalFontSize = 12;
       email = "sam@sammohr.dev";
       branchPrefix = "smores";
+      work = {
+        email = "smohr@blitzy.com";
+        githubOwnerGlob = "blitzy-*";
+        branchPrefix = "smohr";
+        flow = "pr";
+      };
       codeRoot = "${config.home.homeDirectory}/code";
       terminal = "kitty";
       shell = "fish";

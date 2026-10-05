@@ -50,6 +50,26 @@ in
         lib.mapAttrs (_: home: home.activationPackage.drvPath) config.flake.homeConfigurations
       );
 
+      # The git config is identical on every host, so any home built for
+      # this system can stand in.
+      gitConfigHome = lib.findFirst (home: home.activationPackage.system == system) null (
+        lib.attrValues config.flake.homeConfigurations
+      );
+      gitRoutingChecks = lib.optionalAttrs (gitConfigHome != null) {
+        git-work-routing =
+          pkgs.runCommand "git-work-routing"
+            {
+              nativeBuildInputs = [
+                pkgs.bash
+                pkgs.git
+              ];
+            }
+            ''
+              bash ${src}/tests/git_work_routing.sh ${gitConfigHome.config.xdg.configFile."git/config".source}
+              touch $out
+            '';
+      };
+
       nixosChecks = mkEvalChecks "eval-nixos" (
         lib.mapAttrs (_: nixos: nixos.config.system.build.toplevel.drvPath) config.flake.nixosConfigurations
       );
@@ -108,6 +128,7 @@ in
             '';
       }
       // homeChecks
-      // nixosChecks;
+      // nixosChecks
+      // gitRoutingChecks;
     };
 }
