@@ -260,12 +260,15 @@ in
           # The Proton credential is moved out of the tree by hand; the exclude
           # is defence in depth, and .cache is regenerable.
           excludes = [
-            "/.cache/**"
+            "**/.cache/**"
             "/rclone.conf"
           ];
           preBackup = ''
             mkdir -p "$BACKUP_CURRENT/db"
-            runuser -u postgres -- pg_dump -Fc --no-owner immich > "$BACKUP_CURRENT/db/immich-$BACKUP_DATE.dump"
+            tmp="$BACKUP_CURRENT/db/.immich-$BACKUP_DATE.tmp"
+            runuser -u postgres -- pg_dump -Fc --no-owner immich > "$tmp" \
+              && mv "$tmp" "$BACKUP_CURRENT/db/immich-$BACKUP_DATE.dump" \
+              || { rm -f "$tmp"; exit 1; }
           '';
         };
         backup.datasets.Music.schedule = "*-*-* 05:00:00";
