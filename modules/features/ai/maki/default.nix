@@ -8,11 +8,13 @@
 let
   inherit (aiProviders) neuralwatt smortress;
 
-  allowedModels = lib.concatMapStringsSep ", " (spec: builtins.toJSON spec) (
-    lib.concatMap (p: map (m: "${p.providerId}/${m.id}") p.makiModels) [
-      neuralwatt
-      smortress
-    ]
+  # providers.toml entries and the allowed_models list both come from here.
+  makiProviders = [
+    neuralwatt
+    smortress
+  ];
+  allowedModels = lib.concatMapStringsSep ", " builtins.toJSON (
+    lib.concatMap (p: map (m: "${p.providerId}/${m.id}") p.makiModels) makiProviders
   );
 
   # always_yolo skips permission prompts (deny rules still apply);
@@ -68,32 +70,41 @@ let
 
   # Custom providers for maki's providers.toml. Model catalogs and pricing
   # live in providers.nix and are projected into maki's shape via each
-  # provider's makiModels attribute. displayName is maki-specific.
+  # provider's makiModels attribute; display names and auth wiring live here.
   #
   # Not Lua provider plugins: a plugin's base_url must be https or loopback,
   # and smortress serves plain http over the tailnet.
-  providersToml = (pkgs.formats.toml { }).generate "maki-providers.toml" {
+  providerEntries = {
     ${smortress.providerId} = {
       display_name = "Qwen3.8 uncensored (smortress)";
-      protocol = "openai";
-      # Fail closed: the maki fish function points SMORTRESS_BASE_URL at the
-      # real host only once it resolves into the tailnet, so a disconnected
+      # Fail closed: the maki wrapper points SMORTRESS_BASE_URL at the real
+      # host only once it resolves into the tailnet, so a disconnected
       # tailnet never sends prompts to whatever local DNS calls `smortress`.
       base_url = "http://127.0.0.1:9/v1";
       # llama.cpp needs no key, but a custom provider refuses to start without one.
       api_key = "none";
-      models = smortress.makiModels;
     };
     ${neuralwatt.providerId} = {
       display_name = "Neuralwatt";
-      protocol = "openai";
       base_url = neuralwatt.baseUrl;
       api_key_env = neuralwatt.keyEnv;
-      models = neuralwatt.makiModels;
     };
   };
+  providersToml = (pkgs.formats.toml { }).generate "maki-providers.toml" (
+    lib.listToAttrs (
+      map (
+        p:
+        lib.nameValuePair p.providerId (
+          providerEntries.${p.providerId}
+          // {
+            protocol = "openai";
+            models = p.makiModels;
+          }
+        )
+      ) makiProviders
+    )
+  );
 
-  smortressHost = builtins.head (lib.splitString ":" (lib.removePrefix "http://" smortress.baseUrl));
   inTailnet = pkgs.writers.writePython3 "maki-in-tailnet" { } ''
     import ipaddress
     import socket
@@ -104,6 +115,20 @@ let
     except OSError:
         sys.exit(1)
     sys.exit(0 if addr in ipaddress.ip_network("100.64.0.0/10") else 1)
+  '';
+
+  # On PATH ahead of ~/.local/bin so every launch goes through it, including
+  # zellij tabs from spawn_session/resume_session, which exec `maki` without
+  # a shell. The binary itself is installed manually into ~/.local/bin. An
+  # inherited SMORTRESS_BASE_URL (e.g. a nested maki from the bash tool) is
+  # dropped so the gate decides afresh.
+  makiWrapper = pkgs.writeShellScriptBin "maki" ''
+    if ${inTailnet} ${smortress.host}; then
+      export SMORTRESS_BASE_URL=${smortress.baseUrl}
+    else
+      unset SMORTRESS_BASE_URL
+    fi
+    exec "$HOME/.local/bin/maki" "$@"
   '';
 
   # Deny rules apply even under always_yolo — deny is consulted before
@@ -214,29 +239,19 @@ in
       };
 
       ".config/television/cable/maki-sessions.toml".source = makiSessionCable;
-    }
-    // {
+
       ".config/maki/providers.toml" = {
         force = true;
         source = providersToml;
       };
     };
     home.packages = [
+      makiWrapper
       pkgs.rtk
       makiSessionSearchBin
     ];
 
     programs.fish = {
-      functions.maki = {
-        description = "maki with per-launch provider endpoints";
-        wraps = "maki";
-        body = ''
-          if ${inTailnet} ${smortressHost}
-              set -lx SMORTRESS_BASE_URL ${smortress.baseUrl}
-          end
-          command maki $argv
-        '';
-      };
       functions.__maki_session_resume = {
         body = ''
           set -l session_id $argv[1]
@@ -246,7 +261,7 @@ in
             return 1
           end
           cd "$cwd"
-          maki --session "$session_id"
+          command maki --session "$session_id"
         '';
       };
       shellAbbrs.ms = "tv maki-sessions | read -l s; and __maki_session_resume $s";

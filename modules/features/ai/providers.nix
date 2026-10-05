@@ -6,15 +6,30 @@
 { lib, ... }:
 let
   # The retired provider scripts borrowed maki's llama-cpp adapter, which
-  # spells thinking as `thinking_budget_tokens` (0 = off, -1 = unbounded).
-  # A custom openai-protocol entry only thinks through declared
-  # thinking_fields, so spell the same field; every effort level snaps up
-  # to `max`.
-  budgetThinking = {
-    off.thinking_budget_tokens = 0;
-    adaptive.thinking_budget_tokens = -1;
-    max.thinking_budget_tokens = -1;
+  # spells thinking as `thinking_budget_tokens`: 0 off, -1 adaptive, and for
+  # an effort level its percent of half the output window (floor 1024). A
+  # custom openai-protocol entry only thinks through declared thinking_fields,
+  # so declare every level with the budget the adapter would have sent.
+  minThinkingBudget = 1024;
+  effortPercents = {
+    minimal = 10;
+    low = 20;
+    medium = 40;
+    high = 60;
+    xhigh = 80;
+    max = 100;
   };
+  budgetThinking =
+    output:
+    let
+      maxBudget = lib.max (output / 2) minThinkingBudget;
+      levelBudget = pct: lib.max minThinkingBudget (maxBudget * pct / 100);
+    in
+    {
+      off.thinking_budget_tokens = 0;
+      adaptive.thinking_budget_tokens = -1;
+    }
+    // lib.mapAttrs (_: pct: { thinking_budget_tokens = levelBudget pct; }) effortPercents;
 
   # Prices are $/M tokens. reasoning defaults true and write-cache credit is
   # 0 for every model, so specs only state what differs.
@@ -42,11 +57,11 @@ let
       pricing_cache_write = 0;
       pricing_cache_read = cacheRead;
     }
-    // lib.optionalAttrs reasoning { thinking_fields = budgetThinking; };
+    // lib.optionalAttrs reasoning { thinking_fields = budgetThinking output; };
 
   # ── Neuralwatt ────────────────────────────────────────────────────────────
-  # No thinking pinning: maki's always_thinking="max" (init.lua) drives
-  # reasoning depth.
+  # No per-model effort pinning: maki's always_thinking="max" (init.lua)
+  # picks the level, and mkModel's thinking_fields spell its budget.
   neuralwatt = {
     providerId = "neuralwatt";
     baseUrl = "https://api.neuralwatt.com/v1";
@@ -90,10 +105,11 @@ let
   smortress = {
     providerId = "smortress";
     models.qwen38 = qwen38Model;
-    baseUrl = "http://smortress:8081/v1";
+    host = "smortress";
+    baseUrl = "http://${smortress.host}:8081/v1";
     # Reached only when the host resolves into the tailnet (100.64.0.0/10) —
     # a disconnected tailnet must not fall back to untrusted local DNS. The
-    # gate lives in maki's fish wrapper (maki/default.nix).
+    # gate lives in maki's PATH wrapper (maki/default.nix).
     makiModels = [ qwen38Model ];
   };
 in
