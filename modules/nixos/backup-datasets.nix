@@ -20,6 +20,9 @@ let
     name: dataset:
     let
       source = if dataset.source != null then dataset.source else "/var/lib/media/${name}";
+      # Materialised as a script file: a multi-line snippet cannot be a single
+      # systemd ExecStart argument (newlines terminate the directive).
+      pre = pkgs.writeShellScript "backup-${lib.toLower name}-pre" dataset.preBackup;
     in
     lib.concatStringsSep " " (
       [
@@ -30,7 +33,7 @@ let
         "--rclone-config ${lib.escapeShellArg cfg.rcloneConfig}"
       ]
       ++ lib.optional dataset.offsite "--offsite"
-      ++ lib.optional (dataset.preBackup != null) "--pre-backup ${lib.escapeShellArg dataset.preBackup}"
+      ++ lib.optional (dataset.preBackup != null) "--pre-backup ${lib.escapeShellArg pre}"
       ++ lib.concatMap (pattern: [
         "--exclude"
         (lib.escapeShellArg pattern)

@@ -97,9 +97,12 @@ class BackupTests(unittest.TestCase):
         self.assertFalse(any("proton" in step for step in steps))
         self.assertFalse(self.mod.build_check(cfg(self.mod, offsite=False)))
 
-    def test_pre_backup_runs_first_with_snippet(self):
-        steps = self.steps(pre_backup="echo seed >/dev/null")
-        self.assertEqual(steps[0], ["sh", "-c", "echo seed >/dev/null"])
+    def test_pre_backup_runs_first_as_a_script(self):
+        # A script path, never a shell string: a multi-line snippet as a single
+        # ExecStart argument would stop the systemd unit from loading.
+        script = "/nix/store/aaaa-backup-photos-pre"
+        steps = self.steps(pre_backup=script)
+        self.assertEqual(steps[0], [script])
 
     def test_check_uses_checksum_against_remote(self):
         check = self.mod.build_check(cfg(self.mod))
