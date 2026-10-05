@@ -57,12 +57,24 @@ in
       );
       gitRoutingChecks = lib.optionalAttrs (gitConfigHome != null) {
         git-work-routing =
+          let
+            d = gitConfigHome.config.dotfiles;
+          in
           pkgs.runCommand "git-work-routing"
             {
               nativeBuildInputs = [
                 pkgs.bash
                 pkgs.git
               ];
+              WORK_EMAIL = d.work.email;
+              WORK_KEY = d.work.sshKey;
+              WORK_SSH_CONFIG = d.work.sshConfig;
+              WORK_PREFIX = d.work.branchPrefix;
+              WORK_OWNER = lib.replaceStrings [ "*" ] [ "routing-test" ] d.work.githubOwnerGlob;
+              PERSONAL_EMAIL = d.email;
+              PERSONAL_KEY = "~/.ssh/id_personal";
+              PERSONAL_PREFIX = d.branchPrefix;
+              PERSONAL_OWNER = d.githubUser;
             }
             ''
               bash ${src}/tests/git_work_routing.sh ${gitConfigHome.config.xdg.configFile."git/config".source}

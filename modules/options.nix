@@ -351,12 +351,26 @@ in
     work = lib.mkOption {
       type = lib.types.submodule {
         options = {
-          email = lib.mkOption { type = lib.types.str; };
+          email = lib.mkOption {
+            type = lib.types.str;
+            description = "Commit email in work repos.";
+          };
           githubOwnerGlob = lib.mkOption {
             type = lib.types.str;
-            description = "GitHub owner pattern (git wildmatch) whose repos use the work identity.";
+            description = "GitHub owner pattern (git wildmatch, matched case-insensitively) whose repos use the work identity.";
           };
-          branchPrefix = lib.mkOption { type = lib.types.str; };
+          branchPrefix = lib.mkOption {
+            type = lib.types.str;
+            description = "Branch prefix in work repos.";
+          };
+          sshKey = lib.mkOption {
+            type = lib.types.str;
+            description = "Work SSH key (private half; the .pub is used for auth and signing via the agent).";
+          };
+          sshConfig = lib.mkOption {
+            type = lib.types.str;
+            description = "Standalone ssh config that work-repo git uses instead of ~/.ssh/config.";
+          };
           flow = lib.mkOption {
             type = lib.types.enum [
               "direct"
@@ -367,7 +381,12 @@ in
         };
       };
       readOnly = true;
-      description = "Work identity, applied per repo by remote URL on every host. A host without the work key fails loudly rather than pushing as the personal account.";
+      description = "Work identity, applied per repo by remote URL on every host.";
+    };
+    githubUser = lib.mkOption {
+      type = lib.types.str;
+      readOnly = true;
+      description = "Personal GitHub account; repos it owns use the direct-to-main flow.";
     };
     codeRoot = lib.mkOption {
       type = lib.types.str;
@@ -447,8 +466,11 @@ in
         email = "smohr@blitzy.com";
         githubOwnerGlob = "blitzy-*";
         branchPrefix = "smohr";
+        sshKey = "~/.ssh/id_work";
+        sshConfig = "~/.ssh/config.work";
         flow = "pr";
       };
+      githubUser = "smores56";
       codeRoot = "${config.home.homeDirectory}/code";
       terminal = "kitty";
       shell = "fish";

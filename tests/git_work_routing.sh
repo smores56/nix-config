@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2088  # git stores the signing key as a literal ~ path
-# Exercises the generated git config against scratch repos: work-org remotes
-# (every URL form, worktrees) pick up the work identity and ssh route, and
-# everything else stays personal. Usage: git_work_routing.sh <gitconfig>
+# Exercises the generated git config against scratch repos: work-owner
+# remotes (every URL form and casing, worktrees, mixed remotes) pick up the
+# work identity and ssh route, the personal owner gets the direct flow, and
+# everything else keeps only the personal defaults.
+#
+# Usage: git_work_routing.sh <gitconfig>, with the expected values in
+# WORK_EMAIL WORK_KEY WORK_SSH_CONFIG WORK_PREFIX WORK_OWNER (a concrete
+# owner matching the work glob) PERSONAL_EMAIL PERSONAL_KEY PERSONAL_PREFIX
+# PERSONAL_OWNER.
 set -euo pipefail
 
 export GIT_CONFIG_GLOBAL=$1 GIT_CONFIG_NOSYSTEM=1 HOME=$PWD/home
@@ -19,35 +24,56 @@ expect() {
 }
 
 repo() {
-  git init -q "$1"
-  git -C "$1" remote add origin "$2"
+  local dir=$1
+  shift
+  git init -q "$dir"
+  local n=0 url
+  for url in "$@"; do
+    git -C "$dir" remote add "r$n" "$url"
+    n=$((n + 1))
+  done
 }
 
 expect_work() {
-  expect "$1" user.email smohr@blitzy.com
-  expect "$1" user.signingkey "~/.ssh/id_work.pub"
-  expect "$1" core.sshCommand "ssh -F ~/.ssh/config.work"
-  expect "$1" smores.branchPrefix smohr
+  expect "$1" user.email "$WORK_EMAIL"
+  expect "$1" user.signingkey "$WORK_KEY.pub"
+  expect "$1" core.sshCommand "ssh -F $WORK_SSH_CONFIG"
+  expect "$1" smores.branchPrefix "$WORK_PREFIX"
   expect "$1" smores.flow pr
 }
 
 expect_personal() {
-  expect "$1" user.email sam@sammohr.dev
-  expect "$1" user.signingkey "~/.ssh/id_personal.pub"
+  expect "$1" user.email "$PERSONAL_EMAIL"
+  expect "$1" user.signingkey "$PERSONAL_KEY.pub"
   expect "$1" core.sshCommand ""
-  expect "$1" smores.branchPrefix smores
-  expect "$1" smores.flow direct
+  expect "$1" smores.branchPrefix "$PERSONAL_PREFIX"
+  expect "$1" smores.flow "$2"
 }
 
-repo scp git@github.com:blitzy-ai/app.git
-repo ssh ssh://git@github.com/blitzy-platform/infra.git
-repo https https://github.com/blitzy-ai/app
-repo personal git@github.com:smores56/blitzy-notes.git
-repo lookalike git@github.com:notblitzy-ai/app.git
+w=$WORK_OWNER
+W=${WORK_OWNER^^}
+repo scp "git@github.com:$w/app.git"
+repo scp-slash "git@github.com:/$w/app.git"
+repo scp-nouser "github.com:$w/app.git"
+repo ssh "ssh://git@github.com/$w/infra.git"
+repo ssh-port "ssh://git@github.com:22/$w/infra.git"
+repo ssh-nouser "ssh://github.com/$w/infra"
+repo https "https://github.com/$w/app"
+repo https-user "https://someone@github.com/$w/app.git"
+repo upper "git@github.com:$W/app.git"
+repo mixed "git@github.com:$PERSONAL_OWNER/fork.git" "git@github.com:$w/app.git"
+repo own "git@github.com:$PERSONAL_OWNER/notes.git"
+repo third-party "git@github.com:NixOS/nixpkgs.git"
+repo repo-named-like-work "git@github.com:$PERSONAL_OWNER/$w.git"
+repo lookalike-owner "git@github.com:not$w/app.git"
+repo lookalike-host "git@evilgithub.com:$w/app.git"
 mkdir outside
 
-for dir in scp ssh https; do expect_work "$dir"; done
-for dir in personal lookalike outside; do expect_personal "$dir"; done
+for dir in scp scp-slash scp-nouser ssh ssh-port ssh-nouser https https-user upper mixed; do
+  expect_work "$dir"
+done
+for dir in own repo-named-like-work; do expect_personal "$dir" direct; done
+for dir in third-party lookalike-owner lookalike-host outside; do expect_personal "$dir" ""; done
 
 git -C scp -c user.name=t -c commit.gpgsign=false commit -q --allow-empty -m init
 git -C scp worktree add -q ../scp-wt

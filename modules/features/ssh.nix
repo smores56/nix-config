@@ -51,11 +51,11 @@
   # include's core.sshCommand). Standalone on purpose: IdentityFile entries
   # accumulate across config blocks, so layering on the main config would
   # also offer id_personal and could authenticate as the personal account.
-  home.file.".ssh/config.work".text = ''
+  home.file.${lib.removePrefix "~/" config.dotfiles.work.sshConfig}.text = ''
     Host github.com
       HostName github.com
       User git
-      IdentityFile ~/.ssh/id_work.pub
+      IdentityFile ${config.dotfiles.work.sshKey}.pub
       IdentitiesOnly yes
   '';
 

@@ -40,7 +40,7 @@ explicitly. Place files by concern, not by host.
 | `modules/features/tv/` | Television repository and worktree cables |
 | `modules/features/photobucket/` | feh-based keyboard photo triage tool + its Python helper |
 | `modules/features/cloudflare/` | Cloudflare Tunnel DNS/Access reconciler (Python helper) + manual `cloudflare-sync` CLI |
-| `tests/` | Python unit tests for the sdlc, maki, photobucket, and cloudflare tools (run via flake checks) |
+| `tests/` | Python unit tests for the sdlc, maki, photobucket, and cloudflare tools, plus `git_work_routing.sh` (all run via flake checks) |
 
 ### Adding a new feature
 
@@ -86,6 +86,15 @@ nix eval .#checks.x86_64-linux.eval-nixos-smoresbook --apply 'x: true'
 The Python tools under `modules/features/ai/` have unit tests in `tests/`,
 run by the `checks` flake module (`python -m unittest discover -s tests`).
 Run them after touching `modules/features/ai/sdlc/` or maki session search.
+
+Git identity routing (work vs personal by remote URL, `modules/features/git.nix`)
+is checked against the generated git config by `tests/git_work_routing.sh`,
+run as the `git-work-routing` flake check. Run it after touching git or ssh
+identity settings:
+
+```sh
+nix build .#checks.aarch64-darwin.git-work-routing
+```
 
 For home-manager changes, run `home-manager switch --flake .#smores@<host>`
 (e.g. `.#smores@smoresbook` on this machine) to verify activation succeeds
