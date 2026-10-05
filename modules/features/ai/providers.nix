@@ -1,10 +1,21 @@
-# Canonical provider specs for maki provider scripts. Injected as a single
+# Canonical provider specs for maki's providers.toml. Injected as a single
 # `aiProviders` attrset so consumers never import individual providers.
 #
-# Models are authored via mkModel into maki's provider-script shape (see
+# Models are authored via mkModel into maki's providers.toml model shape (see
 # modules/features/ai/maki/default.nix).
-_:
+{ lib, ... }:
 let
+  # The retired provider scripts borrowed maki's llama-cpp adapter, which
+  # spells thinking as `thinking_budget_tokens` (0 = off, -1 = unbounded).
+  # A custom openai-protocol entry only thinks through declared
+  # thinking_fields, so spell the same field; every effort level snaps up
+  # to `max`.
+  budgetThinking = {
+    off.thinking_budget_tokens = 0;
+    adaptive.thinking_budget_tokens = -1;
+    max.thinking_budget_tokens = -1;
+  };
+
   # Prices are $/M tokens. reasoning defaults true and write-cache credit is
   # 0 for every model, so specs only state what differs.
   mkModel =
@@ -23,16 +34,15 @@ let
       context_window = context;
       max_output_tokens = output;
       supports_thinking = reasoning;
-      # maki's base llama-cpp spec is family Generic, which reports no vision, so
-      # a script provider has to declare it or view_image/image input stay off.
+      # A custom openai-protocol entry reports no vision unless declared, so
+      # image input and view_image stay off without it.
       supports_vision = vision;
-      pricing = {
-        input = prompt;
-        output = completion;
-        cache_write = 0;
-        cache_read = cacheRead;
-      };
-    };
+      pricing_input = prompt;
+      pricing_output = completion;
+      pricing_cache_write = 0;
+      pricing_cache_read = cacheRead;
+    }
+    // lib.optionalAttrs reasoning { thinking_fields = budgetThinking; };
 
   # ── Neuralwatt ────────────────────────────────────────────────────────────
   # No thinking pinning: maki's always_thinking="max" (init.lua) drives
@@ -43,8 +53,7 @@ let
     keyEnv = "NEURALWATT_API_KEY";
     # deepseek-v4.1-flash serves a 256K window (native 1M context). Both models
     # report vision in the /v1/models capabilities, and maki only learns that
-    # from this flag: the provider script's llama-cpp base has no vision of its
-    # own, so image input and the view_image tool stay off without it.
+    # from this flag.
     makiModels = map mkModel [
       {
         id = "deepseek-v4.1-flash";
@@ -68,7 +77,7 @@ let
   };
 
   # ── Smortress ─────────────────────────────────────────────────────────────
-  # Local network provider; no auth needed (keyEnv = null). models.qwen38
+  # Local network provider; no auth needed. models.qwen38
   # feeds the dotfiles default model in options.nix.
   qwen38Model = mkModel {
     id = "qwen3.8-27b";
@@ -82,10 +91,9 @@ let
     providerId = "smortress";
     models.qwen38 = qwen38Model;
     baseUrl = "http://smortress:8081/v1";
-    keyEnv = null;
-    # Offered only when the host resolves into the tailnet (100.64.0.0/10) —
-    # a disconnected tailnet must not fall back to untrusted local DNS.
-    tailnetOnly = true;
+    # Reached only when the host resolves into the tailnet (100.64.0.0/10) —
+    # a disconnected tailnet must not fall back to untrusted local DNS. The
+    # gate lives in maki's fish wrapper (maki/default.nix).
     makiModels = [ qwen38Model ];
   };
 in

@@ -8,9 +8,12 @@
 let
   inherit (aiProviders) neuralwatt smortress;
 
-  # All providers are written on every host; each provider script's has_auth
-  # check reports availability based on which credential env vars are present,
-  # so maki only offers providers that actually have auth on that machine.
+  allowedModels = lib.concatMapStringsSep ", " (spec: builtins.toJSON spec) (
+    lib.concatMap (p: map (m: "${p.providerId}/${m.id}") p.makiModels) [
+      neuralwatt
+      smortress
+    ]
+  );
 
   # always_yolo skips permission prompts (deny rules still apply);
   # always_thinking forces the max reasoning level. bash is off by default in
@@ -20,13 +23,14 @@ let
     maki.setup({
       always_yolo = true,
       always_thinking = "max",
-      -- Only neuralwatt (+ smortress qwen as backup); exclude every other
-      -- provider, including the built-in deepseek that appears when the
-      -- DEEPSEEK_API_KEY env var is present. allowed_models wins for
-      -- selectors, CLI/API model changes, delegation, and `maki models`.
+      -- Only the declared neuralwatt models (+ smortress qwen as backup);
+      -- exclude every other provider, including the built-in deepseek that
+      -- appears when the DEEPSEEK_API_KEY env var is present, and the rest of
+      -- neuralwatt's remote catalog. allowed_models wins for selectors,
+      -- CLI/API model changes, delegation, and `maki models`.
       provider = {
         default_model = "neuralwatt/deepseek-v4.1-flash",
-        allowed_models = { "neuralwatt/*", "smortress/*" },
+        allowed_models = { ${allowedModels} },
       },
       -- Search runs on smortress over the tailnet. maki.net refuses private
       -- addresses unless listed, and keeps plain http:// for a listed host.
@@ -62,84 +66,46 @@ let
     net = true
   '';
 
-  # Custom providers for maki. Model catalogs and pricing live in providers.nix
-  # and are projected into maki's shape via each provider's makiModels
-  # attribute. displayName is maki-specific.
-  providersToWrite = {
+  # Custom providers for maki's providers.toml. Model catalogs and pricing
+  # live in providers.nix and are projected into maki's shape via each
+  # provider's makiModels attribute. displayName is maki-specific.
+  #
+  # Not Lua provider plugins: a plugin's base_url must be https or loopback,
+  # and smortress serves plain http over the tailnet.
+  providersToml = (pkgs.formats.toml { }).generate "maki-providers.toml" {
     ${smortress.providerId} = {
-      displayName = "Qwen3.8 uncensored (smortress)";
-      inherit (smortress) baseUrl keyEnv;
+      display_name = "Qwen3.8 uncensored (smortress)";
+      protocol = "openai";
+      # Fail closed: the maki fish function points SMORTRESS_BASE_URL at the
+      # real host only once it resolves into the tailnet, so a disconnected
+      # tailnet never sends prompts to whatever local DNS calls `smortress`.
+      base_url = "http://127.0.0.1:9/v1";
+      # llama.cpp needs no key, but a custom provider refuses to start without one.
+      api_key = "none";
       models = smortress.makiModels;
     };
     ${neuralwatt.providerId} = {
-      displayName = "Neuralwatt";
-      inherit (neuralwatt) baseUrl keyEnv;
+      display_name = "Neuralwatt";
+      protocol = "openai";
+      base_url = neuralwatt.baseUrl;
+      api_key_env = neuralwatt.keyEnv;
       models = neuralwatt.makiModels;
     };
   };
 
-  mkProviderScript =
-    p:
-    let
-      hasKey = p.keyEnv != null;
-      # has_auth requires every credential env var to be non-empty.
-      authEnvs = [ p.keyEnv ];
-      authCheck = lib.concatMapStringsSep " && " (e: ''[ -n "''${${e}:-}" ]'') authEnvs;
-      tailnetOnly = p.tailnetOnly or false;
-      gateHost = builtins.head (lib.splitString ":" (lib.removePrefix "http://" p.baseUrl));
-      infoCmd =
-        if hasKey then
-          ''
-            if ${authCheck}; then ha=true; else ha=false; fi
-            printf '{"display_name":%s,"base":"llama-cpp","has_auth":%s}\n' ${lib.escapeShellArg (builtins.toJSON p.displayName)} "$ha"''
-        else if tailnetOnly then
-          ''
-                        if ${pkgs.python3}/bin/python3 -c 'import ipaddress,socket,sys
-            try:
-                sys.exit(0 if ipaddress.ip_address(socket.gethostbyname("${gateHost}")) in ipaddress.ip_network("100.64.0.0/10") else 1)
-            except OSError:
-                sys.exit(1)'; then ha=true; else ha=false; fi
-                        printf '{"display_name":%s,"base":"llama-cpp","has_auth":%s}\n' ${lib.escapeShellArg (builtins.toJSON p.displayName)} "$ha"''
-        else
-          ''printf '%s\n' ${
-            lib.escapeShellArg (
-              builtins.toJSON {
-                display_name = p.displayName;
-                base = "llama-cpp";
-                has_auth = true;
-              }
-            )
-          }'';
-      resolveCmd =
-        if !hasKey then
-          ''printf '%s\n' ${
-            lib.escapeShellArg (
-              builtins.toJSON {
-                base_url = p.baseUrl;
-                headers = { };
-              }
-            )
-          }''
-        else
-          ''printf '{"base_url":%s,"headers":{"Authorization":"Bearer %s"}}\n' ${lib.escapeShellArg (builtins.toJSON p.baseUrl)} "''${${p.keyEnv}:-}"'';
-    in
-    ''
-      #!/usr/bin/env bash
-      # Managed by home-manager (modules/features/ai/maki). Manual edits are
-      # clobbered.
-      set -euo pipefail
-      case "''${1:-}" in
-        info)
-          ${infoCmd}
-          ;;
-        models)
-          printf '%s\n' ${lib.escapeShellArg (builtins.toJSON p.models)}
-          ;;
-        resolve)
-          ${resolveCmd}
-          ;;
-      esac
-    '';
+  smortressHost = builtins.head (lib.splitString ":" (lib.removePrefix "http://" smortress.baseUrl));
+  inTailnet = pkgs.writers.writePython3 "maki-in-tailnet" { } ''
+    import ipaddress
+    import socket
+    import sys
+
+    try:
+        addr = ipaddress.ip_address(socket.gethostbyname(sys.argv[1]))
+    except OSError:
+        sys.exit(1)
+    sys.exit(0 if addr in ipaddress.ip_network("100.64.0.0/10") else 1)
+  '';
+
   # Deny rules apply even under always_yolo — deny is consulted before
   # yolo (yolo only skips prompting). Catastrophic-pattern backstop against
   # a compromised model or prompt injection; not a sandbox — obfuscated
@@ -249,22 +215,28 @@ in
 
       ".config/television/cable/maki-sessions.toml".source = makiSessionCable;
     }
-    // lib.optionalAttrs (providersToWrite != { }) (
-      lib.mapAttrs' (
-        slug: p:
-        lib.nameValuePair ".config/maki/providers/${slug}" {
-          force = true;
-          executable = true;
-          text = mkProviderScript p;
-        }
-      ) providersToWrite
-    );
+    // {
+      ".config/maki/providers.toml" = {
+        force = true;
+        source = providersToml;
+      };
+    };
     home.packages = [
       pkgs.rtk
       makiSessionSearchBin
     ];
 
     programs.fish = {
+      functions.maki = {
+        description = "maki with per-launch provider endpoints";
+        wraps = "maki";
+        body = ''
+          if ${inTailnet} ${smortressHost}
+              set -lx SMORTRESS_BASE_URL ${smortress.baseUrl}
+          end
+          command maki $argv
+        '';
+      };
       functions.__maki_session_resume = {
         body = ''
           set -l session_id $argv[1]
@@ -274,7 +246,7 @@ in
             return 1
           end
           cd "$cwd"
-          command maki --session "$session_id"
+          maki --session "$session_id"
         '';
       };
       shellAbbrs.ms = "tv maki-sessions | read -l s; and __maki_session_resume $s";
