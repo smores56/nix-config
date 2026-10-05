@@ -163,6 +163,26 @@ writes that setting; it only follows it.
   Per-app extras stylix does not cover (helix, lazygit) are rewritten by the
   activation hook in `modules/features/theme.nix`.
 
+### AI profiles
+
+A home's `aiProfile` knob (`modules/flake/configurations.nix`) picks which
+model providers coding agents may use.
+
+- `personal` (default): maki runs on the providers in
+  `modules/features/ai/providers.nix`; smortress is only reached once it
+  resolves into the tailnet.
+- `work`: maki is Anthropic-only and gets no personal providers or search.
+  Claude Code uses its own subscription login. Maki needs an API key, stored
+  once in the login keychain:
+
+  ```sh
+  security add-generic-password -U -a "$USER" -s maki-anthropic-api-key -w
+  ```
+
+  The `maki` wrapper hands it to maki alone. Never export
+  `ANTHROPIC_API_KEY` globally, or Claude Code bills the key instead of the
+  seat.
+
 ### Adding a new host
 
 1. Run `nixos-generate-config` on the target hardware, move the generated

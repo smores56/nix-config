@@ -8,26 +8,38 @@
 let
   inherit (aiProviders) neuralwatt smortress;
 
-  # The work profile keeps maki on Anthropic so work code never reaches a
-  # personal provider; neither personal provider nor the SearXNG search on
-  # smortress is configured there.
-  isWork = config.dotfiles.aiProfile == "work";
+  # Everything that differs between AI profiles. Work keeps maki on
+  # Anthropic so work code never reaches a personal provider: no personal
+  # providers, no smortress SearXNG search, and the API key comes from the
+  # keychain instead of the tailnet gate.
+  profile =
+    {
+      personal = {
+        # providers.toml entries and the allowed_models list both come from here.
+        providers = [
+          neuralwatt
+          smortress
+        ];
+        allowedModels = lib.concatMap (
+          p: map (m: "${p.providerId}/${m.id}") p.makiModels
+        ) profile.providers;
+        defaultModel = "neuralwatt/deepseek-v4.1-flash";
+        privateHosts = [ "${smortress.host}:${toString config.dotfiles.searchPort}" ];
+        searchPlugin = true;
+        wrapperEnv = personalEnv;
+      };
+      work = {
+        providers = [ ];
+        allowedModels = [ "anthropic/*" ];
+        defaultModel = "anthropic/claude-opus-5-5";
+        privateHosts = [ ];
+        searchPlugin = false;
+        wrapperEnv = workEnv;
+      };
+    }
+    .${config.dotfiles.aiProfile};
 
-  # providers.toml entries and the allowed_models list both come from here.
-  makiProviders = lib.optionals (!isWork) [
-    neuralwatt
-    smortress
-  ];
-  allowedModels = lib.concatMapStringsSep ", " builtins.toJSON (
-    if isWork then
-      [ "anthropic/*" ]
-    else
-      lib.concatMap (p: map (m: "${p.providerId}/${m.id}") p.makiModels) makiProviders
-  );
-  privateHosts = lib.optionalString (!isWork) (
-    builtins.toJSON "${smortress.host}:${toString config.dotfiles.searchPort}"
-  );
-  defaultModel = if isWork then "anthropic/claude-opus-5-5" else "neuralwatt/deepseek-v4.1-flash";
+  luaStrings = lib.concatMapStringsSep ", " builtins.toJSON;
 
   # always_yolo skips permission prompts (deny rules still apply);
   # always_thinking forces the max reasoning level. bash is off by default in
@@ -44,20 +56,21 @@ let
       -- allowed_models wins for selectors, CLI/API model changes,
       -- delegation, and `maki models`.
       provider = {
-        default_model = "${defaultModel}",
-        allowed_models = { ${allowedModels} },
+        default_model = "${profile.defaultModel}",
+        allowed_models = { ${luaStrings profile.allowedModels} },
       },
-      -- Search runs on smortress over the tailnet (personal only). maki.net
-      -- refuses private addresses unless listed, and keeps plain http:// for
-      -- a listed host. Port-scoped so the allowlist cannot reach anything
-      -- else on the host.
+      -- Personal search runs on smortress over the tailnet. maki.net refuses
+      -- private addresses unless listed, and keeps plain http:// for a listed
+      -- host. Port-scoped so the allowlist cannot reach anything else on the
+      -- host.
       net = {
-        allowed_private_hosts = { ${privateHosts} },
+        allowed_private_hosts = { ${luaStrings profile.privateHosts} },
       },
       plugins = {
         bash = { enabled = true },
-        -- The bundled websearch only speaks Exa/You.com; the owned plugin
-        -- below finds results on the self-hosted SearXNG instead.
+        -- The bundled websearch only speaks Exa/You.com; on personal hosts
+        -- the owned plugin below finds results on the self-hosted SearXNG
+        -- instead, and work has no search.
         websearch = { enabled = false },
         -- Bundled project-scoped memory: the `memory` tool, tag-based
         -- retrieval, plain markdown files under the maki state dir.
@@ -67,7 +80,7 @@ let
 
     require("spawn_session")
     require("resume_session")
-    ${lib.optionalString (!isWork) ''require("websearch_owned")''}
+    ${lib.optionalString profile.searchPlugin ''require("websearch_owned")''}
   '';
 
   # Permissions manifest for the Lua plugins under ./lua. `run` is needed by
@@ -79,7 +92,7 @@ let
     fs_write = true
     run = true
     env = true
-    net = true
+    net = ${lib.boolToString profile.searchPlugin}
   '';
 
   # Custom providers for maki's providers.toml. Model catalogs and pricing
@@ -115,7 +128,7 @@ let
             models = p.makiModels;
           }
         )
-      ) makiProviders
+      ) profile.providers
     )
   );
 
@@ -144,13 +157,19 @@ let
   # Work: the Anthropic API key lives in the login keychain and reaches maki
   # alone. A global ANTHROPIC_API_KEY would make Claude Code bill the key
   # instead of the subscription seat; maki strips built-in provider keys from
-  # its bash and MCP children, so a `claude` it runs never sees the key.
-  # Store it with:
+  # its bash and MCP children, so a `claude` it runs never sees the key. Any
+  # inherited endpoint override (a Claude Code proxy or Bedrock setting, a
+  # repo's direnv) is dropped so the key and prompts only go to Anthropic.
+  # Store the key with:
   #   security add-generic-password -U -a "$USER" -s ${keychainService} -w
   keychainService = "maki-anthropic-api-key";
   workEnv = ''
-    if key=$(/usr/bin/security find-generic-password -a "$USER" -s ${keychainService} -w 2>/dev/null); then
+    unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL \
+      ANTHROPIC_BEDROCK_BASE_URL CLAUDE_CODE_USE_BEDROCK
+    if key=$(/usr/bin/security find-generic-password -s ${keychainService} -w 2>/dev/null); then
       export ANTHROPIC_API_KEY="$key"
+    else
+      echo "maki: no Anthropic key in keychain item '${keychainService}' (see modules/features/ai/maki/default.nix)" >&2
     fi
   '';
 
@@ -158,7 +177,7 @@ let
   # zellij tabs from spawn_session/resume_session, which exec `maki` without
   # a shell. The binary itself is installed manually into ~/.local/bin.
   makiWrapper = pkgs.writeShellScriptBin "maki" ''
-    ${if isWork then workEnv else personalEnv}
+    ${profile.wrapperEnv}
     exec "$HOME/.local/bin/maki" "$@"
   '';
 
@@ -265,13 +284,15 @@ in
 
       ".config/television/cable/maki-sessions.toml".source = makiSessionCable;
     }
-    // lib.optionalAttrs (!isWork) {
+    // lib.optionalAttrs profile.searchPlugin {
       ".config/maki/lua/websearch_owned.lua" = {
         force = true;
         text = builtins.replaceStrings [ "@SEARCH_PORT@" ] [ (toString config.dotfiles.searchPort) ] (
           builtins.readFile ./lua/websearch_owned.lua
         );
       };
+    }
+    // lib.optionalAttrs (profile.providers != [ ]) {
       ".config/maki/providers.toml" = {
         force = true;
         source = providersToml;
