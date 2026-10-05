@@ -109,7 +109,12 @@ in
       }
     ];
 
-    environment.systemPackages = [ backup ];
+    # rclone for ops/restore (the restore drill runs it as root); `backup` for
+    # manual/seed runs.
+    environment.systemPackages = [
+      backup
+      pkgs.rclone
+    ];
 
     systemd.services = lib.mapAttrs' (
       name: dataset: lib.nameValuePair "backup-${lib.toLower name}" (mkService name dataset)
