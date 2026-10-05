@@ -254,10 +254,12 @@ class BackupTests(unittest.TestCase):
                 self.assertIn(flag, step)
 
     def test_rclone_steps_emit_machine_readable_progress(self):
-        # The stall watchdog parses transferred bytes from the stats line.
+        # The stall watchdog parses transferred bytes from the stats line, which
+        # rclone hides at its default NOTICE log level unless raised.
         for step in self.steps() + [self.mod.build_check(cfg(self.mod))]:
             self.assertIn("--stats-one-line", step)
             self.assertIn("--stats", step)
+            self.assertEqual(step[step.index("--stats-log-level") + 1], "NOTICE")
 
     def test_transferred_bytes_parses_rclone_stats(self):
         self.assertEqual(

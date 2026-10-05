@@ -81,8 +81,9 @@ NETWORK_FLAGS = [
     "10s",
 ]
 # The stall watchdog reads the transferred-byte field, so ask for machine-readable
-# progress. rclone emits it regardless of verbosity, straight into the journal.
-STATS_FLAGS = ["--stats", "30s", "--stats-one-line"]
+# progress. rclone logs periodic stats at INFO, which the default NOTICE log level
+# hides, so raise the stats-log level explicitly or the watchdog sees nothing.
+STATS_FLAGS = ["--stats", "30s", "--stats-one-line", "--stats-log-level", "NOTICE"]
 
 
 class BackupError(Exception):
