@@ -336,6 +336,20 @@ def run_editor(path):
         _fail(f"editor {which_editor()!r} not found (set $EDITOR)")
 
 
+def cwd_flow():
+    """How changes land in the cwd repo (`git config smores.flow`), or None.
+
+    The git identity include sets it per repo owner; `pr` marks work repos,
+    whose designs must not land in this personal state repo.
+    """
+    proc = subprocess.run(
+        ["git", "config", "--get", "smores.flow"],
+        capture_output=True,
+        text=True,
+    )
+    return proc.stdout.strip() or None
+
+
 def repo_from_cwd():
     proc = subprocess.run(
         ["git", "remote", "get-url", "origin"],

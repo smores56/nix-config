@@ -1,4 +1,9 @@
-{ config, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 {
   home = {
     packages = [
@@ -45,6 +50,14 @@
     fish = {
       enable = true;
       generateCompletions = false;
+
+      # Lix's installer only hooks /etc/{bash,zsh}rc, and nixpkgs' fish reads its
+      # sysconfdir from the store, so non-NixOS hosts never get Nix on PATH.
+      shellInit = lib.mkIf (!config.dotfiles.nixos) ''
+        if test -e /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.fish
+            source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.fish
+        end
+      '';
 
       shellAbbrs = {
         e = "hx";

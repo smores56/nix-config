@@ -3,8 +3,9 @@
 --
 -- The worktree (and its branch) is created by the canonical `worktrees`
 -- tool — the same one AGENTS.md tells agents to use directly. That tool owns
--- branch naming (smores/<slug> for personal repos), so the branch name is
--- always well-formed. The agent supplies a slug/task, never a raw branch
+-- branch naming (the repo owner's prefix from `git config
+-- smores.branchPrefix`, then the slug), so the branch name is always
+-- well-formed. The agent supplies a slug/task, never a raw branch
 -- name.
 --
 -- Prerequisites on PATH: worktrees, zellij, python3

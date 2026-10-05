@@ -55,6 +55,14 @@ in
       default = "dark";
       description = "Base theme polarity, before the native appearance setting (macOS / Noctalia) takes over at runtime.";
     };
+    aiProfile = lib.mkOption {
+      type = lib.types.enum [
+        "personal"
+        "work"
+      ];
+      default = "personal";
+      description = "Which model providers coding agents may use. 'work' keeps agents on Anthropic only, so work code never reaches personal providers.";
+    };
     username = lib.mkOption {
       type = lib.types.str;
       default = "smores";
@@ -345,6 +353,46 @@ in
       readOnly = true;
       description = "Branch prefix for personal repos.";
     };
+    work = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          email = lib.mkOption {
+            type = lib.types.str;
+            description = "Commit email in work repos.";
+          };
+          githubOwnerGlob = lib.mkOption {
+            type = lib.types.str;
+            description = "GitHub owner pattern (git wildmatch, matched case-insensitively) whose repos use the work identity.";
+          };
+          branchPrefix = lib.mkOption {
+            type = lib.types.str;
+            description = "Branch prefix in work repos.";
+          };
+          sshKey = lib.mkOption {
+            type = lib.types.str;
+            description = "Work SSH key (private half; the .pub is used for auth and signing via the agent).";
+          };
+          sshConfig = lib.mkOption {
+            type = lib.types.str;
+            description = "Standalone ssh config that work-repo git uses instead of ~/.ssh/config.";
+          };
+          flow = lib.mkOption {
+            type = lib.types.enum [
+              "direct"
+              "pr"
+            ];
+            description = "How changes land: 'direct' merges to main, 'pr' goes through pull requests.";
+          };
+        };
+      };
+      readOnly = true;
+      description = "Work identity, applied per repo by remote URL on every host.";
+    };
+    githubUser = lib.mkOption {
+      type = lib.types.str;
+      readOnly = true;
+      description = "Personal GitHub account; repos it owns use the direct-to-main flow.";
+    };
     codeRoot = lib.mkOption {
       type = lib.types.str;
       readOnly = true;
@@ -419,6 +467,15 @@ in
       terminalFontSize = 12;
       email = "sam@sammohr.dev";
       branchPrefix = "smores";
+      work = {
+        email = "smohr@blitzy.com";
+        githubOwnerGlob = "blitzy-*";
+        branchPrefix = "smohr";
+        sshKey = "~/.ssh/id_work";
+        sshConfig = "~/.ssh/config.work";
+        flow = "pr";
+      };
+      githubUser = "smores56";
       codeRoot = "${config.home.homeDirectory}/code";
       terminal = "kitty";
       shell = "fish";
