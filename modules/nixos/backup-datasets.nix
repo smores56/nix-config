@@ -31,6 +31,10 @@ let
       ]
       ++ lib.optional dataset.offsite "--offsite"
       ++ lib.optional (dataset.preBackup != null) "--pre-backup ${lib.escapeShellArg dataset.preBackup}"
+      ++ lib.concatMap (pattern: [
+        "--exclude"
+        (lib.escapeShellArg pattern)
+      ]) dataset.excludes
     );
 
   mkService =

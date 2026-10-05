@@ -16,7 +16,14 @@ def load_module():
     return module
 
 
-def cfg(module, base="/var/backup", offsite=True, pre_backup=None, source="/var/lib/media"):
+def cfg(
+    module,
+    base="/var/backup",
+    offsite=True,
+    pre_backup=None,
+    source="/var/lib/media",
+    excludes=(),
+):
     return module.Dataset(
         name="media",
         source=source,
@@ -25,6 +32,7 @@ def cfg(module, base="/var/backup", offsite=True, pre_backup=None, source="/var/
         remote="proton",
         rclone_config="/var/lib/backup/rclone.conf",
         pre_backup=pre_backup,
+        excludes=excludes,
     )
 
 
@@ -201,6 +209,22 @@ class BackupTests(unittest.TestCase):
         self.assertEqual(ran, [])
         self.assertIn("rclone", buf.getvalue())
         self.assertIn("proton:media", buf.getvalue())
+
+    def test_excludes_applied_to_both_copies_and_check(self):
+        # A secret or regenerable cache inside the tree must never reach either
+        # mirror; the check must use the same patterns or it flags them missing.
+        c = cfg(self.mod, excludes=("**/.cache/**", "/rclone.conf"))
+        steps = self.mod.build_steps(c, DATE)
+        local = self.find(steps, "copy", "/var/backup/media/current")
+        offsite = self.find(steps, "proton:media")
+        for argv in (local, offsite, self.mod.build_check(c)):
+            self.assertIn("--exclude", argv)
+            self.assertIn("**/.cache/**", argv)
+            self.assertIn("/rclone.conf", argv)
+
+    def test_no_exclude_flags_by_default(self):
+        for step in self.steps():
+            self.assertNotIn("--exclude", step)
 
     def test_every_step_argv_has_no_secret(self):
         steps = self.steps() + [self.mod.build_check(cfg(self.mod))]

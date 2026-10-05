@@ -45,7 +45,9 @@ Dataset = namedtuple(
         "remote",  # rclone remote name, e.g. "proton"
         "rclone_config",  # rclone config holding the remote (mode 0600, root)
         "pre_backup",  # optional shell snippet run before the copy
+        "excludes",  # rclone exclude patterns (secrets, regenerable caches)
     ],
+    defaults=((),),
 )
 
 _UNCHECKED_RE = re.compile(r"(\d+) hashes could not be checked")
@@ -67,6 +69,18 @@ def marker_path(cfg):
     return os.path.join(cfg.backup_root, cfg.name, "BACKUP-FAILED")
 
 
+def _exclude_flags(cfg):
+    """rclone --exclude flags, shared by both copies and the check.
+
+    Excluded files never enter the mirror, so the offsite copy and the check
+    must apply the same patterns or the check would flag them as missing.
+    """
+    flags = []
+    for pattern in cfg.excludes:
+        flags += ["--exclude", pattern]
+    return flags
+
+
 def build_steps(cfg, date):
     """Return the argv list to run, in order. Pure; no side effects."""
     steps = []
@@ -83,6 +97,7 @@ def build_steps(cfg, date):
             local_dir(cfg),
             "--backup-dir",
             versions_dir(cfg, date),
+            *_exclude_flags(cfg),
         ]
     )
     if cfg.offsite:
@@ -97,6 +112,7 @@ def build_steps(cfg, date):
                 "copy",
                 local_dir(cfg),
                 f"{cfg.remote}:{cfg.name}",
+                *_exclude_flags(cfg),
             ]
         )
     return steps
@@ -120,6 +136,7 @@ def build_check(cfg):
         "--one-way",
         local_dir(cfg),
         f"{cfg.remote}:{cfg.name}",
+        *_exclude_flags(cfg),
     ]
 
 
@@ -224,6 +241,12 @@ def main(argv=None):
     parser.add_argument("--offsite", action="store_true", help="mirror to the remote")
     parser.add_argument("--pre-backup", default=None, help="shell snippet run first")
     parser.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        help="rclone exclude pattern (repeatable)",
+    )
+    parser.add_argument(
         "--date",
         default=datetime.date.today().isoformat(),
         help="version folder name for this run",
@@ -239,6 +262,7 @@ def main(argv=None):
         remote=args.remote,
         rclone_config=args.rclone_config,
         pre_backup=args.pre_backup,
+        excludes=tuple(args.exclude),
     )
     try:
         run_backup(cfg, args.date, dry_run=args.dry_run)
