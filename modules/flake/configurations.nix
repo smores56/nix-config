@@ -254,6 +254,7 @@ in
         # The old Immich-specific restic pipeline is retired in favour of the
         # generic datasets below (its module is deleted in T10).
         backup.enable = true;
+        backup.datasets.Videos.schedule = "*-*-* 01:00:00";
         backup.datasets.Photos = {
           schedule = "*-*-* 03:00:00";
           # The Proton credential is moved out of the tree by hand; the exclude
