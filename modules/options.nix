@@ -273,6 +273,11 @@ in
                     default = "12h";
                     description = "systemd TimeSpan cap on a run (TimeoutStartSec). Generous for the first seed run; shorten later.";
                   };
+                  stallTimeout = lib.mkOption {
+                    type = lib.types.str;
+                    default = "30m";
+                    description = "Abort and retry a transfer that makes no progress for this long (a wedged Proton upload never trips rclone's own timeout). Copy is resumable, so retrying is safe. \"0\" disables.";
+                  };
                 };
               }
             );

@@ -31,6 +31,7 @@ let
         "--backup-root ${lib.escapeShellArg cfg.mountPoint}"
         "--remote ${lib.escapeShellArg cfg.remote}"
         "--rclone-config ${lib.escapeShellArg cfg.rcloneConfig}"
+        "--stall-timeout ${lib.escapeShellArg dataset.stallTimeout}"
       ]
       ++ lib.optional dataset.offsite "--offsite"
       ++ lib.optional (dataset.preBackup != null) "--pre-backup ${lib.escapeShellArg pre}"

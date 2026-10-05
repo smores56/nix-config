@@ -16,6 +16,21 @@ def load_module():
     return module
 
 
+class FakeProc:
+    """Minimal subprocess.Popen stand-in for run_streaming tests."""
+
+    def __init__(self, lines, code=0):
+        self.stdout = io.StringIO("".join(f"{line}\n" for line in lines))
+        self.code = code
+        self.killed = False
+
+    def wait(self):
+        return self.code
+
+    def kill(self):
+        self.killed = True
+
+
 def cfg(
     module,
     base="/var/backup",
@@ -153,11 +168,8 @@ class BackupTests(unittest.TestCase):
 
     def test_run_backup_raises_when_nothing_was_checked(self):
         # rclone exits 0 even when it compared nothing; >0 unchecked hashes must fail.
-        class Result:
-            stdout = "3 hashes could not be checked"
-
         def run(argv, capture=False, env=None):
-            return Result()
+            return "3 hashes could not be checked"
 
         with self.assertRaises(self.mod.BackupError):
             self.mod.run_backup(
@@ -234,6 +246,133 @@ class BackupTests(unittest.TestCase):
         for step in steps:
             self.assertNotIn("--password-file", step)
             self.assertNotIn("--password-command", step)
+
+    def test_rclone_steps_carry_network_resilience_flags(self):
+        # A transient Proton 5xx must be retried by rclone, not surfaced.
+        for step in self.steps() + [self.mod.build_check(cfg(self.mod))]:
+            for flag in ("--timeout", "--contimeout", "--retries", "--low-level-retries"):
+                self.assertIn(flag, step)
+
+    def test_rclone_steps_emit_machine_readable_progress(self):
+        # The stall watchdog parses transferred bytes from the stats line.
+        for step in self.steps() + [self.mod.build_check(cfg(self.mod))]:
+            self.assertIn("--stats-one-line", step)
+            self.assertIn("--stats", step)
+
+    def test_transferred_bytes_parses_rclone_stats(self):
+        self.assertEqual(
+            self.mod.transferred_bytes(
+                "Transferred:   1.234 GiB / 5.678 GiB, 22%, 10 MiB/s, ETA 5m"
+            ),
+            int(1.234 * 1024**3),
+        )
+        self.assertIsNone(self.mod.transferred_bytes("no stats here"))
+
+    def test_progress_only_counts_new_bytes_as_liveness(self):
+        # A wedged transfer keeps printing stats; identical counts are not progress.
+        clock = [0.0]
+        progress = self.mod.Progress(60, clock=lambda: clock[0])
+        progress.note("Transferred:   1.000 GiB / 2.000 GiB, 50%")
+        clock[0] = 50
+        self.assertFalse(progress.stalled())
+        progress.note("Transferred:   1.000 GiB / 2.000 GiB, 50%")  # unchanged
+        clock[0] = 61
+        self.assertTrue(progress.stalled())
+
+    def test_progress_resets_when_bytes_advance(self):
+        clock = [0.0]
+        progress = self.mod.Progress(60, clock=lambda: clock[0])
+        progress.note("Transferred:   1.000 GiB / 2.000 GiB, 50%")
+        clock[0] = 50
+        progress.note("Transferred:   1.500 GiB / 2.000 GiB, 75%")
+        self.assertFalse(progress.stalled())
+
+    def test_parse_duration_units(self):
+        self.assertEqual(self.mod.parse_duration("45"), 45)
+        self.assertEqual(self.mod.parse_duration("30m"), 1800)
+        self.assertEqual(self.mod.parse_duration("2h"), 7200)
+        self.assertEqual(self.mod.parse_duration("1d"), 86400)
+        for bad in ("soon", "", "5x"):
+            with self.assertRaises(ValueError):
+                self.mod.parse_duration(bad)
+
+    def _run_streaming(self, lines, stall_timeout=60, attempts=1, timeout_after=None):
+        proc = FakeProc(lines)
+        clock = [0.0]
+        calls = []
+
+        def popen(argv, **kwargs):
+            calls.append(argv)
+            return proc
+
+        def ready(fds, w, x, timeout):
+            clock[0] += 31
+            if timeout_after is not None and len(calls) > timeout_after:
+                return ([], [], [])
+            return (["ready"], [], [])
+
+        result = self.mod.run_streaming(
+            ["rclone", "copy"],
+            stall_timeout=stall_timeout,
+            attempts=attempts,
+            popen=popen,
+            ready=ready,
+            clock=lambda: clock[0],
+            out=lambda _line: None,
+        )
+        return result, proc, calls
+
+    def test_run_streaming_relays_output_on_success(self):
+        result, proc, _ = self._run_streaming(
+            ["Transferred:   1.000 GiB / 2.000 GiB, 50%"]
+        )
+        self.assertIn("Transferred", result)
+        self.assertFalse(proc.killed)
+
+    def test_run_streaming_kills_a_silent_transfer(self):
+        # ready returns nothing and the clock runs past the window: kill it.
+        with self.assertRaises(self.mod.StalledError):
+            self._run_streaming(["Transferred:   1.000 GiB / 2.000 GiB"], timeout_after=0)
+
+    def test_run_streaming_retries_a_stall_then_gives_up(self):
+        calls = []
+        clock = [0.0]
+
+        def popen(argv, **kwargs):
+            calls.append(argv)
+            return FakeProc([])
+
+        def ready(fds, w, x, timeout):
+            clock[0] += 61
+            return ([], [], [])
+
+        with self.assertRaises(self.mod.StalledError):
+            self.mod.run_streaming(
+                ["rclone", "copy"],
+                stall_timeout=60,
+                attempts=3,
+                popen=popen,
+                ready=ready,
+                clock=lambda: clock[0],
+                out=lambda _line: None,
+            )
+        # copy is resumable, so every retry re-runs the same argv
+        self.assertEqual(calls, [["rclone", "copy"]] * 3)
+
+    def test_plain_run_captures_and_propagates_failure(self):
+        import sys
+
+        out = self.mod._plain_run(
+            [sys.executable, "-c", "print('hello')"], capture=True
+        )
+        self.assertIn("hello", out)
+        with self.assertRaises(self.mod.subprocess.CalledProcessError):
+            self.mod._plain_run(
+                [sys.executable, "-c", "raise SystemExit(3)"], capture=True
+            )
+
+    def test_stall_timeout_defaults_to_zero_in_dataset(self):
+        self.assertEqual(cfg(self.mod).stall_timeout, 0)
 
 
 if __name__ == "__main__":
