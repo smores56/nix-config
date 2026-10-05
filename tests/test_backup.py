@@ -16,19 +16,25 @@ def load_module():
     return module
 
 
+class _Closable:
+    def close(self):
+        pass
+
+
 class FakeProc:
     """Minimal subprocess.Popen stand-in for run_streaming tests."""
 
-    def __init__(self, lines, code=0):
-        self.stdout = io.StringIO("".join(f"{line}\n" for line in lines))
-        self.code = code
+    def __init__(self):
+        self.stdout = _Closable()
         self.killed = False
+        self.returncode = 0
 
     def wait(self):
-        return self.code
+        return self.returncode
 
     def kill(self):
         self.killed = True
+        self.returncode = -9
 
 
 def cfg(
@@ -254,21 +260,35 @@ class BackupTests(unittest.TestCase):
                 self.assertIn(flag, step)
 
     def test_rclone_steps_emit_machine_readable_progress(self):
-        # The stall watchdog parses transferred bytes from the stats line, which
-        # rclone hides at its default NOTICE log level unless raised.
+        # --stats-one-line strips the Transferred:/Checks: labels the watchdog
+        # needs; the multi-line block keeps them, at NOTICE so they surface.
         for step in self.steps() + [self.mod.build_check(cfg(self.mod))]:
-            self.assertIn("--stats-one-line", step)
             self.assertIn("--stats", step)
+            self.assertNotIn("--stats-one-line", step)
             self.assertEqual(step[step.index("--stats-log-level") + 1], "NOTICE")
 
     def test_transferred_bytes_parses_rclone_stats(self):
         self.assertEqual(
             self.mod.transferred_bytes(
-                "Transferred:   1.234 GiB / 5.678 GiB, 22%, 10 MiB/s, ETA 5m"
+                "Transferred:   \t1.234 GiB / 5.678 GiB, 22%, 10 MiB/s, ETA 5m"
             ),
             int(1.234 * 1024**3),
         )
         self.assertIsNone(self.mod.transferred_bytes("no stats here"))
+
+    def test_checked_count_parses_rclone_stats(self):
+        self.assertEqual(self.mod.checked_count("Checks:                12 / 40,  30%"), 12)
+        self.assertIsNone(self.mod.checked_count("no checks here"))
+
+    def test_progress_counts_checked_files_as_liveness(self):
+        # A pure `rclone check` moves no bytes but advances Checks:; without that
+        # a healthy long verification would look like a stall.
+        clock = [0.0]
+        progress = self.mod.Progress(60, clock=lambda: clock[0])
+        progress.note("Checks:                 5 / 40,  12%")
+        clock[0] = 50
+        progress.note("Checks:                10 / 40,  25%")
+        self.assertFalse(progress.stalled())
 
     def test_progress_only_counts_new_bytes_as_liveness(self):
         # A wedged transfer keeps printing stats; identical counts are not progress.
@@ -298,20 +318,24 @@ class BackupTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.mod.parse_duration(bad)
 
-    def _run_streaming(self, lines, stall_timeout=60, attempts=1, timeout_after=None):
-        proc = FakeProc(lines)
+    def _run_streaming(self, lines, stall_timeout=60, attempts=1, idle_after=None):
+        chunks = [f"{line}\n".encode() for line in lines] + [b""]
+        procs = []
         clock = [0.0]
-        calls = []
 
         def popen(argv, **kwargs):
-            calls.append(argv)
+            proc = FakeProc()
+            procs.append(proc)
             return proc
 
         def ready(fds, w, x, timeout):
             clock[0] += 31
-            if timeout_after is not None and len(calls) > timeout_after:
+            if idle_after is not None and len(procs) > idle_after:
                 return ([], [], [])
-            return (["ready"], [], [])
+            return ([True], [], [])
+
+        def read(fd, size):
+            return chunks.pop(0) if chunks else b""
 
         result = self.mod.run_streaming(
             ["rclone", "copy"],
@@ -319,22 +343,29 @@ class BackupTests(unittest.TestCase):
             attempts=attempts,
             popen=popen,
             ready=ready,
+            read=read,
             clock=lambda: clock[0],
             out=lambda _line: None,
         )
-        return result, proc, calls
+        return result, procs
 
     def test_run_streaming_relays_output_on_success(self):
-        result, proc, _ = self._run_streaming(
+        result, procs = self._run_streaming(
             ["Transferred:   1.000 GiB / 2.000 GiB, 50%"]
         )
         self.assertIn("Transferred", result)
-        self.assertFalse(proc.killed)
+        self.assertFalse(procs[0].killed)
+
+    def test_run_streaming_kills_a_transfer_that_keeps_printing_but_stalls(self):
+        # The real failure keeps emitting identical stats; progress must be
+        # sampled on every line, not only when the pipe goes quiet.
+        with self.assertRaises(self.mod.StalledError):
+            self._run_streaming(["Transferred:   1.000 GiB / 2.000 GiB, 50%"] * 4)
 
     def test_run_streaming_kills_a_silent_transfer(self):
         # ready returns nothing and the clock runs past the window: kill it.
         with self.assertRaises(self.mod.StalledError):
-            self._run_streaming(["Transferred:   1.000 GiB / 2.000 GiB"], timeout_after=0)
+            self._run_streaming([], idle_after=0)
 
     def test_run_streaming_retries_a_stall_then_gives_up(self):
         calls = []
@@ -342,7 +373,7 @@ class BackupTests(unittest.TestCase):
 
         def popen(argv, **kwargs):
             calls.append(argv)
-            return FakeProc([])
+            return FakeProc()
 
         def ready(fds, w, x, timeout):
             clock[0] += 61

@@ -60,9 +60,12 @@ Dataset = namedtuple(
 
 _UNCHECKED_RE = re.compile(r"(\d+) hashes could not be checked")
 
-# rclone prints one stats line per --stats interval, e.g.
-# "Transferred:   1.234 GiB / 5.678 GiB, 22%, 10.1 MiB/s, ETA 5m2s".
+# The multi-line stats block carries these counters on their own lines, e.g.
+# "Transferred:   \t1.234 GiB / 5.678 GiB, 22%, 10.1 MiB/s, ETA 5m2s" and
+# "Checks:                 12 / 40,  30%". Do NOT use --stats-one-line: it drops
+# the "Transferred:"/"Checks:" labels and leaves only "<size> / <total>, ...".
 _TRANSFERRED_RE = re.compile(r"Transferred:\s+([\d.]+)\s*([KMGTP]?)i?B", re.I)
+_CHECKS_RE = re.compile(r"Checks:\s+(\d+)")
 _SIZE_UNITS = {"": 1, "K": 1024, "M": 1024**2, "G": 1024**3, "T": 1024**4, "P": 1024**5}
 
 # Proton Drive answers transient 404/422/502s under load. These make rclone back
@@ -80,10 +83,10 @@ NETWORK_FLAGS = [
     "--retries-sleep",
     "10s",
 ]
-# The stall watchdog reads the transferred-byte field, so ask for machine-readable
-# progress. rclone logs periodic stats at INFO, which the default NOTICE log level
-# hides, so raise the stats-log level explicitly or the watchdog sees nothing.
-STATS_FLAGS = ["--stats", "30s", "--stats-one-line", "--stats-log-level", "NOTICE"]
+# The stall watchdog reads the stats counters, which rclone logs at INFO — hidden
+# by the default NOTICE level — so raise the stats-log level explicitly. The
+# multi-line block (not --stats-one-line) is what keeps the counter labels.
+STATS_FLAGS = ["--stats", "30s", "--stats-log-level", "NOTICE"]
 
 
 class BackupError(Exception):
@@ -102,14 +105,24 @@ def transferred_bytes(line):
     return int(float(match.group(1)) * _SIZE_UNITS[match.group(2).upper()])
 
 
+def checked_count(line):
+    """Files checked/hashed so far as reported by rclone, or None.
+
+    A pure `rclone check` transfers no bytes but still advances this counter, so
+    without it a healthy long verification would look like a stall.
+    """
+    match = _CHECKS_RE.search(line)
+    return int(match.group(1)) if match else None
+
+
 class Progress:
     """Decide whether an rclone run has stopped making progress.
 
     rclone's own --timeout does not catch a wedged upload: a dead upload session
     keeps printing stats without tripping the IO idle timer, which once left a
     seed run hung for 18h holding the shared lock. A stalled run keeps emitting
-    stats lines whose transferred-byte count does not advance, so only a new
-    high-water mark counts as progress.
+    stats whose counters do not advance, so only a new high-water mark on either
+    transferred bytes or checked files counts as progress.
     """
 
     def __init__(self, stall_timeout, clock=time.monotonic):
@@ -117,12 +130,24 @@ class Progress:
         self._clock = clock
         self._last = clock()
         self._bytes = -1
+        self._checks = -1
 
     def note(self, line):
+        advanced = self._advance(line)
+        if advanced:
+            self._last = self._clock()
+
+    def _advance(self, line):
+        advanced = False
         current = transferred_bytes(line)
         if current is not None and current > self._bytes:
             self._bytes = current
-            self._last = self._clock()
+            advanced = True
+        checked = checked_count(line)
+        if checked is not None and checked > self._checks:
+            self._checks = checked
+            advanced = True
+        return advanced
 
     def stalled(self):
         return self._clock() - self._last > self.stall_timeout
@@ -267,16 +292,23 @@ def parse_duration(text):
     ]
 
 
-def _plain_run(argv, capture=False, env=None):
-    """Run a non-rclone step (e.g. the preBackup script); inherit stdio."""
+def _plain_run(argv, capture=False, env=None, timeout=0):
+    """Run a non-rclone step (e.g. the preBackup script); inherit stdio.
+
+    A hung pg_dump would hold the shared lock just like a hung rclone, so the
+    same stall budget also bounds it as a hard wall-clock timeout.
+    """
+    limit = timeout or None
     if capture:
-        result = subprocess.run(argv, capture_output=True, text=True, env=env)
+        result = subprocess.run(
+            argv, capture_output=True, text=True, env=env, timeout=limit
+        )
         if result.returncode != 0:
             raise subprocess.CalledProcessError(
                 result.returncode, argv, result.stdout, result.stderr
             )
         return (result.stdout or "") + (result.stderr or "")
-    subprocess.run(argv, check=True, text=True, env=env)
+    subprocess.run(argv, check=True, text=True, env=env, timeout=limit)
     return ""
 
 
@@ -287,54 +319,76 @@ def run_streaming(
     attempts=1,
     popen=subprocess.Popen,
     ready=select.select,
+    read=os.read,
     clock=time.monotonic,
     out=None,
-    interval=30,
+    interval=None,
 ):
-    """Run argv, relaying output, and abort a step that stops transferring.
+    """Run argv, relaying output, and abort a step that stops making progress.
 
-    `copy` is resumable, so a stalled run is retried up to `attempts` times. A
-    non-positive stall_timeout disables the watchdog and runs once.
+    The pipe is read in non-blocking chunks so a partial line cannot park the
+    loop past the stall check (select only promises *some* bytes are ready). A
+    stalled run is retried up to `attempts` times — `copy` is resumable — and a
+    non-positive stall_timeout disables the watchdog and runs exactly once.
     """
     out = out or (lambda line: print(line, file=sys.stderr))
     tries = attempts if stall_timeout > 0 else 1
+    if interval is None:
+        interval = min(30, stall_timeout / 2) if stall_timeout > 0 else 30
     for attempt in range(1, tries + 1):
         progress = Progress(stall_timeout, clock) if stall_timeout > 0 else None
-        proc = popen(
-            argv,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            env=env,
-            bufsize=1,
-        )
+        proc = popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env)
+        stream = proc.stdout
+        try:
+            fd = stream.fileno()
+        except (AttributeError, OSError, ValueError):
+            fd = stream
         lines = []
+        pending = b""
+        stalled = False
         try:
             while True:
-                if progress is not None and not ready([proc.stdout], [], [], interval)[0]:
+                if progress is not None and not ready([fd], [], [], interval)[0]:
                     if progress.stalled():
-                        proc.kill()
-                        proc.wait()
-                        raise StalledError(
-                            f"no transfer progress for {stall_timeout}s: {quote(argv)}"
-                        )
+                        stalled = True
+                        break
                     continue
-                line = proc.stdout.readline()
-                if line == "":
+                chunk = read(fd, 65536)
+                if chunk == b"":
                     break
-                line = line.rstrip("\n")
+                pending += chunk
+                while b"\n" in pending:
+                    raw, pending = pending.split(b"\n", 1)
+                    line = raw.decode("utf-8", "replace").rstrip("\r")
+                    out(line)
+                    lines.append(line)
+                    if progress is not None:
+                        # Sample every line: the failure mode keeps printing
+                        # stats, so checking only on silence would miss it.
+                        progress.note(line)
+                        if progress.stalled():
+                            stalled = True
+                            break
+                if stalled:
+                    break
+            if pending and not stalled:
+                line = pending.decode("utf-8", "replace").rstrip("\r")
                 out(line)
                 lines.append(line)
-                if progress is not None:
-                    progress.note(line)
-            code = proc.wait()
-        except StalledError:
+        finally:
+            if stalled:
+                proc.kill()
+            proc.wait()
+            stream.close()
+        if stalled:
             if attempt < tries:
                 out(f"! stalled, retry {attempt}/{tries - 1}: {quote(argv)}")
                 continue
-            raise
-        if code != 0:
-            raise subprocess.CalledProcessError(code, argv, "\n".join(lines))
+            raise StalledError(
+                f"no transfer progress for {stall_timeout}s: {quote(argv)}"
+            )
+        if proc.returncode != 0:
+            raise subprocess.CalledProcessError(proc.returncode, argv, "\n".join(lines))
         return "\n".join(lines)
 
 
@@ -343,7 +397,7 @@ def make_runner(stall_timeout, attempts=3, out=None):
 
     def run(argv, capture=False, env=None):
         if os.path.basename(argv[0]) != "rclone":
-            return _plain_run(argv, capture=capture, env=env)
+            return _plain_run(argv, capture=capture, env=env, timeout=stall_timeout)
         return run_streaming(
             argv, env=env, stall_timeout=stall_timeout, attempts=attempts, out=out
         )
