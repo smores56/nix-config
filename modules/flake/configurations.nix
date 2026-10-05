@@ -248,6 +248,9 @@ in
         };
         calibre.enable = true;
         immich.enable = true;
+        # Relocated off /var/lib/immich so every media dataset lives under one
+        # root (backup source and read-only server mounts both use it).
+        immich.mediaLocation = "/var/lib/media/Photos";
         immich.backup.enable = true;
         backup.enable = true;
         notify.enable = true;
