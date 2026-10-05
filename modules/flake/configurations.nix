@@ -204,6 +204,13 @@ in
         nixos = true;
         calibre.enable = true;
       };
+      "sam@smoreswork" = mkHome {
+        displayManager = "osx";
+        windowManager = "aerospace";
+        username = "sam";
+        system = "aarch64-darwin";
+        terminalFontSize = 16;
+      };
     };
     nixosConfigurations = {
       "campfire" = mkNixos {
