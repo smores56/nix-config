@@ -40,7 +40,7 @@ explicitly. Place files by concern, not by host.
 | `modules/features/tv/` | Television repository and worktree cables |
 | `modules/features/photobucket/` | feh-based keyboard photo triage tool + its Python helper |
 | `modules/features/cloudflare/` | Cloudflare Tunnel DNS/Access reconciler (Python helper) + manual `cloudflare-sync` CLI |
-| `tests/` | Python unit tests for the sdlc, maki, photobucket, and cloudflare tools, plus the `git_work_routing.sh`, `ssh_agent_keys.sh` and `ssh_allowed_signers.sh` identity checks (all run via flake checks) |
+| `tests/` | Python unit tests for the sdlc, maki, photobucket, and cloudflare tools, plus the `git_work_routing.sh`, `ssh_agent_keys.sh`, `ssh_allowed_signers.sh` and `worktrees_branch_prefix.sh` identity checks (all run via flake checks) |
 
 ### Adding a new feature
 
@@ -91,11 +91,13 @@ Git identity routing (work vs personal by remote URL, `modules/features/git.nix`
 is checked against the generated git config by `tests/git_work_routing.sh`,
 run as the `git-work-routing` flake check; agent key loading by
 `tests/ssh_agent_keys.sh` (`ssh-agent-keys`); and signature verification by
-`tests/ssh_allowed_signers.sh` (`ssh-allowed-signers`). Run them after
-touching git or ssh identity settings:
+`tests/ssh_allowed_signers.sh` (`ssh-allowed-signers`); and per-repo branch
+prefixes from `worktrees new` by `tests/worktrees_branch_prefix.sh`
+(`worktrees-branch-prefix`). Run them after touching git or ssh identity
+settings or `modules/lib/repo-workflow.nix`:
 
 ```sh
-nix build .#checks.aarch64-darwin.{git-work-routing,ssh-agent-keys,ssh-allowed-signers}
+nix build .#checks.aarch64-darwin.{git-work-routing,ssh-agent-keys,ssh-allowed-signers,worktrees-branch-prefix}
 ```
 
 For home-manager changes, run `home-manager switch --flake .#smores@<host>`

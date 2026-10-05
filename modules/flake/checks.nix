@@ -123,6 +123,33 @@ in
             '';
       };
 
+      worktreesChecks = lib.optionalAttrs (gitConfigHome != null) {
+        worktrees-branch-prefix =
+          let
+            d = gitConfigHome.config.dotfiles;
+          in
+          pkgs.runCommand "worktrees-branch-prefix"
+            {
+              nativeBuildInputs = [
+                pkgs.bash
+                pkgs.git
+              ];
+              WORK_OWNER = lib.replaceStrings [ "*" ] [ "routing-test" ] d.work.githubOwnerGlob;
+              WORK_PREFIX = d.work.branchPrefix;
+              PERSONAL_PREFIX = d.branchPrefix;
+            }
+            ''
+              bash ${src}/tests/worktrees_branch_prefix.sh \
+                ${gitConfigHome.config.xdg.configFile."git/config".source} \
+                ${lib.getExe (
+                  lib.findFirst (
+                    p: lib.getName p == "worktrees"
+                  ) (throw "worktrees not in home.packages") gitConfigHome.config.home.packages
+                )}
+              touch $out
+            '';
+      };
+
       nixosChecks = mkEvalChecks "eval-nixos" (
         lib.mapAttrs (_: nixos: nixos.config.system.build.toplevel.drvPath) config.flake.nixosConfigurations
       );
@@ -184,6 +211,7 @@ in
       // nixosChecks
       // gitRoutingChecks
       // sshAgentChecks
-      // allowedSignersChecks;
+      // allowedSignersChecks
+      // worktreesChecks;
     };
 }
