@@ -72,13 +72,26 @@
     '')
 
     # Pre-load keys at shell init so git commit signing works before any
-    # interactive ssh auth. Idempotent via `ssh-add -l`. The `begin; ... end`
-    # group is required: `A; or B; and C` in fish binds as `(A or B) and C`,
-    # which would run C whenever A succeeds.
+    # interactive ssh auth.
     (lib.mkAfter ''
       if set -q SSH_AUTH_SOCK; and test -S "$SSH_AUTH_SOCK"
-          ssh-add -l >/dev/null 2>&1; or begin; test -f ~/.ssh/id_personal; and ssh-add ~/.ssh/id_personal 2>/dev/null; end
+          __load_ssh_keys
       end
     '')
   ];
+
+  # Every identity key present on this host, each added only when the agent
+  # lacks its fingerprint: signing with a .pub IdentityFile needs the key in
+  # the agent, and an agent that already holds one key may still miss the
+  # other. Hosts without the work key just skip it.
+  programs.fish.functions.__load_ssh_keys = ''
+    set -l loaded (ssh-add -l 2>/dev/null)
+    for key in ~/.ssh/id_personal ${config.dotfiles.work.sshKey}
+        test -f $key; or continue
+        set -l fp (ssh-keygen -lf $key.pub 2>/dev/null | string split -f2 " ")
+        if test -z "$fp"; or not string match -q -- "* $fp *" $loaded
+            ssh-add $key 2>/dev/null
+        end
+    end
+  '';
 }

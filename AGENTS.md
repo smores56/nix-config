@@ -40,7 +40,7 @@ explicitly. Place files by concern, not by host.
 | `modules/features/tv/` | Television repository and worktree cables |
 | `modules/features/photobucket/` | feh-based keyboard photo triage tool + its Python helper |
 | `modules/features/cloudflare/` | Cloudflare Tunnel DNS/Access reconciler (Python helper) + manual `cloudflare-sync` CLI |
-| `tests/` | Python unit tests for the sdlc, maki, photobucket, and cloudflare tools, plus `git_work_routing.sh` (all run via flake checks) |
+| `tests/` | Python unit tests for the sdlc, maki, photobucket, and cloudflare tools, plus the `git_work_routing.sh` and `ssh_agent_keys.sh` identity checks (all run via flake checks) |
 
 ### Adding a new feature
 
@@ -89,11 +89,12 @@ Run them after touching `modules/features/ai/sdlc/` or maki session search.
 
 Git identity routing (work vs personal by remote URL, `modules/features/git.nix`)
 is checked against the generated git config by `tests/git_work_routing.sh`,
-run as the `git-work-routing` flake check. Run it after touching git or ssh
-identity settings:
+run as the `git-work-routing` flake check, and agent key loading by
+`tests/ssh_agent_keys.sh` (`ssh-agent-keys`). Run them after touching git or
+ssh identity settings:
 
 ```sh
-nix build .#checks.aarch64-darwin.git-work-routing
+nix build .#checks.aarch64-darwin.git-work-routing .#checks.aarch64-darwin.ssh-agent-keys
 ```
 
 For home-manager changes, run `home-manager switch --flake .#smores@<host>`

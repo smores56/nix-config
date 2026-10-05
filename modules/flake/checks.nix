@@ -82,6 +82,24 @@ in
             '';
       };
 
+      sshAgentChecks = lib.optionalAttrs (gitConfigHome != null) {
+        ssh-agent-keys =
+          pkgs.runCommand "ssh-agent-keys"
+            {
+              nativeBuildInputs = [
+                pkgs.bash
+                pkgs.fish
+                pkgs.openssh
+              ];
+            }
+            ''
+              bash ${src}/tests/ssh_agent_keys.sh ${
+                gitConfigHome.config.xdg.configFile."fish/functions/__load_ssh_keys.fish".source
+              }
+              touch $out
+            '';
+      };
+
       nixosChecks = mkEvalChecks "eval-nixos" (
         lib.mapAttrs (_: nixos: nixos.config.system.build.toplevel.drvPath) config.flake.nixosConfigurations
       );
@@ -141,6 +159,7 @@ in
       }
       // homeChecks
       // nixosChecks
-      // gitRoutingChecks;
+      // gitRoutingChecks
+      // sshAgentChecks;
     };
 }
