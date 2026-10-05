@@ -258,6 +258,11 @@ in
                     default = null;
                     description = "Shell snippet run before the copy. Its env exposes BACKUP_DATE, BACKUP_CURRENT, BACKUP_SOURCE.";
                   };
+                  excludes = lib.mkOption {
+                    type = lib.types.listOf lib.types.str;
+                    default = [ ];
+                    description = "rclone exclude patterns kept out of both mirrors (secrets, regenerable caches).";
+                  };
                   schedule = lib.mkOption {
                     type = lib.types.str;
                     default = "daily";

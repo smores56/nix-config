@@ -31,6 +31,10 @@ let
       ]
       ++ lib.optional dataset.offsite "--offsite"
       ++ lib.optional (dataset.preBackup != null) "--pre-backup ${lib.escapeShellArg dataset.preBackup}"
+      ++ lib.concatMap (pattern: [
+        "--exclude"
+        (lib.escapeShellArg pattern)
+      ]) dataset.excludes
     );
 
   mkService =
@@ -50,6 +54,8 @@ let
     {
       description = "rclone 3-2-1 backup: ${name}";
       unitConfig.RequiresMountsFor = [ cfg.mountPoint ];
+      # A preBackup that dumps Postgres must not race a DB restart at boot.
+      after = lib.optional (dataset.preBackup != null) "postgresql.service";
       # Only reference the handler when notify is enabled; otherwise the template
       # unit does not exist and a failure logs a dead-job error instead of a push.
       onFailure = lib.optional config.dotfiles.notify.enable config.dotfiles.notify.unit;

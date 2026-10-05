@@ -251,8 +251,27 @@ in
         # Relocated off /var/lib/immich so every media dataset lives under one
         # root (backup source and read-only server mounts both use it).
         immich.mediaLocation = "/var/lib/media/Photos";
-        immich.backup.enable = true;
+        # The old Immich-specific restic pipeline is retired in favour of the
+        # generic datasets below (its module is deleted in T10).
         backup.enable = true;
+        backup.datasets.Videos.schedule = "*-*-* 01:00:00";
+        backup.datasets.Photos = {
+          schedule = "*-*-* 03:00:00";
+          # The Proton credential is moved out of the tree by hand; the exclude
+          # is defence in depth, and .cache is regenerable.
+          excludes = [
+            "**/.cache/**"
+            "/rclone.conf"
+          ];
+          preBackup = ''
+            mkdir -p "$BACKUP_CURRENT/db"
+            tmp="$BACKUP_CURRENT/db/.immich-$BACKUP_DATE.tmp"
+            runuser -u postgres -- pg_dump -Fc --no-owner immich > "$tmp" \
+              && mv "$tmp" "$BACKUP_CURRENT/db/immich-$BACKUP_DATE.dump" \
+              || { rm -f "$tmp"; exit 1; }
+          '';
+        };
+        backup.datasets.Music.schedule = "*-*-* 05:00:00";
         notify.enable = true;
       };
     };
