@@ -104,12 +104,36 @@ let
   ]
   ++ importTree ../nixos;
 
+  # Host-authored knobs a home configuration may pass. Read-only `dotfiles.*`
+  # values are resolved in options.nix and cannot be set here.
+  homeKnobs = {
+    displayManager = "none";
+    windowManager = "none";
+    polarity = null;
+    nixos = null;
+    fingerprint = null;
+    noSleep = null;
+    calibre = null;
+    photobucket = null;
+    aiProfile = null;
+  };
+  homeArgs = [
+    "system"
+    "username"
+    "homeDirectory"
+  ];
+
   mkHome =
     args:
     let
       system = args.system or "x86_64-linux";
       username = args.username or "smores";
+      # A typo'd or undeclared knob would otherwise vanish without a trace.
+      unknown = lib.subtractLists (builtins.attrNames homeKnobs ++ homeArgs) (builtins.attrNames args);
     in
+    assert lib.assertMsg (
+      unknown == [ ]
+    ) "mkHome: unknown arguments ${lib.concatStringsSep ", " unknown}; add them to homeKnobs";
     home-manager.lib.homeManagerConfiguration {
       pkgs = pkgsForSystem system;
       extraSpecialArgs = {
@@ -120,19 +144,7 @@ let
           dotfiles = {
             inherit username;
           }
-          // builtins.intersectAttrs {
-            # Host-authored knobs a home configuration may pass. Read-only
-            # `dotfiles.*` values are resolved in options.nix and cannot be set
-            # here; anything not listed is silently dropped.
-            displayManager = "none";
-            windowManager = "none";
-            polarity = null;
-            nixos = null;
-            fingerprint = null;
-            noSleep = null;
-            calibre = null;
-            photobucket = null;
-          } args;
+          // builtins.intersectAttrs homeKnobs args;
           home.username = username;
           home.homeDirectory =
             args.homeDirectory
@@ -209,7 +221,7 @@ in
         windowManager = "aerospace";
         username = "sam";
         system = "aarch64-darwin";
-        terminalFontSize = 16;
+        aiProfile = "work";
       };
     };
     nixosConfigurations = {

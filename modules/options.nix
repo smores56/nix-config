@@ -55,6 +55,14 @@ in
       default = "dark";
       description = "Base theme polarity, before the native appearance setting (macOS / Noctalia) takes over at runtime.";
     };
+    aiProfile = lib.mkOption {
+      type = lib.types.enum [
+        "personal"
+        "work"
+      ];
+      default = "personal";
+      description = "Which model providers coding agents may use. 'work' keeps agents on Anthropic only, so work code never reaches personal providers.";
+    };
     username = lib.mkOption {
       type = lib.types.str;
       default = "smores";
