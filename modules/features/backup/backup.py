@@ -85,7 +85,10 @@ def build_steps(cfg, date):
     """Return the argv list to run, in order. Pure; no side effects."""
     steps = []
     if cfg.pre_backup:
-        steps.append(["sh", "-c", cfg.pre_backup])
+        # An executable script path, not a shell string: a multi-line snippet
+        # cannot be a single systemd ExecStart argument (newlines end the
+        # directive) and would stop the unit from loading.
+        steps.append([cfg.pre_backup])
     # `copy`, never `sync`: the versioned local mirror must never lose data.
     steps.append(
         [
@@ -197,11 +200,12 @@ def run_backup(cfg, date, dry_run=False, run=_run, out=print):
             date = resolve_date(cfg, date)
             os.makedirs(versions_dir(cfg, date), mode=0o700, exist_ok=True)
 
+        pre_step = [cfg.pre_backup] if cfg.pre_backup else None
         for step in build_steps(cfg, date):
             out("+ " + quote(step))
             if dry_run:
                 continue
-            if cfg.pre_backup and step[0] == "sh":
+            if pre_step is not None and step == pre_step:
                 run(step, env=_pre_backup_env(cfg, date))
             else:
                 run(step)
@@ -239,7 +243,7 @@ def main(argv=None):
     parser.add_argument("--remote", default="proton", help="rclone remote name")
     parser.add_argument("--rclone-config", required=True, help="rclone config path")
     parser.add_argument("--offsite", action="store_true", help="mirror to the remote")
-    parser.add_argument("--pre-backup", default=None, help="shell snippet run first")
+    parser.add_argument("--pre-backup", default=None, help="executable run first")
     parser.add_argument(
         "--exclude",
         action="append",
