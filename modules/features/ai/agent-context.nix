@@ -5,22 +5,24 @@
 }:
 let
   cfg = config.dotfiles;
-  personalPrefix = cfg.branchPrefix;
 
   workflowLines = [
     "- Start from the problem, not a solution — state what's wrong or needed; a suspected approach is context, not the goal"
-    "- First move on any request: classify aloud — quick fix, investigation, or feature — and act. Features run the `sdlc` skill (research → brainstorm → [grill] → plan → build → review & fix); quick fixes skip the funnel; investigations run `research` and report"
+    "- First move on any request: classify aloud — quick fix, investigation, or feature — and act. Features run the `sdlc` skill (research → brainstorm → [grill] → plan → build → review & fix), except in `pr`-flow repos (below); quick fixes skip the funnel; investigations run `research` and report"
     "- Resuming: `sdlc list` shows in-flight features; pick one, then `sdlc bootstrap <feature>` and continue from the state repo — never from conversation memory"
     "- Repos live under `${cfg.codeRoot}/github.com/<owner>/<repo>`; clone with `repos get <owner/repo>` — never `git clone`, `git worktree add`, `git checkout -b`, or Claude's EnterWorktree"
     "- Worktrees live under each repo's `.worktrees/` via `worktrees new`; it prints JSON — use its `path` as cwd, never `cd`"
     "- Start task worktrees with `worktrees new --slug <kebab-slug> --task \"<description>\"` (creates branch + worktree)"
-    "- Branches: `${personalPrefix}/<kebab-slug>`"
+    "- Branches come from `worktrees new`, which takes the prefix from the repo's owner (`git config smores.branchPrefix`); never hand-build a branch name"
     "- Run `research` before any non-trivial design; run `review` before merging non-trivial changes"
     "- Behavior-changing work in testable code starts red: run the `test-driven-development` skill (failing test → minimal fix → refactor). Config or verification-only changes skip the loop — verify with the repo's checks instead"
     "- Before a non-trivial decision stands, spawn a fresh read-only subagent to argue against it"
     "- Conventional Commits (feat, fix, refactor, chore, docs, test, perf, ci) with `type(scope): description`; applies to commits and PR titles"
     "- Push immediately after committing; no `Co-Authored-By` trailers"
-    "- Personal flow: worktree → commit and push per change → `review` → merge to main → clean up with `worktrees prune`"
+    "- How changes land follows `git config smores.flow` in the repo:"
+    "  - `direct` (personal repos): worktree → commit and push per change → `review` → merge to main → clean up with `worktrees prune`"
+    "  - `pr` (work repos): worktree → commit and push per change → `review` → open a PR with `gh pr create`; never merge to main yourself. Run sdlc phases in the conversation without `sdlc` state commands — its state repo is personal and must not hold work designs"
+    "  - unset (third-party checkouts): follow the repo's own contribution rules"
   ];
 
   aiHints = ''
