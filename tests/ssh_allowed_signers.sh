@@ -34,6 +34,12 @@ verifies id_work "$WORK_EMAIL" || fail "work key does not verify as $WORK_EMAIL"
 verifies id_work "$PERSONAL_EMAIL" && fail "work key verifies as $PERSONAL_EMAIL"
 verifies id_personal "$WORK_EMAIL" && fail "personal key verifies as $WORK_EMAIL"
 
+# A hand-pasted .pub often lacks the trailing newline.
+printf '%s' "$(cat "$HOME/.ssh/id_work.pub")" >"$HOME/.ssh/id_work.pub.tmp"
+mv "$HOME/.ssh/id_work.pub.tmp" "$HOME/.ssh/id_work.pub"
+"$writer" || fail "writer failed on a .pub without a trailing newline"
+verifies id_work "$WORK_EMAIL" || fail "work key without trailing newline does not verify"
+
 rm "$HOME/.ssh/id_work.pub"
 "$writer"
 verifies id_personal "$PERSONAL_EMAIL" || fail "personal entry lost without the work key"

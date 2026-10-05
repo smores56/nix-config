@@ -77,7 +77,9 @@ let
       entry() {
         # principal, git-only namespace, then key type and body (no comment)
         if [ -f "$2" ]; then
-          read -r type body _ <"$2"
+          # read fails at EOF without a trailing newline but still fills
+          # the fields, which hand-pasted .pub files often lack
+          read -r type body _ <"$2" || [ -n "''${type:-}" ]
           printf '%s namespaces="git" %s %s\n' "$1" "$type" "$body"
         fi
       }

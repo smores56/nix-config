@@ -145,3 +145,44 @@ class ToolCliTest(CliTest):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WorkRepoGuardTest(CliTest):
+    """sdlc state is personal: repos whose git config says smores.flow = pr
+    (work repos, set by the git identity include) must not get features."""
+
+    def _repo(self, flow):
+        path = os.path.join(self._tmp.name, f"repo-{flow}")
+        os.makedirs(path)
+        _git(path, "init", "-q")
+        _git(path, "remote", "add", "origin", "git@github.com:acme/app.git")
+        if flow:
+            _git(path, "config", "smores.flow", flow)
+        return path
+
+    def _new_in(self, cwd, *extra):
+        cli = os.path.join(os.path.dirname(__file__), "..", "modules", "features", "ai", "sdlc", "sdlc_cli.py")
+        return subprocess.run(
+            [sys.executable, os.path.abspath(cli), "new", "feat", *extra],
+            capture_output=True,
+            text=True,
+            env=self._env,
+            cwd=cwd,
+        )
+
+    def test_new_refused_in_pr_flow_repo(self):
+        proc = self._new_in(self._repo("pr"))
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("smores.flow", proc.stderr)
+        self.assertFalse(os.path.exists(os.path.join(self._root, "features", "acme--app--feat")))
+
+    def test_new_refused_in_pr_flow_repo_even_with_explicit_repo(self):
+        proc = self._new_in(self._repo("pr"), "--repo", "other/thing")
+        self.assertNotEqual(proc.returncode, 0)
+
+    def test_new_allowed_in_direct_and_unset_flow_repos(self):
+        for flow in ("direct", None):
+            with self.subTest(flow=flow):
+                proc = self._new_in(self._repo(flow), "--repo", f"own/{flow or 'unset'}")
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+

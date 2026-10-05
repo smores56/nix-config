@@ -105,6 +105,11 @@ def cmd_list(args):
 
 def cmd_new(args):
     root = store.require_root()
+    if store.cwd_flow() == "pr":
+        return _fail(
+            "this repo's smores.flow is pr (a work repo); sdlc state is personal — "
+            "run the phases in the conversation instead"
+        )
     repo = args.repo or store.repo_from_cwd()
     if not repo:
         return _fail("cannot detect repo from cwd origin; pass --repo owner/repo")

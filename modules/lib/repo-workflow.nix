@@ -201,9 +201,9 @@ let
 
         origin_parts >/dev/null || { printf 'worktrees new: could not parse origin remote\n' >&2; exit 1; }
 
-        # The git identity include sets smores.branchPrefix per repo owner
-        # (modules/features/git.nix); the personal prefix covers repos
-        # outside it.
+        # modules/features/git.nix sets smores.branchPrefix globally and per
+        # work owner; the build-time prefix only covers a git config this
+        # repo doesn't manage.
         branch="$(git config --get smores.branchPrefix || printf '%s' "$PERSONAL_PREFIX")/$slug"
         name="$slug"
 

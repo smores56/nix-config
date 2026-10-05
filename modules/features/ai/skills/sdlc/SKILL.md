@@ -18,6 +18,11 @@ Features — work big enough to need design + plan. Quick fixes and pure
 investigations skip this skill (see AGENTS.md classification). Small
 features still run research + brainstorm; the grill phase is optional.
 
+Not for repos whose `git config smores.flow` is `pr` (work repos): the
+state repo is personal, and `sdlc new` refuses there. Run the same phases in
+the conversation, with the human approving the design and plan in chat, and
+land the work as a PR.
+
 ## Lifecycle
 
 research → brainstorm → [grill] → plan → build → review & fix → complete

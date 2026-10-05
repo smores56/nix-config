@@ -3,7 +3,8 @@
 # repos get the work branch prefix, everything else the personal one.
 #
 # Usage: worktrees_branch_prefix.sh <gitconfig> <worktrees>, with WORK_OWNER
-# (a concrete owner matching the work glob), WORK_PREFIX and PERSONAL_PREFIX.
+# (a concrete owner matching the work glob), WORK_PREFIX, PERSONAL_OWNER and
+# PERSONAL_PREFIX.
 set -euo pipefail
 
 export GIT_CONFIG_GLOBAL=$1 GIT_CONFIG_NOSYSTEM=1 HOME=$PWD/home
@@ -26,7 +27,7 @@ check() {
 }
 
 check work "$(branch_for work "git@github.com:$WORK_OWNER/app.git")" "$WORK_PREFIX/fix-auth"
-check personal "$(branch_for personal git@github.com:smores56/notes.git)" "$PERSONAL_PREFIX/fix-auth"
+check personal "$(branch_for personal "git@github.com:$PERSONAL_OWNER/notes.git")" "$PERSONAL_PREFIX/fix-auth"
 check third-party "$(branch_for third-party git@github.com:NixOS/nixpkgs.git)" "$PERSONAL_PREFIX/fix-auth"
 
 if ((failures)); then

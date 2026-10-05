@@ -87,14 +87,12 @@ The Python tools under `modules/features/ai/` have unit tests in `tests/`,
 run by the `checks` flake module (`python -m unittest discover -s tests`).
 Run them after touching `modules/features/ai/sdlc/` or maki session search.
 
-Git identity routing (work vs personal by remote URL, `modules/features/git.nix`)
-is checked against the generated git config by `tests/git_work_routing.sh`,
-run as the `git-work-routing` flake check; agent key loading by
-`tests/ssh_agent_keys.sh` (`ssh-agent-keys`); and signature verification by
-`tests/ssh_allowed_signers.sh` (`ssh-allowed-signers`); and per-repo branch
-prefixes from `worktrees new` by `tests/worktrees_branch_prefix.sh`
-(`worktrees-branch-prefix`). Run them after touching git or ssh identity
-settings or `modules/lib/repo-workflow.nix`:
+Identity checks run each `tests/<name>.sh` against files from a generated
+home, as the `<name>` flake check (`identityChecks` in
+`modules/flake/checks.nix`): `git-work-routing` (work vs personal identity by
+remote URL), `ssh-agent-keys` (agent key loading), `ssh-allowed-signers`
+(signature verification) and `worktrees-branch-prefix`. Run them after
+touching git or ssh identity settings or `modules/lib/repo-workflow.nix`:
 
 ```sh
 nix build .#checks.aarch64-darwin.{git-work-routing,ssh-agent-keys,ssh-allowed-signers,worktrees-branch-prefix}

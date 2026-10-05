@@ -173,9 +173,11 @@ let
     fi
   '';
 
-  # On PATH ahead of ~/.local/bin so every launch goes through it, including
-  # zellij tabs from spawn_session/resume_session, which exec `maki` without
-  # a shell. The binary itself is installed manually into ~/.local/bin.
+  # Every launch must go through this, including zellij tabs from
+  # spawn_session/resume_session, which exec `maki` without a shell. The
+  # binary itself is installed manually into ~/.local/bin, so the wrapper is
+  # put on the session PATH explicitly ahead of it (see home.sessionPath
+  # below) rather than trusting each OS's profile ordering.
   makiWrapper = pkgs.writeShellScriptBin "maki" ''
     ${profile.wrapperEnv}
     exec "$HOME/.local/bin/maki" "$@"
@@ -298,6 +300,8 @@ in
         source = providersToml;
       };
     };
+    home.sessionPath = lib.mkBefore [ "${makiWrapper}/bin" ];
+
     home.packages = [
       makiWrapper
       pkgs.rtk

@@ -50,105 +50,68 @@ in
         lib.mapAttrs (_: home: home.activationPackage.drvPath) config.flake.homeConfigurations
       );
 
-      # The git config is identical on every host, so any home built for
-      # this system can stand in.
-      gitConfigHome = lib.findFirst (home: home.activationPackage.system == system) null (
+      # Identity tests run a tests/*.sh script against files from a generated
+      # home. The identity config (git, ssh, fish key loading) is the same on
+      # every host, so any home built for this system can stand in.
+      identityHome = lib.findFirst (home: home.activationPackage.system == system) null (
         lib.attrValues config.flake.homeConfigurations
       );
-      gitRoutingChecks = lib.optionalAttrs (gitConfigHome != null) {
-        git-work-routing =
-          let
-            d = gitConfigHome.config.dotfiles;
-          in
-          pkgs.runCommand "git-work-routing"
-            {
-              nativeBuildInputs = [
-                pkgs.bash
-                pkgs.git
-              ];
-              WORK_EMAIL = d.work.email;
-              WORK_KEY = d.work.sshKey;
-              WORK_SSH_CONFIG = d.work.sshConfig;
-              WORK_PREFIX = d.work.branchPrefix;
-              WORK_OWNER = lib.replaceStrings [ "*" ] [ "routing-test" ] d.work.githubOwnerGlob;
-              PERSONAL_EMAIL = d.email;
-              PERSONAL_KEY = "~/.ssh/id_personal";
-              PERSONAL_PREFIX = d.branchPrefix;
-              PERSONAL_OWNER = d.githubUser;
-            }
-            ''
-              bash ${src}/tests/git_work_routing.sh ${gitConfigHome.config.xdg.configFile."git/config".source}
+      identityChecks =
+        let
+          hc = identityHome.config;
+          d = hc.dotfiles;
+          configFile = name: hc.xdg.configFile.${name}.source;
+          homeExe =
+            name:
+            lib.getExe (
+              lib.findFirst (p: lib.getName p == name) (throw "${name} not in home.packages") hc.home.packages
+            );
+          # Expected values come from the options, not the test scripts.
+          env = {
+            WORK_EMAIL = d.work.email;
+            WORK_KEY = d.work.sshKey;
+            WORK_SSH_CONFIG = d.work.sshConfig;
+            WORK_PREFIX = d.work.branchPrefix;
+            WORK_OWNER = lib.replaceStrings [ "*" ] [ "routing-test" ] d.work.githubOwnerGlob;
+            PERSONAL_EMAIL = d.email;
+            PERSONAL_KEY = "~/.ssh/id_personal";
+            PERSONAL_PREFIX = d.branchPrefix;
+            PERSONAL_OWNER = d.githubUser;
+          };
+          mkScriptCheck =
+            name:
+            { tools, args }:
+            pkgs.runCommand name (env // { nativeBuildInputs = [ pkgs.bash ] ++ tools; }) ''
+              bash ${src}/tests/${lib.replaceStrings [ "-" ] [ "_" ] name}.sh ${lib.escapeShellArgs args}
               touch $out
             '';
-      };
-
-      sshAgentChecks = lib.optionalAttrs (gitConfigHome != null) {
-        ssh-agent-keys =
-          pkgs.runCommand "ssh-agent-keys"
-            {
-              nativeBuildInputs = [
-                pkgs.bash
+        in
+        lib.optionalAttrs (identityHome != null) (
+          lib.mapAttrs mkScriptCheck {
+            git-work-routing = {
+              tools = [ pkgs.git ];
+              args = [ (configFile "git/config") ];
+            };
+            ssh-agent-keys = {
+              tools = [
                 pkgs.fish
                 pkgs.openssh
               ];
-            }
-            ''
-              bash ${src}/tests/ssh_agent_keys.sh ${
-                gitConfigHome.config.xdg.configFile."fish/functions/__load_ssh_keys.fish".source
-              }
-              touch $out
-            '';
-      };
-
-      allowedSignersChecks = lib.optionalAttrs (gitConfigHome != null) {
-        ssh-allowed-signers =
-          pkgs.runCommand "ssh-allowed-signers"
-            {
-              nativeBuildInputs = [
-                pkgs.bash
-                pkgs.openssh
+              args = [ (configFile "fish/functions/__load_ssh_keys.fish") ];
+            };
+            ssh-allowed-signers = {
+              tools = [ pkgs.openssh ];
+              args = [ (homeExe "ssh-allowed-signers") ];
+            };
+            worktrees-branch-prefix = {
+              tools = [ pkgs.git ];
+              args = [
+                (configFile "git/config")
+                (homeExe "worktrees")
               ];
-              PERSONAL_EMAIL = gitConfigHome.config.dotfiles.email;
-              WORK_EMAIL = gitConfigHome.config.dotfiles.work.email;
-            }
-            ''
-              bash ${src}/tests/ssh_allowed_signers.sh ${
-                lib.getExe (
-                  lib.findFirst (
-                    p: lib.getName p == "ssh-allowed-signers"
-                  ) (throw "ssh-allowed-signers not in home.packages") gitConfigHome.config.home.packages
-                )
-              }
-              touch $out
-            '';
-      };
-
-      worktreesChecks = lib.optionalAttrs (gitConfigHome != null) {
-        worktrees-branch-prefix =
-          let
-            d = gitConfigHome.config.dotfiles;
-          in
-          pkgs.runCommand "worktrees-branch-prefix"
-            {
-              nativeBuildInputs = [
-                pkgs.bash
-                pkgs.git
-              ];
-              WORK_OWNER = lib.replaceStrings [ "*" ] [ "routing-test" ] d.work.githubOwnerGlob;
-              WORK_PREFIX = d.work.branchPrefix;
-              PERSONAL_PREFIX = d.branchPrefix;
-            }
-            ''
-              bash ${src}/tests/worktrees_branch_prefix.sh \
-                ${gitConfigHome.config.xdg.configFile."git/config".source} \
-                ${lib.getExe (
-                  lib.findFirst (
-                    p: lib.getName p == "worktrees"
-                  ) (throw "worktrees not in home.packages") gitConfigHome.config.home.packages
-                )}
-              touch $out
-            '';
-      };
+            };
+          }
+        );
 
       nixosChecks = mkEvalChecks "eval-nixos" (
         lib.mapAttrs (_: nixos: nixos.config.system.build.toplevel.drvPath) config.flake.nixosConfigurations
@@ -209,9 +172,6 @@ in
       }
       // homeChecks
       // nixosChecks
-      // gitRoutingChecks
-      // sshAgentChecks
-      // allowedSignersChecks
-      // worktreesChecks;
+      // identityChecks;
     };
 }
