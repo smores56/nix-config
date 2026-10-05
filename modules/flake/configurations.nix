@@ -268,6 +268,7 @@ in
             runuser -u postgres -- pg_dump -Fc --no-owner immich > "$BACKUP_CURRENT/db/immich-$BACKUP_DATE.dump"
           '';
         };
+        backup.datasets.Music.schedule = "*-*-* 05:00:00";
         notify.enable = true;
       };
     };
