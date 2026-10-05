@@ -8,14 +8,26 @@
 let
   inherit (aiProviders) neuralwatt smortress;
 
+  # The work profile keeps maki on Anthropic so work code never reaches a
+  # personal provider; neither personal provider nor the SearXNG search on
+  # smortress is configured there.
+  isWork = config.dotfiles.aiProfile == "work";
+
   # providers.toml entries and the allowed_models list both come from here.
-  makiProviders = [
+  makiProviders = lib.optionals (!isWork) [
     neuralwatt
     smortress
   ];
   allowedModels = lib.concatMapStringsSep ", " builtins.toJSON (
-    lib.concatMap (p: map (m: "${p.providerId}/${m.id}") p.makiModels) makiProviders
+    if isWork then
+      [ "anthropic/*" ]
+    else
+      lib.concatMap (p: map (m: "${p.providerId}/${m.id}") p.makiModels) makiProviders
   );
+  privateHosts = lib.optionalString (!isWork) (
+    builtins.toJSON "${smortress.host}:${toString config.dotfiles.searchPort}"
+  );
+  defaultModel = if isWork then "anthropic/claude-opus-5-5" else "neuralwatt/deepseek-v4.1-flash";
 
   # always_yolo skips permission prompts (deny rules still apply);
   # always_thinking forces the max reasoning level. bash is off by default in
@@ -25,20 +37,22 @@ let
     maki.setup({
       always_yolo = true,
       always_thinking = "max",
-      -- Only the declared neuralwatt models (+ smortress qwen as backup);
-      -- exclude every other provider, including the built-in deepseek that
-      -- appears when the DEEPSEEK_API_KEY env var is present, and the rest of
-      -- neuralwatt's remote catalog. allowed_models wins for selectors,
-      -- CLI/API model changes, delegation, and `maki models`.
+      -- Personal: only the declared neuralwatt models (+ smortress qwen as
+      -- backup), excluding every other provider, including the built-in
+      -- deepseek that appears when the DEEPSEEK_API_KEY env var is present,
+      -- and the rest of neuralwatt's remote catalog. Work: Anthropic only.
+      -- allowed_models wins for selectors, CLI/API model changes,
+      -- delegation, and `maki models`.
       provider = {
-        default_model = "neuralwatt/deepseek-v4.1-flash",
+        default_model = "${defaultModel}",
         allowed_models = { ${allowedModels} },
       },
-      -- Search runs on smortress over the tailnet. maki.net refuses private
-      -- addresses unless listed, and keeps plain http:// for a listed host.
-      -- Port-scoped so the allowlist cannot reach anything else on the host.
+      -- Search runs on smortress over the tailnet (personal only). maki.net
+      -- refuses private addresses unless listed, and keeps plain http:// for
+      -- a listed host. Port-scoped so the allowlist cannot reach anything
+      -- else on the host.
       net = {
-        allowed_private_hosts = { "smortress:${toString config.dotfiles.searchPort}" },
+        allowed_private_hosts = { ${privateHosts} },
       },
       plugins = {
         bash = { enabled = true },
@@ -53,7 +67,7 @@ let
 
     require("spawn_session")
     require("resume_session")
-    require("websearch_owned")
+    ${lib.optionalString (!isWork) ''require("websearch_owned")''}
   '';
 
   # Permissions manifest for the Lua plugins under ./lua. `run` is needed by
@@ -117,17 +131,34 @@ let
     sys.exit(0 if addr in ipaddress.ip_network("100.64.0.0/10") else 1)
   '';
 
-  # On PATH ahead of ~/.local/bin so every launch goes through it, including
-  # zellij tabs from spawn_session/resume_session, which exec `maki` without
-  # a shell. The binary itself is installed manually into ~/.local/bin. An
-  # inherited SMORTRESS_BASE_URL (e.g. a nested maki from the bash tool) is
-  # dropped so the gate decides afresh.
-  makiWrapper = pkgs.writeShellScriptBin "maki" ''
+  # Personal: smortress is reached only once it resolves into the tailnet;
+  # an inherited SMORTRESS_BASE_URL (e.g. a nested maki from the bash tool)
+  # is dropped so the gate decides afresh.
+  personalEnv = ''
     if ${inTailnet} ${smortress.host}; then
       export SMORTRESS_BASE_URL=${smortress.baseUrl}
     else
       unset SMORTRESS_BASE_URL
     fi
+  '';
+  # Work: the Anthropic API key lives in the login keychain and reaches maki
+  # alone. A global ANTHROPIC_API_KEY would make Claude Code bill the key
+  # instead of the subscription seat; maki strips built-in provider keys from
+  # its bash and MCP children, so a `claude` it runs never sees the key.
+  # Store it with:
+  #   security add-generic-password -U -a "$USER" -s ${keychainService} -w
+  keychainService = "maki-anthropic-api-key";
+  workEnv = ''
+    if key=$(/usr/bin/security find-generic-password -a "$USER" -s ${keychainService} -w 2>/dev/null); then
+      export ANTHROPIC_API_KEY="$key"
+    fi
+  '';
+
+  # On PATH ahead of ~/.local/bin so every launch goes through it, including
+  # zellij tabs from spawn_session/resume_session, which exec `maki` without
+  # a shell. The binary itself is installed manually into ~/.local/bin.
+  makiWrapper = pkgs.writeShellScriptBin "maki" ''
+    ${if isWork then workEnv else personalEnv}
     exec "$HOME/.local/bin/maki" "$@"
   '';
 
@@ -231,15 +262,16 @@ in
         force = true;
         source = ./lua/resume_session.lua;
       };
+
+      ".config/television/cable/maki-sessions.toml".source = makiSessionCable;
+    }
+    // lib.optionalAttrs (!isWork) {
       ".config/maki/lua/websearch_owned.lua" = {
         force = true;
         text = builtins.replaceStrings [ "@SEARCH_PORT@" ] [ (toString config.dotfiles.searchPort) ] (
           builtins.readFile ./lua/websearch_owned.lua
         );
       };
-
-      ".config/television/cable/maki-sessions.toml".source = makiSessionCable;
-
       ".config/maki/providers.toml" = {
         force = true;
         source = providersToml;
