@@ -165,7 +165,7 @@ writes that setting; it only follows it.
 
 ### Work identity
 
-Work is split across two independent switches:
+Work is split across independent switches:
 
 - **Per repo, on every host:** repos with a remote under the GitHub owner
   glob in `dotfiles.work` (`modules/options.nix`) get the work email,
@@ -177,6 +177,8 @@ Work is split across two independent switches:
 - **Per host:** `aiProfile` (below) decides which model providers agents
   may use. A work clone on a personal host still gets the work git
   identity, but maki there runs on the personal providers.
+- **Per host:** `workHost` (below) gives a machine that does daily work the
+  employer's repo layout and shell conveniences.
 
 ### AI profiles
 
@@ -197,6 +199,73 @@ model providers coding agents may use.
   The `maki` wrapper hands it to maki alone. Never export
   `ANTHROPIC_API_KEY` globally, or Claude Code bills the key instead of the
   seat.
+
+### Work hosts
+
+A home with `workHost = true` (`modules/flake/configurations.nix`) applies
+`dotfiles.work.flatRepos` and `toolShell` (`modules/options.nix`);
+`modules/features/work-host.nix` holds the mechanics, and no employer name
+appears outside those option values.
+
+- **Flat folder:** employer tooling that wants every checkout in one folder
+  gets it. `<codeRoot>/github.com/<org>` for each of `flatRepos.orgs` is a
+  symlink to `flatRepos.dir`, so `repos get <org>/<repo>` lands there while
+  the usual path keeps working, and `repos list` shows each checkout once.
+  `flatRepos.envVar` is exported for the tooling.
+- **Links are created on switch** for missing paths and empty dirs only.
+  An org dir that already holds checkouts is reported, never moved; run
+  `work-repo-links --migrate` to move its entries into the flat folder
+  (refusing name collisions, repairing worktrees) and link it.
+- **`wsh`** opens `toolShell` in the flat folder, for the tooling's shell
+  functions. Fish also inits pyenv when one is installed, so a repo's
+  `.python-version` venv resolves.
+- **Skills** that tools install into `~/.claude/skills` are mirrored into
+  `~/.agents/skills` (maki, codex) on every switch, on every host; rerun
+  `agent-skill-mirror ~/.claude/skills ~/.agents/skills` after an install.
+
+Limits: the flat folder holds one checkout per name across all linked orgs,
+and also the tooling's own state (env files, credentials), which is then
+reachable under the org paths. Repo and worktree paths print under the flat
+folder. Links stay when an org is dropped from the list.
+
+### Blitzy onboarding (sam@smoreswork)
+
+The toolchain belongs to `blitzy-dev` and Homebrew (pyenv and per-repo
+venvs, gcloud, the AWS CLI, `op`, nvm, `~/.zshrc`, its skills); this repo
+only provides the frame above. Order matters:
+
+1. `home-manager switch`. If it warns that
+   `~/code/github.com/blitzy-ai` is a real directory, run
+   `work-repo-links --migrate`.
+2. 1Password: join `blitzy.1password.com`, then in the desktop app enable
+   **Settings → Security → Touch ID** and **Settings → Developer →
+   Integrate with 1Password CLI**.
+3. Install `blitzy-dev` (needs `brew` and `gh`, both present). With the
+   checkout already at `~/Blitzy/blitzy-dev`, the installer keeps it:
+
+   ```sh
+   curl -fsSL https://raw.githubusercontent.com/blitzy-ai/blitzy-dev/main/install.sh | bash
+   ```
+
+4. `blitzy setup`, answering the first-run wizard: team **standard**,
+   oh-my-zsh **no**, PyCharm configs **no**, and skip `clone_repos` and
+   `clone_platform_repos` (clone with `repos get` instead of every visible
+   repo). It owns the toolchain from here, and setup and `blitzy update`
+   keep it current.
+5. Clone what you work on with `repos get blitzy-ai/<repo>` (or
+   `blitzy-platform/<repo>`), then rerun `blitzy setup` so venvs, node
+   deps and pre-commit hooks reconcile for the new checkouts.
+6. Ask for access `blitzy dev up` needs: the `blitzy-platform` org (backend,
+   github-handler and job-manager live there) and
+   `roles/iam.serviceAccountTokenCreator` on `service@blitzy-os-dev`. Then
+   `blitzy setup --platform` (pass `--platform` each time; the wizard is the
+   only place that records the team).
+7. Finish the manual steps in blitzy-dev's `docs/local-dev-setup.md`
+   (`env-dev` rebuilt from Secret Manager, WorkOS UI vars).
+
+Use `wsh` for `set_dev`, `rdb_dev`, `ddb` and the other env functions.
+Branches come from `worktrees new --ticket ABK-123` (or `--type fix`); PR
+titles follow the team's `ABK-123: description` style.
 
 ### Adding a new host
 
