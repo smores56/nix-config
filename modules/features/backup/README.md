@@ -102,14 +102,24 @@ runuser -u postgres -- pg_restore --no-owner -d restored \
 ```
 
 **Drill the whole thing.** [`drills/restore-drill.sh`](./drills/restore-drill.sh)
-is the executable form of the above: size/count parity across
-source/local/offsite, sha256 of N random files across all three, and an optional
-database restore into a scratch Postgres:
+is the executable form of the above:
 
 ```sh
+# local parity + local sha256, then restore a few named files from Proton
 sudo bash modules/features/backup/drills/restore-drill.sh Photos
-DRILL_PG_DB=immich sudo bash modules/features/backup/drills/restore-drill.sh Photos
+# ...plus a scratch-Postgres restore of the newest dump
+sudo DRILL_PG_DB=immich bash modules/features/backup/drills/restore-drill.sh Photos
+# ...plus the exhaustive (slow) whole-remote walk + rclone check
+sudo FULL_OFFSITE=1 bash modules/features/backup/drills/restore-drill.sh Photos
 ```
+
+Every offsite rclone operation walks the entire remote, which is minutes on a
+30k-object Proton tree, so the default drill deliberately avoids one: it restores
+a handful of files *by path* (`rclone copyto`) and treats the backup's own
+nightly `rclone check` as the whole-mirror content verification. Opt into the
+expensive walk with `FULL_OFFSITE=1`, which streams progress so it never looks
+hung. Per-fetch `FETCH_TIMEOUT` (default 300s) and the same network flags the
+backup uses keep a wedged Proton session from hanging the drill.
 
 ## Adding a dataset
 
