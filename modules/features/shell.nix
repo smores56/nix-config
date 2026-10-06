@@ -48,10 +48,7 @@ in
       pkgs.osc
       pkgs.pfetch-rs
       zellijTabName
-    ]
-    # The login shell may still point at the profile's fish until `chsh`
-    # (and logins started before it keep $SHELL); keep it resolvable.
-    ++ lib.optional isZsh pkgs.fish;
+    ];
 
     sessionVariables = lib.mkIf isFish {
       async_prompt_functions = "_pure_prompt_git";

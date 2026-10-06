@@ -248,8 +248,7 @@ only provides the frame above. Order matters:
    chsh -s "$HOME/.nix-profile/bin/zsh"
    ```
 
-   Log out and back in so GUI apps (kitty, zellij) pick up the new `$SHELL`;
-   fish stays installed until then.
+   Log out and back in so GUI apps (kitty, zellij) pick up the new `$SHELL`.
 
 2. 1Password: join `blitzy.1password.com`, then in the desktop app enable
    **Settings → Security → Touch ID** and **Settings → Developer →
