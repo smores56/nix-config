@@ -6,7 +6,6 @@
 }:
 let
   cfg = config.dotfiles;
-  isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
   kittyApp = "${config.home.homeDirectory}/Applications/Home Manager Apps/kitty.app";
 in
 {
@@ -14,9 +13,6 @@ in
   home.sessionVariables = {
     TERMINAL = cfg.terminal;
     COLORTERM = "truecolor";
-  }
-  // lib.optionalAttrs (cfg.shell == "fish") {
-    fish_terminal_skip_dsr = "1";
   };
 
   programs.kitty = {
@@ -28,7 +24,7 @@ in
       bold_italic_font = "family='Google Sans Code' style='Bold Italic'";
       font_size = cfg.terminalFontSize;
       background_opacity = lib.mkForce "0.8";
-      shell = cfg.shellPath;
+      shell = "${pkgs.${cfg.shell}}/bin/${cfg.shell}";
       tab_bar_min_tabs = 2;
       hide_window_decorations = "yes";
       enable_audio_bell = "no";
@@ -41,7 +37,7 @@ in
   # nix's kitty.app has a broken ad-hoc signature; launchd rejects GUI spawns
   # (err 162) while shell exec still works. copyApps reinstalls the broken
   # bundle every switch, so re-sign it after.
-  home.activation.signKittyApp = lib.mkIf isDarwin (
+  home.activation.signKittyApp = lib.mkIf pkgs.stdenv.hostPlatform.isDarwin (
     lib.hm.dag.entryAfter [ "copyApps" ] ''
       if [ -d "${kittyApp}" ]; then
         $DRY_RUN_CMD /usr/bin/codesign --force --deep --sign - "${kittyApp}" >/dev/null 2>&1 || true

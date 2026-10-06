@@ -56,7 +56,6 @@ let
   branchSettings = naming: {
     branchTemplate = naming.template;
     branchTemplateUnticketed = toString naming.unticketed;
-    inherit (naming) ticketPattern;
   };
 
   workIncludes = ownerIncludes work.githubOwnerGlob {

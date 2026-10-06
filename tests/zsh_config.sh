@@ -6,6 +6,6 @@
 set -euo pipefail
 
 for f in "$@"; do
-  zsh -n "$f" || { echo "FAIL: $f does not parse"; exit 1; }
+  zsh -n "$f"
 done
 echo "zsh config: ok"

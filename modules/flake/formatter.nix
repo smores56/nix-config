@@ -3,9 +3,9 @@
   perSystem =
     { system, ... }:
     let
-      pkgs = # Pure formatting needs no darwin fix; one nixpkgs keeps nixfmt the same
-        # version on every platform.
-        import inputs.nixpkgs { inherit system; };
+      # Pure formatting needs no darwin fix; one nixpkgs keeps nixfmt the same
+      # version on every platform.
+      pkgs = import inputs.nixpkgs { inherit system; };
     in
     {
       formatter = pkgs.writeShellApplication {

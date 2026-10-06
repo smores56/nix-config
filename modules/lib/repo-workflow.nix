@@ -38,28 +38,6 @@ let
     }
   '';
 
-  workflowPrelude = ''
-    ${originParts}
-    # Build-time branch naming, for git configs this repo doesn't manage;
-    # modules/features/git.nix writes smores.branchTemplate* everywhere else.
-    DEFAULT_BRANCH_TEMPLATE=${lib.escapeShellArg cfg.branchNaming.template}
-    DEFAULT_BRANCH_UNTICKETED=${lib.escapeShellArg (toString cfg.branchNaming.unticketed)}
-    DEFAULT_TICKET_PATTERN=${lib.escapeShellArg cfg.branchNaming.ticketPattern}
-
-    json_string() {
-      printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/^/"/; s/$/"/'
-    }
-
-    slugify() {
-      printf '%s' "$1" \
-        | tr '[:upper:]' '[:lower:]' \
-        | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' \
-        | cut -c1-50 \
-        | sed -E 's/-+$//'
-    }
-
-  '';
-
   repos = pkgs.writeShellApplication {
     name = "repos";
     runtimeInputs = [
@@ -190,7 +168,23 @@ let
       pkgs.television
     ];
     text = ''
-      ${workflowPrelude}
+      ${originParts}
+      # Build-time branch naming, for git configs this repo doesn't manage;
+      # modules/features/git.nix writes smores.branchTemplate* everywhere else.
+      DEFAULT_BRANCH_TEMPLATE=${lib.escapeShellArg cfg.branchNaming.template}
+      DEFAULT_BRANCH_UNTICKETED=${lib.escapeShellArg (toString cfg.branchNaming.unticketed)}
+
+      json_string() {
+        printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/^/"/; s/$/"/'
+      }
+
+      slugify() {
+        printf '%s' "$1" \
+          | tr '[:upper:]' '[:lower:]' \
+          | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' \
+          | cut -c1-50 \
+          | sed -E 's/-+$//'
+      }
 
       list_worktrees() {
         git worktree list --porcelain | awk '
@@ -239,7 +233,7 @@ let
 
       create_new() {
         local slug="" task="" ticket="" type="" base="" dry_run=false
-        local template unticketed pattern lowered branch name root path default
+        local template unticketed lowered branch name root path default
         while [ $# -gt 0 ]; do
           case "$1" in
             --slug) slug=$2; shift 2 ;;
@@ -259,22 +253,19 @@ let
 
         origin_parts >/dev/null || { printf 'worktrees new: could not parse origin remote\n' >&2; exit 1; }
 
-        # A managed git config always sets all three keys (an empty
-        # unticketed means "ticket required"), so an include never inherits
-        # another scheme's value; the build-time defaults cover the rest.
+        # See branchSettings in modules/features/git.nix; an empty
+        # unticketed template means a ticket is required.
         if template=$(git config --get smores.branchTemplate); then
           unticketed=$(git config --get smores.branchTemplateUnticketed || true)
-          pattern=$(git config --get smores.ticketPattern || printf '%s' "$DEFAULT_TICKET_PATTERN")
         else
           template=$DEFAULT_BRANCH_TEMPLATE
           unticketed=$DEFAULT_BRANCH_UNTICKETED
-          pattern=$DEFAULT_TICKET_PATTERN
         fi
 
         case "$template" in
           *'{ticket}'*)
             if [ -n "$ticket" ]; then
-              [[ $ticket =~ ^($pattern)$ ]] || { printf 'worktrees new: --ticket %s does not match this repo'"'"'s ticket pattern %s\n' "$ticket" "$pattern" >&2; exit 2; }
+              [[ $ticket =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] || { printf 'worktrees new: --ticket must be a ticket key like ABC-123: %s\n' "$ticket" >&2; exit 2; }
             elif [ -n "$unticketed" ]; then
               template=$unticketed
             else
@@ -289,13 +280,10 @@ let
             ticket=""
             ;;
         esac
-        case "$template" in
-          *'{type}'*)
-            [ -n "$type" ] || { printf 'worktrees new: this repo needs --type (branch template %s)\n' "$template" >&2; exit 2; }
-            [[ $type =~ ^[a-z][a-z0-9-]*$ ]] || { printf 'worktrees new: --type must be lowercase kebab: %s\n' "$type" >&2; exit 2; }
-            ;;
-          *) type="" ;;
-        esac
+        if [[ $template == *'{type}'* ]]; then
+          [ -n "$type" ] || { printf 'worktrees new: this repo needs --type (branch template %s)\n' "$template" >&2; exit 2; }
+          [[ $type =~ ^[a-z][a-z0-9-]*$ ]] || { printf 'worktrees new: --type must be lowercase kebab: %s\n' "$type" >&2; exit 2; }
+        fi
 
         slug=$(slugify "$slug")
         # Don't repeat a ticket the slug already starts with.

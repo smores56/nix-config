@@ -4,12 +4,8 @@
 # work identity and ssh route, the personal owner gets the direct flow, and
 # everything else keeps only the personal defaults.
 #
-# Usage: git_work_routing.sh <gitconfig>, with the expected values in
-# WORK_EMAIL WORK_KEY WORK_SSH_CONFIG WORK_BRANCH_TEMPLATE
-# WORK_BRANCH_UNTICKETED WORK_OWNER (a concrete owner matching the work glob)
-# PERSONAL_EMAIL PERSONAL_KEY PERSONAL_BRANCH_TEMPLATE
-# PERSONAL_BRANCH_UNTICKETED PERSONAL_OWNER, plus WORK_TICKET_PATTERN and
-# PERSONAL_TICKET_PATTERN.
+# Usage: git_work_routing.sh <gitconfig>, with the expected values in the
+# env scriptChecks sets (modules/flake/checks.nix).
 set -euo pipefail
 
 export GIT_CONFIG_GLOBAL=$1 GIT_CONFIG_NOSYSTEM=1 HOME=$PWD/home
@@ -42,7 +38,6 @@ expect_work() {
   expect "$1" core.sshCommand "ssh -F $WORK_SSH_CONFIG"
   expect "$1" smores.branchTemplate "$WORK_BRANCH_TEMPLATE"
   expect "$1" smores.branchTemplateUnticketed "$WORK_BRANCH_UNTICKETED"
-  expect "$1" smores.ticketPattern "$WORK_TICKET_PATTERN"
   expect "$1" smores.flow pr
 }
 
@@ -52,7 +47,6 @@ expect_personal() {
   expect "$1" core.sshCommand ""
   expect "$1" smores.branchTemplate "$PERSONAL_BRANCH_TEMPLATE"
   expect "$1" smores.branchTemplateUnticketed "$PERSONAL_BRANCH_UNTICKETED"
-  expect "$1" smores.ticketPattern "$PERSONAL_TICKET_PATTERN"
   expect "$1" smores.flow "$2"
 }
 

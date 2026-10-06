@@ -8,7 +8,7 @@ let
   cfg = config.dotfiles;
   inherit (cfg.work) flatRepos githubOwnerGlob;
   hasFlat = cfg.workHost && flatRepos != null;
-  orgPaths = lib.optionals hasFlat (map (org: "${cfg.codeRoot}/github.com/${org}") flatRepos.orgs);
+  orgPaths = map (org: "${cfg.codeRoot}/github.com/${org}") flatRepos.orgs;
 
   links = import ../lib/work-repo-links.nix { inherit pkgs; };
   linkArgs = lib.escapeShellArgs (
@@ -30,51 +30,35 @@ let
   # git wildmatch (as used by the work includes) to a case-folded regex;
   # owner globs only use * and ?.
   globRegex =
-    glob:
-    lib.concatMapStrings (
-      c:
-      if c == "*" then
-        ".*"
-      else if c == "?" then
-        "."
-      else
-        lib.escapeRegex c
-    ) (lib.stringToCharacters (lib.toLower glob));
+    glob: lib.replaceStrings [ "\\*" "\\?" ] [ ".*" "." ] (lib.escapeRegex (lib.toLower glob));
   outsideGlob = lib.filter (
     org: builtins.match (globRegex githubOwnerGlob) (lib.toLower org) == null
-  ) (if flatRepos == null then [ ] else flatRepos.orgs);
+  ) flatRepos.orgs;
 in
-lib.mkMerge [
-  (lib.mkIf hasFlat {
-    assertions = [
-      {
-        assertion = lib.hasPrefix "/" flatRepos.dir && !(lib.hasSuffix "/" flatRepos.dir);
-        message = "dotfiles.work.flatRepos.dir must be an absolute path without a trailing slash: ${flatRepos.dir}";
-      }
-      {
-        # A linked org outside the glob would sit in the work folder but
-        # commit with the personal identity.
-        assertion = outsideGlob == [ ];
-        message = "dotfiles.work.flatRepos.orgs not matched by githubOwnerGlob ${githubOwnerGlob}: ${lib.concatStringsSep ", " outsideGlob}";
-      }
-      {
-        # The org paths become links to dir; dir inside one would loop.
-        assertion = lib.all (p: flatRepos.dir != p && !(lib.hasPrefix "${p}/" flatRepos.dir)) orgPaths;
-        message = "dotfiles.work.flatRepos.dir must not be inside a linked org path: ${flatRepos.dir}";
-      }
-    ];
+lib.mkIf hasFlat {
+  assertions = [
+    {
+      # A linked org outside the glob would sit in the work folder but
+      # commit with the personal identity.
+      assertion = outsideGlob == [ ];
+      message = "dotfiles.work.flatRepos.orgs not matched by githubOwnerGlob ${githubOwnerGlob}: ${lib.concatStringsSep ", " outsideGlob}";
+    }
+    {
+      # The org paths become links to dir; dir inside one would loop.
+      assertion = lib.all (p: flatRepos.dir != p && !(lib.hasPrefix "${p}/" flatRepos.dir)) orgPaths;
+      message = "dotfiles.work.flatRepos.dir must not be inside a linked org path: ${flatRepos.dir}";
+    }
+  ];
 
-    # Employer tooling sees one flat folder while every checkout stays
-    # reachable at <codeRoot>/github.com/<owner>/<repo>.
-    home.activation.workRepoLinks = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      run ${lib.getExe hostLinks}
-    '';
-    home.packages = [ hostLinks ];
+  # Employer tooling sees one flat folder while every checkout stays
+  # reachable at <codeRoot>/github.com/<owner>/<repo>.
+  home.activation.workRepoLinks = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    run ${lib.getExe hostLinks}
+  '';
+  home.packages = [ hostLinks ];
 
-    # Also for processes not started from the tooling's ~/.zshrc.
-    home.sessionVariables = lib.optionalAttrs (flatRepos.envVar != null) {
-      ${flatRepos.envVar} = flatRepos.dir;
-    };
-
-  })
-]
+  # Also for processes not started from the tooling's ~/.zshrc.
+  home.sessionVariables = lib.optionalAttrs (flatRepos.envVar != null) {
+    ${flatRepos.envVar} = flatRepos.dir;
+  };
+}

@@ -203,6 +203,7 @@ let
       "sh",
       "bash",
       "zsh",
+      "fish",
       "git push --force *",
       "git push -f *",
       "git push * --force *",

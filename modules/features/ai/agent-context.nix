@@ -5,21 +5,17 @@
 }:
 let
   cfg = config.dotfiles;
-  inherit (cfg.work) flatRepos toolShell;
+  inherit (cfg.work) flatRepos;
 
   # Generated from the options so no employer name lives here.
-  workHostLines = lib.optionals (cfg.workHost && flatRepos != null) (
-    [
-      "- This is a work host: work checkouts live flat in `${flatRepos.dir}`${
-        lib.optionalString (flatRepos.envVar != null) " (`\$${flatRepos.envVar}`)"
-      }, and `${cfg.codeRoot}/github.com/<org>` links there for ${
-        lib.concatMapStringsSep ", " (org: "`${org}`") flatRepos.orgs
-      }, so repo and worktree paths may print under `${flatRepos.dir}`; clone with `repos get` as usual"
-    ]
-    ++
-      lib.optional (toolShell != null)
-        "- The work tooling's shell functions and aliases come from `~/.${toolShell}rc`, which this host's interactive ${toolShell} loads; if yours didn't (e.g. a non-interactive or other shell), run them as `${toolShell} -ic '<function> && <command>'` so the env a function exports reaches the command"
-  );
+  workHostLines = lib.optionals (cfg.workHost && flatRepos != null) [
+    "- This is a work host: work checkouts live flat in `${flatRepos.dir}`${
+      lib.optionalString (flatRepos.envVar != null) " (`\$${flatRepos.envVar}`)"
+    }, and `${cfg.codeRoot}/github.com/<org>` links there for ${
+      lib.concatMapStringsSep ", " (org: "`${org}`") flatRepos.orgs
+    }, so repo and worktree paths may print under `${flatRepos.dir}`; clone with `repos get` as usual"
+    "- The work tooling's shell functions and aliases come from `~/.zshrc`, which this host's interactive zsh loads; if your shell didn't (e.g. a non-interactive or other shell), run them as `zsh -ic '<function> && <command>'` so the env a function exports reaches the command"
+  ];
 
   workflowLines = [
     "- Start from the problem, not a solution — state what's wrong or needed; a suspected approach is context, not the goal"

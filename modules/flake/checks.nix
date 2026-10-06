@@ -59,15 +59,17 @@ in
       # generated home. What they exercise (git/ssh identity, repo tooling)
       # is the same on every host, so any home built for this system can
       # stand in.
-      scriptHome = lib.findFirst (home: home.activationPackage.system == system) null (
+      homesHere = lib.filter (home: home.activationPackage.system == system) (
         lib.attrValues config.flake.homeConfigurations
       );
+      scriptHome = lib.findFirst (_: true) null homesHere;
+      # zsh only renders on work hosts, so its check needs a home that has it.
+      zshHome = lib.findFirst (home: home.config.programs.zsh.enable) null homesHere;
       scriptChecks =
         let
           hc = scriptHome.config;
           d = hc.dotfiles;
           configFile = name: hc.xdg.configFile.${name}.source;
-          homeFile = name: hc.home.file.${name}.source;
           homeExe =
             name:
             lib.getExe (
@@ -80,63 +82,56 @@ in
             WORK_SSH_CONFIG = d.work.sshConfig;
             WORK_BRANCH_TEMPLATE = d.work.branchNaming.template;
             WORK_BRANCH_UNTICKETED = toString d.work.branchNaming.unticketed;
-            WORK_TICKET_PATTERN = d.work.branchNaming.ticketPattern;
             WORK_OWNER = lib.replaceStrings [ "*" ] [ "routing-test" ] d.work.githubOwnerGlob;
             PERSONAL_EMAIL = d.email;
             PERSONAL_KEY = "~/.ssh/id_personal";
             PERSONAL_BRANCH_TEMPLATE = d.branchNaming.template;
             PERSONAL_BRANCH_UNTICKETED = toString d.branchNaming.unticketed;
-            PERSONAL_TICKET_PATTERN = d.branchNaming.ticketPattern;
             PERSONAL_OWNER = d.githubUser;
           };
           mkScriptCheck =
             name:
-            { tools, args }:
+            {
+              tools ? [ pkgs.git ],
+              args,
+            }:
             pkgs.runCommand name (env // { nativeBuildInputs = [ pkgs.bash ] ++ tools; }) ''
               bash ${src}/tests/${lib.replaceStrings [ "-" ] [ "_" ] name}.sh ${lib.escapeShellArgs args}
               touch $out
             '';
         in
-        lib.optionalAttrs (scriptHome != null) (
-          lib.mapAttrs mkScriptCheck (
-            lib.optionalAttrs hc.programs.zsh.enable {
-              zsh-config = {
-                tools = [ pkgs.zsh ];
-                args = map homeFile [
+        lib.mapAttrs mkScriptCheck (
+          lib.optionalAttrs (zshHome != null) {
+            zsh-config = {
+              tools = [ pkgs.zsh ];
+              args =
+                let
+                  zc = zshHome.config;
+                in
+                map (name: zc.home.file.${name}.source) [
                   ".zshenv"
-                  "${hc.programs.zsh.dotDir}/.zshenv"
-                  "${hc.programs.zsh.dotDir}/.zprofile"
-                  "${hc.programs.zsh.dotDir}/.zshrc"
+                  "${zc.programs.zsh.dotDir}/.zshenv"
+                  "${zc.programs.zsh.dotDir}/.zprofile"
+                  "${zc.programs.zsh.dotDir}/.zshrc"
                 ];
-              };
-            }
-            // {
-              git-work-routing = {
-                tools = [ pkgs.git ];
-                args = [ (configFile "git/config") ];
-              };
-              ssh-agent-keys = {
-                tools = [ pkgs.openssh ];
-                args = [ (homeExe "load-ssh-keys") ];
-              };
-              ssh-allowed-signers = {
-                tools = [ pkgs.openssh ];
-                args = [ (homeExe "ssh-allowed-signers") ];
-              };
-              worktrees-branch-template = {
-                tools = [ pkgs.git ];
-                args = [ (homeExe "worktrees") ];
-              };
-              repos-list-links = {
-                tools = [ pkgs.git ];
-                args = [ (homeExe "repos") ];
-              };
-              work-repo-links = {
-                tools = [ pkgs.git ];
-                args = [ (lib.getExe (import ../lib/work-repo-links.nix { inherit pkgs; })) ];
-              };
-            }
-          )
+            };
+          }
+          // lib.optionalAttrs (scriptHome != null) {
+            git-work-routing = {
+              args = [ (configFile "git/config") ];
+            };
+            ssh-agent-keys = {
+              tools = [ pkgs.openssh ];
+              args = [ (homeExe "load-ssh-keys") ];
+            };
+            ssh-allowed-signers = {
+              tools = [ pkgs.openssh ];
+              args = [ (homeExe "ssh-allowed-signers") ];
+            };
+            worktrees-branch-template.args = [ (homeExe "worktrees") ];
+            repos-list-links.args = [ (homeExe "repos") ];
+            work-repo-links.args = [ (lib.getExe (import ../lib/work-repo-links.nix { inherit pkgs; })) ];
+          }
         );
 
       nixosChecks = mkEvalChecks "eval-nixos" (

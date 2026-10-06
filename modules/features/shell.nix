@@ -9,8 +9,6 @@ let
   isFish = cfg.shell == "fish";
   isZsh = cfg.shell == "zsh";
 
-  abbrFor = shell: lib.mapAttrs (_: v: if builtins.isString v then v else v.${shell}) cfg.shellAbbrs;
-
   # Names the current Zellij tab after the repo (or dir), plus the running
   # command when given one; both shells call it from their prompt hooks.
   zellijTabName = pkgs.writeShellApplication {
@@ -58,6 +56,7 @@ in
     sessionVariables = lib.mkIf isFish {
       async_prompt_functions = "_pure_prompt_git";
       fish_greeting = "";
+      fish_terminal_skip_dsr = "1";
     };
 
     sessionPath = [
@@ -105,12 +104,7 @@ in
   };
 
   programs = {
-    mise = {
-      enable = true;
-      enableFishIntegration = true;
-      enableZshIntegration = true;
-      enableBashIntegration = true;
-    };
+    mise.enable = true;
 
     zoxide = {
       enable = true;
@@ -134,7 +128,7 @@ in
         end
       '';
 
-      shellAbbrs = abbrFor "fish";
+      inherit (cfg) shellAbbrs;
 
       interactiveShellInit = ''
         pfetch
@@ -147,7 +141,7 @@ in
       functions = {
         # pick <tv-channel> <command…>: runs the picker, then the command
         # (in this shell, so `c` can cd) with the selection appended or in
-        # place of {} / {name} (its basename). Cancelling runs nothing.
+        # place of {name} (its basename). Cancelling runs nothing.
         pick.body = ''
           if test (count $argv) -lt 2
               echo 'usage: pick <tv-channel> <command…>' >&2
@@ -157,8 +151,7 @@ in
           set sel $sel[1]
           test -n "$sel"; or return
           set -l cmd $argv[2..]
-          if contains -- '{}' $cmd; or contains -- '{name}' $cmd
-              set cmd (string replace -- '{}' $sel $cmd)
+          if contains -- '{name}' $cmd
               set cmd (string replace -- '{name}' (path basename $sel) $cmd)
           else
               set -a cmd $sel
@@ -203,16 +196,14 @@ in
       historySubstringSearch.enable = true;
       zsh-abbr = {
         enable = true;
-        abbreviations = abbrFor "zsh";
+        abbreviations = cfg.shellAbbrs;
       };
       history = {
         # Keep the history a stock zsh already wrote.
         path = "${config.home.homeDirectory}/.zsh_history";
         size = 50000;
         save = 50000;
-        share = true;
         ignoreAllDups = true;
-        ignoreSpace = true;
       };
 
       # The installer's /etc/zshenv only loads Nix for ssh logins, and login
@@ -232,7 +223,7 @@ in
         # The tool-owned rc, after compinit (its completion blocks need it)
         # and before the interactive layer, so its PATH entries win.
         (lib.mkOrder 600 ''
-          if [[ "''${ZDOTDIR:-$HOME}" != "$HOME" && -f "$HOME/.zshrc" ]]; then
+          if [[ -f ~/.zshrc ]]; then
             source "$HOME/.zshrc"
           fi
         '')
@@ -250,10 +241,7 @@ in
             shift
             local -a cmd=("$@")
             for i in {1..$#cmd}; do
-              case $cmd[i] in
-                '{}') cmd[i]=$sel; replaced=1 ;;
-                '{name}') cmd[i]=''${sel:t}; replaced=1 ;;
-              esac
+              [[ $cmd[i] == '{name}' ]] && cmd[i]=''${sel:t} && replaced=1
             done
             (( replaced )) || cmd+=("$sel")
             "''${cmd[@]}"

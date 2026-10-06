@@ -19,6 +19,7 @@ let
       pkgs.gnugrep
     ];
     text = ''
+      [ -S "''${SSH_AUTH_SOCK:-}" ] || exit 0
       loaded=$(ssh-add -l 2>/dev/null || true)
       for key in ~/.ssh/id_personal ${config.dotfiles.work.sshKey}; do
         [ -f "$key" ] || continue
@@ -104,22 +105,16 @@ in
         end
       ''
     ))
-    (lib.mkAfter ''
-      if set -q SSH_AUTH_SOCK; and test -S "$SSH_AUTH_SOCK"
-          ${lib.getExe loadSshKeys}
-      end
-    '')
+    (lib.mkAfter (lib.getExe loadSshKeys))
   ];
 
   programs.zsh = {
-    envExtra = lib.mkIf isLinux ''
-      : "''${XDG_RUNTIME_DIR:=/run/user/$(id -u)}"
-      export XDG_RUNTIME_DIR
-    '';
-    initContent = lib.mkOrder 1400 ''
-      if [[ -n ''${SSH_AUTH_SOCK-} && -S $SSH_AUTH_SOCK ]]; then
-        ${lib.getExe loadSshKeys}
-      fi
-    '';
+    envExtra = lib.mkIf isLinux (
+      lib.mkBefore ''
+        : "''${XDG_RUNTIME_DIR:=/run/user/$(id -u)}"
+        export XDG_RUNTIME_DIR
+      ''
+    );
+    initContent = lib.mkOrder 1400 (lib.getExe loadSshKeys);
   };
 }

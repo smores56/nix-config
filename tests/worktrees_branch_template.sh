@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # `worktrees new --dry-run` branch naming: templates come from the repo's
-# git config (smores.branchTemplate / smores.branchTemplateUnticketed /
-# smores.ticketPattern), with {slug} {ticket} {type} placeholders; tickets
+# git config (smores.branchTemplate / smores.branchTemplateUnticketed),
+# with {slug} {ticket} {type} placeholders; tickets
 # only come from --ticket. Schemes are set per repo here, so the mechanics
 # are tested independently of any employer's values; the generated config's
 # values are covered by git_work_routing.sh.
@@ -15,17 +15,14 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 HOME=$PWD/home
 worktrees=$1
 mkdir -p "$HOME"
 failures=0
-jira='[A-Z][A-Z0-9]*-[0-9]+'
 
-# repo <dir> [template unticketed pattern]: with a template, sets all three
-# keys the way git.nix does (an empty unticketed means ticket required).
+# repo <dir> [template unticketed]: sets both keys the way git.nix does.
 repo() {
   git init -q "$1"
   git -C "$1" remote add origin "git@github.com:acme/$1.git"
   if [ $# -gt 1 ]; then
     git -C "$1" config smores.branchTemplate "$2"
     git -C "$1" config smores.branchTemplateUnticketed "$3"
-    git -C "$1" config smores.ticketPattern "$4"
   fi
 }
 
@@ -67,20 +64,21 @@ want=${want//\{ticket\}/ABC-1}
 want=${want//\{type\}/fix}
 check fallback "$(run plain --slug fix-auth --ticket ABC-1 --type fix | field branch)" "$want"
 
-repo prefixed 'me/{slug}' '' "$jira"
+repo prefixed 'me/{slug}' ''
 check prefixed "$(run prefixed --slug 'Fix Auth' | field branch)" "me/fix-auth"
 check prefixed-dir "$(run prefixed --slug fix-auth | field path)" "$PWD/prefixed/.worktrees/me-fix-auth"
 check prefixed-task "$(run prefixed --task 'Fix the auth flow' | field branch)" "me/fix-the-auth-flow"
 check prefixed-slug-wins "$(run prefixed --slug fix-auth --task 'ABC-9: other words' | field branch)" "me/fix-auth"
 # Repos that don't name branches by ticket ignore it rather than failing.
-check prefixed-ignores-ticket "$(run prefixed --slug fix-auth --ticket ABC-1 | field branch)" "me/fix-auth"
-check prefixed-ticket-null "$(run prefixed --slug fix-auth --ticket ABC-1 | field ticket)" ""
+out=$(run prefixed --slug fix-auth --ticket ABC-1)
+check prefixed-ignores-ticket "$(field branch <<<"$out")" "me/fix-auth"
+check prefixed-ticket-null "$(field ticket <<<"$out")" ""
 check prefixed-ignores-type "$(run prefixed --slug fix-auth --type feat | field branch)" "me/fix-auth"
 
-repo team '{ticket}-{slug}' '{type}/{slug}' "$jira"
-check ticket "$(run team --slug fix-auth --ticket ABK-1234 | field branch)" "ABK-1234-fix-auth"
-check ticket-field "$(run team --slug fix-auth --ticket ABK-1234 | field ticket)" "ABK-1234"
-check ticket-dir "$(run team --slug fix-auth --ticket ABK-1234 | field path)" "$PWD/team/.worktrees/ABK-1234-fix-auth"
+repo team '{ticket}-{slug}' '{type}/{slug}'
+out=$(run team --slug fix-auth --ticket ABK-1234)
+check ticket "$(field branch <<<"$out")" "ABK-1234-fix-auth"
+check ticket-field "$(field ticket <<<"$out")" "ABK-1234"
 check ticket-not-repeated "$(run team --slug abk-1234-fix-auth --ticket ABK-1234 | field branch)" "ABK-1234-fix-auth"
 # Jira-looking words in free text are text, never tickets.
 check no-implicit-ticket "$(run team --task 'Handle UTF-8 in ABK-9' --type fix | field branch)" "fix/handle-utf-8-in-abk-9"
@@ -89,18 +87,14 @@ check unticketed-dir "$(run team --slug readiness-gate --type feat | field path)
 check_fails type-required 'needs --type' team --slug readiness-gate
 check_fails bad-type 'lowercase kebab' team --slug x --type 'Feat!'
 check_fails multiline-type 'lowercase kebab' team --slug x --type $'fix\nx'
-check_fails bad-ticket 'ticket pattern' team --slug x --ticket abk-12
-check_fails multiline-ticket 'ticket pattern' team --slug x --ticket $'ABK-1\nx'
+check_fails bad-ticket 'ticket key' team --slug x --ticket abk-12
+check_fails multiline-ticket 'ticket key' team --slug x --ticket $'ABK-1\nx'
 check_fails ticket-only-slug 'empty slug' team --slug ABK-7 --ticket ABK-7
 
-repo ticket-only '{ticket}-{slug}' '' "$jira"
+repo ticket-only '{ticket}-{slug}' ''
 check_fails ticket-required 'needs --ticket' ticket-only --slug fix-auth --type fix
 
-repo numbered '{slug}-{ticket}' '' '#?[0-9]+'
-check custom-pattern "$(run numbered --slug fix-auth --ticket 42 | field branch)" "fix-auth-42"
-check_fails custom-pattern-rejects 'ticket pattern' numbered --slug fix-auth --ticket ABK-42
-
-repo bad-placeholder '{user}/{slug}' '' "$jira"
+repo bad-placeholder '{user}/{slug}' ''
 check_fails unknown-placeholder 'unknown placeholder' bad-placeholder --slug fix-auth
 
 if ((failures)); then

@@ -203,7 +203,7 @@ model providers coding agents may use.
 ### Work hosts
 
 A home with `workHost = true` (`modules/flake/configurations.nix`) applies
-`dotfiles.work.flatRepos` and `toolShell` (`modules/options.nix`);
+`dotfiles.work.flatRepos` (`modules/options.nix`);
 `modules/features/work-host.nix` holds the mechanics, and no employer name
 appears outside those option values.
 
@@ -220,17 +220,13 @@ appears outside those option values.
   enabled). HM owns `$ZDOTDIR` (`~/.config/zsh`, set from `~/.zshenv`) and
   sources the tooling-owned plain `~/.zshrc` right after compinit, so its
   PATH entries (pyenv, nvm, brew) win and its functions just work. The
-  interactive layer emulates fish: pure prompt, `zsh-abbr` abbreviations,
-  autosuggestions, syntax highlighting, up-arrow prefix history search,
-  `done`-style notifications, menu completion and pfetch.
+  interactive layer emulates fish (`modules/features/shell.nix`).
 - **Abbreviations** are declared once in `dotfiles.shellAbbrs` and rendered
   for whichever shell a host runs; pickers use `pick <tv-channel>
   <command…>`, defined for both shells.
-- **Skills** the tooling installs into `~/.claude/skills` need nothing
-  extra: Claude Code and maki both read that directory.
 - **Agents** get a generated `CLAUDE.md` note on the layout, and on calling
-  `toolShell` functions as `<toolShell> -ic '<function> && <command>'` when
-  their shell didn't load the rc.
+  the tooling's functions as `zsh -ic '<function> && <command>'` when their
+  shell didn't load `~/.zshrc`.
 
 Limits: the flat folder holds one checkout per name across all linked orgs,
 and also the tooling's own state (env files, credentials), which is then
@@ -243,9 +239,8 @@ The toolchain belongs to `blitzy-dev` and Homebrew (pyenv and per-repo
 venvs, gcloud, the AWS CLI, `op`, nvm, `~/.zshrc`, its skills); this repo
 only provides the frame above. Order matters:
 
-1. `home-manager switch`. If it warns that
-   `~/code/github.com/blitzy-ai` is a real directory, run
-   `work-repo-links --migrate`. Then make Nix zsh the login shell (once,
+1. `home-manager switch` (run `work-repo-links --migrate` if it warns about
+   a real org directory). Then make Nix zsh the login shell (once,
    needs sudo):
 
    ```sh
@@ -283,10 +278,8 @@ only provides the frame above. Order matters:
 7. Finish the manual steps in blitzy-dev's `docs/local-dev-setup.md`
    (`env-dev` rebuilt from Secret Manager, WorkOS UI vars).
 
-`set_dev`, `rdb_dev`, `ddb` and the other env functions work in any shell
-once `blitzy setup` has written `~/.zshrc` (pyenv init comes from it too).
-Branches come from `worktrees new --ticket ABK-123` (or `--type fix`); PR
-titles follow the team's `ABK-123: description` style.
+The env functions (`set_dev`, `rdb_dev`, …) and pyenv init arrive once
+`blitzy setup` has written `~/.zshrc`.
 
 ### Adding a new host
 

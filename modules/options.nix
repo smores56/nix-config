@@ -26,17 +26,12 @@ let
     options = {
       template = lib.mkOption {
         type = lib.types.str;
-        description = "Branch name template with {slug}, {ticket} (a key matching ticketPattern) and {type} (fix, feat, …) placeholders.";
+        description = "Branch name template with {slug}, {ticket} (a ticket key such as ABC-123) and {type} (fix, feat, …) placeholders.";
       };
       unticketed = lib.mkOption {
         type = lib.types.nullOr lib.types.str;
         default = null;
         description = "Template used when `template` needs {ticket} and no ticket was given; null makes a ticket required.";
-      };
-      ticketPattern = lib.mkOption {
-        type = lib.types.str;
-        default = "[A-Z][A-Z0-9]*-[0-9]+";
-        description = "Extended regex a --ticket must match in full (default: Jira-style keys such as ABC-123).";
       };
     };
   };
@@ -85,18 +80,9 @@ in
       description = "Which model providers coding agents may use. 'work' keeps agents on Anthropic only, so work code never reaches personal providers.";
     };
     shellAbbrs = lib.mkOption {
-      type = lib.types.attrsOf (
-        lib.types.either lib.types.str (
-          lib.types.submodule {
-            options = {
-              fish = lib.mkOption { type = lib.types.str; };
-              zsh = lib.mkOption { type = lib.types.str; };
-            };
-          }
-        )
-      );
+      type = lib.types.attrsOf lib.types.str;
       default = { };
-      description = "Abbreviations for whichever shell the host uses. Write one string both fish and zsh accept; give { fish; zsh; } only where no common form exists. `pick <tv-channel> <command…>` runs a picker and the command with the selection (or in place of {} / {name}).";
+      description = "Abbreviations for whichever shell the host uses, each one string both fish and zsh accept. `pick <tv-channel> <command…>` runs a picker, then the command with the selection appended (or in place of {name}, its basename).";
     };
     workHost = lib.mkOption {
       type = lib.types.bool;
@@ -423,17 +409,13 @@ in
             ];
             description = "How changes land: 'direct' merges to main, 'pr' goes through pull requests.";
           };
-          toolShell = lib.mkOption {
-            type = lib.types.nullOr (lib.types.strMatching "[A-Za-z0-9._+-]+");
-            default = null;
-            description = "Shell command whose interactive rc files the employer's tooling manages (its env functions live there); agents whose shell doesn't load them call it with -ic.";
-          };
           flatRepos = lib.mkOption {
             type = lib.types.nullOr (
               lib.types.submodule {
                 options = {
                   dir = lib.mkOption {
-                    type = lib.types.str;
+                    # Absolute, no trailing slash: it becomes link targets.
+                    type = lib.types.strMatching "/.*[^/]";
                     description = "Absolute directory holding every work checkout flat as <dir>/<repo>, the layout the employer's tooling expects.";
                   };
                   envVar = lib.mkOption {
@@ -490,10 +472,6 @@ in
       type = lib.types.package;
       readOnly = true;
     };
-    shellPath = lib.mkOption {
-      type = lib.types.str;
-      readOnly = true;
-    };
     defaultModel = lib.mkOption {
       type = lib.types.str;
       readOnly = true;
@@ -547,7 +525,6 @@ in
           template = "{ticket}-{slug}";
           unticketed = "{type}/{slug}";
         };
-        toolShell = "zsh";
         flatRepos = {
           dir = "${config.home.homeDirectory}/Blitzy";
           envVar = "BLITZY_REPOS_DIR";
@@ -567,7 +544,6 @@ in
       browser = "firefox";
       font = "Google Sans Code";
       fontPackage = pkgs.googlesans-code;
-      shellPath = "${pkgs.${config.dotfiles.shell}}/bin/${config.dotfiles.shell}";
       defaultModel = smortress.models.qwen38.id;
       darkTheme = {
         system = "rose-pine-moon";

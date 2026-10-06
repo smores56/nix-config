@@ -82,10 +82,7 @@ This tool cannot be batched.]],
     if slug == "" or prompt == "" then
       return { llm_output = "error: slug and prompt are required", is_error = true }
     end
-    local task = input.task or ""
     local ticket = input.ticket or ""
-    local change_type = input.type or ""
-    local base = input.base or ""
 
     local start_label = ("Start: %s"):format(slug)
     local prompt_preview = (prompt:match("^([^\n]+)") or prompt):gsub("%s+", " ")
@@ -116,19 +113,13 @@ This tool cannot be batched.]],
       return { llm_output = "(cancelled by user)" }
     end
 
-    -- Build the `worktrees new` arg list with each value shell-quoted.
+    -- Input keys double as `worktrees new` flag names.
     local wt_args = "--slug " .. shell_quote(slug)
-    if task ~= "" then
-      wt_args = wt_args .. " --task " .. shell_quote(task)
-    end
-    if ticket ~= "" then
-      wt_args = wt_args .. " --ticket " .. shell_quote(ticket)
-    end
-    if change_type ~= "" then
-      wt_args = wt_args .. " --type " .. shell_quote(change_type)
-    end
-    if base ~= "" then
-      wt_args = wt_args .. " --base " .. shell_quote(base)
+    for _, flag in ipairs({ "task", "ticket", "type", "base" }) do
+      local value = input[flag] or ""
+      if value ~= "" then
+        wt_args = wt_args .. " --" .. flag .. " " .. shell_quote(value)
+      end
     end
 
     local script = string.format(
