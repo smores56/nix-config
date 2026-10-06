@@ -141,7 +141,9 @@ if [ -n "${DRILL_PG_DB:-}" ]; then
   }
   runuser -u postgres -- dropdb --if-exists "$DRILL"
   runuser -u postgres -- createdb -O postgres "$DRILL"
-  runuser -u postgres -- pg_restore --no-owner -d "$DRILL" "$DUMP"
+  # The dump sits behind the 0700 backup directory, which the postgres user
+  # cannot read; root opens it and streams it in on stdin instead.
+  runuser -u postgres -- pg_restore --no-owner -d "$DRILL" < "$DUMP"
   echo "live:  $(counts "$DRILL_PG_DB")"
   echo "drill: $(counts "$DRILL")"
   runuser -u postgres -- dropdb "$DRILL"

@@ -93,13 +93,18 @@ rclone copy proton:Photos /restore/Photos \
 Add `--backup-dir`-style recovery by reaching into the same path's local
 `versions/` if the mirror still exists.
 
-**Database (Photos).** The newest dump is in `current/db/`:
+**Database (Photos).** The newest dump is in `current/db/`. It sits behind the
+`0700` backup directory, so the `postgres` user cannot open the path directly —
+run this as root and let root stream the file in:
 
 ```sh
 runuser -u postgres -- createdb -O postgres restored
 runuser -u postgres -- pg_restore --no-owner -d restored \
-  /var/backup/Photos/current/db/immich-<date>.dump
+  < /var/backup/Photos/current/db/immich-<date>.dump
 ```
+
+(To restore from an unprivileged shell, copy the dump somewhere `postgres` can
+read first: `install -m 644 …/immich-<date>.dump /tmp/immich.dump`.)
 
 **Drill the whole thing.** [`drills/restore-drill.sh`](./drills/restore-drill.sh)
 is the executable form of the above:
