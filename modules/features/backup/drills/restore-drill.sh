@@ -135,18 +135,24 @@ if [ -n "${DRILL_PG_DB:-}" ]; then
   step "database restore into scratch postgres"
   DUMP=${DRILL_PG_DUMP:-$(ls -t "$LOC"/db/*.dump 2>/dev/null | head -1 || true)}
   echo "dump: $DUMP ($(stat -c %s "$DUMP") bytes, $(stat -c %y "$DUMP"))"
-  QUERY=${DRILL_PG_QUERY:-"select 'assets', count(*) from assets union all select 'albums', count(*) from albums union all select 'people', count(*) from person;"}
-  counts() {
-    runuser -u postgres -- psql -d "$1" -tAc "$QUERY" 2>/dev/null | paste -sd' '
-  }
+  # One row of counts; a single scalar row avoids any union/formatting surprises.
+  QUERY=${DRILL_PG_QUERY:-"select (select count(*) from assets) as assets, (select count(*) from albums) as albums, (select count(*) from person) as person;"}
+  # stderr is deliberately not suppressed: a psql failure must be visible, not
+  # silently yield empty counts that look like a pass.
+  counts() { runuser -u postgres -- psql -d "$1" -tAc "$QUERY"; }
   runuser -u postgres -- dropdb --if-exists "$DRILL"
   runuser -u postgres -- createdb -O postgres "$DRILL"
   # The dump sits behind the 0700 backup directory, which the postgres user
   # cannot read; root opens it and streams it in on stdin instead.
   runuser -u postgres -- pg_restore --no-owner -d "$DRILL" < "$DUMP"
-  echo "live:  $(counts "$DRILL_PG_DB")"
-  echo "drill: $(counts "$DRILL")"
+  live_c=$(counts "$DRILL_PG_DB")
+  drill_c=$(counts "$DRILL")
+  echo "live:  $live_c"
+  echo "drill: $drill_c"
   runuser -u postgres -- dropdb "$DRILL"
+  if [ -z "$drill_c" ] || [ "$live_c" != "$drill_c" ]; then
+    fail=$((fail + 1)); echo "FAIL database restore (empty or mismatched counts)"
+  fi
   echo
 fi
 
