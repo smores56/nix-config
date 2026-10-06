@@ -17,7 +17,7 @@ let
     "- Run `research` before any non-trivial design; run `review` before merging non-trivial changes"
     "- Behavior-changing work in testable code starts red: run the `test-driven-development` skill (failing test → minimal fix → refactor). Config or verification-only changes skip the loop — verify with the repo's checks instead"
     "- Before a non-trivial decision stands, spawn a fresh read-only subagent to argue against it"
-    "- Conventional Commits (feat, fix, refactor, chore, docs, test, perf, ci) with `type(scope): description`; applies to commits and PR titles"
+    "- Commit messages and PR titles: Conventional Commits (feat, fix, refactor, chore, docs, test, perf, ci) with `type(scope): description` in `direct`-flow repos; elsewhere follow the repo's own convention (contributing docs, installed team skills, recent merged PRs)"
     "- Push immediately after committing; no `Co-Authored-By` trailers"
     "- How changes land follows `git config smores.flow` in the repo:"
     "  - `direct` (personal repos): worktree → commit and push per change → `review` → merge to main → clean up with `worktrees prune`"

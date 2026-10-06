@@ -491,7 +491,11 @@ in
       work = {
         email = "smohr@blitzy.com";
         githubOwnerGlob = "blitzy-*";
-        branchNaming.template = "smohr/{slug}";
+        # Team convention: ticket first, else the change type.
+        branchNaming = {
+          template = "{ticket}-{slug}";
+          unticketed = "{type}/{slug}";
+        };
         sshKey = "~/.ssh/id_work";
         sshConfig = "~/.ssh/config.work";
         flow = "pr";
