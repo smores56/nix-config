@@ -18,7 +18,7 @@ let
     ]
     ++
       lib.optional (toolShell != null)
-        "- The work tooling's shell functions load from ${toolShell}'s rc files; when your shell isn't ${toolShell}, run them as `${toolShell} -ic '<function> …'`"
+        "- The work tooling's shell functions and aliases exist only in interactive ${toolShell} (its rc files): run them as `${toolShell} -ic '<function> …'`, and chain whatever needs the env a function exports into the same call (`${toolShell} -ic '<function> && <command>'`)"
   );
 
   workflowLines = [

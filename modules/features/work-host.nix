@@ -70,10 +70,12 @@ lib.mkIf enabled {
   programs.fish = {
     # Employer toolchains often pin Python through a non-Nix pyenv; init it
     # only where one is installed so repo .python-version venvs resolve.
+    # --no-rehash keeps shell startup off pyenv's shim lock. With no pyenv
+    # global set, bare python3 falls through to the Nix one.
     interactiveShellInit = lib.mkAfter ''
       if type -q pyenv
-          pyenv init - fish | source
-          if pyenv commands | string match -q virtualenv-init
+          pyenv init - --no-rehash fish | source
+          if type -q pyenv-virtualenv-init
               pyenv virtualenv-init - fish | source
           end
       end
@@ -81,10 +83,14 @@ lib.mkIf enabled {
     functions = lib.optionalAttrs (toolShell != null) {
       wsh = {
         description = "Open the work tooling's shell (${toolShell}) in ${flatRepos.dir}";
+        # Interactive, not login: a login zsh runs macOS path_helper, which
+        # moves /usr/bin and Homebrew ahead of the Nix profile.
         body = ''
           pushd ${lib.escapeShellArg flatRepos.dir}; or return
-          command ${toolShell} -il $argv
+          command ${toolShell} -i $argv
+          set -l rc $status
           popd
+          return $rc
         '';
       };
     };

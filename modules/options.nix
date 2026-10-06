@@ -410,9 +410,9 @@ in
             description = "How changes land: 'direct' merges to main, 'pr' goes through pull requests.";
           };
           toolShell = lib.mkOption {
-            type = lib.types.nullOr lib.types.str;
+            type = lib.types.nullOr (lib.types.strMatching "[A-Za-z0-9._+-]+");
             default = null;
-            description = "Shell whose rc files the employer's tooling manages (its env functions live there); `wsh` opens it in the flat folder on work hosts.";
+            description = "Shell command whose interactive rc files the employer's tooling manages (its env functions live there); `wsh` opens it in the flat folder on work hosts.";
           };
           flatRepos = lib.mkOption {
             type = lib.types.nullOr (
