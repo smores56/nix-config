@@ -253,6 +253,9 @@ only provides the frame above. Order matters:
    chsh -s "$HOME/.nix-profile/bin/zsh"
    ```
 
+   Log out and back in so GUI apps (kitty, zellij) pick up the new `$SHELL`;
+   fish stays installed until then.
+
 2. 1Password: join `blitzy.1password.com`, then in the desktop app enable
    **Settings → Security → Touch ID** and **Settings → Developer →
    Integrate with 1Password CLI**.
@@ -264,7 +267,8 @@ only provides the frame above. Order matters:
    ```
 
 4. `blitzy setup`, answering the first-run wizard: team **standard**,
-   oh-my-zsh **no**, PyCharm configs **no**, and skip `clone_repos` and
+   oh-my-zsh **no** (its installer follows `$ZDOTDIR` and would replace the
+   HM zshrc), PyCharm configs **no**, and skip `clone_repos` and
    `clone_platform_repos` (clone with `repos get` instead of every visible
    repo). It owns the toolchain from here, and setup and `blitzy update`
    keep it current.
@@ -279,7 +283,8 @@ only provides the frame above. Order matters:
 7. Finish the manual steps in blitzy-dev's `docs/local-dev-setup.md`
    (`env-dev` rebuilt from Secret Manager, WorkOS UI vars).
 
-`set_dev`, `rdb_dev`, `ddb` and the other env functions work in any shell.
+`set_dev`, `rdb_dev`, `ddb` and the other env functions work in any shell
+once `blitzy setup` has written `~/.zshrc` (pyenv init comes from it too).
 Branches come from `worktrees new --ticket ABK-123` (or `--type fix`); PR
 titles follow the team's `ABK-123: description` style.
 

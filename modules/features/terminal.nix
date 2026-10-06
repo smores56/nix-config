@@ -14,6 +14,8 @@ in
   home.sessionVariables = {
     TERMINAL = cfg.terminal;
     COLORTERM = "truecolor";
+  }
+  // lib.optionalAttrs (cfg.shell == "fish") {
     fish_terminal_skip_dsr = "1";
   };
 

@@ -42,7 +42,10 @@ in
       pkgs.osc
       pkgs.pfetch-rs
       zellijTabName
-    ];
+    ]
+    # The login shell may still point at the profile's fish until `chsh`
+    # (and logins started before it keep $SHELL); keep it resolvable.
+    ++ lib.optional isZsh pkgs.fish;
 
     sessionVariables = lib.mkIf isFish {
       async_prompt_functions = "_pure_prompt_git";
@@ -138,7 +141,12 @@ in
         # (in this shell, so `c` can cd) with the selection appended or in
         # place of {} / {name} (its basename). Cancelling runs nothing.
         pick.body = ''
+          if test (count $argv) -lt 2
+              echo 'usage: pick <tv-channel> <command…>' >&2
+              return 2
+          end
           set -l sel (tv $argv[1]); or return
+          set sel $sel[1]
           test -n "$sel"; or return
           set -l cmd $argv[2..]
           if contains -- '{}' $cmd; or contains -- '{name}' $cmd
@@ -190,12 +198,31 @@ in
         abbreviations = abbrFor "zsh";
       };
       history = {
+        # Keep the history a stock zsh already wrote.
+        path = "${config.home.homeDirectory}/.zsh_history";
         size = 50000;
         save = 50000;
         share = true;
         ignoreAllDups = true;
         ignoreSpace = true;
       };
+
+      # Every zsh, not just interactive ones: the installer's /etc/zshenv only
+      # loads Nix for ssh logins, so local and tool-spawned zsh need it here.
+      envExtra = lib.mkIf (!cfg.nixos) ''
+        if [[ -e /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]]; then
+          . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+        fi
+      '';
+      # Login shells run /etc/zprofile's path_helper after .zshenv, moving the
+      # system dirs ahead of Nix and HM; put them back in front.
+      profileExtra = lib.mkIf pkgs.stdenv.hostPlatform.isDarwin ''
+        unset __ETC_PROFILE_NIX_SOURCED __HM_SESS_VARS_SOURCED
+        if [[ -e /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]]; then
+          . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+        fi
+        . "${config.home.sessionVariablesPackage}/etc/profile.d/hm-session-vars.sh"
+      '';
 
       initContent = lib.mkMerge [
         # Before compinit: fish-like menu completion, case-insensitive.
@@ -218,7 +245,9 @@ in
 
           pick() {
             local sel replaced=0 i
+            (( $# >= 2 )) || { print -u2 'usage: pick <tv-channel> <command…>'; return 2 }
             sel=$(tv "$1") || return
+            sel=''${sel%%$'\n'*}
             [[ -n $sel ]] || return
             shift
             local -a cmd=("$@")
@@ -241,11 +270,12 @@ in
           add-zsh-hook preexec _zellij_tab_name_preexec
 
           # Like fish's `done`: notify when a command ran 10s or more while
-          # the terminal wasn't the focused app.
+          # the terminal wasn't the focused app (never over ssh, where the
+          # notification would land on the other machine's screen).
           _done_preexec() { _done_start=$EPOCHREALTIME; _done_cmd=$1 }
           _done_precmd() {
             local rc=$? elapsed
-            [[ -n ''${_done_start-} ]] || return 0
+            [[ -n ''${_done_start-} && -z ''${SSH_CONNECTION-} ]] || return 0
             elapsed=$(( EPOCHREALTIME - _done_start ))
             unset _done_start
             (( elapsed >= 10 )) || return 0
@@ -254,7 +284,8 @@ in
               if pkgs.stdenv.hostPlatform.isDarwin then
                 ''
                   [[ -n ''${__CFBundleIdentifier-} ]] && /usr/bin/lsappinfo info -only bundleID "$(/usr/bin/lsappinfo front)" 2>/dev/null | grep -q "\"$__CFBundleIdentifier\"" && return 0
-                  /usr/bin/osascript -e "display notification \"''${_done_cmd//\"/\\\"}\" with title \"''${title//\"/\\\"}\"" >/dev/null 2>&1
+                  # Text goes in as argv, never spliced into AppleScript source.
+                  /usr/bin/osascript -e 'on run argv' -e 'display notification (item 1 of argv) with title (item 2 of argv)' -e 'end run' -- "$_done_cmd" "$title" >/dev/null 2>&1
                 ''
               else
                 ''
