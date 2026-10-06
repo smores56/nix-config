@@ -9,7 +9,7 @@
     sessionVariables = {
       DISABLE_NIX_SHELL_WELCOME = 1;
     }
-    // lib.optionalAttrs pkgs.stdenv.isDarwin {
+    // lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
       # Apple clang for native builds run outside cargo (uv, node-gyp,
       # autotools); cargo's own CC/CXX live in ~/.cargo/config.toml. Nix's GCC
       # sysroot lacks macOS framework headers and its libstdc++ ABI mismatches
@@ -73,7 +73,7 @@
         libiconv
         wabt
       ]
-      ++ lib.optionals pkgs.stdenv.isDarwin [
+      ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
         pkgs.apple-sdk_15
       ]
       ++ [
@@ -91,7 +91,7 @@
         lazydocker
         docker-compose
       ]
-      ++ lib.optionals pkgs.stdenv.isLinux [
+      ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [
         concord
         odin
       ];

@@ -54,7 +54,7 @@ in
   config = {
     home = {
       # stylix only sets home.pointerCursor on Linux.
-      pointerCursor.enable = lib.mkIf (cfg.graphical && pkgs.stdenv.isLinux) true;
+      pointerCursor.enable = lib.mkIf (cfg.graphical && pkgs.stdenv.hostPlatform.isLinux) true;
 
       activation = {
         saveBaseGeneration = lib.hm.dag.entryAfter [ "writeBoundary" ] ''

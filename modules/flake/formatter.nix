@@ -1,9 +1,9 @@
-{ inputs, ... }:
+{ nixpkgsFor, ... }:
 {
   perSystem =
     { system, ... }:
     let
-      pkgs = import inputs.nixpkgs { inherit system; };
+      pkgs = import (nixpkgsFor system) { inherit system; };
     in
     {
       formatter = pkgs.writeShellApplication {

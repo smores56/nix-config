@@ -6,7 +6,7 @@
 }:
 let
   inherit (pkgs.stdenv) isLinux;
-  isDarwin = pkgs.stdenv.isDarwin;
+  isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
   cfg = config.dotfiles;
   darwinFontsEnv = pkgs.buildEnv {
     name = "home-manager-fonts";

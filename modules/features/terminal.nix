@@ -6,7 +6,7 @@
 }:
 let
   cfg = config.dotfiles;
-  isDarwin = pkgs.stdenv.isDarwin;
+  isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
   kittyApp = "${config.home.homeDirectory}/Applications/Home Manager Apps/kitty.app";
 in
 {

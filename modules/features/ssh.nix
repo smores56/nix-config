@@ -67,7 +67,7 @@
     # value rather than an empty string. Linux only: darwin has no /run, its
     # agent socket comes from DARWIN_USER_TEMP_DIR, and a dangling value
     # breaks tools that put sockets there (`op` fails to start its daemon).
-    (lib.mkIf pkgs.stdenv.isLinux (
+    (lib.mkIf pkgs.stdenv.hostPlatform.isLinux (
       lib.mkBefore ''
         if test -z "$XDG_RUNTIME_DIR"
             set -x XDG_RUNTIME_DIR /run/user/(id -u)

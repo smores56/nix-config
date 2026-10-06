@@ -20,7 +20,7 @@ in
     VISUAL = "hx";
   };
 
-  systemd.user.sessionVariables = lib.mkIf pkgs.stdenv.isLinux {
+  systemd.user.sessionVariables = lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
     EDITOR = "hx";
     VISUAL = "hx";
   };

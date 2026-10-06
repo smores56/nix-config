@@ -2,6 +2,7 @@
   config,
   inputs,
   lib,
+  nixpkgsFor,
   ...
 }:
 let
@@ -22,7 +23,7 @@ in
   perSystem =
     { system, ... }:
     let
-      pkgs = import inputs.nixpkgs {
+      pkgs = import (nixpkgsFor system) {
         inherit system;
         config.allowUnfree = true;
       };
