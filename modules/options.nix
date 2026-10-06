@@ -20,6 +20,22 @@ let
     };
   };
 
+  # How `worktrees new` names branches; rendered into git config so the
+  # owner's include picks the scheme per repo.
+  branchNamingType = lib.types.submodule {
+    options = {
+      template = lib.mkOption {
+        type = lib.types.str;
+        description = "Branch name template with {slug}, {ticket} (a Jira-style key) and {type} (fix, feat, …) placeholders.";
+      };
+      unticketed = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = "Template used when `template` needs {ticket} and no ticket was given; null makes a ticket required.";
+      };
+    };
+  };
+
   themeAssertion = kind: name: path: {
     assertion = builtins.pathExists path;
     message = "'${name}' not found in ${kind}";
@@ -348,10 +364,10 @@ in
       readOnly = true;
       description = "Default git identity.";
     };
-    branchPrefix = lib.mkOption {
-      type = lib.types.str;
+    branch = lib.mkOption {
+      type = branchNamingType;
       readOnly = true;
-      description = "Branch prefix for personal repos.";
+      description = "Branch naming in every repo the work identity doesn't claim.";
     };
     work = lib.mkOption {
       type = lib.types.submodule {
@@ -364,9 +380,9 @@ in
             type = lib.types.str;
             description = "GitHub owner pattern (git wildmatch, matched case-insensitively) whose repos use the work identity.";
           };
-          branchPrefix = lib.mkOption {
-            type = lib.types.str;
-            description = "Branch prefix in work repos.";
+          branch = lib.mkOption {
+            type = branchNamingType;
+            description = "Branch naming in work repos.";
           };
           sshKey = lib.mkOption {
             type = lib.types.str;
@@ -466,11 +482,11 @@ in
       wayland = config.dotfiles.displayManager == "niri";
       terminalFontSize = 12;
       email = "sam@sammohr.dev";
-      branchPrefix = "smores";
+      branch.template = "smores/{slug}";
       work = {
         email = "smohr@blitzy.com";
         githubOwnerGlob = "blitzy-*";
-        branchPrefix = "smohr";
+        branch.template = "smohr/{slug}";
         sshKey = "~/.ssh/id_work";
         sshConfig = "~/.ssh/config.work";
         flow = "pr";

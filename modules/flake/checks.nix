@@ -72,11 +72,13 @@ in
             WORK_EMAIL = d.work.email;
             WORK_KEY = d.work.sshKey;
             WORK_SSH_CONFIG = d.work.sshConfig;
-            WORK_PREFIX = d.work.branchPrefix;
+            WORK_BRANCH_TEMPLATE = d.work.branch.template;
+            WORK_BRANCH_UNTICKETED = toString d.work.branch.unticketed;
             WORK_OWNER = lib.replaceStrings [ "*" ] [ "routing-test" ] d.work.githubOwnerGlob;
             PERSONAL_EMAIL = d.email;
             PERSONAL_KEY = "~/.ssh/id_personal";
-            PERSONAL_PREFIX = d.branchPrefix;
+            PERSONAL_BRANCH_TEMPLATE = d.branch.template;
+            PERSONAL_BRANCH_UNTICKETED = toString d.branch.unticketed;
             PERSONAL_OWNER = d.githubUser;
           };
           mkScriptCheck =
@@ -104,12 +106,9 @@ in
               tools = [ pkgs.openssh ];
               args = [ (homeExe "ssh-allowed-signers") ];
             };
-            worktrees-branch-prefix = {
+            worktrees-branch-template = {
               tools = [ pkgs.git ];
-              args = [
-                (configFile "git/config")
-                (homeExe "worktrees")
-              ];
+              args = [ (homeExe "worktrees") ];
             };
           }
         );

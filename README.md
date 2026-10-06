@@ -170,10 +170,10 @@ Work is split across two independent switches:
 - **Per repo, on every host:** repos with a remote under the GitHub owner
   glob in `dotfiles.work` (`modules/options.nix`) get the work email,
   signing key, ssh route (`~/.ssh/config.work`, work key only), branch
-  prefix and PR flow, via git `includeIf hasconfig:remote.*.url`
+  naming and PR flow, via git `includeIf hasconfig:remote.*.url`
   (`modules/features/git.nix`). Any matching remote counts, so a fork with a
   work `upstream` is a work repo. Tooling reads the result from
-  `git config smores.branchPrefix` / `smores.flow`.
+  `git config smores.branchTemplate` / `smores.flow`.
 - **Per host:** `aiProfile` (below) decides which model providers agents
   may use. A work clone on a personal host still gets the work git
   identity, but maki there runs on the personal providers.

@@ -50,6 +50,17 @@ let
       inherit path;
     }) (ownerRemotes owner);
 
+  # Read by `worktrees new`. A null `unticketed` writes nothing, so a repo
+  # inherits the global value there (none today).
+  branchSettings =
+    branch:
+    {
+      branchTemplate = branch.template;
+    }
+    // lib.optionalAttrs (branch.unticketed != null) {
+      branchTemplateUnticketed = branch.unticketed;
+    };
+
   workIncludes = ownerIncludes work.githubOwnerGlob {
     user = {
       inherit (work) email;
@@ -57,8 +68,9 @@ let
     };
     core.sshCommand = "ssh -F ${work.sshConfig}";
     smores = {
-      inherit (work) branchPrefix flow;
-    };
+      inherit (work) flow;
+    }
+    // branchSettings work.branch;
   };
   # Only repos the personal account owns land directly on main; third-party
   # checkouts get no flow at all.
@@ -179,7 +191,7 @@ in
           fetch.prune = true;
           # Repo tooling reads smores.* instead of re-deriving the identity
           # from the remote.
-          smores = { inherit (cfg) branchPrefix; };
+          smores = branchSettings cfg.branch;
         }
       ];
     };

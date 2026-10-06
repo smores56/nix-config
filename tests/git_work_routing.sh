@@ -5,9 +5,11 @@
 # everything else keeps only the personal defaults.
 #
 # Usage: git_work_routing.sh <gitconfig>, with the expected values in
-# WORK_EMAIL WORK_KEY WORK_SSH_CONFIG WORK_PREFIX WORK_OWNER (a concrete
-# owner matching the work glob) PERSONAL_EMAIL PERSONAL_KEY PERSONAL_PREFIX
-# PERSONAL_OWNER.
+# WORK_EMAIL WORK_KEY WORK_SSH_CONFIG WORK_BRANCH_TEMPLATE
+# WORK_BRANCH_UNTICKETED WORK_OWNER (a concrete owner matching the work glob)
+# PERSONAL_EMAIL PERSONAL_KEY PERSONAL_BRANCH_TEMPLATE
+# PERSONAL_BRANCH_UNTICKETED PERSONAL_OWNER. An empty *_UNTICKETED expects
+# the key to be unset.
 set -euo pipefail
 
 export GIT_CONFIG_GLOBAL=$1 GIT_CONFIG_NOSYSTEM=1 HOME=$PWD/home
@@ -38,7 +40,8 @@ expect_work() {
   expect "$1" user.email "$WORK_EMAIL"
   expect "$1" user.signingkey "$WORK_KEY.pub"
   expect "$1" core.sshCommand "ssh -F $WORK_SSH_CONFIG"
-  expect "$1" smores.branchPrefix "$WORK_PREFIX"
+  expect "$1" smores.branchTemplate "$WORK_BRANCH_TEMPLATE"
+  expect "$1" smores.branchTemplateUnticketed "$WORK_BRANCH_UNTICKETED"
   expect "$1" smores.flow pr
 }
 
@@ -46,7 +49,8 @@ expect_personal() {
   expect "$1" user.email "$PERSONAL_EMAIL"
   expect "$1" user.signingkey "$PERSONAL_KEY.pub"
   expect "$1" core.sshCommand ""
-  expect "$1" smores.branchPrefix "$PERSONAL_PREFIX"
+  expect "$1" smores.branchTemplate "$PERSONAL_BRANCH_TEMPLATE"
+  expect "$1" smores.branchTemplateUnticketed "$PERSONAL_BRANCH_UNTICKETED"
   expect "$1" smores.flow "$2"
 }
 

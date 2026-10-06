@@ -3,8 +3,8 @@
 --
 -- The worktree (and its branch) is created by the canonical `worktrees`
 -- tool — the same one AGENTS.md tells agents to use directly. That tool owns
--- branch naming (the repo owner's prefix from `git config
--- smores.branchPrefix`, then the slug), so the branch name is always
+-- branch naming (the repo's template from `git config
+-- smores.branchTemplate`, rendered with the slug), so the branch name is always
 -- well-formed. The agent supplies a slug/task, never a raw branch
 -- name.
 --
