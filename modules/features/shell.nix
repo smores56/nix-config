@@ -35,6 +35,14 @@ let
     '';
   };
   tabName = lib.getExe zellijTabName;
+
+  zshPathInit = ''
+    unset __ETC_PROFILE_NIX_SOURCED __HM_SESS_VARS_SOURCED
+    if [[ -e /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]]; then
+      . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+    fi
+    . "${config.home.sessionVariablesPackage}/etc/profile.d/hm-session-vars.sh"
+  '';
 in
 {
   home = {
@@ -207,22 +215,12 @@ in
         ignoreSpace = true;
       };
 
-      # Every zsh, not just interactive ones: the installer's /etc/zshenv only
-      # loads Nix for ssh logins, so local and tool-spawned zsh need it here.
-      envExtra = lib.mkIf (!cfg.nixos) ''
-        if [[ -e /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]]; then
-          . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
-        fi
-      '';
-      # Login shells run /etc/zprofile's path_helper after .zshenv, moving the
-      # system dirs ahead of Nix and HM; put them back in front.
-      profileExtra = lib.mkIf pkgs.stdenv.hostPlatform.isDarwin ''
-        unset __ETC_PROFILE_NIX_SOURCED __HM_SESS_VARS_SOURCED
-        if [[ -e /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]]; then
-          . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
-        fi
-        . "${config.home.sessionVariablesPackage}/etc/profile.d/hm-session-vars.sh"
-      '';
+      # The installer's /etc/zshenv only loads Nix for ssh logins, and login
+      # shells then run /etc/zprofile's path_helper, which moves the system
+      # dirs ahead of Nix and HM. Both files rebuild the same order as fish:
+      # HM's sessionPath, then the Nix profile, then the system.
+      envExtra = lib.mkIf (!cfg.nixos) zshPathInit;
+      profileExtra = lib.mkIf (!cfg.nixos) zshPathInit;
 
       initContent = lib.mkMerge [
         # Before compinit: fish-like menu completion, case-insensitive.
