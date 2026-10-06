@@ -216,12 +216,14 @@ appears outside those option values.
   An org dir that already holds checkouts is reported, never moved; run
   `work-repo-links --migrate` to move its entries into the flat folder
   (refusing name collisions, repairing worktrees) and link it.
-- **`wsh`** opens `toolShell` in the flat folder, for the tooling's shell
+- **`wsh`** opens `toolShell` (interactive, not login, so the Nix profile
+  stays first on PATH) in the flat folder, for the tooling's shell
   functions. Fish also inits pyenv when one is installed, so a repo's
   `.python-version` venv resolves.
-- **Skills** that tools install into `~/.claude/skills` are mirrored into
-  `~/.agents/skills` (maki, codex) on every switch, on every host; rerun
-  `agent-skill-mirror ~/.claude/skills ~/.agents/skills` after an install.
+- **Skills** the tooling installs into `~/.claude/skills` need nothing
+  extra: Claude Code and maki both read that directory.
+- **Agents** get a generated `CLAUDE.md` note on the layout and on calling
+  `toolShell` functions (`zsh -ic '<function> && <command>'`).
 
 Limits: the flat folder holds one checkout per name across all linked orgs,
 and also the tooling's own state (env files, credentials), which is then
