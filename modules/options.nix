@@ -409,6 +409,11 @@ in
             ];
             description = "How changes land: 'direct' merges to main, 'pr' goes through pull requests.";
           };
+          toolShell = lib.mkOption {
+            type = lib.types.nullOr lib.types.str;
+            default = null;
+            description = "Shell whose rc files the employer's tooling manages (its env functions live there); `wsh` opens it in the flat folder on work hosts.";
+          };
           flatRepos = lib.mkOption {
             type = lib.types.nullOr (
               lib.types.submodule {
@@ -524,6 +529,7 @@ in
           template = "{ticket}-{slug}";
           unticketed = "{type}/{slug}";
         };
+        toolShell = "zsh";
         flatRepos = {
           dir = "${config.home.homeDirectory}/Blitzy";
           envVar = "BLITZY_REPOS_DIR";

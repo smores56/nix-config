@@ -40,7 +40,7 @@ explicitly. Place files by concern, not by host.
 | `modules/features/tv/` | Television repository and worktree cables |
 | `modules/features/photobucket/` | feh-based keyboard photo triage tool + its Python helper |
 | `modules/features/cloudflare/` | Cloudflare Tunnel DNS/Access reconciler (Python helper) + manual `cloudflare-sync` CLI |
-| `tests/` | Python unit tests for the sdlc, maki, photobucket, and cloudflare tools, plus the `git_work_routing.sh`, `ssh_agent_keys.sh`, `ssh_allowed_signers.sh`, `worktrees_branch_template.sh`, `repos_list_links.sh` and `work_repo_links.sh` shell checks (all run via flake checks) |
+| `tests/` | Python unit tests for the sdlc, maki, photobucket, and cloudflare tools, plus the `git_work_routing.sh`, `ssh_agent_keys.sh`, `ssh_allowed_signers.sh`, `worktrees_branch_template.sh`, `repos_list_links.sh`, `work_repo_links.sh` and `agent_skill_mirror.sh` shell checks (all run via flake checks) |
 
 ### Adding a new feature
 
@@ -93,11 +93,12 @@ generated home, as the `<name>` flake check (`scriptChecks` in
 remote URL), `ssh-agent-keys` (agent key loading), `ssh-allowed-signers`
 (signature verification), `worktrees-branch-template` (branch naming from
 per-repo templates), `repos-list-links` (listing through linked org dirs) and
-`work-repo-links` (the work host's flat-folder links). Run them after
+`work-repo-links` (the work host's flat-folder links) and `agent-skill-mirror`
+(tool-installed skills reaching ~/.agents). Run them after
 touching git or ssh identity settings or `modules/lib/repo-workflow.nix`:
 
 ```sh
-nix build .#checks.aarch64-darwin.{git-work-routing,ssh-agent-keys,ssh-allowed-signers,worktrees-branch-template,repos-list-links,work-repo-links}
+nix build .#checks.aarch64-darwin.{git-work-routing,ssh-agent-keys,ssh-allowed-signers,worktrees-branch-template,repos-list-links,work-repo-links,agent-skill-mirror}
 ```
 
 For home-manager changes, run `home-manager switch --flake .#smores@<host>`

@@ -117,6 +117,10 @@ in
               tools = [ pkgs.git ];
               args = [ (homeExe "repos") ];
             };
+            agent-skill-mirror = {
+              tools = [ ];
+              args = [ (homeExe "agent-skill-mirror") ];
+            };
             work-repo-links = {
               tools = [ pkgs.git ];
               args = [ (lib.getExe (import ../lib/work-repo-links.nix { inherit pkgs; })) ];

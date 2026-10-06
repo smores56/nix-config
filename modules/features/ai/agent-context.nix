@@ -5,6 +5,21 @@
 }:
 let
   cfg = config.dotfiles;
+  inherit (cfg.work) flatRepos toolShell;
+
+  # Generated from the options so no employer name lives here.
+  workHostLines = lib.optionals (cfg.workHost && flatRepos != null) (
+    [
+      "- This is a work host: work checkouts live flat in `${flatRepos.dir}`${
+        lib.optionalString (flatRepos.envVar != null) " (`\$${flatRepos.envVar}`)"
+      }, and `${cfg.codeRoot}/github.com/<org>` links there for ${
+        lib.concatMapStringsSep ", " (org: "`${org}`") flatRepos.orgs
+      }, so repo and worktree paths may print under `${flatRepos.dir}`; clone with `repos get` as usual"
+    ]
+    ++
+      lib.optional (toolShell != null)
+        "- The work tooling's shell functions load from ${toolShell}'s rc files; when your shell isn't ${toolShell}, run them as `${toolShell} -ic '<function> …'`"
+  );
 
   workflowLines = [
     "- Start from the problem, not a solution — state what's wrong or needed; a suspected approach is context, not the goal"
@@ -23,7 +38,8 @@ let
     "  - `direct` (personal repos): worktree → commit and push per change → `review` → merge to main → clean up with `worktrees prune`"
     "  - `pr` (work repos): worktree → commit and push per change → `review` → open a PR with `gh pr create`; never merge to main yourself. Run sdlc phases in the conversation without `sdlc` state commands — its state repo is personal and must not hold work designs"
     "  - unset (third-party checkouts): follow the repo's own contribution rules"
-  ];
+  ]
+  ++ workHostLines;
 
   aiHints = ''
     # Workflow

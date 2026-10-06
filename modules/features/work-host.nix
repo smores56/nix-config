@@ -6,7 +6,7 @@
 }:
 let
   cfg = config.dotfiles;
-  inherit (cfg.work) flatRepos githubOwnerGlob;
+  inherit (cfg.work) flatRepos githubOwnerGlob toolShell;
   enabled = cfg.workHost && flatRepos != null;
 
   links = import ../lib/work-repo-links.nix { inherit pkgs; };
@@ -65,5 +65,28 @@ lib.mkIf enabled {
 
   home.sessionVariables = lib.optionalAttrs (flatRepos.envVar != null) {
     ${flatRepos.envVar} = flatRepos.dir;
+  };
+
+  programs.fish = {
+    # Employer toolchains often pin Python through a non-Nix pyenv; init it
+    # only where one is installed so repo .python-version venvs resolve.
+    interactiveShellInit = lib.mkAfter ''
+      if type -q pyenv
+          pyenv init - fish | source
+          if pyenv commands | string match -q virtualenv-init
+              pyenv virtualenv-init - fish | source
+          end
+      end
+    '';
+    functions = lib.optionalAttrs (toolShell != null) {
+      wsh = {
+        description = "Open the work tooling's shell (${toolShell}) in ${flatRepos.dir}";
+        body = ''
+          pushd ${lib.escapeShellArg flatRepos.dir}; or return
+          command ${toolShell} -il $argv
+          popd
+        '';
+      };
+    };
   };
 }
