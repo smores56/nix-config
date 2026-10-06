@@ -66,7 +66,10 @@ echo "host: $(hostname)  dataset: $NAME  date: $(date -Is)"
 echo "source=$SRC"
 echo "local=$LOC"
 echo "remote=$REMOTE"
-"$RCLONE" version | head -1
+# `rclone version | head -1` races: head closing the pipe SIGPIPEs rclone and
+# pipefail then aborts the script. Buffer the output and trim that instead.
+"$RCLONE" version > "$TMP/version" 2>&1 || true
+head -1 "$TMP/version" || true
 echo
 
 # N files that exist on the source, shared by the local and offsite samples.
