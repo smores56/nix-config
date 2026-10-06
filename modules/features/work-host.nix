@@ -6,25 +6,64 @@
 }:
 let
   cfg = config.dotfiles;
-  flat = cfg.work.flatRepos;
+  inherit (cfg.work) flatRepos githubOwnerGlob;
+  enabled = cfg.workHost && flatRepos != null;
+
   links = import ../lib/work-repo-links.nix { inherit pkgs; };
+  linkArgs = lib.escapeShellArgs (
+    [
+      flatRepos.dir
+      "${cfg.codeRoot}/github.com"
+    ]
+    ++ flatRepos.orgs
+  );
+  # This host's layout baked in, so `work-repo-links --migrate` needs no args.
+  hostLinks = pkgs.writeShellScriptBin "work-repo-links" ''
+    if [ "''${1-}" = --migrate ]; then
+      exec ${lib.getExe links} --migrate ${linkArgs}
+    fi
+    exec ${lib.getExe links} ${linkArgs}
+  '';
+
+  # git wildmatch (as used by the work includes) to a case-folded regex;
+  # owner globs only use * and ?.
+  globRegex =
+    glob:
+    lib.concatMapStrings (
+      c:
+      if c == "*" then
+        ".*"
+      else if c == "?" then
+        "."
+      else
+        lib.escapeRegex c
+    ) (lib.stringToCharacters (lib.toLower glob));
+  outsideGlob = lib.filter (
+    org: builtins.match (globRegex githubOwnerGlob) (lib.toLower org) == null
+  ) (if flatRepos == null then [ ] else flatRepos.orgs);
 in
-lib.mkIf (cfg.workHost && flat != null) {
+lib.mkIf enabled {
+  assertions = [
+    {
+      assertion = lib.hasPrefix "/" flatRepos.dir && !(lib.hasSuffix "/" flatRepos.dir);
+      message = "dotfiles.work.flatRepos.dir must be an absolute path without a trailing slash: ${flatRepos.dir}";
+    }
+    {
+      # A linked org outside the glob would sit in the work folder but commit
+      # with the personal identity.
+      assertion = outsideGlob == [ ];
+      message = "dotfiles.work.flatRepos.orgs not matched by githubOwnerGlob ${githubOwnerGlob}: ${lib.concatStringsSep ", " outsideGlob}";
+    }
+  ];
+
   # Employer tooling sees one flat folder while every checkout stays
   # reachable at <codeRoot>/github.com/<owner>/<repo>.
   home.activation.workRepoLinks = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    run ${lib.getExe links} ${
-      lib.escapeShellArgs (
-        [
-          flat.dir
-          "${cfg.codeRoot}/github.com"
-        ]
-        ++ flat.orgs
-      )
-    }
+    run ${lib.getExe hostLinks}
   '';
+  home.packages = [ hostLinks ];
 
-  home.sessionVariables = lib.optionalAttrs (flat.envVar != null) {
-    ${flat.envVar} = flat.dir;
+  home.sessionVariables = lib.optionalAttrs (flatRepos.envVar != null) {
+    ${flatRepos.envVar} = flatRepos.dir;
   };
 }

@@ -51,15 +51,16 @@ in
         lib.mapAttrs (_: home: home.activationPackage.drvPath) config.flake.homeConfigurations
       );
 
-      # Identity tests run a tests/*.sh script against files from a generated
-      # home. The identity config (git, ssh, fish key loading) is the same on
-      # every host, so any home built for this system can stand in.
-      identityHome = lib.findFirst (home: home.activationPackage.system == system) null (
+      # Script checks run a tests/*.sh script against tools and files from a
+      # generated home. What they exercise (git/ssh identity, repo tooling)
+      # is the same on every host, so any home built for this system can
+      # stand in.
+      scriptHome = lib.findFirst (home: home.activationPackage.system == system) null (
         lib.attrValues config.flake.homeConfigurations
       );
-      identityChecks =
+      scriptChecks =
         let
-          hc = identityHome.config;
+          hc = scriptHome.config;
           d = hc.dotfiles;
           configFile = name: hc.xdg.configFile.${name}.source;
           homeExe =
@@ -91,7 +92,7 @@ in
               touch $out
             '';
         in
-        lib.optionalAttrs (identityHome != null) (
+        lib.optionalAttrs (scriptHome != null) (
           lib.mapAttrs mkScriptCheck {
             git-work-routing = {
               tools = [ pkgs.git ];
@@ -117,7 +118,7 @@ in
               args = [ (homeExe "repos") ];
             };
             work-repo-links = {
-              tools = [ ];
+              tools = [ pkgs.git ];
               args = [ (lib.getExe (import ../lib/work-repo-links.nix { inherit pkgs; })) ];
             };
           }
@@ -182,6 +183,6 @@ in
       }
       // homeChecks
       // nixosChecks
-      // identityChecks;
+      // scriptChecks;
     };
 }

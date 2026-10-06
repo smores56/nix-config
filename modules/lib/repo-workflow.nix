@@ -71,28 +71,36 @@ let
     ];
     text = ''
       ${originParts}
-      # REPOS_CODE_ROOT exists for tests; everything else uses the option.
-      CODE_ROOT=''${REPOS_CODE_ROOT:-${lib.escapeShellArg cfg.codeRoot}}
+      unset CDPATH
+      CODE_ROOT=${lib.escapeShellArg cfg.codeRoot}
 
       # Follows symlinked owner dirs (dotfiles.work.flatRepos links several
       # orgs to one folder), listing each checkout once: under the owner its
       # origin names, else the first path that reaches it.
       list_repos() {
-        [ -d "$CODE_ROOT" ] || exit 0
+        # REPOS_CODE_ROOT only redirects listing, for tests; `get` always
+        # clones under the configured root.
+        local code_root=''${REPOS_CODE_ROOT:-$CODE_ROOT}
+        [ -d "$code_root" ] || exit 0
         local path real owner origin_owner
         local -A chosen=() matched=()
         while IFS= read -r path; do
           git -C "$path" rev-parse --git-dir >/dev/null 2>&1 || continue
-          real=$(cd "$path" && pwd -P)
+          real=$(cd -- "$path" && pwd -P)
           owner=''${path%/*}
           owner=''${owner##*/}
-          origin_owner=$( (cd "$path" && origin_parts) | cut -f2 || true)
+          # Only paths reached through a link can be aliases; skip the origin
+          # lookup for the rest.
+          origin_owner=$owner
+          if [ "$real" != "$path" ]; then
+            origin_owner=$( (cd -- "$path" && origin_parts) | cut -f2 || true)
+          fi
           if [ "''${origin_owner,,}" = "''${owner,,}" ]; then
             [ -n "''${matched[$real]-}" ] || { matched[$real]=1; chosen[$real]=$path; }
           elif [ -z "''${chosen[$real]-}" ]; then
             chosen[$real]=$path
           fi
-        done < <(find -L "$CODE_ROOT" -mindepth 3 -maxdepth 3 -type d 2>/dev/null | sort)
+        done < <(find -L "$code_root" -mindepth 3 -maxdepth 3 -type d 2>/dev/null | sort)
         for real in "''${!chosen[@]}"; do
           printf '%s\n' "''${chosen[$real]}"
         done | sort
@@ -148,7 +156,16 @@ let
           IFS=$'\t' read -r host owner repo <<< "$parts"
           dest="$CODE_ROOT/$host/$owner/$repo"
           url="git@$host:$owner/$repo.git"
-          [ ! -e "$dest" ] || { printf 'repos get: destination exists: %s\n' "$dest" >&2; exit 1; }
+          if [ -e "$dest" ]; then
+            existing=$( (cd -- "$dest" && origin_parts 2>/dev/null) | cut -f2,3 | tr '\t' / || true)
+            if [ -n "$existing" ] && [ "''${existing,,}" != "''${owner,,}/''${repo,,}" ]; then
+              # Linked work orgs share one flat folder, one checkout per name.
+              printf 'repos get: %s is already a checkout of %s (%s resolves into a shared folder)\n' "$dest" "$existing" "$(dirname "$dest")" >&2
+            else
+              printf 'repos get: destination exists: %s\n' "$dest" >&2
+            fi
+            exit 1
+          fi
           mkdir -p "$(dirname "$dest")"
           git clone "$url" "$dest"
           printf '%s\n' "$dest"
