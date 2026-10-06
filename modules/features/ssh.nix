@@ -64,12 +64,16 @@
     # SSH sessions don't run PAM, so it's absent — and HM's ssh-agent module
     # expands $XDG_RUNTIME_DIR when setting SSH_AUTH_SOCK. Set a fallback
     # before HM's init (mkOrder 900): mkBefore runs first, so HM sees a real
-    # value rather than an empty string.
-    (lib.mkBefore ''
-      if test -z "$XDG_RUNTIME_DIR"
-          set -x XDG_RUNTIME_DIR /run/user/(id -u)
-      end
-    '')
+    # value rather than an empty string. Linux only: darwin has no /run, its
+    # agent socket comes from DARWIN_USER_TEMP_DIR, and a dangling value
+    # breaks tools that put sockets there (`op` fails to start its daemon).
+    (lib.mkIf pkgs.stdenv.isLinux (
+      lib.mkBefore ''
+        if test -z "$XDG_RUNTIME_DIR"
+            set -x XDG_RUNTIME_DIR /run/user/(id -u)
+        end
+      ''
+    ))
 
     # Pre-load keys at shell init so git commit signing works before any
     # interactive ssh auth.
