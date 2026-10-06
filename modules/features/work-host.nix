@@ -6,7 +6,7 @@
 }:
 let
   cfg = config.dotfiles;
-  inherit (cfg.work) flatRepos githubOwnerGlob toolShell;
+  inherit (cfg.work) flatRepos githubOwnerGlob;
   hasFlat = cfg.workHost && flatRepos != null;
   orgPaths = lib.optionals hasFlat (map (org: "${cfg.codeRoot}/github.com/${org}") flatRepos.orgs);
 
@@ -45,21 +45,6 @@ let
   ) (if flatRepos == null then [ ] else flatRepos.orgs);
 in
 lib.mkMerge [
-  (lib.mkIf cfg.workHost {
-    # Employer toolchains often pin Python through a non-Nix pyenv; init it
-    # only where one is installed so repo .python-version venvs resolve.
-    # --no-rehash keeps shell startup off pyenv's shim lock. With no pyenv
-    # global set, bare python3 falls through to the Nix one.
-    programs.fish.interactiveShellInit = lib.mkAfter ''
-      if type -q pyenv
-          pyenv init - --no-rehash fish | source
-          if type -q pyenv-virtualenv-init
-              pyenv virtualenv-init - fish | source
-          end
-      end
-    '';
-  })
-
   (lib.mkIf hasFlat {
     assertions = [
       {
@@ -86,24 +71,10 @@ lib.mkMerge [
     '';
     home.packages = [ hostLinks ];
 
-    # Fish only: the tooling's own zsh rc sets it there.
+    # Also for processes not started from the tooling's ~/.zshrc.
     home.sessionVariables = lib.optionalAttrs (flatRepos.envVar != null) {
       ${flatRepos.envVar} = flatRepos.dir;
     };
 
-    programs.fish.functions = lib.optionalAttrs (toolShell != null) {
-      wsh = {
-        description = "Open the work tooling's shell (${toolShell}) in ${flatRepos.dir}";
-        # Interactive, not login: a login zsh runs macOS path_helper, which
-        # reorders PATH before the tooling's own rc runs.
-        body = ''
-          pushd ${lib.escapeShellArg flatRepos.dir}; or return
-          command ${toolShell} -i $argv
-          set -l rc $status
-          popd
-          return $rc
-        '';
-      };
-    };
   })
 ]

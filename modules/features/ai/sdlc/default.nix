@@ -27,9 +27,9 @@ in
 
   home.file.".config/television/cable/features.toml".source = ./features.toml;
 
-  programs.fish.shellAbbrs = {
-    sf = "tv features | read -l f; and c $f";
-    sfe = "tv features | read -l f; and sdlc edit (string replace -r '^.*/' '' $f) plan";
+  dotfiles.shellAbbrs = {
+    sf = "pick features c";
+    sfe = "pick features sdlc edit {name} plan";
     sfl = "sdlc list";
   };
 }

@@ -20,9 +20,9 @@ in
     ".config/television/cable/worktrees.toml".source = ./worktrees.toml;
   };
 
-  programs.fish.shellAbbrs = {
-    r = "tv repos | read -l path; and c $path";
-    w = "tv worktrees | read -l path; and c $path";
+  dotfiles.shellAbbrs = {
+    r = "pick repos c";
+    w = "pick worktrees c";
     wg = "repos get";
     wn = "worktrees new";
     wp = "worktrees prune";

@@ -4,14 +4,47 @@
   pkgs,
   ...
 }:
+let
+  cfg = config.dotfiles;
+  isFish = cfg.shell == "fish";
+  isZsh = cfg.shell == "zsh";
+
+  abbrFor = shell: lib.mapAttrs (_: v: if builtins.isString v then v else v.${shell}) cfg.shellAbbrs;
+
+  # Names the current Zellij tab after the repo (or dir), plus the running
+  # command when given one; both shells call it from their prompt hooks.
+  zellijTabName = pkgs.writeShellApplication {
+    name = "zellij-tab-name";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.git
+    ];
+    text = ''
+      [ -n "''${ZELLIJ:-}" ] || exit 0
+      name=$(basename "$PWD")
+      [ "$PWD" != "$HOME" ] || name="~"
+      if root=$(timeout 1 git rev-parse --show-toplevel 2>/dev/null) && [ -n "$root" ]; then
+        name=$(basename "$root")
+      fi
+      if [ $# -gt 0 ]; then
+        cmd=''${1%% *}
+        [ ''${#cmd} -le 20 ] || cmd="''${cmd:0:17}..."
+        name="$name - $cmd"
+      fi
+      zellij action rename-tab -- "$name" 2>/dev/null || true
+    '';
+  };
+  tabName = lib.getExe zellijTabName;
+in
 {
   home = {
     packages = [
       pkgs.osc
       pkgs.pfetch-rs
+      zellijTabName
     ];
 
-    sessionVariables = {
+    sessionVariables = lib.mkIf isFish {
       async_prompt_functions = "_pure_prompt_git";
       fish_greeting = "";
     };
@@ -30,10 +63,41 @@
 
   manual.manpages.enable = false;
 
+  # One string per abbreviation for both shells; pickers go through `pick`,
+  # defined by each renderer below, since capturing output differs.
+  dotfiles.shellAbbrs = {
+    e = "hx";
+    ef = "pick files hx";
+    et = "pick text hx";
+    l = "eza --icons -lh";
+    t = "zellij a -c main";
+    a = "mkdir -p";
+    f = "yazi";
+    b = "bat";
+    g = "lazygit";
+    gs = "gh dash";
+    gn = "gh notify";
+    gp = "gh pr create";
+    copy = "osc copy";
+    paste = "osc paste";
+
+    cn = "c ~/code/github.com/smores56/nix-config";
+    hm = "home-manager";
+    hs = "home-manager switch --no-write-lock-file";
+
+    ns = "sudo nixos-rebuild --flake ~/.config/home-manager switch --upgrade";
+    ng = "nix-collect-garbage --delete-old";
+
+    sm = "ssh smores@smortress -t fish";
+
+    m = "maki";
+  };
+
   programs = {
     mise = {
       enable = true;
       enableFishIntegration = true;
+      enableZshIntegration = true;
       enableBashIntegration = true;
     };
 
@@ -47,45 +111,19 @@
 
     man.generateCaches = false;
 
-    fish = {
+    fish = lib.mkIf isFish {
       enable = true;
       generateCompletions = false;
 
       # Lix's installer only hooks /etc/{bash,zsh}rc, and nixpkgs' fish reads its
       # sysconfdir from the store, so non-NixOS hosts never get Nix on PATH.
-      shellInit = lib.mkIf (!config.dotfiles.nixos) ''
+      shellInit = lib.mkIf (!cfg.nixos) ''
         if test -e /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.fish
             source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.fish
         end
       '';
 
-      shellAbbrs = {
-        e = "hx";
-        ef = "tv | read -l f; and hx $f";
-        et = "tv text | read -l f; and hx $f";
-        l = "eza --icons -lh";
-        t = "zellij a -c main";
-        a = "mkdir -p";
-        f = "yazi";
-        b = "bat";
-        g = "lazygit";
-        gs = "gh dash";
-        gn = "gh notify";
-        gp = "gh pr create";
-        copy = "osc copy";
-        paste = "osc paste";
-
-        cn = "c ~/code/github.com/smores56/nix-config";
-        hm = "home-manager";
-        hs = "home-manager switch --no-write-lock-file";
-
-        ns = "sudo nixos-rebuild --flake ~/.config/home-manager switch --upgrade";
-        ng = "nix-collect-garbage --delete-old";
-
-        sm = "ssh smores@smortress -t fish";
-
-        m = "maki";
-      };
+      shellAbbrs = abbrFor "fish";
 
       interactiveShellInit = ''
         pfetch
@@ -95,37 +133,33 @@
         end
       '';
 
-      # Auto-name Zellij tabs on every prompt (covers `cd`/zoxide `c`/manual
-      # navigations) and before each command. No-op outside Zellij.
-      functions._zellij_tab_folder = {
-        body = ''
-          set name (basename $PWD)
-          test "$PWD" = "$HOME"; and set name "~"
-          set root (${pkgs.coreutils}/bin/timeout 1 git rev-parse --show-toplevel 2>/dev/null)
-          if test $status -eq 0; and test -n "$root"
-              set name (basename "$root")
+      functions = {
+        # pick <tv-channel> <command…>: runs the picker, then the command
+        # (in this shell, so `c` can cd) with the selection appended or in
+        # place of {} / {name} (its basename). Cancelling runs nothing.
+        pick.body = ''
+          set -l sel (tv $argv[1]); or return
+          test -n "$sel"; or return
+          set -l cmd $argv[2..]
+          if contains -- '{}' $cmd; or contains -- '{name}' $cmd
+              set cmd (string replace -- '{}' $sel $cmd)
+              set cmd (string replace -- '{name}' (path basename $sel) $cmd)
+          else
+              set -a cmd $sel
           end
-          echo "$name"
+          $cmd
         '';
-      };
 
-      functions._zellij_tab_name = {
-        body = ''
-          zellij action rename-tab -- (_zellij_tab_folder) 2>/dev/null
-        '';
-        onEvent = [ "fish_prompt" ];
-      };
-
-      functions._zellij_tab_name_preexec = {
-        body = ''
-          set cmd (string split ' ' -- $argv)[1]
-          if test (string length -- "$cmd") -gt 20
-              set cmd (string sub --length 17 -- "$cmd")"..."
-          end
-          set folder (_zellij_tab_folder)
-          zellij action rename-tab -- "$folder - $cmd" 2>/dev/null
-        '';
-        onEvent = [ "fish_preexec" ];
+        # Auto-name Zellij tabs on every prompt (covers `cd`/zoxide `c`/manual
+        # navigations) and before each command.
+        _zellij_tab_name = {
+          body = "${tabName}";
+          onEvent = [ "fish_prompt" ];
+        };
+        _zellij_tab_name_preexec = {
+          body = "${tabName} $argv";
+          onEvent = [ "fish_preexec" ];
+        };
       };
 
       plugins =
@@ -139,6 +173,102 @@
             "pure"
             "async-prompt"
           ];
+    };
+
+    # Fish emulation: pure prompt, real abbreviations, autosuggestions,
+    # highlighting, prefix history search, `done`-style notifications.
+    zsh = lib.mkIf isZsh {
+      enable = true;
+      # HM owns $ZDOTDIR; ~/.zshrc stays a plain file for tools that write
+      # their own blocks into it (an employer setup tool, installers).
+      dotDir = ".config/zsh";
+      autosuggestion.enable = true;
+      syntaxHighlighting.enable = true;
+      historySubstringSearch.enable = true;
+      zsh-abbr = {
+        enable = true;
+        abbreviations = abbrFor "zsh";
+      };
+      history = {
+        size = 50000;
+        save = 50000;
+        share = true;
+        ignoreAllDups = true;
+        ignoreSpace = true;
+      };
+
+      initContent = lib.mkMerge [
+        # Before compinit: fish-like menu completion, case-insensitive.
+        (lib.mkOrder 550 ''
+          zstyle ':completion:*' menu select
+          zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}' 'r:|[._-]=* r:|=*'
+        '')
+
+        # The tool-owned rc, after compinit (its completion blocks need it)
+        # and before the interactive layer, so its PATH entries win.
+        (lib.mkOrder 600 ''
+          if [[ "''${ZDOTDIR:-$HOME}" != "$HOME" && -f "$HOME/.zshrc" ]]; then
+            source "$HOME/.zshrc"
+          fi
+        '')
+
+        (lib.mkOrder 1000 ''
+          fpath+=(${pkgs.pure-prompt}/share/zsh/site-functions)
+          autoload -U promptinit && promptinit && prompt pure
+
+          pick() {
+            local sel replaced=0 i
+            sel=$(tv "$1") || return
+            [[ -n $sel ]] || return
+            shift
+            local -a cmd=("$@")
+            for i in {1..$#cmd}; do
+              case $cmd[i] in
+                '{}') cmd[i]=$sel; replaced=1 ;;
+                '{name}') cmd[i]=''${sel:t}; replaced=1 ;;
+              esac
+            done
+            (( replaced )) || cmd+=("$sel")
+            "''${cmd[@]}"
+          }
+
+          autoload -Uz add-zsh-hook
+          zmodload zsh/datetime
+
+          _zellij_tab_name() { ${tabName} }
+          _zellij_tab_name_preexec() { ${tabName} "$1" }
+          add-zsh-hook precmd _zellij_tab_name
+          add-zsh-hook preexec _zellij_tab_name_preexec
+
+          # Like fish's `done`: notify when a command ran 10s or more while
+          # the terminal wasn't the focused app.
+          _done_preexec() { _done_start=$EPOCHREALTIME; _done_cmd=$1 }
+          _done_precmd() {
+            local rc=$? elapsed
+            [[ -n ''${_done_start-} ]] || return 0
+            elapsed=$(( EPOCHREALTIME - _done_start ))
+            unset _done_start
+            (( elapsed >= 10 )) || return 0
+            local title="''${_done_cmd%% *} $( (( rc )) && print failed || print finished ) after ''${elapsed%.*}s"
+            ${
+              if pkgs.stdenv.hostPlatform.isDarwin then
+                ''
+                  [[ -n ''${__CFBundleIdentifier-} ]] && /usr/bin/lsappinfo info -only bundleID "$(/usr/bin/lsappinfo front)" 2>/dev/null | grep -q "\"$__CFBundleIdentifier\"" && return 0
+                  /usr/bin/osascript -e "display notification \"''${_done_cmd//\"/\\\"}\" with title \"''${title//\"/\\\"}\"" >/dev/null 2>&1
+                ''
+              else
+                ''
+                  command -v notify-send >/dev/null && notify-send -- "$title" "$_done_cmd"
+                ''
+            }
+            return 0
+          }
+          add-zsh-hook preexec _done_preexec
+          add-zsh-hook precmd _done_precmd
+
+          pfetch
+        '')
+      ];
     };
   };
 }

@@ -103,11 +103,8 @@ in
               args = [ (configFile "git/config") ];
             };
             ssh-agent-keys = {
-              tools = [
-                pkgs.fish
-                pkgs.openssh
-              ];
-              args = [ (configFile "fish/functions/__load_ssh_keys.fish") ];
+              tools = [ pkgs.openssh ];
+              args = [ (homeExe "load-ssh-keys") ];
             };
             ssh-allowed-signers = {
               tools = [ pkgs.openssh ];

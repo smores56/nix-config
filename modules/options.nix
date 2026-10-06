@@ -84,10 +84,24 @@ in
       default = "personal";
       description = "Which model providers coding agents may use. 'work' keeps agents on Anthropic only, so work code never reaches personal providers.";
     };
+    shellAbbrs = lib.mkOption {
+      type = lib.types.attrsOf (
+        lib.types.either lib.types.str (
+          lib.types.submodule {
+            options = {
+              fish = lib.mkOption { type = lib.types.str; };
+              zsh = lib.mkOption { type = lib.types.str; };
+            };
+          }
+        )
+      );
+      default = { };
+      description = "Abbreviations for whichever shell the host uses. Write one string both fish and zsh accept; give { fish; zsh; } only where no common form exists. `pick <tv-channel> <command…>` runs a picker and the command with the selection (or in place of {} / {name}).";
+    };
     workHost = lib.mkOption {
       type = lib.types.bool;
       default = false;
-      description = "This host does day-to-day work development: fish inits an installed pyenv, and when `dotfiles.work.flatRepos` is set it gets that repo layout (plus `wsh` with `toolShell`). Independent of `aiProfile`.";
+      description = "This host does day-to-day work development: its shell is zsh (`dotfiles.shell`), sourcing the tooling-owned ~/.zshrc, and when `dotfiles.work.flatRepos` is set it gets that repo layout. Independent of `aiProfile`.";
     };
     username = lib.mkOption {
       type = lib.types.str;
@@ -412,7 +426,7 @@ in
           toolShell = lib.mkOption {
             type = lib.types.nullOr (lib.types.strMatching "[A-Za-z0-9._+-]+");
             default = null;
-            description = "Shell command whose interactive rc files the employer's tooling manages (its env functions live there); `wsh` opens it in the flat folder on work hosts.";
+            description = "Shell command whose interactive rc files the employer's tooling manages (its env functions live there); agents whose shell doesn't load them call it with -ic.";
           };
           flatRepos = lib.mkOption {
             type = lib.types.nullOr (
@@ -457,8 +471,12 @@ in
       readOnly = true;
     };
     shell = lib.mkOption {
-      type = lib.types.str;
+      type = lib.types.enum [
+        "fish"
+        "zsh"
+      ];
       readOnly = true;
+      description = "Interactive and login shell: zsh on work hosts (the employer's tooling and docs assume it), fish everywhere else.";
     };
     browser = lib.mkOption {
       type = lib.types.str;
@@ -545,7 +563,7 @@ in
       githubUser = "smores56";
       codeRoot = "${config.home.homeDirectory}/code";
       terminal = "kitty";
-      shell = "fish";
+      shell = if config.dotfiles.workHost then "zsh" else "fish";
       browser = "firefox";
       font = "Google Sans Code";
       fontPackage = pkgs.googlesans-code;

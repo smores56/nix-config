@@ -216,15 +216,21 @@ appears outside those option values.
   An org dir that already holds checkouts is reported, never moved; run
   `work-repo-links --migrate` to move its entries into the flat folder
   (refusing name collisions, repairing worktrees) and link it.
-- **`wsh`** opens `toolShell` (interactive, not login, so macOS
-  `path_helper` doesn't reorder PATH before the tooling's rc runs) in the
-  flat folder, for the tooling's shell
-  functions. Fish also inits pyenv when one is installed, so a repo's
-  `.python-version` venv resolves.
+- **zsh is the shell** (`dotfiles.shell` follows `workHost`; fish isn't
+  enabled). HM owns `$ZDOTDIR` (`~/.config/zsh`, set from `~/.zshenv`) and
+  sources the tooling-owned plain `~/.zshrc` right after compinit, so its
+  PATH entries (pyenv, nvm, brew) win and its functions just work. The
+  interactive layer emulates fish: pure prompt, `zsh-abbr` abbreviations,
+  autosuggestions, syntax highlighting, up-arrow prefix history search,
+  `done`-style notifications, menu completion and pfetch.
+- **Abbreviations** are declared once in `dotfiles.shellAbbrs` and rendered
+  for whichever shell a host runs; pickers use `pick <tv-channel>
+  <command…>`, defined for both shells.
 - **Skills** the tooling installs into `~/.claude/skills` need nothing
   extra: Claude Code and maki both read that directory.
-- **Agents** get a generated `CLAUDE.md` note on the layout and on calling
-  `toolShell` functions (`<toolShell> -ic '<function> && <command>'`).
+- **Agents** get a generated `CLAUDE.md` note on the layout, and on calling
+  `toolShell` functions as `<toolShell> -ic '<function> && <command>'` when
+  their shell didn't load the rc.
 
 Limits: the flat folder holds one checkout per name across all linked orgs,
 and also the tooling's own state (env files, credentials), which is then
@@ -239,7 +245,14 @@ only provides the frame above. Order matters:
 
 1. `home-manager switch`. If it warns that
    `~/code/github.com/blitzy-ai` is a real directory, run
-   `work-repo-links --migrate`.
+   `work-repo-links --migrate`. Then make Nix zsh the login shell (once,
+   needs sudo):
+
+   ```sh
+   grep -qx "$HOME/.nix-profile/bin/zsh" /etc/shells || echo "$HOME/.nix-profile/bin/zsh" | sudo tee -a /etc/shells
+   chsh -s "$HOME/.nix-profile/bin/zsh"
+   ```
+
 2. 1Password: join `blitzy.1password.com`, then in the desktop app enable
    **Settings → Security → Touch ID** and **Settings → Developer →
    Integrate with 1Password CLI**.
@@ -266,7 +279,7 @@ only provides the frame above. Order matters:
 7. Finish the manual steps in blitzy-dev's `docs/local-dev-setup.md`
    (`env-dev` rebuilt from Secret Manager, WorkOS UI vars).
 
-Use `wsh` for `set_dev`, `rdb_dev`, `ddb` and the other env functions.
+`set_dev`, `rdb_dev`, `ddb` and the other env functions work in any shell.
 Branches come from `worktrees new --ticket ABK-123` (or `--type fix`); PR
 titles follow the team's `ABK-123: description` style.
 

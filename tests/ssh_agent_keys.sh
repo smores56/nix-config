@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Runs the generated __load_ssh_keys fish function against a scratch
-# ssh-agent: every present key gets loaded, an already-loaded key is not
-# re-added, and a missing key is skipped. Usage: ssh_agent_keys.sh <fn.fish>
+# Runs the generated load-ssh-keys script (both shells call it at init)
+# against a scratch ssh-agent: every present key gets loaded, an
+# already-loaded key is not re-added, and a missing key is skipped.
+# Usage: ssh_agent_keys.sh <load-ssh-keys>
 set -euo pipefail
 
-fn=$1
+load=$1
 export HOME=$PWD/home
 mkdir -p "$HOME/.ssh"
 for key in id_personal id_work; do
@@ -23,15 +24,15 @@ check() {
 }
 
 ssh-add -q "$HOME/.ssh/id_personal"
-fish --no-config -c "source $fn; __load_ssh_keys"
+"$load"
 check "both keys loaded when one already was" "$(loaded)" 2
 
-fish --no-config -c "source $fn; __load_ssh_keys"
+"$load"
 check "rerun adds nothing" "$(loaded)" 2
 
 ssh-add -qD
 rm "$HOME/.ssh/id_work" "$HOME/.ssh/id_work.pub"
-fish --no-config -c "source $fn; __load_ssh_keys"
+"$load"
 check "missing key skipped" "$(loaded)" 1
 
 if ((failures)); then

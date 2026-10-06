@@ -214,6 +214,20 @@ let
   '';
 
   makiSessionSearch = "${pkgs.python3}/bin/python3 ${./maki-session-search.py}";
+
+  # maki-session-resume <id>: reopens a session in the directory it ran in.
+  # A script rather than a shell function so every shell shares it; maki
+  # (the PATH wrapper) is found the same way an interactive call would.
+  makiSessionResume = pkgs.writeShellScriptBin "maki-session-resume" ''
+    session_id=''${1:?usage: maki-session-resume <session-id>}
+    cwd=$(${makiSessionSearch} cwd "$session_id")
+    if [ ! -d "$cwd" ]; then
+      printf 'maki session directory no longer exists: %s\n' "$cwd" >&2
+      exit 1
+    fi
+    cd "$cwd" || exit 1
+    exec maki --session "$session_id"
+  '';
   # PATH bin so the maki Lua plugin can invoke it by name via maki.fn.jobstart.
   makiSessionSearchBin = pkgs.writeShellScriptBin "maki-session-search" ''
     exec ${pkgs.python3}/bin/python3 ${./maki-session-search.py} "$@"
@@ -307,22 +321,9 @@ in
       makiWrapper
       pkgs.rtk
       makiSessionSearchBin
+      makiSessionResume
     ];
 
-    programs.fish = {
-      functions.__maki_session_resume = {
-        body = ''
-          set -l session_id $argv[1]
-          set -l cwd (${makiSessionSearch} cwd "$session_id")
-          if not test -d "$cwd"
-            printf 'maki session directory no longer exists: %s\n' "$cwd" >&2
-            return 1
-          end
-          cd "$cwd"
-          command maki --session "$session_id"
-        '';
-      };
-      shellAbbrs.ms = "tv maki-sessions | read -l s; and __maki_session_resume $s";
-    };
+    dotfiles.shellAbbrs.ms = "pick maki-sessions maki-session-resume";
   };
 }
