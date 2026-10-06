@@ -112,6 +112,14 @@ in
               tools = [ pkgs.git ];
               args = [ (homeExe "worktrees") ];
             };
+            repos-list-links = {
+              tools = [ pkgs.git ];
+              args = [ (homeExe "repos") ];
+            };
+            work-repo-links = {
+              tools = [ ];
+              args = [ (lib.getExe (import ../lib/work-repo-links.nix { inherit pkgs; })) ];
+            };
           }
         );
 

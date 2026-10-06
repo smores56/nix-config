@@ -6,25 +6,8 @@
 let
   cfg = config.dotfiles;
 
-  workflowPrelude = ''
-    # Build-time branch naming, for git configs this repo doesn't manage;
-    # modules/features/git.nix writes smores.branchTemplate* everywhere else.
-    DEFAULT_BRANCH_TEMPLATE=${lib.escapeShellArg cfg.branchNaming.template}
-    DEFAULT_BRANCH_UNTICKETED=${lib.escapeShellArg (toString cfg.branchNaming.unticketed)}
-    DEFAULT_TICKET_PATTERN=${lib.escapeShellArg cfg.branchNaming.ticketPattern}
-
-    json_string() {
-      printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/^/"/; s/$/"/'
-    }
-
-    slugify() {
-      printf '%s' "$1" \
-        | tr '[:upper:]' '[:lower:]' \
-        | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' \
-        | cut -c1-50 \
-        | sed -E 's/-+$//'
-    }
-
+  # Shared by `repos` and `worktrees`: host, owner, repo of the cwd's origin.
+  originParts = ''
     origin_parts() {
       local url path host owner repo
       url=$(git remote get-url origin 2>/dev/null) || return 1
@@ -55,6 +38,28 @@ let
     }
   '';
 
+  workflowPrelude = ''
+    ${originParts}
+    # Build-time branch naming, for git configs this repo doesn't manage;
+    # modules/features/git.nix writes smores.branchTemplate* everywhere else.
+    DEFAULT_BRANCH_TEMPLATE=${lib.escapeShellArg cfg.branchNaming.template}
+    DEFAULT_BRANCH_UNTICKETED=${lib.escapeShellArg (toString cfg.branchNaming.unticketed)}
+    DEFAULT_TICKET_PATTERN=${lib.escapeShellArg cfg.branchNaming.ticketPattern}
+
+    json_string() {
+      printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/^/"/; s/$/"/'
+    }
+
+    slugify() {
+      printf '%s' "$1" \
+        | tr '[:upper:]' '[:lower:]' \
+        | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' \
+        | cut -c1-50 \
+        | sed -E 's/-+$//'
+    }
+
+  '';
+
   repos = pkgs.writeShellApplication {
     name = "repos";
     runtimeInputs = [
@@ -65,17 +70,32 @@ let
       pkgs.television
     ];
     text = ''
-      CODE_ROOT=${lib.escapeShellArg cfg.codeRoot}
+      ${originParts}
+      # REPOS_CODE_ROOT exists for tests; everything else uses the option.
+      CODE_ROOT=''${REPOS_CODE_ROOT:-${lib.escapeShellArg cfg.codeRoot}}
 
+      # Follows symlinked owner dirs (dotfiles.work.flatRepos links several
+      # orgs to one folder), listing each checkout once: under the owner its
+      # origin names, else the first path that reaches it.
       list_repos() {
         [ -d "$CODE_ROOT" ] || exit 0
-        find "$CODE_ROOT" -mindepth 3 -maxdepth 3 -type d \
-          | while IFS= read -r path; do
-              if git -C "$path" rev-parse --git-dir >/dev/null 2>&1; then
-                printf '%s\n' "$path"
-              fi
-            done \
-          | sort
+        local path real owner origin_owner
+        local -A chosen=() matched=()
+        while IFS= read -r path; do
+          git -C "$path" rev-parse --git-dir >/dev/null 2>&1 || continue
+          real=$(cd "$path" && pwd -P)
+          owner=''${path%/*}
+          owner=''${owner##*/}
+          origin_owner=$( (cd "$path" && origin_parts) | cut -f2 || true)
+          if [ "''${origin_owner,,}" = "''${owner,,}" ]; then
+            [ -n "''${matched[$real]-}" ] || { matched[$real]=1; chosen[$real]=$path; }
+          elif [ -z "''${chosen[$real]-}" ]; then
+            chosen[$real]=$path
+          fi
+        done < <(find -L "$CODE_ROOT" -mindepth 3 -maxdepth 3 -type d 2>/dev/null | sort)
+        for real in "''${!chosen[@]}"; do
+          printf '%s\n' "''${chosen[$real]}"
+        done | sort
       }
 
       normalize_repo() {
