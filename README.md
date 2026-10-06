@@ -223,7 +223,7 @@ appears outside those option values.
 - **Skills** the tooling installs into `~/.claude/skills` need nothing
   extra: Claude Code and maki both read that directory.
 - **Agents** get a generated `CLAUDE.md` note on the layout and on calling
-  `toolShell` functions (`zsh -ic '<function> && <command>'`).
+  `toolShell` functions (`<toolShell> -ic '<function> && <command>'`).
 
 Limits: the flat folder holds one checkout per name across all linked orgs,
 and also the tooling's own state (env files, credentials), which is then
