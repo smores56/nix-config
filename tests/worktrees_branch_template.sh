@@ -1,29 +1,35 @@
 #!/usr/bin/env bash
 # `worktrees new --dry-run` branch naming: templates come from the repo's
-# git config (smores.branchTemplate / smores.branchTemplateUnticketed), with
-# {ticket} {type} {slug} placeholders; tickets come from --ticket or the
-# first Jira-shaped key in --task/--slug. Templates here are set per repo, so
-# the mechanics are tested independently of any employer's values; the
-# generated config's values are covered by git_work_routing.sh.
+# git config (smores.branchTemplate / smores.branchTemplateUnticketed /
+# smores.ticketPattern), with {slug} {ticket} {type} placeholders; tickets
+# only come from --ticket. Schemes are set per repo here, so the mechanics
+# are tested independently of any employer's values; the generated config's
+# values are covered by git_work_routing.sh.
 #
-# Usage: worktrees_branch_template.sh <worktrees>, with PERSONAL_BRANCH_TEMPLATE
-# (the build-time fallback when the repo's git config sets nothing).
+# Usage: worktrees_branch_template.sh <worktrees>, with
+# PERSONAL_BRANCH_TEMPLATE (the build-time fallback when the repo's git
+# config sets nothing).
 set -euo pipefail
 
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 HOME=$PWD/home
 worktrees=$1
 mkdir -p "$HOME"
 failures=0
+jira='[A-Z][A-Z0-9]*-[0-9]+'
 
-# repo <dir> [template [unticketed]]
+# repo <dir> [template unticketed pattern]: with a template, sets all three
+# keys the way git.nix does (an empty unticketed means ticket required).
 repo() {
   git init -q "$1"
   git -C "$1" remote add origin "git@github.com:acme/$1.git"
-  [ -z "${2:-}" ] || git -C "$1" config smores.branchTemplate "$2"
-  [ -z "${3:-}" ] || git -C "$1" config smores.branchTemplateUnticketed "$3"
+  if [ $# -gt 1 ]; then
+    git -C "$1" config smores.branchTemplate "$2"
+    git -C "$1" config smores.branchTemplateUnticketed "$3"
+    git -C "$1" config smores.ticketPattern "$4"
+  fi
 }
 
-# run <dir> <args...>: prints the dry-run JSON; stderr folded in on failure
+# run <dir> <args...>: prints the dry-run JSON, or stderr plus EXIT on failure
 run() {
   local dir=$1
   shift
@@ -41,48 +47,61 @@ check() {
   fi
 }
 
+# check_fails <name> <message substring> <dir> <args...>
 check_fails() {
-  local out
-  out=$(run "${@:2}")
-  if [[ $out != *"EXIT "* ]]; then
-    echo "FAIL $1: want an error, got '$out'"
+  local name=$1 want=$2 out
+  shift 2
+  out=$(run "$@")
+  if [[ $out != *"EXIT "* || $out != *"$want"* ]]; then
+    echo "FAIL $name: want an error containing '$want', got '$out'"
     failures=$((failures + 1))
   fi
 }
 
-fallback=${PERSONAL_BRANCH_TEMPLATE//\{slug\}/fix-auth}
-
+# The fallback scheme is whatever the personal default is; pass a ticket and
+# type so any placeholder it uses has a value.
 repo plain
-check fallback "$(run plain --slug fix-auth | field branch)" "$fallback"
-check fallback-dir "$(run plain --slug fix-auth | field path)" "$PWD/plain/.worktrees/fix-auth"
-check fallback-ticket-null "$(run plain --slug fix-auth | grep -c '"ticket":null')" 1
-# A Jira-shaped word in a task for a template without {ticket} stays text.
-check fallback-task-key "$(run plain --task "Fix ABK-12 auth" | field branch)" "${PERSONAL_BRANCH_TEMPLATE//\{slug\}/fix-abk-12-auth}"
-check_fails fallback-explicit-ticket plain --slug fix-auth --ticket ABK-12
+want=$PERSONAL_BRANCH_TEMPLATE
+want=${want//\{slug\}/fix-auth}
+want=${want//\{ticket\}/ABC-1}
+want=${want//\{type\}/fix}
+check fallback "$(run plain --slug fix-auth --ticket ABC-1 --type fix | field branch)" "$want"
 
-repo prefixed 'me/{slug}'
+repo prefixed 'me/{slug}' '' "$jira"
 check prefixed "$(run prefixed --slug 'Fix Auth' | field branch)" "me/fix-auth"
+check prefixed-dir "$(run prefixed --slug fix-auth | field path)" "$PWD/prefixed/.worktrees/me-fix-auth"
+check prefixed-task "$(run prefixed --task 'Fix the auth flow' | field branch)" "me/fix-the-auth-flow"
+check prefixed-slug-wins "$(run prefixed --slug fix-auth --task 'ABC-9: other words' | field branch)" "me/fix-auth"
+# Repos that don't name branches by ticket ignore it rather than failing.
+check prefixed-ignores-ticket "$(run prefixed --slug fix-auth --ticket ABC-1 | field branch)" "me/fix-auth"
+check prefixed-ticket-null "$(run prefixed --slug fix-auth --ticket ABC-1 | field ticket)" ""
+check prefixed-ignores-type "$(run prefixed --slug fix-auth --type feat | field branch)" "me/fix-auth"
 
-repo team '{ticket}-{slug}' '{type}/{slug}'
+repo team '{ticket}-{slug}' '{type}/{slug}' "$jira"
 check ticket "$(run team --slug fix-auth --ticket ABK-1234 | field branch)" "ABK-1234-fix-auth"
 check ticket-field "$(run team --slug fix-auth --ticket ABK-1234 | field ticket)" "ABK-1234"
 check ticket-dir "$(run team --slug fix-auth --ticket ABK-1234 | field path)" "$PWD/team/.worktrees/ABK-1234-fix-auth"
-check ticket-upcased "$(run team --slug fix-auth --ticket arui-7 | field branch)" "ARUI-7-fix-auth"
-check ticket-from-task "$(run team --task "ABK-99: gate the readiness endpoint" | field branch)" "ABK-99-gate-the-readiness-endpoint"
-check ticket-from-slug "$(run team --slug ABK-99-readiness-gate | field branch)" "ABK-99-readiness-gate"
-check ticket-explicit-wins "$(run team --task "ABK-1 old" --ticket ABK-2 | field branch)" "ABK-2-abk-1-old"
-check unticketed "$(run team --slug readiness-gate | field branch)" "fix/readiness-gate"
-check unticketed-dir "$(run team --slug readiness-gate | field path)" "$PWD/team/.worktrees/readiness-gate"
-check unticketed-type "$(run team --slug readiness-gate --type feat | field branch)" "feat/readiness-gate"
-check lowercase-is-text "$(run team --task "bump utf-8 handling" | field branch)" "fix/bump-utf-8-handling"
-check_fails bad-ticket team --slug x --ticket 1234
-check_fails bad-type team --slug x --type 'Feat!'
+check ticket-not-repeated "$(run team --slug abk-1234-fix-auth --ticket ABK-1234 | field branch)" "ABK-1234-fix-auth"
+# Jira-looking words in free text are text, never tickets.
+check no-implicit-ticket "$(run team --task 'Handle UTF-8 in ABK-9' --type fix | field branch)" "fix/handle-utf-8-in-abk-9"
+check unticketed "$(run team --slug readiness-gate --type fix | field branch)" "fix/readiness-gate"
+check unticketed-dir "$(run team --slug readiness-gate --type feat | field path)" "$PWD/team/.worktrees/feat-readiness-gate"
+check_fails type-required 'needs --type' team --slug readiness-gate
+check_fails bad-type 'lowercase kebab' team --slug x --type 'Feat!'
+check_fails multiline-type 'lowercase kebab' team --slug x --type $'fix\nx'
+check_fails bad-ticket 'ticket pattern' team --slug x --ticket abk-12
+check_fails multiline-ticket 'ticket pattern' team --slug x --ticket $'ABK-1\nx'
+check_fails ticket-only-slug 'empty slug' team --slug ABK-7 --ticket ABK-7
 
-repo ticket-only '{ticket}-{slug}'
-check_fails ticket-required ticket-only --slug fix-auth
+repo ticket-only '{ticket}-{slug}' '' "$jira"
+check_fails ticket-required 'needs --ticket' ticket-only --slug fix-auth --type fix
 
-repo bad-placeholder '{user}/{slug}'
-check_fails unknown-placeholder bad-placeholder --slug fix-auth
+repo numbered '{slug}-{ticket}' '' '#?[0-9]+'
+check custom-pattern "$(run numbered --slug fix-auth --ticket 42 | field branch)" "fix-auth-42"
+check_fails custom-pattern-rejects 'ticket pattern' numbered --slug fix-auth --ticket ABK-42
+
+repo bad-placeholder '{user}/{slug}' '' "$jira"
+check_fails unknown-placeholder 'unknown placeholder' bad-placeholder --slug fix-auth
 
 if ((failures)); then
   echo "$failures branch template expectation(s) failed"

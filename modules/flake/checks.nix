@@ -72,13 +72,15 @@ in
             WORK_EMAIL = d.work.email;
             WORK_KEY = d.work.sshKey;
             WORK_SSH_CONFIG = d.work.sshConfig;
-            WORK_BRANCH_TEMPLATE = d.work.branch.template;
-            WORK_BRANCH_UNTICKETED = toString d.work.branch.unticketed;
+            WORK_BRANCH_TEMPLATE = d.work.branchNaming.template;
+            WORK_BRANCH_UNTICKETED = toString d.work.branchNaming.unticketed;
+            WORK_TICKET_PATTERN = d.work.branchNaming.ticketPattern;
             WORK_OWNER = lib.replaceStrings [ "*" ] [ "routing-test" ] d.work.githubOwnerGlob;
             PERSONAL_EMAIL = d.email;
             PERSONAL_KEY = "~/.ssh/id_personal";
-            PERSONAL_BRANCH_TEMPLATE = d.branch.template;
-            PERSONAL_BRANCH_UNTICKETED = toString d.branch.unticketed;
+            PERSONAL_BRANCH_TEMPLATE = d.branchNaming.template;
+            PERSONAL_BRANCH_UNTICKETED = toString d.branchNaming.unticketed;
+            PERSONAL_TICKET_PATTERN = d.branchNaming.ticketPattern;
             PERSONAL_OWNER = d.githubUser;
           };
           mkScriptCheck =

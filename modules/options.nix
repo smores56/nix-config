@@ -33,6 +33,11 @@ let
         default = null;
         description = "Template used when `template` needs {ticket} and no ticket was given; null makes a ticket required.";
       };
+      ticketPattern = lib.mkOption {
+        type = lib.types.str;
+        default = "[A-Z][A-Z0-9]*-[0-9]+";
+        description = "Extended regex a --ticket must match in full (default: Jira-style keys such as ABC-123).";
+      };
     };
   };
 
@@ -364,7 +369,7 @@ in
       readOnly = true;
       description = "Default git identity.";
     };
-    branch = lib.mkOption {
+    branchNaming = lib.mkOption {
       type = branchNamingType;
       readOnly = true;
       description = "Branch naming in every repo the work identity doesn't claim.";
@@ -380,7 +385,7 @@ in
             type = lib.types.str;
             description = "GitHub owner pattern (git wildmatch, matched case-insensitively) whose repos use the work identity.";
           };
-          branch = lib.mkOption {
+          branchNaming = lib.mkOption {
             type = branchNamingType;
             description = "Branch naming in work repos.";
           };
@@ -482,11 +487,11 @@ in
       wayland = config.dotfiles.displayManager == "niri";
       terminalFontSize = 12;
       email = "sam@sammohr.dev";
-      branch.template = "smores/{slug}";
+      branchNaming.template = "smores/{slug}";
       work = {
         email = "smohr@blitzy.com";
         githubOwnerGlob = "blitzy-*";
-        branch.template = "smohr/{slug}";
+        branchNaming.template = "smohr/{slug}";
         sshKey = "~/.ssh/id_work";
         sshConfig = "~/.ssh/config.work";
         flow = "pr";

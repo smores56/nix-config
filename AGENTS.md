@@ -40,7 +40,7 @@ explicitly. Place files by concern, not by host.
 | `modules/features/tv/` | Television repository and worktree cables |
 | `modules/features/photobucket/` | feh-based keyboard photo triage tool + its Python helper |
 | `modules/features/cloudflare/` | Cloudflare Tunnel DNS/Access reconciler (Python helper) + manual `cloudflare-sync` CLI |
-| `tests/` | Python unit tests for the sdlc, maki, photobucket, and cloudflare tools, plus the `git_work_routing.sh`, `ssh_agent_keys.sh`, `ssh_allowed_signers.sh` and `worktrees_branch_template.sh` identity checks (all run via flake checks) |
+| `tests/` | Python unit tests for the sdlc, maki, photobucket, and cloudflare tools, plus the `git_work_routing.sh`, `ssh_agent_keys.sh`, `ssh_allowed_signers.sh` and `worktrees_branch_template.sh` shell checks (all run via flake checks) |
 
 ### Adding a new feature
 
@@ -91,7 +91,8 @@ Identity checks run each `tests/<name>.sh` against files from a generated
 home, as the `<name>` flake check (`identityChecks` in
 `modules/flake/checks.nix`): `git-work-routing` (work vs personal identity by
 remote URL), `ssh-agent-keys` (agent key loading), `ssh-allowed-signers`
-(signature verification) and `worktrees-branch-template`. Run them after
+(signature verification) and `worktrees-branch-template` (branch naming
+from per-repo templates). Run them after
 touching git or ssh identity settings or `modules/lib/repo-workflow.nix`:
 
 ```sh

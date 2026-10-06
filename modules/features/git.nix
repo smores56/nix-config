@@ -50,16 +50,14 @@ let
       inherit path;
     }) (ownerRemotes owner);
 
-  # Read by `worktrees new`. A null `unticketed` writes nothing, so a repo
-  # inherits the global value there (none today).
-  branchSettings =
-    branch:
-    {
-      branchTemplate = branch.template;
-    }
-    // lib.optionalAttrs (branch.unticketed != null) {
-      branchTemplateUnticketed = branch.unticketed;
-    };
+  # Read by `worktrees new`. Every key is always written (null unticketed as
+  # empty, meaning "ticket required") so an owner include fully replaces the
+  # global scheme instead of inheriting parts of it.
+  branchSettings = naming: {
+    branchTemplate = naming.template;
+    branchTemplateUnticketed = toString naming.unticketed;
+    inherit (naming) ticketPattern;
+  };
 
   workIncludes = ownerIncludes work.githubOwnerGlob {
     user = {
@@ -70,7 +68,7 @@ let
     smores = {
       inherit (work) flow;
     }
-    // branchSettings work.branch;
+    // branchSettings work.branchNaming;
   };
   # Only repos the personal account owns land directly on main; third-party
   # checkouts get no flow at all.
@@ -191,7 +189,7 @@ in
           fetch.prune = true;
           # Repo tooling reads smores.* instead of re-deriving the identity
           # from the remote.
-          smores = branchSettings cfg.branch;
+          smores = branchSettings cfg.branchNaming;
         }
       ];
     };

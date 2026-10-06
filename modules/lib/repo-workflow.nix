@@ -9,8 +9,9 @@ let
   workflowPrelude = ''
     # Build-time branch naming, for git configs this repo doesn't manage;
     # modules/features/git.nix writes smores.branchTemplate* everywhere else.
-    DEFAULT_BRANCH_TEMPLATE=${lib.escapeShellArg cfg.branch.template}
-    DEFAULT_BRANCH_UNTICKETED=${lib.escapeShellArg (toString cfg.branch.unticketed)}
+    DEFAULT_BRANCH_TEMPLATE=${lib.escapeShellArg cfg.branchNaming.template}
+    DEFAULT_BRANCH_UNTICKETED=${lib.escapeShellArg (toString cfg.branchNaming.unticketed)}
+    DEFAULT_TICKET_PATTERN=${lib.escapeShellArg cfg.branchNaming.ticketPattern}
 
     json_string() {
       printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/^/"/; s/$/"/'
@@ -183,10 +184,6 @@ let
         git -C "$1" symbolic-ref --quiet --short HEAD 2>/dev/null || true
       }
 
-      # Jira-style keys: uppercase project, dash, number. Lowercase text such
-      # as "utf-8" never counts as a ticket.
-      TICKET_RE='[A-Z][A-Z0-9]*-[0-9]+'
-
       # render_branch <template> <ticket> <type> <slug>
       render_branch() {
         local out=$1
@@ -199,9 +196,13 @@ let
         printf '%s\n' "$out"
       }
 
+      ticket_json() {
+        if [ -n "$1" ]; then json_string "$1"; else printf 'null'; fi
+      }
+
       create_new() {
-        local slug="" task="" ticket="" type="fix" base="" dry_run=false
-        local template unticketed source branch name root path default
+        local slug="" task="" ticket="" type="" base="" dry_run=false
+        local template unticketed pattern lowered branch name root path default
         while [ $# -gt 0 ]; do
           case "$1" in
             --slug) slug=$2; shift 2 ;;
@@ -214,51 +215,64 @@ let
           esac
         done
 
-        source=''${slug:-$task}
-        [ -n "$source" ] || { printf 'worktrees new: --slug or --task required\n' >&2; exit 2; }
-        printf '%s' "$type" | grep -qxE '[a-z]+' || { printf 'worktrees new: --type must be lowercase letters: %s\n' "$type" >&2; exit 2; }
+        [ -n "$slug" ] || {
+          [ -n "$task" ] || { printf 'worktrees new: --slug or --task required\n' >&2; exit 2; }
+          slug=$task
+        }
 
         origin_parts >/dev/null || { printf 'worktrees new: could not parse origin remote\n' >&2; exit 1; }
 
-        template=$(git config --get smores.branchTemplate || printf '%s' "$DEFAULT_BRANCH_TEMPLATE")
-        if git config --get smores.branchTemplate >/dev/null; then
+        # A managed git config always sets all three keys (an empty
+        # unticketed means "ticket required"), so an include never inherits
+        # another scheme's value; the build-time defaults cover the rest.
+        if template=$(git config --get smores.branchTemplate); then
           unticketed=$(git config --get smores.branchTemplateUnticketed || true)
+          pattern=$(git config --get smores.ticketPattern || printf '%s' "$DEFAULT_TICKET_PATTERN")
         else
+          template=$DEFAULT_BRANCH_TEMPLATE
           unticketed=$DEFAULT_BRANCH_UNTICKETED
+          pattern=$DEFAULT_TICKET_PATTERN
         fi
 
+        case "$template" in
+          *'{ticket}'*)
+            if [ -n "$ticket" ]; then
+              [[ $ticket =~ ^($pattern)$ ]] || { printf 'worktrees new: --ticket %s does not match this repo'"'"'s ticket pattern %s\n' "$ticket" "$pattern" >&2; exit 2; }
+            elif [ -n "$unticketed" ]; then
+              template=$unticketed
+            else
+              printf 'worktrees new: this repo needs --ticket (branch template %s)\n' "$template" >&2
+              exit 2
+            fi
+            ;;
+          *)
+            # Agents pass --ticket whenever work has one; repos that don't
+            # name branches by ticket just don't use it.
+            [ -z "$ticket" ] || printf 'worktrees new: branch template %s has no {ticket}; ignoring --ticket %s\n' "$template" "$ticket" >&2
+            ticket=""
+            ;;
+        esac
+        case "$template" in
+          *'{type}'*)
+            [ -n "$type" ] || { printf 'worktrees new: this repo needs --type (branch template %s)\n' "$template" >&2; exit 2; }
+            [[ $type =~ ^[a-z][a-z0-9-]*$ ]] || { printf 'worktrees new: --type must be lowercase kebab: %s\n' "$type" >&2; exit 2; }
+            ;;
+          *) type="" ;;
+        esac
+
+        slug=$(slugify "$slug")
+        # Don't repeat a ticket the slug already starts with.
         if [ -n "$ticket" ]; then
-          ticket=$(printf '%s' "$ticket" | tr '[:lower:]' '[:upper:]')
-          printf '%s' "$ticket" | grep -qxE "$TICKET_RE" || { printf 'worktrees new: --ticket is not a KEY-123 ticket: %s\n' "$ticket" >&2; exit 2; }
-          case "$template" in
-            *'{ticket}'*) ;;
-            *) printf 'worktrees new: this repo'"'"'s branch template has no {ticket}: %s\n' "$template" >&2; exit 2 ;;
-          esac
-        else
-          case "$template" in
-            *'{ticket}'*)
-              # Take the first key the slug or task mentions, and drop it from
-              # the slug so it isn't repeated.
-              ticket=$(printf '%s' "$source" | grep -oE "$TICKET_RE" | head -1 || true)
-              if [ -n "$ticket" ]; then
-                source=''${source/"$ticket"/}
-              elif [ -n "$unticketed" ]; then
-                template=$unticketed
-              else
-                printf 'worktrees new: this repo needs --ticket (template %s)\n' "$template" >&2
-                exit 2
-              fi
-              ;;
-          esac
+          lowered=$(slugify "$ticket")
+          [ "$slug" != "$lowered" ] || slug=""
+          slug=''${slug#"$lowered"-}
         fi
-
-        slug=$(slugify "$source")
         [ -n "$slug" ] || { printf 'worktrees new: empty slug\n' >&2; exit 2; }
 
         branch=$(render_branch "$template" "$ticket" "$type" "$slug") || exit 2
         git check-ref-format --branch "$branch" >/dev/null 2>&1 || { printf 'worktrees new: invalid branch name: %s\n' "$branch" >&2; exit 2; }
-        name=$slug
-        [ -z "$ticket" ] || name="$ticket-$slug"
+        # One directory per branch, so fix/x and feat/x never collide.
+        name=''${branch//\//-}
 
         root=$(main_worktree)
         [ -n "$root" ] || { printf 'worktrees new: could not resolve main worktree\n' >&2; exit 1; }
@@ -286,10 +300,6 @@ let
         mkdir -p "$(dirname "$path")"
         git worktree add "$path" -b "$branch" "$base" >/dev/null
         printf '{"branch":%s,"path":%s,"ticket":%s,"base":%s}\n' "$(json_string "$branch")" "$(json_string "$path")" "$(ticket_json "$ticket")" "$(json_string "$base")"
-      }
-
-      ticket_json() {
-        if [ -n "$1" ]; then json_string "$1"; else printf 'null'; fi
       }
 
       ref_sha() {

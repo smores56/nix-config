@@ -31,11 +31,11 @@ maki.api.register_tool({
   kind = "execute",
   description = [[Spawn a new interactive maki session in a new Zellij tab (with a worktree).
 
-Provide a kebab `slug` and the session `prompt`; optionally a `task` (description) and a `base` ref. The worktree + branch are created by the canonical `worktrees` tool, which owns branch naming — do not supply a branch name.
+Provide a kebab `slug` and the session `prompt`; optionally a `task` (description), a `ticket` (when the work has one), a `type` (fix, feat, … for repos that name unticketed branches by type) and a `base` ref. The worktree + branch are created by the canonical `worktrees` tool, which owns branch naming from the repo's template — do not supply a branch name.
 
 Workflow:
 1. Shows a confirmation question (bottom of window) with the slug and prompt
-2. Creates the worktree via `worktrees new --slug <slug> [--task <task>] [--base <base>]`
+2. Creates the worktree via `worktrees new --slug <slug> [--task <task>] [--ticket <ticket>] [--type <type>] [--base <base>]`
 3. Opens a new Zellij tab and runs maki in the worktree directory
 
 Use for long-running feature work that deserves its own isolated session.
@@ -57,6 +57,14 @@ This tool cannot be batched.]],
         type = "string",
         description = "Task description; passed to `worktrees --task`. Defaults to the slug.",
       },
+      ticket = {
+        type = "string",
+        description = "Ticket key (e.g. 'ABC-123'); passed to `worktrees --ticket`. Repos whose branch template has no ticket ignore it.",
+      },
+      type = {
+        type = "string",
+        description = "Change type (e.g. 'fix', 'feat'); passed to `worktrees --type`. Required by repos whose unticketed branches are named by type.",
+      },
       base = {
         type = "string",
         description = "Base ref for the new branch (defaults to origin's default branch).",
@@ -75,10 +83,10 @@ This tool cannot be batched.]],
       return { llm_output = "error: slug and prompt are required", is_error = true }
     end
     local task = input.task or ""
+    local ticket = input.ticket or ""
+    local change_type = input.type or ""
     local base = input.base or ""
 
-    -- Worktree directory name = <slug>; also the Zellij tab label.
-    local worktree_name = slug
     local start_label = ("Start: %s"):format(slug)
     local prompt_preview = (prompt:match("^([^\n]+)") or prompt):gsub("%s+", " ")
     if #prompt_preview > 120 then
@@ -86,9 +94,9 @@ This tool cannot be batched.]],
     end
     local question_text = ("Start a new session?\n\n"
       .. "- **Slug:** `%s`\n"
-      .. "- **Worktree:** `.worktrees/%s`\n"
+      .. (ticket ~= "" and ("- **Ticket:** `%s`\n"):format(ticket) or "")
       .. "- **Prompt:** %s")
-      :format(slug, worktree_name, prompt_preview)
+      :format(slug, prompt_preview)
 
     -- Bottom-of-window question form. Escape/Ctrl-C/close dismisses
     -- (result.type == "dismiss"); no explicit Cancel option needed.
@@ -112,6 +120,12 @@ This tool cannot be batched.]],
     local wt_args = "--slug " .. shell_quote(slug)
     if task ~= "" then
       wt_args = wt_args .. " --task " .. shell_quote(task)
+    end
+    if ticket ~= "" then
+      wt_args = wt_args .. " --ticket " .. shell_quote(ticket)
+    end
+    if change_type ~= "" then
+      wt_args = wt_args .. " --type " .. shell_quote(change_type)
     end
     if base ~= "" then
       wt_args = wt_args .. " --base " .. shell_quote(base)
@@ -139,12 +153,13 @@ if [ -z "$path" ]; then
   exit 1
 fi
 
-zellij action new-tab -n %s -c "$path" --close-on-exit -- maki -- "$START_PROMPT"
+# The worktree directory name (from the repo's branch template) labels the tab.
+zellij action new-tab -n %s" - ${path##*/}" -c "$path" --close-on-exit -- maki -- "$START_PROMPT"
 echo "OK:$path"
 echo "BRANCH:$branch"
 ]],
       wt_args,
-      shell_quote(sushi_icon .. " - " .. worktree_name)
+      shell_quote(sushi_icon)
     )
 
     -- Run the script and capture output
@@ -171,7 +186,7 @@ echo "BRANCH:$branch"
         local branch = combined:match("BRANCH:([^\n]+)") or "(unknown)"
         ctx:finish({
           llm_output = ("Started session in Zellij tab **%s**\n- Worktree: `%s`\n- Branch: `%s`")
-            :format(worktree_name, path, branch),
+            :format(path:match("([^/]+)$") or path, path, branch),
         })
       end,
     })
