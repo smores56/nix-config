@@ -84,6 +84,11 @@ in
       default = "personal";
       description = "Which model providers coding agents may use. 'work' keeps agents on Anthropic only, so work code never reaches personal providers.";
     };
+    workHost = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "This host does day-to-day work development: it gets the work repo layout (`dotfiles.work.flatRepos`) and work shell conveniences. Independent of `aiProfile`.";
+    };
     username = lib.mkOption {
       type = lib.types.str;
       default = "smores";
@@ -404,6 +409,29 @@ in
             ];
             description = "How changes land: 'direct' merges to main, 'pr' goes through pull requests.";
           };
+          flatRepos = lib.mkOption {
+            type = lib.types.nullOr (
+              lib.types.submodule {
+                options = {
+                  dir = lib.mkOption {
+                    type = lib.types.str;
+                    description = "Absolute directory holding every work checkout flat as <dir>/<repo>, the layout the employer's tooling expects.";
+                  };
+                  envVar = lib.mkOption {
+                    type = lib.types.nullOr lib.types.str;
+                    default = null;
+                    description = "Environment variable the employer's tooling reads for `dir`; exported on work hosts.";
+                  };
+                  orgs = lib.mkOption {
+                    type = lib.types.listOf lib.types.str;
+                    description = "GitHub owners whose <codeRoot>/github.com/<owner> is a symlink to `dir` on work hosts.";
+                  };
+                };
+              }
+            );
+            default = null;
+            description = "Flat checkout layout for work hosts; null keeps work repos under codeRoot like any other.";
+          };
         };
       };
       readOnly = true;
@@ -495,6 +523,14 @@ in
         branchNaming = {
           template = "{ticket}-{slug}";
           unticketed = "{type}/{slug}";
+        };
+        flatRepos = {
+          dir = "${config.home.homeDirectory}/Blitzy";
+          envVar = "BLITZY_REPOS_DIR";
+          orgs = [
+            "blitzy-ai"
+            "blitzy-platform"
+          ];
         };
         sshKey = "~/.ssh/id_work";
         sshConfig = "~/.ssh/config.work";

@@ -116,6 +116,7 @@ let
     calibre = null;
     photobucket = null;
     aiProfile = null;
+    workHost = null;
   };
   homeArgs = [
     "system"
@@ -222,6 +223,7 @@ in
         username = "sam";
         system = "aarch64-darwin";
         aiProfile = "work";
+        workHost = true;
       };
     };
     nixosConfigurations = {
