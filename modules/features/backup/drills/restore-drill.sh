@@ -73,9 +73,11 @@ head -1 "$TMP/version" || true
 echo
 
 # N files that exist on the source, shared by the local and offsite samples.
+# `shuf -n`, not `shuf | head`: head closing the pipe SIGPIPEs shuf, and
+# `set -o pipefail` then aborts the whole drill on a large source tree.
 (
   cd "$SRC" && find . -type f ! -path '*/.cache/*' ! -name rclone.conf \
-    | shuf | head -n "$N" | sed 's|^\./||'
+    | shuf -n "$N" | sed 's|^\./||'
 ) > "$TMP/list"
 
 fail=0
@@ -131,7 +133,7 @@ fi
 
 if [ -n "${DRILL_PG_DB:-}" ]; then
   step "database restore into scratch postgres"
-  DUMP=${DRILL_PG_DUMP:-$(ls -t "$LOC"/db/*.dump | head -1)}
+  DUMP=${DRILL_PG_DUMP:-$(ls -t "$LOC"/db/*.dump 2>/dev/null | head -1 || true)}
   echo "dump: $DUMP ($(stat -c %s "$DUMP") bytes, $(stat -c %y "$DUMP"))"
   QUERY=${DRILL_PG_QUERY:-"select 'assets', count(*) from assets union all select 'albums', count(*) from albums union all select 'people', count(*) from person;"}
   counts() {
