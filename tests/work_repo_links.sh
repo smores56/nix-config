@@ -55,15 +55,16 @@ mkdir -p "$root/legacy/clash" "$flat/clash"
 out=$("$links" --migrate "$flat" "$root" legacy 2>&1) && rc=0 || rc=$?
 check migrate-collision-exit "$rc" 1
 check migrate-collision-warned "$(grep -c -- "$flat/clash already exists" <<<"$out")" 1
-check migrate-moved "$([ -d "$flat/app/.git" ] && echo yes)" yes
+check migrate-all-or-nothing "$([ -d "$root/legacy/app/.git" ] && [ ! -e "$flat/app" ] && echo yes)" yes
 check migrate-kept-clash "$([ -d "$root/legacy/clash" ] && [ ! -L "$root/legacy" ] && echo yes)" yes
-check migrate-worktree-repaired "$(git -C "$flat/app/.worktrees/topic" rev-parse --abbrev-ref HEAD 2>&1)" topic
-check migrate-worktree-listed "$(git -C "$flat/app" worktree list --porcelain | grep -c "^worktree $flat/app/.worktrees/topic$")" 1
 
 rmdir "$root/legacy/clash"
 out=$("$links" --migrate "$flat" "$root" legacy 2>&1) && rc=0 || rc=$?
 check migrate-done-exit "$rc" 0
+check migrate-moved "$([ -d "$flat/app/.git" ] && echo yes)" yes
 check migrate-linked "$(readlink "$root/legacy")" "$flat"
+check migrate-worktree-repaired "$(git -C "$flat/app/.worktrees/topic" rev-parse --abbrev-ref HEAD 2>&1)" topic
+check migrate-worktree-listed "$(git -C "$flat/app" worktree list --porcelain | grep -c "^worktree $flat/app/.worktrees/topic$")" 1
 
 if ((failures)); then exit 1; fi
 echo "work repo links: ok"

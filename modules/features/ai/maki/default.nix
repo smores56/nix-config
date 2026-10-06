@@ -202,6 +202,7 @@ let
       "rm -rf $HOME/*",
       "sh",
       "bash",
+      "zsh",
       "git push --force *",
       "git push -f *",
       "git push * --force *",

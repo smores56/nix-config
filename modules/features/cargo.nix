@@ -5,7 +5,7 @@
   ...
 }:
 let
-  inherit (pkgs.stdenv) isDarwin;
+  inherit (pkgs.stdenv.hostPlatform) isDarwin;
   home = config.home.homeDirectory;
   # rustup stable toolchain for the host triple.
   #

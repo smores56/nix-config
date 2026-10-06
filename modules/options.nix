@@ -26,7 +26,7 @@ let
     options = {
       template = lib.mkOption {
         type = lib.types.str;
-        description = "Branch name template with {slug}, {ticket} (a Jira-style key) and {type} (fix, feat, …) placeholders.";
+        description = "Branch name template with {slug}, {ticket} (a key matching ticketPattern) and {type} (fix, feat, …) placeholders.";
       };
       unticketed = lib.mkOption {
         type = lib.types.nullOr lib.types.str;
@@ -87,7 +87,7 @@ in
     workHost = lib.mkOption {
       type = lib.types.bool;
       default = false;
-      description = "This host does day-to-day work development: it gets the work repo layout (`dotfiles.work.flatRepos`) and work shell conveniences. Independent of `aiProfile`.";
+      description = "This host does day-to-day work development: fish inits an installed pyenv, and when `dotfiles.work.flatRepos` is set it gets that repo layout (plus `wsh` with `toolShell`). Independent of `aiProfile`.";
     };
     username = lib.mkOption {
       type = lib.types.str;

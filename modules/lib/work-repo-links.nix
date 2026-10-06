@@ -39,17 +39,24 @@ pkgs.writeShellApplication {
       [ -z "$(find "$1" -mindepth 1 -maxdepth 1 ! -name .DS_Store -print -quit)" ]
     }
 
+    # Moves everything or nothing: a collision found halfway would leave the
+    # org's checkouts split across two paths.
     move_into_flat() {
-      local dir=$1 entry name moved=true
+      local dir=$1 entry name moved=true clash=false
       for entry in "$dir"/* "$dir"/.[!.]* "$dir"/..?*; do
         [ -e "$entry" ] || [ -L "$entry" ] || continue
         name=''${entry##*/}
         [ "$name" != .DS_Store ] || continue
         if [ -e "$flat/$name" ] || [ -L "$flat/$name" ]; then
-          warn "$flat/$name already exists; not moving $entry (the flat folder holds one checkout per name)"
-          moved=false
-          continue
+          warn "$flat/$name already exists; not migrating $dir (the flat folder holds one checkout per name)"
+          clash=true
         fi
+      done
+      ! $clash || return 1
+      for entry in "$dir"/* "$dir"/.[!.]* "$dir"/..?*; do
+        [ -e "$entry" ] || [ -L "$entry" ] || continue
+        name=''${entry##*/}
+        [ "$name" != .DS_Store ] || continue
         mv -- "$entry" "$flat/$name" || { warn "could not move $entry"; moved=false; continue; }
         # Worktree links are absolute paths; re-point the moved ones.
         if [ -d "$flat/$name/.worktrees" ] && git -C "$flat/$name" rev-parse --git-dir >/dev/null 2>&1; then

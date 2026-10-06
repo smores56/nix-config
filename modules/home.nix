@@ -5,7 +5,7 @@
   ...
 }:
 let
-  inherit (pkgs.stdenv) isLinux;
+  inherit (pkgs.stdenv.hostPlatform) isLinux;
   isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
   cfg = config.dotfiles;
   darwinFontsEnv = pkgs.buildEnv {

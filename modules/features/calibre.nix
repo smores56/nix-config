@@ -13,7 +13,7 @@
   ...
 }:
 let
-  inherit (pkgs.stdenv) isLinux;
+  inherit (pkgs.stdenv.hostPlatform) isLinux;
   cfg = config.dotfiles.calibre;
 
   library = "${config.home.homeDirectory}/Calibre Library";

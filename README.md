@@ -216,8 +216,9 @@ appears outside those option values.
   An org dir that already holds checkouts is reported, never moved; run
   `work-repo-links --migrate` to move its entries into the flat folder
   (refusing name collisions, repairing worktrees) and link it.
-- **`wsh`** opens `toolShell` (interactive, not login, so the Nix profile
-  stays first on PATH) in the flat folder, for the tooling's shell
+- **`wsh`** opens `toolShell` (interactive, not login, so macOS
+  `path_helper` doesn't reorder PATH before the tooling's rc runs) in the
+  flat folder, for the tooling's shell
   functions. Fish also inits pyenv when one is installed, so a repo's
   `.python-version` venv resolves.
 - **Skills** the tooling installs into `~/.claude/skills` need nothing

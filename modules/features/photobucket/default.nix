@@ -15,7 +15,7 @@
   ...
 }:
 let
-  inherit (pkgs.stdenv) isLinux;
+  inherit (pkgs.stdenv.hostPlatform) isLinux;
   cfg = config.dotfiles.photobucket;
   root = if cfg.root == "" then "${config.home.homeDirectory}/Pictures/_triage" else cfg.root;
   photobucket = pkgs.writeShellScriptBin "photobucket" ''

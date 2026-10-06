@@ -6,7 +6,7 @@
 }:
 let
   hasDm = config.dotfiles.graphical;
-  inherit (pkgs.stdenv) isLinux;
+  inherit (pkgs.stdenv.hostPlatform) isLinux;
 in
 {
   config = lib.mkIf (hasDm && isLinux) {

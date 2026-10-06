@@ -8,7 +8,7 @@
   ...
 }:
 let
-  inherit (pkgs.stdenv) isLinux;
+  inherit (pkgs.stdenv.hostPlatform) isLinux;
   immich-ingest = pkgs.writeShellScriptBin "immich-ingest" ''
     export IMMICH_INGEST_PHOTOBUCKET=${./../photobucket/photobucket.py}
     exec ${pkgs.python3}/bin/python3 ${./immich_ingest.py} "$@"

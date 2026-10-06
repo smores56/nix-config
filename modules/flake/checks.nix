@@ -28,6 +28,10 @@ in
         config.allowUnfree = true;
       };
 
+      # Lint tools come from one nixpkgs on every platform so the format check
+      # agrees with `nix fmt` wherever it runs.
+      lintPkgs = import inputs.nixpkgs { inherit system; };
+
       src = inputs.self;
 
       mkEvalChecks =
@@ -133,7 +137,7 @@ in
         format =
           pkgs.runCommand "format-check"
             {
-              nativeBuildInputs = [ pkgs.nixfmt-tree ];
+              nativeBuildInputs = [ lintPkgs.nixfmt-tree ];
             }
             ''
               cp -R --no-preserve=mode,ownership ${src} source
@@ -145,7 +149,7 @@ in
         statix =
           pkgs.runCommand "statix-check"
             {
-              nativeBuildInputs = [ pkgs.statix ];
+              nativeBuildInputs = [ lintPkgs.statix ];
             }
             ''
               statix check -c ${src} ${src}
