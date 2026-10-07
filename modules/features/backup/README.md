@@ -58,10 +58,13 @@ smortress, `proton:Photos`, `proton:Videos`, `proton:Music`.
 | `Music` | `/var/lib/media/Music` | 05:00 | yes | — |
 
 Every dataset excludes `/.cache/**`, `**/.cache/**` and `/rclone.conf` by
-default (the `excludes` option default), so a stray credential copy or a
-regenerable cache never enters a mirror. Both cache patterns are needed:
-rclone's `**/` requires a preceding path segment, so it misses a `.cache`
-sitting at the source root.
+default (the `excludes` option default). That keeps regenerable caches (at the
+source root and nested) and a stray `rclone.conf` at the source root out of
+both mirrors — it does **not** make the mirrors secret-free: a credential-shaped
+file anywhere else (e.g. `Photos/backup/rclone.conf`, a `.env`) is copied unless
+you add it to `excludes`. Both cache patterns are needed: rclone's `**/`
+requires a preceding path segment, so it misses a `.cache` sitting at the
+source root.
 
 ## How a run works
 
@@ -170,5 +173,5 @@ dataset needs `dotfiles.backup.enable = true` (the backup disk).
 - The offsite mirror never prunes and keeps no versions: a file deleted from the
   source lives on in Proton forever, and a changed file is overwritten in place.
   That is deliberate for backup safety; there is no retention/prune tooling.
-- `dotfiles.immich.backup` (the old restic/Immich-specific pipeline) still
-  exists and is being retired in favour of these datasets.
+- `dotfiles.immich.backup` and the old restic/Immich-specific pipeline have
+  been removed; these generic datasets replace them.

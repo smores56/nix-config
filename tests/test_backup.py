@@ -190,6 +190,21 @@ class BackupTests(unittest.TestCase):
                 out=lambda _s: None,
             )
 
+    def test_run_backup_raises_when_check_verified_nothing(self):
+        # Over-broad excludes can empty the mirror; rclone then verifies 0 files
+        # (Checks: 0) and still exits 0, so the count itself must fail the run.
+        def run(argv, capture=False, env=None):
+            return "Checks:                 0 / 0,  -"
+
+        with self.assertRaises(self.mod.BackupError):
+            self.mod.run_backup(
+                cfg(self.mod, self.base, source=str(self.src)),
+                DATE,
+                run=run,
+                lock=False,
+                out=lambda _s: None,
+            )
+
     def test_marker_written_on_failure_and_removed_on_success(self):
         bad_cfg = cfg(self.mod, self.base, source=str(self.src))
 
@@ -355,6 +370,7 @@ class BackupTests(unittest.TestCase):
             read=read,
             clock=lambda: clock[0],
             out=lambda _line: None,
+            capture=True,
         )
         return result, procs
 
@@ -434,6 +450,14 @@ class BackupTests(unittest.TestCase):
                 self.mod.validate_date(bad)
         for good in ("2026-10-03", "2026-10-03T123456", "run_1.2-3"):
             self.assertEqual(self.mod.validate_date(good), good)
+
+    def test_validate_name_rejects_path_escapes(self):
+        # The name is both a local path component and the remote folder, so it
+        # must not carry separators or traverse out of the backup tree.
+        for bad in ("..", "a/b", "", ".", "-leading", "a\\b"):
+            with self.assertRaises(self.mod.BackupError):
+                self.mod.validate_name(bad)
+        self.assertEqual(self.mod.validate_name("Photos"), "Photos")
 
     # --- F15: collision-free version stamp --------------------------------
 
@@ -600,10 +624,49 @@ class BackupTests(unittest.TestCase):
             read=read,
             clock=lambda: 0.0,
             out=out.append,
+            capture=True,
         )
         # The oversized partial line was flushed instead of accumulating.
         self.assertTrue(out)
         self.assertIn("z", result)
+
+    def test_run_streaming_raises_on_nonzero_exit(self):
+        # A non-zero rclone exit must surface, not be swallowed as empty output.
+        def popen(argv, **kwargs):
+            proc = FakeProc()
+            proc.returncode = 2
+            return proc
+
+        def read(fd, size):
+            return b""
+
+        with self.assertRaises(self.mod.subprocess.CalledProcessError):
+            self.mod.run_streaming(
+                ["rclone", "check"],
+                popen=popen,
+                read=read,
+                out=lambda _line: None,
+            )
+
+    def test_run_streaming_strips_control_characters_from_out(self):
+        # Source filenames are attacker-influenceable; ANSI escapes and other C0
+        # controls must not reach the journal.
+        seen = []
+        chunks = [b"evil\x1b[31mname\x07.bin\n", b""]
+
+        def popen(argv, **kwargs):
+            return FakeProc()
+
+        def read(fd, size):
+            return chunks.pop(0) if chunks else b""
+
+        self.mod.run_streaming(
+            ["rclone", "copy"],
+            popen=popen,
+            read=read,
+            out=seen.append,
+        )
+        self.assertEqual(seen, ["evil[31mname.bin"])
 
     def test_run_streaming_retries_a_stall_then_succeeds(self):
         procs = []

@@ -245,7 +245,7 @@ in
                       "**/.cache/**"
                       "/rclone.conf"
                     ];
-                    description = "rclone exclude patterns kept out of both mirrors (secrets, regenerable caches). Defaults to dropping caches at the source root and nested, plus a stray rclone credential copy; override to exclude more.";
+                    description = "rclone exclude patterns kept out of both mirrors. Defaults to dropping regenerable caches at the source root and nested, plus a source-root rclone.conf copy; a credential-shaped file elsewhere in the tree is still copied unless you add it here.";
                   };
                   schedule = lib.mkOption {
                     type = lib.types.str;

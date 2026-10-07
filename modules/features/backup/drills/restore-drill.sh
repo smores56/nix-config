@@ -105,7 +105,7 @@ elif [ ${#unit_excludes[@]} -gt 0 ]; then
   EXCL_ARGS=()
   for pattern in "${unit_excludes[@]}"; do EXCL_ARGS+=(--exclude "$pattern"); done
 else
-  EXCL_ARGS=(--exclude '**/.cache/**' --exclude '/rclone.conf')
+  EXCL_ARGS=(--exclude '/.cache/**' --exclude '**/.cache/**' --exclude '/rclone.conf')
 fi
 
 [ "$DRILL_ONLY_DB" = 1 ] && [ -z "${DRILL_PG_DB:-}" ] &&
@@ -176,12 +176,32 @@ if [ "$DRILL_ONLY_DB" != 1 ]; then
   mapfile -t samples < "$TMP/list"
 
   step "1: source vs local (size/count + $N sha256)"
-  printf '%-10s ' source; "$RCLONE" size "$SRC" --config "$CONF" "${EXCL_ARGS[@]}" 2>/dev/null \
-    | sed -E 's/Total objects: /n=/; s/Total size: /bytes=/' | tr '\n' ' '; echo
-  printf '%-10s ' local; "$RCLONE" size "$LOC" --config "$CONF" "${EXCL_ARGS[@]}" 2>/dev/null \
-    | sed -E 's/Total objects: /n=/; s/Total size: /bytes=/' | tr '\n' ' '; echo
+  src_size=$("$RCLONE" size "$SRC" --config "$CONF" "${EXCL_ARGS[@]}" 2>/dev/null || true)
+  loc_size=$("$RCLONE" size "$LOC" --config "$CONF" "${EXCL_ARGS[@]}" 2>/dev/null || true)
+  printf '%-10s ' source; printf '%s\n' "$src_size" | sed -E 's/Total objects: /n=/; s/Total size: /bytes=/' | tr '\n' ' '; echo
+  printf '%-10s ' local; printf '%s\n' "$loc_size" | sed -E 's/Total objects: /n=/; s/Total size: /bytes=/' | tr '\n' ' '; echo
+  # The counts must match; a failed `rclone size` yields an empty token, which
+  # also fails here rather than passing as a spurious zero.
+  src_n=$(printf '%s\n' "$src_size" | grep -oP 'Total objects:\s*\K\d+' | head -1 || true)
+  loc_n=$(printf '%s\n' "$loc_size" | grep -oP 'Total objects:\s*\K\d+' | head -1 || true)
+  if [ -z "$src_n" ] || [ -z "$loc_n" ]; then
+    fail=$((fail + 1)); echo "FAIL could not read object counts (source=${src_n:-?} local=${loc_n:-?})"
+  elif [ "$src_n" != "$loc_n" ]; then
+    fail=$((fail + 1)); echo "FAIL object count differs: source=$src_n local=$loc_n"
+  else
+    echo "OK   object count matches ($src_n)"
+  fi
+  if [ "${#samples[@]}" -eq 0 ]; then
+    fail=$((fail + 1)); echo "FAIL no samples selected from $SRC"
+  fi
   for rel in "${samples[@]}"; do
-    if [ "$(sha256sum "$SRC/$rel" | cut -d' ' -f1)" = "$(sha256sum "$LOC/$rel" | cut -d' ' -f1)" ]; then
+    # Each hash must actually be read; a failed sha256sum yields an empty token
+    # and an empty-vs-empty comparison would otherwise print a false OK.
+    src_hash=$(sha256sum "$SRC/$rel" 2>/dev/null | cut -d' ' -f1) || true
+    loc_hash=$(sha256sum "$LOC/$rel" 2>/dev/null | cut -d' ' -f1) || true
+    if [ -z "$src_hash" ] || [ -z "$loc_hash" ]; then
+      fail=$((fail + 1)); echo "FAIL local  $rel (could not read sha256)"
+    elif [ "$src_hash" = "$loc_hash" ]; then
       echo "OK   local  $rel"
     else
       fail=$((fail + 1)); echo "FAIL local  $rel"
@@ -200,7 +220,13 @@ if [ "$DRILL_ONLY_DB" != 1 ]; then
     printf 'fetch %s ... ' "$rel"
     if timeout "$FETCH_TIMEOUT" "$RCLONE" copyto "$REMOTE/$rel" "$dest" \
       --config "$CONF" "${NET[@]}" -q; then
-      if [ "$(sha256sum "$SRC/$rel" | cut -d' ' -f1)" = "$(sha256sum "$dest" | cut -d' ' -f1)" ]; then
+      # Both hashes must actually be read; a failed sha256sum yields an empty
+      # token and an empty-vs-empty comparison would print a false OK.
+      src_hash=$(sha256sum "$SRC/$rel" 2>/dev/null | cut -d' ' -f1) || true
+      dst_hash=$(sha256sum "$dest" 2>/dev/null | cut -d' ' -f1) || true
+      if [ -z "$src_hash" ] || [ -z "$dst_hash" ]; then
+        fail=$((fail + 1)); echo "FAIL (could not read sha256)"
+      elif [ "$src_hash" = "$dst_hash" ]; then
         echo "OK"
       else
         fail=$((fail + 1)); echo "FAIL (hash mismatch)"

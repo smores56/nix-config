@@ -181,12 +181,18 @@ in
     ++ lib.mapAttrsToList (name: dataset: {
       # The driver's rclone stats cadence is 30s; a stall budget below two
       # cadences can trip on a slow-but-alive transfer. "0" disables the watchdog.
+      # parseDurationSeconds accepts a far broader grammar (words, compounds,
+      # spaces) than the driver's parse_duration (`\d+[smhd]?`), so guard the
+      # grammar too: a value like "1min" would pass eval then crash every run.
       assertion =
         let
           seconds = parseDurationSeconds dataset.stallTimeout;
         in
-        dataset.stallTimeout == "0" || (seconds != null && seconds >= 60);
-      message = "dotfiles.backup.datasets.${name}.stallTimeout must be \"0\" (disabled) or at least 60s (two rclone 30s stats intervals), got \"${dataset.stallTimeout}\".";
+        dataset.stallTimeout == "0"
+        || (
+          builtins.match "[0-9]+[smhd]?" dataset.stallTimeout != null && seconds != null && seconds >= 60
+        );
+      message = "dotfiles.backup.datasets.${name}.stallTimeout must be \"0\" (disabled) or \"<number><s|m|h|d>\" of at least 60s (two rclone 30s stats intervals), got \"${dataset.stallTimeout}\".";
     }) cfg.datasets;
 
     # The driver creates the host-wide lock itself; this only guarantees it
