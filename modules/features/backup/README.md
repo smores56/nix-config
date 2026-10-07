@@ -57,9 +57,11 @@ smortress, `proton:Photos`, `proton:Videos`, `proton:Music`.
 | `Videos` | `/var/lib/media/Videos` | 01:00 | yes | — |
 | `Music` | `/var/lib/media/Music` | 05:00 | yes | — |
 
-Every dataset excludes `**/.cache/**` and `/rclone.conf` by default (the
-`excludes` option default), so a stray credential copy or a regenerable cache
-never enters a mirror.
+Every dataset excludes `/.cache/**`, `**/.cache/**` and `/rclone.conf` by
+default (the `excludes` option default), so a stray credential copy or a
+regenerable cache never enters a mirror. Both cache patterns are needed:
+rclone's `**/` requires a preceding path segment, so it misses a `.cache`
+sitting at the source root.
 
 ## How a run works
 
@@ -150,7 +152,7 @@ dotfiles.backup.datasets.Books = {
   # timeout = "12h";       # wall-clock backstop
   # offsite = false;       # local-only dataset
   # stallTimeout = "30m";  # "0" disables; otherwise must be >= 60s
-  # excludes = [ "**/.cache/**" "/rclone.conf" ];  # defaults; override to add more
+  # excludes = [ "/.cache/**" "**/.cache/**" "/rclone.conf" ];  # defaults; override to add more
   # postgres = true;       # preBackup dumps Postgres: pg_dump on PATH, After=postgresql.service
   # preBackup = '' ... ''; # runs with BACKUP_* env, before the copy
 };

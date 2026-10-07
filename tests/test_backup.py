@@ -242,12 +242,13 @@ class BackupTests(unittest.TestCase):
     def test_excludes_applied_to_both_copies_and_check(self):
         # A secret or regenerable cache inside the tree must never reach either
         # mirror; the check must use the same patterns or it flags them missing.
-        c = cfg(self.mod, excludes=("**/.cache/**", "/rclone.conf"))
+        c = cfg(self.mod, excludes=("/.cache/**", "**/.cache/**", "/rclone.conf"))
         steps = self.mod.build_steps(c, DATE)
         local = self.find(steps, "copy", "/var/backup/media/current")
         offsite = self.find(steps, "proton:media")
         for argv in (local, offsite, self.mod.build_check(c)):
             self.assertIn("--exclude", argv)
+            self.assertIn("/.cache/**", argv)
             self.assertIn("**/.cache/**", argv)
             self.assertIn("/rclone.conf", argv)
 
