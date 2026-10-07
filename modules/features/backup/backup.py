@@ -85,6 +85,9 @@ _UNCHECKED_RE = re.compile(r"(\d+) hashes could not be checked")
 _TRANSFERRED_RE = re.compile(r"Transferred:\s+([\d.]+)\s*([KMGTP]?)i?B", re.I)
 _CHECKS_RE = re.compile(r"Checks:\s+(\d+)")
 _SIZE_UNITS = {"": 1, "K": 1024, "M": 1024**2, "G": 1024**3, "T": 1024**4, "P": 1024**5}
+# C0 control characters except tab: rclone relays source filenames verbatim, so
+# a crafted name can smuggle ANSI escapes into the journal or the failure marker.
+_CONTROL_RE = re.compile(r"[\x00-\x08\x0a-\x1f]")
 
 # Proton Drive answers transient 404/422/502s under load. These make rclone back
 # off and retry them instead of surfacing a failure, and cap how long any single
@@ -305,6 +308,7 @@ def resolve_date(cfg, date, now=None):
 
 
 _SAFE_DATE_RE = re.compile(r"[A-Za-z0-9_.-]+")
+_SAFE_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 
 def validate_date(date):
@@ -319,6 +323,28 @@ def validate_date(date):
             "(letters, digits, dot, dash, underscore only; no path separators)"
         )
     return date
+
+
+def validate_name(name):
+    """Reject a --name that could escape the dataset directories.
+
+    The name is used both as a local path component (`<backup_root>/<name>`) and
+    as the remote folder (`<remote>:<name>`), so an empty, `.`/`..` or
+    separator-bearing value could write outside the backup tree or address
+    another remote path.
+    """
+    if (
+        not name
+        or not _SAFE_NAME_RE.fullmatch(name)
+        or ".." in name
+        or name == "."
+    ):
+        raise BackupError(
+            f"invalid --name {name!r}: must start with a letter or digit and "
+            "contain only letters, digits, dot, dash, underscore "
+            "(no path separators)"
+        )
+    return name
 
 
 def validate_stall_timeout(stall_timeout):
@@ -359,6 +385,21 @@ def acquire_lock(path=LOCK_PATH, out=None):
 
 def quote(argv):
     return " ".join(shlex.quote(part) for part in argv)
+
+
+def sanitize_output(text):
+    """Strip C0 control characters (except tab) from raw rclone output.
+
+    rclone relays source filenames verbatim, so an attacker-controlled name can
+    inject ANSI escapes into the journal or the failure marker. The progress
+    parser still receives the raw line; only what we print/persist is scrubbed.
+    """
+    return _CONTROL_RE.sub("", text)
+
+
+def _sanitized(out):
+    """Wrap `out` so it never relays raw control characters."""
+    return lambda line: out(sanitize_output(line))
 
 
 def parse_duration(text):
@@ -403,6 +444,7 @@ def run_streaming(
     clock=time.monotonic,
     out=None,
     interval=None,
+    capture=False,
 ):
     """Run argv, relaying output, and abort a step that stops making progress.
 
@@ -411,7 +453,7 @@ def run_streaming(
     stalled run is retried up to `attempts` times — `copy` is resumable — and a
     non-positive stall_timeout disables the watchdog and runs exactly once.
     """
-    out = out or (lambda line: print(line, file=sys.stderr))
+    out = _sanitized(out or (lambda line: print(line, file=sys.stderr)))
     tries = attempts if stall_timeout > 0 else 1
     if interval is None:
         interval = min(30, stall_timeout / 2) if stall_timeout > 0 else 30
@@ -477,7 +519,7 @@ def run_streaming(
             )
         if proc.returncode != 0:
             raise subprocess.CalledProcessError(proc.returncode, argv, "\n".join(lines))
-        return "\n".join(lines)
+        return "\n".join(lines) if capture else ""
 
 
 def make_runner(stall_timeout, attempts=3, out=None, plain_timeout=DEFAULT_STEP_TIMEOUT):
@@ -493,7 +535,12 @@ def make_runner(stall_timeout, attempts=3, out=None, plain_timeout=DEFAULT_STEP_
         if os.path.basename(argv[0]) != "rclone":
             return _plain_run(argv, capture=capture, env=env, timeout=plain_timeout)
         return run_streaming(
-            argv, env=env, stall_timeout=stall_timeout, attempts=attempts, out=out
+            argv,
+            env=env,
+            stall_timeout=stall_timeout,
+            attempts=attempts,
+            out=out,
+            capture=capture,
         )
 
     return run
@@ -545,6 +592,15 @@ def run_backup(cfg, date, dry_run=False, run=None, out=print, lock=True):
                     raise BackupError(
                         f"offsite check could not verify every file: {output.strip()}"
                     )
+                if checked_count(output) == 0:
+                    raise BackupError(
+                        "offsite check verified no files; the mirror may be empty "
+                        "(over-broad excludes?)"
+                    )
+        if not dry_run and os.path.exists(marker_path(cfg)):
+            # Remove inside the lock so a concurrent run cannot interleave
+            # between the success and the marker cleanup.
+            os.remove(marker_path(cfg))
     except Exception as error:
         if not dry_run:
             try:
@@ -554,7 +610,8 @@ def run_backup(cfg, date, dry_run=False, run=None, out=print, lock=True):
                     os.path.dirname(marker_path(cfg)), mode=0o700, exist_ok=True
                 )
                 with open(marker_path(cfg), "w") as handle:
-                    handle.write(f"{type(error).__name__}: {error}\n")
+                    message = f"{type(error).__name__}: {error}"
+                    handle.write(sanitize_output(message) + "\n")
             except OSError:
                 # The marker is best-effort: never let writing it raise over
                 # (and mask) the original failure.
@@ -563,8 +620,6 @@ def run_backup(cfg, date, dry_run=False, run=None, out=print, lock=True):
     finally:
         if lock_handle is not None:
             lock_handle.close()  # releases the flock
-    if not dry_run and os.path.exists(marker_path(cfg)):
-        os.remove(marker_path(cfg))
     out("backup complete")
 
 
@@ -602,13 +657,20 @@ def main(argv=None):
     parser.add_argument(
         "--no-lock",
         action="store_true",
-        help="skip the host-wide run lock (tests only)",
+        help="skip the host-wide run lock; only honored when "
+        "BACKUP_ALLOW_NO_LOCK=1 (tests only)",
     )
     args = parser.parse_args(argv)
 
     try:
+        if args.no_lock and os.environ.get("BACKUP_ALLOW_NO_LOCK") != "1":
+            raise BackupError(
+                "--no-lock requires BACKUP_ALLOW_NO_LOCK=1: bypassing the "
+                "host-wide lock risks two rclone clients blanking the "
+                "single-use Proton token"
+            )
         cfg = Dataset(
-            name=args.name,
+            name=validate_name(args.name),
             source=args.source,
             backup_root=args.backup_root,
             offsite=args.offsite,
@@ -626,7 +688,7 @@ def main(argv=None):
             lock=not args.no_lock,
         )
     except Exception as error:  # noqa: BLE001 - top-level CLI boundary
-        print(f"backup failed: {error}", file=sys.stderr)
+        print(f"backup failed: {sanitize_output(str(error))}", file=sys.stderr)
         return 1
     return 0
 
