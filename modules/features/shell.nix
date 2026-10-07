@@ -187,7 +187,7 @@ in
       enable = true;
       # HM owns $ZDOTDIR; ~/.zshrc stays a plain file for tools that write
       # their own blocks into it (an employer setup tool, installers).
-      dotDir = ".config/zsh";
+      dotDir = "${config.xdg.configHome}/zsh";
       autosuggestion.enable = true;
       syntaxHighlighting.enable = true;
       historySubstringSearch.enable = true;
