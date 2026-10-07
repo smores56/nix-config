@@ -270,11 +270,16 @@ in
                   };
                   excludes = lib.mkOption {
                     type = lib.types.listOf lib.types.str;
+                    # `/.cache/**` is root-anchored and `**/.cache/**` is not
+                    # (rclone's `**/` needs a preceding path segment), so a
+                    # `.cache` at the source root needs the first pattern and
+                    # a nested one the second; both are required.
                     default = [
+                      "/.cache/**"
                       "**/.cache/**"
                       "/rclone.conf"
                     ];
-                    description = "rclone exclude patterns kept out of both mirrors (secrets, regenerable caches). Defaults to dropping caches and a stray rclone credential copy; override to exclude more.";
+                    description = "rclone exclude patterns kept out of both mirrors (secrets, regenerable caches). Defaults to dropping caches at the source root and nested, plus a stray rclone credential copy; override to exclude more.";
                   };
                   schedule = lib.mkOption {
                     type = lib.types.str;
