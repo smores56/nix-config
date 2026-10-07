@@ -23,7 +23,7 @@ let
   cfg = config.dotfiles.notify;
 
   # Instance-templated: watchers instantiate us as notify@%n.service, so %i is
-  # the full name of the failing unit (e.g. immich-backup.service). systemd
+  # the full name of the failing unit (e.g. backup-photos.service). systemd
   # passes the failed invocation's ID and result to OnFailure handlers; scope
   # the log to that exact run and fall back to the unit's last lines otherwise.
   notifyScript = ''
