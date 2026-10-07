@@ -14,12 +14,15 @@ the code in [`backup.py`](./backup.py). This file is the operator's view.
 - **`copy`, never `sync`.** A `sync` would propagate a source deletion into the
   mirror. `copy` only adds or overwrites, so a lost or corrupt source cannot
   reach in and delete the backup.
-- **Local deletion non-propagation via `--backup-dir`.** When a file changes,
-  the previous revision is moved to `versions/<date>/` instead of being
-  clobbered. Deleted source files stay in `versions/`.
+- **Local versioning via `--backup-dir`.** When a file is overwritten, the
+  previous revision is moved to `versions/<date>/` instead of being clobbered.
+  `copy` never deletes, so a file deleted at the source is *not* removed from
+  `current/` and is never moved to `versions/` — it simply stays in `current/`.
 - **The offsite copy has no `--backup-dir`.** Versions are local-only; Proton is
-  a plain append-only mirror that is never pruned. Stale files there are
-  harmless and cannot be removed by a compromised local box.
+  a plain mirror that is never pruned. It is not append-only for overwrites —
+  `copy` replaces a file whose content changed and uploads new ones — but a
+  source-side deletion is never propagated, so a deleted file lingers there. A
+  compromised local box cannot delete from the remote.
 - **The offsite mirror is verified.** Each run finishes with
   `rclone check --checksum --one-way`. rclone exits 0 even when it compared
   nothing, so the `"<n> hashes could not be checked"` summary is parsed and any
@@ -28,7 +31,8 @@ the code in [`backup.py`](./backup.py). This file is the operator's view.
   not catch a wedged upload session (one such hang held the shared Proton lock
   for 18h). A stats-based watchdog (`stallTimeout`, default 30m) aborts a step
   whose `Transferred:` *and* `Checks:` counters stop advancing, then retries —
-  `copy` is resumable.
+  `copy` is resumable. A non-zero `stallTimeout` must be at least 60s (two 30s
+  rclone stats intervals) or evaluation fails; `"0"` disables the watchdog.
 
 ## Layout on a host
 
@@ -36,11 +40,11 @@ the code in [`backup.py`](./backup.py). This file is the operator's view.
 | --- | --- |
 | `/var/lib/media/<Name>` | live source (Disk 1), root-owned, `a+rX` |
 | `/var/backup/<Name>/current` | local mirror of the source (Disk 2) |
-| `/var/backup/<Name>/versions/<date>` | files overwritten or deleted from `current` |
+| `/var/backup/<Name>/versions/<date>` | previous revisions of files that changed (moved out of `current`) |
 | `/var/backup/<Name>/db/` | pre-backup database dumps (dataset's `preBackup`) |
-| `/var/backup/<Name>/BACKUP-FAILED` | marker written by `ExecStopPost` when a run stops non-`success` |
+| `/var/backup/<Name>/BACKUP-FAILED` | failure marker: detailed one written by the driver, generic fallback by `ExecStopPost` |
 | `/var/lib/backup/rclone.conf` | Proton remote config, mode 0600, **runtime only — never in the Nix store** |
-| `/run/lock/media-backup.lock` | host-wide `flock`; all datasets share one Proton credential |
+| `/run/lock/media-backup.lock` | host-wide, driver-owned lock, mode 0600; all datasets share one Proton credential |
 
 Proton paths are the dataset name under the remote: `proton:<Name>` — on
 smortress, `proton:Photos`, `proton:Videos`, `proton:Music`.
@@ -53,23 +57,28 @@ smortress, `proton:Photos`, `proton:Videos`, `proton:Music`.
 | `Videos` | `/var/lib/media/Videos` | 01:00 | yes | — |
 | `Music` | `/var/lib/media/Music` | 05:00 | yes | — |
 
-Every dataset excludes `**/.cache/**` and `/rclone.conf` so a stray credential
-copy or a regenerable cache never enters a mirror.
+Every dataset excludes `**/.cache/**` and `/rclone.conf` by default (the
+`excludes` option default), so a stray credential copy or a regenerable cache
+never enters a mirror.
 
 ## How a run works
 
-1. `flock /run/lock/media-backup.lock` — Proton refresh tokens are single-use;
-   two concurrent rclone clients blank the session (rclone#9880), so runs
-   serialize. A queued dataset simply waits.
+1. The driver takes the host-wide lock at `/run/lock/media-backup.lock` (created
+   mode 0600) — Proton refresh tokens are single-use; two concurrent rclone
+   clients blank the session (rclone#9880), so runs serialize. A queued dataset
+   simply waits. Manual `backup` runs and the restore drill take the same lock.
 2. `preBackup` (if set) runs with `BACKUP_DATE`, `BACKUP_CURRENT`,
-   `BACKUP_SOURCE` in the environment. Writes are atomic (`.tmp` + `mv`).
+   `BACKUP_SOURCE` in the environment. Writes are atomic (`.tmp` + `mv`), and a
+   killed dump traps and removes its `.tmp` so no partial file is mirrored.
 3. Local copy → `current/`, overwritten revisions to `versions/<date>/`.
 4. Offsite copy → `proton:<Name>` with
    `--protondrive-replace-existing-draft=true` (uploads only; never used to
    delete).
 5. `rclone check --checksum --one-way` against the offsite mirror.
-6. On success the unit is done. On failure `ExecStopPost` writes
-   `BACKUP-FAILED`, and `onFailure` pushes an ntfy alert.
+6. On success the unit is done. On failure the driver writes a detailed
+   `BACKUP-FAILED` marker from inside the run; if the run was killed before that
+   could happen, `ExecStopPost` writes a generic one (it never overwrites the
+   detailed marker). `onFailure` pushes an ntfy alert.
 
 `TimeoutStartSec` (per-dataset `timeout`) is a wall-clock backstop only; a stuck
 run is normally caught by `stallTimeout` in ~30m. A `TimeoutStartSec` kill
@@ -126,7 +135,9 @@ a handful of files *by path* (`rclone copyto`) and treats the backup's own
 nightly `rclone check` as the whole-mirror content verification. Opt into the
 expensive walk with `FULL_OFFSITE=1`, which streams progress so it never looks
 hung. Per-fetch `FETCH_TIMEOUT` (default 300s) and the same network flags the
-backup uses keep a wedged Proton session from hanging the drill.
+backup uses keep a wedged Proton session from hanging the drill. Like `backup`,
+the drill takes the host-wide `/run/lock/media-backup.lock`, so it serializes
+with any scheduled run instead of racing it for the single-use Proton session.
 
 ## Adding a dataset
 
@@ -138,8 +149,9 @@ dotfiles.backup.datasets.Books = {
   schedule = "*-*-* 07:00:00";
   # timeout = "12h";       # wall-clock backstop
   # offsite = false;       # local-only dataset
-  # stallTimeout = "30m";  # "0" disables the watchdog
-  # excludes = [ "**/.cache/**" ];
+  # stallTimeout = "30m";  # "0" disables; otherwise must be >= 60s
+  # excludes = [ "**/.cache/**" "/rclone.conf" ];  # defaults; override to add more
+  # postgres = true;       # preBackup dumps Postgres: pg_dump on PATH, After=postgresql.service
   # preBackup = '' ... ''; # runs with BACKUP_* env, before the copy
 };
 ```
@@ -153,8 +165,8 @@ dataset needs `dotfiles.backup.enable = true` (the backup disk).
   can leave a retry that re-uploads a zero-byte file; this is not data loss
   (the source and local mirror are intact) but it is not self-healing. Tracked
   as a known low-severity finding.
-- The offsite mirror never prunes, so a file deleted from the source lives on in
-  Proton forever. That is deliberate for backup safety; there is no
-  retention/prune tooling.
+- The offsite mirror never prunes and keeps no versions: a file deleted from the
+  source lives on in Proton forever, and a changed file is overwritten in place.
+  That is deliberate for backup safety; there is no retention/prune tooling.
 - `dotfiles.immich.backup` (the old restic/Immich-specific pipeline) still
   exists and is being retired in favour of these datasets.

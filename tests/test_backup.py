@@ -44,6 +44,7 @@ def cfg(
     pre_backup=None,
     source="/var/lib/media",
     excludes=(),
+    timeout=None,
 ):
     return module.Dataset(
         name="media",
@@ -54,6 +55,9 @@ def cfg(
         rclone_config="/var/lib/backup/rclone.conf",
         pre_backup=pre_backup,
         excludes=excludes,
+        timeout=(
+            timeout if timeout is not None else module.DEFAULT_STEP_TIMEOUT
+        ),
     )
 
 
@@ -182,6 +186,7 @@ class BackupTests(unittest.TestCase):
                 cfg(self.mod, self.base, source=str(self.src)),
                 DATE,
                 run=run,
+                lock=False,
                 out=lambda _s: None,
             )
 
@@ -192,7 +197,9 @@ class BackupTests(unittest.TestCase):
             raise RuntimeError("boom")
 
         with self.assertRaises(RuntimeError):
-            self.mod.run_backup(bad_cfg, DATE, run=failing, out=lambda _s: None)
+            self.mod.run_backup(
+                bad_cfg, DATE, run=failing, lock=False, out=lambda _s: None
+            )
         marker = self.mod.marker_path(bad_cfg)
         self.assertTrue(os.path.exists(marker))
 
@@ -202,6 +209,7 @@ class BackupTests(unittest.TestCase):
             cfg(self.mod, self.base, offsite=False, source=str(self.src)),
             DATE,
             run=self.collector(ran),
+            lock=False,
             out=lambda _s: None,
         )
         self.assertFalse(os.path.exists(self.mod.marker_path(bad_cfg)))
@@ -213,7 +221,7 @@ class BackupTests(unittest.TestCase):
             handle.write("stale")
         ran = []
         self.mod.run_backup(
-            base_cfg, DATE, run=self.collector(ran), out=lambda _s: None
+            base_cfg, DATE, run=self.collector(ran), lock=False, out=lambda _s: None
         )
         self.assertFalse(os.path.exists(self.mod.marker_path(base_cfg)))
 
@@ -406,6 +414,228 @@ class BackupTests(unittest.TestCase):
 
     def test_stall_timeout_defaults_to_zero_in_dataset(self):
         self.assertEqual(cfg(self.mod).stall_timeout, 0)
+
+    # --- F5: stall timeout vs stats cadence -------------------------------
+
+    def test_validate_stall_timeout_rejects_window_below_two_stats_intervals(self):
+        # The watchdog can only see progress when a stats line lands (every 30s),
+        # so a window under 2 intervals could kill a healthy transfer.
+        with self.assertRaises(self.mod.BackupError):
+            self.mod.validate_stall_timeout(59)
+        self.assertEqual(self.mod.validate_stall_timeout(60), 60)
+        self.assertEqual(self.mod.validate_stall_timeout(0), 0)  # disables it
+
+    # --- F19: --date path-escape validation -------------------------------
+
+    def test_validate_date_rejects_path_escapes(self):
+        for bad in ("../etc", "2026/10/03", "a\\b", "..", "", ".", "a/../b"):
+            with self.assertRaises(self.mod.BackupError):
+                self.mod.validate_date(bad)
+        for good in ("2026-10-03", "2026-10-03T123456", "run_1.2-3"):
+            self.assertEqual(self.mod.validate_date(good), good)
+
+    # --- F15: collision-free version stamp --------------------------------
+
+    def test_resolve_date_disambiguates_two_runs_in_the_same_second(self):
+        import datetime
+
+        c = cfg(self.mod, self.base)
+        os.makedirs(self.mod.versions_dir(c, DATE))
+        now = datetime.datetime(2026, 10, 3, 12, 34, 56)
+        first = self.mod.resolve_date(c, DATE, now=now)
+        self.assertEqual(first, DATE + "T123456")
+        os.makedirs(self.mod.versions_dir(c, first))
+        second = self.mod.resolve_date(c, DATE, now=now)
+        self.assertNotEqual(second, first)
+        self.assertFalse(os.path.exists(self.mod.versions_dir(c, second)))
+
+    # --- F3: marker write must not mask the real error --------------------
+
+    def test_marker_write_does_not_mask_the_underlying_error(self):
+        # require_source runs before any makedirs, so the dataset dir is missing
+        # on a fresh disk; writing the marker must not raise FileNotFoundError
+        # and replace the real BackupError.
+        missing = str(Path(self.base) / "missing-source")
+        c = cfg(self.mod, self.base, source=missing)
+        with self.assertRaises(self.mod.BackupError):
+            self.mod.run_backup(
+                c, DATE, run=self.collector([]), lock=False, out=lambda _s: None
+            )
+        self.assertTrue(os.path.exists(self.mod.marker_path(c)))
+
+    # --- F7: host-wide lock ----------------------------------------------
+
+    def test_acquire_lock_creates_0600_and_releases_on_close(self):
+        path = str(Path(self.base) / "lock")
+        first = self.mod.acquire_lock(path=path, out=lambda _l: None)
+        self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
+        # flock locks are per open file description, so a second open conflicts
+        # even inside one process.
+        fd = os.open(path, os.O_WRONLY)
+        with self.assertRaises(BlockingIOError):
+            self.mod.fcntl.flock(fd, self.mod.fcntl.LOCK_EX | self.mod.fcntl.LOCK_NB)
+        first.close()
+        self.mod.fcntl.flock(fd, self.mod.fcntl.LOCK_EX | self.mod.fcntl.LOCK_NB)
+        os.close(fd)
+
+    def test_acquire_lock_reports_waiting_when_busy(self):
+        path = str(Path(self.base) / "lock2")
+        real = self.mod.fcntl.flock
+        state = {"calls": 0}
+        messages = []
+
+        def busy_once(handle, op):
+            state["calls"] += 1
+            if state["calls"] == 1:
+                raise BlockingIOError("busy")
+
+        self.mod.fcntl.flock = busy_once
+        try:
+            handle = self.mod.acquire_lock(path=path, out=messages.append)
+        finally:
+            self.mod.fcntl.flock = real
+        handle.close()
+        self.assertTrue(any("waiting for lock" in m for m in messages))
+        self.assertEqual(state["calls"], 2)
+
+    # --- N2 / F4: runner wiring and independent step timeout --------------
+
+    def test_make_runner_routes_rclone_streamed_and_plain_steps(self):
+        seen = []
+        self.mod.run_streaming = (
+            lambda argv, **kw: seen.append(("stream", argv, kw.get("stall_timeout")))
+        )
+        self.mod._plain_run = (
+            lambda argv, capture=False, env=None, timeout=0: seen.append(
+                ("plain", argv, timeout)
+            )
+        )
+        run = self.mod.make_runner(120, plain_timeout=7)
+        run(["rclone", "copy"])
+        run(["/bin/true"])
+        self.assertEqual(seen[0], ("stream", ["rclone", "copy"], 120))
+        self.assertEqual(seen[1], ("plain", ["/bin/true"], 7))
+
+    def test_plain_runner_bounded_even_when_watchdog_disabled(self):
+        import sys
+
+        # stall_timeout=0 disables the rclone watchdog, but a non-rclone step
+        # must still be bounded or a hung dump would hold the lock forever.
+        run = self.mod.make_runner(0, plain_timeout=0.5)
+        with self.assertRaises(self.mod.subprocess.TimeoutExpired):
+            run([sys.executable, "-c", "import time; time.sleep(5)"])
+
+    def test_plain_run_honors_its_timeout(self):
+        import sys
+
+        with self.assertRaises(self.mod.subprocess.TimeoutExpired):
+            self.mod._plain_run(
+                [sys.executable, "-c", "import time; time.sleep(5)"], timeout=0.5
+            )
+
+    def test_run_backup_kills_hung_pre_backup_with_watchdog_disabled(self):
+        import sys
+
+        script = Path(self.base) / "slow-pre"
+        script.write_text(f"#!/bin/sh\nexec {sys.executable} -c 'import time; time.sleep(5)'\n")
+        script.chmod(0o755)
+        c = cfg(
+            self.mod,
+            self.base,
+            source=str(self.src),
+            pre_backup=str(script),
+            timeout=1,
+        )
+        c = c._replace(stall_timeout=0)
+        with self.assertRaises(self.mod.subprocess.TimeoutExpired):
+            self.mod.run_backup(c, DATE, lock=False, out=lambda _s: None)
+
+    # --- F14: stall checks on newline-free streams ------------------------
+
+    def test_run_streaming_stall_checks_a_newline_free_stream(self):
+        clock = [0.0]
+
+        def popen(argv, **kwargs):
+            return FakeProc()
+
+        def ready(fds, w, x, timeout):
+            return ([True], [], [])
+
+        def read(fd, size):
+            clock[0] += 31  # each read advances time; no newline ever arrives
+            return b"xxxxxxxxxx"
+
+        with self.assertRaises(self.mod.StalledError):
+            self.mod.run_streaming(
+                ["rclone", "copy"],
+                stall_timeout=60,
+                attempts=1,
+                popen=popen,
+                ready=ready,
+                read=read,
+                clock=lambda: clock[0],
+                out=lambda _line: None,
+            )
+
+    def test_run_streaming_flushes_an_oversized_partial_buffer(self):
+        out = []
+        reads = iter([b"z" * (self.mod._MAX_PARTIAL_LINE + 1), b""])
+
+        def popen(argv, **kwargs):
+            return FakeProc()
+
+        def ready(fds, w, x, timeout):
+            return ([True], [], [])
+
+        def read(fd, size):
+            return next(reads)
+
+        result = self.mod.run_streaming(
+            ["rclone", "copy"],
+            stall_timeout=60,
+            attempts=1,
+            popen=popen,
+            ready=ready,
+            read=read,
+            clock=lambda: 0.0,
+            out=out.append,
+        )
+        # The oversized partial line was flushed instead of accumulating.
+        self.assertTrue(out)
+        self.assertIn("z", result)
+
+    def test_run_streaming_retries_a_stall_then_succeeds(self):
+        procs = []
+        clock = [0.0]
+
+        def popen(argv, **kwargs):
+            procs.append(FakeProc())
+            return procs[-1]
+
+        def ready(fds, w, x, timeout):
+            if len(procs) == 1:
+                clock[0] += 61  # first attempt stalls
+                return ([], [], [])
+            return ([True], [], [])
+
+        def read(fd, size):
+            return b""
+
+        result = self.mod.run_streaming(
+            ["rclone", "copy"],
+            stall_timeout=60,
+            attempts=3,
+            popen=popen,
+            ready=ready,
+            read=read,
+            clock=lambda: clock[0],
+            out=lambda _line: None,
+        )
+        # First attempt killed, retry (resumable copy) finished cleanly.
+        self.assertTrue(procs[0].killed)
+        self.assertEqual(len(procs), 2)
+        self.assertFalse(procs[1].killed)
+        self.assertEqual(result, "")
 
 
 if __name__ == "__main__":

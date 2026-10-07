@@ -33,6 +33,7 @@ into the Nix store.
 
 import argparse
 import datetime
+import fcntl
 import os
 import re
 import select
@@ -41,6 +42,22 @@ import subprocess
 import sys
 import time
 from collections import namedtuple
+
+# Host-wide run lock shared by every entry point (systemd timer, manual
+# `backup`, seed runs). Serializing here stops two rclone clients blanking the
+# single-use Proton refresh token (rclone#9880). Created 0600 in /run/lock.
+LOCK_PATH = "/run/lock/media-backup.lock"
+# rclone logs a stats block this often (see STATS_FLAGS); the stall watchdog can
+# only observe progress at this cadence, so a shorter window would kill healthy
+# transfers between ticks.
+STATS_INTERVAL = 30
+# Wall-clock cap for a non-rclone step (e.g. the preBackup pg_dump) when the
+# dataset sets none. Unlike the stall watchdog this is ALWAYS applied, so
+# stall-timeout 0 cannot leave a hung dump holding the lock forever.
+DEFAULT_STEP_TIMEOUT = 12 * 3600
+# Bound the partial-line buffer: a stream that never sends a newline (e.g. a
+# wedged binary transfer) must not grow memory without limit.
+_MAX_PARTIAL_LINE = 1 << 20
 
 Dataset = namedtuple(
     "Dataset",
@@ -54,8 +71,9 @@ Dataset = namedtuple(
         "pre_backup",  # optional shell snippet run before the copy
         "stall_timeout",  # seconds of no transfer progress before aborting a step
         "excludes",  # rclone exclude patterns (secrets, regenerable caches)
+        "timeout",  # wall-clock cap on non-rclone steps (preBackup)
     ],
-    defaults=(0, ()),
+    defaults=(0, (), DEFAULT_STEP_TIMEOUT),
 )
 
 _UNCHECKED_RE = re.compile(r"(\d+) hashes could not be checked")
@@ -86,7 +104,7 @@ NETWORK_FLAGS = [
 # The stall watchdog reads the stats counters, which rclone logs at INFO — hidden
 # by the default NOTICE level — so raise the stats-log level explicitly. The
 # multi-line block (not --stats-one-line) is what keeps the counter labels.
-STATS_FLAGS = ["--stats", "30s", "--stats-log-level", "NOTICE"]
+STATS_FLAGS = ["--stats", f"{STATS_INTERVAL}s", "--stats-log-level", "NOTICE"]
 
 
 class BackupError(Exception):
@@ -275,7 +293,68 @@ def resolve_date(cfg, date, now=None):
     if not os.path.exists(versions_dir(cfg, date)):
         return date
     stamp = (now or datetime.datetime.now()).strftime("%H%M%S")
-    return f"{date}T{stamp}"
+    candidate = f"{date}T{stamp}"
+    # Two runs can land in the same second; keep probing so the second run never
+    # reuses (and so clobbers) the revision the first one just wrote. The host
+    # lock serializes runs, so probing cannot race another resolve_date.
+    serial = 1
+    while os.path.exists(versions_dir(cfg, candidate)):
+        candidate = f"{date}T{stamp}-{serial}"
+        serial += 1
+    return candidate
+
+
+_SAFE_DATE_RE = re.compile(r"[A-Za-z0-9_.-]+")
+
+
+def validate_date(date):
+    """Reject a --date that could escape backup_root through --backup-dir.
+
+    The date becomes a path component under `versions/`; anything carrying a
+    path separator or a `..` could write outside the backup disk.
+    """
+    if not date or not _SAFE_DATE_RE.fullmatch(date) or ".." in date or date == ".":
+        raise BackupError(
+            f"invalid --date {date!r}: must be a plain date/timestamp token "
+            "(letters, digits, dot, dash, underscore only; no path separators)"
+        )
+    return date
+
+
+def validate_stall_timeout(stall_timeout):
+    """Reject a watchdog window the stats cadence cannot feed.
+
+    Stats land every STATS_INTERVAL seconds, so a window shorter than two
+    intervals can elapse between ticks and kill a healthy transfer. `0` disables
+    the watchdog and is always valid.
+    """
+    minimum = 2 * STATS_INTERVAL
+    if stall_timeout != 0 and stall_timeout < minimum:
+        raise BackupError(
+            f"stall-timeout {stall_timeout}s is below twice the rclone stats "
+            f"interval ({minimum}s); pass 0 to disable the watchdog"
+        )
+    return stall_timeout
+
+
+def acquire_lock(path=LOCK_PATH, out=None):
+    """Block until an exclusive host-wide run lock is held; return its handle.
+
+    Every entry point funnels through here so concurrent runs (timer, manual
+    `backup`, seed) cannot blank the single-use Proton refresh token. The file
+    is created 0600; closing the returned handle releases the lock.
+    """
+    out = out or (lambda line: print(line, file=sys.stderr))
+    fd = os.open(path, os.O_CREAT | os.O_WRONLY, 0o600)
+    handle = os.fdopen(fd, "w")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        # Busy: say so (a silent multi-hour block is indistinguishable from a
+        # hang) and then wait for the holder to finish.
+        out(f"waiting for lock {path} ...")
+        fcntl.flock(handle, fcntl.LOCK_EX)
+    return handle
 
 
 def quote(argv):
@@ -295,8 +374,9 @@ def parse_duration(text):
 def _plain_run(argv, capture=False, env=None, timeout=0):
     """Run a non-rclone step (e.g. the preBackup script); inherit stdio.
 
-    A hung pg_dump would hold the shared lock just like a hung rclone, so the
-    same stall budget also bounds it as a hard wall-clock timeout.
+    A hung pg_dump would hold the host lock just like a hung rclone, so it is
+    always bounded by a wall-clock timeout — independent of the stall watchdog,
+    which can be switched off with stall-timeout 0.
     """
     limit = timeout or None
     if capture:
@@ -366,10 +446,18 @@ def run_streaming(
                         # Sample every line: the failure mode keeps printing
                         # stats, so checking only on silence would miss it.
                         progress.note(line)
-                        if progress.stalled():
-                            stalled = True
-                            break
-                if stalled:
+                if len(pending) > _MAX_PARTIAL_LINE:
+                    # A newline-free stream must not grow the buffer without
+                    # limit; flush it as a line (it carries no stats counters).
+                    line = pending.decode("utf-8", "replace").rstrip("\r")
+                    out(line)
+                    lines.append(line)
+                    pending = b""
+                if progress is not None and progress.stalled():
+                    # Check after EVERY read, not only on silence or a newline:
+                    # a stream that keeps delivering bytes without newlines must
+                    # still be watched for a stall.
+                    stalled = True
                     break
             if pending and not stalled:
                 line = pending.decode("utf-8", "replace").rstrip("\r")
@@ -392,12 +480,18 @@ def run_streaming(
         return "\n".join(lines)
 
 
-def make_runner(stall_timeout, attempts=3, out=None):
-    """Default step runner: rclone steps get the stall watchdog, others do not."""
+def make_runner(stall_timeout, attempts=3, out=None, plain_timeout=DEFAULT_STEP_TIMEOUT):
+    """Default step runner: rclone steps get the stall watchdog, others do not.
+
+    A non-rclone step (the preBackup dump) is still bounded by a wall-clock
+    timeout independent of the stall setting: a hung pg_dump must be killed even
+    when the watchdog is disabled with stall-timeout 0, or it would hold the
+    host lock forever.
+    """
 
     def run(argv, capture=False, env=None):
         if os.path.basename(argv[0]) != "rclone":
-            return _plain_run(argv, capture=capture, env=env, timeout=stall_timeout)
+            return _plain_run(argv, capture=capture, env=env, timeout=plain_timeout)
         return run_streaming(
             argv, env=env, stall_timeout=stall_timeout, attempts=attempts, out=out
         )
@@ -414,8 +508,13 @@ def _pre_backup_env(cfg, date):
     }
 
 
-def run_backup(cfg, date, dry_run=False, run=None, out=print):
-    run = run or make_runner(cfg.stall_timeout)
+def run_backup(cfg, date, dry_run=False, run=None, out=print, lock=True):
+    run = run or make_runner(
+        cfg.stall_timeout, plain_timeout=cfg.timeout or DEFAULT_STEP_TIMEOUT
+    )
+    # Hold the host lock for the whole run (all entry points funnel through
+    # here), except for a dry run which touches nothing.
+    lock_handle = acquire_lock(out=out) if (lock and not dry_run) else None
     try:
         if not dry_run:
             require_source(cfg)
@@ -448,10 +547,22 @@ def run_backup(cfg, date, dry_run=False, run=None, out=print):
                     )
     except Exception as error:
         if not dry_run:
-            with open(marker_path(cfg), "w") as handle:
-                handle.write(f"{type(error).__name__}: {error}\n")
+            try:
+                # require_source can fail before any makedirs, so the dataset dir
+                # may not exist yet; create it so the marker can be written.
+                os.makedirs(
+                    os.path.dirname(marker_path(cfg)), mode=0o700, exist_ok=True
+                )
+                with open(marker_path(cfg), "w") as handle:
+                    handle.write(f"{type(error).__name__}: {error}\n")
+            except OSError:
+                # The marker is best-effort: never let writing it raise over
+                # (and mask) the original failure.
+                pass
         raise
-
+    finally:
+        if lock_handle is not None:
+            lock_handle.close()  # releases the flock
     if not dry_run and os.path.exists(marker_path(cfg)):
         os.remove(marker_path(cfg))
     out("backup complete")
@@ -478,26 +589,42 @@ def main(argv=None):
         help="abort a step with no transfer progress for this long and retry it",
     )
     parser.add_argument(
+        "--timeout",
+        default="12h",
+        help="wall-clock cap on non-rclone steps (e.g. preBackup); always applied",
+    )
+    parser.add_argument(
         "--date",
         default=datetime.date.today().isoformat(),
         help="version folder name for this run",
     )
     parser.add_argument("--dry-run", action="store_true", help="print steps only")
+    parser.add_argument(
+        "--no-lock",
+        action="store_true",
+        help="skip the host-wide run lock (tests only)",
+    )
     args = parser.parse_args(argv)
 
-    cfg = Dataset(
-        name=args.name,
-        source=args.source,
-        backup_root=args.backup_root,
-        offsite=args.offsite,
-        remote=args.remote,
-        rclone_config=args.rclone_config,
-        pre_backup=args.pre_backup,
-        stall_timeout=parse_duration(args.stall_timeout),
-        excludes=tuple(args.exclude),
-    )
     try:
-        run_backup(cfg, args.date, dry_run=args.dry_run)
+        cfg = Dataset(
+            name=args.name,
+            source=args.source,
+            backup_root=args.backup_root,
+            offsite=args.offsite,
+            remote=args.remote,
+            rclone_config=args.rclone_config,
+            pre_backup=args.pre_backup,
+            stall_timeout=validate_stall_timeout(parse_duration(args.stall_timeout)),
+            excludes=tuple(args.exclude),
+            timeout=parse_duration(args.timeout),
+        )
+        run_backup(
+            cfg,
+            validate_date(args.date),
+            dry_run=args.dry_run,
+            lock=not args.no_lock,
+        )
     except Exception as error:  # noqa: BLE001 - top-level CLI boundary
         print(f"backup failed: {error}", file=sys.stderr)
         return 1
