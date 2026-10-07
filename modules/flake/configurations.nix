@@ -277,13 +277,13 @@ in
         backup.enable = true;
         backup.datasets.Videos = {
           schedule = "*-*-* 01:00:00";
-          # Seed-sized: 39G at Proton's ~1MB/s. T11 tightens this to 2h once
-          # the first full upload has completed.
-          timeout = "48h";
+          # Incrementals run in minutes; 2h is a wall-clock backstop so a
+          # deadlock trips fast (stallTimeout catches a stalled transfer sooner).
+          timeout = "2h";
         };
         backup.datasets.Photos = {
           schedule = "*-*-* 03:00:00";
-          timeout = "48h";
+          timeout = "2h";
           # preBackup dumps Postgres, so the unit gets pg_dump on PATH and orders
           # after postgresql.service. Cache/credential excludes are the option
           # default, shared by every dataset.
@@ -302,7 +302,7 @@ in
         };
         backup.datasets.Music = {
           schedule = "*-*-* 05:00:00";
-          timeout = "48h";
+          timeout = "2h";
         };
         notify.enable = true;
       };
