@@ -116,6 +116,8 @@ sudo bash modules/features/backup/drills/restore-drill.sh Photos
 sudo DRILL_PG_DB=immich bash modules/features/backup/drills/restore-drill.sh Photos
 # ...plus the exhaustive (slow) whole-remote walk + rclone check
 sudo FULL_OFFSITE=1 bash modules/features/backup/drills/restore-drill.sh Photos
+# ...or skip the media phases and re-check only the database
+sudo DRILL_PG_DB=immich DRILL_ONLY_DB=1 bash modules/features/backup/drills/restore-drill.sh Photos
 ```
 
 Every offsite rclone operation walks the entire remote, which is minutes on a

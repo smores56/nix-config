@@ -28,6 +28,8 @@
 #   EXCLUDES               rclone exclude args (default drops .cache + secrets)
 #   FETCH_TIMEOUT          seconds allowed per offsite file fetch (default 300)
 #   FULL_OFFSITE=1         also walk the whole remote (slow)
+#   DRILL_ONLY_DB=1        skip the media phases and only check the database
+#                          (requires DRILL_PG_DB)
 #   DRILL_PG_DB            live database to compare against; enables the DB phase
 #   DRILL_PG_DUMP          dump to restore (default: newest <LOC>/db/*.dump)
 #   DRILL_PG_QUERY         count query run against both databases
@@ -38,6 +40,7 @@ N=${2:-${N:-20}}
 OFFN=${OFFN:-3}
 FETCH_TIMEOUT=${FETCH_TIMEOUT:-300}
 FULL_OFFSITE=${FULL_OFFSITE:-0}
+DRILL_ONLY_DB=${DRILL_ONLY_DB:-0}
 
 RCLONE=${RCLONE:-rclone}
 CONF=${CONF:-/var/lib/backup/rclone.conf}
@@ -49,6 +52,9 @@ EXCLUDES=${EXCLUDES:---exclude **/.cache/** --exclude /rclone.conf}
 # Same protections the backup uses: a wedged Proton session must not hang forever.
 NET=(--timeout 5m --contimeout 30s --retries 3 --low-level-retries 20 --retries-sleep 10s)
 STATS=(--stats 30s --stats-log-level NOTICE)
+
+[ "$DRILL_ONLY_DB" = 1 ] && [ -z "${DRILL_PG_DB:-}" ] &&
+  { echo "DRILL_ONLY_DB=1 requires DRILL_PG_DB"; exit 2; }
 
 DRILL=${DRILL_DB:-${DRILL_PG_DB:-drill}_drill}
 TMP=$(mktemp -d "/tmp/restore-drill.XXXXXX")
@@ -66,87 +72,91 @@ echo "host: $(hostname)  dataset: $NAME  date: $(date -Is)"
 echo "source=$SRC"
 echo "local=$LOC"
 echo "remote=$REMOTE"
-# `rclone version | head -1` races: head closing the pipe SIGPIPEs rclone and
-# pipefail then aborts the script. Buffer the output and trim that instead.
+# Buffered, not `rclone version | head -1`: head closing the pipe SIGPIPEs
+# rclone and pipefail then aborts the script.
 "$RCLONE" version > "$TMP/version" 2>&1 || true
 head -1 "$TMP/version" || true
 echo
 
-# N files that exist on the source, shared by the local and offsite samples.
-# `shuf -n`, not `shuf | head`: head closing the pipe SIGPIPEs shuf, and
-# `set -o pipefail` then aborts the whole drill on a large source tree.
-(
-  cd "$SRC" && find . -type f ! -path '*/.cache/*' ! -name rclone.conf \
-    | shuf -n "$N" | sed 's|^\./||'
-) > "$TMP/list"
-
 fail=0
 step() { echo "== $1 =="; }
 
-step "1: source vs local (size/count + $N sha256)"
-printf '%-10s ' source; "$RCLONE" size "$SRC" --config "$CONF" $EXCLUDES 2>/dev/null \
-  | sed -E 's/Total objects: /n=/; s/Total size: /bytes=/' | tr '\n' ' '; echo
-printf '%-10s ' local; "$RCLONE" size "$LOC" --config "$CONF" $EXCLUDES 2>/dev/null \
-  | sed -E 's/Total objects: /n=/; s/Total size: /bytes=/' | tr '\n' ' '; echo
-while IFS= read -r rel; do
-  if [ "$(sha256sum "$SRC/$rel" | cut -d' ' -f1)" = "$(sha256sum "$LOC/$rel" | cut -d' ' -f1)" ]; then
-    echo "OK   local  $rel"
-  else
-    fail=$((fail + 1)); echo "FAIL local  $rel"
-  fi
-done < "$TMP/list"
-echo
+if [ "$DRILL_ONLY_DB" != 1 ]; then
+  # N files that exist on the source, shared by the local and offsite samples.
+  # `shuf -n`, not `shuf | head`: head closing the pipe SIGPIPEs shuf, and
+  # `set -o pipefail` then aborts the whole drill on a large source tree.
+  (
+    cd "$SRC" && find . -type f ! -path '*/.cache/*' ! -name rclone.conf \
+      | shuf -n "$N" | sed 's|^\./||'
+  ) > "$TMP/list"
 
-step "2: offsite restore sample ($OFFN files, path-resolved — no full traversal)"
-# `rclone copyto` on one path resolves only that path's directories, so this stays
-# cheap on a large remote. A `--files-from` copy would re-walk every object.
-for rel in $(shuf -n "$OFFN" "$TMP/list"); do
-  dest="$TMP/off/$rel"
-  mkdir -p "$(dirname "$dest")"
-  printf 'fetch %s ... ' "$rel"
-  if timeout "$FETCH_TIMEOUT" "$RCLONE" copyto "$REMOTE/$rel" "$dest" \
-    --config "$CONF" "${NET[@]}" -q; then
-    if [ "$(sha256sum "$SRC/$rel" | cut -d' ' -f1)" = "$(sha256sum "$dest" | cut -d' ' -f1)" ]; then
-      echo "OK"
-    else
-      fail=$((fail + 1)); echo "FAIL (hash mismatch)"
-    fi
-  else
-    fail=$((fail + 1)); echo "FAIL (fetch failed or timed out after ${FETCH_TIMEOUT}s)"
-  fi
-done
-echo
-
-if [ "$FULL_OFFSITE" = 1 ]; then
-  step "3: offsite walk (slow — every object on the remote)"
-  printf '%-10s ' offsite; "$RCLONE" size "$REMOTE" --config "$CONF" "${NET[@]}" 2>/dev/null \
+  step "1: source vs local (size/count + $N sha256)"
+  printf '%-10s ' source; "$RCLONE" size "$SRC" --config "$CONF" $EXCLUDES 2>/dev/null \
     | sed -E 's/Total objects: /n=/; s/Total size: /bytes=/' | tr '\n' ' '; echo
-  echo "running: rclone check --checksum --one-way local offsite"
-  check_out=$("$RCLONE" check --checksum --one-way "$LOC" "$REMOTE" \
-    --config "$CONF" "${NET[@]}" "${STATS[@]}" 2>&1) || true
-  echo "$check_out" | tail -5
-  if echo "$check_out" | grep -qE '[1-9][0-9]* hashes could not be checked'; then
-    fail=$((fail + 1)); echo "FAIL could not verify every object"
-  fi
+  printf '%-10s ' local; "$RCLONE" size "$LOC" --config "$CONF" $EXCLUDES 2>/dev/null \
+    | sed -E 's/Total objects: /n=/; s/Total size: /bytes=/' | tr '\n' ' '; echo
+  while IFS= read -r rel; do
+    if [ "$(sha256sum "$SRC/$rel" | cut -d' ' -f1)" = "$(sha256sum "$LOC/$rel" | cut -d' ' -f1)" ]; then
+      echo "OK   local  $rel"
+    else
+      fail=$((fail + 1)); echo "FAIL local  $rel"
+    fi
+  done < "$TMP/list"
   echo
+
+  step "2: offsite restore sample ($OFFN files, path-resolved — no full traversal)"
+  # `rclone copyto` on one path resolves only that path's directories, so this
+  # stays cheap on a large remote. A `--files-from` copy would re-walk every
+  # object (minutes on a 30k-object Proton tree).
+  for rel in $(shuf -n "$OFFN" "$TMP/list"); do
+    dest="$TMP/off/$rel"
+    mkdir -p "$(dirname "$dest")"
+    printf 'fetch %s ... ' "$rel"
+    if timeout "$FETCH_TIMEOUT" "$RCLONE" copyto "$REMOTE/$rel" "$dest" \
+      --config "$CONF" "${NET[@]}" -q; then
+      if [ "$(sha256sum "$SRC/$rel" | cut -d' ' -f1)" = "$(sha256sum "$dest" | cut -d' ' -f1)" ]; then
+        echo "OK"
+      else
+        fail=$((fail + 1)); echo "FAIL (hash mismatch)"
+      fi
+    else
+      fail=$((fail + 1)); echo "FAIL (fetch failed or timed out after ${FETCH_TIMEOUT}s)"
+    fi
+  done
+  echo
+
+  if [ "$FULL_OFFSITE" = 1 ]; then
+    step "3: offsite walk (slow — every object on the remote)"
+    printf '%-10s ' offsite; "$RCLONE" size "$REMOTE" --config "$CONF" "${NET[@]}" 2>/dev/null \
+      | sed -E 's/Total objects: /n=/; s/Total size: /bytes=/' | tr '\n' ' '; echo
+    echo "running: rclone check --checksum --one-way local offsite"
+    check_out=$("$RCLONE" check --checksum --one-way "$LOC" "$REMOTE" \
+      --config "$CONF" "${NET[@]}" "${STATS[@]}" 2>&1) || true
+    echo "$check_out" | tail -5
+    if echo "$check_out" | grep -qE '[1-9][0-9]* hashes could not be checked'; then
+      fail=$((fail + 1)); echo "FAIL could not verify every object"
+    fi
+    echo
+  fi
 fi
 
 if [ -n "${DRILL_PG_DB:-}" ]; then
   step "database restore into scratch postgres"
   DUMP=${DRILL_PG_DUMP:-$(ls -t "$LOC"/db/*.dump 2>/dev/null | head -1 || true)}
   echo "dump: $DUMP ($(stat -c %s "$DUMP") bytes, $(stat -c %y "$DUMP"))"
-  # One row of counts; a single scalar row avoids any union/formatting surprises.
-  QUERY=${DRILL_PG_QUERY:-"select (select count(*) from assets) as assets, (select count(*) from albums) as albums, (select count(*) from person) as person;"}
+  # Immich 3.x uses singular table names; the counts come back as one row.
+  QUERY=${DRILL_PG_QUERY:-"select (select count(*) from asset) as assets, (select count(*) from album) as albums, (select count(*) from person) as people, (select count(*) from asset_face) as faces;"}
   # stderr is deliberately not suppressed: a psql failure must be visible, not
-  # silently yield empty counts that look like a pass.
+  # silently yield empty counts that look like a pass. `|| true` keeps a failure
+  # from aborting the script before both databases are compared.
   counts() { runuser -u postgres -- psql -d "$1" -tAc "$QUERY"; }
   runuser -u postgres -- dropdb --if-exists "$DRILL"
   runuser -u postgres -- createdb -O postgres "$DRILL"
   # The dump sits behind the 0700 backup directory, which the postgres user
   # cannot read; root opens it and streams it in on stdin instead.
   runuser -u postgres -- pg_restore --no-owner -d "$DRILL" < "$DUMP"
-  live_c=$(counts "$DRILL_PG_DB")
-  drill_c=$(counts "$DRILL")
+  live_c=$(counts "$DRILL_PG_DB" || true)
+  drill_c=$(counts "$DRILL" || true)
   echo "live:  $live_c"
   echo "drill: $drill_c"
   runuser -u postgres -- dropdb "$DRILL"
