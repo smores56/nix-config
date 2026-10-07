@@ -258,10 +258,18 @@ in
                     default = null;
                     description = "Shell snippet run before the copy. Its env exposes BACKUP_DATE, BACKUP_CURRENT, BACKUP_SOURCE.";
                   };
+                  postgres = lib.mkOption {
+                    type = lib.types.bool;
+                    default = false;
+                    description = "Whether preBackup dumps PostgreSQL: puts the server's package on the unit PATH and orders the unit after postgresql.service.";
+                  };
                   excludes = lib.mkOption {
                     type = lib.types.listOf lib.types.str;
-                    default = [ ];
-                    description = "rclone exclude patterns kept out of both mirrors (secrets, regenerable caches).";
+                    default = [
+                      "**/.cache/**"
+                      "/rclone.conf"
+                    ];
+                    description = "rclone exclude patterns kept out of both mirrors (secrets, regenerable caches). Defaults to dropping caches and a stray rclone credential copy; override to exclude more.";
                   };
                   schedule = lib.mkOption {
                     type = lib.types.str;

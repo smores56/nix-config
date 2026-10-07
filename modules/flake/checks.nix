@@ -104,6 +104,8 @@ in
             ''
               bash -n ${src}/bootstrap.sh
               shellcheck ${src}/bootstrap.sh
+              bash -n ${src}/modules/features/backup/drills/restore-drill.sh
+              shellcheck ${src}/modules/features/backup/drills/restore-drill.sh
               touch $out
             '';
       }

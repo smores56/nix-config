@@ -263,18 +263,20 @@ in
         backup.datasets.Photos = {
           schedule = "*-*-* 03:00:00";
           timeout = "48h";
-          # The Proton credential is moved out of the tree by hand; the exclude
-          # is defence in depth, and .cache is regenerable.
-          excludes = [
-            "**/.cache/**"
-            "/rclone.conf"
-          ];
+          # preBackup dumps Postgres, so the unit gets pg_dump on PATH and orders
+          # after postgresql.service. Cache/credential excludes are the option
+          # default, shared by every dataset.
+          postgres = true;
           preBackup = ''
             mkdir -p "$BACKUP_CURRENT/db"
             tmp="$BACKUP_CURRENT/db/.immich-$BACKUP_DATE.tmp"
+            # A dump killed mid-write must not leave a partial .tmp for the mirror
+            # to pick up, so clean it on any exit or terminating signal.
+            trap 'rm -f "$tmp"' EXIT
+            trap 'rm -f "$tmp"; exit 1' TERM INT
             runuser -u postgres -- pg_dump -Fc --no-owner immich > "$tmp" \
               && mv "$tmp" "$BACKUP_CURRENT/db/immich-$BACKUP_DATE.dump" \
-              || { rm -f "$tmp"; exit 1; }
+              || exit 1
           '';
         };
         backup.datasets.Music = {
