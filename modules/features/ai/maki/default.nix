@@ -8,10 +8,8 @@
 let
   inherit (aiProviders) neuralwatt smortress;
 
-  # Everything that differs between AI profiles. Work keeps maki on
-  # Anthropic so work code never reaches a personal provider: no personal
-  # providers, no smortress SearXNG search, and the API key comes from the
-  # keychain instead of the tailnet gate.
+  # Work uses the built-in OpenAI provider and Maki's own login storage,
+  # without personal providers or smortress SearXNG search.
   profile =
     {
       personal = {
@@ -30,8 +28,8 @@ let
       };
       work = {
         providers = [ ];
-        allowedModels = [ "anthropic/*" ];
-        defaultModel = "anthropic/claude-opus-5-5";
+        allowedModels = [ "openai/*" ];
+        defaultModel = "openai/gpt-6.1-sol";
         privateHosts = [ ];
         searchPlugin = false;
         wrapperEnv = workEnv;
@@ -52,7 +50,7 @@ let
       -- Personal: only the declared neuralwatt models (+ smortress qwen as
       -- backup), excluding every other provider, including the built-in
       -- deepseek that appears when the DEEPSEEK_API_KEY env var is present,
-      -- and the rest of neuralwatt's remote catalog. Work: Anthropic only.
+      -- and the rest of neuralwatt's remote catalog. Work: OpenAI only.
       -- allowed_models wins for selectors, CLI/API model changes,
       -- delegation, and `maki models`.
       provider = {
@@ -154,23 +152,10 @@ let
       unset SMORTRESS_BASE_URL
     fi
   '';
-  # Work: the Anthropic API key lives in the login keychain and reaches maki
-  # alone. A global ANTHROPIC_API_KEY would make Claude Code bill the key
-  # instead of the subscription seat; maki strips built-in provider keys from
-  # its bash and MCP children, so a `claude` it runs never sees the key. Any
-  # inherited endpoint override (a Claude Code proxy or Bedrock setting, a
-  # repo's direnv) is dropped so the key and prompts only go to Anthropic.
-  # Store the key with:
-  #   security add-generic-password -U -a "$USER" -s ${keychainService} -w
-  keychainService = "maki-anthropic-api-key";
+  # Clear inherited endpoint overrides so work prompts reach OpenAI directly.
+  # Subscription credentials are managed by `maki auth login openai`.
   workEnv = ''
-    unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL \
-      ANTHROPIC_BEDROCK_BASE_URL CLAUDE_CODE_USE_BEDROCK
-    if key=$(/usr/bin/security find-generic-password -s ${keychainService} -w 2>/dev/null); then
-      export ANTHROPIC_API_KEY="$key"
-    else
-      echo "maki: no Anthropic key in keychain item '${keychainService}' (see modules/features/ai/maki/default.nix)" >&2
-    fi
+    unset OPENAI_BASE_URL
   '';
 
   # Every launch must go through this, including zellij tabs from

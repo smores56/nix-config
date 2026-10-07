@@ -183,22 +183,24 @@ Work is split across independent switches:
 ### AI profiles
 
 A home's `aiProfile` knob (`modules/flake/configurations.nix`) picks which
-model providers coding agents may use.
+model providers Maki may use.
 
 - `personal` (default): maki runs on the providers in
   `modules/features/ai/providers.nix`; smortress is only reached once it
   resolves into the tailnet.
-- `work`: maki is Anthropic-only and gets no personal providers or search.
-  Claude Code uses its own subscription login. Maki needs an API key, stored
-  once in the login keychain:
+- `work`: maki is OpenAI-only and gets no personal providers or search.
+  The default model is configured in `modules/features/ai/maki/default.nix`.
+  Sign in once per machine using your ChatGPT/Codex account:
 
   ```sh
-  security add-generic-password -U -a "$USER" -s maki-anthropic-api-key -w
+  maki auth login openai
   ```
 
-  The `maki` wrapper hands it to maki alone. Never export
-  `ANTHROPIC_API_KEY` globally, or Claude Code bills the key instead of the
-  seat.
+  Choose ChatGPT login for subscription access. Maki stores and refreshes its
+  own credentials; an existing Codex CLI login does not replace this step.
+  Use `maki models` or `/model` to choose another available OpenAI model.
+  The wrapper clears `OPENAI_BASE_URL` so work prompts go directly to OpenAI.
+  Claude Code continues to use its own subscription login.
 
 ### Work hosts
 

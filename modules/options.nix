@@ -77,7 +77,7 @@ in
         "work"
       ];
       default = "personal";
-      description = "Which model providers coding agents may use. 'work' keeps agents on Anthropic only, so work code never reaches personal providers.";
+      description = "Which model providers Maki may use. 'work' keeps Maki on OpenAI only, without the personal providers.";
     };
     shellAbbrs = lib.mkOption {
       type = lib.types.attrsOf lib.types.str;
