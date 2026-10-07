@@ -272,8 +272,8 @@ in
         # Relocated off /var/lib/immich so every media dataset lives under one
         # root (backup source and read-only server mounts both use it).
         immich.mediaLocation = "/var/lib/media/Photos";
-        # The old Immich-specific restic pipeline is retired in favour of the
-        # generic datasets below (its module is deleted in T10).
+        # These generic datasets replaced the old Immich-specific restic
+        # pipeline, which has been removed.
         backup.enable = true;
         backup.datasets.Videos = {
           schedule = "*-*-* 01:00:00";
