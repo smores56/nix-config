@@ -100,6 +100,80 @@ class BrainCommitTests(unittest.TestCase):
         self.assertEqual(git(self.vault, "diff", "--cached", "--name-only"), "")
         self.assertEqual(self.head_count(), 1)
 
+    def test_secrets_in_non_ascii_filenames_are_caught(self):
+        self.write("wiki/josé.md", "token ghp_" + "a" * 36 + "\n")
+        result = self.commit()
+        self.assertEqual(result.status, "refused")
+        self.assertIn("josé.md:1", result.detail)
+        self.assertEqual(self.head_count(), 1)
+
+    def test_diff_config_cannot_hide_secrets(self):
+        git(self.vault, "config", "diff.noprefix", "true")
+        git(self.vault, "config", "diff.external", "true")
+        self.write("daily/d.md", "token ghp_" + "a" * 36 + "\n")
+        self.assertEqual(self.commit().status, "refused")
+        self.assertEqual(self.head_count(), 1)
+
+    def test_only_markdown_notes_are_allowed_under_note_dirs(self):
+        for rel in ("wiki/.gitattributes", "daily/script.sh"):
+            with self.subTest(rel=rel):
+                self.write(rel, "* -diff\n")
+                result = self.commit()
+                self.assertEqual(result.status, "refused")
+                self.assertIn(rel, result.detail)
+                (self.vault / rel).unlink()
+
+    def test_symlinked_notes_are_refused(self):
+        outside = Path(self.tmp.name) / "outside.txt"
+        outside.write_text("x\n")
+        (self.vault / "daily").mkdir()
+        (self.vault / "daily" / "x.md").symlink_to(outside)
+        result = self.commit()
+        self.assertEqual(result.status, "refused")
+        self.assertIn("daily/x.md", result.detail)
+
+    def test_refuses_repos_with_filter_drivers(self):
+        marker = Path(self.tmp.name) / "filter-ran"
+        git(self.vault, "config", "filter.x.clean", f"sh -c 'touch {marker}; cat'")
+        self.write("daily/d.md", "x\n")
+        self.assertEqual(self.commit().status, "refused")
+        self.assertFalse(marker.exists())
+
+    def test_fsmonitor_never_runs(self):
+        marker = Path(self.tmp.name) / "fsmonitor-ran"
+        script = Path(self.tmp.name) / "fsmon.sh"
+        script.write_text(f"#!/bin/sh\ntouch {marker}\n")
+        script.chmod(0o755)
+        git(self.vault, "config", "core.fsmonitor", str(script))
+        self.write("daily/d.md", "x\n")
+        self.assertEqual(self.commit().status, "committed")
+        self.assertFalse(marker.exists())
+
+    def test_inherited_git_dir_is_ignored(self):
+        other = Path(self.tmp.name) / "other"
+        other.mkdir()
+        git(other, "init", "-q")
+        env = {**ENV, "GIT_DIR": str(other / ".git"), "GIT_WORK_TREE": str(self.vault)}
+        self.write("daily/d.md", "x\n")
+        result = self.bc.commit(self.vault, "harvest: x", env=env)
+        self.assertEqual(result.status, "committed")
+        self.assertEqual(self.head_count(), 2)
+
+    def test_pre_staged_renames_commit_cleanly(self):
+        self.write("wiki/a.md", "x\n")
+        self.commit()
+        git(self.vault, "mv", "wiki/a.md", "wiki/b.md")
+        self.assertEqual(self.commit("lint: merge").status, "committed")
+        self.assertEqual(git(self.vault, "ls-files", "wiki").split(), ["wiki/b.md"])
+
+    def test_git_failures_are_refusals_not_crashes(self):
+        git(self.vault, "config", "commit.gpgSign", "true")
+        git(self.vault, "config", "gpg.program", "false")
+        self.write("daily/d.md", "x\n")
+        result = self.commit()
+        self.assertEqual(result.status, "refused")
+        self.assertEqual(git(self.vault, "diff", "--cached", "--name-only"), "")
+
     def test_git_hooks_never_run(self):
         hook = self.vault / ".git" / "hooks" / "pre-commit"
         marker = Path(self.tmp.name) / "hook-ran"

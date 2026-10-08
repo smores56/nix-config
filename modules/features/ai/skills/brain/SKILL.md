@@ -28,10 +28,14 @@ brag.md                   - YYYY-MM-DD: win (link)
 CLAUDE.md                 config — written only by the user
 ```
 
+Notes are `.md` files only — no dotfiles, scripts, or symlinks under the
+note folders.
+
 **Commit only with `brain-commit -m "<message>"`.** It refuses a vault with a
-remote, any change outside the note paths above (including `CLAUDE.md`),
-and secret-shaped text, and it never runs git hooks. If it refuses, report
-the reason to the user — never work around it with plain `git`.
+remote or filter drivers, any change outside the markdown note paths above
+(including `CLAUDE.md`), symlinks, and secret-shaped text, and it runs no git
+hooks. If it refuses, report the reason to the user — never work around it
+with plain `git`.
 
 ## Config contract
 
