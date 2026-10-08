@@ -191,12 +191,13 @@ def unique(items):
     return list(dict.fromkeys(items))
 
 
-def summarize_session(session_id, records, day, tz, opts):
+def summarize_session(session_id, records, day, tz, opts, sidechain=False):
     titles = [clean(as_text(r.get("aiTitle"))) for r in records if r.get("type") == "ai-title"]
     stamped = [
         (ts, r)
         for r in records
-        if r.get("type") in ("user", "assistant") and not r.get("isSidechain")
+        # A subagent transcript is all sidechain; in a main session those records are noise.
+        if r.get("type") in ("user", "assistant") and (sidechain or not r.get("isSidechain"))
         if (ts := parse_ts(r.get("timestamp"))) and localize(ts, tz).date() == day
     ]
     if not stamped:
@@ -231,9 +232,30 @@ def summarize_session(session_id, records, day, tz, opts):
     }
 
 
-def session_files(root):
-    # Subagent transcripts live in <session>/subagents/; only top-level files are sessions.
-    return sorted(p for p in root.glob("*/*.jsonl") if p.is_file())
+@dataclass(frozen=True)
+class Transcript:
+    path: Path
+    kind: str  # "session" or "subagent"
+    parent_session: str | None = None
+
+
+def transcripts(root):
+    # Main sessions are <project>/<id>.jsonl; their subagents live in <project>/<id>/subagents/.
+    sessions = [Transcript(p, "session") for p in root.glob("*/*.jsonl") if p.is_file()]
+    subagents = [
+        Transcript(p, "subagent", p.parent.parent.name)
+        for p in root.glob("*/*/subagents/*.jsonl")
+        if p.is_file()
+    ]
+    return sorted(sessions + subagents, key=lambda t: t.path)
+
+
+def subagent_meta(path):
+    try:
+        meta = json.loads(path.with_suffix(".meta.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return meta if isinstance(meta, dict) else {}
 
 
 def day_start(day, tz):
@@ -244,18 +266,31 @@ def digest(root, day, tz, opts):
     # A file untouched since before the day began cannot hold records from it.
     cutoff = day_start(day, tz).timestamp()
 
-    def load(path):
+    def load(transcript):
+        path = transcript.path
         try:
             if path.stat().st_mtime < cutoff:
                 return None
             with path.open(encoding="utf-8", errors="replace") as f:
                 records = [r for r in parse_records(f) if r.get("type") in KEPT_TYPES]
-            return summarize_session(path.stem, records, day, tz, opts)
+            is_subagent = transcript.kind == "subagent"
+            summary = summarize_session(path.stem, records, day, tz, opts, sidechain=is_subagent)
+            if summary is None:
+                return None
+            meta = subagent_meta(path) if is_subagent else {}
+            description = clean(as_text(meta.get("description")))
+            return {
+                **summary,
+                "title": description or summary["title"],
+                "kind": transcript.kind,
+                "parent_session": transcript.parent_session,
+                "agent_type": clean(as_text(meta.get("agentType"))) or None,
+            }
         except Exception as err:  # one bad transcript must not blank the whole day
             print(f"brain-digest: skipping {path}: {err}", file=sys.stderr)
             return None
 
-    sessions = [s for s in map(load, session_files(root)) if s]
+    sessions = [s for s in map(load, transcripts(root)) if s]
     return sorted(sessions, key=lambda s: datetime.fromisoformat(s["start"]))
 
 

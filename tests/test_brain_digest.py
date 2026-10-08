@@ -279,7 +279,7 @@ class ParseAndDigestTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("\n".join(json.dumps(r) for r in records) + "\n")
 
-    def test_digest_reads_top_level_sessions_only_sorted_by_start(self):
+    def test_digest_rows_are_sorted_by_start_across_sessions_and_subagents(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self.write_session(root / "-proj" / "b.jsonl", [user("later", ts="2026-10-07T12:00:00Z")])
@@ -289,7 +289,10 @@ class ParseAndDigestTests(unittest.TestCase):
                 [user("subagent", ts="2026-10-07T09:00:00Z")],
             )
             got = self.bd.digest(root, DAY, UTC, self.bd.Options())
-        self.assertEqual([s["session_id"] for s in got], ["a", "b"])
+        self.assertEqual(
+            [(s["kind"], s["session_id"]) for s in got],
+            [("session", "a"), ("subagent", "agent-1"), ("session", "b")],
+        )
 
     def test_files_last_modified_before_the_day_are_skipped(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -310,6 +313,47 @@ class ParseAndDigestTests(unittest.TestCase):
             with redirect_stderr(io.StringIO()):
                 got = self.bd.digest(root, DAY, UTC, self.bd.Options())
         self.assertEqual([s["session_id"] for s in got], ["good"])
+
+    def test_main_sessions_are_rows_of_kind_session(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.write_session(root / "-proj" / "a.jsonl", [user("hi", ts="2026-10-07T08:00:00Z")])
+            (row,) = self.bd.digest(root, DAY, UTC, self.bd.Options())
+        self.assertEqual((row["kind"], row["parent_session"], row["agent_type"]), ("session", None, None))
+
+    def test_subagents_become_their_own_rows_tied_to_the_parent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.write_session(root / "-proj" / "a.jsonl", [user("delegate", ts="2026-10-07T08:00:00Z")])
+            sub = root / "-proj" / "a" / "subagents"
+            self.write_session(
+                sub / "agent-x.jsonl",
+                [
+                    user("review the diff", ts="2026-10-07T08:05:00Z", isSidechain=True),
+                    assistant(
+                        [tool_use("Edit", file_path="/repo/fix.py")], ts="2026-10-07T08:06:00Z", isSidechain=True
+                    ),
+                ],
+            )
+            (sub / "agent-x.meta.json").write_text(
+                json.dumps({"agentType": "general-purpose", "description": "Review the diff"})
+            )
+            rows = self.bd.digest(root, DAY, UTC, self.bd.Options())
+        sub_row = next(r for r in rows if r["kind"] == "subagent")
+        self.assertEqual(sub_row["parent_session"], "a")
+        self.assertEqual(sub_row["title"], "Review the diff")
+        self.assertEqual(sub_row["agent_type"], "general-purpose")
+        self.assertEqual(sub_row["prompts"], ["review the diff"])
+        self.assertEqual(sub_row["edited_files"], ["/repo/fix.py"])
+
+    def test_subagent_without_readable_meta_still_reports(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sub = root / "-proj" / "a" / "subagents"
+            self.write_session(sub / "agent-y.jsonl", [user("go", ts="2026-10-07T08:00:00Z", isSidechain=True)])
+            (sub / "agent-y.meta.json").write_text("not json")
+            (row,) = self.bd.digest(root, DAY, UTC, self.bd.Options())
+        self.assertEqual((row["kind"], row["title"], row["agent_type"]), ("subagent", None, None))
 
     def test_cli_prints_json_lines(self):
         with tempfile.TemporaryDirectory() as tmp:
