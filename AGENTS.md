@@ -36,7 +36,7 @@ explicitly. Place files by concern, not by host.
 | `modules/hosts/` | per-host hardware config only (filesystems, kernel modules) |
 | `modules/flake/` | flake-parts modules (configurations, checks, formatter) |
 | `modules/lib/` | helper libraries |
-| `modules/features/ai/` | AI tooling: assistant context, brain (transcript digest), maki, providers, sdlc, skills |
+| `modules/features/ai/` | AI tooling: assistant context, brain (transcript digest, guarded vault commit; its skill is `skills/brain`), maki, providers, sdlc, skills |
 | `modules/features/tv/` | Television repository and worktree cables |
 | `modules/features/photobucket/` | feh-based keyboard photo triage tool + its Python helper |
 | `modules/features/cloudflare/` | Cloudflare Tunnel DNS/Access reconciler (Python helper) + manual `cloudflare-sync` CLI |
@@ -67,6 +67,10 @@ patterns.
   declared in `modules/options.nix`, not through `specialArgs`.
 - **Delete dead code** — no leftover aliases, re-exports, or stale TODOs.
   If a file is unused, delete it; `import-tree` handles removals automatically.
+- **Brain files stay employer-free**: the brain skill, digest, and its tests
+  are public while the vault they serve is not. Employer specifics belong in
+  the vault's `CLAUDE.md`; use placeholder ticket keys (`FOO-1`) in tests.
+  `checks.brain-leak-guard` enforces this.
 
 ## Verification
 
