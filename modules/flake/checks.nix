@@ -107,12 +107,14 @@ in
               args =
                 let
                   zc = zshHome.config;
+                  # dotDir is absolute; home.file keys are relative to home.
+                  dotDir = lib.removePrefix "${zc.home.homeDirectory}/" zc.programs.zsh.dotDir;
                 in
                 map (name: zc.home.file.${name}.source) [
                   ".zshenv"
-                  "${zc.programs.zsh.dotDir}/.zshenv"
-                  "${zc.programs.zsh.dotDir}/.zprofile"
-                  "${zc.programs.zsh.dotDir}/.zshrc"
+                  "${dotDir}/.zshenv"
+                  "${dotDir}/.zprofile"
+                  "${dotDir}/.zshrc"
                 ];
             };
           }

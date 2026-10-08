@@ -96,7 +96,9 @@ in
   # /run, its agent socket comes from DARWIN_USER_TEMP_DIR, and a dangling
   # value breaks tools that put sockets there (`op` fails to start its
   # daemon). Keys are pre-loaded at shell init so git commit signing works
-  # before any interactive ssh auth.
+  # before any interactive ssh auth. Interactive shells load them in the
+  # background (the check costs ~40ms) since nobody signs within that window;
+  # scripted ones may commit right away, so they wait.
   programs.fish.shellInit = lib.mkMerge [
     (lib.mkIf isLinux (
       lib.mkBefore ''
@@ -105,7 +107,14 @@ in
         end
       ''
     ))
-    (lib.mkAfter (lib.getExe loadSshKeys))
+    (lib.mkAfter ''
+      if status is-interactive
+          ${lib.getExe loadSshKeys} &
+          disown $last_pid 2>/dev/null
+      else
+          ${lib.getExe loadSshKeys}
+      end
+    '')
   ];
 
   programs.zsh = {
@@ -115,6 +124,14 @@ in
         export XDG_RUNTIME_DIR
       ''
     );
-    initContent = lib.mkOrder 1400 (lib.getExe loadSshKeys);
+    # `zsh -ic <cmd>` is interactive yet scripted, so only a shell reading
+    # commands from its terminal loads keys in the background.
+    initContent = lib.mkOrder 1400 ''
+      if [[ -o shin_stdin ]]; then
+        ${lib.getExe loadSshKeys} &!
+      else
+        ${lib.getExe loadSshKeys}
+      fi
+    '';
   };
 }

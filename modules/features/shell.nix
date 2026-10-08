@@ -9,30 +9,41 @@ let
   isFish = cfg.shell == "fish";
   isZsh = cfg.shell == "zsh";
 
-  # Names the current Zellij tab after the repo (or dir), plus the running
-  # command when given one; both shells call it from their prompt hooks.
-  zellijTabName = pkgs.writeShellApplication {
-    name = "zellij-tab-name";
+  # Renames the tab holding this shell's pane, not the focused one, which
+  # differs once you switch tabs while a command runs. Shells compute the
+  # name themselves and run this in the background, since each zellij client
+  # call costs ~16ms.
+  zellijTabRename = pkgs.writeShellApplication {
+    name = "zellij-tab-rename";
     runtimeInputs = [
       pkgs.coreutils
-      pkgs.git
+      pkgs.jq
     ];
     text = ''
-      [ -n "''${ZELLIJ:-}" ] || exit 0
-      name=$(basename "$PWD")
-      [ "$PWD" != "$HOME" ] || name="~"
-      if root=$(timeout 1 git rev-parse --show-toplevel 2>/dev/null) && [ -n "$root" ]; then
-        name=$(basename "$root")
-      fi
-      if [ $# -gt 0 ]; then
-        cmd=''${1%% *}
-        [ ''${#cmd} -le 20 ] || cmd="''${cmd:0:17}..."
-        name="$name - $cmd"
-      fi
-      zellij action rename-tab -- "$name" 2>/dev/null || true
+      [ -n "''${ZELLIJ_PANE_ID:-}" ] || exit 0
+      tab=$(timeout 2 zellij action list-panes -j 2>/dev/null |
+        jq -r --argjson p "$ZELLIJ_PANE_ID" '.[] | select((.is_plugin | not) and .id == $p) | .tab_id' 2>/dev/null)
+      [ -n "$tab" ] || exit 0
+      timeout 2 zellij action rename-tab-by-id -- "$tab" "$1" >/dev/null 2>&1 || true
     '';
   };
-  tabName = lib.getExe zellijTabName;
+  tabRename = lib.getExe zellijTabRename;
+
+  # Init scripts that only depend on the tool's version and flags, generated
+  # at build time so shells source a file instead of spawning the tool.
+  initScript = name: cmd: pkgs.runCommand name { } "${cmd} > $out";
+  fzf = lib.getExe config.programs.fzf.package;
+  zoxide = "${lib.getExe config.programs.zoxide.package} init";
+  zoxideFlags = lib.escapeShellArgs config.programs.zoxide.options;
+  fzfZsh = initScript "fzf-init.zsh" "${fzf} --zsh";
+  fzfFish = initScript "fzf-init.fish" "${fzf} --fish";
+  zoxideZsh = initScript "zoxide-init.zsh" "${zoxide} zsh ${zoxideFlags}";
+  zoxideFish = initScript "zoxide-init.fish" "${zoxide} fish ${zoxideFlags}";
+
+  # Fish-style abbreviations: expand the command word on space or enter.
+  zshAbbrs = lib.concatStringsSep " " (
+    lib.mapAttrsToList (k: v: "${lib.escapeShellArg k} ${lib.escapeShellArg v}") cfg.shellAbbrs
+  );
 
   zshPathInit = ''
     unset __ETC_PROFILE_NIX_SOURCED __HM_SESS_VARS_SOURCED
@@ -47,7 +58,7 @@ in
     packages = [
       pkgs.osc
       pkgs.pfetch-rs
-      zellijTabName
+      zellijTabRename
     ];
 
     sessionVariables = lib.mkIf isFish {
@@ -101,10 +112,16 @@ in
   };
 
   programs = {
-    mise.enable = true;
+    # Sourced from build-time init scripts below instead.
+    fzf = {
+      enableZshIntegration = false;
+      enableFishIntegration = false;
+    };
 
     zoxide = {
       enable = true;
+      enableZshIntegration = false;
+      enableFishIntegration = false;
       options = [
         "--cmd"
         "c"
@@ -127,13 +144,18 @@ in
 
       inherit (cfg) shellAbbrs;
 
-      interactiveShellInit = ''
-        pfetch
-        for p in $NIX_PROFILES
-            set -a fish_function_path $p/share/fish/vendor_functions.d
-            set -a fish_complete_path $p/share/fish/vendor_completions.d
-        end
-      '';
+      interactiveShellInit = lib.mkMerge [
+        # Where HM put its fzf integration.
+        (lib.mkOrder 200 "source ${fzfFish}")
+        ''
+          source ${zoxideFish}
+          pfetch
+          for p in $NIX_PROFILES
+              set -a fish_function_path $p/share/fish/vendor_functions.d
+              set -a fish_complete_path $p/share/fish/vendor_completions.d
+          end
+        ''
+      ];
 
       functions = {
         # pick <tv-channel> <command…>: runs the picker, then the command
@@ -156,14 +178,56 @@ in
           $cmd
         '';
 
-        # Auto-name Zellij tabs on every prompt (covers `cd`/zoxide `c`/manual
-        # navigations) and before each command.
+        # Auto-name Zellij tabs after the repo (or dir) on every prompt
+        # (covers `cd`/zoxide `c`/manual navigations), plus the command
+        # before each one runs. Renames go out in the background and only
+        # when the name changes.
+        _zellij_tab_title.body = ''
+          set -l dir $PWD
+          while test "$dir" != /; and not test -e $dir/.git
+              set dir (path dirname -- $dir)
+          end
+          set -l name (path basename -- $PWD)
+          if test -e $dir/.git
+              set name (path basename -- $dir)
+          else if test "$PWD" = "$HOME"
+              set name '~'
+          end
+          if set -q argv[1]
+              set -l cmd (string split -f1 -- ' ' $argv[1])
+              test (string length -- $cmd) -le 20; or set cmd (string sub -l 17 -- $cmd)...
+              set name "$name - $cmd"
+          end
+          echo $name
+        '';
+        _zellij_tab_rename.body = ''
+          test "$argv[1]" = "$_ztn_last"; and return
+          set -g _ztn_last $argv[1]
+          ${tabRename} $argv[1] &
+          set -g _ztn_pid $last_pid
+          disown $_ztn_pid 2>/dev/null
+        '';
         _zellij_tab_name = {
-          body = "${tabName}";
+          body = ''
+            set -q ZELLIJ; or return
+            # A fast command's preexec rename may still be in flight and
+            # land after this one; kill it so the newest name wins. Only
+            # for short commands, so the pid can't have been reused.
+            if set -q _ztn_pid; and test "$CMD_DURATION" -lt 2000
+                kill $_ztn_pid 2>/dev/null
+            end
+            _zellij_tab_rename (_zellij_tab_title)
+            # Only preexec renames are tracked for killing.
+            set -e _ztn_pid
+          '';
           onEvent = [ "fish_prompt" ];
         };
         _zellij_tab_name_preexec = {
-          body = "${tabName} $argv";
+          body = ''
+            set -q ZELLIJ; or return
+            set -e _ztn_pid
+            _zellij_tab_rename (_zellij_tab_title $argv[1])
+          '';
           onEvent = [ "fish_preexec" ];
         };
       };
@@ -191,10 +255,25 @@ in
       autosuggestion.enable = true;
       syntaxHighlighting.enable = true;
       historySubstringSearch.enable = true;
-      zsh-abbr = {
-        enable = true;
-        abbreviations = cfg.shellAbbrs;
-      };
+
+      # compaudit (most of compinit's ~27ms) only matters when fpath changes,
+      # and fpath comes from the HM generation and the Nix profile, so key the
+      # dump on both: a switch rebuilds it once, other starts skip the audit.
+      completionInit = ''
+        autoload -U compinit
+        () {
+          local hm=$HOME/.local/state/nix/profiles/home-manager prof=$HOME/.nix-profile
+          local dump=$ZDOTDIR/.zcompdump-''${''${''${hm:A}:t}[1,12]}-''${''${''${prof:A}:t}[1,12]}
+          if [[ -e $dump ]]; then
+            compinit -C -d $dump
+          else
+            compinit -d $dump
+            # Spare this key's files: a concurrent shell may be mid-write.
+            setopt local_options extended_glob
+            rm -f $ZDOTDIR/.zcompdump*~$dump*(N)
+          fi
+        }
+      '';
       history = {
         # Keep the history a stock zsh already wrote.
         path = "${config.home.homeDirectory}/.zsh_history";
@@ -225,8 +304,31 @@ in
           fi
         '')
 
+        # Where HM put the zoxide and fzf integrations.
+        (lib.mkOrder 851 "source ${zoxideZsh}")
+        (lib.mkOrder 910 ''
+          if [[ $options[zle] = on ]]; then
+            source ${fzfZsh}
+          fi
+        '')
+
         (lib.mkOrder 1000 ''
           fpath+=(${pkgs.pure-prompt}/share/zsh/site-functions)
+
+          typeset -gA _abbrs=(${zshAbbrs})
+          # Only the whole command word expands, as in fish; Ctrl-Space types
+          # a plain space. Replacing accept-line covers every key bound to it.
+          _abbr_expand() {
+            [[ $LBUFFER =~ '^ *([^ ]+)$' && $RBUFFER != [^\ ]* ]] && (( $+_abbrs[$match[1]] )) &&
+              LBUFFER=''${LBUFFER%$match[1]}$_abbrs[$match[1]]
+          }
+          _abbr_space() { _abbr_expand; zle self-insert }
+          _abbr_accept() { _abbr_expand; zle .accept-line }
+          zle -N _abbr_space
+          zle -N accept-line _abbr_accept
+          bindkey ' ' _abbr_space
+          bindkey '^ ' magic-space
+          bindkey -M isearch ' ' self-insert
           autoload -U promptinit && promptinit && prompt pure
 
           pick() {
@@ -247,8 +349,49 @@ in
           autoload -Uz add-zsh-hook
           zmodload zsh/datetime
 
-          _zellij_tab_name() { ${tabName} }
-          _zellij_tab_name_preexec() { ${tabName} "$1" }
+          # Auto-name Zellij tabs after the repo (or dir) on every prompt,
+          # plus the command before each one runs. Renames go out in the
+          # background and only when the name changes.
+          _zellij_tab_title() {
+            local dir=$PWD name=''${PWD:t}
+            while [[ $dir != / && ! -e $dir/.git ]]; do dir=''${dir:h}; done
+            if [[ -e $dir/.git ]]; then
+              name=''${dir:t}
+            elif [[ $PWD == $HOME ]]; then
+              name='~'
+            fi
+            [[ -n $name ]] || name=/
+            if (( $# )); then
+              local cmd=''${1%% *}
+              (( $#cmd <= 20 )) || cmd="''${cmd[1,17]}..."
+              name="$name - $cmd"
+            fi
+            REPLY=$name
+          }
+          _zellij_tab_rename() {
+            [[ $1 == "''${_ztn_last-}" ]] && return
+            _ztn_last=$1
+            ${tabRename} "$1" &!
+            _ztn_job=$!
+          }
+          _zellij_tab_name() {
+            [[ -n ''${ZELLIJ-} ]] || return 0
+            # A fast command's preexec rename may still be in flight and
+            # land after this one; kill it so the newest name wins. Only
+            # within 2s, so the pid can't have been reused.
+            [[ -n ''${_ztn_pid-} ]] && (( EPOCHREALTIME - _ztn_at < 2 )) &&
+              kill $_ztn_pid 2>/dev/null
+            unset _ztn_pid
+            _zellij_tab_title
+            _zellij_tab_rename $REPLY
+          }
+          _zellij_tab_name_preexec() {
+            [[ -n ''${ZELLIJ-} ]] || return 0
+            unset _ztn_job
+            _zellij_tab_title "$1"
+            _zellij_tab_rename $REPLY
+            [[ -n ''${_ztn_job-} ]] && _ztn_pid=$_ztn_job _ztn_at=$EPOCHREALTIME
+          }
           add-zsh-hook precmd _zellij_tab_name
           add-zsh-hook preexec _zellij_tab_name_preexec
 
