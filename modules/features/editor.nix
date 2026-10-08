@@ -31,7 +31,12 @@ in
     taplo
     gopls
     nixfmt
-    (mdformat.withPlugins (p: [ p.mdformat-gfm ]))
+    # wikilink keeps mdformat from escaping [[links]] into \[[links]\].
+    (mdformat.withPlugins (p: [
+      p.mdformat-gfm
+      p.mdformat-wikilink
+    ]))
+    markdown-oxide
     marksman
     harper
     basedpyright
@@ -142,9 +147,11 @@ in
             "-"
           ];
         };
+        # oxide first: helix takes each feature from the first server offering it,
+        # and oxide's backlinks, tags, and daily notes beat marksman's plain links.
         language-servers = [
+          "markdown-oxide"
           "marksman"
-          "codebook"
         ];
       }
       {
@@ -178,10 +185,6 @@ in
           enable = true;
           lint = true;
         };
-      };
-      codebook = {
-        command = "codebook-lsp";
-        args = [ "serve" ];
       };
     };
   };
