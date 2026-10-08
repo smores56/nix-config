@@ -36,7 +36,7 @@ explicitly. Place files by concern, not by host.
 | `modules/hosts/` | per-host hardware config only (filesystems, kernel modules) |
 | `modules/flake/` | flake-parts modules (configurations, checks, formatter) |
 | `modules/lib/` | helper libraries |
-| `modules/features/ai/` | AI tooling: assistant context, brain (transcript digest; its skill is `skills/brain`), maki, providers, sdlc, skills |
+| `modules/features/ai/` | AI tooling: assistant context, brain (transcript digest, guarded vault commit; its skill is `skills/brain`), maki, providers, sdlc, skills |
 | `modules/features/tv/` | Television repository and worktree cables |
 | `modules/features/photobucket/` | feh-based keyboard photo triage tool + its Python helper |
 | `modules/features/cloudflare/` | Cloudflare Tunnel DNS/Access reconciler (Python helper) + manual `cloudflare-sync` CLI |

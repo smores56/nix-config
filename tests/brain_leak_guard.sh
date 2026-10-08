@@ -19,7 +19,7 @@ synthetic_prefixes='^(FOO|BAR|ERR|SHA|UTC|UTF|Z0)-'
 
 brain_files() {
   local base=$1
-  for path in modules/features/ai/brain modules/features/ai/skills/brain tests/test_brain_digest.py; do
+  for path in modules/features/ai/brain modules/features/ai/skills/brain tests/test_brain_digest.py tests/test_brain_commit.py; do
     [[ -e $base/$path ]] && find "$base/$path" -type f
   done
   return 0

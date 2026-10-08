@@ -1,10 +1,21 @@
-{ pkgs, ... }:
+{ lib, pkgs, ... }:
 let
-  # PATH bin so the brain skill can call it by name from any session.
-  brainDigest = pkgs.writeShellScriptBin "brain-digest" ''
-    exec ${pkgs.python3}/bin/python3 ${./brain-digest.py} "$@"
-  '';
+  # One store dir so brain-commit can load the digest's shared secret patterns.
+  src = lib.fileset.toSource {
+    root = ./.;
+    fileset = lib.fileset.fileFilter (file: file.hasExt "py") ./.;
+  };
+  # PATH bins so the brain skill can call them by name from any session.
+  mkBin =
+    name:
+    pkgs.writeShellScriptBin name ''
+      export PATH=${pkgs.git}/bin:$PATH
+      exec ${pkgs.python3}/bin/python3 ${src}/${name}.py "$@"
+    '';
 in
 {
-  config.home.packages = [ brainDigest ];
+  config.home.packages = [
+    (mkBin "brain-digest")
+    (mkBin "brain-commit")
+  ];
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reduce one day of Claude Code transcripts to a compact per-session digest.
+"""Reduce one day of Claude Code transcripts to a compact digest: one row per session or subagent.
 
 Raw transcripts run to tens of MB a day (tool output, file dumps), far past
 what a summarizing agent can read; this keeps only what a work log needs.
@@ -60,6 +60,7 @@ class Options:
     max_prompts: int = 10
     max_prompt_chars: int = 300
     max_reply_chars: int = 600
+    max_title_chars: int = 120
     ticket_prefixes: tuple[str, ...] = ()
 
 
@@ -94,6 +95,11 @@ def clean(text):
 
 def truncate(text, limit):
     return text if len(text) <= limit else text[:limit] + "…"
+
+
+def label(text, opts):
+    # Titles are one-line labels; model-written ones can be arbitrarily long.
+    return truncate(" ".join(clean(text).split()), opts.max_title_chars)
 
 
 def blocks(record):
@@ -192,7 +198,7 @@ def unique(items):
 
 
 def summarize_session(session_id, records, day, tz, opts, sidechain=False):
-    titles = [clean(as_text(r.get("aiTitle"))) for r in records if r.get("type") == "ai-title"]
+    titles = [label(as_text(r.get("aiTitle")), opts) for r in records if r.get("type") == "ai-title"]
     stamped = [
         (ts, r)
         for r in records
@@ -208,6 +214,8 @@ def summarize_session(session_id, records, day, tz, opts, sidechain=False):
     prompts = [p for p in map(prompt_text, active) if p]
     replies = [t for t in map(reply_text, active) if t]
     conversation = prompts + replies
+    # A subagent's conversation is delegation text; only its own gh pr writes count.
+    pr_sources = ([] if sidechain else conversation) + pr_write_texts(active)
     edited = [
         as_text(tool_input(b).get("file_path") or tool_input(b).get("notebook_path"))
         for r in active
@@ -227,7 +235,7 @@ def summarize_session(session_id, records, day, tz, opts, sidechain=False):
         "prompts": [truncate(p, opts.max_prompt_chars) for p in prompts[: opts.max_prompts]],
         "last_reply": truncate(replies[-1], opts.max_reply_chars) if replies else None,
         "tickets": unique(k for t in conversation for k in tickets_in(t, opts.ticket_prefixes)),
-        "prs": unique(u for t in conversation + pr_write_texts(active) for u in PR_RE.findall(t)),
+        "prs": unique(u for t in pr_sources for u in PR_RE.findall(t)),
         "edited_files": unique(clean(f) for f in edited if f and not is_credential_path(f)),
     }
 
@@ -235,19 +243,20 @@ def summarize_session(session_id, records, day, tz, opts, sidechain=False):
 @dataclass(frozen=True)
 class Transcript:
     path: Path
-    kind: str  # "session" or "subagent"
-    parent_session: str | None = None
+    parent_session: str | None = None  # set only for subagents
+
+    @property
+    def is_subagent(self):
+        return self.parent_session is not None
 
 
 def transcripts(root):
     # Main sessions are <project>/<id>.jsonl; their subagents live in <project>/<id>/subagents/.
-    sessions = [Transcript(p, "session") for p in root.glob("*/*.jsonl") if p.is_file()]
+    sessions = [Transcript(p) for p in root.glob("*/*.jsonl") if p.is_file()]
     subagents = [
-        Transcript(p, "subagent", p.parent.parent.name)
-        for p in root.glob("*/*/subagents/*.jsonl")
-        if p.is_file()
+        Transcript(p, p.parent.parent.name) for p in root.glob("*/*/subagents/*.jsonl") if p.is_file()
     ]
-    return sorted(sessions + subagents, key=lambda t: t.path)
+    return sessions + subagents
 
 
 def subagent_meta(path):
@@ -256,6 +265,24 @@ def subagent_meta(path):
     except (OSError, ValueError):
         return {}
     return meta if isinstance(meta, dict) else {}
+
+
+def to_row(summary, transcript, meta, opts):
+    if not transcript.is_subagent:
+        return {**summary, "kind": "session", "parent_session": None, "agent_type": None}
+    # Delegation prompts and replies are the parent agent's words, often pasting
+    # untrusted content; keep only the evidence of work done.
+    return {
+        **summary,
+        "title": label(as_text(meta.get("description")), opts) or summary["title"],
+        "prompt_count": 0,
+        "prompts": [],
+        "last_reply": None,
+        "tickets": [],
+        "kind": "subagent",
+        "parent_session": transcript.parent_session,
+        "agent_type": clean(as_text(meta.get("agentType"))) or None,
+    }
 
 
 def day_start(day, tz):
@@ -273,19 +300,9 @@ def digest(root, day, tz, opts):
                 return None
             with path.open(encoding="utf-8", errors="replace") as f:
                 records = [r for r in parse_records(f) if r.get("type") in KEPT_TYPES]
-            is_subagent = transcript.kind == "subagent"
-            summary = summarize_session(path.stem, records, day, tz, opts, sidechain=is_subagent)
-            if summary is None:
-                return None
-            meta = subagent_meta(path) if is_subagent else {}
-            description = clean(as_text(meta.get("description")))
-            return {
-                **summary,
-                "title": description or summary["title"],
-                "kind": transcript.kind,
-                "parent_session": transcript.parent_session,
-                "agent_type": clean(as_text(meta.get("agentType"))) or None,
-            }
+            summary = summarize_session(path.stem, records, day, tz, opts, sidechain=transcript.is_subagent)
+            meta = subagent_meta(path) if transcript.is_subagent else {}
+            return summary and to_row(summary, transcript, meta, opts)
         except Exception as err:  # one bad transcript must not blank the whole day
             print(f"brain-digest: skipping {path}: {err}", file=sys.stderr)
             return None

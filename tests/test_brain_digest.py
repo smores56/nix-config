@@ -321,30 +321,80 @@ class ParseAndDigestTests(unittest.TestCase):
             (row,) = self.bd.digest(root, DAY, UTC, self.bd.Options())
         self.assertEqual((row["kind"], row["parent_session"], row["agent_type"]), ("session", None, None))
 
+    def write_subagent(self, root, name, records, meta):
+        sub = root / "-proj" / "a" / "subagents"
+        self.write_session(sub / f"{name}.jsonl", records)
+        (sub / f"{name}.meta.json").write_text(meta if isinstance(meta, str) else json.dumps(meta))
+        return sub / f"{name}.jsonl"
+
     def test_subagents_become_their_own_rows_tied_to_the_parent(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self.write_session(root / "-proj" / "a.jsonl", [user("delegate", ts="2026-10-07T08:00:00Z")])
-            sub = root / "-proj" / "a" / "subagents"
-            self.write_session(
-                sub / "agent-x.jsonl",
+            self.write_subagent(
+                root,
+                "agent-x",
                 [
                     user("review the diff", ts="2026-10-07T08:05:00Z", isSidechain=True),
                     assistant(
                         [tool_use("Edit", file_path="/repo/fix.py")], ts="2026-10-07T08:06:00Z", isSidechain=True
                     ),
                 ],
-            )
-            (sub / "agent-x.meta.json").write_text(
-                json.dumps({"agentType": "general-purpose", "description": "Review the diff"})
+                {"agentType": "general-purpose", "description": "Review the diff"},
             )
             rows = self.bd.digest(root, DAY, UTC, self.bd.Options())
         sub_row = next(r for r in rows if r["kind"] == "subagent")
         self.assertEqual(sub_row["parent_session"], "a")
         self.assertEqual(sub_row["title"], "Review the diff")
         self.assertEqual(sub_row["agent_type"], "general-purpose")
-        self.assertEqual(sub_row["prompts"], ["review the diff"])
         self.assertEqual(sub_row["edited_files"], ["/repo/fix.py"])
+
+    def test_subagent_rows_omit_delegation_text(self):
+        # Delegation prompts are the parent's words (often pasted, untrusted content), not the user's.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.write_subagent(
+                root,
+                "agent-x",
+                [
+                    user("work on FOO-9 per https://github.com/o/r/pull/3", ts="2026-10-07T08:05:00Z", isSidechain=True),
+                    assistant([text("done with FOO-9")], ts="2026-10-07T08:06:00Z", isSidechain=True),
+                ],
+                {"description": "Fix it"},
+            )
+            (row,) = self.bd.digest(root, DAY, UTC, self.bd.Options())
+        self.assertEqual(
+            (row["prompts"], row["prompt_count"], row["last_reply"], row["tickets"], row["prs"]),
+            ([], 0, None, [], []),
+        )
+
+    def test_subagent_meta_description_wins_over_ai_title_and_is_capped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.write_subagent(
+                root,
+                "agent-x",
+                [{"type": "ai-title", "aiTitle": "Generated"}, user("go", ts="2026-10-07T08:00:00Z", isSidechain=True)],
+                {"description": "Line one\nline two " + "x" * 200},
+            )
+            (row,) = self.bd.digest(root, DAY, UTC, self.bd.Options())
+        self.assertTrue(row["title"].startswith("Line one line two "))
+        self.assertLessEqual(len(row["title"]), 121)
+
+    def test_subagent_meta_that_is_not_an_object_is_ignored(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.write_subagent(root, "agent-x", [user("go", ts="2026-10-07T08:00:00Z", isSidechain=True)], "[1, 2]")
+            (row,) = self.bd.digest(root, DAY, UTC, self.bd.Options())
+        self.assertEqual((row["title"], row["agent_type"]), (None, None))
+
+    def test_stale_subagent_files_are_skipped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = self.write_subagent(root, "agent-x", [user("go", ts="2026-10-07T08:00:00Z", isSidechain=True)], {})
+            old = self.bd.datetime(2026, 10, 1, tzinfo=UTC).timestamp()
+            os.utime(path, (old, old))
+            self.assertEqual(self.bd.digest(root, DAY, UTC, self.bd.Options()), [])
 
     def test_subagent_without_readable_meta_still_reports(self):
         with tempfile.TemporaryDirectory() as tmp:
