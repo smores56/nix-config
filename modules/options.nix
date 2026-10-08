@@ -84,6 +84,13 @@ in
       default = { };
       description = "Abbreviations for whichever shell the host uses, each one string both fish and zsh accept. `pick <tv-channel> <command…>` runs a picker, then the command with the selection appended (or in place of {name}, its basename).";
     };
+    brain.dir = lib.mkOption {
+      # Relative, no leading or trailing slash: joined onto the home directory.
+      type = lib.types.nullOr (lib.types.strMatching "[^/].*[^/]|[^/]");
+      default = null;
+      example = "brain";
+      description = "Second-brain vault directory, relative to home, maintained by the `brain` skill. When set, `BRAIN_DIR` is exported and assistant context points sessions at it; null leaves the vault unconfigured.";
+    };
     workHost = lib.mkOption {
       type = lib.types.bool;
       default = false;

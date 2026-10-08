@@ -1,5 +1,11 @@
-{ lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
+  inherit (config.dotfiles.brain) dir;
   # One store dir so brain-commit can load the digest's shared secret patterns.
   src = lib.fileset.toSource {
     root = ./.;
@@ -14,8 +20,14 @@ let
     '';
 in
 {
-  config.home.packages = [
-    (mkBin "brain-digest")
-    (mkBin "brain-commit")
-  ];
+  config = {
+    home.packages = [
+      (mkBin "brain-digest")
+      (mkBin "brain-commit")
+    ];
+    # The brain skill and brain-commit both resolve the vault from this.
+    home.sessionVariables = lib.optionalAttrs (dir != null) {
+      BRAIN_DIR = "${config.home.homeDirectory}/${dir}";
+    };
+  };
 }

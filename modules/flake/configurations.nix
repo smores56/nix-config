@@ -117,6 +117,7 @@ let
     photobucket = null;
     aiProfile = null;
     workHost = null;
+    brain = null;
   };
   homeArgs = [
     "system"
@@ -224,6 +225,7 @@ in
         system = "aarch64-darwin";
         aiProfile = "work";
         workHost = true;
+        brain.dir = "brain";
       };
     };
     nixosConfigurations = {
