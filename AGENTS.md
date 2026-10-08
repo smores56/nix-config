@@ -36,11 +36,11 @@ explicitly. Place files by concern, not by host.
 | `modules/hosts/` | per-host hardware config only (filesystems, kernel modules) |
 | `modules/flake/` | flake-parts modules (configurations, checks, formatter) |
 | `modules/lib/` | helper libraries |
-| `modules/features/ai/` | AI tooling: assistant context, maki, providers, sdlc, skills |
+| `modules/features/ai/` | AI tooling: assistant context, brain (transcript digest), maki, providers, sdlc, skills |
 | `modules/features/tv/` | Television repository and worktree cables |
 | `modules/features/photobucket/` | feh-based keyboard photo triage tool + its Python helper |
 | `modules/features/cloudflare/` | Cloudflare Tunnel DNS/Access reconciler (Python helper) + manual `cloudflare-sync` CLI |
-| `tests/` | Python unit tests for the sdlc, maki, photobucket, and cloudflare tools, plus `tests/*.sh` shell checks (all run via flake checks) |
+| `tests/` | Python unit tests for the sdlc, maki, brain, photobucket, and cloudflare tools, plus `tests/*.sh` shell checks (all run via flake checks) |
 
 ### Adding a new feature
 
@@ -85,7 +85,7 @@ nix eval .#checks.x86_64-linux.eval-nixos-smoresbook --apply 'x: true'
 
 The Python tools under `modules/features/ai/` have unit tests in `tests/`,
 run by the `checks` flake module (`python -m unittest discover -s tests`).
-Run them after touching `modules/features/ai/sdlc/` or maki session search.
+Run them after touching `modules/features/ai/sdlc/`, maki session search, or `modules/features/ai/brain/`.
 
 Script checks run each `tests/<name>.sh` against tools and files from a
 generated home, as the `<name>` flake check (`scriptChecks` in
