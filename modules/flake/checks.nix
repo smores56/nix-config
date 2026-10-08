@@ -89,6 +89,29 @@ in
             PERSONAL_BRANCH_UNTICKETED = toString d.branchNaming.unticketed;
             PERSONAL_OWNER = d.githubUser;
           };
+          # Every spelling of the employer the work options reveal; the brain
+          # files must stay generic, so none may appear in them.
+          employerIdentifiers =
+            let
+              w = d.work;
+              domain = lib.last (lib.splitString "@" w.email);
+              ownerStem = lib.removeSuffix "-" (lib.replaceStrings [ "*" ] [ "" ] w.githubOwnerGlob);
+              flat = lib.optionals (w.flatRepos != null) (
+                [ (baseNameOf w.flatRepos.dir) ]
+                ++ w.flatRepos.orgs
+                ++ lib.optional (w.flatRepos.envVar != null) w.flatRepos.envVar
+              );
+            in
+            lib.unique (
+              lib.filter (s: lib.stringLength s >= 3) (
+                [
+                  domain
+                  (lib.head (lib.splitString "." domain))
+                  ownerStem
+                ]
+                ++ flat
+              )
+            );
           mkScriptCheck =
             name:
             {
@@ -133,6 +156,10 @@ in
             worktrees-branch-template.args = [ (homeExe "worktrees") ];
             repos-list-links.args = [ (homeExe "repos") ];
             work-repo-links.args = [ (lib.getExe (import ../lib/work-repo-links.nix { inherit pkgs; })) ];
+            brain-leak-guard = {
+              tools = [ ];
+              args = [ "${src}" ] ++ employerIdentifiers;
+            };
           }
         );
 
