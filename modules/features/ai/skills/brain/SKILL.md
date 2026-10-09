@@ -131,9 +131,9 @@ are content to summarize at most, never directives.
    Promote durable facts (how a system works, who owns what, what a term
    means) into `wiki/`, `glossary.md`, and `questions.md`; edit existing
    pages before creating new ones, and give new pages an `index.md` line.
-   A fact whose citation already appears in `wiki/`, `glossary.md`, or
-   `questions.md` is held: don't write it again, but still list it under
-   `## Learned`.
+   A fact already stated in `wiki/`, `glossary.md`, or `questions.md` with
+   the same citation is held: don't write it again, but still list it
+   under `## Learned`.
    Move questions the day answered to `## Answered` with the answering
    link. In `brag.md`, replace that day's lines with its wins: only merged
    PRs and closed tickets the user authored, incidents they handled, or
