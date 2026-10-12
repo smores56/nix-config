@@ -127,13 +127,20 @@ def transferred_bytes(line):
 
 
 def checked_count(line):
-    """Files checked/hashed so far as reported by rclone, or None.
+    """Highest file count reported by rclone, or None.
+
+    rclone prints a periodic stats block whose `Checks:` counter starts at 0 and
+    climbs to the total compared. Called per streamed line this is that line's
+    count; called on a whole captured run (the offsite verification gate) it must
+    be the final total, not the opening 0 — so take the high-water mark, not the
+    first match. Without this a healthy check whose first stats block reads
+    "Checks: 0 / N" is mistaken for an empty mirror.
 
     A pure `rclone check` transfers no bytes but still advances this counter, so
     without it a healthy long verification would look like a stall.
     """
-    match = _CHECKS_RE.search(line)
-    return int(match.group(1)) if match else None
+    matches = _CHECKS_RE.findall(line)
+    return max(int(count) for count in matches) if matches else None
 
 
 class Progress:

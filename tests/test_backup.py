@@ -205,6 +205,30 @@ class BackupTests(unittest.TestCase):
                 out=lambda _s: None,
             )
 
+    def test_run_backup_succeeds_when_check_output_starts_at_zero(self):
+        # Regression: a healthy check whose first stats block is "0 / N" must not
+        # be mistaken for an empty mirror — the final "75 / 75" is the verdict.
+        def run(argv, capture=False, env=None):
+            return "\n".join(
+                [
+                    "Checks:                 0 / 8,   0%",
+                    "Checks:                75 / 75, 100%",
+                    "0 differences found",
+                ]
+            )
+
+        # No BackupError: the run completes and clears any failure marker.
+        self.mod.run_backup(
+            cfg(self.mod, self.base, source=str(self.src)),
+            DATE,
+            run=run,
+            lock=False,
+            out=lambda _s: None,
+        )
+        self.assertFalse(os.path.exists(self.mod.marker_path(
+            cfg(self.mod, self.base, source=str(self.src))
+        )))
+
     def test_marker_written_on_failure_and_removed_on_success(self):
         bad_cfg = cfg(self.mod, self.base, source=str(self.src))
 
@@ -303,6 +327,19 @@ class BackupTests(unittest.TestCase):
     def test_checked_count_parses_rclone_stats(self):
         self.assertEqual(self.mod.checked_count("Checks:                12 / 40,  30%"), 12)
         self.assertIsNone(self.mod.checked_count("no checks here"))
+
+    def test_checked_count_takes_the_final_total_from_a_whole_run(self):
+        # A captured check run is a whole log: rclone's opening stats block prints
+        # "Checks: 0 / N" and the counter climbs to the total. Parsing the first
+        # match reads the opening 0 and falsely fails a healthy mirror.
+        output = "\n".join(
+            [
+                "Checks:                 0 / 8,   0%",
+                "Checks:                53 / 61, 87%",
+                "Checks:                75 / 75, 100%",
+            ]
+        )
+        self.assertEqual(self.mod.checked_count(output), 75)
 
     def test_progress_counts_checked_files_as_liveness(self):
         # A pure `rclone check` moves no bytes but advances Checks:; without that
