@@ -183,6 +183,7 @@ let
             webProxy = args.webProxy or { };
             calibre = args.calibre or { };
             immich = args.immich or { };
+            navidrome = args.navidrome or { };
             backup = args.backup or { };
             notify = args.notify or { };
           };
@@ -261,6 +262,9 @@ in
           services = {
             calibre.port = 8181;
             immich.port = 2283;
+            # Public, protected only by Navidrome's own auth: music streaming is
+            # low-bandwidth, so the Cloudflare CDN terms that bite video don't apply.
+            music.port = 4533;
             # Unauthenticated loopback listener, so it must sit behind Access
             # (enforced by an assertion in modules/nixos/notify.nix).
             ntfy = {
@@ -271,6 +275,7 @@ in
         };
         calibre.enable = true;
         immich.enable = true;
+        navidrome.enable = true;
         # Relocated off /var/lib/immich so every media dataset lives under one
         # root (backup source and read-only server mounts both use it).
         immich.mediaLocation = "/var/lib/media/Photos";

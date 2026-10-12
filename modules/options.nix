@@ -197,6 +197,30 @@ in
       default = { };
       description = "calibre OPDS content server exposed over the Cloudflare Tunnel.";
     };
+    navidrome = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkEnableOption "Navidrome music server (NixOS-only)";
+          port = lib.mkOption {
+            type = lib.types.port;
+            default = 4533;
+            description = "Loopback port for Navidrome.";
+          };
+          musicFolder = lib.mkOption {
+            type = lib.types.path;
+            default = "/var/lib/media/Music";
+            description = "Music library Navidrome scans; the nixpkgs module mounts it read-only into the service.";
+          };
+          environmentFile = lib.mkOption {
+            type = lib.types.path;
+            default = "/var/lib/navidrome/env";
+            description = "Root-owned ND_* secrets file read by systemd; carries ND_DEVAUTOCREATEADMINPASSWORD so the admin exists before the endpoint is public. Never in the Nix store.";
+          };
+        };
+      };
+      default = { };
+      description = "Self-hosted Navidrome music server, reading the media library read-only.";
+    };
     photobucket = lib.mkOption {
       type = lib.types.submodule {
         options = {
