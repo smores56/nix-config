@@ -175,3 +175,32 @@ dataset needs `dotfiles.backup.enable = true` (the backup disk).
   That is deliberate for backup safety; there is no retention/prune tooling.
 - `dotfiles.immich.backup` and the old restic/Immich-specific pipeline have
   been removed; these generic datasets replace them.
+
+### Hardening not yet done (accepted, from the final review)
+
+- The backup service runs as root with no systemd sandboxing
+  (`ProtectSystem`/`ReadWritePaths`/`NoNewPrivileges`/`PrivateTmp`); it feeds
+  source filenames through rclone, so a parser/write flaw would be uncontained.
+- The stall watchdog and unchecked-hash guard `re.search` over every relayed
+  line, which includes source filenames; a file deliberately named to embed
+  `Transferred:`/`Checks:`/`hashes could not be checked` can forge a stall or a
+  spurious failure.
+- Only systemd's `RequiresMountsFor` guards the backup disk: a manual/seed
+  `backup` run with the disk absent writes the whole mirror onto `/` and
+  reports success.
+- `/var/lib/backup/rclone.conf` is documented as 0600/root but nothing creates
+  or enforces it; a looser-mode copy is accepted silently.
+- Every verification layer (both copies, `rclone check`, the drill) applies the
+  same exclude list, so an over-broad or mistyped exclude removes files from the
+  source listing, both mirrors, the check, and the drill sample alike — the loss
+  is invisible. Keep excludes narrow and review them.
+- The nightly pipeline checks local↔remote, never source↔local; source-side
+  under-copy is only caught by the manual drill's sample.
+- The restore drill restores the newest dump as the `postgres` superuser, so a
+  dump shaped via a compromised Immich DB executes as that user.
+- The drill is only syntax-checked in CI (not run); it scrapes the unit's
+  `ExecStart` via `xargs` (quote-lossy) and ignores a custom `mountPoint`.
+- `--timeout` (driver, non-rclone steps) defaults to 12h and is not forwarded
+  from the dataset option — systemd `TimeoutStartSec` is the real bound.
+- The failure marker embeds raw rclone output and is unbounded; the lock file is
+  created but never re-hardened against a pre-existing looser mode.
