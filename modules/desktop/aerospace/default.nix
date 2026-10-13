@@ -121,6 +121,20 @@ let
     export AEROSPACE_BIN=${config.programs.aerospace.package}/bin/aerospace
     exec ${pkgs.python3}/bin/python3 -I ${./aerospace_layout.py} "$@"
   '';
+  # exec-and-forget discards output, so report the outcome as a notification.
+  # stdout carries the applied mode; stderr lists problems, if any.
+  layoutAction =
+    mode:
+    let
+      apply = pkgs.writeShellScript "aerospace-layout-${mode}" ''
+        if out=$(${aerospaceLayout}/bin/aerospace-layout ${mode} 2>&1); then
+          ${pkgs.noti}/bin/noti -t aerospace -m "Applied $out layout"
+        else
+          ${pkgs.noti}/bin/noti -t aerospace -m "Layout problems: $out"
+        fi
+      '';
+    in
+    "exec-and-forget ${apply}";
 
   # Without all-monitors-outer-frame, focus and move stop at the current
   # monitor's edge instead of continuing onto the adjacent monitor.
@@ -153,10 +167,17 @@ in
 
       settings = {
         start-at-login = false;
+        # Replacing PATH drops AeroSpace's Homebrew default, so keep it; without
+        # the nix profile, bare tools like noti in the bindings never resolved.
+        exec = {
+          inherit-env-vars = true;
+          env-vars.PATH = "${config.home.profileDirectory}/bin:/opt/homebrew/bin:/opt/homebrew/sbin:\${PATH}";
+        };
         default-root-container-layout = "tiles";
         default-root-container-orientation = "auto";
         after-startup-command = [
           "layout tiles"
+          (layoutAction "auto")
         ];
         # Keyboard focus can now cross monitors; keep the pointer with it so
         # scrolling targets the focused monitor. Lazy: no-op if already there.
@@ -220,6 +241,14 @@ in
 
           service.binding = {
             esc = mkServiceAction null "reload-config" "Config reloaded! Back to main mode.";
+            d = [
+              (layoutAction "docked")
+              "mode main"
+            ];
+            l = [
+              (layoutAction "laptop")
+              "mode main"
+            ];
             p = [
               "exec-and-forget noti -t aerospace -m \"Disabled Aerospace\""
               "enable toggle"
