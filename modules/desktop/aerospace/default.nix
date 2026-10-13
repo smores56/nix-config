@@ -38,12 +38,89 @@ let
   monitors = {
     main = "^dell u3425we";
     side = "^27e6qca";
-    builtIn = "built-in";
+    builtIn = "^built-in";
+  };
+  workspaces = {
+    work = "1";
+    comms = "2";
   };
   pinnedWorkspaces = {
-    "1" = monitors.main;
-    "2" = monitors.side;
+    ${workspaces.work} = monitors.main;
+    ${workspaces.comms} = monitors.side;
   };
+
+  # Pinned apps by bundle id; anything not listed is never moved by layouts.
+  apps = {
+    chrome = "com.google.Chrome";
+    kitty = "net.kovidgoyal.kitty";
+    slack = "com.tinyspeck.slackmacgap";
+    mail = "com.apple.mail";
+    calendar = "com.apple.iCal";
+  };
+  workLayout = {
+    name = workspaces.work;
+    layout = "h_tiles";
+    children = [
+      apps.chrome
+      apps.kitty
+    ];
+  };
+  # Consumed by aerospace_layout.py; a nested two-app list becomes a split
+  # perpendicular to its workspace root. focus = null restores prior focus.
+  layoutSpec = {
+    builtInMonitor = monitors.builtIn;
+    layouts = {
+      docked = {
+        focus = null;
+        workspaces = [
+          workLayout
+          {
+            name = workspaces.comms;
+            layout = "h_tiles";
+            children = [
+              apps.slack
+              [
+                apps.mail
+                apps.calendar
+              ]
+            ];
+          }
+        ];
+      };
+      laptop = {
+        focus = workspaces.work;
+        workspaces = [
+          workLayout
+          {
+            name = workspaces.comms;
+            layout = "h_accordion";
+            children = [
+              apps.slack
+              apps.mail
+              apps.calendar
+            ];
+          }
+        ];
+      };
+    };
+  };
+  # Parsed at build time so a malformed spec fails the switch, not a keypress.
+  layoutSpecFile =
+    pkgs.runCommand "aerospace-layout.json"
+      {
+        spec = builtins.toJSON layoutSpec;
+        passAsFile = [ "spec" ];
+      }
+      ''
+        ${pkgs.python3}/bin/python3 -I ${./aerospace_layout.py} check "$specPath"
+        cp "$specPath" "$out"
+      '';
+  # exec-and-forget's PATH lacks the nix profile, so pin every path here.
+  aerospaceLayout = pkgs.writeShellScriptBin "aerospace-layout" ''
+    export AEROSPACE_LAYOUT_SPEC=${layoutSpecFile}
+    export AEROSPACE_BIN=${config.programs.aerospace.package}/bin/aerospace
+    exec ${pkgs.python3}/bin/python3 -I ${./aerospace_layout.py} "$@"
+  '';
 
   # Without all-monitors-outer-frame, focus and move stop at the current
   # monitor's edge instead of continuing onto the adjacent monitor.
@@ -68,6 +145,7 @@ in
     home.packages = [
       pkgs.noti
       pkgs.jankyborders
+      aerospaceLayout
     ];
 
     programs.aerospace = {
