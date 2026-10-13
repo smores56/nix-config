@@ -32,6 +32,10 @@ let
   mkWorkspaceBindings = binding: actionFn: mkPrefixedBindings binding (lib.range 1 9) actionFn;
   mkAllDirectionBindings = binding: actionFn: mkPrefixedBindings binding allDirections actionFn;
 
+  # Without all-monitors-outer-frame, focus and move stop at the current
+  # monitor's edge instead of continuing onto the adjacent monitor.
+  crossMonitor = "--boundaries all-monitors-outer-frame";
+
   mkAppBinding = app: [
     "exec-and-forget open -a ${app}"
     "mode main"
@@ -63,6 +67,9 @@ in
         after-startup-command = [
           "layout tiles"
         ];
+        # Keyboard focus can now cross monitors; keep the pointer with it so
+        # scrolling targets the focused monitor. Lazy: no-op if already there.
+        on-focused-monitor-changed = [ "move-mouse monitor-lazy-center" ];
 
         gaps = {
           inner = {
@@ -88,8 +95,8 @@ in
             cmd-ctrl-e = "layout tiles horizontal vertical";
             cmd-ctrl-a = "layout accordion horizontal vertical";
           }
-          // mkAllDirectionBindings "cmd-ctrl" (d: "focus ${d}")
-          // mkAllDirectionBindings "cmd-ctrl-shift" (d: "move ${d}")
+          // mkAllDirectionBindings "cmd-ctrl" (d: "focus ${crossMonitor} ${d}")
+          // mkAllDirectionBindings "cmd-ctrl-shift" (d: "move ${crossMonitor} ${d}")
           // mkWorkspaceBindings "ctrl-alt" (i: "workspace ${toString i}")
           // mkWorkspaceBindings "ctrl-alt-shift" (i: [
             "move-node-to-workspace ${toString i}"
@@ -99,7 +106,7 @@ in
           move.binding = {
             esc = "mode main";
           }
-          // mkAllDirectionBindings "" (d: "move ${d}")
+          // mkAllDirectionBindings "" (d: "move ${crossMonitor} ${d}")
           // mkWorkspaceBindings "" (i: [
             "move-node-to-workspace ${toString i}"
             "workspace ${toString i}"
