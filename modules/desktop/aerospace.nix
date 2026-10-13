@@ -32,6 +32,19 @@ let
   mkWorkspaceBindings = binding: actionFn: mkPrefixedBindings binding (lib.range 1 9) actionFn;
   mkAllDirectionBindings = binding: actionFn: mkPrefixedBindings binding allDirections actionFn;
 
+  # Patterns are case-insensitive regexes over monitor names. A pinned
+  # workspace falls back to the built-in display when its monitor is absent
+  # (first resolving pattern wins), so undocking collapses onto the laptop.
+  monitors = {
+    main = "^dell u3425we";
+    side = "^27e6qca";
+    builtIn = "built-in";
+  };
+  pinnedWorkspaces = {
+    "1" = monitors.main;
+    "2" = monitors.side;
+  };
+
   # Without all-monitors-outer-frame, focus and move stop at the current
   # monitor's edge instead of continuing onto the adjacent monitor.
   crossMonitor = "--boundaries all-monitors-outer-frame";
@@ -70,6 +83,11 @@ in
         # Keyboard focus can now cross monitors; keep the pointer with it so
         # scrolling targets the focused monitor. Lazy: no-op if already there.
         on-focused-monitor-changed = [ "move-mouse monitor-lazy-center" ];
+
+        workspace-to-monitor-force-assignment = lib.mapAttrs (_: monitor: [
+          monitor
+          monitors.builtIn
+        ]) pinnedWorkspaces;
 
         gaps = {
           inner = {
