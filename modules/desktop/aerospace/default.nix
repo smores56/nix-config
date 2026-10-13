@@ -167,6 +167,12 @@ in
 
       settings = {
         start-at-login = false;
+        # Replacing PATH drops AeroSpace's Homebrew default, so keep it; without
+        # the nix profile, bare tools like noti in the bindings never resolved.
+        exec = {
+          inherit-env-vars = true;
+          env-vars.PATH = "${config.home.profileDirectory}/bin:/opt/homebrew/bin:/opt/homebrew/sbin:\${PATH}";
+        };
         default-root-container-layout = "tiles";
         default-root-container-orientation = "auto";
         after-startup-command = [
