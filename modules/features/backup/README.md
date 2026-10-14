@@ -28,9 +28,11 @@ the code in [`backup.py`](./backup.py). This file is the operator's view.
   `rclone check --checksum --one-way --files-from <those paths>`, so only what
   changed is re-read instead of the whole tree (a full walk of a large unchanged
   dataset reads the entire mirror for no new information). When the copy wrote
-  nothing the check is skipped: the mirror already matches the last verified
-  run. A periodic whole-mirror `--full-check` (per-dataset `fullCheckSchedule`)
-  still walks everything to catch drift in old files. rclone exits 0 even when
+  nothing the check is skipped: the mirror is unchanged since the last run. A
+  skipped check never clears a prior failure's `BACKUP-FAILED` marker — only a
+  run that actually verified the mirror does. A periodic whole-mirror
+  `--full-check` (per-dataset `fullCheckSchedule`) still walks everything to
+  catch drift in old files. rclone exits 0 even when
   it compared nothing, so the `"<n> hashes could not be checked"` summary is
   parsed and any non-zero count fails the run: an unverified mirror is not a
   backup.
@@ -166,14 +168,16 @@ automated prune, and there should not be one: making the mirror track source
 deletions is exactly the `sync` failure mode the pipeline refuses.
 
 When you *deliberately* want to reclaim the space (e.g. after culling the photo
-library), do it as a one-off, reviewed operation:
+library), do it as a one-off, reviewed operation. The local mirror holds one
+thing the source does not — the `preBackup` database dumps under `db/` — so that
+path MUST be excluded or `sync` deletes every dump:
 
 ```sh
 # 1. Review what would be deleted. --dry-run touches nothing.
 sudo rclone sync /var/lib/media/Photos /var/backup/Photos/current \
   --config /var/lib/backup/rclone.conf \
+  --exclude '/db/**' \
   --exclude '/.cache/**' --exclude '**/.cache/**' --exclude '/rclone.conf' \
-  --exclude '/thumbs/**' --exclude '/encoded-video/**' \
   --dry-run
 
 # 2. Same command without --dry-run deletes the orphans at the destination.
@@ -181,9 +185,17 @@ sudo rclone sync /var/lib/media/Photos /var/backup/Photos/current \
 
 Notes:
 
+- **`--exclude '/db/**'` is not optional.** `db/` exists only in the mirror (it
+  is the `preBackup` dump target), so without the exclude `sync` lists every
+  dump for deletion — including the newest local recovery point.
 - `versions/<date>/` holds only *overwritten* files, never deletions — it is not
   a recovery path for culled images. Until Proton is pruned too, the offsite
   mirror is the safety net.
+- `thumbs/` and `encoded-video/` are excluded from the dataset (regenerable), so
+  new runs no longer copy them, but they remain in the existing mirrors. To
+  reclaim them, delete the subtrees explicitly from both mirrors:
+  `rclone delete /var/backup/Photos/current/thumbs` and `.../encoded-video`, and
+  `rclone purge proton:Photos/thumbs` and `proton:Photos/encoded-video`.
 - The offsite leg needs the same treatment, but a bare `sync` against Proton
   aborts its delete phase on any IO error. `rclone purge` the affected
   `proton:<Name>/<subtree>` and re-`copy` from the (now smaller) source instead.
@@ -226,6 +238,13 @@ dataset needs `dotfiles.backup.enable = true` (the backup disk).
   [Pruning a mirror](#pruning-a-mirror-one-time).
 - `dotfiles.immich.backup` and the old restic/Immich-specific pipeline have
   been removed; these generic datasets replace them.
+- The offsite copy logs each copied filename at INFO (to extract changed paths),
+  so source filenames reach journald on every run that copies files — previously
+  they were suppressed at NOTICE. journald is root-only and local.
+- The `--files-from` list is a 0600 temp file removed in a `finally`; a hard kill
+  (systemd `TimeoutStartSec`, OOM) can leave it in `$TMPDIR`.
+- A `fullCheckSchedule` run re-runs the whole dataset — `preBackup` (an extra
+  `pg_dump` for Photos) and both copies — not only the check.
 
 ### Hardening not yet done (accepted, from the final review)
 

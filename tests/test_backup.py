@@ -85,7 +85,7 @@ class BackupTests(unittest.TestCase):
         self.fail(f"no step containing {needle}")
 
     def collector(self, ran):
-        def run(argv, capture=False, env=None, on_line=None):
+        def run(argv, capture=False, env=None):
             ran.append(argv)
 
         return run
@@ -180,9 +180,9 @@ class BackupTests(unittest.TestCase):
     def test_run_backup_raises_when_nothing_was_checked(self):
         # rclone exits 0 even when it compared nothing; >0 unchecked hashes must fail.
         # The offsite copy reports a change so the scoped check actually runs.
-        def run(argv, capture=False, env=None, on_line=None):
-            if on_line is not None:
-                on_line(json.dumps({"msg": "Copied (new)", "object": "one.bin"}))
+        def run(argv, capture=False, env=None):
+            if "copy" in argv and "proton:media" in argv:
+                return json.dumps({"msg": "Copied (new)", "object": "one.bin"})
             return "3 hashes could not be checked"
 
         with self.assertRaises(self.mod.BackupError):
@@ -197,9 +197,9 @@ class BackupTests(unittest.TestCase):
     def test_run_backup_raises_when_check_verified_nothing(self):
         # Over-broad excludes can empty the mirror; rclone then verifies 0 files
         # (Checks: 0) and still exits 0, so the count itself must fail the run.
-        def run(argv, capture=False, env=None, on_line=None):
-            if on_line is not None:
-                on_line(json.dumps({"msg": "Copied (new)", "object": "one.bin"}))
+        def run(argv, capture=False, env=None):
+            if "copy" in argv and "proton:media" in argv:
+                return json.dumps({"msg": "Copied (new)", "object": "one.bin"})
             return "Checks:                 0 / 0,  -"
 
         with self.assertRaises(self.mod.BackupError):
@@ -214,9 +214,9 @@ class BackupTests(unittest.TestCase):
     def test_run_backup_succeeds_when_check_output_starts_at_zero(self):
         # Regression: a healthy check whose first stats block is "0 / N" must not
         # be mistaken for an empty mirror — the final "75 / 75" is the verdict.
-        def run(argv, capture=False, env=None, on_line=None):
-            if on_line is not None:
-                on_line(json.dumps({"msg": "Copied (new)", "object": "one.bin"}))
+        def run(argv, capture=False, env=None):
+            if "copy" in argv and "proton:media" in argv:
+                return json.dumps({"msg": "Copied (new)", "object": "one.bin"})
             return "\n".join(
                 [
                     "Checks:                 0 / 8,   0%",
@@ -240,7 +240,7 @@ class BackupTests(unittest.TestCase):
     def test_marker_written_on_failure_and_removed_on_success(self):
         bad_cfg = cfg(self.mod, self.base, source=str(self.src))
 
-        def failing(argv, capture=False, env=None, on_line=None):
+        def failing(argv, capture=False, env=None):
             raise RuntimeError("boom")
 
         with self.assertRaises(RuntimeError):
@@ -374,12 +374,15 @@ class BackupTests(unittest.TestCase):
         line = json.dumps({"msg": "Copied (new)", "object": 5})
         self.assertEqual(self.mod.copied_paths([line]), [])
 
-    def test_copy_steps_use_json_logging_for_change_detection(self):
-        for step in self.steps():
-            if "copy" in step:
-                self.assertIn("--use-json-log", step)
-                self.assertEqual(step[step.index("--log-level") + 1], "INFO")
-        # The check's summary is parsed, not logged, so it stays plain text.
+    def test_only_the_offsite_copy_uses_json_logging(self):
+        # Only the offsite copy's output is parsed for changed paths, so only it
+        # needs JSON logging; the local copy and the check stay plain text.
+        steps = self.steps()
+        local = self.find(steps, "copy", "/var/lib/media")
+        offsite = self.find(steps, "proton:media")
+        self.assertNotIn("--use-json-log", local)
+        self.assertIn("--use-json-log", offsite)
+        self.assertEqual(offsite[offsite.index("--log-level") + 1], "INFO")
         self.assertNotIn("--use-json-log", self.mod.build_check(cfg(self.mod)))
 
     def test_stats_regexes_parse_json_log_lines(self):
@@ -408,11 +411,12 @@ class BackupTests(unittest.TestCase):
         ran = []
         messages = []
 
-        def run(argv, capture=False, env=None, on_line=None):
+        def run(argv, capture=False, env=None):
             ran.append(argv)
             # A no-change copy logs only "nothing to transfer", no Copied lines.
-            if on_line is not None:
-                on_line(json.dumps({"msg": "There was nothing to transfer"}))
+            if "copy" in argv and "proton:media" in argv:
+                return json.dumps({"msg": "There was nothing to transfer"})
+            return ""
 
         self.mod.run_backup(
             cfg(self.mod, self.base, source=str(self.src)),
@@ -427,12 +431,13 @@ class BackupTests(unittest.TestCase):
     def test_run_backup_checks_only_the_changed_paths(self):
         ran = []
 
-        def run(argv, capture=False, env=None, on_line=None):
+        def run(argv, capture=False, env=None):
             ran.append(argv)
-            if "copy" in argv and on_line is not None:
-                on_line(json.dumps({"msg": "Copied (new)", "object": "one.bin"}))
+            if "copy" in argv and "proton:media" in argv:
+                return json.dumps({"msg": "Copied (new)", "object": "one.bin"})
             if "check" in argv:
                 return "Checks:                 1 / 1, 100%\n0 differences found"
+            return ""
 
         self.mod.run_backup(
             cfg(self.mod, self.base, source=str(self.src)),
@@ -449,16 +454,24 @@ class BackupTests(unittest.TestCase):
     def test_run_backup_writes_changed_paths_to_the_files_from_file(self):
         captured = {}
 
-        def run(argv, capture=False, env=None, on_line=None):
-            if "copy" in argv and on_line is not None:
-                on_line(json.dumps({"msg": "Copied (new)", "object": "a/one.bin"}))
-                on_line(
-                    json.dumps({"msg": "Copied (replaced existing)", "object": "two.bin"})
+        def run(argv, capture=False, env=None):
+            if "copy" in argv and "proton:media" in argv:
+                return "\n".join(
+                    [
+                        json.dumps({"msg": "Copied (new)", "object": "a/one.bin"}),
+                        json.dumps(
+                            {
+                                "msg": "Copied (replaced existing)",
+                                "object": "two.bin",
+                            }
+                        ),
+                    ]
                 )
             if "check" in argv:
                 with open(argv[argv.index("--files-from") + 1]) as handle:
                     captured["paths"] = handle.read().split()
                 return "Checks: 2 / 2, 100%\n0 differences found"
+            return ""
 
         self.mod.run_backup(
             cfg(self.mod, self.base, source=str(self.src)),
@@ -472,12 +485,13 @@ class BackupTests(unittest.TestCase):
     def test_run_backup_removes_the_files_from_file_on_check_failure(self):
         paths = {}
 
-        def run(argv, capture=False, env=None, on_line=None):
-            if "copy" in argv and on_line is not None:
-                on_line(json.dumps({"msg": "Copied (new)", "object": "one.bin"}))
+        def run(argv, capture=False, env=None):
+            if "copy" in argv and "proton:media" in argv:
+                return json.dumps({"msg": "Copied (new)", "object": "one.bin"})
             if "check" in argv:
                 paths["file"] = argv[argv.index("--files-from") + 1]
                 return "3 hashes could not be checked"
+            return ""
 
         with self.assertRaises(self.mod.BackupError):
             self.mod.run_backup(
@@ -493,11 +507,12 @@ class BackupTests(unittest.TestCase):
     def test_run_backup_full_check_walks_the_tree_and_is_never_skipped(self):
         ran = []
 
-        def run(argv, capture=False, env=None, on_line=None):
+        def run(argv, capture=False, env=None):
             ran.append(argv)
             # No Copied lines at all: a change-free run.
             if "check" in argv:
                 return "Checks:                 1 / 1, 100%\n0 differences found"
+            return ""
 
         self.mod.run_backup(
             cfg(self.mod, self.base, source=str(self.src)),
@@ -513,12 +528,13 @@ class BackupTests(unittest.TestCase):
     def test_run_backup_full_check_ignores_the_changed_set(self):
         ran = []
 
-        def run(argv, capture=False, env=None, on_line=None):
+        def run(argv, capture=False, env=None):
             ran.append(argv)
-            if "copy" in argv and on_line is not None:
-                on_line(json.dumps({"msg": "Copied (new)", "object": "one.bin"}))
+            if "copy" in argv and "proton:media" in argv:
+                return json.dumps({"msg": "Copied (new)", "object": "one.bin"})
             if "check" in argv:
                 return "Checks:                 1 / 1, 100%\n0 differences found"
+            return ""
 
         self.mod.run_backup(
             cfg(self.mod, self.base, source=str(self.src)),
@@ -555,30 +571,65 @@ class BackupTests(unittest.TestCase):
         self.assertIn("check", buf.getvalue())
         self.assertNotIn("--files-from", buf.getvalue())
 
-    def test_run_streaming_calls_on_line_for_every_line(self):
-        seen = []
-        chunks = [b'{"msg":"Copied (new)","object":"a"}\n', b"plain\n", b""]
+    def test_copied_paths_accepts_to_suffix_and_other_variants(self):
+        # Older rclone appends " to: <dest>"; some backends prefix or wrap the
+        # action. All are content writes and must enter the verify set.
+        for msg in (
+            "Copied (new) to: proton:media/a.jpg",
+            "Copied (replaced existing) to: proton:media/b.jpg",
+            "Multi-thread Copied (new)",
+        ):
+            line = json.dumps({"msg": msg, "object": "x.jpg"})
+            self.assertEqual(self.mod.copied_paths([line]), ["x.jpg"])
 
-        def popen(argv, **kwargs):
-            return FakeProc()
-
-        def read(fd, size):
-            return chunks.pop(0) if chunks else b""
-
-        self.mod.run_streaming(
-            ["rclone", "copy"],
-            popen=popen,
-            read=read,
-            out=lambda _line: None,
-            on_line=seen.append,
+    def test_transferred_bytes_last_reads_the_final_stats_block(self):
+        text = "\n".join(
+            [
+                "Transferred:   0 B / 0 B, -, 0 B/s, ETA -",
+                "Transferred:   1.000 GiB / 2.000 GiB, 50%",
+            ]
         )
-        self.assertEqual(seen, ['{"msg":"Copied (new)","object":"a"}', "plain"])
+        self.assertEqual(self.mod.transferred_bytes_last(text), 1024**3)
+        self.assertIsNone(self.mod.transferred_bytes_last("nothing here"))
 
-    def test_make_runner_forwards_on_line(self):
-        seen = {}
-        self.mod.run_streaming = lambda argv, **kw: seen.update(kw)
-        self.mod.make_runner(0)(["rclone", "copy"], on_line=lambda _l: None)
-        self.assertIn("on_line", seen)
+    def test_run_backup_fails_when_bytes_transferred_without_recorded_paths(self):
+        # If the offsite copy moved bytes but no copied path could be parsed
+        # (e.g. rclone changed its message format), fail rather than skip: an
+        # unverified mirror must never look like a green run.
+        def run(argv, capture=False, env=None):
+            if "copy" in argv and "proton:media" in argv:
+                return json.dumps(
+                    {
+                        "level": "notice",
+                        "msg": "Transferred:   \t          3 B / 3 B, 100%",
+                    }
+                )
+            return ""
+
+        with self.assertRaises(self.mod.BackupError):
+            self.mod.run_backup(
+                cfg(self.mod, self.base, source=str(self.src)),
+                DATE,
+                run=run,
+                lock=False,
+                out=lambda _s: None,
+            )
+
+    def test_run_backup_keeps_the_marker_when_the_check_is_skipped(self):
+        # A skipped check must not erase a prior failure's evidence: an unchanged
+        # mirror is not a verified one.
+        c = cfg(self.mod, self.base, source=str(self.src))
+        os.makedirs(os.path.dirname(self.mod.marker_path(c)), exist_ok=True)
+        with open(self.mod.marker_path(c), "w") as handle:
+            handle.write("prior failure")
+
+        def run(argv, capture=False, env=None):
+            if "copy" in argv and "proton:media" in argv:
+                return json.dumps({"msg": "There was nothing to transfer"})
+            return ""
+
+        self.mod.run_backup(c, DATE, run=run, lock=False, out=lambda _s: None)
+        self.assertTrue(os.path.exists(self.mod.marker_path(c)))
 
     def test_checked_count_takes_the_final_total_from_a_whole_run(self):
         # A captured check run is a whole log: rclone's opening stats block prints
