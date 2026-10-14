@@ -72,7 +72,7 @@ let
       lib.foldl' (total: part: total + part) 0 parts;
 
   mkArgs =
-    name: dataset:
+    name: dataset: fullCheck:
     let
       source = if dataset.source != null then dataset.source else "/var/lib/media/${name}";
     in
@@ -85,6 +85,7 @@ let
         "--rclone-config ${lib.escapeShellArg cfg.rcloneConfig}"
         "--stall-timeout ${lib.escapeShellArg dataset.stallTimeout}"
       ]
+      ++ lib.optional fullCheck "--full-check"
       ++ lib.optional dataset.offsite "--offsite"
       # Materialised as a script file: a multi-line snippet cannot be a single
       # systemd ExecStart argument (newlines terminate the directive). Built only
@@ -104,7 +105,7 @@ let
     );
 
   mkService =
-    name: dataset:
+    name: dataset: fullCheck:
     let
       dir = "${cfg.mountPoint}/${name}";
       marker = "${dir}/BACKUP-FAILED";
@@ -122,7 +123,7 @@ let
       '';
     in
     {
-      description = "rclone 3-2-1 backup: ${name}";
+      description = "rclone 3-2-1 backup: ${name}${lib.optionalString fullCheck " (full check)"}";
       unitConfig.RequiresMountsFor = [ cfg.mountPoint ];
       # Only a dataset whose preBackup dumps Postgres needs the server (and must
       # not race a DB restart at boot); a generic dataset must not depend on it.
@@ -157,15 +158,15 @@ let
         # (rclone#9880). The driver owns the host-wide lock at
         # /run/lock/media-backup.lock (created mode 0600) and serializes inside
         # itself, so the unit must not wrap ExecStart in its own flock.
-        ExecStart = "${backup}/bin/backup ${mkArgs name dataset}";
+        ExecStart = "${backup}/bin/backup ${mkArgs name dataset fullCheck}";
         ExecStopPost = [ stopPost ];
       };
     };
 
-  mkTimer = _name: dataset: {
+  mkTimer = calendar: {
     wantedBy = [ "timers.target" ];
     timerConfig = {
-      OnCalendar = dataset.schedule;
+      OnCalendar = calendar;
       Persistent = true;
     };
   };
@@ -193,6 +194,10 @@ in
           builtins.match "[0-9]+[smhd]?" dataset.stallTimeout != null && seconds != null && seconds >= 60
         );
       message = "dotfiles.backup.datasets.${name}.stallTimeout must be \"0\" (disabled) or \"<number><s|m|h|d>\" of at least 60s (two rclone 30s stats intervals), got \"${dataset.stallTimeout}\".";
+    }) cfg.datasets
+    ++ lib.mapAttrsToList (name: dataset: {
+      assertion = dataset.fullCheckSchedule == null || dataset.fullCheckSchedule != "";
+      message = "dotfiles.backup.datasets.${name}.fullCheckSchedule must be null (disabled) or a non-empty systemd OnCalendar expression, got \"${dataset.fullCheckSchedule}\".";
     }) cfg.datasets;
 
     # The driver creates the host-wide lock itself; this only guarantees it
@@ -208,12 +213,22 @@ in
       pkgs.rclone
     ];
 
-    systemd.services = lib.mapAttrs' (
-      name: dataset: lib.nameValuePair "backup-${lib.toLower name}" (mkService name dataset)
-    ) cfg.datasets;
+    systemd.services =
+      lib.mapAttrs' (
+        name: dataset: lib.nameValuePair "backup-${lib.toLower name}" (mkService name dataset false)
+      ) cfg.datasets
+      // lib.mapAttrs' (
+        name: dataset:
+        lib.nameValuePair "backup-${lib.toLower name}-fullcheck" (mkService name dataset true)
+      ) (lib.filterAttrs (_: dataset: dataset.fullCheckSchedule != null) cfg.datasets);
 
-    systemd.timers = lib.mapAttrs' (
-      name: dataset: lib.nameValuePair "backup-${lib.toLower name}" (mkTimer name dataset)
-    ) cfg.datasets;
+    systemd.timers =
+      lib.mapAttrs' (
+        name: dataset: lib.nameValuePair "backup-${lib.toLower name}" (mkTimer dataset.schedule)
+      ) cfg.datasets
+      // lib.mapAttrs' (
+        name: dataset:
+        lib.nameValuePair "backup-${lib.toLower name}-fullcheck" (mkTimer dataset.fullCheckSchedule)
+      ) (lib.filterAttrs (_: dataset: dataset.fullCheckSchedule != null) cfg.datasets);
   };
 }

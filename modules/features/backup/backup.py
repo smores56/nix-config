@@ -16,8 +16,13 @@ Nothing here ever deletes source data:
   The remote is a plain append-only mirror — stale files there are harmless and
   are never pruned, so a lost local disk cannot take the offsite copy with it.
 
-The offsite copy is verified with `rclone check --checksum`. rclone exits 0 even
-when it could not actually compare anything (e.g. a hash-less backend), so the
+The offsite copy is verified with `rclone check --checksum`, scoped to the files
+the offsite copy actually wrote this run (`--files-from`) instead of the whole
+mirror: on a large unchanged tree a full walk reads the entire dataset for no new
+information. When nothing changed the check is skipped entirely — the mirror is
+already identical to the last verified run — and `--full-check` forces the
+whole-tree walk for a periodic integrity scan. rclone exits 0 even when it could
+not actually compare anything (e.g. a hash-less backend), so the
 "<n> hashes could not be checked" summary is parsed and any non-zero count is a
 hard failure: an unverified mirror is not a backup.
 
@@ -34,12 +39,14 @@ into the Nix store.
 import argparse
 import datetime
 import fcntl
+import json
 import os
 import re
 import select
 import shlex
 import subprocess
 import sys
+import tempfile
 import time
 from collections import namedtuple
 
@@ -82,7 +89,12 @@ _UNCHECKED_RE = re.compile(r"(\d+) hashes could not be checked")
 # "Transferred:   \t1.234 GiB / 5.678 GiB, 22%, 10.1 MiB/s, ETA 5m2s" and
 # "Checks:                 12 / 40,  30%". Do NOT use --stats-one-line: it drops
 # the "Transferred:"/"Checks:" labels and leaves only "<size> / <total>, ...".
-_TRANSFERRED_RE = re.compile(r"Transferred:\s+([\d.]+)\s*([KMGTP]?)i?B", re.I)
+# Under --use-json-log the stats block is one JSON line whose `msg` escapes the
+# tab between "Transferred:" and the counter as a literal backslash-t, so the
+# separator must tolerate the escaped form as well as the real tab.
+_TRANSFERRED_RE = re.compile(
+    r"Transferred:\s*(?:\\t)?\s*([\d.]+)\s*([KMGTP]?)i?B", re.I
+)
 _CHECKS_RE = re.compile(r"Checks:\s+(\d+)")
 _SIZE_UNITS = {"": 1, "K": 1024, "M": 1024**2, "G": 1024**3, "T": 1024**4, "P": 1024**5}
 # C0 control characters except tab: rclone relays source filenames verbatim, so
@@ -108,6 +120,11 @@ NETWORK_FLAGS = [
 # by the default NOTICE level — so raise the stats-log level explicitly. The
 # multi-line block (not --stats-one-line) is what keeps the counter labels.
 STATS_FLAGS = ["--stats", f"{STATS_INTERVAL}s", "--stats-log-level", "NOTICE"]
+# Copy steps log one JSON object per line so the offsite copy's changed paths can
+# be extracted (see copied_paths); the stats counters live in a `msg` value the
+# watchdog regexes still match. The check stays plain text — its summary is
+# parsed, not logged.
+COPY_LOG_FLAGS = ["--use-json-log", "--log-level", "INFO"]
 
 
 class BackupError(Exception):
@@ -141,6 +158,34 @@ def checked_count(line):
     """
     matches = _CHECKS_RE.findall(line)
     return max(int(count) for count in matches) if matches else None
+
+
+# rclone's operation names for a file it actually wrote to the destination. A
+# metadata-only touch logs "Updated modification time in destination" instead,
+# which is not a content change and must not enter the verify set.
+_COPIED_MSGS = frozenset({"Copied (new)", "Copied (replaced existing)"})
+
+
+def copied_path(line):
+    """The path if this JSON log line reports a content copy, else None.
+
+    The operation is the `msg` field and the path the `object` field, so a
+    crafted filename that looks like a copied message cannot forge an entry.
+    Non-JSON and malformed lines yield None.
+    """
+    try:
+        entry = json.loads(line)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(entry, dict) or entry.get("msg") not in _COPIED_MSGS:
+        return None
+    obj = entry.get("object")
+    return obj if isinstance(obj, str) else None
+
+
+def copied_paths(lines):
+    """Paths reported copied (new or replaced) across JSON log lines."""
+    return [path for path in map(copied_path, lines) if path is not None]
 
 
 class Progress:
@@ -225,6 +270,7 @@ def build_steps(cfg, date):
             "--config",
             cfg.rclone_config,
             *_rclone_flags(),
+            *COPY_LOG_FLAGS,
             "copy",
             cfg.source,
             local_dir(cfg),
@@ -240,6 +286,7 @@ def build_steps(cfg, date):
                 "--config",
                 cfg.rclone_config,
                 *_rclone_flags(),
+                *COPY_LOG_FLAGS,
                 # A failed Proton upload leaves a draft; without this the retry
                 # dies with "a draft exist" and the file never reaches the mirror.
                 "--protondrive-replace-existing-draft=true",
@@ -252,16 +299,19 @@ def build_steps(cfg, date):
     return steps
 
 
-def build_check(cfg):
+def build_check(cfg, files_from=None):
     """Verify the offsite mirror by checksum; None when there is no offsite copy.
 
     `--one-way` is required: the remote is append-only, so it can legitimately
     hold files the mirror no longer does. A two-way check would treat those
     harmless extras as differences and wedge the dataset red forever.
+
+    `files_from` (a path) scopes the check to the files this run copied; without
+    it the whole mirror is walked, which on a large unchanged tree is pure cost.
     """
     if not cfg.offsite:
         return None
-    return [
+    argv = [
         "rclone",
         "--config",
         cfg.rclone_config,
@@ -273,6 +323,9 @@ def build_check(cfg):
         f"{cfg.remote}:{cfg.name}",
         *_exclude_flags(cfg),
     ]
+    if files_from is not None:
+        argv += ["--files-from", files_from]
+    return argv
 
 
 def unchecked_hashes(output):
@@ -450,6 +503,7 @@ def run_streaming(
     read=os.read,
     clock=time.monotonic,
     out=None,
+    on_line=None,
     interval=None,
     capture=False,
 ):
@@ -459,6 +513,9 @@ def run_streaming(
     loop past the stall check (select only promises *some* bytes are ready). A
     stalled run is retried up to `attempts` times — `copy` is resumable — and a
     non-positive stall_timeout disables the watchdog and runs exactly once.
+
+    `on_line`, when given, is called with each raw line as it arrives so a caller
+    can watch the stream without buffering the whole run.
     """
     out = _sanitized(out or (lambda line: print(line, file=sys.stderr)))
     tries = attempts if stall_timeout > 0 else 1
@@ -491,6 +548,8 @@ def run_streaming(
                     line = raw.decode("utf-8", "replace").rstrip("\r")
                     out(line)
                     lines.append(line)
+                    if on_line is not None:
+                        on_line(line)
                     if progress is not None:
                         # Sample every line: the failure mode keeps printing
                         # stats, so checking only on silence would miss it.
@@ -501,6 +560,8 @@ def run_streaming(
                     line = pending.decode("utf-8", "replace").rstrip("\r")
                     out(line)
                     lines.append(line)
+                    if on_line is not None:
+                        on_line(line)
                     pending = b""
                 if progress is not None and progress.stalled():
                     # Check after EVERY read, not only on silence or a newline:
@@ -512,6 +573,8 @@ def run_streaming(
                 line = pending.decode("utf-8", "replace").rstrip("\r")
                 out(line)
                 lines.append(line)
+                if on_line is not None:
+                    on_line(line)
         finally:
             if stalled:
                 proc.kill()
@@ -538,7 +601,7 @@ def make_runner(stall_timeout, attempts=3, out=None, plain_timeout=DEFAULT_STEP_
     host lock forever.
     """
 
-    def run(argv, capture=False, env=None):
+    def run(argv, capture=False, env=None, on_line=None):
         if os.path.basename(argv[0]) != "rclone":
             return _plain_run(argv, capture=capture, env=env, timeout=plain_timeout)
         return run_streaming(
@@ -548,6 +611,7 @@ def make_runner(stall_timeout, attempts=3, out=None, plain_timeout=DEFAULT_STEP_
             attempts=attempts,
             out=out,
             capture=capture,
+            on_line=on_line,
         )
 
     return run
@@ -562,7 +626,66 @@ def _pre_backup_env(cfg, date):
     }
 
 
-def run_backup(cfg, date, dry_run=False, run=None, out=print, lock=True):
+def write_paths_file(paths):
+    """Write paths one per line to a fresh temp file and return its path.
+
+    `--files-from` takes a file rather than a repeated flag, so the changed set
+    goes through disk. mkstemp gives a private 0600 file (source filenames can be
+    sensitive); the caller removes it.
+    """
+    fd, path = tempfile.mkstemp(prefix="backup-check-", suffix=".txt")
+    with os.fdopen(fd, "w") as handle:
+        handle.write("".join(name + "\n" for name in paths))
+    return path
+
+
+def _verify_offsite(cfg, changed, run, out, dry_run, full_check):
+    """Verify the offsite mirror over the changed set (or the whole tree).
+
+    The offsite copy reports exactly which paths differ between the local mirror
+    and the remote, so checking only those turns an O(tree) walk into an
+    O(changes) one. An empty change set means the mirror already matches the last
+    verified run, so the check is skipped entirely; `--full-check` forces the
+    whole-tree walk as a periodic integrity scan.
+    """
+    if dry_run:
+        # Nothing was copied, so there is no changed set to scope the check;
+        # show the whole-tree check as the shape a real run would produce.
+        check = build_check(cfg)
+        if check is not None:
+            out("+ " + quote(check))
+        return
+    if not full_check and not changed:
+        out("no offsite changes; skipping verification")
+        return
+    tmp_path = write_paths_file(changed) if (changed and not full_check) else None
+    try:
+        check = build_check(cfg, files_from=tmp_path)
+        out("+ " + quote(check))
+        result = run(check, capture=True)
+        # run_streaming returns the captured output; the summary may land on
+        # either stream depending on rclone version.
+        output = result or ""
+        if unchecked_hashes(output) > 0:
+            raise BackupError(
+                f"offsite check could not verify every file: {output.strip()}"
+            )
+        # This guard only runs when a check actually happened (the empty-change
+        # case returned above): a zero count then means the mirror verified
+        # nothing, e.g. it is empty from over-broad excludes.
+        if checked_count(output) == 0:
+            raise BackupError(
+                "offsite check verified no files; the mirror may be empty "
+                "(over-broad excludes?)"
+            )
+    finally:
+        if tmp_path is not None:
+            os.remove(tmp_path)
+
+
+def run_backup(
+    cfg, date, dry_run=False, run=None, out=print, lock=True, full_check=False
+):
     run = run or make_runner(
         cfg.stall_timeout, plain_timeout=cfg.timeout or DEFAULT_STEP_TIMEOUT
     )
@@ -577,33 +700,31 @@ def run_backup(cfg, date, dry_run=False, run=None, out=print, lock=True):
             date = resolve_date(cfg, date)
             os.makedirs(versions_dir(cfg, date), mode=0o700, exist_ok=True)
 
+        # The offsite copy logs each file it copies; collecting those paths scopes
+        # the verification to what changed instead of walking the whole mirror.
+        changed = []
+
+        def collect(line):
+            path = copied_path(line)
+            if path is not None:
+                changed.append(path)
+
         pre_step = [cfg.pre_backup] if cfg.pre_backup else None
+        offsite_target = f"{cfg.remote}:{cfg.name}"
         for step in build_steps(cfg, date):
             out("+ " + quote(step))
             if dry_run:
                 continue
             if pre_step is not None and step == pre_step:
                 run(step, env=_pre_backup_env(cfg, date))
+            elif cfg.offsite and offsite_target in step:
+                run(step, on_line=collect)
             else:
                 run(step)
 
-        check = build_check(cfg)
-        if check is not None:
-            out("+ " + quote(check))
-            if not dry_run:
-                result = run(check, capture=True)
-                # run_streaming returns the captured output; the summary may land
-                # on either stream depending on rclone version.
-                output = result or ""
-                if unchecked_hashes(output) > 0:
-                    raise BackupError(
-                        f"offsite check could not verify every file: {output.strip()}"
-                    )
-                if checked_count(output) == 0:
-                    raise BackupError(
-                        "offsite check verified no files; the mirror may be empty "
-                        "(over-broad excludes?)"
-                    )
+        if cfg.offsite:
+            _verify_offsite(cfg, changed, run, out, dry_run, full_check)
+
         if not dry_run and os.path.exists(marker_path(cfg)):
             # Remove inside the lock so a concurrent run cannot interleave
             # between the success and the marker cleanup.
@@ -662,6 +783,11 @@ def main(argv=None):
     )
     parser.add_argument("--dry-run", action="store_true", help="print steps only")
     parser.add_argument(
+        "--full-check",
+        action="store_true",
+        help="verify the whole offsite mirror instead of only this run's changes",
+    )
+    parser.add_argument(
         "--no-lock",
         action="store_true",
         help="skip the host-wide run lock; only honored when "
@@ -693,6 +819,7 @@ def main(argv=None):
             validate_date(args.date),
             dry_run=args.dry_run,
             lock=not args.no_lock,
+            full_check=args.full_check,
         )
     except Exception as error:  # noqa: BLE001 - top-level CLI boundary
         print(f"backup failed: {sanitize_output(str(error))}", file=sys.stderr)
