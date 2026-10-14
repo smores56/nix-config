@@ -56,6 +56,7 @@ class FakeAeroSpace:
         self.home_monitor = {"1": self.monitor_names[0], "2": self.monitor_names[-1]}
         self.visible = {}  # monitor -> workspace shown there
         self.fail_on = set()  # command names that exit non-zero
+        self.unlaunchable = set()  # bundles `open -b` cannot find
 
     # -- setup helpers
     def tile(self, workspace, bundle, window_id=None):
@@ -92,6 +93,8 @@ class FakeAeroSpace:
 
     # -- client interface used by the module
     def windows(self):
+        if "list-windows" in self.fail_on:
+            raise self.mod.CommandError("list-windows failed")
         for bundle, entry in list(self.pending.items()):
             entry[0] -= 1
             if entry[0] <= 0 and bundle in self.launched:
@@ -102,6 +105,10 @@ class FakeAeroSpace:
             for window_id, layout in self._walk(root):
                 found.append(self.mod.Window(window_id, self.bundles[window_id], layout, workspace))
         for window_id, (bundle, layout, workspace) in self.loose.items():
+            # AeroSpace parks minimized windows outside every workspace, so
+            # list-windows --all never reports them.
+            if layout == "macos_native_minimized":
+                continue
             found.append(self.mod.Window(window_id, bundle, layout, workspace))
         return found
 
@@ -112,6 +119,8 @@ class FakeAeroSpace:
         return list(self.monitor_names)
 
     def launch(self, bundle):
+        if bundle in self.unlaunchable:
+            raise self.mod.CommandError(f"Unable to find application with identifier {bundle}")
         self.launched.append(bundle)
 
     def run(self, argv):
@@ -145,8 +154,10 @@ class FakeAeroSpace:
 
     def _cmd_join_with(self, args):
         window_id = int(self._opt(args, "--window-id"))
-        assert args[-1] == "right", args
         parent = self._parent_of(window_id)
+        along = "right" if parent["layout"].startswith("h_") else "down"
+        if args[-1] != along:
+            raise self.mod.CommandError("No windows in the specified direction")
         i = parent["children"].index(window_id)
         neighbor = parent["children"][i + 1]
         layout = "v_tiles" if parent["layout"].startswith("h_") else "h_tiles"
@@ -355,21 +366,132 @@ class AeroSpaceLayoutTests(unittest.TestCase):
         self.assertEqual(f.tree("1"), ("h_tiles", [chrome, kitty]))
         self.assertEqual(f.tree("2"), ("h_tiles", [mail, calendar]))
 
-    def test_app_with_only_untileable_windows_is_neither_launched_nor_reported(self):
+    def test_app_with_only_a_minimized_window_is_reopened_to_restore_it(self):
         f = self.fake
         f.tile("1", CHROME)
         f.tile("1", KITTY)
         f.tile("2", SLACK)
         f.tile("2", CALENDAR)
         f.untiled("5", MAIL, "macos_native_minimized")
+        f.appears_after_launch(MAIL, polls=1)
+
+        problems = self.arrange("docked")
+
+        self.assertEqual(problems, [])
+        self.assertEqual(f.launched, [MAIL])
+
+    def test_app_with_only_floating_windows_is_reported_as_not_arranged(self):
+        f = self.fake
+        f.tile("1", CHROME)
+        f.tile("1", KITTY)
+        f.tile("2", MAIL)
+        f.tile("2", CALENDAR)
+        f.untiled("2", SLACK, "floating")
+
+        problems = self.arrange("docked")
+
+        self.assertEqual(f.launched, [])
+        self.assertEqual(len(problems), 1)
+        self.assertIn(SLACK, problems[0])
+        self.assertIn("floating", problems[0])
+
+    def test_launched_app_whose_first_window_floats_is_reported_as_not_arranged(self):
+        f = self.fake
+        f.tile("1", CHROME)
+        f.tile("1", KITTY)
+        f.tile("2", SLACK)
+        f.tile("2", CALENDAR)
+        f.launch = lambda bundle: (f.launched.append(bundle), f.untiled("3", bundle, "floating"))
         clock = iter(range(0, 1000))
 
         problems = self.mod.arrange(
             self.spec, "docked", f, sleep=lambda _: None, clock=lambda: next(clock)
         )
 
+        self.assertEqual(len(problems), 1)
+        self.assertIn(MAIL, problems[0])
+
+    def test_app_that_cannot_be_launched_is_reported_without_waiting(self):
+        f = self.fake
+        f.tile("1", CHROME)
+        f.tile("1", KITTY)
+        f.tile("2", MAIL)
+        f.tile("2", CALENDAR)
+        f.unlaunchable = {SLACK}
+        sleeps = []
+
+        problems = self.mod.arrange(self.spec, "docked", f, sleep=sleeps.append)
+
+        self.assertEqual(sleeps, [])
+        self.assertEqual(len(problems), 1)
+        self.assertIn("launch", problems[0])
+
+    def test_failed_window_listing_is_reported_instead_of_raising(self):
+        self.fake.fail_on = {"list-windows"}
+
+        problems = self.arrange("docked")
+
+        self.assertEqual(len(problems), 1)
+        self.assertIn("list-windows", problems[0])
+
+    def test_docked_without_a_focused_window_ends_on_the_work_workspace(self):
+        self.scrambled_desk()
+        self.fake.focused_id = None
+
+        self.arrange("docked")
+
+        self.assertEqual(self.fake.focused_workspace, "1")
+
+    def test_group_under_a_vertical_root_splits_side_by_side(self):
+        spec = self.mod.parse_spec(
+            {
+                "builtInMonitor": "^built-in",
+                "layouts": {
+                    "docked": {
+                        "focus": None,
+                        "workspaces": [{"name": "2", "layout": "v_tiles", "children": [SLACK, [MAIL, CALENDAR]]}],
+                    },
+                    "laptop": {"focus": None, "workspaces": []},
+                },
+            }
+        )
+        f = self.fake
+        slack = f.tile("2", SLACK)
+        mail = f.tile("2", MAIL)
+        calendar = f.tile("2", CALENDAR)
+
+        problems = self.mod.arrange(spec, "docked", f, sleep=lambda _: None)
+
         self.assertEqual(problems, [])
-        self.assertEqual(f.launched, [])
+        self.assertEqual(f.tree("2"), ("v_tiles", [slack, ("h_tiles", [mail, calendar])]))
+
+    def test_spec_requires_both_docked_and_laptop_layouts(self):
+        bad = {"builtInMonitor": "^built-in", "layouts": {"docked": SPEC["layouts"]["docked"]}}
+
+        with self.assertRaises(ValueError):
+            self.mod.parse_spec(bad)
+
+    def test_spec_rejects_focus_on_a_workspace_the_layout_does_not_build(self):
+        bad = {
+            "builtInMonitor": "^built-in",
+            "layouts": {**SPEC["layouts"], "laptop": {**SPEC["layouts"]["laptop"], "focus": "9"}},
+        }
+
+        with self.assertRaises(ValueError):
+            self.mod.parse_spec(bad)
+
+    def test_spec_rejects_an_app_pinned_twice_in_one_layout(self):
+        docked = {
+            "focus": None,
+            "workspaces": [
+                {"name": "1", "layout": "h_tiles", "children": [CHROME, KITTY]},
+                {"name": "2", "layout": "h_tiles", "children": [CHROME]},
+            ],
+        }
+        bad = {"builtInMonitor": "^built-in", "layouts": {**SPEC["layouts"], "docked": docked}}
+
+        with self.assertRaises(ValueError):
+            self.mod.parse_spec(bad)
 
     def test_laptop_with_externals_attached_still_shows_both_workspaces(self):
         w = self.scrambled_desk()
@@ -422,7 +544,8 @@ class AeroSpaceLayoutTests(unittest.TestCase):
                     "workspaces": [
                         {"name": "2", "layout": "h_tiles", "children": [[SLACK, MAIL, CALENDAR]]}
                     ],
-                }
+                },
+                "laptop": SPEC["layouts"]["laptop"],
             },
         }
 
@@ -436,7 +559,8 @@ class AeroSpaceLayoutTests(unittest.TestCase):
                 "docked": {
                     "focus": None,
                     "workspaces": [{"name": "1", "layout": "tiles", "children": [CHROME]}],
-                }
+                },
+                "laptop": SPEC["layouts"]["laptop"],
             },
         }
 
