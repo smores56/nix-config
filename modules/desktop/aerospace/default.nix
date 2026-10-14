@@ -33,9 +33,9 @@ let
   mkWorkspaceBindings = binding: actionFn: mkPrefixedBindings binding (lib.range 1 9) actionFn;
   mkAllDirectionBindings = binding: actionFn: mkPrefixedBindings binding allDirections actionFn;
 
-  # Patterns are case-insensitive regexes over monitor names. A pinned
-  # workspace falls back to the built-in display when its monitor is absent
-  # (first resolving pattern wins), so undocking collapses onto the laptop.
+  # Patterns are case-insensitive regexes over monitor names; the first
+  # connected one wins. Work prefers any external, so with one external plus
+  # the open laptop, work takes the external and comms the laptop.
   monitors = {
     main = "^dell u3425we";
     side = "^27e6qca";
@@ -46,8 +46,15 @@ let
     comms = "2";
   };
   pinnedWorkspaces = {
-    ${workspaces.work} = monitors.main;
-    ${workspaces.comms} = monitors.side;
+    ${workspaces.work} = [
+      monitors.main
+      monitors.side
+      monitors.builtIn
+    ];
+    ${workspaces.comms} = [
+      monitors.builtIn
+      monitors.side
+    ];
   };
 
   # Pinned apps by bundle id; anything not listed is never moved by layouts.
@@ -160,10 +167,7 @@ in
         # scrolling targets the focused monitor. Lazy: no-op if already there.
         on-focused-monitor-changed = [ "move-mouse monitor-lazy-center" ];
 
-        workspace-to-monitor-force-assignment = lib.mapAttrs (_: monitor: [
-          monitor
-          monitors.builtIn
-        ]) pinnedWorkspaces;
+        workspace-to-monitor-force-assignment = pinnedWorkspaces;
 
         gaps = {
           inner = {
