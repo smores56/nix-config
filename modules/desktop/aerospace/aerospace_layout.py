@@ -1,4 +1,4 @@
-"""Arrange pinned apps into a named AeroSpace layout (docked or laptop).
+"""Arrange pinned apps into the AeroSpace layout, on whatever displays exist.
 
 AeroSpace has no layout save/restore, so a layout is rebuilt from commands:
 every pinned window goes through a scratch workspace and back, because
@@ -15,17 +15,13 @@ bundle ids or two-bundle lists (groups).
 import fcntl
 import json
 import os
-import re
 import subprocess
 import sys
 import time
 from contextlib import contextmanager
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from types import MappingProxyType
 
-MODES = ("docked", "laptop")
 TILING_LAYOUTS = frozenset({"h_tiles", "v_tiles", "h_accordion", "v_accordion"})
 SCRATCH_WORKSPACE = "layout-scratch"
 LAUNCH_TIMEOUT_SECONDS = 15
@@ -57,18 +53,10 @@ class WorkspaceLayout:
 @dataclass(frozen=True)
 class Layout:
     workspaces: tuple[WorkspaceLayout, ...]
-    # Workspace to end on; None restores the window focused before the run.
-    focus: str | None
 
     @property
     def bundles(self):
         return tuple(b for workspace in self.workspaces for b in workspace.bundles)
-
-
-@dataclass(frozen=True)
-class Spec:
-    built_in_monitor: str
-    layouts: Mapping[str, Layout]
 
 
 class CommandError(Exception):
@@ -92,21 +80,11 @@ def parse_workspace(raw):
     return WorkspaceLayout(raw["name"], raw["layout"], children)
 
 
-def parse_layout(mode, raw):
-    layout = Layout(tuple(parse_workspace(w) for w in raw["workspaces"]), raw["focus"])
-    names = {w.name for w in layout.workspaces}
-    if layout.focus is not None and layout.focus not in names:
-        raise ValueError(f"{mode}: focus {layout.focus!r} is not one of its workspaces")
-    if len(set(layout.bundles)) != len(layout.bundles):
-        raise ValueError(f"{mode}: an app is pinned more than once")
-    return layout
-
-
 def parse_spec(raw):
-    if set(raw["layouts"]) != set(MODES):
-        raise ValueError(f"layouts must be exactly {', '.join(MODES)}")
-    layouts = {mode: parse_layout(mode, layout) for mode, layout in raw["layouts"].items()}
-    return Spec(raw["builtInMonitor"], MappingProxyType(layouts))
+    layout = Layout(tuple(parse_workspace(w) for w in raw["workspaces"]))
+    if len(set(layout.bundles)) != len(layout.bundles):
+        raise ValueError("an app is pinned more than once")
+    return layout
 
 
 def parse_windows(out):
@@ -116,11 +94,6 @@ def parse_windows(out):
         if len(fields) == 4 and fields[0].isdigit():
             windows.append(Window(int(fields[0]), fields[1], fields[2], fields[3]))
     return windows
-
-
-def pick_mode(monitor_names, built_in_pattern):
-    built_in = re.compile(built_in_pattern, re.IGNORECASE)
-    return "laptop" if any(built_in.search(name) for name in monitor_names) else "docked"
 
 
 def tileable_by_bundle(windows):
@@ -198,9 +171,8 @@ def wait_for_windows(layout, client, sleep, clock):
     return windows, problems
 
 
-def arrange(spec, mode, client, sleep=time.sleep, clock=time.monotonic):
-    """Apply layout `mode`; returns human-readable problems (empty on success)."""
-    layout = spec.layouts[mode]
+def arrange(layout, client, sleep=time.sleep, clock=time.monotonic):
+    """Apply `layout`; returns human-readable problems (empty on success)."""
     focused_before = client.focused()
     try:
         windows, problems = wait_for_windows(layout, client, sleep, clock)
@@ -222,9 +194,7 @@ def arrange(spec, mode, client, sleep=time.sleep, clock=time.monotonic):
     # The scratch round trip can leave the scratch workspace showing on a
     # monitor; switching to each layout workspace puts it back on display.
     commands += [["workspace", workspace.name] for workspace in layout.workspaces]
-    if layout.focus is not None:
-        commands.append(["workspace", layout.focus])
-    elif focused_before in {w.id for w in windows}:
+    if focused_before in {w.id for w in windows}:
         commands.append(["focus", "--window-id", str(focused_before)])
     elif layout.workspaces:
         # Nothing to restore; prefer work over leaving comms focused.
@@ -282,9 +252,6 @@ class AeroSpaceCli:
             return None
         return int(out) if out.isdigit() else None
 
-    def monitors(self):
-        return self._call(["list-monitors", "--format", "%{monitor-name}"]).splitlines()
-
     def launch(self, bundle):
         # -g keeps the launched app from stealing focus mid-arrangement.
         result = subprocess.run(["/usr/bin/open", "-g", "-b", bundle], capture_output=True, text=True)
@@ -297,27 +264,17 @@ def main(argv):
         with open(argv[2]) as f:
             parse_spec(json.load(f))
         return 0
-    if len(argv) != 2 or argv[1] not in {*MODES, "auto"}:
-        print("usage: aerospace-layout docked|laptop|auto | check <spec.json>", file=sys.stderr)
+    if len(argv) != 1:
+        print("usage: aerospace-layout [check <spec.json>]", file=sys.stderr)
         return 2
     with open(os.environ["AEROSPACE_LAYOUT_SPEC"]) as f:
-        spec = parse_spec(json.load(f))
+        layout = parse_spec(json.load(f))
     lock = Path(os.environ.get("TMPDIR", "/tmp")) / "aerospace-layout.lock"
     with single_instance(lock) as acquired:
         if not acquired:
             print("another aerospace-layout run is in progress", file=sys.stderr)
             return 1
-        client = AeroSpaceCli(os.environ["AEROSPACE_BIN"])
-        mode = argv[1]
-        if mode == "auto":
-            try:
-                mode = pick_mode(client.monitors(), spec.built_in_monitor)
-            except CommandError as err:
-                print(f"list-monitors: {err}", file=sys.stderr)
-                return 1
-        problems = arrange(spec, mode, client)
-    # Flush first: the caller merges both streams and leads with the mode.
-    print(mode, flush=True)
+        problems = arrange(layout, AeroSpaceCli(os.environ["AEROSPACE_BIN"]))
     for problem in problems:
         print(problem, file=sys.stderr)
     return 1 if problems else 0
