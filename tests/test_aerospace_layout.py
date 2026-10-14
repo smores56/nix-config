@@ -10,23 +10,10 @@ CALENDAR = "com.apple.iCal"
 FINDER = "com.apple.finder"
 
 SPEC = {
-    "builtInMonitor": "^built-in",
-    "layouts": {
-        "docked": {
-            "focus": None,
-            "workspaces": [
-                {"name": "1", "layout": "h_tiles", "children": [CHROME, KITTY]},
-                {"name": "2", "layout": "h_tiles", "children": [SLACK, [MAIL, CALENDAR]]},
-            ],
-        },
-        "laptop": {
-            "focus": "1",
-            "workspaces": [
-                {"name": "1", "layout": "h_tiles", "children": [CHROME, KITTY]},
-                {"name": "2", "layout": "h_accordion", "children": [SLACK, MAIL, CALENDAR]},
-            ],
-        },
-    },
+    "workspaces": [
+        {"name": "1", "layout": "h_tiles", "children": [CHROME, KITTY]},
+        {"name": "2", "layout": "h_tiles", "children": [SLACK, [MAIL, CALENDAR]]},
+    ],
 }
 
 
@@ -56,6 +43,7 @@ class FakeAeroSpace:
         self.home_monitor = {"1": self.monitor_names[0], "2": self.monitor_names[-1]}
         self.visible = {}  # monitor -> workspace shown there
         self.fail_on = set()  # command names that exit non-zero
+        self.unlaunchable = set()  # bundles `open -b` cannot find
 
     # -- setup helpers
     def tile(self, workspace, bundle, window_id=None):
@@ -92,6 +80,8 @@ class FakeAeroSpace:
 
     # -- client interface used by the module
     def windows(self):
+        if "list-windows" in self.fail_on:
+            raise self.mod.CommandError("list-windows failed")
         for bundle, entry in list(self.pending.items()):
             entry[0] -= 1
             if entry[0] <= 0 and bundle in self.launched:
@@ -102,6 +92,10 @@ class FakeAeroSpace:
             for window_id, layout in self._walk(root):
                 found.append(self.mod.Window(window_id, self.bundles[window_id], layout, workspace))
         for window_id, (bundle, layout, workspace) in self.loose.items():
+            # AeroSpace parks minimized windows outside every workspace, so
+            # list-windows --all never reports them.
+            if layout == "macos_native_minimized":
+                continue
             found.append(self.mod.Window(window_id, bundle, layout, workspace))
         return found
 
@@ -112,6 +106,8 @@ class FakeAeroSpace:
         return list(self.monitor_names)
 
     def launch(self, bundle):
+        if bundle in self.unlaunchable:
+            raise self.mod.CommandError(f"Unable to find application with identifier {bundle}")
         self.launched.append(bundle)
 
     def run(self, argv):
@@ -145,8 +141,10 @@ class FakeAeroSpace:
 
     def _cmd_join_with(self, args):
         window_id = int(self._opt(args, "--window-id"))
-        assert args[-1] == "right", args
         parent = self._parent_of(window_id)
+        along = "right" if parent["layout"].startswith("h_") else "down"
+        if args[-1] != along:
+            raise self.mod.CommandError("No windows in the specified direction")
         i = parent["children"].index(window_id)
         neighbor = parent["children"][i + 1]
         layout = "v_tiles" if parent["layout"].startswith("h_") else "h_tiles"
@@ -232,8 +230,8 @@ class AeroSpaceLayoutTests(unittest.TestCase):
         self.fake.mod = self.mod
         self.spec = self.mod.parse_spec(SPEC)
 
-    def arrange(self, mode):
-        return self.mod.arrange(self.spec, mode, self.fake, sleep=lambda _: None)
+    def arrange(self):
+        return self.mod.arrange(self.spec, self.fake, sleep=lambda _: None)
 
     def scrambled_desk(self):
         f = self.fake
@@ -243,10 +241,10 @@ class AeroSpaceLayoutTests(unittest.TestCase):
         slack = f.tile("11", SLACK)
         return {"chrome": chrome, "kitty": kitty, "slack": slack, "mail": mail, "calendar": calendar}
 
-    def test_docked_builds_chrome_kitty_and_slack_beside_mail_over_calendar(self):
+    def test_builds_chrome_kitty_and_slack_beside_mail_over_calendar(self):
         w = self.scrambled_desk()
 
-        problems = self.arrange("docked")
+        problems = self.arrange()
 
         self.assertEqual(problems, [])
         self.assertEqual(self.fake.tree("1"), ("h_tiles", [w["chrome"], w["kitty"]]))
@@ -255,38 +253,28 @@ class AeroSpaceLayoutTests(unittest.TestCase):
             ("h_tiles", [w["slack"], ("v_tiles", [w["mail"], w["calendar"]])]),
         )
 
-    def test_docked_restores_the_window_focused_before_arranging(self):
+    def test_restores_the_window_focused_before_arranging(self):
         w = self.scrambled_desk()
         self.fake.focused_id = w["mail"]
 
-        self.arrange("docked")
+        self.arrange()
 
         self.assertEqual(self.fake.focused_id, w["mail"])
 
-    def test_docked_shows_each_layout_workspace_on_its_monitor(self):
+    def test_shows_each_layout_workspace_on_its_monitor(self):
         w = self.scrambled_desk()
         self.fake.visible = {"DELL U3425WE": "layout-scratch", "27E6QCA": "11"}
         self.fake.focused_id = w["slack"]
 
-        self.arrange("docked")
+        self.arrange()
 
         self.assertEqual(self.fake.visible, {"DELL U3425WE": "1", "27E6QCA": "2"})
-
-    def test_laptop_stacks_comms_as_accordion_and_ends_on_workspace_1(self):
-        w = self.scrambled_desk()
-        self.fake.focused_id = w["mail"]
-
-        self.arrange("laptop")
-
-        self.assertEqual(self.fake.tree("1"), ("h_tiles", [w["chrome"], w["kitty"]]))
-        self.assertEqual(self.fake.tree("2"), ("h_accordion", [w["slack"], w["mail"], w["calendar"]]))
-        self.assertEqual(self.fake.focused_workspace, "1")
 
     def test_extra_windows_of_pinned_apps_follow_but_trail_the_arranged_ones(self):
         w = self.scrambled_desk()
         second_chrome = self.fake.tile("4", CHROME)
 
-        self.arrange("docked")
+        self.arrange()
 
         self.assertEqual(self.fake.tree("1"), ("h_tiles", [w["chrome"], w["kitty"], second_chrome]))
 
@@ -294,7 +282,7 @@ class AeroSpaceLayoutTests(unittest.TestCase):
         w = self.scrambled_desk()
         newer_mail = self.fake.tile("2", MAIL)
 
-        self.arrange("docked")
+        self.arrange()
 
         self.assertEqual(
             self.fake.tree("2"),
@@ -307,7 +295,7 @@ class AeroSpaceLayoutTests(unittest.TestCase):
         floating = self.fake.untiled("5", SLACK, "floating")
         fullscreen = self.fake.untiled("6", CHROME, "macos_native_fullscreen")
 
-        problems = self.arrange("docked")
+        problems = self.arrange()
 
         self.assertEqual(problems, [])
         for window_id, workspace in ((minimized, "5"), (floating, "5"), (fullscreen, "6")):
@@ -318,7 +306,7 @@ class AeroSpaceLayoutTests(unittest.TestCase):
         finder = self.fake.tile("1", FINDER)
         elsewhere = self.fake.tile("7", FINDER)
 
-        self.arrange("docked")
+        self.arrange()
 
         self.assertEqual(self.fake.tree("1"), ("h_tiles", [finder, w["chrome"], w["kitty"]]))
         self.assertEqual(self.fake.tree("7"), ("h_tiles", [elsewhere]))
@@ -331,7 +319,7 @@ class AeroSpaceLayoutTests(unittest.TestCase):
         f.tile("2", CALENDAR)
         f.appears_after_launch(SLACK, polls=3)
 
-        problems = self.arrange("docked")
+        problems = self.arrange()
 
         self.assertEqual(problems, [])
         self.assertEqual(f.launched, [SLACK])
@@ -347,7 +335,7 @@ class AeroSpaceLayoutTests(unittest.TestCase):
         clock = iter(range(0, 1000))
 
         problems = self.mod.arrange(
-            self.spec, "docked", f, sleep=lambda _: None, clock=lambda: next(clock)
+            self.spec, f, sleep=lambda _: None, clock=lambda: next(clock)
         )
 
         self.assertEqual(len(problems), 1)
@@ -355,36 +343,126 @@ class AeroSpaceLayoutTests(unittest.TestCase):
         self.assertEqual(f.tree("1"), ("h_tiles", [chrome, kitty]))
         self.assertEqual(f.tree("2"), ("h_tiles", [mail, calendar]))
 
-    def test_app_with_only_untileable_windows_is_neither_launched_nor_reported(self):
+    def test_app_with_only_a_minimized_window_is_reopened_to_restore_it(self):
         f = self.fake
         f.tile("1", CHROME)
         f.tile("1", KITTY)
         f.tile("2", SLACK)
         f.tile("2", CALENDAR)
         f.untiled("5", MAIL, "macos_native_minimized")
+        f.appears_after_launch(MAIL, polls=1)
+
+        problems = self.arrange()
+
+        self.assertEqual(problems, [])
+        self.assertEqual(f.launched, [MAIL])
+
+    def test_app_with_only_floating_windows_is_reported_as_not_arranged(self):
+        f = self.fake
+        f.tile("1", CHROME)
+        f.tile("1", KITTY)
+        f.tile("2", MAIL)
+        f.tile("2", CALENDAR)
+        f.untiled("2", SLACK, "floating")
+
+        problems = self.arrange()
+
+        self.assertEqual(f.launched, [])
+        self.assertEqual(len(problems), 1)
+        self.assertIn(SLACK, problems[0])
+        self.assertIn("floating", problems[0])
+
+    def test_launched_app_whose_first_window_floats_is_reported_as_not_arranged(self):
+        f = self.fake
+        f.tile("1", CHROME)
+        f.tile("1", KITTY)
+        f.tile("2", SLACK)
+        f.tile("2", CALENDAR)
+        f.launch = lambda bundle: (f.launched.append(bundle), f.untiled("3", bundle, "floating"))
         clock = iter(range(0, 1000))
 
         problems = self.mod.arrange(
-            self.spec, "docked", f, sleep=lambda _: None, clock=lambda: next(clock)
+            self.spec, f, sleep=lambda _: None, clock=lambda: next(clock)
         )
 
-        self.assertEqual(problems, [])
-        self.assertEqual(f.launched, [])
+        self.assertEqual(len(problems), 1)
+        self.assertIn(MAIL, problems[0])
 
-    def test_laptop_with_externals_attached_still_shows_both_workspaces(self):
-        w = self.scrambled_desk()
-        self.fake.visible = {"DELL U3425WE": "11", "27E6QCA": "layout-scratch"}
+    def test_app_that_cannot_be_launched_is_reported_without_waiting(self):
+        f = self.fake
+        f.tile("1", CHROME)
+        f.tile("1", KITTY)
+        f.tile("2", MAIL)
+        f.tile("2", CALENDAR)
+        f.unlaunchable = {SLACK}
+        sleeps = []
 
-        self.arrange("laptop")
+        problems = self.mod.arrange(self.spec, f, sleep=sleeps.append)
 
-        self.assertEqual(self.fake.visible, {"DELL U3425WE": "1", "27E6QCA": "2"})
+        self.assertEqual(sleeps, [])
+        self.assertEqual(len(problems), 1)
+        self.assertIn("launch", problems[0])
+
+    def test_failed_window_listing_is_reported_instead_of_raising(self):
+        self.fake.fail_on = {"list-windows"}
+
+        problems = self.arrange()
+
+        self.assertEqual(len(problems), 1)
+        self.assertIn("list-windows", problems[0])
+
+    def test_without_a_focused_window_the_run_ends_on_the_work_workspace(self):
+        self.scrambled_desk()
+        self.fake.focused_id = None
+
+        self.arrange()
+
         self.assertEqual(self.fake.focused_workspace, "1")
+
+    def test_group_under_a_vertical_root_splits_side_by_side(self):
+        spec = self.mod.parse_spec(
+            {"workspaces": [{"name": "2", "layout": "v_tiles", "children": [SLACK, [MAIL, CALENDAR]]}]}
+        )
+        f = self.fake
+        slack = f.tile("2", SLACK)
+        mail = f.tile("2", MAIL)
+        calendar = f.tile("2", CALENDAR)
+
+        problems = self.mod.arrange(spec, f, sleep=lambda _: None)
+
+        self.assertEqual(problems, [])
+        self.assertEqual(f.tree("2"), ("v_tiles", [slack, ("h_tiles", [mail, calendar])]))
+
+    def test_spec_rejects_an_app_pinned_twice_in_one_layout(self):
+        bad = {
+            "workspaces": [
+                {"name": "1", "layout": "h_tiles", "children": [CHROME, KITTY]},
+                {"name": "2", "layout": "h_tiles", "children": [CHROME]},
+            ],
+        }
+
+        with self.assertRaises(ValueError):
+            self.mod.parse_spec(bad)
+
+    def test_laptop_screen_alone_ends_showing_the_work_workspace(self):
+        f = FakeAeroSpace(monitors=("Built-in Retina Display",))
+        f.mod = self.mod
+        chrome = f.tile("1", CHROME)
+        f.tile("1", KITTY)
+        f.tile("2", SLACK)
+        f.tile("2", MAIL)
+        f.tile("2", CALENDAR)
+        f.focused_id = chrome
+
+        self.mod.arrange(self.spec, f, sleep=lambda _: None)
+
+        self.assertEqual(f.visible, {"Built-in Retina Display": "1"})
 
     def test_unpinned_containers_keep_their_nesting(self):
         w = self.scrambled_desk()
         left, right = self.fake.group("1", "v_tiles", FINDER, FINDER)
 
-        self.arrange("docked")
+        self.arrange()
 
         self.assertEqual(
             self.fake.tree("1"), ("h_tiles", [("v_tiles", [left, right]), w["chrome"], w["kitty"]])
@@ -399,7 +477,7 @@ class AeroSpaceLayoutTests(unittest.TestCase):
         calendar = f.tile("2", CALENDAR)
         clock = iter(range(0, 1000))
 
-        self.mod.arrange(self.spec, "docked", f, sleep=lambda _: None, clock=lambda: next(clock))
+        self.mod.arrange(self.spec, f, sleep=lambda _: None, clock=lambda: next(clock))
 
         self.assertEqual(f.tree("2"), ("h_tiles", [finder, ("v_tiles", [mail, calendar])]))
 
@@ -407,38 +485,20 @@ class AeroSpaceLayoutTests(unittest.TestCase):
         w = self.scrambled_desk()
         self.fake.fail_on = {"balance-sizes"}
 
-        problems = self.arrange("docked")
+        problems = self.arrange()
 
         self.assertEqual(len(problems), 2)
         self.assertTrue(all("balance-sizes" in p for p in problems))
         self.assertEqual(self.fake.tree("1"), ("h_tiles", [w["chrome"], w["kitty"]]))
 
     def test_spec_rejects_a_group_that_is_not_two_apps(self):
-        bad = {
-            "builtInMonitor": "^built-in",
-            "layouts": {
-                "docked": {
-                    "focus": None,
-                    "workspaces": [
-                        {"name": "2", "layout": "h_tiles", "children": [[SLACK, MAIL, CALENDAR]]}
-                    ],
-                }
-            },
-        }
+        bad = {"workspaces": [{"name": "2", "layout": "h_tiles", "children": [[SLACK, MAIL, CALENDAR]]}]}
 
         with self.assertRaises(ValueError):
             self.mod.parse_spec(bad)
 
     def test_spec_rejects_an_unknown_root_layout(self):
-        bad = {
-            "builtInMonitor": "^built-in",
-            "layouts": {
-                "docked": {
-                    "focus": None,
-                    "workspaces": [{"name": "1", "layout": "tiles", "children": [CHROME]}],
-                }
-            },
-        }
+        bad = {"workspaces": [{"name": "1", "layout": "tiles", "children": [CHROME]}]}
 
         with self.assertRaises(ValueError):
             self.mod.parse_spec(bad)
@@ -465,12 +525,6 @@ class AeroSpaceLayoutTests(unittest.TestCase):
                 with self.mod.single_instance(path) as second:
                     self.assertTrue(first)
                     self.assertFalse(second)
-
-    def test_auto_picks_laptop_when_a_built_in_display_is_present(self):
-        self.assertEqual(self.mod.pick_mode(["Built-in Retina Display"], "^built-in"), "laptop")
-
-    def test_auto_picks_docked_with_only_external_monitors(self):
-        self.assertEqual(self.mod.pick_mode(["DELL U3425WE", "27E6QCA"], "^built-in"), "docked")
 
 
 if __name__ == "__main__":

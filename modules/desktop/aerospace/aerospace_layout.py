@@ -1,4 +1,4 @@
-"""Arrange pinned apps into a named AeroSpace layout (docked or laptop).
+"""Arrange pinned apps into the AeroSpace layout, on whatever displays exist.
 
 AeroSpace has no layout save/restore, so a layout is rebuilt from commands:
 every pinned window goes through a scratch workspace and back, because
@@ -15,21 +15,20 @@ bundle ids or two-bundle lists (groups).
 import fcntl
 import json
 import os
-import re
 import subprocess
 import sys
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Union
 
 TILING_LAYOUTS = frozenset({"h_tiles", "v_tiles", "h_accordion", "v_accordion"})
 SCRATCH_WORKSPACE = "layout-scratch"
 LAUNCH_TIMEOUT_SECONDS = 15
 POLL_SECONDS = 0.25
+CLI_TIMEOUT_SECONDS = 10
 
-Child = Union[str, tuple[str, str]]
+Child = str | tuple[str, str]
 
 
 @dataclass(frozen=True)
@@ -54,18 +53,10 @@ class WorkspaceLayout:
 @dataclass(frozen=True)
 class Layout:
     workspaces: tuple[WorkspaceLayout, ...]
-    # Workspace to end on; None restores the window focused before the run.
-    focus: Optional[str]
 
     @property
     def bundles(self):
         return tuple(b for workspace in self.workspaces for b in workspace.bundles)
-
-
-@dataclass(frozen=True)
-class Spec:
-    built_in_monitor: str
-    layouts: dict[str, Layout]
 
 
 class CommandError(Exception):
@@ -90,11 +81,10 @@ def parse_workspace(raw):
 
 
 def parse_spec(raw):
-    layouts = {
-        mode: Layout(tuple(parse_workspace(w) for w in layout["workspaces"]), layout["focus"])
-        for mode, layout in raw["layouts"].items()
-    }
-    return Spec(raw["builtInMonitor"], layouts)
+    layout = Layout(tuple(parse_workspace(w) for w in raw["workspaces"]))
+    if len(set(layout.bundles)) != len(layout.bundles):
+        raise ValueError("an app is pinned more than once")
+    return layout
 
 
 def parse_windows(out):
@@ -106,11 +96,6 @@ def parse_windows(out):
     return windows
 
 
-def pick_mode(monitor_names, built_in_pattern):
-    built_in = re.compile(built_in_pattern, re.IGNORECASE)
-    return "laptop" if any(built_in.search(name) for name in monitor_names) else "docked"
-
-
 def tileable_by_bundle(windows):
     grouped = {}
     for window in sorted(windows, key=lambda w: w.id):
@@ -120,10 +105,21 @@ def tileable_by_bundle(windows):
 
 
 def absent_bundles(layout, windows):
-    """Pinned apps with no window at all; minimized or hidden windows still
-    count as present, since launching cannot produce a tileable one."""
+    """Pinned apps with no listed window. list-windows omits minimized
+    windows, so reopening such an app restores and arranges its window."""
     present = {w.bundle for w in windows}
     return [bundle for bundle in layout.bundles if bundle not in present]
+
+
+def untiled_problems(layout, windows, by_bundle):
+    layouts_by_bundle = {}
+    for window in windows:
+        layouts_by_bundle.setdefault(window.bundle, set()).add(window.layout)
+    return [
+        f"{bundle} not arranged: only {', '.join(sorted(layouts_by_bundle[bundle]))} windows"
+        for bundle in layout.bundles
+        if bundle in layouts_by_bundle and bundle not in by_bundle
+    ]
 
 
 def workspace_commands(workspace, by_bundle, residents):
@@ -148,32 +144,43 @@ def workspace_commands(workspace, by_bundle, residents):
     commands.append(["layout", "--workspace", name, "--root", workspace.layout])
     # A group alone on its workspace would just be the root; leave it flat.
     if residents + len(ordered) > 2:
-        commands += [["join-with", "--window-id", str(first), "right"] for first, _ in groups]
+        along = "right" if workspace.layout.startswith("h_") else "down"
+        commands += [["join-with", "--window-id", str(first), along] for first, _ in groups]
     commands.append(["balance-sizes", "--workspace", name])
     return commands
 
 
 def wait_for_windows(layout, client, sleep, clock):
+    """Launches absent apps and waits until each has a tileable window, since
+    a fresh app's first window may be a floating dialog."""
     windows = client.windows()
-    absent = absent_bundles(layout, windows)
-    for bundle in absent:
-        client.launch(bundle)
+    problems, waiting = [], []
+    for bundle in absent_bundles(layout, windows):
+        try:
+            client.launch(bundle)
+            waiting.append(bundle)
+        except CommandError as err:
+            problems.append(f"could not launch {bundle}: {err}")
     deadline = clock() + LAUNCH_TIMEOUT_SECONDS
-    while absent and clock() < deadline:
+    while waiting and clock() < deadline:
         sleep(POLL_SECONDS)
         windows = client.windows()
-        absent = absent_bundles(layout, windows)
-    return windows, absent
+        waiting = [b for b in waiting if b not in tileable_by_bundle(windows)]
+    listed = {w.bundle for w in windows}
+    problems += [f"no window for {b} after launching it" for b in waiting if b not in listed]
+    return windows, problems
 
 
-def arrange(spec, mode, client, sleep=time.sleep, clock=time.monotonic):
-    """Apply layout `mode`; returns human-readable problems (empty on success)."""
-    layout = spec.layouts[mode]
+def arrange(layout, client, sleep=time.sleep, clock=time.monotonic):
+    """Apply `layout`; returns human-readable problems (empty on success)."""
     focused_before = client.focused()
-    windows, absent = wait_for_windows(layout, client, sleep, clock)
-    problems = [f"no window for {bundle} after launching it" for bundle in absent]
+    try:
+        windows, problems = wait_for_windows(layout, client, sleep, clock)
+    except CommandError as err:
+        return [f"list-windows: {err}"]
 
     by_bundle = tileable_by_bundle(windows)
+    problems += untiled_problems(layout, windows, by_bundle)
     pinned = set(layout.bundles)
 
     def residents(name):
@@ -187,10 +194,11 @@ def arrange(spec, mode, client, sleep=time.sleep, clock=time.monotonic):
     # The scratch round trip can leave the scratch workspace showing on a
     # monitor; switching to each layout workspace puts it back on display.
     commands += [["workspace", workspace.name] for workspace in layout.workspaces]
-    if layout.focus is not None:
-        commands.append(["workspace", layout.focus])
-    elif focused_before in {w.id for w in windows}:
+    if focused_before in {w.id for w in windows}:
         commands.append(["focus", "--window-id", str(focused_before)])
+    elif layout.workspaces:
+        # Nothing to restore; prefer work over leaving comms focused.
+        commands.append(["workspace", layout.workspaces[0].name])
 
     for command in commands:
         try:
@@ -204,7 +212,9 @@ def arrange(spec, mode, client, sleep=time.sleep, clock=time.monotonic):
 def single_instance(path):
     """Yields whether this process holds the lock; overlapping runs (startup
     plus a keypress) would interleave their scratch round trips."""
-    with open(path, "w") as handle:
+    # O_NOFOLLOW and no truncation: the lock may sit in a shared /tmp.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "w") as handle:
         try:
             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
@@ -218,7 +228,12 @@ class AeroSpaceCli:
         self.binary = binary
 
     def _call(self, argv):
-        result = subprocess.run([self.binary, *argv], capture_output=True, text=True)
+        try:
+            result = subprocess.run(
+                [self.binary, *argv], capture_output=True, text=True, timeout=CLI_TIMEOUT_SECONDS
+            )
+        except subprocess.TimeoutExpired:
+            raise CommandError(f"timed out after {CLI_TIMEOUT_SECONDS}s")
         if result.returncode != 0:
             raise CommandError(result.stderr.strip() or f"exit {result.returncode}")
         return result.stdout
@@ -237,12 +252,11 @@ class AeroSpaceCli:
             return None
         return int(out) if out.isdigit() else None
 
-    def monitors(self):
-        return self._call(["list-monitors", "--format", "%{monitor-name}"]).splitlines()
-
     def launch(self, bundle):
         # -g keeps the launched app from stealing focus mid-arrangement.
-        subprocess.run(["/usr/bin/open", "-g", "-b", bundle], capture_output=True)
+        result = subprocess.run(["/usr/bin/open", "-g", "-b", bundle], capture_output=True, text=True)
+        if result.returncode != 0:
+            raise CommandError(result.stderr.strip() or f"exit {result.returncode}")
 
 
 def main(argv):
@@ -250,22 +264,17 @@ def main(argv):
         with open(argv[2]) as f:
             parse_spec(json.load(f))
         return 0
-    if len(argv) != 2 or argv[1] not in {"docked", "laptop", "auto"}:
-        print("usage: aerospace-layout docked|laptop|auto | check <spec.json>", file=sys.stderr)
+    if len(argv) != 1:
+        print("usage: aerospace-layout [check <spec.json>]", file=sys.stderr)
         return 2
     with open(os.environ["AEROSPACE_LAYOUT_SPEC"]) as f:
-        spec = parse_spec(json.load(f))
+        layout = parse_spec(json.load(f))
     lock = Path(os.environ.get("TMPDIR", "/tmp")) / "aerospace-layout.lock"
     with single_instance(lock) as acquired:
         if not acquired:
             print("another aerospace-layout run is in progress", file=sys.stderr)
             return 1
-        client = AeroSpaceCli(os.environ["AEROSPACE_BIN"])
-        mode = argv[1]
-        if mode == "auto":
-            mode = pick_mode(client.monitors(), spec.built_in_monitor)
-        problems = arrange(spec, mode, client)
-    print(mode)
+        problems = arrange(layout, AeroSpaceCli(os.environ["AEROSPACE_BIN"]))
     for problem in problems:
         print(problem, file=sys.stderr)
     return 1 if problems else 0

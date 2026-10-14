@@ -6,6 +6,7 @@
 }:
 let
   enabled = config.dotfiles.windowManager == "aerospace";
+  noti = "${pkgs.noti}/bin/noti";
 
   allDirections = [
     "left"
@@ -32,9 +33,9 @@ let
   mkWorkspaceBindings = binding: actionFn: mkPrefixedBindings binding (lib.range 1 9) actionFn;
   mkAllDirectionBindings = binding: actionFn: mkPrefixedBindings binding allDirections actionFn;
 
-  # Patterns are case-insensitive regexes over monitor names. A pinned
-  # workspace falls back to the built-in display when its monitor is absent
-  # (first resolving pattern wins), so undocking collapses onto the laptop.
+  # Patterns are case-insensitive regexes over monitor names; the first
+  # connected one wins. Work prefers any external, so with one external plus
+  # the open laptop, work takes the external and comms the laptop.
   monitors = {
     main = "^dell u3425we";
     side = "^27e6qca";
@@ -45,8 +46,15 @@ let
     comms = "2";
   };
   pinnedWorkspaces = {
-    ${workspaces.work} = monitors.main;
-    ${workspaces.comms} = monitors.side;
+    ${workspaces.work} = [
+      monitors.main
+      monitors.side
+      monitors.builtIn
+    ];
+    ${workspaces.comms} = [
+      monitors.builtIn
+      monitors.side
+    ];
   };
 
   # Pinned apps by bundle id; anything not listed is never moved by layouts.
@@ -57,52 +65,31 @@ let
     mail = "com.apple.mail";
     calendar = "com.apple.iCal";
   };
-  workLayout = {
-    name = workspaces.work;
-    layout = "h_tiles";
-    children = [
-      apps.chrome
-      apps.kitty
-    ];
-  };
   # Consumed by aerospace_layout.py; a nested two-app list becomes a split
-  # perpendicular to its workspace root. focus = null restores prior focus.
+  # perpendicular to its workspace root. One layout serves docked and laptop:
+  # undocked, both workspaces fall back to the built-in display.
   layoutSpec = {
-    builtInMonitor = monitors.builtIn;
-    layouts = {
-      docked = {
-        focus = null;
-        workspaces = [
-          workLayout
-          {
-            name = workspaces.comms;
-            layout = "h_tiles";
-            children = [
-              apps.slack
-              [
-                apps.mail
-                apps.calendar
-              ]
-            ];
-          }
+    workspaces = [
+      {
+        name = workspaces.work;
+        layout = "h_tiles";
+        children = [
+          apps.chrome
+          apps.kitty
         ];
-      };
-      laptop = {
-        focus = workspaces.work;
-        workspaces = [
-          workLayout
-          {
-            name = workspaces.comms;
-            layout = "h_accordion";
-            children = [
-              apps.slack
-              apps.mail
-              apps.calendar
-            ];
-          }
+      }
+      {
+        name = workspaces.comms;
+        layout = "h_tiles";
+        children = [
+          apps.slack
+          [
+            apps.mail
+            apps.calendar
+          ]
         ];
-      };
-    };
+      }
+    ];
   };
   # Parsed at build time so a malformed spec fails the switch, not a keypress.
   layoutSpecFile =
@@ -115,22 +102,20 @@ let
         ${pkgs.python3}/bin/python3 -I ${./aerospace_layout.py} check "$specPath"
         cp "$specPath" "$out"
       '';
-  # exec-and-forget's PATH lacks the nix profile, so pin every path here.
+  # Store paths keep the tool independent of exec-and-forget's PATH.
   aerospaceLayout = pkgs.writeShellScriptBin "aerospace-layout" ''
     export AEROSPACE_LAYOUT_SPEC=${layoutSpecFile}
     export AEROSPACE_BIN=${config.programs.aerospace.package}/bin/aerospace
     exec ${pkgs.python3}/bin/python3 -I ${./aerospace_layout.py} "$@"
   '';
   # exec-and-forget discards output, so report the outcome as a notification.
-  # stdout carries the applied mode; stderr lists problems, if any.
-  layoutAction =
-    mode:
+  applyLayout =
     let
-      apply = pkgs.writeShellScript "aerospace-layout-${mode}" ''
-        if out=$(${aerospaceLayout}/bin/aerospace-layout ${mode} 2>&1); then
-          ${pkgs.noti}/bin/noti -t aerospace -m "Applied $out layout"
+      apply = pkgs.writeShellScript "aerospace-layout-apply" ''
+        if out=$(${aerospaceLayout}/bin/aerospace-layout 2>&1); then
+          ${noti} -t aerospace -m "Applied layout"
         else
-          ${pkgs.noti}/bin/noti -t aerospace -m "Layout problems: $out"
+          ${noti} -t aerospace -m "Layout problems: $out"
         fi
       '';
     in
@@ -141,7 +126,7 @@ let
   crossMonitor = "--boundaries all-monitors-outer-frame";
 
   mkAppBinding = app: [
-    "exec-and-forget open -a ${app}"
+    "exec-and-forget /usr/bin/open -a ${app}"
     "mode main"
   ];
 
@@ -150,7 +135,7 @@ let
     (if command != null then [ command ] else [ ])
     ++ (if action == "" then [ ] else [ action ])
     ++ [
-      "exec-and-forget noti -t aerospace -m \"${message}\""
+      "exec-and-forget ${noti} -t aerospace -m \"${message}\""
       "mode main"
     ];
 in
@@ -167,26 +152,22 @@ in
 
       settings = {
         start-at-login = false;
-        # Replacing PATH drops AeroSpace's Homebrew default, so keep it; without
-        # the nix profile, bare tools like noti in the bindings never resolved.
+        # Replacing PATH drops AeroSpace's Homebrew default, so keep it; the nix
+        # profile lets bare tools in exec-and-forget resolve.
         exec = {
-          inherit-env-vars = true;
           env-vars.PATH = "${config.home.profileDirectory}/bin:/opt/homebrew/bin:/opt/homebrew/sbin:\${PATH}";
         };
         default-root-container-layout = "tiles";
         default-root-container-orientation = "auto";
         after-startup-command = [
           "layout tiles"
-          (layoutAction "auto")
+          applyLayout
         ];
         # Keyboard focus can now cross monitors; keep the pointer with it so
         # scrolling targets the focused monitor. Lazy: no-op if already there.
         on-focused-monitor-changed = [ "move-mouse monitor-lazy-center" ];
 
-        workspace-to-monitor-force-assignment = lib.mapAttrs (_: monitor: [
-          monitor
-          monitors.builtIn
-        ]) pinnedWorkspaces;
+        workspace-to-monitor-force-assignment = pinnedWorkspaces;
 
         gaps = {
           inner = {
@@ -211,6 +192,8 @@ in
             cmd-ctrl-0 = "balance-sizes";
             cmd-ctrl-e = "layout tiles horizontal vertical";
             cmd-ctrl-a = "layout accordion horizontal vertical";
+            # r for restore; no macOS or app default claims cmd-ctrl-r.
+            cmd-ctrl-r = applyLayout;
           }
           // mkAllDirectionBindings "cmd-ctrl" (d: "focus ${crossMonitor} ${d}")
           // mkAllDirectionBindings "cmd-ctrl-shift" (d: "move ${crossMonitor} ${d}")
@@ -241,16 +224,8 @@ in
 
           service.binding = {
             esc = mkServiceAction null "reload-config" "Config reloaded! Back to main mode.";
-            d = [
-              (layoutAction "docked")
-              "mode main"
-            ];
-            l = [
-              (layoutAction "laptop")
-              "mode main"
-            ];
             p = [
-              "exec-and-forget noti -t aerospace -m \"Disabled Aerospace\""
+              "exec-and-forget ${noti} -t aerospace -m \"Disabled Aerospace\""
               "enable toggle"
             ];
             b =
