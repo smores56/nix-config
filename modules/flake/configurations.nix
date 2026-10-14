@@ -284,16 +284,27 @@ in
         backup.enable = true;
         backup.datasets.Videos = {
           schedule = "*-*-* 01:00:00";
+          fullCheckSchedule = "Sun *-*-* 07:00:00";
           # Incrementals run in minutes; 2h is a wall-clock backstop so a
           # deadlock trips fast (stallTimeout catches a stalled transfer sooner).
           timeout = "2h";
         };
         backup.datasets.Photos = {
           schedule = "*-*-* 03:00:00";
+          fullCheckSchedule = "Sun *-*-* 06:00:00";
           timeout = "2h";
           # preBackup dumps Postgres, so the unit gets pg_dump on PATH and orders
-          # after postgresql.service. Cache/credential excludes are the option
-          # default, shared by every dataset.
+          # after postgresql.service. `excludes` REPLACES the option default, so
+          # the cache/credential patterns are repeated here alongside the two
+          # regenerable Immich derived trees (thumbs, encoded-video) that Immich
+          # rebuilds from the originals and that need not occupy a mirror.
+          excludes = [
+            "/.cache/**"
+            "**/.cache/**"
+            "/rclone.conf"
+            "/thumbs/**"
+            "/encoded-video/**"
+          ];
           postgres = true;
           preBackup = ''
             mkdir -p "$BACKUP_CURRENT/db"
@@ -309,6 +320,7 @@ in
         };
         backup.datasets.Music = {
           schedule = "*-*-* 05:00:00";
+          fullCheckSchedule = "Sun *-*-* 08:00:00";
           timeout = "2h";
         };
         notify.enable = true;

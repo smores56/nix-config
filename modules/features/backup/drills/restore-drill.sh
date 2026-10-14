@@ -16,9 +16,9 @@
 #
 # Cost model: ANY offsite rclone operation walks the whole remote. On a 30k-object
 # Proton tree a full walk takes minutes, so the default drill never does one — it
-# restores a few named files by path (cheap) and relies on the nightly backup's
-# own `rclone check` for whole-mirror content verification. Set FULL_OFFSITE=1 to
-# add the exhaustive walk (`rclone check`), which is slow but streams progress.
+# restores a few named files by path (cheap). The nightly check is now scoped to
+# the files that changed, so whole-mirror content verification is this drill's
+# FULL_OFFSITE=1 walk (`rclone check`), or a `backup --full-check` run.
 #
 # The whole drill holds the same host-wide flock the driver takes, because every
 # dataset shares one Proton credential and two concurrent rclone clients blank

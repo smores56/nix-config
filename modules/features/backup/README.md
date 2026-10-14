@@ -23,10 +23,19 @@ the code in [`backup.py`](./backup.py). This file is the operator's view.
   `copy` replaces a file whose content changed and uploads new ones — but a
   source-side deletion is never propagated, so a deleted file lingers there. A
   compromised local box cannot delete from the remote.
-- **The offsite mirror is verified.** Each run finishes with
-  `rclone check --checksum --one-way`. rclone exits 0 even when it compared
-  nothing, so the `"<n> hashes could not be checked"` summary is parsed and any
-  non-zero count fails the run: an unverified mirror is not a backup.
+- **The offsite mirror is verified — incrementally.** The offsite copy logs
+  every file it wrote (`--use-json-log`), and the run finishes with
+  `rclone check --checksum --one-way --files-from <those paths>`, so only what
+  changed is re-read instead of the whole tree (a full walk of a large unchanged
+  dataset reads the entire mirror for no new information). When the copy wrote
+  nothing the check is skipped: the mirror is unchanged since the last run. A
+  skipped check never clears a prior failure's `BACKUP-FAILED` marker — only a
+  run that actually verified the mirror does. A periodic whole-mirror
+  `--full-check` (per-dataset `fullCheckSchedule`) still walks everything to
+  catch drift in old files. rclone exits 0 even when
+  it compared nothing, so the `"<n> hashes could not be checked"` summary is
+  parsed and any non-zero count fails the run: an unverified mirror is not a
+  backup.
 - **A run that stalls is killed and retried.** rclone's own idle timeout does
   not catch a wedged upload session (one such hang held the shared Proton lock
   for 18h). A stats-based watchdog (`stallTimeout`, default 30m) aborts a step
@@ -51,11 +60,11 @@ smortress, `proton:Photos`, `proton:Videos`, `proton:Music`.
 
 ## Datasets on smortress
 
-| Name | Source | Schedule | Offsite | preBackup |
-| --- | --- | --- | --- | --- |
-| `Photos` | `/var/lib/media/Photos` | 03:00 | yes | `pg_dump -Fc` of `immich` into `current/db/immich-<date>.dump` |
-| `Videos` | `/var/lib/media/Videos` | 01:00 | yes | — |
-| `Music` | `/var/lib/media/Music` | 05:00 | yes | — |
+| Name | Source | Schedule | Full check | Offsite | preBackup |
+| --- | --- | --- | --- | --- | --- |
+| `Photos` | `/var/lib/media/Photos` | 03:00 | Sun 06:00 | yes | `pg_dump -Fc` of `immich` into `current/db/immich-<date>.dump` |
+| `Videos` | `/var/lib/media/Videos` | 01:00 | Sun 07:00 | yes | — |
+| `Music` | `/var/lib/media/Music` | 05:00 | Sun 08:00 | yes | — |
 
 Every dataset excludes `/.cache/**`, `**/.cache/**` and `/rclone.conf` by
 default (the `excludes` option default). That keeps regenerable caches (at the
@@ -64,7 +73,9 @@ both mirrors — it does **not** make the mirrors secret-free: a credential-shap
 file anywhere else (e.g. `Photos/backup/rclone.conf`, a `.env`) is copied unless
 you add it to `excludes`. Both cache patterns are needed: rclone's `**/`
 requires a preceding path segment, so it misses a `.cache` sitting at the
-source root.
+source root. `Photos` additionally excludes `/thumbs/**` and
+`/encoded-video/**` — regenerable Immich derived assets that Immich rebuilds
+from the originals, so they need not occupy a mirror.
 
 ## How a run works
 
@@ -79,7 +90,10 @@ source root.
 4. Offsite copy → `proton:<Name>` with
    `--protondrive-replace-existing-draft=true` (uploads only; never used to
    delete).
-5. `rclone check --checksum --one-way` against the offsite mirror.
+5. Verify the offsite mirror: `rclone check --checksum --one-way` scoped with
+   `--files-from` to the paths the offsite copy wrote this run, or skipped
+   entirely when it wrote nothing. A `--full-check` run (per-dataset
+   `fullCheckSchedule`) walks the whole mirror instead.
 6. On success the unit is done. On failure the driver writes a detailed
    `BACKUP-FAILED` marker from inside the run; if the run was killed before that
    could happen, `ExecStopPost` writes a generic one (it never overwrites the
@@ -136,13 +150,59 @@ sudo DRILL_PG_DB=immich DRILL_ONLY_DB=1 bash modules/features/backup/drills/rest
 
 Every offsite rclone operation walks the entire remote, which is minutes on a
 30k-object Proton tree, so the default drill deliberately avoids one: it restores
-a handful of files *by path* (`rclone copyto`) and treats the backup's own
-nightly `rclone check` as the whole-mirror content verification. Opt into the
+a handful of files *by path* (`rclone copyto`). The nightly check now verifies
+only the files that changed, so the whole-mirror content verification is this
+`FULL_OFFSITE=1` walk (or a manual `backup ... --full-check`). Opt into the
 expensive walk with `FULL_OFFSITE=1`, which streams progress so it never looks
 hung. Per-fetch `FETCH_TIMEOUT` (default 300s) and the same network flags the
 backup uses keep a wedged Proton session from hanging the drill. Like `backup`,
 the drill takes the host-wide `/run/lock/media-backup.lock`, so it serializes
 with any scheduled run instead of racing it for the single-use Proton session.
+
+## Pruning a mirror (one-time)
+
+The routine pipeline only ever *adds*: `copy` never deletes, so a file removed
+from the source lives on in `current/` and in `proton:<Name>` forever. That is
+the point — an accidental source deletion cannot reach the backup. There is no
+automated prune, and there should not be one: making the mirror track source
+deletions is exactly the `sync` failure mode the pipeline refuses.
+
+When you *deliberately* want to reclaim the space (e.g. after culling the photo
+library), do it as a one-off, reviewed operation. The local mirror holds one
+thing the source does not — the `preBackup` database dumps under `db/` — so that
+path MUST be excluded or `sync` deletes every dump:
+
+```sh
+# 1. Review what would be deleted. --dry-run touches nothing.
+sudo rclone sync /var/lib/media/Photos /var/backup/Photos/current \
+  --config /var/lib/backup/rclone.conf \
+  --exclude '/db/**' \
+  --exclude '/.cache/**' --exclude '**/.cache/**' --exclude '/rclone.conf' \
+  --dry-run
+
+# 2. Same command without --dry-run deletes the orphans at the destination.
+```
+
+Notes:
+
+- **`--exclude '/db/**'` is not optional.** `db/` exists only in the mirror (it
+  is the `preBackup` dump target), so without the exclude `sync` lists every
+  dump for deletion — including the newest local recovery point.
+- `versions/<date>/` holds only *overwritten* files, never deletions — it is not
+  a recovery path for culled images. Until Proton is pruned too, the offsite
+  mirror is the safety net.
+- `thumbs/` and `encoded-video/` are excluded from the dataset (regenerable), so
+  new runs no longer copy them, but they remain in the existing mirrors. To
+  reclaim them, delete the subtrees explicitly from both mirrors:
+  `rclone delete /var/backup/Photos/current/thumbs` and `.../encoded-video`, and
+  `rclone purge proton:Photos/thumbs` and `proton:Photos/encoded-video`.
+- The offsite leg needs the same treatment, but a bare `sync` against Proton
+  aborts its delete phase on any IO error. `rclone purge` the affected
+  `proton:<Name>/<subtree>` and re-`copy` from the (now smaller) source instead.
+- Run it under the host lock (or outside the backup windows) so it does not race
+  a scheduled run for the single-use Proton session.
+- This is a **one-time** operation. Do not put it on a timer or make it routine:
+  a mirror that follows deletions is no longer a backup.
 
 ## Adding a dataset
 
@@ -152,6 +212,7 @@ check, marker and alert are generated:
 ```nix
 dotfiles.backup.datasets.Books = {
   schedule = "*-*-* 07:00:00";
+  # fullCheckSchedule = "Sun *-*-* 06:00:00";  # extra whole-mirror check
   # timeout = "12h";       # wall-clock backstop
   # offsite = false;       # local-only dataset
   # stallTimeout = "30m";  # "0" disables; otherwise must be >= 60s
@@ -172,9 +233,18 @@ dataset needs `dotfiles.backup.enable = true` (the backup disk).
   as a known low-severity finding.
 - The offsite mirror never prunes and keeps no versions: a file deleted from the
   source lives on in Proton forever, and a changed file is overwritten in place.
-  That is deliberate for backup safety; there is no retention/prune tooling.
+  That is deliberate for backup safety; there is no automated retention/prune
+  tooling. For the deliberate one-off, see
+  [Pruning a mirror](#pruning-a-mirror-one-time).
 - `dotfiles.immich.backup` and the old restic/Immich-specific pipeline have
   been removed; these generic datasets replace them.
+- The offsite copy logs each copied filename at INFO (to extract changed paths),
+  so source filenames reach journald on every run that copies files — previously
+  they were suppressed at NOTICE. journald is root-only and local.
+- The `--files-from` list is a 0600 temp file removed in a `finally`; a hard kill
+  (systemd `TimeoutStartSec`, OOM) can leave it in `$TMPDIR`.
+- A `fullCheckSchedule` run re-runs the whole dataset — `preBackup` (an extra
+  `pg_dump` for Photos) and both copies — not only the check.
 
 ### Hardening not yet done (accepted, from the final review)
 

@@ -40,7 +40,8 @@ explicitly. Place files by concern, not by host.
 | `modules/features/tv/` | Television repository and worktree cables |
 | `modules/features/photobucket/` | feh-based keyboard photo triage tool + its Python helper |
 | `modules/features/cloudflare/` | Cloudflare Tunnel DNS/Access reconciler (Python helper) + manual `cloudflare-sync` CLI |
-| `tests/` | Python unit tests for the sdlc, maki, brain, photobucket, and cloudflare tools, plus `tests/*.sh` shell checks (all run via flake checks) |
+| `modules/desktop/aerospace/` | AeroSpace config + `aerospace-layout` (rebuilds the pinned-app window layout on `cmd-ctrl-r` and at startup; Python helper) |
+| `tests/` | Python unit tests for the sdlc, maki, brain, photobucket, cloudflare, backup, immich, and aerospace-layout tools, plus `tests/*.sh` shell checks (all run via flake checks) |
 
 ### Adding a new feature
 

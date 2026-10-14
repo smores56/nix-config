@@ -327,6 +327,11 @@ in
                     default = "30m";
                     description = "Abort and retry a transfer that makes no progress for this long (a wedged Proton upload never trips rclone's own timeout). Copy is resumable, so retrying is safe. \"0\" disables.";
                   };
+                  fullCheckSchedule = lib.mkOption {
+                    type = lib.types.nullOr lib.types.str;
+                    default = null;
+                    description = "Optional systemd OnCalendar for an extra whole-mirror integrity check: runs the same dataset with --full-check so drift in old, unchanged files is still caught. null (the default) disables it; the normal schedule verifies only the files that changed.";
+                  };
                 };
               }
             );
