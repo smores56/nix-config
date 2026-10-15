@@ -197,12 +197,40 @@ Notes:
   `rclone delete /var/backup/Photos/current/thumbs` and `.../encoded-video`, and
   `rclone purge proton:Photos/thumbs` and `proton:Photos/encoded-video`.
 - The offsite leg needs the same treatment, but a bare `sync` against Proton
-  aborts its delete phase on any IO error. `rclone purge` the affected
-  `proton:<Name>/<subtree>` and re-`copy` from the (now smaller) source instead.
+  aborts its delete phase on any IO error. For a whole subtree, `rclone purge`
+  the affected `proton:<Name>/<subtree>` and re-`copy` from the (now smaller)
+  source; for scattered files use the `--files-from` recipe below.
 - Run it under the host lock (or outside the backup windows) so it does not race
   a scheduled run for the single-use Proton session.
 - This is a **one-time** operation. Do not put it on a timer or make it routine:
   a mirror that follows deletions is no longer a backup.
+
+### Pruning scattered files (`--files-from`)
+
+`sync` walks one directory; for a culled photo library the removed files are
+scattered across `library/<year>/<month>/<day>/…`, and the offsite leg cannot take
+a bare `sync` at all. Delete the exact set instead — same one-time rules apply:
+
+```sh
+# One path per line, RELATIVE to the dataset root, e.g.
+#   library/admin/2021/2021-05-03/IMG_1234.jpg
+LIST=~/photos-purge-list.txt
+
+for target in /var/backup/Photos/current proton:Photos; do
+  sudo flock /run/lock/media-backup.lock rclone --config /var/lib/backup/rclone.conf \
+    delete "$target" --files-from "$LIST" --dry-run -v   # drop --dry-run to delete
+done
+```
+
+- **Empty the source first.** The files must already be gone from the source
+  (e.g. empty the Immich trash after culling); while they are still present the
+  next `rclone copy` re-adds them and the purge is undone the same night.
+- `--files-from` deletes only the listed files and leaves `db/**` and everything
+  else untouched. It also prunes the walk — rclone descends only into directories
+  that prefix a listed path, so it does not enumerate the whole mirror (crucial
+  on Proton, where a full walk is rate-limited and slow).
+- Run under the host lock (`flock /run/lock/media-backup.lock`) so it cannot race
+  a scheduled run for the single-use Proton session.
 
 ## Adding a dataset
 
