@@ -171,12 +171,21 @@ in
                     type = lib.types.port;
                     description = "Loopback port the service listens on.";
                   };
+                  protocol = lib.mkOption {
+                    type = lib.types.enum [
+                      "http"
+                      "tcp"
+                      "ssh"
+                    ];
+                    default = "http";
+                    description = "Origin scheme cloudflared proxies to. Non-HTTP schemes (tcp/ssh) are reached from clients via `cloudflared access <tcp|ssh>`, not a browser.";
+                  };
                   access.enable = lib.mkEnableOption "Cloudflare Access in front of this endpoint (account IdP, shared allow-list)";
                 };
               }
             );
             default = { };
-            description = "Services to expose, keyed by subdomain: each becomes <sub>.<domain> -> http://127.0.0.1:<port>, with a proxied DNS CNAME to the tunnel reconciled on every activation.";
+            description = "Services to expose, keyed by subdomain: each becomes <sub>.<domain> -> <protocol>://127.0.0.1:<port>, with a proxied DNS CNAME to the tunnel reconciled on every activation.";
           };
         };
       };

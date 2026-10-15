@@ -17,7 +17,7 @@ in
         inherit (cfg) credentialsFile;
         default = "http_status:404";
         ingress = lib.mapAttrs' (
-          sub: s: lib.nameValuePair "${sub}.${cfg.domain}" "http://127.0.0.1:${toString s.port}"
+          sub: s: lib.nameValuePair "${sub}.${cfg.domain}" "${s.protocol}://127.0.0.1:${toString s.port}"
         ) cfg.services;
       };
     };
