@@ -108,13 +108,12 @@ let
     export AEROSPACE_BIN=${config.programs.aerospace.package}/bin/aerospace
     exec ${pkgs.python3}/bin/python3 -I ${./aerospace_layout.py} "$@"
   '';
-  # exec-and-forget discards output, so report the outcome as a notification.
+  # exec-and-forget discards output, so surface problems as a notification;
+  # success stays silent.
   applyLayout =
     let
       apply = pkgs.writeShellScript "aerospace-layout-apply" ''
-        if out=$(${aerospaceLayout}/bin/aerospace-layout 2>&1); then
-          ${noti} -t aerospace -m "Applied layout"
-        else
+        if ! out=$(${aerospaceLayout}/bin/aerospace-layout 2>&1); then
           ${noti} -t aerospace -m "Layout problems: $out"
         fi
       '';
@@ -124,33 +123,19 @@ let
   # Without all-monitors-outer-frame, focus and move stop at the current
   # monitor's edge instead of continuing onto the adjacent monitor.
   crossMonitor = "--boundaries all-monitors-outer-frame";
-
-  mkAppBinding = app: [
-    "exec-and-forget /usr/bin/open -a ${app}"
-    "mode main"
-  ];
-
-  mkServiceAction =
-    command: action: message:
-    (if command != null then [ command ] else [ ])
-    ++ (if action == "" then [ ] else [ action ])
-    ++ [
-      "exec-and-forget ${noti} -t aerospace -m \"${message}\""
-      "mode main"
-    ];
 in
 {
   config = lib.mkIf enabled {
-    home.packages = [
-      pkgs.noti
-      pkgs.jankyborders
-      aerospaceLayout
-    ];
+    home.packages = [ aerospaceLayout ];
 
     programs.aerospace = {
       enable = true;
 
       settings = {
+        config-version = 2;
+        # Version 2 no longer infers persistent workspaces from the bindings;
+        # keep 1-9 so empty pinned workspaces stay on their monitors.
+        persistent-workspaces = map toString (lib.range 1 9);
         start-at-login = false;
         # Replacing PATH drops AeroSpace's Homebrew default, so keep it; the nix
         # profile lets bare tools in exec-and-forget resolve.
@@ -184,9 +169,6 @@ in
 
         mode = {
           main.binding = {
-            cmd-ctrl-esc = "mode move";
-            cmd-ctrl-space = "mode open";
-            cmd-ctrl-s = "mode service";
             cmd-ctrl-minus = "resize smart -30";
             cmd-ctrl-equal = "resize smart +30";
             cmd-ctrl-0 = "balance-sizes";
@@ -202,40 +184,6 @@ in
             "move-node-to-workspace ${toString i}"
             "workspace ${toString i}"
           ]);
-
-          move.binding = {
-            esc = "mode main";
-          }
-          // mkAllDirectionBindings "" (d: "move ${crossMonitor} ${d}")
-          // mkWorkspaceBindings "" (i: [
-            "move-node-to-workspace ${toString i}"
-            "workspace ${toString i}"
-            "mode main"
-          ]);
-
-          open.binding = {
-            esc = "mode main";
-            t = mkAppBinding "/Applications/WezTerm.app";
-            b = mkAppBinding "/Applications/Firefox.app";
-            s = mkAppBinding "/Applications/Slack.app";
-            m = mkAppBinding "/Applications/Spotify.app";
-            f = mkAppBinding "/System/Library/CoreServices/Finder.app";
-          };
-
-          service.binding = {
-            esc = mkServiceAction null "reload-config" "Config reloaded! Back to main mode.";
-            p = [
-              "exec-and-forget ${noti} -t aerospace -m \"Disabled Aerospace\""
-              "enable toggle"
-            ];
-            b =
-              mkServiceAction "exec-and-forget brew services restart borders" ""
-                "Restarted borders! Back to main mode.";
-            r = mkServiceAction null "flatten-workspace-tree" "Reset layout tree! Back to main mode.";
-            backspace =
-              mkServiceAction null "close-all-windows-but-current"
-                "Closed all other windows! Back to main mode.";
-          };
         };
       };
     };
