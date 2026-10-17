@@ -1,0 +1,9 @@
+keys:
+  - &admin age1pehwade3sd0mhf0aegvavsurmtqeffl2tnk9w8rty2u4xugf0ygq9e20pc
+  - &smortress age19k8s634eqfnptm8fngc8c3yl5cyk5t4wqgaukya4j6kjtvzm2q9sq674ru
+creation_rules:
+  - path_regex: secrets/smortress\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *smortress

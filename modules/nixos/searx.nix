@@ -10,23 +10,24 @@
 {
   config,
   lib,
-  pkgs,
   ...
 }:
 let
   cfg = config.dotfiles;
-
-  # SearXNG signs sessions with server.secret_key. Keep it off the world-readable
-  # Nix store and out of the repo: the oneshot below writes it once under
-  # /var/lib, and searx-init's envsubst substitutes $SEARX_SECRET_KEY from this
-  # same EnvironmentFile.
-  secretFile = "/var/lib/searxng/secrets.env";
 in
 {
   config = lib.mkIf cfg.search {
+    # SearXNG signs sessions with server.secret_key. searx-init's envsubst
+    # substitutes `$SEARX_SECRET_KEY` from this service's EnvironmentFile, so the
+    # file must read `SEARX_SECRET_KEY=<key>`. sops decrypts the bare key to a
+    # file; render the env-file form from it here so the key never enters the
+    # world-readable Nix store.
+    sops.templates."searxng-secret".content =
+      "SEARX_SECRET_KEY=${config.sops.placeholder.searxng-secret-key}";
+
     services.searx = {
       enable = true;
-      environmentFile = secretFile;
+      environmentFile = config.sops.templates."searxng-secret".path;
       # No limiter: it exists to throttle untrusted clients and needs Valkey.
       # This instance is tailnet-only; JSON stays on for the maki plugin.
       settings = {
@@ -73,32 +74,6 @@ in
             disabled = false;
           }
         ];
-      };
-    };
-
-    systemd.services.searx-secret = {
-      description = "Generate the SearXNG secret key on first boot";
-      before = [ "searx-init.service" ];
-      requiredBy = [ "searx-init.service" ];
-      serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-        StateDirectory = "searxng";
-        StateDirectoryMode = "0700";
-        # The redirect would otherwise inherit systemd's 0022 and leave the key
-        # readable by every local user.
-        UMask = "0077";
-        ExecStart = pkgs.writeShellScript "searx-secret" ''
-          set -eu
-          file=${lib.escapeShellArg secretFile}
-          # `-s`, not `-e`: an empty file from an interrupted first boot would
-          # let envsubst substitute a blank secret and SearXNG still start.
-          if [ ! -s "$file" ]; then
-            printf 'SEARX_SECRET_KEY=%s\n' \
-              "$(${pkgs.coreutils}/bin/head -c 32 /dev/urandom | ${pkgs.coreutils}/bin/base64 | ${pkgs.coreutils}/bin/tr -d '\n')" \
-              > "$file"
-          fi
-        '';
       };
     };
   };

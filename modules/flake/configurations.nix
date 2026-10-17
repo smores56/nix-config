@@ -6,6 +6,7 @@ let
     noctalia
     concord
     stylix
+    sops-nix
     ;
   inherit (inputs.nixpkgs) lib;
 
@@ -93,6 +94,7 @@ let
     niri.homeModules.niri
     noctalia.homeModules.default
     stylix.homeModules.stylix
+    sops-nix.homeManagerModules.sops
   ];
 
   # providers.nix injects `_module.args.aiProviders`, which options.nix's
@@ -101,6 +103,7 @@ let
   nixosModules = [
     ../options.nix
     ../features/ai/providers.nix
+    sops-nix.nixosModules.sops
   ]
   ++ importTree ../nixos;
 

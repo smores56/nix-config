@@ -156,12 +156,12 @@ in
           credentialsFile = lib.mkOption {
             type = lib.types.path;
             default = "/var/lib/cloudflared/credentials.json";
-            description = "Path to the tunnel credentials JSON on the host. Kept out of the Nix store; provisioned out-of-band.";
+            description = "Path to the tunnel credentials JSON on the host. Kept out of the Nix store; provisioned out-of-band, except on smortress which points this at its sops-decrypted copy.";
           };
           apiTokenFile = lib.mkOption {
             type = lib.types.path;
             default = "/var/lib/cloudflare/api-token";
-            description = "Path to the scoped Cloudflare API token (Zone:DNS:Write + Access: Apps and Policies:Write) on the host, mode 0600. Read by the reconciler at runtime; never enters the Nix store.";
+            description = "Path to the scoped Cloudflare API token (Zone:DNS:Write + Access: Apps and Policies:Write) on the host, mode 0600. Read by the reconciler at runtime; never enters the Nix store. smortress points this at its sops-decrypted copy.";
           };
           services = lib.mkOption {
             type = lib.types.attrsOf (
@@ -223,7 +223,7 @@ in
           environmentFile = lib.mkOption {
             type = lib.types.path;
             default = "/var/lib/navidrome/env";
-            description = "Root-owned ND_* secrets file read by systemd; carries ND_DEVAUTOCREATEADMINPASSWORD so the admin exists before the endpoint is public. Never in the Nix store.";
+            description = "Root-owned ND_* secrets file read by systemd; carries ND_DEVAUTOCREATEADMINPASSWORD so the admin exists before the endpoint is public. Never in the Nix store; smortress points this at its sops-decrypted copy.";
           };
         };
       };
