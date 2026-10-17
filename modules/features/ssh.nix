@@ -6,47 +6,12 @@
 }:
 let
   inherit (pkgs.stdenv.hostPlatform) isLinux;
-
-  # Every identity key present on this host, each added only when the agent
-  # lacks its fingerprint: signing with a .pub IdentityFile needs the key in
-  # the agent, and an agent that already holds one key may still miss the
-  # other. Hosts without the work key just skip it.
-  loadSshKeys = pkgs.writeShellApplication {
-    name = "load-ssh-keys";
-    runtimeInputs = [
-      pkgs.openssh
-      pkgs.coreutils
-      pkgs.gnugrep
-    ];
-    text = ''
-      [ -S "''${SSH_AUTH_SOCK:-}" ] || exit 0
-      loaded=$(ssh-add -l 2>/dev/null || true)
-      for key in ~/.ssh/id_personal ${config.dotfiles.work.sshKey}; do
-        [ -f "$key" ] || continue
-        fp=$(ssh-keygen -lf "$key.pub" 2>/dev/null | cut -d' ' -f2 || true)
-        if [ -z "$fp" ] || ! grep -qF -- " $fp " <<<"$loaded"; then
-          ssh-add "$key" 2>/dev/null || true
-        fi
-      done
-    '';
-  };
 in
 {
   # The client lives with its config rather than in the shared package list.
-  home.packages = [
-    pkgs.openssh
-    loadSshKeys
-  ];
-
-  # Host ssh-agent holds the SSH keys so tooling can sign commits and auth
-  # to git remotes WITHOUT reading ~/.ssh — agents only ask the agent to
-  # sign blobs (private keys are never on disk in agent contexts).
-  services.ssh-agent.enable = true;
-
-  # HM restarts ssh-agent on each activation, but `ssh-agent -D -a %t/ssh-agent`
-  # leaves the socket file behind when killed, so the new instance fails with
-  # "Address already in use" and stays failed. Remove the stale socket first.
-  systemd.user.services.ssh-agent.Service.ExecStartPre = "-${pkgs.coreutils}/bin/rm -f %t/ssh-agent";
+  # The identities themselves come from Proton Pass over SSH_AUTH_SOCK
+  # (modules/features/proton-pass.nix), so no private key is read from ~/.ssh.
+  home.packages = [ pkgs.openssh ];
 
   programs.ssh = {
     enable = true;
@@ -89,49 +54,24 @@ in
       IdentitiesOnly yes
   '';
 
-  # $XDG_RUNTIME_DIR is normally set by pam_systemd at login, but tailscale
-  # SSH sessions don't run PAM, so it's absent — and HM's ssh-agent module
-  # expands $XDG_RUNTIME_DIR when setting SSH_AUTH_SOCK. Set a fallback
-  # before HM's init (fish mkBefore; zsh .zshenv). Linux only: darwin has no
-  # /run, its agent socket comes from DARWIN_USER_TEMP_DIR, and a dangling
-  # value breaks tools that put sockets there (`op` fails to start its
-  # daemon). Keys are pre-loaded at shell init so git commit signing works
-  # before any interactive ssh auth. Interactive shells load them in the
-  # background (the check costs ~40ms) since nobody signs within that window;
-  # scripted ones may commit right away, so they wait.
-  programs.fish.shellInit = lib.mkMerge [
-    (lib.mkIf isLinux (
-      lib.mkBefore ''
-        if test -z "$XDG_RUNTIME_DIR"
-            set -x XDG_RUNTIME_DIR /run/user/(id -u)
-        end
-      ''
-    ))
-    (lib.mkAfter ''
-      if status is-interactive
-          ${lib.getExe loadSshKeys} &
-          disown $last_pid 2>/dev/null
-      else
-          ${lib.getExe loadSshKeys}
+  # $XDG_RUNTIME_DIR is normally set by pam_systemd at login, but a session
+  # without PAM (e.g. Tailscale SSH) leaves it unset — and the agent module
+  # expands $XDG_RUNTIME_DIR when setting SSH_AUTH_SOCK. Set a fallback before
+  # that init (fish mkBefore; zsh .zshenv). Linux only: darwin has no /run, its
+  # agent socket comes from DARWIN_USER_TEMP_DIR, and a dangling value breaks
+  # tools that put sockets there (`op` fails to start its daemon).
+  programs.fish.shellInit = lib.mkIf isLinux (
+    lib.mkBefore ''
+      if test -z "$XDG_RUNTIME_DIR"
+          set -x XDG_RUNTIME_DIR /run/user/(id -u)
       end
-    '')
-  ];
+    ''
+  );
 
-  programs.zsh = {
-    envExtra = lib.mkIf isLinux (
-      lib.mkBefore ''
-        : "''${XDG_RUNTIME_DIR:=/run/user/$(id -u)}"
-        export XDG_RUNTIME_DIR
-      ''
-    );
-    # `zsh -ic <cmd>` is interactive yet scripted, so only a shell reading
-    # commands from its terminal loads keys in the background.
-    initContent = lib.mkOrder 1400 ''
-      if [[ -o shin_stdin ]]; then
-        ${lib.getExe loadSshKeys} &!
-      else
-        ${lib.getExe loadSshKeys}
-      fi
-    '';
-  };
+  programs.zsh.envExtra = lib.mkIf isLinux (
+    lib.mkBefore ''
+      : "''${XDG_RUNTIME_DIR:=/run/user/$(id -u)}"
+      export XDG_RUNTIME_DIR
+    ''
+  );
 }
