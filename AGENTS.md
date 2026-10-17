@@ -85,7 +85,7 @@ For changes touching NixOS modules or home-manager base:
 
 ```sh
 nix eval .#checks.x86_64-linux.eval-nixos-smortress --apply 'x: true'
-nix eval .#checks.x86_64-linux.eval-nixos-smoresbook --apply 'x: true'
+nix eval .#checks.x86_64-linux.eval-nixos-smorespro --apply 'x: true'
 ```
 
 The Python tools under `modules/features/ai/` have unit tests in `tests/`,
@@ -108,7 +108,7 @@ nix build .#checks.aarch64-darwin.{git-work-routing,ssh-allowed-signers,worktree
 ```
 
 For home-manager changes, run `home-manager switch --flake .#smores@<host>`
-(e.g. `.#smores@smoresbook` on this machine) to verify activation succeeds
+(e.g. `.#smores@smortress` on this machine) to verify activation succeeds
 (not just evaluation).
 
 ## Repo conventions

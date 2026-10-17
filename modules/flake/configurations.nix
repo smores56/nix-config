@@ -203,14 +203,6 @@ in
 {
   flake = {
     homeConfigurations = {
-      "smores@smorestux" = mkHome {
-        displayManager = "niri";
-        nixos = true;
-      };
-      "smores@smoresbook" = mkHome {
-        displayManager = "niri";
-        nixos = true;
-      };
       "smores@smorespro" = mkHome {
         displayManager = "niri";
         nixos = true;
@@ -236,14 +228,6 @@ in
       };
     };
     nixosConfigurations = {
-      "smorestux" = mkNixos {
-        hostname = "smorestux";
-        displayManager = "niri";
-      };
-      "smoresbook" = mkNixos {
-        hostname = "smoresbook";
-        displayManager = "niri";
-      };
       "smorespro" = mkNixos {
         hostname = "smorespro";
         displayManager = "niri";
