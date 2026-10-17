@@ -22,7 +22,7 @@ let
           p: map (m: "${p.providerId}/${m.id}") p.makiModels
         ) profile.providers;
         defaultModel = "neuralwatt/deepseek-v4.1-flash";
-        privateHosts = [ "${smortress.host}:${toString config.dotfiles.searchPort}" ];
+        privateHosts = [ "127.0.0.1:${toString config.dotfiles.searchPort}" ];
         searchPlugin = true;
         wrapperEnv = personalEnv;
       };
@@ -57,7 +57,7 @@ let
         default_model = "${profile.defaultModel}",
         allowed_models = { ${luaStrings profile.allowedModels} },
       },
-      -- Personal search runs on smortress over the tailnet. maki.net refuses
+      -- Personal search runs on smortress through the tunnel. maki.net refuses
       -- private addresses unless listed, and keeps plain http:// for a listed
       -- host. Port-scoped so the allowlist cannot reach anything else on the
       -- host.
@@ -98,14 +98,13 @@ let
   # provider's makiModels attribute; display names and auth wiring live here.
   #
   # Not Lua provider plugins: a plugin's base_url must be https or loopback,
-  # and smortress serves plain http over the tailnet.
+  # which the loopback URL below satisfies.
   providerEntries = {
     ${smortress.providerId} = {
       display_name = "Qwen3.8 uncensored (smortress)";
-      # Fail closed: the maki wrapper points SMORTRESS_BASE_URL at the real
-      # host only once it resolves into the tailnet, so a disconnected
-      # tailnet never sends prompts to whatever local DNS calls `smortress`.
-      base_url = "http://127.0.0.1:9/v1";
+      # Loopback: a disconnected tunnel refuses to connect rather than sending
+      # prompts to whatever a look-alike host resolves to.
+      base_url = smortress.baseUrl;
       # llama.cpp needs no key, but a custom provider refuses to start without one.
       api_key = "none";
     };
@@ -130,27 +129,11 @@ let
     )
   );
 
-  inTailnet = pkgs.writers.writePython3 "maki-in-tailnet" { } ''
-    import ipaddress
-    import socket
-    import sys
-
-    try:
-        addr = ipaddress.ip_address(socket.gethostbyname(sys.argv[1]))
-    except OSError:
-        sys.exit(1)
-    sys.exit(0 if addr in ipaddress.ip_network("100.64.0.0/10") else 1)
-  '';
-
-  # Personal: smortress is reached only once it resolves into the tailnet;
-  # an inherited SMORTRESS_BASE_URL (e.g. a nested maki from the bash tool)
-  # is dropped so the gate decides afresh.
+  # Personal: the provider URL is the loopback one from providers.toml; drop an
+  # inherited SMORTRESS_BASE_URL (e.g. from a nested maki in the bash tool) so
+  # it cannot point the provider somewhere else.
   personalEnv = ''
-    if ${inTailnet} ${smortress.host}; then
-      export SMORTRESS_BASE_URL=${smortress.baseUrl}
-    else
-      unset SMORTRESS_BASE_URL
-    fi
+    unset SMORTRESS_BASE_URL
   '';
   # Clear inherited endpoint overrides so work prompts reach OpenAI directly.
   # Subscription credentials are managed by `maki auth login openai`.

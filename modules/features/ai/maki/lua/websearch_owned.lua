@@ -1,13 +1,14 @@
--- Owned web search: queries the self-hosted SearXNG on smortress over the
--- tailnet, so search costs no vendor money. The bundled `websearch` plugin is
+-- Owned web search: queries the self-hosted SearXNG on smortress through the
+-- tunnel, so search costs no vendor money. The bundled `websearch` plugin is
 -- disabled in init.lua; this file reclaims its tool name, schema, and audiences
 -- so nothing downstream (delegation, the interpreter) changes.
 --
--- The endpoint is private: `net.allowed_private_hosts` in init.lua lists this
--- host:port, which also keeps the plain http:// scheme that maki.net would
--- otherwise upgrade to https://.
+-- The endpoint is loopback: on the server SearXNG listens locally, on clients
+-- a `cloudflared access tcp` forward binds the same port. `net.allowed_private_hosts`
+-- in init.lua lists this host:port, which also keeps the plain http:// scheme
+-- that maki.net would otherwise upgrade to https://.
 
-local HOST = "smortress"
+local HOST = "127.0.0.1"
 -- Substituted from dotfiles.searchPort at install time, so the service and this
 -- client cannot drift apart.
 local PORT = "@SEARCH_PORT@"

@@ -105,11 +105,12 @@ let
   smortress = {
     providerId = "smortress";
     models.qwen38 = qwen38Model;
-    host = "smortress";
-    baseUrl = "http://${smortress.host}:8081/v1";
-    # Reached only when the host resolves into the tailnet (100.64.0.0/10) —
-    # a disconnected tailnet must not fall back to untrusted local DNS. The
-    # gate lives in maki's PATH wrapper (maki/default.nix).
+    # Always loopback: on the server llama.cpp is local; on clients a
+    # `cloudflared access tcp` forward (modules/features/cloudflared.nix) binds
+    # the same port. No DNS to fall through to, so nothing can leak to a
+    # look-alike host.
+    port = 8081;
+    baseUrl = "http://127.0.0.1:8081/v1";
     makiModels = [ qwen38Model ];
   };
 in

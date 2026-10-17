@@ -119,6 +119,7 @@ let
     calibre = null;
     photobucket = null;
     aiProfile = null;
+    llm = null;
     workHost = null;
     brain = null;
   };
@@ -220,6 +221,9 @@ in
       "smores@smortress" = mkHome {
         displayManager = "none";
         nixos = true;
+        # Runs llama.cpp locally, so maki reaches it on loopback instead of a
+        # cloudflared forward (modules/features/cloudflared.nix).
+        llm = true;
         calibre.enable = true;
       };
       "sam@smoreswork" = mkHome {
