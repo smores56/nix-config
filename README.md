@@ -71,16 +71,20 @@ reconciled on every activation and optional Cloudflare Access in front:
 webProxy.services.ntfy = { port = 2586; access.enable = true; };
 ```
 
-One-time provisioning, out of band (nothing here enters the Nix store):
+One-time provisioning. Both the API token and the tunnel credentials are
+secrets: they live in `secrets/smortress.yaml`, encrypted with sops-nix (age
+recipients are the admin key and smortress's SSH host key), and smortress
+repoints `dotfiles.webProxy.apiTokenFile`/`credentialsFile` at the decrypted
+files (`modules/nixos/secrets.nix`). Nothing enters the Nix store.
 
 - Create a Cloudflare API token scoped to the apex zone with
-  **Zone:DNS:Write** and **Access: Apps and Policies:Write**.
-- `install -d -m 0700 /var/lib/cloudflare`, then write the token to
-  `/var/lib/cloudflare/api-token` (mode 0600). It is read at runtime.
-- The tunnel credentials at `dotfiles.webProxy.credentialsFile` are the
-  authoritative source of the tunnel UUID (`TunnelID`); no UUID is authored
-  anywhere in the repo. `tunnelName` is only a label and must be a non-UUID
-  string.
+  **Zone:DNS:Write** and **Access: Apps and Policies:Write**, and the tunnel's
+  credentials JSON.
+- Store them as `cf-api-token` and `cloudflared-credentials` with
+  `sops secrets/smortress.yaml`.
+- The tunnel credentials are the authoritative source of the tunnel UUID
+  (`TunnelID`); no UUID is authored anywhere in the repo. `tunnelName` is only
+  a label and must be a non-UUID string.
 
 `modules/nixos/cloudflare-sync.nix` runs the reconciler at boot and after every
 activation. Dry-run it with `sudo cloudflare-sync --check` — it prints the diff
@@ -92,6 +96,57 @@ place and nothing is removed; a CNAME at a declared name pointing elsewhere is
 the one exception —
 disabling `access.enable` deletes the app, which is what makes the endpoint
 public again.
+
+### Recovery
+
+smortress is reached only through the Cloudflare Tunnel — there is no inbound
+port — so the physical console is the out-of-band path. Everything below
+assumes console access or a working client. Until the Tailscale cutover lands,
+`sudo tailscale up` on smortress is a second path.
+
+**No SSH from a client.** The client needs two things from Proton Pass: the
+Access service token (resolved by the `cloudflared-access` wrapper) and an SSH
+identity from the agent. If `pass-cli` has logged out:
+
+```sh
+PROTON_PASS_KEY_PROVIDER=fs pass-cli login --interactive
+ssh-add -L                                    # should list the identity
+systemctl --user restart proton-pass-agent    # macOS: launchctl kickstart -k gui/$(id -u)/org.nix-community.home.proton-pass-agent
+```
+
+Then re-run `nix run github:smores56/nix-config#bootstrap` to re-materialise
+`~/.ssh/*.pub`.
+
+**smortress unreachable (tunnel down, network, power).** At the console
+`<tunnelName>` is `dotfiles.webProxy.tunnelName`:
+
+```sh
+systemctl status cloudflared-tunnel-<tunnelName>
+sudo systemctl restart cloudflared-tunnel-<tunnelName>
+```
+
+If the host will not boot, reinstall from the repo (the `bootstrap` app, and
+once it lands, disko + nixos-anywhere).
+
+**Cloudflare token invalid or rotated.** The reconciler runs at boot and after
+each activation and exits 2 — not drift — when the API fails; the running
+tunnel keeps serving existing hostnames, but DNS/Access stop reconciling.
+Rotate the token in the dashboard, update `cf-api-token` in
+`secrets/smortress.yaml` (`sops secrets/smortress.yaml`), and redeploy. Check
+with `sudo cloudflare-sync --check`.
+
+**Access misconfiguration.** A typo that clears `access.enable` on
+`ssh`/`llm`/`searx`/`ntfy` fails evaluation (`modules/nixos/web-proxy.nix`),
+and the reconciler refuses to delete those apps even when asked
+(`PROTECTED_SUBDOMAINS` in `modules/features/cloudflare/cloudflare_sync.py`).
+An Access *policy* mistake (wrong email) still locks out the browser — fix it
+in the Cloudflare dashboard.
+
+**sops cannot decrypt (host key lost).** The `smortress` age recipient in
+`.sops.yaml` is derived from `/etc/ssh/ssh_host_ed25519_key`; losing that key
+means `secrets/smortress.yaml` cannot be decrypted. Restore the key, or
+re-key: add a fresh recipient to `.sops.yaml` and re-encrypt with the admin
+age key.
 
 ### Service failure alerts
 
