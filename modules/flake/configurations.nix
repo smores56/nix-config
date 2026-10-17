@@ -301,10 +301,14 @@ in
                 serviceAuth = true;
               };
             };
-            # SearXNG (dotfiles.searchPort); maki's JSON search path uses the
-            # service token, browsers get the email-OTP fallback.
+            # SearXNG (dotfiles.searchPort). maki reaches it through a
+            # `cloudflared access tcp` forward (modules/features/cloudflared.nix),
+            # so the ingress is tcp — an http ingress forwards the carrier's
+            # WebSocket upgrade to SearXNG and fails with "websocket: bad
+            # handshake". The service token keeps maki's calls unattended.
             searx = {
               port = 8899;
+              protocol = "tcp";
               access = {
                 enable = true;
                 serviceAuth = true;
