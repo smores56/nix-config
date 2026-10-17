@@ -6,6 +6,7 @@
 }:
 let
   cfg = config.dotfiles;
+  ports = import ../ports.nix;
 
   llama-cpp = pkgs.stdenv.mkDerivation {
     pname = "llama-cpp";
@@ -91,7 +92,9 @@ in
         # Loopback only: the Cloudflare Tunnel proxies llm.<domain> to it, and
         # the tunnel's Access app is the only way in.
         host = "127.0.0.1";
-        port = 8081;
+        # Single source shared with the tunnel ingress and the clients' forwards
+        # (modules/ports.nix).
+        port = ports.llm;
         alias = cfg.defaultModel;
         model = mainModel;
         n-gpu-layers = 99;

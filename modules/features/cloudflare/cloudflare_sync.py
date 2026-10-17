@@ -9,9 +9,9 @@ for each declared subdomain and adopts an existing matching record, but never
 deletes one — an orphan that points at the tunnel without ingress simply hits
 the 404 default. Access applications are the exception: disabling Access (or
 removing the entry) deletes the app, so turning it off genuinely makes the
-endpoint public — except for a small set of protected hostnames (ssh/llm/
-searx/ntfy): their apps are never deleted, because a Nix typo that clears
-`access.enable` must not publish them. The reconciler refuses and reports
+endpoint public — except for a small set of protected services (ssh/llm/
+searx/ntfy, matched by hostname or port): their apps are never deleted, because
+a Nix typo that clears `access.enable` must not publish them. The reconciler refuses and reports
 loudly instead.
 
 A service may also request `serviceAuth`: an extra Access policy whose action
@@ -28,7 +28,7 @@ file's `TunnelID` at runtime and used to build `<uuid>.cfargotunnel.com`.
 exists, so CI or a rebuild can detect a dashboard edit that the next apply
 would revert. Exit codes: 0 clean, 1 drift, 2 an API, spec, or safety error (a
 permission problem, a malformed spec, or a refused deletion of a protected
-hostname are never mistaken for drift).
+service are never mistaken for drift).
 
 Scope of drift repair: the reconciler owns each app's *set* of policies (an
 extra live policy is reverted) and adopts shared account policies by name. It
@@ -58,8 +58,22 @@ SERVICE_AUTH_DECISION = "non_identity"
 SERVICE_AUTH_POLICY_NAME = "service auth (any valid service token)"
 # Hostnames whose Access app is never deleted. A Nix typo that clears
 # `access.enable` must not silently publish sshd/the LLM/SearXNG; ntfy is
-# already protected by its own assertion (modules/nixos/notify.nix).
+# already protected by its own assertion (modules/nixos/notify.nix). Mirrors the
+# `protected` list in modules/nixos/web-proxy.nix: that assertion stops the
+# mistake at evaluation; this is the second line of defence for a stale or
+# hand-edited spec.
 PROTECTED_SUBDOMAINS = frozenset({"ssh", "llm", "searx", "ntfy"})
+# The origin ports those services listen on (modules/flake/configurations.nix).
+# Protection follows the service, not just its label: a rename that keeps the
+# port, or a port move that keeps the name, is still refused, so a one-sided
+# edit cannot slip a critical endpoint out from under the guard.
+PROTECTED_PORTS = frozenset({22, 8081, 8899, 2586})
+
+
+def is_protected(sub, port):
+    return sub in PROTECTED_SUBDOMAINS or port in PROTECTED_PORTS
+
+
 # Actions that mean the live state differs from the desired state.
 DRIFT_ACTIONS = frozenset({"created", "updated", "deleted"})
 
@@ -112,7 +126,9 @@ class CloudflareClient:
             with urllib.request.urlopen(request, timeout=30) as response:
                 payload = json.loads(response.read())
         except urllib.error.HTTPError as exc:
-            detail = exc.read().decode(errors="replace")
+            # Truncate: an error body is echoed into a systemd journal, and a
+            # verbose one can be large (or carry request context we do not need).
+            detail = exc.read().decode(errors="replace")[:500]
             hint = ""
             if exc.code in (401, 403):
                 hint = (
@@ -224,7 +240,9 @@ def _ensure_policy(client, account_id, name, decision, include, precedence, dry_
     return created["id"], Result("created", f"Access policy {name}")
 
 
-def reconcile_access(client, account_id, sub, fqdn, email, wanted, service_auth, dry_run):
+def reconcile_access(
+    client, account_id, sub, port, fqdn, email, wanted, service_auth, dry_run
+):
     apps = [
         app
         for app in client.paginate(
@@ -234,7 +252,7 @@ def reconcile_access(client, account_id, sub, fqdn, email, wanted, service_auth,
     ]
 
     if not wanted:
-        if sub in PROTECTED_SUBDOMAINS:
+        if is_protected(sub, port):
             # Defence in depth: a typo (or a stale hand-edited spec) that clears
             # `access.enable` must not make a critical hostname public. Never
             # delete its app — and refuse even when no app exists yet, because
@@ -244,8 +262,8 @@ def reconcile_access(client, account_id, sub, fqdn, email, wanted, service_auth,
             return [
                 Result(
                     "protected",
-                    f"refused to remove Access for {fqdn}: {sub!r} is a "
-                    f"protected hostname and is never made public",
+                    f"refused to remove Access for {fqdn}: {sub!r} (port {port}) "
+                    f"is a protected service and is never made public",
                 )
             ]
         if not apps:
@@ -326,10 +344,17 @@ def reconcile_access(client, account_id, sub, fqdn, email, wanted, service_auth,
     )
     if already_correct:
         results.append(Result("unchanged", f"Access app {fqdn}"))
-        return results
-    if not dry_run:
-        client.put(f"/accounts/{account_id}/access/apps/{app['id']}", body)
-    results.append(Result("updated", f"Access app {fqdn}"))
+    else:
+        if not dry_run:
+            client.put(f"/accounts/{account_id}/access/apps/{app['id']}", body)
+        results.append(Result("updated", f"Access app {fqdn}"))
+    # Any further app on this hostname is one we do not own: delete it so the
+    # endpoint is guarded by exactly the declared app. A lingering duplicate
+    # could keep an unintended policy in force while we report the host correct.
+    for extra in apps[1:]:
+        if not dry_run:
+            client.delete(f"/accounts/{account_id}/access/apps/{extra['id']}")
+        results.append(Result("deleted", f"duplicate Access app {fqdn} ({extra['id']})"))
     return results
 
 
@@ -342,17 +367,27 @@ def run(spec, client, dry_run=False):
     results = []
     for sub, service in spec["services"].items():
         fqdn = f"{sub}.{zone}"
-        results += reconcile_dns(client, zone_id, fqdn, tunnel_id, dry_run)
-        results += reconcile_access(
+        # Access first. The tunnel ingress is live from Nix regardless of this
+        # run, so a CNAME published before its Access app exists would serve the
+        # loopback service to anyone who learns the hostname; ordering Access
+        # first means a failed Access call aborts the run (exit 2) before the DNS
+        # record is created.
+        access_results = reconcile_access(
             client,
             account_id,
             sub,
+            service.get("port"),
             fqdn,
             email,
             bool(service.get("access")),
             bool(service.get("serviceAuth")),
             dry_run,
         )
+        results += access_results
+        # A refused (protected) hostname must not get a DNS record either.
+        if any(r.action == "protected" for r in access_results):
+            continue
+        results += reconcile_dns(client, zone_id, fqdn, tunnel_id, dry_run)
     return results
 
 
@@ -398,7 +433,7 @@ def main(argv=None, client_factory=None):
     if any(r.action == "protected" for r in results):
         print(
             "cloudflare-sync: REFUSED to delete Cloudflare Access for a protected "
-            "hostname (ssh/llm/searx/ntfy) and left it in place: "
+            "service (ssh/llm/searx/ntfy, or their ports) and left it in place: "
             "dotfiles.webProxy.services declares it public, which must never happen. "
             "Fix the config — do not work around this.",
             file=sys.stderr,

@@ -12,6 +12,10 @@ let
 
   importTree = path: (inputs.import-tree path).imports;
 
+  # Loopback ports for the tunnel-exposed services (single source shared with
+  # the listeners and the clients' forwards).
+  ports = import ../ports.nix;
+
   localOverlays = system: [
     niri.overlays.niri
     (final: prev: {
@@ -294,7 +298,8 @@ in
             # maki reaches llama.cpp (api_key = "none") through the tunnel; the
             # service token keeps the agent's calls unattended.
             llm = {
-              port = 8081;
+              # Port comes from modules/ports.nix (the listener's single source).
+              port = ports.llm;
               protocol = "tcp";
               access = {
                 enable = true;
@@ -307,7 +312,8 @@ in
             # WebSocket upgrade to SearXNG and fails with "websocket: bad
             # handshake". The service token keeps maki's calls unattended.
             searx = {
-              port = 8899;
+              # Port comes from modules/ports.nix (the listener's single source).
+              port = ports.searx;
               protocol = "tcp";
               access = {
                 enable = true;

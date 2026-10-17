@@ -11,16 +11,14 @@
 # policy accepting any valid account service token, so unattended clients
 # (cloudflared access ssh/tcp) authenticate without an IdP browser login.
 #
-# Provisioning (out of band, never committed):
-#
-#   install -d -m 0700 /var/lib/cloudflare
-#   (umask 077; printf '%s' '<token>' > /var/lib/cloudflare/api-token)
-#
-# The token needs Zone:DNS:Write and Access: Apps and Policies:Write on the
-# apex zone; the reconciler names the missing scope if an API call is denied.
-# It is read at runtime, so it never enters the Nix store. cloudflared's own
-# credentials (`dotfiles.webProxy.credentialsFile`) are read for the TunnelID
-# that builds `<uuid>.cfargotunnel.com` — no UUID is authored anywhere.
+# The API token and cloudflared's credentials are secrets, so they live in sops
+# (`secrets/smortress.yaml`); smortress repoints
+# `dotfiles.webProxy.apiTokenFile`/`credentialsFile` at the decrypted files
+# (modules/nixos/secrets.nix). The token needs Zone:DNS:Write and Access: Apps
+# and Policies:Write on the apex zone; the reconciler names the missing scope
+# if an API call is denied. It is read at runtime, so it never enters the Nix
+# store. cloudflared's credentials are read for the TunnelID that builds
+# `<uuid>.cfargotunnel.com` — no UUID is authored anywhere.
 #
 # Add a service by adding an entry to `dotfiles.webProxy.services` (keyed by
 # subdomain) and rebuilding; add `access.enable = true` to put Cloudflare
@@ -35,8 +33,12 @@
 let
   cfg = config.dotfiles.webProxy;
 
+  # Defaults make `sudo cloudflare-sync --check` work with no arguments: the
+  # spec is installed at a stable path and the token path comes from the option
+  # (a sops file on smortress). The unit below relies on them too.
   cloudflare-sync = pkgs.writeShellScriptBin "cloudflare-sync" ''
-    exec ${pkgs.python3}/bin/python3 ${./../features/cloudflare/cloudflare_sync.py} "$@"
+    exec ${pkgs.python3}/bin/python3 ${./../features/cloudflare/cloudflare_sync.py} \
+      --spec /etc/cloudflare-sync/spec.json --token-file ${cfg.apiTokenFile} "$@"
   '';
 
   # The spec is deliberately secrets-free: only the token path (not the token)
@@ -63,7 +65,7 @@ in
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
-        ExecStart = "${cloudflare-sync}/bin/cloudflare-sync --spec ${specFile} --token-file ${cfg.apiTokenFile}";
+        ExecStart = "${cloudflare-sync}/bin/cloudflare-sync";
       };
       # Route failures to the shared ntfy primitive, but only on hosts that have
       # enabled notify: the template does not exist otherwise and a dangling

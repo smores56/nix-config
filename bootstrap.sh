@@ -9,8 +9,9 @@ set -euo pipefail
 # Or the served copy, from Bash, Zsh, or Fish:
 #   curl -fsSL bootstrap.sammohr.dev | bash
 #
-# Override auto-detected user/host or the checkout root:
-#   nix run github:smores56/nix-config#bootstrap -- env BOOTSTRAP_USER=smores BOOTSTRAP_HOST=smorespro
+# Override auto-detected user/host or the checkout root (prefix the command;
+# the app forwards no arguments):
+#   BOOTSTRAP_USER=smores BOOTSTRAP_HOST=smorespro nix run github:smores56/nix-config#bootstrap
 #   BOOTSTRAP_CODE_ROOT="$HOME/code" nix run github:smores56/nix-config#bootstrap
 
 REPO_OWNER="smores56"
@@ -164,7 +165,9 @@ SSH_KEY="${HOME}/.ssh/id_personal"
 WORK_SSH_KEY="${HOME}/.ssh/id_work"
 
 agent_key() {
-  ssh-add -L 2>/dev/null | grep -iE "^ssh-[^ ]+ [^ ]+ ${1}$" || true
+  # Match the comment field (last whitespace-separated field) case-insensitively;
+  # awk avoids regex-escaping the label and `|| true` swallows a dead agent.
+  ssh-add -L 2>/dev/null | awk -v label="$1" 'tolower($NF) == tolower(label)' || true
 }
 
 materialise_pub() {

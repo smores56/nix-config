@@ -37,6 +37,10 @@ let
       {{ ${token}/password }}"
 
       { read -r token_id; read -r token_secret; } < <(printf '%s\n' "$template" | pass-cli inject -f)
+      if [ -z "$token_id" ] || [ -z "$token_secret" ]; then
+        echo "cloudflared-access: could not resolve the Cloudflare Access service token (is pass-cli logged in?)" >&2
+        exit 1
+      fi
       export TUNNEL_SERVICE_TOKEN_ID="$token_id"
       export TUNNEL_SERVICE_TOKEN_SECRET="$token_secret"
 
@@ -69,7 +73,7 @@ in
   # loopback sshd (modules/nixos/ssh.nix). `%h` expands to HostName.
   programs.ssh.settings."smortress" = {
     HostName = "ssh.${domain}";
-    User = "smores";
+    User = config.dotfiles.username;
     ProxyCommand = "${cloudflared-access}/bin/cloudflared-access ssh --hostname %h";
   };
 

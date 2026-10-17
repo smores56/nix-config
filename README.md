@@ -64,8 +64,9 @@ sudo nixos-rebuild switch --flake .#<host>
 `dotfiles.webProxy` (declared in `modules/options.nix`, rendered by
 `modules/nixos/web-proxy.nix`) exposes services through a Cloudflare Tunnel.
 Declare a service once, keyed by subdomain; it becomes
-`<sub>.<domain>` → `http://127.0.0.1:<port>` with a proxied DNS CNAME
-reconciled on every activation and optional Cloudflare Access in front:
+`<sub>.<domain>` → `<protocol>://127.0.0.1:<port>` (`protocol` defaults to
+`http`; `tcp`/`ssh` for non-HTTP services) with a proxied DNS CNAME reconciled
+on every activation and optional Cloudflare Access in front:
 
 ```nix
 webProxy.services.ntfy = { port = 2586; access.enable = true; };
@@ -243,8 +244,8 @@ A home's `aiProfile` knob (`modules/flake/configurations.nix`) picks which
 model providers Maki may use.
 
 - `personal` (default): maki runs on the providers in
-  `modules/features/ai/providers.nix`; smortress is only reached once it
-  resolves into the tailnet.
+  `modules/features/ai/providers.nix`; smortress is reached through the tunnel,
+  over loopback forwards.
 - `work`: maki is OpenAI-only and gets no personal providers or search.
   The default model is configured in `modules/features/ai/maki/default.nix`.
   Sign in once per machine using your ChatGPT/Codex account:

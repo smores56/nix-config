@@ -7,6 +7,7 @@
 }:
 let
   inherit (aiProviders) smortress;
+  ports = import ./ports.nix;
   themeType = lib.types.submodule {
     options = {
       system = lib.mkOption {
@@ -129,7 +130,7 @@ in
     };
     searchPort = lib.mkOption {
       type = lib.types.port;
-      default = 8899;
+      default = ports.searx;
       description = "TCP port the self-hosted SearXNG listens on. Single source of truth: the NixOS service and the templated maki websearch plugin both derive from it.";
     };
     noSleep = lib.mkOption {

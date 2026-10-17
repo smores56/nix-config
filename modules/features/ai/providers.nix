@@ -5,6 +5,7 @@
 # modules/features/ai/maki/default.nix).
 { lib, ... }:
 let
+  ports = import ../../ports.nix;
   # The retired provider scripts borrowed maki's llama-cpp adapter, which
   # spells thinking as `thinking_budget_tokens`: 0 off, -1 adaptive, and for
   # an effort level its percent of half the output window (floor 1024). A
@@ -102,6 +103,11 @@ let
     completion = 0.0;
   };
 
+  # llama.cpp's loopback port: the single source the NixOS listener
+  # (modules/nixos/llm.nix) and the tunnel ingress (modules/flake/configurations.nix)
+  # both read, alongside the client base URL built from it below.
+  llmPort = ports.llm;
+
   smortress = {
     providerId = "smortress";
     models.qwen38 = qwen38Model;
@@ -109,8 +115,8 @@ let
     # `cloudflared access tcp` forward (modules/features/cloudflared.nix) binds
     # the same port. No DNS to fall through to, so nothing can leak to a
     # look-alike host.
-    port = 8081;
-    baseUrl = "http://127.0.0.1:8081/v1";
+    port = llmPort;
+    baseUrl = "http://127.0.0.1:${toString llmPort}/v1";
     makiModels = [ qwen38Model ];
   };
 in

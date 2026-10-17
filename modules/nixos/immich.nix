@@ -13,8 +13,9 @@ in
       enable = true;
       inherit (cfg) mediaLocation;
 
-      # Listen on all interfaces but open no firewall port: Immich is reached
-      # over the tailnet, and the tailscale0 interface is already trusted.
+      # Bind all interfaces but open no firewall port: the only path in is
+      # cloudflared dialing 127.0.0.1:2283 over the tunnel; the firewall drops
+      # every other attempt.
       host = "0.0.0.0";
       openFirewall = false;
 

@@ -107,7 +107,7 @@ class CloudflareSyncTests(unittest.TestCase):
             spec = self.make_spec(tmp, {"calibre": {"port": 8181, "access": False}})
             client = FakeClient(base_responses())
             results = self.module.run(spec, client)
-            self.assertEqual([r.action for r in results], ["created", "unchanged"])
+            self.assertEqual([r.action for r in results], ["unchanged", "created"])
             create = client.writes()[0]
             self.assertEqual(create[0], "POST")
             self.assertEqual(create[1], DNS_PATH)
@@ -128,7 +128,7 @@ class CloudflareSyncTests(unittest.TestCase):
                 )
             )
             results = self.module.run(spec, client)
-            self.assertEqual(results[0].action, "adopted")
+            self.assertEqual(results[-1].action, "adopted")
             self.assertEqual(client.writes(), [])
 
     def test_dns_updated_when_content_differs(self):
@@ -144,7 +144,7 @@ class CloudflareSyncTests(unittest.TestCase):
                 )
             )
             results = self.module.run(spec, client)
-            self.assertEqual(results[0].action, "updated")
+            self.assertEqual(results[-1].action, "updated")
             update = client.writes()[0]
             self.assertEqual(update[0], "PUT")
             self.assertEqual(update[1], f"{DNS_PATH}/rec1")
@@ -162,7 +162,7 @@ class CloudflareSyncTests(unittest.TestCase):
                 )
             )
             results = self.module.run(spec, client)
-            self.assertEqual(results[0].action, "updated")
+            self.assertEqual(results[-1].action, "updated")
 
     # -- Access -----------------------------------------------------------
 
@@ -174,12 +174,14 @@ class CloudflareSyncTests(unittest.TestCase):
             actions = [r.action for r in results]
             self.assertEqual(actions, ["created", "created", "created"])
             writes = client.writes()
-            self.assertEqual([w[1] for w in writes], [DNS_PATH, POLICIES_PATH, APPS_PATH])
-            policy = writes[1][3]
+            # Access before DNS: the tunnel ingress is live from Nix, so the
+            # CNAME must not appear before the app that guards it.
+            self.assertEqual([w[1] for w in writes], [POLICIES_PATH, APPS_PATH, DNS_PATH])
+            policy = writes[0][3]
             self.assertEqual(policy["decision"], "allow")
             self.assertEqual(policy["include"], [{"email": {"email": EMAIL}}])
             self.assertEqual(policy["precedence"], 1)
-            app = writes[2][3]
+            app = writes[1][3]
             self.assertEqual(app["domain"], f"immich.{ZONE}")
             self.assertEqual(app["session_duration"], "24h")
             self.assertEqual(app["policies"], [{"id": "created-policies", "precedence": 1}])
@@ -204,7 +206,7 @@ class CloudflareSyncTests(unittest.TestCase):
                 )
             )
             results = self.module.run(spec, client)
-            self.assertEqual([r.action for r in results], ["adopted", "unchanged"])
+            self.assertEqual([r.action for r in results], ["unchanged", "adopted"])
             self.assertEqual(client.writes(), [])
 
     def test_access_unchanged_when_policies_are_bare_ids(self):
@@ -227,7 +229,7 @@ class CloudflareSyncTests(unittest.TestCase):
                 )
             )
             results = self.module.run(spec, client)
-            self.assertEqual([r.action for r in results], ["adopted", "unchanged"])
+            self.assertEqual([r.action for r in results], ["unchanged", "adopted"])
             self.assertEqual(client.writes(), [])
 
     def test_access_updated_when_session_or_policy_differs(self):
@@ -249,8 +251,8 @@ class CloudflareSyncTests(unittest.TestCase):
                 )
             )
             results = self.module.run(spec, client)
-            self.assertEqual(results[-1].action, "updated")
-            update = client.writes()[-1]
+            self.assertEqual(results[0].action, "updated")
+            update = next(c for c in client.writes() if c[1].startswith(APPS_PATH))
             self.assertEqual(update[0], "PUT")
             self.assertEqual(update[1], f"{APPS_PATH}/app1")
 
@@ -261,8 +263,8 @@ class CloudflareSyncTests(unittest.TestCase):
                 base_responses(**{APPS_PATH: [{"id": "app1", "domain": f"immich.{ZONE}"}]})
             )
             results = self.module.run(spec, client)
-            self.assertEqual(results[-1].action, "deleted")
-            delete = client.writes()[-1]
+            self.assertEqual(results[0].action, "deleted")
+            delete = next(c for c in client.writes() if c[0] == "DELETE")
             self.assertEqual(delete[0], "DELETE")
             self.assertEqual(delete[1], f"{APPS_PATH}/app1")
 
@@ -281,7 +283,7 @@ class CloudflareSyncTests(unittest.TestCase):
                 )
             )
             results = self.module.run(spec, client)
-            self.assertEqual([r.action for r in results], ["adopted", "deleted", "deleted"])
+            self.assertEqual([r.action for r in results], ["deleted", "deleted", "adopted"])
             deletes = [call[1] for call in client.writes() if call[0] == "DELETE"]
             self.assertEqual(deletes, [f"{APPS_PATH}/app1", f"{APPS_PATH}/app2"])
 
@@ -297,7 +299,7 @@ class CloudflareSyncTests(unittest.TestCase):
                 )
             )
             results = self.module.run(spec, client)
-            self.assertEqual(results[-1].action, "unchanged")
+            self.assertEqual(results[0].action, "unchanged")
             self.assertEqual(client.writes(), [])
 
     # -- Access service tokens (unattended clients) -----------------------
@@ -313,9 +315,9 @@ class CloudflareSyncTests(unittest.TestCase):
             writes = client.writes()
             self.assertEqual(
                 [w[1] for w in writes],
-                [DNS_PATH, POLICIES_PATH, POLICIES_PATH, APPS_PATH],
+                [POLICIES_PATH, POLICIES_PATH, APPS_PATH, DNS_PATH],
             )
-            service_policy = writes[2][3]
+            service_policy = writes[1][3]
             self.assertEqual(service_policy["name"], self.module.SERVICE_AUTH_POLICY_NAME)
             # The dashboard "Service Auth" action is `non_identity` at the API,
             # accepting any token minted in the account rather than naming one.
@@ -324,7 +326,7 @@ class CloudflareSyncTests(unittest.TestCase):
                 service_policy["include"], [{"any_valid_service_token": {}}]
             )
             self.assertEqual(service_policy["precedence"], 2)
-            app = writes[3][3]
+            app = writes[2][3]
             self.assertEqual([p["precedence"] for p in app["policies"]], [1, 2])
 
     def test_service_auth_absent_creates_only_the_email_policy(self):
@@ -360,7 +362,7 @@ class CloudflareSyncTests(unittest.TestCase):
                 )
             )
             results = self.module.run(spec, client)
-            self.assertEqual([r.action for r in results], ["adopted", "unchanged"])
+            self.assertEqual([r.action for r in results], ["unchanged", "adopted"])
             self.assertEqual(client.writes(), [])
 
     def test_service_auth_updates_app_missing_service_policy(self):
@@ -387,8 +389,8 @@ class CloudflareSyncTests(unittest.TestCase):
                 )
             )
             results = self.module.run(spec, client)
-            self.assertEqual(results[-1].action, "updated")
-            update = client.writes()[-1]
+            self.assertEqual(results[0].action, "updated")
+            update = next(c for c in client.writes() if c[1].startswith(APPS_PATH))
             self.assertEqual(update[1], f"{APPS_PATH}/app1")
             self.assertEqual([p["precedence"] for p in update[3]["policies"]], [1, 2])
 
@@ -444,11 +446,38 @@ class CloudflareSyncTests(unittest.TestCase):
             self.assertEqual(self.run_main(spec, client, check=True), 2)
             self.assertEqual(client.writes(), [])
 
-    def test_protected_subdomains_are_the_critical_set(self):
-        self.assertEqual(
-            self.module.PROTECTED_SUBDOMAINS,
-            frozenset({"ssh", "llm", "searx", "ntfy"}),
-        )
+    def test_access_is_reconciled_before_dns(self):
+        # The tunnel ingress is live from Nix, so a hostname's CNAME must never
+        # be created before the Access app that guards it.
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = self.make_spec(
+                tmp, {"llm": {"port": 8081, "protocol": "tcp", "access": True}}
+            )
+            client = FakeClient(base_responses(**{APPS_PATH: [], POLICIES_PATH: []}))
+            self.module.run(spec, client)
+            paths = [w[1] for w in client.writes()]
+            self.assertLess(paths.index(APPS_PATH), paths.index(DNS_PATH))
+
+    def test_every_protected_subdomain_refuses_deletion(self):
+        # Behavioural, not a restatement of the constant: clearing
+        # access.enable on any protected hostname must be refused, and refused
+        # *before* any DNS record is written.
+        for sub in ("ssh", "llm", "searx", "ntfy"):
+            with self.subTest(sub=sub), tempfile.TemporaryDirectory() as tmp:
+                spec = self.make_spec(tmp, {sub: {"port": 1234, "access": False}})
+                client = FakeClient(
+                    base_responses(
+                        **{
+                            DNS_PATH: [
+                                {"id": "rec1", "content": PROXY_TARGET, "proxied": True}
+                            ],
+                            APPS_PATH: [{"id": "app1", "domain": f"{sub}.{ZONE}"}],
+                        }
+                    )
+                )
+                results = self.module.run(spec, client)
+                self.assertEqual([r.action for r in results], ["protected"])
+                self.assertEqual(client.writes(), [])
 
     def test_protected_hostname_refused_even_without_a_live_app(self):
         # A stale or hand-edited spec that clears `access.enable` must still be
@@ -468,6 +497,50 @@ class CloudflareSyncTests(unittest.TestCase):
             results = self.module.run(spec, client)
             self.assertEqual(results[-1].action, "protected")
             self.assertEqual(client.writes(), [])
+
+    def test_protected_port_refuses_deletion(self):
+        # Protection follows the service, not just the label: a rename that keeps
+        # a critical port must still be refused.
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = self.make_spec(tmp, {"gateway": {"port": 22, "access": False}})
+            client = FakeClient(
+                base_responses(
+                    **{
+                        DNS_PATH: [{"id": "rec1", "content": PROXY_TARGET, "proxied": True}],
+                        APPS_PATH: [{"id": "app1", "domain": f"gateway.{ZONE}"}],
+                    }
+                )
+            )
+            results = self.module.run(spec, client)
+            self.assertEqual([r.action for r in results], ["protected"])
+            self.assertEqual(client.writes(), [])
+
+    def test_duplicate_access_apps_are_deleted(self):
+        # A second app on the same hostname is one we do not own: delete it so the
+        # endpoint is guarded by exactly the declared app.
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = self.make_spec(tmp, {"immich": {"port": 2283, "access": True}})
+            client = FakeClient(
+                base_responses(
+                    **{
+                        DNS_PATH: [{"id": "rec1", "content": PROXY_TARGET, "proxied": True}],
+                        APPS_PATH: [
+                            {
+                                "id": "app1",
+                                "domain": f"immich.{ZONE}",
+                                "session_duration": "24h",
+                                "policies": ["pol1"],
+                            },
+                            {"id": "app2", "domain": f"immich.{ZONE}"},
+                        ],
+                        POLICIES_PATH: [{"id": "pol1", "name": f"allow {EMAIL}"}],
+                    }
+                )
+            )
+            results = self.module.run(spec, client)
+            self.assertIn("deleted", [r.action for r in results])
+            deletes = [call[1] for call in client.writes() if call[0] == "DELETE"]
+            self.assertEqual(deletes, [f"{APPS_PATH}/app2"])
 
     def test_access_updated_when_an_extra_policy_is_attached(self):
         # Extra live policies are drift to revert, not `unchanged`: an app must
@@ -494,7 +567,7 @@ class CloudflareSyncTests(unittest.TestCase):
                 )
             )
             results = self.module.run(spec, client)
-            self.assertEqual(results[-1].action, "updated")
+            self.assertEqual(results[0].action, "updated")
             update = client.writes()[-1]
             self.assertEqual(update[3]["policies"], [{"id": "pol1", "precedence": 1}])
 
@@ -769,7 +842,7 @@ class CloudflareClientTests(unittest.TestCase):
                 self.module.urllib.request, "urlopen", side_effect=fake_urlopen
             ):
                 results = self.module.run(spec, client)
-        self.assertEqual(results[0].action, "adopted")
+        self.assertEqual(results[-1].action, "adopted")
         # The second page was fetched, so a match past the first 100 is not missed.
         self.assertTrue(any("dns_records" in url and "page=2" in url for url in requested))
 

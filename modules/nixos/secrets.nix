@@ -11,11 +11,11 @@
 {
   config = lib.mkIf (config.networking.hostName == "smortress") {
     sops.defaultSopsFile = ../../secrets/smortress.yaml;
-    # sops-nix's default is to import `services.openssh.hostKeys`, but smortress
-    # does not enable openssh, so that default is empty and the "no key source"
-    # assertion fires. Point it at the host ed25519 key directly; it is the key
-    # the `smortress` age recipient in `.sops.yaml` was derived from and must
-    # already exist on the host (out of band, like the secrets it decrypts).
+    # The `smortress` age recipient in `.sops.yaml` is derived from the host
+    # ed25519 key. sops-nix would import that key by default once openssh is
+    # enabled (exposeSsh), but it is named explicitly so a default change cannot
+    # quietly break decryption; the key must already exist on the host — out of
+    # band, like the secrets it decrypts.
     sops.age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
     sops.secrets = {
       cf-api-token = {

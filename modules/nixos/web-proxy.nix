@@ -12,10 +12,11 @@ let
   # Hostnames that must never be reachable without Access in front of them: a
   # typo that clears `access.enable` would otherwise publish sshd/the LLM/
   # SearXNG/ntfy to the internet. The reconciler refuses to *remove* their
-  # Access too (defence in depth), but failing evaluation here stops the mistake
-  # before anything is applied. ntfy is listed here as well as in notify.nix so
-  # the guard still holds if notify (whose assertion is gated on its own
-  # enable) is ever turned off.
+  # Access too (defence in depth, mirroring PROTECTED_SUBDOMAINS/PROTECTED_PORTS
+  # in modules/features/cloudflare/cloudflare_sync.py), but failing evaluation
+  # here stops the mistake before anything is applied. ntfy is listed here as
+  # well as in notify.nix so the guard still holds if notify (whose assertion is
+  # gated on its own enable) is ever turned off.
   protected = [
     "ssh"
     "llm"
