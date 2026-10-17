@@ -27,16 +27,19 @@ in
     services.searx = {
       enable = true;
       environmentFile = config.sops.templates."searxng-secret".path;
-      # The limiter throttles scraping and abuse on the public hostname; it
-      # needs a Redis, which the module creates locally. JSON stays on for the
-      # maki plugin.
-      redisCreateLocally = true;
+      # The limiter is deliberately off. Its JSON API cap is a hardcoded
+      # `API_MAX = 4` requests per hour (botdetection/ip_limit.py), which the
+      # maki websearch plugin blows through immediately; it also cannot
+      # attribute clients here, because the Cloudflare Tunnel is a TCP ingress,
+      # so no X-Forwarded-For reaches SearXNG and every client looks like
+      # 127.0.0.1. Cloudflare Access (email allow-list + service token) gates
+      # the hostname instead, so the local Redis the limiter needs is not
+      # created either. JSON stays on for the maki plugin.
       settings = {
         server = {
           bind_address = "127.0.0.1";
           port = cfg.searchPort;
           secret_key = "$SEARX_SECRET_KEY";
-          limiter = true;
         };
         search.formats = [
           "html"
