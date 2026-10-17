@@ -17,7 +17,7 @@ let
 
   # Vault path of the Access service token (login item: username = Client ID,
   # password = Client Secret). Not a secret in itself, so it is safe in the
-  # store; `pass-cli run` resolves the `pass://` refs into cloudflared's env.
+  # store; `pass-cli inject` resolves the `pass://` refs into cloudflared's env.
   token = "pass://Hosting/Cloudflare Access service token";
   cloudflared-access = pkgs.writeShellApplication {
     name = "cloudflared-access";
@@ -25,11 +25,22 @@ let
       pkgs.cloudflared
       pkgs.proton-pass-cli
     ];
+    # `pass-cli run` pipes the child's stdio through its secret masker: it
+    # buffers, and it drops the hidden `password` field outright, so the token
+    # never reaches cloudflared and an SSH stream stalls just after the banner.
+    # `inject` emits values verbatim, so resolve the token here and hand
+    # cloudflared raw inherited stdio.
     text = ''
       export PROTON_PASS_KEY_PROVIDER="''${PROTON_PASS_KEY_PROVIDER:-fs}"
-      export TUNNEL_SERVICE_TOKEN_ID='${token}/username'
-      export TUNNEL_SERVICE_TOKEN_SECRET='${token}/password'
-      exec pass-cli run --no-masking -- cloudflared access "$@"
+
+      template="{{ ${token}/username }}
+      {{ ${token}/password }}"
+
+      { read -r token_id; read -r token_secret; } < <(printf '%s\n' "$template" | pass-cli inject -f)
+      export TUNNEL_SERVICE_TOKEN_ID="$token_id"
+      export TUNNEL_SERVICE_TOKEN_SECRET="$token_secret"
+
+      exec cloudflared access "$@"
     '';
   };
 
