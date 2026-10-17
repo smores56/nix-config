@@ -318,7 +318,9 @@ class CloudflareSyncTests(unittest.TestCase):
                 [POLICIES_PATH, POLICIES_PATH, APPS_PATH, DNS_PATH],
             )
             service_policy = writes[1][3]
-            self.assertEqual(service_policy["name"], self.module.SERVICE_AUTH_POLICY_NAME)
+            self.assertEqual(
+                service_policy["name"], "service auth (any valid service token)"
+            )
             # The dashboard "Service Auth" action is `non_identity` at the API,
             # accepting any token minted in the account rather than naming one.
             self.assertEqual(service_policy["decision"], "non_identity")
@@ -446,17 +448,8 @@ class CloudflareSyncTests(unittest.TestCase):
             self.assertEqual(self.run_main(spec, client, check=True), 2)
             self.assertEqual(client.writes(), [])
 
-    def test_access_is_reconciled_before_dns(self):
-        # The tunnel ingress is live from Nix, so a hostname's CNAME must never
-        # be created before the Access app that guards it.
-        with tempfile.TemporaryDirectory() as tmp:
-            spec = self.make_spec(
-                tmp, {"llm": {"port": 8081, "protocol": "tcp", "access": True}}
-            )
-            client = FakeClient(base_responses(**{APPS_PATH: [], POLICIES_PATH: []}))
-            self.module.run(spec, client)
-            paths = [w[1] for w in client.writes()]
-            self.assertLess(paths.index(APPS_PATH), paths.index(DNS_PATH))
+    # (Access-before-DNS ordering is asserted exactly in
+    # test_access_created_with_policy's write-order check.)
 
     def test_every_protected_subdomain_refuses_deletion(self):
         # Behavioural, not a restatement of the constant: clearing
@@ -597,10 +590,7 @@ class CloudflareSyncTests(unittest.TestCase):
             spec = self.make_spec(tmp, {"calibre": {"port": 8181, "access": False}})
             client = FakeClient(
                 base_responses(
-                    **{
-                        DNS_PATH: [{"id": "rec1", "content": PROXY_TARGET, "proxied": True}],
-                        APPS_PATH: [],
-                    }
+                    **{DNS_PATH: [{"id": "rec1", "content": PROXY_TARGET, "proxied": True}]}
                 )
             )
             code = self.run_main(spec, client, check=True)

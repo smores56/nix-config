@@ -371,7 +371,7 @@ in
           enable = lib.mkEnableOption "service-failure push notifications via a self-hosted ntfy server";
           ntfyPort = lib.mkOption {
             type = lib.types.port;
-            default = 2586;
+            default = ports.ntfy;
             description = "Loopback port the local ntfy server listens on; the alert handler publishes here.";
           };
           topicFile = lib.mkOption {
@@ -438,7 +438,7 @@ in
           };
           sshKey = lib.mkOption {
             type = lib.types.str;
-            description = "Work SSH key (private half; the .pub is used for auth and signing via the agent).";
+            description = "Work SSH key path without extension; its `.pub` is materialised on disk and offered via the Proton Pass agent, which holds the private half.";
           };
           sshConfig = lib.mkOption {
             type = lib.types.str;

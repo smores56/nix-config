@@ -77,8 +77,11 @@ in
     ProxyCommand = "${cloudflared-access}/bin/cloudflared-access ssh --hostname %h";
   };
 
-  systemd.user.services = {
-    cloudflared-llm = lib.mkIf (aiProfile == "personal" && !llm) (forward "llm" smortress.port);
-    cloudflared-searx = lib.mkIf (aiProfile == "personal" && !llm) (forward "searx" searchPort);
+  # A personal client reaches the server's llm/searx over the tunnel; a work
+  # profile reaches its own, and smortress itself uses loopback, so neither
+  # needs these forwards.
+  systemd.user.services = lib.mkIf (aiProfile == "personal" && !llm) {
+    cloudflared-llm = forward "llm" smortress.port;
+    cloudflared-searx = forward "searx" searchPort;
   };
 }

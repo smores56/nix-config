@@ -93,8 +93,8 @@ let
   };
 
   # ── Smortress ─────────────────────────────────────────────────────────────
-  # Local network provider; no auth needed. models.qwen38
-  # feeds the dotfiles default model in options.nix.
+  # Reached on loopback through the Cloudflare Tunnel; no auth needed.
+  # models.qwen38 feeds the dotfiles default model in options.nix.
   qwen38Model = mkModel {
     id = "qwen3.8-27b";
     context = 200192;

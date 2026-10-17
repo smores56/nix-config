@@ -16,6 +16,14 @@ let
   # the listeners and the clients' forwards).
   ports = import ../ports.nix;
 
+  # The ssh/llm/searx entries all want the same Access policy set: an email
+  # allow-list (human fallback) plus a Service Auth policy for unattended
+  # clients. Shared so the three cannot diverge.
+  accessWithServiceAuth = {
+    enable = true;
+    serviceAuth = true;
+  };
+
   localOverlays = system: [
     niri.overlays.niri
     (final: prev: {
@@ -253,7 +261,7 @@ in
             # Unauthenticated loopback listener, so it must sit behind Access
             # (enforced by an assertion in modules/nixos/notify.nix).
             ntfy = {
-              port = 2586;
+              port = ports.ntfy;
               access.enable = true;
             };
             # sshd (key-only, loopback; see modules/nixos/ssh.nix) is reachable
@@ -263,10 +271,7 @@ in
             ssh = {
               port = 22;
               protocol = "ssh";
-              access = {
-                enable = true;
-                serviceAuth = true;
-              };
+              access = accessWithServiceAuth;
             };
             # maki reaches llama.cpp (api_key = "none") through the tunnel; the
             # service token keeps the agent's calls unattended.
@@ -274,10 +279,7 @@ in
               # Port comes from modules/ports.nix (the listener's single source).
               port = ports.llm;
               protocol = "tcp";
-              access = {
-                enable = true;
-                serviceAuth = true;
-              };
+              access = accessWithServiceAuth;
             };
             # SearXNG (dotfiles.searchPort). maki reaches it through a
             # `cloudflared access tcp` forward (modules/features/cloudflared.nix),
@@ -288,10 +290,7 @@ in
               # Port comes from modules/ports.nix (the listener's single source).
               port = ports.searx;
               protocol = "tcp";
-              access = {
-                enable = true;
-                serviceAuth = true;
-              };
+              access = accessWithServiceAuth;
             };
           };
         };

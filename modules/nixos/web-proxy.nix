@@ -25,25 +25,21 @@ let
   ];
 in
 {
-  config = lib.mkMerge [
-    (lib.mkIf cfg.enable {
-      assertions = map (sub: {
-        assertion = !(cfg.services ? ${sub}) || cfg.services.${sub}.access.enable;
-        message = "dotfiles.webProxy.services.${sub} must set access.enable = true: exposing ${sub}.${cfg.domain} over the tunnel without Cloudflare Access would publish it to anyone who learns the hostname.";
-      }) protected;
-    })
+  config = lib.mkIf cfg.enable {
+    assertions = map (sub: {
+      assertion = !(cfg.services ? ${sub}) || cfg.services.${sub}.access.enable;
+      message = "dotfiles.webProxy.services.${sub} must set access.enable = true: exposing ${sub}.${cfg.domain} over the tunnel without Cloudflare Access would publish it to anyone who learns the hostname.";
+    }) protected;
 
-    (lib.mkIf (cfg.enable && cfg.tunnelName != "") {
-      services.cloudflared = {
-        enable = true;
-        tunnels.${cfg.tunnelName} = {
-          inherit (cfg) credentialsFile;
-          default = "http_status:404";
-          ingress = lib.mapAttrs' (
-            sub: s: lib.nameValuePair "${sub}.${cfg.domain}" "${s.protocol}://127.0.0.1:${toString s.port}"
-          ) cfg.services;
-        };
+    services.cloudflared = lib.mkIf (cfg.tunnelName != "") {
+      enable = true;
+      tunnels.${cfg.tunnelName} = {
+        inherit (cfg) credentialsFile;
+        default = "http_status:404";
+        ingress = lib.mapAttrs' (
+          sub: s: lib.nameValuePair "${sub}.${cfg.domain}" "${s.protocol}://127.0.0.1:${toString s.port}"
+        ) cfg.services;
       };
-    })
-  ];
+    };
+  };
 }

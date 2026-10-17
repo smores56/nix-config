@@ -17,19 +17,13 @@
     # quietly break decryption; the key must already exist on the host — out of
     # band, like the secrets it decrypts.
     sops.age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
+    # 0400 (sops-nix's default) and root ownership: only the root services that
+    # read them (cloudflared, the reconciler, navidrome, searxng) need access.
     sops.secrets = {
-      cf-api-token = {
-        mode = "0400";
-      };
-      cloudflared-credentials = {
-        mode = "0400";
-      };
-      navidrome-env = {
-        mode = "0400";
-      };
-      searxng-secret-key = {
-        mode = "0400";
-      };
+      cf-api-token = { };
+      cloudflared-credentials = { };
+      navidrome-env = { };
+      searxng-secret-key = { };
     };
 
     # Repoint the consumers at the decrypted files. The option defaults stay

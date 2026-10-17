@@ -54,12 +54,12 @@ in
       IdentitiesOnly yes
   '';
 
-  # $XDG_RUNTIME_DIR is normally set by pam_systemd at login, but a session
-  # without PAM (e.g. Tailscale SSH) leaves it unset — and the agent module
-  # expands $XDG_RUNTIME_DIR when setting SSH_AUTH_SOCK. Set a fallback before
-  # that init (fish mkBefore; zsh .zshenv). Linux only: darwin has no /run, its
-  # agent socket comes from DARWIN_USER_TEMP_DIR, and a dangling value breaks
-  # tools that put sockets there (`op` fails to start its daemon).
+  # $XDG_RUNTIME_DIR is normally set by pam_systemd at login, but a session that
+  # does not go through PAM leaves it unset — and the agent module expands
+  # $XDG_RUNTIME_DIR when setting SSH_AUTH_SOCK. Set a fallback before that init
+  # (fish mkBefore; zsh .zshenv). Linux only: darwin has no /run, its agent
+  # socket comes from DARWIN_USER_TEMP_DIR, and a dangling value breaks tools
+  # that put sockets there (`op` fails to start its daemon).
   programs.fish.shellInit = lib.mkIf isLinux (
     lib.mkBefore ''
       if test -z "$XDG_RUNTIME_DIR"

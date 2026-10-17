@@ -24,7 +24,7 @@ let
         defaultModel = "neuralwatt/deepseek-v4.1-flash";
         privateHosts = [ "127.0.0.1:${toString config.dotfiles.searchPort}" ];
         searchPlugin = true;
-        wrapperEnv = personalEnv;
+        wrapperEnv = "";
       };
       work = {
         providers = [ ];
@@ -129,12 +129,6 @@ let
     )
   );
 
-  # Personal: the provider URL is the loopback one from providers.toml; drop an
-  # inherited SMORTRESS_BASE_URL (e.g. from a nested maki in the bash tool) so
-  # it cannot point the provider somewhere else.
-  personalEnv = ''
-    unset SMORTRESS_BASE_URL
-  '';
   # Clear inherited endpoint overrides so work prompts reach OpenAI directly.
   # Subscription credentials are managed by `maki auth login openai`.
   workEnv = ''

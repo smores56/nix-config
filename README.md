@@ -90,13 +90,14 @@ files (`modules/nixos/secrets.nix`). Nothing enters the Nix store.
 `modules/nixos/cloudflare-sync.nix` runs the reconciler at boot and after every
 activation. Dry-run it with `sudo cloudflare-sync --check` — it prints the diff
 (created / updated / adopted / deleted / unchanged) and exits 0 when clean, 1
-on drift, and 2 when the API or spec fails (so a permission error is never
-mistaken for drift). DNS is **adopt-never-delete**: a matching CNAME is left in
-place and nothing is removed; a CNAME at a declared name pointing elsewhere is
-**updated** to the tunnel (it logs the previous target). Access applications are
-the one exception —
-disabling `access.enable` deletes the app, which is what makes the endpoint
-public again.
+on drift, and 2 on an API, spec, or safety error (a permission problem or a
+refused protected-hostname deletion is never mistaken for drift). DNS is
+**adopt-never-delete**: a matching CNAME is left in place and nothing is
+removed; a CNAME at a declared name pointing elsewhere is **updated** to the
+tunnel (it logs the previous target). Access applications are the one exception
+— disabling `access.enable` deletes the app, making the endpoint public again —
+except for the protected hostnames (ssh/llm/searx/ntfy, matched by name or
+origin port), whose apps are never deleted: the reconciler refuses and exits 2.
 
 ### Recovery
 

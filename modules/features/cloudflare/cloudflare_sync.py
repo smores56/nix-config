@@ -63,7 +63,8 @@ SERVICE_AUTH_POLICY_NAME = "service auth (any valid service token)"
 # mistake at evaluation; this is the second line of defence for a stale or
 # hand-edited spec.
 PROTECTED_SUBDOMAINS = frozenset({"ssh", "llm", "searx", "ntfy"})
-# The origin ports those services listen on (modules/flake/configurations.nix).
+# The origin ports those services listen on: modules/ports.nix for llm/searx/
+# ntfy, modules/options.nix for ntfy's knob, modules/nixos/ssh.nix for sshd.
 # Protection follows the service, not just its label: a rename that keeps the
 # port, or a port move that keeps the name, is still refused, so a one-sided
 # edit cannot slip a critical endpoint out from under the guard.
@@ -212,17 +213,18 @@ def reconcile_dns(client, zone_id, fqdn, tunnel_id, dry_run):
     return [Result("updated", f"DNS {fqdn} -> {content} (was {record.get('content')})")]
 
 
-def _ensure_policy(client, account_id, name, decision, include, precedence, dry_run):
+def _ensure_policy(
+    client, account_id, policies, name, decision, include, precedence, dry_run
+):
     """Return (policy_id, result). Idempotent by policy name.
 
-    A reusable account policy that already exists is adopted; otherwise one is
-    created. In `dry_run` a missing policy yields `(None, Result("created"))`,
-    since no id exists yet — the caller must then treat the app as needing an
-    update rather than reporting it unchanged.
+    `policies` is the account's policy list, fetched once by the caller so a
+    hostname carrying two policies does not paginate the API twice. A reusable
+    account policy that already exists is adopted; otherwise one is created. In
+    `dry_run` a missing policy yields `(None, Result("created"))`, since no id
+    exists yet — the caller must then treat the app as needing an update rather
+    than reporting it unchanged.
     """
-    policies = client.paginate(
-        f"/accounts/{account_id}/access/policies", params={"per_page": 100}
-    )
     policy = next((p for p in policies if p.get("name") == name), None)
     if policy is not None:
         return policy["id"], None
@@ -279,36 +281,31 @@ def reconcile_access(
     wanted_policies = []
     policies_changed = False
 
-    email_id, created = _ensure_policy(
-        client,
-        account_id,
-        f"allow {email}",
-        "allow",
-        [{"email": {"email": email}}],
-        1,
-        dry_run,
-    )
-    policies_changed = policies_changed or created is not None
-    if created:
-        results.append(created)
-    if email_id:
-        wanted_policies.append((email_id, 1))
-
+    # (name, decision, include, precedence) for every policy this hostname
+    # needs: the email allow-list, plus a Service Auth policy when unattended
+    # clients reach it. One fetch of the account's policies serves them all.
+    descriptors = [(f"allow {email}", "allow", [{"email": {"email": email}}], 1)]
     if service_auth:
-        token_id, created = _ensure_policy(
-            client,
-            account_id,
-            SERVICE_AUTH_POLICY_NAME,
-            SERVICE_AUTH_DECISION,
-            [{"any_valid_service_token": {}}],
-            2,
-            dry_run,
+        descriptors.append(
+            (
+                SERVICE_AUTH_POLICY_NAME,
+                SERVICE_AUTH_DECISION,
+                [{"any_valid_service_token": {}}],
+                2,
+            )
+        )
+    policies = client.paginate(
+        f"/accounts/{account_id}/access/policies", params={"per_page": 100}
+    )
+    for name, decision, include, precedence in descriptors:
+        policy_id, created = _ensure_policy(
+            client, account_id, policies, name, decision, include, precedence, dry_run
         )
         policies_changed = policies_changed or created is not None
         if created:
             results.append(created)
-        if token_id:
-            wanted_policies.append((token_id, 2))
+        if policy_id:
+            wanted_policies.append((policy_id, precedence))
 
     body = {
         "name": fqdn,
