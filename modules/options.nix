@@ -106,6 +106,12 @@ in
       default = false;
       description = "Host runs sshd, bound to loopback so it is reachable only through the Cloudflare Tunnel (cloudflared dials 127.0.0.1:22). Also disables sudo password prompts for wheel.";
     };
+    sshAuthorizedKeys = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      example = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... sam@example.com" ];
+      description = "Public keys sshd accepts on hosts with dotfiles.exposeSsh. Only the public half ever reaches a server; the private keys stay in Proton Pass.";
+    };
     nvidia = lib.mkOption {
       type = lib.types.bool;
       default = false;
@@ -551,6 +557,11 @@ in
       wayland = config.dotfiles.displayManager == "niri";
       terminalFontSize = 12;
       email = "sam@sammohr.dev";
+      # The vault's shared personal identity (design D6). Servers only ever
+      # hold the public half; clients get the private half over SSH_AUTH_SOCK.
+      sshAuthorizedKeys = [
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEu3DfhswY9f9hum/0OhAw2833CkZOP6wVKW5yJk6GpU sam@sammohr.dev"
+      ];
       branchNaming.template = "smores/{slug}";
       work = {
         email = "smohr@blitzy.com";

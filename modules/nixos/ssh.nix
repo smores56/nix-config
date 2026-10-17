@@ -27,5 +27,9 @@
     };
     security.sudo.wheelNeedsPassword = false;
     nix.settings.trusted-users = [ config.dotfiles.username ];
+    # sshd authenticates against the vault's shared identity; the server only
+    # ever holds the public half (dotfiles.sshAuthorizedKeys).
+    users.users.${config.dotfiles.username}.openssh.authorizedKeys.keys =
+      config.dotfiles.sshAuthorizedKeys;
   };
 }
