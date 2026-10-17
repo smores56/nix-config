@@ -88,7 +88,9 @@ in
       enable = true;
       package = llama-cpp;
       settings = {
-        host = "0.0.0.0";
+        # Loopback only: the Cloudflare Tunnel proxies llm.<domain> to it, and
+        # the tunnel's Access app is the only way in.
+        host = "127.0.0.1";
         port = 8081;
         alias = cfg.defaultModel;
         model = mainModel;
