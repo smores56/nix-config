@@ -95,7 +95,7 @@ Run them after touching `modules/features/ai/sdlc/`, maki session search, or `mo
 Script checks run each `tests/<name>.sh` against tools and files from a
 generated home, as the `<name>` flake check (`scriptChecks` in
 `modules/flake/checks.nix`): `git-work-routing` (work vs personal identity by
-remote URL), `ssh-agent-keys` (agent key loading), `ssh-allowed-signers`
+remote URL), `ssh-allowed-signers`
 (signature verification), `worktrees-branch-template` (branch naming from
 per-repo templates), `repos-list-links` (listing through linked org dirs),
 `work-repo-links` (the work host's flat-folder links) and `zsh-config`
@@ -104,7 +104,7 @@ them after touching shell, git or ssh settings or
 `modules/lib/repo-workflow.nix`:
 
 ```sh
-nix build .#checks.aarch64-darwin.{git-work-routing,ssh-agent-keys,ssh-allowed-signers,worktrees-branch-template,repos-list-links,work-repo-links,zsh-config}
+nix build .#checks.aarch64-darwin.{git-work-routing,ssh-allowed-signers,worktrees-branch-template,repos-list-links,work-repo-links,zsh-config}
 ```
 
 For home-manager changes, run `home-manager switch --flake .#smores@<host>`
