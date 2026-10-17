@@ -4,7 +4,12 @@
 # CNAME is adopted, a missing one created, a changed one updated, and nothing is
 # ever deleted — so unrelated records are safe. Access applications *are*
 # deleted when `access.enable` is turned off, since that is what makes an
-# endpoint public again.
+# endpoint public again — except for a protected allowlist (ssh/llm/searx/ntfy),
+# whose apps the reconciler refuses to delete so a Nix typo cannot publish them.
+#
+# A service with `access.serviceAuth = true` additionally gets a Service Auth
+# policy accepting any valid account service token, so unattended clients
+# (cloudflared access ssh/tcp) authenticate without an IdP browser login.
 #
 # Provisioning (out of band, never committed):
 #
@@ -43,6 +48,7 @@ let
     services = lib.mapAttrs (_: service: {
       inherit (service) port;
       access = service.access.enable;
+      serviceAuth = service.access.serviceAuth;
     }) cfg.services;
   };
   specFile = pkgs.writeText "cloudflare-sync-spec.json" (builtins.toJSON spec);

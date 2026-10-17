@@ -300,6 +300,204 @@ class CloudflareSyncTests(unittest.TestCase):
             self.assertEqual(results[-1].action, "unchanged")
             self.assertEqual(client.writes(), [])
 
+    # -- Access service tokens (unattended clients) -----------------------
+
+    def test_service_auth_creates_non_identity_policy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = self.make_spec(
+                tmp, {"immich": {"port": 2283, "access": True, "serviceAuth": True}}
+            )
+            client = FakeClient(base_responses(**{APPS_PATH: [], POLICIES_PATH: []}))
+            results = self.module.run(spec, client)
+            self.assertEqual([r.action for r in results], ["created"] * 4)
+            writes = client.writes()
+            self.assertEqual(
+                [w[1] for w in writes],
+                [DNS_PATH, POLICIES_PATH, POLICIES_PATH, APPS_PATH],
+            )
+            service_policy = writes[2][3]
+            self.assertEqual(service_policy["name"], self.module.SERVICE_AUTH_POLICY_NAME)
+            # The dashboard "Service Auth" action is `non_identity` at the API,
+            # accepting any token minted in the account rather than naming one.
+            self.assertEqual(service_policy["decision"], "non_identity")
+            self.assertEqual(
+                service_policy["include"], [{"any_valid_service_token": {}}]
+            )
+            self.assertEqual(service_policy["precedence"], 2)
+            app = writes[3][3]
+            self.assertEqual([p["precedence"] for p in app["policies"]], [1, 2])
+
+    def test_service_auth_absent_creates_only_the_email_policy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = self.make_spec(tmp, {"immich": {"port": 2283, "access": True}})
+            client = FakeClient(base_responses(**{APPS_PATH: [], POLICIES_PATH: []}))
+            self.module.run(spec, client)
+            names = [w[3]["name"] for w in client.writes() if w[1] == POLICIES_PATH]
+            self.assertEqual(names, [f"allow {EMAIL}"])
+
+    def test_service_auth_unchanged_when_policies_present(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = self.make_spec(
+                tmp, {"immich": {"port": 2283, "access": True, "serviceAuth": True}}
+            )
+            client = FakeClient(
+                base_responses(
+                    **{
+                        DNS_PATH: [{"id": "rec1", "content": PROXY_TARGET, "proxied": True}],
+                        APPS_PATH: [
+                            {
+                                "id": "app1",
+                                "domain": f"immich.{ZONE}",
+                                "session_duration": "24h",
+                                "policies": ["pol1", "pol2"],
+                            }
+                        ],
+                        POLICIES_PATH: [
+                            {"id": "pol1", "name": f"allow {EMAIL}"},
+                            {"id": "pol2", "name": self.module.SERVICE_AUTH_POLICY_NAME},
+                        ],
+                    }
+                )
+            )
+            results = self.module.run(spec, client)
+            self.assertEqual([r.action for r in results], ["adopted", "unchanged"])
+            self.assertEqual(client.writes(), [])
+
+    def test_service_auth_updates_app_missing_service_policy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = self.make_spec(
+                tmp, {"immich": {"port": 2283, "access": True, "serviceAuth": True}}
+            )
+            client = FakeClient(
+                base_responses(
+                    **{
+                        APPS_PATH: [
+                            {
+                                "id": "app1",
+                                "domain": f"immich.{ZONE}",
+                                "session_duration": "24h",
+                                "policies": [{"id": "pol1", "precedence": 1}],
+                            }
+                        ],
+                        POLICIES_PATH: [
+                            {"id": "pol1", "name": f"allow {EMAIL}"},
+                            {"id": "pol2", "name": self.module.SERVICE_AUTH_POLICY_NAME},
+                        ],
+                    }
+                )
+            )
+            results = self.module.run(spec, client)
+            self.assertEqual(results[-1].action, "updated")
+            update = client.writes()[-1]
+            self.assertEqual(update[1], f"{APPS_PATH}/app1")
+            self.assertEqual([p["precedence"] for p in update[3]["policies"]], [1, 2])
+
+    # -- Protected hostnames (a typo must never publish them) -------------
+
+    def test_protected_hostname_refuses_deletion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = self.make_spec(
+                tmp, {"ssh": {"port": 22, "protocol": "ssh", "access": False}}
+            )
+            client = FakeClient(
+                base_responses(
+                    **{
+                        DNS_PATH: [{"id": "rec1", "content": PROXY_TARGET, "proxied": True}],
+                        APPS_PATH: [{"id": "app1", "domain": f"ssh.{ZONE}"}],
+                    }
+                )
+            )
+            results = self.module.run(spec, client)
+            self.assertEqual(results[-1].action, "protected")
+            self.assertIn("ssh", results[-1].detail)
+            self.assertEqual([c for c in client.writes() if c[0] == "DELETE"], [])
+
+    def test_protected_hostname_refusal_is_an_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = self.make_spec(
+                tmp, {"ssh": {"port": 22, "protocol": "ssh", "access": False}}
+            )
+            client = FakeClient(
+                base_responses(
+                    **{
+                        DNS_PATH: [{"id": "rec1", "content": PROXY_TARGET, "proxied": True}],
+                        APPS_PATH: [{"id": "app1", "domain": f"ssh.{ZONE}"}],
+                    }
+                )
+            )
+            self.assertEqual(self.run_main(spec, client, check=False), 2)
+            self.assertEqual([c for c in client.writes() if c[0] == "DELETE"], [])
+
+    def test_protected_hostname_refusal_mutates_nothing_in_check_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = self.make_spec(
+                tmp, {"llm": {"port": 8081, "protocol": "tcp", "access": False}}
+            )
+            client = FakeClient(
+                base_responses(
+                    **{
+                        DNS_PATH: [{"id": "rec1", "content": PROXY_TARGET, "proxied": True}],
+                        APPS_PATH: [{"id": "app1", "domain": f"llm.{ZONE}"}],
+                    }
+                )
+            )
+            self.assertEqual(self.run_main(spec, client, check=True), 2)
+            self.assertEqual(client.writes(), [])
+
+    def test_protected_subdomains_are_the_critical_set(self):
+        self.assertEqual(
+            self.module.PROTECTED_SUBDOMAINS,
+            frozenset({"ssh", "llm", "searx", "ntfy"}),
+        )
+
+    def test_protected_hostname_refused_even_without_a_live_app(self):
+        # A stale or hand-edited spec that clears `access.enable` must still be
+        # refused: the DNS record and tunnel ingress already publish the service.
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = self.make_spec(
+                tmp, {"ssh": {"port": 22, "protocol": "ssh", "access": False}}
+            )
+            client = FakeClient(
+                base_responses(
+                    **{
+                        DNS_PATH: [{"id": "rec1", "content": PROXY_TARGET, "proxied": True}],
+                        APPS_PATH: [],
+                    }
+                )
+            )
+            results = self.module.run(spec, client)
+            self.assertEqual(results[-1].action, "protected")
+            self.assertEqual(client.writes(), [])
+
+    def test_access_updated_when_an_extra_policy_is_attached(self):
+        # Extra live policies are drift to revert, not `unchanged`: an app must
+        # carry exactly the policies the config declares.
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = self.make_spec(tmp, {"immich": {"port": 2283, "access": True}})
+            client = FakeClient(
+                base_responses(
+                    **{
+                        DNS_PATH: [{"id": "rec1", "content": PROXY_TARGET, "proxied": True}],
+                        APPS_PATH: [
+                            {
+                                "id": "app1",
+                                "domain": f"immich.{ZONE}",
+                                "session_duration": "24h",
+                                "policies": ["pol1", "pol-extra"],
+                            }
+                        ],
+                        POLICIES_PATH: [
+                            {"id": "pol1", "name": f"allow {EMAIL}"},
+                            {"id": "pol-extra", "name": "include everyone"},
+                        ],
+                    }
+                )
+            )
+            results = self.module.run(spec, client)
+            self.assertEqual(results[-1].action, "updated")
+            update = client.writes()[-1]
+            self.assertEqual(update[3]["policies"], [{"id": "pol1", "precedence": 1}])
+
     # -- --check ----------------------------------------------------------
 
     def run_main(self, spec, client, check):
@@ -368,6 +566,14 @@ class CloudflareSyncTests(unittest.TestCase):
             spec = self.make_spec(tmp, {"calibre": {"port": 8181, "access": False}})
             del spec["zone"]
             code = self.run_main(spec, FakeClient(base_responses()), check=False)
+            self.assertEqual(code, 2)
+
+    def test_main_exits_two_when_services_is_not_an_object(self):
+        # `services` as a list raises AttributeError; it must be an error (2),
+        # never drift (1) or a crash that the shell reports as 1.
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = self.make_spec(tmp, [])
+            code = self.run_main(spec, FakeClient(base_responses()), check=True)
             self.assertEqual(code, 2)
 
     def test_main_exits_two_when_spec_file_is_missing(self):

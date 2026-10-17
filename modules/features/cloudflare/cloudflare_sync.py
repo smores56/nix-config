@@ -9,15 +9,31 @@ for each declared subdomain and adopts an existing matching record, but never
 deletes one — an orphan that points at the tunnel without ingress simply hits
 the 404 default. Access applications are the exception: disabling Access (or
 removing the entry) deletes the app, so turning it off genuinely makes the
-endpoint public.
+endpoint public — except for a small set of protected hostnames (ssh/llm/
+searx/ntfy): their apps are never deleted, because a Nix typo that clears
+`access.enable` must not publish them. The reconciler refuses and reports
+loudly instead.
+
+A service may also request `serviceAuth`: an extra Access policy whose action
+is the dashboard's "Service Auth" (the API's `non_identity` decision) with a
+selector that accepts *any* valid account service token. The operator mints the
+token in the dashboard; the reconciler never names one, so unattended clients
+(`cloudflared access ssh|tcp`) authenticate without an IdP browser login while
+the email allow-list policy stays as a human fallback.
 
 The tunnel UUID is never authored: it is read out of the tunnel credentials
 file's `TunnelID` at runtime and used to build `<uuid>.cfargotunnel.com`.
 
 `--check` prints the diff, mutates nothing, and exits non-zero when drift
 exists, so CI or a rebuild can detect a dashboard edit that the next apply
-would revert. Exit codes: 0 clean, 1 drift, 2 an API or spec error (so a
-permission problem is never mistaken for drift).
+would revert. Exit codes: 0 clean, 1 drift, 2 an API, spec, or safety error (a
+permission problem, a malformed spec, or a refused deletion of a protected
+hostname are never mistaken for drift).
+
+Scope of drift repair: the reconciler owns each app's *set* of policies (an
+extra live policy is reverted) and adopts shared account policies by name. It
+does not re-verify or revert the *contents* of an adopted shared policy — only
+the account owner can edit those in the dashboard, so that is out of scope.
 """
 
 import argparse
@@ -35,6 +51,15 @@ DEFAULT_TOKEN_FILE = "/var/lib/cloudflare/api-token"
 DEFAULT_SPEC_FILE = "/etc/cloudflare-sync/spec.json"
 SESSION_DURATION = "24h"
 TUNNEL_SUFFIX = ".cfargotunnel.com"
+# The dashboard's "Service Auth" action is the API's `non_identity` decision
+# paired with a selector that accepts any token in the account, so the operator
+# mints the token in the dashboard and the reconciler never names one.
+SERVICE_AUTH_DECISION = "non_identity"
+SERVICE_AUTH_POLICY_NAME = "service auth (any valid service token)"
+# Hostnames whose Access app is never deleted. A Nix typo that clears
+# `access.enable` must not silently publish sshd/the LLM/SearXNG; ntfy is
+# already protected by its own assertion (modules/nixos/notify.nix).
+PROTECTED_SUBDOMAINS = frozenset({"ssh", "llm", "searx", "ntfy"})
 # Actions that mean the live state differs from the desired state.
 DRIFT_ACTIONS = frozenset({"created", "updated", "deleted"})
 
@@ -171,7 +196,35 @@ def reconcile_dns(client, zone_id, fqdn, tunnel_id, dry_run):
     return [Result("updated", f"DNS {fqdn} -> {content} (was {record.get('content')})")]
 
 
-def reconcile_access(client, account_id, fqdn, email, wanted, dry_run):
+def _ensure_policy(client, account_id, name, decision, include, precedence, dry_run):
+    """Return (policy_id, result). Idempotent by policy name.
+
+    A reusable account policy that already exists is adopted; otherwise one is
+    created. In `dry_run` a missing policy yields `(None, Result("created"))`,
+    since no id exists yet — the caller must then treat the app as needing an
+    update rather than reporting it unchanged.
+    """
+    policies = client.paginate(
+        f"/accounts/{account_id}/access/policies", params={"per_page": 100}
+    )
+    policy = next((p for p in policies if p.get("name") == name), None)
+    if policy is not None:
+        return policy["id"], None
+    if dry_run:
+        return None, Result("created", f"Access policy {name}")
+    created = client.post(
+        f"/accounts/{account_id}/access/policies",
+        {
+            "name": name,
+            "decision": decision,
+            "include": include,
+            "precedence": precedence,
+        },
+    )
+    return created["id"], Result("created", f"Access policy {name}")
+
+
+def reconcile_access(client, account_id, sub, fqdn, email, wanted, service_auth, dry_run):
     apps = [
         app
         for app in client.paginate(
@@ -181,6 +234,20 @@ def reconcile_access(client, account_id, fqdn, email, wanted, dry_run):
     ]
 
     if not wanted:
+        if sub in PROTECTED_SUBDOMAINS:
+            # Defence in depth: a typo (or a stale hand-edited spec) that clears
+            # `access.enable` must not make a critical hostname public. Never
+            # delete its app — and refuse even when no app exists yet, because
+            # the DNS record and tunnel ingress already publish the loopback
+            # service. Report a `protected` result (main escalates it to a loud
+            # error); the Nix assertion should have failed evaluation first.
+            return [
+                Result(
+                    "protected",
+                    f"refused to remove Access for {fqdn}: {sub!r} is a "
+                    f"protected hostname and is never made public",
+                )
+            ]
         if not apps:
             return [Result("unchanged", f"Access {fqdn}: off")]
         # Delete every app on this hostname, not just the first: a second app left
@@ -191,25 +258,39 @@ def reconcile_access(client, account_id, fqdn, email, wanted, dry_run):
         return [Result("deleted", f"Access app {fqdn} ({app['id']})") for app in apps]
 
     results = []
-    policy_name = f"allow {email}"
-    policies = client.paginate(
-        f"/accounts/{account_id}/access/policies", params={"per_page": 100}
+    wanted_policies = []
+    policies_changed = False
+
+    email_id, created = _ensure_policy(
+        client,
+        account_id,
+        f"allow {email}",
+        "allow",
+        [{"email": {"email": email}}],
+        1,
+        dry_run,
     )
-    policy = next((p for p in policies if p.get("name") == policy_name), None)
-    policy_id = policy["id"] if policy else None
-    if policy is None:
-        if not dry_run:
-            created = client.post(
-                f"/accounts/{account_id}/access/policies",
-                {
-                    "name": policy_name,
-                    "decision": "allow",
-                    "include": [{"email": {"email": email}}],
-                    "precedence": 1,
-                },
-            )
-            policy_id = created["id"]
-        results.append(Result("created", f"Access policy {policy_name}"))
+    policies_changed = policies_changed or created is not None
+    if created:
+        results.append(created)
+    if email_id:
+        wanted_policies.append((email_id, 1))
+
+    if service_auth:
+        token_id, created = _ensure_policy(
+            client,
+            account_id,
+            SERVICE_AUTH_POLICY_NAME,
+            SERVICE_AUTH_DECISION,
+            [{"any_valid_service_token": {}}],
+            2,
+            dry_run,
+        )
+        policies_changed = policies_changed or created is not None
+        if created:
+            results.append(created)
+        if token_id:
+            wanted_policies.append((token_id, 2))
 
     body = {
         "name": fqdn,
@@ -217,8 +298,11 @@ def reconcile_access(client, account_id, fqdn, email, wanted, dry_run):
         "type": "self_hosted",
         "session_duration": SESSION_DURATION,
     }
-    if policy_id:
-        body["policies"] = [{"id": policy_id, "precedence": 1}]
+    if wanted_policies:
+        body["policies"] = [
+            {"id": policy_id, "precedence": precedence}
+            for policy_id, precedence in wanted_policies
+        ]
 
     if not apps:
         if not dry_run:
@@ -227,13 +311,18 @@ def reconcile_access(client, account_id, fqdn, email, wanted, dry_run):
         return results
 
     app = apps[0]
-    policy_ids = {
+    live_ids = {
         p["id"] if isinstance(p, dict) else p for p in (app.get("policies") or [])
     }
+    wanted_ids = {policy_id for policy_id, _ in wanted_policies}
+    # Equality, not a subset: this app's policies are fully owned by the config,
+    # so an extra live policy (e.g. a permissive one added in the dashboard) is
+    # drift to revert, not something to report `unchanged`.
     already_correct = (
         app.get("session_duration") == SESSION_DURATION
-        and policy_id is not None
-        and policy_id in policy_ids
+        and not policies_changed
+        and bool(wanted_ids)
+        and wanted_ids == live_ids
     )
     if already_correct:
         results.append(Result("unchanged", f"Access app {fqdn}"))
@@ -255,7 +344,14 @@ def run(spec, client, dry_run=False):
         fqdn = f"{sub}.{zone}"
         results += reconcile_dns(client, zone_id, fqdn, tunnel_id, dry_run)
         results += reconcile_access(
-            client, account_id, fqdn, email, bool(service.get("access")), dry_run
+            client,
+            account_id,
+            sub,
+            fqdn,
+            email,
+            bool(service.get("access")),
+            bool(service.get("serviceAuth")),
+            dry_run,
         )
     return results
 
@@ -288,13 +384,26 @@ def main(argv=None, client_factory=None):
             spec = json.load(handle)
         client = factory(read_token(args.token_file))
         results = run(spec, client, dry_run=args.check)
-    except (CloudflareError, OSError, ValueError, KeyError) as exc:
+    # AttributeError/TypeError catch a malformed spec (e.g. `services` as a list,
+    # or a service value that is not an object) so it is reported as an error
+    # (exit 2), never mistaken for drift (exit 1).
+    except (CloudflareError, OSError, ValueError, KeyError, AttributeError, TypeError) as exc:
         print(f"cloudflare-sync: {exc}", file=sys.stderr)
         return 2
 
     for result in results:
         verb = f"would {result.action}" if args.check else result.action
         print(f"{verb}: {result.detail}")
+
+    if any(r.action == "protected" for r in results):
+        print(
+            "cloudflare-sync: REFUSED to delete Cloudflare Access for a protected "
+            "hostname (ssh/llm/searx/ntfy) and left it in place: "
+            "dotfiles.webProxy.services declares it public, which must never happen. "
+            "Fix the config — do not work around this.",
+            file=sys.stderr,
+        )
+        return 2
 
     if args.check and any(r.action in DRIFT_ACTIONS for r in results):
         print("cloudflare-sync: drift detected", file=sys.stderr)

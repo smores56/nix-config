@@ -275,6 +275,37 @@ in
               port = 2586;
               access.enable = true;
             };
+            # sshd (key-only, loopback; see modules/nixos/ssh.nix) is reachable
+            # only through the tunnel. The Service Auth policy lets `cloudflared
+            # access ssh` run unattended; the email policy keeps a browser
+            # fallback. Must never lose Access (assertion in web-proxy.nix).
+            ssh = {
+              port = 22;
+              protocol = "ssh";
+              access = {
+                enable = true;
+                serviceAuth = true;
+              };
+            };
+            # maki reaches llama.cpp (api_key = "none") through the tunnel; the
+            # service token keeps the agent's calls unattended.
+            llm = {
+              port = 8081;
+              protocol = "tcp";
+              access = {
+                enable = true;
+                serviceAuth = true;
+              };
+            };
+            # SearXNG (dotfiles.searchPort); maki's JSON search path uses the
+            # service token, browsers get the email-OTP fallback.
+            searx = {
+              port = 8899;
+              access = {
+                enable = true;
+                serviceAuth = true;
+              };
+            };
           };
         };
         calibre.enable = true;
