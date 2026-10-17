@@ -217,11 +217,6 @@ in
         fingerprint = true;
         photobucket.enable = true;
       };
-      "smores@campfire" = mkHome {
-        displayManager = "niri";
-        nixos = true;
-        noSleep = true;
-      };
       "smores@smortress" = mkHome {
         displayManager = "none";
         nixos = true;
@@ -241,12 +236,6 @@ in
       };
     };
     nixosConfigurations = {
-      "campfire" = mkNixos {
-        hostname = "campfire";
-        displayManager = "niri";
-        exposeSsh = true;
-        noSleep = true;
-      };
       "smorestux" = mkNixos {
         hostname = "smorestux";
         displayManager = "niri";

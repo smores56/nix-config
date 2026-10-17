@@ -102,8 +102,7 @@ public again.
 
 smortress is reached only through the Cloudflare Tunnel — there is no inbound
 port — so the physical console is the out-of-band path. Everything below
-assumes console access or a working client. Until the Tailscale cutover lands,
-`sudo tailscale up` on smortress is a second path.
+assumes console access or a working client.
 
 **No SSH from a client.** The client needs two things from Proton Pass: the
 Access service token (resolved by the `cloudflared-access` wrapper) and an SSH

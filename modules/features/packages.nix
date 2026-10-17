@@ -45,9 +45,6 @@
         _1password-cli
         just
 
-        # networking
-        tailscale
-
         # monitoring
         dua
         tokei
