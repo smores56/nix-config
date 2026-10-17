@@ -3,14 +3,15 @@ set -euo pipefail
 
 # Idempotent bootstrap for a fresh machine with only Nix installed.
 #
-# Usage from Bash, Zsh, or Fish:
+# Usage (flake app):
+#   nix run github:smores56/nix-config#bootstrap
+#
+# Or the served copy, from Bash, Zsh, or Fish:
 #   curl -fsSL bootstrap.sammohr.dev | bash
 #
-# Override auto-detected user/host:
-#   curl -fsSL bootstrap.sammohr.dev | env BOOTSTRAP_USER=smores BOOTSTRAP_HOST=smorespro bash
-#
-# Override repository root:
-#   curl -fsSL bootstrap.sammohr.dev | env BOOTSTRAP_CODE_ROOT="$HOME/code" bash
+# Override auto-detected user/host or the checkout root:
+#   nix run github:smores56/nix-config#bootstrap -- env BOOTSTRAP_USER=smores BOOTSTRAP_HOST=smorespro
+#   BOOTSTRAP_CODE_ROOT="$HOME/code" nix run github:smores56/nix-config#bootstrap
 
 REPO_OWNER="smores56"
 REPO_NAME="nix-config"
@@ -24,8 +25,6 @@ REPO_DIR="${CODE_ROOT}/${GITHUB_HOST}/${REPO_OWNER}/${REPO_NAME}"
 USERNAME="${BOOTSTRAP_USER:-$(whoami)}"
 HOSTNAME="${BOOTSTRAP_HOST:-$(hostname -s 2>/dev/null || hostname)}"
 CONFIG_NAME="${USERNAME}@${HOSTNAME}"
-
-EMAIL="sam@sammohr.dev"
 
 info()  { printf '\033[1;34m[info]\033[0m  %s\n' "$*"; }
 ok()    { printf '\033[1;32m[ok]\033[0m    %s\n' "$*"; }
@@ -142,17 +141,58 @@ ok "home-manager switch complete"
 
 export PATH="${HOME}/.nix-profile/bin:${PATH}"
 
-# ── Phase 4: SSH key generation ───────────────────────────────────
+# ── Phase 4: SSH identities from Proton Pass ──────────────────────
+#
+# Identities live in Proton Pass; the agent home-manager installed serves their
+# private halves over SSH_AUTH_SOCK, so nothing is generated here. The public
+# halves still have to exist on disk because git's `user.signingkey` and
+# `allowed_signers` reference files. The vault labels the keys "Personal" and
+# "Work".
+
+# A shell that predates the home-manager switch (this one) has no SSH_AUTH_SOCK
+# yet; derive the agent's default socket, matching the home-manager module.
+if [ -z "${SSH_AUTH_SOCK:-}" ]; then
+  if [ "$(uname -s)" = "Darwin" ]; then
+    SSH_AUTH_SOCK="$(getconf DARWIN_USER_TEMP_DIR)/proton-pass-agent"
+  else
+    SSH_AUTH_SOCK="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/proton-pass-agent"
+  fi
+  export SSH_AUTH_SOCK
+fi
 
 SSH_KEY="${HOME}/.ssh/id_personal"
-if [ -f "$SSH_KEY" ]; then
-  skip "SSH key already exists at ${SSH_KEY}"
-else
-  info "Generating SSH key..."
+WORK_SSH_KEY="${HOME}/.ssh/id_work"
+
+agent_key() {
+  ssh-add -L 2>/dev/null | grep -iE "^ssh-[^ ]+ [^ ]+ ${1}$" || true
+}
+
+materialise_pub() {
+  local label="$1" dest="$2" key
+  if [ -s "$dest" ]; then
+    skip "Public key already at ${dest}"
+    return
+  fi
+  key="$(agent_key "$label")"
+  if [ -z "$key" ]; then
+    warn "No '${label}' identity from the Proton Pass agent. Log in with:"
+    warn "  PROTON_PASS_KEY_PROVIDER=fs pass-cli login --interactive"
+    warn "then re-run this script."
+    return
+  fi
   mkdir -p "${HOME}/.ssh"
   chmod 700 "${HOME}/.ssh"
-  ssh-keygen -t ed25519 -C "$EMAIL" -f "$SSH_KEY" -N ""
-  ok "SSH key generated"
+  printf '%s\n' "$key" >"$dest"
+  ok "Wrote ${dest} from the Proton Pass agent"
+}
+
+materialise_pub Personal "${SSH_KEY}.pub"
+materialise_pub Work "${WORK_SSH_KEY}.pub"
+
+# `allowed_signers` is written on activation, before these .pub files existed on
+# a fresh host; refresh it now that they do.
+if command -v ssh-allowed-signers >/dev/null 2>&1; then
+  ssh-allowed-signers && ok "Refreshed ~/.ssh/allowed_signers"
 fi
 
 # ── Phase 5: GitHub authentication ────────────────────────────────
@@ -187,27 +227,34 @@ else
   ok "GitHub auth scopes ready"
 fi
 
-SSH_KEY_BLOB="$(awk '{print $2}' "${SSH_KEY}.pub")"
-if gh api user/keys --jq '.[].key' | grep -qF "$SSH_KEY_BLOB"; then
-  skip "SSH authentication key already registered with GitHub"
+if [ ! -s "${SSH_KEY}.pub" ]; then
+  warn "Skipping GitHub SSH key registration: ${SSH_KEY}.pub is missing."
+  warn "Log in to Proton Pass (see Phase 4) and re-run this script."
 else
-  info "Adding SSH authentication key to GitHub..."
-  gh ssh-key add "${SSH_KEY}.pub" --type authentication --title "${CONFIG_NAME}"
-  ok "SSH authentication key added to GitHub"
-fi
+  SSH_KEY_BLOB="$(awk '{print $2}' "${SSH_KEY}.pub")"
+  if gh api user/keys --jq '.[].key' | grep -qF "$SSH_KEY_BLOB"; then
+    skip "SSH authentication key already registered with GitHub"
+  else
+    info "Adding SSH authentication key to GitHub..."
+    gh ssh-key add "${SSH_KEY}.pub" --type authentication --title "${CONFIG_NAME}"
+    ok "SSH authentication key added to GitHub"
+  fi
 
-if gh api user/ssh_signing_keys --jq '.[].key' | grep -qF "$SSH_KEY_BLOB"; then
-  skip "SSH signing key already registered with GitHub"
-else
-  info "Adding SSH signing key to GitHub..."
-  gh ssh-key add "${SSH_KEY}.pub" --type signing --title "${CONFIG_NAME} signing"
-  ok "SSH signing key added to GitHub"
+  if gh api user/ssh_signing_keys --jq '.[].key' | grep -qF "$SSH_KEY_BLOB"; then
+    skip "SSH signing key already registered with GitHub"
+  else
+    info "Adding SSH signing key to GitHub..."
+    gh ssh-key add "${SSH_KEY}.pub" --type signing --title "${CONFIG_NAME} signing"
+    ok "SSH signing key added to GitHub"
+  fi
 fi
 
 # ── Phase 6: Switch remote to SSH ─────────────────────────────────
 
 CURRENT_REMOTE="$(git -C "$REPO_DIR" remote get-url origin 2>/dev/null || true)"
-if [ "$CURRENT_REMOTE" = "$REPO_URL_SSH" ]; then
+if ! ssh-add -L >/dev/null 2>&1; then
+  warn "No SSH identity from the Proton Pass agent; leaving the HTTPS remote in place."
+elif [ "$CURRENT_REMOTE" = "$REPO_URL_SSH" ]; then
   skip "Remote already using SSH"
 else
   info "Switching remote from HTTPS to SSH..."
@@ -247,7 +294,4 @@ ok "Bootstrap complete for ${CONFIG_NAME}!"
 echo ""
 info "Next steps:"
 echo "  - Open a new terminal to load fish shell"
-if is_nixos; then
-  echo "  - Run 'sudo tailscale up' to join the tailnet"
-fi
 echo "  - Verify: gh auth status"

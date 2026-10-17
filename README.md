@@ -39,11 +39,13 @@ sets its own options in `mkHome`/`mkNixos` calls.
 ### Fresh machine (requires only Nix)
 
 ```sh
-curl -fsSL bootstrap.sammohr.dev | bash
+nix run github:smores56/nix-config#bootstrap
 ```
 
-This clones the repo via `ghq`, runs `home-manager switch`, generates SSH
-keys, authenticates GitHub, and (on NixOS) applies the system configuration.
+The served copy (`curl -fsSL bootstrap.sammohr.dev | bash`) runs the same
+script. Either way it clones the repo via `ghq`, runs `home-manager switch`,
+materialises the SSH public keys from the Proton Pass agent, authenticates
+GitHub, and (on NixOS) applies the system configuration.
 
 ### Manual
 
