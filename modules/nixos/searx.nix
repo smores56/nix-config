@@ -1,9 +1,8 @@
 # Self-hosted SearXNG (meta search) so the agent's web search stays on
 # infrastructure we own instead of paying a search vendor. Only the host with
-# `dotfiles.search = true` runs it — currently smortress, which is always on and
-# reachable over the tailnet. tailscale0 is already a trusted interface
-# (modules/nixos/networking.nix), so the port needs no firewall rule and off-LAN
-# clients are still dropped.
+# `dotfiles.search = true` runs it — currently smortress, always on. It binds
+# loopback: the Cloudflare Tunnel proxies searx.<domain> to it, and the tunnel's
+# Access app is the only way in.
 #
 # The maki `websearch` plugin calls the JSON API below; the bundled Exa/You.com
 # tool is disabled in the maki module.
@@ -28,14 +27,16 @@ in
     services.searx = {
       enable = true;
       environmentFile = config.sops.templates."searxng-secret".path;
-      # No limiter: it exists to throttle untrusted clients and needs Valkey.
-      # This instance is tailnet-only; JSON stays on for the maki plugin.
+      # The limiter throttles scraping and abuse on the public hostname; it
+      # needs a Redis, which the module creates locally. JSON stays on for the
+      # maki plugin.
+      redisCreateLocally = true;
       settings = {
         server = {
-          bind_address = "0.0.0.0";
+          bind_address = "127.0.0.1";
           port = cfg.searchPort;
           secret_key = "$SEARX_SECRET_KEY";
-          limiter = false;
+          limiter = true;
         };
         search.formats = [
           "html"
