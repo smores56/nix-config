@@ -104,6 +104,7 @@ in
     exposeSsh = lib.mkOption {
       type = lib.types.bool;
       default = false;
+      description = "Host runs sshd, bound to loopback so it is reachable only through the Cloudflare Tunnel (cloudflared dials 127.0.0.1:22). Also disables sudo password prompts for wheel.";
     };
     nvidia = lib.mkOption {
       type = lib.types.bool;

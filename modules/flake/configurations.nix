@@ -254,6 +254,7 @@ in
       };
       "smortress" = mkNixos {
         hostname = "smortress";
+        exposeSsh = true;
         displayManager = "none";
         nvidia = true;
         llm = true;
