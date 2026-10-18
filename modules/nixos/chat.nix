@@ -82,6 +82,29 @@ in
         };
         DEFAULT_MODELS = "${neuralwatt.providerId}.deepseek-v4.1-flash";
 
+        # Start every new chat with web search and the code interpreter already
+        # toggled on. The per-chat toggles read model.info.meta.defaultFeatureIds,
+        # but only when the model's matching *capability* is truthy, so both must
+        # be set. `models.default_metadata` is applied to every model (per-model
+        # overrides still win), so this covers both connections in one place.
+        DEFAULT_MODEL_METADATA = builtins.toJSON {
+          capabilities = {
+            web_search = true;
+            code_interpreter = true;
+          };
+          defaultFeatureIds = [
+            "web_search"
+            "code_interpreter"
+          ];
+        };
+        # `models.default_metadata` is a PersistentConfig: the env value is only
+        # seeded into the DB when the row is absent, and the first launch already
+        # stored an empty one — so the var above would be inert without this.
+        # Turning persistence off makes this file authoritative for all config,
+        # which is what we want here anyway: the DB can then never drift from
+        # chat.nix. Trade-off: admin-UI config edits no longer survive a restart.
+        ENABLE_PERSISTENT_CONFIG = "False";
+
         # Web search goes through the co-located SearXNG over loopback; its JSON
         # API is already enabled in modules/nixos/searx.nix. The engine appends
         # `format=json` itself, so only the bare endpoint is needed here.
