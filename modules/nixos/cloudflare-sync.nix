@@ -4,8 +4,9 @@
 # CNAME is adopted, a missing one created, a changed one updated, and nothing is
 # ever deleted — so unrelated records are safe. Access applications *are*
 # deleted when `access.enable` is turned off, since that is what makes an
-# endpoint public again — except for a protected allowlist (ssh/llm/searx/ntfy),
-# whose apps the reconciler refuses to delete so a Nix typo cannot publish them.
+# endpoint public again — except for a protected allowlist
+# (ssh/llm/searx/ntfy/chat), whose apps the reconciler refuses to delete so a
+# Nix typo cannot publish them.
 #
 # A service with `access.serviceAuth = true` additionally gets a Service Auth
 # policy accepting any valid account service token, so unattended clients

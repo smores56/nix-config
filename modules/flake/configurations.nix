@@ -155,6 +155,7 @@ let
     "immich"
     "backup"
     "notify"
+    "chat"
   ];
   # The same list as an attrset, for intersectAttrs-style filtering.
   hostKnobsSet = lib.genAttrs hostKnobs (_: null);

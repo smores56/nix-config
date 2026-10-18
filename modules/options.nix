@@ -224,6 +224,25 @@ in
       default = { };
       description = "calibre OPDS content server exposed over the Cloudflare Tunnel.";
     };
+    chat = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkEnableOption "Open WebUI chat front end (NixOS-only)";
+          port = lib.mkOption {
+            type = lib.types.port;
+            default = ports.chat;
+            description = "Loopback port for Open WebUI. Single-sourced from modules/ports.nix so the listener and the tunnel ingress cannot drift.";
+          };
+          jupyterPort = lib.mkOption {
+            type = lib.types.port;
+            default = ports.jupyter;
+            description = "Loopback port for the code-interpreter Jupyter sandbox. Never exposed; reachable only by Open WebUI.";
+          };
+        };
+      };
+      default = { };
+      description = "Self-hosted Open WebUI chat, exposed over the Cloudflare Tunnel.";
+    };
     navidrome = lib.mkOption {
       type = lib.types.submodule {
         options = {

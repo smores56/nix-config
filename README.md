@@ -96,7 +96,7 @@ refused protected-hostname deletion is never mistaken for drift). DNS is
 removed; a CNAME at a declared name pointing elsewhere is **updated** to the
 tunnel (it logs the previous target). Access applications are the one exception
 — disabling `access.enable` deletes the app, making the endpoint public again —
-except for the protected hostnames (ssh/llm/searx/ntfy, matched by name or
+except for the protected hostnames (ssh/llm/searx/ntfy/chat, matched by name or
 origin port), whose apps are never deleted: the reconciler refuses and exits 2.
 
 ### Immich from mobile
@@ -150,7 +150,7 @@ Rotate the token in the dashboard, update `cf-api-token` in
 with `sudo cloudflare-sync --check`.
 
 **Access misconfiguration.** A typo that clears `access.enable` on
-`ssh`/`llm`/`searx`/`ntfy` fails evaluation (`modules/nixos/web-proxy.nix`),
+`ssh`/`llm`/`searx`/`ntfy`/`chat` fails evaluation (`modules/nixos/web-proxy.nix`),
 and the reconciler refuses to delete those apps even when asked
 (`PROTECTED_SUBDOMAINS` in `modules/features/cloudflare/cloudflare_sync.py`).
 An Access *policy* mistake (wrong email) still locks out the browser — fix it

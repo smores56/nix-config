@@ -496,7 +496,7 @@ class CloudflareSyncTests(unittest.TestCase):
         # Behavioural, not a restatement of the constant: clearing
         # access.enable on any protected hostname must be refused, and refused
         # *before* any DNS record is written.
-        for sub in ("ssh", "llm", "searx", "ntfy"):
+        for sub in ("ssh", "llm", "searx", "ntfy", "chat"):
             with self.subTest(sub=sub), tempfile.TemporaryDirectory() as tmp:
                 spec = self.make_spec(tmp, {sub: {"port": 1234, "access": False}})
                 client = FakeClient(

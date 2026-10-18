@@ -82,6 +82,9 @@ in
     # 10.0.0.0/24 is the LAN subnet. WAN access stays tunnel-only.
     immich.lanSources = [ "10.0.0.0/24" ];
     navidrome.enable = true;
+    # Open WebUI: single-user chat at chat.<domain>, loopback-only (the tunnel
+    # ingress and Access are added with the rest of the chat feature).
+    chat.enable = true;
     # These generic datasets replaced the old Immich-specific restic
     # pipeline, which has been removed.
     backup.enable = true;
