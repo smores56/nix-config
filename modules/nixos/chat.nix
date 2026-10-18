@@ -15,6 +15,7 @@
 let
   cfg = config.dotfiles.chat;
   inherit (aiProviders) neuralwatt smortress;
+  ports = import ../ports.nix;
 in
 {
   config = lib.mkIf cfg.enable {
@@ -56,6 +57,13 @@ in
           };
         };
         DEFAULT_MODELS = "${neuralwatt.providerId}.deepseek-v4.1-flash";
+
+        # Web search goes through the co-located SearXNG over loopback; its JSON
+        # API is already enabled in modules/nixos/searx.nix. The engine appends
+        # `format=json` itself, so only the bare endpoint is needed here.
+        ENABLE_WEB_SEARCH = "True";
+        WEB_SEARCH_ENGINE = "searxng";
+        SEARXNG_QUERY_URL = "http://127.0.0.1:${toString ports.searx}/search";
       };
     };
   };
