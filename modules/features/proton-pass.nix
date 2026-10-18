@@ -14,9 +14,19 @@ in
 {
   services.proton-pass-agent.enable = true;
   home.sessionVariables.PROTON_PASS_KEY_PROVIDER = keyProvider;
-  systemd.user.services.proton-pass-agent.Service.Environment = [
-    "PROTON_PASS_KEY_PROVIDER=${keyProvider}"
-  ];
+
+  # The user manager starts this before the network is up, so pass-cli's first
+  # vault lookups fail. The default start rate limiting gives up after 5 tries
+  # in 10s (start-limit-hit), leaving the agent dead until a manual restart;
+  # retry indefinitely instead so it recovers on its own once DNS works.
+  systemd.user.services.proton-pass-agent = {
+    Unit.StartLimitIntervalSec = 0;
+    Service = {
+      RestartSec = 5;
+      Environment = [ "PROTON_PASS_KEY_PROVIDER=${keyProvider}" ];
+    };
+  };
+
   launchd.agents.proton-pass-agent.config.EnvironmentVariables = {
     PROTON_PASS_KEY_PROVIDER = keyProvider;
   };
