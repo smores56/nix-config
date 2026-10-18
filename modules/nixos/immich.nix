@@ -13,9 +13,8 @@ in
       enable = true;
       inherit (cfg) mediaLocation;
 
-      # Bind all interfaces but open no firewall port: the only path in is
-      # cloudflared dialing 127.0.0.1:2283 over the tunnel; the firewall drops
-      # every other attempt.
+      # Bind all interfaces; reachability is governed by the firewall rule
+      # below (and the tunnel dials 127.0.0.1:2283).
       host = "0.0.0.0";
       openFirewall = false;
 
@@ -29,5 +28,12 @@ in
         };
       };
     };
+
+    # The mobile app uploads over the LAN at home (fast, and bypasses the
+    # Cloudflare upload cap) via its local-network URL; open the port only on
+    # the listed interfaces, never to the WAN. Empty keeps Immich tunnel-only.
+    networking.firewall.interfaces = lib.genAttrs cfg.lanInterfaces (_: {
+      allowedTCPPorts = [ config.services.immich.port ];
+    });
   };
 }

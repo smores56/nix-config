@@ -99,6 +99,18 @@ tunnel (it logs the previous target). Access applications are the one exception
 except for the protected hostnames (ssh/llm/searx/ntfy, matched by name or
 origin port), whose apps are never deleted: the reconciler refuses and exits 2.
 
+### Immich from mobile
+
+The Immich mobile app takes a primary server URL (the tunnel hostname,
+`https://immich.<domain>`) plus a **local network URL** for when the phone is on
+the home LAN. smortress opens Immich's port only on its LAN interface
+(`dotfiles.immich.lanInterfaces`) — point the local URL at
+`http://<lan-ip>:2283`. The WAN stays tunnel-only.
+
+Cloudflare caps a single upload at 100 MB and Immich neither chunks nor resumes,
+so uploads over the tunnel fail with a 413 above that limit; the LAN URL avoids
+the cap at home. Configure both URLs in the app's server settings.
+
 ### Recovery
 
 smortress is reached only through the Cloudflare Tunnel — there is no inbound

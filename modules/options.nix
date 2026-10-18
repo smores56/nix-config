@@ -267,6 +267,11 @@ in
             default = "/var/lib/immich";
             description = "Directory Immich stores its managed library in. The default is created by the Immich module.";
           };
+          lanInterfaces = lib.mkOption {
+            type = lib.types.listOf lib.types.str;
+            default = [ ];
+            description = "Network interfaces on which to open the Immich port for LAN clients (the mobile app's local-network URL). Empty keeps Immich tunnel-only.";
+          };
         };
       };
       default = { };
