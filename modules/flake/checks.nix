@@ -224,7 +224,7 @@ in
 
         # PROTECTED_PORTS/PROTECTED_SUBDOMAINS in cloudflare_sync.py are a second
         # line of defence kept deliberately independent of Nix (a stale spec must
-        # not publish sshd/the LLM/SearXNG/ntfy). Fail loudly if they drift from
+        # not publish sshd/the LLM/SearXNG/ntfy/chat). Fail loudly if they drift from
         # the Nix sources: modules/ports.nix plus sshd's 22, and
         # modules/protected-services.nix, which web-proxy.nix shares.
         protected-services-sync =

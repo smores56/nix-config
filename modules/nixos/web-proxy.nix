@@ -11,7 +11,7 @@ let
 
   # Hostnames that must never be reachable without Access in front of them: a
   # typo that clears `access.enable` would otherwise publish sshd/the LLM/
-  # SearXNG/ntfy to the internet. The reconciler refuses to *remove* their
+  # SearXNG/ntfy/chat to the internet. The reconciler refuses to *remove* their
   # Access too (defence in depth, mirroring PROTECTED_SUBDOMAINS in
   # modules/features/cloudflare/cloudflare_sync.py, which also guards their
   # ports), but failing evaluation here stops the mistake before anything is

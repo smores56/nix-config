@@ -3,7 +3,7 @@
 
 cloudflare_sync.py hard-codes PROTECTED_PORTS/PROTECTED_SUBDOMAINS as a second
 line of defence, so a stale or hand-edited spec cannot publish sshd/the LLM/
-SearXNG/ntfy over the tunnel. Those copies must stay in sync with
+SearXNG/ntfy/chat over the tunnel. Those copies must stay in sync with
 modules/ports.nix (plus sshd's 22) and modules/protected-services.nix; the flake's
 `protected-services-sync` check passes the expected sets in, so this script needs
 no Nix parsing.

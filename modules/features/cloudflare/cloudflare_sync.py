@@ -10,7 +10,7 @@ deletes one — an orphan that points at the tunnel without ingress simply hits
 the 404 default. Access applications are the exception: disabling Access (or
 removing the entry) deletes the app, so turning it off genuinely makes the
 endpoint public — except for a small set of protected services (ssh/llm/
-searx/ntfy, matched by hostname or port): their apps are never deleted, because
+searx/ntfy/chat, matched by hostname or port): their apps are never deleted, because
 a Nix typo that clears `access.enable` must not publish them. The reconciler refuses and reports
 loudly instead.
 
@@ -57,18 +57,19 @@ TUNNEL_SUFFIX = ".cfargotunnel.com"
 SERVICE_AUTH_DECISION = "non_identity"
 SERVICE_AUTH_POLICY_NAME = "service auth (any valid service token)"
 # Hostnames whose Access app is never deleted. A Nix typo that clears
-# `access.enable` must not silently publish sshd/the LLM/SearXNG; ntfy is
+# `access.enable` must not silently publish sshd/the LLM/SearXNG/chat; ntfy is
 # already protected by its own assertion (modules/nixos/notify.nix). Mirrors the
 # `protected` list in modules/nixos/web-proxy.nix: that assertion stops the
 # mistake at evaluation; this is the second line of defence for a stale or
 # hand-edited spec.
-PROTECTED_SUBDOMAINS = frozenset({"ssh", "llm", "searx", "ntfy"})
+PROTECTED_SUBDOMAINS = frozenset({"ssh", "llm", "searx", "ntfy", "chat"})
 # The origin ports those services listen on: modules/ports.nix for llm/searx/
-# ntfy, modules/options.nix for ntfy's knob, modules/nixos/ssh.nix for sshd.
+# ntfy/chat/jupyter, modules/options.nix for ntfy's knob, modules/nixos/ssh.nix
+# for sshd.
 # Protection follows the service, not just its label: a rename that keeps the
 # port, or a port move that keeps the name, is still refused, so a one-sided
 # edit cannot slip a critical endpoint out from under the guard.
-PROTECTED_PORTS = frozenset({22, 8081, 8899, 2586})
+PROTECTED_PORTS = frozenset({22, 8080, 8081, 8888, 8899, 2586})
 
 
 def is_protected(sub, port):
