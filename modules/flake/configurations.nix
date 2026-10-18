@@ -7,6 +7,7 @@ let
     concord
     stylix
     sops-nix
+    disko
     ;
   inherit (inputs.nixpkgs) lib;
 
@@ -104,6 +105,9 @@ let
     ../options.nix
     ../features/ai/providers.nix
     sops-nix.nixosModules.sops
+    # Declarative disk layouts: a host with modules/hosts/<name>/disko.nix
+    # derives its fileSystems from disko.devices (see AGENTS.md).
+    disko.nixosModules.disko
   ]
   ++ importTree ../nixos;
 
