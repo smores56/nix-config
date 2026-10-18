@@ -66,7 +66,8 @@ Hosts are discovered from `modules/hosts/*/`; adding one never edits
 3. `modules/hosts/<hostname>/hardware.nix` — hardware config from
    `nixos-generate-config` (kernel modules, CPU microcode). **Optional**:
    `nixos-anywhere` generates it during the install, so a host can be authored
-   without it.
+   without it. Always generate with `--no-filesystems` (disko owns
+   `fileSystems`); `nixos-anywhere` passes the flag for you.
 
 `nixos = true` builds `nixosConfigurations.<hostname>`; `home = true` builds
 `homeConfigurations.<username>@<hostname>`. The `dotfiles` attrset is shared by
@@ -84,8 +85,12 @@ nix run .#install -- <hostname> root@<target-ip>
 
 `nixos-anywhere` kexecs the target into the NixOS installer, runs the host's
 disko layout (**wiping its disks**), generates
-`modules/hosts/<hostname>/hardware.nix`, and installs. Commit the generated
-hardware config, then run the `bootstrap` app for the per-user setup.
+`modules/hosts/<hostname>/hardware.nix`, and installs. It generates that file
+with `--no-filesystems`, so it never redeclares the `fileSystems` disko owns
+(pass the same flag if you regenerate by hand). The generated file overwrites
+the checked-in one, so re-apply any hand-added settings from git afterwards.
+Commit the generated hardware config, then run the `bootstrap` app for the
+per-user setup.
 
 `host-key` writes the host's SSH key to the gitignored
 `secrets/hosts/<hostname>/` and prints the sops age recipient (add it to

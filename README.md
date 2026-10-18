@@ -368,7 +368,9 @@ adding one never edits `modules/flake/configurations.nix`.
    devices.
 3. `hardware.nix` (kernel modules, CPU microcode) comes from
    `nixos-generate-config`. It is optional and is generated during a
-   `nixos-anywhere` install (see *Installing a blank machine*).
+   `nixos-anywhere` install (see *Installing a blank machine*). Generate it with
+   `--no-filesystems` — disko owns `fileSystems`, and `nixos-anywhere` passes
+   the flag for you.
 
 The `dotfiles` attrset is shared by the host's NixOS and home configs; each
 reads the knobs it knows, so a value is written once. The available
@@ -387,8 +389,12 @@ nix run .#install -- <hostname> root@<target-ip>
 
 `nixos-anywhere` kexecs the target into the NixOS installer, runs the host's
 disko layout (**wiping its disks**), generates
-`modules/hosts/<hostname>/hardware.nix`, and installs NixOS. Commit the
-generated hardware config, then run the `bootstrap` app for the per-user setup.
+`modules/hosts/<hostname>/hardware.nix`, and installs NixOS. It generates that
+file with `--no-filesystems`, so it never redeclares what disko owns; pass the
+same flag if you regenerate by hand. The generated file overwrites the
+checked-in one, so re-apply any hand-added settings from git afterwards. Commit
+the generated hardware config, then run the `bootstrap` app for the per-user
+setup.
 
 `host-key` writes the host's SSH key to the gitignored
 `secrets/hosts/<hostname>/` and prints the sops age recipient; add it to
