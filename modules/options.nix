@@ -268,10 +268,10 @@ in
             description = "Directory Immich stores its managed library in. The default is created by the Immich module.";
           };
           lanSources = lib.mkOption {
-            type = lib.types.listOf lib.types.str;
+            type = lib.types.listOf (lib.types.strMatching "[0-9]{1,3}(\\.[0-9]{1,3}){3}/[0-9]{1,2}");
             default = [ ];
             example = [ "10.0.0.0/24" ];
-            description = "Source CIDRs allowed to reach the Immich port directly (the mobile app's local-network URL). Empty keeps Immich tunnel-only. Source-scoped rather than interface-scoped so a global-IPv6 uplink cannot expose it to the WAN.";
+            description = "IPv4 source CIDRs allowed to reach the Immich port directly (the mobile app's local-network URL). Empty keeps Immich tunnel-only. Source-scoped rather than interface-scoped so a global-IPv6 uplink cannot expose it to the WAN. Each entry is interpolated into a root iptables command, so the type validates it as a CIDR.";
           };
         };
       };

@@ -16,6 +16,13 @@ let
 in
 {
   config = lib.mkIf cfg.search {
+    assertions = [
+      {
+        assertion = config.sops.secrets ? searxng-secret-key;
+        message = "dotfiles.search = true requires a `searxng-secret-key` sops secret declared for this host (see modules/nixos/secrets.nix).";
+      }
+    ];
+
     # SearXNG signs sessions with server.secret_key. searx-init's envsubst
     # substitutes `$SEARX_SECRET_KEY` from this service's EnvironmentFile, so the
     # file must read `SEARX_SECRET_KEY=<key>`. sops decrypts the bare key to a

@@ -10,7 +10,7 @@ set -euo pipefail
 #   curl -fsSL bootstrap.sammohr.dev | bash
 #
 # Override auto-detected user/host or the checkout root (prefix the command;
-# the app forwards no arguments):
+# these are read from the environment, not from arguments):
 #   BOOTSTRAP_USER=smores BOOTSTRAP_HOST=smorespro nix run github:smores56/nix-config#bootstrap
 #   BOOTSTRAP_CODE_ROOT="$HOME/code" nix run github:smores56/nix-config#bootstrap
 
@@ -43,7 +43,13 @@ is_nonempty_dir() {
   [ -d "$1" ] && [ -n "$(find "$1" -mindepth 1 -maxdepth 1 -print -quit)" ]
 }
 
-has_required_scopes() {
+# GitHub advertises a token's OAuth scopes in the `x-oauth-scopes` response
+# header, but only for classic tokens. A fine-grained PAT omits the header and
+# is scoped by its configured permissions instead (needs "Git SSH keys: write"
+# and "SSH signing keys: write"), so an absent header means "cannot tell", not
+# "missing". Returns 0 when the scopes are present and sufficient, 1 when they
+# are present but insufficient, and 2 when the header is absent.
+scope_status() {
   local needed="$1"
   local current
   current="$(gh api -i user 2>/dev/null | awk '
@@ -54,6 +60,7 @@ has_required_scopes() {
       exit
     }
   ')"
+  [ -n "$current" ] || return 2
 
   local scope
   local IFS=','
@@ -247,14 +254,19 @@ ACTIVE_GITHUB_USER="$(gh api user --jq .login 2>/dev/null || true)"
 [ "$ACTIVE_GITHUB_USER" = "$GITHUB_USER" ] \
   || err "gh is authenticated as '${ACTIVE_GITHUB_USER:-unknown}', expected '${GITHUB_USER}'. Unset GH_TOKEN/GITHUB_TOKEN or authenticate as ${GITHUB_USER}."
 
-if has_required_scopes "$GH_KEY_SCOPES"; then
+if scope_status "$GH_KEY_SCOPES"; then
   skip "GitHub auth already has required scopes (${GH_KEY_SCOPES})"
-elif [ "$GH_USED_PAT" = "1" ]; then
-  err "The GitHub PAT is missing required scopes (${GH_KEY_SCOPES}). Grant them to the token and re-run (a PAT session cannot refresh scopes non-interactively)."
 else
-  info "Adding missing GitHub auth scopes (${GH_KEY_SCOPES})..."
-  gh auth refresh --hostname "$GITHUB_HOST" --scopes "$GH_KEY_SCOPES"
-  ok "GitHub auth scopes ready"
+  scope_code=$?
+  if [ "$scope_code" = "2" ]; then
+    warn "GitHub token advertises no OAuth scopes (fine-grained PAT); relying on its configured permissions (needs 'Git SSH keys: write' and 'SSH signing keys: write')."
+  elif [ "$GH_USED_PAT" = "1" ]; then
+    err "The GitHub PAT is missing required scopes (${GH_KEY_SCOPES}). Grant them to the token and re-run (a PAT session cannot refresh scopes non-interactively)."
+  else
+    info "Adding missing GitHub auth scopes (${GH_KEY_SCOPES})..."
+    gh auth refresh --hostname "$GITHUB_HOST" --scopes "$GH_KEY_SCOPES"
+    ok "GitHub auth scopes ready"
+  fi
 fi
 
 if [ ! -s "${SSH_KEY}.pub" ]; then
@@ -262,7 +274,11 @@ if [ ! -s "${SSH_KEY}.pub" ]; then
   warn "Log in to Proton Pass (see Phase 4) and re-run this script."
 else
   SSH_KEY_BLOB="$(awk '{print $2}' "${SSH_KEY}.pub")"
-  if gh api user/keys --jq '.[].key' | grep -qF "$SSH_KEY_BLOB"; then
+  # --paginate: the key lists are paged (30/page); without it a key beyond the
+  # first page looks unregistered and is re-added, failing on the duplicate. The
+  # here-string also avoids a `gh | grep -q` SIGPIPE/pipefail false negative.
+  existing_auth_keys="$(gh api user/keys --paginate --jq '.[].key')"
+  if grep -qF "$SSH_KEY_BLOB" <<<"$existing_auth_keys"; then
     skip "SSH authentication key already registered with GitHub"
   else
     info "Adding SSH authentication key to GitHub..."
@@ -270,7 +286,8 @@ else
     ok "SSH authentication key added to GitHub"
   fi
 
-  if gh api user/ssh_signing_keys --jq '.[].key' | grep -qF "$SSH_KEY_BLOB"; then
+  existing_signing_keys="$(gh api user/ssh_signing_keys --paginate --jq '.[].key')"
+  if grep -qF "$SSH_KEY_BLOB" <<<"$existing_signing_keys"; then
     skip "SSH signing key already registered with GitHub"
   else
     info "Adding SSH signing key to GitHub..."

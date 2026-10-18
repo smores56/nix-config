@@ -125,6 +125,8 @@ let
     aiProfile = null;
     shellAbbrs = { };
     llm = null;
+    searchPort = null;
+    webProxy = null;
     workHost = null;
     brain = null;
   };
@@ -140,7 +142,6 @@ let
     "workHost"
     "username"
     "exposeSsh"
-    "sshAuthorizedKeys"
     "nvidia"
     "llm"
     "search"
@@ -165,6 +166,15 @@ let
   hostNames = builtins.attrNames (
     lib.filterAttrs (_: type: type == "directory") (builtins.readDir hostsDir)
   );
+  # Top-level keys a host's meta.nix may author; anything else is a typo that
+  # would otherwise be ignored silently (e.g. `homee` drops the home config).
+  hostMetaKeys = [
+    "dotfiles"
+    "username"
+    "system"
+    "nixos"
+    "home"
+  ];
   hostMeta =
     name:
     let
@@ -175,10 +185,13 @@ let
         else
           throw "modules/hosts/${name}/ has no meta.nix (see AGENTS.md)";
       unknown = lib.subtractLists hostKnobs (builtins.attrNames (m.dotfiles or { }));
+      unknownTop = lib.subtractLists hostMetaKeys (builtins.attrNames m);
     in
     assert lib.assertMsg (
       unknown == [ ]
     ) "modules/hosts/${name}/meta.nix: unknown dotfiles knob(s): ${lib.concatStringsSep ", " unknown}";
+    assert lib.assertMsg (unknownTop == [ ])
+      "modules/hosts/${name}/meta.nix: unknown top-level key(s): ${lib.concatStringsSep ", " unknownTop} (allowed: ${lib.concatStringsSep ", " hostMetaKeys})";
     m;
 
   # The identity every config built for a host carries; set after the host's own

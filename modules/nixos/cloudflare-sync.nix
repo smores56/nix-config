@@ -67,6 +67,11 @@ in
         RemainAfterExit = true;
         ExecStart = "${cloudflare-sync}/bin/cloudflare-sync";
       };
+      # The unit text is otherwise stable — the wrapper bakes in only the script
+      # and token paths — so without this a `dotfiles.webProxy.services` change
+      # would leave the unit byte-identical and systemd would not restart this
+      # oneshot: the reconciler would not re-run until reboot.
+      restartTriggers = [ specFile ];
       # Route failures to the shared ntfy primitive, but only on hosts that have
       # enabled notify: the template does not exist otherwise and a dangling
       # `onFailure` reference fails activation.

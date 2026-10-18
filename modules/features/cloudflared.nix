@@ -71,9 +71,12 @@ in
 
   # smortress is reached only through the tunnel: cloudflared proxies to its
   # loopback sshd (modules/nixos/ssh.nix). `%h` expands to HostName.
+  # smortress's account is always `smores`; a client's own username may differ
+  # (e.g. the macOS work host runs as `sam`), so the login user is fixed here
+  # rather than taken from the local user.
   programs.ssh.settings."smortress" = {
     HostName = "ssh.${domain}";
-    User = config.dotfiles.username;
+    User = "smores";
     ProxyCommand = "${cloudflared-access}/bin/cloudflared-access ssh --hostname %h";
   };
 

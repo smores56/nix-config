@@ -318,7 +318,9 @@ def cmd_normalize(args):
 # the upload check takes hex SHA1, and the per-asset form has no device* fields
 # (older clients sent deviceAssetId/deviceId; 3.0.3 rejects unknown form parts).
 
-DEFAULT_URL = "http://smortress:2283"
+# The tunnel hostname works from any client; the bare `smortress` LAN name only
+# resolved over Tailscale, which is gone.
+DEFAULT_URL = "https://immich.sammohr.dev"
 DEFAULT_API_KEY_FILE = "~/.config/immich-ingest/api-key"
 API_KEY_ENV = "IMMICH_API_KEY"
 URL_ENV = "IMMICH_URL"

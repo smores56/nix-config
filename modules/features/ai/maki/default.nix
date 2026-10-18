@@ -24,7 +24,6 @@ let
         defaultModel = "neuralwatt/deepseek-v4.1-flash";
         privateHosts = [ "127.0.0.1:${toString config.dotfiles.searchPort}" ];
         searchPlugin = true;
-        wrapperEnv = "";
       };
       work = {
         providers = [ ];
@@ -141,7 +140,7 @@ let
   # put on the session PATH explicitly ahead of it (see home.sessionPath
   # below) rather than trusting each OS's profile ordering.
   makiWrapper = pkgs.writeShellScriptBin "maki" ''
-    ${profile.wrapperEnv}
+    ${lib.optionalString (profile ? wrapperEnv) profile.wrapperEnv}
     exec "$HOME/.local/bin/maki" "$@"
   '';
 

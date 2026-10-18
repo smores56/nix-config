@@ -408,11 +408,16 @@ tokens. `modules/nixos/secrets.nix` declares `github-pat` and `proton-pass-pat`
 nix-shell -p sops --run 'sops secrets/smortress.yaml'   # add github-pat: <token>, proton-pass-pat: <pst_...::key>
 ```
 
-- `github-pat` needs `write:public_key` and `write:ssh_signing_key` (the scopes
-  `bootstrap` registers the SSH keys with); `gh auth login --with-token` uses it.
+- `github-pat` needs permission to register SSH keys: a **classic** token with
+  `write:public_key` and `write:ssh_signing_key`, or a **fine-grained** token
+  with the account permissions "Git SSH keys: write" and "SSH signing keys:
+  write" (fine-grained tokens do not advertise OAuth scopes, so `bootstrap`
+  trusts their configured permissions). `gh auth login --with-token` uses it.
 - `proton-pass-pat` is a `pass-cli` personal access token; `pass-cli login` uses
-  it. PAT sessions last ~2 h and cannot be locked, so a headless host re-logs-in
-  on each `bootstrap` run (an interactive `fs` session persists longer).
+  it. The *token* is long-lived (see "Rotating the PATs"), but each *login
+  session* it grants lasts only ~2 h and cannot be locked, so a headless host
+  re-logs-in on each `bootstrap` run (an interactive `fs` session persists
+  longer).
 
 #### Rotating the PATs
 
@@ -421,7 +426,8 @@ Both tokens expire and need periodic replacement — `proton-pass-pat` has a
 per its own setting. Replace each before it lapses:
 
 1. Issue a replacement — Proton Pass → Settings → Access tokens, or GitHub →
-   Developer settings → fine-grained tokens (same scopes as above).
+   Developer settings → tokens (classic: the same scopes as above; fine-grained:
+   the same two account permissions).
 2. Update the value: `nix-shell -p sops --run 'sops secrets/<host>.yaml'`.
 3. Commit, then `nixos-rebuild switch` on every host holding the token, so
    sops-nix redeploys `/run/secrets/*`.

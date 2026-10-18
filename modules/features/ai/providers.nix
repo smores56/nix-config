@@ -104,8 +104,9 @@ let
   };
 
   # llama.cpp's loopback port: the single source the NixOS listener
-  # (modules/nixos/llm.nix) and the tunnel ingress (modules/flake/configurations.nix)
-  # both read, alongside the client base URL built from it below.
+  # (modules/nixos/llm.nix) and the tunnel ingress (modules/nixos/web-proxy.nix,
+  # from the host's dotfiles.webProxy.services) both read, alongside the client
+  # base URL built from it below.
   llmPort = ports.llm;
 
   smortress = {
