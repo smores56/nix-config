@@ -184,6 +184,12 @@ systemctl --user restart proton-pass-agent    # macOS: launchctl kickstart -k gu
 Then re-run `nix run github:smores56/nix-config#bootstrap` to re-materialise
 `~/.ssh/*.pub`.
 
+The Access token is cached per login in
+`$XDG_RUNTIME_DIR/cloudflared-access/token` (0600, tmpfs) by
+`cloudflared-access-token.service`; after rotating it,
+`systemctl --user restart cloudflared-access-token`. A missing cache falls back
+to `pass-cli inject` (~1s slower) rather than failing.
+
 **smortress unreachable (tunnel down, network, power).** At the console
 `<tunnelName>` is `dotfiles.webProxy.tunnelName`:
 
