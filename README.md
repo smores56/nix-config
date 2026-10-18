@@ -326,14 +326,17 @@ A home with `workHost = true` (`modules/flake/configurations.nix`) applies
 appears outside those option values.
 
 - **Flat folder:** employer tooling that wants every checkout in one folder
-  gets it. `<codeRoot>/github.com/<org>` for each of `flatRepos.orgs` is a
-  symlink to `flatRepos.dir`, so `repos get <org>/<repo>` lands there while
-  the usual path keeps working, and `repos list` shows each checkout once.
-  `flatRepos.envVar` is exported for the tooling.
-- **Links are created on switch** for missing paths and empty dirs only.
-  An org dir that already holds checkouts is reported, never moved; run
-  `work-repo-links --migrate` to move its entries into the flat folder
-  (refusing name collisions, repairing worktrees) and link it.
+  gets it. `<codeRoot>/github.com/<owner>` for any owner matching
+  `dotfiles.work.githubOwnerGlob` is a symlink to `flatRepos.dir`, so
+  `repos get <owner>/<repo>` lands there while the usual path keeps working,
+  and `repos list` shows each checkout once. The owner is linked on demand by
+  `repos get`, so no owner name is baked into the config. `flatRepos.envVar`
+  is exported for the tooling.
+- **Links are created on switch** for empty dirs (and `.DS_Store`-only ones)
+  among owners already present. An org dir that already holds checkouts is
+  reported, never moved; run `work-repo-links --migrate` to move its entries
+  into the flat folder (refusing name collisions, repairing worktrees) and
+  link it.
 - **zsh is the shell** (`dotfiles.shell` follows `workHost`; fish isn't
   enabled). HM owns `$ZDOTDIR` (`~/.config/zsh`, set from `~/.zshenv`) and
   sources the tooling-owned plain `~/.zshrc` right after compinit, so its

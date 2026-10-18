@@ -526,10 +526,6 @@ in
                     default = null;
                     description = "Environment variable the employer's tooling reads for `dir`; exported on work hosts.";
                   };
-                  orgs = lib.mkOption {
-                    type = lib.types.listOf lib.types.str;
-                    description = "GitHub owners whose <codeRoot>/github.com/<owner> is a symlink to `dir` on work hosts.";
-                  };
                 };
               }
             );
@@ -636,10 +632,6 @@ in
         flatRepos = {
           dir = "${config.home.homeDirectory}/Blitzy";
           envVar = "BLITZY_REPOS_DIR";
-          orgs = [
-            "blitzy-ai"
-            "blitzy-platform"
-          ];
         };
         sshKey = "~/.ssh/id_work";
         sshConfig = "~/.ssh/config.work";

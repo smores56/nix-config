@@ -42,5 +42,32 @@ if [[ $got != "$want" ]]; then
   failures=$((failures + 1))
 fi
 
+# `repos get` links a work owner's dir into the flat folder before cloning,
+# so its checkout lands flat; a non-matching owner keeps its normal path.
+export GIT_CONFIG_GLOBAL="$PWD/gitconfig"
+: > "$GIT_CONFIG_GLOBAL"
+git init -q --bare "$PWD/remote-foo"
+git init -q --bare "$PWD/remote-bar"
+git config --global --add url."$PWD/remote-foo".insteadOf "git@github.com:$WORK_OWNER/foo.git"
+git config --global --add url."$PWD/remote-bar".insteadOf "git@github.com:someone/bar.git"
+
+root2=$PWD/code2
+flat2=$PWD/flat2
+mkdir -p "$root2/github.com" "$flat2"
+REPOS_CODE_ROOT=$root2 REPOS_WORK_FLAT=$flat2 "$repos" get "$WORK_OWNER/foo" >/dev/null
+if [[ $(readlink "$root2/github.com/$WORK_OWNER") != "$flat2" ]]; then
+  echo "FAIL get-link: want $flat2, got $(readlink "$root2/github.com/$WORK_OWNER")"
+  failures=$((failures + 1))
+fi
+if [[ ! -d "$flat2/foo/.git" ]]; then
+  echo "FAIL get-flat: $flat2/foo was not cloned flat"
+  failures=$((failures + 1))
+fi
+REPOS_CODE_ROOT=$root2 REPOS_WORK_FLAT=$flat2 "$repos" get someone/bar >/dev/null
+if [[ ! -d "$root2/github.com/someone/bar/.git" || -L "$root2/github.com/someone" ]]; then
+  echo "FAIL get-plain: someone/bar should keep its normal path"
+  failures=$((failures + 1))
+fi
+
 if ((failures)); then exit 1; fi
 echo "repos list links: ok"

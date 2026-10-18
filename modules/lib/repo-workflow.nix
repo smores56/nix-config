@@ -6,6 +6,10 @@
 let
   cfg = config.dotfiles;
 
+  # Work orgs live flat in one folder; `repos get` links an owner dir into it
+  # on demand, so no owner name is baked into the config.
+  workFlatDir = if cfg.work.flatRepos != null then cfg.work.flatRepos.dir else "";
+
   # Shared by `repos` and `worktrees`: host, owner, repo of the cwd's origin.
   originParts = ''
     origin_parts() {
@@ -51,6 +55,12 @@ let
       ${originParts}
       unset CDPATH
       CODE_ROOT=${lib.escapeShellArg cfg.codeRoot}
+      # REPOS_CODE_ROOT redirects both listing and `get`, for tests.
+      ROOT=''${REPOS_CODE_ROOT:-$CODE_ROOT}
+      WORK_FLAT=${lib.escapeShellArg workFlatDir}
+      # REPOS_WORK_FLAT overrides the flat folder, for tests.
+      WORK_FLAT=''${REPOS_WORK_FLAT:-$WORK_FLAT}
+      WORK_OWNER_GLOB=${lib.escapeShellArg cfg.work.githubOwnerGlob}
 
       # Follows symlinked owner dirs (dotfiles.work.flatRepos links several
       # orgs to one folder), listing each checkout once: under the owner its
@@ -132,7 +142,21 @@ let
           [ $# -eq 2 ] || { printf 'usage: repos get <repo-or-url>\n' >&2; exit 2; }
           parts=$(normalize_repo "$2")
           IFS=$'\t' read -r host owner repo <<< "$parts"
-          dest="$CODE_ROOT/$host/$owner/$repo"
+          # A work owner's dir links to the flat folder before the clone, so
+          # the checkout lands there while its normal path keeps working.
+          if [ -n "$WORK_FLAT" ]; then
+            shopt -s nocasematch
+            # shellcheck disable=SC2053
+            if [[ $owner == $WORK_OWNER_GLOB ]]; then
+              link="$ROOT/$host/$owner"
+              if [ ! -e "$link" ] && [ ! -L "$link" ]; then
+                mkdir -p "$(dirname "$link")"
+                ln -s -- "$WORK_FLAT" "$link"
+              fi
+            fi
+            shopt -u nocasematch
+          fi
+          dest="$ROOT/$host/$owner/$repo"
           url="git@$host:$owner/$repo.git"
           if [ -e "$dest" ]; then
             existing=$( (cd -- "$dest" && origin_parts 2>/dev/null) | cut -f2,3 | tr '\t' / || true)

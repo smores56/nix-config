@@ -1,10 +1,12 @@
-# work-repo-links [--migrate] <flat-dir> <host-dir> <org>...: points each
-# <host-dir>/<org> at the flat work folder (dotfiles.work.flatRepos).
+# work-repo-links [--migrate] <flat-dir> <host-dir> <owner-glob>: points each
+# existing <host-dir>/<owner> whose name matches the glob at the flat work
+# folder (dotfiles.work.flatRepos). Owners not yet present are linked on
+# demand by `repos get`, so no owner name is baked into the config.
 #
 # Default mode (run by activation) never fails and never moves data: it
-# links missing paths and empty dirs (ignoring .DS_Store) and warns about
-# the rest. --migrate moves a real org dir's entries into the flat folder,
-# refusing name collisions, repairs moved repos' worktree links, then links.
+# links empty dirs (ignoring .DS_Store) and warns about the rest. --migrate
+# moves a real org dir's entries into the flat folder, refusing name
+# collisions, repairs moved repos' worktree links, then links.
 { pkgs }:
 pkgs.writeShellApplication {
   name = "work-repo-links";
@@ -20,9 +22,9 @@ pkgs.writeShellApplication {
       migrate=true
       shift
     fi
-    [ $# -ge 2 ] || { printf 'usage: work-repo-links [--migrate] <flat-dir> <host-dir> <org>...\n' >&2; exit 2; }
-    flat=$1 root=$2
-    shift 2
+    [ $# -eq 3 ] || { printf 'usage: work-repo-links [--migrate] <flat-dir> <host-dir> <owner-glob>\n' >&2; exit 2; }
+    flat=$1 root=$2 glob=$3
+    shift 3
     status=0
 
     warn() {
@@ -93,9 +95,14 @@ pkgs.writeShellApplication {
     if ! mkdir -p -- "$flat" "$root" 2>/dev/null || [ ! -d "$flat" ] || [ ! -d "$root" ]; then
       warn "could not create $flat and $root; skipping"
     else
-      for org in "$@"; do
-        link_org "$root/$org"
+      shopt -s nocasematch
+      for dir in "$root"/*; do
+        [ -e "$dir" ] || [ -L "$dir" ] || continue
+        # shellcheck disable=SC2053
+        [[ ''${dir##*/} == $glob ]] || continue
+        link_org "$dir"
       done
+      shopt -u nocasematch
     fi
 
     # Activation must never fail a switch over this; --migrate reports.

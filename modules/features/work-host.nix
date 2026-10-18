@@ -8,16 +8,15 @@ let
   cfg = config.dotfiles;
   inherit (cfg.work) flatRepos githubOwnerGlob;
   hasFlat = cfg.workHost && flatRepos != null;
-  orgPaths = map (org: "${cfg.codeRoot}/github.com/${org}") flatRepos.orgs;
 
   links = import ../lib/work-repo-links.nix { inherit pkgs; };
-  linkArgs = lib.escapeShellArgs (
-    [
-      flatRepos.dir
-      "${cfg.codeRoot}/github.com"
-    ]
-    ++ flatRepos.orgs
-  );
+  # The owner glob, not a list of owner names: the set of linked orgs is
+  # whatever matches it, so no employer org name lives in the repo.
+  linkArgs = lib.escapeShellArgs [
+    flatRepos.dir
+    "${cfg.codeRoot}/github.com"
+    githubOwnerGlob
+  ];
   # This host's layout baked in, so `work-repo-links --migrate` needs no args.
   hostLinks = pkgs.writeShellScriptBin "work-repo-links" ''
     case "''${1-}" in
@@ -26,27 +25,13 @@ let
       *) printf 'usage: work-repo-links [--migrate]\n' >&2; exit 2 ;;
     esac
   '';
-
-  # git wildmatch (as used by the work includes) to a case-folded regex;
-  # owner globs only use * and ?.
-  globRegex =
-    glob: lib.replaceStrings [ "\\*" "\\?" ] [ ".*" "." ] (lib.escapeRegex (lib.toLower glob));
-  outsideGlob = lib.filter (
-    org: builtins.match (globRegex githubOwnerGlob) (lib.toLower org) == null
-  ) flatRepos.orgs;
 in
 lib.mkIf hasFlat {
   assertions = [
     {
-      # A linked org outside the glob would sit in the work folder but
-      # commit with the personal identity.
-      assertion = outsideGlob == [ ];
-      message = "dotfiles.work.flatRepos.orgs not matched by githubOwnerGlob ${githubOwnerGlob}: ${lib.concatStringsSep ", " outsideGlob}";
-    }
-    {
-      # The org paths become links to dir; dir inside one would loop.
-      assertion = lib.all (p: flatRepos.dir != p && !(lib.hasPrefix "${p}/" flatRepos.dir)) orgPaths;
-      message = "dotfiles.work.flatRepos.dir must not be inside a linked org path: ${flatRepos.dir}";
+      # Org links live under codeRoot/github.com; dir inside that would loop.
+      assertion = !(lib.hasPrefix "${cfg.codeRoot}/github.com/" "${flatRepos.dir}/");
+      message = "dotfiles.work.flatRepos.dir must not be inside ${cfg.codeRoot}/github.com: ${flatRepos.dir}";
     }
   ];
 

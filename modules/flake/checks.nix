@@ -97,9 +97,7 @@ in
               domain = lib.last (lib.splitString "@" w.email);
               ownerStem = lib.removeSuffix "-" (lib.replaceStrings [ "*" ] [ "" ] w.githubOwnerGlob);
               flat = lib.optionals (w.flatRepos != null) (
-                [ (baseNameOf w.flatRepos.dir) ]
-                ++ w.flatRepos.orgs
-                ++ lib.optional (w.flatRepos.envVar != null) w.flatRepos.envVar
+                [ (baseNameOf w.flatRepos.dir) ] ++ lib.optional (w.flatRepos.envVar != null) w.flatRepos.envVar
               );
             in
             lib.unique (
