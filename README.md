@@ -118,7 +118,8 @@ front end, declared by `dotfiles.chat` on smortress (`modules/nixos/chat.nix`).
 It listens on loopback only; the tunnel publishes it behind Cloudflare Access (it
 is a protected hostname, so the ingress cannot exist without `access.enable`),
 with Open WebUI's own login as the second gate. The first visit offers sign-up;
-that account becomes admin and sign-up then disables itself.
+that account becomes admin. Sign-up is pinned off (`ENABLE_SIGNUP=False`) — the
+first admin is exempt from that flag, so the initial account can still be created.
 
 Two OpenAI-compatible upstreams are wired: the hosted Neuralwatt API
 (`neuralwatt.<model>`, default `neuralwatt.deepseek-v4.1-flash`) and the local
@@ -132,6 +133,17 @@ network egress is deliberately unrestricted.
 The Neuralwatt key, the Open WebUI session secret, and the Jupyter token are sops
 secrets (`neuralwatt-api-key`, `open-webui-secret-key`, `jupyter-token`), rendered
 into root-owned env files that systemd reads before dropping privileges.
+
+New chats start with web search and the code interpreter already toggled on: the
+per-chat toggles honour a model's `defaultFeatureIds` only when the matching
+capability is set, so `DEFAULT_MODEL_METADATA` supplies both for every model.
+
+Config is **env-authoritative** (`ENABLE_PERSISTENT_CONFIG=False`). Open WebUI's
+`PersistentConfig` seeds a DB row only when it is absent, so an env change after
+first launch is otherwise ignored — a stale empty `models.default_metadata` row is
+exactly that case. The trade-off: config edited in the admin UI does not survive a
+restart, and neither does state the app mutates at runtime (hence the pinned
+`ENABLE_SIGNUP`). Change `modules/nixos/chat.nix` instead.
 
 ### Recovery
 

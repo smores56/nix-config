@@ -100,10 +100,16 @@ in
         # `models.default_metadata` is a PersistentConfig: the env value is only
         # seeded into the DB when the row is absent, and the first launch already
         # stored an empty one — so the var above would be inert without this.
-        # Turning persistence off makes this file authoritative for all config,
-        # which is what we want here anyway: the DB can then never drift from
-        # chat.nix. Trade-off: admin-UI config edits no longer survive a restart.
+        # With persistence off, config is read from the env on every start, so this
+        # file is authoritative. Trade-off: admin-UI config edits no longer survive
+        # a restart, and neither does runtime-mutated state — which is why signup
+        # is pinned off below rather than left to auto-disable itself.
         ENABLE_PERSISTENT_CONFIG = "False";
+        # Normally the first user flips `ui.enable_signup` to false and that write
+        # persists; with persistence off it would revert to the env default (true)
+        # on every restart. Pin it off. The first admin is not gated by this — the
+        # signup route only checks it once users exist.
+        ENABLE_SIGNUP = "False";
 
         # Web search goes through the co-located SearXNG over loopback; its JSON
         # API is already enabled in modules/nixos/searx.nix. The engine appends
