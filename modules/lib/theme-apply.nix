@@ -54,8 +54,25 @@ pkgs.writeShellScriptBin "theme-apply" ''
   if [ "$(cat ${appliedStateFile} 2>/dev/null || true)" = "$target_gen" ]; then
     exit 0
   fi
+
+  # Hooks are detached, so rapid toggles can queue invocations out of order.
+  # The native mode is authoritative: drop a replay that is no longer current.
+  if command -v noctalia >/dev/null 2>&1; then
+    current_mode=$(noctalia msg theme-mode-get 2>/dev/null || true)
+    if [ -n "$current_mode" ] && [ "$current_mode" != "$mode" ]; then
+      exit 0
+    fi
+  fi
+
+  # Written before activation: the restarted shell's `started` hook re-enters
+  # this script mid-activation and must no-op. Restore on failure so a later
+  # start retries instead of trusting a half-applied generation.
+  previous=$(cat ${appliedStateFile} 2>/dev/null || true)
   echo "$target_gen" > ${appliedStateFile}
 
   export HM_SPECIALISATION_SWITCH=1
-  "$target"
+  if ! "$target"; then
+    printf '%s\n' "$previous" > ${appliedStateFile}
+    exit 1
+  fi
 ''
