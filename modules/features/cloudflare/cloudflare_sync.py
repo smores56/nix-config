@@ -449,7 +449,7 @@ def main(argv=None, client_factory=None):
     if any(r.action == "protected" for r in results):
         print(
             "cloudflare-sync: REFUSED to delete Cloudflare Access for a protected "
-            "service (ssh/llm/searx/ntfy, or their ports) and left it in place: "
+            "service (ssh/llm/searx/ntfy/chat, or their ports) and left it in place: "
             "dotfiles.webProxy.services declares it public, which must never happen. "
             "Fix the config — do not work around this.",
             file=sys.stderr,

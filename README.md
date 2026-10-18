@@ -111,6 +111,28 @@ Cloudflare caps a single upload at 100 MB and Immich neither chunks nor resumes,
 so uploads over the tunnel fail with a 413 above that limit; the LAN URL avoids
 the cap at home. Configure both URLs in the app's server settings.
 
+### Chat UI
+
+`chat.<domain>` serves [Open WebUI](https://openwebui.com) — a single-user chat
+front end, declared by `dotfiles.chat` on smortress (`modules/nixos/chat.nix`).
+It listens on loopback only; the tunnel publishes it behind Cloudflare Access (it
+is a protected hostname, so the ingress cannot exist without `access.enable`),
+with Open WebUI's own login as the second gate. The first visit offers sign-up;
+that account becomes admin and sign-up then disables itself.
+
+Two OpenAI-compatible upstreams are wired: the hosted Neuralwatt API
+(`neuralwatt.<model>`, default `neuralwatt.deepseek-v4.1-flash`) and the local
+`llama.cpp` (`local.qwen3.8-27b`). Web search uses the co-located SearXNG over
+loopback; document RAG embeds locally with `all-MiniLM-L6-v2` (Neuralwatt has no
+embeddings API); and the code interpreter drives a `jupyter-sandbox` systemd unit
+on loopback, token-authenticated from sops. The sandbox runs arbitrary code as a
+`DynamicUser` with `MemoryMax=4G`; it is never exposed through the tunnel, but its
+network egress is deliberately unrestricted.
+
+The Neuralwatt key, the Open WebUI session secret, and the Jupyter token are sops
+secrets (`neuralwatt-api-key`, `open-webui-secret-key`, `jupyter-token`), rendered
+into root-owned env files that systemd reads before dropping privileges.
+
 ### Recovery
 
 smortress is reached only through the Cloudflare Tunnel — there is no inbound

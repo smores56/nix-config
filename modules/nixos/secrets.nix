@@ -18,7 +18,8 @@
     # band, like the secrets it decrypts.
     sops.age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
     # 0400 (sops-nix's default) and root ownership: only the root services that
-    # read them (cloudflared, the reconciler, navidrome, searxng) need access.
+    # read them (cloudflared, the reconciler, navidrome, searxng) or that get them
+    # via a root-read EnvironmentFile (the chat services) need access.
     sops.secrets = {
       cf-api-token = { };
       cloudflared-credentials = { };

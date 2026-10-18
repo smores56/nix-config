@@ -38,6 +38,8 @@ in
       OPENAI_API_KEYS=${config.sops.placeholder.neuralwatt-api-key};none
       CODE_INTERPRETER_JUPYTER_AUTH_TOKEN=${config.sops.placeholder.jupyter-token}
     '';
+    # Rotating a secret should take effect without a manual restart.
+    sops.templates."open-webui-env".restartUnits = [ "open-webui.service" ];
 
     # The sandbox reads its token from JUPYTER_TOKEN, which takes precedence over
     # a generated one (jupyter_server.auth.identity). An EnvironmentFile is the
@@ -46,6 +48,7 @@ in
     sops.templates."jupyter-env".content = ''
       JUPYTER_TOKEN=${config.sops.placeholder.jupyter-token}
     '';
+    sops.templates."jupyter-env".restartUnits = [ "jupyter-sandbox.service" ];
 
     services.open-webui = {
       enable = true;
@@ -65,7 +68,10 @@ in
         # API (key from the env file) and local llama.cpp (placeholder key).
         OPENAI_API_BASE_URLS = "${neuralwatt.baseUrl};${smortress.baseUrl}";
         # Namespace each connection so the switcher can tell the two "Qwen 3.8
-        # 27B" entries apart; ids become neuralwatt.* and local.*.
+        # 27B" entries apart; ids become neuralwatt.* and local.*. The chat path
+        # strips the prefix before calling upstream, but Open WebUI's /embeddings
+        # proxy does not — irrelevant while RAG uses the local embedder, but a
+        # trap if it is ever pointed at a prefixed connection.
         OPENAI_API_CONFIGS = builtins.toJSON {
           "0" = {
             prefix_id = neuralwatt.providerId;
@@ -85,10 +91,11 @@ in
 
         # RAG uses Open WebUI's built-in local embedder: Neuralwatt has no
         # embeddings API, so there is no hosted engine to point at. An empty
-        # engine is the "local" one; the ~90 MB model downloads once into
-        # SENTENCE_TRANSFORMERS_HOME (under the module's state dir) and runs
-        # in-process. Auto-update and trust_remote_code are off to pin the model
-        # and avoid executing downloaded code.
+        # engine is the "local" one; the ~90 MB model downloads into
+        # SENTENCE_TRANSFORMERS_HOME (under the module's state dir), is cached
+        # there, and runs in-process. Auto-update is off so boots don't re-check
+        # upstream, and trust_remote_code is off to avoid executing downloaded
+        # code.
         RAG_EMBEDDING_ENGINE = "";
         RAG_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2";
         RAG_EMBEDDING_MODEL_AUTO_UPDATE = "False";
@@ -101,11 +108,11 @@ in
         CODE_INTERPRETER_JUPYTER_URL = "http://127.0.0.1:${toString cfg.jupyterPort}";
         CODE_INTERPRETER_JUPYTER_AUTH = "token";
 
-        # The browser reaches the app at https://chat.<domain>, so links and the
-        # WebSocket origin check must match it (the module's default WEBUI_URL is
-        # the loopback address). CORS is narrowed from its `*` default to the
-        # public origin, and the tunnel-terminated TLS means cookies must be
-        # Secure-only.
+        # The browser reaches the app at https://chat.<domain>, so links must use
+        # the public URL (the module's default WEBUI_URL is the loopback address).
+        # CORS_ALLOW_ORIGIN also drives the Socket.IO origin check, so narrowing
+        # it from the `*` default to the public origin keeps WebSockets working.
+        # The tunnel terminates TLS, so cookies must be Secure-only.
         WEBUI_URL = "https://chat.${config.dotfiles.webProxy.domain}";
         CORS_ALLOW_ORIGIN = "https://chat.${config.dotfiles.webProxy.domain}";
         WEBUI_SESSION_COOKIE_SECURE = "True";
@@ -115,9 +122,11 @@ in
 
     # The code-interpreter sandbox: a headless Jupyter Server that Open WebUI
     # starts kernels on. Loopback-only, token-auth, its own transient user, and a
-    # memory cap; never exposed through the tunnel. Hardened as a service that
-    # runs untrusted code, but without SystemCallFilter / MemoryDenyWriteExecute —
-    # Python C extensions and JITs need broad syscalls and writable-exec memory.
+    # memory cap; never exposed through the tunnel. Hardened for a unit that runs
+    # untrusted code, but with MemoryDenyWriteExecute left off (it breaks Python C
+    # extensions and JITs). Egress is deliberately unrestricted so the interpreter
+    # can install packages and fetch data — an accepted risk, since the listener
+    # is loopback-only and token-authenticated.
     systemd.services.jupyter-sandbox = {
       description = "Jupyter sandbox for Open WebUI's code interpreter";
       wantedBy = [ "multi-user.target" ];
@@ -156,6 +165,15 @@ in
         RestrictRealtime = true;
         RestrictSUIDSGID = true;
         LockPersonality = true;
+        ProtectKernelLogs = true;
+        RestrictNamespaces = true;
+        SystemCallArchitectures = "native";
+        # The same seccomp profile the nixpkgs open-webui module applies to this
+        # Python stack, so it is known-compatible here.
+        SystemCallFilter = [
+          "@system-service"
+          "~@privileged"
+        ];
         RestrictAddressFamilies = [
           "AF_INET"
           "AF_INET6"
