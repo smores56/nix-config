@@ -64,6 +64,17 @@ in
         ENABLE_WEB_SEARCH = "True";
         WEB_SEARCH_ENGINE = "searxng";
         SEARXNG_QUERY_URL = "http://127.0.0.1:${toString ports.searx}/search";
+
+        # RAG uses Open WebUI's built-in local embedder: Neuralwatt has no
+        # embeddings API, so there is no hosted engine to point at. An empty
+        # engine is the "local" one; the ~90 MB model downloads once into
+        # SENTENCE_TRANSFORMERS_HOME (under the module's state dir) and runs
+        # in-process. Auto-update and trust_remote_code are off to pin the model
+        # and avoid executing downloaded code.
+        RAG_EMBEDDING_ENGINE = "";
+        RAG_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2";
+        RAG_EMBEDDING_MODEL_AUTO_UPDATE = "False";
+        RAG_EMBEDDING_MODEL_TRUST_REMOTE_CODE = "False";
       };
     };
   };
