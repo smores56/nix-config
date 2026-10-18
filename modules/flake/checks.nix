@@ -158,6 +158,10 @@ in
               tools = [ pkgs.gawk ];
               args = [ "${src}" ];
             };
+            github-mirror-probe = {
+              tools = [ pkgs.git ];
+              args = [ "${src}/modules/features/backup/github-mirror.sh" ];
+            };
           }
         );
 
@@ -185,7 +189,7 @@ in
               nativeBuildInputs = [ lintPkgs.statix ];
             }
             ''
-              statix check -c ${src} ${src}
+              statix check -c ${src}/statix.toml ${src}
               touch $out
             '';
 

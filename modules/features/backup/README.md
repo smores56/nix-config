@@ -62,7 +62,7 @@ the code in [`backup.py`](./backup.py). This file is the operator's view.
 | `/var/lib/backup/rclone.conf` | Proton remote config, mode 0600, **runtime only — never in the Nix store** |
 | `/var/lib/github-mirrors/<owner>_backup/<repo>` | ghorg bare git mirrors, refreshed in place (Disk 1) |
 | `/var/backup/GitHub/current` | local mirror of the GitHub mirrors (Disk 2) |
-| `/run/lock/media-backup.lock` | host-wide, driver-owned lock, mode 0600; all datasets share one Proton credential |
+| `/run/lock/media-backup.lock` | driver-owned lock, mode 0600, serializing the datasets that share the one Proton credential; local-only datasets take `/run/lock/media-backup-<name>.lock` instead |
 
 Proton paths are the dataset name under the remote: `proton:<Name>` — on
 smortress, `proton:Photos`, `proton:Videos`, `proton:Music`.
@@ -74,7 +74,7 @@ smortress, `proton:Photos`, `proton:Videos`, `proton:Music`.
 | `Photos` | `/var/lib/media/Photos` | 03:00 | Sun 06:00 | yes | `pg_dump -Fc` of `immich` into `current/db/immich-<date>.dump` |
 | `Videos` | `/var/lib/media/Videos` | 01:00 | Sun 07:00 | yes | — |
 | `Music` | `/var/lib/media/Music` | 05:00 | Sun 08:00 | yes | — |
-| `GitHub` | `/var/lib/github-mirrors` | 00:30 | — | no | `ghorg` refresh of the `smores56` mirrors (see below) |
+| `GitHub` | `/var/lib/github-mirrors` | 00:30 | Sun 10:00 | no | `ghorg` refresh of the `smores56` mirrors (see below) |
 
 Every dataset excludes `/.cache/**`, `**/.cache/**` and `/rclone.conf` by
 default (the `excludes` option default). That keeps regenerable caches (at the
@@ -106,23 +106,37 @@ unchanged (and a copy-based mirror keys on that mtime).
   clones on the first run and `git remote update`s thereafter, plus
   `GHORG_FETCH_GIT_LFS=true` so LFS objects are pulled. Archived repos **are**
   mirrored (they are frozen, not disposable — most of this owner's history is
-  archived); forks are skipped as upstream duplicates.
-  `fetch.unpackLimit=1` keeps each repo a single pack (a small fetch is otherwise
-  exploded into loose objects) and `gc.auto=0` stops a nondeterministic repack.
+  archived); forks are skipped by policy, so a fork carrying unique commits is
+  not backed up.
+  `fetch.unpackLimit=1` stores every fetch as a pack instead of exploding it
+  into loose objects, and auto-maintenance is disabled (`maintenance.auto=false`)
+  so git does not rewrite packs behind the copy's back. The mirror therefore
+  gains one pack per fetch that brought objects; a periodic `repack` would bound
+  the count but re-copy every pack, so it is deliberately not run.
 - **Token.** Read at runtime from `dotfiles.githubBackup.tokenFile`
-  (`/run/secrets/github-repo-pat`, a `repo`-scoped sops secret, root-owned mode
-  0400); never placed in the Nix store. This is a *different* token from the
-  `github-key-pat` `bootstrap` uses for SSH-key registration.
+  (`/run/secrets/github-repo-pat`, a classic `repo`-scoped sops secret,
+  root-owned mode 0400); never placed in the Nix store. This is a *different*
+  token from the `github-key-pat` `bootstrap` uses for SSH-key registration.
+  Classic `repo` grants write access to every repo the account can reach; the
+  mirror only reads, and fine-grained tokens cannot read wikis. ghorg embeds
+  the token in the `git clone`/`git remote set-url` URL, so it is visible in
+  root argv during a run (see the hardening list).
 - **Private-repo guard.** `dotfiles.githubBackup.probeRepo` names a known-private
-  repo; the run fails if its mirror is absent, catching a token that lost `repo`
-  scope (ghorg would otherwise clone only public repos and still exit 0).
+  repo; the run fails unless that repo was refreshed in the current run. A token
+  that lost `repo` scope still lists public repos and exits 0, and ghorg never
+  prunes the private mirrors it created earlier, so a directory-existence check
+  would pass forever. The script compares the probe's `FETCH_HEAD` mtime against
+  a marker taken before ghorg ran.
 
 ## How a run works
 
-1. The driver takes the host-wide lock at `/run/lock/media-backup.lock` (created
-   mode 0600) — Proton refresh tokens are single-use; two concurrent rclone
-   clients blank the session (rclone#9880), so runs serialize. A queued dataset
-   simply waits. Manual `backup` runs and the restore drill take the same lock.
+1. The driver takes the lock for the dataset (created mode 0600): the shared
+   `/run/lock/media-backup.lock` for offsite datasets — Proton refresh tokens are
+   single-use, so two concurrent rclone clients would blank the session
+   (rclone#9880) — and `/run/lock/media-backup-<name>.lock` for local-only ones,
+   so a long GitHub refresh neither waits on nor starves the media units. A
+   queued dataset simply waits. Manual `backup` runs and the restore drill take
+   the same lock.
 2. `preBackup` (if set) runs with `BACKUP_DATE`, `BACKUP_CURRENT`,
    `BACKUP_SOURCE` in the environment. Writes are atomic (`.tmp` + `mv`), and a
    killed dump traps and removes its `.tmp` so no partial file is mirrored. The
@@ -341,6 +355,13 @@ dataset needs `dotfiles.backup.enable = true` (the backup disk).
 - The backup service runs as root with no systemd sandboxing
   (`ProtectSystem`/`ReadWritePaths`/`NoNewPrivileges`/`PrivateTmp`); it feeds
   source filenames through rclone, so a parser/write flaw would be uncontained.
+- ghorg puts the GitHub token in the `git` argv (`clone`/`remote set-url`), which
+  any local user can read from `/proc/<pid>/cmdline` during a run; the wrapper
+  strips a token left in a mirror's config before the copy, and the token is
+  root-only, but the argv window remains.
+- A mirrored repo can set `lfs.url` in `.lfsconfig`, redirecting the root-run LFS
+  fetch to an arbitrary endpoint (blind SSRF). git-lfs ignores unsafe keys, so
+  this is not code execution.
 - The stall watchdog and unchecked-hash guard `re.search` over every relayed
   line, which includes source filenames; a file deliberately named to embed
   `Transferred:`/`Checks:`/`hashes could not be checked` can forge a stall or a
@@ -354,8 +375,10 @@ dataset needs `dotfiles.backup.enable = true` (the backup disk).
   same exclude list, so an over-broad or mistyped exclude removes files from the
   source listing, both mirrors, the check, and the drill sample alike — the loss
   is invisible. Keep excludes narrow and review them.
-- The nightly pipeline checks local↔remote, never source↔local; source-side
-  under-copy is only caught by the manual drill's sample.
+- Offsite datasets check local↔remote, never source↔local; source-side
+  under-copy is only caught by the manual drill's sample. Local-only datasets
+  (the GitHub mirror) check source↔local instead, scoped to the files copied
+  that run; the weekly full check walks the whole tree.
 - The restore drill restores the newest dump as the `postgres` superuser, so a
   dump shaped via a compromised Immich DB executes as that user.
 - The drill is only syntax-checked in CI (not run); it scrapes the unit's

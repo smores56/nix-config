@@ -363,8 +363,8 @@ class BackupTests(unittest.TestCase):
             out=lambda _s: None,
         )
         check = next(step for step in ran if "check" in step)
-        self.assertIn("--files-from", check)
-        self.assertFalse(os.path.exists(check[check.index("--files-from") + 1]))
+        self.assertIn("--files-from0", check)
+        self.assertFalse(os.path.exists(check[check.index("--files-from0") + 1]))
 
     def test_run_backup_skips_the_local_check_when_nothing_changed(self):
         messages = []
@@ -515,29 +515,29 @@ class BackupTests(unittest.TestCase):
         check = self.mod.build_check(cfg(self.mod), files_from="/tmp/changed.txt")
         self.assertIn("--checksum", check)
         self.assertIn("--one-way", check)
-        self.assertEqual(check[check.index("--files-from") + 1], "/tmp/changed.txt")
+        self.assertEqual(check[check.index("--files-from0") + 1], "/tmp/changed.txt")
 
     def test_build_check_without_files_from_walks_the_whole_tree(self):
-        self.assertNotIn("--files-from", self.mod.build_check(cfg(self.mod)))
+        self.assertNotIn("--files-from0", self.mod.build_check(cfg(self.mod)))
 
     def test_check_never_combines_files_from_with_excludes(self):
-        # rclone aborts on "--files-from ... overrides all other filters", so the
+        # rclone aborts on "--files-from0 ... overrides all other filters", so the
         # excludes are only valid on a whole-tree walk.
         c = cfg(self.mod, excludes=("/.cache/**",))
         scoped = self.mod.build_check(c, files_from="/tmp/changed.txt")
-        self.assertIn("--files-from", scoped)
+        self.assertIn("--files-from0", scoped)
         self.assertNotIn("--exclude", scoped)
         whole = self.mod.build_check(c)
-        self.assertNotIn("--files-from", whole)
+        self.assertNotIn("--files-from0", whole)
         self.assertIn("--exclude", whole)
 
     def test_local_check_never_combines_files_from_with_excludes(self):
         c = cfg(self.mod, offsite=False, source=str(self.src), excludes=("/.cache/**",))
         scoped = self.mod.build_local_check(c, files_from="/tmp/changed.txt")
-        self.assertIn("--files-from", scoped)
+        self.assertIn("--files-from0", scoped)
         self.assertNotIn("--exclude", scoped)
         whole = self.mod.build_local_check(c)
-        self.assertNotIn("--files-from", whole)
+        self.assertNotIn("--files-from0", whole)
         self.assertIn("--exclude", whole)
 
     def test_run_backup_skips_check_when_the_offsite_copy_changed_nothing(self):
@@ -580,9 +580,9 @@ class BackupTests(unittest.TestCase):
             out=lambda _s: None,
         )
         check = next(step for step in ran if "check" in step)
-        self.assertIn("--files-from", check)
+        self.assertIn("--files-from0", check)
         # The temp file is removed on the way out.
-        self.assertFalse(os.path.exists(check[check.index("--files-from") + 1]))
+        self.assertFalse(os.path.exists(check[check.index("--files-from0") + 1]))
 
     def test_run_backup_writes_changed_paths_to_the_files_from_file(self):
         captured = {}
@@ -601,8 +601,8 @@ class BackupTests(unittest.TestCase):
                     ]
                 )
             if "check" in argv:
-                with open(argv[argv.index("--files-from") + 1]) as handle:
-                    captured["paths"] = handle.read().split()
+                with open(argv[argv.index("--files-from0") + 1]) as handle:
+                    captured["paths"] = [p for p in handle.read().split("\0") if p]
                 return "Checks: 2 / 2, 100%\n0 differences found"
             return ""
 
@@ -622,7 +622,7 @@ class BackupTests(unittest.TestCase):
             if "copy" in argv and "proton:media" in argv:
                 return json.dumps({"msg": "Copied (new)", "object": "one.bin"})
             if "check" in argv:
-                paths["file"] = argv[argv.index("--files-from") + 1]
+                paths["file"] = argv[argv.index("--files-from0") + 1]
                 return "3 hashes could not be checked"
             return ""
 
@@ -656,7 +656,7 @@ class BackupTests(unittest.TestCase):
             full_check=True,
         )
         check = next(step for step in ran if "check" in step)
-        self.assertNotIn("--files-from", check)
+        self.assertNotIn("--files-from0", check)
 
     def test_run_backup_full_check_ignores_the_changed_set(self):
         ran = []
@@ -678,7 +678,7 @@ class BackupTests(unittest.TestCase):
             full_check=True,
         )
         check = next(step for step in ran if "check" in step)
-        self.assertNotIn("--files-from", check)
+        self.assertNotIn("--files-from0", check)
 
     def test_cli_full_check_flag_forces_the_whole_tree_check(self):
         import contextlib
@@ -702,7 +702,7 @@ class BackupTests(unittest.TestCase):
             )
         self.assertEqual(rc, 0)
         self.assertIn("check", buf.getvalue())
-        self.assertNotIn("--files-from", buf.getvalue())
+        self.assertNotIn("--files-from0", buf.getvalue())
 
     def test_copied_paths_accepts_to_suffix_and_other_variants(self):
         # Older rclone appends " to: <dest>"; some backends prefix or wrap the
@@ -1030,6 +1030,55 @@ class BackupTests(unittest.TestCase):
             self.mod._plain_run(
                 [sys.executable, "-c", "import time; time.sleep(5)"], timeout=0.5
             )
+
+    def test_plain_run_timeout_kills_the_process_group(self):
+        import sys
+        import time
+
+        # ghorg spawns concurrent git children; a timeout must not leave one
+        # writing to a mirror after the unit released the lock.
+        pidfile = Path(self.base) / "child.pid"
+        script = (
+            "import subprocess, sys, time; "
+            "child = subprocess.Popen([sys.executable, '-c', "
+            "'import time; time.sleep(30)']); "
+            "open(sys.argv[1], 'w').write(str(child.pid)); "
+            "time.sleep(30)"
+        )
+        with self.assertRaises(self.mod.subprocess.TimeoutExpired):
+            self.mod._plain_run(
+                [sys.executable, "-c", script, str(pidfile)], timeout=0.5
+            )
+        pid = int(pidfile.read_text())
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.05)
+        else:
+            self.fail("child process survived the timeout")
+
+    def test_write_paths_file_keeps_awkward_names_intact(self):
+        paths = ["#comment", " leading-space", "two\nlines"]
+        name = self.mod.write_paths_file(paths)
+        try:
+            with open(name, "rb") as handle:
+                self.assertEqual(
+                    handle.read(), b"#comment\0 leading-space\0two\nlines\0"
+                )
+        finally:
+            os.remove(name)
+
+    def test_local_only_datasets_take_their_own_lock(self):
+        # Proton datasets must serialize on the shared credential; a local-only
+        # dataset must not make them wait out its (long) timeout.
+        local = cfg(self.mod, offsite=False, source=str(self.src))
+        self.assertEqual(
+            self.mod.dataset_lock_path(local), "/run/lock/media-backup-media.lock"
+        )
+        self.assertEqual(self.mod.dataset_lock_path(cfg(self.mod)), self.mod.LOCK_PATH)
 
     def test_run_backup_kills_hung_pre_backup_with_watchdog_disabled(self):
         import sys

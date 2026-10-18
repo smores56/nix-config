@@ -432,11 +432,14 @@ nix-shell -p sops --run 'sops secrets/smortress.yaml'
 - `github-repo-pat` has `repo` scope (classic) and is read **only** by the root
   GitHub-backup service (`modules/nixos/github-backup.nix`, via
   `dotfiles.githubBackup.tokenFile`); it is root-owned, so the user's shell
-  cannot read it. `bootstrap` never touches it.
+  cannot read it. `bootstrap` never touches it. Classic `repo` grants read/write
+  to every private repo the account can reach, including org repos, while the
+  mirror only reads; fine-grained tokens cannot read wikis, so `--clone-wiki`
+  would silently omit them. Keep this token root-only.
 
 #### Rotating the PATs
 
-Both tokens expire and need periodic replacement — `proton-pass-pat` has a
+The tokens expire and need periodic replacement — `proton-pass-pat` has a
 **maximum lifetime of one year** (a Proton Pass limit), and the GitHub PATs
 expire per their own setting. Replace each before it lapses:
 
@@ -454,5 +457,6 @@ A lapsed token degrades differently per provider:
   log in interactively afterwards.
 - `github-key-pat` — `gh auth login --with-token` rejects it and `bootstrap` **fails
   hard**. Blank the secret (and rebuild) to fall back to the device-code flow.
-- `github-repo-pat` — the nightly GitHub mirror fails (and its probe trips) until
-  a valid `repo`-scoped token is back in place.
+- `github-repo-pat` — the nightly GitHub mirror fails until a valid token is back
+  in place. A token that is valid but has lost `repo` scope is caught by the
+  probe, which requires a known-private repo to be refreshed on every run.

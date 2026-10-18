@@ -12,8 +12,8 @@
 }:
 let
   inherit (config.dotfiles) aiProfile llm searchPort;
-  domain = config.dotfiles.webProxy.domain;
-  smortress = aiProviders.smortress;
+  inherit (config.dotfiles.webProxy) domain;
+  inherit (aiProviders) smortress;
 
   # Vault path of the Access service token (login item: username = Client ID,
   # password = Client Secret). Not a secret in itself, so it is safe in the

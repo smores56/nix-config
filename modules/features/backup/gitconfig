@@ -3,9 +3,16 @@
 #
 # Pin packing so the mirror stays a handful of files per repo instead of a
 # loose-object torrent: a small fetch is otherwise unpacked into loose objects
-# (fetch.unpackLimit defaults to 100), and git's auto-gc would nondeterministically
-# rewrite whole packs (a new packfile mtime re-copies it on a copy-based mirror).
+# (fetch.unpackLimit defaults to 100). The cost is one new pack per fetch that
+# brought objects; auto-maintenance is disabled so git does not rewrite those
+# packs behind our back (a rewritten packfile has a new mtime, and the
+# copy-based mirror keys on mtime, so every rewrite re-copies the whole pack).
+# A periodic controlled `git repack` would bound the pack count, but it would
+# re-copy every pack each time; the local-only dataset prefers the churn.
 [fetch]
 	unpackLimit = 1
 [gc]
 	auto = 0
+[maintenance]
+	auto = false
+	autoDetach = false

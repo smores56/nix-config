@@ -142,13 +142,14 @@ generated home, as the `<name>` flake check (`scriptChecks` in
 remote URL), `ssh-allowed-signers`
 (signature verification), `worktrees-branch-template` (branch naming from
 per-repo templates), `repos-list-links` (listing through linked org dirs),
-`work-repo-links` (the work host's flat-folder links) and `zsh-config`
-(generated zsh startup files parse; only on a system with a zsh home). Run
-them after touching shell, git or ssh settings or
-`modules/lib/repo-workflow.nix`:
+`work-repo-links` (the work host's flat-folder links), `zsh-config`
+(generated zsh startup files parse; only on a system with a zsh home) and
+`github-mirror-probe` (the GitHub mirror rejects a stale private-repo probe and
+scrubs a token-bearing origin). Run them after touching shell, git, ssh or
+backup settings, or `modules/lib/repo-workflow.nix`:
 
 ```sh
-nix build .#checks.aarch64-darwin.{git-work-routing,ssh-allowed-signers,worktrees-branch-template,repos-list-links,work-repo-links,zsh-config}
+nix build .#checks.aarch64-darwin.{git-work-routing,ssh-allowed-signers,worktrees-branch-template,repos-list-links,work-repo-links,zsh-config,github-mirror-probe}
 ```
 
 For home-manager changes, run `home-manager switch --flake .#smores@<host>`

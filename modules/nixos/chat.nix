@@ -53,7 +53,7 @@ in
     services.open-webui = {
       enable = true;
       host = "127.0.0.1";
-      port = cfg.port;
+      inherit (cfg) port;
       environmentFile = config.sops.templates."open-webui-env".path;
       # The module merges its fixed dirs with this attrset via `//`, so setting
       # any key here REPLACES the option's telemetry defaults wholesale — the

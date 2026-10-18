@@ -404,22 +404,27 @@ in
             # the Nix store, which would publish the token.
             type = lib.types.str;
             default = "/run/secrets/github-repo-pat";
-            description = "Runtime file holding a GitHub token with `repo` scope, read by ghorg; never placed in the Nix store.";
+            description = "Runtime file holding a GitHub token that can read every mirrored repo, read by ghorg; never placed in the Nix store. A classic `repo` token also grants write access to every repo the account can reach, so keep it root-only.";
           };
           probeRepo = lib.mkOption {
             type = lib.types.str;
             default = "";
-            description = "A known-private repo name. When set, the run fails unless that repo's mirror exists, catching a token without `repo` scope (private repos would otherwise be silently absent while the run still 'succeeds').";
+            description = "A known-private repo name (required). The run fails unless that repo was refreshed in the current run, catching a token that lost `repo` scope: ghorg then lists only public repos, leaves the old private mirrors in place, and still exits 0.";
           };
           schedule = lib.mkOption {
             type = lib.types.str;
             default = "*-*-* 00:30:00";
-            description = "systemd OnCalendar for the mirror timer. Keep it ahead of the media datasets so the shared host lock never contends.";
+            description = "systemd OnCalendar for the mirror timer. A local-only dataset takes its own lock, so it neither waits on nor starves the Proton datasets.";
           };
           timeout = lib.mkOption {
             type = lib.types.str;
             default = "6h";
             description = "systemd TimeSpan cap on a run; generous for a cold clone of every repo.";
+          };
+          fullCheckSchedule = lib.mkOption {
+            type = lib.types.nullOr lib.types.str;
+            default = "Sun *-*-* 10:00:00";
+            description = "systemd OnCalendar for a periodic whole-tree verification (null disables). The nightly check only walks the files copied that run, so unchanged packs would otherwise never be re-read.";
           };
         };
       };

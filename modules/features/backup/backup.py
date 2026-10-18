@@ -16,12 +16,14 @@ Nothing here ever deletes source data:
   The remote is a plain append-only mirror — stale files there are harmless and
   are never pruned, so a lost local disk cannot take the offsite copy with it.
 
-The offsite copy is verified with `rclone check --checksum`, scoped to the files
-the offsite copy actually wrote this run (`--files-from`) instead of the whole
-mirror: on a large unchanged tree a full walk reads the entire dataset for no new
-information. When nothing changed the check is skipped entirely — the mirror is
-already identical to the last verified run — and `--full-check` forces the
-whole-tree walk for a periodic integrity scan. rclone exits 0 even when it could
+Every mirror is verified with `rclone check --checksum`, scoped to the files the
+copy actually wrote this run (`--files-from0`) instead of the whole tree: on a
+large unchanged tree a full walk reads the entire dataset for no new
+information. Which pair is compared depends on the dataset: the offsite copy
+against the local mirror, or — for a local-only dataset (`offsite = false`) —
+the source against the local mirror. When nothing changed the check is skipped
+entirely — the mirror is already identical to the last verified run — and
+`--full-check` forces the whole-tree walk for a periodic integrity scan. rclone exits 0 even when it could
 not actually compare anything (e.g. a hash-less backend), so the
 "<n> hashes could not be checked" summary is parsed and any non-zero count is a
 hard failure: an unverified mirror is not a backup.
@@ -44,6 +46,7 @@ import os
 import re
 import select
 import shlex
+import signal
 import subprocess
 import sys
 import tempfile
@@ -327,12 +330,14 @@ def build_steps(cfg, date):
 
 
 def _check_argv(cfg, source, dest, files_from):
-    """rclone `check` argv. `--files-from` is mutually exclusive with the filters.
+    """rclone `check` argv. `--files-from0` is exclusive with the filters.
 
-    rclone rejects `--files-from` alongside any other filter ("the usage of
+    rclone rejects `--files-from*` alongside any other filter ("the usage of
     --files-from overrides all other filters, it should be used alone"), so the
     excludes only go on a whole-tree walk. When `files_from` is set it names the
-    files this run wrote, which the excludes never match anyway.
+    files this run wrote, which the excludes never match anyway. The NUL form
+    keeps names that start with `#`/`;` or contain whitespace from being trimmed
+    or skipped.
     """
     argv = [
         "rclone",
@@ -346,7 +351,7 @@ def _check_argv(cfg, source, dest, files_from):
         dest,
     ]
     if files_from is not None:
-        argv += ["--files-from", files_from]
+        argv += ["--files-from0", files_from]
     else:
         argv += _exclude_flags(cfg)
     return argv
@@ -478,6 +483,19 @@ def validate_stall_timeout(stall_timeout):
     return stall_timeout
 
 
+def dataset_lock_path(cfg):
+    """Lock file for a run: Proton datasets share one; local-only ones do not.
+
+    The host-wide lock exists to serialize use of the single-use Proton refresh
+    token. A local-only dataset never touches Proton, so it takes a per-dataset
+    lock: concurrent runs of the same dataset still serialize, while a long
+    GitHub refresh cannot make a media unit wait past its TimeoutStartSec.
+    """
+    if cfg.offsite:
+        return LOCK_PATH
+    return f"/run/lock/media-backup-{cfg.name}.lock"
+
+
 def acquire_lock(path=LOCK_PATH, out=None):
     """Block until an exclusive host-wide run lock is held; return its handle.
 
@@ -532,20 +550,29 @@ def _plain_run(argv, capture=False, env=None, timeout=0):
 
     A hung pg_dump would hold the host lock just like a hung rclone, so it is
     always bounded by a wall-clock timeout — independent of the stall watchdog,
-    which can be switched off with stall-timeout 0.
+    which can be switched off with stall-timeout 0. The step gets its own
+    process group so a timeout kills its children too: ghorg spawns concurrent
+    git processes, and an orphaned one could keep writing to a mirror after the
+    unit released the lock.
     """
     limit = timeout or None
-    if capture:
-        result = subprocess.run(
-            argv, capture_output=True, text=True, env=env, timeout=limit
-        )
-        if result.returncode != 0:
-            raise subprocess.CalledProcessError(
-                result.returncode, argv, result.stdout, result.stderr
-            )
-        return (result.stdout or "") + (result.stderr or "")
-    subprocess.run(argv, check=True, text=True, env=env, timeout=limit)
-    return ""
+    proc = subprocess.Popen(
+        argv,
+        stdout=subprocess.PIPE if capture else None,
+        stderr=subprocess.PIPE if capture else None,
+        text=True,
+        env=env,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=limit)
+    except subprocess.TimeoutExpired:
+        os.killpg(proc.pid, signal.SIGKILL)
+        proc.communicate()
+        raise
+    if proc.returncode != 0:
+        raise subprocess.CalledProcessError(proc.returncode, argv, stdout, stderr)
+    return (stdout or "") + (stderr or "") if capture else ""
 
 
 def run_streaming(
@@ -671,15 +698,17 @@ def _pre_backup_env(cfg, date):
 
 
 def write_paths_file(paths):
-    """Write paths one per line to a fresh temp file and return its path.
+    """Write paths NUL-separated to a fresh temp file and return its path.
 
-    `--files-from` takes a file rather than a repeated flag, so the changed set
-    goes through disk. mkstemp gives a private 0600 file (source filenames can be
-    sensitive); the caller removes it.
+    `--files-from0` takes a file rather than a repeated flag, so the changed set
+    goes through disk. NUL separation keeps names containing newlines, leading
+    spaces, or a leading `#`/`;` intact; the line-based `--files-from` trims or
+    treats those as comments and silently skips them. mkstemp gives a private
+    0600 file (source filenames can be sensitive); the caller removes it.
     """
     fd, path = tempfile.mkstemp(prefix="backup-check-", suffix=".txt")
     with os.fdopen(fd, "w") as handle:
-        handle.write("".join(name + "\n" for name in paths))
+        handle.write("".join(name + "\0" for name in paths))
     return path
 
 
@@ -744,7 +773,11 @@ def run_backup(
     )
     # Hold the host lock for the whole run (all entry points funnel through
     # here), except for a dry run which touches nothing.
-    lock_handle = acquire_lock(out=out) if (lock and not dry_run) else None
+    lock_handle = (
+        acquire_lock(path=dataset_lock_path(cfg), out=out)
+        if (lock and not dry_run)
+        else None
+    )
     try:
         if not dry_run:
             os.makedirs(local_dir(cfg), mode=0o700, exist_ok=True)
@@ -866,7 +899,7 @@ def main(argv=None):
     parser.add_argument(
         "--full-check",
         action="store_true",
-        help="verify the whole offsite mirror instead of only this run's changes",
+        help="verify the whole mirror instead of only this run's changes",
     )
     parser.add_argument(
         "--no-lock",

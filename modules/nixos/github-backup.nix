@@ -14,6 +14,7 @@
 }:
 let
   cfg = config.dotfiles.githubBackup;
+  mirrorRoot = "/var/lib/github-mirrors";
 
   # ghorg reads its config from $XDG_CONFIG_HOME/ghorg/conf.yaml; pin it at an
   # empty store dir so a stray root conf can never redirect a backup run.
@@ -21,29 +22,37 @@ let
 
   # The driver's preBackup hook runs as root with only the driver's PATH, so this
   # exports everything ghorg/git need. GIT_CONFIG_GLOBAL pins packing so the
-  # mirror stays a handful of files per repo (see the checked-in gitconfig); the
-  # token is passed as a file path, never inlined — this script is world-readable
-  # in the Nix store.
+  # mirror does not grow loose objects or get rewritten by auto-maintenance (see
+  # the checked-in gitconfig); the token is passed as a file path, never
+  # inlined — this script is world-readable in the Nix store.
+  #
+  # `env -i` scrubs inherited GHORG_* (GHORG_CONFIG, GHORG_DEBUG, GHORG_PRUNE,
+  # GHORG_TOKEN_CMD, ...) and `cd /` avoids ghorg's ./ghorg.yaml lookup, so a
+  # privileged manual run cannot be redirected by its environment or cwd.
   mirror = pkgs.writeShellScript "github-mirror-env" ''
-    export PATH=${
-      lib.makeBinPath [
-        pkgs.ghorg
-        pkgs.git
-        pkgs.git-lfs
-        pkgs.coreutils
-        pkgs.bash
-      ]
-    }
-    export GIT_CONFIG_GLOBAL=${../features/backup/gitconfig}
-    export XDG_CONFIG_HOME=${emptyConfig}
-    export HOME=/root
-    export GHORG_GITHUB_TOKEN=${lib.escapeShellArg cfg.tokenFile}
-    export GHORG_ABSOLUTE_PATH_TO_CLONE_TO=/var/lib/github-mirrors
-    export GHORG_CLONE_TYPE=user
-    export GHORG_SCM_TYPE=github
-    export GHORG_FETCH_GIT_LFS=true
-    export GHORG_PROBE_REPO=${lib.escapeShellArg cfg.probeRepo}
-    exec ${../features/backup/github-mirror.sh} ${lib.escapeShellArg config.dotfiles.githubUser}
+    cd /
+    exec ${pkgs.coreutils}/bin/env -i \
+      PATH=${
+        lib.escapeShellArg (
+          lib.makeBinPath [
+            pkgs.ghorg
+            pkgs.git
+            pkgs.git-lfs
+            pkgs.coreutils
+            pkgs.bash
+          ]
+        )
+      } \
+      HOME=/root \
+      XDG_CONFIG_HOME=${emptyConfig} \
+      GIT_CONFIG_GLOBAL=${../features/backup/gitconfig} \
+      GHORG_GITHUB_TOKEN=${lib.escapeShellArg cfg.tokenFile} \
+      GHORG_ABSOLUTE_PATH_TO_CLONE_TO=${mirrorRoot} \
+      GHORG_CLONE_TYPE=user \
+      GHORG_SCM_TYPE=github \
+      GHORG_FETCH_GIT_LFS=true \
+      GHORG_PROBE_REPO=${lib.escapeShellArg cfg.probeRepo} \
+      ${../features/backup/github-mirror.sh} ${lib.escapeShellArg config.dotfiles.githubUser}
   '';
 in
 {
@@ -51,13 +60,26 @@ in
   # `dotfiles.backup.enable` here would recurse (this module defines a child of
   # it). backup-datasets.nix already asserts that any dataset needs the disk.
   config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = cfg.probeRepo != "";
+        message = "dotfiles.githubBackup.probeRepo must name a known-private repo; it is the only guard against a token that silently loses `repo` scope.";
+      }
+    ];
+
+    # ghorg only sets 0700 when it creates the target itself, and git creates
+    # the repo dirs 0755; enforce the barrier that keeps private repo contents
+    # out of other users' reach.
+    systemd.tmpfiles.rules = [
+      "d ${mirrorRoot} 0700 root root -"
+    ];
+
     dotfiles.backup.datasets.GitHub = {
       # ghorg writes <target>/<owner>_backup/<repo>/; the dataset source is the
       # parent, so the whole tree is mirrored.
-      source = "/var/lib/github-mirrors";
+      source = mirrorRoot;
       offsite = false;
-      schedule = cfg.schedule;
-      timeout = cfg.timeout;
+      inherit (cfg) fullCheckSchedule schedule timeout;
       preBackup = "${mirror}";
     };
   };

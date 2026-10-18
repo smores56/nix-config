@@ -3,7 +3,8 @@
 # never sit on disk (only their `.pub` files do — git's `user.signingkey` and
 # `allowed_signers` reference files). This replaces the old file-backed
 # ssh-agent and its `load-ssh-keys` helper.
-{ ... }:
+_:
+
 let
   # `fs` keeps the session's local encryption key in a file under the session
   # dir instead of the kernel keyring, which is wiped on reboot (and absent on

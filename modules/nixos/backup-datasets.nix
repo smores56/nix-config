@@ -144,6 +144,25 @@ let
       serviceConfig = {
         Type = "oneshot";
         User = "root";
+        # The preBackup step processes repo-controlled content (ghorg/git) as
+        # root, so contain it where it is safe for every dataset. ProtectSystem
+        # is deliberately absent: each dataset would need its own ReadWritePaths.
+        NoNewPrivileges = true;
+        PrivateTmp = true;
+        ProtectHome = true;
+        ProtectKernelTunables = true;
+        ProtectKernelModules = true;
+        ProtectControlGroups = true;
+        ProtectClock = true;
+        ProtectHostname = true;
+        RestrictSUIDSGID = true;
+        RestrictRealtime = true;
+        LockPersonality = true;
+        RestrictAddressFamilies = [
+          "AF_UNIX"
+          "AF_INET"
+          "AF_INET6"
+        ];
         # Cap the wall-clock run: a seed copy can take hours, a stuck one must not.
         TimeoutStartSec = dataset.timeout;
         # The `+` runs this privileged, after RequiresMountsFor, so the dataset
