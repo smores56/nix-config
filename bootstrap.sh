@@ -270,14 +270,15 @@ fi
 if is_nixos && has_nixos_config; then
   info "NixOS detected with config for ${HOSTNAME}"
 
-  HARDWARE_DEST="${REPO_DIR}/modules/hosts/${HOSTNAME}.nix"
+  HARDWARE_DEST="${REPO_DIR}/modules/hosts/${HOSTNAME}/hardware.nix"
 
   if [ ! -f "$HARDWARE_DEST" ]; then
     info "Generating hardware configuration..."
     sudo nixos-generate-config --force
+    mkdir -p "$(dirname "$HARDWARE_DEST")"
     cp /etc/nixos/hardware-configuration.nix "$HARDWARE_DEST"
     ok "Hardware config saved to ${HARDWARE_DEST}"
-    warn "Commit this file: cd ${REPO_DIR} && git add modules/hosts/${HOSTNAME}.nix && git commit -m 'Add ${HOSTNAME} hardware config'"
+    warn "Commit this file: cd ${REPO_DIR} && git add modules/hosts/${HOSTNAME} && git commit -m 'Add ${HOSTNAME} hardware config'"
   else
     skip "Hardware config already exists at ${HARDWARE_DEST}"
   fi
@@ -287,7 +288,7 @@ if is_nixos && has_nixos_config; then
   ok "NixOS rebuild complete"
 elif is_nixos; then
   warn "NixOS detected but no nixosConfiguration for '${HOSTNAME}'."
-  warn "Add a config to modules/flake/configurations.nix and re-run."
+  warn "Add modules/hosts/${HOSTNAME}/meta.nix (with nixos = true) and re-run."
 fi
 
 # ── Done ──────────────────────────────────────────────────────────

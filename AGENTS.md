@@ -33,7 +33,7 @@ explicitly. Place files by concern, not by host.
 | `modules/features/` | cross-platform home-manager modules (shell, editor, git, packages, theme, ai) |
 | `modules/desktop/` | desktop-environment modules (niri, aerospace) |
 | `modules/nixos/` | NixOS system modules (base, desktop, networking, ssh, etc.) |
-| `modules/hosts/` | per-host hardware config only (filesystems, kernel modules) |
+| `modules/hosts/` | per-host directory: `hardware.nix` (nixos-generate-config) + `meta.nix` (host knobs; auto-discovered) |
 | `modules/flake/` | flake-parts modules (configurations, checks, formatter) |
 | `modules/lib/` | helper libraries |
 | `modules/features/ai/` | AI tooling: assistant context, brain (transcript digest, guarded vault commit; its skill is `skills/brain`), maki, providers, sdlc, skills |
@@ -51,9 +51,20 @@ patterns.
 
 ### Adding a new host config
 
-1. `modules/hosts/<hostname>.nix` — hardware config from `nixos-generate-config`
-2. `modules/flake/configurations.nix` — add `nixosConfigurations` (via
-   `mkNixos`) and `homeConfigurations` (via `mkHome`) entries
+Hosts are discovered from `modules/hosts/*/`; adding one never edits
+`configurations.nix`.
+
+1. `modules/hosts/<hostname>/hardware.nix` — hardware config from
+   `nixos-generate-config` (NixOS hosts only).
+2. `modules/hosts/<hostname>/meta.nix` — a plain attrset (data, **not** a
+   module: no arguments) declaring `system`, `username`, `nixos = true` and/or
+   `home = true`, and a shared `dotfiles` attrset of host knobs (the first
+   `dotfiles` section in `options.nix`).
+
+`nixos = true` builds `nixosConfigurations.<hostname>` (needs `hardware.nix`);
+`home = true` builds `homeConfigurations.<username>@<hostname>`. The `dotfiles`
+attrset is shared by both, so a shared value is written once. A `disko.nix`
+beside them is imported into the NixOS config when present.
 
 ## Repo-specific code quality
 

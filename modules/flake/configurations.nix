@@ -12,18 +12,6 @@ let
 
   importTree = path: (inputs.import-tree path).imports;
 
-  # Loopback ports for the tunnel-exposed services (single source shared with
-  # the listeners and the clients' forwards).
-  ports = import ../ports.nix;
-
-  # The ssh/llm/searx entries all want the same Access policy set: an email
-  # allow-list (human fallback) plus a Service Auth policy for unattended
-  # clients. Shared so the three cannot diverge.
-  accessWithServiceAuth = {
-    enable = true;
-    serviceAuth = true;
-  };
-
   localOverlays = system: [
     niri.overlays.niri
     (final: prev: {
@@ -135,23 +123,73 @@ let
     workHost = null;
     brain = null;
   };
-  homeArgs = [
-    "system"
+  # Every host-authored knob (the first `dotfiles` section in options.nix),
+  # used to reject typos in a host's meta.nix. Keep in sync with options.nix.
+  hostKnobs = [
+    "displayManager"
+    "windowManager"
+    "polarity"
+    "aiProfile"
+    "shellAbbrs"
+    "brain"
+    "workHost"
     "username"
-    "homeDirectory"
+    "exposeSsh"
+    "sshAuthorizedKeys"
+    "nvidia"
+    "llm"
+    "search"
+    "searchPort"
+    "noSleep"
+    "nixos"
+    "fingerprint"
+    "webProxy"
+    "calibre"
+    "navidrome"
+    "photobucket"
+    "immich"
+    "backup"
+    "notify"
   ];
+
+  # Hosts are discovered from modules/hosts/<name>/; adding a host means adding
+  # a directory (meta.nix + hardware.nix), never editing this file.
+  hostsDir = ../hosts;
+  hostNames = builtins.attrNames (
+    lib.filterAttrs (_: type: type == "directory") (builtins.readDir hostsDir)
+  );
+  hostMeta =
+    name:
+    let
+      metaPath = hostsDir + "/${name}/meta.nix";
+      m =
+        if builtins.pathExists metaPath then
+          import metaPath
+        else
+          throw "modules/hosts/${name}/ has no meta.nix (see AGENTS.md)";
+      unknown = lib.subtractLists hostKnobs (builtins.attrNames (m.dotfiles or { }));
+    in
+    assert lib.assertMsg (
+      unknown == [ ]
+    ) "modules/hosts/${name}/meta.nix: unknown dotfiles knob(s): ${lib.concatStringsSep ", " unknown}";
+    m;
+
+  # The identity every config built for a host carries; set after the host's own
+  # knobs so a meta.nix cannot silently retarget a config's user or platform.
+  identity =
+    m:
+    (m.dotfiles or { })
+    // {
+      username = m.username or "smores";
+      system = m.system or "x86_64-linux";
+    };
 
   mkHome =
     args:
     let
       system = args.system or "x86_64-linux";
       username = args.username or "smores";
-      # A typo'd or undeclared knob would otherwise vanish without a trace.
-      unknown = lib.subtractLists (builtins.attrNames homeKnobs ++ homeArgs) (builtins.attrNames args);
     in
-    assert lib.assertMsg (
-      unknown == [ ]
-    ) "mkHome: unknown arguments ${lib.concatStringsSep ", " unknown}; add them to homeKnobs";
     home-manager.lib.homeManagerConfiguration {
       pkgs = pkgsForSystem system;
       extraSpecialArgs = {
@@ -184,7 +222,12 @@ let
       ]
       ++ nixosModules
       ++ [
-        ../hosts/${args.hostname}.nix
+        (hostsDir + "/${args.hostname}/hardware.nix")
+      ]
+      ++ lib.optional (builtins.pathExists (hostsDir + "/${args.hostname}/disko.nix")) (
+        hostsDir + "/${args.hostname}/disko.nix"
+      )
+      ++ [
         {
           networking.hostName = args.hostname;
           dotfiles = {
@@ -210,142 +253,22 @@ let
 in
 {
   flake = {
-    homeConfigurations = {
-      "smores@smorespro" = mkHome {
-        displayManager = "niri";
-        nixos = true;
-        fingerprint = true;
-        photobucket.enable = true;
-      };
-      "smores@smortress" = mkHome {
-        displayManager = "none";
-        nixos = true;
-        # Runs llama.cpp locally, so maki reaches it on loopback instead of a
-        # cloudflared forward (modules/features/cloudflared.nix).
-        llm = true;
-        calibre.enable = true;
-      };
-      "sam@smoreswork" = mkHome {
-        displayManager = "osx";
-        windowManager = "aerospace";
-        username = "sam";
-        system = "aarch64-darwin";
-        aiProfile = "work";
-        workHost = true;
-        brain.dir = "brain";
-      };
-    };
-    nixosConfigurations = {
-      "smorespro" = mkNixos {
-        hostname = "smorespro";
-        displayManager = "niri";
-        fingerprint = true;
-      };
-      "smortress" = mkNixos {
-        hostname = "smortress";
-        exposeSsh = true;
-        displayManager = "none";
-        nvidia = true;
-        llm = true;
-        search = true;
-        noSleep = true;
-        webProxy = {
-          enable = true;
-          tunnelName = "smortress";
-          services = {
-            calibre.port = 8181;
-            immich.port = 2283;
-            # Public, protected only by Navidrome's own auth: music streaming is
-            # low-bandwidth, so the Cloudflare CDN terms that bite video don't apply.
-            music.port = 4533;
-            # Unauthenticated loopback listener, so it must sit behind Access
-            # (enforced by an assertion in modules/nixos/notify.nix).
-            ntfy = {
-              port = ports.ntfy;
-              access.enable = true;
-            };
-            # sshd (key-only, loopback; see modules/nixos/ssh.nix) is reachable
-            # only through the tunnel. The Service Auth policy lets `cloudflared
-            # access ssh` run unattended; the email policy keeps a browser
-            # fallback. Must never lose Access (assertion in web-proxy.nix).
-            ssh = {
-              port = 22;
-              protocol = "ssh";
-              access = accessWithServiceAuth;
-            };
-            # maki reaches llama.cpp (api_key = "none") through the tunnel; the
-            # service token keeps the agent's calls unattended.
-            llm = {
-              # Port comes from modules/ports.nix (the listener's single source).
-              port = ports.llm;
-              protocol = "tcp";
-              access = accessWithServiceAuth;
-            };
-            # SearXNG (dotfiles.searchPort). maki reaches it through a
-            # `cloudflared access tcp` forward (modules/features/cloudflared.nix),
-            # so the ingress is tcp — an http ingress forwards the carrier's
-            # WebSocket upgrade to SearXNG and fails with "websocket: bad
-            # handshake". The service token keeps maki's calls unattended.
-            searx = {
-              # Port comes from modules/ports.nix (the listener's single source).
-              port = ports.searx;
-              protocol = "tcp";
-              access = accessWithServiceAuth;
-            };
-          };
-        };
-        calibre.enable = true;
-        immich.enable = true;
-        navidrome.enable = true;
-        # Relocated off /var/lib/immich so every media dataset lives under one
-        # root (backup source and read-only server mounts both use it).
-        immich.mediaLocation = "/var/lib/media/Photos";
-        # These generic datasets replaced the old Immich-specific restic
-        # pipeline, which has been removed.
-        backup.enable = true;
-        backup.datasets.Videos = {
-          schedule = "*-*-* 01:00:00";
-          fullCheckSchedule = "Sun *-*-* 07:00:00";
-          # Incrementals run in minutes; 2h is a wall-clock backstop so a
-          # deadlock trips fast (stallTimeout catches a stalled transfer sooner).
-          timeout = "2h";
-        };
-        backup.datasets.Photos = {
-          schedule = "*-*-* 03:00:00";
-          fullCheckSchedule = "Sun *-*-* 06:00:00";
-          timeout = "2h";
-          # preBackup dumps Postgres, so the unit gets pg_dump on PATH and orders
-          # after postgresql.service. `excludes` REPLACES the option default, so
-          # the cache/credential patterns are repeated here alongside the two
-          # regenerable Immich derived trees (thumbs, encoded-video) that Immich
-          # rebuilds from the originals and that need not occupy a mirror.
-          excludes = [
-            "/.cache/**"
-            "**/.cache/**"
-            "/rclone.conf"
-            "/thumbs/**"
-            "/encoded-video/**"
-          ];
-          postgres = true;
-          preBackup = ''
-            mkdir -p "$BACKUP_CURRENT/db"
-            tmp="$BACKUP_CURRENT/db/.immich-$BACKUP_DATE.tmp"
-            # A dump killed mid-write must not leave a partial .tmp for the mirror
-            # to pick up, so clean it on any exit or terminating signal.
-            trap 'rm -f "$tmp"' EXIT
-            trap 'rm -f "$tmp"; exit 1' TERM INT
-            runuser -u postgres -- pg_dump -Fc --no-owner immich > "$tmp" \
-              && mv "$tmp" "$BACKUP_CURRENT/db/immich-$BACKUP_DATE.dump" \
-              || exit 1
-          '';
-        };
-        backup.datasets.Music = {
-          schedule = "*-*-* 05:00:00";
-          fullCheckSchedule = "Sun *-*-* 08:00:00";
-          timeout = "2h";
-        };
-        notify.enable = true;
-      };
-    };
+    # Every host directory under modules/hosts/ contributes its configs; the
+    # meta.nix `nixos`/`home` flags say which. Hosts are discovered, so adding
+    # one never touches this file.
+    homeConfigurations = lib.listToAttrs (
+      map (
+        name:
+        let
+          m = hostMeta name;
+        in
+        lib.nameValuePair "${m.username or "smores"}@${name}" (mkHome (identity m))
+      ) (lib.filter (name: (hostMeta name).home or false) hostNames)
+    );
+    nixosConfigurations = lib.listToAttrs (
+      map (name: lib.nameValuePair name (mkNixos ((identity (hostMeta name)) // { hostname = name; }))) (
+        lib.filter (name: (hostMeta name).nixos or false) hostNames
+      )
+    );
   };
 }
