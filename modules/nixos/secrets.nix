@@ -24,6 +24,12 @@
       cloudflared-credentials = { };
       navidrome-env = { };
       searxng-secret-key = { };
+      # The calibre OPDS password, read by the user's calibre-server unit; owned
+      # by the user so the 0400 file is readable without root.
+      calibre-password = {
+        owner = config.dotfiles.username;
+        mode = "0400";
+      };
 
       # Provisioning PATs, readable by the user so `bootstrap` can log in
       # non-interactively (`gh auth login --with-token`, `pass-cli login`).

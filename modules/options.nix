@@ -214,6 +214,11 @@ in
             default = 8181;
             description = "Loopback port for calibre-server.";
           };
+          passwordFile = lib.mkOption {
+            type = lib.types.str;
+            default = "";
+            description = "File holding the OPDS account password. Empty falls back to ~/.config/calibre-server/password; smortress points this at its sops-decrypted copy.";
+          };
         };
       };
       default = { };

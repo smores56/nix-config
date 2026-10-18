@@ -71,6 +71,9 @@ in
       };
     };
     calibre.enable = true;
+    # OPDS password comes from sops (owner smores, 0400) instead of the plaintext
+    # ~/.config/calibre-server/password, which is retired once this lands.
+    calibre.passwordFile = "/run/secrets/calibre-password";
     immich.enable = true;
     # Relocated off /var/lib/immich so every media dataset lives under one
     # root (backup source and read-only server mounts both use it).

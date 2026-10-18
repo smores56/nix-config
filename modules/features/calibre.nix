@@ -19,15 +19,23 @@ let
   library = "${config.home.homeDirectory}/Calibre Library";
   userdb = "${config.home.homeDirectory}/.config/calibre-server/users.sqlite";
 
-  # Single OPDS account, provisioned from a plaintext XDG password file
-  # (trailing newlines stripped). Restarting the unit re-applies the file,
-  # so rotating the password is just editing the file.
+  # The host may point this at a sops-decrypted copy (smortress does); the
+  # plaintext XDG file is only the fallback for hosts without a secret.
+  passwordFile =
+    if cfg.passwordFile != "" then
+      cfg.passwordFile
+    else
+      "${config.home.homeDirectory}/.config/calibre-server/password";
+
+  # Single OPDS account, provisioned from the password file (trailing newlines
+  # stripped). Restarting the unit re-applies the file, so rotating the password
+  # is just editing the secret and rebuilding.
   opdsUser = "smores56";
 
   provisionUser = pkgs.writeShellScript "calibre-provision-user" ''
     set -euo pipefail
     server=${lib.getExe' pkgs.calibre "calibre-server"}
-    password_file="''${XDG_CONFIG_HOME:-$HOME/.config}/calibre-server/password"
+    password_file=${lib.escapeShellArg passwordFile}
     if [[ ! -r "$password_file" || ! -s "$password_file" ]]; then
       echo "calibre-server: password file missing or empty: $password_file" >&2
       exit 1
