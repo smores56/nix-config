@@ -225,9 +225,12 @@ let
         { nixpkgs.overlays = localOverlays (args.system or "x86_64-linux"); }
       ]
       ++ nixosModules
-      ++ [
-        (hostsDir + "/${args.hostname}/hardware.nix")
-      ]
+      # hardware.nix is optional so a host can be authored (meta.nix +
+      # disko.nix) before nixos-anywhere generates it during the install; the
+      # guard keeps the flake evaluable in that window (see AGENTS.md).
+      ++ lib.optional (builtins.pathExists (hostsDir + "/${args.hostname}/hardware.nix")) (
+        hostsDir + "/${args.hostname}/hardware.nix"
+      )
       ++ lib.optional (builtins.pathExists (hostsDir + "/${args.hostname}/disko.nix")) (
         hostsDir + "/${args.hostname}/disko.nix"
       )

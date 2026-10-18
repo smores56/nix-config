@@ -22,7 +22,7 @@ Key directories under `modules/`:
 | `features/` | cross-platform home-manager modules (shell, editor, git, packages, theme, ai) |
 | `desktop/` | desktop-environment modules (niri, aerospace) |
 | `nixos/` | NixOS system modules (base, desktop, networking, ssh, etc.) |
-| `hosts/` | per-host directory: `hardware.nix` (nixos-generate-config) + `meta.nix` (host knobs; auto-discovered) |
+| `hosts/` | per-host directory: `meta.nix` (host knobs; auto-discovered) + optional `hardware.nix` (nixos-generate-config) and `disko.nix` (declarative disks) |
 | `lib/` | helper libraries |
 | `tests/` | Python unit tests for the repo's tools (sdlc, maki, brain, photobucket, cloudflare, backup, immich, aerospace-layout), and shell checks |
 
@@ -126,8 +126,9 @@ systemctl status cloudflared-tunnel-<tunnelName>
 sudo systemctl restart cloudflared-tunnel-<tunnelName>
 ```
 
-If the host will not boot, reinstall from the repo (the `bootstrap` app, and
-once it lands, disko + nixos-anywhere).
+If the host will not boot, reinstall from the repo with
+`nix run .#install -- <hostname> root@<ip>` (see *Installing a blank machine*),
+then run the `bootstrap` app.
 
 **Cloudflare token invalid or rotated.** The reconciler runs at boot and after
 each activation and exits 2 — not drift — when the API fails; the running
@@ -345,15 +346,33 @@ The env functions (`set_dev`, `rdb_dev`, …) and pyenv init arrive once
 Hosts live in `modules/hosts/<hostname>/` and are discovered automatically;
 adding one never edits `modules/flake/configurations.nix`.
 
-1. On the target hardware, run `nixos-generate-config` and save the generated
-   `hardware-configuration.nix` as `modules/hosts/<hostname>/hardware.nix`
-   (hardware-only settings: filesystems, kernel modules, CPU microcode).
-2. Add `modules/hosts/<hostname>/meta.nix` — a plain attrset (data, no
+1. Add `modules/hosts/<hostname>/meta.nix` — a plain attrset (data, no
    arguments) declaring `system`, `username`, whether to build a NixOS config
    (`nixos = true`) and/or a home config (`home = true`), and a `dotfiles`
    attrset of the host's knobs (see `modules/options.nix`).
+2. For a NixOS host, add `modules/hosts/<hostname>/disko.nix` — the declarative
+   disk layout. disko owns `fileSystems` for `/` and `/boot`, so `hardware.nix`
+   omits them; pin each partition's `label` for stable `/dev/disk/by-partlabel`
+   devices.
+3. `hardware.nix` (kernel modules, CPU microcode) comes from
+   `nixos-generate-config`. It is optional and is generated during a
+   `nixos-anywhere` install (see *Installing a blank machine*).
 
 The `dotfiles` attrset is shared by the host's NixOS and home configs; each
 reads the knobs it knows, so a value is written once. The available
 configurations are the `nixosConfigurations` / `homeConfigurations` flake
 outputs.
+
+### Installing a blank machine
+
+Commit the host's `meta.nix` + `disko.nix` (flakes only see tracked files),
+then from the checkout:
+
+```sh
+nix run .#install -- <hostname> root@<target-ip>
+```
+
+`nixos-anywhere` kexecs the target into the NixOS installer, runs the host's
+disko layout (**wiping its disks**), generates
+`modules/hosts/<hostname>/hardware.nix`, and installs NixOS. Commit the
+generated hardware config, then run the `bootstrap` app for the per-user setup.

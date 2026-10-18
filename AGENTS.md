@@ -33,7 +33,7 @@ explicitly. Place files by concern, not by host.
 | `modules/features/` | cross-platform home-manager modules (shell, editor, git, packages, theme, ai) |
 | `modules/desktop/` | desktop-environment modules (niri, aerospace) |
 | `modules/nixos/` | NixOS system modules (base, desktop, networking, ssh, etc.) |
-| `modules/hosts/` | per-host directory: `hardware.nix` (nixos-generate-config) + `meta.nix` (host knobs; auto-discovered) |
+| `modules/hosts/` | per-host directory: `meta.nix` (host knobs; auto-discovered) + optional `hardware.nix` (nixos-generate-config) and `disko.nix` (declarative disks) |
 | `modules/flake/` | flake-parts modules (configurations, checks, formatter) |
 | `modules/lib/` | helper libraries |
 | `modules/features/ai/` | AI tooling: assistant context, brain (transcript digest, guarded vault commit; its skill is `skills/brain`), maki, providers, sdlc, skills |
@@ -54,17 +54,37 @@ patterns.
 Hosts are discovered from `modules/hosts/*/`; adding one never edits
 `configurations.nix`.
 
-1. `modules/hosts/<hostname>/hardware.nix` — hardware config from
-   `nixos-generate-config` (NixOS hosts only).
-2. `modules/hosts/<hostname>/meta.nix` — a plain attrset (data, **not** a
+1. `modules/hosts/<hostname>/meta.nix` — a plain attrset (data, **not** a
    module: no arguments) declaring `system`, `username`, `nixos = true` and/or
    `home = true`, and a shared `dotfiles` attrset of host knobs (the first
    `dotfiles` section in `options.nix`).
+2. `modules/hosts/<hostname>/disko.nix` — the declarative disk layout for a
+   NixOS host. disko owns `fileSystems` for `/` and `/boot` (and `boot` when it
+   manages an EF02 partition), so `hardware.nix` omits them. Pin each
+   partition's `label` so the derived `/dev/disk/by-partlabel/*` devices are
+   stable across reinstalls.
+3. `modules/hosts/<hostname>/hardware.nix` — hardware config from
+   `nixos-generate-config` (kernel modules, CPU microcode). **Optional**:
+   `nixos-anywhere` generates it during the install, so a host can be authored
+   without it.
 
-`nixos = true` builds `nixosConfigurations.<hostname>` (needs `hardware.nix`);
-`home = true` builds `homeConfigurations.<username>@<hostname>`. The `dotfiles`
-attrset is shared by both, so a shared value is written once. A `disko.nix`
-beside them is imported into the NixOS config when present.
+`nixos = true` builds `nixosConfigurations.<hostname>`; `home = true` builds
+`homeConfigurations.<username>@<hostname>`. The `dotfiles` attrset is shared by
+both, so a shared value is written once.
+
+### Provisioning a blank NixOS machine
+
+`git add` the host's `meta.nix` + `disko.nix` first (flakes only see tracked
+files), then from the checkout:
+
+```
+nix run .#install -- <hostname> root@<target-ip>
+```
+
+`nixos-anywhere` kexecs the target into the NixOS installer, runs the host's
+disko layout (**wiping its disks**), generates
+`modules/hosts/<hostname>/hardware.nix`, and installs. Commit the generated
+hardware config, then run the `bootstrap` app for the per-user setup.
 
 ## Repo-specific code quality
 
