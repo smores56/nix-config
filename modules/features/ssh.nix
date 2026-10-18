@@ -35,9 +35,11 @@ in
         ServerAliveCountMax = 3;
         HashKnownHosts = false;
         UserKnownHostsFile = "~/.ssh/known_hosts";
-        ControlMaster = "no";
+        # Reuse one transport per destination: a fresh cloudflared ProxyCommand
+        # also re-resolves the Access token via pass-cli, ~1.7s per invocation.
+        ControlMaster = "auto";
         ControlPath = "~/.ssh/master-%r@%n:%p";
-        ControlPersist = "no";
+        ControlPersist = "10m";
       };
     };
   };
