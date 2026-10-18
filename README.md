@@ -99,6 +99,26 @@ tunnel (it logs the previous target). Access applications are the one exception
 except for the protected hostnames (ssh/llm/searx/ntfy/chat, matched by name or
 origin port), whose apps are never deleted: the reconciler refuses and exits 2.
 
+### Personal site and keyboard redirect
+
+`sammohr.dev` is a Cloudflare Worker with static assets serving the `docs/`
+directory from `smores56/personal-site` (no build command, asset directory
+`docs`). `keyboards.sammohr.dev` is a proxied placeholder record plus a Single
+Redirect rule to <https://github.com/smores56/keyboards>. Both are configured
+in the Cloudflare dashboard, not by this repo.
+
+`cloudflare-sync` is deliberately not involved. It reconciles tunnel CNAMEs and
+Access apps, and the token documented above has Zone:DNS:Write and
+Access:Apps and Policies:Write, not the Rulesets/Single Redirect scope.
+Managing one redirect would mean rotating the token and merging a zone-wide
+ruleset, so the rule stays in the dashboard.
+
+The previous GitHub Pages build remains on `personal-site`'s `gh-pages`
+branch. If the Worker fails, restore the deleted workflow from git history and point
+the apex back at GitHub Pages. Purge the Cloudflare cache
+after any origin switch so stale HTML does not reference missing `_app/`
+chunks.
+
 ### Immich from mobile
 
 The Immich mobile app takes a primary server URL (the tunnel hostname,
