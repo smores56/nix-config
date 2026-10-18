@@ -174,10 +174,15 @@ in
           "@system-service"
           "~@privileged"
         ];
+        # AF_NETLINK is required: glibc's getifaddrs() (used by libzmq's
+        # ip_resolver and jupyter_client's interface discovery) opens a
+        # NETLINK_ROUTE socket, so without it every kernel dies with
+        # EAFNOSUPPORT and the sandbox never answers.
         RestrictAddressFamilies = [
           "AF_INET"
           "AF_INET6"
           "AF_UNIX"
+          "AF_NETLINK"
         ];
       };
     };
