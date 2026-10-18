@@ -68,6 +68,14 @@ in
           protocol = "tcp";
           access = serviceAuth;
         };
+        # Open WebUI. A browser app, so the default `http` ingress is correct
+        # (an http ingress is what carries its WebSockets). Cloudflare Access is
+        # the outer gate, Open WebUI's own login the inner one; `chat` is a
+        # protected subdomain, so the assertion below forces access.enable.
+        chat = {
+          port = ports.chat;
+          access.enable = true;
+        };
       };
     };
     calibre.enable = true;

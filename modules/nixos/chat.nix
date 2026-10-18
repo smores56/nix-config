@@ -100,6 +100,16 @@ in
         CODE_INTERPRETER_ENGINE = "jupyter";
         CODE_INTERPRETER_JUPYTER_URL = "http://127.0.0.1:${toString cfg.jupyterPort}";
         CODE_INTERPRETER_JUPYTER_AUTH = "token";
+
+        # The browser reaches the app at https://chat.<domain>, so links and the
+        # WebSocket origin check must match it (the module's default WEBUI_URL is
+        # the loopback address). CORS is narrowed from its `*` default to the
+        # public origin, and the tunnel-terminated TLS means cookies must be
+        # Secure-only.
+        WEBUI_URL = "https://chat.${config.dotfiles.webProxy.domain}";
+        CORS_ALLOW_ORIGIN = "https://chat.${config.dotfiles.webProxy.domain}";
+        WEBUI_SESSION_COOKIE_SECURE = "True";
+        WEBUI_AUTH_COOKIE_SECURE = "True";
       };
     };
 
