@@ -140,7 +140,6 @@ let
     "shellAbbrs"
     "brain"
     "workHost"
-    "username"
     "exposeSsh"
     "nvidia"
     "llm"

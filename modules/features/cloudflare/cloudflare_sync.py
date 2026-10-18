@@ -227,6 +227,18 @@ def _ensure_policy(
     """
     policy = next((p for p in policies if p.get("name") == name), None)
     if policy is not None:
+        # Adopt by name, but only if it really is the policy we want: a dashboard
+        # policy that merely shares the name (e.g. `allow <email>` whose include
+        # is `everyone`) would otherwise be attached silently and open the
+        # endpoint. The account policy list carries decision/include, so compare
+        # them and refuse on any mismatch rather than trusting the name.
+        if policy.get("decision") != decision or policy.get("include") != include:
+            raise CloudflareError(
+                f"account policy {name!r} exists but does not match the declared "
+                f"decision/include: expected decision={decision!r} include={include!r}, "
+                f"found decision={policy.get('decision')!r} include={policy.get('include')!r}. "
+                "Rename or fix the policy — refusing to attach it."
+            )
         return policy["id"], None
     if dry_run:
         return None, Result("created", f"Access policy {name}")
@@ -326,18 +338,24 @@ def reconcile_access(
         return results
 
     app = apps[0]
-    live_ids = {
-        p["id"] if isinstance(p, dict) else p for p in (app.get("policies") or [])
-    }
-    wanted_ids = {policy_id for policy_id, _ in wanted_policies}
+    live_policies = app.get("policies") or []
+    # Compare precedence, not just ids: a dashboard reorder is drift too. The API
+    # may return either `{id, precedence}` objects or bare ids; with bare ids
+    # there is no precedence to compare, so fall back to an id set.
+    if all(isinstance(p, dict) for p in live_policies):
+        live_key = {(p["id"], p.get("precedence")) for p in live_policies}
+        wanted_key = set(wanted_policies)
+    else:
+        live_key = {p["id"] if isinstance(p, dict) else p for p in live_policies}
+        wanted_key = {policy_id for policy_id, _ in wanted_policies}
     # Equality, not a subset: this app's policies are fully owned by the config,
     # so an extra live policy (e.g. a permissive one added in the dashboard) is
     # drift to revert, not something to report `unchanged`.
     already_correct = (
         app.get("session_duration") == SESSION_DURATION
         and not policies_changed
-        and bool(wanted_ids)
-        and wanted_ids == live_ids
+        and bool(wanted_key)
+        and wanted_key == live_key
     )
     if already_correct:
         results.append(Result("unchanged", f"Access app {fqdn}"))

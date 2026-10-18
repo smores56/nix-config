@@ -33,6 +33,7 @@
           pkgs.git
           pkgs.gnugrep
           pkgs.nixos-anywhere
+          pkgs.sops
           pkgs.ssh-to-age
         ];
         text = ''
@@ -86,12 +87,26 @@
             echo "Delivering secrets/hosts/$host into the new root"
             extra_files=(--extra-files "secrets/hosts/$host")
             key_pub="secrets/hosts/$host/etc/ssh/ssh_host_ed25519_key.pub"
+            key_priv="secrets/hosts/$host/etc/ssh/ssh_host_ed25519_key"
             if [ -f "$key_pub" ]; then
               recipient="$(ssh-to-age -i "$key_pub")"
               if grep -qF "$recipient" .sops.yaml; then
                 echo "Host key recipient ''${recipient} is in .sops.yaml"
               else
                 echo "warning: host key recipient ''${recipient} is NOT in .sops.yaml — sops secrets will not decrypt on first boot" >&2
+              fi
+              # Strongest preflight: prove the delivered key actually decrypts
+              # this host's secrets. A recipient can appear in .sops.yaml without
+              # being bound to a rule for secrets/<host>.yaml, and a regenerated
+              # key encrypts to a recipient the host cannot use.
+              if [ -f "secrets/$host.yaml" ]; then
+                if SOPS_AGE_KEY="$(ssh-to-age -private-key -i "$key_priv")" \
+                  sops --decrypt "secrets/$host.yaml" >/dev/null 2>&1; then
+                  echo "Host key decrypts secrets/$host.yaml"
+                else
+                  echo "error: the delivered host key cannot decrypt secrets/$host.yaml — fix .sops.yaml and run 'sops updatekeys secrets/$host.yaml' before installing" >&2
+                  exit 1
+                fi
               fi
             fi
           else

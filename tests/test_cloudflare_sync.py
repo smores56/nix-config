@@ -201,7 +201,14 @@ class CloudflareSyncTests(unittest.TestCase):
                                 "policies": [{"id": "pol1", "precedence": 1}],
                             }
                         ],
-                        POLICIES_PATH: [{"id": "pol1", "name": f"allow {EMAIL}"}],
+                        POLICIES_PATH: [
+                            {
+                                "id": "pol1",
+                                "name": f"allow {EMAIL}",
+                                "decision": "allow",
+                                "include": [{"email": {"email": EMAIL}}],
+                            }
+                        ],
                     }
                 )
             )
@@ -224,7 +231,14 @@ class CloudflareSyncTests(unittest.TestCase):
                                 "policies": ["pol1"],
                             }
                         ],
-                        POLICIES_PATH: [{"id": "pol1", "name": f"allow {EMAIL}"}],
+                        POLICIES_PATH: [
+                            {
+                                "id": "pol1",
+                                "name": f"allow {EMAIL}",
+                                "decision": "allow",
+                                "include": [{"email": {"email": EMAIL}}],
+                            }
+                        ],
                     }
                 )
             )
@@ -246,7 +260,14 @@ class CloudflareSyncTests(unittest.TestCase):
                                 "policies": [{"id": "pol1", "precedence": 1}],
                             }
                         ],
-                        POLICIES_PATH: [{"id": "pol1", "name": f"allow {EMAIL}"}],
+                        POLICIES_PATH: [
+                            {
+                                "id": "pol1",
+                                "name": f"allow {EMAIL}",
+                                "decision": "allow",
+                                "include": [{"email": {"email": EMAIL}}],
+                            }
+                        ],
                     }
                 )
             )
@@ -357,8 +378,18 @@ class CloudflareSyncTests(unittest.TestCase):
                             }
                         ],
                         POLICIES_PATH: [
-                            {"id": "pol1", "name": f"allow {EMAIL}"},
-                            {"id": "pol2", "name": self.module.SERVICE_AUTH_POLICY_NAME},
+                            {
+                                "id": "pol1",
+                                "name": f"allow {EMAIL}",
+                                "decision": "allow",
+                                "include": [{"email": {"email": EMAIL}}],
+                            },
+                            {
+                                "id": "pol2",
+                                "name": self.module.SERVICE_AUTH_POLICY_NAME,
+                                "decision": self.module.SERVICE_AUTH_DECISION,
+                                "include": [{"any_valid_service_token": {}}],
+                            },
                         ],
                     }
                 )
@@ -384,8 +415,18 @@ class CloudflareSyncTests(unittest.TestCase):
                             }
                         ],
                         POLICIES_PATH: [
-                            {"id": "pol1", "name": f"allow {EMAIL}"},
-                            {"id": "pol2", "name": self.module.SERVICE_AUTH_POLICY_NAME},
+                            {
+                                "id": "pol1",
+                                "name": f"allow {EMAIL}",
+                                "decision": "allow",
+                                "include": [{"email": {"email": EMAIL}}],
+                            },
+                            {
+                                "id": "pol2",
+                                "name": self.module.SERVICE_AUTH_POLICY_NAME,
+                                "decision": self.module.SERVICE_AUTH_DECISION,
+                                "include": [{"any_valid_service_token": {}}],
+                            },
                         ],
                     }
                 )
@@ -526,7 +567,14 @@ class CloudflareSyncTests(unittest.TestCase):
                             },
                             {"id": "app2", "domain": f"immich.{ZONE}"},
                         ],
-                        POLICIES_PATH: [{"id": "pol1", "name": f"allow {EMAIL}"}],
+                        POLICIES_PATH: [
+                            {
+                                "id": "pol1",
+                                "name": f"allow {EMAIL}",
+                                "decision": "allow",
+                                "include": [{"email": {"email": EMAIL}}],
+                            }
+                        ],
                     }
                 )
             )
@@ -553,8 +601,18 @@ class CloudflareSyncTests(unittest.TestCase):
                             }
                         ],
                         POLICIES_PATH: [
-                            {"id": "pol1", "name": f"allow {EMAIL}"},
-                            {"id": "pol-extra", "name": "include everyone"},
+                            {
+                                "id": "pol1",
+                                "name": f"allow {EMAIL}",
+                                "decision": "allow",
+                                "include": [{"email": {"email": EMAIL}}],
+                            },
+                            {
+                                "id": "pol2",
+                                "name": self.module.SERVICE_AUTH_POLICY_NAME,
+                                "decision": self.module.SERVICE_AUTH_DECISION,
+                                "include": [{"any_valid_service_token": {}}],
+                            },
                         ],
                     }
                 )
@@ -563,6 +621,58 @@ class CloudflareSyncTests(unittest.TestCase):
             self.assertEqual(results[0].action, "updated")
             update = client.writes()[-1]
             self.assertEqual(update[3]["policies"], [{"id": "pol1", "precedence": 1}])
+
+    def test_access_errors_when_adopted_policy_mismatches(self):
+        # A same-named account policy with a permissive include must not be
+        # adopted silently: the reconciler refuses (exit 2) instead.
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = self.make_spec(tmp, {"immich": {"port": 2283, "access": True}})
+            client = FakeClient(
+                base_responses(
+                    **{
+                        APPS_PATH: [],
+                        POLICIES_PATH: [
+                            {
+                                "id": "pol1",
+                                "name": f"allow {EMAIL}",
+                                "decision": "allow",
+                                "include": [{"everyone": {}}],
+                            }
+                        ],
+                    }
+                )
+            )
+            with self.assertRaises(self.module.CloudflareError):
+                self.module.run(spec, client)
+
+    def test_access_updated_when_policy_precedence_differs(self):
+        # Same policy id, different precedence (a dashboard reorder) is drift.
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = self.make_spec(tmp, {"immich": {"port": 2283, "access": True}})
+            client = FakeClient(
+                base_responses(
+                    **{
+                        APPS_PATH: [
+                            {
+                                "id": "app1",
+                                "domain": f"immich.{ZONE}",
+                                "session_duration": "24h",
+                                "policies": [{"id": "pol1", "precedence": 2}],
+                            }
+                        ],
+                        POLICIES_PATH: [
+                            {
+                                "id": "pol1",
+                                "name": f"allow {EMAIL}",
+                                "decision": "allow",
+                                "include": [{"email": {"email": EMAIL}}],
+                            }
+                        ],
+                    }
+                )
+            )
+            results = self.module.run(spec, client)
+            self.assertEqual(results[0].action, "updated")
 
     # -- --check ----------------------------------------------------------
 

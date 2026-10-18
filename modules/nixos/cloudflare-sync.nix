@@ -66,6 +66,22 @@ in
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = "${cloudflare-sync}/bin/cloudflare-sync";
+        # The reconciler only makes outbound HTTPS calls and reads two files, so
+        # it needs no filesystem writes and no privilege beyond its own user.
+        NoNewPrivileges = true;
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        PrivateDevices = true;
+        ProtectKernelTunables = true;
+        ProtectControlGroups = true;
+        LockPersonality = true;
+        SystemCallArchitectures = "native";
+        RestrictAddressFamilies = [
+          "AF_INET"
+          "AF_INET6"
+          "AF_UNIX"
+        ];
       };
       # The unit text is otherwise stable — the wrapper bakes in only the script
       # and token paths — so without this a `dotfiles.webProxy.services` change

@@ -15,22 +15,25 @@ let
   # Access too (defence in depth, mirroring PROTECTED_SUBDOMAINS in
   # modules/features/cloudflare/cloudflare_sync.py, which also guards their
   # ports), but failing evaluation here stops the mistake before anything is
-  # applied. ntfy is listed here as
-  # well as in notify.nix so the guard still holds if notify (whose assertion is
-  # gated on its own enable) is ever turned off.
-  protected = [
-    "ssh"
-    "llm"
-    "searx"
-    "ntfy"
-  ];
+  # applied. ntfy is listed here as well as in notify.nix so the guard still
+  # holds if notify (whose assertion is gated on its own enable) is ever turned
+  # off. The list is shared with the consistency check via
+  # modules/protected-services.nix.
+  protected = (import ../protected-services.nix).subdomains;
 in
 {
   config = lib.mkIf cfg.enable {
-    assertions = map (sub: {
-      assertion = !(cfg.services ? ${sub}) || cfg.services.${sub}.access.enable;
-      message = "dotfiles.webProxy.services.${sub} must set access.enable = true: exposing ${sub}.${cfg.domain} over the tunnel without Cloudflare Access would publish it to anyone who learns the hostname.";
-    }) protected;
+    assertions =
+      map (sub: {
+        assertion = !(cfg.services ? ${sub}) || cfg.services.${sub}.access.enable;
+        message = "dotfiles.webProxy.services.${sub} must set access.enable = true: exposing ${sub}.${cfg.domain} over the tunnel without Cloudflare Access would publish it to anyone who learns the hostname.";
+      }) protected
+      # A Service Auth policy only takes effect when Access is on; without this
+      # the intent is silently dropped by the reconciler.
+      ++ map (sub: {
+        assertion = !cfg.services.${sub}.access.serviceAuth || cfg.services.${sub}.access.enable;
+        message = "dotfiles.webProxy.services.${sub} sets access.serviceAuth without access.enable: the Service Auth policy would never be applied.";
+      }) (builtins.attrNames cfg.services);
 
     services.cloudflared = lib.mkIf (cfg.tunnelName != "") {
       enable = true;

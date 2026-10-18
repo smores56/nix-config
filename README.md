@@ -414,10 +414,12 @@ nix-shell -p sops --run 'sops secrets/smortress.yaml'   # add github-pat: <token
   write" (fine-grained tokens do not advertise OAuth scopes, so `bootstrap`
   trusts their configured permissions). `gh auth login --with-token` uses it.
 - `proton-pass-pat` is a `pass-cli` personal access token; `pass-cli login` uses
-  it. The *token* is long-lived (see "Rotating the PATs"), but each *login
-  session* it grants lasts only ~2 h and cannot be locked, so a headless host
-  re-logs-in on each `bootstrap` run (an interactive `fs` session persists
-  longer).
+  it. Scope it to the **Hosting** and **Identity** vaults at read-only
+  permission: bootstrap only reads SSH keys and the Access service token, so a
+  narrow scope bounds what a leaked token exposes. The *token* is long-lived
+  (see "Rotating the PATs"), but each *login session* it grants lasts only ~2 h
+  and cannot be locked, so a headless host re-logs-in on each `bootstrap` run
+  (an interactive `fs` session persists longer).
 
 #### Rotating the PATs
 
@@ -425,9 +427,9 @@ Both tokens expire and need periodic replacement — `proton-pass-pat` has a
 **maximum lifetime of one year** (a Proton Pass limit), and `github-pat` expires
 per its own setting. Replace each before it lapses:
 
-1. Issue a replacement — Proton Pass → Settings → Access tokens, or GitHub →
-   Developer settings → tokens (classic: the same scopes as above; fine-grained:
-   the same two account permissions).
+1. Issue a replacement — Proton Pass → Settings → Access tokens (scope: Hosting
+   + Identity, read-only), or GitHub → Developer settings → tokens (classic: the
+   same scopes as above; fine-grained: the same two account permissions).
 2. Update the value: `nix-shell -p sops --run 'sops secrets/<host>.yaml'`.
 3. Commit, then `nixos-rebuild switch` on every host holding the token, so
    sops-nix redeploys `/run/secrets/*`.
