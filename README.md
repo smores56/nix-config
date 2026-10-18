@@ -381,6 +381,7 @@ Commit the host's `meta.nix` + `disko.nix` (flakes only see tracked files),
 then from the checkout:
 
 ```sh
+nix run .#host-key -- <hostname>   # generate the host key, print its age recipient
 nix run .#install -- <hostname> root@<target-ip>
 ```
 
@@ -388,3 +389,9 @@ nix run .#install -- <hostname> root@<target-ip>
 disko layout (**wiping its disks**), generates
 `modules/hosts/<hostname>/hardware.nix`, and installs NixOS. Commit the
 generated hardware config, then run the `bootstrap` app for the per-user setup.
+
+`host-key` writes the host's SSH key to the gitignored
+`secrets/hosts/<hostname>/` and prints the sops age recipient; add it to
+`.sops.yaml` and `sops updatekeys secrets/<hostname>.yaml` so the host decrypts
+its own secrets on first boot. When that directory exists, `install` delivers it
+into the new root (`/etc/ssh/...`) via `--extra-files`.

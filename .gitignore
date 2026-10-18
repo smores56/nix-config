@@ -4,3 +4,7 @@ node_modules/
 package.json
 result
 result-*
+
+# Pre-generated host keys delivered to a blank machine via nixos-anywhere
+# --extra-files; plaintext, never committed (see `nix run .#host-key`).
+secrets/hosts/
