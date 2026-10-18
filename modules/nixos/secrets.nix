@@ -24,6 +24,18 @@
       cloudflared-credentials = { };
       navidrome-env = { };
       searxng-secret-key = { };
+
+      # Provisioning PATs, readable by the user so `bootstrap` can log in
+      # non-interactively (`gh auth login --with-token`, `pass-cli login`).
+      # Populate them with `sops secrets/smortress.yaml` (see README).
+      github-pat = {
+        owner = config.dotfiles.username;
+        mode = "0400";
+      };
+      proton-pass-pat = {
+        owner = config.dotfiles.username;
+        mode = "0400";
+      };
     };
 
     # Repoint the consumers at the decrypted files. The option defaults stay

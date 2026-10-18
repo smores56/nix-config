@@ -395,3 +395,20 @@ generated hardware config, then run the `bootstrap` app for the per-user setup.
 `.sops.yaml` and `sops updatekeys secrets/<hostname>.yaml` so the host decrypts
 its own secrets on first boot. When that directory exists, `install` delivers it
 into the new root (`/etc/ssh/...`) via `--extra-files`.
+
+### Provisioning PATs (headless login)
+
+`bootstrap` logs in non-interactively when the host's sops secrets hold the
+tokens. `modules/nixos/secrets.nix` declares `github-pat` and `proton-pass-pat`
+(user-readable); add them to the encrypted file **before** the next
+`nixos-rebuild switch`, or activation fails on the missing key:
+
+```sh
+sops secrets/smortress.yaml   # add github-pat: <token>, proton-pass-pat: <pst_...::key>
+```
+
+- `github-pat` needs `write:public_key` and `write:ssh_signing_key` (the scopes
+  `bootstrap` registers the SSH keys with); `gh auth login --with-token` uses it.
+- `proton-pass-pat` is a `pass-cli` personal access token; `pass-cli login` uses
+  it. PAT sessions last ~2 h and cannot be locked, so a headless host re-logs-in
+  on each `bootstrap` run (an interactive `fs` session persists longer).

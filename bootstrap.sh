@@ -150,6 +150,20 @@ export PATH="${HOME}/.nix-profile/bin:${PATH}"
 # `allowed_signers` reference files. The vault labels the keys "Personal" and
 # "Work".
 
+# A headless host logs in with the vault's PAT (sops-delivered, non-interactive);
+# elsewhere the session is established interactively in a browser.
+PROTON_PASS_PAT_FILE="${PROTON_PASS_PAT_FILE:-/run/secrets/proton-pass-pat}"
+if [ -s "$PROTON_PASS_PAT_FILE" ]; then
+  info "Logging in to Proton Pass with the vault PAT..."
+  if PROTON_PASS_PERSONAL_ACCESS_TOKEN="$(cat "$PROTON_PASS_PAT_FILE")" \
+    PROTON_PASS_KEY_PROVIDER="${PROTON_PASS_KEY_PROVIDER:-fs}" \
+    pass-cli login; then
+    ok "Logged in to Proton Pass"
+  else
+    warn "Proton Pass PAT login failed; log in interactively later."
+  fi
+fi
+
 # A shell that predates the home-manager switch (this one) has no SSH_AUTH_SOCK
 # yet; derive the agent's default socket, matching the home-manager module.
 if [ -z "${SSH_AUTH_SOCK:-}" ]; then
@@ -202,8 +216,17 @@ fi
 
 GH_KEY_SCOPES="write:public_key,write:ssh_signing_key"
 
+# A headless host authenticates with the vault's GitHub PAT (sops-delivered,
+# non-interactive); elsewhere use the device code flow in a browser.
+GITHUB_PAT_FILE="${GITHUB_PAT_FILE:-/run/secrets/github-pat}"
 if gh auth token --hostname "$GITHUB_HOST" --user "$GITHUB_USER" >/dev/null 2>&1; then
   skip "Already authenticated with GitHub as ${GITHUB_USER}"
+elif [ -s "$GITHUB_PAT_FILE" ]; then
+  info "Authenticating with GitHub as ${GITHUB_USER} with the vault PAT..."
+  gh auth login --hostname "$GITHUB_HOST" --git-protocol ssh --with-token <"$GITHUB_PAT_FILE"
+  gh auth token --hostname "$GITHUB_HOST" --user "$GITHUB_USER" >/dev/null 2>&1 \
+    || err "GitHub PAT authentication did not create credentials for ${GITHUB_USER}."
+  ok "GitHub authentication complete"
 else
   info "Authenticating with GitHub as ${GITHUB_USER} (device code flow)..."
   info "A code will appear below. Visit https://github.com/login/device from any browser to enter it."
