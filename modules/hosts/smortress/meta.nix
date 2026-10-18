@@ -76,8 +76,8 @@ in
     # root (backup source and read-only server mounts both use it).
     immich.mediaLocation = "/var/lib/media/Photos";
     # The phone uploads over the LAN at home via Immich's local-network URL;
-    # enp7s0 is the LAN NIC (10.0.0.0/24). WAN access stays tunnel-only.
-    immich.lanInterfaces = [ "enp7s0" ];
+    # 10.0.0.0/24 is the LAN subnet. WAN access stays tunnel-only.
+    immich.lanSources = [ "10.0.0.0/24" ];
     navidrome.enable = true;
     # These generic datasets replaced the old Immich-specific restic
     # pipeline, which has been removed.

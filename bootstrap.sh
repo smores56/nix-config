@@ -219,9 +219,11 @@ GH_KEY_SCOPES="write:public_key,write:ssh_signing_key"
 # A headless host authenticates with the vault's GitHub PAT (sops-delivered,
 # non-interactive); elsewhere use the device code flow in a browser.
 GITHUB_PAT_FILE="${GITHUB_PAT_FILE:-/run/secrets/github-pat}"
+GH_USED_PAT=0
 if gh auth token --hostname "$GITHUB_HOST" --user "$GITHUB_USER" >/dev/null 2>&1; then
   skip "Already authenticated with GitHub as ${GITHUB_USER}"
 elif [ -s "$GITHUB_PAT_FILE" ]; then
+  GH_USED_PAT=1
   info "Authenticating with GitHub as ${GITHUB_USER} with the vault PAT..."
   gh auth login --hostname "$GITHUB_HOST" --git-protocol ssh --with-token <"$GITHUB_PAT_FILE"
   gh auth token --hostname "$GITHUB_HOST" --user "$GITHUB_USER" >/dev/null 2>&1 \
@@ -247,6 +249,8 @@ ACTIVE_GITHUB_USER="$(gh api user --jq .login 2>/dev/null || true)"
 
 if has_required_scopes "$GH_KEY_SCOPES"; then
   skip "GitHub auth already has required scopes (${GH_KEY_SCOPES})"
+elif [ "$GH_USED_PAT" = "1" ]; then
+  err "The GitHub PAT is missing required scopes (${GH_KEY_SCOPES}). Grant them to the token and re-run (a PAT session cannot refresh scopes non-interactively)."
 else
   info "Adding missing GitHub auth scopes (${GH_KEY_SCOPES})..."
   gh auth refresh --hostname "$GITHUB_HOST" --scopes "$GH_KEY_SCOPES"

@@ -103,8 +103,8 @@ origin port), whose apps are never deleted: the reconciler refuses and exits 2.
 
 The Immich mobile app takes a primary server URL (the tunnel hostname,
 `https://immich.<domain>`) plus a **local network URL** for when the phone is on
-the home LAN. smortress opens Immich's port only on its LAN interface
-(`dotfiles.immich.lanInterfaces`) — point the local URL at
+the home LAN. smortress opens Immich's port only to its LAN subnet
+(`dotfiles.immich.lanSources`) — point the local URL at
 `http://<lan-ip>:2283`. The WAN stays tunnel-only.
 
 Cloudflare caps a single upload at 100 MB and Immich neither chunks nor resumes,
@@ -392,9 +392,10 @@ generated hardware config, then run the `bootstrap` app for the per-user setup.
 
 `host-key` writes the host's SSH key to the gitignored
 `secrets/hosts/<hostname>/` and prints the sops age recipient; add it to
-`.sops.yaml` and `sops updatekeys secrets/<hostname>.yaml` so the host decrypts
-its own secrets on first boot. When that directory exists, `install` delivers it
-into the new root (`/etc/ssh/...`) via `--extra-files`.
+`.sops.yaml` as a key **and a creation rule** for `secrets/<hostname>.yaml`, then
+`sops updatekeys secrets/<hostname>.yaml`, so the host decrypts its own secrets
+on first boot. When that directory exists, `install` delivers it into the new
+root (`/etc/ssh/...`) via `--extra-files`.
 
 ### Provisioning PATs (headless login)
 

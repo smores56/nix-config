@@ -267,10 +267,11 @@ in
             default = "/var/lib/immich";
             description = "Directory Immich stores its managed library in. The default is created by the Immich module.";
           };
-          lanInterfaces = lib.mkOption {
+          lanSources = lib.mkOption {
             type = lib.types.listOf lib.types.str;
             default = [ ];
-            description = "Network interfaces on which to open the Immich port for LAN clients (the mobile app's local-network URL). Empty keeps Immich tunnel-only.";
+            example = [ "10.0.0.0/24" ];
+            description = "Source CIDRs allowed to reach the Immich port directly (the mobile app's local-network URL). Empty keeps Immich tunnel-only. Source-scoped rather than interface-scoped so a global-IPv6 uplink cannot expose it to the WAN.";
           };
         };
       };

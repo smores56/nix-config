@@ -29,7 +29,12 @@
       # the checkout; the host needs modules/hosts/<host>/{meta.nix,disko.nix}.
       install = pkgs.writeShellApplication {
         name = "install";
-        runtimeInputs = [ pkgs.nixos-anywhere ];
+        runtimeInputs = [
+          pkgs.git
+          pkgs.gnugrep
+          pkgs.nixos-anywhere
+          pkgs.ssh-to-age
+        ];
         text = ''
           usage() {
             cat <<'EOF'
@@ -67,6 +72,8 @@
               echo "error: $host_dir/$f is missing — create modules/hosts/$host/ first (see AGENTS.md)" >&2
               exit 1
             fi
+            git ls-files --error-unmatch "$host_dir/$f" >/dev/null 2>&1 \
+              || { echo "error: $host_dir/$f is not tracked by git — commit it (flakes only see tracked files)" >&2; exit 1; }
           done
 
           hardware="$host_dir/hardware.nix"
@@ -78,6 +85,17 @@
           if [ -d "secrets/hosts/$host" ]; then
             echo "Delivering secrets/hosts/$host into the new root"
             extra_files=(--extra-files "secrets/hosts/$host")
+            key_pub="secrets/hosts/$host/etc/ssh/ssh_host_ed25519_key.pub"
+            if [ -f "$key_pub" ]; then
+              recipient="$(ssh-to-age -i "$key_pub")"
+              if grep -qF "$recipient" .sops.yaml; then
+                echo "Host key recipient ''${recipient} is in .sops.yaml"
+              else
+                echo "warning: host key recipient ''${recipient} is NOT in .sops.yaml — sops secrets will not decrypt on first boot" >&2
+              fi
+            fi
+          else
+            echo "warning: secrets/hosts/$host is missing — no host key will be delivered; sops secrets will not decrypt on first boot (run: nix run .#host-key -- $host)" >&2
           fi
 
           nixos-anywhere \

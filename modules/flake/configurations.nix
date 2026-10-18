@@ -123,6 +123,7 @@ let
     calibre = null;
     photobucket = null;
     aiProfile = null;
+    shellAbbrs = { };
     llm = null;
     workHost = null;
     brain = null;
@@ -155,6 +156,8 @@ let
     "backup"
     "notify"
   ];
+  # The same list as an attrset, for intersectAttrs-style filtering.
+  hostKnobsSet = lib.genAttrs hostKnobs (_: null);
 
   # Hosts are discovered from modules/hosts/<name>/; adding a host means adding
   # a directory (meta.nix + hardware.nix), never editing this file.
@@ -227,9 +230,15 @@ let
       ++ nixosModules
       # hardware.nix is optional so a host can be authored (meta.nix +
       # disko.nix) before nixos-anywhere generates it during the install; the
-      # guard keeps the flake evaluable in that window (see AGENTS.md).
-      ++ lib.optional (builtins.pathExists (hostsDir + "/${args.hostname}/hardware.nix")) (
-        hostsDir + "/${args.hostname}/hardware.nix"
+      # guard keeps the flake evaluable in that window (see AGENTS.md). Warn
+      # loudly because a missing file means no kernel modules / microcode.
+      ++ (
+        if builtins.pathExists (hostsDir + "/${args.hostname}/hardware.nix") then
+          [ (hostsDir + "/${args.hostname}/hardware.nix") ]
+        else
+          lib.warn
+            "modules/hosts/${args.hostname}/hardware.nix is missing: the NixOS config has no hardware settings (nixos-anywhere generates it on install; see AGENTS.md)"
+            [ ]
       )
       ++ lib.optional (builtins.pathExists (hostsDir + "/${args.hostname}/disko.nix")) (
         hostsDir + "/${args.hostname}/disko.nix"
@@ -237,21 +246,12 @@ let
       ++ [
         {
           networking.hostName = args.hostname;
-          dotfiles = {
+          # Host-authored knobs (validated against hostKnobs in hostMeta) are
+          # forwarded wholesale so every declared knob reaches the config;
+          # identity is applied last so a meta.nix cannot retarget them.
+          dotfiles = builtins.intersectAttrs hostKnobsSet args // {
             inherit username;
             displayManager = dm;
-            exposeSsh = args.exposeSsh or false;
-            nvidia = args.nvidia or false;
-            llm = args.llm or false;
-            search = args.search or false;
-            noSleep = args.noSleep or false;
-            fingerprint = args.fingerprint or false;
-            webProxy = args.webProxy or { };
-            calibre = args.calibre or { };
-            immich = args.immich or { };
-            navidrome = args.navidrome or { };
-            backup = args.backup or { };
-            notify = args.notify or { };
           };
         }
       ]

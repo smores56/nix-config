@@ -30,10 +30,14 @@ in
     };
 
     # The mobile app uploads over the LAN at home (fast, and bypasses the
-    # Cloudflare upload cap) via its local-network URL; open the port only on
-    # the listed interfaces, never to the WAN. Empty keeps Immich tunnel-only.
-    networking.firewall.interfaces = lib.genAttrs cfg.lanInterfaces (_: {
-      allowedTCPPorts = [ config.services.immich.port ];
-    });
+    # Cloudflare upload cap) via its local-network URL. Open the port only to
+    # the listed source CIDRs (IPv4) — matching by source, not interface, so a
+    # global-IPv6 uplink cannot reach it. Empty keeps Immich tunnel-only.
+    networking.firewall.extraCommands = lib.concatMapStrings (src: ''
+      iptables -A nixos-fw -p tcp --dport ${toString config.services.immich.port} -s ${src} -j nixos-fw-accept
+    '') cfg.lanSources;
+    networking.firewall.extraStopCommands = lib.concatMapStrings (src: ''
+      iptables -D nixos-fw -p tcp --dport ${toString config.services.immich.port} -s ${src} -j nixos-fw-accept || true
+    '') cfg.lanSources;
   };
 }
