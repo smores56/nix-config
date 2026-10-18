@@ -405,7 +405,7 @@ tokens. `modules/nixos/secrets.nix` declares `github-pat` and `proton-pass-pat`
 `nixos-rebuild switch`, or activation fails on the missing key:
 
 ```sh
-sops secrets/smortress.yaml   # add github-pat: <token>, proton-pass-pat: <pst_...::key>
+nix-shell -p sops --run 'sops secrets/smortress.yaml'   # add github-pat: <token>, proton-pass-pat: <pst_...::key>
 ```
 
 - `github-pat` needs `write:public_key` and `write:ssh_signing_key` (the scopes
@@ -413,3 +413,22 @@ sops secrets/smortress.yaml   # add github-pat: <token>, proton-pass-pat: <pst_.
 - `proton-pass-pat` is a `pass-cli` personal access token; `pass-cli login` uses
   it. PAT sessions last ~2 h and cannot be locked, so a headless host re-logs-in
   on each `bootstrap` run (an interactive `fs` session persists longer).
+
+#### Rotating the PATs
+
+Both tokens expire and need periodic replacement — `proton-pass-pat` has a
+**maximum lifetime of one year** (a Proton Pass limit), and `github-pat` expires
+per its own setting. Replace each before it lapses:
+
+1. Issue a replacement — Proton Pass → Settings → Access tokens, or GitHub →
+   Developer settings → fine-grained tokens (same scopes as above).
+2. Update the value: `nix-shell -p sops --run 'sops secrets/<host>.yaml'`.
+3. Commit, then `nixos-rebuild switch` on every host holding the token, so
+   sops-nix redeploys `/run/secrets/*`.
+
+A lapsed token degrades differently per provider:
+
+- `proton-pass-pat` — `pass-cli login` fails, `bootstrap` warns and continues;
+  log in interactively afterwards.
+- `github-pat` — `gh auth login --with-token` rejects it and `bootstrap` **fails
+  hard**. Blank the secret (and rebuild) to fall back to the device-code flow.
