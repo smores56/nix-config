@@ -1,11 +1,12 @@
 # Backup — rclone driver (media to Proton, GitHub local-only)
 
 Generic, dataset-agnostic backup driver. One systemd oneshot + timer per
-`dotfiles.backup.datasets.<Name>` entry. A dataset is a directory on Disk 1, a
-local mirror on the backup disk (Disk 2), and — unless `offsite` is disabled —
-an append-only mirror on Proton Drive (Disk 3, "offsite"). Two dataset families
-use it: the media trees (`Photos`, `Videos`, `Music`; offsite) and a local-only
-GitHub repo mirror (`GitHub`; see
+`dotfiles.backup.datasets.<Name>` entry, optionally fired early by a filesystem
+watcher (`onChange`). A dataset is a directory on Disk 1, a local mirror on the
+backup disk (Disk 2), and — unless `offsite` is disabled — an append-only mirror
+on Proton Drive (Disk 3, "offsite"). Two dataset families use it: the media
+trees (`Photos`, `Videos`, `Music`; offsite and change-triggered) and a
+local-only GitHub repo mirror (`GitHub`; see
 [GitHub repo mirror](#github-repo-mirror-local-only)).
 
 The rationale for every destructive-looking choice lives as a comment next to
@@ -63,18 +64,19 @@ the code in [`backup.py`](./backup.py). This file is the operator's view.
 | `/var/lib/github-mirrors/<owner>_backup/<repo>` | ghorg bare git mirrors, refreshed in place (Disk 1) |
 | `/var/backup/GitHub/current` | local mirror of the GitHub mirrors (Disk 2) |
 | `/run/lock/media-backup.lock` | driver-owned lock, mode 0600, serializing the datasets that share the one Proton credential; local-only datasets take `/run/lock/media-backup-<name>.lock` instead |
+| `/run/backup-watch/<name>/` | request queue for a dataset with `onChange` enabled: the watcher creates a file per debounced batch, and the backup unit drains it |
 
 Proton paths are the dataset name under the remote: `proton:<Name>` — on
 smortress, `proton:Photos`, `proton:Videos`, `proton:Music`.
 
 ## Datasets on smortress
 
-| Name | Source | Schedule | Full check | Offsite | preBackup |
-| --- | --- | --- | --- | --- | --- |
-| `Photos` | `/var/lib/media/Photos` | 03:00 | Sun 06:00 | yes | `pg_dump -Fc` of `immich` into `current/db/immich-<date>.dump` |
-| `Videos` | `/var/lib/media/Videos` | 01:00 | Sun 07:00 | yes | — |
-| `Music` | `/var/lib/media/Music` | 05:00 | Sun 08:00 | yes | — |
-| `GitHub` | `/var/lib/github-mirrors` | 00:30 | Sun 10:00 | no | `ghorg` refresh of the `smores56` mirrors (see below) |
+| Name | Source | Schedule | Trigger | Full check | Offsite | preBackup |
+| --- | --- | --- | --- | --- | --- | --- |
+| `Photos` | `/var/lib/media/Photos` | 03:00 | `onChange` (15m) | Sun 06:00 | yes | `pg_dump -Fc` of `immich` into `current/db/immich-<date>.dump` |
+| `Videos` | `/var/lib/media/Videos` | 01:00 | `onChange` (15m) | Sun 07:00 | yes | — |
+| `Music` | `/var/lib/media/Music` | 05:00 | `onChange` (15m) | Sun 08:00 | yes | — |
+| `GitHub` | `/var/lib/github-mirrors` | 00:30 | timer only | Sun 10:00 | no | `ghorg` refresh of the `smores56` mirrors (see below) |
 
 Every dataset excludes `/.cache/**`, `**/.cache/**` and `/rclone.conf` by
 default (the `excludes` option default). That keeps regenerable caches (at the
@@ -161,7 +163,37 @@ unchanged (and a copy-based mirror keys on that mtime).
 run is normally caught by `stallTimeout` in ~30m. A `TimeoutStartSec` kill
 cannot run the in-process marker, which is why the marker is in `ExecStopPost`.
 
-## Restore procedure
+## Event-driven trigger (optional)
+
+A dataset with `onChange.enable = true` gets a long-running
+`backup-<name>-watch.service` in addition to its timer. It runs
+[`backup_watch.py`](./backup_watch.py), which streams recursive inotify events
+from the source (`inotifywait -m -r`, `create`/`close_write`/`moved_to`), waits
+for the dataset's `onChange.debounce` of quiet, then creates one request file in
+`/run/backup-watch/<name>/`. A `backup-<name>-queue.path` unit watching that
+directory with `DirectoryNotEmpty=` starts the ordinary
+`backup-<name>.service`; the watcher never runs the driver, so the unit's
+timeout, failure marker, ntfy alert, and sandbox stay in one place.
+
+- **Debounce.** After the last accepted change, nothing is queued until the
+  quiet period (15m on smortress) elapses, so a photo import or music sync
+  produces one run instead of one per file. Photos runs `pg_dump` on every
+  invocation, which is the main reason the window is not shorter.
+- **Coalescing.** The queue is drained by the backup unit's privileged
+  `ExecStartPre`, and `DirectoryNotEmpty` is re-checked when the service exits.
+  Changes that arrive during a run therefore leave a request behind and cause
+  exactly one follow-up run — never a lost change and never a run per event.
+- **Noise filter.** Hidden path components, writer scratch suffixes (`.part`,
+  `.tmp`, `.swp`, `.!qB`, …), and `Thumbs.db`/`desktop.ini` are ignored
+  everywhere. `onChange.ignore` adds per-dataset globs matched against each path
+  component, so Photos passes `["thumbs" "encoded-video"]` and a change inside
+  Immich's regenerable derived trees does not trigger a backup.
+- **The timer is still the guarantee.** The nightly schedule remains, and it is
+  the fallback for anything the watcher can miss: events before the watches were
+  installed, an inotify queue overflow, or a watcher restart (`Restart=always`,
+  10s). The watcher is skipped, not restarted in a loop, while the source
+  directory does not exist (`ConditionPathIsDirectory`).
+
 
 **Files, from the local mirror.** The mirror is a plain directory tree:
 

@@ -16,6 +16,18 @@ let
     exec ${pkgs.python3}/bin/python3 ${./../features/backup/backup.py} "$@"
   '';
 
+  backup-watch = pkgs.writeShellScriptBin "backup-watch" ''
+    exec ${pkgs.python3}/bin/python3 ${./../features/backup/backup_watch.py} "$@"
+  '';
+
+  # The source default lives here once so the watcher and the driver agree.
+  sourceOf =
+    name: dataset: if dataset.source != null then dataset.source else "/var/lib/media/${name}";
+  # systemd.path cannot watch recursively, so the watcher writes into this queue
+  # and `DirectoryNotEmpty=` (re-checked after each run) starts the backup unit.
+  queueDir = name: "/run/backup-watch/${lib.toLower name}";
+  unitName = name: "backup-${lib.toLower name}";
+
   # Parse a systemd TimeSpan subset (space-separated <number><unit> tokens; a
   # unit-less token is seconds) into seconds, or null when unparseable. Only the
   # forms operators actually use are needed; anything else fails the assertion.
@@ -74,7 +86,7 @@ let
   mkArgs =
     name: dataset: fullCheck:
     let
-      source = if dataset.source != null then dataset.source else "/var/lib/media/${name}";
+      source = sourceOf name dataset;
     in
     lib.concatStringsSep " " (
       [
@@ -167,11 +179,15 @@ let
         TimeoutStartSec = dataset.timeout;
         # The `+` runs this privileged, after RequiresMountsFor, so the dataset
         # folders always exist on the real disk even on a mid-session `switch`.
+        # A watched dataset drains its request queue here: changes that arrive
+        # during the run create new requests, and the path unit re-checks the
+        # directory when the service exits (one follow-up run, never a loss).
         ExecStartPre = [
           "+${pkgs.coreutils}/bin/install -d -m 0700 ${lib.escapeShellArg dir} ${
             lib.escapeShellArg (dir + "/current")
           } ${lib.escapeShellArg (dir + "/versions")}"
-        ];
+        ]
+        ++ lib.optional dataset.onChange.enable "+${pkgs.findutils}/bin/find ${lib.escapeShellArg (queueDir name)} -mindepth 1 -delete";
         # Every dataset shares one Proton credential, and Proton refresh tokens
         # are single-use: two concurrent rclone clients blank the session
         # (rclone#9880). The driver owns the host-wide lock at
@@ -181,6 +197,54 @@ let
         ExecStopPost = [ stopPost ];
       };
     };
+
+  # Long-running watcher for one dataset. It only reads the source and writes
+  # request files; the path unit below starts the real backup service.
+  mkWatchService = name: dataset: {
+    description = "Queue a ${name} backup after source changes";
+    wantedBy = [ "multi-user.target" ];
+    # A missing source must skip the unit, not restart-loop it.
+    unitConfig.ConditionPathIsDirectory = sourceOf name dataset;
+    # The helper spawns `inotifywait`; the service attribute is the only PATH
+    # that survives systemd rendering (see the driver service above).
+    path = [ pkgs.inotify-tools ];
+    serviceConfig = {
+      Type = "simple";
+      User = "root";
+      ExecStart = lib.escapeShellArgs (
+        [
+          "${backup-watch}/bin/backup-watch"
+          "--source"
+          (sourceOf name dataset)
+          "--queue-dir"
+          (queueDir name)
+          "--debounce-seconds"
+          (toString (parseDurationSeconds dataset.onChange.debounce))
+        ]
+        ++ lib.concatMap (pattern: [
+          "--ignore"
+          pattern
+        ]) dataset.onChange.ignore
+      );
+      Restart = "always";
+      RestartSec = "10s";
+      # Reads the source, writes only its queue; no network access is needed.
+      NoNewPrivileges = true;
+      PrivateTmp = true;
+      ProtectHome = true;
+      ProtectSystem = "strict";
+      ReadWritePaths = [ (queueDir name) ];
+      ProtectKernelTunables = true;
+      ProtectKernelModules = true;
+      ProtectControlGroups = true;
+      ProtectClock = true;
+      ProtectHostname = true;
+      RestrictSUIDSGID = true;
+      RestrictRealtime = true;
+      LockPersonality = true;
+      RestrictAddressFamilies = [ "AF_UNIX" ];
+    };
+  };
 
   mkTimer = calendar: {
     wantedBy = [ "timers.target" ];
@@ -217,13 +281,28 @@ in
     ++ lib.mapAttrsToList (name: dataset: {
       assertion = dataset.fullCheckSchedule == null || dataset.fullCheckSchedule != "";
       message = "dotfiles.backup.datasets.${name}.fullCheckSchedule must be null (disabled) or a non-empty systemd OnCalendar expression, got \"${dataset.fullCheckSchedule}\".";
+    }) cfg.datasets
+    ++ lib.mapAttrsToList (name: dataset: {
+      # The watcher parses the same compact grammar as the driver's timeout.
+      assertion =
+        !dataset.onChange.enable
+        || (
+          builtins.match "[0-9]+[smhd]?" dataset.onChange.debounce != null
+          && parseDurationSeconds dataset.onChange.debounce != null
+          && parseDurationSeconds dataset.onChange.debounce >= 1
+        );
+      message = "dotfiles.backup.datasets.${name}.onChange.debounce must be \"<number><s|m|h|d>\" of at least 1s, got \"${dataset.onChange.debounce}\".";
     }) cfg.datasets;
 
     # The driver creates the host-wide lock itself; this only guarantees it
-    # exists at mode 0600 (root-only) and never widens it.
+    # exists at mode 0600 (root-only) and never widens it. Each watched dataset
+    # gets a root-only queue directory for the watcher's request files.
     systemd.tmpfiles.rules = [
       "f /run/lock/media-backup.lock 0600 root root -"
-    ];
+    ]
+    ++ lib.mapAttrsToList (name: _: "d ${queueDir name} 0700 root root -") (
+      lib.filterAttrs (_: dataset: dataset.onChange.enable) cfg.datasets
+    );
 
     # rclone for ops/restore (the restore drill runs it as root); `backup` for
     # manual/seed runs.
@@ -234,20 +313,35 @@ in
 
     systemd.services =
       lib.mapAttrs' (
-        name: dataset: lib.nameValuePair "backup-${lib.toLower name}" (mkService name dataset false)
+        name: dataset: lib.nameValuePair (unitName name) (mkService name dataset false)
       ) cfg.datasets
       // lib.mapAttrs' (
-        name: dataset:
-        lib.nameValuePair "backup-${lib.toLower name}-fullcheck" (mkService name dataset true)
-      ) (lib.filterAttrs (_: dataset: dataset.fullCheckSchedule != null) cfg.datasets);
+        name: dataset: lib.nameValuePair "${unitName name}-fullcheck" (mkService name dataset true)
+      ) (lib.filterAttrs (_: dataset: dataset.fullCheckSchedule != null) cfg.datasets)
+      // lib.mapAttrs' (
+        name: dataset: lib.nameValuePair "${unitName name}-watch" (mkWatchService name dataset)
+      ) (lib.filterAttrs (_: dataset: dataset.onChange.enable) cfg.datasets);
+
+    # DirectoryNotEmpty is re-checked after the backup service exits, so a
+    # change during a run leaves a request behind and triggers exactly one more
+    # run (PathChanged would silently lose it).
+    systemd.paths = lib.mapAttrs' (
+      name: _:
+      lib.nameValuePair "${unitName name}-queue" {
+        wantedBy = [ "paths.target" ];
+        pathConfig = {
+          DirectoryNotEmpty = queueDir name;
+          Unit = "${unitName name}.service";
+        };
+      }
+    ) (lib.filterAttrs (_: dataset: dataset.onChange.enable) cfg.datasets);
 
     systemd.timers =
       lib.mapAttrs' (
-        name: dataset: lib.nameValuePair "backup-${lib.toLower name}" (mkTimer dataset.schedule)
+        name: dataset: lib.nameValuePair (unitName name) (mkTimer dataset.schedule)
       ) cfg.datasets
       // lib.mapAttrs' (
-        name: dataset:
-        lib.nameValuePair "backup-${lib.toLower name}-fullcheck" (mkTimer dataset.fullCheckSchedule)
+        name: dataset: lib.nameValuePair "${unitName name}-fullcheck" (mkTimer dataset.fullCheckSchedule)
       ) (lib.filterAttrs (_: dataset: dataset.fullCheckSchedule != null) cfg.datasets);
   };
 }

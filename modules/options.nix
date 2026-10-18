@@ -384,6 +384,25 @@ in
                     default = null;
                     description = "Optional systemd OnCalendar for an extra whole-mirror integrity check: runs the same dataset with --full-check so drift in old, unchanged files is still caught. null (the default) disables it; the normal schedule verifies only the files that changed.";
                   };
+                  onChange = lib.mkOption {
+                    type = lib.types.submodule {
+                      options = {
+                        enable = lib.mkEnableOption "queueing a backup shortly after the source changes";
+                        debounce = lib.mkOption {
+                          type = lib.types.str;
+                          default = "15m";
+                          description = "Quiet period after the last accepted change before one backup is queued, so an upload or import batch produces one run rather than many. The scheduled timer remains the guaranteed fallback.";
+                        };
+                        ignore = lib.mkOption {
+                          type = lib.types.listOf lib.types.str;
+                          default = [ ];
+                          description = "Extra path components or shell glob patterns whose changes never trigger a run (for example derived directories that the dataset excludes such as `thumbs`). Built-in junk suffixes and hidden entries are always ignored.";
+                        };
+                      };
+                    };
+                    default = { };
+                    description = "Trigger this dataset's existing backup unit on filesystem changes under `source` (inotify, recursive) in addition to the scheduled timer.";
+                  };
                 };
               }
             );

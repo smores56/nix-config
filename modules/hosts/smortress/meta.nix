@@ -102,6 +102,7 @@ in
       # Incrementals run in minutes; 2h is a wall-clock backstop so a
       # deadlock trips fast (stallTimeout catches a stalled transfer sooner).
       timeout = "2h";
+      onChange.enable = true;
     };
     backup.datasets.Photos = {
       schedule = "*-*-* 03:00:00";
@@ -120,6 +121,15 @@ in
         "/encoded-video/**"
       ];
       postgres = true;
+      onChange = {
+        enable = true;
+        # Regenerable Immich trees excluded from the mirror must not trigger a
+        # run either; the storage-template originals under library/ still do.
+        ignore = [
+          "thumbs"
+          "encoded-video"
+        ];
+      };
       preBackup = ''
         mkdir -p "$BACKUP_CURRENT/db"
         tmp="$BACKUP_CURRENT/db/.immich-$BACKUP_DATE.tmp"
@@ -136,6 +146,7 @@ in
       schedule = "*-*-* 05:00:00";
       fullCheckSchedule = "Sun *-*-* 08:00:00";
       timeout = "2h";
+      onChange.enable = true;
     };
     notify.enable = true;
     # Mirror this host's GitHub repos onto the backup disk (local-only; GitHub is

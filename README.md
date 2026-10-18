@@ -234,10 +234,12 @@ alerts in the browser.
 `dotfiles.backup.datasets.<Name>` entry per dataset drives an rclone 3-2-1
 pipeline — a versioned local mirror on the disk and, unless `offsite = false`,
 an append-only Proton mirror — with a per-dataset timer, failure marker and ntfy
-alert. smortress backs up `Photos`/`Videos`/`Music` offsite and mirrors the
+alert. Media datasets can additionally set `onChange` to queue a run after a
+debounced batch of source changes, with the timer as the fallback. smortress
+backs up `Photos`/`Videos`/`Music` offsite (and change-triggered) and mirrors the
 `smores56` GitHub repos locally (`dotfiles.githubBackup`). The operator's guide
-— guarantees, layout, restore and one-time prune procedures — is
-[`modules/features/backup/README.md`](modules/features/backup/README.md).
+— guarantees, trigger semantics, layout, restore and one-time prune procedures —
+is [`modules/features/backup/README.md`](modules/features/backup/README.md).
 
 ### Fingerprint enrollment
 
