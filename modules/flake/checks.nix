@@ -219,6 +219,8 @@ in
               shellcheck ${src}/bootstrap.sh
               bash -n ${src}/modules/features/backup/drills/restore-drill.sh
               shellcheck ${src}/modules/features/backup/drills/restore-drill.sh
+              bash -n ${src}/modules/features/backup/github-mirror.sh
+              shellcheck ${src}/modules/features/backup/github-mirror.sh
               touch $out
             '';
 

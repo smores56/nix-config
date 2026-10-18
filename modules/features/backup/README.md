@@ -1,10 +1,12 @@
-# Media backup — rclone 3-2-1 to Proton Drive
+# Backup — rclone driver (media to Proton, GitHub local-only)
 
-Generic, dataset-agnostic media backup. One systemd oneshot + timer per
-`dotfiles.backup.datasets.<Name>` entry. Nothing here is Immich-specific: a
-dataset is a directory on Disk 1, a local mirror on the backup disk (Disk 2),
-and — unless `offsite` is disabled — an append-only mirror on Proton Drive
-(Disk 3, "offsite").
+Generic, dataset-agnostic backup driver. One systemd oneshot + timer per
+`dotfiles.backup.datasets.<Name>` entry. A dataset is a directory on Disk 1, a
+local mirror on the backup disk (Disk 2), and — unless `offsite` is disabled —
+an append-only mirror on Proton Drive (Disk 3, "offsite"). Two dataset families
+use it: the media trees (`Photos`, `Videos`, `Music`; offsite) and a local-only
+GitHub repo mirror (`GitHub`; see
+[GitHub repo mirror](#github-repo-mirror-local-only)).
 
 The rationale for every destructive-looking choice lives as a comment next to
 the code in [`backup.py`](./backup.py). This file is the operator's view.
@@ -36,6 +38,11 @@ the code in [`backup.py`](./backup.py). This file is the operator's view.
   it compared nothing, so the `"<n> hashes could not be checked"` summary is
   parsed and any non-zero count fails the run: an unverified mirror is not a
   backup.
+- **A local-only dataset is verified against the local copy.** With
+  `offsite = false` there is no remote, so the run finishes with the same scoped
+  `rclone check --one-way --checksum --files-from <changed>` but source → local
+  mirror instead. The `BACKUP-FAILED` marker therefore keeps meaning "the mirror
+  was verified" on every dataset, offsite or not.
 - **A run that stalls is killed and retried.** rclone's own idle timeout does
   not catch a wedged upload session (one such hang held the shared Proton lock
   for 18h). A stats-based watchdog (`stallTimeout`, default 30m) aborts a step
@@ -53,6 +60,8 @@ the code in [`backup.py`](./backup.py). This file is the operator's view.
 | `/var/backup/<Name>/db/` | pre-backup database dumps (dataset's `preBackup`) |
 | `/var/backup/<Name>/BACKUP-FAILED` | failure marker: detailed one written by the driver, generic fallback by `ExecStopPost` |
 | `/var/lib/backup/rclone.conf` | Proton remote config, mode 0600, **runtime only — never in the Nix store** |
+| `/var/lib/github-mirrors/<owner>_backup/<repo>` | ghorg bare git mirrors, refreshed in place (Disk 1) |
+| `/var/backup/GitHub/current` | local mirror of the GitHub mirrors (Disk 2) |
 | `/run/lock/media-backup.lock` | host-wide, driver-owned lock, mode 0600; all datasets share one Proton credential |
 
 Proton paths are the dataset name under the remote: `proton:<Name>` — on
@@ -65,6 +74,7 @@ smortress, `proton:Photos`, `proton:Videos`, `proton:Music`.
 | `Photos` | `/var/lib/media/Photos` | 03:00 | Sun 06:00 | yes | `pg_dump -Fc` of `immich` into `current/db/immich-<date>.dump` |
 | `Videos` | `/var/lib/media/Videos` | 01:00 | Sun 07:00 | yes | — |
 | `Music` | `/var/lib/media/Music` | 05:00 | Sun 08:00 | yes | — |
+| `GitHub` | `/var/lib/github-mirrors` | 00:30 | — | no | `ghorg` refresh of the `smores56` mirrors (see below) |
 
 Every dataset excludes `/.cache/**`, `**/.cache/**` and `/rclone.conf` by
 default (the `excludes` option default). That keeps regenerable caches (at the
@@ -77,6 +87,36 @@ source root. `Photos` additionally excludes `/thumbs/**` and
 `/encoded-video/**` — regenerable Immich derived assets that Immich rebuilds
 from the originals, so they need not occupy a mirror.
 
+## GitHub repo mirror (local-only)
+
+`dotfiles.githubBackup` mirrors this host's GitHub repos onto the backup disk as
+bare git mirrors, driven by
+[`modules/nixos/github-backup.nix`](../../nixos/github-backup.nix). It is
+deliberately **local-only** (`offsite = false`): GitHub already holds the offsite
+copy of every repo, so the HDD mirror exists for fast local restore and as
+protection against an accidental repo deletion or account lockout — not as a
+second offsite. A Proton leg would also re-upload every pack on every run, since
+`git repack` rewrites packfiles with new mtimes even when the content is
+unchanged (and a copy-based mirror keys on that mtime).
+
+- **Refresh.** The dataset's `preBackup` runs
+  [`github-mirror.sh`](./github-mirror.sh) under [`gitconfig`](./gitconfig) via
+  `GIT_CONFIG_GLOBAL`: [ghorg](https://github.com/gabrie30/ghorg)
+  `clone --backup --clone-wiki --skip-forks` of `dotfiles.githubUser`, which
+  clones on the first run and `git remote update`s thereafter, plus
+  `GHORG_FETCH_GIT_LFS=true` so LFS objects are pulled. Archived repos **are**
+  mirrored (they are frozen, not disposable — most of this owner's history is
+  archived); forks are skipped as upstream duplicates.
+  `fetch.unpackLimit=1` keeps each repo a single pack (a small fetch is otherwise
+  exploded into loose objects) and `gc.auto=0` stops a nondeterministic repack.
+- **Token.** Read at runtime from `dotfiles.githubBackup.tokenFile`
+  (`/run/secrets/github-repo-pat`, a `repo`-scoped sops secret, root-owned mode
+  0400); never placed in the Nix store. This is a *different* token from the
+  `github-key-pat` `bootstrap` uses for SSH-key registration.
+- **Private-repo guard.** `dotfiles.githubBackup.probeRepo` names a known-private
+  repo; the run fails if its mirror is absent, catching a token that lost `repo`
+  scope (ghorg would otherwise clone only public repos and still exit 0).
+
 ## How a run works
 
 1. The driver takes the host-wide lock at `/run/lock/media-backup.lock` (created
@@ -85,15 +125,19 @@ from the originals, so they need not occupy a mirror.
    simply waits. Manual `backup` runs and the restore drill take the same lock.
 2. `preBackup` (if set) runs with `BACKUP_DATE`, `BACKUP_CURRENT`,
    `BACKUP_SOURCE` in the environment. Writes are atomic (`.tmp` + `mv`), and a
-   killed dump traps and removes its `.tmp` so no partial file is mirrored.
+   killed dump traps and removes its `.tmp` so no partial file is mirrored. The
+   source's emptiness check runs *after* `preBackup`, so a producer-style dataset
+   whose `preBackup` creates the source (e.g. the GitHub mirror) is not rejected
+   for starting empty.
 3. Local copy → `current/`, overwritten revisions to `versions/<date>/`.
 4. Offsite copy → `proton:<Name>` with
    `--protondrive-replace-existing-draft=true` (uploads only; never used to
    delete).
-5. Verify the offsite mirror: `rclone check --checksum --one-way` scoped with
-   `--files-from` to the paths the offsite copy wrote this run, or skipped
-   entirely when it wrote nothing. A `--full-check` run (per-dataset
-   `fullCheckSchedule`) walks the whole mirror instead.
+5. Verify the mirror: `rclone check --checksum --one-way` scoped with
+   `--files-from` to the paths the copy wrote this run, or skipped entirely when
+   it wrote nothing. Offsite datasets check local↔remote; a local-only dataset
+   (`offsite = false`) checks source↔local instead. A `--full-check` run
+   (per-dataset `fullCheckSchedule`) walks the whole mirror instead.
 6. On success the unit is done. On failure the driver writes a detailed
    `BACKUP-FAILED` marker from inside the run; if the run was killed before that
    could happen, `ExecStopPost` writes a generic one (it never overwrites the
@@ -133,6 +177,19 @@ runuser -u postgres -- pg_restore --no-owner -d restored \
 
 (To restore from an unprivileged shell, copy the dump somewhere `postgres` can
 read first: `install -m 644 …/immich-<date>.dump /tmp/immich.dump`.)
+
+**GitHub repos.** The mirror is a tree of bare mirrors. To restore one:
+
+```sh
+# clone a working tree straight out of the mirror
+mkdir -p /restore/<repo> && cd /restore/<repo> && git init
+# source the bare mirror as a remote, or clone it directly:
+#   git clone /var/backup/GitHub/current/<owner>_backup/<repo> /restore/<repo>
+git remote add origin /var/backup/GitHub/current/<owner>_backup/<repo>
+git fetch origin && git checkout main
+```
+
+To push a mirror back to a remote, `git push --mirror <url>` from it.
 
 **Drill the whole thing.** [`drills/restore-drill.sh`](./drills/restore-drill.sh)
 is the executable form of the above:
@@ -273,6 +330,11 @@ dataset needs `dotfiles.backup.enable = true` (the backup disk).
   (systemd `TimeoutStartSec`, OOM) can leave it in `$TMPDIR`.
 - A `fullCheckSchedule` run re-runs the whole dataset — `preBackup` (an extra
   `pg_dump` for Photos) and both copies — not only the check.
+- The GitHub mirror is append-only like every other dataset: `copy` never
+  deletes, so a repo removed from GitHub lingers in
+  `/var/backup/GitHub/current`. `--skip-forks` also keeps forks out of the
+  *listing*, so one forked before the first run is never mirrored — a deliberate
+  scope choice, not a silent error. Archived repos are included.
 
 ### Hardening not yet done (accepted, from the final review)
 

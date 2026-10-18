@@ -228,6 +228,17 @@ Known limits: ntfy runs on this host, so it cannot report the host itself
 being down; and the mobile app cannot pass Cloudflare Access, so consume
 alerts in the browser.
 
+### Backups
+
+`dotfiles.backup` (the backup disk; `modules/nixos/backup.nix`) plus one
+`dotfiles.backup.datasets.<Name>` entry per dataset drives an rclone 3-2-1
+pipeline — a versioned local mirror on the disk and, unless `offsite = false`,
+an append-only Proton mirror — with a per-dataset timer, failure marker and ntfy
+alert. smortress backs up `Photos`/`Videos`/`Music` offsite and mirrors the
+`smores56` GitHub repos locally (`dotfiles.githubBackup`). The operator's guide
+— guarantees, layout, restore and one-time prune procedures — is
+[`modules/features/backup/README.md`](modules/features/backup/README.md).
+
 ### Fingerprint enrollment
 
 Hosts with `dotfiles.fingerprint = true` get `services.fprintd` and the
@@ -340,53 +351,6 @@ and also the tooling's own state (env files, credentials), which is then
 reachable under the org paths. Repo and worktree paths print under the flat
 folder. Links stay when an org is dropped from the list.
 
-### Blitzy onboarding (sam@smoreswork)
-
-The toolchain belongs to `blitzy-dev` and Homebrew (pyenv and per-repo
-venvs, gcloud, the AWS CLI, `op`, nvm, `~/.zshrc`, its skills); this repo
-only provides the frame above. Order matters:
-
-1. `home-manager switch` (run `work-repo-links --migrate` if it warns about
-   a real org directory). Then make Nix zsh the login shell (once,
-   needs sudo):
-
-   ```sh
-   grep -qx "$HOME/.nix-profile/bin/zsh" /etc/shells || echo "$HOME/.nix-profile/bin/zsh" | sudo tee -a /etc/shells
-   chsh -s "$HOME/.nix-profile/bin/zsh"
-   ```
-
-   Log out and back in so GUI apps (kitty, zellij) pick up the new `$SHELL`.
-
-2. 1Password: join `blitzy.1password.com`, then in the desktop app enable
-   **Settings → Security → Touch ID** and **Settings → Developer →
-   Integrate with 1Password CLI**.
-3. Install `blitzy-dev` (needs `brew` and `gh`, both present). With the
-   checkout already at `~/Blitzy/blitzy-dev`, the installer keeps it:
-
-   ```sh
-   curl -fsSL https://raw.githubusercontent.com/blitzy-ai/blitzy-dev/main/install.sh | bash
-   ```
-
-4. `blitzy setup`, answering the first-run wizard: team **standard**,
-   oh-my-zsh **no** (its installer follows `$ZDOTDIR` and would replace the
-   HM zshrc), PyCharm configs **no**, and skip `clone_repos` and
-   `clone_platform_repos` (clone with `repos get` instead of every visible
-   repo). It owns the toolchain from here, and setup and `blitzy update`
-   keep it current.
-5. Clone what you work on with `repos get blitzy-ai/<repo>` (or
-   `blitzy-platform/<repo>`), then rerun `blitzy setup` so venvs, node
-   deps and pre-commit hooks reconcile for the new checkouts.
-6. Ask for access `blitzy dev up` needs: the `blitzy-platform` org (backend,
-   github-handler and job-manager live there) and
-   `roles/iam.serviceAccountTokenCreator` on `service@blitzy-os-dev`. Then
-   `blitzy setup --platform` (pass `--platform` each time; the wizard is the
-   only place that records the team).
-7. Finish the manual steps in blitzy-dev's `docs/local-dev-setup.md`
-   (`env-dev` rebuilt from Secret Manager, WorkOS UI vars).
-
-The env functions (`set_dev`, `rdb_dev`, …) and pyenv init arrive once
-`blitzy setup` has written `~/.zshrc`.
-
 ### Adding a new host
 
 Hosts live in `modules/hosts/<hostname>/` and are discovered automatically;
@@ -440,15 +404,17 @@ root (`/etc/ssh/...`) via `--extra-files`.
 ### Provisioning PATs (headless login)
 
 `bootstrap` logs in non-interactively when the host's sops secrets hold the
-tokens. `modules/nixos/secrets.nix` declares `github-pat` and `proton-pass-pat`
-(user-readable); add them to the encrypted file **before** the next
-`nixos-rebuild switch`, or activation fails on the missing key:
+tokens. `modules/nixos/secrets.nix` declares `github-key-pat`,
+`proton-pass-pat` and `github-repo-pat`; add them to the encrypted file
+**before** the next `nixos-rebuild switch`, or activation fails on the missing
+key:
 
 ```sh
-nix-shell -p sops --run 'sops secrets/smortress.yaml'   # add github-pat: <token>, proton-pass-pat: <pst_...::key>
+nix-shell -p sops --run 'sops secrets/smortress.yaml'
+# add github-key-pat: <token>, proton-pass-pat: <pst_...::key>, github-repo-pat: <token>
 ```
 
-- `github-pat` needs permission to register SSH keys: a **classic** token with
+- `github-key-pat` needs permission to register SSH keys: a **classic** token with
   `write:public_key` and `write:ssh_signing_key`, or a **fine-grained** token
   with the account permissions "Git SSH keys: write" and "SSH signing keys:
   write" (fine-grained tokens do not advertise OAuth scopes, so `bootstrap`
@@ -460,16 +426,21 @@ nix-shell -p sops --run 'sops secrets/smortress.yaml'   # add github-pat: <token
   (see "Rotating the PATs"), but each *login session* it grants lasts only ~2 h
   and cannot be locked, so a headless host re-logs-in on each `bootstrap` run
   (an interactive `fs` session persists longer).
+- `github-repo-pat` has `repo` scope (classic) and is read **only** by the root
+  GitHub-backup service (`modules/nixos/github-backup.nix`, via
+  `dotfiles.githubBackup.tokenFile`); it is root-owned, so the user's shell
+  cannot read it. `bootstrap` never touches it.
 
 #### Rotating the PATs
 
 Both tokens expire and need periodic replacement — `proton-pass-pat` has a
-**maximum lifetime of one year** (a Proton Pass limit), and `github-pat` expires
-per its own setting. Replace each before it lapses:
+**maximum lifetime of one year** (a Proton Pass limit), and the GitHub PATs
+expire per their own setting. Replace each before it lapses:
 
 1. Issue a replacement — Proton Pass → Settings → Access tokens (scope: Hosting
-   + Identity, read-only), or GitHub → Developer settings → tokens (classic: the
-   same scopes as above; fine-grained: the same two account permissions).
+   + Identity, read-only), GitHub → Developer settings → tokens for
+   `github-key-pat` (classic: the two scopes above; fine-grained: the two account
+   permissions above), or a `repo`-scoped classic token for `github-repo-pat`.
 2. Update the value: `nix-shell -p sops --run 'sops secrets/<host>.yaml'`.
 3. Commit, then `nixos-rebuild switch` on every host holding the token, so
    sops-nix redeploys `/run/secrets/*`.
@@ -478,5 +449,7 @@ A lapsed token degrades differently per provider:
 
 - `proton-pass-pat` — `pass-cli login` fails, `bootstrap` warns and continues;
   log in interactively afterwards.
-- `github-pat` — `gh auth login --with-token` rejects it and `bootstrap` **fails
+- `github-key-pat` — `gh auth login --with-token` rejects it and `bootstrap` **fails
   hard**. Blank the secret (and rebuild) to fall back to the device-code flow.
+- `github-repo-pat` — the nightly GitHub mirror fails (and its probe trips) until
+  a valid `repo`-scoped token is back in place.

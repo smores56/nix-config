@@ -395,6 +395,37 @@ in
       default = { };
       description = "Generic local backup disk; hosts mount it and backup features write beneath it.";
     };
+    githubBackup = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkEnableOption "mirroring this host's GitHub repos onto the backup disk";
+          tokenFile = lib.mkOption {
+            # str, not path: a path interpolated into a derivation is copied into
+            # the Nix store, which would publish the token.
+            type = lib.types.str;
+            default = "/run/secrets/github-repo-pat";
+            description = "Runtime file holding a GitHub token with `repo` scope, read by ghorg; never placed in the Nix store.";
+          };
+          probeRepo = lib.mkOption {
+            type = lib.types.str;
+            default = "";
+            description = "A known-private repo name. When set, the run fails unless that repo's mirror exists, catching a token without `repo` scope (private repos would otherwise be silently absent while the run still 'succeeds').";
+          };
+          schedule = lib.mkOption {
+            type = lib.types.str;
+            default = "*-*-* 00:30:00";
+            description = "systemd OnCalendar for the mirror timer. Keep it ahead of the media datasets so the shared host lock never contends.";
+          };
+          timeout = lib.mkOption {
+            type = lib.types.str;
+            default = "6h";
+            description = "systemd TimeSpan cap on a run; generous for a cold clone of every repo.";
+          };
+        };
+      };
+      default = { };
+      description = "Mirror this host's GitHub repos onto the backup disk via ghorg (local-only; GitHub is the offsite copy).";
+    };
     notify = lib.mkOption {
       type = lib.types.submodule {
         options = {

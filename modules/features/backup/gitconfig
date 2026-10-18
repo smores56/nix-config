@@ -1,0 +1,11 @@
+# Global git config for the GitHub mirror runs, exposed to ghorg via
+# GIT_CONFIG_GLOBAL by modules/nixos/github-backup.nix.
+#
+# Pin packing so the mirror stays a handful of files per repo instead of a
+# loose-object torrent: a small fetch is otherwise unpacked into loose objects
+# (fetch.unpackLimit defaults to 100), and git's auto-gc would nondeterministically
+# rewrite whole packs (a new packfile mtime re-copies it on a copy-based mirror).
+[fetch]
+	unpackLimit = 1
+[gc]
+	auto = 0

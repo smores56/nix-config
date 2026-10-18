@@ -154,6 +154,7 @@ let
     "photobucket"
     "immich"
     "backup"
+    "githubBackup"
     "notify"
     "chat"
   ];

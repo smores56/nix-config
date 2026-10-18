@@ -286,6 +286,10 @@ def build_steps(cfg, date):
         # cannot be a single systemd ExecStart argument (newlines end the
         # directive) and would stop the unit from loading.
         steps.append([cfg.pre_backup])
+    # With no offsite leg the local copy's log is the only record of what
+    # changed, so it (and only it) emits JSON for the local check to scope
+    # against; offsite datasets keep the local copy human-readable.
+    local_flags = [] if cfg.offsite else COPY_LOG_FLAGS
     # `copy`, never `sync`: the versioned local mirror must never lose data.
     steps.append(
         [
@@ -293,6 +297,7 @@ def build_steps(cfg, date):
             "--config",
             cfg.rclone_config,
             *_rclone_flags(),
+            *local_flags,
             "copy",
             cfg.source,
             local_dir(cfg),
@@ -321,6 +326,32 @@ def build_steps(cfg, date):
     return steps
 
 
+def _check_argv(cfg, source, dest, files_from):
+    """rclone `check` argv. `--files-from` is mutually exclusive with the filters.
+
+    rclone rejects `--files-from` alongside any other filter ("the usage of
+    --files-from overrides all other filters, it should be used alone"), so the
+    excludes only go on a whole-tree walk. When `files_from` is set it names the
+    files this run wrote, which the excludes never match anyway.
+    """
+    argv = [
+        "rclone",
+        "--config",
+        cfg.rclone_config,
+        *_rclone_flags(),
+        "check",
+        "--checksum",
+        "--one-way",
+        source,
+        dest,
+    ]
+    if files_from is not None:
+        argv += ["--files-from", files_from]
+    else:
+        argv += _exclude_flags(cfg)
+    return argv
+
+
 def build_check(cfg, files_from=None):
     """Verify the offsite mirror by checksum; None when there is no offsite copy.
 
@@ -333,21 +364,23 @@ def build_check(cfg, files_from=None):
     """
     if not cfg.offsite:
         return None
-    argv = [
-        "rclone",
-        "--config",
-        cfg.rclone_config,
-        *_rclone_flags(),
-        "check",
-        "--checksum",
-        "--one-way",
-        local_dir(cfg),
-        f"{cfg.remote}:{cfg.name}",
-        *_exclude_flags(cfg),
-    ]
-    if files_from is not None:
-        argv += ["--files-from", files_from]
-    return argv
+    return _check_argv(cfg, local_dir(cfg), f"{cfg.remote}:{cfg.name}", files_from)
+
+
+def build_local_check(cfg, files_from=None):
+    """Verify the local mirror against the source by checksum; None when offsite.
+
+    With no offsite leg the offsite check never runs, so without this the marker
+    would clear on any successful run and stop meaning "verified". `--one-way` is
+    required for the same reason as the offsite check: the mirror is append-only
+    (copy never deletes), so it may legitimately hold files the source dropped.
+
+    `files_from` (a path) scopes the check to the files this run's local copy
+    wrote; without it the whole mirror is walked.
+    """
+    if cfg.offsite:
+        return None
+    return _check_argv(cfg, cfg.source, local_dir(cfg), files_from)
 
 
 def unchecked_hashes(output):
@@ -650,13 +683,13 @@ def write_paths_file(paths):
     return path
 
 
-def _verify_offsite(cfg, offsite_output, run, out, dry_run, full_check):
-    """Verify the offsite mirror over the changed set (or the whole tree).
+def _verify(cfg, build, output, label, run, out, dry_run, full_check):
+    """Verify a mirror over the changed set (or the whole tree).
 
-    The offsite copy reports the files it wrote, so checking only those turns an
-    O(tree) walk into an O(changes) one. When it wrote nothing the check is
-    skipped — the mirror is unchanged since the last run — and `--full-check`
-    forces the whole-tree walk as a periodic integrity scan.
+    The copy reports the files it wrote, so checking only those turns an O(tree)
+    walk into an O(changes) one. When it wrote nothing the check is skipped —
+    the mirror is unchanged since the last run — and `--full-check` forces the
+    whole-tree walk as a periodic integrity scan.
 
     Returns True when the mirror was verified this run, False when the check was
     skipped, so the caller does not clear a prior failure's marker on a skip. A
@@ -667,35 +700,35 @@ def _verify_offsite(cfg, offsite_output, run, out, dry_run, full_check):
     if dry_run:
         # Nothing was copied, so there is no changed set to scope the check;
         # show the whole-tree check as the shape a real run would produce.
-        check = build_check(cfg)
+        check = build(cfg)
         if check is not None:
             out("+ " + quote(check))
         return True
-    changed = copied_paths(offsite_output.splitlines())
+    changed = copied_paths(output.splitlines())
     if not full_check and not changed:
-        if (transferred_bytes_last(offsite_output) or 0) > 0:
+        if (transferred_bytes_last(output) or 0) > 0:
             raise BackupError(
-                "offsite copy transferred data but no changed paths were "
+                f"{label} copy transferred data but no changed paths were "
                 "recorded; refusing to skip verification"
             )
-        out("no offsite changes; skipping verification")
+        out(f"no {label} changes; skipping verification")
         return False
     tmp_path = write_paths_file(changed) if (changed and not full_check) else None
     try:
-        check = build_check(cfg, files_from=tmp_path)
+        check = build(cfg, files_from=tmp_path)
         out("+ " + quote(check))
-        output = run(check, capture=True) or ""
-        if unchecked_hashes(output) > 0:
+        result = run(check, capture=True) or ""
+        if unchecked_hashes(result) > 0:
             raise BackupError(
-                f"offsite check could not verify every file: {output.strip()}"
+                f"{label} check could not verify every file: {result.strip()}"
             )
         # Only reached when a check ran: a zero (or unreadable) count means the
         # changed paths were not actually compared — they are missing on the
-        # remote, or an over-broad exclude hid them.
-        if not checked_count(output):
+        # mirror, or an over-broad exclude hid them.
+        if not checked_count(result):
             raise BackupError(
-                "offsite check verified no files; the changed paths were not "
-                "compared (missing on the remote, or an over-broad exclude?)"
+                f"{label} check verified no files; the changed paths were not "
+                "compared (missing on the mirror, or an over-broad exclude?)"
             )
     finally:
         if tmp_path is not None:
@@ -714,32 +747,62 @@ def run_backup(
     lock_handle = acquire_lock(out=out) if (lock and not dry_run) else None
     try:
         if not dry_run:
-            require_source(cfg)
             os.makedirs(local_dir(cfg), mode=0o700, exist_ok=True)
             # Resolve before creating, so an existing same-day folder is detected.
             date = resolve_date(cfg, date)
             os.makedirs(versions_dir(cfg, date), mode=0o700, exist_ok=True)
 
-        # The offsite copy logs each file it copies; capturing its output lets us
-        # scope verification to what changed instead of walking the whole mirror.
+        # Each copy logs the files it writes; capturing that log lets
+        # verification be scoped to what changed instead of walking the whole
+        # mirror. Which copy is captured depends on where the check runs: the
+        # offsite copy when there is one, otherwise the local copy.
         offsite_output = ""
+        local_output = ""
         pre_step = [cfg.pre_backup] if cfg.pre_backup else None
         offsite_target = f"{cfg.remote}:{cfg.name}"
+        # preBackup runs first and may *produce* the source (a producer-style
+        # dataset starts empty), so the emptiness check must follow it: running
+        # it first would abort before the producer ever populated anything.
+        if pre_step is not None:
+            out("+ " + quote(pre_step))
+            if not dry_run:
+                run(pre_step, env=_pre_backup_env(cfg, date))
+        if not dry_run:
+            require_source(cfg)
         for step in build_steps(cfg, date):
+            if step == pre_step:
+                continue
             out("+ " + quote(step))
             if dry_run:
                 continue
-            if pre_step is not None and step == pre_step:
-                run(step, env=_pre_backup_env(cfg, date))
-            elif cfg.offsite and offsite_target in step:
+            if cfg.offsite and offsite_target in step:
                 offsite_output = run(step, capture=True) or ""
+            elif not cfg.offsite and cfg.source in step:
+                local_output = run(step, capture=True) or ""
             else:
                 run(step)
 
-        verified = True
         if cfg.offsite:
-            verified = _verify_offsite(
-                cfg, offsite_output, run, out, dry_run, full_check
+            verified = _verify(
+                cfg,
+                build_check,
+                offsite_output,
+                "offsite",
+                run,
+                out,
+                dry_run,
+                full_check,
+            )
+        else:
+            verified = _verify(
+                cfg,
+                build_local_check,
+                local_output,
+                "local",
+                run,
+                out,
+                dry_run,
+                full_check,
             )
 
         if not dry_run and verified and os.path.exists(marker_path(cfg)):

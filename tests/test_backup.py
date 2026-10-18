@@ -130,6 +130,47 @@ class BackupTests(unittest.TestCase):
         steps = self.steps(pre_backup=script)
         self.assertEqual(steps[0], [script])
 
+    def test_pre_backup_may_produce_an_initially_empty_source(self):
+        # Producer-style datasets (e.g. ghorg mirrors) start empty, so the
+        # emptiness check must follow the preBackup step that fills them, not
+        # precede it — otherwise the run aborts before the producer ever runs.
+        import subprocess
+
+        produced = Path(self.base) / "produced"
+        produced.mkdir()
+        script = str(Path(self.base) / "producer.sh")
+        Path(script).write_text('#!/bin/sh\ntouch "$BACKUP_SOURCE/one.bin"\n')
+        os.chmod(script, 0o755)
+        c = cfg(
+            self.mod, self.base, offsite=False, pre_backup=script, source=str(produced)
+        )
+        ran = []
+
+        def run(argv, capture=False, env=None):
+            ran.append(argv)
+            if argv == [script]:
+                subprocess.run(argv, check=True, env=env)
+
+        self.mod.run_backup(c, DATE, run=run, lock=False, out=lambda _s: None)
+        self.assertEqual(ran[0], [script])
+        self.assertTrue(any("rclone" in step for step in ran))
+
+    def test_empty_source_still_guarded_without_a_producer(self):
+        # Without a preBackup the check must still fire, and it must fire before
+        # the copy: an empty source would otherwise silently "succeed".
+        empty = Path(self.base) / "empty"
+        empty.mkdir()
+        ran = []
+        with self.assertRaises(self.mod.BackupError):
+            self.mod.run_backup(
+                cfg(self.mod, self.base, offsite=False, source=str(empty)),
+                DATE,
+                run=self.collector(ran),
+                lock=False,
+                out=lambda _s: None,
+            )
+        self.assertEqual(ran, [])
+
     def test_check_uses_checksum_against_remote(self):
         check = self.mod.build_check(cfg(self.mod))
         self.assertIn("check", check)
@@ -266,11 +307,83 @@ class BackupTests(unittest.TestCase):
         os.makedirs(os.path.dirname(self.mod.marker_path(base_cfg)), exist_ok=True)
         with open(self.mod.marker_path(base_cfg), "w") as handle:
             handle.write("stale")
-        ran = []
-        self.mod.run_backup(
-            base_cfg, DATE, run=self.collector(ran), lock=False, out=lambda _s: None
-        )
+
+        def run(argv, capture=False, env=None):
+            # A local-only dataset verifies via the local copy's log + a local
+            # check; only a verified run clears a stale marker.
+            if "copy" in argv:
+                return json.dumps({"msg": "Copied (new)", "object": "one.bin"})
+            if "check" in argv:
+                return "Checks: 1 / 1, 100%\n0 differences found"
+            return ""
+
+        self.mod.run_backup(base_cfg, DATE, run=run, lock=False, out=lambda _s: None)
         self.assertFalse(os.path.exists(self.mod.marker_path(base_cfg)))
+
+    def test_local_check_verifies_the_mirror_against_the_source(self):
+        # With no offsite leg the marker must still mean "verified", so the check
+        # compares the source into the local mirror, one-way: the mirror may hold
+        # files the source dropped (copy never deletes).
+        c = cfg(self.mod, offsite=False, source=str(self.src))
+        self.assertIsNone(self.mod.build_check(c))
+        check = self.mod.build_local_check(c)
+        self.assertIn("check", check)
+        self.assertIn("--checksum", check)
+        self.assertIn("--one-way", check)
+        self.assertEqual(check[check.index("--one-way") + 1], str(self.src))
+        self.assertEqual(
+            check[check.index("--one-way") + 2], "/var/backup/media/current"
+        )
+
+    def test_local_check_is_none_when_offsite_is_on(self):
+        self.assertIsNone(self.mod.build_local_check(cfg(self.mod)))
+
+    def test_only_the_local_copy_uses_json_logging_when_offsite_disabled(self):
+        # The local check is scoped by the local copy's log, so it needs JSON;
+        # offsite datasets leave the local copy human-readable (checked above).
+        local = self.find(self.steps(offsite=False), "copy", "/var/lib/media")
+        self.assertIn("--use-json-log", local)
+
+    def test_run_backup_verifies_locally_and_scopes_to_changed_paths(self):
+        ran = []
+
+        def run(argv, capture=False, env=None):
+            ran.append(argv)
+            if "copy" in argv:
+                return json.dumps({"msg": "Copied (new)", "object": "one.bin"})
+            if "check" in argv:
+                return "Checks: 1 / 1, 100%\n0 differences found"
+            return ""
+
+        self.mod.run_backup(
+            cfg(self.mod, self.base, offsite=False, source=str(self.src)),
+            DATE,
+            run=run,
+            lock=False,
+            out=lambda _s: None,
+        )
+        check = next(step for step in ran if "check" in step)
+        self.assertIn("--files-from", check)
+        self.assertFalse(os.path.exists(check[check.index("--files-from") + 1]))
+
+    def test_run_backup_skips_the_local_check_when_nothing_changed(self):
+        messages = []
+
+        def run(argv, capture=False, env=None):
+            if "copy" in argv:
+                return json.dumps({"msg": "There was nothing to transfer"})
+            return ""
+
+        self.mod.run_backup(
+            cfg(self.mod, self.base, offsite=False, source=str(self.src)),
+            DATE,
+            run=run,
+            lock=False,
+            out=messages.append,
+        )
+        self.assertTrue(
+            any("no local changes; skipping verification" in m for m in messages)
+        )
 
     def test_dry_run_executes_nothing_yet_prints_steps(self):
         ran = []
@@ -406,6 +519,26 @@ class BackupTests(unittest.TestCase):
 
     def test_build_check_without_files_from_walks_the_whole_tree(self):
         self.assertNotIn("--files-from", self.mod.build_check(cfg(self.mod)))
+
+    def test_check_never_combines_files_from_with_excludes(self):
+        # rclone aborts on "--files-from ... overrides all other filters", so the
+        # excludes are only valid on a whole-tree walk.
+        c = cfg(self.mod, excludes=("/.cache/**",))
+        scoped = self.mod.build_check(c, files_from="/tmp/changed.txt")
+        self.assertIn("--files-from", scoped)
+        self.assertNotIn("--exclude", scoped)
+        whole = self.mod.build_check(c)
+        self.assertNotIn("--files-from", whole)
+        self.assertIn("--exclude", whole)
+
+    def test_local_check_never_combines_files_from_with_excludes(self):
+        c = cfg(self.mod, offsite=False, source=str(self.src), excludes=("/.cache/**",))
+        scoped = self.mod.build_local_check(c, files_from="/tmp/changed.txt")
+        self.assertIn("--files-from", scoped)
+        self.assertNotIn("--exclude", scoped)
+        whole = self.mod.build_local_check(c)
+        self.assertNotIn("--files-from", whole)
+        self.assertIn("--exclude", whole)
 
     def test_run_backup_skips_check_when_the_offsite_copy_changed_nothing(self):
         ran = []

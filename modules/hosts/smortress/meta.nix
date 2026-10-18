@@ -138,5 +138,10 @@ in
       timeout = "2h";
     };
     notify.enable = true;
+    # Mirror this host's GitHub repos onto the backup disk (local-only; GitHub is
+    # the offsite copy). The probe fails the run if the token ever loses `repo`
+    # scope, which would otherwise silently drop every private repo.
+    githubBackup.enable = true;
+    githubBackup.probeRepo = "sdlc-state";
   };
 }

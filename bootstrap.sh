@@ -225,7 +225,7 @@ GH_KEY_SCOPES="write:public_key,write:ssh_signing_key"
 
 # A headless host authenticates with the vault's GitHub PAT (sops-delivered,
 # non-interactive); elsewhere use the device code flow in a browser.
-GITHUB_PAT_FILE="${GITHUB_PAT_FILE:-/run/secrets/github-pat}"
+GITHUB_PAT_FILE="${GITHUB_PAT_FILE:-/run/secrets/github-key-pat}"
 GH_USED_PAT=0
 if gh auth token --hostname "$GITHUB_HOST" --user "$GITHUB_USER" >/dev/null 2>&1; then
   skip "Already authenticated with GitHub as ${GITHUB_USER}"
