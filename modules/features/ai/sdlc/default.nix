@@ -28,8 +28,8 @@ in
   home.file.".config/television/cable/features.toml".source = ./features.toml;
 
   dotfiles.shellAbbrs = {
-    sf = "pick features c";
-    sfe = "pick features sdlc edit {name} plan";
-    sfl = "sdlc list";
+    s = "pick features c";
+    se = "pick features sdlc edit {name} plan";
+    sl = "sdlc list";
   };
 }
