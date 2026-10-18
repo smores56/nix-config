@@ -16,10 +16,20 @@ let
 in
 {
   config = lib.mkIf cfg.enable {
+    # The session secret (and, in later tasks, the model keys) reach the service
+    # through a systemd EnvironmentFile, which the manager reads as root before
+    # dropping to the DynamicUser — so sops' default root ownership is correct.
+    # The store path holds a placeholder, not the secret; sops-nix substitutes
+    # the real value at activation.
+    sops.templates."open-webui-env".content = ''
+      WEBUI_SECRET_KEY=${config.sops.placeholder.open-webui-secret-key}
+    '';
+
     services.open-webui = {
       enable = true;
       host = "127.0.0.1";
       port = cfg.port;
+      environmentFile = config.sops.templates."open-webui-env".path;
     };
   };
 }

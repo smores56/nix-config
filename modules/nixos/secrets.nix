@@ -31,6 +31,14 @@
         mode = "0400";
       };
 
+      # Open WebUI's session secret, the Neuralwatt API key, and the code
+      # interpreter's Jupyter token. All three reach their services through a
+      # systemd EnvironmentFile (read by the manager as root before it drops to
+      # the DynamicUser), so they keep the default root ownership.
+      neuralwatt-api-key = { };
+      open-webui-secret-key = { };
+      jupyter-token = { };
+
       # Provisioning PATs, readable by the user so `bootstrap` can log in
       # non-interactively (`gh auth login --with-token`, `pass-cli login`).
       # Populate them with `sops secrets/smortress.yaml` (see README).
