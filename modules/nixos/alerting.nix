@@ -14,7 +14,10 @@ let
   datasets = config.dotfiles.backup.datasets;
 
   # JSON secret shape:
-  #   {"token":"...","account_id":"...","from":"alerts@sammohr.dev","to":"sam@sammohr.dev"}
+  #   {"token":"...","account_id":"...","from":"alerts@send.sammohr.dev","to":"sam@sammohr.dev"}
+  # Use a sending subdomain (send.<domain>) so its DMARC/SPF/DKIM records do not
+  # interact with the Proton apex records; the from address must match whichever
+  # domain/subdomain was onboarded.
   # The token is the SMTP/REST credential with Email Sending: Edit. The from
   # address must belong to an onboarded Email Service domain; the to address
   # must be verified (sends to verified destinations are free).
@@ -164,6 +167,9 @@ in
         Environment = [ "CLOUDFLARE_EMAIL_SECRET=${cfg.secretFile}" ];
         RuntimeDirectory = "backup-freshness";
         RuntimeDirectoryMode = "0700";
+        # The alerted flag must survive between 5-minute runs; without this the
+        # directory is removed when the oneshot exits and every run re-emails.
+        RuntimeDirectoryPreserve = "yes";
         TimeoutStartSec = "5m";
       };
     };
