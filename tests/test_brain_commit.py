@@ -210,6 +210,48 @@ class BrainCommitTests(unittest.TestCase):
             ("commit.gpgSign", "true"), ("gpg.format", "x509"), ("gpg.x509.program", "{script}")
         )
 
+    def test_instruction_files_are_refused_at_any_depth(self):
+        # Assistants load these as trusted instructions from any directory they read.
+        for name in ("wiki/CLAUDE.md", "daily/sub/AGENTS.md", "til/CLAUDE.local.md"):
+            with self.subTest(name=name):
+                self.assertFalse(self.bc.is_note_path(name))
+
+    def set_link_hosts(self, *hosts):
+        (self.vault / "CLAUDE.md").write_text("# cfg\n\n## Link hosts\n" + "\n".join(hosts) + "\n\n## Other\nx\n")
+        git(self.vault, "commit", "-qam", "hosts")
+
+    def test_links_to_configured_hosts_commit(self):
+        self.set_link_hosts("example.com")
+        self.write("daily/d.md", "- did a thing ([pr](https://example.com/o/r/pull/1)), dev at http://localhost:5173\n")
+        self.assertEqual(self.commit().status, "committed")
+
+    def test_links_to_other_hosts_are_refused(self):
+        self.set_link_hosts("example.com")
+        self.write("daily/d.md", "ok\nsee https://evil.example/p?d=secret-summary\n")
+        result = self.commit()
+        self.assertEqual(result.status, "refused")
+        self.assertIn("daily/d.md:2", result.detail)
+        self.assertIn("evil.example", result.detail)
+
+    def test_lookalike_hosts_are_refused(self):
+        self.set_link_hosts("example.com")
+        for url in ("https://example.com.evil.test/x", "https://notexample.com/y", "https://example.com@evil.test/z"):
+            with self.subTest(url=url):
+                self.write("daily/d.md", url + "\n")
+                self.assertEqual(self.commit().status, "refused")
+
+    def test_images_and_raw_html_are_refused(self):
+        self.set_link_hosts("example.com")
+        for text in ("![x](https://example.com/a.png)", '<img src="https://example.com/a">', "<IFRAME src=x>"):
+            with self.subTest(text=text):
+                self.write("daily/d.md", text + "\n")
+                self.assertEqual(self.commit().status, "refused")
+                (self.vault / "daily/d.md").unlink()
+
+    def test_angle_brackets_in_prose_are_fine(self):
+        self.set_link_hosts("example.com")
+        self.write("daily/d.md", "- passed <KEY> placeholders; a < b > c\n")
+        self.assertEqual(self.commit().status, "committed")
 
 if __name__ == "__main__":
     unittest.main()

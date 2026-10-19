@@ -9,6 +9,7 @@ reaches history.
 import argparse
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -16,6 +17,12 @@ from pathlib import Path
 
 NOTE_DIRS = ("daily/", "wiki/", "til/", "standups/")
 NOTE_FILES = ("index.md", "glossary.md", "questions.md", "brag.md")
+# Assistants load these as trusted instructions from whatever directory they read.
+INSTRUCTION_FILES = frozenset({"CLAUDE.md", "CLAUDE.local.md", "AGENTS.md", "GEMINI.md"})
+# Images and embeds fetch on preview, so an injected one leaks whatever its URL carries.
+EMBED_RE = re.compile(r"!\[|<\s*/?\s*(?:img|iframe|script|object|embed|svg|video|audio|source|link|meta|a)\b", re.I)
+URL_RE = re.compile(r"\bhttps?://([^/\s?#)\]>\"'`]+)", re.I)
+LOOPBACK = frozenset({"localhost", "127.0.0.1", "[::1]"})
 # Inherited repo-selection variables would point git at some other repo's index.
 REPO_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_COMMON_DIR")
 # Neutralize every config knob that makes git run a program during status/add/commit.
@@ -56,7 +63,12 @@ def is_note_path(path):
     # Markdown only, no dotfiles: a .gitattributes or script under a note dir could
     # change how git treats the notes.
     parts = path.split("/")
-    return path.startswith(NOTE_DIRS) and path.endswith(".md") and not any(p.startswith(".") for p in parts)
+    return (
+        path.startswith(NOTE_DIRS)
+        and path.endswith(".md")
+        and not any(p.startswith(".") for p in parts)
+        and parts[-1] not in INSTRUCTION_FILES
+    )
 
 
 def changed_paths(porcelain):
@@ -77,6 +89,28 @@ def is_linked(vault, path):
     # A symlinked note (or note dir) lets writes escape the vault.
     target = vault / path
     return any(p.is_symlink() for p in [target, *target.parents] if p != vault and vault in p.parents)
+
+
+def link_hosts(config_text):
+    """Hosts listed one per line under `## Link hosts`; None when the section is absent."""
+    found = re.search(r"^## Link hosts[ \t]*\n(.*?)(?=^## |\Z)", config_text, re.MULTILINE | re.DOTALL)
+    if not found:
+        return None
+    return frozenset(line.strip().lower() for line in found.group(1).splitlines() if re.fullmatch(r"[\w.-]+", line.strip()))
+
+
+def content_hits(name, content, hosts):
+    """name:line for embeds and for links off the configured hosts; notes may only link where sources live."""
+    lines = content.decode("utf-8", errors="replace").splitlines()
+    hits = []
+    for n, line in enumerate(lines, 1):
+        if EMBED_RE.search(line):
+            hits.append(f"{name}:{n} (image or HTML)")
+        for host in URL_RE.findall(line):
+            bare = host.rsplit("@", 1)[-1].split(":")[0].lower() if not host.startswith("[") else host.lower()
+            if hosts is not None and bare not in hosts and bare not in LOOPBACK:
+                hits.append(f"{name}:{n} (link to {bare})")
+    return hits
 
 
 def secret_hits(name, content):
@@ -129,6 +163,17 @@ def commit(vault, message, env=None):
         if hits:
             git("reset", "-q")
             return Result("refused", "secret-shaped text at " + ", ".join(hits))
+        # The committed config, not the working copy: a harvest can't widen its own link hosts.
+        committed_config = git("show", "HEAD:CLAUDE.md", check=False).stdout
+        hosts = link_hosts(committed_config)
+        bad = [
+            hit
+            for name in filter(None, staged.split("\0"))
+            for hit in content_hits(name, git("cat-file", "blob", f":{name}", text=False).stdout, hosts)
+        ]
+        if bad:
+            git("reset", "-q")
+            return Result("refused", "disallowed content at " + ", ".join(bad))
         git("commit", "-q", "--no-verify", "-m", message)
     except subprocess.CalledProcessError as err:
         git("reset", "-q", check=False)
