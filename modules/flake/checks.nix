@@ -114,8 +114,9 @@ in
             {
               tools ? [ pkgs.git ],
               args,
+              extraEnv ? { },
             }:
-            pkgs.runCommand name (env // { nativeBuildInputs = [ pkgs.bash ] ++ tools; }) ''
+            pkgs.runCommand name (env // extraEnv // { nativeBuildInputs = [ pkgs.bash ] ++ tools; }) ''
               bash ${src}/tests/${lib.replaceStrings [ "-" ] [ "_" ] name}.sh ${lib.escapeShellArgs args}
               touch $out
             '';
@@ -165,7 +166,50 @@ in
               args = [ "${src}/modules/features/backup/github-mirror.sh" ];
             };
           }
+          // lib.optionalAttrs pkgs.stdenv.isLinux {
+            manual-steps-sync = {
+              tools = [ pkgs.jq ];
+              args = [
+                "${src}"
+                "${manualStepInventory}"
+              ];
+            };
+          }
         );
+
+      # Inventory for manual-steps-sync. File-derived items (hosts, sops keys,
+      # Tofu providers/notifications) are parsed by the script; these are the
+      # values that only exist after module evaluation.
+      manualStepInventory = pkgs.writeText "manual-steps-inventory.json" (
+        let
+          nixos = lib.attrValues config.flake.nixosConfigurations;
+          sortedUnique = xs: lib.sort builtins.lessThan (lib.unique xs);
+        in
+        builtins.toJSON {
+          datasets = sortedUnique (
+            lib.concatMap (n: lib.attrNames n.config.backup.datasets) (lib.filter (n: n.options ? backup) nixos)
+          );
+          services = sortedUnique (
+            lib.concatMap (
+              n:
+              if n.options ? webProxy then
+                lib.mapAttrsToList (name: _: "${n.config.networking.hostName}/${name}") n.config.webProxy.services
+              else
+                [ ]
+            ) nixos
+          );
+          apps = sortedUnique (
+            lib.concatMap (system: lib.attrNames config.flake.apps.${system}) (lib.attrNames config.flake.apps)
+          );
+          alerts = sortedUnique (
+            lib.concatMap (
+              n:
+              lib.optional (n.config.systemd.services ? backup-freshness) "backup-freshness"
+              ++ lib.optional (n.config.systemd.services ? "cloudflare-email@") "unit-failure"
+            ) nixos
+          );
+        }
+      );
 
       nixosChecks = mkEvalChecks "eval-nixos" (
         lib.mapAttrs (_: nixos: nixos.config.system.build.toplevel.drvPath) (
@@ -239,6 +283,8 @@ in
               shellcheck ${src}/modules/features/backup/drills/restore-drill.sh
               bash -n ${src}/modules/features/backup/github-mirror.sh
               shellcheck ${src}/modules/features/backup/github-mirror.sh
+              bash -n ${src}/tests/manual_steps_sync.sh
+              shellcheck ${src}/tests/manual_steps_sync.sh
               touch $out
             '';
 

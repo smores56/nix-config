@@ -35,6 +35,12 @@ Cross-cutting values flow through `config.machine.*` and `config.user.*`
 Feature options live in the module that owns them (`webProxy`, `backup`,
 `immich`, `calibre`, `alerting`, …).
 
+Operator-only steps — tokens, Cloudflare objects, host provisioning, backup
+datasets, public services, flake apps, and alerts — live in
+[`docs/manual-steps.md`](docs/manual-steps.md). `checks.manual-steps-sync`
+fails when the configuration gains an item without a matching anchor, or when
+the document drifts ahead of the configuration.
+
 ## Installation
 
 ### Fresh machine (requires only Nix)
@@ -83,13 +89,12 @@ service token are operator-minted. One Cloudflare API token covers
 DNS (`Zone:DNS:Edit`), Access (`Access: Apps and Policies:Edit`),
 notifications (`Notifications:Edit`), and alert email (`Email Sending:Edit`).
 
-One-time provisioning:
-
-- Store the API token as `cloudflare-api-token` and the tunnel credentials
-  JSON as `cloudflared-credentials` in `secrets/smortress.yaml`.
-- The tunnel credentials are the authoritative source of the tunnel UUID
-  (`TunnelID`); no UUID is authored in the repo. `tunnelName` is only a label.
-- The token is read at tool time from sops and never enters Tofu state.
+One-time provisioning (token scopes, tunnel credentials, Email Service
+onboarding, and stale-object cleanup) is operator work: see
+[`docs/manual-steps.md`](docs/manual-steps.md#providers). The tunnel credentials
+are the authoritative source of the tunnel UUID (`TunnelID`); no UUID is
+authored in the repo. The token is read at tool time from sops and never enters
+OpenTofu state.
 
 Plan and apply from the checkout as root:
 
@@ -370,59 +375,11 @@ setup.
 on first boot. When that directory exists, `install` delivers it into the new
 root (`/etc/ssh/...`) via `--extra-files`.
 
-### Provisioning PATs (headless login)
+### Headless login and token rotation
 
 `bootstrap` logs in non-interactively when the host's sops secrets hold the
-tokens. `modules/nixos/secrets.nix` declares `github-key-pat`,
-`proton-pass-pat` and `github-repo-pat`; add them to the encrypted file
-**before** the next `nixos-rebuild switch`, or activation fails on the missing
-key:
-
-```sh
-nix-shell -p sops --run 'sops secrets/smortress.yaml'
-# add github-key-pat: <token>, proton-pass-pat: <pst_...::key>, github-repo-pat: <token>
-```
-
-- `github-key-pat` needs permission to register SSH keys: a **classic** token with
-  `write:public_key` and `write:ssh_signing_key`, or a **fine-grained** token
-  with the account permissions "Git SSH keys: write" and "SSH signing keys:
-  write" (fine-grained tokens do not advertise OAuth scopes, so `bootstrap`
-  trusts their configured permissions). `gh auth login --with-token` uses it.
-- `proton-pass-pat` is a `pass-cli` personal access token; `pass-cli login` uses
-  it. Scope it to the **Hosting** and **Identity** vaults at read-only
-  permission: bootstrap only reads SSH keys and the Access service token, so a
-  narrow scope bounds what a leaked token exposes. The *token* is long-lived
-  (see "Rotating the PATs"), but each *login session* it grants lasts only ~2 h
-  and cannot be locked, so a headless host re-logs-in on each `bootstrap` run
-  (an interactive `fs` session persists longer).
-- `github-repo-pat` has `repo` scope (classic) and is read **only** by the root
-  GitHub-backup service (`modules/nixos/github-backup.nix`, via
-  `githubBackup.tokenFile`); it is root-owned, so the user's shell
-  cannot read it. `bootstrap` never touches it. Classic `repo` grants read/write
-  to every private repo the account can reach, including org repos, while the
-  mirror only reads; fine-grained tokens cannot read wikis, so `--clone-wiki`
-  would silently omit them. Keep this token root-only.
-
-#### Rotating the PATs
-
-The tokens expire and need periodic replacement — `proton-pass-pat` has a
-**maximum lifetime of one year** (a Proton Pass limit), and the GitHub PATs
-expire per their own setting. Replace each before it lapses:
-
-1. Issue a replacement — Proton Pass → Settings → Access tokens (scope: Hosting
-   + Identity, read-only), GitHub → Developer settings → tokens for
-   `github-key-pat` (classic: the two scopes above; fine-grained: the two account
-   permissions above), or a `repo`-scoped classic token for `github-repo-pat`.
-2. Update the value: `nix-shell -p sops --run 'sops secrets/<host>.yaml'`.
-3. Commit, then `nixos-rebuild switch` on every host holding the token, so
-   sops-nix redeploys `/run/secrets/*`.
-
-A lapsed token degrades differently per provider:
-
-- `proton-pass-pat` — `pass-cli login` fails, `bootstrap` warns and continues;
-  log in interactively afterwards.
-- `github-key-pat` — `gh auth login --with-token` rejects it and `bootstrap` **fails
-  hard**. Blank the secret (and rebuild) to fall back to the device-code flow.
-- `github-repo-pat` — the nightly GitHub mirror fails until a valid token is back
-  in place. A token that is valid but has lost `repo` scope is caught by the
-  probe, which requires a known-private repo to be refreshed on every run.
+tokens. The token inventory, scopes, minting, rotation, and per-provider
+failure behavior are documented once in
+[`docs/manual-steps.md`](docs/manual-steps.md#secrets). `modules/nixos/secrets.nix`
+declares the keys, so a missing key fails activation — provision the tokens
+before the next `nixos-rebuild switch`.

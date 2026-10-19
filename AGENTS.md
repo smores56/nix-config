@@ -16,6 +16,13 @@ every rename. Link to source files (e.g.
 `modules/flake/configurations.nix`) as the source of truth for volatile
 details.
 
+Operator-only steps (host provisioning, sops keys, Cloudflare objects, backup
+datasets, public services, flake apps, alert paths) live in
+`docs/manual-steps.md`. The `manual-steps-sync` check derives that inventory
+from the configuration: add an anchor (`<!-- manual-step: <kind>/<id> -->`) with
+real instructions for every new item, remove anchors for deleted items, and keep
+the file free of `TODO`/`TBD`.
+
 ## Where things go
 
 Modules are composed by profiles, not auto-imported. `modules/flake/configurations.nix`
@@ -154,6 +161,13 @@ backup settings, or `modules/lib/repo-workflow.nix`:
 
 ```sh
 nix build .#checks.aarch64-darwin.{git-work-routing,ssh-allowed-signers,ssh-pub-keys,worktrees-branch-template,repos-list-links,zsh-config,github-mirror-probe}
+```
+
+Run `manual-steps-sync` after touching hosts, sops keys, `tofu/`, backup
+datasets, `webProxy` services, flake apps, or alert paths:
+
+```sh
+nix build .#checks.x86_64-linux.manual-steps-sync
 ```
 
 For home-manager changes, run `home-manager switch --flake .#smores@<host>`
