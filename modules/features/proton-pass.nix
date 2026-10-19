@@ -1,9 +1,7 @@
 # Proton Pass is the single source of truth for the user's SSH identities:
 # pass-cli's agent serves the vault's keys over SSH_AUTH_SOCK, so private keys
-# never sit on disk (only their `.pub` files do, fetched by `ssh-pub-keys` in
-# ssh-keys.nix — git's `user.signingkey` and `allowed_signers` reference
-# files). This replaces the old file-backed
-# ssh-agent and its `load-ssh-keys` helper.
+# never sit on disk; only their `.pub` files do (see ssh-keys.nix). This
+# replaces the old file-backed ssh-agent and its `load-ssh-keys` helper.
 _:
 
 let

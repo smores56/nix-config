@@ -147,7 +147,10 @@ info "Running home-manager switch (this may take a while on first run)..."
 nix-shell -p home-manager --run "home-manager switch --flake '${REPO_DIR}#${CONFIG_NAME}' --no-write-lock-file"
 ok "home-manager switch complete"
 
-export PATH="${HOME}/.nix-profile/bin:${PATH}"
+# This shell predates the profile the switch created, so put the generation it
+# just built first on PATH; every later phase runs its tools.
+PATH="$(readlink -f "${XDG_STATE_HOME:-${HOME}/.local/state}/home-manager/gcroots/current-home")/home-path/bin:${PATH}"
+export PATH
 
 # ── Phase 4: SSH identities from Proton Pass ──────────────────────
 #
@@ -156,10 +159,6 @@ export PATH="${HOME}/.nix-profile/bin:${PATH}"
 # halves are fetched from the vault by `ssh-pub-keys` (modules/features/
 # ssh-keys.nix), the same command every switch runs.
 
-# The tools come from the generation the switch just built, not PATH: this
-# shell predates the profile it created.
-HM_BIN="$(readlink -f "${XDG_STATE_HOME:-${HOME}/.local/state}/home-manager/gcroots/current-home")/home-path/bin"
-
 # A headless host logs in with the vault's PAT (sops-delivered, non-interactive);
 # elsewhere the session is established interactively in a browser.
 PROTON_PASS_PAT_FILE="${PROTON_PASS_PAT_FILE:-/run/secrets/proton-pass-pat}"
@@ -167,28 +166,15 @@ if [ -s "$PROTON_PASS_PAT_FILE" ]; then
   info "Logging in to Proton Pass with the vault PAT..."
   if PROTON_PASS_PERSONAL_ACCESS_TOKEN="$(cat "$PROTON_PASS_PAT_FILE")" \
     PROTON_PASS_KEY_PROVIDER="${PROTON_PASS_KEY_PROVIDER:-fs}" \
-    "${HM_BIN}/pass-cli" login; then
+    pass-cli login; then
     ok "Logged in to Proton Pass"
   else
     warn "Proton Pass PAT login failed; log in interactively later."
   fi
 fi
 
-# A shell that predates the home-manager switch (this one) has no SSH_AUTH_SOCK
-# yet; derive the agent's default socket, matching the home-manager module.
-if [ -z "${SSH_AUTH_SOCK:-}" ]; then
-  if [ "$(uname -s)" = "Darwin" ]; then
-    SSH_AUTH_SOCK="$(getconf DARWIN_USER_TEMP_DIR)/proton-pass-agent"
-  else
-    SSH_AUTH_SOCK="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/proton-pass-agent"
-  fi
-  export SSH_AUTH_SOCK
-fi
-
-SSH_KEY="${HOME}/.ssh/id_personal"
-
 # The Phase 3 switch already ran ssh-pub-keys, before pass-cli was logged in.
-if "${HM_BIN}/ssh-pub-keys"; then
+if ssh-pub-keys; then
   ok "SSH public keys present and trusted in ~/.ssh/allowed_signers"
 else
   warn "Some SSH public keys are missing (see above); re-run this script after logging in."
@@ -197,6 +183,8 @@ fi
 # ── Phase 5: GitHub authentication ────────────────────────────────
 
 GH_KEY_SCOPES="write:public_key,write:ssh_signing_key"
+# dotfiles.sshKey in modules/options.nix; bash cannot read the option.
+SSH_KEY="${HOME}/.ssh/id_personal"
 
 # A headless host authenticates with the vault's GitHub PAT (sops-delivered,
 # non-interactive); elsewhere use the device code flow in a browser.
@@ -272,6 +260,17 @@ else
 fi
 
 # ── Phase 6: Switch remote to SSH ─────────────────────────────────
+
+# A shell that predates the home-manager switch (this one) has no SSH_AUTH_SOCK
+# yet; derive the agent's default socket, matching the home-manager module.
+if [ -z "${SSH_AUTH_SOCK:-}" ]; then
+  if [ "$(uname -s)" = "Darwin" ]; then
+    SSH_AUTH_SOCK="$(getconf DARWIN_USER_TEMP_DIR)/proton-pass-agent"
+  else
+    SSH_AUTH_SOCK="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/proton-pass-agent"
+  fi
+  export SSH_AUTH_SOCK
+fi
 
 CURRENT_REMOTE="$(git -C "$REPO_DIR" remote get-url origin 2>/dev/null || true)"
 if ! ssh-add -L >/dev/null 2>&1; then

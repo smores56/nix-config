@@ -58,53 +58,51 @@ chmod +x "$work/bin/pass-cli"
 
 path() { printf '%s.pub' "${1/#\~/$HOME}"; }
 
-# Runs the script in a fresh-or-given HOME; a provider other than fs in the
-# environment must not reach pass-cli. Sets $status.
+# Each case gets its own HOME.
+fresh() {
+  export HOME=$work/home-$1
+  mkdir -p "$HOME/.ssh"
+}
+
+# Runs the script with the fake first on PATH (RUN_PATH overrides); a provider
+# other than fs in the environment must not reach pass-cli. Sets $status.
 run() {
-  local mode=$1
-  export HOME=${2:-$work/home-$mode}
-  mkdir -p "$HOME"
   status=0
-  env -i PATH="$work/bin:$PATH" HOME="$HOME" PROTON_PASS_KEY_PROVIDER=keyring \
-    FAKE_MODE="$mode" "$script" </dev/null 2>"$work/stderr" || status=$?
+  env -i PATH="${RUN_PATH:-$work/bin:$PATH}" HOME="$HOME" PROTON_PASS_KEY_PROVIDER=keyring \
+    FAKE_MODE="$1" "$script" </dev/null 2>"$work/stderr" || status=$?
 }
 
-verifies() {
-  local title=$1 principal=$2
-  echo payload >"$work/msg"
-  rm -f "$work/msg.sig"
-  ssh-keygen -q -Y sign -f "$work/vault/$title" -n git "$work/msg"
-  ssh-keygen -q -Y verify -f "$HOME/.ssh/allowed_signers" -I "$principal" -n git \
-    -s "$work/msg.sig" <"$work/msg" >/dev/null 2>&1
+# ssh_allowed_signers.sh proves entries verify; here the fetched key must be one.
+trusted() {
+  read -r type body _ <"$work/vault/$1.pub"
+  grep -qxF "$2 namespaces=\"git\" $type $body" "$HOME/.ssh/allowed_signers"
 }
 
+export HOME=$work/home-new
 run ok
 ((status == 0)) || fail "exited $status when the vault answered"
 cmp -s "$(path "$PERSONAL_KEY")" "$work/vault/Personal.pub" || fail "personal .pub not fetched from the Personal item"
 cmp -s "$(path "$WORK_KEY")" "$work/vault/Work.pub" || fail "work .pub not fetched from the Work item"
 [[ $(stat -c %a "$HOME/.ssh") == 700 ]] || fail "~/.ssh not created 0700"
 [[ $(stat -c %a "$(path "$WORK_KEY")") == 644 ]] || fail ".pub not written 0644"
-verifies Personal "$PERSONAL_EMAIL" || fail "fetched personal key not trusted as $PERSONAL_EMAIL"
-verifies Work "$WORK_EMAIL" || fail "fetched work key not trusted as $WORK_EMAIL"
+trusted Personal "$PERSONAL_EMAIL" || fail "fetched personal key not trusted as $PERSONAL_EMAIL"
+trusted Work "$WORK_EMAIL" || fail "fetched work key not trusted as $WORK_EMAIL"
 
-home=$work/home-keep
-mkdir -p "$home/.ssh"
-HOME=$home
+fresh keep
 echo "ssh-ed25519 AAAAexisting existing" >"$(path "$PERSONAL_KEY")"
-run ok "$home"
+run ok
 ((status == 0)) || fail "exited $status with one key present"
 [[ $(cat "$(path "$PERSONAL_KEY")") == "ssh-ed25519 AAAAexisting existing" ]] \
   || fail "existing personal .pub was overwritten"
 cmp -s "$(path "$WORK_KEY")" "$work/vault/Work.pub" || fail "missing work .pub not fetched alongside an existing personal one"
 
-home=$work/home-empty
-mkdir -p "$home/.ssh"
-HOME=$home
+fresh empty
 : >"$(path "$PERSONAL_KEY")"
-run ok "$home"
+run ok
 cmp -s "$(path "$PERSONAL_KEY")" "$work/vault/Personal.pub" || fail "empty personal .pub not refetched"
 
 for mode in fail garbage bare multiline; do
+  fresh "$mode"
   run "$mode"
   ((status != 0)) || fail "exited 0 when the fetch was $mode"
   # Nothing but the (empty) allowed_signers.
@@ -114,11 +112,8 @@ done
 
 # Without a pass-cli on PATH the baked-in one runs; with no session it fails,
 # but it must have been found.
-export HOME=$work/home-real
-mkdir -p "$HOME"
-status=0
-env -i PATH="$(dirname "$(command -v ssh-keygen)"):$(dirname "$(command -v cat)")" HOME="$HOME" \
-  "$script" </dev/null 2>"$work/stderr" || status=$?
+fresh real
+RUN_PATH="$(dirname "$(command -v ssh-keygen)"):$(dirname "$(command -v cat)")" run ok
 ((status != 0)) || fail "exited 0 with no Proton Pass session"
 grep -q "command not found" "$work/stderr" && fail "baked-in pass-cli not found"
 
