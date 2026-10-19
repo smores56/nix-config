@@ -5,8 +5,7 @@
   ...
 }:
 let
-  machine = config.machine;
-  user = config.user;
+  inherit (config) machine user;
 
   homeDirectory =
     if lib.hasSuffix "-darwin" machine.system then
