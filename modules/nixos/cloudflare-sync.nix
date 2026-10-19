@@ -89,10 +89,8 @@ in
       # would leave the unit byte-identical and systemd would not restart this
       # oneshot: the reconciler would not re-run until reboot.
       restartTriggers = [ specFile ];
-      # Route failures to the shared ntfy primitive, but only on hosts that have
-      # enabled notify: the template does not exist otherwise and a dangling
-      # `onFailure` reference fails activation.
-      onFailure = lib.optional config.dotfiles.notify.enable config.dotfiles.notify.unit;
+      # Route failures through the Cloudflare email template, only when enabled.
+      onFailure = lib.optional config.dotfiles.alerting.enable "cloudflare-email@%n.service";
     };
 
     environment.systemPackages = [ cloudflare-sync ];

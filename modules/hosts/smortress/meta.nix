@@ -30,12 +30,6 @@ in
       services = {
         calibre.port = ports.calibre;
         immich.port = ports.immich;
-        # Unauthenticated loopback listener, so it must sit behind Access
-        # (enforced by an assertion in modules/nixos/notify.nix).
-        ntfy = {
-          port = ports.ntfy;
-          access.enable = true;
-        };
         # sshd (key-only, loopback; see modules/nixos/ssh.nix) is reachable
         # only through the tunnel. The Service Auth policy lets `cloudflared
         # access ssh` run unattended; the email policy keeps a browser
@@ -120,7 +114,6 @@ in
       timeout = "2h";
       onChange.enable = true;
     };
-    notify.enable = true;
     alerting.enable = true;
     # Mirror this host's GitHub repos onto the backup disk (local-only; GitHub is
     # the offsite copy). The probe requires this known-private repo to be

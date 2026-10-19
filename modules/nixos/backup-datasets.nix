@@ -197,12 +197,9 @@ let
         ++ lib.optional dataset.postgres "${unitName name}-dump.service";
       # Start the dump unit with this run and fail the run if the dump fails.
       requires = lib.optional dataset.postgres "${unitName name}-dump.service";
-      # Only reference handlers when they are enabled; otherwise the template
-      # unit does not exist and a failure logs a dead-job error instead of
-      # sending an alert. Keep ntfy until the Cloudflare path is proven.
-      onFailure =
-        lib.optional config.dotfiles.alerting.enable "cloudflare-email@%n.service"
-        ++ lib.optional config.dotfiles.notify.enable config.dotfiles.notify.unit;
+      # The Cloudflare email template is the alert path; reference it only when
+      # enabled, or systemd logs a dead-job error.
+      onFailure = lib.optional config.dotfiles.alerting.enable "cloudflare-email@%n.service";
       # Put rclone on the unit's PATH. This must be the service attribute (not
       # serviceConfig.path, which systemd renders verbatim as an ignored `path=`
       # directive and leaves the default PATH without it).
