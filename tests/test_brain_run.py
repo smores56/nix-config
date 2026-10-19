@@ -3,6 +3,7 @@ import io
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -388,6 +389,16 @@ class CollectTests(unittest.TestCase):
         self.assertEqual(len(rows), 3)
         self.assertEqual(rows[-1], {"source": "git", "truncated": 2})
 
+    def test_a_capped_runs_skipped_days_are_not_collected(self):
+        root = self.base / "code"
+        repo = self.make_repo(root / "repo", "2026-10-01T09:00:00-04:00")
+        env = {"GIT_COMMITTER_DATE": "2026-10-10T10:00:00-04:00", "GIT_AUTHOR_DATE": "2026-10-10T10:00:00-04:00"}
+        git(repo, "commit", "-q", "--allow-empty", "-m", "gap day", env=env)
+        rows = self.br.collect(
+            self.config(repo_roots=(root,)), "git", ("2026-10-01", "2026-10-20"), "2026-10-20T17:30:00-04:00"
+        )
+        self.assertEqual([r["subject"] for r in rows], ["first change"])
+
     def test_github_queries_are_bounded_by_the_window(self):
         calls = []
 
@@ -480,6 +491,9 @@ class HeadlessPureTests(unittest.TestCase):
     def test_standup_before_noon_is_for_today(self):
         self.assertEqual(self.br.standup_target(at("2026-10-19T09:00:00")), date(2026, 10, 19))
 
+    def test_a_weekend_morning_standup_is_for_monday(self):
+        self.assertEqual(self.br.standup_target(at("2026-10-17T09:00:00")), date(2026, 10, 19))
+
     def test_standup_after_noon_is_for_the_next_weekday(self):
         self.assertEqual(self.br.standup_target(at("2026-10-16T17:30:00")), date(2026, 10, 19))
         self.assertEqual(self.br.standup_target(at("2026-10-14T17:30:00")), date(2026, 10, 15))
@@ -489,7 +503,7 @@ class HeadlessPureTests(unittest.TestCase):
 
     def test_settings_scope_file_tools_to_note_paths_by_home_relative_rules(self):
         allow = self.settings()["allow"]
-        self.assertIn("Edit(~/brain/daily/**)", allow)
+        self.assertIn("Edit(~/brain/daily/**/*.md)", allow)
         self.assertIn("Write(~/brain/glossary.md)", allow)
         self.assertIn("Read(~/brain/**)", allow)
         self.assertFalse([r for r in allow if r.startswith(("Bash", "WebFetch", "WebSearch"))])
@@ -508,7 +522,15 @@ class HeadlessPureTests(unittest.TestCase):
 
     def test_a_vault_outside_home_uses_absolute_rules(self):
         allow = self.br.headless_settings(Path("/srv/brain"), Path("/Users/u"))["permissions"]["allow"]
-        self.assertIn("Edit(//srv/brain/daily/**)", allow)
+        self.assertIn("Edit(//srv/brain/daily/**/*.md)", allow)
+
+    def test_settings_deny_nested_instruction_files_and_known_write_tools(self):
+        deny = self.settings()["deny"]
+        self.assertIn("Write(~/brain/**/CLAUDE.md)", deny)
+        self.assertIn("Write(~/brain/**/AGENTS.md)", deny)
+        for tool in ("mcp__claude_ai_Slack__slack_send_message", "mcp__claude_ai_Gmail__send_message",
+                     "mcp__claude_ai_Google_Calendar__create_event", "mcp__claude_ai_Atlassian_Rovo__createJiraIssue"):
+            self.assertIn(tool, deny)
 
     def run_record(self, sources=("sessions", "git", "github", "chat", "mail")):
         return self.br.Run("n", "2026-10-14T17:30:00-04:00", "h", {}, sources, ("2026-10-13", "2026-10-14"), "x", False)
@@ -526,6 +548,14 @@ class HeadlessPureTests(unittest.TestCase):
         prompt = self.br.harvest_prompt("S", self.run_record(), rows, {}, date(2026, 10, 15))
         self.assertEqual(prompt.count("</local-rows>"), 1)
 
+    def test_days_split_into_contiguous_segments(self):
+        days = ("2026-10-01", "2026-10-02", "2026-10-03", "2026-10-20")
+        self.assertEqual(self.br.segments(days), [("2026-10-01", "2026-10-03"), ("2026-10-20", "2026-10-20")])
+
+    def test_commit_message_names_each_segment(self):
+        run = self.br.Run("n", "x", "h", {}, (), ("2026-10-01", "2026-10-02", "2026-10-20"), "x", True)
+        self.assertEqual(self.br.commit_message(run, date(2026, 10, 21)), "harvest: 2026-10-01..2026-10-02, 2026-10-20; standup: 2026-10-21")
+
     def test_completed_sources_need_local_success_and_no_model_failure(self):
         run = self.run_record()
         statuses = {"chat": "complete", "mail": "failed", "git": "complete", "sessions": "failed"}
@@ -540,6 +570,12 @@ class HeadlessPureTests(unittest.TestCase):
         out = json.dumps({"subtype": "success", "is_error": False, "total_cost_usd": 1.5,
                           "structured_output": {"sources": [{"source": "chat", "status": "complete", "detail": ""}]}})
         self.assertEqual(self.br.parse_result(out), ({"chat": "complete"}, None, 1.5))
+
+    def test_parse_result_survives_odd_output(self):
+        self.assertEqual(self.br.parse_result("null")[1], "claude output was not a result object")
+        out = json.dumps({"subtype": "success", "total_cost_usd": "lots",
+                          "structured_output": {"sources": [{"source": "chat"}, {"source": ["x"], "status": "complete"}, 3]}})
+        self.assertEqual(self.br.parse_result(out), ({}, None, 0.0))
 
     def test_parse_result_reports_errors_and_missing_status(self):
         self.assertEqual(self.br.parse_result("not json")[1], "claude output was not JSON")
@@ -657,11 +693,87 @@ class HeadlessRunTests(unittest.TestCase):
         self.assertEqual(self.headless(self.fake_claude({})), 1)
         self.assertIn("wiki/draft.md", self.notes[-1])
 
+    def test_a_run_that_writes_nothing_is_a_failure(self):
+        code = self.headless(self.fake_claude({"chat": "complete"}, writes=()))
+        self.assertEqual(code, 1)
+        self.assertIn("no notes", self.notes[-1])
+        self.assertFalse((self.config.state_dir / "active.json").exists())
+
+    def test_an_unexpected_error_after_begin_releases_and_notifies(self):
+        def boom(args, prompt, cwd, timeout):
+            raise RuntimeError("kaboom")
+
+        self.assertEqual(self.headless(boom), 1)
+        self.assertFalse((self.config.state_dir / "active.json").exists())
+        self.assertIn("kaboom", self.notes[-1])
+
+    def test_a_vault_that_is_not_a_repo_notifies_instead_of_crashing(self):
+        import shutil
+
+        shutil.rmtree(self.vault / ".git")
+        self.assertEqual(self.headless(self.fake_claude({})), 1)
+        self.assertEqual(self.calls, [])
+        self.assertTrue(self.notes)
+
+    def test_a_missing_skill_refuses_before_claiming(self):
+        self.skill.unlink()
+        self.assertEqual(self.headless(self.fake_claude({})), 1)
+        self.assertEqual(self.calls, [])
+        self.assertFalse((self.config.state_dir / "active.json").exists())
+
+    def test_a_vault_with_a_remote_is_refused_before_paying_for_a_run(self):
+        git(self.vault, "remote", "add", "origin", "https://example.invalid/x.git")
+        self.assertEqual(self.headless(self.fake_claude({})), 1)
+        self.assertEqual(self.calls, [])
+
+    def test_symlinks_under_note_dirs_are_refused_before_a_run(self):
+        (self.vault / "wiki").mkdir()
+        (self.vault / "wiki" / "out").symlink_to(Path(self.tmp.name))
+        git(self.vault, "add", "-A")
+        git(self.vault, "commit", "-qm", "link")
+        self.assertEqual(self.headless(self.fake_claude({})), 1)
+        self.assertEqual(self.calls, [])
+
+    def test_edits_to_trusted_pages_are_called_out(self):
+        (self.vault / "wiki").mkdir()
+        (self.vault / "wiki" / "svc.md").write_text("old\n")
+        git(self.vault, "add", "-A")
+        git(self.vault, "commit", "-qm", "seed")
+        self.headless(self.fake_claude({"chat": "complete"}, writes=("daily/2026-10-14.md", "wiki/svc.md")))
+        self.assertIn("wiki/svc.md", self.notes[-1])
+
+    def test_a_backlog_held_by_a_failing_source_says_so(self):
+        (self.vault / "daily").mkdir()
+        (self.vault / "daily" / "2026-10-01.md").write_text("x\n")
+        git(self.vault, "add", "-A")
+        git(self.vault, "commit", "-qm", "old")
+        self.headless(self.fake_claude({"chat": "failed"}))
+        self.assertIn("held by chat", self.notes[-1])
+
     def test_writes_outside_note_paths_are_refused_by_the_commit(self):
         self.headless(self.fake_claude({"chat": "complete"}, writes=("daily/2026-10-14.md", "evil.sh")))
         self.assertEqual(self.log_subjects(), ["init"])
         self.assertFalse((self.config.state_dir / "cursors.json").exists())
         self.assertIn("evil.sh", self.notes[-1])
+
+
+class RunClaudeProcessTests(unittest.TestCase):
+    def setUp(self):
+        self.br = load_module()
+
+    def test_returns_stdout_and_feeds_the_prompt_on_stdin(self):
+        args = [sys.executable, "-c", "import sys; print(sys.stdin.read().upper())"]
+        self.assertEqual(self.br.run_claude(args, "hi", ".", 10).strip(), "HI")
+
+    def test_a_timeout_kills_the_whole_process_group(self):
+        marker = Path(tempfile.mkdtemp()) / "survived"
+        child = f"import time; time.sleep(3); open({str(marker)!r}, 'w').write('x')"
+        script = f"import subprocess, sys, time; subprocess.Popen([sys.executable, '-c', {child!r}]); time.sleep(30)"
+        with self.assertRaises(subprocess.TimeoutExpired):
+            self.br.run_claude([sys.executable, "-c", script], "", ".", 1)
+        time.sleep(4)
+        self.assertFalse(marker.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

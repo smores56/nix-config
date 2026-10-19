@@ -180,7 +180,7 @@ blocks, and will commit and finish it. Nobody is watching:
 The standup is usually prepared at the end of a work day for the next one.
 The target is the work day it is for: an explicit date wins (needed when
 the next work day follows a day off); before 12:00 it is today; otherwise
-the next weekday after today.
+the next weekday after today. A weekend target rolls to Monday.
 
 1. Run the harvest above without an explicit date, so it catches up
    through today; a later harvest picks up the rest of today.

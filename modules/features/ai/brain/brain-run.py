@@ -25,6 +25,7 @@ import socket
 import subprocess
 import sys
 import time as systime
+import traceback
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
@@ -81,6 +82,38 @@ CONNECTOR_TOOLS = (
     "mcp__claude_ai_Atlassian_Rovo__getJiraIssue",
     "mcp__claude_ai_Atlassian_Rovo__lookupJiraAccountId",
 )
+# Already refused as unlisted; denied too, so no managed-settings allow can ever reach them.
+CONNECTOR_WRITE_TOOLS = (
+    "mcp__claude_ai_Slack__slack_send_message",
+    "mcp__claude_ai_Slack__slack_send_message_draft",
+    "mcp__claude_ai_Slack__slack_schedule_message",
+    "mcp__claude_ai_Slack__slack_add_reaction",
+    "mcp__claude_ai_Slack__slack_create_canvas",
+    "mcp__claude_ai_Slack__slack_update_canvas",
+    "mcp__claude_ai_Slack__slack_create_conversation",
+    "mcp__claude_ai_Gmail__send_message",
+    "mcp__claude_ai_Gmail__reply",
+    "mcp__claude_ai_Gmail__forward",
+    "mcp__claude_ai_Gmail__create_draft",
+    "mcp__claude_ai_Gmail__update_draft",
+    "mcp__claude_ai_Gmail__trash_message",
+    "mcp__claude_ai_Gmail__trash_thread",
+    "mcp__claude_ai_Gmail__label_message",
+    "mcp__claude_ai_Gmail__label_thread",
+    "mcp__claude_ai_Gmail__update_message_labels",
+    "mcp__claude_ai_Google_Calendar__create_event",
+    "mcp__claude_ai_Google_Calendar__update_event",
+    "mcp__claude_ai_Google_Calendar__delete_event",
+    "mcp__claude_ai_Google_Calendar__respond_to_event",
+    "mcp__claude_ai_Atlassian_Rovo__createJiraIssue",
+    "mcp__claude_ai_Atlassian_Rovo__editJiraIssue",
+    "mcp__claude_ai_Atlassian_Rovo__transitionJiraIssue",
+    "mcp__claude_ai_Atlassian_Rovo__addCommentToJiraIssue",
+    "mcp__claude_ai_Atlassian_Rovo__addWorklogToJiraIssue",
+    "mcp__claude_ai_Atlassian_Rovo__createConfluencePage",
+    "mcp__claude_ai_Atlassian_Rovo__updateConfluencePage",
+    "mcp__claude_ai_Atlassian_Rovo__fetch",
+)
 # Whole servers the harvest never needs, hidden so their write tools aren't even listed.
 DENIED_SERVERS = ("mcp__claude_ai_Notion", "mcp__claude_ai_Google_Drive", "mcp__claude_ai_Claude_Docs")
 DENIED_TOOLS = ("Bash", "WebFetch", "WebSearch", "Agent", "Task", "NotebookEdit")
@@ -107,6 +140,9 @@ MAX_BUDGET_USD = 10
 # Below STALE_AFTER, so a live run's claim is never taken over.
 RUN_TIMEOUT = timedelta(minutes=45)
 NETWORK_WAIT = timedelta(minutes=2)
+# launchd never starts a job that is still running, so no step may hang.
+GIT_TIMEOUT = 60
+GH_TIMEOUT = 120
 
 
 def _load(name):
@@ -190,6 +226,17 @@ def advance(cursors_now, cursors_read, complete, target):
     return {**cursors_now, **{s: target for s in complete if moved(s)}}
 
 
+def segments(days):
+    """Contiguous (first, last) runs of ISO days: a capped backlog plus today is two."""
+    runs = []
+    for day in days:
+        if runs and date.fromisoformat(day) - date.fromisoformat(runs[-1][1]) == timedelta(days=1):
+            runs[-1] = (runs[-1][0], day)
+        else:
+            runs.append((day, day))
+    return runs
+
+
 def window(days, until):
     """[first day's midnight, min(until, midnight after the last day))."""
     first, last = (date.fromisoformat(d) for d in (days[0], days[-1]))
@@ -269,11 +316,8 @@ def pr_rows(results_by_role):
 
 
 def standup_target(now):
-    """The skill's rule: before noon the standup is today's, otherwise the next weekday's."""
-    today = local(now).date()
-    if local(now).time() < time(12):
-        return today
-    nxt = today + timedelta(days=1)
+    """The skill's rule: before noon the standup is today's, otherwise the next weekday's; never a weekend."""
+    nxt = local(now).date() + timedelta(days=0 if local(now).time() < time(12) else 1)
     while nxt.weekday() >= 5:
         nxt += timedelta(days=1)
     return nxt
@@ -286,7 +330,7 @@ def rule_path(path, home):
 
 def headless_settings(vault, home):
     v = rule_path(vault, home)
-    notes = [f"{v}/{d}**" for d in COMMIT.NOTE_DIRS] + [f"{v}/{f}" for f in COMMIT.NOTE_FILES]
+    notes = [f"{v}/{d}**/*.md" for d in COMMIT.NOTE_DIRS] + [f"{v}/{f}" for f in COMMIT.NOTE_FILES]
     return {
         "permissions": {
             "allow": [
@@ -296,7 +340,9 @@ def headless_settings(vault, home):
             ],
             "deny": [
                 *(f"{tool}({v}/{p})" for tool in ("Edit", "Write") for p in (".git/**", "CLAUDE.md")),
+                *(f"{tool}({v}/**/{name})" for tool in ("Edit", "Write") for name in sorted(COMMIT.INSTRUCTION_FILES)),
                 *DENIED_TOOLS,
+                *CONNECTOR_WRITE_TOOLS,
                 *DENIED_SERVERS,
             ],
         }
@@ -351,18 +397,23 @@ def parse_result(stdout):
     try:
         result = json.loads(stdout.strip().splitlines()[-1])
     except (ValueError, IndexError):
-        return {}, "claude output was not JSON", 0
-    cost = result.get("total_cost_usd") or 0
+        return {}, "claude output was not JSON", 0.0
+    if not isinstance(result, dict):
+        return {}, "claude output was not a result object", 0.0
+    cost = result.get("total_cost_usd")
+    cost = float(cost) if isinstance(cost, (int, float)) else 0.0
     if result.get("is_error") or result.get("subtype") != "success":
         return {}, f"claude stopped: {result.get('subtype') or 'error'}", cost
-    entries = (result.get("structured_output") or {}).get("sources")
+    output = result.get("structured_output")
+    entries = output.get("sources") if isinstance(output, dict) else None
     if not isinstance(entries, list):
         return {}, "claude returned no status", cost
-    return {e["source"]: e["status"] for e in entries if isinstance(e, dict) and "source" in e}, None, cost
+    valid = [e for e in entries if isinstance(e, dict) and isinstance(e.get("source"), str) and isinstance(e.get("status"), str)]
+    return {e["source"]: e["status"] for e in valid}, None, cost
 
 
 def commit_message(run, standup_day):
-    days = run.days[0] if len(run.days) == 1 else f"{run.days[0]}..{run.days[-1]}"
+    days = ", ".join(first if first == last else f"{first}..{last}" for first, last in segments(run.days))
     return f"harvest: {days}; standup: {standup_day.isoformat()}"
 
 
@@ -376,7 +427,9 @@ READ_CONFIG = COMMIT.SAFE_CONFIG + ("protocol.allow=never",)
 def git(repo, *args, check=True):
     config = [arg for kv in READ_CONFIG for arg in ("-c", kv)]
     env = {k: v for k, v in os.environ.items() if k not in COMMIT.REPO_ENV} | {"GIT_NO_LAZY_FETCH": "1"}
-    return subprocess.run(["git", "-C", str(repo), *config, *args], env=env, check=check, capture_output=True, text=True)
+    return subprocess.run(
+        ["git", "-C", str(repo), *config, *args], env=env, check=check, capture_output=True, text=True, timeout=GIT_TIMEOUT
+    )
 
 
 def read_json(path, default):
@@ -521,13 +574,14 @@ def worktrees(repo, roots):
 
 
 def collect_git(config, days, until):
-    start, end = window(days, until)
+    spans = [window(seg, until) for seg in segments(days)]
     rows = []
     for repo in find_repos(config.repo_roots):
         for tree in worktrees(repo, config.repo_roots):
             out = git(tree, "log", "-g", "--date=iso-strict", "--format=%H%x00%gd%x00%gs", "HEAD", check=False).stdout
             # Only newline frames an entry; splitlines() would also break on separators inside a subject.
-            rows += reflog_rows(tree, out.split("\n"), start, end)
+            lines = out.split("\n")
+            rows += [r for start, end in spans for r in reflog_rows(tree, lines, start, end)]
     rows.sort(key=lambda r: datetime.fromisoformat(r["time"]))
     if len(rows) <= GIT_ROW_CAP:
         return rows
@@ -535,17 +589,17 @@ def collect_git(config, days, until):
 
 
 def collect_github(days, until, gh):
-    start, end = window(days, until)
-    span = f"--updated={start.isoformat(timespec='seconds')}..{end.isoformat(timespec='seconds')}"
-    results = {
-        role: json.loads(gh(["search", "prs", flag, span, "--limit", str(GH_LIMIT), "--json", GH_FIELDS]))
-        for role, flag in GH_ROLES.items()
-    }
+    results = {role: [] for role in GH_ROLES}
+    for seg in segments(days):
+        start, end = window(seg, until)
+        span = f"--updated={start.isoformat(timespec='seconds')}..{end.isoformat(timespec='seconds')}"
+        for role, flag in GH_ROLES.items():
+            results[role] += json.loads(gh(["search", "prs", flag, span, "--limit", str(GH_LIMIT), "--json", GH_FIELDS]))
     return pr_rows(results)
 
 
 def run_gh(args):
-    return subprocess.run(["gh", *args], check=True, capture_output=True, text=True).stdout
+    return subprocess.run(["gh", *args], check=True, capture_output=True, text=True, timeout=GH_TIMEOUT).stdout
 
 
 def collect_sessions(config, days):
@@ -578,8 +632,11 @@ def run_claude(args, prompt, cwd, timeout):
     try:
         out, err = proc.communicate(prompt, timeout=timeout)
     except subprocess.TimeoutExpired:
-        os.killpg(proc.pid, signal.SIGKILL)
-        proc.communicate()
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(proc.pid, signal.SIGKILL)
+        # A grandchild that left the group could hold the pipes open; don't wait on it forever.
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            proc.communicate(timeout=10)
         raise
     if err:
         print(err, file=sys.stderr, end="")
@@ -596,15 +653,16 @@ def notify_macos(text):
 
 def network_up(wait=NETWORK_WAIT, host=("api.anthropic.com", 443)):
     # A run fired on wake can beat Wi-Fi; harvesting offline would only record failures.
-    deadline = datetime.now() + wait
+    deadline = systime.monotonic() + wait.total_seconds()
     while True:
         try:
             socket.create_connection(host, timeout=5).close()
             return True
         except OSError:
-            if datetime.now() >= deadline:
+            left = deadline - systime.monotonic()
+            if left <= 0:
                 return False
-            systime.sleep(10)
+            systime.sleep(min(10, left))
 
 
 def release(config, run):
@@ -612,32 +670,21 @@ def release(config, run):
         finish(config, run.nonce, [])
 
 
-def headless(config, now, claude=run_claude, notify=notify_macos, online=network_up, gh=run_gh):
-    inspect = f"Inspect: git -C {config.vault} status"
-    if not online():
-        notify("Brain: offline, harvest skipped; the next run catches up.")
-        return 1
-    try:
-        run = begin(config, now)
-    except Refused as err:
-        notify(f"Brain: harvest not started: {err}")
-        return 1
+def preflight(config):
+    """Refusals that would only surface after a paid run, checked before claiming one."""
+    if not (config.skill and config.skill.is_file()):
+        raise Refused(f"brain skill not found at {config.skill}")
+    if remotes := git(config.vault, "remote").stdout.split():
+        raise Refused(f"vault has remotes ({', '.join(remotes)}); it must stay local-only")
+    # A symlinked note path lets permitted writes land outside the vault.
+    links = [p for d in COMMIT.NOTE_DIRS if (config.vault / d).exists() for p in (config.vault / d).rglob("*") if p.is_symlink()]
+    links += [config.vault / d.rstrip("/") for d in COMMIT.NOTE_DIRS if (config.vault / d.rstrip("/")).is_symlink()]
+    if links:
+        raise Refused("symlinks under note folders: " + ", ".join(str(p.relative_to(config.vault)) for p in links))
 
-    rows, local_failures = {}, {}
-    for source in (s for s in LOCAL_SOURCES if s in run.sources):
-        try:
-            rows[source] = collect(config, source, run.days, run.started, gh=gh)
-        except (Refused, OSError, ValueError, subprocess.CalledProcessError) as err:
-            detail = err.stderr if isinstance(err, subprocess.CalledProcessError) and err.stderr else err
-            local_failures[source] = DIGEST.truncate(DIGEST.clean(str(detail)), SUBJECT_CHARS)
 
-    standup_day = standup_target(now)
-    skill_text = config.skill.read_text(encoding="utf-8") if config.skill else ""
-    prompt = harvest_prompt(skill_text, run, rows, local_failures, standup_day)
-    config.run_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-    settings = config.run_dir / "settings.json"
-    write_json(settings, headless_settings(config.vault, Path.home()))
-    args = [
+def claude_args(settings):
+    return [
         os.environ.get("BRAIN_CLAUDE", "claude"), "-p",
         "--no-session-persistence",
         "--setting-sources", "",
@@ -648,37 +695,90 @@ def headless(config, now, claude=run_claude, notify=notify_macos, online=network
         "--max-turns", str(MAX_TURNS),
         "--max-budget-usd", str(MAX_BUDGET_USD),
     ]
+
+
+def trusted_edits(vault, head0):
+    """Pre-existing wiki/index/glossary/questions pages the run changed: what later sessions read as context."""
+    if not head0:
+        return []
+    out = git(vault, "diff", "--name-only", "--diff-filter=M", head0, "HEAD", check=False).stdout.split()
+    return [p for p in out if p.startswith("wiki/") or p in ("index.md", "glossary.md", "questions.md")]
+
+
+def harvest(config, run, now, claude, gh):
+    """Collect, run claude, commit, finish; returns (exit code, notification). Raises only on bugs."""
+    inspect = f"Inspect: git -C {config.vault} status"
+    rows, local_failures = {}, {}
+    for source in (s for s in LOCAL_SOURCES if s in run.sources):
+        try:
+            rows[source] = collect(config, source, run.days, run.started, gh=gh)
+        except (Refused, OSError, ValueError, subprocess.SubprocessError) as err:
+            detail = err.stderr if isinstance(err, subprocess.CalledProcessError) and err.stderr else err
+            local_failures[source] = DIGEST.truncate(DIGEST.clean(str(detail)), SUBJECT_CHARS)
+
+    standup_day = standup_target(now)
+    prompt = harvest_prompt(config.skill.read_text(encoding="utf-8"), run, rows, local_failures, standup_day)
+    config.run_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    settings = config.run_dir / "settings.json"
+    write_json(settings, headless_settings(config.vault.resolve(), Path.home().resolve()))
     try:
-        statuses, error, cost = parse_result(claude(args, prompt, config.run_dir, RUN_TIMEOUT.total_seconds()))
+        statuses, error, cost = parse_result(claude(claude_args(settings), prompt, config.run_dir, RUN_TIMEOUT.total_seconds()))
     except subprocess.TimeoutExpired:
-        statuses, error, cost = {}, f"timed out after {RUN_TIMEOUT}", 0
+        statuses, error, cost = {}, f"timed out after {RUN_TIMEOUT}", 0.0
     except OSError as err:
-        statuses, error, cost = {}, f"could not start claude: {err}", 0
+        statuses, error, cost = {}, f"could not run claude: {err}", 0.0
     if error:
         release(config, run)
-        notify(f"Brain: harvest failed ({error}); nothing advanced. {inspect}")
-        return 1
+        return 1, f"Brain: harvest failed ({error}); nothing advanced. {inspect}"
 
     committed = COMMIT.commit(config.vault, commit_message(run, standup_day))
-    if committed.status == "refused":
+    if committed.status != "committed":
         release(config, run)
-        notify(f"Brain: commit refused ({committed.detail}); nothing advanced. {inspect}")
-        return 1
+        reason = committed.detail if committed.status == "refused" else "the run wrote no notes"
+        return 1, f"Brain: nothing committed ({reason}); nothing advanced. {inspect}"
     try:
         outcome = finish(config, run.nonce, completed_sources(run, local_failures, statuses))
     except Refused as err:
-        notify(f"Brain: {err}. {inspect}")
-        return 1
+        return 1, f"Brain: {err}. {inspect}"
 
     reasons = {**{s: statuses.get(s, "not reported") for s in outcome["held"]}, **local_failures}
     held = ", ".join(f"{s} ({reasons.get(s, 'held')})" for s in outcome["held"])
-    backlog = " Backlog remains; the next run continues it." if run.truncated else ""
-    notify(
-        f"Brain: harvested {', '.join(run.days)}; standup {standup_day.isoformat()} ready (${cost:.2f})."
+    edited = trusted_edits(config.vault, run.head0)
+    if run.truncated:
+        blocking = [s for s in outcome["held"]]
+        backlog = f" Backlog held by {', '.join(blocking)}." if blocking else " Backlog remains; the next run continues it."
+    else:
+        backlog = ""
+    # Problems first: the notification is cut to a few lines.
+    return 0, (
+        "Brain:"
         + (f" Held: {held}." if held else "")
         + backlog
+        + (f" Edited trusted pages: {', '.join(edited)}." if edited else "")
+        + f" Harvested {', '.join(run.days)}; standup {standup_day.isoformat()} ready (${cost:.2f})."
     )
-    return 0
+
+
+def headless(config, now, claude=run_claude, notify=notify_macos, online=network_up, gh=run_gh):
+    if not online():
+        notify("Brain: offline, harvest skipped; the next run catches up.")
+        return 1
+    try:
+        preflight(config)
+        run = begin(config, now)
+    except (Refused, OSError, subprocess.SubprocessError) as err:
+        detail = err.stderr.strip() if isinstance(err, subprocess.CalledProcessError) and err.stderr else err
+        notify(f"Brain: harvest not started: {detail}")
+        return 1
+    try:
+        code, message = harvest(config, run, now, claude, gh)
+    except Exception as err:  # the claim must never outlive a crash, and launchd logs are unread
+        release(config, run)
+        notify(f"Brain: harvest crashed ({type(err).__name__}: {err}); nothing advanced. Inspect: git -C {config.vault} status")
+        traceback.print_exc()
+        return 1
+    notify(message)
+    return code
 
 
 # CLI
