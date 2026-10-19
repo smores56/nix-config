@@ -144,6 +144,5 @@ in
     git.includes = personalIncludes ++ workIncludes;
 
     lazygit.enable = true;
-    lazygit.settings.gui.theme.lightTheme = false;
   };
 }

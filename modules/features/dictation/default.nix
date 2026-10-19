@@ -28,6 +28,26 @@ let
     '';
   };
 
+  voxtype = pkgs.voxtype.overrideAttrs (old: {
+    env = (old.env or { }) // {
+      CMAKE_TOOLCHAIN_FILE = "${./ggml-avx.cmake}";
+    };
+  });
+
+  # Niri uses libwayland's first free socket, so the name is not stable across
+  # boots. Discover it when the daemon starts; it is the process that later
+  # runs wtype/wl-copy.
+  voxtypeDaemon = pkgs.writeShellScript "voxtype-daemon" ''
+    set -eu
+    for socket in "''${XDG_RUNTIME_DIR:?}"/wayland-*; do
+      if [ -S "$socket" ]; then
+        export WAYLAND_DISPLAY="''${socket##*/}"
+        break
+      fi
+    done
+    exec ${lib.getExe voxtype} daemon
+  '';
+
   mdStructure = pkgs.writeShellApplication {
     name = "md-structure";
     runtimeInputs = [ pkgs.coreutils ];
@@ -38,14 +58,17 @@ let
 in
 {
   config = lib.mkIf cfg.wayland {
-    home.packages = [ mdStructure ];
+    home.packages = [
+      mdStructure
+      pkgs.wl-clipboard
+      pkgs.wtype
+    ];
 
     # The compositor owns the keybinding; Voxtype's evdev hotkey stays off so
-    # no input-group membership or uinput access is needed. wtype/wl-clipboard
-    # come from the module's wayland runtime path.
+    # no input-group membership or uinput access is needed.
     services.voxtype = {
       enable = true;
-      wayland.display = "wayland-1";
+      package = voxtype;
 
       settings = {
         hotkey.enabled = false;
@@ -64,8 +87,17 @@ in
       };
     };
 
+    systemd.user.services.voxtype = {
+      Unit = {
+        After = [ "graphical-session.target" ];
+        Wants = [ "graphical-session.target" ];
+      };
+
+      Service.ExecStart = lib.mkForce voxtypeDaemon;
+    };
+
     programs.niri.settings.binds."Mod+Shift+D".action.spawn = [
-      (lib.getExe pkgs.voxtype)
+      (lib.getExe voxtype)
       "record"
       "toggle"
     ];

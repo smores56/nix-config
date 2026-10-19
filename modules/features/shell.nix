@@ -90,8 +90,6 @@ in
     f = "yazi";
     b = "bat";
     g = "lazygit";
-    gs = "gh dash";
-    gn = "gh notify";
     gp = "gh pr create";
     copy = "osc copy";
     paste = "osc paste";

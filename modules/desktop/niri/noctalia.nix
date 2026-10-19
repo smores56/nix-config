@@ -1,6 +1,7 @@
 {
   config,
   lib,
+  pkgs,
   ...
 }:
 let
@@ -12,6 +13,22 @@ let
 in
 {
   config = lib.mkIf isNiri {
+    # Noctalia's sparse settings.toml wins over the Nix base, including its
+    # light/dark mode. Static Stylix dark has no light palette, so strip any
+    # persisted [theme] table once; later GUI tweaks keep working.
+    home.activation.resetNoctaliaTheme = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      state="$HOME/.local/state/noctalia/settings.toml"
+      marker="$HOME/.local/state/noctalia/.stylix-static-dark"
+      if [ -f "$state" ] && [ ! -e "$marker" ]; then
+        ${pkgs.gawk}/bin/awk '
+          /^\[/ { skip = ($0 ~ /^\[theme(\]|\.)/) }
+          !skip { print }
+        ' "$state" > "$state.tmp"
+        mv "$state.tmp" "$state"
+        touch "$marker"
+      fi
+    '';
+
     # Noctalia's state file (~/.local/state/noctalia/settings.toml) is a sparse,
     # self-pruning overlay holding only settings that deviate from this
     # declarative base; the theme itself is static dark from Stylix.

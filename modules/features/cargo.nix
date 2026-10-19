@@ -9,11 +9,11 @@ let
   home = config.home.homeDirectory;
   # rustup stable toolchain for the host triple.
   #
-  # The Nix-provided `cargo` (packages.nix) mixes rustc versions within a single
-  # build — proc-macro crates compile with a different rustc than library crates,
-  # producing E0514 "crate compiled by an incompatible version of rustc". Pinning
-  # build.rustc to one rustup toolchain binary (bypassing the rustup shim's
-  # per-invocation resolution) makes cargo use a single rustc consistently.
+  # rustup's cargo shim resolves the toolchain per invocation, which mixes
+  # rustc versions within a single build — proc-macro crates compile with a
+  # different rustc than library crates, producing E0514 "crate compiled by an
+  # incompatible version of rustc". Pinning build.rustc to one rustup toolchain
+  # binary bypasses the shim so cargo uses a single rustc consistently.
   #
   # The final link also needs Apple clang as the linker driver so libc++ and
   # libiconv resolve via the macOS SDK; Nix's GCC sysroot lacks them.

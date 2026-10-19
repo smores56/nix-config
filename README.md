@@ -294,9 +294,9 @@ reader is missing; watch `journalctl -t fp-rebind`.
 
 Stylix provides one static dark theme (`rose-pine-moon`) on every host. There
 is no light/dark toggle or home-manager specialisation: the palette is a
-single base16 scheme, so every stylix target (kitty, firefox, zellij, …) is
-themed at build time. Helix uses the bundled `rose_pine_moon` theme and
-lazygit is pinned to its dark variant.
+single base16 scheme, so every stylix target (kitty, zellij, …) is themed
+at build time. Helix uses the bundled `rose_pine_moon` theme; lazygit keeps
+its default palette.
 
 Noctalia's `~/.local/state/noctalia/settings.toml` is left in place: it is a
 sparse overlay holding only settings that deviate from the Nix base, so GUI
