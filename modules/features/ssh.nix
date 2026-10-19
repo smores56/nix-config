@@ -6,12 +6,62 @@
 }:
 let
   inherit (pkgs.stdenv.hostPlatform) isLinux;
+  home = lib.replaceStrings [ "~" ] [ "$HOME" ];
+
+  # ssh, git signing and allowed_signers read these .pub files, while the
+  # private halves stay in the vault. Fetches only missing files and never
+  # fails: activation runs it before bootstrap has logged pass-cli in, so a
+  # failed fetch warns and bootstrap reruns it after login.
+  sshPubKeys = pkgs.writeShellApplication {
+    name = "ssh-pub-keys";
+    text = ''
+      # Appended, not prepended: an earlier pass-cli on PATH (the test's fake)
+      # wins, and activation's bare PATH still finds this one.
+      PATH=$PATH:${config.services.proton-pass-agent.package}/bin
+      # Any other provider makes pass-cli force a logout and delete the
+      # session; activation does not see the session variable.
+      export PROTON_PASS_KEY_PROVIDER=fs
+
+      fetch() {
+        local title=$1 dest=$2 dir key tmp
+        dir=$(dirname "$dest")
+        [ -e "$dest" ] && return 0
+        # A real key is one line; anything else (an error on stdout) is not
+        # worth writing where ssh and git will trust it.
+        if ! key=$(pass-cli item view --vault-name Identity --item-title "$title" --field public_key </dev/null) \
+          || [[ $key != ssh-* || $key == *$'\n'* ]]; then
+          echo "ssh-pub-keys: could not fetch '$title' from Proton Pass for $dest. Log in with" >&2
+          echo "  PROTON_PASS_KEY_PROVIDER=fs pass-cli login --interactive" >&2
+          echo "then run ssh-pub-keys." >&2
+          return 0
+        fi
+        [ -d "$dir" ] || { mkdir -p "$dir" && chmod 700 "$dir"; }
+        tmp=$(mktemp "$dest.XXXXXX")
+        printf '%s\n' "$key" >"$tmp"
+        chmod 644 "$tmp"
+        mv "$tmp" "$dest"
+        echo "ssh-pub-keys: wrote $dest from Proton Pass" >&2
+      }
+
+      fetch Personal "$HOME/.ssh/id_personal.pub"
+      fetch Work "${home config.dotfiles.work.sshKey}.pub"
+    '';
+  };
 in
 {
   # The client lives with its config rather than in the shared package list.
   # The identities themselves come from Proton Pass over SSH_AUTH_SOCK
   # (modules/features/proton-pass.nix), so no private key is read from ~/.ssh.
-  home.packages = [ pkgs.openssh ];
+  home.packages = [
+    pkgs.openssh
+    sshPubKeys
+  ];
+
+  # git.nix's sshAllowedSigners orders itself after this, so keys fetched here
+  # reach allowed_signers in the same switch.
+  home.activation.sshPubKeys = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    run ${lib.getExe sshPubKeys}
+  '';
 
   programs.ssh = {
     enable = true;

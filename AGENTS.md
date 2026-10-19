@@ -140,7 +140,8 @@ Script checks run each `tests/<name>.sh` against tools and files from a
 generated home, as the `<name>` flake check (`scriptChecks` in
 `modules/flake/checks.nix`): `git-work-routing` (work vs personal identity by
 remote URL), `ssh-allowed-signers`
-(signature verification), `worktrees-branch-template` (branch naming from
+(signature verification), `ssh-pub-keys` (missing `.pub` files fetched from
+Proton Pass, existing ones kept, failures only warn), `worktrees-branch-template` (branch naming from
 per-repo templates), `repos-list-links` (listing through linked org dirs), `zsh-config`
 (generated zsh startup files parse; only on a system with a zsh home) and
 `github-mirror-probe` (the GitHub mirror rejects a stale private-repo probe and
@@ -148,7 +149,7 @@ scrubs a token-bearing origin). Run them after touching shell, git, ssh or
 backup settings, or `modules/lib/repo-workflow.nix`:
 
 ```sh
-nix build .#checks.aarch64-darwin.{git-work-routing,ssh-allowed-signers,worktrees-branch-template,repos-list-links,zsh-config,github-mirror-probe}
+nix build .#checks.aarch64-darwin.{git-work-routing,ssh-allowed-signers,ssh-pub-keys,worktrees-branch-template,repos-list-links,zsh-config,github-mirror-probe}
 ```
 
 For home-manager changes, run `home-manager switch --flake .#smores@<host>`

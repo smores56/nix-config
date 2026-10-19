@@ -73,8 +73,9 @@ let
   # checkouts get no flow at all.
   personalIncludes = ownerIncludes cfg.githubUser { smores.flow = "direct"; };
   # Signatures only verify against keys listed here. Built from the local
-  # .pub files rather than committed keys because personal keys differ per
-  # machine; rerun `ssh-allowed-signers` after adding a key.
+  # .pub files, which ssh-pub-keys (ssh.nix) fetches from Proton Pass, so the
+  # vault stays the one source of keys; rerun `ssh-allowed-signers` after
+  # adding a key by hand.
   allowedSigners = "~/.ssh/allowed_signers";
   allowedSignersWriter = pkgs.writeShellApplication {
     name = "ssh-allowed-signers";
@@ -102,7 +103,7 @@ let
 
 in
 {
-  home.activation.sshAllowedSigners = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+  home.activation.sshAllowedSigners = lib.hm.dag.entryAfter [ "sshPubKeys" ] ''
     $DRY_RUN_CMD ${lib.getExe allowedSignersWriter}
   '';
 

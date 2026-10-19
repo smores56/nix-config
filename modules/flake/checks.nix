@@ -146,6 +146,10 @@ in
               tools = [ pkgs.openssh ];
               args = [ (homeExe "ssh-allowed-signers") ];
             };
+            ssh-pub-keys = {
+              tools = [ ];
+              args = [ (homeExe "ssh-pub-keys") ];
+            };
             worktrees-branch-template.args = [ (homeExe "worktrees") ];
             repos-list-links.args = [ (homeExe "repos") ];
             brain-leak-guard = {
