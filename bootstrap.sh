@@ -153,9 +153,12 @@ export PATH="${HOME}/.nix-profile/bin:${PATH}"
 #
 # Identities live in Proton Pass; the agent home-manager installed serves their
 # private halves over SSH_AUTH_SOCK, so nothing is generated here. The public
-# halves still have to exist on disk because git's `user.signingkey` and
-# `allowed_signers` reference files. The vault labels the keys "Personal" and
-# "Work".
+# halves are fetched from the vault by `ssh-pub-keys` (modules/features/
+# ssh-keys.nix), the same command every switch runs.
+
+# The tools come from the generation the switch just built, not PATH: this
+# shell predates the profile it created.
+HM_BIN="$(readlink -f "${XDG_STATE_HOME:-${HOME}/.local/state}/home-manager/gcroots/current-home")/home-path/bin"
 
 # A headless host logs in with the vault's PAT (sops-delivered, non-interactive);
 # elsewhere the session is established interactively in a browser.
@@ -164,7 +167,7 @@ if [ -s "$PROTON_PASS_PAT_FILE" ]; then
   info "Logging in to Proton Pass with the vault PAT..."
   if PROTON_PASS_PERSONAL_ACCESS_TOKEN="$(cat "$PROTON_PASS_PAT_FILE")" \
     PROTON_PASS_KEY_PROVIDER="${PROTON_PASS_KEY_PROVIDER:-fs}" \
-    pass-cli login; then
+    "${HM_BIN}/pass-cli" login; then
     ok "Logged in to Proton Pass"
   else
     warn "Proton Pass PAT login failed; log in interactively later."
@@ -183,40 +186,12 @@ if [ -z "${SSH_AUTH_SOCK:-}" ]; then
 fi
 
 SSH_KEY="${HOME}/.ssh/id_personal"
-WORK_SSH_KEY="${HOME}/.ssh/id_work"
 
-agent_key() {
-  # Match the comment field (last whitespace-separated field) case-insensitively;
-  # awk avoids regex-escaping the label and `|| true` swallows a dead agent.
-  ssh-add -L 2>/dev/null | awk -v label="$1" 'tolower($NF) == tolower(label)' || true
-}
-
-materialise_pub() {
-  local label="$1" dest="$2" key
-  if [ -s "$dest" ]; then
-    skip "Public key already at ${dest}"
-    return
-  fi
-  key="$(agent_key "$label")"
-  if [ -z "$key" ]; then
-    warn "No '${label}' identity from the Proton Pass agent. Log in with:"
-    warn "  PROTON_PASS_KEY_PROVIDER=fs pass-cli login --interactive"
-    warn "then re-run this script."
-    return
-  fi
-  mkdir -p "${HOME}/.ssh"
-  chmod 700 "${HOME}/.ssh"
-  printf '%s\n' "$key" >"$dest"
-  ok "Wrote ${dest} from the Proton Pass agent"
-}
-
-materialise_pub Personal "${SSH_KEY}.pub"
-materialise_pub Work "${WORK_SSH_KEY}.pub"
-
-# `allowed_signers` is written on activation, before these .pub files existed on
-# a fresh host; refresh it now that they do.
-if command -v ssh-allowed-signers >/dev/null 2>&1; then
-  ssh-allowed-signers && ok "Refreshed ~/.ssh/allowed_signers"
+# The Phase 3 switch already ran ssh-pub-keys, before pass-cli was logged in.
+if "${HM_BIN}/ssh-pub-keys"; then
+  ok "SSH public keys present and trusted in ~/.ssh/allowed_signers"
+else
+  warn "Some SSH public keys are missing (see above); re-run this script after logging in."
 fi
 
 # ── Phase 5: GitHub authentication ────────────────────────────────

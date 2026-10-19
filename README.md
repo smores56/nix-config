@@ -44,7 +44,7 @@ nix run github:smores56/nix-config#bootstrap
 
 The served copy (`curl -fsSL bootstrap.sammohr.dev | bash`) runs the same
 script. Either way it clones the repo via `ghq`, runs `home-manager switch`,
-materialises the SSH public keys from the Proton Pass agent, authenticates
+fetches the SSH public keys from the Proton Pass vault, authenticates
 GitHub, and (on NixOS) applies the system configuration.
 
 ### Manual
@@ -181,8 +181,10 @@ ssh-add -L                                    # should list the identity
 systemctl --user restart proton-pass-agent    # macOS: launchctl kickstart -k gui/$(id -u)/org.nix-community.home.proton-pass-agent
 ```
 
-Then re-run `nix run github:smores56/nix-config#bootstrap` to re-materialise
-`~/.ssh/*.pub`.
+Then run `ssh-pub-keys` to fetch any missing `~/.ssh/*.pub` and refresh
+`~/.ssh/allowed_signers` (every `home-manager switch` and bootstrap also run
+it). It only fetches missing files, so after replacing a key in the vault
+delete its `.pub` first, e.g. `rm ~/.ssh/id_work.pub && ssh-pub-keys`.
 
 The Access token is cached per login in
 `$XDG_RUNTIME_DIR/cloudflared-access/token` (0600, tmpfs) by
