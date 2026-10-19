@@ -62,7 +62,8 @@ SECRET_RE = re.compile(
     r"|SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}"
     r"|://[^/\s:@]+:[^/\s@]+@"
     r"|X-Amz-Signature=[0-9a-f]{16,}"
-    r"|(?i:\b(?:password|passwd|pwd|api[_-]?key|secret)=[^\s&]{4,})"
+    r"|(?i:(?:client_secret|access_token|refresh_token|id_token|token|secret|password|passwd|pwd|api[_-]?key|sig)=[^\s&\"']{4,})"
+    r"|hooks\.slack\.com/services/[A-Za-z0-9/]+"
 )
 CREDENTIAL_DIRS = frozenset({".ssh", ".aws", ".gnupg", ".kube"})
 
@@ -211,6 +212,16 @@ def unique(items):
     return list(dict.fromkeys(items))
 
 
+def is_brain_call(block):
+    """A harvest started by the Skill tool or by running the brain tools, not only by `/brain`."""
+    if block.get("type") != "tool_use":
+        return False
+    inputs = tool_input(block)
+    if block.get("name") == "Skill":
+        return as_text(inputs.get("skill")).split(":")[-1] == "brain"
+    return block.get("name") == "Bash" and bool(re.search(r"\bbrain-(?:run|commit)\b", as_text(inputs.get("command"))))
+
+
 def summarize_session(session_id, records, day, tz, opts, sidechain=False):
     titles = [label(as_text(r.get("aiTitle")), opts) for r in records if r.get("type") == "ai-title"]
     stamped = [
@@ -227,7 +238,9 @@ def summarize_session(session_id, records, day, tz, opts, sidechain=False):
 
     prompts = [p for p in map(prompt_text, active) if p]
     # A brain harvest's replies summarize untrusted mail and chat; they must not return as the user's work.
-    harvested = any(p == "/brain" or p.startswith("/brain ") for p in prompts)
+    harvested = any(p == "/brain" or p.startswith("/brain ") for p in prompts) or any(
+        is_brain_call(b) for r in active if r.get("type") == "assistant" for b in blocks(r)
+    )
     replies = [] if harvested else [t for t in map(reply_text, active) if t]
     conversation = prompts + replies
     # A subagent's conversation is delegation text; only its own gh pr writes count.

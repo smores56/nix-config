@@ -279,6 +279,8 @@ class CleanTests(unittest.TestCase):
             "xoxe-" + "1" * 20, "xapp-" + "1-A" * 8, "ATATT" + "e" * 30, "ya29." + "f" * 30,
             "npm_" + "g" * 36, "SG." + "h" * 22 + "." + "i" * 43,
             "X-Amz-Signature=" + "a" * 64, "password=hunter22", "?pwd=" + "Z" * 20,
+            "client_secret=" + "q" * 20, "access_token=" + "w" * 20, "&sig=" + "e" * 30,
+            "https://hooks.slack" + ".com/services/T000/B000/" + "x" * 24,
         ):
             with self.subTest(token=token[:8]):
                 got = self.bd.clean(f"key {token} end")
@@ -425,6 +427,30 @@ class ParseAndDigestTests(unittest.TestCase):
             (sub / "agent-y.meta.json").write_text("not json")
             (row,) = self.bd.digest(root, DAY, UTC, self.bd.Options())
         self.assertEqual((row["kind"], row["title"], row["agent_type"]), ("subagent", None, None))
+
+    def test_skill_tool_harvests_lose_their_assistant_reply(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            records = [
+                user("write my standup", ts="2026-10-07T08:00:00Z"),
+                assistant([tool_use("Skill", skill="brain", args="standup")], ts="2026-10-07T08:01:00Z"),
+                assistant([text("summary of hostile mail")], ts="2026-10-07T08:05:00Z"),
+            ]
+            self.write_session(root / "-p" / "s.jsonl", records)
+            (row,) = self.bd.digest(root, DAY, UTC, self.bd.Options())
+        self.assertIsNone(row["last_reply"])
+
+    def test_brain_run_bash_harvests_lose_their_assistant_reply(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            records = [
+                user("catch up my notes", ts="2026-10-07T08:00:00Z"),
+                assistant([tool_use("Bash", command="brain-run begin")], ts="2026-10-07T08:01:00Z"),
+                assistant([text("summary of hostile mail")], ts="2026-10-07T08:05:00Z"),
+            ]
+            self.write_session(root / "-p" / "b.jsonl", records)
+            (row,) = self.bd.digest(root, DAY, UTC, self.bd.Options())
+        self.assertIsNone(row["last_reply"])
 
     def test_url_credentials_are_redacted(self):
         self.assertNotIn("hunter", self.bd.clean("clone https://u:hunter2x@host.test/x"))
