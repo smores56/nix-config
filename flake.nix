@@ -15,8 +15,14 @@
       url = "github:nix-community/home-manager/041a999e8c1c5b731913855909e68d30ca69b8e0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    niri.url = "github:sodiboo/niri-flake";
-    noctalia.url = "github:noctalia-dev/noctalia";
+    niri = {
+      url = "github:sodiboo/niri-flake";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    noctalia = {
+      url = "github:noctalia-dev/noctalia";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     whisrs = {
       url = "github:y0sif/whisrs";
       inputs.nixpkgs.follows = "nixpkgs";

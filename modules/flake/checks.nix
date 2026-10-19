@@ -2,7 +2,7 @@
   config,
   inputs,
   lib,
-  nixpkgsFor,
+  mkPkgs,
   ...
 }:
 let
@@ -23,10 +23,7 @@ in
   perSystem =
     { system, ... }:
     let
-      pkgs = import (nixpkgsFor system) {
-        inherit system;
-        config.allowUnfree = true;
-      };
+      pkgs = mkPkgs system { };
 
       # Lint tools come from one nixpkgs on every platform so the format check
       # agrees with `nix fmt` wherever it runs.
@@ -52,7 +49,9 @@ in
           '';
 
       homeChecks = mkEvalChecks "eval-home" (
-        lib.mapAttrs (_: home: home.activationPackage.drvPath) config.flake.homeConfigurations
+        lib.mapAttrs (_: home: home.activationPackage.drvPath) (
+          lib.filterAttrs (_: home: home.activationPackage.system == system) config.flake.homeConfigurations
+        )
       );
 
       # Script checks run a tests/*.sh script against tools and files from a
@@ -166,7 +165,11 @@ in
         );
 
       nixosChecks = mkEvalChecks "eval-nixos" (
-        lib.mapAttrs (_: nixos: nixos.config.system.build.toplevel.drvPath) config.flake.nixosConfigurations
+        lib.mapAttrs (_: nixos: nixos.config.system.build.toplevel.drvPath) (
+          lib.filterAttrs (
+            _: nixos: nixos.config.nixpkgs.hostPlatform.system == system
+          ) config.flake.nixosConfigurations
+        )
       );
     in
     {
@@ -190,6 +193,16 @@ in
             }
             ''
               statix check -c ${src}/statix.toml ${src}
+              touch $out
+            '';
+
+        deadnix =
+          pkgs.runCommand "deadnix-check"
+            {
+              nativeBuildInputs = [ lintPkgs.deadnix ];
+            }
+            ''
+              deadnix --fail --exclude 'modules/hosts/*/hardware.nix' ${src}
               touch $out
             '';
 

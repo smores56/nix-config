@@ -1,4 +1,4 @@
-{ inputs, nixpkgsFor, ... }:
+{ inputs, mkPkgs, ... }:
 let
   inherit (inputs)
     home-manager
@@ -79,9 +79,7 @@ let
 
   pkgsForSystem =
     system:
-    import (nixpkgsFor system) {
-      inherit system;
-      config.allowUnfree = true;
+    mkPkgs system {
       overlays = localOverlays system;
     };
 
