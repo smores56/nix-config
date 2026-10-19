@@ -4,10 +4,10 @@ Generic, dataset-agnostic backup driver. One systemd oneshot + timer per
 `backup.datasets.<Name>` entry, optionally fired early by a filesystem
 watcher (`onChange`). A dataset is a directory on Disk 1, a local mirror on the
 backup disk (Disk 2), and — unless `offsite` is disabled — an append-only mirror
-on Proton Drive (Disk 3, "offsite"). Two dataset families use it: the media
-trees (`Photos`, `Videos`, `Music`; offsite and change-triggered) and a
-GitHub repo mirror (`GitHub`; see
-[GitHub repo mirror](#github-repo-mirror)).
+on Proton Drive (Disk 3, "offsite"). Three dataset families use it: the media
+trees (`Photos`, `Videos`, `Music`; offsite and change-triggered), a GitHub
+repo mirror (`GitHub`; see [GitHub repo mirror](#github-repo-mirror)), and the
+OpenTofu edge state (`CloudflareTofu`).
 
 The rationale for every destructive-looking choice lives as a comment next to
 the code in [`backup.py`](./backup.py). This file is the operator's view.
@@ -67,7 +67,8 @@ the code in [`backup.py`](./backup.py). This file is the operator's view.
 | `/run/backup-watch/<name>/` | request queue for a dataset with `onChange` enabled: the watcher creates a file per debounced batch, and the backup unit drains it |
 
 Proton paths are the dataset name under the remote: `proton:<Name>` — on
-smortress, `proton:Photos`, `proton:Videos`, `proton:Music`.
+smortress, `proton:Photos`, `proton:Videos`, `proton:Music`, `proton:GitHub`,
+and `proton:CloudflareTofu`.
 
 ## Datasets on smortress
 
@@ -76,7 +77,8 @@ smortress, `proton:Photos`, `proton:Videos`, `proton:Music`.
 | `Photos` | `/var/lib/media/Photos` | 03:00 | `onChange` (15m) | Sun 06:00 | yes | `pg_dump -Fc` of `immich` into `current/db/immich-<date>.dump` |
 | `Videos` | `/var/lib/media/Videos` | 01:00 | `onChange` (15m) | Sun 07:00 | yes | — |
 | `Music` | `/var/lib/media/Music` | 05:00 | `onChange` (15m) | Sun 08:00 | yes | — |
-| `GitHub` | `/var/lib/github-mirrors` | 00:30 | timer only | Sun 10:00 | no | `ghorg` refresh of the `smores56` mirrors (see below) |
+| `GitHub` | `/var/lib/github-mirrors` | 00:30 | timer only | Sun 10:00 | yes | `ghorg` refresh of the `smores56` mirrors (see below) |
+| `CloudflareTofu` | `/var/lib/cloudflare-tofu` | 00:15 | timer only | — | yes | — |
 
 Every dataset excludes `/.cache/**`, `**/.cache/**` and `/rclone.conf` by
 default (the `excludes` option default). That keeps regenerable caches (at the
@@ -97,9 +99,11 @@ bare git mirrors, driven by
 remains the authoritative copy; the HDD mirror provides fast local restore and
 protection against an accidental repo deletion or account lockout, and the
 dataset is also copied to Proton (`offsite = true`). The first offsite seed is
-large; later runs move only new packs — measured 45–52 files / 2.2–2.6 MiB per
-run. No periodic `git repack` runs, so packs are not rewritten and the
-copy-based mirror does not re-upload unchanged data.
+large; later runs move only the ref files ghorg rewrote plus any new packs.
+Measured deltas range from 213 small ref/config files (35 KiB, no new objects)
+to 45–52 files (2.2–2.6 MiB) when fetches bring objects. No periodic
+`git repack` runs, so packs are not rewritten and the copy-based mirror does
+not re-upload unchanged data.
 
 - **Refresh.** The dataset's `preBackup` runs
   [`github-mirror.sh`](./github-mirror.sh) under [`gitconfig`](./gitconfig) via
@@ -157,7 +161,8 @@ copy-based mirror does not re-upload unchanged data.
 6. On success the unit is done. On failure the driver writes a detailed
    `BACKUP-FAILED` marker from inside the run; if the run was killed before that
    could happen, `ExecStopPost` writes a generic one (it never overwrites the
-   detailed marker). `onFailure` pushes an ntfy alert.
+   detailed marker). `onFailure` sends the Cloudflare email alert
+   (`cloudflare-email@%n.service`).
 
 `TimeoutStartSec` (per-dataset `timeout`) is a wall-clock backstop only; a stuck
 run is normally caught by `stallTimeout` in ~30m. A `TimeoutStartSec` kill
@@ -173,7 +178,7 @@ for the dataset's `onChange.debounce` of quiet, then creates one request file in
 `/run/backup-watch/<name>/`. A `backup-<name>-queue.path` unit watching that
 directory with `DirectoryNotEmpty=` starts the ordinary
 `backup-<name>.service`; the watcher never runs the driver, so the unit's
-timeout, failure marker, ntfy alert, and sandbox stay in one place.
+timeout, failure marker, Cloudflare email alert, and sandbox stay in one place.
 
 - **Debounce.** After the last accepted change, nothing is queued until the
   quiet period (15m on smortress) elapses, so a photo import or music sync
@@ -409,8 +414,9 @@ dataset needs `backup.enable = true` (the backup disk).
   is invisible. Keep excludes narrow and review them.
 - Offsite datasets check local↔remote, never source↔local; source-side
   under-copy is only caught by the manual drill's sample. Local-only datasets
-  (the GitHub mirror) check source↔local instead, scoped to the files copied
-  that run; the weekly full check walks the whole tree.
+  (`offsite = false`, none on smortress today) check source↔local instead,
+  scoped to the files copied that run; the weekly full check walks the whole
+  tree.
 - The restore drill restores the newest dump as the `postgres` superuser, so a
   dump shaped via a compromised Immich DB executes as that user.
 - The drill is only syntax-checked in CI (not run); it scrapes the unit's

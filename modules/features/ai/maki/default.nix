@@ -9,7 +9,7 @@ let
   inherit (aiProviders) neuralwatt smortress;
 
   # Work uses the built-in OpenAI provider and Maki's own login storage,
-  # without personal providers or smortress SearXNG search.
+  # with no personal providers and no search plugin.
   profile =
     {
       personal = {

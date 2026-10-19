@@ -250,8 +250,8 @@ transfer deltas only. The pre-unit refreshes every repo and the run fails unless
 the probe repo (`sdlc-state`) was refreshed.
 
 Restore a repository from `/var/backup/GitHub/current/smores56_backup/<repo>`
-(or `proton:GitHub`) — it is a mirror clone, not a bare repo, so it can be
-cloned or pushed from directly.
+(or `proton:GitHub`). It is a bare mirror: clone from it directly, or push it
+back with `git push --mirror`.
 
 ### Music
 
