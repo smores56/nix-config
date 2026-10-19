@@ -67,14 +67,14 @@ let
     providerId = "neuralwatt";
     baseUrl = "https://api.neuralwatt.com/v1";
     keyEnv = "NEURALWATT_API_KEY";
-    # deepseek-v4.1-flash serves a 256K window (native 1M context). Both models
-    # report vision in the /v1/models capabilities, and maki only learns that
-    # from this flag.
+    # Windows are the upstream caps: deepseek serves its full 1M context, qwen
+    # its 262K. Both report vision in the /v1/models capabilities, and maki only
+    # learns that from this flag.
     makiModels = map mkModel [
       {
         id = "deepseek-v4.1-flash";
-        context = 262144;
-        output = 65536;
+        context = 1048576;
+        output = 393216;
         vision = true;
         prompt = 0.15;
         completion = 0.60;
@@ -83,7 +83,7 @@ let
       {
         id = "qwen-3.8-27b";
         context = 262144;
-        output = 32768;
+        output = 131072;
         vision = true;
         prompt = 0.45;
         completion = 3.20;
