@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 import subprocess
 import tempfile
@@ -38,7 +39,7 @@ class BrainCommitTests(unittest.TestCase):
         self.vault = Path(self.tmp.name) / "brain"
         self.vault.mkdir()
         git(self.vault, "init", "-q")
-        (self.vault / "CLAUDE.md").write_text("config\n")
+        (self.vault / "CLAUDE.md").write_text("config\n\n## Link hosts\nexample.com\n")
         git(self.vault, "add", "CLAUDE.md")
         git(self.vault, "commit", "-qm", "init")
 
@@ -250,8 +251,80 @@ class BrainCommitTests(unittest.TestCase):
 
     def test_angle_brackets_in_prose_are_fine(self):
         self.set_link_hosts("example.com")
-        self.write("daily/d.md", "- passed <KEY> placeholders; a < b > c\n")
+        self.write("daily/d.md", "- passed <KEY> placeholders; a < b > c; latency < a second; see <source>; data: x; file:line cites\n")
         self.assertEqual(self.commit().status, "committed")
+
+    def test_link_tricks_that_reach_other_hosts_are_refused(self):
+        self.set_link_hosts("example.com")
+        for target in (
+            "https://evil.test\\@example.com/a",
+            "https:evil.test/a",
+            "https:\\\\evil.test/a",
+            "//evil.test/a",
+            "https://user:tok@example.com/a",
+            "javascript:alert(1)",
+            "data:text/html,x",
+        ):
+            with self.subTest(target=target):
+                self.write("daily/d.md", f"[x]({target})\n")
+                self.assertEqual(self.commit().status, "refused")
+
+    def test_relative_and_wiki_links_are_fine(self):
+        self.set_link_hosts("example.com")
+        self.write("daily/d.md", "[[svc]] and [page](../wiki/svc.md) and [x](https://example.com/a?b=c#d)\n")
+        self.assertEqual(self.commit().status, "committed")
+
+    def test_styled_and_attributed_html_is_refused(self):
+        self.set_link_hosts("example.com")
+        for text in ('<span style="background:url(x)">', "<p class=x>", "&#x68;ttps", "@import url(x)", "<script>x</script>"):
+            with self.subTest(text=text):
+                self.write("daily/d.md", text + "\n")
+                self.assertEqual(self.commit().status, "refused")
+
+    def test_a_missing_link_hosts_section_refuses(self):
+        (self.vault / "CLAUDE.md").write_text("config\n")
+        git(self.vault, "commit", "-qam", "no hosts")
+        self.write("daily/d.md", "x\n")
+        result = self.commit()
+        self.assertEqual(result.status, "refused")
+        self.assertIn("Link hosts", result.detail)
+
+    def test_annotated_host_lines_count(self):
+        self.set_link_hosts("example.com   (PRs)")
+        self.write("daily/d.md", "https://example.com/a\n")
+        self.assertEqual(self.commit().status, "committed")
+
+    def claim(self, nonce, started):
+        state = Path(self.tmp.name) / "state"
+        state.mkdir(exist_ok=True)
+        (state / "active.json").write_text(json.dumps({"nonce": nonce, "started": started}))
+        return state
+
+    def test_a_harvest_in_progress_blocks_other_commits(self):
+        self.set_link_hosts("example.com")
+        from datetime import datetime
+        state = self.claim("abc", datetime.now().astimezone().isoformat())
+        self.write("daily/d.md", "x\n")
+        result = self.bc.commit(self.vault, "lint: x", env=ENV, state_dir=state)
+        self.assertEqual(result.status, "refused")
+        self.assertIn("in progress", result.detail)
+        self.assertEqual(self.bc.commit(self.vault, "harvest: x", env=ENV, state_dir=state, run="abc").status, "committed")
+
+    def test_a_stale_claim_does_not_block_commits(self):
+        self.set_link_hosts("example.com")
+        state = self.claim("abc", "2020-01-01T00:00:00+00:00")
+        self.write("daily/d.md", "x\n")
+        self.assertEqual(self.bc.commit(self.vault, "lint: x", env=ENV, state_dir=state).status, "committed")
+
+    def test_globally_ignored_note_paths_are_still_seen(self):
+        self.set_link_hosts("example.com")
+        ignore = Path(self.tmp.name) / "global-ignore"
+        ignore.write_text("*.md\n")
+        git(self.vault, "config", "core.excludesFile", str(ignore))
+        self.write("wiki/x.md", "x\n")
+        self.assertEqual(self.commit().status, "committed")
+        self.assertIn("wiki/x.md", git(self.vault, "ls-files"))
+
 
 if __name__ == "__main__":
     unittest.main()

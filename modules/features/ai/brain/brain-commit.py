@@ -3,26 +3,45 @@
 
 Harvests read untrusted mail, chat, and tickets, so the commit step is code,
 not prose: it only commits markdown note paths in a remote-less vault, runs no
-git hooks, filters, or fsmonitor, and blocks secret-shaped text before it
-reaches history.
+git hooks, filters, fsmonitor, or signing programs, and before anything reaches
+history it blocks secret-shaped text, assistant instruction files, embeds and
+HTML, and links to hosts outside the vault's `## Link hosts`. While a harvest
+run holds its claim, only that run may commit.
 """
 import argparse
 import importlib.util
+import json
 import os
 import re
 import subprocess
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 
 NOTE_DIRS = ("daily/", "wiki/", "til/", "standups/")
 NOTE_FILES = ("index.md", "glossary.md", "questions.md", "brag.md")
 # Assistants load these as trusted instructions from whatever directory they read.
 INSTRUCTION_FILES = frozenset({"CLAUDE.md", "CLAUDE.local.md", "AGENTS.md", "GEMINI.md"})
-# Images and embeds fetch on preview, so an injected one leaks whatever its URL carries.
-EMBED_RE = re.compile(r"!\[|<\s*/?\s*(?:img|iframe|script|object|embed|svg|video|audio|source|link|meta|a)\b", re.I)
-URL_RE = re.compile(r"\bhttps?://([^/\s?#)\]>\"'`]+)", re.I)
+# Anything a renderer fetches on preview leaks whatever its URL carries. Fetching needs an
+# image, an attribute, a style, or an escaped URL; bare `<word>` in prose stays allowed.
+EMBED_RE = re.compile(
+    r"!\["
+    r"|</?(?:script|style|iframe)\b"
+    r"|<[A-Za-z][\w-]*\s+[^>]*="
+    r"|\burl\s*\("
+    r"|&#"
+    r"|@import",
+    re.I,
+)
+# Every link target: markdown `](...)` and reference definitions take any scheme; bare text
+# only counts as a link when it is http(s), so prose like "data: x" or "file:line" passes.
+MD_TARGET_RE = re.compile(r"\]\(\s*<?([^)\s>]+)|^\s*\[[^\]]+\]:\s*<?(\S+?)>?\s*$")
+BARE_URL_RE = re.compile(r"(?<![\w/])https?:[^\s)\]>\"']*", re.I)
+HTTP_RE = re.compile(r"https?://([A-Za-z0-9.-]+|\[[0-9a-fA-F:]+\])(?::\d+)?(?=[/?#]|$)", re.I)
 LOOPBACK = frozenset({"localhost", "127.0.0.1", "[::1]"})
+# Matches brain-run's claim staleness: a dead run's claim must not block commits forever.
+CLAIM_STALE_AFTER = timedelta(hours=3)
 # Inherited repo-selection variables would point git at some other repo's index.
 REPO_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_COMMON_DIR")
 # Neutralize every config knob that makes git run a program during status/add/commit.
@@ -31,6 +50,8 @@ SAFE_CONFIG = (
     "core.fsmonitor=false",
     "core.attributesFile=/dev/null",
     "diff.external=",
+    # A global ignore list would hide planted note-path files from every check below.
+    "core.excludesFile=/dev/null",
     # Signing runs gpg.program / gpg.ssh.program / gpg.x509.program, all settable from .git/config.
     "commit.gpgSign=false",
     "gpg.program=false",
@@ -91,26 +112,66 @@ def is_linked(vault, path):
     return any(p.is_symlink() for p in [target, *target.parents] if p != vault and vault in p.parents)
 
 
+def section(markdown, heading, level=2):
+    """Body of a `##`-level section of the vault CLAUDE.md, or None; shared with brain-run."""
+    marks = "#" * level
+    found = re.search(
+        rf"^{marks} {re.escape(heading)}[ \t]*\n(.*?)(?=^#{{1,{level}}} |\Z)", markdown, re.MULTILINE | re.DOTALL
+    )
+    return found.group(1) if found else None
+
+
 def link_hosts(config_text):
-    """Hosts listed one per line under `## Link hosts`; None when the section is absent."""
-    found = re.search(r"^## Link hosts[ \t]*\n(.*?)(?=^## |\Z)", config_text, re.MULTILINE | re.DOTALL)
-    if not found:
+    """Hosts under `## Link hosts`, the first word of each line; None when the section is absent."""
+    body = section(config_text, "Link hosts")
+    if body is None:
         return None
-    return frozenset(line.strip().lower() for line in found.group(1).splitlines() if re.fullmatch(r"[\w.-]+", line.strip()))
+    words = (line.split()[0].lower() for line in body.splitlines() if line.split())
+    return frozenset(w for w in words if re.fullmatch(r"[a-z0-9.-]+", w))
+
+
+def target_problem(target, hosts):
+    """Why a link target is not allowed, or None. Only relative paths and http(s) to a listed host pass."""
+    if target.startswith("//") or "\\" in target:
+        return "scheme-relative or backslashed link"
+    scheme = re.match(r"([A-Za-z][\w+.-]*):", target)
+    if not scheme:
+        return None
+    if scheme.group(1).lower() not in ("http", "https"):
+        return f"{scheme.group(1).lower()}: link"
+    found = HTTP_RE.match(target)
+    if not found:
+        return "malformed or credentialed URL"
+    host = found.group(1).lower()
+    return None if host in hosts or host in LOOPBACK else f"link to {host}"
 
 
 def content_hits(name, content, hosts):
-    """name:line for embeds and for links off the configured hosts; notes may only link where sources live."""
+    """name:line for embeds and HTML, and for links off the configured hosts."""
     lines = content.decode("utf-8", errors="replace").splitlines()
     hits = []
     for n, line in enumerate(lines, 1):
         if EMBED_RE.search(line):
             hits.append(f"{name}:{n} (image or HTML)")
-        for host in URL_RE.findall(line):
-            bare = host.rsplit("@", 1)[-1].split(":")[0].lower() if not host.startswith("[") else host.lower()
-            if hosts is not None and bare not in hosts and bare not in LOOPBACK:
-                hits.append(f"{name}:{n} (link to {bare})")
+        targets = [t for pair in MD_TARGET_RE.findall(line) for t in pair if t] + BARE_URL_RE.findall(line)
+        hits += [f"{name}:{n} ({p})" for p in {target_problem(t, hosts) for t in targets} if p]
     return hits
+
+
+def claim_refusal(state_dir, run):
+    # Without this, an attended commit could sweep up a running harvest's half-written notes.
+    try:
+        active = json.loads((state_dir / "active.json").read_text(encoding="utf-8"))
+        started = datetime.fromisoformat(active["started"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if datetime.now().astimezone() - started >= CLAIM_STALE_AFTER or active.get("nonce") == run:
+        return None
+    return f"harvest run {active.get('nonce')} is in progress; commit after it finishes"
+
+
+def default_state_dir():
+    return Path(os.environ.get("BRAIN_STATE_DIR", "~/.local/state/brain")).expanduser()
 
 
 def secret_hits(name, content):
@@ -119,7 +180,7 @@ def secret_hits(name, content):
     return [f"{name}:{n}" for n, line in enumerate(lines, 1) if SECRET_RE.search(line)]
 
 
-def commit(vault, message, env=None):
+def commit(vault, message, env=None, state_dir=None, run=None):
     vault = Path(vault).expanduser().resolve()
     env = {k: v for k, v in (os.environ if env is None else env).items() if k not in REPO_ENV}
     config = [arg for kv in SAFE_CONFIG for arg in ("-c", kv)]
@@ -138,6 +199,8 @@ def commit(vault, message, env=None):
         return Result("refused", f"vault has remotes ({', '.join(remotes)}); it must stay local-only")
     if filters := git("config", "--get-regexp", r"^filter\.", check=False).stdout.split("\n")[0]:
         return Result("refused", f"vault config defines filter drivers ({filters.split()[0]}); remove them")
+    if busy := claim_refusal(state_dir or default_state_dir(), run):
+        return Result("refused", busy)
 
     paths = changed_paths(git("status", "--porcelain=v1", "-z", "--untracked-files=all").stdout)
     if not paths:
@@ -164,8 +227,10 @@ def commit(vault, message, env=None):
             git("reset", "-q")
             return Result("refused", "secret-shaped text at " + ", ".join(hits))
         # The committed config, not the working copy: a harvest can't widen its own link hosts.
-        committed_config = git("show", "HEAD:CLAUDE.md", check=False).stdout
-        hosts = link_hosts(committed_config)
+        hosts = link_hosts(git("show", "HEAD:CLAUDE.md", check=False).stdout)
+        if hosts is None:
+            git("reset", "-q")
+            return Result("refused", "the committed vault CLAUDE.md has no `## Link hosts` section")
         bad = [
             hit
             for name in filter(None, staged.split("\0"))
@@ -186,9 +251,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("-m", "--message", required=True)
     parser.add_argument("--vault", default=os.environ.get("BRAIN_DIR", "~/brain"))
+    parser.add_argument("--run", help="the claimed harvest run committing (from `brain-run begin`)")
     args = parser.parse_args(argv)
 
-    result = commit(args.vault, args.message)
+    result = commit(args.vault, args.message, run=args.run)
     print(f"brain-commit: {result.status}" + (f": {result.detail}" if result.detail else ""))
     return 1 if result.status == "refused" else 0
 
