@@ -118,7 +118,26 @@ in
       timeout = "2h";
       onChange.enable = true;
     };
-    alerting.enable = true;
+    # OpenTofu state is the only copy of the edge object IDs; losing it means
+    # `tofu import`, not data loss. Skip the provider cache and the transient
+    # lock file.
+    backup.datasets.CloudflareTofu = {
+      source = "/var/lib/cloudflare-tofu";
+      schedule = "*-*-* 00:15:00";
+      timeout = "30m";
+      onChange.enable = true;
+      excludes = [
+        "/.cache/**"
+        "**/.cache/**"
+        "/rclone.conf"
+        "/.terraform/**"
+        "/terraform.tfstate.lock.info"
+      ];
+    };
+    alerting = {
+      enable = true;
+      accountId = "385f7d47e2e8438fbda5d6f76d760434";
+    };
     # Mirror this host's GitHub repos onto the backup disk (local-only; GitHub is
     # the offsite copy). The probe requires this known-private repo to be
     # refreshed every run, catching a token that lost `repo` scope (which would

@@ -62,43 +62,47 @@ sudo nixos-rebuild switch --flake .#<host>
 
 ### Cloudflare Tunnel exposure
 
-`webProxy` (declared in `modules/options.nix`, rendered by
-`modules/nixos/web-proxy.nix`) exposes services through a Cloudflare Tunnel.
-Declare a service once, keyed by subdomain; it becomes
-`<sub>.<domain>` → `<protocol>://127.0.0.1:<port>` (`protocol` defaults to
-`http`; `tcp`/`ssh` for non-HTTP services) with a proxied DNS CNAME reconciled
-on every activation and optional Cloudflare Access in front:
+`webProxy` (declared in `modules/nixos/web-proxy.nix`) configures the tunnel
+ingress: each declared service becomes `<sub>.<domain>` →
+`<protocol>://127.0.0.1:<port>` (`protocol` defaults to `http`; `tcp`/`ssh`
+for non-HTTP services), optionally with Cloudflare Access in front.
 
 ```nix
 webProxy.services.calibre = { port = 8080; access.enable = true; };
 ```
 
-One-time provisioning. Both the API token and the tunnel credentials are
-secrets: they live in `secrets/smortress.yaml`, encrypted with sops-nix (age
-recipients are the admin key and smortress's SSH host key), and smortress
-repoints `webProxy.apiTokenFile`/`credentialsFile` at the decrypted
-files (`modules/nixos/secrets.nix`). Nothing enters the Nix store.
+DNS and Access are managed by the minimal OpenTofu config in `tofu/`:
 
-- Create a Cloudflare API token scoped to the apex zone with
-  **Zone:DNS:Write** and **Access: Apps and Policies:Write**, and the tunnel's
-  credentials JSON.
-- Store them as `cf-api-token` and `cloudflared-credentials` with
-  `sops secrets/smortress.yaml`.
+- wildcard proxied CNAME `*.sammohr.dev` → `<tunnel>.cfargotunnel.com`;
+- `ssh` and `llm` Access applications;
+- email allow-list and service-auth policies;
+- tunnel-health and expiring-service-token notifications.
+
+Ingress stays in Nix; the tunnel itself, its credentials, and the Access
+service token are operator-minted. One Cloudflare API token covers
+DNS (`Zone:DNS:Edit`), Access (`Access: Apps and Policies:Edit`),
+notifications (`Notifications:Edit`), and alert email (`Email Sending:Edit`).
+
+One-time provisioning:
+
+- Store the API token as `cloudflare-api-token` and the tunnel credentials
+  JSON as `cloudflared-credentials` in `secrets/smortress.yaml`.
 - The tunnel credentials are the authoritative source of the tunnel UUID
-  (`TunnelID`); no UUID is authored anywhere in the repo. `tunnelName` is only
-  a label and must be a non-UUID string.
+  (`TunnelID`); no UUID is authored in the repo. `tunnelName` is only a label.
+- The token is read at tool time from sops and never enters Tofu state.
 
-`modules/nixos/cloudflare-sync.nix` runs the reconciler at boot and after every
-activation. Dry-run it with `sudo cloudflare-sync --check` — it prints the diff
-(created / updated / adopted / deleted / unchanged) and exits 0 when clean, 1
-on drift, and 2 on an API, spec, or safety error (a permission problem or a
-refused protected-hostname deletion is never mistaken for drift). DNS is
-**adopt-never-delete**: a matching CNAME is left in place and nothing is
-removed; a CNAME at a declared name pointing elsewhere is **updated** to the
-tunnel (it logs the previous target). Access applications are the one exception
-— disabling `access.enable` deletes the app, making the endpoint public again —
-except for the protected hostnames (ssh/llm, matched by name or
-origin port), whose apps are never deleted: the reconciler refuses and exits 2.
+Plan and apply from the checkout as root:
+
+```sh
+sudo nix run .#cloudflare-plan
+sudo nix run .#cloudflare-apply
+```
+
+State lives in `/var/lib/cloudflare-tofu/` (0700, backed up as the
+`CloudflareTofu` dataset). On a host with existing objects, import them before
+the first apply (`sudo nix run .#cloudflare-tofu -- import <address> <id>`);
+`prevent_destroy` is set on the apps and policies. Stale records/apps from the
+retired reconciler are removed manually first.
 
 ### Personal site and keyboard redirect
 
@@ -108,11 +112,9 @@ directory from `smores56/personal-site` (no build command, asset directory
 Redirect rule to <https://github.com/smores56/keyboards>. Both are configured
 in the Cloudflare dashboard, not by this repo.
 
-`cloudflare-sync` is deliberately not involved. It reconciles tunnel CNAMEs and
-Access apps, and the token documented above has Zone:DNS:Write and
-Access:Apps and Policies:Write, not the Rulesets/Single Redirect scope.
-Managing one redirect would mean rotating the token and merging a zone-wide
-ruleset, so the rule stays in the dashboard.
+OpenTofu is deliberately not involved: the token above has no
+Rulesets/Single Redirect scope, and managing one redirect would mean merging a
+zone-wide ruleset.
 
 The previous GitHub Pages build remains on `personal-site`'s `gh-pages`
 branch. If the Worker fails, restore the deleted workflow from git history and point
@@ -171,19 +173,17 @@ If the host will not boot, reinstall from the repo with
 `nix run .#install -- <hostname> root@<ip>` (see *Installing a blank machine*),
 then run the `bootstrap` app.
 
-**Cloudflare token invalid or rotated.** The reconciler runs at boot and after
-each activation and exits 2 — not drift — when the API fails; the running
-tunnel keeps serving existing hostnames, but DNS/Access stop reconciling.
-Rotate the token in the dashboard, update `cf-api-token` in
-`secrets/smortress.yaml` (`sops secrets/smortress.yaml`), and redeploy. Check
-with `sudo cloudflare-sync --check`.
+**Cloudflare token invalid or rotated.** The running tunnel keeps serving
+existing hostnames, but plan/apply fail until the token is fixed. Rotate it in
+the dashboard, update `cloudflare-api-token` in `secrets/smortress.yaml`
+(`sops secrets/smortress.yaml`), and redeploy. Check with
+`sudo nix run .#cloudflare-plan`.
 
 **Access misconfiguration.** A typo that clears `access.enable` on
-`ssh`/`llm` fails evaluation (`modules/nixos/web-proxy.nix`),
-and the reconciler refuses to delete those apps even when asked
-(`PROTECTED_SUBDOMAINS` in `modules/features/cloudflare/cloudflare_sync.py`).
-An Access *policy* mistake (wrong email) still locks out the browser — fix it
-in the Cloudflare dashboard.
+`ssh`/`llm` fails evaluation (`modules/nixos/web-proxy.nix`), and OpenTofu has
+`prevent_destroy` on those apps and policies. An Access *policy* mistake (wrong
+email) still locks out the browser — fix it in OpenTofu and apply, or in the
+dashboard as a break-glass step.
 
 **sops cannot decrypt (host key lost).** The `smortress` age recipient in
 `.sops.yaml` is derived from `/etc/ssh/ssh_host_ed25519_key`; losing that key
@@ -196,8 +196,10 @@ age key.
 `alerting.enable` (implemented by `modules/nixos/alerting.nix`) sends unit
 failures and stale-backup warnings through Cloudflare Email Service. Every
 backup unit's `OnFailure` points at the `cloudflare-email@` template, and a
-five-minute freshness timer emails once per stale period. The JSON credential
-lives in sops (`cloudflare-email`); no topic or listener runs on the host.
+five-minute freshness timer emails once per stale period. The token and
+non-secret account/from/to values are read from
+`/run/secrets/cloudflare-api-token` and the `alerting` options; no topic or
+listener runs on the host.
 
 ### Backups
 

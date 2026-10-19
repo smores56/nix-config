@@ -30,15 +30,15 @@ let
     ];
     text = ''
       set -euo pipefail
-      secret="''${CLOUDFLARE_EMAIL_SECRET:-/run/secrets/cloudflare-email}"
+      secret="''${CLOUDFLARE_API_TOKEN_FILE:-/run/secrets/cloudflare-api-token}"
       if [ ! -r "$secret" ]; then
         echo "cloudflare-email: cannot read $secret" >&2
         exit 1
       fi
-      token=$(jq -er '.token' "$secret")
-      account=$(jq -er '.account_id' "$secret")
-      from=$(jq -er '.from' "$secret")
-      to=$(jq -er '.to' "$secret")
+      token=$(tr -d '[:space:]' < "$secret")
+      account=${lib.escapeShellArg cfg.accountId}
+      from=${lib.escapeShellArg cfg.from}
+      to=${lib.escapeShellArg cfg.to}
       subject="''${1:?subject required}"
       body="''${2:-}"
 
@@ -79,7 +79,7 @@ let
           journalctl -u "$unit" -n 50 --no-pager || true
         } 2>&1
       )
-      exec ${cloudflareEmail}/bin/cloudflare-email "[smortress] $unit failed" "$body"
+      exec ${cloudflareEmail}/bin/cloudflare-email "[${config.networking.hostName}] $unit failed" "$body"
     '';
   };
 
@@ -163,10 +163,24 @@ in
     type = lib.types.submodule {
       options = {
         enable = lib.mkEnableOption "Cloudflare email alerts for unit failures and stale backups";
+        accountId = lib.mkOption {
+          type = lib.types.str;
+          description = "Cloudflare account ID that owns the Email Service domain.";
+        };
+        from = lib.mkOption {
+          type = lib.types.str;
+          default = "alerts@send.sammohr.dev";
+          description = "From address on the onboarded Email Service sending domain.";
+        };
+        to = lib.mkOption {
+          type = lib.types.str;
+          default = "sam@sammohr.dev";
+          description = "Verified recipient address.";
+        };
         secretFile = lib.mkOption {
           type = lib.types.str;
-          default = "/run/secrets/cloudflare-email";
-          description = "JSON secret holding the Cloudflare Email Service token, account id, from address, and to address.";
+          default = "/run/secrets/cloudflare-api-token";
+          description = "File holding the Cloudflare API token (plain text, root-only).";
         };
       };
     };
@@ -181,7 +195,7 @@ in
         Type = "oneshot";
         User = "root";
         ExecStart = "${onFailure}/bin/cloudflare-email-onfailure %i";
-        Environment = [ "CLOUDFLARE_EMAIL_SECRET=${cfg.secretFile}" ];
+        Environment = [ "CLOUDFLARE_API_TOKEN_FILE=${cfg.secretFile}" ];
         TimeoutStartSec = "2m";
       };
     };
@@ -192,7 +206,7 @@ in
         Type = "oneshot";
         User = "root";
         ExecStart = "${freshness}/bin/backup-freshness";
-        Environment = [ "CLOUDFLARE_EMAIL_SECRET=${cfg.secretFile}" ];
+        Environment = [ "CLOUDFLARE_API_TOKEN_FILE=${cfg.secretFile}" ];
         RuntimeDirectory = "backup-freshness";
         RuntimeDirectoryMode = "0700";
         # The alerted flag must survive between 5-minute runs; without this the

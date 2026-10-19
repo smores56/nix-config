@@ -36,7 +36,7 @@ files by concern, not by host.
 | `modules/lib/` | helper libraries |
 | `modules/features/ai/` | AI tooling: assistant context, brain, maki, providers, sdlc, skills |
 | `modules/features/tv/` | Television repository and worktree cables |
-| `modules/features/cloudflare/` | Cloudflare Tunnel DNS/Access reconciler (Python helper) + manual `cloudflare-sync` CLI |
+| `tofu/` | minimal Cloudflare DNS/Access/notification objects; run via the `cloudflare-*` flake apps |
 | `modules/features/backup/` | rclone backup driver (`backup.py`) + operator README, the GitHub-mirror helper and the restore drill |
 | `modules/desktop/aerospace/` | AeroSpace config + `aerospace-layout` |
 | `tests/` | Python unit tests for the repo's tools plus `tests/*.sh` shell checks (all run via flake checks) |

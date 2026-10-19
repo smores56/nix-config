@@ -168,6 +168,59 @@
           echo "  sops updatekeys secrets/$host.yaml"
         '';
       };
+
+      # Runs the minimal Cloudflare OpenTofu config from a root-owned state
+      # directory. The API token and tunnel UUID stay in sops-decrypted files;
+      # account/email inputs are non-secret.
+      cloudflareTofu =
+        name: action:
+        pkgs.writeShellApplication {
+          inherit name;
+          runtimeInputs = [
+            pkgs.opentofu
+            pkgs.jq
+            pkgs.coreutils
+            pkgs.bash
+          ];
+          text = ''
+            if [ "$(id -u)" -ne 0 ]; then
+              echo "${name}: run as root (state and secrets are root-only)" >&2
+              exit 1
+            fi
+
+            state="''${CLOUDFLARE_TOFU_DIR:-/var/lib/cloudflare-tofu}"
+            token_file="''${CLOUDFLARE_API_TOKEN_FILE:-/run/secrets/cloudflare-api-token}"
+            creds="''${CLOUDFLARE_TUNNEL_CREDENTIALS:-/run/secrets/cloudflared-credentials}"
+
+            for f in "$token_file" "$creds"; do
+              [ -r "$f" ] || { echo "${name}: cannot read $f" >&2; exit 1; }
+            done
+
+            install -d -m 0700 "$state"
+            rm -f "$state"/*.tf
+            cp ${../../tofu}/*.tf "$state"/
+            cp ${../../tofu}/.terraform.lock.hcl "$state"/
+            chmod 0600 "$state"/*.tf "$state"/.terraform.lock.hcl
+
+            export CLOUDFLARE_API_TOKEN
+            CLOUDFLARE_API_TOKEN=$(tr -d '[:space:]' < "$token_file")
+            export TF_VAR_account_id="''${CLOUDFLARE_ACCOUNT_ID:-$(cat /etc/cloudflare-tofu/account-id)}"
+            export TF_VAR_domain="''${CLOUDFLARE_DOMAIN:-sammohr.dev}"
+            export TF_VAR_email="''${CLOUDFLARE_ALERT_EMAIL:-sam@sammohr.dev}"
+            export TF_VAR_tunnel_id
+            TF_VAR_tunnel_id=$(jq -er '.TunnelID' "$creds")
+
+            cd "$state"
+            if [ ! -d .terraform ]; then
+              tofu init -input=false
+            fi
+            exec tofu ${action} "$@"
+          '';
+        };
+
+      cloudflarePlan = cloudflareTofu "cloudflare-plan" "plan";
+      cloudflareApply = cloudflareTofu "cloudflare-apply" "apply";
+      cloudflareCommand = cloudflareTofu "cloudflare-tofu" "";
     in
     {
       packages.bootstrap = bootstrap;
@@ -189,6 +242,20 @@
       apps.host-key = {
         type = "app";
         program = "${host-key}/bin/host-key";
+      };
+      # `sudo nix run .#cloudflare-plan` / `..#cloudflare-apply`.
+      apps.cloudflare-plan = {
+        type = "app";
+        program = "${cloudflarePlan}/bin/cloudflare-plan";
+      };
+      apps.cloudflare-apply = {
+        type = "app";
+        program = "${cloudflareApply}/bin/cloudflare-apply";
+      };
+      # `sudo nix run .#cloudflare-tofu -- import <address> <id>` / `state list`.
+      apps.cloudflare-tofu = {
+        type = "app";
+        program = "${cloudflareCommand}/bin/cloudflare-tofu";
       };
     };
 }

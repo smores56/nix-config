@@ -5,8 +5,8 @@
   ];
   nixos = [
     ../nixos/secrets.nix
+    ../nixos/cloudflare-tofu.nix
     ../nixos/web-proxy.nix
-    ../nixos/cloudflare-sync.nix
     ../nixos/immich.nix
     ../nixos/llm.nix
     ../nixos/nvidia.nix

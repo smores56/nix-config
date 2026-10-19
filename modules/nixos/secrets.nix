@@ -18,9 +18,11 @@
     # band, like the secrets it decrypts.
     sops.age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
     # 0400 (sops-nix's default) and root ownership: only the root services that
-    # read them (cloudflared, the reconciler) need access.
+    # read them (cloudflared, OpenTofu, and the alert units) need access.
     sops.secrets = {
-      cf-api-token = { };
+      # One Cloudflare API token: OpenTofu (DNS/Access/Notifications) and the
+      # email alert sender (Email Sending). Root-only; read at runtime.
+      cloudflare-api-token = { };
       cloudflared-credentials = { };
       # The calibre OPDS password, read by the user's calibre-server unit; owned
       # by the user so the 0400 file is readable without root.
@@ -61,18 +63,10 @@
       github-repo-pat = {
         mode = "0400";
       };
-    }
-    // lib.optionalAttrs config.alerting.enable {
-      # JSON {token, account_id, from, to} for Cloudflare Email Service; read by
-      # the root alert units. Declared only when alerting is enabled so a host
-      # can switch before the secret exists.
-      cloudflare-email = { };
     };
 
-    # Repoint the consumers at the decrypted files. The option defaults stay
-    # untouched so every other host still evaluates against the old /var/lib
-    # paths.
-    webProxy.apiTokenFile = config.sops.secrets.cf-api-token.path;
+    # Repoint the tunnel daemon at the decrypted credentials. The API token is
+    # read directly from its sops path by OpenTofu and the alert sender.
     webProxy.credentialsFile = config.sops.secrets.cloudflared-credentials.path;
   };
 }

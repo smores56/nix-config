@@ -1,5 +1,6 @@
-# `tunnelName` is a non-UUID label only: cloudflared resolves the real tunnel
-# UUID from `credentialsFile`, and the reconciler reads it back from that file.
+# Tunnel ingress and the Access requirement assertion. DNS and Access objects
+# are managed by the minimal OpenTofu config in `tofu/`; `tunnelName` is only a
+# label, and the tunnel UUID is read from `credentialsFile`.
 {
   config,
   lib,
@@ -8,17 +9,13 @@
 let
   cfg = config.webProxy;
 
-  # Hostnames that must never be reachable without Access in front of them: a
-  # typo that clears `access.enable` would otherwise publish sshd/the LLM/
-  # SearXNG/ntfy/chat to the internet. The reconciler refuses to *remove* their
-  # Access too (defence in depth, mirroring PROTECTED_SUBDOMAINS in
-  # modules/features/cloudflare/cloudflare_sync.py, which also guards their
-  # ports), but failing evaluation here stops the mistake before anything is
-  # applied. ntfy is listed here as well as in notify.nix so the guard still
-  # holds if notify (whose assertion is gated on its own enable) is ever turned
-  # off. The list is shared with the consistency check via
-  # modules/protected-services.nix.
-  protected = (import ../protected-services.nix).subdomains;
+  # A typo that clears `access.enable` would publish sshd or the LLM to the
+  # internet. OpenTofu owns those two apps and their policies; this assertion
+  # stops the mistake before the tunnel ingress is applied.
+  protected = [
+    "ssh"
+    "llm"
+  ];
 in
 {
   options.webProxy = lib.mkOption {
@@ -33,17 +30,12 @@ in
         tunnelName = lib.mkOption {
           type = lib.types.str;
           default = "smortress";
-          description = "Stable human label for the tunnel. NOT the UUID: cloudflared resolves the real UUID from credentialsFile at runtime, and the reconciler reads it back out of that file. Empty leaves the tunnel daemon off.";
+          description = "Stable human label for the tunnel. NOT the UUID: cloudflared resolves the real UUID from credentialsFile at runtime, and OpenTofu reads it back out of that file. Empty leaves the tunnel daemon off.";
         };
         credentialsFile = lib.mkOption {
           type = lib.types.path;
           default = "/var/lib/cloudflared/credentials.json";
           description = "Path to the tunnel credentials JSON on the host. Kept out of the Nix store; provisioned out-of-band, except on smortress which points this at its sops-decrypted copy.";
-        };
-        apiTokenFile = lib.mkOption {
-          type = lib.types.path;
-          default = "/var/lib/cloudflare/api-token";
-          description = "Path to the scoped Cloudflare API token (Zone:DNS:Write + Access: Apps and Policies:Write) on the host, mode 0600. Read by the reconciler at runtime; never enters the Nix store. smortress points this at its sops-decrypted copy.";
         };
         services = lib.mkOption {
           type = lib.types.attrsOf (
@@ -87,7 +79,7 @@ in
         message = "webProxy.services.${sub} must set access.enable = true: exposing ${sub}.${cfg.domain} over the tunnel without Cloudflare Access would publish it to anyone who learns the hostname.";
       }) protected
       # A Service Auth policy only takes effect when Access is on; without this
-      # the intent is silently dropped by the reconciler.
+      # the intent is silently dropped by the tunnel ingress.
       ++ map (sub: {
         assertion = !cfg.services.${sub}.access.serviceAuth || cfg.services.${sub}.access.enable;
         message = "webProxy.services.${sub} sets access.serviceAuth without access.enable: the Service Auth policy would never be applied.";
