@@ -36,7 +36,7 @@ explicitly. Place files by concern, not by host.
 | `modules/hosts/` | per-host directory: `meta.nix` (host knobs; auto-discovered) + optional `hardware.nix` (nixos-generate-config) and `disko.nix` (declarative disks) |
 | `modules/flake/` | flake-parts modules (configurations, checks, formatter) |
 | `modules/lib/` | helper libraries |
-| `modules/features/ai/` | AI tooling: assistant context, brain (transcript digest, guarded vault commit; its skill is `skills/brain`), maki, providers, sdlc, skills |
+| `modules/features/ai/` | AI tooling: assistant context, brain (transcript digest, guarded vault commit, `brain-run` harvest cursors and the weekday launchd autopilot; its skill is `skills/brain`), maki, providers, sdlc, skills |
 | `modules/features/tv/` | Television repository and worktree cables |
 | `modules/features/photobucket/` | feh-based keyboard photo triage tool + its Python helper |
 | `modules/features/cloudflare/` | Cloudflare Tunnel DNS/Access reconciler (Python helper) + manual `cloudflare-sync` CLI |
