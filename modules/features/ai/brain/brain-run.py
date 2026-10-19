@@ -22,19 +22,34 @@ from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
+ALWAYS_SOURCES = ("sessions", "git")
+# Vault CLAUDE.md `### <heading>` under `## Sources` → source name; unconfigured sources are never waited on.
+CONFIGURED_SOURCES = {
+    "Code host": "github",
+    "Chat": "chat",
+    "Mail": "mail",
+    "Calendar": "calendar",
+    "Issue tracker": "tracker",
+}
+SOURCES = ALWAYS_SOURCES + tuple(CONFIGURED_SOURCES.values())
 LOCAL_SOURCES = ("sessions", "git", "github")
-CONNECTOR_SOURCES = ("chat", "mail", "calendar", "tracker")
-SOURCES = LOCAL_SOURCES + CONNECTOR_SOURCES
 # A long backlog in one run would blow the turn budget and never advance anything.
 DAY_CAP = 5
-# Late-night work belongs to the day it started; matches the skill's "before 04:00" rule.
+# Before this, "today" is still yesterday: the skill's late-night rule.
 ROLLOVER = time(4)
-# Longer than any run can take, so an abandoned claim can't block harvests forever.
+# Longer than the headless run's wall-clock timeout, so only a dead claim is ever taken over.
 STALE_AFTER = timedelta(hours=3)
+# Deep enough for <root>/<host>/<owner>/<repo>.
 REPO_DEPTH = 3
 # Reflog actions that are work; checkouts and resets are navigation.
 GIT_ACTIONS = ("commit", "merge", "pull", "rebase (finish)", "cherry-pick", "revert")
+# Commit subjects and PR titles are one-line labels, not content.
 SUBJECT_CHARS = 200
+# Rows are prompt input; a checkout full of automated commits must not flood the run.
+GIT_ROW_CAP = 500
+GH_LIMIT = 1000
+GH_FIELDS = "url,title,state,isDraft,updatedAt,closedAt"
+GH_ROLES = {"author": "--author=@me", "reviewer": "--reviewed-by=@me", "commenter": "--commenter=@me"}
 TICKET_KEY_RE = re.compile(r"^[A-Z][A-Z0-9]{1,9}$")
 
 
@@ -59,80 +74,111 @@ class Config:
     vault: Path
     state_dir: Path
     repo_roots: tuple[Path, ...] = ()
-    exclude_cwds: tuple[str, ...] = ()
     transcripts: Path = field(default_factory=DIGEST.default_root)
+
+    @property
+    def run_dir(self):
+        # Headless runs work here, so their own transcripts are recognizable and never re-ingested.
+        return self.state_dir / "run"
 
 
 @dataclass(frozen=True)
 class Run:
     nonce: str
     started: str  # aware ISO
-    head0: str
+    head0: str  # "" for a vault with no commits yet
     cursors_read: dict
+    sources: tuple[str, ...]
     days: tuple[str, ...]
-    advance_to: str  # aware ISO: `started`, or the end of the last day when the backlog was capped
+    advance_to: str  # aware ISO: `started`, or the end of the backlog chunk when capped
     truncated: bool
 
 
-# Pure core
+# Pure core (local time throughout: `astimezone()` follows the system zone, DST included)
+
+
+def local(moment):
+    return moment.astimezone()
+
+
+def midnight(day):
+    return DIGEST.day_start(day, None)
 
 
 def work_day(moment):
-    return (moment - timedelta(hours=ROLLOVER.hour, minutes=ROLLOVER.minute)).date()
+    return (local(moment) - timedelta(hours=ROLLOVER.hour, minutes=ROLLOVER.minute)).date()
 
 
-def day_end(day, tz):
-    return datetime.combine(day + timedelta(days=1), ROLLOVER, tzinfo=tz)
-
-
-def plan_days(cursors, default_day, today, tz, cap=DAY_CAP):
-    """Days to rebuild and whether the backlog was cut short."""
-    starts = [work_day(parse_time(cursors[s], tz)) if s in cursors else default_day for s in SOURCES]
+def plan_days(cursors, sources, default_day, today, cap=DAY_CAP):
+    """Days to rebuild, and the cursor target for the run's completed sources (None: the run's start)."""
+    starts = [local(datetime.fromisoformat(cursors[s])).date() if s in cursors else default_day for s in sources]
     start = min(min(starts), today)
     days = [start + timedelta(days=i) for i in range((today - start).days + 1)]
-    return days[:cap], len(days) > cap
+    if len(days) <= cap:
+        return days, None
+    # Today is always rebuilt, so one source that stays down can't freeze the vault in the past.
+    backlog = days[: cap - 1]
+    return backlog + [today], midnight(backlog[-1] + timedelta(days=1))
 
 
 def advance(cursors_now, cursors_read, complete, target):
-    """Move each completed source to target, unless another run moved it since this one read it."""
-    return {
-        **cursors_now,
-        **{s: target for s in complete if cursors_now.get(s) == cursors_read.get(s)},
-    }
+    """Move each completed source forward to target, unless another run moved it since this one read it."""
+
+    def moved(source):
+        current = cursors_now.get(source)
+        unchanged = current == cursors_read.get(source)
+        forward = current is None or datetime.fromisoformat(current) < datetime.fromisoformat(target)
+        return unchanged and forward
+
+    return {**cursors_now, **{s: target for s in complete if moved(s)}}
 
 
-def parse_time(value, tz):
-    moment = datetime.fromisoformat(value)
-    return moment.astimezone(tz) if tz else moment.astimezone()
+def window(days, until):
+    """[first day's midnight, min(until, midnight after the last day))."""
+    first, last = (date.fromisoformat(d) for d in (days[0], days[-1]))
+    return midnight(first), min(local(datetime.fromisoformat(until)), midnight(last + timedelta(days=1)))
 
 
-def window(run, tz):
-    days = [date.fromisoformat(d) for d in run.days]
-    start = datetime.combine(days[0], time.min, tzinfo=tz) if tz else datetime.combine(days[0], time.min).astimezone()
-    return start, min(parse_time(run.started, tz), day_end(days[-1], tz))
+def section(markdown, heading, level=2):
+    marks = "#" * level
+    found = re.search(
+        rf"^{marks} {re.escape(heading)}[ \t]*\n(.*?)(?=^#{{1,{level}}} |\Z)", markdown, re.MULTILINE | re.DOTALL
+    )
+    return found.group(1) if found else None
 
 
 def ticket_prefixes(vault_config):
     """Keys listed one per line under the vault CLAUDE.md's `## Ticket prefixes`."""
-    section = re.search(r"^## Ticket prefixes\n(.*?)(?=^## |\Z)", vault_config, re.MULTILINE | re.DOTALL)
-    lines = section.group(1).splitlines() if section else []
+    lines = (section(vault_config, "Ticket prefixes") or "").splitlines()
     return tuple(line.strip() for line in lines if TICKET_KEY_RE.match(line.strip()))
 
 
-def reflog_rows(repo, lines, start, end, tz):
+def configured_sources(vault_config):
+    """Sessions and git always; the rest only when the vault's `## Sources` has their subsection."""
+    sources = section(vault_config, "Sources")
+    if sources is None:
+        return SOURCES
+    headings = set(re.findall(r"^### (.+?)[ \t]*$", sources, re.MULTILINE))
+    return ALWAYS_SOURCES + tuple(name for heading, name in CONFIGURED_SOURCES.items() if heading in headings)
+
+
+def reflog_rows(repo, lines, start, end):
     rows = []
     for line in lines:
         sha, selector, subject = (line.split("\0") + ["", ""])[:3]
         stamp = re.search(r"@\{(.+)\}", selector)
         if not stamp:
             continue
-        moment = parse_time(stamp.group(1), tz)
-        action, _, rest = subject.partition(": ")
-        if not (start <= moment < end) or not action.startswith(GIT_ACTIONS):
+        moment = local(datetime.fromisoformat(stamp.group(1)))
+        head, _, rest = subject.partition(": ")
+        # Only the verb: the rest of the head can carry a ref name someone else chose.
+        action = next((a for a in GIT_ACTIONS if head.startswith(a)), None)
+        if not (start <= moment < end) or action is None:
             continue
         rows.append(
             {
                 "source": "git",
+                "day": moment.date().isoformat(),
                 "repo": str(repo),
                 "time": moment.isoformat(),
                 "action": action,
@@ -144,7 +190,7 @@ def reflog_rows(repo, lines, start, end, tz):
 
 
 def pr_rows(results_by_role):
-    """Merge `gh search prs` results by URL, keeping every role Sam had on the PR."""
+    """Merge `gh search prs` results by URL, keeping every role the user had on the PR."""
     merged = {}
     for role, results in results_by_role.items():
         for pr in results:
@@ -168,35 +214,60 @@ def pr_rows(results_by_role):
 # Effects
 
 
+# Scanned checkouts are not all trusted: reads must never reach a network helper.
+READ_CONFIG = COMMIT.SAFE_CONFIG + ("protocol.allow=never",)
+
+
 def git(repo, *args, check=True):
-    config = [arg for kv in COMMIT.SAFE_CONFIG for arg in ("-c", kv)]
-    env = {k: v for k, v in os.environ.items() if k not in COMMIT.REPO_ENV}
+    config = [arg for kv in READ_CONFIG for arg in ("-c", kv)]
+    env = {k: v for k, v in os.environ.items() if k not in COMMIT.REPO_ENV} | {"GIT_NO_LAZY_FETCH": "1"}
     return subprocess.run(["git", "-C", str(repo), *config, *args], env=env, check=check, capture_output=True, text=True)
 
 
 def read_json(path, default):
+    # A torn or hand-mangled state file must not wedge every later run.
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError):
         return default
+    return value if isinstance(value, type(default)) or default is None else default
 
 
 def write_json(path, value):
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(json.dumps(value, indent=2) + "\n")
+        f.flush()
+        os.fsync(f.fileno())
     tmp.replace(path)
 
 
 @contextlib.contextmanager
 def locked(state_dir):
-    state_dir.mkdir(parents=True, exist_ok=True)
-    with open(state_dir / "lock", "w") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
+    state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd = os.open(state_dir / "lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
         yield
+    finally:
+        os.close(fd)
+
+
+def vault_config(config):
+    path = config.vault / "CLAUDE.md"
+    return path.read_text(encoding="utf-8") if path.is_file() else ""
 
 
 def vault_dirty(vault):
+    # `git status` re-hashes changed files through any filter driver; brain-commit refuses those too.
+    if filters := git(vault, "config", "--get-regexp", r"^filter\.", check=False).stdout.split():
+        raise Refused(f"vault config defines filter drivers ({filters[0]}); remove them")
     return COMMIT.changed_paths(git(vault, "status", "--porcelain=v1", "-z", "--untracked-files=all").stdout)
+
+
+def vault_head(vault):
+    head = git(vault, "rev-parse", "--verify", "-q", "HEAD", check=False)
+    return head.stdout.strip() if head.returncode == 0 else ""
 
 
 def newest_daily(vault):
@@ -205,27 +276,29 @@ def newest_daily(vault):
 
 
 def load_run(record):
-    return Run(**{**record, "days": tuple(record["days"])})
+    return Run(**{**record, "days": tuple(record["days"]), "sources": tuple(record["sources"])})
 
 
-def begin(config, now, tz=None):
+def begin(config, now):
     with locked(config.state_dir):
         active = read_json(config.state_dir / "active.json", None)
-        if active and now - parse_time(active["started"], tz) < STALE_AFTER:
+        if active and now - datetime.fromisoformat(active["started"]) < STALE_AFTER:
             raise Refused(f"run {active['nonce']} started {active['started']} is still in progress")
         if dirty := vault_dirty(config.vault):
             raise Refused("vault has uncommitted changes: " + ", ".join(sorted(set(dirty))))
         cursors = read_json(config.state_dir / "cursors.json", {})
+        sources = configured_sources(vault_config(config))
         today = work_day(now)
-        days, truncated = plan_days(cursors, newest_daily(config.vault) or today, today, tz)
+        days, capped_at = plan_days(cursors, sources, newest_daily(config.vault) or today, today)
         run = Run(
             nonce=secrets.token_hex(8),
-            started=now.isoformat(),
-            head0=git(config.vault, "rev-parse", "HEAD").stdout.strip(),
+            started=local(now).isoformat(),
+            head0=vault_head(config.vault),
             cursors_read=cursors,
+            sources=sources,
             days=tuple(d.isoformat() for d in days),
-            advance_to=(day_end(days[-1], tz) if truncated else now).isoformat(),
-            truncated=truncated,
+            advance_to=(capped_at or local(now)).isoformat(),
+            truncated=capped_at is not None,
         )
         write_json(config.state_dir / "active.json", asdict(run))
         return run
@@ -233,27 +306,35 @@ def begin(config, now, tz=None):
 
 def active_run(config, nonce):
     active = read_json(config.state_dir / "active.json", None)
-    if not active or active["nonce"] != nonce:
+    if not active or active.get("nonce") != nonce:
         raise Refused(f"run {nonce} is not the active run")
     return load_run(active)
 
 
-def finish(config, nonce, complete):
-    """Release the run; advance `complete` sources only if the vault holds this run's work committed."""
-    if unknown := sorted(set(complete) - set(SOURCES)):
-        raise Refused("unknown sources: " + ", ".join(unknown))
+def now_or(clock):
+    return local(clock() if clock else datetime.now())
+
+
+def finish(config, nonce, complete, clock=None):
+    """Release the run; advance `complete` sources only if the vault's changes are all committed on top of its start."""
     with locked(config.state_dir):
         run = active_run(config, nonce)
+        if unknown := sorted(set(complete) - set(run.sources)):
+            raise Refused("not sources of this run: " + ", ".join(unknown))
         (config.state_dir / "active.json").unlink()
         if dirty := vault_dirty(config.vault):
             raise Refused("vault has uncommitted changes, nothing advanced: " + ", ".join(sorted(set(dirty))))
-        if git(config.vault, "merge-base", "--is-ancestor", run.head0, "HEAD", check=False).returncode != 0:
+        head = vault_head(config.vault)
+        if run.head0 and git(config.vault, "merge-base", "--is-ancestor", run.head0, head or "HEAD", check=False).returncode:
             raise Refused("vault history no longer contains the run's starting commit, nothing advanced")
+        # A run that committed nothing proves nothing; its days are simply rebuilt next time.
+        committed = head and head != run.head0
+        target = min(datetime.fromisoformat(run.advance_to), now_or(clock)).isoformat()
         now = read_json(config.state_dir / "cursors.json", {})
-        updated = advance(now, run.cursors_read, complete, run.advance_to)
+        updated = advance(now, run.cursors_read, complete if committed else [], target)
         write_json(config.state_dir / "cursors.json", updated)
-        moved = [s for s in SOURCES if updated.get(s) != now.get(s)]
-        return {"advanced": moved, "held": [s for s in SOURCES if s not in moved]}
+        moved = [s for s in run.sources if updated.get(s) != now.get(s)]
+        return {"advanced": moved, "held": [s for s in run.sources if s not in moved]}
 
 
 def find_repos(roots):
@@ -276,29 +357,33 @@ def find_repos(roots):
     return sorted(found)
 
 
-def worktrees(repo):
-    out = git(repo, "worktree", "list", "--porcelain", check=False).stdout
-    return [Path(line[len("worktree ") :]) for line in out.splitlines() if line.startswith("worktree ")] or [repo]
+def worktrees(repo, roots):
+    """The repo's worktrees that live under a scan root; a stale or planted entry can point anywhere."""
+    out = git(repo, "worktree", "list", "--porcelain", "-z", check=False).stdout
+    paths = [Path(f[len("worktree ") :]) for f in out.split("\0") if f.startswith("worktree ")] or [repo]
+    resolved = [Path(r).expanduser().resolve() for r in roots]
+    return [p for p in paths if any(p.resolve().is_relative_to(r) for r in resolved)]
 
 
-def collect_git(config, run, tz):
-    start, end = window(run, tz)
+def collect_git(config, days, until):
+    start, end = window(days, until)
     rows = []
     for repo in find_repos(config.repo_roots):
-        for tree in worktrees(repo):
+        for tree in worktrees(repo, config.repo_roots):
             out = git(tree, "log", "-g", "--date=iso-strict", "--format=%H%x00%gd%x00%gs", "HEAD", check=False).stdout
-            rows += reflog_rows(tree, out.splitlines(), start, end, tz)
-    return sorted(rows, key=lambda r: r["time"])
+            # Only newline frames an entry; splitlines() would also break on separators inside a subject.
+            rows += reflog_rows(tree, out.split("\n"), start, end)
+    rows.sort(key=lambda r: datetime.fromisoformat(r["time"]))
+    if len(rows) <= GIT_ROW_CAP:
+        return rows
+    return rows[:GIT_ROW_CAP] + [{"source": "git", "truncated": len(rows) - GIT_ROW_CAP}]
 
 
-GH_FIELDS = "url,title,state,isDraft,updatedAt,closedAt"
-GH_ROLES = {"author": "--author=@me", "reviewer": "--reviewed-by=@me", "commenter": "--commenter=@me"}
-
-
-def collect_github(run, gh):
-    since = run.days[0]
+def collect_github(days, until, gh):
+    start, end = window(days, until)
+    span = f"--updated={start.isoformat(timespec='seconds')}..{end.isoformat(timespec='seconds')}"
     results = {
-        role: json.loads(gh(["search", "prs", flag, f"--updated=>={since}", "--limit", "100", "--json", GH_FIELDS]))
+        role: json.loads(gh(["search", "prs", flag, span, "--limit", str(GH_LIMIT), "--json", GH_FIELDS]))
         for role, flag in GH_ROLES.items()
     }
     return pr_rows(results)
@@ -308,68 +393,76 @@ def run_gh(args):
     return subprocess.run(["gh", *args], check=True, capture_output=True, text=True).stdout
 
 
-def collect_sessions(config, run):
-    vault_config = (config.vault / "CLAUDE.md").read_text(encoding="utf-8") if (config.vault / "CLAUDE.md").exists() else ""
-    opts = DIGEST.Options(ticket_prefixes=ticket_prefixes(vault_config), exclude_cwds=config.exclude_cwds)
+def collect_sessions(config, days):
+    opts = DIGEST.Options(
+        ticket_prefixes=ticket_prefixes(vault_config(config)), exclude_cwds=(str(config.run_dir),)
+    )
     return [
         {"source": "sessions", "day": day, **row}
-        for day in run.days
+        for day in days
         for row in DIGEST.digest(config.transcripts, date.fromisoformat(day), None, opts)
     ]
 
 
-def collect(config, run, source, tz=None, gh=run_gh):
+def collect(config, source, days, until, gh=run_gh):
     if source == "sessions":
-        return collect_sessions(config, run)
+        return collect_sessions(config, days)
     if source == "git":
-        return collect_git(config, run, tz)
+        return collect_git(config, days, until)
     if source == "github":
-        return collect_github(run, gh)
+        return collect_github(days, until, gh)
     raise Refused(f"{source} is not a local source; the harvesting model reads it")
 
 
 # CLI
 
 
-def load_config(path):
-    raw = read_json(Path(path).expanduser(), None)
-    if raw is None:
-        raise Refused(f"no config at {path}")
-    return Config(
-        vault=Path(raw["vault"]).expanduser(),
-        state_dir=Path(raw["state_dir"]).expanduser(),
-        repo_roots=tuple(Path(p).expanduser() for p in raw.get("repo_roots", [])),
-        exclude_cwds=tuple(str(Path(p).expanduser()) for p in raw.get("exclude_cwds", [])),
-    )
+def env_paths(name):
+    return tuple(Path(p).expanduser() for p in os.environ.get(name, "").split(os.pathsep) if p)
 
 
 def main(argv=None, now=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--config", default="~/.config/brain/autopilot.json")
+    parser.add_argument("--vault", type=Path, default=Path(os.environ.get("BRAIN_DIR", "~/brain")))
+    parser.add_argument("--state-dir", type=Path, default=Path(os.environ.get("BRAIN_STATE_DIR", "~/.local/state/brain")))
+    parser.add_argument(
+        "--repo-root", type=Path, action="append", help="dir to scan for git checkouts (default: $BRAIN_REPO_ROOTS)"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("begin", help="claim a run; prints its days and nonce")
-    p_collect = sub.add_parser("collect", help="print a local source's rows for the run as JSON lines")
-    p_collect.add_argument("--run", required=True)
+    sub.add_parser("begin", help="claim a run; prints its nonce, sources, and days")
+    p_collect = sub.add_parser("collect", help="print a local source's rows as JSON lines")
     p_collect.add_argument("--source", required=True, choices=LOCAL_SOURCES)
+    scope = p_collect.add_mutually_exclusive_group(required=True)
+    scope.add_argument("--run", help="the active run's days")
+    scope.add_argument("--day", type=date.fromisoformat, action="append", help="an explicit day, outside any run")
     p_finish = sub.add_parser("finish", help="release the run, advancing completed sources")
     p_finish.add_argument("--run", required=True)
     p_finish.add_argument("--complete", default="", help="comma-separated sources the run fully harvested")
     args = parser.parse_args(argv)
 
+    now = now or datetime.now().astimezone()
+    config = Config(
+        vault=args.vault.expanduser(),
+        state_dir=args.state_dir.expanduser(),
+        repo_roots=tuple(p.expanduser() for p in args.repo_root) if args.repo_root else env_paths("BRAIN_REPO_ROOTS"),
+    )
     try:
-        config = load_config(args.config)
         if args.command == "begin":
-            run = begin(config, now or datetime.now().astimezone())
-            print(json.dumps({"run": run.nonce, "days": run.days, "truncated": run.truncated, "sources": SOURCES}))
+            run = begin(config, now)
+            print(json.dumps({"run": run.nonce, "sources": run.sources, "days": run.days, "truncated": run.truncated}))
         elif args.command == "collect":
-            with locked(config.state_dir):
-                run = active_run(config, args.run)
-            for row in collect(config, run, args.source):
+            if args.run:
+                with locked(config.state_dir):
+                    run = active_run(config, args.run)
+                days, until = run.days, run.started
+            else:
+                days, until = tuple(sorted(d.isoformat() for d in set(args.day))), now.isoformat()
+            for row in collect(config, args.source, days, until):
                 print(json.dumps(row, ensure_ascii=False))
         else:
             complete = [s for s in args.complete.split(",") if s]
-            print(json.dumps(finish(config, args.run, complete)))
-    except (Refused, subprocess.CalledProcessError) as err:
+            print(json.dumps(finish(config, args.run, complete, clock=lambda: now)))
+    except (Refused, OSError, subprocess.CalledProcessError) as err:
         detail = err.stderr.strip() if isinstance(err, subprocess.CalledProcessError) and err.stderr else err
         print(f"brain-run: refused: {detail}", file=sys.stderr)
         return 1

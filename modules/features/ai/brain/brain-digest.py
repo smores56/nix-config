@@ -49,6 +49,9 @@ SECRET_RE = re.compile(
     r"|xox[abprs]-[A-Za-z0-9-]{10,}"
     r"|AKIA[0-9A-Z]{16}"
     r"|sk-[A-Za-z0-9_-]{20,}"
+    r"|[sr]k_(?:live|test)_[A-Za-z0-9]{16,}"
+    r"|AIza[0-9A-Za-z_-]{35}"
+    r"|glpat-[A-Za-z0-9_-]{20,}"
     r"|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"
     r"|-----BEGIN [A-Z ]+-----"
 )
@@ -91,7 +94,8 @@ def localize(ts, tz):
 
 
 def clean(text):
-    return SECRET_RE.sub("[REDACTED]", CTRL_RE.sub("", ENVELOPE_RE.sub("", text))).strip()
+    # Controls go first: one inside a tag name would hide the tag from the envelope pass.
+    return SECRET_RE.sub("[REDACTED]", ENVELOPE_RE.sub("", CTRL_RE.sub("", text))).strip()
 
 
 def truncate(text, limit):
