@@ -23,6 +23,10 @@ from the configuration: add an anchor (`<!-- manual-step: <kind>/<id> -->`) with
 real instructions for every new item, remove anchors for deleted items, and keep
 the file free of `TODO`/`TBD`.
 
+The `justfile` is the command index. Point users at `just --list` instead of
+duplicating commands in prose; add a recipe there when an operation becomes a
+routine.
+
 ## Where things go
 
 Modules are composed by profiles, not auto-imported. `modules/flake/configurations.nix`
@@ -127,6 +131,8 @@ decrypts its own secrets on first boot.
   `checks.brain-leak-guard` enforces this.
 
 ## Verification
+
+`just --list` is the command index; the checks below are what its recipes wrap.
 
 After any change, verify at minimum:
 

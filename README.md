@@ -41,6 +41,10 @@ datasets, public services, flake apps, and alerts — live in
 fails when the configuration gains an item without a matching anchor, or when
 the document drifts ahead of the configuration.
 
+The command index is the [`justfile`](justfile): run `just --list` (or bare
+`just`) for checks, formatting, switches, install/bootstrap, Cloudflare
+plan/apply, backup status, and the restore drill.
+
 ## Installation
 
 ### Fresh machine (requires only Nix)
