@@ -115,7 +115,9 @@ in
         # One stable name: copy never deletes, so dated names would accumulate
         # a full dump per run locally and offsite forever. Overwrites keep the
         # previous revision in the local versions/ tree; Proton holds the latest.
-        cp "$dump" "$BACKUP_CURRENT/db/immich.dump"
+        # Stage then rename so a concurrent read never sees a partial dump.
+        cp "$dump" "$BACKUP_CURRENT/db/immich.dump.tmp"
+        mv "$BACKUP_CURRENT/db/immich.dump.tmp" "$BACKUP_CURRENT/db/immich.dump"
       '';
     };
     backup.datasets.Music = {
