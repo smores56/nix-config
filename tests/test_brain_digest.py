@@ -405,6 +405,49 @@ class ParseAndDigestTests(unittest.TestCase):
             (row,) = self.bd.digest(root, DAY, UTC, self.bd.Options())
         self.assertEqual((row["kind"], row["title"], row["agent_type"]), ("subagent", None, None))
 
+    def test_sessions_run_entirely_inside_an_excluded_cwd_are_dropped(self):
+        # The autopilot's own headless runs must never come back as Sam's words.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.write_session(
+                root / "-run" / "headless.jsonl", [user("harvest", ts="2026-10-07T08:00:00Z", cwd="/state/run/x")]
+            )
+            self.write_session(root / "-proj" / "mine.jsonl", [user("hi", ts="2026-10-07T09:00:00Z")])
+            opts = self.bd.Options(exclude_cwds=("/state/run",))
+            got = self.bd.digest(root, DAY, UTC, opts)
+        self.assertEqual([s["session_id"] for s in got], ["mine"])
+
+    def test_a_session_that_also_left_the_excluded_cwd_is_kept(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            records = [
+                user("start", ts="2026-10-07T08:00:00Z", cwd="/state/run"),
+                user("moved", ts="2026-10-07T08:10:00Z", cwd="/repo"),
+            ]
+            self.write_session(root / "-run" / "mixed.jsonl", records)
+            opts = self.bd.Options(exclude_cwds=("/state/run",))
+            got = self.bd.digest(root, DAY, UTC, opts)
+        self.assertEqual([s["session_id"] for s in got], ["mixed"])
+
+    def test_exclusion_matches_whole_path_components(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.write_session(
+                root / "-proj" / "a.jsonl", [user("hi", ts="2026-10-07T08:00:00Z", cwd="/state/runner")]
+            )
+            opts = self.bd.Options(exclude_cwds=("/state/run",))
+            got = self.bd.digest(root, DAY, UTC, opts)
+        self.assertEqual(len(got), 1)
+
+    def test_cli_exclude_cwd_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.write_session(root / "-run" / "a.jsonl", [user("x", ts="2026-10-07T08:00:00Z", cwd="/state/run")])
+            out = io.StringIO()
+            with redirect_stdout(out):
+                self.bd.main(["--root", tmp, "--date", "2026-10-07", "--utc", "--exclude-cwd", "/state/run"])
+        self.assertEqual(out.getvalue(), "")
+
     def test_cli_prints_json_lines(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

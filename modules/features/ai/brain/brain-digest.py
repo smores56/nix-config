@@ -62,6 +62,7 @@ class Options:
     max_reply_chars: int = 600
     max_title_chars: int = 120
     ticket_prefixes: tuple[str, ...] = ()
+    exclude_cwds: tuple[str, ...] = ()
 
 
 def parse_records(lines):
@@ -285,6 +286,12 @@ def to_row(summary, transcript, meta, opts):
     }
 
 
+def is_excluded(row, opts):
+    # Sessions that never left an excluded dir are automated runs, not Sam's work.
+    cwds = [PurePath(c) for c in row["cwds"]]
+    return bool(cwds) and all(any(c.is_relative_to(ex) for ex in opts.exclude_cwds) for c in cwds)
+
+
 def day_start(day, tz):
     return datetime.combine(day, time.min, tzinfo=tz) if tz else datetime.combine(day, time.min).astimezone()
 
@@ -307,7 +314,7 @@ def digest(root, day, tz, opts):
             print(f"brain-digest: skipping {path}: {err}", file=sys.stderr)
             return None
 
-    sessions = [s for s in map(load, transcripts(root)) if s]
+    sessions = [s for s in map(load, transcripts(root)) if s and not is_excluded(s, opts)]
     return sorted(sessions, key=lambda s: datetime.fromisoformat(s["start"]))
 
 
@@ -324,11 +331,14 @@ def main(argv=None):
     parser.add_argument(
         "--ticket-prefix", action="append", default=[], help="only keep tickets with this key prefix"
     )
+    parser.add_argument(
+        "--exclude-cwd", action="append", default=[], help="drop sessions that only ran under this dir"
+    )
     args = parser.parse_args(argv)
 
     tz = timezone.utc if args.utc else None
     day = args.date or datetime.now(tz).astimezone(tz).date()
-    opts = Options(ticket_prefixes=tuple(args.ticket_prefix))
+    opts = Options(ticket_prefixes=tuple(args.ticket_prefix), exclude_cwds=tuple(args.exclude_cwd))
     for session in digest(args.root, day, tz, opts):
         print(json.dumps(session, ensure_ascii=False))
     return 0
