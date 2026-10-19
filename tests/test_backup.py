@@ -320,6 +320,45 @@ class BackupTests(unittest.TestCase):
         self.mod.run_backup(base_cfg, DATE, run=run, lock=False, out=lambda _s: None)
         self.assertFalse(os.path.exists(self.mod.marker_path(base_cfg)))
 
+    def test_last_success_written_on_verified_run(self):
+        c = cfg(self.mod, self.base, offsite=False, source=str(self.src))
+
+        def run(argv, capture=False, env=None):
+            if "copy" in argv:
+                return json.dumps({"msg": "Copied (new)", "object": "one.bin"})
+            if "check" in argv:
+                return "Checks: 1 / 1, 100%\n0 differences found"
+            return ""
+
+        self.mod.run_backup(c, DATE, run=run, lock=False, out=lambda _s: None)
+        last = self.mod.last_success_path(c)
+        self.assertTrue(os.path.exists(last))
+        self.assertGreater(os.path.getsize(last), 0)
+
+    def test_last_success_written_on_safe_no_change_run(self):
+        # A no-change run skips the check, but the mirror is unchanged since the
+        # last verified run; the freshness timer must not false-alarm.
+        c = cfg(self.mod, self.base, offsite=False, source=str(self.src))
+
+        def run(argv, capture=False, env=None):
+            return ""
+
+        self.mod.run_backup(c, DATE, run=run, lock=False, out=lambda _s: None)
+        self.assertTrue(os.path.exists(self.mod.last_success_path(c)))
+
+    def test_last_success_suppressed_while_marker_exists(self):
+        c = cfg(self.mod, self.base, offsite=False, source=str(self.src))
+        os.makedirs(os.path.dirname(self.mod.marker_path(c)), exist_ok=True)
+        with open(self.mod.marker_path(c), "w") as handle:
+            handle.write("stale")
+
+        def run(argv, capture=False, env=None):
+            return ""
+
+        self.mod.run_backup(c, DATE, run=run, lock=False, out=lambda _s: None)
+        self.assertTrue(os.path.exists(self.mod.marker_path(c)))
+        self.assertFalse(os.path.exists(self.mod.last_success_path(c)))
+
     def test_local_check_verifies_the_mirror_against_the_source(self):
         # With no offsite leg the marker must still mean "verified", so the check
         # compares the source into the local mirror, one-way: the mirror may hold

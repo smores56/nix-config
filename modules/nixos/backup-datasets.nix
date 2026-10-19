@@ -23,6 +23,12 @@ let
   # The source default lives here once so the watcher and the driver agree.
   sourceOf =
     name: dataset: if dataset.source != null then dataset.source else "/var/lib/media/${name}";
+  # The generated postgres pre-unit writes one dump per dataset here. The
+  # backup unit copies it into the dataset's current/db and fails if it is
+  # stale; keeping the dump outside the source tree means the unit needs no
+  # write access to /var/backup and the postgres user never sees the mirror.
+  pgDumpDir = "/var/lib/postgresql/backups";
+  pgDumpFile = name: "${pgDumpDir}/${lib.toLower name}.dump";
   # systemd.path cannot watch recursively, so the watcher writes into this queue
   # and `DirectoryNotEmpty=` (re-checked after each run) starts the backup unit.
   queueDir = name: "/run/backup-watch/${lib.toLower name}";
@@ -116,6 +122,53 @@ let
       ]) dataset.excludes
     );
 
+  mkDumpService =
+    name: dataset:
+    let
+      dump = pgDumpFile name;
+      script = pkgs.writeShellScript "backup-${lib.toLower name}-dump" ''
+        set -euo pipefail
+        tmp=${lib.escapeShellArg (dump + ".tmp")}
+        trap 'rm -f "$tmp"' EXIT
+        ${config.services.postgresql.package}/bin/pg_dump -Fc --no-owner ${lib.escapeShellArg dataset.postgresDatabase} > "$tmp"
+        mv "$tmp" ${lib.escapeShellArg dump}
+      '';
+    in
+    {
+      description = "Dump PostgreSQL (${dataset.postgresDatabase}) for ${name} backup";
+      after = [ "postgresql.service" ];
+      requires = [ "postgresql.service" ];
+      # The backup unit copies the dump into current/db; keeping the dump out of
+      # /var/backup means postgres needs write access only to its own directory.
+      path = [
+        pkgs.coreutils
+        pkgs.bash
+        config.services.postgresql.package
+      ];
+      serviceConfig = {
+        Type = "oneshot";
+        User = "postgres";
+        Group = "postgres";
+        ExecStart = script;
+        TimeoutStartSec = "1h";
+        NoNewPrivileges = true;
+        PrivateTmp = true;
+        ProtectHome = true;
+        ProtectSystem = "strict";
+        ReadWritePaths = [ pgDumpDir ];
+        ProtectKernelTunables = true;
+        ProtectKernelModules = true;
+        ProtectControlGroups = true;
+        ProtectClock = true;
+        ProtectHostname = true;
+        RestrictSUIDSGID = true;
+        RestrictRealtime = true;
+        LockPersonality = true;
+        # pg_dump uses the local Unix socket; no network is needed.
+        RestrictAddressFamilies = [ "AF_UNIX" ];
+      };
+    };
+
   mkService =
     name: dataset: fullCheck:
     let
@@ -139,7 +192,11 @@ let
       unitConfig.RequiresMountsFor = [ cfg.mountPoint ];
       # Only a dataset whose preBackup dumps Postgres needs the server (and must
       # not race a DB restart at boot); a generic dataset must not depend on it.
-      after = lib.optional dataset.postgres "postgresql.service";
+      after =
+        lib.optional dataset.postgres "postgresql.service"
+        ++ lib.optional dataset.postgres "${unitName name}-dump.service";
+      # Start the dump unit with this run and fail the run if the dump fails.
+      requires = lib.optional dataset.postgres "${unitName name}-dump.service";
       # Only reference the handler when notify is enabled; otherwise the template
       # unit does not exist and a failure logs a dead-job error instead of a push.
       onFailure = lib.optional config.dotfiles.notify.enable config.dotfiles.notify.unit;
@@ -263,7 +320,10 @@ in
       }
     ]
     ++ lib.mapAttrsToList (name: dataset: {
-      # The driver's rclone stats cadence is 30s; a stall budget below two
+      assertion = !dataset.postgres || dataset.preBackup != null;
+      message = "dotfiles.backup.datasets.${name}.postgres requires a preBackup snippet that copies ${pgDumpFile name} into BACKUP_CURRENT/db.";
+    }) cfg.datasets
+    ++ lib.mapAttrsToList (name: dataset: {
       # cadences can trip on a slow-but-alive transfer. "0" disables the watchdog.
       # parseDurationSeconds accepts a far broader grammar (words, compounds,
       # spaces) than the driver's parse_duration (`\d+[smhd]?`), so guard the
@@ -300,6 +360,9 @@ in
     systemd.tmpfiles.rules = [
       "f /run/lock/media-backup.lock 0600 root root -"
     ]
+    ++ lib.optional (lib.any (dataset: dataset.postgres) (
+      lib.attrValues cfg.datasets
+    )) "d ${pgDumpDir} 0700 postgres postgres -"
     ++ lib.mapAttrsToList (name: _: "d ${queueDir name} 0700 root root -") (
       lib.filterAttrs (_: dataset: dataset.onChange.enable) cfg.datasets
     );
@@ -320,7 +383,10 @@ in
       ) (lib.filterAttrs (_: dataset: dataset.fullCheckSchedule != null) cfg.datasets)
       // lib.mapAttrs' (
         name: dataset: lib.nameValuePair "${unitName name}-watch" (mkWatchService name dataset)
-      ) (lib.filterAttrs (_: dataset: dataset.onChange.enable) cfg.datasets);
+      ) (lib.filterAttrs (_: dataset: dataset.onChange.enable) cfg.datasets)
+      // lib.mapAttrs' (
+        name: dataset: lib.nameValuePair "${unitName name}-dump" (mkDumpService name dataset)
+      ) (lib.filterAttrs (_: dataset: dataset.postgres) cfg.datasets);
 
     # DirectoryNotEmpty is re-checked after the backup service exits, so a
     # change during a run leaves a request behind and triggers exactly one more

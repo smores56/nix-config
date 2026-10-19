@@ -264,6 +264,10 @@ def marker_path(cfg):
     return os.path.join(cfg.backup_root, cfg.name, "BACKUP-FAILED")
 
 
+def last_success_path(cfg):
+    return os.path.join(cfg.backup_root, cfg.name, "BACKUP-LAST-SUCCESS")
+
+
 def _exclude_flags(cfg):
     """rclone --exclude flags, shared by both copies and the check.
 
@@ -843,6 +847,22 @@ def run_backup(
             # run: a skipped check must not erase a prior failure's evidence.
             # Remove inside the lock so a concurrent run cannot interleave.
             os.remove(marker_path(cfg))
+        if not dry_run and (verified or not os.path.exists(marker_path(cfg))):
+            # A skipped check is safe only when the copy moved nothing; in that
+            # case the mirror is unchanged since the last verified run. A prior
+            # failure marker still suppresses the success timestamp.
+            try:
+                with open(last_success_path(cfg), "w") as handle:
+                    handle.write(
+                        datetime.datetime.now(datetime.timezone.utc).isoformat() + "\n"
+                    )
+            except OSError as error:
+                # The backup itself succeeded; the freshness timer will alert if
+                # the timestamp cannot be updated.
+                print(
+                    f"backup: could not write last-success marker: {error}",
+                    file=sys.stderr,
+                )
     except Exception as error:
         if not dry_run:
             try:

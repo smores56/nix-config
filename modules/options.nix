@@ -349,7 +349,12 @@ in
                   postgres = lib.mkOption {
                     type = lib.types.bool;
                     default = false;
-                    description = "Whether preBackup dumps PostgreSQL: puts the server's package on the unit PATH and orders the unit after postgresql.service.";
+                    description = "Whether this dataset has a generated PostgreSQL dump pre-unit: puts the server's package on the backup unit PATH, orders it after postgresql.service, and starts the dump unit first.";
+                  };
+                  postgresDatabase = lib.mkOption {
+                    type = lib.types.str;
+                    default = "immich";
+                    description = "Database dumped by the generated PostgreSQL pre-unit for this dataset.";
                   };
                   excludes = lib.mkOption {
                     type = lib.types.listOf lib.types.str;

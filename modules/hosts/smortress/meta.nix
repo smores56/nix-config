@@ -108,8 +108,9 @@ in
       schedule = "*-*-* 03:00:00";
       fullCheckSchedule = "Sun *-*-* 06:00:00";
       timeout = "2h";
-      # preBackup dumps Postgres, so the unit gets pg_dump on PATH and orders
-      # after postgresql.service. `excludes` REPLACES the option default, so
+      # A generated pre-unit dumps Postgres as the postgres user (NNP on, no
+      # runuser); this snippet copies that dump into the mirror and fails if the
+      # dump is missing or stale. `excludes` REPLACES the option default, so
       # the cache/credential patterns are repeated here alongside the two
       # regenerable Immich derived trees (thumbs, encoded-video) that Immich
       # rebuilds from the originals and that need not occupy a mirror.
@@ -131,15 +132,13 @@ in
         ];
       };
       preBackup = ''
+        dump=/var/lib/postgresql/backups/photos.dump
+        test -s "$dump" || { echo "missing PostgreSQL dump: $dump"; exit 1; }
+        now=$(date +%s)
+        mtime=$(stat -c %Y "$dump")
+        [ $((now - mtime)) -le 3600 ] || { echo "stale PostgreSQL dump: $dump"; exit 1; }
         mkdir -p "$BACKUP_CURRENT/db"
-        tmp="$BACKUP_CURRENT/db/.immich-$BACKUP_DATE.tmp"
-        # A dump killed mid-write must not leave a partial .tmp for the mirror
-        # to pick up, so clean it on any exit or terminating signal.
-        trap 'rm -f "$tmp"' EXIT
-        trap 'rm -f "$tmp"; exit 1' TERM INT
-        runuser -u postgres -- pg_dump -Fc --no-owner immich > "$tmp" \
-          && mv "$tmp" "$BACKUP_CURRENT/db/immich-$BACKUP_DATE.dump" \
-          || exit 1
+        cp "$dump" "$BACKUP_CURRENT/db/immich-$BACKUP_DATE.dump"
       '';
     };
     backup.datasets.Music = {
