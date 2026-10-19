@@ -11,7 +11,7 @@ let
   workHostLines = lib.optionals (cfg.workHost && flatRepos != null) [
     "- This is a work host: work checkouts live flat in `${flatRepos.dir}`${
       lib.optionalString (flatRepos.envVar != null) " (`\$${flatRepos.envVar}`)"
-    }, and `${cfg.codeRoot}/github.com/<owner>` links there for owners matching `${cfg.work.githubOwnerGlob}`, so repo and worktree paths may print under `${flatRepos.dir}`; clone with `repos get` as usual"
+    }, and `${cfg.codeRoot}/github.com/<owner>` links there on demand when `repos get` first fetches an owner matching `${cfg.work.githubOwnerGlob}`, so repo and worktree paths may print under `${flatRepos.dir}`; clone with `repos get` as usual"
     "- The work tooling's shell functions and aliases come from `~/.zshrc`, which this host's interactive zsh loads; if your shell didn't (e.g. a non-interactive or other shell), run them as `zsh -ic '<function> && <command>'` so the env a function exports reaches the command"
   ];
 

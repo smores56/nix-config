@@ -360,11 +360,9 @@ appears outside those option values.
   and `repos list` shows each checkout once. The owner is linked on demand by
   `repos get`, so no owner name is baked into the config. `flatRepos.envVar`
   is exported for the tooling.
-- **Links are created on switch** for empty dirs (and `.DS_Store`-only ones)
-  among owners already present. An org dir that already holds checkouts is
-  reported, never moved; run `work-repo-links --migrate` to move its entries
-  into the flat folder (refusing name collisions, repairing worktrees) and
-  link it.
+- **Links are created on demand** by `repos get` before a work clone. An org
+  dir that already exists as a real directory is not converted; move its
+  checkouts into the flat folder manually once.
 - **zsh is the shell** (`dotfiles.shell` follows `workHost`; fish isn't
   enabled). HM owns `$ZDOTDIR` (`~/.config/zsh`, set from `~/.zshenv`) and
   sources the tooling-owned plain `~/.zshrc` right after compinit, so its

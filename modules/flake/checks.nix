@@ -148,7 +148,6 @@ in
             };
             worktrees-branch-template.args = [ (homeExe "worktrees") ];
             repos-list-links.args = [ (homeExe "repos") ];
-            work-repo-links.args = [ (lib.getExe (import ../lib/work-repo-links.nix { inherit pkgs; })) ];
             brain-leak-guard = {
               tools = [ ];
               args = [ "${src}" ] ++ employerIdentifiers;

@@ -100,10 +100,6 @@ let
     '';
   };
 
-  hunk = pkgs.writeShellScriptBin "hunk" ''
-    export PATH="${pkgs.nodejs_24}/bin:$PATH"
-    exec npx hunkdiff "$@"
-  '';
 in
 {
   home.activation.sshAllowedSigners = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
@@ -116,9 +112,6 @@ in
     delta
     git-lfs
     difftastic
-    jujutsu
-    lazyjj
-    hunk
   ];
 
   home.file.".gitignore".text = ''

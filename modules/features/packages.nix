@@ -25,7 +25,6 @@
         eza
         fd
         ripgrep
-        glow
         television
 
         # data interaction
@@ -36,20 +35,16 @@
         ouch
         zip
         unzip
-        lazysql
 
         # documents
         poppler-utils
 
         # environment management
-        _1password-cli
         just
 
         # monitoring
         dua
-        tokei
         bottom
-        watchexec
         lsof
 
         # languages
@@ -59,7 +54,6 @@
         deno
         bun
         nodejs_24
-        typst
         cargo
         tree-sitter
 
@@ -68,7 +62,6 @@
         pkg-config
         openssl.dev
         libiconv
-        wabt
       ]
       ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
         pkgs.apple-sdk_15
@@ -78,19 +71,10 @@
         # fun stuff
         cbonsai
         musikcube
-        clock-rs
-        ttyper
 
         # TUI utilities
         gum
-
-        # container tools
-        lazydocker
-        docker-compose
       ]
-      ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [
-        concord
-        odin
-      ];
+      ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ concord ];
   };
 }
