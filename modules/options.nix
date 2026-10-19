@@ -501,6 +501,11 @@ in
       readOnly = true;
       description = "Default git identity.";
     };
+    sshKey = lib.mkOption {
+      type = lib.types.str;
+      readOnly = true;
+      description = "Personal SSH key path without extension; its `.pub` is fetched from Proton Pass and offered via the agent, which holds the private half.";
+    };
     branchNaming = lib.mkOption {
       type = branchNamingType;
       readOnly = true;
@@ -523,7 +528,7 @@ in
           };
           sshKey = lib.mkOption {
             type = lib.types.str;
-            description = "Work SSH key path without extension; its `.pub` is materialised on disk and offered via the Proton Pass agent, which holds the private half.";
+            description = "Work SSH key path without extension; its `.pub` is fetched from Proton Pass and offered via the agent, which holds the private half.";
           };
           sshConfig = lib.mkOption {
             type = lib.types.str;
@@ -639,6 +644,7 @@ in
       wayland = config.dotfiles.displayManager == "niri";
       terminalFontSize = 12;
       email = "sam@sammohr.dev";
+      sshKey = "~/.ssh/id_personal";
       # The vault's shared personal identity (design D6). Servers only ever
       # hold the public half; clients get the private half over SSH_AUTH_SOCK.
       sshAuthorizedKeys = [

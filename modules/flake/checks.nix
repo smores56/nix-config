@@ -83,7 +83,7 @@ in
             WORK_BRANCH_UNTICKETED = toString d.work.branchNaming.unticketed;
             WORK_OWNER = lib.replaceStrings [ "*" ] [ "routing-test" ] d.work.githubOwnerGlob;
             PERSONAL_EMAIL = d.email;
-            PERSONAL_KEY = "~/.ssh/id_personal";
+            PERSONAL_KEY = d.sshKey;
             PERSONAL_BRANCH_TEMPLATE = d.branchNaming.template;
             PERSONAL_BRANCH_UNTICKETED = toString d.branchNaming.unticketed;
             PERSONAL_OWNER = d.githubUser;
@@ -147,7 +147,7 @@ in
               args = [ (homeExe "ssh-allowed-signers") ];
             };
             ssh-pub-keys = {
-              tools = [ ];
+              tools = [ pkgs.openssh ];
               args = [ (homeExe "ssh-pub-keys") ];
             };
             worktrees-branch-template.args = [ (homeExe "worktrees") ];

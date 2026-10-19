@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 # Runs the generated ssh-pub-keys against a fake pass-cli: missing .pub files
-# are fetched from the vault, existing ones are left alone, and a failed or
-# garbled fetch only warns. pass-cli must always see the fs key provider,
+# are fetched from the Identity vault and trusted in allowed_signers, existing
+# ones are left alone, and a failed or malformed fetch writes nothing and exits
+# non-zero with a login hint. pass-cli must always see the fs key provider,
 # since any other provider force-logs-out the real session.
 #
-# Usage: ssh_pub_keys.sh <ssh-pub-keys>, with PERSONAL_KEY and WORK_KEY.
+# Usage: ssh_pub_keys.sh <ssh-pub-keys>, with PERSONAL_KEY, WORK_KEY,
+# PERSONAL_EMAIL and WORK_EMAIL.
 set -euo pipefail
 
 script=$1
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-mkdir -p "$work/bin"
+mkdir -p "$work/bin" "$work/vault"
 failures=0
 
 fail() {
@@ -18,66 +20,107 @@ fail() {
   failures=$((failures + 1))
 }
 
-# Fake pass-cli: prints a key named after --item-title, or fails / prints an
-# error to stdout per FAKE_MODE; refuses to answer without the fs provider.
-# The shebang is the running bash because the Nix sandbox has no /usr/bin/env.
+for title in Personal Work; do
+  ssh-keygen -q -t ed25519 -N "" -C "$title" -f "$work/vault/$title"
+done
+
+# Fake pass-cli: serves $work/vault/<title>.pub for `item view` on the Identity
+# vault, or fails / prints malformed output per FAKE_MODE. The shebang is the
+# running bash because the Nix sandbox has no /usr/bin/env.
 {
   printf '#!%s\n' "$BASH"
+  printf 'vault=%q\n' "$work/vault"
   cat <<'EOF'
 set -e
 [ "${PROTON_PASS_KEY_PROVIDER:-}" = fs ] || { echo "wrong key provider" >&2; exit 3; }
-title= field=
+[ "$1 $2" = "item view" ] || { echo "unexpected command: $1 $2" >&2; exit 4; }
+shift 2
+name= title= field=
 while [ $# -gt 0 ]; do
   case "$1" in
+    --vault-name) name=$2; shift ;;
     --item-title) title=$2; shift ;;
     --field) field=$2; shift ;;
   esac
   shift
 done
-[ "$field" = public_key ] || exit 4
+[ "$name" = Identity ] && [ "$field" = public_key ] || exit 5
 case "${FAKE_MODE:-ok}" in
-  ok) printf 'ssh-ed25519 AAAA%s %s\n' "$title" "$title" ;;
+  ok) cat "$vault/$title.pub" ;;
   fail) echo "Error: This operation requires an authenticated client" >&2; exit 1 ;;
   garbage) echo "Error: Local encryption key not found" ;;
+  bare) echo "ssh-ed25519" ;;
+  multiline) cat "$vault/$title.pub"; echo "warning: update available" ;;
 esac
 EOF
 } >"$work/bin/pass-cli"
 chmod +x "$work/bin/pass-cli"
 
-# Each case gets a fresh HOME; a provider other than fs in the environment
-# must not reach pass-cli.
-run() {
-  export HOME=$work/home-$1
-  mkdir -p "$HOME"
-  env -i PATH="$work/bin:$PATH" HOME="$HOME" PROTON_PASS_KEY_PROVIDER=keyring \
-    FAKE_MODE="$1" "$script" </dev/null 2>"$work/stderr-$1"
-}
-
 path() { printf '%s.pub' "${1/#\~/$HOME}"; }
 
-run ok || fail "exited non-zero when the vault answered"
-[[ $(cat "$(path "$PERSONAL_KEY")") == "ssh-ed25519 AAAAPersonal Personal" ]] \
-  || fail "personal .pub not fetched from the Personal item"
-[[ $(cat "$(path "$WORK_KEY")") == "ssh-ed25519 AAAAWork Work" ]] \
-  || fail "work .pub not fetched from the Work item"
-[[ $(stat -c %a "$HOME/.ssh" 2>/dev/null || stat -f %Lp "$HOME/.ssh") == 700 ]] \
-  || fail "~/.ssh not created 0700"
+# Runs the script in a fresh-or-given HOME; a provider other than fs in the
+# environment must not reach pass-cli. Sets $status.
+run() {
+  local mode=$1
+  export HOME=${2:-$work/home-$mode}
+  mkdir -p "$HOME"
+  status=0
+  env -i PATH="$work/bin:$PATH" HOME="$HOME" PROTON_PASS_KEY_PROVIDER=keyring \
+    FAKE_MODE="$mode" "$script" </dev/null 2>"$work/stderr" || status=$?
+}
 
-export HOME=$work/home-keep
-mkdir -p "$HOME/.ssh"
+verifies() {
+  local title=$1 principal=$2
+  echo payload >"$work/msg"
+  rm -f "$work/msg.sig"
+  ssh-keygen -q -Y sign -f "$work/vault/$title" -n git "$work/msg"
+  ssh-keygen -q -Y verify -f "$HOME/.ssh/allowed_signers" -I "$principal" -n git \
+    -s "$work/msg.sig" <"$work/msg" >/dev/null 2>&1
+}
+
+run ok
+((status == 0)) || fail "exited $status when the vault answered"
+cmp -s "$(path "$PERSONAL_KEY")" "$work/vault/Personal.pub" || fail "personal .pub not fetched from the Personal item"
+cmp -s "$(path "$WORK_KEY")" "$work/vault/Work.pub" || fail "work .pub not fetched from the Work item"
+[[ $(stat -c %a "$HOME/.ssh") == 700 ]] || fail "~/.ssh not created 0700"
+[[ $(stat -c %a "$(path "$WORK_KEY")") == 644 ]] || fail ".pub not written 0644"
+verifies Personal "$PERSONAL_EMAIL" || fail "fetched personal key not trusted as $PERSONAL_EMAIL"
+verifies Work "$WORK_EMAIL" || fail "fetched work key not trusted as $WORK_EMAIL"
+
+home=$work/home-keep
+mkdir -p "$home/.ssh"
+HOME=$home
 echo "ssh-ed25519 AAAAexisting existing" >"$(path "$PERSONAL_KEY")"
-env -i PATH="$work/bin:$PATH" HOME="$HOME" FAKE_MODE=ok "$script" </dev/null 2>/dev/null \
-  || fail "exited non-zero with one key present"
+run ok "$home"
+((status == 0)) || fail "exited $status with one key present"
 [[ $(cat "$(path "$PERSONAL_KEY")") == "ssh-ed25519 AAAAexisting existing" ]] \
   || fail "existing personal .pub was overwritten"
-[[ -s $(path "$WORK_KEY") ]] || fail "missing work .pub not fetched alongside an existing personal one"
+cmp -s "$(path "$WORK_KEY")" "$work/vault/Work.pub" || fail "missing work .pub not fetched alongside an existing personal one"
 
-for mode in fail garbage; do
-  run "$mode" || fail "exited non-zero when the fetch was $mode"
-  # Neither a .pub nor a leftover temp file.
-  [[ -z $(find "$HOME" -type f) ]] || fail "left files behind when the fetch was $mode"
-  grep -q "pass-cli login" "$work/stderr-$mode" || fail "no login hint when the fetch was $mode"
+home=$work/home-empty
+mkdir -p "$home/.ssh"
+HOME=$home
+: >"$(path "$PERSONAL_KEY")"
+run ok "$home"
+cmp -s "$(path "$PERSONAL_KEY")" "$work/vault/Personal.pub" || fail "empty personal .pub not refetched"
+
+for mode in fail garbage bare multiline; do
+  run "$mode"
+  ((status != 0)) || fail "exited 0 when the fetch was $mode"
+  # Nothing but the (empty) allowed_signers.
+  [[ -z $(find "$HOME" -type f ! -name allowed_signers) ]] || fail "left files behind when the fetch was $mode"
+  grep -q "pass-cli login" "$work/stderr" || fail "no login hint when the fetch was $mode"
 done
+
+# Without a pass-cli on PATH the baked-in one runs; with no session it fails,
+# but it must have been found.
+export HOME=$work/home-real
+mkdir -p "$HOME"
+status=0
+env -i PATH="$(dirname "$(command -v ssh-keygen)"):$(dirname "$(command -v cat)")" HOME="$HOME" \
+  "$script" </dev/null 2>"$work/stderr" || status=$?
+((status != 0)) || fail "exited 0 with no Proton Pass session"
+grep -q "command not found" "$work/stderr" && fail "baked-in pass-cli not found"
 
 if ((failures)); then
   echo "$failures ssh-pub-keys expectation(s) failed"

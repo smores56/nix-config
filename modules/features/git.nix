@@ -72,43 +72,10 @@ let
   # Only repos the personal account owns land directly on main; third-party
   # checkouts get no flow at all.
   personalIncludes = ownerIncludes cfg.githubUser { smores.flow = "direct"; };
-  # Signatures only verify against keys listed here. Built from the local
-  # .pub files, which ssh-pub-keys (ssh.nix) fetches from Proton Pass, so the
-  # vault stays the one source of keys; rerun `ssh-allowed-signers` after
-  # adding a key by hand.
-  allowedSigners = "~/.ssh/allowed_signers";
-  allowedSignersWriter = pkgs.writeShellApplication {
-    name = "ssh-allowed-signers";
-    text = ''
-      out=${lib.replaceStrings [ "~" ] [ "$HOME" ] allowedSigners}
-      # No ~/.ssh yet (fresh host) means no keys to verify against.
-      [ -d "$(dirname "$out")" ] || exit 0
-      tmp=$(mktemp "$out.XXXXXX")
-      entry() {
-        # principal, git-only namespace, then key type and body (no comment)
-        if [ -f "$2" ]; then
-          # read fails at EOF without a trailing newline but still fills
-          # the fields, which hand-pasted .pub files often lack
-          read -r type body _ <"$2" || [ -n "''${type:-}" ]
-          printf '%s namespaces="git" %s %s\n' "$1" "$type" "$body"
-        fi
-      }
-      {
-        entry ${lib.escapeShellArg cfg.email} "$HOME/.ssh/id_personal.pub"
-        entry ${lib.escapeShellArg work.email} "${lib.replaceStrings [ "~" ] [ "$HOME" ] work.sshKey}.pub"
-      } >"$tmp"
-      mv "$tmp" "$out"
-    '';
-  };
 
 in
 {
-  home.activation.sshAllowedSigners = lib.hm.dag.entryAfter [ "sshPubKeys" ] ''
-    $DRY_RUN_CMD ${lib.getExe allowedSignersWriter}
-  '';
-
   home.packages = with pkgs; [
-    allowedSignersWriter
     gnupg
     delta
     git-lfs
@@ -177,8 +144,7 @@ in
           safe.directory = "*";
           commit.gpgsign = true;
           gpg.format = "ssh";
-          gpg.ssh.allowedSignersFile = allowedSigners;
-          user.signingkey = "~/.ssh/id_personal.pub";
+          user.signingkey = "${cfg.sshKey}.pub";
           fetch.prune = true;
           # Repo tooling reads smores.* instead of re-deriving the identity
           # from the remote.
