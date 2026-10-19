@@ -1,10 +1,10 @@
 # smortress: the headless always-on server. It is the Cloudflare Tunnel origin
-# and runs the local LLM, SearXNG, Immich/Navidrome/Calibre, and the backup disk.
+# and runs the local LLM, Immich/Calibre, and the backup disk.
 # `dotfiles` is shared by the NixOS config and the home config, so a value
 # lives in exactly one place; each module reads the knobs it knows.
 let
   ports = import ../../ports.nix;
-  # The ssh/llm/searx endpoints all want an email allow-list (human fallback)
+  # The ssh/llm endpoints all want an email allow-list (human fallback)
   # plus a Service Auth policy for unattended clients.
   serviceAuth = {
     enable = true;
@@ -23,7 +23,6 @@ in
     exposeSsh = true;
     nvidia = true;
     llm = true;
-    search = true;
     noSleep = true;
     webProxy = {
       enable = true;
@@ -31,9 +30,6 @@ in
       services = {
         calibre.port = ports.calibre;
         immich.port = ports.immich;
-        # Public, protected only by Navidrome's own auth: music streaming is
-        # low-bandwidth, so the Cloudflare CDN terms that bite video don't apply.
-        music.port = ports.navidrome;
         # Unauthenticated loopback listener, so it must sit behind Access
         # (enforced by an assertion in modules/nixos/notify.nix).
         ntfy = {
@@ -57,25 +53,6 @@ in
           protocol = "tcp";
           access = serviceAuth;
         };
-        # SearXNG (dotfiles.searchPort). maki reaches it through a
-        # `cloudflared access tcp` forward (modules/features/cloudflared.nix),
-        # so the ingress is tcp — an http ingress forwards the carrier's
-        # WebSocket upgrade to SearXNG and fails with "websocket: bad
-        # handshake". The service token keeps maki's calls unattended.
-        searx = {
-          # Port comes from modules/ports.nix (the listener's single source).
-          port = ports.searx;
-          protocol = "tcp";
-          access = serviceAuth;
-        };
-        # Open WebUI. A browser app, so the default `http` ingress is correct
-        # (an http ingress is what carries its WebSockets). Cloudflare Access is
-        # the outer gate, Open WebUI's own login the inner one; `chat` is a
-        # protected subdomain, so the assertion below forces access.enable.
-        chat = {
-          port = ports.chat;
-          access.enable = true;
-        };
       };
     };
     calibre.enable = true;
@@ -89,10 +66,6 @@ in
     # The phone uploads over the LAN at home via Immich's local-network URL;
     # 10.0.0.0/24 is the LAN subnet. WAN access stays tunnel-only.
     immich.lanSources = [ "10.0.0.0/24" ];
-    navidrome.enable = true;
-    # Open WebUI: single-user chat at chat.<domain>, loopback-only (the tunnel
-    # ingress and Access are added with the rest of the chat feature).
-    chat.enable = true;
     # These generic datasets replaced the old Immich-specific restic
     # pipeline, which has been removed.
     backup.enable = true;

@@ -9,6 +9,5 @@
     displayManager = "niri";
     nixos = true;
     fingerprint = true;
-    photobucket.enable = true;
   };
 }

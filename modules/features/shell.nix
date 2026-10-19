@@ -142,11 +142,14 @@ in
               source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.fish
           end
         '')
-        # sops-nix provisions this 0400 user-owned secret on smortress; other
-        # hosts do not have the path and skip it.
+        # sops-nix provisions these 0400 user-owned secrets on smortress; other
+        # hosts do not have the paths and skip them.
         (lib.mkIf cfg.nixos ''
           if test -r /run/secrets/neuralwatt-api-key
               set -gx NEURALWATT_API_KEY (cat /run/secrets/neuralwatt-api-key)
+          end
+          if test -r /run/secrets/brave-api-key
+              set -gx BRAVE_API_KEY (cat /run/secrets/brave-api-key)
           end
         '')
       ];

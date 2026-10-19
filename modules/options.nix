@@ -123,16 +123,6 @@ in
       default = false;
       description = "Host runs the llama.cpp LLM service; also disables desktop/system sleep for availability.";
     };
-    search = lib.mkOption {
-      type = lib.types.bool;
-      default = false;
-      description = "Host runs the self-hosted SearXNG service behind the agent's web search. NixOS-only.";
-    };
-    searchPort = lib.mkOption {
-      type = lib.types.port;
-      default = ports.searx;
-      description = "TCP port the self-hosted SearXNG listens on. Single source of truth: the NixOS service and the templated maki websearch plugin both derive from it.";
-    };
     noSleep = lib.mkOption {
       type = lib.types.bool;
       default = false;
@@ -224,64 +214,6 @@ in
       default = { };
       description = "calibre OPDS content server exposed over the Cloudflare Tunnel.";
     };
-    chat = lib.mkOption {
-      type = lib.types.submodule {
-        options = {
-          enable = lib.mkEnableOption "Open WebUI chat front end (NixOS-only)";
-          port = lib.mkOption {
-            type = lib.types.port;
-            default = ports.chat;
-            description = "Loopback port for Open WebUI. Single-sourced from modules/ports.nix so the listener and the tunnel ingress cannot drift.";
-          };
-          jupyterPort = lib.mkOption {
-            type = lib.types.port;
-            default = ports.jupyter;
-            description = "Loopback port for the code-interpreter Jupyter sandbox. Never exposed; reachable only by Open WebUI.";
-          };
-        };
-      };
-      default = { };
-      description = "Self-hosted Open WebUI chat, exposed over the Cloudflare Tunnel.";
-    };
-    navidrome = lib.mkOption {
-      type = lib.types.submodule {
-        options = {
-          enable = lib.mkEnableOption "Navidrome music server (NixOS-only)";
-          port = lib.mkOption {
-            type = lib.types.port;
-            default = ports.navidrome;
-            description = "Loopback port for Navidrome.";
-          };
-          musicFolder = lib.mkOption {
-            type = lib.types.path;
-            default = "/var/lib/media/Music";
-            description = "Music library Navidrome scans; the nixpkgs module mounts it read-only into the service.";
-          };
-          environmentFile = lib.mkOption {
-            type = lib.types.path;
-            default = "/var/lib/navidrome/env";
-            description = "Root-owned ND_* secrets file read by systemd; carries ND_DEVAUTOCREATEADMINPASSWORD so the admin exists before the endpoint is public. Never in the Nix store; smortress points this at its sops-decrypted copy.";
-          };
-        };
-      };
-      default = { };
-      description = "Self-hosted Navidrome music server, reading the media library read-only.";
-    };
-    photobucket = lib.mkOption {
-      type = lib.types.submodule {
-        options = {
-          enable = lib.mkEnableOption "photobucket feh-based photo triage reviewer";
-          root = lib.mkOption {
-            type = lib.types.str;
-            default = "";
-            description = "Root for photobucket decision logs and bucket folders. Empty means ~/Pictures/_triage.";
-          };
-        };
-      };
-      default = { };
-      description = "Keyboard-driven photo triage reviewer built on feh.";
-    };
-
     immich = lib.mkOption {
       type = lib.types.submodule {
         options = {

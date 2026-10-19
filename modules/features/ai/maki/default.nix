@@ -22,7 +22,7 @@ let
           p: map (m: "${p.providerId}/${m.id}") p.makiModels
         ) profile.providers;
         defaultModel = "neuralwatt/deepseek-v4.1-flash";
-        privateHosts = [ "127.0.0.1:${toString config.dotfiles.searchPort}" ];
+        privateHosts = [ ];
         searchPlugin = true;
       };
       work = {
@@ -56,18 +56,16 @@ let
         default_model = "${profile.defaultModel}",
         allowed_models = { ${luaStrings profile.allowedModels} },
       },
-      -- Personal search runs on smortress through the tunnel. maki.net refuses
-      -- private addresses unless listed, and keeps plain http:// for a listed
-      -- host. Port-scoped so the allowlist cannot reach anything else on the
-      -- host.
+      -- Personal search uses the Brave Search API over https; no private host
+      -- allowlist is needed. The smortress provider uses its own client.
       net = {
         allowed_private_hosts = { ${luaStrings profile.privateHosts} },
       },
       plugins = {
         bash = { enabled = true },
         -- The bundled websearch only speaks Exa/You.com; on personal hosts
-        -- the owned plugin below finds results on the self-hosted SearXNG
-        -- instead, and work has no search.
+        -- the owned plugin below uses the Brave Search API instead, and work
+        -- has no search.
         websearch = { enabled = false },
         -- Bundled project-scoped memory: the `memory` tool, tag-based
         -- retrieval, plain markdown files under the maki state dir.
@@ -82,7 +80,7 @@ let
 
   # Permissions manifest for the Lua plugins under ./lua. `run` is needed by
   # spawn_session's maki.fn.jobstart (process spawn); `net` lets
-  # websearch_owned reach the self-hosted SearXNG.
+  # websearch_owned reach the Brave Search API.
   pluginToml = ''
     [permissions]
     fs_read = true
@@ -266,9 +264,7 @@ in
     // lib.optionalAttrs profile.searchPlugin {
       ".config/maki/lua/websearch_owned.lua" = {
         force = true;
-        text = builtins.replaceStrings [ "@SEARCH_PORT@" ] [ (toString config.dotfiles.searchPort) ] (
-          builtins.readFile ./lua/websearch_owned.lua
-        );
+        source = ./lua/websearch_owned.lua;
       };
     }
     // lib.optionalAttrs (profile.providers != [ ]) {

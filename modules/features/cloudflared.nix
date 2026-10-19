@@ -1,4 +1,4 @@
-# Reach smortress's loopback-only services (sshd, llama.cpp, SearXNG) from a
+# Reach smortress's loopback-only services (sshd, llama.cpp) from a
 # client over the Cloudflare Tunnel. `cloudflared access` authenticates with a
 # Cloudflare Access service token pulled from Proton Pass, so nothing lands on
 # disk and no browser login is ever needed. The server itself reaches its own
@@ -11,7 +11,7 @@
   ...
 }:
 let
-  inherit (config.dotfiles) aiProfile llm searchPort;
+  inherit (config.dotfiles) aiProfile llm;
   inherit (config.dotfiles.webProxy) domain;
   inherit (aiProviders) smortress;
   inherit (pkgs.stdenv.hostPlatform) isLinux;
@@ -113,13 +113,12 @@ in
     ProxyCommand = "${cloudflared-access}/bin/cloudflared-access ssh --hostname %h";
   };
 
-  # A personal client reaches the server's llm/searx over the tunnel; a work
+  # A personal client reaches the server's llm over the tunnel; a work
   # profile reaches its own, and smortress itself uses loopback, so neither
   # needs these forwards.
   systemd.user.services = lib.mkMerge [
     (lib.mkIf (aiProfile == "personal" && !llm) {
       cloudflared-llm = forward "llm" smortress.port;
-      cloudflared-searx = forward "searx" searchPort;
     })
 
     # macOS has no tmpfs user runtime to put this in; the wrapper's

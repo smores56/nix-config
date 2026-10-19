@@ -1,20 +1,14 @@
--- Owned web search: queries the self-hosted SearXNG on smortress through the
--- tunnel, so search costs no vendor money. The bundled `websearch` plugin is
--- disabled in init.lua; this file reclaims its tool name, schema, and audiences
--- so nothing downstream (delegation, the interpreter) changes.
+-- Owned web search: Brave Search API.
 --
--- The endpoint is loopback: on the server SearXNG listens locally, on clients
--- a `cloudflared access tcp` forward binds the same port. `net.allowed_private_hosts`
--- in init.lua lists this host:port, which also keeps the plain http:// scheme
--- that maki.net would otherwise upgrade to https://.
+-- The bundled `websearch` plugin is disabled in init.lua; this file reclaims its
+-- tool name, schema, and audiences so nothing downstream (delegation, the
+-- interpreter) changes. It uses the free Brave Search API tier; the key comes
+-- from `BRAVE_API_KEY`, which the fish init exports from the sops secret.
 
-local HOST = "127.0.0.1"
--- Substituted from dotfiles.searchPort at install time, so the service and this
--- client cannot drift apart.
-local PORT = "@SEARCH_PORT@"
-local ENDPOINT = "http://" .. HOST .. ":" .. PORT .. "/search"
+local ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
 local REQUEST_TIMEOUT_SECS = 25
 local DEFAULT_NUM_RESULTS = 8
+local MAX_NUM_RESULTS = 20
 local MAX_OUTPUT_LINES = 40
 local MAX_OUTPUT_BYTES = 32 * 1024
 
@@ -46,7 +40,8 @@ local function format_results(results, num_results)
     local result = results[i]
     lines[#lines + 1] = "Title: " .. (result.title or "")
     lines[#lines + 1] = "URL: " .. (result.url or "")
-    local snippet = result.content or ""
+    -- Brave descriptions can contain highlight markup; keep the text.
+    local snippet = (result.description or ""):gsub("<[^>]+>", "")
     if snippet ~= "" then
       lines[#lines + 1] = "Snippet: " .. snippet
     end
@@ -58,7 +53,7 @@ end
 maki.api.register_tool({
   name = "websearch",
   kind = "fetch",
-  description = "Search the web for real-time information using a self-hosted SearXNG.\n\n"
+  description = "Search the web for real-time information using the Brave Search API.\n\n"
     .. "Today's date is "
     .. os.date("%Y-%m-%d")
     .. ".\n\n"
@@ -87,9 +82,21 @@ maki.api.register_tool({
       return { llm_output = "error: query is required", is_error = true }
     end
 
-    local url = ENDPOINT .. "?format=json&q=" .. urlencode(query)
+    local key = maki.uv.os_getenv("BRAVE_API_KEY")
+    if not key or key == "" then
+      return {
+        llm_output = "error: BRAVE_API_KEY is not set; add brave-api-key to the sops secrets and open a new shell",
+        is_error = true,
+      }
+    end
+
+    local num = math.max(1, math.min(input.num_results or DEFAULT_NUM_RESULTS, MAX_NUM_RESULTS))
+    local url = ENDPOINT .. "?q=" .. urlencode(query) .. "&count=" .. tostring(num)
     local resp, err = maki.net.request(url, {
-      headers = { ["Accept"] = "application/json" },
+      headers = {
+        ["Accept"] = "application/json",
+        ["X-Subscription-Token"] = key,
+      },
       timeout = REQUEST_TIMEOUT_SECS,
     })
     if not resp then
@@ -107,7 +114,8 @@ maki.api.register_tool({
       return { llm_output = "error: invalid response: " .. tostring(decode_err), is_error = true }
     end
 
-    local text = format_results(data.results or {}, input.num_results or DEFAULT_NUM_RESULTS)
+    local results = (data.web and data.web.results) or {}
+    local text = format_results(results, num)
     return { llm_output = truncate(text, MAX_OUTPUT_LINES, MAX_OUTPUT_BYTES) }
   end,
 })

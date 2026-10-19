@@ -18,13 +18,10 @@
     # band, like the secrets it decrypts.
     sops.age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
     # 0400 (sops-nix's default) and root ownership: only the root services that
-    # read them (cloudflared, the reconciler, navidrome, searxng) or that get them
-    # via a root-read EnvironmentFile (the chat services) need access.
+    # read them (cloudflared, the reconciler) need access.
     sops.secrets = {
       cf-api-token = { };
       cloudflared-credentials = { };
-      navidrome-env = { };
-      searxng-secret-key = { };
       # The calibre OPDS password, read by the user's calibre-server unit; owned
       # by the user so the 0400 file is readable without root.
       calibre-password = {
@@ -32,18 +29,16 @@
         mode = "0400";
       };
 
-      # Open WebUI's session secret and the code interpreter's Jupyter token.
-      # Both reach their services through a systemd EnvironmentFile (read by the
-      # manager as root before it drops to the DynamicUser), so they keep the
-      # default root ownership. The Neuralwatt key is user-owned below because
-      # maki reads it from the shell.
-      open-webui-secret-key = { };
-      jupyter-token = { };
-
       # maki's hosted-inference key; the fish init exports it from this path, so
-      # the user must be able to read it. (Open WebUI's environment is removed
-      # in the target state; the key stays for maki.)
+      # the user must be able to read it.
       neuralwatt-api-key = {
+        owner = config.dotfiles.username;
+        mode = "0400";
+      };
+
+      # Brave Search API key; the fish init exports it for maki's websearch
+      # plugin and Page Assist uses its own copy in the browser.
+      brave-api-key = {
         owner = config.dotfiles.username;
         mode = "0400";
       };
@@ -79,6 +74,5 @@
     # paths.
     dotfiles.webProxy.apiTokenFile = config.sops.secrets.cf-api-token.path;
     dotfiles.webProxy.credentialsFile = config.sops.secrets.cloudflared-credentials.path;
-    dotfiles.navidrome.environmentFile = config.sops.secrets.navidrome-env.path;
   };
 }
