@@ -148,9 +148,11 @@ nix-shell -p home-manager --run "home-manager switch --flake '${REPO_DIR}#${CONF
 ok "home-manager switch complete"
 
 # This shell predates the profile the switch created, so put the generation it
-# just built first on PATH; every later phase runs its tools.
-PATH="$(readlink -f "${XDG_STATE_HOME:-${HOME}/.local/state}/home-manager/gcroots/current-home")/home-path/bin:${PATH}"
-export PATH
+# just built first on PATH; every later phase runs its tools. Same root
+# home-manager's activation writes.
+HM_BIN="${XDG_STATE_HOME:-${HOME}/.local/state}/home-manager/gcroots/current-home/home-path/bin"
+[ -d "$HM_BIN" ] || err "home-manager switch left no generation at ${HM_BIN}"
+export PATH="${HM_BIN}:${PATH}"
 
 # ── Phase 4: SSH identities from Proton Pass ──────────────────────
 #
@@ -160,12 +162,14 @@ export PATH
 # ssh-keys.nix), the same command every switch runs.
 
 # A headless host logs in with the vault's PAT (sops-delivered, non-interactive);
-# elsewhere the session is established interactively in a browser.
+# elsewhere the session is established interactively in a browser. Always the
+# fs key provider (modules/features/proton-pass.nix): ssh-pub-keys and the agent
+# force it, and a session made with another provider would be logged out.
 PROTON_PASS_PAT_FILE="${PROTON_PASS_PAT_FILE:-/run/secrets/proton-pass-pat}"
 if [ -s "$PROTON_PASS_PAT_FILE" ]; then
   info "Logging in to Proton Pass with the vault PAT..."
   if PROTON_PASS_PERSONAL_ACCESS_TOKEN="$(cat "$PROTON_PASS_PAT_FILE")" \
-    PROTON_PASS_KEY_PROVIDER="${PROTON_PASS_KEY_PROVIDER:-fs}" \
+    PROTON_PASS_KEY_PROVIDER=fs \
     pass-cli login; then
     ok "Logged in to Proton Pass"
   else
@@ -177,7 +181,7 @@ fi
 if ssh-pub-keys; then
   ok "SSH public keys present and trusted in ~/.ssh/allowed_signers"
 else
-  warn "Some SSH public keys are missing (see above); re-run this script after logging in."
+  warn "Some SSH public keys are missing (see above); fix that and re-run this script."
 fi
 
 # ── Phase 5: GitHub authentication ────────────────────────────────

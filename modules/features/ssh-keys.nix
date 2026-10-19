@@ -82,11 +82,14 @@ let
         [ -s "$dest" ] && return 0
         key=$(pass-cli item view --vault-name ${vault} --item-title "$title" --field public_key </dev/null) \
           || return 1
-        # One line, and ssh-keygen must parse it: an error printed to stdout
-        # must not land where ssh and git will trust it.
-        [[ $key != *$'\n'* ]] || return 1
+        # Exactly "<type> <base64> [comment]" (no authorized_keys options,
+        # no CR) that ssh-keygen also parses: an error printed to stdout must
+        # not land where ssh and git will trust it, and allowed_signers reads
+        # the first two fields as type and key.
+        [[ $key =~ ^(ssh|ecdsa|sk)-[^[:space:]]+\ [A-Za-z0-9+/]+=*(\ [^[:cntrl:]]*)?$ ]] || return 1
         dir=$(dirname "$dest")
-        [ -d "$dir" ] || { mkdir -p "$dir" && chmod 700 "$dir"; } || return 1
+        # Always: home-manager may have created ~/.ssh first with the umask.
+        mkdir -p "$dir" && chmod 700 "$dir" || return 1
         tmp=$(mktemp "$dest.XXXXXX") || return 1
         if printf '%s\n' "$key" >"$tmp" \
           && ssh-keygen -l -f "$tmp" >/dev/null 2>&1 \
@@ -102,16 +105,16 @@ let
       missing=0
       ${lib.concatMapStrings (i: ''
         fetch ${lib.escapeShellArg i.title} "${expandHome i.key}.pub" || {
-          echo "ssh-pub-keys: could not fetch '${i.title}' from the ${vault} vault" >&2
+          echo "ssh-pub-keys: no usable '${i.title}' key from the ${vault} vault (see any pass-cli error above)" >&2
           missing=1
         }
       '') identities}
       ${lib.getExe allowedSignersWriter}
 
       if ((missing)); then
-        echo "ssh-pub-keys: log in with" >&2
+        echo "ssh-pub-keys: if pass-cli is logged out, log in with" >&2
         echo "  PROTON_PASS_KEY_PROVIDER=$PROTON_PASS_KEY_PROVIDER pass-cli login --interactive" >&2
-        echo "then run ssh-pub-keys." >&2
+        echo "then run ssh-pub-keys; otherwise check the item exists in the ${vault} vault." >&2
         exit 1
       fi
     '';
@@ -123,7 +126,7 @@ in
     allowedSignersWriter
   ];
 
-  home.activation.sshKeys = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+  home.activation.sshPubKeys = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     run ${lib.getExe sshPubKeys} || true
   '';
 

@@ -45,12 +45,15 @@ while [ $# -gt 0 ]; do
   shift
 done
 [ "$name" = Identity ] && [ "$field" = public_key ] || exit 5
+[ "$title" = "${FAKE_FAIL_TITLE:-}" ] && { echo "Error: item not found" >&2; exit 1; }
 case "${FAKE_MODE:-ok}" in
   ok) cat "$vault/$title.pub" ;;
   fail) echo "Error: This operation requires an authenticated client" >&2; exit 1 ;;
   garbage) echo "Error: Local encryption key not found" ;;
   bare) echo "ssh-ed25519" ;;
   multiline) cat "$vault/$title.pub"; echo "warning: update available" ;;
+  options) printf 'from="10.0.0.1" '; cat "$vault/$title.pub" ;;
+  crlf) printf '%s\r\n' "$(cat "$vault/$title.pub")" ;;
 esac
 EOF
 } >"$work/bin/pass-cli"
@@ -69,7 +72,7 @@ fresh() {
 run() {
   status=0
   env -i PATH="${RUN_PATH:-$work/bin:$PATH}" HOME="$HOME" PROTON_PASS_KEY_PROVIDER=keyring \
-    FAKE_MODE="$1" "$script" </dev/null 2>"$work/stderr" || status=$?
+    FAKE_MODE="$1" FAKE_FAIL_TITLE="${FAKE_FAIL_TITLE:-}" "$script" </dev/null 2>"$work/stderr" || status=$?
 }
 
 # ssh_allowed_signers.sh proves entries verify; here the fetched key must be one.
@@ -84,7 +87,9 @@ run ok
 cmp -s "$(path "$PERSONAL_KEY")" "$work/vault/Personal.pub" || fail "personal .pub not fetched from the Personal item"
 cmp -s "$(path "$WORK_KEY")" "$work/vault/Work.pub" || fail "work .pub not fetched from the Work item"
 [[ $(stat -c %a "$HOME/.ssh") == 700 ]] || fail "~/.ssh not created 0700"
-[[ $(stat -c %a "$(path "$WORK_KEY")") == 644 ]] || fail ".pub not written 0644"
+for key in "$PERSONAL_KEY" "$WORK_KEY"; do
+  [[ $(stat -c %a "$(path "$key")") == 644 ]] || fail "$(path "$key") not written 0644"
+done
 trusted Personal "$PERSONAL_EMAIL" || fail "fetched personal key not trusted as $PERSONAL_EMAIL"
 trusted Work "$WORK_EMAIL" || fail "fetched work key not trusted as $WORK_EMAIL"
 
@@ -96,12 +101,27 @@ run ok
   || fail "existing personal .pub was overwritten"
 cmp -s "$(path "$WORK_KEY")" "$work/vault/Work.pub" || fail "missing work .pub not fetched alongside an existing personal one"
 
+# home-manager may create ~/.ssh first (for ~/.ssh/config) with the umask.
+fresh loose
+chmod 755 "$HOME/.ssh"
+run ok
+[[ $(stat -c %a "$HOME/.ssh") == 700 ]] || fail "existing ~/.ssh not tightened to 0700"
+
+# One item failing must not stop the other from being fetched and trusted.
+fresh partial
+FAKE_FAIL_TITLE=Work run ok
+((status != 0)) || fail "exited 0 with the Work item unavailable"
+cmp -s "$(path "$PERSONAL_KEY")" "$work/vault/Personal.pub" || fail "personal .pub not fetched when Work failed"
+trusted Personal "$PERSONAL_EMAIL" || fail "personal key not trusted when Work failed"
+[[ -e $(path "$WORK_KEY") ]] && fail "wrote a work .pub when its fetch failed"
+grep -q "item not found" "$work/stderr" || fail "pass-cli's own error not shown"
+
 fresh empty
 : >"$(path "$PERSONAL_KEY")"
 run ok
 cmp -s "$(path "$PERSONAL_KEY")" "$work/vault/Personal.pub" || fail "empty personal .pub not refetched"
 
-for mode in fail garbage bare multiline; do
+for mode in fail garbage bare multiline options crlf; do
   fresh "$mode"
   run "$mode"
   ((status != 0)) || fail "exited 0 when the fetch was $mode"
