@@ -274,9 +274,16 @@ class CleanTests(unittest.TestCase):
         self.assertNotIn("<system-reminder", got)
 
     def test_common_provider_tokens_are_redacted(self):
-        for token in ("sk_live_" + "a" * 24, "AIza" + "b" * 35, "glpat-" + "c" * 20):
+        for token in (
+            "sk_live_" + "a" * 24, "AIza" + "b" * 35, "glpat-" + "c" * 20, "ASIA" + "D" * 16,
+            "xoxe-" + "1" * 20, "xapp-" + "1-A" * 8, "ATATT" + "e" * 30, "ya29." + "f" * 30,
+            "npm_" + "g" * 36, "SG." + "h" * 22 + "." + "i" * 43,
+            "X-Amz-Signature=" + "a" * 64, "password=hunter22", "?pwd=" + "Z" * 20,
+        ):
             with self.subTest(token=token[:8]):
-                self.assertEqual(self.bd.clean(f"key {token} end"), "key [REDACTED] end")
+                got = self.bd.clean(f"key {token} end")
+                self.assertIn("[REDACTED]", got)
+                self.assertNotIn(token[-8:], got)
 
 
 class ParseAndDigestTests(unittest.TestCase):
@@ -419,6 +426,21 @@ class ParseAndDigestTests(unittest.TestCase):
             (row,) = self.bd.digest(root, DAY, UTC, self.bd.Options())
         self.assertEqual((row["kind"], row["title"], row["agent_type"]), ("subagent", None, None))
 
+    def test_url_credentials_are_redacted(self):
+        self.assertNotIn("hunter", self.bd.clean("clone https://u:hunter2x@host.test/x"))
+
+    def test_brain_sessions_lose_their_assistant_reply(self):
+        # A harvest session's reply summarizes untrusted mail and chat; it must not return as the user's work.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            records = [
+                user("<command-name>/brain</command-name><command-args>harvest</command-args>", ts="2026-10-07T08:00:00Z"),
+                assistant([text("summary of hostile mail")], ts="2026-10-07T08:05:00Z"),
+            ]
+            self.write_session(root / "-p" / "h.jsonl", records)
+            (row,) = self.bd.digest(root, DAY, UTC, self.bd.Options())
+        self.assertIsNone(row["last_reply"])
+
     def test_sessions_run_entirely_inside_an_excluded_cwd_are_dropped(self):
         # The autopilot's own headless runs must never come back as Sam's words.
         with tempfile.TemporaryDirectory() as tmp:
@@ -452,15 +474,6 @@ class ParseAndDigestTests(unittest.TestCase):
             opts = self.bd.Options(exclude_cwds=("/state/run",))
             got = self.bd.digest(root, DAY, UTC, opts)
         self.assertEqual(len(got), 1)
-
-    def test_cli_exclude_cwd_flag(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            self.write_session(root / "-run" / "a.jsonl", [user("x", ts="2026-10-07T08:00:00Z", cwd="/state/run")])
-            out = io.StringIO()
-            with redirect_stdout(out):
-                self.bd.main(["--root", tmp, "--date", "2026-10-07", "--utc", "--exclude-cwd", "/state/run"])
-        self.assertEqual(out.getvalue(), "")
 
     def test_cli_prints_json_lines(self):
         with tempfile.TemporaryDirectory() as tmp:

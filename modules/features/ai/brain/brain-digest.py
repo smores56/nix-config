@@ -54,6 +54,15 @@ SECRET_RE = re.compile(
     r"|glpat-[A-Za-z0-9_-]{20,}"
     r"|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"
     r"|-----BEGIN [A-Z ]+-----"
+    r"|ASIA[0-9A-Z]{16}"
+    r"|xox[ep]-[A-Za-z0-9-]{10,}|xapp-[A-Za-z0-9-]{10,}"
+    r"|ATATT[A-Za-z0-9_=-]{20,}"
+    r"|ya29\.[A-Za-z0-9_-]{20,}"
+    r"|npm_[A-Za-z0-9]{36}"
+    r"|SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}"
+    r"|://[^/\s:@]+:[^/\s@]+@"
+    r"|X-Amz-Signature=[0-9a-f]{16,}"
+    r"|(?i:\b(?:password|passwd|pwd|api[_-]?key|secret)=[^\s&]{4,})"
 )
 CREDENTIAL_DIRS = frozenset({".ssh", ".aws", ".gnupg", ".kube"})
 
@@ -217,7 +226,9 @@ def summarize_session(session_id, records, day, tz, opts, sidechain=False):
     active = [r for _, r in stamped]
 
     prompts = [p for p in map(prompt_text, active) if p]
-    replies = [t for t in map(reply_text, active) if t]
+    # A brain harvest's replies summarize untrusted mail and chat; they must not return as the user's work.
+    harvested = any(p == "/brain" or p.startswith("/brain ") for p in prompts)
+    replies = [] if harvested else [t for t in map(reply_text, active) if t]
     conversation = prompts + replies
     # A subagent's conversation is delegation text; only its own gh pr writes count.
     pr_sources = ([] if sidechain else conversation) + pr_write_texts(active)
@@ -335,14 +346,11 @@ def main(argv=None):
     parser.add_argument(
         "--ticket-prefix", action="append", default=[], help="only keep tickets with this key prefix"
     )
-    parser.add_argument(
-        "--exclude-cwd", action="append", default=[], help="drop sessions that only ran under this dir"
-    )
     args = parser.parse_args(argv)
 
     tz = timezone.utc if args.utc else None
     day = args.date or datetime.now(tz).astimezone(tz).date()
-    opts = Options(ticket_prefixes=tuple(args.ticket_prefix), exclude_cwds=tuple(args.exclude_cwd))
+    opts = Options(ticket_prefixes=tuple(args.ticket_prefix))
     for session in digest(args.root, day, tz, opts):
         print(json.dumps(session, ensure_ascii=False))
     return 0
