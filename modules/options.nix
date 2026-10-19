@@ -341,6 +341,11 @@ in
                     default = true;
                     description = "Mirror the local copy to the remote (append-only).";
                   };
+                  freshnessSeconds = lib.mkOption {
+                    type = lib.types.int;
+                    default = 93600;
+                    description = "Maximum age of BACKUP-LAST-SUCCESS before the freshness alert fires, in seconds. Default 26h for a daily backup; set 8d for a weekly-only dataset.";
+                  };
                   preBackup = lib.mkOption {
                     type = lib.types.nullOr lib.types.lines;
                     default = null;
@@ -480,6 +485,21 @@ in
       };
       default = { };
       description = "Push notifications when a watched systemd unit fails, delivered through ntfy.";
+    };
+
+    alerting = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          enable = lib.mkEnableOption "Cloudflare email alerts for unit failures and stale backups";
+          secretFile = lib.mkOption {
+            type = lib.types.str;
+            default = "/run/secrets/cloudflare-email";
+            description = "JSON secret holding the Cloudflare Email Service token, account id, from address, and to address.";
+          };
+        };
+      };
+      default = { };
+      description = "Send unit-failure and stale-backup email through Cloudflare Email Service. Enable only after the secret and the sending domain exist.";
     };
 
     # ------------------------------------------------------------------

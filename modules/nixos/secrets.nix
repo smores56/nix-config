@@ -66,6 +66,12 @@
       github-repo-pat = {
         mode = "0400";
       };
+    }
+    // lib.optionalAttrs config.dotfiles.alerting.enable {
+      # JSON {token, account_id, from, to} for Cloudflare Email Service; read by
+      # the root alert units. Declared only when alerting is enabled so a host
+      # can switch before the secret exists.
+      cloudflare-email = { };
     };
 
     # Repoint the consumers at the decrypted files. The option defaults stay
