@@ -5,11 +5,10 @@
   ...
 }:
 let
-  hasDm = config.dotfiles.graphical;
   inherit (pkgs.stdenv.hostPlatform) isLinux;
 in
 {
-  config = lib.mkIf (hasDm && isLinux) {
+  config = lib.mkIf isLinux {
     home.packages = with pkgs; [
       kdePackages.dolphin
       firefox

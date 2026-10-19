@@ -1,7 +1,7 @@
 # Backup — rclone driver (media to Proton, GitHub local-only)
 
 Generic, dataset-agnostic backup driver. One systemd oneshot + timer per
-`dotfiles.backup.datasets.<Name>` entry, optionally fired early by a filesystem
+`backup.datasets.<Name>` entry, optionally fired early by a filesystem
 watcher (`onChange`). A dataset is a directory on Disk 1, a local mirror on the
 backup disk (Disk 2), and — unless `offsite` is disabled — an append-only mirror
 on Proton Drive (Disk 3, "offsite"). Two dataset families use it: the media
@@ -91,7 +91,7 @@ from the originals, so they need not occupy a mirror.
 
 ## GitHub repo mirror (local-only)
 
-`dotfiles.githubBackup` mirrors this host's GitHub repos onto the backup disk as
+`githubBackup` mirrors this host's GitHub repos onto the backup disk as
 bare git mirrors, driven by
 [`modules/nixos/github-backup.nix`](../../nixos/github-backup.nix). It is
 deliberately **local-only** (`offsite = false`): GitHub already holds the offsite
@@ -104,7 +104,7 @@ unchanged (and a copy-based mirror keys on that mtime).
 - **Refresh.** The dataset's `preBackup` runs
   [`github-mirror.sh`](./github-mirror.sh) under [`gitconfig`](./gitconfig) via
   `GIT_CONFIG_GLOBAL`: [ghorg](https://github.com/gabrie30/ghorg)
-  `clone --backup --clone-wiki --skip-forks` of `dotfiles.githubUser`, which
+  `clone --backup --clone-wiki --skip-forks` of `user.githubUser`, which
   clones on the first run and `git remote update`s thereafter, plus
   `GHORG_FETCH_GIT_LFS=true` so LFS objects are pulled. Archived repos **are**
   mirrored (they are frozen, not disposable — most of this owner's history is
@@ -115,7 +115,7 @@ unchanged (and a copy-based mirror keys on that mtime).
   so git does not rewrite packs behind the copy's back. The mirror therefore
   gains one pack per fetch that brought objects; a periodic `repack` would bound
   the count but re-copy every pack, so it is deliberately not run.
-- **Token.** Read at runtime from `dotfiles.githubBackup.tokenFile`
+- **Token.** Read at runtime from `githubBackup.tokenFile`
   (`/run/secrets/github-repo-pat`, a classic `repo`-scoped sops secret,
   root-owned mode 0400); never placed in the Nix store. This is a *different*
   token from the `github-key-pat` `bootstrap` uses for SSH-key registration.
@@ -123,7 +123,7 @@ unchanged (and a copy-based mirror keys on that mtime).
   mirror only reads, and fine-grained tokens cannot read wikis. ghorg embeds
   the token in the `git clone`/`git remote set-url` URL, so it is visible in
   root argv during a run (see the hardening list).
-- **Private-repo guard.** `dotfiles.githubBackup.probeRepo` names a known-private
+- **Private-repo guard.** `githubBackup.probeRepo` names a known-private
   repo; the run fails unless that repo was refreshed in the current run. A token
   that lost `repo` scope still lists public repos and exits 0, and ghorg never
   prunes the private mirrors it created earlier, so a directory-existence check
@@ -341,7 +341,7 @@ Declare it and nothing else — the service, timer, local mirror, offsite mirror
 check, marker and alert are generated:
 
 ```nix
-dotfiles.backup.datasets.Books = {
+backup.datasets.Books = {
   schedule = "*-*-* 07:00:00";
   # fullCheckSchedule = "Sun *-*-* 06:00:00";  # extra whole-mirror check
   # timeout = "12h";       # wall-clock backstop
@@ -354,7 +354,7 @@ dotfiles.backup.datasets.Books = {
 ```
 
 The source defaults to `/var/lib/media/<Name>`; set `source` to override. A
-dataset needs `dotfiles.backup.enable = true` (the backup disk).
+dataset needs `backup.enable = true` (the backup disk).
 
 ## Known limits
 
@@ -367,7 +367,7 @@ dataset needs `dotfiles.backup.enable = true` (the backup disk).
   That is deliberate for backup safety; there is no automated retention/prune
   tooling. For the deliberate one-off, see
   [Pruning a mirror](#pruning-a-mirror-one-time).
-- `dotfiles.immich.backup` and the old restic/Immich-specific pipeline have
+- `immich.backup` and the old restic/Immich-specific pipeline have
   been removed; these generic datasets replace them.
 - The offsite copy logs each copied filename at INFO (to extract changed paths),
   so source filenames reach journald on every run that copies files — previously

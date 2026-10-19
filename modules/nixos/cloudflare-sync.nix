@@ -1,4 +1,4 @@
-# Reconciler for the Cloudflare side of `dotfiles.webProxy`: one oneshot that
+# Reconciler for the Cloudflare side of `webProxy`: one oneshot that
 # reads a secrets-free desired-state spec and makes DNS records (and, where
 # enabled, Access applications) match it. It is additive for DNS — a matching
 # CNAME is adopted, a missing one created, a changed one updated, and nothing is
@@ -14,14 +14,14 @@
 #
 # The API token and cloudflared's credentials are secrets, so they live in sops
 # (`secrets/smortress.yaml`); smortress repoints
-# `dotfiles.webProxy.apiTokenFile`/`credentialsFile` at the decrypted files
+# `webProxy.apiTokenFile`/`credentialsFile` at the decrypted files
 # (modules/nixos/secrets.nix). The token needs Zone:DNS:Write and Access: Apps
 # and Policies:Write on the apex zone; the reconciler names the missing scope
 # if an API call is denied. It is read at runtime, so it never enters the Nix
 # store. cloudflared's credentials are read for the TunnelID that builds
 # `<uuid>.cfargotunnel.com` — no UUID is authored anywhere.
 #
-# Add a service by adding an entry to `dotfiles.webProxy.services` (keyed by
+# Add a service by adding an entry to `webProxy.services` (keyed by
 # subdomain) and rebuilding; add `access.enable = true` to put Cloudflare
 # Access in front of it. Dry-run any time with `sudo cloudflare-sync --check`
 # (exits non-zero when the live state has drifted from the declared one).
@@ -32,7 +32,7 @@
   ...
 }:
 let
-  cfg = config.dotfiles.webProxy;
+  cfg = config.webProxy;
 
   # Defaults make `sudo cloudflare-sync --check` work with no arguments: the
   # spec is installed at a stable path and the token path comes from the option
@@ -47,7 +47,7 @@ let
   spec = {
     zone = cfg.domain;
     inherit (cfg) credentialsFile;
-    accessEmail = config.dotfiles.email;
+    accessEmail = config.user.email;
     services = lib.mapAttrs (_: service: {
       inherit (service) port;
       access = service.access.enable;
@@ -85,12 +85,12 @@ in
         ];
       };
       # The unit text is otherwise stable — the wrapper bakes in only the script
-      # and token paths — so without this a `dotfiles.webProxy.services` change
+      # and token paths — so without this a `webProxy.services` change
       # would leave the unit byte-identical and systemd would not restart this
       # oneshot: the reconciler would not re-run until reboot.
       restartTriggers = [ specFile ];
       # Route failures through the Cloudflare email template, only when enabled.
-      onFailure = lib.optional config.dotfiles.alerting.enable "cloudflare-email@%n.service";
+      onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
     };
 
     environment.systemPackages = [ cloudflare-sync ];

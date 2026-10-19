@@ -5,9 +5,9 @@
   ...
 }:
 let
-  cfg = config.dotfiles;
-  isFish = cfg.shell == "fish";
-  isZsh = cfg.shell == "zsh";
+  shell = config.user.shell;
+  isFish = shell == "fish";
+  isZsh = shell == "zsh";
 
   # Renames the tab holding this shell's pane, not the focused one, which
   # differs once you switch tabs while a command runs. Shells compute the
@@ -39,7 +39,7 @@ let
 
   # Fish-style abbreviations: expand the command word on space or enter.
   zshAbbrs = lib.concatStringsSep " " (
-    lib.mapAttrsToList (k: v: "${lib.escapeShellArg k} ${lib.escapeShellArg v}") cfg.shellAbbrs
+    lib.mapAttrsToList (k: v: "${lib.escapeShellArg k} ${lib.escapeShellArg v}") config.user.shellAbbrs
   );
 
   zshPathInit = ''
@@ -80,7 +80,7 @@ in
 
   # One string per abbreviation for both shells; pickers go through `pick`,
   # defined by each renderer below, since capturing output differs.
-  dotfiles.shellAbbrs = {
+  user.shellAbbrs = {
     e = "hx";
     ef = "pick files hx";
     et = "pick text hx";
@@ -126,14 +126,14 @@ in
       # Lix's installer only hooks /etc/{bash,zsh}rc, and nixpkgs' fish reads its
       # sysconfdir from the store, so non-NixOS hosts never get Nix on PATH.
       shellInit = lib.mkMerge [
-        (lib.mkIf (!cfg.nixos) ''
+        (lib.mkIf (!config.machine.nixos) ''
           if test -e /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.fish
               source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.fish
           end
         '')
         # sops-nix provisions these 0400 user-owned secrets on smortress; other
         # hosts do not have the paths and skip them.
-        (lib.mkIf cfg.nixos ''
+        (lib.mkIf config.machine.nixos ''
           if test -r /run/secrets/neuralwatt-api-key
               set -gx NEURALWATT_API_KEY (cat /run/secrets/neuralwatt-api-key)
           end
@@ -143,7 +143,7 @@ in
         '')
       ];
 
-      inherit (cfg) shellAbbrs;
+      inherit (config.user) shellAbbrs;
 
       interactiveShellInit = lib.mkMerge [
         ''
@@ -285,8 +285,8 @@ in
       # shells then run /etc/zprofile's path_helper, which moves the system
       # dirs ahead of Nix and HM. Both files rebuild the same order as fish:
       # HM's sessionPath, then the Nix profile, then the system.
-      envExtra = lib.mkIf (!cfg.nixos) zshPathInit;
-      profileExtra = lib.mkIf (!cfg.nixos) zshPathInit;
+      envExtra = lib.mkIf (!config.machine.nixos) zshPathInit;
+      profileExtra = lib.mkIf (!config.machine.nixos) zshPathInit;
 
       initContent = lib.mkMerge [
         # Before compinit: fish-like menu completion, case-insensitive.

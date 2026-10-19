@@ -7,7 +7,7 @@
 let
   inherit (pkgs.stdenv.hostPlatform) isLinux;
   isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
-  cfg = config.dotfiles;
+  cfg = config.user;
   darwinFontsEnv = pkgs.buildEnv {
     name = "home-manager-fonts";
     paths = [ cfg.fontPackage ];
@@ -21,7 +21,7 @@ in
     stateVersion = "26.05";
     packages = [
       pkgs.home-manager
-      config.dotfiles.fontPackage
+      config.user.fontPackage
     ];
     file.".config/home-manager" = {
       source = config.lib.file.mkOutOfStoreSymlink "${cfg.codeRoot}/github.com/smores56/nix-config";
@@ -56,7 +56,7 @@ in
     );
   };
 
-  targets.genericLinux.enable = isLinux && !cfg.nixos;
+  targets.genericLinux.enable = isLinux && !config.machine.nixos;
   xdg = lib.mkIf isLinux {
     enable = true;
     mime.enable = true;

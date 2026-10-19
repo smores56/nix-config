@@ -20,7 +20,7 @@ in
     ".config/television/cable/worktrees.toml".source = ./worktrees.toml;
   };
 
-  dotfiles.shellAbbrs = {
+  user.shellAbbrs = {
     r = "pick repos c";
     w = "pick worktrees c";
     wg = "repos get";

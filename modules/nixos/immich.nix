@@ -5,10 +5,31 @@
 # llama.cpp, so indexing must not contend for VRAM.
 { config, lib, ... }:
 let
-  cfg = config.dotfiles.immich;
+  cfg = config.immich;
   ports = import ../ports.nix;
 in
 {
+  options.immich = lib.mkOption {
+    type = lib.types.submodule {
+      options = {
+        enable = lib.mkEnableOption "self-hosted Immich photo library (NixOS-only)";
+        mediaLocation = lib.mkOption {
+          type = lib.types.path;
+          default = "/var/lib/immich";
+          description = "Directory Immich stores its managed library in. The default is created by the Immich module.";
+        };
+        lanSources = lib.mkOption {
+          type = lib.types.listOf (lib.types.strMatching "[0-9]{1,3}(\\.[0-9]{1,3}){3}/[0-9]{1,2}");
+          default = [ ];
+          example = [ "10.0.0.0/24" ];
+          description = "IPv4 source CIDRs allowed to reach the Immich port directly (the mobile app's local-network URL). Empty keeps Immich tunnel-only. Source-scoped rather than interface-scoped so a global-IPv6 uplink cannot expose it to the WAN. Each entry is interpolated into a root iptables command, so the type validates it as a CIDR.";
+        };
+      };
+    };
+    default = { };
+    description = "Self-hosted Immich photo/video library and its Postgres/Redis backing services.";
+  };
+
   config = lib.mkIf cfg.enable {
     services.immich = {
       enable = true;

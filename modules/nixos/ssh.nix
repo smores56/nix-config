@@ -1,9 +1,16 @@
 { config, lib, ... }:
 let
   ports = import ../ports.nix;
+  # The vault's shared personal identity (design D6). Servers only ever hold
+  # the public half; clients get the private half over SSH_AUTH_SOCK.
+  authorizedKeys = [
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEu3DfhswY9f9hum/0OhAw2833CkZOP6wVKW5yJk6GpU sam@sammohr.dev"
+  ];
 in
 {
-  config = lib.mkIf config.dotfiles.exposeSsh {
+  options.exposeSsh.enable = lib.mkEnableOption "sshd bound to loopback for Cloudflare Tunnel access";
+
+  config = lib.mkIf config.exposeSsh.enable {
     services.openssh = {
       enable = true;
       # Reachable only through the Cloudflare Tunnel: cloudflared dials
@@ -29,10 +36,9 @@ in
       };
     };
     security.sudo.wheelNeedsPassword = false;
-    nix.settings.trusted-users = [ config.dotfiles.username ];
+    nix.settings.trusted-users = [ config.machine.username ];
     # sshd authenticates against the vault's shared identity; the server only
-    # ever holds the public half (dotfiles.sshAuthorizedKeys).
-    users.users.${config.dotfiles.username}.openssh.authorizedKeys.keys =
-      config.dotfiles.sshAuthorizedKeys;
+    # ever holds the public half.
+    users.users.${config.machine.username}.openssh.authorizedKeys.keys = authorizedKeys;
   };
 }

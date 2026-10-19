@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Reconcile Cloudflare DNS and Access for the tunnel-exposed services declared
-in `dotfiles.webProxy.services`.
+in `webProxy.services`.
 
 Nix emits a secrets-free desired-state JSON (see `modules/nixos/cloudflare-sync.nix`)
 and the API token is read at runtime from a 0600 file, so no secret ever enters
@@ -449,7 +449,7 @@ def main(argv=None, client_factory=None):
         print(
             "cloudflare-sync: REFUSED to delete Cloudflare Access for a protected "
             "service (ssh/llm/searx/ntfy/chat, or their ports) and left it in place: "
-            "dotfiles.webProxy.services declares it public, which must never happen. "
+            "webProxy.services declares it public, which must never happen. "
             "Fix the config — do not work around this.",
             file=sys.stderr,
         )

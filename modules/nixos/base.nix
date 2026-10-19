@@ -5,7 +5,7 @@
   ...
 }:
 let
-  cfg = config.dotfiles;
+  cfg = config.machine;
 in
 {
   system.stateVersion = "25.11";
@@ -44,7 +44,7 @@ in
       "wheel"
       "dialout"
     ];
-    shell = pkgs.${cfg.shell};
+    shell = pkgs.${config.user.shell};
   };
 
   services.displayManager.autoLogin = lib.mkIf cfg.graphical {
@@ -75,7 +75,7 @@ in
     enable32Bit = true;
   };
 
-  programs.${cfg.shell}.enable = true;
+  programs.${config.user.shell}.enable = true;
   nixpkgs.config.allowUnfree = true;
 
   # Keep user services running across logout (needed for user systemd units).

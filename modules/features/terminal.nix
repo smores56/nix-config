@@ -5,13 +5,13 @@
   ...
 }:
 let
-  cfg = config.dotfiles;
+  shell = config.user.shell;
   kittyApp = "${config.home.homeDirectory}/Applications/Home Manager Apps/kitty.app";
 in
 {
-  fonts.fontconfig.enable = lib.mkIf cfg.graphical true;
+  fonts.fontconfig.enable = lib.mkIf config.machine.graphical true;
   home.sessionVariables = {
-    TERMINAL = cfg.terminal;
+    TERMINAL = "kitty";
     COLORTERM = "truecolor";
   };
 
@@ -22,15 +22,15 @@ in
       bold_font = "family='Google Sans Code' style=Bold";
       italic_font = "family='Google Sans Code' style=Italic";
       bold_italic_font = "family='Google Sans Code' style='Bold Italic'";
-      font_size = cfg.terminalFontSize;
+      font_size = 12;
       background_opacity = lib.mkForce "0.8";
-      shell = "${pkgs.${cfg.shell}}/bin/${cfg.shell}";
+      shell = "${pkgs.${shell}}/bin/${shell}";
       tab_bar_min_tabs = 2;
       hide_window_decorations = "yes";
       enable_audio_bell = "no";
       visual_bell_duration = "0.15";
       macos_option_as_alt = "both";
-      wayland_enable_ime = if cfg.wayland then "yes" else "no";
+      wayland_enable_ime = if config.machine.wayland then "yes" else "no";
     };
   };
 

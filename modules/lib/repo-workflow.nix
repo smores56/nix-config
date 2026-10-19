@@ -4,7 +4,7 @@
   pkgs,
 }:
 let
-  cfg = config.dotfiles;
+  cfg = config.user;
 
   # Work orgs live flat in one folder; `repos get` links an owner dir into it
   # on demand, so no owner name is baked into the config.
@@ -62,7 +62,7 @@ let
       WORK_FLAT=''${REPOS_WORK_FLAT:-$WORK_FLAT}
       WORK_OWNER_GLOB=${lib.escapeShellArg cfg.work.githubOwnerGlob}
 
-      # Follows symlinked owner dirs (dotfiles.work.flatRepos links several
+      # Follows symlinked owner dirs (user.work.flatRepos links several
       # orgs to one folder), listing each checkout once: under the owner its
       # origin names, else the first path that reaches it.
       list_repos() {

@@ -5,11 +5,8 @@
   username = "sam";
   home = true;
 
-  dotfiles = {
-    displayManager = "osx";
-    windowManager = "aerospace";
+  user = {
     aiProfile = "work";
-    workHost = true;
     brain.dir = "brain";
   };
 }

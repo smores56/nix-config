@@ -14,7 +14,8 @@
 }:
 let
   inherit (pkgs.stdenv.hostPlatform) isLinux;
-  cfg = config.dotfiles.calibre;
+  ports = import ../ports.nix;
+  cfg = config.calibre;
 
   library = "${config.home.homeDirectory}/Calibre Library";
   userdb = "${config.home.homeDirectory}/.config/calibre-server/users.sqlite";
@@ -49,6 +50,26 @@ let
   '';
 in
 {
+  options.calibre = lib.mkOption {
+    type = lib.types.submodule {
+      options = {
+        enable = lib.mkEnableOption "calibre-server OPDS as a user systemd service";
+        port = lib.mkOption {
+          type = lib.types.port;
+          default = ports.calibre;
+          description = "Loopback port for calibre-server.";
+        };
+        passwordFile = lib.mkOption {
+          type = lib.types.str;
+          default = "";
+          description = "File holding the OPDS account password. Empty falls back to ~/.config/calibre-server/password; smortress points this at its sops-decrypted copy.";
+        };
+      };
+    };
+    default = { };
+    description = "calibre OPDS content server exposed over the Cloudflare Tunnel.";
+  };
+
   config = lib.mkIf (isLinux && cfg.enable) {
     home.packages = [ pkgs.calibre ];
 

@@ -5,7 +5,6 @@
   ...
 }:
 let
-  isNiri = config.dotfiles.displayManager == "niri";
   inherit (config.lib.stylix) colors;
   defaultSpring = {
     damping-ratio = 0.8;
@@ -14,91 +13,89 @@ let
   };
 in
 {
-  config = lib.mkIf isNiri {
-    home.packages = with pkgs; [
-      brightnessctl
-      wl-clipboard
-      grim
-      slurp
-      playerctl
-    ];
+  home.packages = with pkgs; [
+    brightnessctl
+    wl-clipboard
+    grim
+    slurp
+    playerctl
+  ];
 
-    # Force Qt apps onto the Wayland platform plugin. Without this, Krita in
-    # particular falls back to XWayland, where drawing tablets receive no pen
-    # input. This must live in the systemd user environment rather than niri's
-    # `environment` block: the launcher (Noctalia) runs as a systemd user
-    # service, so apps it spawns never inherit niri's process environment.
-    xdg.configFile."environment.d/20-qt-wayland.conf".text = ''
-      QT_QPA_PLATFORM=wayland
-      NIXOS_OZONE_WL=1
-    '';
+  # Force Qt apps onto the Wayland platform plugin. Without this, Krita in
+  # particular falls back to XWayland, where drawing tablets receive no pen
+  # input. This must live in the systemd user environment rather than niri's
+  # `environment` block: the launcher (Noctalia) runs as a systemd user
+  # service, so apps it spawns never inherit niri's process environment.
+  xdg.configFile."environment.d/20-qt-wayland.conf".text = ''
+    QT_QPA_PLATFORM=wayland
+    NIXOS_OZONE_WL=1
+  '';
 
-    programs.niri.package = pkgs.niri-unstable;
-    programs.niri.settings = {
-      prefer-no-csd = true;
-      hotkey-overlay.skip-at-startup = true;
-      layout = {
-        background-color = "#${colors.base00}";
-        shadow = {
-          enable = true;
-          color = "#00000050";
-          inactive-color = "#00000030";
-          offset = {
-            x = 2;
-            y = 3;
-          };
-          softness = 12;
-          spread = 0;
+  programs.niri.package = pkgs.niri-unstable;
+  programs.niri.settings = {
+    prefer-no-csd = true;
+    hotkey-overlay.skip-at-startup = true;
+    layout = {
+      background-color = "#${colors.base00}";
+      shadow = {
+        enable = true;
+        color = "#00000050";
+        inactive-color = "#00000030";
+        offset = {
+          x = 2;
+          y = 3;
         };
-        insert-hint.display.color = "#${colors.base0E}80";
-        default-column-width.proportion = 0.5;
+        softness = 12;
+        spread = 0;
       };
-      overview.backdrop-color = "#${colors.base00}";
-
-      animations = {
-        window-open.kind.easing = {
-          curve = "ease-out-expo";
-          duration-ms = 200;
-        };
-        window-close.kind.easing = {
-          curve = "ease-out-expo";
-          duration-ms = 150;
-        };
-        window-movement.kind.spring = defaultSpring;
-        workspace-switch.kind.spring = defaultSpring;
-        horizontal-view-movement.kind.spring = defaultSpring;
-      };
-
-      cursor = {
-        hide-after-inactive-ms = 3000;
-        hide-when-typing = true;
-      };
-
-      input = {
-        keyboard = {
-          repeat-delay = 200;
-          repeat-rate = 35;
-        };
-
-        touchpad = {
-          natural-scroll = false;
-          tap = true;
-          scroll-factor = 0.5;
-        };
-      };
-
-      window-rules = [
-        {
-          draw-border-with-background = false;
-          geometry-corner-radius = lib.genAttrs [
-            "top-left"
-            "top-right"
-            "bottom-left"
-            "bottom-right"
-          ] (_: 12.0);
-          clip-to-geometry = true;
-        }
-      ];
+      insert-hint.display.color = "#${colors.base0E}80";
+      default-column-width.proportion = 0.5;
     };
+    overview.backdrop-color = "#${colors.base00}";
+
+    animations = {
+      window-open.kind.easing = {
+        curve = "ease-out-expo";
+        duration-ms = 200;
+      };
+      window-close.kind.easing = {
+        curve = "ease-out-expo";
+        duration-ms = 150;
+      };
+      window-movement.kind.spring = defaultSpring;
+      workspace-switch.kind.spring = defaultSpring;
+      horizontal-view-movement.kind.spring = defaultSpring;
+    };
+
+    cursor = {
+      hide-after-inactive-ms = 3000;
+      hide-when-typing = true;
+    };
+
+    input = {
+      keyboard = {
+        repeat-delay = 200;
+        repeat-rate = 35;
+      };
+
+      touchpad = {
+        natural-scroll = false;
+        tap = true;
+        scroll-factor = 0.5;
+      };
+    };
+
+    window-rules = [
+      {
+        draw-border-with-background = false;
+        geometry-corner-radius = lib.genAttrs [
+          "top-left"
+          "top-right"
+          "bottom-left"
+          "bottom-right"
+        ] (_: 12.0);
+        clip-to-geometry = true;
+      }
+    ];
   };
 }

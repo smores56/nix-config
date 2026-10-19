@@ -13,7 +13,7 @@
   ...
 }:
 let
-  cfg = config.dotfiles.githubBackup;
+  cfg = config.githubBackup;
   mirrorRoot = "/var/lib/github-mirrors";
 
   # ghorg reads its config from $XDG_CONFIG_HOME/ghorg/conf.yaml; pin it at an
@@ -52,18 +52,52 @@ let
       GHORG_SCM_TYPE=github \
       GHORG_FETCH_GIT_LFS=true \
       GHORG_PROBE_REPO=${lib.escapeShellArg cfg.probeRepo} \
-      ${../features/backup/github-mirror.sh} ${lib.escapeShellArg config.dotfiles.githubUser}
+      ${../features/backup/github-mirror.sh} ${lib.escapeShellArg config.user.githubUser}
   '';
 in
 {
-  # Gate on the host's own knob only: reading the parent option
-  # `dotfiles.backup.enable` here would recurse (this module defines a child of
-  # it). backup-datasets.nix already asserts that any dataset needs the disk.
+  options.githubBackup = lib.mkOption {
+    type = lib.types.submodule {
+      options = {
+        enable = lib.mkEnableOption "mirroring this host's GitHub repos onto the backup disk";
+        tokenFile = lib.mkOption {
+          # str, not path: a path interpolated into a derivation is copied into
+          # the Nix store, which would publish the token.
+          type = lib.types.str;
+          default = "/run/secrets/github-repo-pat";
+          description = "Runtime file holding a GitHub token that can read every mirrored repo, read by ghorg; never placed in the Nix store. A classic `repo` token also grants write access to every repo the account can reach, so keep it root-only.";
+        };
+        probeRepo = lib.mkOption {
+          type = lib.types.str;
+          default = "";
+          description = "A known-private repo name (required). The run fails unless that repo was refreshed in the current run, catching a token that lost `repo` scope: ghorg then lists only public repos, leaves the old private mirrors in place, and still exits 0.";
+        };
+        schedule = lib.mkOption {
+          type = lib.types.str;
+          default = "*-*-* 00:30:00";
+          description = "systemd OnCalendar for the mirror timer. A local-only dataset takes its own lock, so it neither waits on nor starves the Proton datasets.";
+        };
+        timeout = lib.mkOption {
+          type = lib.types.str;
+          default = "6h";
+          description = "systemd TimeSpan cap on a run; generous for a cold clone of every repo.";
+        };
+        fullCheckSchedule = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = "Sun *-*-* 10:00:00";
+          description = "systemd OnCalendar for a periodic whole-tree verification (null disables). The nightly check only walks the files copied that run, so unchanged packs would otherwise never be re-read.";
+        };
+      };
+    };
+    default = { };
+    description = "Mirror this host's GitHub repos onto the backup disk via ghorg (local-only; GitHub is the offsite copy).";
+  };
+
   config = lib.mkIf cfg.enable {
     assertions = [
       {
         assertion = cfg.probeRepo != "";
-        message = "dotfiles.githubBackup.probeRepo must name a known-private repo; it is the only guard against a token that silently loses `repo` scope.";
+        message = "githubBackup.probeRepo must name a known-private repo; it is the only guard against a token that silently loses `repo` scope.";
       }
     ];
 
@@ -74,7 +108,7 @@ in
       "d ${mirrorRoot} 0700 root root -"
     ];
 
-    dotfiles.backup.datasets.GitHub = {
+    backup.datasets.GitHub = {
       # ghorg writes <target>/<owner>_backup/<repo>/; the dataset source is the
       # parent, so the whole tree is mirrored.
       source = mirrorRoot;

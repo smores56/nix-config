@@ -23,12 +23,12 @@ in
       "github.com" = {
         HostName = "github.com";
         User = "git";
-        IdentityFile = "${config.dotfiles.sshKey}.pub";
+        IdentityFile = "${config.user.sshKey}.pub";
         IdentitiesOnly = true;
       };
 
       "*" = {
-        IdentityFile = "${config.dotfiles.sshKey}.pub";
+        IdentityFile = "${config.user.sshKey}.pub";
         ForwardAgent = false;
         Compression = false;
         ServerAliveInterval = 0;
@@ -48,11 +48,11 @@ in
   # include's core.sshCommand). Standalone on purpose: IdentityFile entries
   # accumulate across config blocks, so layering on the main config would
   # also offer id_personal and could authenticate as the personal account.
-  home.file.${lib.removePrefix "~/" config.dotfiles.work.sshConfig}.text = ''
+  home.file.${lib.removePrefix "~/" config.user.work.sshConfig}.text = ''
     Host github.com
       HostName github.com
       User git
-      IdentityFile ${config.dotfiles.work.sshKey}.pub
+      IdentityFile ${config.user.work.sshKey}.pub
       IdentitiesOnly yes
   '';
 

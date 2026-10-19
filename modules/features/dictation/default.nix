@@ -5,7 +5,7 @@
   ...
 }:
 let
-  cfg = config.dotfiles;
+  cfg = config.machine;
 
   # whisper.cpp base.en weights for the local backend. Pinning them keeps the
   # config pointing at an immutable store path instead of downloading into

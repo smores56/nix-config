@@ -187,7 +187,7 @@ fi
 # ── Phase 5: GitHub authentication ────────────────────────────────
 
 GH_KEY_SCOPES="write:public_key,write:ssh_signing_key"
-# dotfiles.sshKey in modules/options.nix; bash cannot read the option.
+# user.sshKey in modules/options.nix; bash cannot read the option.
 SSH_KEY="${HOME}/.ssh/id_personal"
 
 # A headless host authenticates with the vault's GitHub PAT (sops-delivered,

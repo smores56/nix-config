@@ -67,7 +67,7 @@ in
       scriptChecks =
         let
           hc = scriptHome.config;
-          d = hc.dotfiles;
+          d = hc.user;
           configFile = name: hc.xdg.configFile.${name}.source;
           homeExe =
             name:

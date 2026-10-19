@@ -1,6 +1,6 @@
 # Server-side secrets for smortress, decrypted by sops-nix at activation from
-# the encrypted `secrets/smortress.yaml`. Declared on the host rather than a
-# `dotfiles.*` knob because the age recipients are host-scoped: only the host
+# the encrypted `secrets/smortress.yaml`. Declared on the host rather than as
+# a shared option because the age recipients are host-scoped: only the host
 # whose ssh host key decrypts that file may declare its secrets. Other hosts
 # import the sops module but declare no secrets, so nothing runs there.
 {
@@ -25,21 +25,21 @@
       # The calibre OPDS password, read by the user's calibre-server unit; owned
       # by the user so the 0400 file is readable without root.
       calibre-password = {
-        owner = config.dotfiles.username;
+        owner = config.machine.username;
         mode = "0400";
       };
 
       # maki's hosted-inference key; the fish init exports it from this path, so
       # the user must be able to read it.
       neuralwatt-api-key = {
-        owner = config.dotfiles.username;
+        owner = config.machine.username;
         mode = "0400";
       };
 
       # Brave Search API key; the fish init exports it for maki's websearch
       # plugin and Page Assist uses its own copy in the browser.
       brave-api-key = {
-        owner = config.dotfiles.username;
+        owner = config.machine.username;
         mode = "0400";
       };
 
@@ -47,11 +47,11 @@
       # non-interactively (`gh auth login --with-token`, `pass-cli login`).
       # Populate with `sops secrets/smortress.yaml` (see README).
       github-key-pat = {
-        owner = config.dotfiles.username;
+        owner = config.machine.username;
         mode = "0400";
       };
       proton-pass-pat = {
-        owner = config.dotfiles.username;
+        owner = config.machine.username;
         mode = "0400";
       };
 
@@ -62,7 +62,7 @@
         mode = "0400";
       };
     }
-    // lib.optionalAttrs config.dotfiles.alerting.enable {
+    // lib.optionalAttrs config.alerting.enable {
       # JSON {token, account_id, from, to} for Cloudflare Email Service; read by
       # the root alert units. Declared only when alerting is enabled so a host
       # can switch before the secret exists.
@@ -72,7 +72,7 @@
     # Repoint the consumers at the decrypted files. The option defaults stay
     # untouched so every other host still evaluates against the old /var/lib
     # paths.
-    dotfiles.webProxy.apiTokenFile = config.sops.secrets.cf-api-token.path;
-    dotfiles.webProxy.credentialsFile = config.sops.secrets.cloudflared-credentials.path;
+    webProxy.apiTokenFile = config.sops.secrets.cf-api-token.path;
+    webProxy.credentialsFile = config.sops.secrets.cloudflared-credentials.path;
   };
 }

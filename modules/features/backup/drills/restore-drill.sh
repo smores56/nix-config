@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Restore drill for a dotfiles.backup dataset: prove the local mirror and the
+# Restore drill for a backup dataset: prove the local mirror and the
 # offsite mirror are faithful copies of the live source, and (optionally)
 # restore a dataset's database dump into a scratch Postgres and assert the
 # restore is faithful and complete (expected tables present with rows).
@@ -11,7 +11,7 @@
 #   sudo DRILL_PG_DB=immich bash restore-drill.sh Photos
 #
 # Usage: restore-drill.sh <Dataset> [samples]
-#   Dataset  name of a dotfiles.backup.datasets.<Dataset> entry (e.g. Photos)
+#   Dataset  name of a backup.datasets.<Dataset> entry (e.g. Photos)
 #   samples  files to hash-compare source vs local vs offsite (default 20)
 #
 # Cost model: ANY offsite rclone operation walks the whole remote. On a 30k-object

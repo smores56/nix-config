@@ -5,9 +5,7 @@
   nixos = true;
   home = true;
 
-  dotfiles = {
-    displayManager = "niri";
-    nixos = true;
-    fingerprint = true;
+  nixosOptions = {
+    fingerprint.enable = true;
   };
 }

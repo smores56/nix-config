@@ -5,7 +5,7 @@
   ...
 }:
 let
-  stateDir = "${config.dotfiles.codeRoot}/github.com/smores56/sdlc-state";
+  stateDir = "${config.user.codeRoot}/github.com/smores56/sdlc-state";
 
   # Bundle the CLI sources into one store dir so sibling imports resolve
   # (each `${./file}` alone would land in its own store path).
@@ -27,7 +27,7 @@ in
 
   home.file.".config/television/cable/features.toml".source = ./features.toml;
 
-  dotfiles.shellAbbrs = {
+  user.shellAbbrs = {
     s = "pick features c";
     se = "pick features sdlc edit {name} plan";
     sl = "sdlc list";

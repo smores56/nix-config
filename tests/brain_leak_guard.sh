@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The brain skill and digest ship in this public repo while the vault they
 # serve holds employer data. This guard fails the build when the brain files
-# name the employer (identifiers derived from dotfiles.work), link a Slack or
+# name the employer (identifiers derived from user.work), link a Slack or
 # Jira workspace, or carry a ticket key that isn't an obvious placeholder.
 # It first proves itself against planted fixtures, then scans the repo.
 #

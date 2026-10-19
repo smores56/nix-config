@@ -10,8 +10,8 @@
   ...
 }:
 let
-  cfg = config.dotfiles.alerting;
-  datasets = config.dotfiles.backup.datasets;
+  cfg = config.alerting;
+  datasets = config.backup.datasets;
 
   # JSON secret shape:
   #   {"token":"...","account_id":"...","from":"alerts@send.sammohr.dev","to":"sam@sammohr.dev"}
@@ -159,6 +159,21 @@ let
   };
 in
 {
+  options.alerting = lib.mkOption {
+    type = lib.types.submodule {
+      options = {
+        enable = lib.mkEnableOption "Cloudflare email alerts for unit failures and stale backups";
+        secretFile = lib.mkOption {
+          type = lib.types.str;
+          default = "/run/secrets/cloudflare-email";
+          description = "JSON secret holding the Cloudflare Email Service token, account id, from address, and to address.";
+        };
+      };
+    };
+    default = { };
+    description = "Send unit-failure and stale-backup email through Cloudflare Email Service. Enable only after the secret and the sending domain exist.";
+  };
+
   config = lib.mkIf cfg.enable {
     systemd.services."cloudflare-email@" = {
       description = "Email the failure of %i through Cloudflare";

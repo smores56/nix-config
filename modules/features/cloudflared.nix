@@ -1,8 +1,8 @@
 # Reach smortress's loopback-only services (sshd, llama.cpp) from a
 # client over the Cloudflare Tunnel. `cloudflared access` authenticates with a
 # Cloudflare Access service token pulled from Proton Pass, so nothing lands on
-# disk and no browser login is ever needed. The server itself reaches its own
-# services on loopback (`dotfiles.llm`), so it gets no forwards.
+# disk and no browser login is ever needed. The server reaches its own
+# services on loopback, so it gets no forwards.
 {
   config,
   lib,
@@ -11,8 +11,9 @@
   ...
 }:
 let
-  inherit (config.dotfiles) aiProfile llm;
-  inherit (config.dotfiles.webProxy) domain;
+  aiProfile = config.user.aiProfile;
+  domain = "sammohr.dev";
+  isServer = builtins.elem "server" config.machine.profiles;
   inherit (aiProviders) smortress;
   inherit (pkgs.stdenv.hostPlatform) isLinux;
 
@@ -117,7 +118,7 @@ in
   # profile reaches its own, and smortress itself uses loopback, so neither
   # needs these forwards.
   systemd.user.services = lib.mkMerge [
-    (lib.mkIf (aiProfile == "personal" && !llm) {
+    (lib.mkIf (aiProfile == "personal" && !isServer) {
       cloudflared-llm = forward "llm" smortress.port;
     })
 

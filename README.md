@@ -6,33 +6,34 @@ Personal Nix configuration for macOS and NixOS machines, managed with
 
 ## Structure
 
-This repo follows the **[dendritic pattern](https://github.com/mightyiam/dendritic)**:
-files under `modules/` are self-contained top-level modules, auto-discovered
-via [import-tree](https://github.com/vic/import-tree) (a few entry points and
-pure-function helpers are listed explicitly). No manual per-module `imports`
-lists.
+Modules are composed by **profiles**, not auto-imported. Each
+`modules/hosts/<host>/default.nix` lists the profiles it composes; every
+profile (`modules/profiles/`) contributes module paths to the home plane, the
+NixOS plane, or both. `import-tree` only assembles the flake-parts modules in
+`modules/flake/`.
 
 Key directories under `modules/`:
 
 | Directory | Purpose |
 |---|---|
-| `options.nix` | `dotfiles.*` option declarations and computed defaults |
+| `options.nix` | `machine.*` host facts, `user.*` identity/preferences, server-profile assertion |
+| `profiles/` | six opt-in profiles: `cli`, `user-base`, `ai-tools`, `linux-desktop`, `darwin-work`, `server` |
+| `hosts/` | per-host `meta.nix` (facts + option values), `default.nix` (explicit profiles), optional `hardware.nix` and `disko.nix` |
 | `home.nix` | home-manager base (fonts, nix.conf, darwin helpers) |
 | `flake/` | flake-parts modules (configurations, checks, formatter) |
 | `features/` | cross-platform home-manager modules (shell, editor, git, packages, theme, ai) |
 | `desktop/` | desktop-environment modules (niri, aerospace) |
 | `nixos/` | NixOS system modules (base, desktop, networking, ssh, etc.) |
-| `hosts/` | per-host directory: `meta.nix` (host knobs; auto-discovered) + optional `hardware.nix` (nixos-generate-config) and `disko.nix` (declarative disks) |
 | `lib/` | helper libraries |
-| `tests/` | Python unit tests for the repo's tools (sdlc, maki, brain, photobucket, cloudflare, backup, immich, aerospace-layout), and shell checks |
+| `tests/` | Python unit tests for the repo's tools and shell checks |
 
 Television cables live with their owning feature modules: `features/tv/`
 for repository navigation and `features/ai/maki/` for Maki sessions.
 
-Cross-cutting values flow through `config.dotfiles.*` options declared in
-`modules/options.nix`, not through `specialArgs` pass-through. Every
-module reads what it needs from `config.dotfiles`, and each host config
-sets its own options in `mkHome`/`mkNixos` calls.
+Cross-cutting values flow through `config.machine.*` and `config.user.*`
+(options declared in `modules/options.nix`), not through `specialArgs`.
+Feature options live in the module that owns them (`webProxy`, `backup`,
+`immich`, `calibre`, `alerting`, …).
 
 ## Installation
 
@@ -61,7 +62,7 @@ sudo nixos-rebuild switch --flake .#<host>
 
 ### Cloudflare Tunnel exposure
 
-`dotfiles.webProxy` (declared in `modules/options.nix`, rendered by
+`webProxy` (declared in `modules/options.nix`, rendered by
 `modules/nixos/web-proxy.nix`) exposes services through a Cloudflare Tunnel.
 Declare a service once, keyed by subdomain; it becomes
 `<sub>.<domain>` → `<protocol>://127.0.0.1:<port>` (`protocol` defaults to
@@ -69,13 +70,13 @@ Declare a service once, keyed by subdomain; it becomes
 on every activation and optional Cloudflare Access in front:
 
 ```nix
-webProxy.services.ntfy = { port = 2586; access.enable = true; };
+webProxy.services.calibre = { port = 8080; access.enable = true; };
 ```
 
 One-time provisioning. Both the API token and the tunnel credentials are
 secrets: they live in `secrets/smortress.yaml`, encrypted with sops-nix (age
 recipients are the admin key and smortress's SSH host key), and smortress
-repoints `dotfiles.webProxy.apiTokenFile`/`credentialsFile` at the decrypted
+repoints `webProxy.apiTokenFile`/`credentialsFile` at the decrypted
 files (`modules/nixos/secrets.nix`). Nothing enters the Nix store.
 
 - Create a Cloudflare API token scoped to the apex zone with
@@ -96,7 +97,7 @@ refused protected-hostname deletion is never mistaken for drift). DNS is
 removed; a CNAME at a declared name pointing elsewhere is **updated** to the
 tunnel (it logs the previous target). Access applications are the one exception
 — disabling `access.enable` deletes the app, making the endpoint public again —
-except for the protected hostnames (ssh/llm/searx/ntfy/chat, matched by name or
+except for the protected hostnames (ssh/llm, matched by name or
 origin port), whose apps are never deleted: the reconciler refuses and exits 2.
 
 ### Personal site and keyboard redirect
@@ -124,46 +125,12 @@ chunks.
 The Immich mobile app takes a primary server URL (the tunnel hostname,
 `https://immich.<domain>`) plus a **local network URL** for when the phone is on
 the home LAN. smortress opens Immich's port only to its LAN subnet
-(`dotfiles.immich.lanSources`) — point the local URL at
+(`immich.lanSources`) — point the local URL at
 `http://<lan-ip>:2283`. The WAN stays tunnel-only.
 
 Cloudflare caps a single upload at 100 MB and Immich neither chunks nor resumes,
 so uploads over the tunnel fail with a 413 above that limit; the LAN URL avoids
 the cap at home. Configure both URLs in the app's server settings.
-
-### Chat UI
-
-`chat.<domain>` serves [Open WebUI](https://openwebui.com) — a single-user chat
-front end, declared by `dotfiles.chat` on smortress (`modules/nixos/chat.nix`).
-It listens on loopback only; the tunnel publishes it behind Cloudflare Access (it
-is a protected hostname, so the ingress cannot exist without `access.enable`),
-with Open WebUI's own login as the second gate. The first visit offers sign-up;
-that account becomes admin. Sign-up is pinned off (`ENABLE_SIGNUP=False`) — the
-first admin is exempt from that flag, so the initial account can still be created.
-
-Two OpenAI-compatible upstreams are wired: the hosted Neuralwatt API
-(`neuralwatt.<model>`, default `neuralwatt.deepseek-v4.1-flash`) and the local
-`llama.cpp` (`local.qwen3.8-27b`). Web search uses the co-located SearXNG over
-loopback; document RAG embeds locally with `all-MiniLM-L6-v2` (Neuralwatt has no
-embeddings API); and the code interpreter drives a `jupyter-sandbox` systemd unit
-on loopback, token-authenticated from sops. The sandbox runs arbitrary code as a
-`DynamicUser` with `MemoryMax=4G`; it is never exposed through the tunnel, but its
-network egress is deliberately unrestricted.
-
-The Neuralwatt key, the Open WebUI session secret, and the Jupyter token are sops
-secrets (`neuralwatt-api-key`, `open-webui-secret-key`, `jupyter-token`), rendered
-into root-owned env files that systemd reads before dropping privileges.
-
-New chats start with web search and the code interpreter already toggled on: the
-per-chat toggles honour a model's `defaultFeatureIds` only when the matching
-capability is set, so `DEFAULT_MODEL_METADATA` supplies both for every model.
-
-Config is **env-authoritative** (`ENABLE_PERSISTENT_CONFIG=False`). Open WebUI's
-`PersistentConfig` seeds a DB row only when it is absent, so an env change after
-first launch is otherwise ignored — a stale empty `models.default_metadata` row is
-exactly that case. The trade-off: config edited in the admin UI does not survive a
-restart, and neither does state the app mutates at runtime (hence the pinned
-`ENABLE_SIGNUP`). Change `modules/nixos/chat.nix` instead.
 
 ### Recovery
 
@@ -193,7 +160,7 @@ The Access token is cached per login in
 to `pass-cli inject` (~1s slower) rather than failing.
 
 **smortress unreachable (tunnel down, network, power).** At the console
-`<tunnelName>` is `dotfiles.webProxy.tunnelName`:
+`<tunnelName>` is `webProxy.tunnelName`:
 
 ```sh
 systemctl status cloudflared-tunnel-<tunnelName>
@@ -212,7 +179,7 @@ Rotate the token in the dashboard, update `cf-api-token` in
 with `sudo cloudflare-sync --check`.
 
 **Access misconfiguration.** A typo that clears `access.enable` on
-`ssh`/`llm`/`searx`/`ntfy`/`chat` fails evaluation (`modules/nixos/web-proxy.nix`),
+`ssh`/`llm` fails evaluation (`modules/nixos/web-proxy.nix`),
 and the reconciler refuses to delete those apps even when asked
 (`PROTECTED_SUBDOMAINS` in `modules/features/cloudflare/cloudflare_sync.py`).
 An Access *policy* mistake (wrong email) still locks out the browser — fix it
@@ -226,52 +193,28 @@ age key.
 
 ### Service failure alerts
 
-`dotfiles.notify` (declared in `modules/options.nix`, implemented by
-`modules/nixos/notify.nix`) runs a self-hosted [ntfy](https://ntfy.sh) listener
-on loopback and a templated handler that any unit can be pointed at:
-
-```nix
-systemd.services.my-thing.onFailure =
-  lib.optional config.dotfiles.notify.enable config.dotfiles.notify.unit;
-```
-
-Gate on the option (and read `dotfiles.notify.unit`) instead of hardcoding the
-unit name: a host that has not enabled notify has no such template, and a
-dangling `onFailure` reference fails activation. The handler journals the
-failing invocation's last lines and publishes them to the loopback listener, so
-alerts arrive even without the public `ntfy.<domain>` exposure — that only adds
-browser access, and it is gated behind Cloudflare Access (see
-`modules/nixos/notify.nix` for the assertion enforcing this).
-
-The topic is the only secret and never enters the Nix store; it is generated
-once at `/var/lib/ntfy-alert/topic` (mode 0600, dir 0700). Read and poll it
-from the host:
-
-```sh
-sudo cat /var/lib/ntfy-alert/topic                     # the topic
-curl -s "http://127.0.0.1:2586/$(sudo cat /var/lib/ntfy-alert/topic)"   # backlog
-```
-
-Known limits: ntfy runs on this host, so it cannot report the host itself
-being down; and the mobile app cannot pass Cloudflare Access, so consume
-alerts in the browser.
+`alerting.enable` (implemented by `modules/nixos/alerting.nix`) sends unit
+failures and stale-backup warnings through Cloudflare Email Service. Every
+backup unit's `OnFailure` points at the `cloudflare-email@` template, and a
+five-minute freshness timer emails once per stale period. The JSON credential
+lives in sops (`cloudflare-email`); no topic or listener runs on the host.
 
 ### Backups
 
-`dotfiles.backup` (the backup disk; `modules/nixos/backup.nix`) plus one
-`dotfiles.backup.datasets.<Name>` entry per dataset drives an rclone 3-2-1
+`backup` (the backup disk; `modules/nixos/backup.nix`) plus one
+`backup.datasets.<Name>` entry per dataset drives an rclone 3-2-1
 pipeline — a versioned local mirror on the disk and, unless `offsite = false`,
-an append-only Proton mirror — with a per-dataset timer, failure marker and ntfy
+an append-only Proton mirror — with a per-dataset timer, failure marker and Cloudflare email alert
 alert. Media datasets can additionally set `onChange` to queue a run after a
 debounced batch of source changes, with the timer as the fallback. smortress
 backs up `Photos`/`Videos`/`Music` offsite (and change-triggered) and mirrors the
-`smores56` GitHub repos locally (`dotfiles.githubBackup`). The operator's guide
+`smores56` GitHub repos locally (`githubBackup`). The operator's guide
 — guarantees, trigger semantics, layout, restore and one-time prune procedures —
 is [`modules/features/backup/README.md`](modules/features/backup/README.md).
 
 ### Fingerprint enrollment
 
-Hosts with `dotfiles.fingerprint = true` get `services.fprintd` and the
+Hosts with `fingerprint.enable = true` get `services.fprintd` and the
 Noctalia lock screen reader. Enroll a print once per machine after
 activating the config:
 
@@ -308,7 +251,7 @@ here; the desktop owns it.
 Work is split across independent switches:
 
 - **Per repo, on every host:** repos with a remote under the GitHub owner
-  glob in `dotfiles.work` (`modules/options.nix`) get the work email,
+  glob in `user.work` (`modules/options.nix`) get the work email,
   signing key, ssh route (`~/.ssh/config.work`, work key only), branch
   naming and PR flow, via git `includeIf hasconfig:remote.*.url`
   (`modules/features/git.nix`). Any matching remote counts, so a fork with a
@@ -345,13 +288,13 @@ model providers Maki may use.
 ### Work hosts
 
 A home with `workHost = true` (`modules/flake/configurations.nix`) applies
-`dotfiles.work.flatRepos` (`modules/options.nix`);
+`user.work.flatRepos` (`modules/options.nix`);
 `modules/features/work-host.nix` holds the mechanics, and no employer name
 appears outside those option values.
 
 - **Flat folder:** employer tooling that wants every checkout in one folder
   gets it. `<codeRoot>/github.com/<owner>` for any owner matching
-  `dotfiles.work.githubOwnerGlob` is a symlink to `flatRepos.dir`, so
+  `user.work.githubOwnerGlob` is a symlink to `flatRepos.dir`, so
   `repos get <owner>/<repo>` lands there while the usual path keeps working,
   and `repos list` shows each checkout once. The owner is linked on demand by
   `repos get`, so no owner name is baked into the config. `flatRepos.envVar`
@@ -359,12 +302,12 @@ appears outside those option values.
 - **Links are created on demand** by `repos get` before a work clone. An org
   dir that already exists as a real directory is not converted; move its
   checkouts into the flat folder manually once.
-- **zsh is the shell** (`dotfiles.shell` follows `workHost`; fish isn't
+- **zsh is the shell** (`user.shell` follows `workHost`; fish isn't
   enabled). HM owns `$ZDOTDIR` (`~/.config/zsh`, set from `~/.zshenv`) and
   sources the tooling-owned plain `~/.zshrc` right after compinit, so its
   PATH entries (pyenv, nvm, brew) win and its functions just work. The
   interactive layer emulates fish (`modules/features/shell.nix`).
-- **Abbreviations** are declared once in `dotfiles.shellAbbrs` and rendered
+- **Abbreviations** are declared once in `user.shellAbbrs` and rendered
   for whichever shell a host runs; pickers use `pick <tv-channel>
   <command…>`, defined for both shells.
 - **Agents** get a generated `CLAUDE.md` note on the layout, and on calling
@@ -381,24 +324,24 @@ folder. Links stay when an org is dropped from the list.
 Hosts live in `modules/hosts/<hostname>/` and are discovered automatically;
 adding one never edits `modules/flake/configurations.nix`.
 
-1. Add `modules/hosts/<hostname>/meta.nix` — a plain attrset (data, no
-   arguments) declaring `system`, `username`, whether to build a NixOS config
-   (`nixos = true`) and/or a home config (`home = true`), and a `dotfiles`
-   attrset of the host's knobs (see `modules/options.nix`).
-2. For a NixOS host, add `modules/hosts/<hostname>/disko.nix` — the declarative
-   disk layout. disko owns `fileSystems` for `/` and `/boot`, so `hardware.nix`
-   omits them; pin each partition's `label` for stable `/dev/disk/by-partlabel`
-   devices.
-3. `hardware.nix` (kernel modules, CPU microcode) comes from
+1. `meta.nix` — a plain attrset (data, no arguments) declaring `system`,
+   `username`, `nixos = true` and/or `home = true`, optional `machine`/`user`
+   overrides, and option values under `homeOptions`/`nixosOptions`
+   (e.g. `fingerprint.enable = true`).
+2. `default.nix` — the explicit profile list this host composes
+   (`../../profiles/cli.nix`, …). Profiles contribute modules to the home and
+   NixOS planes.
+3. For a NixOS host, `disko.nix` — the declarative disk layout. disko owns
+   `fileSystems` for `/` and `/boot`, so `hardware.nix` omits them; pin each
+   partition's `label` for stable `/dev/disk/by-partlabel` devices.
+4. `hardware.nix` (kernel modules, CPU microcode) comes from
    `nixos-generate-config`. It is optional and is generated during a
-   `nixos-anywhere` install (see *Installing a blank machine*). Generate it with
-   `--no-filesystems` — disko owns `fileSystems`, and `nixos-anywhere` passes
-   the flag for you.
+   `nixos-anywhere` install. Generate it with `--no-filesystems` — disko owns
+   `fileSystems`, and `nixos-anywhere` passes the flag for you.
 
-The `dotfiles` attrset is shared by the host's NixOS and home configs; each
-reads the knobs it knows, so a value is written once. The available
-configurations are the `nixosConfigurations` / `homeConfigurations` flake
-outputs.
+`machine`/`user` are shared by the host's NixOS and home configs, so identity
+and host facts are written once. The available configurations are the
+`nixosConfigurations` / `homeConfigurations` flake outputs.
 
 ### Installing a blank machine
 
@@ -453,7 +396,7 @@ nix-shell -p sops --run 'sops secrets/smortress.yaml'
   (an interactive `fs` session persists longer).
 - `github-repo-pat` has `repo` scope (classic) and is read **only** by the root
   GitHub-backup service (`modules/nixos/github-backup.nix`, via
-  `dotfiles.githubBackup.tokenFile`); it is root-owned, so the user's shell
+  `githubBackup.tokenFile`); it is root-owned, so the user's shell
   cannot read it. `bootstrap` never touches it. Classic `repo` grants read/write
   to every private repo the account can reach, including org repos, while the
   mirror only reads; fine-grained tokens cannot read wikis, so `--clone-wiki`

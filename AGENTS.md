@@ -18,37 +18,38 @@ details.
 
 ## Where things go
 
-This repo follows the [dendritic pattern](https://github.com/mightyiam/dendritic):
-most `.nix` files under `modules/` are auto-imported by `import-tree`, which
-scans `modules/flake` (from `flake.nix`) and the `features`/`desktop`/`nixos`
-subtrees (from `modules/flake/configurations.nix`). A few entry points and
-pure-function helpers (`modules/options.nix`, `modules/home.nix`,
-`modules/features/ai/providers.nix`, `modules/lib/*`) are listed or imported
-explicitly. Place files by concern, not by host.
+Modules are composed by profiles, not auto-imported. `modules/flake/configurations.nix`
+reads each host's `default.nix`, which lists profile files explicitly; each
+profile contributes paths to the home plane, the NixOS plane, or both. Place
+files by concern, not by host.
 
 | Location | What goes here |
 |---|---|
-| `modules/options.nix` | `dotfiles.*` option declarations and computed defaults |
+| `modules/options.nix` | `machine.*` host facts, `user.*` identity/preferences, and the server-profile assertion |
+| `modules/profiles/` | six opt-in profiles: `cli`, `user-base`, `ai-tools`, `linux-desktop`, `darwin-work`, `server` |
+| `modules/hosts/` | per-host `meta.nix` (facts + option values), `default.nix` (explicit profile list), optional `hardware.nix` and `disko.nix` |
 | `modules/home.nix` | home-manager base (fonts, nix.conf, darwin helpers) |
 | `modules/features/` | cross-platform home-manager modules (shell, editor, git, packages, theme, ai) |
 | `modules/desktop/` | desktop-environment modules (niri, aerospace) |
 | `modules/nixos/` | NixOS system modules (base, desktop, networking, ssh, etc.) |
-| `modules/hosts/` | per-host directory: `meta.nix` (host knobs; auto-discovered) + optional `hardware.nix` (nixos-generate-config) and `disko.nix` (declarative disks) |
 | `modules/flake/` | flake-parts modules (configurations, checks, formatter) |
 | `modules/lib/` | helper libraries |
-| `modules/features/ai/` | AI tooling: assistant context, brain (transcript digest, guarded vault commit, `brain-run` harvest cursors and the weekday launchd autopilot; its skill is `skills/brain`), maki, providers, sdlc, skills |
+| `modules/features/ai/` | AI tooling: assistant context, brain, maki, providers, sdlc, skills |
 | `modules/features/tv/` | Television repository and worktree cables |
-| `modules/features/photobucket/` | feh-based keyboard photo triage tool + its Python helper |
 | `modules/features/cloudflare/` | Cloudflare Tunnel DNS/Access reconciler (Python helper) + manual `cloudflare-sync` CLI |
 | `modules/features/backup/` | rclone backup driver (`backup.py`) + operator README, the GitHub-mirror helper and the restore drill |
-| `modules/desktop/aerospace/` | AeroSpace config + `aerospace-layout` (rebuilds the pinned-app window layout on `cmd-ctrl-r` and at startup; Python helper) |
-| `tests/` | Python unit tests for the sdlc, maki, brain, photobucket, cloudflare, backup, immich, and aerospace-layout tools, plus `tests/*.sh` shell checks (all run via flake checks) |
+| `modules/desktop/aerospace/` | AeroSpace config + `aerospace-layout` |
+| `tests/` | Python unit tests for the repo's tools plus `tests/*.sh` shell checks (all run via flake checks) |
+
+Feature options live in the module that owns them (`webProxy` in
+`modules/nixos/web-proxy.nix`, `backup` in `modules/nixos/backup.nix`,
+`dictation` in `modules/features/dictation/`, …).
 
 ### Adding a new feature
 
-Drop a `.nix` file in the appropriate directory. It's auto-imported — no
-registration needed. Read existing modules in the same directory for
-patterns.
+Add a module in the appropriate directory, then list it in the profile that
+owns it (`modules/profiles/<profile>.nix`). A module not listed in a profile
+never evaluates.
 
 ### Adding a new host config
 
@@ -57,22 +58,24 @@ Hosts are discovered from `modules/hosts/*/`; adding one never edits
 
 1. `modules/hosts/<hostname>/meta.nix` — a plain attrset (data, **not** a
    module: no arguments) declaring `system`, `username`, `nixos = true` and/or
-   `home = true`, and a shared `dotfiles` attrset of host knobs (the first
-   `dotfiles` section in `options.nix`).
-2. `modules/hosts/<hostname>/disko.nix` — the declarative disk layout for a
+   `home = true`, optional `machine`/`user` overrides, and option values under
+   `homeOptions`/`nixosOptions` (e.g. `fingerprint.enable = true`).
+2. `modules/hosts/<hostname>/default.nix` — the explicit profile list
+   (`../../profiles/cli.nix`, …) composed into this host.
+3. `modules/hosts/<hostname>/disko.nix` — the declarative disk layout for a
    NixOS host. disko owns `fileSystems` for `/` and `/boot` (and `boot` when it
    manages an EF02 partition), so `hardware.nix` omits them. Pin each
    partition's `label` so the derived `/dev/disk/by-partlabel/*` devices are
    stable across reinstalls.
-3. `modules/hosts/<hostname>/hardware.nix` — hardware config from
+4. `modules/hosts/<hostname>/hardware.nix` — hardware config from
    `nixos-generate-config` (kernel modules, CPU microcode). **Optional**:
    `nixos-anywhere` generates it during the install, so a host can be authored
    without it. Always generate with `--no-filesystems` (disko owns
    `fileSystems`); `nixos-anywhere` passes the flag for you.
 
 `nixos = true` builds `nixosConfigurations.<hostname>`; `home = true` builds
-`homeConfigurations.<username>@<hostname>`. The `dotfiles` attrset is shared by
-both, so a shared value is written once.
+`homeConfigurations.<username>@<hostname>`. `machine`/`user` are shared by both
+planes, so identity and host facts are written once.
 
 ### Provisioning a blank NixOS machine
 
@@ -102,16 +105,15 @@ decrypts its own secrets on first boot.
 ## Repo-specific code quality
 
 - **Nix style**: `nix fmt` before committing.
-- **Gate on `dotfiles.*`, not `enable` flags**: every module is imported on
-  every host. Gate behavior on `config.dotfiles.*` values (e.g.
-  `lib.mkIf isLinux`, `lib.mkIf config.dotfiles.graphical`). `mkEnableOption`
-  is reserved for genuinely optional subfeatures that default to off
-  (`dotfiles.webProxy.enable`, `dotfiles.calibre.enable`); do not add a
-  top-level `enable` for a whole module.
-- **Cross-cutting values** flow through `config.dotfiles.*` options
+- **Imports are explicit.** Only modules listed by a host's profiles are
+  evaluated; gate behavior on `machine.*`/`user.*` and on the feature's own
+  options (`webProxy.enable`, `backup.enable`, …). `mkEnableOption` is for
+  optional subfeatures that default to off; do not add a top-level `enable`
+  for a whole module.
+- **Cross-cutting values** flow through `config.machine.*` and `config.user.*`
   declared in `modules/options.nix`, not through `specialArgs`.
 - **Delete dead code** — no leftover aliases, re-exports, or stale TODOs.
-  If a file is unused, delete it; `import-tree` handles removals automatically.
+  If a file is unused, delete it and remove it from its profile.
 - **Brain files stay employer-free**: the brain skill, digest, and its tests
   are public while the vault they serve is not. Employer specifics belong in
   the vault's `CLAUDE.md`; use placeholder ticket keys (`FOO-1`) in tests.

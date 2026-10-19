@@ -4,16 +4,16 @@
   ...
 }:
 let
-  cfg = config.dotfiles;
+  cfg = config.user;
   inherit (cfg.work) flatRepos;
-  hasFlat = cfg.workHost && flatRepos != null;
+  hasFlat = config.machine.workHost && flatRepos != null;
 in
 lib.mkIf hasFlat {
   assertions = [
     {
       # Org links live under codeRoot/github.com; dir inside that would loop.
       assertion = !(lib.hasPrefix "${cfg.codeRoot}/github.com/" "${flatRepos.dir}/");
-      message = "dotfiles.work.flatRepos.dir must not be inside ${cfg.codeRoot}/github.com: ${flatRepos.dir}";
+      message = "work.flatRepos.dir must not be inside ${cfg.codeRoot}/github.com: ${flatRepos.dir}";
     }
   ];
 

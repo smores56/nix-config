@@ -94,7 +94,7 @@ let
 
   # ── Smortress ─────────────────────────────────────────────────────────────
   # Reached on loopback through the Cloudflare Tunnel; no auth needed.
-  # models.qwen38 feeds the dotfiles default model in options.nix.
+  # models.qwen38 feeds the default model in nixos/llm.nix.
   qwen38Model = mkModel {
     id = "qwen3.8-27b";
     context = 200192;
@@ -105,7 +105,7 @@ let
 
   # llama.cpp's loopback port: the single source the NixOS listener
   # (modules/nixos/llm.nix) and the tunnel ingress (modules/nixos/web-proxy.nix,
-  # from the host's dotfiles.webProxy.services) both read, alongside the client
+  # from the host's webProxy.services) both read, alongside the client
   # base URL built from it below.
   llmPort = ports.llm;
 

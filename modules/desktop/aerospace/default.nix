@@ -5,7 +5,6 @@
   ...
 }:
 let
-  enabled = config.dotfiles.windowManager == "aerospace";
   noti = "${pkgs.noti}/bin/noti";
 
   allDirections = [
@@ -125,66 +124,64 @@ let
   crossMonitor = "--boundaries all-monitors-outer-frame";
 in
 {
-  config = lib.mkIf enabled {
-    home.packages = [ aerospaceLayout ];
+  home.packages = [ aerospaceLayout ];
 
-    programs.aerospace = {
-      enable = true;
+  programs.aerospace = {
+    enable = true;
 
-      settings = {
-        config-version = 2;
-        # Version 2 no longer infers persistent workspaces from the bindings;
-        # keep 1-9 so empty pinned workspaces stay on their monitors.
-        persistent-workspaces = map toString (lib.range 1 9);
-        start-at-login = false;
-        # Replacing PATH drops AeroSpace's Homebrew default, so keep it; the nix
-        # profile lets bare tools in exec-and-forget resolve.
-        exec = {
-          env-vars.PATH = "${config.home.profileDirectory}/bin:/opt/homebrew/bin:/opt/homebrew/sbin:\${PATH}";
+    settings = {
+      config-version = 2;
+      # Version 2 no longer infers persistent workspaces from the bindings;
+      # keep 1-9 so empty pinned workspaces stay on their monitors.
+      persistent-workspaces = map toString (lib.range 1 9);
+      start-at-login = false;
+      # Replacing PATH drops AeroSpace's Homebrew default, so keep it; the nix
+      # profile lets bare tools in exec-and-forget resolve.
+      exec = {
+        env-vars.PATH = "${config.home.profileDirectory}/bin:/opt/homebrew/bin:/opt/homebrew/sbin:\${PATH}";
+      };
+      default-root-container-layout = "tiles";
+      default-root-container-orientation = "auto";
+      after-startup-command = [
+        "layout tiles"
+        applyLayout
+      ];
+      # Keyboard focus can now cross monitors; keep the pointer with it so
+      # scrolling targets the focused monitor. Lazy: no-op if already there.
+      on-focused-monitor-changed = [ "move-mouse monitor-lazy-center" ];
+
+      workspace-to-monitor-force-assignment = pinnedWorkspaces;
+
+      gaps = {
+        inner = {
+          horizontal = gapsConfig;
+          vertical = gapsConfig;
         };
-        default-root-container-layout = "tiles";
-        default-root-container-orientation = "auto";
-        after-startup-command = [
-          "layout tiles"
-          applyLayout
-        ];
-        # Keyboard focus can now cross monitors; keep the pointer with it so
-        # scrolling targets the focused monitor. Lazy: no-op if already there.
-        on-focused-monitor-changed = [ "move-mouse monitor-lazy-center" ];
-
-        workspace-to-monitor-force-assignment = pinnedWorkspaces;
-
-        gaps = {
-          inner = {
-            horizontal = gapsConfig;
-            vertical = gapsConfig;
-          };
-          outer = {
-            left = gapsConfig;
-            right = gapsConfig;
-            top = gapsConfig;
-            bottom = gapsConfig;
-          };
+        outer = {
+          left = gapsConfig;
+          right = gapsConfig;
+          top = gapsConfig;
+          bottom = gapsConfig;
         };
+      };
 
-        mode = {
-          main.binding = {
-            cmd-ctrl-minus = "resize smart -30";
-            cmd-ctrl-equal = "resize smart +30";
-            cmd-ctrl-0 = "balance-sizes";
-            cmd-ctrl-e = "layout tiles horizontal vertical";
-            cmd-ctrl-a = "layout accordion horizontal vertical";
-            # r for restore; no macOS or app default claims cmd-ctrl-r.
-            cmd-ctrl-r = applyLayout;
-          }
-          // mkAllDirectionBindings "cmd-ctrl" (d: "focus ${crossMonitor} ${d}")
-          // mkAllDirectionBindings "cmd-ctrl-shift" (d: "move ${crossMonitor} ${d}")
-          // mkWorkspaceBindings "ctrl-alt" (i: "workspace ${toString i}")
-          // mkWorkspaceBindings "ctrl-alt-shift" (i: [
-            "move-node-to-workspace ${toString i}"
-            "workspace ${toString i}"
-          ]);
-        };
+      mode = {
+        main.binding = {
+          cmd-ctrl-minus = "resize smart -30";
+          cmd-ctrl-equal = "resize smart +30";
+          cmd-ctrl-0 = "balance-sizes";
+          cmd-ctrl-e = "layout tiles horizontal vertical";
+          cmd-ctrl-a = "layout accordion horizontal vertical";
+          # r for restore; no macOS or app default claims cmd-ctrl-r.
+          cmd-ctrl-r = applyLayout;
+        }
+        // mkAllDirectionBindings "cmd-ctrl" (d: "focus ${crossMonitor} ${d}")
+        // mkAllDirectionBindings "cmd-ctrl-shift" (d: "move ${crossMonitor} ${d}")
+        // mkWorkspaceBindings "ctrl-alt" (i: "workspace ${toString i}")
+        // mkWorkspaceBindings "ctrl-alt-shift" (i: [
+          "move-node-to-workspace ${toString i}"
+          "workspace ${toString i}"
+        ]);
       };
     };
   };

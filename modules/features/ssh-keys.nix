@@ -10,7 +10,7 @@
   ...
 }:
 let
-  cfg = config.dotfiles;
+  cfg = config.user;
   expandHome = lib.replaceStrings [ "~" ] [ "$HOME" ];
 
   # title is the vault item; email is the principal its signatures verify as.

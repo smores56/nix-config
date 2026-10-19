@@ -4,8 +4,13 @@
   pkgs,
   ...
 }:
+let
+  cfg = config.nvidia;
+in
 {
-  config = lib.mkIf config.dotfiles.nvidia {
+  options.nvidia.enable = lib.mkEnableOption "the proprietary NVIDIA GPU driver";
+
+  config = lib.mkIf cfg.enable {
     boot.kernelModules = [ "nvidia_uvm" ];
 
     hardware.nvidia = {
@@ -20,7 +25,7 @@
 
     services.xserver.videoDrivers = [ "nvidia" ];
 
-    environment.etc = lib.mkIf (config.dotfiles.displayManager == "niri") {
+    environment.etc = lib.mkIf config.machine.wayland {
       # NVIDIA's default driver profiles cover several Wayland compositors, but
       # not niri. Limit the driver's freed-buffer pool for niri specifically.
       "nvidia/nvidia-application-profiles-rc.d/50-limit-free-buffer-pool-in-wayland-compositors.json".text =

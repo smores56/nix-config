@@ -4,11 +4,11 @@
   ...
 }:
 let
-  cfg = config.dotfiles;
+  cfg = config.user;
   inherit (cfg.work) flatRepos;
 
   # Generated from the options so no employer name lives here.
-  workHostLines = lib.optionals (cfg.workHost && flatRepos != null) [
+  workHostLines = lib.optionals (config.machine.workHost && flatRepos != null) [
     "- This is a work host: work checkouts live flat in `${flatRepos.dir}`${
       lib.optionalString (flatRepos.envVar != null) " (`\$${flatRepos.envVar}`)"
     }, and `${cfg.codeRoot}/github.com/<owner>` links there on demand when `repos get` first fetches an owner matching `${cfg.work.githubOwnerGlob}`, so repo and worktree paths may print under `${flatRepos.dir}`; clone with `repos get` as usual"
@@ -52,6 +52,12 @@ let
   '';
 in
 {
+  options.ai.hints = lib.mkOption {
+    type = lib.types.str;
+    readOnly = true;
+    description = "Shared AI-assistant context/rules rendered into each tool's instruction file.";
+  };
+
   config = {
     home.file = {
       ".claude/CLAUDE.md" = {
@@ -64,6 +70,6 @@ in
       };
     };
 
-    dotfiles.aiHints = aiHints;
+    ai.hints = aiHints;
   };
 }

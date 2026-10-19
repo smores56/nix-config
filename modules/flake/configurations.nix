@@ -11,8 +11,6 @@ let
     ;
   inherit (inputs.nixpkgs) lib;
 
-  importTree = path: (inputs.import-tree path).imports;
-
   localOverlays = system: [
     niri.overlays.niri
     (final: prev: {
@@ -75,19 +73,14 @@ let
   homeModules = [
     ../options.nix
     ../home.nix
-  ]
-  ++ importTree ../features
-  ++ importTree ../desktop
-  ++ [
     niri.homeModules.niri
     noctalia.homeModules.default
     stylix.homeModules.stylix
     sops-nix.homeManagerModules.sops
   ];
 
-  # providers.nix injects `_module.args.aiProviders`, which options.nix's
-  # computed defaults (e.g. dotfiles.defaultModel) depend on.  Pure data — safe
-  # to import into NixOS evaluations too.
+  # providers.nix injects `_module.args.aiProviders` for maki and cloudflared.
+  # Pure data — safe to import into NixOS evaluations too.
   nixosModules = [
     ../options.nix
     ../features/ai/providers.nix
@@ -95,41 +88,54 @@ let
     # Declarative disk layouts: a host with modules/hosts/<name>/disko.nix
     # derives its fileSystems from disko.devices (see AGENTS.md).
     disko.nixosModules.disko
-  ]
-  ++ importTree ../nixos;
+  ];
 
   # Hosts are discovered from modules/hosts/<name>/; adding a host means adding
-  # a directory (meta.nix + hardware.nix), never editing this file.
+  # a directory (meta.nix + default.nix + hardware.nix), never editing this file.
   hostsDir = ../hosts;
   hostNames = builtins.attrNames (
     lib.filterAttrs (_: type: type == "directory") (builtins.readDir hostsDir)
   );
-  # Top-level keys a host's meta.nix may author; anything else is a typo that
-  # would otherwise be ignored silently (e.g. `homee` drops the home config).
-  hostMetaKeys = [
-    "dotfiles"
-    "username"
-    "system"
-    "nixos"
-    "home"
-  ];
   hostMeta =
     name:
     let
       metaPath = hostsDir + "/${name}/meta.nix";
-      m =
-        if builtins.pathExists metaPath then
-          import metaPath
-        else
-          throw "modules/hosts/${name}/ has no meta.nix (see AGENTS.md)";
-      unknownTop = lib.subtractLists hostMetaKeys (builtins.attrNames m);
     in
-    assert lib.assertMsg (unknownTop == [ ])
-      "modules/hosts/${name}/meta.nix: unknown top-level key(s): ${lib.concatStringsSep ", " unknownTop} (allowed: ${lib.concatStringsSep ", " hostMetaKeys})";
-    m;
+    if builtins.pathExists metaPath then
+      import metaPath
+    else
+      throw "modules/hosts/${name}/ has no meta.nix (see AGENTS.md)";
 
-  # Defaults for the identity keys every config needs; `dotfiles` is passed
-  # through whole, so a typo is caught by the option system instead of a list.
+  # A host names its profiles explicitly; each profile contributes module paths
+  # to the home and NixOS planes. The names also drive machine.graphical/
+  # wayland/workHost and the server-profile assertion.
+  hostProfiles =
+    name:
+    let
+      path = hostsDir + "/${name}/default.nix";
+      m =
+        if builtins.pathExists path then
+          import path
+        else
+          throw "modules/hosts/${name}/ has no default.nix (see AGENTS.md)";
+    in
+    map (p: {
+      name = lib.removeSuffix ".nix" (baseNameOf (toString p));
+      inherit p;
+    }) m.profiles;
+
+  profileModules =
+    name: kind: lib.concatMap (profile: (import profile.p).${kind} or [ ]) (hostProfiles name);
+
+  hostModule = args: profileNames: {
+    machine = (args.machine or { }) // {
+      inherit (args) username system;
+      nixos = args.nixos or false;
+      profiles = profileNames;
+    };
+    user = args.user or { };
+  };
+
   normalize =
     m:
     m
@@ -143,37 +149,43 @@ let
     let
       system = args.system or "x86_64-linux";
       username = args.username or "smores";
+      profiles = hostProfiles args.hostname;
+      profileNames = map (p: p.name) profiles;
     in
     home-manager.lib.homeManagerConfiguration {
       pkgs = pkgsForSystem system;
       extraSpecialArgs = {
         inherit inputs;
       };
-      modules = homeModules ++ [
-        {
-          dotfiles = (args.dotfiles or { }) // {
-            inherit username;
-          };
-          home.username = username;
-          home.homeDirectory =
-            args.homeDirectory
-              or (if lib.hasSuffix "-darwin" system then "/Users/${username}" else "/home/${username}");
-        }
-      ];
+      modules =
+        homeModules
+        ++ profileModules args.hostname "home"
+        ++ [
+          (hostModule args profileNames // (args.homeOptions or { }))
+          {
+            home.username = username;
+            home.homeDirectory =
+              args.homeDirectory
+                or (if lib.hasSuffix "-darwin" system then "/Users/${username}" else "/home/${username}");
+          }
+        ];
     };
 
   mkNixos =
     args:
     let
-      dm = args.dotfiles.displayManager or "none";
-      username = args.username or "smores";
+      system = args.system or "x86_64-linux";
+      profiles = hostProfiles args.hostname;
+      profileNames = map (p: p.name) profiles;
     in
     inputs.nixpkgs.lib.nixosSystem {
       specialArgs = { inherit inputs; };
       modules = [
-        { nixpkgs.overlays = localOverlays (args.system or "x86_64-linux"); }
+        { nixpkgs.overlays = localOverlays system; }
       ]
       ++ nixosModules
+      ++ profileModules args.hostname "nixos"
+      ++ lib.optionals (builtins.elem "linux-desktop" profileNames) [ niri.nixosModules.niri ]
       # hardware.nix is optional so a host can be authored (meta.nix +
       # disko.nix) before nixos-anywhere generates it during the install; the
       # guard keeps the flake evaluable in that window (see AGENTS.md). Warn
@@ -190,17 +202,9 @@ let
         hostsDir + "/${args.hostname}/disko.nix"
       )
       ++ [
-        {
-          networking.hostName = args.hostname;
-          # Host knobs are forwarded whole; an undeclared option fails
-          # evaluation. The top-level identity is applied last so a meta.nix
-          # cannot retarget the config's user or display manager.
-          dotfiles = (args.dotfiles or { }) // {
-            inherit username;
-          };
-        }
-      ]
-      ++ lib.optionals (dm == "niri") [ niri.nixosModules.niri ];
+        (hostModule args profileNames // (args.nixosOptions or { }))
+        { networking.hostName = args.hostname; }
+      ];
     };
 in
 {
@@ -214,7 +218,9 @@ in
         let
           m = hostMeta name;
         in
-        lib.nameValuePair "${m.username or "smores"}@${name}" (mkHome (normalize m))
+        lib.nameValuePair "${m.username or "smores"}@${name}" (
+          mkHome ((normalize m) // { hostname = name; })
+        )
       ) (lib.filter (name: (hostMeta name).home or false) hostNames)
     );
     nixosConfigurations = lib.listToAttrs (

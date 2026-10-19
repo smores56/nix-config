@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # `repos list` with org directories that are symlinks into one flat folder
-# (dotfiles.work.flatRepos): every repo is listed once, under the owner its
+# (user.work.flatRepos): every repo is listed once, under the owner its
 # origin remote names, and plain repos are unaffected.
 #
 # Usage: repos_list_links.sh <repos>

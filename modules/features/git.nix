@@ -5,7 +5,7 @@
   ...
 }:
 let
-  cfg = config.dotfiles;
+  cfg = config.user;
 
   inherit (cfg) work;
 

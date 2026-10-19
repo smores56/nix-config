@@ -34,7 +34,7 @@ let
         wrapperEnv = workEnv;
       };
     }
-    .${config.dotfiles.aiProfile};
+    .${config.user.aiProfile};
 
   luaStrings = lib.concatMapStringsSep ", " builtins.toJSON;
 
@@ -225,7 +225,7 @@ in
       ".config/maki/AGENTS.md" = {
         force = true;
         text = ''
-          ${config.dotfiles.aiHints}
+          ${config.ai.hints}
           # Delegation
           For the top-level coordinator — subagents execute their assignment
           directly. You are a workflow manager: delegate implementation by
@@ -243,7 +243,7 @@ in
             (paths, constraints, acceptance criteria); ask for file:line
             summaries, not code dumps
           - Parallelize independent lanes; serialize writers sharing files or
-            the dotfiles.* contract
+            the machine/user contract
           - Acceptance criteria: behavioral for implementation, evidence for research
           - The coordinator verifies — narrowest relevant validation first,
             broaden only on failed focused checks
@@ -282,6 +282,6 @@ in
       makiSessionResume
     ];
 
-    dotfiles.shellAbbrs.ms = "pick maki-sessions maki-session-resume";
+    user.shellAbbrs.ms = "pick maki-sessions maki-session-resume";
   };
 }

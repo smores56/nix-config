@@ -2,10 +2,11 @@
   config,
   lib,
   pkgs,
+  aiProviders,
   ...
 }:
 let
-  cfg = config.dotfiles;
+  cfg = config.llm;
   ports = import ../ports.nix;
 
   llama-cpp = pkgs.stdenv.mkDerivation {
@@ -77,11 +78,13 @@ let
   #   Total: ~23.2 GiB — 200K is the ceiling; larger ctx needs lighter weights
 in
 {
-  config = lib.mkIf cfg.llm {
+  options.llm.enable = lib.mkEnableOption "the llama.cpp LLM service (also disables desktop/system sleep for availability)";
+
+  config = lib.mkIf cfg.enable {
     assertions = [
       {
-        assertion = cfg.nvidia;
-        message = "llm requires nvidia = true for CUDA support";
+        assertion = config.nvidia.enable;
+        message = "llm requires nvidia.enable for CUDA support";
       }
     ];
 
@@ -95,7 +98,7 @@ in
         # Single source shared with the tunnel ingress and the clients' forwards
         # (modules/ports.nix).
         port = ports.llm;
-        alias = cfg.defaultModel;
+        alias = aiProviders.smortress.models.qwen38.id;
         model = mainModel;
         n-gpu-layers = 99;
         ctx-size = 200192;

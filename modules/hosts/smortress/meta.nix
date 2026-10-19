@@ -1,7 +1,5 @@
 # smortress: the headless always-on server. It is the Cloudflare Tunnel origin
 # and runs the local LLM, Immich/Calibre, and the backup disk.
-# `dotfiles` is shared by the NixOS config and the home config, so a value
-# lives in exactly one place; each module reads the knobs it knows.
 let
   ports = import ../../ports.nix;
   # The ssh/llm endpoints all want an email allow-list (human fallback)
@@ -17,13 +15,21 @@ in
   nixos = true;
   home = true;
 
-  dotfiles = {
-    displayManager = "none";
-    nixos = true;
-    exposeSsh = true;
-    nvidia = true;
-    llm = true;
-    noSleep = true;
+  homeOptions = {
+    calibre = {
+      enable = true;
+      # OPDS password comes from sops (owner smores, 0400) instead of the
+      # plaintext ~/.config/calibre-server/password, which is retired once
+      # this lands.
+      passwordFile = "/run/secrets/calibre-password";
+    };
+  };
+
+  nixosOptions = {
+    exposeSsh.enable = true;
+    nvidia.enable = true;
+    llm.enable = true;
+    noSleep.enable = true;
     webProxy = {
       enable = true;
       tunnelName = "smortress";
@@ -49,17 +55,15 @@ in
         };
       };
     };
-    calibre.enable = true;
-    # OPDS password comes from sops (owner smores, 0400) instead of the plaintext
-    # ~/.config/calibre-server/password, which is retired once this lands.
-    calibre.passwordFile = "/run/secrets/calibre-password";
-    immich.enable = true;
-    # Relocated off /var/lib/immich so every media dataset lives under one
-    # root (backup source and read-only server mounts both use it).
-    immich.mediaLocation = "/var/lib/media/Photos";
-    # The phone uploads over the LAN at home via Immich's local-network URL;
-    # 10.0.0.0/24 is the LAN subnet. WAN access stays tunnel-only.
-    immich.lanSources = [ "10.0.0.0/24" ];
+    immich = {
+      enable = true;
+      # Relocated off /var/lib/immich so every media dataset lives under one
+      # root (backup source and read-only server mounts both use it).
+      mediaLocation = "/var/lib/media/Photos";
+      # The phone uploads over the LAN at home via Immich's local-network URL;
+      # 10.0.0.0/24 is the LAN subnet. WAN access stays tunnel-only.
+      lanSources = [ "10.0.0.0/24" ];
+    };
     # These generic datasets replaced the old Immich-specific restic
     # pipeline, which has been removed.
     backup.enable = true;

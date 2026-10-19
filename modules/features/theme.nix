@@ -5,13 +5,13 @@
   ...
 }:
 let
-  cfg = config.dotfiles;
+  graphical = config.machine.graphical;
 in
 {
   config = {
     home = {
       # stylix only sets home.pointerCursor on Linux.
-      pointerCursor.enable = lib.mkIf (cfg.graphical && pkgs.stdenv.hostPlatform.isLinux) true;
+      pointerCursor.enable = lib.mkIf (graphical && pkgs.stdenv.hostPlatform.isLinux) true;
     };
 
     stylix = {
@@ -21,11 +21,11 @@ in
       base16Scheme = "${pkgs.base16-schemes}/share/themes/rose-pine-moon.yaml";
 
       fonts.monospace = {
-        package = cfg.fontPackage;
-        name = cfg.font;
+        package = config.user.fontPackage;
+        name = config.user.font;
       };
 
-      cursor = lib.mkIf cfg.graphical {
+      cursor = lib.mkIf graphical {
         package = pkgs.bibata-cursors;
         name = "Bibata-Modern-Classic";
         size = 24;

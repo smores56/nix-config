@@ -1,5 +1,5 @@
 # Generic rclone 3-2-1 backup: one oneshot service + timer per
-# dotfiles.backup.datasets.<Name>. Each run keeps a versioned local mirror
+# backup.datasets.<Name>. Each run keeps a versioned local mirror
 # (`copy` + `--backup-dir`) and, unless offsite is disabled, an append-only
 # checksummed mirror to the remote. The rationale for copy-over-sync and the
 # unchecked-hash guard lives in modules/features/backup/backup.py.
@@ -10,7 +10,7 @@
   ...
 }:
 let
-  cfg = config.dotfiles.backup;
+  cfg = config.backup;
 
   backup = pkgs.writeShellScriptBin "backup" ''
     exec ${pkgs.python3}/bin/python3 ${./../features/backup/backup.py} "$@"
@@ -199,7 +199,7 @@ let
       requires = lib.optional dataset.postgres "${unitName name}-dump.service";
       # The Cloudflare email template is the alert path; reference it only when
       # enabled, or systemd logs a dead-job error.
-      onFailure = lib.optional config.dotfiles.alerting.enable "cloudflare-email@%n.service";
+      onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
       # Put rclone on the unit's PATH. This must be the service attribute (not
       # serviceConfig.path, which systemd renders verbatim as an ignored `path=`
       # directive and leaves the default PATH without it).
@@ -316,12 +316,12 @@ in
     assertions = [
       {
         assertion = cfg.enable;
-        message = "dotfiles.backup.datasets requires dotfiles.backup (the backup disk) to be enabled.";
+        message = "backup.datasets requires backup (the backup disk) to be enabled.";
       }
     ]
     ++ lib.mapAttrsToList (name: dataset: {
       assertion = !dataset.postgres || dataset.preBackup != null;
-      message = "dotfiles.backup.datasets.${name}.postgres requires a preBackup snippet that copies ${pgDumpFile name} into BACKUP_CURRENT/db.";
+      message = "backup.datasets.${name}.postgres requires a preBackup snippet that copies ${pgDumpFile name} into BACKUP_CURRENT/db.";
     }) cfg.datasets
     ++ lib.mapAttrsToList (name: dataset: {
       # cadences can trip on a slow-but-alive transfer. "0" disables the watchdog.
@@ -336,11 +336,11 @@ in
         || (
           builtins.match "[0-9]+[smhd]?" dataset.stallTimeout != null && seconds != null && seconds >= 60
         );
-      message = "dotfiles.backup.datasets.${name}.stallTimeout must be \"0\" (disabled) or \"<number><s|m|h|d>\" of at least 60s (two rclone 30s stats intervals), got \"${dataset.stallTimeout}\".";
+      message = "backup.datasets.${name}.stallTimeout must be \"0\" (disabled) or \"<number><s|m|h|d>\" of at least 60s (two rclone 30s stats intervals), got \"${dataset.stallTimeout}\".";
     }) cfg.datasets
     ++ lib.mapAttrsToList (name: dataset: {
       assertion = dataset.fullCheckSchedule == null || dataset.fullCheckSchedule != "";
-      message = "dotfiles.backup.datasets.${name}.fullCheckSchedule must be null (disabled) or a non-empty systemd OnCalendar expression, got \"${dataset.fullCheckSchedule}\".";
+      message = "backup.datasets.${name}.fullCheckSchedule must be null (disabled) or a non-empty systemd OnCalendar expression, got \"${dataset.fullCheckSchedule}\".";
     }) cfg.datasets
     ++ lib.mapAttrsToList (name: dataset: {
       # The watcher parses the same compact grammar as the driver's timeout.
@@ -351,7 +351,7 @@ in
           && parseDurationSeconds dataset.onChange.debounce != null
           && parseDurationSeconds dataset.onChange.debounce >= 1
         );
-      message = "dotfiles.backup.datasets.${name}.onChange.debounce must be \"<number><s|m|h|d>\" of at least 1s, got \"${dataset.onChange.debounce}\".";
+      message = "backup.datasets.${name}.onChange.debounce must be \"<number><s|m|h|d>\" of at least 1s, got \"${dataset.onChange.debounce}\".";
     }) cfg.datasets;
 
     # The driver creates the host-wide lock itself; this only guarantees it

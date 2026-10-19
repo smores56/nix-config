@@ -5,8 +5,6 @@
   ...
 }:
 let
-  cfg = config.dotfiles;
-
   # The Goodix reader's xHCI host controller sometimes fails to re-enumerate it
   # after suspend/resume (Framework issue #102), leaving the device off the bus
   # until the controller is reset. Cache the host controller at boot, then after
@@ -102,7 +100,9 @@ let
   };
 in
 {
-  config = lib.mkIf cfg.fingerprint {
+  options.fingerprint.enable = lib.mkEnableOption "fprintd and the Noctalia lock-screen fingerprint reader";
+
+  config = lib.mkIf config.fingerprint.enable {
     # Goodix 27c6:609c is handled by libfprint's native goodixmoc driver; no
     # proprietary TOD package is needed.
     services.fprintd.enable = true;
