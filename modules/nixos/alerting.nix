@@ -88,6 +88,7 @@ let
     runtimeInputs = [
       pkgs.coreutils
       pkgs.bash
+      pkgs.systemd
     ];
     text = ''
       set -euo pipefail
@@ -102,7 +103,19 @@ let
         [ -d "$dir/current" ] || return 0
         file="$dir/BACKUP-LAST-SUCCESS"
         flag="/run/backup-freshness/$name.alerted"
-        mtime=$(stat -c %Y "$file" 2>/dev/null || echo 0)
+        if [ -e "$file" ]; then
+          mtime=$(stat -c %Y "$file" 2>/dev/null || echo 0)
+        else
+          # No marker yet (first run since the marker landed). Fall back to the
+          # unit's last successful run so epoch 0 does not look ~56 years stale.
+          result=$(systemctl show "$unit" -p Result --value 2>/dev/null || true)
+          if [ "$result" = "success" ]; then
+            last=$(systemctl show "$unit" -p ExecMainExitTimestamp --value 2>/dev/null || true)
+            mtime=$(date -d "$last" +%s 2>/dev/null || echo 0)
+          else
+            mtime=0
+          fi
+        fi
         age=$((now - mtime))
         if [ "$age" -gt "$max" ]; then
           if [ ! -e "$flag" ]; then
