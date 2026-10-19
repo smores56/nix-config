@@ -46,6 +46,9 @@ LOCAL_SOURCES = ("sessions", "git", "github")
 DAY_CAP = 5
 # Before this, "today" is still yesterday: the skill's late-night rule.
 ROLLOVER = time(4)
+# Consecutive committed runs a source may fail before it stops holding the window back:
+# a revoked connector would otherwise make every run rebuild the same backlog.
+PARK_AFTER = 3
 # Longer than the headless run's wall-clock timeout, so only a dead claim is ever taken over.
 STALE_AFTER = timedelta(hours=3)
 # Deep enough for <root>/<host>/<owner>/<repo>.
@@ -188,6 +191,7 @@ class Run:
     days: tuple[str, ...]
     advance_to: str  # aware ISO: `started`, or the end of the backlog chunk when capped
     truncated: bool
+    parked: tuple[str, ...] = ()  # sources that failed PARK_AFTER runs running; they don't set the days
 
 
 # Pure core (local time throughout: `astimezone()` follows the system zone, DST included)
@@ -205,16 +209,28 @@ def work_day(moment):
     return (local(moment) - timedelta(hours=ROLLOVER.hour, minutes=ROLLOVER.minute)).date()
 
 
-def plan_days(cursors, sources, default_day, today, cap=DAY_CAP):
+def plan_days(cursors, sources, default_day, today, cap=DAY_CAP, parked=()):
     """Days to rebuild, and the cursor target for the run's completed sources (None: the run's start)."""
-    starts = [local(datetime.fromisoformat(cursors[s])).date() if s in cursors else default_day for s in sources]
-    start = min(min(starts), today)
+    starts = [
+        local(datetime.fromisoformat(cursors[s])).date() if s in cursors else default_day
+        for s in sources
+        if s not in parked
+    ]
+    start = min(starts + [today])
     days = [start + timedelta(days=i) for i in range((today - start).days + 1)]
     if len(days) <= cap:
         return days, None
     # Today is always rebuilt, so one source that stays down can't freeze the vault in the past.
     backlog = days[: cap - 1]
     return backlog + [today], midnight(backlog[-1] + timedelta(days=1))
+
+
+def parked_sources(failures):
+    return tuple(s for s in SOURCES if failures.get(s, 0) >= PARK_AFTER)
+
+
+def count_failures(failures, sources, complete):
+    return {**failures, **{s: 0 if s in complete else failures.get(s, 0) + 1 for s in sources}}
 
 
 def advance(cursors_now, cursors_read, complete, target):
@@ -493,7 +509,10 @@ def newest_daily(vault):
 
 
 def load_run(record):
-    return Run(**{**record, "days": tuple(record["days"]), "sources": tuple(record["sources"])})
+    return Run(**{
+        **record,
+        **{k: tuple(record.get(k, ())) for k in ("days", "sources", "parked")},
+    })
 
 
 def begin(config, now):
@@ -505,8 +524,9 @@ def begin(config, now):
             raise Refused("vault has uncommitted changes: " + ", ".join(sorted(set(dirty))))
         cursors = read_json(config.state_dir / "cursors.json", {})
         sources = configured_sources(vault_config(config))
+        parked = tuple(s for s in parked_sources(read_json(config.state_dir / "failures.json", {})) if s in sources)
         today = work_day(now)
-        days, capped_at = plan_days(cursors, sources, newest_daily(config.vault) or today, today)
+        days, capped_at = plan_days(cursors, sources, newest_daily(config.vault) or today, today, parked=parked)
         run = Run(
             nonce=secrets.token_hex(8),
             started=local(now).isoformat(),
@@ -516,6 +536,7 @@ def begin(config, now):
             days=tuple(d.isoformat() for d in days),
             advance_to=(capped_at or local(now)).isoformat(),
             truncated=capped_at is not None,
+            parked=parked,
         )
         write_json(config.state_dir / "active.json", asdict(run))
         return run
@@ -548,7 +569,13 @@ def finish(config, nonce, complete, clock=None):
         committed = head and head != run.head0
         target = min(datetime.fromisoformat(run.advance_to), now_or(clock)).isoformat()
         now = read_json(config.state_dir / "cursors.json", {})
-        updated = advance(now, run.cursors_read, complete if committed else [], target)
+        # A parked source's run covered none of its missed days: completing it unparks it, and
+        # its old cursor then pulls the next runs back to catch them up.
+        advancing = [s for s in complete if s not in run.parked] if committed else []
+        updated = advance(now, run.cursors_read, advancing, target)
+        if committed:
+            failures = read_json(config.state_dir / "failures.json", {})
+            write_json(config.state_dir / "failures.json", count_failures(failures, run.sources, complete))
         write_json(config.state_dir / "cursors.json", updated)
         moved = [s for s in run.sources if updated.get(s) != now.get(s)]
         return {"advanced": moved, "held": [s for s in run.sources if s not in moved]}
@@ -788,13 +815,23 @@ def harvest(config, run, now, claude, gh):
     except Refused as err:
         return 1, f"Brain: {err}. Inspect: git -C {config.vault} status"
 
-    failures = [s for s in run.sources if s not in complete]
-    reasons = {**{s: statuses.get(s, "not reported") for s in failures}, **local_failures}
+    failures = [s for s in run.sources if s not in complete and s not in run.parked]
+    reasons = {**{s: statuses.get(s, "not reported") for s in run.sources}, **local_failures}
     held = ", ".join(f"{s} ({reasons[s]})" for s in failures)
+    headings = {name: key for key, name in CONFIGURED_SOURCES.items()}
+    still_parked = [s for s in run.parked if s not in complete]
+    parked = ", ".join(
+        f"{s} ({reasons[s]}; failed {PARK_AFTER}+ runs, fix it or remove `### {headings.get(s, s)}` from `## Sources`)"
+        for s in still_parked
+    )
+    recovered = [s for s in run.parked if s in complete]
     cursors = read_json(config.state_dir / "cursors.json", {})
     target = datetime.fromisoformat(run.advance_to)
     # The sources still behind the chunk are what keeps the backlog from clearing.
-    behind = [s for s in run.sources if s not in cursors or datetime.fromisoformat(cursors[s]) < target]
+    behind = [
+        s for s in run.sources
+        if s not in run.parked and (s not in cursors or datetime.fromisoformat(cursors[s]) < target)
+    ]
     backlog = (f" Backlog held by {', '.join(behind)}." if behind else " Backlog remains; the next run continues it.") if run.truncated else ""
     edited = trusted_edits(config.vault, run.head0)
     standup = "ready" if (config.vault / "standups" / f"{standup_day.isoformat()}.md").is_file() else "not written"
@@ -802,6 +839,8 @@ def harvest(config, run, now, claude, gh):
     return 0, (
         "Brain:"
         + (f" Held: {held}." if held else "")
+        + (f" Parked: {parked}." if parked else "")
+        + (f" Recovered: {', '.join(recovered)}; catching up its missed days next." if recovered else "")
         + backlog
         + (f" Changed trusted pages: {', '.join(edited)}." if edited else "")
         + f" Harvested {', '.join(run.days)}; standup {standup_day.isoformat()} {standup} (${cost:.2f})."
@@ -871,7 +910,10 @@ def main(argv=None, now=None):
     try:
         if args.command == "begin":
             run = begin(config, now)
-            print(json.dumps({"run": run.nonce, "sources": run.sources, "days": run.days, "truncated": run.truncated}))
+            print(json.dumps({
+                "run": run.nonce, "sources": run.sources, "days": run.days,
+                "truncated": run.truncated, "parked": run.parked,
+            }))
         elif args.command == "collect":
             if args.run:
                 with locked(config.state_dir):

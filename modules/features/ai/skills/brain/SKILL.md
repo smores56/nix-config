@@ -111,7 +111,10 @@ source resumes from its own last complete pull.
      source's last complete pull; a first run starts at the newest `daily/`
      note, or today), the 04:00 rule, and a 5-day cap. `truncated: true`
      means the days between the rebuilt backlog and today remain for the
-     next run; say so in the report. If it refuses (a run in progress,
+     next run; say so in the report. `parked` lists sources that failed 3
+     harvests in a row: they no longer hold the days back, but read them
+     anyway — finishing one complete unparks it, and later runs catch up its
+     missed days. Name parked sources in the report. If it refuses (a run in progress,
      uncommitted vault changes), stop and report why.
 2. **Collect local sources** with
    `brain-run collect --run <nonce> --source <s>` (or `--day <d>` per day

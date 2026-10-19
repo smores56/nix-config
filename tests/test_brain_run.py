@@ -104,6 +104,20 @@ class PureTests(unittest.TestCase):
         days, _ = self.br.plan_days(cursors, self.all, date(2026, 10, 1), date(2026, 10, 14))
         self.assertEqual(days, [date(2026, 10, 14)])
 
+    def test_parked_sources_do_not_hold_the_window(self):
+        cursors = self.cursors("2026-10-14T17:30:00-04:00", mail="2026-10-01T17:30:00-04:00")
+        days, capped = self.br.plan_days(
+            cursors, self.all, date(2026, 10, 1), date(2026, 10, 15), parked=("mail",)
+        )
+        self.assertEqual((days, capped), ([date(2026, 10, 14), date(2026, 10, 15)], None))
+
+    def test_parked_sources_follow_the_failure_count(self):
+        self.assertEqual(self.br.parked_sources({"mail": 3, "chat": 2, "git": 0}), ("mail",))
+
+    def test_failure_counts_reset_on_completion_and_grow_otherwise(self):
+        got = self.br.count_failures({"mail": 2, "chat": 1}, ("chat", "mail", "git"), ["chat", "git"])
+        self.assertEqual(got, {"mail": 3, "chat": 0, "git": 0})
+
     def test_advance_moves_only_completed_sources(self):
         read = {"chat": "2026-10-13T17:00:00-04:00", "mail": "2026-10-13T17:00:00-04:00"}
         got = self.br.advance(read, read, ["chat"], "2026-10-14T17:00:00-04:00")
@@ -319,6 +333,39 @@ class RunLifecycleTests(unittest.TestCase):
         nxt = self.begin("2026-10-20T18:01:00")
         self.assertEqual(nxt.days[0], "2026-10-05")
 
+    def run_day(self, day, complete_all_but=()):
+        run = self.begin(f"{day}T17:30:00")
+        self.commit_note(f"daily/{day}.md", f"{day}\n")
+        self.finish(run, [s for s in run.sources if s not in complete_all_but], when=f"{day}T18:00:00")
+        return run
+
+    def test_a_source_failing_three_runs_is_parked_and_stops_holding_the_window(self):
+        self.run_day("2026-10-12")
+        for day in ("2026-10-13", "2026-10-14", "2026-10-15"):
+            self.run_day(day, complete_all_but=("mail",))
+        nxt = self.begin("2026-10-16T17:30:00")
+        self.assertEqual(nxt.parked, ("mail",))
+        self.assertEqual(nxt.days, ("2026-10-15", "2026-10-16"))
+
+    def test_a_recovered_parked_source_keeps_its_cursor_and_catches_up(self):
+        self.run_day("2026-10-12")
+        last_good = self.cursors()["mail"]
+        for day in ("2026-10-13", "2026-10-14", "2026-10-15"):
+            self.run_day(day, complete_all_but=("mail",))
+        self.run_day("2026-10-16")
+        # Its missed days were never read, so recovering must not skip them.
+        self.assertEqual(self.cursors()["mail"], last_good)
+        nxt = self.begin("2026-10-17T17:30:00")
+        self.assertEqual(nxt.parked, ())
+        self.assertEqual(nxt.days[0], "2026-10-12")
+
+    def test_runs_that_commit_nothing_do_not_count_failures(self):
+        self.run_day("2026-10-12")
+        for day in ("2026-10-13", "2026-10-14", "2026-10-15"):
+            run = self.begin(f"{day}T17:30:00")
+            self.finish(run, [], when=f"{day}T18:00:00")
+        self.assertEqual(self.begin("2026-10-16T17:30:00").parked, ())
+
     def test_failed_source_is_re_pulled_from_its_old_day(self):
         first = self.begin("2026-10-13T17:30:00")
         self.commit_note("daily/2026-10-13.md")
@@ -533,7 +580,7 @@ class HeadlessPureTests(unittest.TestCase):
     def run_record(self, sources=("sessions", "git", "github", "chat", "mail")):
         return self.br.Run(
             nonce="n", started="2026-10-14T17:30:00-04:00", head0="h", cursors_read={}, sources=sources,
-            days=("2026-10-13", "2026-10-14"), advance_to="x", truncated=False,
+            days=("2026-10-13", "2026-10-14"), advance_to="x", truncated=False, parked=(),
         )
 
     def test_collection_errors_stay_inside_a_data_block(self):
@@ -579,7 +626,7 @@ class HeadlessPureTests(unittest.TestCase):
     def test_commit_message_names_each_segment(self):
         run = self.br.Run(
             nonce="n", started="x", head0="h", cursors_read={}, sources=(),
-            days=("2026-10-01", "2026-10-02", "2026-10-20"), advance_to="x", truncated=True,
+            days=("2026-10-01", "2026-10-02", "2026-10-20"), advance_to="x", truncated=True, parked=(),
         )
         self.assertEqual(self.br.commit_message(run, date(2026, 10, 21)), "harvest: 2026-10-01..2026-10-02, 2026-10-20; standup: 2026-10-21")
 
@@ -825,6 +872,13 @@ class HeadlessRunTests(unittest.TestCase):
         git(self.vault, "commit", "-qm", "old")
         self.headless(self.fake_claude({"chat": "failed"}))
         self.assertIn("held by chat", self.notes[-1])
+
+    def test_a_parked_source_is_named_with_how_to_drop_it(self):
+        self.config.state_dir.mkdir(parents=True)
+        (self.config.state_dir / "failures.json").write_text(json.dumps({"chat": 3}))
+        self.headless(self.fake_claude({"chat": "failed"}))
+        self.assertIn("Parked: chat", self.notes[-1])
+        self.assertIn("### Chat", self.notes[-1])
 
     def test_healthy_sources_ahead_of_a_capped_chunk_are_not_blamed(self):
         (self.vault / "daily").mkdir()
