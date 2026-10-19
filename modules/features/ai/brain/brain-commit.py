@@ -24,6 +24,11 @@ SAFE_CONFIG = (
     "core.fsmonitor=false",
     "core.attributesFile=/dev/null",
     "diff.external=",
+    # Signing runs gpg.program / gpg.ssh.program / gpg.x509.program, all settable from .git/config.
+    "commit.gpgSign=false",
+    "gpg.program=false",
+    "gpg.ssh.program=false",
+    "gpg.x509.program=false",
 )
 
 

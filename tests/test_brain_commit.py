@@ -167,8 +167,8 @@ class BrainCommitTests(unittest.TestCase):
         self.assertEqual(git(self.vault, "ls-files", "wiki").split(), ["wiki/b.md"])
 
     def test_git_failures_are_refusals_not_crashes(self):
-        git(self.vault, "config", "commit.gpgSign", "true")
-        git(self.vault, "config", "gpg.program", "false")
+        # A held index lock makes `git add` fail the way a concurrent git process would.
+        (self.vault / ".git" / "index.lock").write_text("")
         self.write("daily/d.md", "x\n")
         result = self.commit()
         self.assertEqual(result.status, "refused")
@@ -182,6 +182,33 @@ class BrainCommitTests(unittest.TestCase):
         self.write("daily/d.md", "x\n")
         self.assertEqual(self.commit().status, "committed")
         self.assertFalse(marker.exists())
+
+    def assert_signer_never_runs(self, *config):
+        marker = Path(self.tmp.name) / "signer-ran"
+        script = Path(self.tmp.name) / "signer.sh"
+        script.write_text(f"#!/bin/sh\ntouch {marker}\n")
+        script.chmod(0o755)
+        for key, value in config:
+            git(self.vault, "config", key, value.format(script=script))
+        self.write("daily/d.md", "x\n")
+        self.assertEqual(self.commit().status, "committed")
+        self.assertFalse(marker.exists())
+
+    def test_gpg_signing_program_never_runs(self):
+        self.assert_signer_never_runs(("commit.gpgSign", "true"), ("gpg.program", "{script}"))
+
+    def test_ssh_signing_program_never_runs(self):
+        self.assert_signer_never_runs(
+            ("commit.gpgSign", "true"),
+            ("gpg.format", "ssh"),
+            ("user.signingKey", "key::ssh-ed25519 AAAA"),
+            ("gpg.ssh.program", "{script}"),
+        )
+
+    def test_x509_signing_program_never_runs(self):
+        self.assert_signer_never_runs(
+            ("commit.gpgSign", "true"), ("gpg.format", "x509"), ("gpg.x509.program", "{script}")
+        )
 
 
 if __name__ == "__main__":
