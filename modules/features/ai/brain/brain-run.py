@@ -49,6 +49,8 @@ ROLLOVER = time(4)
 # Consecutive committed runs a source may fail before it stops holding the window back:
 # a revoked connector would otherwise make every run rebuild the same backlog.
 PARK_AFTER = 3
+# Refused notes may hold secret-shaped text; keep them long enough to inspect, not forever.
+QUARANTINE_KEEP = timedelta(days=30)
 # Longer than the headless run's wall-clock timeout, so only a dead claim is ever taken over.
 STALE_AFTER = timedelta(hours=3)
 # Deep enough for <root>/<host>/<owner>/<repo>.
@@ -386,7 +388,9 @@ Read these sources yourself through their connector tools: {", ".join(connectors
 The local sources are already collected below; do not try to collect them. Local sources that
 failed to collect are in <local-failures>; note each in the affected daily notes as not collected.
 Link only to hosts listed under `## Link hosts` in the vault CLAUDE.md; leave any other link out.
-The caller refuses the whole commit for an off-host link, an image, or HTML.
+Write plain markdown: no images, no HTML, no `&` entities, and no `<` directly before a letter
+outside code spans (a bare `<WORD>` placeholder is fine). The caller refuses the whole commit
+otherwise.
 
 Do not commit; the caller commits. Finish with the status object: one entry for every source
 you read ({", ".join(connectors) or "none"}), plus any local source whose rows you could not use.
@@ -418,23 +422,24 @@ def completed_sources(run, local_failures, statuses):
 
 
 def parse_result(stdout):
-    """(statuses by source, error or None, cost in USD) from `claude -p --output-format json`."""
+    """(statuses by source, details by source, error or None, cost in USD) from `claude -p --output-format json`."""
     try:
         result = json.loads(stdout.strip().splitlines()[-1])
     except (ValueError, IndexError):
-        return {}, "claude output was not JSON", 0.0
+        return {}, {}, "claude output was not JSON", 0.0
     if not isinstance(result, dict):
-        return {}, "claude output was not a result object", 0.0
+        return {}, {}, "claude output was not a result object", 0.0
     cost = result.get("total_cost_usd")
     cost = float(cost) if isinstance(cost, (int, float)) else 0.0
     if result.get("is_error") or result.get("subtype") != "success":
-        return {}, f"claude stopped: {result.get('subtype') or 'error'}", cost
+        return {}, {}, f"claude stopped: {result.get('subtype') or 'error'}", cost
     output = result.get("structured_output")
     entries = output.get("sources") if isinstance(output, dict) else None
     if not isinstance(entries, list):
-        return {}, "claude returned no status", cost
+        return {}, {}, "claude returned no status", cost
     valid = [e for e in entries if isinstance(e, dict) and isinstance(e.get("source"), str) and isinstance(e.get("status"), str)]
-    return {e["source"]: e["status"] for e in valid}, None, cost
+    details = {e["source"]: DIGEST.truncate(DIGEST.clean(str(e.get("detail") or "")), SUBJECT_CHARS) for e in valid}
+    return {e["source"]: e["status"] for e in valid}, details, None, cost
 
 
 def commit_message(run, standup_day):
@@ -495,7 +500,8 @@ def vault_dirty(vault):
     # `git status` re-hashes changed files through any filter driver; brain-commit refuses those too.
     if filters := git(vault, "config", "--get-regexp", r"^filter\.", check=False).stdout.split():
         raise Refused(f"vault config defines filter drivers ({filters[0]}); remove them")
-    return COMMIT.changed_paths(git(vault, "status", "--porcelain=v1", "-z", "--untracked-files=all").stdout)
+    notes, others = COMMIT.vault_changes(lambda *args: git(vault, *args))
+    return notes + others
 
 
 def vault_head(vault):
@@ -553,15 +559,53 @@ def now_or(clock):
     return local(clock() if clock else datetime.now())
 
 
+def quarantine(config, nonce):
+    """Move uncommitted vault changes out of the vault, so nothing refused stays where a preview renders it.
+
+    Exactly the changed paths brain-commit would consider: ignored files (vault or global) stay.
+    Returns (dest, paths), or (None, []) when the vault is clean.
+    """
+    changed = vault_dirty(config.vault)
+    if not changed:
+        return None, []
+    dest = config.state_dir / "quarantine" / nonce
+    for rel in changed:
+        src = config.vault / rel
+        if src.is_file() and not src.is_symlink():
+            (dest / rel).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest / rel)
+    in_head = set(git(config.vault, "ls-tree", "-r", "--name-only", "-z", "HEAD", check=False).stdout.split("\0"))
+    if restore := [p for p in changed if p in in_head]:
+        git(config.vault, "restore", "--source=HEAD", "--staged", "--worktree", "--", *restore)
+    for rel in (p for p in changed if p not in in_head):
+        git(config.vault, "rm", "-q", "--cached", "--ignore-unmatch", "--", rel)
+        path = config.vault / rel
+        if path.is_symlink() or path.is_file():
+            path.unlink()
+        if path.parent != config.vault:
+            with contextlib.suppress(OSError):  # not empty: the folder holds other notes
+                path.parent.rmdir()
+    return dest, changed
+
+
+def prune_quarantine(config, now, keep=QUARANTINE_KEEP):
+    root = config.state_dir / "quarantine"
+    for entry in root.iterdir() if root.is_dir() else ():
+        if entry.is_dir() and not entry.is_symlink() and local(now).timestamp() - entry.stat().st_mtime > keep.total_seconds():
+            shutil.rmtree(entry)
+
+
 def finish(config, nonce, complete, clock=None):
     """Release the run; advance `complete` sources only if the vault's changes are all committed on top of its start."""
     with locked(config.state_dir):
         run = active_run(config, nonce)
         if unknown := sorted(set(complete) - set(run.sources)):
             raise Refused("not sources of this run: " + ", ".join(unknown))
+        # Quarantine before releasing the claim: once released, an unclaimed commit could take them.
+        dest, moved_out = quarantine(config, nonce)
         (config.state_dir / "active.json").unlink()
-        if dirty := vault_dirty(config.vault):
-            raise Refused("vault has uncommitted changes, nothing advanced: " + ", ".join(sorted(set(dirty))))
+        if moved_out:
+            raise Refused(f"uncommitted vault changes ({', '.join(moved_out)}) moved to quarantine {dest}; nothing advanced")
         head = vault_head(config.vault)
         if run.head0 and git(config.vault, "merge-base", "--is-ancestor", run.head0, head or "HEAD", check=False).returncode:
             raise Refused("vault history no longer contains the run's starting commit, nothing advanced")
@@ -631,14 +675,14 @@ def cap_day(day, rows):
 
 
 def collect_github(days, until, gh):
-    results = {role: [] for role in GH_ROLES}
-    for seg in segments(days):
-        start, _ = window(seg, until)
-        # Lower bound only: search sees a PR's latest update, so a PR worked on that day and
-        # touched again later would vanish from a bounded window.
-        span = f"--updated=>={start.isoformat(timespec='seconds')}"
-        for role, flag in GH_ROLES.items():
-            results[role] += json.loads(gh(["search", "prs", flag, span, "--limit", str(GH_LIMIT), "--json", GH_FIELDS]))
+    start, _ = window(days, until)
+    # Lower bound only, from the first day: search sees a PR's latest update, so a PR worked on
+    # that day and touched again later would vanish from a bounded window.
+    span = f"--updated=>={start.isoformat(timespec='seconds')}"
+    results = {
+        role: json.loads(gh(["search", "prs", flag, span, "--limit", str(GH_LIMIT), "--json", GH_FIELDS]))
+        for role, flag in GH_ROLES.items()
+    }
     return pr_rows(results)
 
 
@@ -712,25 +756,6 @@ def detail(err):
     return err.stderr.strip() if isinstance(err, subprocess.CalledProcessError) and err.stderr else err
 
 
-def quarantine(config, run):
-    """Move the run's uncommitted changes out of the vault, so nothing refused stays where a preview renders it."""
-    changed = sorted(set(COMMIT.changed_paths(
-        git(config.vault, "status", "--porcelain=v1", "-z", "--untracked-files=all").stdout
-    )))
-    if not changed:
-        return None
-    dest = config.state_dir / "quarantine" / run.nonce
-    for rel in changed:
-        src = config.vault / rel
-        if src.is_file() and not src.is_symlink():
-            (dest / rel).parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dest / rel)
-    # begin() refused a dirty vault, so every change here is the run's own.
-    git(config.vault, "checkout", "-q", "--", ".", check=False)
-    git(config.vault, "clean", "-fdq", check=False)
-    return dest
-
-
 def release(config, run):
     with contextlib.suppress(Refused):
         finish(config, run.nonce, [])
@@ -773,9 +798,11 @@ def trusted_edits(vault, head0):
 
 
 def failed(config, run, reason):
-    release(config, run)
-    kept = quarantine(config, run)
-    return f"Brain: {reason}; nothing advanced." + (f" The run's notes are in quarantine: {kept}" if kept else "")
+    try:
+        finish(config, run.nonce, [])
+    except Refused as err:
+        return f"Brain: {reason}; {err}."
+    return f"Brain: {reason}; nothing advanced."
 
 
 def harvest(config, run, now, claude, gh):
@@ -793,11 +820,13 @@ def harvest(config, run, now, claude, gh):
     settings = config.run_dir / "settings.json"
     write_json(settings, headless_settings(config.vault.resolve(), Path.home().resolve()))
     try:
-        statuses, error, cost = parse_result(claude(claude_args(settings), prompt, config.run_dir, RUN_TIMEOUT.total_seconds()))
+        statuses, details, error, cost = parse_result(
+            claude(claude_args(settings), prompt, config.run_dir, RUN_TIMEOUT.total_seconds())
+        )
     except subprocess.TimeoutExpired:
-        statuses, error, cost = {}, f"timed out after {RUN_TIMEOUT}", 0.0
+        statuses, details, error, cost = {}, {}, f"timed out after {RUN_TIMEOUT}", 0.0
     except OSError as err:
-        statuses, error, cost = {}, f"could not run claude: {err}", 0.0
+        statuses, details, error, cost = {}, {}, f"could not run claude: {err}", 0.0
     if error:
         return 1, failed(config, run, f"harvest failed ({error})")
 
@@ -806,18 +835,25 @@ def harvest(config, run, now, claude, gh):
     )
     if committed.status == "refused":
         return 1, failed(config, run, f"commit refused ({committed.detail})")
+    complete = completed_sources(run, local_failures, statuses)
+    reasons = {
+        **{s: details.get(s) or statuses.get(s, "not reported") for s in run.sources},
+        **local_failures,
+    }
+    failures = [s for s in run.sources if s not in complete and s not in run.parked]
+    held = ", ".join(f"{s} ({reasons[s]})" for s in failures)
     if committed.status == "nothing":
         release(config, run)
-        return 0, f"Brain: no note changes for {', '.join(run.days)}; nothing advanced (${cost:.2f})."
-    complete = completed_sources(run, local_failures, statuses)
+        return 0, (
+            f"Brain: no note changes for {', '.join(run.days)}; nothing advanced"
+            + (f". Held: {held}" if held else "")
+            + f" (${cost:.2f})."
+        )
     try:
         finish(config, run.nonce, complete, clock=lambda: now)
     except Refused as err:
         return 1, f"Brain: {err}. Inspect: git -C {config.vault} status"
 
-    failures = [s for s in run.sources if s not in complete and s not in run.parked]
-    reasons = {**{s: statuses.get(s, "not reported") for s in run.sources}, **local_failures}
-    held = ", ".join(f"{s} ({reasons[s]})" for s in failures)
     headings = {name: key for key, name in CONFIGURED_SOURCES.items()}
     still_parked = [s for s in run.parked if s not in complete]
     parked = ", ".join(
@@ -853,6 +889,7 @@ def headless(config, now, claude=run_claude, notify=notify_macos, online=network
         return 1
     try:
         preflight(config)
+        prune_quarantine(config, now)
         run = begin(config, now)
     except (Refused, OSError, subprocess.SubprocessError) as err:
         notify(f"Brain: harvest not started: {detail(err)}")

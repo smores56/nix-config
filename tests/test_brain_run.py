@@ -447,16 +447,17 @@ class CollectTests(unittest.TestCase):
         )
         self.assertEqual([r["subject"] for r in rows], ["first change"])
 
-    def test_github_queries_start_at_each_segment(self):
+    def test_github_queries_once_from_the_first_day(self):
         calls = []
 
         def fake_gh(args):
             calls.append(args)
             return json.dumps([{"url": "https://github.com/o/r/pull/1", "title": "t", "updatedAt": "x"}])
 
-        rows = self.br.collect(self.config(), "github", self.days, self.until, gh=fake_gh)
-        # Lower bound only: a PR worked on that day and updated again later still has to show up.
-        self.assertIn("--updated=>=2026-10-14T00:00:00-04:00", calls[0])
+        rows = self.br.collect(self.config(), "github", ("2026-10-01", "2026-10-14"), self.until, gh=fake_gh)
+        # Lower bound only, from the first day: a PR worked on then and updated again later still shows up.
+        self.assertEqual(len(calls), 3)
+        self.assertIn("--updated=>=2026-10-01T00:00:00-04:00", calls[0])
         self.assertEqual(rows[0]["roles"], ["author", "reviewer", "commenter"])
 
     def test_sessions_use_vault_ticket_prefixes_and_skip_headless_runs(self):
@@ -641,22 +642,26 @@ class HeadlessPureTests(unittest.TestCase):
         self.assertEqual(got, ["sessions", "git", "github"])
 
     def test_parse_result_reads_structured_status_and_cost(self):
-        out = json.dumps({"subtype": "success", "is_error": False, "total_cost_usd": 1.5,
-                          "structured_output": {"sources": [{"source": "chat", "status": "complete", "detail": ""}]}})
-        self.assertEqual(self.br.parse_result(out), ({"chat": "complete"}, None, 1.5))
+        out = json.dumps({"subtype": "success", "is_error": False, "total_cost_usd": 1.5, "structured_output": {
+            "sources": [{"source": "chat", "status": "complete", "detail": ""},
+                        {"source": "mail", "status": "failed", "detail": "connector unavailable"}]}})
+        self.assertEqual(
+            self.br.parse_result(out),
+            ({"chat": "complete", "mail": "failed"}, {"chat": "", "mail": "connector unavailable"}, None, 1.5),
+        )
 
     def test_parse_result_survives_odd_output(self):
-        self.assertEqual(self.br.parse_result("null")[1], "claude output was not a result object")
+        self.assertEqual(self.br.parse_result("null")[2], "claude output was not a result object")
         out = json.dumps({"subtype": "success", "total_cost_usd": "lots",
                           "structured_output": {"sources": [{"source": "chat"}, {"source": ["x"], "status": "complete"}, 3]}})
-        self.assertEqual(self.br.parse_result(out), ({}, None, 0.0))
+        self.assertEqual(self.br.parse_result(out), ({}, {}, None, 0.0))
 
     def test_parse_result_reports_errors_and_missing_status(self):
-        self.assertEqual(self.br.parse_result("not json")[1], "claude output was not JSON")
+        self.assertEqual(self.br.parse_result("not json")[2], "claude output was not JSON")
         out = json.dumps({"subtype": "error_max_turns", "is_error": True, "total_cost_usd": 3})
-        self.assertEqual(self.br.parse_result(out), ({}, "claude stopped: error_max_turns", 3))
+        self.assertEqual(self.br.parse_result(out), ({}, {}, "claude stopped: error_max_turns", 3))
         out = json.dumps({"subtype": "success", "is_error": False})
-        self.assertEqual(self.br.parse_result(out)[1], "claude returned no status")
+        self.assertEqual(self.br.parse_result(out)[2], "claude returned no status")
 
 
 class HeadlessRunTests(unittest.TestCase):
@@ -806,6 +811,70 @@ class HeadlessRunTests(unittest.TestCase):
         code = self.br.headless(self.config, now, claude=claude, notify=self.notes.append, online=lambda: True, gh=lambda a: "[]")
         self.assertEqual(code, 0, self.notes[-1])
         self.assertTrue(self.log_subjects()[0].startswith("harvest: "))
+
+    def test_quarantine_leaves_ignored_and_globally_ignored_files_alone(self):
+        (self.vault / ".gitignore").write_text(".DS_Store\n")
+        git(self.vault, "add", "-A")
+        git(self.vault, "commit", "-qm", "ignore")
+        (self.vault / ".DS_Store").write_text("finder")
+        ignore = Path(self.tmp.name) / "global-ignore"
+        ignore.write_text("**/.claude/settings.local.json\n")
+        git(self.vault, "config", "core.excludesFile", str(ignore))
+        (self.vault / ".claude").mkdir()
+        (self.vault / ".claude" / "settings.local.json").write_text("{}")
+        self.headless(self.fake_claude({}, subtype="error_max_turns"))
+        self.assertTrue((self.vault / ".DS_Store").exists())
+        self.assertTrue((self.vault / ".claude" / "settings.local.json").exists())
+        self.assertFalse((self.vault / "daily" / "2026-10-14.md").exists())
+
+    def test_quarantine_restores_modified_and_staged_notes(self):
+        (self.vault / "wiki").mkdir()
+        (self.vault / "wiki" / "svc.md").write_text("old\n")
+        git(self.vault, "add", "-A")
+        git(self.vault, "commit", "-qm", "seed")
+
+        def staging(args, prompt, cwd, timeout):
+            (self.vault / "wiki" / "svc.md").write_text("injected\n")
+            git(self.vault, "add", "wiki/svc.md")
+            raise subprocess.TimeoutExpired(args, timeout)
+
+        self.headless(staging)
+        self.assertEqual((self.vault / "wiki" / "svc.md").read_text(), "old\n")
+        self.assertEqual(git(self.vault, "status", "--porcelain"), "")
+        self.assertIn("wiki/svc.md", self.notes[-1])
+
+    def test_an_attended_finish_on_a_dirty_vault_quarantines(self):
+        run = self.br.begin(self.config, at("2026-10-14T17:30:00"))
+        (self.vault / "daily").mkdir()
+        (self.vault / "daily" / "2026-10-14.md").write_text("![x](https://evil.test/p)\n")
+        with self.assertRaisesRegex(self.br.Refused, "quarantine"):
+            self.br.finish(self.config, run.nonce, ["chat"], clock=lambda: at("2026-10-14T18:00:00"))
+        self.assertEqual(git(self.vault, "status", "--porcelain"), "")
+
+    def test_model_failure_details_reach_the_notification(self):
+        def claude(args, prompt, cwd, timeout):
+            for rel in ("daily/2026-10-14.md", "standups/2026-10-15.md"):
+                (self.vault / rel).parent.mkdir(parents=True, exist_ok=True)
+                (self.vault / rel).write_text("note\n")
+            return json.dumps({"subtype": "success", "total_cost_usd": 0.1, "structured_output": {
+                "sources": [{"source": "chat", "status": "failed", "detail": "connector unavailable"}]}})
+
+        self.headless(claude)
+        self.assertIn("chat (connector unavailable)", self.notes[-1])
+
+    def test_no_note_changes_still_names_held_sources(self):
+        self.headless(self.fake_claude({"chat": "failed"}, writes=()))
+        self.assertIn("no note changes", self.notes[-1])
+        self.assertIn("chat", self.notes[-1])
+
+    def test_old_quarantines_are_pruned(self):
+        old = self.config.state_dir / "quarantine" / "old"
+        old.mkdir(parents=True)
+        (old / "x.md").write_text("x")
+        stamp = at("2026-09-01T00:00:00").timestamp()
+        os.utime(old, (stamp, stamp))
+        self.headless(self.fake_claude({"chat": "complete"}))
+        self.assertFalse(old.exists())
 
     def test_a_missing_standup_is_reported(self):
         self.headless(self.fake_claude({"chat": "complete"}, writes=("daily/2026-10-14.md",)))

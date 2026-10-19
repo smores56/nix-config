@@ -166,7 +166,8 @@ source resumes from its own last complete pull.
    for an explicit range). `nothing` means the notes came out unchanged; the
    cursors then stay put, which is harmless.
 7. **Finish** a claimed run, always — even after a refused commit, which
-   then passes no `--complete`:
+   then passes no `--complete`; `finish` moves any uncommitted vault changes
+   to `<state>/quarantine/<nonce>/` and says so:
    `brain-run finish --run <nonce> --complete <s1,s2,…>`, listing only
    sources fully read for every day. A source that failed on any day stays
    off the list, so the next harvest re-pulls it.
@@ -183,7 +184,9 @@ blocks, and will commit and finish it. Nobody is watching:
   steps 1, 2, 6, 7, and 8 — the status object replaces the report. There is
   no shell — never try `brain-digest`, `brain-run`, `brain-commit`, or `git`.
 - Link only to hosts under `## Link hosts`, in every file; leave any other
-  link out. One off-host link, image, or HTML tag refuses the whole run.
+  link out. Write plain markdown: no images, HTML, or `&` entities, and no
+  `<` directly before a letter outside code spans (a bare `<WORD>`
+  placeholder is fine). Any of these refuses the whole run.
 - Never ask a question or wait for an answer; decide, or leave the item out
   and note it in `## Open`.
 - After the harvest, write the standup file (standup steps 2 and 4,
