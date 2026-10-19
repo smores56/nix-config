@@ -20,11 +20,11 @@ let
     cfg.codeRoot
   ]
   ++ lib.optional (cfg.workHost && cfg.work.flatRepos != null) cfg.work.flatRepos.dir;
-  # launchd starts jobs with a bare PATH; claude is installed outside Nix.
+  # launchd starts jobs with a bare PATH. claude is installed outside Nix, so it is
+  # named by full path rather than letting ~/.local/bin shadow system tools.
   runPath = lib.concatStringsSep ":" [
     "${pkgs.git}/bin"
     "${pkgs.gh}/bin"
-    "${home}/.local/bin"
     "/usr/bin"
     "/bin"
     "/usr/sbin"
@@ -44,6 +44,7 @@ let
     BRAIN_STATE_DIR = stateDir;
     BRAIN_REPO_ROOTS = lib.concatStringsSep ":" repoRoots;
     BRAIN_SKILL = "${../skills/brain/SKILL.md}";
+    BRAIN_CLAUDE = "${home}/.local/bin/claude";
   };
   brainRun = mkBin "brain-run" runEnv;
 in

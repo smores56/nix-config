@@ -90,7 +90,7 @@ in
       type = lib.types.nullOr (lib.types.strMatching "[^/].*[^/]|[^/]");
       default = null;
       example = "brain";
-      description = "Second-brain vault directory, relative to home, maintained by the `brain` skill. When set, `BRAIN_DIR` is exported and assistant context points sessions at it; null leaves the vault unconfigured.";
+      description = "Second-brain vault directory, relative to home, maintained by the `brain` skill. When set, `BRAIN_DIR` is exported, assistant context points sessions at it, `brain-run` is installed, and on macOS a weekday 17:30 launchd job runs an unattended, paid `claude -p` harvest (up to $10 a run; see modules/features/ai/brain/); null leaves the vault unconfigured.";
     };
     workHost = lib.mkOption {
       type = lib.types.bool;
