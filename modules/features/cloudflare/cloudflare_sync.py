@@ -63,13 +63,12 @@ SERVICE_AUTH_POLICY_NAME = "service auth (any valid service token)"
 # mistake at evaluation; this is the second line of defence for a stale or
 # hand-edited spec.
 PROTECTED_SUBDOMAINS = frozenset({"ssh", "llm", "searx", "ntfy", "chat"})
-# The origin ports those services listen on: modules/ports.nix for llm/searx/
-# ntfy/chat/jupyter, modules/options.nix for ntfy's knob, modules/nixos/ssh.nix
-# for sshd.
-# Protection follows the service, not just its label: a rename that keeps the
-# port, or a port move that keeps the name, is still refused, so a one-sided
-# edit cannot slip a critical endpoint out from under the guard.
-PROTECTED_PORTS = frozenset({22, 8080, 8081, 8888, 8899, 2586})
+# The origin ports those services listen on, single-sourced from
+# modules/ports.nix. Protection follows the service, not just its label: a
+# rename that keeps the port, or a port move that keeps the name, is still
+# refused, so a one-sided edit cannot slip a critical endpoint out from under
+# the guard.
+PROTECTED_PORTS = frozenset({22, 2586, 8080, 8081, 8888, 8899})
 
 
 def is_protected(sub, port):

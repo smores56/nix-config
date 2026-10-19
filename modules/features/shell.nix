@@ -136,11 +136,20 @@ in
 
       # Lix's installer only hooks /etc/{bash,zsh}rc, and nixpkgs' fish reads its
       # sysconfdir from the store, so non-NixOS hosts never get Nix on PATH.
-      shellInit = lib.mkIf (!cfg.nixos) ''
-        if test -e /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.fish
-            source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.fish
-        end
-      '';
+      shellInit = lib.mkMerge [
+        (lib.mkIf (!cfg.nixos) ''
+          if test -e /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.fish
+              source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.fish
+          end
+        '')
+        # sops-nix provisions this 0400 user-owned secret on smortress; other
+        # hosts do not have the path and skip it.
+        (lib.mkIf cfg.nixos ''
+          if test -r /run/secrets/neuralwatt-api-key
+              set -gx NEURALWATT_API_KEY (cat /run/secrets/neuralwatt-api-key)
+          end
+        '')
+      ];
 
       inherit (cfg) shellAbbrs;
 

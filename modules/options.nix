@@ -652,7 +652,7 @@ in
       sshKey = "~/.ssh/id_personal";
       # The vault's shared personal identity (design D6). Servers only ever
       # hold the public half; clients get the private half over SSH_AUTH_SOCK.
-      sshAuthorizedKeys = [
+      sshAuthorizedKeys = lib.mkDefault [
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEu3DfhswY9f9hum/0OhAw2833CkZOP6wVKW5yJk6GpU sam@sammohr.dev"
       ];
       branchNaming.template = "smores/{slug}";

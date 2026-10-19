@@ -32,13 +32,21 @@
         mode = "0400";
       };
 
-      # Open WebUI's session secret, the Neuralwatt API key, and the code
-      # interpreter's Jupyter token. All three reach their services through a
-      # systemd EnvironmentFile (read by the manager as root before it drops to
-      # the DynamicUser), so they keep the default root ownership.
-      neuralwatt-api-key = { };
+      # Open WebUI's session secret and the code interpreter's Jupyter token.
+      # Both reach their services through a systemd EnvironmentFile (read by the
+      # manager as root before it drops to the DynamicUser), so they keep the
+      # default root ownership. The Neuralwatt key is user-owned below because
+      # maki reads it from the shell.
       open-webui-secret-key = { };
       jupyter-token = { };
+
+      # maki's hosted-inference key; the fish init exports it from this path, so
+      # the user must be able to read it. (Open WebUI's environment is removed
+      # in the target state; the key stays for maki.)
+      neuralwatt-api-key = {
+        owner = config.dotfiles.username;
+        mode = "0400";
+      };
 
       # Provisioning PAT, readable by the user so `bootstrap` can log in
       # non-interactively (`gh auth login --with-token`, `pass-cli login`).

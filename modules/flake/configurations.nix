@@ -176,7 +176,7 @@ let
   mkNixos =
     args:
     let
-      dm = args.displayManager or "none";
+      dm = args.dotfiles.displayManager or "none";
       username = args.username or "smores";
     in
     inputs.nixpkgs.lib.nixosSystem {
@@ -208,7 +208,6 @@ let
           # cannot retarget the config's user or display manager.
           dotfiles = (args.dotfiles or { }) // {
             inherit username;
-            displayManager = dm;
           };
         }
       ]

@@ -13,6 +13,14 @@ in
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
 
+  # The server has no swap and the Immich/llama peaks caused three OOM kills in
+  # 30 days. zram gives the kernel compressed headroom without a disk-backed
+  # swap file; 25% leaves most RAM for the workloads.
+  zramSwap = {
+    enable = true;
+    memoryPercent = 25;
+  };
+
   time.timeZone = "America/New_York";
 
   i18n.defaultLocale = "en_US.UTF-8";
