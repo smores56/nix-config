@@ -1,7 +1,7 @@
 # smortress: the headless always-on server. It is the Cloudflare Tunnel origin
 # and runs the local LLM, SearXNG, Immich/Navidrome/Calibre, and the backup disk.
-# `dotfiles` is shared by the NixOS config and the home config; each reads the
-# knobs it knows (mkNixos/mkHome filter), so a value lives in exactly one place.
+# `dotfiles` is shared by the NixOS config and the home config, so a value
+# lives in exactly one place; each module reads the knobs it knows.
 let
   ports = import ../../ports.nix;
   # The ssh/llm/searx endpoints all want an email allow-list (human fallback)
@@ -29,11 +29,11 @@ in
       enable = true;
       tunnelName = "smortress";
       services = {
-        calibre.port = 8181;
-        immich.port = 2283;
+        calibre.port = ports.calibre;
+        immich.port = ports.immich;
         # Public, protected only by Navidrome's own auth: music streaming is
         # low-bandwidth, so the Cloudflare CDN terms that bite video don't apply.
-        music.port = 4533;
+        music.port = ports.navidrome;
         # Unauthenticated loopback listener, so it must sit behind Access
         # (enforced by an assertion in modules/nixos/notify.nix).
         ntfy = {
@@ -45,7 +45,7 @@ in
         # access ssh` run unattended; the email policy keeps a browser
         # fallback. Must never lose Access (assertion in web-proxy.nix).
         ssh = {
-          port = 22;
+          port = ports.ssh;
           protocol = "ssh";
           access = serviceAuth;
         };

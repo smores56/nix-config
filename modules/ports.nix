@@ -12,4 +12,10 @@
   # ingress, `jupyter` is reachable only by the chat UI over loopback.
   chat = 8080;
   jupyter = 8888;
+  # Service listeners and their tunnel ingress read these, so the two cannot
+  # drift apart.
+  calibre = 8181;
+  immich = 2283;
+  navidrome = 4533;
+  ssh = 22;
 }

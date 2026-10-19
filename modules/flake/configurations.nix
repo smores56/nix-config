@@ -109,56 +109,6 @@ let
   ]
   ++ importTree ../nixos;
 
-  # Host-authored knobs a home configuration may pass. Read-only `dotfiles.*`
-  # values are resolved in options.nix and cannot be set here.
-  homeKnobs = {
-    displayManager = "none";
-    windowManager = "none";
-    polarity = null;
-    nixos = null;
-    fingerprint = null;
-    noSleep = null;
-    calibre = null;
-    photobucket = null;
-    aiProfile = null;
-    shellAbbrs = { };
-    llm = null;
-    searchPort = null;
-    webProxy = null;
-    workHost = null;
-    brain = null;
-  };
-  # Every host-authored knob (the first `dotfiles` section in options.nix),
-  # used to reject typos in a host's meta.nix. Keep in sync with options.nix.
-  hostKnobs = [
-    "displayManager"
-    "windowManager"
-    "polarity"
-    "aiProfile"
-    "shellAbbrs"
-    "brain"
-    "workHost"
-    "exposeSsh"
-    "nvidia"
-    "llm"
-    "search"
-    "searchPort"
-    "noSleep"
-    "nixos"
-    "fingerprint"
-    "webProxy"
-    "calibre"
-    "navidrome"
-    "photobucket"
-    "immich"
-    "backup"
-    "githubBackup"
-    "notify"
-    "chat"
-  ];
-  # The same list as an attrset, for intersectAttrs-style filtering.
-  hostKnobsSet = lib.genAttrs hostKnobs (_: null);
-
   # Hosts are discovered from modules/hosts/<name>/; adding a host means adding
   # a directory (meta.nix + hardware.nix), never editing this file.
   hostsDir = ../hosts;
@@ -183,21 +133,17 @@ let
           import metaPath
         else
           throw "modules/hosts/${name}/ has no meta.nix (see AGENTS.md)";
-      unknown = lib.subtractLists hostKnobs (builtins.attrNames (m.dotfiles or { }));
       unknownTop = lib.subtractLists hostMetaKeys (builtins.attrNames m);
     in
-    assert lib.assertMsg (
-      unknown == [ ]
-    ) "modules/hosts/${name}/meta.nix: unknown dotfiles knob(s): ${lib.concatStringsSep ", " unknown}";
     assert lib.assertMsg (unknownTop == [ ])
       "modules/hosts/${name}/meta.nix: unknown top-level key(s): ${lib.concatStringsSep ", " unknownTop} (allowed: ${lib.concatStringsSep ", " hostMetaKeys})";
     m;
 
-  # The identity every config built for a host carries; set after the host's own
-  # knobs so a meta.nix cannot silently retarget a config's user or platform.
-  identity =
+  # Defaults for the identity keys every config needs; `dotfiles` is passed
+  # through whole, so a typo is caught by the option system instead of a list.
+  normalize =
     m:
-    (m.dotfiles or { })
+    m
     // {
       username = m.username or "smores";
       system = m.system or "x86_64-linux";
@@ -216,10 +162,9 @@ let
       };
       modules = homeModules ++ [
         {
-          dotfiles = {
+          dotfiles = (args.dotfiles or { }) // {
             inherit username;
-          }
-          // builtins.intersectAttrs homeKnobs args;
+          };
           home.username = username;
           home.homeDirectory =
             args.homeDirectory
@@ -258,10 +203,10 @@ let
       ++ [
         {
           networking.hostName = args.hostname;
-          # Host-authored knobs (validated against hostKnobs in hostMeta) are
-          # forwarded wholesale so every declared knob reaches the config;
-          # identity is applied last so a meta.nix cannot retarget them.
-          dotfiles = builtins.intersectAttrs hostKnobsSet args // {
+          # Host knobs are forwarded whole; an undeclared option fails
+          # evaluation. The top-level identity is applied last so a meta.nix
+          # cannot retarget the config's user or display manager.
+          dotfiles = (args.dotfiles or { }) // {
             inherit username;
             displayManager = dm;
           };
@@ -281,11 +226,11 @@ in
         let
           m = hostMeta name;
         in
-        lib.nameValuePair "${m.username or "smores"}@${name}" (mkHome (identity m))
+        lib.nameValuePair "${m.username or "smores"}@${name}" (mkHome (normalize m))
       ) (lib.filter (name: (hostMeta name).home or false) hostNames)
     );
     nixosConfigurations = lib.listToAttrs (
-      map (name: lib.nameValuePair name (mkNixos ((identity (hostMeta name)) // { hostname = name; }))) (
+      map (name: lib.nameValuePair name (mkNixos ((normalize (hostMeta name)) // { hostname = name; }))) (
         lib.filter (name: (hostMeta name).nixos or false) hostNames
       )
     );

@@ -6,15 +6,17 @@
 { config, lib, ... }:
 let
   cfg = config.dotfiles.immich;
+  ports = import ../ports.nix;
 in
 {
   config = lib.mkIf cfg.enable {
     services.immich = {
       enable = true;
       inherit (cfg) mediaLocation;
+      port = ports.immich;
 
       # Bind all interfaces; reachability is governed by the firewall rule
-      # below (and the tunnel dials 127.0.0.1:2283).
+      # below (and the tunnel dials 127.0.0.1:${toString ports.immich}).
       host = "0.0.0.0";
       openFirewall = false;
 

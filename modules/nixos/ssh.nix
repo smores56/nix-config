@@ -1,15 +1,18 @@
 { config, lib, ... }:
+let
+  ports = import ../ports.nix;
+in
 {
   config = lib.mkIf config.dotfiles.exposeSsh {
     services.openssh = {
       enable = true;
       # Reachable only through the Cloudflare Tunnel: cloudflared dials
-      # 127.0.0.1:22, so sshd binds loopback and opens no firewall port.
+      # 127.0.0.1:${toString ports.ssh}, so sshd binds loopback and opens no firewall port.
       openFirewall = false;
       listenAddresses = [
         {
           addr = "127.0.0.1";
-          port = 22;
+          port = ports.ssh;
         }
       ];
       settings = {

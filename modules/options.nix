@@ -211,7 +211,7 @@ in
           enable = lib.mkEnableOption "calibre-server OPDS as a user systemd service";
           port = lib.mkOption {
             type = lib.types.port;
-            default = 8181;
+            default = ports.calibre;
             description = "Loopback port for calibre-server.";
           };
           passwordFile = lib.mkOption {
@@ -249,7 +249,7 @@ in
           enable = lib.mkEnableOption "Navidrome music server (NixOS-only)";
           port = lib.mkOption {
             type = lib.types.port;
-            default = 4533;
+            default = ports.navidrome;
             description = "Loopback port for Navidrome.";
           };
           musicFolder = lib.mkOption {
