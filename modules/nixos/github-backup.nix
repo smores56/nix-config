@@ -1,8 +1,9 @@
 # Mirror this host's GitHub repos onto the backup disk with ghorg.
 #
-# Local-only by design: GitHub already holds the offsite copy of everything, so
-# the dataset sets offsite = false and the driver's scoped local check — which
-# stands in for the offsite verification — still marks the mirror verified.
+# GitHub already holds the offsite copy of everything, but the mirror is also
+# copied to Proton: the first seed is large, then only new/changed packs move
+# (measured 45–52 files / 2.2–2.6 MiB per run). The driver's scoped local check
+# still marks the mirror verified.
 # ghorg refreshes the bare mirrors in the dataset's preBackup step (it clones on
 # the first run and `git remote update`s thereafter); the driver then
 # rclone-copies /var/lib/github-mirrors into <mount>/GitHub/current.
@@ -75,7 +76,7 @@ in
         schedule = lib.mkOption {
           type = lib.types.str;
           default = "*-*-* 00:30:00";
-          description = "systemd OnCalendar for the mirror timer. A local-only dataset takes its own lock, so it neither waits on nor starves the Proton datasets.";
+          description = "systemd OnCalendar for the mirror timer. The mirror takes its own lock, so it neither waits on nor starves the Proton datasets.";
         };
         timeout = lib.mkOption {
           type = lib.types.str;
@@ -90,7 +91,7 @@ in
       };
     };
     default = { };
-    description = "Mirror this host's GitHub repos onto the backup disk via ghorg (local-only; GitHub is the offsite copy).";
+    description = "Mirror this host's GitHub repos onto the backup disk via ghorg; GitHub remains the authoritative copy.";
   };
 
   config = lib.mkIf cfg.enable {
@@ -112,7 +113,7 @@ in
       # ghorg writes <target>/<owner>_backup/<repo>/; the dataset source is the
       # parent, so the whole tree is mirrored.
       source = mirrorRoot;
-      offsite = false;
+      offsite = true;
       inherit (cfg) fullCheckSchedule schedule timeout;
       preBackup = "${mirror}";
     };

@@ -1,4 +1,4 @@
-# Backup — rclone driver (media to Proton, GitHub local-only)
+# Backup — rclone driver (media and GitHub to Proton)
 
 Generic, dataset-agnostic backup driver. One systemd oneshot + timer per
 `backup.datasets.<Name>` entry, optionally fired early by a filesystem
@@ -6,8 +6,8 @@ watcher (`onChange`). A dataset is a directory on Disk 1, a local mirror on the
 backup disk (Disk 2), and — unless `offsite` is disabled — an append-only mirror
 on Proton Drive (Disk 3, "offsite"). Two dataset families use it: the media
 trees (`Photos`, `Videos`, `Music`; offsite and change-triggered) and a
-local-only GitHub repo mirror (`GitHub`; see
-[GitHub repo mirror](#github-repo-mirror-local-only)).
+GitHub repo mirror (`GitHub`; see
+[GitHub repo mirror](#github-repo-mirror)).
 
 The rationale for every destructive-looking choice lives as a comment next to
 the code in [`backup.py`](./backup.py). This file is the operator's view.
@@ -89,17 +89,17 @@ source root. `Photos` additionally excludes `/thumbs/**` and
 `/encoded-video/**` — regenerable Immich derived assets that Immich rebuilds
 from the originals, so they need not occupy a mirror.
 
-## GitHub repo mirror (local-only)
+## GitHub repo mirror
 
 `githubBackup` mirrors this host's GitHub repos onto the backup disk as
 bare git mirrors, driven by
-[`modules/nixos/github-backup.nix`](../../nixos/github-backup.nix). It is
-deliberately **local-only** (`offsite = false`): GitHub already holds the offsite
-copy of every repo, so the HDD mirror exists for fast local restore and as
-protection against an accidental repo deletion or account lockout — not as a
-second offsite. A Proton leg would also re-upload every pack on every run, since
-`git repack` rewrites packfiles with new mtimes even when the content is
-unchanged (and a copy-based mirror keys on that mtime).
+[`modules/nixos/github-backup.nix`](../../nixos/github-backup.nix). GitHub
+remains the authoritative copy; the HDD mirror provides fast local restore and
+protection against an accidental repo deletion or account lockout, and the
+dataset is also copied to Proton (`offsite = true`). The first offsite seed is
+large; later runs move only new packs — measured 45–52 files / 2.2–2.6 MiB per
+run. No periodic `git repack` runs, so packs are not rewritten and the
+copy-based mirror does not re-upload unchanged data.
 
 - **Refresh.** The dataset's `preBackup` runs
   [`github-mirror.sh`](./github-mirror.sh) under [`gitconfig`](./gitconfig) via
