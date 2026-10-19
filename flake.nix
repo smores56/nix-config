@@ -23,10 +23,6 @@
       url = "github:noctalia-dev/noctalia";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    whisrs = {
-      url = "github:y0sif/whisrs";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     concord = {
       url = "github:chojs23/concord";
       inputs.nixpkgs.follows = "nixpkgs";

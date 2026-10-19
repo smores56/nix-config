@@ -8,7 +8,7 @@
 -- well-formed. The agent supplies a slug/task, never a raw branch
 -- name.
 --
--- Prerequisites on PATH: worktrees, zellij, python3
+-- Prerequisites on PATH: worktrees, zellij, jq
 
 local QuestionForm = require("question_form")
 
@@ -17,7 +17,7 @@ local sushi_icon = "\238\136\154"
 
 if maki.fn.executable("worktrees") == 0
   or maki.fn.executable("zellij") == 0
-  or maki.fn.executable("python3") == 0
+  or maki.fn.executable("jq") == 0
 then
   return
 end
@@ -131,14 +131,8 @@ out=$(worktrees new %s 2>&1) || {
 # worktrees prints a single JSON line on stdout; isolate it from any git
 # fetch noise on stderr so JSON parsing is robust.
 json=$(printf "%%s" "$out" | grep -E '^\{' | tail -1)
-path=$(printf "%%s" "$json" | python3 -c "import sys,json; print(json.load(sys.stdin).get('path',''))" 2>/dev/null)
-if [ -z "$path" ]; then
-  path=$(printf "%%s" "$json" | grep -o '"path":"[^"]*"' | head -1 | cut -d'"' -f4)
-fi
-branch=$(printf "%%s" "$json" | python3 -c "import sys,json; print(json.load(sys.stdin).get('branch',''))" 2>/dev/null)
-if [ -z "$branch" ]; then
-  branch=$(printf "%%s" "$json" | grep -o '"branch":"[^"]*"' | head -1 | cut -d'"' -f4)
-fi
+path=$(printf "%%s" "$json" | jq -r '.path // empty')
+branch=$(printf "%%s" "$json" | jq -r '.branch // empty')
 if [ -z "$path" ]; then
   echo "ERR:could not determine worktree path: $out"
   exit 1

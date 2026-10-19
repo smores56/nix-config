@@ -76,10 +76,8 @@ let
 in
 {
   home.packages = with pkgs; [
-    gnupg
     delta
     git-lfs
-    difftastic
   ];
 
   home.file.".gitignore".text = ''
@@ -98,15 +96,6 @@ in
         editor = "hx";
         git_protocol = "ssh";
       };
-
-      extensions = with pkgs; [
-        gh-f
-        gh-i
-        gh-s
-        gh-eco
-        gh-dash
-        gh-notify
-      ];
     };
 
     git = {
@@ -129,10 +118,6 @@ in
           delta = {
             navigate = true;
             line-numbers = true;
-          };
-          difftool = {
-            prompt = false;
-            difftastic.cmd = "difft \"$LOCAL\" \"$REMOTE\"";
           };
           pager = {
             diff = "delta";
@@ -159,5 +144,6 @@ in
     git.includes = personalIncludes ++ workIncludes;
 
     lazygit.enable = true;
+    lazygit.settings.gui.theme.lightTheme = false;
   };
 }

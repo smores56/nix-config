@@ -1,7 +1,6 @@
 {
   config,
   lib,
-  pkgs,
   ...
 }:
 let
@@ -10,28 +9,12 @@ let
 
   clockFormat = "{:%-I:%M %p %a, %b %d}";
 
-  # Noctalia's state file (~/.local/state/noctalia/settings.toml) is a sparse,
-  # self-pruning overlay holding only settings that deviate from this declarative
-  # base — so it is left in place, and Noctalia's own theme mode stays the source
-  # of truth for light/dark.
-  themeApply = import ../../lib/theme-apply.nix { inherit pkgs lib; };
-
-  # Hooks run inside noctalia.service's cgroup, and the home-manager activation
-  # they trigger restarts that same unit. systemd signals the whole cgroup when
-  # stopping a unit, which would kill the activation halfway through: Noctalia
-  # stops and never starts again. A transient user unit is a sibling cgroup, so
-  # the activation survives the restart.
-  themeHook = label: modeExpr: ''
-    ${pkgs.systemd}/bin/systemd-run --user --collect \
-      --description=${lib.escapeShellArg "theme-apply ${label}"} -- \
-      ${themeApply}/bin/theme-apply ${modeExpr}
-  '';
 in
 {
   config = lib.mkIf isNiri {
-    # Stylix writes the base palette and theme.mode into config.toml; Noctalia's
-    # own toggle persists to settings.toml, which wins — so its mode is the
-    # source of truth and the hooks below propagate it to the rest of the system.
+    # Noctalia's state file (~/.local/state/noctalia/settings.toml) is a sparse,
+    # self-pruning overlay holding only settings that deviate from this
+    # declarative base; the theme itself is static dark from Stylix.
     programs.noctalia = {
       enable = true;
       systemd.enable = true;
@@ -46,13 +29,6 @@ in
         };
 
         location.auto_locate = true;
-
-        # Noctalia's theme mode drives the rest of the system: sync on start and
-        # follow every change, via the native push hooks.
-        hooks = {
-          started = themeHook "started" "\"$(noctalia msg theme-mode-get)\"";
-          theme_mode_changed = themeHook "mode-changed" "\"$NOCTALIA_THEME_MODE\"";
-        };
 
         bar.main = {
           position = "top";

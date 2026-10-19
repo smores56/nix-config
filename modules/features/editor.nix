@@ -5,8 +5,6 @@
 }:
 let
   tsJsRoots = [
-    "deno.json"
-    "deno.jsonc"
     "package.json"
   ];
 in
@@ -29,7 +27,6 @@ in
     nixd
     ruff
     taplo
-    gopls
     nixfmt
     # wikilink keeps mdformat from escaping [[links]] into \[[links]\].
     (mdformat.withPlugins (p: [
@@ -43,17 +40,15 @@ in
     lua-language-server
     dockerfile-language-server
     yaml-language-server
-    svelte-language-server
     typescript-language-server
     vscode-langservers-extracted
-    graphql-language-service-cli
   ];
 
   programs.helix = {
     enable = true;
 
     settings = {
-      theme = "active";
+      theme = "rose_pine_moon";
 
       keys.normal = {
         C-r = [
@@ -116,7 +111,7 @@ in
           "tsx"
         ];
         auto-format = true;
-        language-servers = [ "deno-lsp" ];
+        language-servers = [ "typescript-language-server" ];
       }
       {
         name = "javascript";
@@ -126,7 +121,7 @@ in
           "jsx"
         ];
         auto-format = true;
-        language-servers = [ "deno-lsp" ];
+        language-servers = [ "typescript-language-server" ];
       }
       {
         name = "python";
@@ -177,14 +172,6 @@ in
       };
       rust-analyzer.config = {
         rust-analyzer.diagnostics.disabled = [ "unresolved-proc-macro" ];
-      };
-      deno-lsp = {
-        command = "deno";
-        args = [ "lsp" ];
-        config.deno = {
-          enable = true;
-          lint = true;
-        };
       };
     };
   };

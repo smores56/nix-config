@@ -2,27 +2,14 @@
   config,
   lib,
   pkgs,
-  inputs,
   ...
 }:
 let
   cfg = config.dotfiles;
-  system = pkgs.stdenv.hostPlatform.system;
 
-  # Upstream's Nix build compiles the bundled ggml unoptimised, so a phrase
-  # decode costs ~6x native whisper.cpp and phrase-level streaming degenerates
-  # into batch. whisper-rs-sys forwards this toolchain file to cmake; see it for
-  # the numbers and the SIMD flags.
-  whisrs = inputs.whisrs.packages.${system}.default.overrideAttrs (old: {
-    env = (old.env or { }) // {
-      CMAKE_TOOLCHAIN_FILE = "${./whisrs-ggml.cmake}";
-    };
-  });
-
-  # whisper.cpp base.en GGML weights for the local backend. Neither nixpkgs nor
-  # sherpa-onnx ship a whisper.cpp model set, and the daemon would otherwise
-  # download the file into $HOME on first run; pinning it keeps the config
-  # pointing at an immutable store path.
+  # whisper.cpp base.en weights for the local backend. Pinning them keeps the
+  # config pointing at an immutable store path instead of downloading into
+  # $HOME on first run.
   whisperModel = pkgs.stdenvNoCC.mkDerivation {
     pname = "whisper-cpp-ggml-base-en";
     version = "2026-09-14";
@@ -51,47 +38,35 @@ let
 in
 {
   config = lib.mkIf cfg.wayland {
-    home.packages = [
-      whisrs
-      mdStructure
-    ];
+    home.packages = [ mdStructure ];
 
-    # Read-only by design: `whisrs config`/`setup` rewrite this file and fail
-    # against the store symlink, so edit this expression instead (keep secrets
-    # out — store paths are world-readable). Only non-default keys are set; the
-    # silence timeout is raised because 0 stops on the first silent sample, not
-    # disables it, so 30s keeps a thinking pause from ending a session.
-    xdg.configFile."whisrs/config.toml".text = ''
-      [general]
-      backend = "local-whisper"
-      language = "en"
-      silence_timeout_ms = 30000
-      audio_feedback = true
+    # The compositor owns the keybinding; Voxtype's evdev hotkey stays off so
+    # no input-group membership or uinput access is needed. wtype/wl-clipboard
+    # come from the module's wayland runtime path.
+    services.voxtype = {
+      enable = true;
+      wayland.display = "wayland-1";
 
-      [local-whisper]
-      model_path = "${whisperModel}/ggml-base.en.bin"
-    '';
+      settings = {
+        hotkey.enabled = false;
 
-    # The daemon tracks the focused window through the compositor env; keep it
-    # in the graphical session so early key presses are not dropped.
-    systemd.user.services.whisrsd = {
-      Unit = {
-        Description = "whisrs dictation daemon";
-        After = [ "graphical-session.target" ];
-        PartOf = [ config.wayland.systemd.target ];
+        audio.feedback.enabled = true;
+
+        whisper = {
+          model = "${whisperModel}/ggml-base.en.bin";
+          language = "en";
+        };
+
+        output = {
+          mode = "type";
+          fallback_to_clipboard = true;
+        };
       };
-
-      Service = {
-        ExecStart = "${whisrs}/bin/whisrsd";
-        Restart = "on-failure";
-        RestartSec = 3;
-      };
-
-      Install.WantedBy = [ config.wayland.systemd.target ];
     };
 
     programs.niri.settings.binds."Mod+Shift+D".action.spawn = [
-      "${whisrs}/bin/whisrs"
+      (lib.getExe pkgs.voxtype)
+      "record"
       "toggle"
     ];
 

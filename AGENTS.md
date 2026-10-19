@@ -159,4 +159,4 @@ For home-manager changes, run `home-manager switch --flake .#smores@<host>`
 
 ## Repo conventions
 
-- Wallpapers are LFS-tracked (`.gitattributes`).
+- PNG and JPEG files are LFS-tracked (`.gitattributes`).

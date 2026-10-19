@@ -32,11 +32,8 @@ let
   # Init scripts that only depend on the tool's version and flags, generated
   # at build time so shells source a file instead of spawning the tool.
   initScript = name: cmd: pkgs.runCommand name { } "${cmd} > $out";
-  fzf = lib.getExe config.programs.fzf.package;
   zoxide = "${lib.getExe config.programs.zoxide.package} init";
   zoxideFlags = lib.escapeShellArgs config.programs.zoxide.options;
-  fzfZsh = initScript "fzf-init.zsh" "${fzf} --zsh";
-  fzfFish = initScript "fzf-init.fish" "${fzf} --fish";
   zoxideZsh = initScript "zoxide-init.zsh" "${zoxide} zsh ${zoxideFlags}";
   zoxideFish = initScript "zoxide-init.fish" "${zoxide} fish ${zoxideFlags}";
 
@@ -112,12 +109,6 @@ in
   };
 
   programs = {
-    # Sourced from build-time init scripts below instead.
-    fzf = {
-      enableZshIntegration = false;
-      enableFishIntegration = false;
-    };
-
     zoxide = {
       enable = true;
       enableZshIntegration = false;
@@ -157,8 +148,6 @@ in
       inherit (cfg) shellAbbrs;
 
       interactiveShellInit = lib.mkMerge [
-        # Where HM put its fzf integration.
-        (lib.mkOrder 200 "source ${fzfFish}")
         ''
           source ${zoxideFish}
           pfetch
@@ -316,13 +305,8 @@ in
           fi
         '')
 
-        # Where HM put the zoxide and fzf integrations.
+        # Where HM put the zoxide integration.
         (lib.mkOrder 851 "source ${zoxideZsh}")
-        (lib.mkOrder 910 ''
-          if [[ $options[zle] = on ]]; then
-            source ${fzfZsh}
-          fi
-        '')
 
         (lib.mkOrder 1000 ''
           fpath+=(${pkgs.pure-prompt}/share/zsh/site-functions)

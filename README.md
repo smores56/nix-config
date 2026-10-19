@@ -290,24 +290,18 @@ host controller fails to re-enumerate it). `modules/nixos/fprintd.nix`
 caches the host controller at boot and resets it after wake only if the
 reader is missing; watch `journalctl -t fp-rebind`.
 
-### Light/dark theming
+### Theme
 
-The **native appearance setting is the source of truth** — macOS Appearance
-(System Settings), or Noctalia's theme toggle on Niri. Nothing in this config
-writes that setting; it only follows it.
+Stylix provides one static dark theme (`rose-pine-moon`) on every host. There
+is no light/dark toggle or home-manager specialisation: the palette is a
+single base16 scheme, so every stylix target (kitty, firefox, zellij, …) is
+themed at build time. Helix uses the bundled `rose_pine_moon` theme and
+lazygit is pinned to its dark variant.
 
-- Both polarities are declared as home-manager [specialisations](https://nixos.wiki/wiki/Home_Manager),
-  so switching re-themes every stylix target at once (kitty, firefox, zellij, …).
-- The change is event-driven, never polled: `dark-mode-notify` (macOS) and
-  Noctalia's `started` / `theme_mode_changed` hooks (Linux) call
-  `modules/lib/theme-apply.nix`, which activates the matching specialisation and
-  no-ops when it is already active.
-- Noctalia's `~/.local/state/noctalia/settings.toml` is left in place: it is a
-  sparse overlay holding only settings that deviate from the Nix base, so your
-  toggle (and any other GUI tweak) persists while Nix stays the base layer.
-- `dotfiles.polarity` is only the pre-sync default used until the first event.
-  Per-app extras stylix does not cover (helix, lazygit) are rewritten by the
-  activation hook in `modules/features/theme.nix`.
+Noctalia's `~/.local/state/noctalia/settings.toml` is left in place: it is a
+sparse overlay holding only settings that deviate from the Nix base, so GUI
+tweaks persist while Nix stays the base layer. The wallpaper is not managed
+here; the desktop owns it.
 
 ### Work identity
 

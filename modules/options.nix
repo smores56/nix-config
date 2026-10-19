@@ -8,19 +8,6 @@
 let
   inherit (aiProviders) smortress;
   ports = import ./ports.nix;
-  themeType = lib.types.submodule {
-    options = {
-      system = lib.mkOption {
-        type = lib.types.str;
-        description = "Base16 scheme name (must exist in base16-schemes package)";
-      };
-      helix = lib.mkOption {
-        type = lib.types.str;
-        description = "Helix theme name (must exist in helix runtime themes)";
-      };
-    };
-  };
-
   # How `worktrees new` names branches; rendered into git config so the
   # owner's include picks the scheme per repo.
   branchNamingType = lib.types.submodule {
@@ -37,10 +24,6 @@ let
     };
   };
 
-  themeAssertion = kind: name: path: {
-    assertion = builtins.pathExists path;
-    message = "'${name}' not found in ${kind}";
-  };
 in
 {
   options.dotfiles = {
@@ -63,14 +46,6 @@ in
       ];
       default = "none";
       description = "macOS tiling window manager. Only meaningful when displayManager is 'osx'.";
-    };
-    polarity = lib.mkOption {
-      type = lib.types.enum [
-        "dark"
-        "light"
-      ];
-      default = "dark";
-      description = "Base theme polarity, before the native appearance setting (macOS / Noctalia) takes over at runtime.";
     };
     aiProfile = lib.mkOption {
       type = lib.types.enum [
@@ -535,14 +510,6 @@ in
       readOnly = true;
       description = "Default local LLM model for AI coding tools.";
     };
-    darkTheme = lib.mkOption {
-      type = themeType;
-      readOnly = true;
-    };
-    lightTheme = lib.mkOption {
-      type = themeType;
-      readOnly = true;
-    };
     aiHints = lib.mkOption {
       type = lib.types.str;
       readOnly = true;
@@ -550,25 +517,6 @@ in
     };
   };
   config = {
-    assertions =
-      let
-        helixThemes = "${pkgs.helix-unwrapped.src}/runtime/themes";
-      in
-      [
-        (themeAssertion "base16-schemes" config.dotfiles.darkTheme.system
-          "${pkgs.base16-schemes}/share/themes/${config.dotfiles.darkTheme.system}.yaml"
-        )
-        (themeAssertion "base16-schemes" config.dotfiles.lightTheme.system
-          "${pkgs.base16-schemes}/share/themes/${config.dotfiles.lightTheme.system}.yaml"
-        )
-        (themeAssertion "helix themes" config.dotfiles.darkTheme.helix
-          "${helixThemes}/${config.dotfiles.darkTheme.helix}.toml"
-        )
-        (themeAssertion "helix themes" config.dotfiles.lightTheme.helix
-          "${helixThemes}/${config.dotfiles.lightTheme.helix}.toml"
-        )
-      ];
-
     dotfiles = {
       graphical = config.dotfiles.displayManager != "none";
       wayland = config.dotfiles.displayManager == "niri";
@@ -605,14 +553,6 @@ in
       font = "Google Sans Code";
       fontPackage = pkgs.googlesans-code;
       defaultModel = smortress.models.qwen38.id;
-      darkTheme = {
-        system = "rose-pine-moon";
-        helix = "rose_pine_moon";
-      };
-      lightTheme = {
-        system = "rose-pine-dawn";
-        helix = "rose_pine_dawn";
-      };
     };
   };
 }

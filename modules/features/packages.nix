@@ -2,7 +2,6 @@
 {
   programs = {
     bat.enable = true;
-    fzf.enable = true;
   };
 
   home = {
@@ -29,15 +28,10 @@
 
         # data interaction
         jq
-        eva
         curl
         sd
-        ouch
         zip
         unzip
-
-        # documents
-        poppler-utils
 
         # environment management
         just
@@ -45,35 +39,16 @@
         # monitoring
         dua
         bottom
-        lsof
 
-        # languages
-        go
+        # ad-hoc Python
         uv
-        python3
-        deno
-        bun
-        nodejs_24
-        cargo
-        tree-sitter
-
-        # compilation
-        gcc
-        pkg-config
-        openssl.dev
-        libiconv
-      ]
-      ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
-        pkgs.apple-sdk_15
-      ]
-      ++ [
 
         # fun stuff
         cbonsai
-        musikcube
-
-        # TUI utilities
-        gum
+      ]
+      ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
+        libiconv
+        apple-sdk_15
       ]
       ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ concord ];
   };
