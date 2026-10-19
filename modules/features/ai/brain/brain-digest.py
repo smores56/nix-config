@@ -49,8 +49,21 @@ SECRET_RE = re.compile(
     r"|xox[abprs]-[A-Za-z0-9-]{10,}"
     r"|AKIA[0-9A-Z]{16}"
     r"|sk-[A-Za-z0-9_-]{20,}"
+    r"|[sr]k_(?:live|test)_[A-Za-z0-9]{16,}"
+    r"|AIza[0-9A-Za-z_-]{35}"
+    r"|glpat-[A-Za-z0-9_-]{20,}"
     r"|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"
     r"|-----BEGIN [A-Z ]+-----"
+    r"|ASIA[0-9A-Z]{16}"
+    r"|xox[ep]-[A-Za-z0-9-]{10,}|xapp-[A-Za-z0-9-]{10,}"
+    r"|ATATT[A-Za-z0-9_=-]{20,}"
+    r"|ya29\.[A-Za-z0-9_-]{20,}"
+    r"|npm_[A-Za-z0-9]{36}"
+    r"|SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}"
+    r"|://[^/\s:@]+:[^/\s@]+@"
+    r"|X-Amz-Signature=[0-9a-f]{16,}"
+    r"|(?i:(?:client_secret|access_token|refresh_token|id_token|token|secret|password|passwd|pwd|api[_-]?key|sig)=[^\s&\"']{4,})"
+    r"|hooks\.slack\.com/services/[A-Za-z0-9/]+"
 )
 CREDENTIAL_DIRS = frozenset({".ssh", ".aws", ".gnupg", ".kube"})
 
@@ -62,6 +75,7 @@ class Options:
     max_reply_chars: int = 600
     max_title_chars: int = 120
     ticket_prefixes: tuple[str, ...] = ()
+    exclude_cwds: tuple[str, ...] = ()
 
 
 def parse_records(lines):
@@ -90,7 +104,8 @@ def localize(ts, tz):
 
 
 def clean(text):
-    return SECRET_RE.sub("[REDACTED]", CTRL_RE.sub("", ENVELOPE_RE.sub("", text))).strip()
+    # Controls go first: one inside a tag name would hide the tag from the envelope pass.
+    return SECRET_RE.sub("[REDACTED]", ENVELOPE_RE.sub("", CTRL_RE.sub("", text))).strip()
 
 
 def truncate(text, limit):
@@ -197,6 +212,16 @@ def unique(items):
     return list(dict.fromkeys(items))
 
 
+def is_brain_call(block):
+    """A harvest started by the Skill tool or by running the brain tools, not only by `/brain`."""
+    if block.get("type") != "tool_use":
+        return False
+    inputs = tool_input(block)
+    if block.get("name") == "Skill":
+        return as_text(inputs.get("skill")).split(":")[-1] == "brain"
+    return block.get("name") == "Bash" and bool(re.search(r"\bbrain-(?:run|commit)\b", as_text(inputs.get("command"))))
+
+
 def summarize_session(session_id, records, day, tz, opts, sidechain=False):
     titles = [label(as_text(r.get("aiTitle")), opts) for r in records if r.get("type") == "ai-title"]
     stamped = [
@@ -212,7 +237,11 @@ def summarize_session(session_id, records, day, tz, opts, sidechain=False):
     active = [r for _, r in stamped]
 
     prompts = [p for p in map(prompt_text, active) if p]
-    replies = [t for t in map(reply_text, active) if t]
+    # A brain harvest's replies summarize untrusted mail and chat; they must not return as the user's work.
+    harvested = any(p == "/brain" or p.startswith("/brain ") for p in prompts) or any(
+        is_brain_call(b) for r in active if r.get("type") == "assistant" for b in blocks(r)
+    )
+    replies = [] if harvested else [t for t in map(reply_text, active) if t]
     conversation = prompts + replies
     # A subagent's conversation is delegation text; only its own gh pr writes count.
     pr_sources = ([] if sidechain else conversation) + pr_write_texts(active)
@@ -285,6 +314,12 @@ def to_row(summary, transcript, meta, opts):
     }
 
 
+def is_excluded(row, opts):
+    # Sessions that never left an excluded dir are automated runs, not Sam's work.
+    cwds = [PurePath(c) for c in row["cwds"]]
+    return bool(cwds) and all(any(c.is_relative_to(ex) for ex in opts.exclude_cwds) for c in cwds)
+
+
 def day_start(day, tz):
     return datetime.combine(day, time.min, tzinfo=tz) if tz else datetime.combine(day, time.min).astimezone()
 
@@ -307,7 +342,7 @@ def digest(root, day, tz, opts):
             print(f"brain-digest: skipping {path}: {err}", file=sys.stderr)
             return None
 
-    sessions = [s for s in map(load, transcripts(root)) if s]
+    sessions = [s for s in map(load, transcripts(root)) if s and not is_excluded(s, opts)]
     return sorted(sessions, key=lambda s: datetime.fromisoformat(s["start"]))
 
 
