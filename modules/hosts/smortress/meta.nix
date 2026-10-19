@@ -148,6 +148,7 @@ in
       onChange.enable = true;
     };
     notify.enable = true;
+    alerting.enable = true;
     # Mirror this host's GitHub repos onto the backup disk (local-only; GitHub is
     # the offsite copy). The probe requires this known-private repo to be
     # refreshed every run, catching a token that lost `repo` scope (which would
