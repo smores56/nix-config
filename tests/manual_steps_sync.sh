@@ -31,11 +31,11 @@ done < <(sed -n 's/^\([A-Za-z0-9._-]*\):.*/\1/p' "$src"/secrets/*.yaml | grep -v
 
 while IFS= read -r provider; do
   add_expected "provider/$provider"
-done < <(sed -n 's/^[[:space:]]*source[[:space:]]*=[[:space:]]*"\([^/"]*\)\/.*/\1/p' "$src/tofu/versions.tf" | sort -u)
+done < <(sed -n 's/^[[:space:]]*source[[:space:]]*=[[:space:]]*"\([^/"]*\)\/.*/\1/p' "$src"/tofu/*.tf | sort -u)
 
 while IFS= read -r name; do
   add_expected "alert/${name//_/-}"
-done < <(sed -n 's/^resource "cloudflare_notification_policy" "\([^"]*\)".*/\1/p' "$src/tofu/main.tf")
+done < <(sed -n 's/^resource "cloudflare_notification_policy" "\([^"]*\)".*/\1/p' "$src"/tofu/*.tf)
 
 while IFS= read -r item; do add_expected "dataset/$item"; done < <(jq -r '.datasets[]' "$inventory")
 while IFS= read -r item; do add_expected "service/$item"; done < <(jq -r '.services[]' "$inventory")

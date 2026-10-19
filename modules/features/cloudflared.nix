@@ -125,7 +125,7 @@ in
     # macOS has no tmpfs user runtime to put this in; the wrapper's
     # pass-cli fallback covers it. Same retry policy as proton-pass-agent:
     # at login the user manager runs before DNS, so don't rate-limit away.
-    (lib.mkIf isLinux {
+    (lib.mkIf (isLinux && !isServer) {
       cloudflared-access-token = {
         Unit = {
           Description = "Cache the Cloudflare Access service token in tmpfs";

@@ -166,7 +166,7 @@ in
               args = [ "${src}/modules/features/backup/github-mirror.sh" ];
             };
           }
-          // lib.optionalAttrs pkgs.stdenv.isLinux {
+          // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
             manual-steps-sync = {
               tools = [ pkgs.jq ];
               args = [
@@ -260,6 +260,9 @@ in
                 pkgs.python3
                 pkgs.git
               ];
+              # The brain-run tests pin TZ=America/New_York and call tzset();
+              # without zoneinfo the sandbox falls back to UTC and they fail.
+              TZDIR = "${pkgs.tzdata}/share/zoneinfo";
             }
             ''
               cp -R --no-preserve=mode,ownership ${src} source
@@ -288,8 +291,15 @@ in
               touch $out
             '';
 
-        # The old protected-services consistency check is gone with the
-        # Cloudflare reconciler it guarded; the reconciler is deleted in T10.
+        tofu-format =
+          pkgs.runCommand "tofu-format-check"
+            {
+              nativeBuildInputs = [ pkgs.opentofu ];
+            }
+            ''
+              tofu fmt -check -recursive ${src}/tofu
+              touch $out
+            '';
       }
       // homeChecks
       // nixosChecks

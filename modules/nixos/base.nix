@@ -47,11 +47,6 @@ in
     shell = pkgs.${config.user.shell};
   };
 
-  services.displayManager.autoLogin = lib.mkIf cfg.graphical {
-    enable = true;
-    user = cfg.username;
-  };
-
   # Removable-media helpers and FUSE.
   services = {
     devmon.enable = true;

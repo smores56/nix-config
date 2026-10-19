@@ -102,6 +102,7 @@ let
         "--remote ${lib.escapeShellArg cfg.remote}"
         "--rclone-config ${lib.escapeShellArg cfg.rcloneConfig}"
         "--stall-timeout ${lib.escapeShellArg dataset.stallTimeout}"
+        "--timeout ${lib.escapeShellArg dataset.timeout}"
       ]
       ++ lib.optional fullCheck "--full-check"
       ++ lib.optional dataset.offsite "--offsite"

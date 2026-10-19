@@ -69,7 +69,7 @@ Hosts are discovered from `modules/hosts/*/`; adding one never edits
 
 1. `modules/hosts/<hostname>/meta.nix` — a plain attrset (data, **not** a
    module: no arguments) declaring `system`, `username`, `nixos = true` and/or
-   `home = true`, optional `machine`/`user` overrides, and option values under
+   `home = true`, optional `user` overrides (machine name/system are fixed from\n`meta.nix`), and option values under
    `homeOptions`/`nixosOptions` (e.g. `fingerprint.enable = true`).
 2. `modules/hosts/<hostname>/default.nix` — the explicit profile list
    (`../../profiles/cli.nix`, …) composed into this host.

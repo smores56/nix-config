@@ -1,9 +1,8 @@
 # Mirror this host's GitHub repos onto the backup disk with ghorg.
 #
 # GitHub already holds the offsite copy of everything, but the mirror is also
-# copied to Proton: the first seed is large, then only new/changed packs move
-# (measured 45–52 files / 2.2–2.6 MiB per run). The driver's scoped local check
-# still marks the mirror verified.
+# copied to Proton: the first seed is large, then only new/changed packs move.
+# The driver's scoped offsite check marks the mirror verified.
 # ghorg refreshes the bare mirrors in the dataset's preBackup step (it clones on
 # the first run and `git remote update`s thereafter); the driver then
 # rclone-copies /var/lib/github-mirrors into <mount>/GitHub/current.
@@ -76,7 +75,7 @@ in
         schedule = lib.mkOption {
           type = lib.types.str;
           default = "*-*-* 00:30:00";
-          description = "systemd OnCalendar for the mirror timer. The mirror takes its own lock, so it neither waits on nor starves the Proton datasets.";
+          description = "systemd OnCalendar for the mirror timer. The ghorg refresh runs before the shared Proton lock is taken, so it neither waits on nor starves the media datasets.";
         };
         timeout = lib.mkOption {
           type = lib.types.str;

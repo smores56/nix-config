@@ -171,6 +171,36 @@ class BackupTests(unittest.TestCase):
             )
         self.assertEqual(ran, [])
 
+    def test_host_lock_is_acquired_after_pre_backup(self):
+        # A producer-style preBackup (ghorg) can run for hours and never touches
+        # Proton, so it must not hold the shared rclone lock the media units
+        # need. The lock covers only the copy/check steps.
+        from unittest import mock
+
+        script = "/nix/store/aaaa-backup-github-pre"
+        c = cfg(
+            self.mod, self.base, pre_backup=script, source=str(self.src)
+        )
+        order = []
+
+        class Handle:
+            def close(self):
+                order.append("unlock")
+
+        def fake_lock(**_kw):
+            order.append("lock")
+            return Handle()
+
+        def run(argv, capture=False, env=None):
+            order.append(argv[0])
+
+        with mock.patch.object(self.mod, "acquire_lock", fake_lock):
+            self.mod.run_backup(c, DATE, run=run, lock=True, out=lambda _s: None)
+
+        self.assertEqual(order[0], script)
+        self.assertLess(order.index("lock"), order.index("rclone"))
+        self.assertEqual(order[-1], "unlock")
+
     def test_check_uses_checksum_against_remote(self):
         check = self.mod.build_check(cfg(self.mod))
         self.assertIn("check", check)

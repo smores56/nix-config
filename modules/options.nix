@@ -160,10 +160,6 @@ in
       readOnly = true;
       description = "Interactive and login shell: zsh on work hosts (the employer's tooling and docs assume it), fish everywhere else.";
     };
-    browser = lib.mkOption {
-      type = lib.types.str;
-      readOnly = true;
-    };
     font = lib.mkOption {
       type = lib.types.str;
       readOnly = true;
@@ -225,7 +221,6 @@ in
       githubUser = "smores56";
       codeRoot = "${homeDirectory}/code";
       shell = if machine.workHost then "zsh" else "fish";
-      browser = "firefox";
       font = "Google Sans Code";
       fontPackage = pkgs.googlesans-code;
     };

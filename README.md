@@ -53,10 +53,10 @@ plan/apply, backup status, and the restore drill.
 nix run github:smores56/nix-config#bootstrap
 ```
 
-The served copy (`curl -fsSL bootstrap.sammohr.dev | bash`) runs the same
-script. Either way it clones the repo via `ghq`, runs `home-manager switch`,
-fetches the SSH public keys from the Proton Pass vault, authenticates
-GitHub, and (on NixOS) applies the system configuration.
+The served copy at `bootstrap.sammohr.dev` is not provisioned by this repo;
+use the flake app above. It clones the repo via `ghq`, runs
+`home-manager switch`, fetches the SSH public keys from the Proton Pass vault,
+authenticates GitHub, and (on NixOS) applies the system configuration.
 
 ### Manual
 
@@ -78,8 +78,13 @@ ingress: each declared service becomes `<sub>.<domain>` →
 for non-HTTP services), optionally with Cloudflare Access in front.
 
 ```nix
-webProxy.services.calibre = { port = 8080; access.enable = true; };
+webProxy.services.immich = { port = 2283; };
 ```
+
+Calibre and Immich are public with their own app auth; `ssh` and `llm`
+require Access. `access.enable` is implemented only for the services in
+`webProxy.protected` (applications are hand-written in `tofu/`), and enabling
+it elsewhere fails evaluation.
 
 DNS and Access are managed by the minimal OpenTofu config in `tofu/`:
 
@@ -275,7 +280,7 @@ Work is split across independent switches:
 
 ### AI profiles
 
-A home's `aiProfile` knob (`modules/flake/configurations.nix`) picks which
+A home's `aiProfile` knob (`modules/options.nix`) picks which
 model providers Maki may use.
 
 - `personal` (default): maki runs on the providers in
@@ -297,7 +302,8 @@ model providers Maki may use.
 
 ### Work hosts
 
-A home with `workHost = true` (`modules/flake/configurations.nix`) applies
+A home with `workHost = true` (`modules/options.nix`, derived from its
+profile) applies
 `user.work.flatRepos` (`modules/options.nix`);
 `modules/features/work-host.nix` holds the mechanics, and no employer name
 appears outside those option values.

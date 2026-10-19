@@ -52,14 +52,21 @@ let
       # Keep the bearer token out of argv (visible in ps); curl reads the
       # headers from a 0600 temp file instead.
       headers=$(mktemp)
-      trap 'rm -f "$headers"' EXIT
+      response=$(mktemp)
+      trap 'rm -f "$headers" "$response"' EXIT
       chmod 600 "$headers"
       printf '%s\n' "Authorization: Bearer $token" "Content-Type: application/json" > "$headers"
 
       curl --fail --silent --show-error --retry 3 --retry-delay 5 --max-time 30 \
         --url "https://api.cloudflare.com/client/v4/accounts/$account/email/sending/send" \
         --header @"$headers" \
-        --data "$payload" >/dev/null
+        --data "$payload" >"$response"
+      # Cloudflare can return HTTP 200 with success:false; only a successful
+      # API result counts as delivered.
+      if ! jq -e '.success == true' >/dev/null 2>&1 <"$response"; then
+        echo "cloudflare-email: send failed: $(cat "$response")" >&2
+        exit 1
+      fi
     '';
   };
 
@@ -97,7 +104,7 @@ let
         name=$1
         max=$2
         unit=$3
-        dir="/var/backup/$name"
+        dir="${config.backup.mountPoint}/$name"
         # Skip a dataset that has never produced a mirror; there is nothing to
         # be stale yet.
         [ -d "$dir/current" ] || return 0
@@ -108,9 +115,11 @@ let
         else
           # No marker yet (first run since the marker landed). Fall back to the
           # unit's last successful run so epoch 0 does not look ~56 years stale.
+          # An empty timestamp means the unit never ran; treat that as no
+          # successful backup rather than as fresh.
           result=$(systemctl show "$unit" -p Result --value 2>/dev/null || true)
-          if [ "$result" = "success" ]; then
-            last=$(systemctl show "$unit" -p ExecMainExitTimestamp --value 2>/dev/null || true)
+          last=$(systemctl show "$unit" -p ExecMainExitTimestamp --value 2>/dev/null || true)
+          if [ "$result" = "success" ] && [ -n "$last" ]; then
             mtime=$(date -d "$last" +%s 2>/dev/null || echo 0)
           else
             mtime=0
@@ -119,9 +128,14 @@ let
         age=$((now - mtime))
         if [ "$age" -gt "$max" ]; then
           if [ ! -e "$flag" ]; then
-            ${cloudflareEmail}/bin/cloudflare-email "backup stale: $name" \
-              "No successful $name backup for $((age / 3600))h (limit $((max / 3600))h). Check: systemctl status $unit; journalctl -u $unit" || true
-            touch "$flag"
+            if [ -e "$file" ]; then
+              body="No successful $name backup for $((age / 3600))h (limit $((max / 3600))h). Check: systemctl status $unit; journalctl -u $unit"
+            else
+              body="No successful $name backup recorded (no BACKUP-LAST-SUCCESS marker). Check: systemctl status $unit; journalctl -u $unit"
+            fi
+            if ${cloudflareEmail}/bin/cloudflare-email "backup stale: $name" "$body"; then
+              touch "$flag"
+            fi
           fi
         else
           rm -f "$flag"

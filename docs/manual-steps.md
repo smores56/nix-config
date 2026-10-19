@@ -63,6 +63,10 @@ fprintd-list "$USER"
 Fingerprint auth is for the lock screen only; it is deliberately not enabled
 for `sudo`/`su`.
 
+Maki's personal profile on this host has no `NEURALWATT_API_KEY` or
+`BRAVE_API_KEY`: those secrets live only in `secrets/smortress.yaml`. Use the
+`work` AI profile or provision keys out of band.
+
 ### smoreswork
 
 <!-- manual-step: host/smoreswork -->
@@ -73,6 +77,10 @@ Nix, then:
 ```sh
 nix run github:smores56/nix-config#bootstrap
 ```
+
+`bootstrap` derives the configuration name from the machine's hostname and
+user; on a laptop whose OS hostname is not `smoreswork`, override both:
+`BOOTSTRAP_USER=sam BOOTSTRAP_HOST=smoreswork ...`.
 
 MDM enrollment, FileVault, and OS updates stay with the employer; this repo only
 manages the user environment.
@@ -135,9 +143,11 @@ to the device-code flow.
 <!-- manual-step: secret/github-repo-pat -->
 
 Classic `repo`-scoped token, root-only, read only by the GitHub mirror
-(`githubBackup.tokenFile`). Fine-grained tokens cannot read wikis, so
-`--clone-wiki` would silently omit them. Mint at GitHub → Settings → Developer
-settings → Personal access tokens.
+(`githubBackup.tokenFile`). ghorg embeds it in git's argv, so it is visible in
+`/proc/<pid>/cmdline` during a run; the backup guide records that accepted
+window. Fine-grained tokens cannot read wikis, so `--clone-wiki` would silently
+omit them. Mint at GitHub → Settings → Developer settings → Personal access
+tokens.
 
 The mirror's probe repo (`sdlc-state`) must be refreshed on every run; a token
 that is valid but has lost `repo` scope fails the run.
@@ -194,7 +204,9 @@ Manual, one-time (dashboard):
 - Create the tunnel and store its credentials (see
   `cloudflared-credentials`).
 - Mint the Access service token(s) used by unattended clients; the service-auth
-  policy references them. OpenTofu does not create tokens.
+  policy references them. OpenTofu does not create tokens. One
+  `any_valid_service_token` policy covers both `ssh` and `llm`, so any service
+  token in the account reaches both endpoints.
 - Onboard the Email Service sending subdomain (`send.sammohr.dev`) and add its
   SPF/DKIM/DMARC records. Verify the destination (`sam@sammohr.dev`). Leave the
   apex DMARC record alone (`p=reject`).
@@ -215,7 +227,8 @@ delete them.
 Datasets come from `backup.datasets` on every NixOS host.
 
 Each dataset runs `backup-<name>.service` on its timer and writes
-`/var/backup/<Name>/BACKUP-LAST-SUCCESS` only after the offsite check passes.
+`/var/backup/<Name>/BACKUP-LAST-SUCCESS` after a run that verified the mirror or
+found nothing to verify. A run with a prior failure marker does not refresh it.
 Inspect runs with:
 
 ```sh
@@ -270,7 +283,7 @@ rclone copy proton:Music /restore/Music --config /var/lib/backup/rclone.conf
 
 `/var/lib/media/Photos` (the Immich library), daily 03:00, full check Sundays
 06:00, change-triggered. A generated pre-unit dumps PostgreSQL as `postgres`;
-the driver copies it to `current/db/immich-<date>.dump` and fails the run if the
+the driver copies it to `current/db/immich.dump` and fails the run if the
 dump is missing or stale. `thumbs` and `encoded-video` are excluded because
 Immich rebuilds them from the originals.
 
@@ -287,22 +300,24 @@ change-triggered.
 ## Public services
 
 Services come from `webProxy.services` on each NixOS host. Each becomes
-`<name>.<domain>` through the tunnel; `webProxy` refuses to evaluate an exposed
-service without Cloudflare Access.
+`<name>.<domain>` through the tunnel. Only `ssh` and `llm` have Cloudflare
+Access applications (hand-written in `tofu/`); `access.enable` on any other
+service fails evaluation. Calibre and Immich are public and rely on their own
+app auth.
 
 ### smortress/calibre
 
 <!-- manual-step: service/smortress/calibre -->
 
-`calibre.sammohr.dev` → loopback `ports.calibre`, HTTP, behind the email
-allow-list. OPDS clients authenticate as `smores56` with
-`calibre-password`.
+`calibre.sammohr.dev` → loopback `ports.calibre`, HTTP, public (no Access).
+OPDS clients authenticate as `smores56` with `calibre-password`.
 
 ### smortress/immich
 
 <!-- manual-step: service/smortress/immich -->
 
-`immich.sammohr.dev` behind Access. Phones also use the LAN URL
+`immich.sammohr.dev`, public (no Access) and protected by Immich's own login.
+Phones also use the LAN URL
 `http://<lan-ip>:2283` (`immich.lanSources`) because Cloudflare caps a single
 upload at 100 MB and Immich neither chunks nor resumes. Configure both URLs in
 the mobile app.
@@ -333,8 +348,8 @@ another machine use `github:smores56/nix-config#<name>`.
 
 Fresh machine (requires only Nix): clones the repo via ghq, switches
 home-manager, fetches SSH public keys from Proton Pass, logs in GitHub, and on
-NixOS applies the system configuration. Also served at
-`bootstrap.sammohr.dev`.
+NixOS applies the system configuration. `bootstrap.sammohr.dev` is not
+provisioned by this repo; use the flake app.
 
 ### install
 

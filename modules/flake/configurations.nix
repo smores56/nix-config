@@ -100,11 +100,29 @@ let
     name:
     let
       metaPath = hostsDir + "/${name}/meta.nix";
+      meta =
+        if builtins.pathExists metaPath then
+          import metaPath
+        else
+          throw "modules/hosts/${name}/ has no meta.nix (see AGENTS.md)";
+      # Catch typos in the top-level keys: a misspelled `home`/`nixos` flag or
+      # options section would otherwise be silently ignored.
+      allowed = [
+        "system"
+        "username"
+        "nixos"
+        "home"
+        "machine"
+        "user"
+        "homeOptions"
+        "nixosOptions"
+      ];
+      unknown = builtins.filter (key: !(builtins.elem key allowed)) (builtins.attrNames meta);
     in
-    if builtins.pathExists metaPath then
-      import metaPath
+    if unknown != [ ] then
+      throw "modules/hosts/${name}/meta.nix has unknown keys: ${lib.concatStringsSep ", " unknown}"
     else
-      throw "modules/hosts/${name}/ has no meta.nix (see AGENTS.md)";
+      meta;
 
   # A host names its profiles explicitly; each profile contributes module paths
   # to the home and NixOS planes. The names also drive machine.graphical/
@@ -179,6 +197,7 @@ let
       profileNames = map (p: p.name) profiles;
     in
     inputs.nixpkgs.lib.nixosSystem {
+      inherit system;
       specialArgs = { inherit inputs; };
       modules = [
         { nixpkgs.overlays = localOverlays system; }

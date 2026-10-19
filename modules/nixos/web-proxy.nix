@@ -83,6 +83,13 @@ in
       ++ map (sub: {
         assertion = !cfg.services.${sub}.access.serviceAuth || cfg.services.${sub}.access.enable;
         message = "webProxy.services.${sub} sets access.serviceAuth without access.enable: the Service Auth policy would never be applied.";
+      }) (builtins.attrNames cfg.services)
+      # Access applications are hand-written in tofu/ for the protected
+      # services. Enabling access on any other service would evaluate cleanly
+      # while leaving the hostname uncovered by an application.
+      ++ map (sub: {
+        assertion = !cfg.services.${sub}.access.enable || builtins.elem sub protected;
+        message = "webProxy.services.${sub}: Cloudflare Access is implemented only for ${lib.concatStringsSep ", " protected}; add a tofu/ application and extend webProxy.protected before exposing this service with Access.";
       }) (builtins.attrNames cfg.services);
 
     services.cloudflared = lib.mkIf (cfg.tunnelName != "") {

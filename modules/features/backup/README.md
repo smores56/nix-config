@@ -60,6 +60,7 @@ the code in [`backup.py`](./backup.py). This file is the operator's view.
 | `/var/backup/<Name>/versions/<date>` | previous revisions of files that changed (moved out of `current`) |
 | `/var/backup/<Name>/db/` | pre-backup database dumps (dataset's `preBackup`) |
 | `/var/backup/<Name>/BACKUP-FAILED` | failure marker: detailed one written by the driver, generic fallback by `ExecStopPost` |
+| `/var/backup/<Name>/BACKUP-LAST-SUCCESS` | last run that verified the mirror, or found nothing to verify; the freshness timer watches its mtime |
 | `/var/lib/backup/rclone.conf` | Proton remote config, mode 0600, **runtime only — never in the Nix store** |
 | `/var/lib/github-mirrors/<owner>_backup/<repo>` | ghorg bare git mirrors, refreshed in place (Disk 1) |
 | `/var/backup/GitHub/current` | local mirror of the GitHub mirrors (Disk 2) |
@@ -74,7 +75,7 @@ and `proton:CloudflareTofu`.
 
 | Name | Source | Schedule | Trigger | Full check | Offsite | preBackup |
 | --- | --- | --- | --- | --- | --- | --- |
-| `Photos` | `/var/lib/media/Photos` | 03:00 | `onChange` (15m) | Sun 06:00 | yes | `pg_dump -Fc` of `immich` into `current/db/immich-<date>.dump` |
+| `Photos` | `/var/lib/media/Photos` | 03:00 | `onChange` (15m) | Sun 06:00 | yes | `pg_dump -Fc` of `immich` into `current/db/immich.dump` |
 | `Videos` | `/var/lib/media/Videos` | 01:00 | `onChange` (15m) | Sun 07:00 | yes | — |
 | `Music` | `/var/lib/media/Music` | 05:00 | `onChange` (15m) | Sun 08:00 | yes | — |
 | `GitHub` | `/var/lib/github-mirrors` | 00:30 | timer only | Sun 10:00 | yes | `ghorg` refresh of the `smores56` mirrors (see below) |
@@ -136,19 +137,19 @@ not re-upload unchanged data.
 
 ## How a run works
 
-1. The driver takes the lock for the dataset (created mode 0600): the shared
+1. `preBackup` (if set) runs first, outside the host lock, with `BACKUP_DATE`,
+   `BACKUP_CURRENT`, `BACKUP_SOURCE` in the environment. Writes are atomic
+   (`.tmp` + `mv`), and a killed dump traps and removes its `.tmp` so no partial
+   file is mirrored. A producer-style preBackup (ghorg) can run for hours
+   without blocking the media units. The source's emptiness check runs *after*
+   `preBackup`, so a dataset whose `preBackup` creates the source is not
+   rejected for starting empty.
+2. The driver takes the lock for the dataset (created mode 0600): the shared
    `/run/lock/media-backup.lock` for offsite datasets — Proton refresh tokens are
    single-use, so two concurrent rclone clients would blank the session
-   (rclone#9880) — and `/run/lock/media-backup-<name>.lock` for local-only ones,
-   so a long GitHub refresh neither waits on nor starves the media units. A
-   queued dataset simply waits. Manual `backup` runs and the restore drill take
+   (rclone#9880) — and `/run/lock/media-backup-<name>.lock` for local-only ones.
+   A queued dataset simply waits. Manual `backup` runs and the restore drill take
    the same lock.
-2. `preBackup` (if set) runs with `BACKUP_DATE`, `BACKUP_CURRENT`,
-   `BACKUP_SOURCE` in the environment. Writes are atomic (`.tmp` + `mv`), and a
-   killed dump traps and removes its `.tmp` so no partial file is mirrored. The
-   source's emptiness check runs *after* `preBackup`, so a producer-style dataset
-   whose `preBackup` creates the source (e.g. the GitHub mirror) is not rejected
-   for starting empty.
 3. Local copy → `current/`, overwritten revisions to `versions/<date>/`.
 4. Offsite copy → `proton:<Name>` with
    `--protondrive-replace-existing-draft=true` (uploads only; never used to
@@ -223,11 +224,11 @@ run this as root and let root stream the file in:
 ```sh
 runuser -u postgres -- createdb -O postgres restored
 runuser -u postgres -- pg_restore --no-owner -d restored \
-  < /var/backup/Photos/current/db/immich-<date>.dump
+  < /var/backup/Photos/current/db/immich.dump
 ```
 
 (To restore from an unprivileged shell, copy the dump somewhere `postgres` can
-read first: `install -m 644 …/immich-<date>.dump /tmp/immich.dump`.)
+read first: `install -m 644 …/immich.dump /tmp/immich.dump`.)
 
 **GitHub repos.** The mirror is a tree of bare mirrors. To restore one:
 
@@ -389,9 +390,10 @@ dataset needs `backup.enable = true` (the backup disk).
 
 ### Hardening not yet done (accepted, from the final review)
 
-- The backup service runs as root with no systemd sandboxing
-  (`ProtectSystem`/`ReadWritePaths`/`NoNewPrivileges`/`PrivateTmp`); it feeds
-  source filenames through rclone, so a parser/write flaw would be uncontained.
+- The backup service runs as root with no `ProtectSystem`/`ReadWritePaths`
+  (it does set `NoNewPrivileges`, `PrivateTmp`, `ProtectHome`, kernel/clock/
+  hostname protections, and address-family restrictions); it feeds source
+  filenames through rclone, so a parser/write flaw would be uncontained.
 - ghorg puts the GitHub token in the `git` argv (`clone`/`remote set-url`), which
   any local user can read from `/proc/<pid>/cmdline` during a run; the wrapper
   strips a token left in a mirror's config before the copy, and the token is

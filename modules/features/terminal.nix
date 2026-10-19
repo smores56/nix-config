@@ -18,10 +18,10 @@ in
   programs.kitty = {
     enable = true;
     settings = {
-      font_family = "family='Google Sans Code' style=Regular";
-      bold_font = "family='Google Sans Code' style=Bold";
-      italic_font = "family='Google Sans Code' style=Italic";
-      bold_italic_font = "family='Google Sans Code' style='Bold Italic'";
+      font_family = "family='${config.user.font}' style=Regular";
+      bold_font = "family='${config.user.font}' style=Bold";
+      italic_font = "family='${config.user.font}' style=Italic";
+      bold_italic_font = "family='${config.user.font}' style='Bold Italic'";
       font_size = 12;
       background_opacity = lib.mkForce "0.8";
       shell = "${pkgs.${shell}}/bin/${shell}";

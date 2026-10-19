@@ -103,6 +103,10 @@ resource "cloudflare_notification_policy" "tunnel_health" {
       id = var.email
     }]
   }
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "cloudflare_notification_policy" "service_token_expiry" {
@@ -115,5 +119,9 @@ resource "cloudflare_notification_policy" "service_token_expiry" {
     email = [{
       id = var.email
     }]
+  }
+
+  lifecycle {
+    prevent_destroy = true
   }
 }

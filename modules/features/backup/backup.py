@@ -775,13 +775,11 @@ def run_backup(
     run = run or make_runner(
         cfg.stall_timeout, plain_timeout=cfg.timeout or DEFAULT_STEP_TIMEOUT
     )
-    # Hold the host lock for the whole run (all entry points funnel through
-    # here), except for a dry run which touches nothing.
-    lock_handle = (
-        acquire_lock(path=dataset_lock_path(cfg), out=out)
-        if (lock and not dry_run)
-        else None
-    )
+    # Hold the host lock only for the rclone steps (acquired below, after
+    # preBackup). A producer-style preBackup such as ghorg can run for hours and
+    # never touches Proton, so it must not starve the media units that need the
+    # single-use refresh token.
+    lock_handle = None
     try:
         if not dry_run:
             os.makedirs(local_dir(cfg), mode=0o700, exist_ok=True)
@@ -806,6 +804,11 @@ def run_backup(
                 run(pre_step, env=_pre_backup_env(cfg, date))
         if not dry_run:
             require_source(cfg)
+            lock_handle = (
+                acquire_lock(path=dataset_lock_path(cfg), out=out)
+                if lock
+                else None
+            )
         for step in build_steps(cfg, date):
             if step == pre_step:
                 continue

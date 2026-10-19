@@ -105,11 +105,17 @@ in
       preBackup = ''
         dump=/var/lib/postgresql/backups/photos.dump
         test -s "$dump" || { echo "missing PostgreSQL dump: $dump"; exit 1; }
+        # postgres owns the dump directory; refuse a symlink so a compromised
+        # database cannot make root copy an arbitrary file into the mirror.
+        [ ! -L "$dump" ] || { echo "refusing symlinked PostgreSQL dump: $dump"; exit 1; }
         now=$(date +%s)
         mtime=$(stat -c %Y "$dump")
         [ $((now - mtime)) -le 3600 ] || { echo "stale PostgreSQL dump: $dump"; exit 1; }
         mkdir -p "$BACKUP_CURRENT/db"
-        cp "$dump" "$BACKUP_CURRENT/db/immich-$BACKUP_DATE.dump"
+        # One stable name: copy never deletes, so dated names would accumulate
+        # a full dump per run locally and offsite forever. Overwrites keep the
+        # previous revision in the local versions/ tree; Proton holds the latest.
+        cp "$dump" "$BACKUP_CURRENT/db/immich.dump"
       '';
     };
     backup.datasets.Music = {
@@ -138,10 +144,10 @@ in
       enable = true;
       accountId = "385f7d47e2e8438fbda5d6f76d760434";
     };
-    # Mirror this host's GitHub repos onto the backup disk (local-only; GitHub is
-    # the offsite copy). The probe requires this known-private repo to be
-    # refreshed every run, catching a token that lost `repo` scope (which would
-    # otherwise silently stop updating every private mirror).
+    # Mirror this host's GitHub repos onto the backup disk and Proton. The
+    # probe requires this known-private repo to be refreshed every run, catching
+    # a token that lost `repo` scope (which would otherwise silently stop
+    # updating every private mirror).
     githubBackup.enable = true;
     githubBackup.probeRepo = "sdlc-state";
   };

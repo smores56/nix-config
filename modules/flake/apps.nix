@@ -62,6 +62,13 @@
           target="$2"
           shift 2
 
+          case "$host" in
+            "" | */* | *..*)
+              echo "error: invalid host name: $host" >&2
+              exit 1
+              ;;
+          esac
+
           if [ ! -f flake.nix ]; then
             echo "error: run from the nix-config checkout (no flake.nix in $(pwd))" >&2
             exit 1
@@ -144,6 +151,13 @@
 
           host="$1"
 
+          case "$host" in
+            "" | */* | *..*)
+              echo "error: invalid host name: $host" >&2
+              exit 1
+              ;;
+          esac
+
           if [ ! -f flake.nix ]; then
             echo "error: run from the nix-config checkout (no flake.nix in $(pwd))" >&2
             exit 1
@@ -211,9 +225,9 @@
             TF_VAR_tunnel_id=$(jq -er '.TunnelID' "$creds")
 
             cd "$state"
-            if [ ! -d .terraform ]; then
-              tofu init -input=false
-            fi
+            # Always init: a provider/lockfile change needs `init` to pick up
+            # the new lock, and a warm .terraform makes it a cheap no-op.
+            tofu init -input=false
             exec tofu ${action} "$@"
           '';
         };
