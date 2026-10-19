@@ -23,21 +23,26 @@ NOTE_DIRS = ("daily/", "wiki/", "til/", "standups/")
 NOTE_FILES = ("index.md", "glossary.md", "questions.md", "brag.md")
 # Assistants load these as trusted instructions from whatever directory they read.
 INSTRUCTION_FILES = frozenset({"CLAUDE.md", "CLAUDE.local.md", "AGENTS.md", "GEMINI.md"})
-# Anything a renderer fetches on preview leaks whatever its URL carries. Fetching needs an
-# image, an attribute, a style, or an escaped URL; bare `<word>` in prose stays allowed.
+# A global ignore list could hide planted note-path files, so note paths are scanned without it;
+# other paths keep the user's ignores (editor and Claude Code droppings live there).
+STRICT_CONFIG = ("core.excludesFile=/dev/null",)
+# Anything a renderer fetches on preview leaks whatever its URL carries. Notes are plain
+# markdown, so outside code: no images, no HTML tag beyond a bare `<word>` placeholder (a tag
+# split across lines or using `/` as a separator still opens here), and no entities, which
+# CommonMark decodes inside link targets.
 EMBED_RE = re.compile(
-    r"!\["
-    r"|</?(?:script|style|iframe)\b"
-    r"|<[A-Za-z][\w-]*\s+[^>]*="
-    r"|\burl\s*\("
-    r"|&#"
-    r"|@import",
+    r"!\[|<[A-Za-z][\w-]*(?![\w-]*>)|</[A-Za-z][\w-]*[^\w>-]|&#|&[A-Za-z][A-Za-z0-9]*;"
+    # Active even bare, so never allowed as a placeholder.
+    r"|</?(?:script|style|iframe|object|embed|svg|math|template|base|form)\b",
     re.I,
 )
+CODE_SPAN_RE = re.compile(r"`+[^`]*`+")
+FENCE_RE = re.compile(r"^\s*(```|~~~)")
 # Every link target: markdown `](...)` and reference definitions take any scheme; bare text
 # only counts as a link when it is http(s), so prose like "data: x" or "file:line" passes.
-MD_TARGET_RE = re.compile(r"\]\(\s*<?([^)\s>]+)|^\s*\[[^\]]+\]:\s*<?(\S+?)>?\s*$")
+MD_TARGET_RE = re.compile(r"\]\(\s*<?([^)\s>]+)|^\s*\[[^\]]+\]:\s*<?([^\s>]+)>?(?:\s+.*)?$")
 BARE_URL_RE = re.compile(r"(?<![\w/])https?:[^\s)\]>\"']*", re.I)
+TRAILING_PUNCT = ".,;:!?|"
 HTTP_RE = re.compile(r"https?://([A-Za-z0-9.-]+|\[[0-9a-fA-F:]+\])(?::\d+)?(?=[/?#]|$)", re.I)
 LOOPBACK = frozenset({"localhost", "127.0.0.1", "[::1]"})
 # Matches brain-run's claim staleness: a dead run's claim must not block commits forever.
@@ -50,8 +55,6 @@ SAFE_CONFIG = (
     "core.fsmonitor=false",
     "core.attributesFile=/dev/null",
     "diff.external=",
-    # A global ignore list would hide planted note-path files from every check below.
-    "core.excludesFile=/dev/null",
     # Signing runs gpg.program / gpg.ssh.program / gpg.x509.program, all settable from .git/config.
     "commit.gpgSign=false",
     "gpg.program=false",
@@ -124,10 +127,10 @@ def section(markdown, heading, level=2):
 def link_hosts(config_text):
     """Hosts under `## Link hosts`, the first word of each line; None when the section is absent."""
     body = section(config_text, "Link hosts")
-    if body is None:
-        return None
-    words = (line.split()[0].lower() for line in body.splitlines() if line.split())
-    return frozenset(w for w in words if re.fullmatch(r"[a-z0-9.-]+", w))
+    lines = [line.strip().lstrip("-*+ ").split() for line in (body or "").splitlines()]
+    hosts = frozenset(w[0].lower() for w in lines if w and re.fullmatch(r"[A-Za-z0-9.-]+", w[0]))
+    # An empty list would refuse every link, which is a missing section in effect.
+    return hosts or None
 
 
 def target_problem(target, hosts):
@@ -146,15 +149,26 @@ def target_problem(target, hosts):
     return None if host in hosts or host in LOOPBACK else f"link to {host}"
 
 
+def prose_lines(text):
+    """(line number, text outside code) per line; code spans and fenced blocks never render as links or HTML."""
+    fenced = False
+    for n, line in enumerate(text.splitlines(), 1):
+        if FENCE_RE.match(line):
+            fenced = not fenced
+            continue
+        if not fenced:
+            yield n, CODE_SPAN_RE.sub("", line)
+
+
 def content_hits(name, content, hosts):
     """name:line for embeds and HTML, and for links off the configured hosts."""
-    lines = content.decode("utf-8", errors="replace").splitlines()
     hits = []
-    for n, line in enumerate(lines, 1):
+    for n, line in prose_lines(content.decode("utf-8", errors="replace")):
         if EMBED_RE.search(line):
-            hits.append(f"{name}:{n} (image or HTML)")
-        targets = [t for pair in MD_TARGET_RE.findall(line) for t in pair if t] + BARE_URL_RE.findall(line)
-        hits += [f"{name}:{n} ({p})" for p in {target_problem(t, hosts) for t in targets} if p]
+            hits.append(f"{name}:{n} (image, HTML, or entity)")
+        targets = [t for pair in MD_TARGET_RE.findall(line) for t in pair if t]
+        targets += [u.rstrip(TRAILING_PUNCT) for u in BARE_URL_RE.findall(line)]
+        hits += [f"{name}:{n} ({p})" for p in sorted({target_problem(t, hosts) for t in targets} - {None})]
     return hits
 
 
@@ -162,8 +176,8 @@ def claim_refusal(state_dir, run):
     # Without this, an attended commit could sweep up a running harvest's half-written notes.
     try:
         active = json.loads((state_dir / "active.json").read_text(encoding="utf-8"))
-        started = datetime.fromisoformat(active["started"])
-    except (OSError, ValueError, KeyError, TypeError):
+        started = datetime.fromisoformat(active["started"]).astimezone()
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return None
     if datetime.now().astimezone() - started >= CLAIM_STALE_AFTER or active.get("nonce") == run:
         return None
@@ -178,6 +192,15 @@ def secret_hits(name, content):
     """name:line for each line that looks like a secret (the text itself is never echoed)."""
     lines = content.decode("utf-8", errors="replace").splitlines()
     return [f"{name}:{n}" for n, line in enumerate(lines, 1) if SECRET_RE.search(line)]
+
+
+def vault_changes(git):
+    """(note paths, other paths) changed in the vault: notes regardless of global ignores, others honoring them."""
+    def status(*config):
+        return set(changed_paths(git(*config, "status", "--porcelain=v1", "-z", "--untracked-files=all").stdout))
+
+    strict = status(*(arg for kv in STRICT_CONFIG for arg in ("-c", kv)))
+    return sorted(p for p in strict if is_note_path(p)), sorted(p for p in status() if not is_note_path(p))
 
 
 def commit(vault, message, env=None, state_dir=None, run=None):
@@ -202,20 +225,23 @@ def commit(vault, message, env=None, state_dir=None, run=None):
     if busy := claim_refusal(state_dir or default_state_dir(), run):
         return Result("refused", busy)
 
-    paths = changed_paths(git("status", "--porcelain=v1", "-z", "--untracked-files=all").stdout)
-    if not paths:
-        return Result("nothing")
-    if outside := sorted(p for p in set(paths) if not is_note_path(p)):
+    notes, outside = vault_changes(git)
+    if outside:
         return Result(
             "refused",
             "changes outside note paths (commit them yourself if intended): " + ", ".join(outside),
         )
-    if linked := sorted(p for p in set(paths) if is_linked(vault, p)):
+    if not notes:
+        return Result("nothing")
+    if linked := sorted(p for p in notes if is_linked(vault, p)):
         return Result("refused", "symlinked note paths: " + ", ".join(linked))
 
     try:
-        # Every change is a note path (checked above), so staging everything stages only notes.
-        git("add", "-A")
+        # Exactly the note paths, forced past any global ignore that would hide one. A path already
+        # staged as deleted (a rename's old side) is in neither tree nor index and needs no add.
+        tracked = set(git("ls-files", "-z").stdout.split("\0"))
+        if pending := [p for p in notes if (vault / p).exists() or p in tracked]:
+            git("add", "-A", "-f", "--", *pending)
         staged = git("diff", "--cached", "--name-only", "-z", "--no-renames", "--diff-filter=d").stdout
         # Scan the staged blobs themselves: diff output can be reshaped by config and attributes.
         hits = [

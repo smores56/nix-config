@@ -249,6 +249,51 @@ class BrainCommitTests(unittest.TestCase):
                 self.assertEqual(self.commit().status, "refused")
                 (self.vault / "daily/d.md").unlink()
 
+    def test_engineering_prose_and_code_spans_are_fine(self):
+        self.set_link_hosts("example.com")
+        self.write(
+            "daily/d.md",
+            "- Fixed the OAuth redirect URL (FOO-1); dropped the @import of base.css\n"
+            "- wrote `<div class=\"x\">` and `https://evil.test/in-code`\n"
+            "```\n<img src=//evil.test/x> &amp; https://evil.test/fenced\n```\n",
+        )
+        self.assertEqual(self.commit().status, "committed")
+
+    def test_reference_definitions_with_titles_are_checked(self):
+        self.set_link_hosts("example.com")
+        for line in ('[x]: obsidian://open "t"', "[x]: https://evil.test/a 'title'"):
+            with self.subTest(line=line):
+                self.write("daily/d.md", "see [x]\n\n" + line + "\n")
+                self.assertEqual(self.commit().status, "refused")
+
+    def test_trailing_punctuation_after_a_bare_host_is_fine(self):
+        self.set_link_hosts("example.com")
+        self.write("daily/d.md", "see https://example.com. and https://example.com, then https://example.com/a.\n")
+        self.assertEqual(self.commit().status, "committed")
+
+    def test_bulleted_host_lines_count_and_an_empty_section_is_missing(self):
+        self.set_link_hosts("- example.com")
+        self.write("daily/d.md", "https://example.com/a\n")
+        self.assertEqual(self.commit().status, "committed")
+        self.assertIsNone(self.bc.link_hosts("## Link hosts\n\n## Next\n"))
+
+    def test_globally_ignored_non_note_files_do_not_block_commits(self):
+        self.set_link_hosts("example.com")
+        ignore = Path(self.tmp.name) / "global-ignore"
+        ignore.write_text("**/.claude/settings.local.json\n")
+        git(self.vault, "config", "core.excludesFile", str(ignore))
+        (self.vault / ".claude").mkdir()
+        (self.vault / ".claude" / "settings.local.json").write_text("{}")
+        self.write("daily/d.md", "x\n")
+        self.assertEqual(self.commit().status, "committed")
+        self.assertNotIn(".claude", git(self.vault, "ls-files"))
+
+    def test_a_naive_claim_time_does_not_crash(self):
+        self.set_link_hosts("example.com")
+        state = self.claim("abc", "2026-10-19T10:00:00")
+        self.write("daily/d.md", "x\n")
+        self.assertIn(self.bc.commit(self.vault, "x", env=ENV, state_dir=state).status, ("committed", "refused"))
+
     def test_angle_brackets_in_prose_are_fine(self):
         self.set_link_hosts("example.com")
         self.write("daily/d.md", "- passed <KEY> placeholders; a < b > c; latency < a second; see <source>; data: x; file:line cites\n")
@@ -276,7 +321,11 @@ class BrainCommitTests(unittest.TestCase):
 
     def test_styled_and_attributed_html_is_refused(self):
         self.set_link_hosts("example.com")
-        for text in ('<span style="background:url(x)">', "<p class=x>", "&#x68;ttps", "@import url(x)", "<script>x</script>"):
+        for text in (
+            '<span style="background:url(x)">', "<p class=x>", "&#x68;ttps", "<script>x</script>",
+            "<img/src=//evil.test/x>", "<video/poster=//evil.test>", "<img\nsrc=//evil.test/x>",
+            "[x](https&colon;//evil.test/a)", "<https://example.com/autolink>",
+        ):
             with self.subTest(text=text):
                 self.write("daily/d.md", text + "\n")
                 self.assertEqual(self.commit().status, "refused")
