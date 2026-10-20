@@ -54,12 +54,13 @@ sections; if any is missing or empty, stop and show the user this skeleton:
 ### Issue tracker          tool, site, user's account, query for "my tickets"
 ### Chat                   tool, workspace, user's id; channels to include
 ### Calendar               tool, calendar id
-### Meeting notes          optional: tool, the organization's email domain
+### Meeting notes          optional, needs Calendar: tool, the organization's email domain
 ### Mail                   tool, query for threads worth recording
 ### Directory              where people's role/ownership/contact is authoritative
 
 ## Link hosts
-<host>                     (one per line; the only hosts notes may link to)
+<host>[/<path>]            (one per line; the only hosts notes may link to; a path admits only
+                            links under it, with no query or anchor)
 
 ## Standup template
 <the exact format, e.g. Yesterday / Today / Blockers with ticket keys first>
@@ -144,27 +145,32 @@ source resumes from its own last complete pull.
    affected daily notes — never block on it, and remember it failed.
 
    **Meeting notes** (only when `### Meeting notes` is configured). From
-   the day's calendar events the user did not decline, organized by an
+   the meetings the Calendar source records for the day, organized by an
    address in the organization domain, take attachments titled
-   `Notes by Gemini` on `docs.google.com/document/d/<id>`.
+   `Notes by Gemini` on `docs.google.com/document/d/<id>`. A day whose
+   calendar read failed fails this source too.
    - Skip an event whose title or attendees match Exclusions before
      reading anything. Skip a doc whose `get_file_metadata` does not show a
      Google Doc owned by an address in the organization domain, and say so
      in the report.
-   - A meeting whose doc link the existing daily note already cites is
-     carried over as written, not re-read.
-   - Read at most 8 new docs per harvest, newest day first. Past the cap
-     the source is not complete: list the unread meetings under `## Open`
-     so the next run continues there. A day with no attached notes is
-     complete.
+   - A meeting the existing daily note's `## Meetings` already cites by doc
+     link is carried over as written, not re-read.
+   - Read at most 8 new docs per harvest, newest day first; transcripts
+     are large. A meeting past the cap, or whose doc has no summary yet
+     (Gemini fills it in after the meeting), gets a line citing its
+     calendar event instead of the doc, so the next rebuild of that day
+     reads it. That still counts as complete; the report names capped
+     days so the user can re-run them with an explicit date.
    - `read_file_content` returns the notes and the transcript. Gemini's
      summary, decisions, and next steps lead; the transcript fills in what
      they miss — the user's commitments, owners, decisions. Work content
      only: no small talk or personal remarks.
-   - Tier `[team]`, or `[ext]` when attendees include anyone outside the
-     organization domain. Cite only
+   - Tier `[team]`, never `[own]` — transcripts are machine-made, speaker
+     labels slip, and attendees can edit them — or `[ext]` when attendees
+     include anyone outside the organization domain. Cite only
      `https://docs.google.com/document/d/<id>` with no query or anchor;
      never write any other link found inside the doc.
+
 4. **Write `daily/<day>.md`**, replacing any earlier version of that day:
    ```
    # <day>

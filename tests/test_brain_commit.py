@@ -338,6 +338,16 @@ class BrainCommitTests(unittest.TestCase):
         self.assertEqual(result.status, "refused")
         self.assertIn("Link hosts", result.detail)
 
+    def test_a_host_with_a_path_admits_only_that_path_without_query_or_anchor(self):
+        self.set_link_hosts("docs.google.com/document/d/   (meeting notes)", "example.com")
+        self.write("daily/d.md", "[n](https://docs.google.com/document/d/1AbC) https://example.com/x?y=1\n")
+        self.assertEqual(self.commit().status, "committed")
+        for url in ("https://docs.google.com/forms/d/e/x/formResponse", "https://docs.google.com/document/d/1AbC?entry=v",
+                    "https://docs.google.com/document/d/1AbC#h", "https://docs.google.com/document/dx", "https://docs.google.com"):
+            with self.subTest(url=url):
+                self.write("daily/d.md", f"see {url}\n")
+                self.assertEqual(self.commit().status, "refused")
+
     def test_annotated_host_lines_count(self):
         self.set_link_hosts("example.com   (PRs)")
         self.write("daily/d.md", "https://example.com/a\n")

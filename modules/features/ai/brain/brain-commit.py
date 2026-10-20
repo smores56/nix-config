@@ -125,12 +125,22 @@ def section(markdown, heading, level=2):
 
 
 def link_hosts(config_text):
-    """Hosts under `## Link hosts`, the first word of each line; None when the section is absent."""
+    """Hosts under `## Link hosts`, the first word of each line, as (host, path prefix or None); None when absent."""
     body = section(config_text, "Link hosts")
     lines = [line.strip().lstrip("-*+ ").split() for line in (body or "").splitlines()]
-    hosts = frozenset(w[0].lower() for w in lines if w and re.fullmatch(r"[A-Za-z0-9.-]+", w[0]))
+    entries = [re.fullmatch(r"([A-Za-z0-9.-]+)(/[\w.~/-]*)?", w[0]) for w in lines if w]
+    hosts = frozenset((m.group(1).lower(), m.group(2)) for m in entries if m)
     # An empty list would refuse every link, which is a missing section in effect.
     return hosts or None
+
+
+def host_allows(hosts, host, rest):
+    # A path entry admits only that path with no query or anchor: a whole host like docs.google.com also
+    # serves forms that submit their query string.
+    return any(
+        h == host and (prefix is None or (rest.startswith(prefix) and not re.search(r"[?#]", rest)))
+        for h, prefix in hosts
+    )
 
 
 def target_problem(target, hosts):
@@ -146,7 +156,7 @@ def target_problem(target, hosts):
     if not found:
         return "malformed or credentialed URL"
     host = found.group(1).lower()
-    return None if host in hosts or host in LOOPBACK else f"link to {host}"
+    return None if host_allows(hosts, host, target[found.end():]) or host in LOOPBACK else f"link to {host}"
 
 
 def prose_lines(text):
