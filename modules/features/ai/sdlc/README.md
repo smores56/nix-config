@@ -77,6 +77,30 @@ sdlc prune <feature>                # delete a terminal feature from state
 Features are addressed by full key `<owner>--<repo>--<slug>` or by slug when
 unambiguous.
 
+## sdlc-issues (issues ledger, until T8)
+
+`sdlc-issues` is the stateless control plane for the GitHub Issues ledger. It
+is global, needs only `gh`, and does not use the justfile or any local state.
+The registry is `$SDLC_REPO` (default `smores56/sdlc`); every call passes it
+to `gh`.
+
+```sh
+sdlc-issues list [--all] [--repo owner/repo] [--format human|path|json] [--pick]
+sdlc-issues show <feature>            # body + comment thread
+sdlc-issues status <feature>          # design hash, approval, task counts
+sdlc-issues next [<feature>] [--pick] # next ready task, or the blocker
+sdlc-issues approve <feature> [--yes] [--pick]   # human gate: label + hash comment
+sdlc-issues new <slug> --repo <owner/repo> [--title TEXT]
+sdlc-issues task add <feature> <title> [--needs T1,T2|10,12]
+sdlc-issues task start|done|cancel <issue>
+sdlc-issues complete|cancel <feature>
+```
+
+Approval adds `status:approved` with an `Approved design sha256:<hash>` comment
+and never removes `status:todo`; lifecycle labels still drive work state. The
+design hash ignores `> Sam:` annotation lines. `--pick` prefers `tv`, then
+`fzf`, then a numbered prompt. Replaced by `sdlc` in T8.
+
 ## Television
 
 `tv features` (abbr `sf`) browses active features — pick one to jump to its

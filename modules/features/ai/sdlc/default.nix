@@ -14,6 +14,7 @@ let
     cp ${./sdlc_cli.py} $out/sdlc_cli.py
     cp ${./sdlc_model.py} $out/sdlc_model.py
     cp ${./sdlc_state.py} $out/sdlc_state.py
+    cp ${./sdlc_issues.py} $out/sdlc_issues.py
   '';
 
   sdlcBin = pkgs.writeShellScriptBin "sdlc" ''
@@ -21,9 +22,16 @@ let
     export PYTHONPATH=${sdlcSrc}
     exec ${pkgs.python3}/bin/python3 ${sdlcSrc}/sdlc_cli.py "$@"
   '';
+
+  sdlcIssuesBin = pkgs.writeShellScriptBin "sdlc-issues" ''
+    exec ${pkgs.python3}/bin/python3 ${sdlcSrc}/sdlc_issues.py "$@"
+  '';
 in
 {
-  home.packages = [ sdlcBin ];
+  home.packages = [
+    sdlcBin
+    sdlcIssuesBin
+  ];
 
   home.file.".config/television/cable/features.toml".source = ./features.toml;
 
