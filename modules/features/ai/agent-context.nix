@@ -22,7 +22,7 @@ let
   workflowLines = [
     "- Start from the problem, not a solution — state what's wrong or needed; a suspected approach is context, not the goal"
     "- First move on any request: classify aloud — quick fix, investigation, or feature — and act. Features run the `sdlc` skill (research → brainstorm → [grill] → plan → human approval → build → review & fix); quick fixes skip the funnel; investigations are read-only. In `pr`-flow work repos the skill's phases run in the conversation, without the personal registry"
-    "- Resuming: `sdlc-issues list` shows in-flight features from the issues-only registry (`smores56/sdlc`, `$SDLC_REPO`); `sdlc-issues show <n>` prints the design and comments, `sdlc-issues status <n>` the approval hash and tasks; pick one, then `sdlc-issues next <n>` — never resume from conversation memory"
+    "- Resuming: `sdlc list` shows in-flight features from the issues-only registry (`smores56/sdlc`, `$SDLC_REPO`); `sdlc show <n>` prints the design and comments, `sdlc status <n>` the approval hash and tasks; pick one, then `sdlc next <n>` — never resume from conversation memory"
     "- Repos live under `${cfg.codeRoot}/github.com/<owner>/<repo>`; clone with `repos get <owner/repo>` — never `git clone`, `git worktree add`, `git checkout -b`, or Claude's EnterWorktree"
     "- Worktrees live under each repo's `.worktrees/` via `worktrees new`; it prints JSON — use its `path` as cwd, never `cd`"
     "- Start task worktrees with `worktrees new --slug <kebab-slug> --task \"<description>\"` (creates branch + worktree); pass `--ticket <KEY>` whenever the work has a ticket (repos that don't name branches by ticket ignore it) and `--type <fix|feat|…>` when it asks for one"
@@ -34,7 +34,7 @@ let
     "- Push immediately after committing; no `Co-Authored-By` trailers"
     "- How changes land follows `git config smores.flow` in the repo:"
     "  - `hybrid` (personal repos): feature work → worktree → commit and push per change → `review` → open a PR with `gh pr create` → merge after review → `worktrees prune`; quick fixes commit directly to `main`; investigations are read-only"
-    "  - `pr` (work repos): worktree → commit and push per change → `review` → open a PR with `gh pr create`; never merge to main yourself. Never file work features in the personal `sdlc-issues` registry — run sdlc phases in the conversation with the human approving in chat"
+    "  - `pr` (work repos): worktree → commit and push per change → `review` → open a PR with `gh pr create`; never merge to main yourself. Never file work features in the personal `sdlc` registry — run sdlc phases in the conversation with the human approving in chat"
     "  - unset (third-party checkouts): follow the repo's own contribution rules"
   ]
   ++ workHostLines

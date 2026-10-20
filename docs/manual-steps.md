@@ -149,7 +149,7 @@ window. Fine-grained tokens cannot read wikis, so `--clone-wiki` would silently
 omit them. Mint at GitHub → Settings → Developer settings → Personal access
 tokens.
 
-The mirror's probe repo (`sdlc-state`) must be refreshed on every run; a token
+The mirror's probe repo (`sdlc`) must be refreshed on every run; a token
 that is valid but has lost `repo` scope fails the run.
 
 ### proton-pass-pat
@@ -260,7 +260,7 @@ Losing state is recoverable by importing the existing objects
 Mirror of the `githubBackup` repos under `/var/lib/github-mirrors`, nightly
 00:30, local and offsite (`proton:GitHub`). Seeded on 2026-10-19; later runs
 transfer deltas only. The pre-unit refreshes every repo and the run fails unless
-the probe repo (`sdlc-state`) was refreshed.
+the probe repo (`sdlc`) was refreshed.
 
 Restore a repository from `/var/backup/GitHub/current/smores56_backup/<repo>`
 (or `proton:GitHub`). It is a bare mirror: clone from it directly, or push it

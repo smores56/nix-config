@@ -1,13 +1,13 @@
 [metadata]
 name = "features"
-description = "sdlc features in the sdlc-state repo"
-requirements = ["sdlc"]
+description = "sdlc feature issues in the GitHub registry"
+requirements = ["sdlc", "gh"]
 
 [source]
-command = "sdlc list --path"
+command = "sdlc list --format path"
 entry_delimiter = "\n"
-display = "{split:\t:1} ({split:\t:2})"
+display = "#{split:\t:0} {split:\t:1} [{split:\t:2}]"
 output = "{split:\t:0}"
 
 [preview]
-command = "sdlc status {split:\t:1}"
+command = "sdlc status {split:\t:0}"

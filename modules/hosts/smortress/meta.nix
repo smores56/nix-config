@@ -151,6 +151,6 @@ in
     # a token that lost `repo` scope (which would otherwise silently stop
     # updating every private mirror).
     githubBackup.enable = true;
-    githubBackup.probeRepo = "sdlc-state";
+    githubBackup.probeRepo = "sdlc";
   };
 }

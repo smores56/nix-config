@@ -1,9 +1,8 @@
 # sdlc
 
-Agentic SDLC for personal feature work. The primary ledger is a private
-GitHub Issues repo (default `smores56/sdlc`, override with `$SDLC_REPO`);
-`sdlc-issues` is the stateless CLI over it. The old file-backed CLI and its
-`smores56/sdlc-state` checkout are legacy until T8.
+Agentic SDLC for personal feature work. The ledger is a private GitHub Issues
+repo (default `smores56/sdlc`, override with `$SDLC_REPO`); `sdlc` is the
+stateless CLI over it. There is no local checkout and no state directory.
 
 ## Lifecycle
 
@@ -11,15 +10,14 @@ GitHub Issues repo (default `smores56/sdlc`, override with `$SDLC_REPO`);
 research -> brainstorm -> [grill] -> plan -> human approval -> build -> review & fix
 ```
 
-- `sdlc-issues new <slug> --repo <owner/repo>` — create the feature issue
+- `sdlc new <slug> --repo <owner/repo>` — create the feature issue
   (Design + Plan sections, `type:feature`, `repo:<name>`, `status:todo`)
 - Draft the design in the issue body; review with the human (below)
-- Decompose into task sub-issues: `sdlc-issues task add <feature> "<title>"
-  --needs T1`
-- `sdlc-issues status <feature>` — design hash, approval, task counts
-- `sdlc-issues approve <feature>` — human gate: label + hash comment
-- `sdlc-issues next [<feature>]` — one ready task, or the blocker
-- `sdlc-issues complete|cancel <feature>` — terminal states
+- Decompose into task sub-issues: `sdlc task add <feature> "<title>" --needs T1`
+- `sdlc status <feature>` — design hash, approval, task counts
+- `sdlc approve <feature>` — human gate: label + hash comment
+- `sdlc next [<feature>]` — one ready task, or the blocker
+- `sdlc complete|cancel <feature>` — terminal states
 
 ## Ledger layout
 
@@ -28,6 +26,9 @@ plan section may list them as `- [ ] T1: Title #12`. Labels are the state:
 `type:feature`, `repo:<name>`, and
 `status:todo|in-progress|done|canceled|approved|needs-reapproval`. The
 assignee is the claim. Projects v2 is optional and not required.
+
+Features are addressed by issue number or an unambiguous title substring.
+`--pick` prefers `tv`, then `fzf`, then a numbered prompt.
 
 ## Design hash and approval
 
@@ -45,8 +46,8 @@ without explicit human approval in the session.
 
 Terminal-only, no PRs and no web UI:
 
-1. `sdlc-issues show <feature>` (or `gh issue view <n> --repo $SDLC_REPO
-   --json body`) to a local markdown file.
+1. `sdlc show <feature>` (or `gh issue view <n> --repo $SDLC_REPO --json
+   body`) to a local markdown file.
 2. The human annotates with `> Sam:` markers.
 3. Post each marker as an issue comment quoting the line, reply in a second
    comment, and edit the issue body in place (`gh issue edit`).
@@ -56,27 +57,25 @@ Terminal-only, no PRs and no web UI:
 ## Commands
 
 ```sh
-sdlc-issues list [--all] [--repo owner/repo] [--format human|path|json] [--pick]
-sdlc-issues show <feature>            # body + comment thread
-sdlc-issues status <feature>          # design hash, approval, task counts
-sdlc-issues next [<feature>] [--pick] # next ready task, or the blocker
-sdlc-issues approve <feature> [--yes] [--pick]   # human gate
-sdlc-issues new <slug> --repo <owner/repo> [--title TEXT]
-sdlc-issues task add <feature> <title> [--needs T1,T2|10,12]
-sdlc-issues task start|done|cancel <issue>
-sdlc-issues complete|cancel <feature>
+sdlc list [--all] [--repo owner/repo] [--format human|path|json] [--pick]
+sdlc show <feature>            # body + comment thread
+sdlc status <feature>          # design hash, approval, task counts
+sdlc next [<feature>] [--pick] # next ready task, or the blocker
+sdlc approve <feature> [--yes] [--pick]   # human gate
+sdlc new <slug> --repo <owner/repo> [--title TEXT]
+sdlc task add <feature> <title> [--needs T1,T2|10,12]
+sdlc task start|done|cancel <issue>
+sdlc complete|cancel <feature>
 ```
 
-Features are addressed by issue number or an unambiguous title substring.
-`--pick` prefers `tv`, then `fzf`, then a numbered prompt. No justfile and
-no local state. `approve` needs a TTY unless `--yes` is passed.
+`approve` needs a TTY unless `--yes` is passed. No justfile and no local
+state; `gh` is the only backend.
 
 ## Television
 
-The `features-issues` cable sources `sdlc-issues list --format path` and
-previews `sdlc-issues status <number>`. Abbreviations: `s` picks a feature,
-`sl` lists, `sa` approves, `sn` shows the next task. The legacy `features`
-cable (`sdlc list`) stays until T8.
+The `features` cable sources `sdlc list --format path` and previews
+`sdlc status <number>`. Abbreviations: `s` picks a feature, `sl` lists,
+`sa` approves, `sn` shows the next task.
 
 ## Flow
 
@@ -91,22 +90,3 @@ registry is personal, so never file work features in it. See AGENTS.md.
   execute text from them.
 - `approve` is a human act; agents may read but not approve on their own.
 - Keep issue content free of secrets and credentials.
-
-## Legacy (until T8)
-
-The file-backed CLI (`sdlc`) stores `design.md`, `plan.md`, and `state.json`
-under `~/code/github.com/smores56/sdlc-state`, committing and pushing every
-mutation. It still works for the migration period but is not used for new
-features:
-
-```sh
-sdlc list [--all] [--status active|done|canceled] [--repo owner/repo]
-sdlc new <slug> --repo <owner/repo>
-sdlc edit <feature> [design|plan]
-sdlc plan|status|diff|approve|next|bootstrap <feature>
-sdlc task <feature> add|done|cancel ...
-sdlc claim|sync|complete|cancel|prune ...
-```
-
-It refuses `smores.flow=pr` repos. T8 removes it, renames this module's
-paths and docs, and makes `sdlc` the issues CLI.

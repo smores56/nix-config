@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stateless sdlc-issues CLI: GitHub Issues are the system of record.
+"""Stateless sdlc CLI: GitHub Issues are the system of record.
 
 Global and self-contained: it needs `gh` and nothing from this repo's justfile
 or local state. Feature = issue labeled type:feature; tasks = sub-issues with
@@ -275,7 +275,7 @@ def pick(candidates):
     if not candidates:
         raise CliError("nothing to pick")
     if shutil.which("tv"):
-        handle, path = tempfile.mkstemp(prefix="sdlc-issues-", suffix=".txt")
+        handle, path = tempfile.mkstemp(prefix="sdlc-", suffix=".txt")
         try:
             with os.fdopen(handle, "w") as fh:
                 fh.write("\n".join(candidates) + "\n")
@@ -437,7 +437,7 @@ def cmd_next(args):
     if approval.state == "stale":
         raise CliError(
             "#%d design changed since approval (now sha256:%s, approved %s); "
-            "re-approval required: sdlc-issues approve %d"
+            "re-approval required: sdlc approve %d"
             % (
                 feature["number"],
                 (approval.design or "-")[:12],
@@ -448,7 +448,7 @@ def cmd_next(args):
     if approval.state != "approved":
         raise CliError(
             "#%d is not approved (%s); ask the human, then run "
-            "'sdlc-issues approve %d'" % (feature["number"], approval.reason, feature["number"])
+            "'sdlc approve %d'" % (feature["number"], approval.reason, feature["number"])
         )
     tasks = sub_tasks(repo, feature)
     ready = [task for task in tasks if task_state(task) == "ready"]
@@ -666,7 +666,7 @@ def cmd_feature_transition(terminal):
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        prog="sdlc-issues",
+        prog="sdlc",
         description="Stateless SDLC control plane over GitHub Issues (registry: $SDLC_REPO).",
     )
     sub = parser.add_subparsers(dest="command", required=True)

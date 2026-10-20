@@ -1,4 +1,4 @@
-"""Tests for the stateless sdlc-issues CLI.
+"""Tests for the stateless sdlc CLI.
 
 Written before implementation (red first). A fake `gh` on PATH records every
 call and serves canned JSON, so nothing here needs a network or the real

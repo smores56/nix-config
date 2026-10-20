@@ -1,47 +1,18 @@
-{
-  config,
-  lib,
-  pkgs,
-  ...
-}:
+{ pkgs, ... }:
 let
-  stateDir = "${config.user.codeRoot}/github.com/smores56/sdlc-state";
-
-  # Bundle the CLI sources into one store dir so sibling imports resolve
-  # (each `${./file}` alone would land in its own store path).
-  sdlcSrc = pkgs.runCommand "sdlc-src" { } ''
-    mkdir -p $out
-    cp ${./sdlc_cli.py} $out/sdlc_cli.py
-    cp ${./sdlc_model.py} $out/sdlc_model.py
-    cp ${./sdlc_state.py} $out/sdlc_state.py
-    cp ${./sdlc_issues.py} $out/sdlc_issues.py
-  '';
-
-  sdlcBin = pkgs.writeShellScriptBin "sdlc" ''
-    export SDLC_STATE_DIR=''${SDLC_STATE_DIR:-${lib.escapeShellArg stateDir}}
-    export PYTHONPATH=${sdlcSrc}
-    exec ${pkgs.python3}/bin/python3 ${sdlcSrc}/sdlc_cli.py "$@"
-  '';
-
-  sdlcIssuesBin = pkgs.writeShellScriptBin "sdlc-issues" ''
-    exec ${pkgs.python3}/bin/python3 ${sdlcSrc}/sdlc_issues.py "$@"
+  sdlc = pkgs.writeShellScriptBin "sdlc" ''
+    exec ${pkgs.python3}/bin/python3 ${./sdlc_issues.py} "$@"
   '';
 in
 {
-  home.packages = [
-    sdlcBin
-    sdlcIssuesBin
-  ];
+  home.packages = [ sdlc ];
 
-  home.file = {
-    ".config/television/cable/features.toml".source = ./features.toml;
-    ".config/television/cable/features-issues.toml".source = ./features-issues.toml;
-  };
+  home.file.".config/television/cable/features.toml".source = ./features.toml;
 
   user.shellAbbrs = {
-    s = "pick features-issues c";
-    sl = "sdlc-issues list";
-    sa = "sdlc-issues approve --pick";
-    sn = "sdlc-issues next --pick";
+    s = "pick features c";
+    sl = "sdlc list";
+    sa = "sdlc approve --pick";
+    sn = "sdlc next --pick";
   };
 }
