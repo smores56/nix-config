@@ -61,6 +61,10 @@ let
       # See the nixpkgs-unstable input: rclone needs the protondrive fixes it
       # carries (1.75.1) for a trustworthy Proton mirror.
       rclone = inputs.nixpkgs-unstable.legacyPackages.${system}.rclone;
+
+      # The pinned nixpkgs ships tuicr 0.19.1, which predates --file and the
+      # review-session CLI that the sdlc review bridge needs.
+      tuicr = inputs.nixpkgs-unstable.legacyPackages.${system}.tuicr;
     })
   ];
 

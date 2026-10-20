@@ -4,7 +4,8 @@
 Global and self-contained: it needs `gh` and nothing from this repo's justfile
 or local state. Feature = issue labeled type:feature; tasks = sub-issues with
 blocked-by links; approval = the status:approved label plus a comment holding
-the canonical design hash.
+the canonical design hash. `ui` uses `tv` when present; `review` launches
+`tuicr`.
 """
 
 import argparse
@@ -32,7 +33,13 @@ LIST_FIELDS = "number,title,body,state,labels,comments,subIssues,url"
 TASK_FIELDS = "number,title,state,labels,blockedBy"
 NODE_FIELDS = "number,title,state,labels"
 
+ACTIONS = ("show", "status", "review", "comment", "next", "approve", "complete", "cancel")
+REVIEW_ITEM_RE = re.compile(r"^\s*\d+\.\s+`([^`]+)`\s+-\s+(.*)$")
+ANCHOR_RE = re.compile(r"^(?P<file>.+?)(?::(?P<start>\d+)(?:-(?P<end>\d+))?)?$")
+REVIEW_MARKER_RE = re.compile(r"<!-- sdlc-review:n\d+:[0-9a-f]{12} -->")
+
 Approval = namedtuple("Approval", "state design approved comment reason")
+ReviewNote = namedtuple("ReviewNote", "anchor file start end text")
 
 
 class CliError(Exception):
@@ -72,6 +79,17 @@ def gh_json(*args):
         return json.loads(out)
     except ValueError:
         raise CliError("gh %s returned invalid JSON" % " ".join(args[:2]))
+
+
+def gh_stdin(*args, body):
+    try:
+        proc = subprocess.run(["gh", *args], input=body, capture_output=True, text=True)
+    except FileNotFoundError:
+        raise CliError("gh not found on PATH")
+    if proc.returncode != 0:
+        detail = proc.stderr.strip() or proc.stdout.strip() or "exit %d" % proc.returncode
+        raise CliError("gh %s failed: %s" % (" ".join(args[:2]), detail))
+    return proc.stdout
 
 
 def fetch_issue(repo, number, fields=FEATURE_FIELDS):
@@ -270,7 +288,7 @@ def task_counts(tasks):
 # --- picker -----------------------------------------------------------------
 
 
-def pick(candidates):
+def pick(candidates, header="sdlc features"):
     """tv, then fzf, then a numbered prompt. Returns one candidate line."""
     if not candidates:
         raise CliError("nothing to pick")
@@ -286,7 +304,7 @@ def pick(candidates):
                     "cat %s" % shlex.quote(path),
                     "--no-preview",
                     "--input-header",
-                    "sdlc features",
+                    header,
                 ],
                 capture_output=True,
                 text=True,
@@ -328,6 +346,168 @@ def path_row(issue):
             clean(repo_names(issue) or "-"),
         ]
     )
+
+
+# --- review roundtrip -------------------------------------------------------
+
+
+def parse_tuicr_export(text):
+    """Parse tuicr's numbered markdown export into anchored notes."""
+    notes = []
+    current = None
+    for raw in (text or "").splitlines():
+        match = REVIEW_ITEM_RE.match(raw)
+        if match:
+            anchor = match.group(1)
+            parsed = ANCHOR_RE.match(anchor)
+            current = {
+                "anchor": anchor,
+                "file": parsed.group("file"),
+                "start": int(parsed.group("start")) if parsed.group("start") else None,
+                "end": int(parsed.group("end")) if parsed.group("end") else None,
+                "lines": [match.group(2).strip()],
+            }
+            notes.append(current)
+        elif current is not None and raw.strip():
+            current["lines"].append(raw.strip())
+        elif not raw.strip():
+            current = None
+    return [
+        ReviewNote(
+            note["anchor"],
+            note["file"],
+            note["start"],
+            note["end"],
+            "\n".join(note["lines"]).strip(),
+        )
+        for note in notes
+    ]
+
+
+def review_quote(note, body_lines, limit=20):
+    """Quote the reviewed body lines; anchors are advisory, the quote is exact."""
+    if not note.start:
+        return None
+    start = max(note.start, 1)
+    end = min(note.end or start, len(body_lines))
+    if start > end:
+        return None
+    picked = body_lines[start - 1 : end][:limit]
+    quoted = "\n".join("> " + line for line in picked)
+    if end - start + 1 > limit:
+        quoted += "\n> …"
+    return quoted
+
+
+def review_marker(feature_number, note):
+    # The temp body path changes every run; anchor on stable line bounds.
+    digest = hashlib.sha256(
+        ("%s:%s\n%s" % (note.start, note.end, note.text)).encode("utf-8")
+    ).hexdigest()[:12]
+    return "<!-- sdlc-review:n%d:%s -->" % (feature_number, digest)
+
+
+def review_location(note):
+    if note.start and note.end and note.end != note.start:
+        return "lines %d–%d" % (note.start, note.end)
+    if note.start:
+        return "line %d" % note.start
+    return "file"
+
+
+def render_review(feature_number, title, body, notes, markers=()):
+    kept = []
+    seen = set(markers)
+    for note in notes:
+        marker = review_marker(feature_number, note)
+        if marker in seen:
+            continue
+        seen.add(marker)
+        kept.append(note)
+    if not kept:
+        return ""
+    digest = design_hash(body)
+    header = "## Review — #%d %s (design sha256:%s)" % (
+        feature_number,
+        one_line(title),
+        digest[:12] if digest else "none",
+    )
+    blocks = []
+    body_lines = body.splitlines()
+    for note in kept:
+        block = [review_marker(feature_number, note), "### %s" % review_location(note)]
+        quote = review_quote(note, body_lines)
+        if quote:
+            block += ["", quote]
+        block += ["", note.text]
+        blocks.append("\n".join(block))
+    return "\n\n".join([header] + blocks) + "\n"
+
+
+# --- pickers ----------------------------------------------------------------
+
+
+def cwd_repo_name():
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True
+        )
+    except FileNotFoundError:
+        return None
+    if proc.returncode != 0:
+        return None
+    return os.path.basename(proc.stdout.strip()) or None
+
+
+def pick_action():
+    return pick(list(ACTIONS), header="sdlc actions").strip()
+
+
+def pick_feature(repo, all_states=False):
+    features = feature_issues(repo, all_states=all_states)
+    if not features:
+        raise CliError("no active features in %s" % repo)
+    cwd = cwd_repo_name()
+    features.sort(key=lambda feature: 0 if cwd and cwd in repo_names(feature) else 1)
+    rows = [path_row(feature) for feature in features]
+    if not shutil.which("tv"):
+        return int(pick(rows).split("\t")[0])
+
+    with tempfile.TemporaryDirectory(prefix="sdlc-cable-") as tmp:
+        cable = os.path.join(tmp, "cable")
+        os.makedirs(cable)
+        source = os.path.join(tmp, "features.tsv")
+        with open(source, "w") as fh:
+            fh.write("\n".join(rows) + "\n")
+        preview = "%s %s status {split:\\t:0}" % (
+            shlex.quote(sys.executable),
+            shlex.quote(os.path.abspath(__file__)),
+        )
+        channel = (
+            '[metadata]\nname = "sdlc-features"\nrequirements = ["sdlc"]\n\n'
+            '[source]\ncommand = "cat %s"\nentry_delimiter = "\\n"\n'
+            'display = "#{split:\\t:0} {split:\\t:1} [{split:\\t:2}] {split:\\t:3}"\n'
+            'output = "{split:\\t:0}"\n\n'
+            '[preview]\ncommand = "%s"\n'
+        ) % (shlex.quote(source), preview)
+        with open(os.path.join(cable, "sdlc-features.toml"), "w") as fh:
+            fh.write(channel)
+        proc = subprocess.run(
+            ["tv", "--cable-dir", cable, "sdlc-features"], capture_output=True, text=True
+        )
+    if proc.returncode != 0 or not proc.stdout.strip():
+        raise CliError("selection canceled")
+    selected = proc.stdout.splitlines()[0].strip()
+    try:
+        return int(selected)
+    except ValueError:
+        raise CliError("unexpected picker output: %r" % selected)
+
+
+def confirm(prompt):
+    sys.stderr.write("%s? [y/N] " % prompt)
+    sys.stderr.flush()
+    return sys.stdin.readline().strip().lower() in ("y", "yes")
 
 
 # --- commands ---------------------------------------------------------------
@@ -661,6 +841,117 @@ def cmd_feature_transition(terminal):
     return run
 
 
+def cmd_review(args):
+    repo = registry_repo()
+    feature = resolve_feature(repo, args.feature)
+    body = feature.get("body") or ""
+    with tempfile.TemporaryDirectory(prefix="sdlc-review-") as tmp:
+        path = os.path.join(tmp, "issue-%d.md" % feature["number"])
+        with open(path, "w") as fh:
+            fh.write(body)
+        export_path = os.path.join(tmp, "export.md")
+        try:
+            with open(export_path, "w") as out:
+                proc = subprocess.run(["tuicr", "--stdout", "--file", path], stdout=out)
+        except FileNotFoundError:
+            raise CliError("tuicr not found on PATH")
+        if proc.returncode != 0:
+            raise CliError("tuicr exited %d" % proc.returncode)
+        with open(export_path) as fh:
+            export = fh.read()
+
+    notes = parse_tuicr_export(export)
+    if not notes:
+        print("no review notes")
+        return
+    existing = "\n".join(
+        clean(comment.get("body") or "") for comment in feature.get("comments") or []
+    )
+    comment = render_review(
+        feature["number"],
+        feature.get("title") or "",
+        body,
+        notes,
+        set(REVIEW_MARKER_RE.findall(existing)),
+    )
+    if not comment:
+        print("no new review notes")
+        return
+    if args.dry_run:
+        print(comment, end="")
+        return
+    url = gh_stdin(
+        "issue",
+        "comment",
+        str(feature["number"]),
+        "--repo",
+        repo,
+        "--body-file",
+        "-",
+        body=comment,
+    )
+    print(
+        "posted review notes to #%d %s"
+        % (feature["number"], url.strip() or "")
+    )
+    print('tell the agent: read #%d' % feature["number"])
+
+
+def cmd_comment(args):
+    repo = registry_repo()
+    ref = args.feature if args.feature is not None else str(pick_feature(repo))
+    feature = resolve_feature(repo, ref)
+    try:
+        proc = subprocess.run(
+            ["gh", "issue", "comment", str(feature["number"]), "--repo", repo, "--editor"]
+        )
+    except FileNotFoundError:
+        raise CliError("gh not found on PATH")
+    if proc.returncode != 0:
+        raise CliError("gh issue comment failed: exit %d" % proc.returncode)
+
+
+def cmd_ui(args):
+    if args.repo:
+        os.environ["SDLC_REPO"] = args.repo
+    repo = registry_repo()
+    features = []
+    actions = []
+    for token in args.items:
+        lowered = token.lower()
+        if lowered in ACTIONS:
+            actions.append(lowered)
+        else:
+            features.append(token)
+    if len(features) > 1:
+        raise CliError("expected at most one feature, got %s" % ", ".join(features))
+    if len(actions) > 1:
+        raise CliError("expected at most one action, got %s" % ", ".join(actions))
+
+    action = actions[0] if actions else pick_action()
+    ref = features[0] if features else str(pick_feature(repo, all_states=args.all))
+    ns = argparse.Namespace(feature=ref, pick=False, yes=False, dry_run=False)
+    if action == "show":
+        cmd_show(ns)
+    elif action == "status":
+        cmd_status(ns)
+    elif action == "review":
+        cmd_review(ns)
+    elif action == "comment":
+        cmd_comment(ns)
+    elif action == "next":
+        cmd_next(ns)
+    elif action == "approve":
+        cmd_approve(ns)
+    elif action in ("complete", "cancel"):
+        if confirm("%s #%s" % (action, ref)):
+            cmd_feature_transition("done" if action == "complete" else "canceled")(ns)
+        else:
+            print("not %s" % ("completed" if action == "complete" else "canceled"))
+    else:
+        raise CliError("unknown action %r" % action)
+
+
 # --- CLI --------------------------------------------------------------------
 
 
@@ -726,6 +1017,21 @@ def build_parser():
     p = sub.add_parser("cancel", help="close a feature as canceled")
     p.add_argument("feature", help="issue number or title substring")
     p.set_defaults(fn=cmd_feature_transition("canceled"))
+
+    p = sub.add_parser("ui", help="pick a feature and an action")
+    p.add_argument("items", nargs="*", help="action and/or feature")
+    p.add_argument("--all", action="store_true", help="include terminal features")
+    p.add_argument("--repo", help="registry repo (default $SDLC_REPO)")
+    p.set_defaults(fn=cmd_ui)
+
+    p = sub.add_parser("review", help="review a feature body in tuicr and post the notes")
+    p.add_argument("feature", help="issue number or title substring")
+    p.add_argument("--dry-run", action="store_true", help="print the comment instead of posting")
+    p.set_defaults(fn=cmd_review)
+
+    p = sub.add_parser("comment", help="comment on a feature in $EDITOR")
+    p.add_argument("feature", nargs="?", help="issue number or title substring")
+    p.set_defaults(fn=cmd_comment)
 
     return parser
 

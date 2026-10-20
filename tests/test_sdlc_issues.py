@@ -56,11 +56,52 @@ elif args[:2] == ["issue", "view"]:
 elif args[:2] == ["issue", "create"]:
     sys.stdout.write(read("create_url.txt"))
 elif args[:2] in (["issue", "edit"], ["issue", "comment"], ["issue", "close"]):
+    if args[:2] == ["issue", "comment"] and "--body-file" in args:
+        with open(os.path.join(state, "last-comment.md"), "w") as fh:
+            fh.write(sys.stdin.read())
     sys.stdout.write("")
 else:
     sys.stderr.write("fake gh: unexpected args %r\\n" % (args,))
     sys.exit(2)
 '''
+
+FAKE_TUICR = '''#!{python}
+import json, os, sys
+
+state = os.environ["FAKE_GH_STATE"]
+with open(os.path.join(state, "tuicr.jsonl"), "a") as fh:
+    fh.write(json.dumps(sys.argv[1:]) + "\\n")
+path = os.path.join(state, "tuicr-export.md")
+if os.path.exists(path):
+    with open(path) as fh:
+        sys.stdout.write(fh.read())
+'''
+
+FAKE_TV = '''#!{python}
+import json, os, sys
+
+state = os.environ["FAKE_GH_STATE"]
+args = sys.argv[1:]
+with open(os.path.join(state, "tv.jsonl"), "a") as fh:
+    fh.write(json.dumps(args) + "\\n")
+if "sdlc-features" in args:
+    with open(os.path.join(state, "tv-feature.txt")) as fh:
+        sys.stdout.write(fh.read().strip() + "\\n")
+    sys.exit(0)
+if "--source-command" in args:
+    source = args[args.index("--source-command") + 1]
+    if source.startswith("cat "):
+        with open(source[4:].strip("'")) as fh:
+            sys.stdout.write(fh.read().splitlines()[0] + "\\n")
+        sys.exit(0)
+sys.exit(1)
+'''
+
+EXPORT = (
+    "I reviewed your code and have the following comments. Please address them.\n\n"
+    "1. `body.md:7` - Make this a link.\n"
+    "2. `body.md:13-15` - Split the plan.\n"
+)
 
 
 def label(name):
@@ -173,6 +214,16 @@ class GhTest(unittest.TestCase):
     def serve_issue(self, iss):
         self.serve("issue-%d.json" % iss["number"], iss)
 
+    def fakes(self):
+        self.script("tuicr", FAKE_TUICR.replace("{python}", sys.executable))
+        self.script("tv", FAKE_TV.replace("{python}", sys.executable))
+        self.serve("tv-feature.txt", "1\n")
+
+    def reset_calls(self):
+        path = os.path.join(self.state, "calls.jsonl")
+        if os.path.exists(path):
+            os.unlink(path)
+
     def calls(self):
         path = os.path.join(self.state, "calls.jsonl")
         if not os.path.exists(path):
@@ -182,6 +233,13 @@ class GhTest(unittest.TestCase):
 
     def calls_for(self, *prefix):
         return [call for call in self.calls() if call[: len(prefix)] == list(prefix)]
+
+    def tv_calls(self):
+        path = os.path.join(self.state, "tv.jsonl")
+        if not os.path.exists(path):
+            return []
+        with open(path) as fh:
+            return [json.loads(line) for line in fh if line.strip()]
 
     def run_cli(self, *args, stdin=None, path=None):
         env = dict(os.environ)
@@ -609,6 +667,184 @@ class FeatureTerminalTest(GhTest):
         edit = self.calls_for("issue", "edit")[0]
         self.assertEqual(edit[edit.index("--add-label") + 1], "status:canceled")
         self.assertEqual(len(self.calls_for("issue", "close")), 1)
+
+
+class TuicrExportTest(unittest.TestCase):
+    def test_parses_file_line_and_range_anchors(self):
+        notes = sdlc_issues.parse_tuicr_export(EXPORT)
+        self.assertEqual([n.anchor for n in notes], ["body.md:7", "body.md:13-15"])
+        self.assertEqual(notes[0].file, "body.md")
+        self.assertEqual((notes[0].start, notes[0].end), (7, None))
+        self.assertEqual((notes[1].start, notes[1].end), (13, 15))
+        self.assertEqual(notes[0].text, "Make this a link.")
+
+    def test_keeps_continuation_lines(self):
+        text = "1. `a.md:3` - first\n  second line\n\n2. `a.md` - file note\n"
+        notes = sdlc_issues.parse_tuicr_export(text)
+        self.assertEqual(notes[0].text, "first\nsecond line")
+        self.assertEqual((notes[1].start, notes[1].end), (None, None))
+
+    def test_ignores_the_preamble(self):
+        self.assertEqual(sdlc_issues.parse_tuicr_export("nothing here\n"), [])
+
+
+class ReviewRenderTest(unittest.TestCase):
+    def note(self, anchor="body.md:7", start=7, end=None, text="Make this a link."):
+        return sdlc_issues.ReviewNote(anchor, "body.md", start, end, text)
+
+    def test_quotes_the_anchored_body_lines(self):
+        text = sdlc_issues.render_review(1, "Title", DESIGN, [self.note()])
+        self.assertIn("## Review — #1 Title", text)
+        self.assertIn("design sha256:%s" % DESIGN_SHA[:12], text)
+        self.assertIn("### line 7", text)
+        self.assertIn("> Use GitHub issues.", text)
+        self.assertIn("<!-- sdlc-review:n1:", text)
+
+    def test_quotes_ranges(self):
+        text = sdlc_issues.render_review(
+            1, "Title", DESIGN, [self.note("body.md:13-15", 13, 15, "Split it.")]
+        )
+        self.assertIn("> ## Plan", text)
+        self.assertIn("> - [ ] T1: Build", text)
+
+    def test_skips_markers_already_posted(self):
+        note = self.note()
+        marker = sdlc_issues.review_marker(1, note)
+        self.assertEqual(sdlc_issues.render_review(1, "Title", DESIGN, [note], {marker}), "")
+
+    def test_marker_is_stable_for_the_same_anchor_and_text(self):
+        self.assertEqual(
+            sdlc_issues.review_marker(1, self.note()),
+            sdlc_issues.review_marker(1, self.note()),
+        )
+
+
+class ReviewCliTest(GhTest):
+    def setUp(self):
+        super().setUp()
+        self.serve_issue(approved_feature())
+        self.fakes()
+
+    def export(self, text=EXPORT):
+        self.serve("tuicr-export.md", text)
+
+    def posted(self):
+        with open(os.path.join(self.state, "last-comment.md")) as fh:
+            return fh.read()
+
+    def test_posts_one_aggregated_comment_with_quotes(self):
+        self.export()
+        out = self.run_cli("review", "1")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        body = self.posted()
+        self.assertIn("## Review — #1", body)
+        self.assertIn("> Use GitHub issues.", body)
+        self.assertIn("> ## Plan", body)
+        self.assertIn("design sha256:%s" % DESIGN_SHA[:12], body)
+        self.assertEqual(len(self.calls_for("issue", "comment")), 1)
+        self.assertIn("tell the agent", out.stdout)
+
+    def test_dry_run_prints_without_posting(self):
+        self.export()
+        out = self.run_cli("review", "1", "--dry-run")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("> Use GitHub issues.", out.stdout)
+        self.assertEqual(self.calls_for("issue", "comment"), [])
+
+    def test_no_comments_does_not_post(self):
+        out = self.run_cli("review", "1")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("no review notes", out.stdout)
+        self.assertEqual(self.calls_for("issue", "comment"), [])
+
+    def test_second_run_skips_markers_already_posted(self):
+        self.export()
+        self.run_cli("review", "1")
+        posted = self.posted()
+        self.serve_issue(approved_feature(comments=(comment("sam", posted),)))
+        self.reset_calls()
+        out = self.run_cli("review", "1")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("no new review notes", out.stdout)
+        self.assertEqual(self.calls_for("issue", "comment"), [])
+
+
+class UiCliTest(GhTest):
+    def setUp(self):
+        super().setUp()
+        feature = issue(
+            1,
+            "Reduce bespoke tooling",
+            DESIGN,
+            ["type:feature", "repo:nix-config", "status:todo"],
+        )
+        self.serve_issue(feature)
+        self.serve_list([feature])
+        self.fakes()
+
+    def test_action_and_feature_dispatch_without_tv(self):
+        out = self.run_cli("ui", "show", "1")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("Use GitHub issues.", out.stdout)
+        self.assertEqual(self.tv_calls(), [])
+
+    def test_feature_arg_opens_the_action_picker(self):
+        out = self.run_cli("ui", "1")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("Use GitHub issues.", out.stdout)
+        self.assertTrue(self.tv_calls())
+
+    def test_action_arg_opens_the_feature_picker(self):
+        out = self.run_cli("ui", "show")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("Use GitHub issues.", out.stdout)
+        self.assertTrue(any("sdlc-features" in call for call in self.tv_calls()))
+
+    def test_complete_declines_by_default(self):
+        out = self.run_cli("ui", "1", "complete", stdin="n\n")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(self.calls_for("issue", "close"), [])
+
+    def test_complete_runs_after_yes(self):
+        out = self.run_cli("ui", "1", "complete", stdin="y\n")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(len(self.calls_for("issue", "close")), 1)
+
+    def test_cancel_runs_after_yes(self):
+        out = self.run_cli("ui", "1", "cancel", stdin="y\n")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        edit = self.calls_for("issue", "edit")[0]
+        self.assertEqual(edit[edit.index("--add-label") + 1], "status:canceled")
+
+    def test_rejects_two_feature_tokens(self):
+        out = self.run_cli("ui", "1", "2")
+        self.assertNotEqual(out.returncode, 0)
+        self.assertIn("one feature", out.stderr)
+
+
+class CommentCliTest(GhTest):
+    def setUp(self):
+        super().setUp()
+        feature = issue(
+            1,
+            "Reduce bespoke tooling",
+            DESIGN,
+            ["type:feature", "repo:nix-config", "status:todo"],
+        )
+        self.serve_issue(feature)
+        self.serve_list([feature])
+        self.fakes()
+
+    def test_comment_opens_the_editor(self):
+        out = self.run_cli("comment", "1")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        call = self.calls_for("issue", "comment")[0]
+        self.assertIn("--editor", call)
+
+    def test_comment_without_a_feature_uses_the_picker(self):
+        out = self.run_cli("comment")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertTrue(any("sdlc-features" in call for call in self.tv_calls()))
 
 
 class CleanTest(unittest.TestCase):
