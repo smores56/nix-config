@@ -252,6 +252,7 @@ in
             pkgs.restic
             pkgs.rclone
             pkgs.coreutils
+            pkgs.findutils
             pkgs.bash
             pkgs.util-linux
           ];
@@ -291,7 +292,7 @@ in
               "+${pkgs.coreutils}/bin/install -d -m 0700 ${lib.escapeShellArg (repoOf name dataset)} ${lib.escapeShellArg (markerDir name)} ${lib.escapeShellArg cacheDir}"
             ]
             ++ lib.optional dataset.postgres "+${pkgs.coreutils}/bin/install -d -o postgres -g postgres -m 0700 ${lib.escapeShellArg (stagingDir name)}"
-            ++ lib.optional dataset.onChange.enable "+${pkgs.coreutils}/bin/find ${lib.escapeShellArg (queueDir name)} -mindepth 1 -delete"
+            ++ lib.optional dataset.onChange.enable "+${pkgs.findutils}/bin/find ${lib.escapeShellArg (queueDir name)} -mindepth 1 -delete"
             ++ lib.optional dataset.onChange.enable "+${pkgs.coreutils}/bin/install -m 0600 /dev/null ${lib.escapeShellArg (runningFile name)}";
             # Probe refresh tokens are single-use and the Proton byte copy
             # shares one credential with the legacy rclone datasets: every
