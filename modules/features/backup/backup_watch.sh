@@ -7,10 +7,9 @@
 # systemd DirectoryNotEmpty= path unit starts it. If a run is active (the
 # running file exists), a batch is written as one follow-up request instead.
 #
-# Replaces modules/features/backup/backup_watch.py for the small plain driver
-# while the legacy rclone datasets keep the Python watcher. The ignore rules
-# and queue semantics are deliberately identical, so the two cannot diverge in
-# what counts as a change.
+# The shell watcher for the plain driver (replaces the deleted Python watcher).
+# The ignore rules and queue semantics match what the units and the operator
+# README expect, so nothing silently changes in what counts as a change.
 set -uo pipefail
 umask 077
 
@@ -86,9 +85,8 @@ stop() {
 trap cleanup EXIT
 trap stop INT TERM
 
-# True when the path should not count as a change. Mirrors
-# backup_watch.py:is_ignored -- hidden components, writer scratch names, and
-# per-dataset globs matched against each component.
+# True when the path should not count as a change. Hidden components, writer
+# scratch names, and per-dataset globs matched against each component.
 ignored() {
   local path=$1 rel parts part
   rel=${path#"$SOURCE"/}

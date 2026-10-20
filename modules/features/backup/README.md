@@ -8,8 +8,9 @@ propagates source deletions, `versions/` lives only on the local disk, Proton
 keeps every version ever copied, and there is no encryption, key, or
 repository layer to manage beyond that.
 
-Generic, dataset-agnostic backup driver. One systemd oneshot + timer per
-`backup.datasets.<Name>` entry, optionally fired early by a filesystem
+Generic, dataset-agnostic backup driver, [`backup.sh`](./backup.sh) — a small
+shell script packaged with `writeShellApplication`. One systemd oneshot + timer
+per `backup.datasets.<Name>` entry, optionally fired early by a filesystem
 watcher (`onChange`). A dataset is a directory on Disk 1, a local mirror on the
 backup disk (Disk 2), and — unless `offsite` is disabled — an append-only mirror
 on Proton Drive (Disk 3, "offsite"). Three dataset families use it: the media
@@ -18,7 +19,7 @@ repo mirror (`GitHub`; see [GitHub repo mirror and metadata](#github-repo-mirror
 OpenTofu edge state (`CloudflareTofu`).
 
 The rationale for every destructive-looking choice lives as a comment next to
-the code in [`backup.py`](./backup.py). This file is the operator's view.
+the code in [`backup.sh`](./backup.sh). This file is the operator's view.
 
 ## Guarantees
 
@@ -36,7 +37,7 @@ the code in [`backup.py`](./backup.py). This file is the operator's view.
   compromised local box cannot delete from the remote.
 - **The offsite mirror is verified — incrementally.** The offsite copy logs
   every file it wrote (`--use-json-log`), and the run finishes with
-  `rclone check --checksum --one-way --files-from <those paths>`, so only what
+  `rclone check --checksum --one-way --files-from0 <those paths>`, so only what
   changed is re-read instead of the whole tree (a full walk of a large unchanged
   dataset reads the entire mirror for no new information). When the copy wrote
   nothing the check is skipped: the mirror is unchanged since the last run. A
@@ -49,15 +50,16 @@ the code in [`backup.py`](./backup.py). This file is the operator's view.
   backup.
 - **A local-only dataset is verified against the local copy.** With
   `offsite = false` there is no remote, so the run finishes with the same scoped
-  `rclone check --one-way --checksum --files-from <changed>` but source → local
+  `rclone check --one-way --checksum --files-from0 <changed>` but source → local
   mirror instead. The `BACKUP-FAILED` marker therefore keeps meaning "the mirror
   was verified" on every dataset, offsite or not.
 - **A run that stalls is killed and retried.** rclone's own idle timeout does
   not catch a wedged upload session (one such hang held the shared Proton lock
-  for 18h). A stats-based watchdog (`stallTimeout`, default 30m) aborts a step
-  whose `Transferred:` *and* `Checks:` counters stop advancing, then retries —
-  `copy` is resumable. A non-zero `stallTimeout` must be at least 60s (two 30s
-  rclone stats intervals) or evaluation fails; `"0"` disables the watchdog.
+  for 18h). A stats-based watchdog (`stallTimeout`, default 30m) samples the
+  step log and aborts a step whose `Transferred:` *and* `Checks:` counters stop
+  advancing, then retries — `copy` is resumable. A non-zero `stallTimeout` must
+  be at least 60s (two 30s rclone stats intervals) or evaluation fails; `"0"`
+  disables the watchdog.
 
 ## Layout on a host
 
@@ -204,7 +206,7 @@ Layout under `/var/lib/github-mirrors` (the dataset source):
    `--protondrive-replace-existing-draft=true` (uploads only; never used to
    delete).
 5. Verify the mirror: `rclone check --checksum --one-way` scoped with
-   `--files-from` to the paths the copy wrote this run, or skipped entirely when
+   `--files-from0` to the paths the copy wrote this run, or skipped entirely when
    it wrote nothing. Offsite datasets check local↔remote; a local-only dataset
    (`offsite = false`) checks source↔local instead. A `--full-check` run
    (per-dataset `fullCheckSchedule`) walks the whole mirror instead.
@@ -222,11 +224,11 @@ cannot run the in-process marker, which is why the marker is in `ExecStopPost`.
 
 A dataset with `onChange.enable = true` gets a long-running
 `backup-<name>-watch.service` in addition to its timer. It runs
-[`backup_watch.py`](./backup_watch.py), which streams recursive inotify events
-from the source (`inotifywait -m -r`, `create`/`close_write`/`moved_to`), waits
-for the dataset's `onChange.debounce` of quiet, then creates one request file in
-`/run/backup-watch/<name>/`. A `backup-<name>-queue.path` unit watching that
-directory with `DirectoryNotEmpty=` starts the ordinary
+[`backup_watch.sh`](./backup_watch.sh), which streams recursive inotify events
+from the source (`inotifywait -m -r`, `modify`/`create`/`delete`/`move`/
+`attrib`), waits for the dataset's `onChange.debounce` of quiet, then creates one
+request file in `/run/backup-watch/<name>/`. A `backup-<name>-queue.path` unit
+watching that directory with `DirectoryNotEmpty=` starts the ordinary
 `backup-<name>.service`; the watcher never runs the driver, so the unit's
 timeout, failure marker, Cloudflare email alert, and sandbox stay in one place.
 
@@ -445,8 +447,9 @@ dataset needs `backup.enable = true` (the backup disk).
 - The offsite copy logs each copied filename at INFO (to extract changed paths),
   so source filenames reach journald on every run that copies files — previously
   they were suppressed at NOTICE. journald is root-only and local.
-- The `--files-from` list is a 0600 temp file removed in a `finally`; a hard kill
-  (systemd `TimeoutStartSec`, OOM) can leave it in `$TMPDIR`.
+- The `--files-from0` list lives in the run's private 0700 workspace, removed by
+  an `EXIT` trap; a hard kill (systemd `TimeoutStartSec`, OOM) can leave that
+  directory in `$TMPDIR`.
 - A `fullCheckSchedule` run re-runs the whole dataset — `preBackup` (an extra
   `pg_dump` for Photos) and both copies — not only the check.
 - The GitHub mirror is append-only like every other dataset: `copy` never
@@ -480,10 +483,11 @@ dataset needs `backup.enable = true` (the backup disk).
 - A mirrored repo can set `lfs.url` in `.lfsconfig`, redirecting the root-run LFS
   fetch to an arbitrary endpoint (blind SSRF). git-lfs ignores unsafe keys, so
   this is not code execution.
-- The stall watchdog and unchecked-hash guard `re.search` over every relayed
-  line, which includes source filenames; a file deliberately named to embed
+- The stall watchdog and unchecked-hash guard grep the step log, which includes
+  source filenames; a file deliberately named to embed
   `Transferred:`/`Checks:`/`hashes could not be checked` can forge a stall or a
-  spurious failure.
+  spurious failure. The shell watchdog samples the log every 30s and only sees
+  newline-terminated output, unlike the deleted Python driver's per-line watch.
 - Only systemd's `RequiresMountsFor` guards the backup disk: a manual/seed
   `backup` run with the disk absent writes the whole mirror onto `/` and
   reports success.
@@ -503,6 +507,9 @@ dataset needs `backup.enable = true` (the backup disk).
 - The drill is only syntax-checked in CI (not run); it scrapes the unit's
   `ExecStart` via `xargs` (quote-lossy) and ignores a custom `mountPoint`.
 - `--timeout` (driver, non-rclone steps) defaults to 12h and is not forwarded
-  from the dataset option — systemd `TimeoutStartSec` is the real bound.
-- The failure marker embeds raw rclone output and is unbounded; the lock file is
+  from the dataset option — systemd `TimeoutStartSec` is the real bound. (The
+  preBackup step is bounded by `timeout --kill-after`, which kills its process
+  group.)
+- The failure marker repeats the failing command line (plus the last lines of a
+  failed check's output) with control characters stripped; the lock file is
   created but never re-hardened against a pre-existing looser mode.

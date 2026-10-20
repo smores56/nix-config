@@ -189,6 +189,20 @@ in
             };
           }
           // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+            # The driver needs flock (util-linux), so this check is Linux-only.
+            backup-plain = {
+              tools = [
+                # The same rclone generation the NixOS module overlays in
+                # (nixpkgs-unstable, 1.75.1); the pinned nixpkgs rclone 1.74.4
+                # predates --files-from0, which the scoped check needs.
+                inputs.nixpkgs-unstable.legacyPackages.${system}.rclone
+                pkgs.jq
+                pkgs.coreutils
+                pkgs.util-linux
+                pkgs.findutils
+              ];
+              args = [ "${src}/modules/features/backup/backup.sh" ];
+            };
             manual-steps-sync = {
               tools = [ pkgs.jq ];
               args = [
@@ -314,8 +328,12 @@ in
               shellcheck ${src}/modules/features/backup/github-verify.sh
               bash -n ${src}/modules/features/backup/backup_watch.sh
               shellcheck ${src}/modules/features/backup/backup_watch.sh
+              bash -n ${src}/modules/features/backup/backup.sh
+              shellcheck ${src}/modules/features/backup/backup.sh
               bash -n ${src}/tests/backup_watch.sh
               shellcheck ${src}/tests/backup_watch.sh
+              bash -n ${src}/tests/backup_plain.sh
+              shellcheck ${src}/tests/backup_plain.sh
               bash -n ${src}/tests/manual_steps_sync.sh
               shellcheck ${src}/tests/manual_steps_sync.sh
               bash -n ${src}/tests/github_metadata.sh

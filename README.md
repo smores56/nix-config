@@ -220,7 +220,10 @@ listener runs on the host.
 `backup` (the backup disk; `modules/nixos/backup.nix`) plus one
 `backup.datasets.<Name>` entry per dataset drives the backup pipeline: a
 versioned local mirror on the disk plus an append-only Proton mirror, kept as
-plain rclone directory trees (no repository or encryption layer). Every
+plain rclone directory trees (no repository or encryption layer). The driver is
+[`modules/features/backup/backup.sh`](modules/features/backup/backup.sh), one
+shell script run once per dataset; the Proton tree stays browsable in the Proton
+Drive app, which is the phone access path. Every
 dataset has a per-dataset timer, failure marker, and Cloudflare email alert.
 Media datasets can additionally set `onChange` to queue a run after
 a debounced batch of source changes, with the timer as the fallback. smortress

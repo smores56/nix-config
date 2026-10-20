@@ -50,14 +50,14 @@ DRILL_ONLY_DB=${DRILL_ONLY_DB:-0}
 
 RCLONE=${RCLONE:-rclone}
 CONF=${CONF:-/var/lib/backup/rclone.conf}
-# Same host-wide lock the driver (backup.py) takes.
+# Same host-wide lock the driver (backup.sh) takes.
 LOCK=${MEDIA_BACKUP_LOCK:-/run/lock/media-backup.lock}
 
-# These mirror backup.py's NETWORK_FLAGS / STATS_FLAGS and _UNCHECKED_RE.
-# Keep in sync with backup.py; a divergent copy silently weakens the drill.
+# These mirror the driver's NETWORK_FLAGS / STATS_FLAGS and unchecked-hash guard.
+# Keep in sync with backup.sh; a divergent copy silently weakens the drill.
 NET=(--timeout 5m --contimeout 30s --retries 5 --low-level-retries 20 --retries-sleep 10s)
 STATS=(--stats 30s --stats-log-level NOTICE)
-# _UNCHECKED_RE is PCRE (`\d`), so it is matched with `grep -P`.
+# The driver greps that summary with ERE; this copy is PCRE, so `grep -P` is used here.
 UNCHECKED_RE='(\d+) hashes could not be checked'
 
 # Derive the dataset's real config from the deployed unit instead of guessing:
@@ -251,7 +251,7 @@ if [ "$DRILL_ONLY_DB" != 1 ]; then
       fail=$((fail + 1)); echo "FAIL rclone check exit=$check_rc (files differ or missing)"
     fi
     # rclone exits 0 even when it compared nothing, so also fail when it reports
-    # unchecked hashes (same regex as backup.py's _UNCHECKED_RE).
+    # unchecked hashes (the same summary the driver parses).
     unchecked=$(printf '%s\n' "$check_out" | grep -oP "$UNCHECKED_RE" | grep -oP '^\d+' | head -1 || true)
     if [ -n "$unchecked" ] && [ "$unchecked" -gt 0 ]; then
       fail=$((fail + 1)); echo "FAIL could not verify every object ($unchecked files unchecked)"

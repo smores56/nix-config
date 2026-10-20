@@ -49,7 +49,7 @@ files by concern, not by host.
 | `modules/features/ai/` | AI tooling: assistant context, brain, maki, providers, sdlc, skills |
 | `modules/features/tv/` | Television repository and worktree cables |
 | `tofu/` | minimal Cloudflare DNS/Access/notification objects; run via the `cloudflare-*` flake apps |
-| `modules/features/backup/` | rclone driver (`backup.py`), shell watcher, operator README, GitHub-mirror helpers and restore drill |
+| `modules/features/backup/` | Shell rclone driver (`backup.sh`), shell watcher, operator README, GitHub-mirror helpers and restore drill |
 | `modules/desktop/aerospace/` | AeroSpace config + `aerospace-layout` |
 | `tests/` | Python unit tests for the repo's tools plus `tests/*.sh` shell checks (all run via flake checks) |
 
@@ -163,13 +163,17 @@ exits non-zero), `worktrees-branch-template` (branch naming from
 per-repo templates), `repos-list-links` (listing through linked org dirs), `zsh-config`
 (generated zsh startup files parse; only on a system with a zsh home) and
 `github-mirror-probe` (the GitHub mirror rejects a stale private-repo probe and
-scrubs a token-bearing origin) and `github-metadata` (pgb flags and token-by-file,
-manifest counts, stale/scope/count failures, and the full-pass swap). Run them
+scrubs a token-bearing origin), `github-metadata` (pgb flags and token-by-file,
+manifest counts, stale/scope/count failures, and the full-pass swap),
+`backup-watch` (watcher debounce/ignore/queue semantics) and `backup-plain`
+(copy-never-sync, versions, scoped check, markers and the stall watchdog against
+local rclone remotes). Run them
 after touching shell, git, ssh or backup settings, or
 `modules/lib/repo-workflow.nix`:
 
 ```sh
 nix build .#checks.aarch64-darwin.{git-work-routing,ssh-allowed-signers,ssh-pub-keys,worktrees-branch-template,repos-list-links,zsh-config,github-mirror-probe,github-metadata}
+nix build .#checks.x86_64-linux.{backup-watch,backup-plain,manual-steps-sync}
 ```
 
 Run `manual-steps-sync` after touching hosts, sops keys, `tofu/`, backup

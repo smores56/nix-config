@@ -2,7 +2,7 @@
 # backup.datasets.<Name>. Each run keeps a versioned local mirror
 # (`copy` + `--backup-dir`) and, unless offsite is disabled, an append-only
 # checksummed mirror to the remote. The rationale for copy-over-sync and the
-# unchecked-hash guard lives in modules/features/backup/backup.py.
+# unchecked-hash guard lives in modules/features/backup/backup.sh.
 {
   config,
   lib,
@@ -12,13 +12,35 @@
 let
   cfg = config.backup;
 
-  backup = pkgs.writeShellScriptBin "backup" ''
-    exec ${pkgs.python3}/bin/python3 ${./../features/backup/backup.py} "$@"
-  '';
+  # The driver is a self-contained shell script; writeShellApplication pins its
+  # runtime tools on PATH, so the unit needs no implicit system PATH. It keeps
+  # the same CLI flags the Python driver had, so ExecStart and the restore drill
+  # read the same way.
+  backup = pkgs.writeShellApplication {
+    name = "backup";
+    bashOptions = [ ];
+    runtimeInputs = [
+      pkgs.rclone
+      pkgs.coreutils
+      pkgs.jq
+      pkgs.util-linux
+      pkgs.findutils
+      pkgs.bash
+    ];
+    text = builtins.readFile ../features/backup/backup.sh;
+  };
 
-  backup-watch = pkgs.writeShellScriptBin "backup-watch" ''
-    exec ${pkgs.python3}/bin/python3 ${./../features/backup/backup_watch.py} "$@"
-  '';
+  backup-watch = pkgs.writeShellApplication {
+    name = "backup-watch";
+    bashOptions = [ ];
+    runtimeInputs = [
+      pkgs.inotify-tools
+      pkgs.coreutils
+      pkgs.findutils
+      pkgs.bash
+    ];
+    text = builtins.readFile ../features/backup/backup_watch.sh;
+  };
 
   # The source default lives here once so the watcher and the driver agree.
   sourceOf =
@@ -203,7 +225,9 @@ let
       onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
       # Put rclone on the unit's PATH. This must be the service attribute (not
       # serviceConfig.path, which systemd renders verbatim as an ignored `path=`
-      # directive and leaves the default PATH without it).
+      # directive and leaves the default PATH without it). The driver wrapper
+      # already carries its own runtime tools; rclone stays here for ops and the
+      # restore drill, which run it directly.
       path = [
         pkgs.rclone
         pkgs.coreutils

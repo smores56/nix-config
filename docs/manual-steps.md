@@ -228,7 +228,11 @@ delete them.
 
 ## Backup datasets
 
-Datasets come from `backup.datasets` on every NixOS host.
+Datasets come from `backup.datasets` on every NixOS host. Each one is driven by
+the shell driver [`backup.sh`](../modules/features/backup/backup.sh), packaged
+as `backup`; a manual run passes the same flags the unit uses (`--name`,
+`--source`, `--backup-root`, `--remote`, `--rclone-config`, `--offsite`,
+`--exclude`, `--full-check`).
 
 Each dataset runs `backup-<name>.service` on its timer and writes
 `/var/backup/<Name>/BACKUP-LAST-SUCCESS` after a run that verified the mirror or
