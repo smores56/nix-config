@@ -161,6 +161,11 @@ class PureTests(unittest.TestCase):
     def test_a_vault_without_a_sources_section_tracks_everything(self):
         self.assertEqual(self.br.configured_sources("# Vault\n"), self.br.SOURCES)
 
+    def test_meeting_notes_are_their_own_opt_in_source(self):
+        config = "## Sources\n\n### Calendar\nx\n\n### Meeting notes\ny\n"
+        self.assertEqual(self.br.configured_sources(config), ("sessions", "git", "calendar", "meetings"))
+        self.assertNotIn("meetings", self.br.configured_sources("## Sources\n\n### Calendar\nx\n"))
+
     def window(self):
         return at("2026-10-14T00:00:00"), at("2026-10-15T00:00:00")
 
@@ -565,6 +570,18 @@ class HeadlessPureTests(unittest.TestCase):
         self.assertFalse([r for r in mcp if r.endswith("*") or r.count("__") < 2])
         for verb in ("send", "post", "reply", "create", "update", "delete", "trash", "forward", "draft", "label", "schedule"):
             self.assertFalse([r for r in mcp if verb in r.lower()], verb)
+
+    def test_drive_is_reachable_only_to_read_one_known_doc(self):
+        settings = self.settings()
+        drive = "mcp__claude_ai_Google_Drive"
+        self.assertEqual(
+            sorted(r for r in settings["allow"] if r.startswith(drive)),
+            [f"{drive}__get_file_metadata", f"{drive}__read_file_content"],
+        )
+        self.assertNotIn(drive, settings["deny"])
+        for verb in ("create_file", "update_file", "copy_file", "share_file", "trash_file",
+                     "download_file_content", "search_files", "list_recent_files", "get_file_permissions"):
+            self.assertIn(f"{drive}__{verb}", settings["deny"])
 
     def test_a_vault_outside_home_uses_absolute_rules(self):
         allow = self.br.headless_settings(Path("/srv/brain"), Path("/Users/u"))["permissions"]["allow"]

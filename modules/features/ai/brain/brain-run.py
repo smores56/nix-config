@@ -39,6 +39,7 @@ CONFIGURED_SOURCES = {
     "Mail": "mail",
     "Calendar": "calendar",
     "Issue tracker": "tracker",
+    "Meeting notes": "meetings",
 }
 SOURCES = ALWAYS_SOURCES + tuple(CONFIGURED_SOURCES.values())
 LOCAL_SOURCES = ("sessions", "git", "github")
@@ -87,6 +88,9 @@ CONNECTOR_TOOLS = (
     "mcp__claude_ai_Atlassian_Rovo__searchJiraIssuesUsingJql",
     "mcp__claude_ai_Atlassian_Rovo__getJiraIssue",
     "mcp__claude_ai_Atlassian_Rovo__lookupJiraAccountId",
+    # Meeting notes: only a doc id taken from a calendar attachment, checked then read.
+    "mcp__claude_ai_Google_Drive__get_file_metadata",
+    "mcp__claude_ai_Google_Drive__read_file_content",
 )
 # Writes and URL fetchers: already refused as unlisted, denied too so no managed-settings allow
 # can ever reach them.
@@ -120,9 +124,19 @@ CONNECTOR_DENIED_TOOLS = (
     "mcp__claude_ai_Atlassian_Rovo__createConfluencePage",
     "mcp__claude_ai_Atlassian_Rovo__updateConfluencePage",
     "mcp__claude_ai_Atlassian_Rovo__fetch",
+    "mcp__claude_ai_Google_Drive__create_file",
+    "mcp__claude_ai_Google_Drive__update_file",
+    "mcp__claude_ai_Google_Drive__copy_file",
+    "mcp__claude_ai_Google_Drive__share_file",
+    "mcp__claude_ai_Google_Drive__trash_file",
+    # Drive reads that could reach docs no calendar event names.
+    "mcp__claude_ai_Google_Drive__download_file_content",
+    "mcp__claude_ai_Google_Drive__search_files",
+    "mcp__claude_ai_Google_Drive__list_recent_files",
+    "mcp__claude_ai_Google_Drive__get_file_permissions",
 )
 # Whole servers the harvest never needs, hidden so their write tools aren't even listed.
-DENIED_SERVERS = ("mcp__claude_ai_Notion", "mcp__claude_ai_Google_Drive", "mcp__claude_ai_Claude_Docs")
+DENIED_SERVERS = ("mcp__claude_ai_Notion", "mcp__claude_ai_Claude_Docs")
 # "Task" is the subagent tool's older name.
 DENIED_TOOLS = ("Bash", "WebFetch", "WebSearch", "Agent", "Task", "NotebookEdit")
 STATUS_SCHEMA = {
