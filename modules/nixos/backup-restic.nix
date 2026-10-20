@@ -82,7 +82,31 @@ let
   tomlArray = values: "[" + lib.concatMapStringsSep ", " tomlString values + "]";
   tomlList = values: "[ " + lib.concatMapStringsSep ", " tomlString values + " ]";
 
-  pwFile = dataset: dataset.passwordFile;
+  pwFile =
+    name: dataset:
+    if dataset.passwordFile != null then dataset.passwordFile else "${repoOf name dataset}/password";
+
+  # The password lives inside the repository and is copied with it to Proton, so
+  # losing the sops key cannot make a surviving repository unreadable. Sops is
+  # used only to seed the first password; if it is absent, generate one.
+  passwordBootstrap =
+    name: dataset:
+    pkgs.writeShellScript "backup-${lower name}-password" ''
+      set -euo pipefail
+      pw=${lib.escapeShellArg (pwFile name dataset)}
+      parent=${lib.escapeShellArg (builtins.dirOf (pwFile name dataset))}
+      if [ ! -s "$pw" ]; then
+        ${pkgs.coreutils}/bin/install -d -m 0700 "$parent"
+        tmp="$pw.tmp"
+        if [ -s /run/secrets/restic-password ]; then
+          ${pkgs.coreutils}/bin/cp /run/secrets/restic-password "$tmp"
+        else
+          umask 077
+          ${pkgs.coreutils}/bin/head -c 48 /dev/urandom | ${pkgs.coreutils}/bin/base64 -w0 > "$tmp"
+        fi
+        ${pkgs.coreutils}/bin/mv -f "$tmp" "$pw"
+      fi
+    '';
   repo = name: dataset: repoOf name dataset;
 
   mkProfile =
@@ -91,7 +115,7 @@ let
       profile = lower name;
       top = lib.concatMapStringsSep "\n" (line: "  ${line}") [
         "repository = ${tomlString (repo name dataset)}"
-        "password-file = ${tomlString (pwFile dataset)}"
+        "password-file = ${tomlString (pwFile name dataset)}"
         "cache-dir = ${tomlString cacheDir}"
         "initialize = true"
       ];
@@ -146,7 +170,7 @@ let
       rclone = "${pkgs.rclone}/bin/rclone";
       remote = "${cfg.remote}:${protonPathOf name dataset}";
       config = cfg.rcloneConfig;
-      check = lib.optional dataset.check "${restic} --repo ${repo name dataset} --password-file ${pwFile dataset} check";
+      check = lib.optional dataset.check "${restic} --repo ${repo name dataset} --password-file ${pwFile name dataset} check";
       copy = [
         "${rclone} --config ${config} --timeout 5m --contimeout 30s --retries 5 --low-level-retries 20 --retries-sleep 10s copy ${repo name dataset} ${remote} --transfers 8 --checkers 16 --protondrive-replace-existing-draft=true"
         "${rclone} --config ${config} --timeout 5m --contimeout 30s --retries 5 --low-level-retries 20 --retries-sleep 10s check ${repo name dataset} ${remote} --one-way --transfers 8 --checkers 16"
@@ -290,6 +314,7 @@ in
             # publishes the running marker the watcher uses to label follow-ups.
             ExecStartPre = [
               "+${pkgs.coreutils}/bin/install -d -m 0700 ${lib.escapeShellArg (repoOf name dataset)} ${lib.escapeShellArg (markerDir name)} ${lib.escapeShellArg cacheDir}"
+              "+${passwordBootstrap name dataset}"
             ]
             ++ lib.optional dataset.postgres "+${pkgs.coreutils}/bin/install -d -o postgres -g postgres -m 0700 ${lib.escapeShellArg (stagingDir name)}"
             ++ lib.optional dataset.onChange.enable "+${pkgs.findutils}/bin/find ${lib.escapeShellArg (queueDir name)} -mindepth 1 -delete"

@@ -112,9 +112,9 @@ in
                   description = "Local restic repository for driver = \"restic\". Defaults to <mountPoint>/restic/<Name>.";
                 };
                 passwordFile = lib.mkOption {
-                  type = lib.types.path;
-                  default = "/run/secrets/restic-password";
-                  description = "Runtime file holding the restic repository password (driver = \"restic\"). Read at run time; never placed in the Nix store.";
+                  type = lib.types.nullOr lib.types.path;
+                  default = null;
+                  description = "Optional override for the restic repository password file (driver = \"restic\"). Defaults to <repository>/password, which is copied with the repository, so a surviving copy is always decryptable. The sops restic-password file is only an optional seed/backup copy.";
                 };
                 protonPath = lib.mkOption {
                   type = lib.types.nullOr lib.types.str;

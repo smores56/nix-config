@@ -160,11 +160,13 @@ caught the same night.
 
 <!-- manual-step: secret/restic-password -->
 
-The restic repository password for the Photos backup and restore drill,
-root-only at `/run/secrets/restic-password` (mode 0400). Stored in
-`secrets/smortress.yaml`; create it with `sops secrets/smortress.yaml`.
-Escrow a copy in Proton Pass and offline: without it both the local and Proton
-repositories are unreadable. Retrieve it with
+The restic repository password is stored inside the repository at
+`/var/backup/restic/Photos/password` (0600) and is copied with the repository to
+Proton. A surviving local or Proton copy is therefore always decryptable; there
+is no separate key escrow and no key-loss failure mode. The sops
+`restic-password` key is only an optional seed/backup: if present, the first run
+copies it into the repo; if absent, the unit generates a random password.
+Retrieve the optional copy with
 `nix run nixpkgs#sops -- -d --extract '["restic-password"]' secrets/smortress.yaml`.
 
 ### proton-pass-pat
@@ -326,12 +328,12 @@ rclone copy proton:Music /restore/Music --config /var/lib/backup/rclone.conf
 old rclone mirror under `/var/backup/Photos/current` is retained until the
 restic drill passes; its old units are no longer generated.
 
-The restic password is read at run time from `/run/secrets/restic-password`
-(root-only, mode 0400). Create the `restic-password` sops key in
-`secrets/smortress.yaml`, rebuild, and confirm the file exists before the first
-run — without it every restic unit fails and raises the alert. Escrow the same
-password offline and in Proton Pass before relying on the backup (T10 restores
-with the offline kit alone).
+The restic password is stored inside the repository at
+`/var/backup/restic/Photos/password` (0600) and is copied with the repository to
+Proton, so a surviving copy is always decryptable. The sops `restic-password`
+key is optional: if present it seeds the first password, otherwise the unit
+generates one. There is no separate key-escrow gate; the T10 drill proves the
+repository copy contains everything needed to restore.
 
 A generated dump unit runs as `postgres` and writes Immich's documented plain
 SQL dump to `/var/lib/restic-staging/photos/immich.sql.gz`; restic

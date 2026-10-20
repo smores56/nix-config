@@ -53,7 +53,7 @@ set -euo pipefail
 
 DATASET=${DATASET:-Photos}
 REPO=${REPO:-/var/backup/restic/$DATASET}
-PASSWORD_FILE=${PASSWORD_FILE:-/run/secrets/restic-password}
+PASSWORD_FILE=${PASSWORD_FILE:-$REPO/password}
 SOURCE=${SOURCE:-/var/lib/media/$DATASET}
 PROTON_PATH=${PROTON_PATH:-proton:restic/$DATASET}
 RCLONE_CONFIG=${RCLONE_CONFIG:-/var/lib/backup/rclone.conf}

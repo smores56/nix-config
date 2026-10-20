@@ -21,8 +21,9 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 cd "$tmp"
 
-mkdir -p src/sub staging backup cache proton home
+mkdir -p src/sub staging backup cache proton home "$tmp/repo"
 echo test-password >pw
+echo test-password >"$tmp/repo/password"
 printf 'a' >src/a.txt
 printf 'b' >src/sub/b.txt
 printf 'dump' >staging/immich.sql.gz
@@ -83,7 +84,7 @@ test ! -e "restore2$tmp/src/sub/b.txt" || {
 
 # A failed backup clears the success marker and leaves BACKUP-FAILED.
 echo wrong >wrongpw
-sed "s#$tmp/pw#$tmp/wrongpw#" profiles.toml >wrong.toml
+sed -e "s#$tmp/pw#$tmp/wrongpw#" -e "s#$tmp/repo/password#$tmp/wrongpw#" profiles.toml >wrong.toml
 if resticprofile --config wrong.toml --name photos backup >fail.log 2>&1; then
   echo "wrong-password backup unexpectedly succeeded" >&2
   exit 1

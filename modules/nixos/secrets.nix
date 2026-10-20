@@ -64,9 +64,10 @@
         mode = "0400";
       };
 
-      # restic repository password for the Photos restic backup and its restore
-      # drill. Root-only; escrow a copy in Proton Pass and offline before
-      # relying on the repository.
+      # Optional seed/backup for the restic repository password. The
+      # authoritative password lives in <repository>/password and is copied with
+      # the repository, so losing this key cannot make a surviving copy
+      # unreadable. If absent, the backup unit generates a random password.
       restic-password = {
         mode = "0400";
       };

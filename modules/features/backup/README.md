@@ -119,7 +119,7 @@ The other datasets are unchanged until their own migration.
 | `/var/backup/Photos/BACKUP-FAILED` | failure marker (detailed from the hook, generic from `ExecStopPost`) |
 | `/var/backup/Photos/BACKUP-LAST-SUCCESS` | last backup that passed the local check and the Proton copy/check |
 | `proton:restic/Photos` | append-only byte copy of the repository (never synced, never pruned) |
-| `/run/secrets/restic-password` | restic password, root-only 0400, read at run time |
+| `/var/backup/restic/Photos/password` | restic password, 0600, copied with the repository; sops `restic-password` is only an optional seed/backup |
 | `/run/lock/media-backup.lock` | host-wide lock held by the whole run, including the Proton copy |
 | `/run/backup-watch/photos/` | watcher request queue; `/run/backup-watch/photos.running` marks an active run |
 
@@ -160,7 +160,7 @@ drill format (plain SQL), so a restore uses `psql`, not `pg_restore`.
 rebuild the database:
 
 ```sh
-restic -r /var/backup/restic/Photos --password-file /run/secrets/restic-password \
+restic -r /var/backup/restic/Photos --password-file /var/backup/restic/Photos/password \
   restore latest --target /restore
 # /restore/var/lib/media/Photos is the library;
 # /restore/var/lib/restic-staging/photos/immich.sql.gz is the database dump.
@@ -173,8 +173,8 @@ same Proton credential:
 ```sh
 flock /run/lock/media-backup.lock rclone copy proton:restic/Photos /restore/restic-Photos \
   --config /var/lib/backup/rclone.conf --transfers 8 --checkers 16
-restic -r /restore/restic-Photos --password-file /run/secrets/restic-password check
-restic -r /restore/restic-Photos --password-file /run/secrets/restic-password \
+restic -r /restore/restic-Photos --password-file /restore/restic-Photos/password check
+restic -r /restore/restic-Photos --password-file /restore/restic-Photos/password \
   restore latest --target /restore
 ```
 
@@ -224,29 +224,25 @@ just restore-drill-photos DRILL_PG_DB=photos_drill   # + dump into a scratch DB
 The rclone datasets keep [`drills/restore-drill.sh`](./drills/restore-drill.sh)
 until T12.
 
-**Escrowed-key-only restore (clean machine).** Install `restic`, `rclone` and
-`psql`, take the restic password from the offline kit (never from this repo or
-the failed host), and write it to a root-only file. Copy the Proton repository
-back with the Proton credentials from the kit, then run the drill against the
-copy with a clean home and cache:
+**Self-contained repository password.** The password is stored inside the
+repository at `<repo>/password` (0600) and is copied with it to Proton, so a
+surviving local or Proton copy is always decryptable. The sops
+`restic-password` key is only an optional seed/backup: on the first run the unit
+copies it into the repo if present, otherwise it generates a random password.
+There is no separate key-escrow requirement and no key-loss gate; the drill
+proves the repository copy contains everything needed:
 
 ```sh
-umask 077; cat > /run/secrets/restic-password   # paste the escrowed password, then Ctrl-D
 flock /run/lock/media-backup.lock rclone copy proton:restic/Photos /restore/restic-Photos \
   --config /var/lib/backup/rclone.conf --transfers 8 --checkers 16 --stats 30s
 sudo env REPO=/restore/restic-Photos KEY_ONLY=1 FULL_OFFSITE=0 \
   DRILL_PG_DB=immich_drill bash modules/features/backup/drills/restic-restore-drill.sh
 ```
 
-`KEY_ONLY=1 FULL_OFFSITE=0` still checks that only `--password-file` and the
-repository are needed; with `FULL_OFFSITE=1` and no local repository present it
-also proves the copy itself, but that run downloads Proton into the temp tree
-first. Then load the dump into the restored Immich database with the `psql`
-command above.
-
-> The `restic-password` sops key is not yet in `secrets/smortress.yaml`. Add it
-> (root-only, 0400) and deploy `/run/secrets/restic-password` before the first
-> scheduled run; without it every restic unit fails and raises the alert.
+The restored database uses the `psql` command above. The password is nominal
+confidentiality only; anyone who can read the local or Proton repository can
+decrypt it. That is deliberate: recoverability matters more here than
+protection from someone who already has the storage.
 
 ## GitHub repo mirror and metadata
 
@@ -584,7 +580,7 @@ backup.datasets.Books = {
   # preBackup = '' ... ''; # rclone only: runs with BACKUP_* env, before the copy
   # repository = "/var/backup/restic/Books";  # restic default
   # protonPath = "restic/Books";               # restic default
-  # passwordFile = "/run/secrets/restic-password";  # restic default
+  # passwordFile = null;  # default: <repository>/password, copied with the repo
   # retention = { daily = 7; weekly = 8; monthly = 24; yearly = 3; };  # restic defaults
   # check = true;          # restic: check after backup + fullCheckSchedule read-data check
 };
@@ -599,7 +595,7 @@ dataset needs `backup.enable = true` (the backup disk).
   repository for `rclone check` on every run, which is slower than the rclone
   driver's changed-files-only check. A killed run can leave a restic lock;
   clear it with `restic -r /var/backup/restic/Photos --password-file
-  /run/secrets/restic-password unlock`. There is no stall watchdog: a wedged
+  /var/backup/restic/Photos/password unlock`. There is no stall watchdog: a wedged
   Proton upload is bounded by the dataset's `timeout` (`TimeoutStartSec`) and
   resticprofile retries no step by itself. Proton quota is not monitored; a
   failed copy raises `BACKUP-FAILED` and the email alert. The dump staging file
