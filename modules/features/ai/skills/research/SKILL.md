@@ -73,7 +73,7 @@ in posts paraphrasing other posts, find the source or flag it unverified.
 ## Step 5 — Brief
 
 Synthesize into the conversation — never a repo file (repo design docs are
-banned; for sdlc features the shortlist joins the feature's design record):
+banned; for sdlc features the shortlist joins the feature's design issue):
 
 ```
 ## Research brief: [topic]

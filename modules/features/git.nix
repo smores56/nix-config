@@ -69,9 +69,9 @@ let
     }
     // branchSettings work.branchNaming;
   };
-  # Only repos the personal account owns land directly on main; third-party
+  # Only repos the personal account owns get the hybrid flow; third-party
   # checkouts get no flow at all.
-  personalIncludes = ownerIncludes cfg.githubUser { smores.flow = "direct"; };
+  personalIncludes = ownerIncludes cfg.githubUser { smores.flow = "hybrid"; };
 
 in
 {

@@ -33,11 +33,15 @@ in
     sdlcIssuesBin
   ];
 
-  home.file.".config/television/cable/features.toml".source = ./features.toml;
+  home.file = {
+    ".config/television/cable/features.toml".source = ./features.toml;
+    ".config/television/cable/features-issues.toml".source = ./features-issues.toml;
+  };
 
   user.shellAbbrs = {
-    s = "pick features c";
-    se = "pick features sdlc edit {name} plan";
-    sl = "sdlc list";
+    s = "pick features-issues c";
+    sl = "sdlc-issues list";
+    sa = "sdlc-issues approve --pick";
+    sn = "sdlc-issues next --pick";
   };
 }

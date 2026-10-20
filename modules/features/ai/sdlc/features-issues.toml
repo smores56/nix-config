@@ -1,0 +1,13 @@
+[metadata]
+name = "features-issues"
+description = "sdlc feature issues in the GitHub registry"
+requirements = ["sdlc-issues", "gh"]
+
+[source]
+command = "sdlc-issues list --format path"
+entry_delimiter = "\n"
+display = "#{split:\t:0} {split:\t:1} [{split:\t:2}]"
+output = "{split:\t:0}"
+
+[preview]
+command = "sdlc-issues status {split:\t:0}"

@@ -4,8 +4,9 @@ Guidance for AI coding agents working in this repository.
 
 ## Working branch
 
-Work directly on `main`. No worktrees, feature branches, or PRs unless
-explicitly asked.
+This repo's `smores.flow` is `hybrid`: feature work gets a worktree, branch,
+and PR; quick fixes land directly on `main` with no worktree. Investigations
+are read-only. Explicit user instructions override the flow.
 
 ## Documentation
 

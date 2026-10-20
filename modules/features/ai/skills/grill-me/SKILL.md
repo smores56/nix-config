@@ -77,7 +77,7 @@ Unresolved / deferred: [list, or "none"]
 ```
 
 Stateless by design — but if the locked decisions feed later sessions,
-offer to persist them (memory note, or the sdlc feature record for
+offer to persist them (memory note, or the sdlc feature issue for
 tracked features)
 before the session ends. Grilling that evaporates at the session boundary
 is wasted interrogation.
