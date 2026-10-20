@@ -571,16 +571,16 @@ class HeadlessPureTests(unittest.TestCase):
         for verb in ("send", "post", "reply", "create", "update", "delete", "trash", "forward", "draft", "label", "schedule"):
             self.assertFalse([r for r in mcp if verb in r.lower()], verb)
 
-    def test_drive_is_reachable_only_to_read_one_known_doc(self):
+    def test_drive_is_reachable_only_to_find_and_read_notes_docs(self):
         settings = self.settings()
         drive = "mcp__claude_ai_Google_Drive"
         self.assertEqual(
             sorted(r for r in settings["allow"] if r.startswith(drive)),
-            [f"{drive}__get_file_metadata", f"{drive}__read_file_content"],
+            [f"{drive}__get_file_metadata", f"{drive}__read_file_content", f"{drive}__search_files"],
         )
         self.assertNotIn(drive, settings["deny"])
         for verb in ("create_file", "update_file", "copy_file", "share_file", "trash_file",
-                     "download_file_content", "search_files", "list_recent_files", "get_file_permissions"):
+                     "download_file_content", "list_recent_files", "get_file_permissions"):
             self.assertIn(f"{drive}__{verb}", settings["deny"])
 
     def test_a_vault_outside_home_uses_absolute_rules(self):

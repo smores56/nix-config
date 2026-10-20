@@ -88,9 +88,10 @@ CONNECTOR_TOOLS = (
     "mcp__claude_ai_Atlassian_Rovo__searchJiraIssuesUsingJql",
     "mcp__claude_ai_Atlassian_Rovo__getJiraIssue",
     "mcp__claude_ai_Atlassian_Rovo__lookupJiraAccountId",
-    # Meeting notes: only a doc id taken from a calendar attachment, checked then read.
+    # Meeting notes: Gemini docs found by calendar attachment or the day's title search, checked then read.
     "mcp__claude_ai_Google_Drive__get_file_metadata",
     "mcp__claude_ai_Google_Drive__read_file_content",
+    "mcp__claude_ai_Google_Drive__search_files",
 )
 # Writes and URL fetchers: already refused as unlisted, denied too so no managed-settings allow
 # can ever reach them.
@@ -129,9 +130,8 @@ CONNECTOR_DENIED_TOOLS = (
     "mcp__claude_ai_Google_Drive__copy_file",
     "mcp__claude_ai_Google_Drive__share_file",
     "mcp__claude_ai_Google_Drive__trash_file",
-    # Drive reads that could reach docs no calendar event names.
+    # Drive reads the meeting-notes rules never need.
     "mcp__claude_ai_Google_Drive__download_file_content",
-    "mcp__claude_ai_Google_Drive__search_files",
     "mcp__claude_ai_Google_Drive__list_recent_files",
     "mcp__claude_ai_Google_Drive__get_file_permissions",
 )
