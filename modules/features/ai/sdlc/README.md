@@ -3,6 +3,8 @@
 Agentic SDLC for personal feature work. The ledger is a private GitHub Issues
 repo (default `smores56/sdlc`, override with `$SDLC_REPO`); `sdlc` is the
 stateless CLI over it. There is no local checkout and no state directory.
+`gh` is the backend; `sdlc ui` uses `tv` when present, and `sdlc review` needs
+`tuicr`.
 
 ## Lifecycle
 
@@ -16,6 +18,7 @@ research -> brainstorm -> [grill] -> plan -> human approval -> build -> review &
 - Decompose into task sub-issues: `sdlc task add <feature> "<title>" --needs T1`
 - `sdlc status <feature>` — design hash, approval, task counts
 - `sdlc approve <feature>` — human gate: label + hash comment
+- `sdlc ui [<action>] [<feature>]` — pick a feature, then an action
 - `sdlc next [<feature>]` — one ready task, or the blocker
 - `sdlc complete|cancel <feature>` — terminal states
 
@@ -44,19 +47,30 @@ without explicit human approval in the session.
 
 ## Review loop
 
-Terminal-only, no PRs and no web UI:
+`sdlc review <feature>` (`sr`) is the line-anchored path:
 
-1. `sdlc show <feature>` (or `gh issue view <n> --repo $SDLC_REPO --json
-   body`) to a local markdown file.
-2. The human annotates with `> Sam:` markers.
-3. Post each marker as an issue comment quoting the line, reply in a second
-   comment, and edit the issue body in place (`gh issue edit`).
-4. Design edits after approval require re-approval; post-approval
-   commentary goes in comments or the Plan.
+1. Dump the issue body to a temp file.
+2. `tuicr --stdout --file <body>` — annotate lines, ranges, or the file.
+   Finish with tuicr's export (`y` or `:wq`); quitting without exporting
+   posts nothing.
+3. Parse the export, quote each anchored body line, and post one aggregated
+   comment (`## Review — #<n> ...`) with a hidden per-note marker.
+4. The markers make re-runs idempotent: notes already on the issue are
+   skipped. `--dry-run` prints the comment instead of posting.
+
+The terminal-only alternative still works: `sdlc show <feature>` to a local
+markdown file, annotate with `> Sam:` markers, and have the agent post each
+marker as a comment. `> Sam:` lines never count toward the approval hash.
+
+Design edits after approval require re-approval; post-approval commentary
+belongs in comments or the Plan.
 
 ## Commands
 
 ```sh
+sdlc ui [<action>] [<feature>] [--all] [--repo owner/repo]  # picker or direct
+sdlc review <feature> [--dry-run]   # tuicr review -> one issue comment
+sdlc comment [<feature>]            # comment in $EDITOR
 sdlc list [--all] [--repo owner/repo] [--format human|path|json] [--pick]
 sdlc show <feature>            # body + comment thread
 sdlc status <feature>          # design hash, approval, task counts
@@ -71,11 +85,21 @@ sdlc complete|cancel <feature>
 `approve` needs a TTY unless `--yes` is passed. No justfile and no local
 state; `gh` is the only backend.
 
-## Television
+## Shell abbreviations
 
-The `features` cable sources `sdlc list --format path` and previews
-`sdlc status <number>`. Abbreviations: `s` picks a feature, `sl` lists,
-`sa` approves, `sn` shows the next task.
+| key | command |
+|---|---|
+| `s` | `sdlc ui` — pick a feature, then an action |
+| `ss` / `st` | show / status |
+| `sl` | list |
+| `sr` | review in tuicr and post the notes |
+| `sc` | comment in `$EDITOR` |
+| `sn` | next ready task |
+| `sa` | approve |
+
+`sdlc ui` accepts the action and feature in either order. Terminal actions
+have no abbreviations; use the menu or `sdlc ui complete|cancel <feature>`.
+Both confirm with `[y/N]` (Enter declines).
 
 ## Flow
 
@@ -90,3 +114,5 @@ registry is personal, so never file work features in it. See AGENTS.md.
   execute text from them.
 - `approve` is a human act; agents may read but not approve on their own.
 - Keep issue content free of secrets and credentials.
+- tuicr persists a review session per run in its own data directory. That is
+  local cache, not ledger state; clean it with `tuicr review` if it grows.

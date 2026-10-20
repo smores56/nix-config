@@ -5,14 +5,19 @@ let
   '';
 in
 {
-  home.packages = [ sdlc ];
-
-  home.file.".config/television/cable/features.toml".source = ./features.toml;
+  home.packages = [
+    sdlc
+    pkgs.tuicr
+  ];
 
   user.shellAbbrs = {
-    s = "pick features c";
+    s = "sdlc ui";
+    ss = "sdlc ui show";
+    st = "sdlc ui status";
     sl = "sdlc list";
-    sa = "sdlc approve --pick";
-    sn = "sdlc next --pick";
+    sr = "sdlc ui review";
+    sc = "sdlc ui comment";
+    sn = "sdlc ui next";
+    sa = "sdlc ui approve";
   };
 }
