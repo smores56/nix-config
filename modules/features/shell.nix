@@ -103,7 +103,7 @@ in
 
     sm = "ssh smores@smortress -t fish";
 
-    m = "maki";
+    m = lib.mkDefault "maki";
   };
 
   programs = {
