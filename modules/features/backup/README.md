@@ -179,15 +179,70 @@ restic -r /restore/restic-Photos --password-file /run/secrets/restic-password \
 ```
 
 **Database.** The dump is plain SQL in Immich's documented shape (including
-`search_path` handling). Restore it as `postgres` into an empty database:
+`search_path` handling). Restore it as `postgres`, rewriting the emptied
+`search_path` the way Immich documents, in one transaction:
 
 ```sh
 gunzip -c /restore/var/lib/backup/restic-staging/photos/immich.sql.gz \
-  | runuser -u postgres -- psql -v ON_ERROR_STOP=1 -d immich
+  | sed "s/SELECT pg_catalog.set_config('search_path', '', false);/SELECT pg_catalog.set_config('search_path', 'public, pg_catalog', true);/g" \
+  | runuser -u postgres -- psql --dbname=immich --single-transaction \
+      --set ON_ERROR_STOP=on
 ```
 
-Run the drill in [`drills/restore-drill.sh`](./drills/restore-drill.sh) for the
-rclone datasets; the restic drill and escrowed-key-only restore land in T10.
+**Drill.** [`drills/restic-restore-drill.sh`](./drills/restic-restore-drill.sh)
+is the executable form of this procedure and the restore gate. It holds
+`/run/lock/media-backup.lock`, runs `restic check` on the local repository,
+restores a representative sample (the staged dump plus spread-out source
+files) and compares every restored byte with `restic dump` of the *same*
+snapshot — the live source keeps changing, so a source-vs-latest compare is not
+valid. It reports the snapshot id, time and file count and never writes
+`BACKUP-LAST-SUCCESS`.
+
+```sh
+just restore-drill-photos                            # local repository
+just restore-drill-photos FULL_OFFSITE=1             # + copy and verify Proton
+just restore-drill-photos FULL_OFFSITE=1 KEY_ONLY=1  # + escrow proof
+just restore-drill-photos DRILL_PG_DB=photos_drill   # + dump into a scratch DB
+```
+
+- `FULL_OFFSITE=1` copies `proton:restic/Photos` into a temp dir under the lock
+  (remote is never written or pruned), checks the copy, requires the same
+  latest snapshot as the local repo, then restores and verifies the sample.
+- `KEY_ONLY=1` repeats check/restore with a fresh `HOME` and
+  `RESTIC_CACHE_DIR` and no `RESTIC_*` environment: only the password file and
+  the repository (or the Proton copy) may be used.
+- `DRILL_PG_DB=<name>` streams `immich.sql.gz` from the snapshot through
+  `gunzip`, the `search_path` rewrite and `psql --single-transaction --set
+  ON_ERROR_STOP=on` into that caller-named scratch database. `immich` and
+  non-`[A-Za-z0-9_]+` names are refused; a pre-existing non-`*_drill` database
+  is refused. Exit 2 means the requested phase was skipped (no `psql`, no
+  reachable server, or a refusal); the scratch DB and temp tree are removed on
+  success unless `KEEP=1`.
+- `SOURCE_COMPARE=1` additionally hashes sampled source files and reports
+  unchanged ones (`SKIP` when the source changed since the snapshot).
+
+The rclone datasets keep [`drills/restore-drill.sh`](./drills/restore-drill.sh)
+until T12.
+
+**Escrowed-key-only restore (clean machine).** Install `restic`, `rclone` and
+`psql`, take the restic password from the offline kit (never from this repo or
+the failed host), and write it to a root-only file. Copy the Proton repository
+back with the Proton credentials from the kit, then run the drill against the
+copy with a clean home and cache:
+
+```sh
+umask 077; cat > /run/secrets/restic-password   # paste the escrowed password, then Ctrl-D
+flock /run/lock/media-backup.lock rclone copy proton:restic/Photos /restore/restic-Photos \
+  --config /var/lib/backup/rclone.conf --transfers 8 --checkers 16 --stats 30s
+sudo env REPO=/restore/restic-Photos KEY_ONLY=1 FULL_OFFSITE=0 \
+  DRILL_PG_DB=immich_drill bash modules/features/backup/drills/restic-restore-drill.sh
+```
+
+`KEY_ONLY=1 FULL_OFFSITE=0` still checks that only `--password-file` and the
+repository are needed; with `FULL_OFFSITE=1` and no local repository present it
+also proves the copy itself, but that run downloads Proton into the temp tree
+first. Then load the dump into the restored Immich database with the `psql`
+command above.
 
 > The `restic-password` sops key is not yet in `secrets/smortress.yaml`. Add it
 > (root-only, 0400) and deploy `/run/secrets/restic-password` before the first

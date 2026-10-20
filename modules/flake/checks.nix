@@ -191,6 +191,19 @@ in
               ];
               args = [ "${src}/modules/features/backup/backup_watch.sh" ];
             };
+            # Stands in for Proton with a local rclone alias and shims psql when
+            # no server is reachable, so the full drill logic runs hermetically.
+            restic-restore-drill = {
+              tools = [
+                pkgs.restic
+                pkgs.rclone
+                pkgs.gzip
+                pkgs.coreutils
+                pkgs.findutils
+                pkgs.util-linux
+              ];
+              args = [ "${src}/modules/features/backup/drills/restic-restore-drill.sh" ];
+            };
           }
           // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
             manual-steps-sync = {

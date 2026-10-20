@@ -256,7 +256,9 @@ datasets get 8d). The operator guide — guarantees, trigger semantics, restore,
 and prune procedures — is
 [`modules/features/backup/README.md`](../modules/features/backup/README.md).
 Run [`drills/restore-drill.sh`](../modules/features/backup/drills/restore-drill.sh)
-when changing the driver.
+for the legacy rclone datasets and
+[`drills/restic-restore-drill.sh`](../modules/features/backup/drills/restic-restore-drill.sh)
+(Photos) when changing a driver.
 
 ### CloudflareTofu
 
@@ -318,6 +320,23 @@ Restore with `restic restore latest` from the local repository, or copy
 `proton:restic/Photos` back with `rclone copy` under
 `/run/lock/media-backup.lock` first, then restore and load the dump with
 `psql`. The exact commands are in the backup README.
+
+Drill it after activation and after the first seed (and after any driver or
+Proton change):
+
+```sh
+just restore-drill-photos                            # local repo, sample restore
+just restore-drill-photos FULL_OFFSITE=1             # copies and verifies Proton
+just restore-drill-photos FULL_OFFSITE=1 KEY_ONLY=1  # escrow: clean HOME/cache
+just restore-drill-photos DRILL_PG_DB=photos_drill   # dump into a scratch DB
+```
+
+The drill takes the host lock and never writes `BACKUP-LAST-SUCCESS`; exit 2
+means the requested Postgres phase was skipped or a name was refused. For the
+escrow proof, take the password from the offline kit, copy the Proton repo with
+the kit's Proton credentials, then run the drill against the copy with
+`KEY_ONLY=1 REPO=<copy> DRILL_PG_DB=immich_drill`; the full clean-machine
+procedure is in the backup README.
 
 ### Videos
 
