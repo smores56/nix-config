@@ -31,24 +31,6 @@ in
 
       src = inputs.self;
 
-      # The generated Photos profile is only reachable through the unit's
-      # ExecStart string. Writing that string to a file keeps its store-path
-      # context, so the smoke check builds the profile it actually parses.
-      photosExecStart =
-        let
-          nixos = config.flake.nixosConfigurations.smortress or null;
-        in
-        if nixos != null && nixos.config.systemd.services ? backup-photos then
-          nixos.config.systemd.services.backup-photos.serviceConfig.ExecStart
-        else
-          null;
-
-      # Same override as modules/nixos/backup-restic.nix: the package builds,
-      # but its Go test suite fails in this nixpkgs pin.
-      resticprofileForCheck = pkgs.resticprofile.overrideAttrs (_: {
-        doCheck = false;
-      });
-
       mkEvalChecks =
         prefix: configs:
         lib.mapAttrs' (
@@ -205,19 +187,6 @@ in
               ];
               args = [ "${src}/modules/features/backup/backup_watch.sh" ];
             };
-            # Stands in for Proton with a local rclone alias and shims psql when
-            # no server is reachable, so the full drill logic runs hermetically.
-            restic-restore-drill = {
-              tools = [
-                pkgs.restic
-                pkgs.rclone
-                pkgs.gzip
-                pkgs.coreutils
-                pkgs.findutils
-                pkgs.util-linux
-              ];
-              args = [ "${src}/modules/features/backup/drills/restic-restore-drill.sh" ];
-            };
           }
           // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
             manual-steps-sync = {
@@ -345,8 +314,6 @@ in
               shellcheck ${src}/modules/features/backup/github-verify.sh
               bash -n ${src}/modules/features/backup/backup_watch.sh
               shellcheck ${src}/modules/features/backup/backup_watch.sh
-              bash -n ${src}/tests/backup_restic_smoke.sh
-              shellcheck ${src}/tests/backup_restic_smoke.sh
               bash -n ${src}/tests/backup_watch.sh
               shellcheck ${src}/tests/backup_watch.sh
               bash -n ${src}/tests/manual_steps_sync.sh
@@ -368,25 +335,6 @@ in
       }
       // homeChecks
       // nixosChecks
-      // scriptChecks
-      // lib.optionalAttrs (photosExecStart != null && pkgs.stdenv.hostPlatform.isLinux) {
-        backup-restic-smoke =
-          pkgs.runCommand "backup-restic-smoke"
-            {
-              nativeBuildInputs = [
-                pkgs.bash
-                pkgs.coreutils
-                pkgs.findutils
-                pkgs.restic
-                pkgs.rclone
-                resticprofileForCheck
-              ];
-              execStartFile = pkgs.writeText "backup-photos-exec-start" photosExecStart;
-            }
-            ''
-              bash ${src}/tests/backup_restic_smoke.sh $execStartFile
-              touch $out
-            '';
-      };
+      // scriptChecks;
     };
 }

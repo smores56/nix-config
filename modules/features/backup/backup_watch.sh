@@ -7,9 +7,9 @@
 # systemd DirectoryNotEmpty= path unit starts it. If a run is active (the
 # running file exists), a batch is written as one follow-up request instead.
 #
-# Replaces modules/features/backup/backup_watch.py for restic datasets while
-# the rclone datasets keep the Python watcher until T13. The ignore rules and
-# queue semantics are deliberately identical, so the two cannot diverge in
+# Replaces modules/features/backup/backup_watch.py for the small plain driver
+# while the legacy rclone datasets keep the Python watcher. The ignore rules
+# and queue semantics are deliberately identical, so the two cannot diverge in
 # what counts as a change.
 set -uo pipefail
 umask 077

@@ -63,14 +63,6 @@
       github-repo-pat = {
         mode = "0400";
       };
-
-      # Optional seed/backup for the restic repository password. The
-      # authoritative password lives in <repository>/password and is copied with
-      # the repository, so losing this key cannot make a surviving copy
-      # unreadable. If absent, the backup unit generates a random password.
-      restic-password = {
-        mode = "0400";
-      };
     };
 
     # Repoint the tunnel daemon at the decrypted credentials. The API token is

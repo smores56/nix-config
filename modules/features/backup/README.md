@@ -1,26 +1,21 @@
-# Backup — rclone + restic drivers (media and GitHub to Proton)
+# Backup — rclone driver (media and GitHub to Proton)
 
-Generic, dataset-agnostic backup. One systemd oneshot + timer per
+**Format policy.** Every dataset is a plain rclone tree: Disk 1 is the source,
+Disk 2 holds a `current/` copy plus local `versions/` (`--backup-dir`), and
+Proton gets an append-only copy. The Proton Drive app is the phone/desktop
+access path to those trees. `copy`, never `sync`: the backup never
+propagates source deletions, `versions/` lives only on the local disk, Proton
+keeps every version ever copied, and there is no encryption, key, or
+repository layer to manage beyond that.
+
+Generic, dataset-agnostic backup driver. One systemd oneshot + timer per
 `backup.datasets.<Name>` entry, optionally fired early by a filesystem
-watcher (`onChange`). A dataset is a directory on Disk 1 and a copy on the
-backup disk (Disk 2); unless `offsite` is disabled it also has an
-append-only copy on Proton Drive (Disk 3, "offsite").
-
-Two drivers exist side by side while the migration is staged:
-
-- **`driver = "restic"`** (Photos today): a local restic repository on Disk 2
-  and an append-only byte copy of that repository on Proton. See
-  [Photos: restic driver](#photos-restic-driver).
-- **`driver = "rclone"`** (the default; Videos, Music, GitHub,
-  CloudflareTofu): the local mirror + Proton mirror below, still implemented by
-  [`backup.py`](./backup.py).
-
-The old Photos rclone units are no longer generated. Its existing local mirror
-under `/var/backup/Photos/current` and `versions/` is left untouched; it is
-retired only after the restic restore drill passes (T10) and T12 removes the
-legacy paths. Both drivers share `/run/lock/media-backup.lock`, the
-`backup-<name>` unit names, and the `BACKUP-FAILED`/`BACKUP-LAST-SUCCESS`
-markers, so `backup-freshness` and `journalctl -u backup-photos` keep working.
+watcher (`onChange`). A dataset is a directory on Disk 1, a local mirror on the
+backup disk (Disk 2), and — unless `offsite` is disabled — an append-only mirror
+on Proton Drive (Disk 3, "offsite"). Three dataset families use it: the media
+trees (`Photos`, `Videos`, `Music`; offsite and change-triggered), a GitHub
+repo mirror (`GitHub`; see [GitHub repo mirror and metadata](#github-repo-mirror-and-metadata)), and the
+OpenTofu edge state (`CloudflareTofu`).
 
 The rationale for every destructive-looking choice lives as a comment next to
 the code in [`backup.py`](./backup.py). This file is the operator's view.
@@ -86,163 +81,24 @@ and `proton:CloudflareTofu`.
 
 ## Datasets on smortress
 
-| Name | Driver | Source | Schedule | Trigger | Full check | Offsite | preBackup |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `Photos` | restic | `/var/lib/media/Photos` | 03:00 | `onChange` (15m) | Sun 06:00 | yes (`proton:restic/Photos`) | generated `pg_dump --clean --if-exists` into the restic staging directory |
-| `Videos` | rclone | `/var/lib/media/Videos` | 01:00 | `onChange` (15m) | Sun 07:00 | yes | — |
-| `Music` | rclone | `/var/lib/media/Music` | 05:00 | `onChange` (15m) | Sun 08:00 | yes | — |
-| `GitHub` | rclone | `/var/lib/github-mirrors` | 00:30 | timer only | Sun 10:00 | yes | `ghorg` refresh, then incremental `python-github-backup` metadata + verification (see below) |
-| `CloudflareTofu` | rclone | `/var/lib/cloudflare-tofu` | 00:15 | timer only | — | yes | — |
+| Name | Source | Schedule | Trigger | Full check | Offsite | preBackup |
+| --- | --- | --- | --- | --- | --- | --- |
+| `Photos` | `/var/lib/media/Photos` | 03:00 | `onChange` (15m) | Sun 06:00 | yes | `pg_dump -Fc` of `immich` into `current/db/immich.dump` |
+| `Videos` | `/var/lib/media/Videos` | 01:00 | `onChange` (15m) | Sun 07:00 | yes | — |
+| `Music` | `/var/lib/media/Music` | 05:00 | `onChange` (15m) | Sun 08:00 | yes | — |
+| `GitHub` | `/var/lib/github-mirrors` | 00:30 | timer only | Sun 10:00 | yes | `ghorg` refresh, then incremental `python-github-backup` metadata + verification (see below) |
+| `CloudflareTofu` | `/var/lib/cloudflare-tofu` | 00:15 | timer only | — | yes | — |
 
 Every dataset excludes `/.cache/**`, `**/.cache/**` and `/rclone.conf` by
 default (the `excludes` option default). That keeps regenerable caches (at the
 source root and nested) and a stray `rclone.conf` at the source root out of
-the backup — it does **not** make the backup secret-free: a credential-shaped
+both mirrors — it does **not** make the mirrors secret-free: a credential-shaped
 file anywhere else (e.g. `Photos/backup/rclone.conf`, a `.env`) is copied unless
-you add it to `excludes`. Both cache patterns are needed for rclone: its `**/`
+you add it to `excludes`. Both cache patterns are needed: rclone's `**/`
 requires a preceding path segment, so it misses a `.cache` sitting at the
 source root. `Photos` additionally excludes `/thumbs/**` and
 `/encoded-video/**` — regenerable Immich derived assets that Immich rebuilds
-from the originals, so they need not occupy a backup.
-
-## Photos: restic driver
-
-Photos uses `driver = "restic"`; the units are generated by
-[`backup-restic.nix`](../../nixos/backup-restic.nix), not by the rclone driver.
-The other datasets are unchanged until their own migration.
-
-| Path | What |
-| --- | --- |
-| `/var/lib/media/Photos` | live Immich library (Disk 1), copied into the repository |
-| `/var/backup/restic/Photos` | local restic repository (Disk 2); `restic mount` gives a browsable view |
-| `/var/lib/restic-staging/photos/immich.sql.gz` | generated `pg_dump --clean --if-exists -d immich \| gzip`, included in every snapshot |
-| `/var/backup/Photos/BACKUP-FAILED` | failure marker (detailed from the hook, generic from `ExecStopPost`) |
-| `/var/backup/Photos/BACKUP-LAST-SUCCESS` | last backup that passed the local check and the Proton copy/check |
-| `proton:restic/Photos` | append-only byte copy of the repository (never synced, never pruned) |
-| `/var/backup/restic/Photos/password` | restic password, 0600, copied with the repository; sops `restic-password` is only an optional seed/backup |
-| `/run/lock/media-backup.lock` | host-wide lock held by the whole run, including the Proton copy |
-| `/run/backup-watch/photos/` | watcher request queue; `/run/backup-watch/photos.running` marks an active run |
-
-Units: `backup-photos.service` + `.timer` (03:00 daily, 15m randomized),
-`backup-photos-fullcheck.service` + `.timer` (Sunday 06:00,
-`restic check --read-data-subset=10%`), `backup-photos-dump.service` (runs as
-`postgres`, `UMask=0077`, writes the gzipped SQL dump atomically),
-`backup-photos-watch.service` (shell `inotifywait` watcher) and
-`backup-photos-queue.path` (`DirectoryNotEmpty`).
-
-A run holds the host lock and executes `resticprofile backup`, which:
-
-1. runs the retention rule (7 daily / 8 weekly / 24 monthly / 3 yearly,
-   prune) locally;
-2. in `run-after` (only after success), runs `restic check`, copies the
-   repository to
-   `proton:restic/Photos` with `rclone copy`, verifies it with
-   `rclone check --one-way`, writes `BACKUP-LAST-SUCCESS` atomically and
-   removes `BACKUP-FAILED`;
-3. on failure, `run-after-fail` removes the success marker and writes
-   `BACKUP-FAILED`; a timeout or resticprofile lock failure skips the hook, so
-   `ExecStopPost` writes the generic marker instead.
-
-`rclone copy` (never `sync`) means a local prune does not delete Proton files;
-stale repository files there are harmless and the local repository remains the
-authoritative restore source. `rclone check --one-way` only requires local
-repository files to exist remotely, so leftover remote packs do not fail a run.
-Hooks pass explicit `--repo`/`--password-file` because resticprofile does not
-export them to hook commands.
-
-Immich's built-in scheduled dumps stay enabled; they are a fast local restore
-path and are not part of the offsite copy. The restic dump is the documented
-drill format (plain SQL), so a restore uses `psql`, not `pg_restore`.
-
-### Restoring Photos
-
-**Local repository (backup disk available).** Restore the newest snapshot, then
-rebuild the database:
-
-```sh
-restic -r /var/backup/restic/Photos --password-file /var/backup/restic/Photos/password \
-  restore latest --target /restore
-# /restore/var/lib/media/Photos is the library;
-# /restore/var/lib/restic-staging/photos/immich.sql.gz is the database dump.
-```
-
-**Proton copy (local disk lost).** Copy the byte copy back into a local
-directory, then restore from it. Run it under the host lock because it uses the
-same Proton credential:
-
-```sh
-flock /run/lock/media-backup.lock rclone copy proton:restic/Photos /restore/restic-Photos \
-  --config /var/lib/backup/rclone.conf --transfers 8 --checkers 16
-restic -r /restore/restic-Photos --password-file /restore/restic-Photos/password check
-restic -r /restore/restic-Photos --password-file /restore/restic-Photos/password \
-  restore latest --target /restore
-```
-
-**Database.** The dump is plain SQL in Immich's documented shape (including
-`search_path` handling). Restore it as `postgres`, rewriting the emptied
-`search_path` the way Immich documents, in one transaction:
-
-```sh
-gunzip -c /restore/var/lib/restic-staging/photos/immich.sql.gz \
-  | sed "s/SELECT pg_catalog.set_config('search_path', '', false);/SELECT pg_catalog.set_config('search_path', 'public, pg_catalog', true);/g" \
-  | runuser -u postgres -- psql --dbname=immich --single-transaction \
-      --set ON_ERROR_STOP=on
-```
-
-**Drill.** [`drills/restic-restore-drill.sh`](./drills/restic-restore-drill.sh)
-is the executable form of this procedure and the restore gate. It holds
-`/run/lock/media-backup.lock`, runs `restic check` on the local repository,
-restores a representative sample (the staged dump plus spread-out source
-files) and compares every restored byte with `restic dump` of the *same*
-snapshot — the live source keeps changing, so a source-vs-latest compare is not
-valid. It reports the snapshot id, time and file count and never writes
-`BACKUP-LAST-SUCCESS`.
-
-```sh
-just restore-drill-photos                            # local repository
-just restore-drill-photos FULL_OFFSITE=1             # + copy and verify Proton
-just restore-drill-photos FULL_OFFSITE=1 KEY_ONLY=1  # + escrow proof
-just restore-drill-photos DRILL_PG_DB=photos_drill   # + dump into a scratch DB
-```
-
-- `FULL_OFFSITE=1` copies `proton:restic/Photos` into a temp dir under the lock
-  (remote is never written or pruned), checks the copy, requires the same
-  latest snapshot as the local repo, then restores and verifies the sample.
-- `KEY_ONLY=1` repeats check/restore with a fresh `HOME` and
-  `RESTIC_CACHE_DIR` and no `RESTIC_*` environment: only the password file and
-  the repository (or the Proton copy) may be used.
-- `DRILL_PG_DB=<name>` streams `immich.sql.gz` from the snapshot through
-  `gunzip`, the `search_path` rewrite and `psql --single-transaction --set
-  ON_ERROR_STOP=on` into that caller-named scratch database. `immich` and
-  non-`[A-Za-z0-9_]+` names are refused; a pre-existing non-`*_drill` database
-  is refused. Exit 2 means the requested phase was skipped (no `psql`, no
-  reachable server, or a refusal); the scratch DB and temp tree are removed on
-  success unless `KEEP=1`.
-- `SOURCE_COMPARE=1` additionally hashes sampled source files and reports
-  unchanged ones (`SKIP` when the source changed since the snapshot).
-
-The rclone datasets keep [`drills/restore-drill.sh`](./drills/restore-drill.sh)
-until T12.
-
-**Self-contained repository password.** The password is stored inside the
-repository at `<repo>/password` (0600) and is copied with it to Proton, so a
-surviving local or Proton copy is always decryptable. The sops
-`restic-password` key is only an optional seed/backup: on the first run the unit
-copies it into the repo if present, otherwise it generates a random password.
-There is no separate key-escrow requirement and no key-loss gate; the drill
-proves the repository copy contains everything needed:
-
-```sh
-flock /run/lock/media-backup.lock rclone copy proton:restic/Photos /restore/restic-Photos \
-  --config /var/lib/backup/rclone.conf --transfers 8 --checkers 16 --stats 30s
-sudo env REPO=/restore/restic-Photos KEY_ONLY=1 FULL_OFFSITE=0 \
-  DRILL_PG_DB=immich_drill bash modules/features/backup/drills/restic-restore-drill.sh
-```
-
-The restored database uses the `psql` command above. The password is nominal
-confidentiality only; anyone who can read the local or Proton repository can
-decrypt it. That is deliberate: recoverability matters more here than
-protection from someone who already has the storage.
+from the originals, so they need not occupy a mirror.
 
 ## GitHub repo mirror and metadata
 
@@ -366,15 +222,10 @@ cannot run the in-process marker, which is why the marker is in `ExecStopPost`.
 
 A dataset with `onChange.enable = true` gets a long-running
 `backup-<name>-watch.service` in addition to its timer. It runs
-[`backup_watch.py`](./backup_watch.py) for rclone datasets and
-[`backup_watch.sh`](./backup_watch.sh) for restic datasets, both streaming
-recursive inotify events from the source (`inotifywait -m -r`,
-`create`/`close_write`/`moved_to`), waiting for the dataset's
-`onChange.debounce` of quiet, then creating one request file in
-`/run/backup-watch/<name>/`. The shell watcher checks
-`/run/backup-watch/<name>.running` (created by the backup unit while it runs)
-and labels the batch as a follow-up, which is the same request either way. A
-`backup-<name>-queue.path` unit watching that
+[`backup_watch.py`](./backup_watch.py), which streams recursive inotify events
+from the source (`inotifywait -m -r`, `create`/`close_write`/`moved_to`), waits
+for the dataset's `onChange.debounce` of quiet, then creates one request file in
+`/run/backup-watch/<name>/`. A `backup-<name>-queue.path` unit watching that
 directory with `DirectoryNotEmpty=` starts the ordinary
 `backup-<name>.service`; the watcher never runs the driver, so the unit's
 timeout, failure marker, Cloudflare email alert, and sandbox stay in one place.
@@ -399,23 +250,18 @@ timeout, failure marker, Cloudflare email alert, and sandbox stay in one place.
   directory does not exist (`ConditionPathIsDirectory`).
 
 
-## Restoring rclone datasets
-
 **Files, from the local mirror.** The mirror is a plain directory tree:
 
 ```sh
-rsync -a /var/backup/Music/current/ /restore/Music/
+rsync -a /var/backup/Photos/current/ /restore/Photos/
 ```
 
 **Files, from offsite** (local disk lost):
 
 ```sh
-rclone copy proton:Music /restore/Music \
+rclone copy proton:Photos /restore/Photos \
   --config /var/lib/backup/rclone.conf --transfers 8 --checkers 16
 ```
-
-Photos is no longer restored this way; see
-[Restoring Photos](#restoring-photos).
 
 Add `--backup-dir`-style recovery by reaching into the same path's local
 `versions/` if the mirror still exists.
@@ -569,20 +415,14 @@ check, marker and alert are generated:
 
 ```nix
 backup.datasets.Books = {
-  # driver = "restic";  # default "rclone"; restic needs repository/passwordFile
   schedule = "*-*-* 07:00:00";
-  # fullCheckSchedule = "Sun *-*-* 06:00:00";  # extra whole-mirror / read-data check
+  # fullCheckSchedule = "Sun *-*-* 06:00:00";  # extra whole-mirror check
   # timeout = "12h";       # wall-clock backstop
   # offsite = false;       # local-only dataset
-  # stallTimeout = "30m";  # rclone only; "0" disables; otherwise must be >= 60s
+  # stallTimeout = "30m";  # "0" disables; otherwise must be >= 60s
   # excludes = [ "/.cache/**" "**/.cache/**" "/rclone.conf" ];  # defaults; override to add more
-  # postgres = true;       # generated dump unit (rclone: current/db; restic: staging)
-  # preBackup = '' ... ''; # rclone only: runs with BACKUP_* env, before the copy
-  # repository = "/var/backup/restic/Books";  # restic default
-  # protonPath = "restic/Books";               # restic default
-  # passwordFile = null;  # default: <repository>/password, copied with the repo
-  # retention = { daily = 7; weekly = 8; monthly = 24; yearly = 3; };  # restic defaults
-  # check = true;          # restic: check after backup + fullCheckSchedule read-data check
+  # postgres = true;       # preBackup dumps Postgres: pg_dump on PATH, After=postgresql.service
+  # preBackup = '' ... ''; # runs with BACKUP_* env, before the copy
 };
 ```
 
@@ -591,16 +431,6 @@ dataset needs `backup.enable = true` (the backup disk).
 
 ## Known limits
 
-- **restic driver (Photos).** The Proton copy re-reads the whole local
-  repository for `rclone check` on every run, which is slower than the rclone
-  driver's changed-files-only check. A killed run can leave a restic lock;
-  clear it with `restic -r /var/backup/restic/Photos --password-file
-  /var/backup/restic/Photos/password unlock`. There is no stall watchdog: a wedged
-  Proton upload is bounded by the dataset's `timeout` (`TimeoutStartSec`) and
-  resticprofile retries no step by itself. Proton quota is not monitored; a
-  failed copy raises `BACKUP-FAILED` and the email alert. The dump staging file
-  is overwritten every run, so `restic` keeps the previous version only through
-  snapshots.
 - A kill that lands *after* rclone has committed a file but before it reports
   can leave a retry that re-uploads a zero-byte file; this is not data loss
   (the source and local mirror are intact) but it is not self-healing. Tracked
@@ -610,7 +440,7 @@ dataset needs `backup.enable = true` (the backup disk).
   That is deliberate for backup safety; there is no automated retention/prune
   tooling. For the deliberate one-off, see
   [Pruning a mirror](#pruning-a-mirror-one-time).
-- `immich.backup` and the old restic/Immich-specific pipeline have
+- `immich.backup` and the old Immich-specific backup pipeline have
   been removed; these generic datasets replace them.
 - The offsite copy logs each copied filename at INFO (to extract changed paths),
   so source filenames reach journald on every run that copies files — previously

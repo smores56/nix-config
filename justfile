@@ -70,13 +70,9 @@ backup-run name:
 backup-logs name:
     journalctl -u backup-{{name}}.service -f
 
-# Prove the legacy rclone mirrors against the live source (Photos uses the restic drill).
+# Prove the local and offsite mirrors against the live source.
 restore-drill dataset:
     sudo bash modules/features/backup/drills/restore-drill.sh {{dataset}}
-
-# Prove the Photos restic backup restores; args are env overrides, e.g. FULL_OFFSITE=1 KEY_ONLY=1.
-restore-drill-photos *args:
-    sudo env {{args}} bash modules/features/backup/drills/restic-restore-drill.sh
 
 # Update every flake input.
 update:

@@ -35,14 +35,6 @@ in
           type = lib.types.attrsOf (
             lib.types.submodule {
               options = {
-                driver = lib.mkOption {
-                  type = lib.types.enum [
-                    "rclone"
-                    "restic"
-                  ];
-                  default = "rclone";
-                  description = "Which backup driver owns this dataset. `rclone` is the legacy mirror/copy pipeline; `restic` is the local restic repo plus Proton byte-copy implemented in modules/nixos/backup-restic.nix.";
-                };
                 source = lib.mkOption {
                   type = lib.types.nullOr lib.types.path;
                   default = null;
@@ -61,12 +53,12 @@ in
                 preBackup = lib.mkOption {
                   type = lib.types.nullOr lib.types.lines;
                   default = null;
-                  description = "Shell snippet run before the copy (driver = \"rclone\" only). Its env exposes BACKUP_DATE, BACKUP_CURRENT, BACKUP_SOURCE.";
+                  description = "Shell snippet run before the copy. Its env exposes BACKUP_DATE, BACKUP_CURRENT, BACKUP_SOURCE.";
                 };
                 postgres = lib.mkOption {
                   type = lib.types.bool;
                   default = false;
-                  description = "Whether this dataset has a generated PostgreSQL dump pre-unit: puts the server's package on the backup unit PATH, orders it after postgresql.service, and starts the dump unit first. Both drivers generate one; restic writes the documented plain-SQL dump into its staging directory.";
+                  description = "Whether this dataset has a generated PostgreSQL dump pre-unit: puts the server's package on the backup unit PATH, orders it after postgresql.service, and starts the dump unit first.";
                 };
                 postgresDatabase = lib.mkOption {
                   type = lib.types.str;
@@ -84,7 +76,7 @@ in
                     "**/.cache/**"
                     "/rclone.conf"
                   ];
-                  description = "Exclude patterns passed to the driver (rclone globs or restic patterns) so they stay out of the backup. Defaults to dropping regenerable caches at the source root and nested, plus a source-root rclone.conf copy; a credential-shaped file elsewhere in the tree is still copied unless you add it here.";
+                  description = "rclone exclude patterns kept out of both mirrors. Defaults to dropping regenerable caches at the source root and nested, plus a source-root rclone.conf copy; a credential-shaped file elsewhere in the tree is still copied unless you add it here.";
                 };
                 schedule = lib.mkOption {
                   type = lib.types.str;
@@ -105,54 +97,6 @@ in
                   type = lib.types.nullOr lib.types.str;
                   default = null;
                   description = "Optional systemd OnCalendar for an extra whole-mirror integrity check: runs the same dataset with --full-check so drift in old, unchanged files is still caught. null (the default) disables it; the normal schedule verifies only the files that changed.";
-                };
-                repository = lib.mkOption {
-                  type = lib.types.nullOr lib.types.path;
-                  default = null;
-                  description = "Local restic repository for driver = \"restic\". Defaults to <mountPoint>/restic/<Name>.";
-                };
-                passwordFile = lib.mkOption {
-                  type = lib.types.nullOr lib.types.path;
-                  default = null;
-                  description = "Optional override for the restic repository password file (driver = \"restic\"). Defaults to <repository>/password, which is copied with the repository, so a surviving copy is always decryptable. The sops restic-password file is only an optional seed/backup copy.";
-                };
-                protonPath = lib.mkOption {
-                  type = lib.types.nullOr lib.types.str;
-                  default = null;
-                  description = "Path under the rclone remote that receives the byte copy of the restic repository. Defaults to restic/<Name>. The copy is append-only: never synced and never pruned.";
-                };
-                retention = lib.mkOption {
-                  type = lib.types.submodule {
-                    options = {
-                      daily = lib.mkOption {
-                        type = lib.types.int;
-                        default = 7;
-                        description = "Snapshots kept by the daily retention rule.";
-                      };
-                      weekly = lib.mkOption {
-                        type = lib.types.int;
-                        default = 8;
-                        description = "Snapshots kept by the weekly retention rule.";
-                      };
-                      monthly = lib.mkOption {
-                        type = lib.types.int;
-                        default = 24;
-                        description = "Snapshots kept by the monthly retention rule.";
-                      };
-                      yearly = lib.mkOption {
-                        type = lib.types.int;
-                        default = 3;
-                        description = "Snapshots kept by the yearly retention rule.";
-                      };
-                    };
-                  };
-                  default = { };
-                  description = "restic forget/prune retention (driver = \"restic\"). Applied locally after each backup; Proton is never pruned.";
-                };
-                check = lib.mkOption {
-                  type = lib.types.bool;
-                  default = true;
-                  description = "Run restic check after each backup and, when fullCheckSchedule is set, a read-data-subset check on that calendar (driver = \"restic\").";
                 };
                 onChange = lib.mkOption {
                   type = lib.types.submodule {
@@ -177,7 +121,7 @@ in
             }
           );
           default = { };
-          description = "Datasets backed up onto the disk. `driver = \"rclone\"` uses the generic rclone 3-2-1 mirror; `driver = \"restic\"` uses a local restic repository plus a Proton byte copy.";
+          description = "Datasets backed up onto the disk by the generic rclone 3-2-1 mechanism.";
         };
       };
     };

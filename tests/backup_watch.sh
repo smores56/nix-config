@@ -3,7 +3,7 @@
 #
 # Usage: bash tests/backup_watch.sh <path-to-backup_watch.sh>
 #
-# Covers the behaviour the restic units depend on: one request per quiet batch
+# Covers the behaviour the backup units depend on: one request per quiet batch
 # (coalescing), the ignore rules, and a follow-up request while a backup is
 # marked running. A one-second debounce keeps the test quick.
 set -euo pipefail

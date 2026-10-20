@@ -49,7 +49,7 @@ files by concern, not by host.
 | `modules/features/ai/` | AI tooling: assistant context, brain, maki, providers, sdlc, skills |
 | `modules/features/tv/` | Television repository and worktree cables |
 | `tofu/` | minimal Cloudflare DNS/Access/notification objects; run via the `cloudflare-*` flake apps |
-| `modules/features/backup/` | legacy rclone driver (`backup.py`) and the restic shell watcher, plus the operator README, GitHub-mirror helper and restore drill |
+| `modules/features/backup/` | rclone driver (`backup.py`), shell watcher, operator README, GitHub-mirror helpers and restore drill |
 | `modules/desktop/aerospace/` | AeroSpace config + `aerospace-layout` |
 | `tests/` | Python unit tests for the repo's tools plus `tests/*.sh` shell checks (all run via flake checks) |
 

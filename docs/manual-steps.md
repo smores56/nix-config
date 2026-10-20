@@ -156,19 +156,6 @@ that is valid but has lost `repo` scope fails the run. The verifier also fails
 when the token's repo listing no longer matches the mirror, so a scope loss is
 caught the same night.
 
-### restic-password
-
-<!-- manual-step: secret/restic-password -->
-
-The restic repository password is stored inside the repository at
-`/var/backup/restic/Photos/password` (0600) and is copied with the repository to
-Proton. A surviving local or Proton copy is therefore always decryptable; there
-is no separate key escrow and no key-loss failure mode. The sops
-`restic-password` key is only an optional seed/backup: if present, the first run
-copies it into the repo; if absent, the unit generates a random password.
-Retrieve the optional copy with
-`nix run nixpkgs#sops -- -d --extract '["restic-password"]' secrets/smortress.yaml`.
-
 ### proton-pass-pat
 
 <!-- manual-step: secret/proton-pass-pat -->
@@ -241,14 +228,12 @@ delete them.
 
 ## Backup datasets
 
-Datasets come from `backup.datasets` on every NixOS host. Two drivers coexist
-while the migration is staged: `driver = "restic"` (Photos) writes a local
-restic repository plus an append-only Proton byte copy; every other dataset
-keeps the legacy `rclone` driver until T12.
+Datasets come from `backup.datasets` on every NixOS host.
 
 Each dataset runs `backup-<name>.service` on its timer and writes
-`/var/backup/<Name>/BACKUP-LAST-SUCCESS` after a verified run. A run with a
-prior failure marker does not refresh it. Inspect runs with:
+`/var/backup/<Name>/BACKUP-LAST-SUCCESS` after a run that verified the mirror or
+found nothing to verify. A run with a prior failure marker does not refresh it.
+Inspect runs with:
 
 ```sh
 systemctl list-timers 'backup-*'
@@ -262,9 +247,7 @@ datasets get 8d). The operator guide — guarantees, trigger semantics, restore,
 and prune procedures — is
 [`modules/features/backup/README.md`](../modules/features/backup/README.md).
 Run [`drills/restore-drill.sh`](../modules/features/backup/drills/restore-drill.sh)
-for the legacy rclone datasets and
-[`drills/restic-restore-drill.sh`](../modules/features/backup/drills/restic-restore-drill.sh)
-(Photos) when changing a driver.
+when changing the driver.
 
 ### CloudflareTofu
 
@@ -321,47 +304,14 @@ rclone copy proton:Music /restore/Music --config /var/lib/backup/rclone.conf
 
 <!-- manual-step: dataset/Photos -->
 
-`/var/lib/media/Photos` (the Immich library) uses the restic driver: daily
-03:00, full check Sundays 06:00, change-triggered. The local repository is
-`/var/backup/restic/Photos`; the append-only Proton copy is
-`proton:restic/Photos` (copied with `rclone copy`, never synced or pruned). The
-old rclone mirror under `/var/backup/Photos/current` is retained until the
-restic drill passes; its old units are no longer generated.
+`/var/lib/media/Photos` (the Immich library), daily 03:00, full check Sundays
+06:00, change-triggered. A generated pre-unit dumps PostgreSQL as `postgres`;
+the driver copies it to `current/db/immich.dump` and fails the run if the
+dump is missing or stale. `thumbs` and `encoded-video` are excluded because
+Immich rebuilds them from the originals.
 
-The restic password is stored inside the repository at
-`/var/backup/restic/Photos/password` (0600) and is copied with the repository to
-Proton, so a surviving copy is always decryptable. The sops `restic-password`
-key is optional: if present it seeds the first password, otherwise the unit
-generates one. There is no separate key-escrow gate; the T10 drill proves the
-repository copy contains everything needed to restore.
-
-A generated dump unit runs as `postgres` and writes Immich's documented plain
-SQL dump to `/var/lib/restic-staging/photos/immich.sql.gz`; restic
-includes that directory in every snapshot. Immich's own scheduled dumps stay
-enabled as the fast local path. `thumbs` and `encoded-video` are excluded
-because Immich rebuilds them from the originals.
-
-Restore with `restic restore latest` from the local repository, or copy
-`proton:restic/Photos` back with `rclone copy` under
-`/run/lock/media-backup.lock` first, then restore and load the dump with
-`psql`. The exact commands are in the backup README.
-
-Drill it after activation and after the first seed (and after any driver or
-Proton change):
-
-```sh
-just restore-drill-photos                            # local repo, sample restore
-just restore-drill-photos FULL_OFFSITE=1             # copies and verifies Proton
-just restore-drill-photos FULL_OFFSITE=1 KEY_ONLY=1  # escrow: clean HOME/cache
-just restore-drill-photos DRILL_PG_DB=photos_drill   # dump into a scratch DB
-```
-
-The drill takes the host lock and never writes `BACKUP-LAST-SUCCESS`; exit 2
-means the requested Postgres phase was skipped or a name was refused. For the
-escrow proof, take the password from the offline kit, copy the Proton repo with
-the kit's Proton credentials, then run the drill against the copy with
-`KEY_ONLY=1 REPO=<copy> DRILL_PG_DB=immich_drill`; the full clean-machine
-procedure is in the backup README.
+Restore both the database dump and the library; the procedure (including
+`runuser -u postgres`) is in the backup README.
 
 ### Videos
 
