@@ -926,6 +926,29 @@ class CommentCliTest(GhTest):
         self.assertTrue(any("sdlc-features" in call for call in self.tv_calls()))
 
 
+class PickerCableTest(unittest.TestCase):
+    def test_preview_reads_precomputed_files_instead_of_github(self):
+        features = [
+            issue(1, "One", DESIGN, ["type:feature", "repo:nix-config", "status:todo"]),
+            issue(
+                2,
+                "Two",
+                "## Design\n\nSecond.\n",
+                ["type:feature", "repo:sdlc", "status:todo"],
+            ),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            cable = sdlc_issues.write_picker_cable(tmp, features)
+            with open(os.path.join(cable, "sdlc-features.toml")) as fh:
+                channel = fh.read()
+            self.assertIn("cat ", channel)
+            self.assertNotIn("status {split", channel)
+            with open(os.path.join(tmp, "previews", "1.md")) as fh:
+                preview = fh.read()
+            self.assertIn("#1 One", preview)
+            self.assertIn("Use GitHub issues.", preview)
+
+
 class RepoNameTest(unittest.TestCase):
     def test_uses_the_origin_remote(self):
         with tempfile.TemporaryDirectory() as tmp:

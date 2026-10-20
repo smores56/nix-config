@@ -344,6 +344,41 @@ def path_row(issue):
     )
 
 
+def preview_text(feature):
+    return "#%d %s\n[%s] %s\n\n%s\n" % (
+        feature["number"],
+        one_line(feature.get("title") or ""),
+        display_status(feature),
+        repo_names(feature) or "-",
+        clean(feature.get("body") or ""),
+    )
+
+
+def write_picker_cable(tmp, features):
+    """Write the feature list and its previews for tv, with no live gh calls."""
+    cable = os.path.join(tmp, "cable")
+    previews = os.path.join(tmp, "previews")
+    os.makedirs(cable)
+    os.makedirs(previews)
+    source = os.path.join(tmp, "features.tsv")
+    with open(source, "w") as fh:
+        fh.write("\n".join(path_row(feature) for feature in features) + "\n")
+    for feature in features:
+        with open(os.path.join(previews, "%d.md" % feature["number"]), "w") as fh:
+            fh.write(preview_text(feature))
+    preview = "cat %s/{split:\\t:0}.md" % shlex.quote(previews)
+    channel = (
+        '[metadata]\nname = "sdlc-features"\nrequirements = ["sdlc"]\n\n'
+        '[source]\ncommand = "cat %s"\nentry_delimiter = "\\n"\n'
+        'display = "#{split:\\t:0} {split:\\t:1} [{split:\\t:2}] {split:\\t:3}"\n'
+        'output = "{split:\\t:0}"\n\n'
+        '[preview]\ncommand = "%s"\n'
+    ) % (shlex.quote(source), preview)
+    with open(os.path.join(cable, "sdlc-features.toml"), "w") as fh:
+        fh.write(channel)
+    return cable
+
+
 # --- review roundtrip -------------------------------------------------------
 
 
@@ -494,24 +529,7 @@ def pick_feature(repo, all_states=False):
         return int(pick(rows).split("\t")[0])
 
     with tempfile.TemporaryDirectory(prefix="sdlc-cable-") as tmp:
-        cable = os.path.join(tmp, "cable")
-        os.makedirs(cable)
-        source = os.path.join(tmp, "features.tsv")
-        with open(source, "w") as fh:
-            fh.write("\n".join(rows) + "\n")
-        preview = "%s %s status {split:\\t:0}" % (
-            shlex.quote(sys.executable),
-            shlex.quote(os.path.abspath(__file__)),
-        )
-        channel = (
-            '[metadata]\nname = "sdlc-features"\nrequirements = ["sdlc"]\n\n'
-            '[source]\ncommand = "cat %s"\nentry_delimiter = "\\n"\n'
-            'display = "#{split:\\t:0} {split:\\t:1} [{split:\\t:2}] {split:\\t:3}"\n'
-            'output = "{split:\\t:0}"\n\n'
-            '[preview]\ncommand = "%s"\n'
-        ) % (shlex.quote(source), preview)
-        with open(os.path.join(cable, "sdlc-features.toml"), "w") as fh:
-            fh.write(channel)
+        cable = write_picker_cable(tmp, features)
         proc = subprocess.run(
             ["tv", "--cable-dir", cable, "sdlc-features"], capture_output=True, text=True
         )
