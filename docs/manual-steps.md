@@ -334,7 +334,7 @@ password offline and in Proton Pass before relying on the backup (T10 restores
 with the offline kit alone).
 
 A generated dump unit runs as `postgres` and writes Immich's documented plain
-SQL dump to `/var/lib/backup/restic-staging/photos/immich.sql.gz`; restic
+SQL dump to `/var/lib/restic-staging/photos/immich.sql.gz`; restic
 includes that directory in every snapshot. Immich's own scheduled dumps stay
 enabled as the fast local path. `thumbs` and `encoded-video` are excluded
 because Immich rebuilds them from the originals.

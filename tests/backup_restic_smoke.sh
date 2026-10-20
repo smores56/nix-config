@@ -32,7 +32,7 @@ sed -e "s#/var/backup/restic/Photos#$tmp/repo#g" \
   -e "s#/run/secrets/restic-password#$tmp/pw#g" \
   -e "s#/var/cache/restic#$tmp/cache#g" \
   -e "s#/var/lib/media/Photos#$tmp/src#g" \
-  -e "s#/var/lib/backup/restic-staging/photos#$tmp/staging#g" \
+  -e "s#/var/lib/restic-staging/photos#$tmp/staging#g" \
   -e "s#/var/lib/backup/rclone.conf#$tmp/rclone.conf#g" \
   -e "s#/var/backup/Photos#$tmp/backup#g" \
   "$profile" >profiles.toml

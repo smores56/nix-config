@@ -43,7 +43,7 @@ let
   protonPathOf =
     name: dataset: if dataset.protonPath != null then dataset.protonPath else "restic/${name}";
   markerDir = name: "${cfg.mountPoint}/${name}";
-  stagingDir = name: "/var/lib/backup/restic-staging/${lower name}";
+  stagingDir = name: "/var/lib/restic-staging/${lower name}";
   queueDir = name: "/run/backup-watch/${lower name}";
   # Deliberately outside queueDir: a persistent marker inside the directory the
   # path unit watches would keep DirectoryNotEmpty true forever.

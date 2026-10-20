@@ -115,7 +115,7 @@ The other datasets are unchanged until their own migration.
 | --- | --- |
 | `/var/lib/media/Photos` | live Immich library (Disk 1), copied into the repository |
 | `/var/backup/restic/Photos` | local restic repository (Disk 2); `restic mount` gives a browsable view |
-| `/var/lib/backup/restic-staging/photos/immich.sql.gz` | generated `pg_dump --clean --if-exists -d immich \| gzip`, included in every snapshot |
+| `/var/lib/restic-staging/photos/immich.sql.gz` | generated `pg_dump --clean --if-exists -d immich \| gzip`, included in every snapshot |
 | `/var/backup/Photos/BACKUP-FAILED` | failure marker (detailed from the hook, generic from `ExecStopPost`) |
 | `/var/backup/Photos/BACKUP-LAST-SUCCESS` | last backup that passed the local check and the Proton copy/check |
 | `proton:restic/Photos` | append-only byte copy of the repository (never synced, never pruned) |
@@ -163,7 +163,7 @@ rebuild the database:
 restic -r /var/backup/restic/Photos --password-file /run/secrets/restic-password \
   restore latest --target /restore
 # /restore/var/lib/media/Photos is the library;
-# /restore/var/lib/backup/restic-staging/photos/immich.sql.gz is the database dump.
+# /restore/var/lib/restic-staging/photos/immich.sql.gz is the database dump.
 ```
 
 **Proton copy (local disk lost).** Copy the byte copy back into a local
@@ -183,7 +183,7 @@ restic -r /restore/restic-Photos --password-file /run/secrets/restic-password \
 `search_path` the way Immich documents, in one transaction:
 
 ```sh
-gunzip -c /restore/var/lib/backup/restic-staging/photos/immich.sql.gz \
+gunzip -c /restore/var/lib/restic-staging/photos/immich.sql.gz \
   | sed "s/SELECT pg_catalog.set_config('search_path', '', false);/SELECT pg_catalog.set_config('search_path', 'public, pg_catalog', true);/g" \
   | runuser -u postgres -- psql --dbname=immich --single-transaction \
       --set ON_ERROR_STOP=on

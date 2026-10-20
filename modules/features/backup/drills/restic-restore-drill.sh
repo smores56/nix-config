@@ -34,7 +34,7 @@
 #   PROTON_PATH         rclone remote repo (default proton:restic/Photos)
 #   RCLONE_CONFIG       rclone config (default /var/lib/backup/rclone.conf)
 #   STAGING             snapshot path of the dump dir
-#                       (default /var/lib/backup/restic-staging/<dataset lc>)
+#                       (default /var/lib/restic-staging/<dataset lc>)
 #   RESTORE_ROOT        per-run restore work dir (default /var/tmp/restic-drill)
 #   PROTON_COPY         where to copy the Proton repo (default: inside the run dir)
 #   SAMPLES             source files sampled per repo (default 3)
@@ -57,7 +57,7 @@ PASSWORD_FILE=${PASSWORD_FILE:-/run/secrets/restic-password}
 SOURCE=${SOURCE:-/var/lib/media/$DATASET}
 PROTON_PATH=${PROTON_PATH:-proton:restic/$DATASET}
 RCLONE_CONFIG=${RCLONE_CONFIG:-/var/lib/backup/rclone.conf}
-staging_default=/var/lib/backup/restic-staging/$(printf '%s' "$DATASET" | tr '[:upper:]' '[:lower:]')
+staging_default=/var/lib/restic-staging/$(printf '%s' "$DATASET" | tr '[:upper:]' '[:lower:]')
 STAGING=${STAGING:-$staging_default}
 RESTORE_ROOT=${RESTORE_ROOT:-/var/tmp/restic-drill}
 FULL_OFFSITE=${FULL_OFFSITE:-0}

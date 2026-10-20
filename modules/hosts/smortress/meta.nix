@@ -99,7 +99,7 @@ in
       ];
       # The generated dump unit writes Immich's documented plain-SQL dump
       # (pg_dump --clean --if-exists | gzip) to
-      # /var/lib/backup/restic-staging/photos/immich.sql.gz, and the restic
+      # /var/lib/restic-staging/photos/immich.sql.gz, and the restic
       # backup includes that directory. Immich's own scheduled dumps stay
       # enabled as the fast local path; they are not part of the offsite copy.
       postgres = true;
