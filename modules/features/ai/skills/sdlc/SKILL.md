@@ -59,9 +59,10 @@ PR.
   `status:todo|in-progress|done|canceled|approved|needs-reapproval`.
   Assignee = claim. Projects are optional.
 - Commands: `sdlc ui|review|comment|list|show|status|next|approve|new`,
-  `task add|start|done|cancel`, `complete|cancel`. `ui` picks a feature and
-  an action (tv when present); `--pick` prefers `tv`, then `fzf`, then a
-  numbered prompt. No justfile and no local state.
+  `task add|start|done|cancel`, `complete|cancel`. `ui`, `review`, and
+  `comment` are human-interactive; agents use `list|show|status|next`.
+  `--pick` prefers `tv`, then `fzf`, then a numbered prompt. No justfile and
+  no local state.
 - Evidence, not checkboxes: a feature names its merged PR, and the PR links
   the task issue; a quick fix commit says `Refs #<issue>`. Status follows
   that evidence.
@@ -84,10 +85,12 @@ final newline, SHA-256 of UTF-8.
 
 Design and plan review happen in the terminal:
 
-1. `sdlc review <feature>` (`sr`) dumps the issue body, opens it in
-   `tuicr --file`, then posts the anchored notes as one comment. Use
-   `--dry-run` to print instead of posting. Content-hash markers make a
-   repeat run skip notes already on the issue.
+1. The human runs `sdlc review <feature>` (`sr`): it dumps the issue body,
+   opens it in `tuicr --file`, and posts the anchored notes as one comment
+   when the review is exported (`y` or `:wq`). Use `--dry-run` to print
+   instead of posting. Content-hash markers make a repeat run skip notes
+   already on the issue. Agents must not launch the TUI; read the posted
+   comment with `sdlc show <feature>`.
 2. Alternatively, `sdlc show <feature>` (or `gh issue view <n> --repo
    $SDLC_REPO --json body`) into a local markdown file and annotate with
    `> Sam:` markers — questions or revision requests.

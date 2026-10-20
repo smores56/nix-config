@@ -69,8 +69,14 @@ FAKE_TUICR = '''#!{python}
 import json, os, sys
 
 state = os.environ["FAKE_GH_STATE"]
+args = sys.argv[1:]
 with open(os.path.join(state, "tuicr.jsonl"), "a") as fh:
-    fh.write(json.dumps(sys.argv[1:]) + "\\n")
+    fh.write(json.dumps(args) + "\\n")
+if "--file" in args:
+    with open(args[args.index("--file") + 1]) as fh:
+        source = fh.read()
+    with open(os.path.join(state, "reviewed-body.md"), "w") as fh:
+        fh.write(source)
 path = os.path.join(state, "tuicr-export.md")
 if os.path.exists(path):
     with open(path) as fh:
@@ -101,6 +107,12 @@ EXPORT = (
     "I reviewed your code and have the following comments. Please address them.\n\n"
     "1. `body.md:7` - Make this a link.\n"
     "2. `body.md:13-15` - Split the plan.\n"
+)
+
+TYPED_EXPORT = (
+    "## Session: body.md@main/worktree\n\n"
+    "1. **[ISSUE]** `body.md:7` - Typed note.\n"
+    "2. **[SUGGESTION]** `body.md:13-15` (commit abc1234) - Range note.\n"
 )
 
 
@@ -233,6 +245,13 @@ class GhTest(unittest.TestCase):
 
     def calls_for(self, *prefix):
         return [call for call in self.calls() if call[: len(prefix)] == list(prefix)]
+
+    def tuicr_calls(self):
+        path = os.path.join(self.state, "tuicr.jsonl")
+        if not os.path.exists(path):
+            return []
+        with open(path) as fh:
+            return [json.loads(line) for line in fh if line.strip()]
 
     def tv_calls(self):
         path = os.path.join(self.state, "tv.jsonl")
@@ -426,6 +445,18 @@ class StatusTest(GhTest):
 
     def test_missing_without_approval(self):
         feature = approved_feature(labels=("type:feature", "repo:nix-config", "status:todo"))
+        self.serve_list([feature])
+        self.serve_issue(feature)
+        self.serve_task_fixtures()
+        out = self.run_cli("status", "1")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("approval=missing", out.stdout)
+
+    def test_quoted_approval_line_is_not_an_approval(self):
+        feature = approved_feature(
+            labels=("type:feature", "repo:nix-config", "status:todo"),
+            comments=(comment("sam", "> Approved design sha256:%s" % DESIGN_SHA),),
+        )
         self.serve_list([feature])
         self.serve_issue(feature)
         self.serve_task_fixtures()
@@ -687,6 +718,17 @@ class TuicrExportTest(unittest.TestCase):
     def test_ignores_the_preamble(self):
         self.assertEqual(sdlc_issues.parse_tuicr_export("nothing here\n"), [])
 
+    def test_parses_typed_and_commit_scoped_items(self):
+        notes = sdlc_issues.parse_tuicr_export(TYPED_EXPORT)
+        self.assertEqual([note.start for note in notes], [7, 13])
+        self.assertEqual(notes[0].text, "Typed note.")
+        self.assertEqual(notes[1].text, "Range note.")
+
+    def test_preserves_blank_lines_inside_a_note(self):
+        text = "1. `a.md:3` - first\n   \n   second paragraph\n"
+        notes = sdlc_issues.parse_tuicr_export(text)
+        self.assertEqual(notes[0].text, "first\n\nsecond paragraph")
+
 
 class ReviewRenderTest(unittest.TestCase):
     def note(self, anchor="body.md:7", start=7, end=None, text="Make this a link."):
@@ -709,13 +751,28 @@ class ReviewRenderTest(unittest.TestCase):
 
     def test_skips_markers_already_posted(self):
         note = self.note()
-        marker = sdlc_issues.review_marker(1, note)
+        marker = sdlc_issues.review_marker(1, note, DESIGN.split("\n"))
         self.assertEqual(sdlc_issues.render_review(1, "Title", DESIGN, [note], {marker}), "")
 
     def test_marker_is_stable_for_the_same_anchor_and_text(self):
         self.assertEqual(
             sdlc_issues.review_marker(1, self.note()),
             sdlc_issues.review_marker(1, self.note()),
+        )
+
+    def test_marker_ignores_line_shift_but_tracks_content(self):
+        body = "x\ny\nsame\nsame\n"
+        lines = body.split("\n")
+        first = sdlc_issues.ReviewNote("f:3", "f", 3, None, "note")
+        shifted = sdlc_issues.ReviewNote("f:4", "f", 4, None, "note")
+        self.assertEqual(
+            sdlc_issues.review_marker(1, first, lines),
+            sdlc_issues.review_marker(1, shifted, lines),
+        )
+        changed = "x\ny\nchanged\nsame\n"
+        self.assertNotEqual(
+            sdlc_issues.review_marker(1, first, lines),
+            sdlc_issues.review_marker(1, first, changed.split("\n")),
         )
 
 
@@ -731,6 +788,15 @@ class ReviewCliTest(GhTest):
     def posted(self):
         with open(os.path.join(self.state, "last-comment.md")) as fh:
             return fh.read()
+
+    def test_hands_the_body_to_tuicr_in_stdout_mode(self):
+        self.export()
+        self.run_cli("review", "1")
+        args = self.tuicr_calls()[0]
+        self.assertIn("--stdout", args)
+        self.assertIn("--file", args)
+        with open(os.path.join(self.state, "reviewed-body.md")) as fh:
+            self.assertEqual(fh.read(), DESIGN)
 
     def test_posts_one_aggregated_comment_with_quotes(self):
         self.export()
@@ -781,6 +847,19 @@ class UiCliTest(GhTest):
         self.serve_issue(feature)
         self.serve_list([feature])
         self.fakes()
+
+    def test_picks_the_feature_before_the_action(self):
+        self.run_cli("ui")
+        calls = self.tv_calls()
+        self.assertGreaterEqual(len(calls), 2)
+        self.assertTrue(any("sdlc-features" in call for call in calls[:1]))
+        self.assertFalse(any("sdlc-features" in call for call in calls[1:2]))
+
+    def test_approve_stays_behind_the_tty_gate(self):
+        out = self.run_cli("ui", "1", "approve")
+        self.assertNotEqual(out.returncode, 0)
+        self.assertIn("TTY", out.stderr + out.stdout)
+        self.assertEqual(self.calls_for("issue", "edit"), [])
 
     def test_action_and_feature_dispatch_without_tv(self):
         out = self.run_cli("ui", "show", "1")
@@ -845,6 +924,17 @@ class CommentCliTest(GhTest):
         out = self.run_cli("comment")
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertTrue(any("sdlc-features" in call for call in self.tv_calls()))
+
+
+class RepoNameTest(unittest.TestCase):
+    def test_uses_the_origin_remote(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run(["git", "init", "-q", tmp], check=True)
+            subprocess.run(
+                ["git", "-C", tmp, "remote", "add", "origin", "git@github.com:acme/widget.git"],
+                check=True,
+            )
+            self.assertEqual(sdlc_issues.cwd_repo_name(tmp), "widget")
 
 
 class CleanTest(unittest.TestCase):

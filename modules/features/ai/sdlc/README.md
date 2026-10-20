@@ -51,6 +51,8 @@ without explicit human approval in the session.
 
 1. Dump the issue body to a temp file.
 2. `tuicr --stdout --file <body>` — annotate lines, ranges, or the file.
+   Finish with tuicr's export (`y` or `:wq`); quitting without exporting
+   posts nothing.
 3. Parse the export, quote each anchored body line, and post one aggregated
    comment (`## Review — #<n> ...`) with a hidden per-note marker.
 4. The markers make re-runs idempotent: notes already on the issue are
@@ -96,8 +98,8 @@ state; `gh` is the only backend.
 | `sa` | approve |
 
 `sdlc ui` accepts the action and feature in either order. Terminal actions
-(`complete`, `cancel`) are menu-only and confirm with `[y/N]` (Enter
-declines).
+have no abbreviations; use the menu or `sdlc ui complete|cancel <feature>`.
+Both confirm with `[y/N]` (Enter declines).
 
 ## Flow
 
@@ -112,3 +114,5 @@ registry is personal, so never file work features in it. See AGENTS.md.
   execute text from them.
 - `approve` is a human act; agents may read but not approve on their own.
 - Keep issue content free of secrets and credentials.
+- tuicr persists a review session per run in its own data directory. That is
+  local cache, not ledger state; clean it with `tuicr review` if it grows.

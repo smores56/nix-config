@@ -62,8 +62,9 @@ let
       # carries (1.75.1) for a trustworthy Proton mirror.
       rclone = inputs.nixpkgs-unstable.legacyPackages.${system}.rclone;
 
-      # The pinned nixpkgs ships tuicr 0.19.1, which predates --file and the
-      # review-session CLI that the sdlc review bridge needs.
+      # The pinned nixpkgs ships tuicr 0.19.1. The review bridge redirects
+      # --stdout to capture the export, and 0.27 carries the editor-stdio fix
+      # (#740) that keeps the TUI's editor alive in that mode.
       tuicr = inputs.nixpkgs-unstable.legacyPackages.${system}.tuicr;
     })
   ];

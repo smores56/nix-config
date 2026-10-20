@@ -21,7 +21,7 @@ import tempfile
 from collections import namedtuple
 
 DEFAULT_REPO = "smores56/sdlc"
-HASH_RE = re.compile(r"Approved design sha256:([0-9a-f]{64})")
+HASH_RE = re.compile(r"(?m)^[ \t]*Approved design sha256:([0-9a-f]{64})[ \t]*$")
 ISSUE_URL_RE = re.compile(r"https?://\S+/issues/(\d+)")
 LIFECYCLE = ("todo", "in-progress", "done", "canceled")
 TERMINAL = ("done", "canceled")
@@ -34,8 +34,11 @@ TASK_FIELDS = "number,title,state,labels,blockedBy"
 NODE_FIELDS = "number,title,state,labels"
 
 ACTIONS = ("show", "status", "review", "comment", "next", "approve", "complete", "cancel")
-REVIEW_ITEM_RE = re.compile(r"^\s*\d+\.\s+`([^`]+)`\s+-\s+(.*)$")
-ANCHOR_RE = re.compile(r"^(?P<file>.+?)(?::(?P<start>\d+)(?:-(?P<end>\d+))?)?$")
+REVIEW_ITEM_RE = re.compile(
+    r"^\s*(\d+)\.\s+(?:\*\*\[[^\]]+\]\*\*\s+)?`([^`]+)`"
+    r"(?:\s+\(commit\s+[0-9a-f]+\))?\s+-\s+(.*)$"
+)
+ANCHOR_RE = re.compile(r"^(?P<file>.+?)(?::~?(?P<start>\d+)(?:-~?(?P<end>\d+))?)?$")
 REVIEW_MARKER_RE = re.compile(r"<!-- sdlc-review:n\d+:[0-9a-f]{12} -->")
 
 Approval = namedtuple("Approval", "state design approved comment reason")
@@ -46,7 +49,7 @@ class CliError(Exception):
     """A user-facing failure; main() prints it and exits nonzero."""
 
 
-_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
 
 
 def clean(value):
@@ -62,9 +65,9 @@ def one_line(value):
 # --- gh plumbing ------------------------------------------------------------
 
 
-def gh(*args, check=True):
+def gh(*args, check=True, input=None):
     try:
-        proc = subprocess.run(["gh", *args], capture_output=True, text=True)
+        proc = subprocess.run(["gh", *args], capture_output=True, text=True, input=input)
     except FileNotFoundError:
         raise CliError("gh not found on PATH")
     if check and proc.returncode != 0:
@@ -82,14 +85,7 @@ def gh_json(*args):
 
 
 def gh_stdin(*args, body):
-    try:
-        proc = subprocess.run(["gh", *args], input=body, capture_output=True, text=True)
-    except FileNotFoundError:
-        raise CliError("gh not found on PATH")
-    if proc.returncode != 0:
-        detail = proc.stderr.strip() or proc.stdout.strip() or "exit %d" % proc.returncode
-        raise CliError("gh %s failed: %s" % (" ".join(args[:2]), detail))
-    return proc.stdout
+    return gh(*args, input=body)
 
 
 def fetch_issue(repo, number, fields=FEATURE_FIELDS):
@@ -355,30 +351,39 @@ def parse_tuicr_export(text):
     """Parse tuicr's numbered markdown export into anchored notes."""
     notes = []
     current = None
-    for raw in (text or "").splitlines():
+    for raw in (text or "").split("\n"):
         match = REVIEW_ITEM_RE.match(raw)
         if match:
-            anchor = match.group(1)
+            anchor = match.group(2)
             parsed = ANCHOR_RE.match(anchor)
             current = {
                 "anchor": anchor,
                 "file": parsed.group("file"),
                 "start": int(parsed.group("start")) if parsed.group("start") else None,
                 "end": int(parsed.group("end")) if parsed.group("end") else None,
-                "lines": [match.group(2).strip()],
+                "indent": len(match.group(1)) + 2,
+                "lines": [match.group(3)],
             }
             notes.append(current)
-        elif current is not None and raw.strip():
-            current["lines"].append(raw.strip())
-        elif not raw.strip():
-            current = None
+        elif current is not None:
+            if not raw.strip():
+                current["lines"].append("")
+            elif raw[:1].isspace():
+                # tuicr indents continuation lines; column-0 text is a footer.
+                lead = len(raw) - len(raw.lstrip(" "))
+                current["lines"].append(raw[min(lead, current["indent"]) :])
+    for note in notes:
+        lines = note["lines"]
+        while lines and not lines[-1].strip():
+            lines.pop()
+        note["text"] = "\n".join(line.rstrip() for line in lines).strip()
     return [
         ReviewNote(
             note["anchor"],
             note["file"],
             note["start"],
             note["end"],
-            "\n".join(note["lines"]).strip(),
+            note["text"],
         )
         for note in notes
     ]
@@ -393,16 +398,19 @@ def review_quote(note, body_lines, limit=20):
     if start > end:
         return None
     picked = body_lines[start - 1 : end][:limit]
-    quoted = "\n".join("> " + line for line in picked)
+    quoted = "\n".join("> " + clean(line) for line in picked)
     if end - start + 1 > limit:
         quoted += "\n> …"
     return quoted
 
 
-def review_marker(feature_number, note):
-    # The temp body path changes every run; anchor on stable line bounds.
+def review_marker(feature_number, note, body_lines=None):
+    # The temp body path changes every run. Hashing the quoted text keeps a
+    # note stable across line shifts but re-posts it when the reviewed text
+    # changes, which is exactly when the agent needs the new signal.
+    quote = review_quote(note, body_lines) if body_lines is not None else None
     digest = hashlib.sha256(
-        ("%s:%s\n%s" % (note.start, note.end, note.text)).encode("utf-8")
+        ("%s\n%s" % (note.text.strip(), quote or "")).encode("utf-8")
     ).hexdigest()[:12]
     return "<!-- sdlc-review:n%d:%s -->" % (feature_number, digest)
 
@@ -416,10 +424,11 @@ def review_location(note):
 
 
 def render_review(feature_number, title, body, notes, markers=()):
+    body_lines = body.split("\n")
     kept = []
     seen = set(markers)
     for note in notes:
-        marker = review_marker(feature_number, note)
+        marker = review_marker(feature_number, note, body_lines)
         if marker in seen:
             continue
         seen.add(marker)
@@ -433,13 +442,15 @@ def render_review(feature_number, title, body, notes, markers=()):
         digest[:12] if digest else "none",
     )
     blocks = []
-    body_lines = body.splitlines()
     for note in kept:
-        block = [review_marker(feature_number, note), "### %s" % review_location(note)]
+        block = [
+            review_marker(feature_number, note, body_lines),
+            "### %s" % review_location(note),
+        ]
         quote = review_quote(note, body_lines)
         if quote:
             block += ["", quote]
-        block += ["", note.text]
+        block += ["", clean(note.text)]
         blocks.append("\n".join(block))
     return "\n\n".join([header] + blocks) + "\n"
 
@@ -447,11 +458,20 @@ def render_review(feature_number, title, body, notes, markers=()):
 # --- pickers ----------------------------------------------------------------
 
 
-def cwd_repo_name():
-    try:
-        proc = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True
+def cwd_repo_name(cwd=None):
+    def run(*args):
+        return subprocess.run(
+            ["git", *args], cwd=cwd, capture_output=True, text=True
         )
+
+    try:
+        proc = run("remote", "get-url", "origin")
+        if proc.returncode == 0 and proc.stdout.strip():
+            name = re.sub(r"\.git$", "", proc.stdout.strip().rstrip("/"))
+            name = re.split(r"[/:]", name)[-1]
+            if name:
+                return name
+        proc = run("rev-parse", "--show-toplevel")
     except FileNotFoundError:
         return None
     if proc.returncode != 0:
@@ -862,7 +882,7 @@ def cmd_review(args):
 
     notes = parse_tuicr_export(export)
     if not notes:
-        print("no review notes")
+        print("no review notes (export with y or :wq in tuicr)")
         return
     existing = "\n".join(
         clean(comment.get("body") or "") for comment in feature.get("comments") or []
@@ -928,24 +948,25 @@ def cmd_ui(args):
     if len(actions) > 1:
         raise CliError("expected at most one action, got %s" % ", ".join(actions))
 
-    action = actions[0] if actions else pick_action()
     ref = features[0] if features else str(pick_feature(repo, all_states=args.all))
-    ns = argparse.Namespace(feature=ref, pick=False, yes=False, dry_run=False)
+    action = actions[0] if actions else pick_action()
     if action == "show":
-        cmd_show(ns)
+        cmd_show(argparse.Namespace(feature=ref))
     elif action == "status":
-        cmd_status(ns)
+        cmd_status(argparse.Namespace(feature=ref))
     elif action == "review":
-        cmd_review(ns)
+        cmd_review(argparse.Namespace(feature=ref, dry_run=False))
     elif action == "comment":
-        cmd_comment(ns)
+        cmd_comment(argparse.Namespace(feature=ref))
     elif action == "next":
-        cmd_next(ns)
+        cmd_next(argparse.Namespace(feature=ref, pick=False))
     elif action == "approve":
-        cmd_approve(ns)
+        cmd_approve(argparse.Namespace(feature=ref, pick=False, yes=False))
     elif action in ("complete", "cancel"):
         if confirm("%s #%s" % (action, ref)):
-            cmd_feature_transition("done" if action == "complete" else "canceled")(ns)
+            cmd_feature_transition("done" if action == "complete" else "canceled")(
+                argparse.Namespace(feature=ref)
+            )
         else:
             print("not %s" % ("completed" if action == "complete" else "canceled"))
     else:
