@@ -183,6 +183,20 @@ in
               tools = [ pkgs.git ];
               args = [ "${src}/modules/features/backup/github-mirror.sh" ];
             };
+            github-metadata = {
+              tools = [
+                pkgs.git
+                pkgs.jq
+                pkgs.util-linux
+                pkgs.coreutils
+                pkgs.findutils
+                pkgs.gawk
+              ];
+              args = [
+                "${src}/modules/features/backup/github-metadata.sh"
+                "${src}/modules/features/backup/github-verify.sh"
+              ];
+            };
             backup-watch = {
               tools = [
                 pkgs.inotify-tools
@@ -325,6 +339,10 @@ in
               shellcheck ${src}/modules/features/backup/drills/restore-drill.sh
               bash -n ${src}/modules/features/backup/github-mirror.sh
               shellcheck ${src}/modules/features/backup/github-mirror.sh
+              bash -n ${src}/modules/features/backup/github-metadata.sh
+              shellcheck ${src}/modules/features/backup/github-metadata.sh
+              bash -n ${src}/modules/features/backup/github-verify.sh
+              shellcheck ${src}/modules/features/backup/github-verify.sh
               bash -n ${src}/modules/features/backup/backup_watch.sh
               shellcheck ${src}/modules/features/backup/backup_watch.sh
               bash -n ${src}/tests/backup_restic_smoke.sh
@@ -333,6 +351,8 @@ in
               shellcheck ${src}/tests/backup_watch.sh
               bash -n ${src}/tests/manual_steps_sync.sh
               shellcheck ${src}/tests/manual_steps_sync.sh
+              bash -n ${src}/tests/github_metadata.sh
+              shellcheck ${src}/tests/github_metadata.sh
               touch $out
             '';
 

@@ -142,15 +142,19 @@ to the device-code flow.
 
 <!-- manual-step: secret/github-repo-pat -->
 
-Classic `repo`-scoped token, root-only, read only by the GitHub mirror
-(`githubBackup.tokenFile`). ghorg embeds it in git's argv, so it is visible in
-`/proc/<pid>/cmdline` during a run; the backup guide records that accepted
-window. Fine-grained tokens cannot read wikis, so `--clone-wiki` would silently
-omit them. Mint at GitHub → Settings → Developer settings → Personal access
-tokens.
+Classic `repo`-scoped token, root-only, read by the GitHub mirror and metadata
+units (`githubBackup.tokenFile`): ghorg, `python-github-backup`, and the
+verifier (`gh`, via `GH_TOKEN` in its environment). ghorg embeds it in git's
+argv, so it is visible in `/proc/<pid>/cmdline` during a run; the backup guide
+records that accepted window. pgb receives it as a `file://` path, so it stays
+out of argv. Fine-grained tokens cannot read wikis, so `--clone-wiki` would
+silently omit them. Mint at GitHub → Settings → Developer settings → Personal
+access tokens.
 
 The mirror's probe repo (`sdlc`) must be refreshed on every run; a token
-that is valid but has lost `repo` scope fails the run.
+that is valid but has lost `repo` scope fails the run. The verifier also fails
+when the token's repo listing no longer matches the mirror, so a scope loss is
+caught the same night.
 
 ### restic-password
 
@@ -272,14 +276,33 @@ Losing state is recoverable by importing the existing objects
 
 <!-- manual-step: dataset/GitHub -->
 
-Mirror of the `githubBackup` repos under `/var/lib/github-mirrors`, nightly
-00:30, local and offsite (`proton:GitHub`). Seeded on 2026-10-19; later runs
-transfer deltas only. The pre-unit refreshes every repo and the run fails unless
-the probe repo (`sdlc`) was refreshed.
+Git bare mirrors plus issue/PR metadata under `/var/lib/github-mirrors`,
+nightly 00:30, local and offsite (`proton:GitHub`). Seeded on 2026-10-19; later
+runs transfer deltas only. The pre-unit refreshes every repo with ghorg, then
+runs `python-github-backup` incrementally into `meta/`, and fails unless the
+probe repo (`sdlc`) was refreshed. It also fails on a repo-set mismatch against
+`gh api user/repos`, an issue/PR count drift beyond the documented slack, a
+stale pgb `last_update`, or a failed `git fsck` sample; evidence is written to
+`manifests/<date>/`.
+
+A monthly full metadata pass (`github-metadata-full.timer`, first Sunday 09:00)
+rebuilds `meta` without `-i` into `meta.new`, verifies it, and swaps it in under
+the host lock. Check the last result with:
+
+```sh
+systemctl status github-metadata-full.service
+jq . /var/lib/github-mirrors/manifests/$(date -u +%F)/counts.json
+```
 
 Restore a repository from `/var/backup/GitHub/current/smores56_backup/<repo>`
 (or `proton:GitHub`). It is a bare mirror: clone from it directly, or push it
-back with `git push --mirror`.
+back with `git push --mirror`. Issues, PRs, discussions, releases, and
+attachments are archived JSON under `.../current/meta/repositories/<repo>/`,
+not restorable state: GitHub has no issue-import that preserves numbers and
+cross-references, so recreating a lost issue is a manual copy from the JSON.
+The mirror token is the classic `repo`-scoped `github-repo-pat` (root-only,
+0400), shared by ghorg, pgb, and the verifier; it can write to every repo the
+account reaches, but these units only read.
 
 ### Music
 

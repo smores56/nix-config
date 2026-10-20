@@ -226,7 +226,8 @@ Proton mirror. Both have a per-dataset timer, failure marker, and Cloudflare
 email alert. Media datasets can additionally set `onChange` to queue a run after
 a debounced batch of source changes, with the timer as the fallback. smortress
 backs up `Photos`/`Videos`/`Music` offsite (and change-triggered) and mirrors the
-`smores56` GitHub repos both locally and offsite (`githubBackup`). The operator's guide
+`smores56` GitHub repos (git plus issue/PR metadata) both locally and offsite
+(`githubBackup`). The operator's guide
 — guarantees, trigger semantics, layout, restore and one-time prune procedures —
 is [`modules/features/backup/README.md`](modules/features/backup/README.md).
 

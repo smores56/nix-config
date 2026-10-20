@@ -91,7 +91,7 @@ and `proton:CloudflareTofu`.
 | `Photos` | restic | `/var/lib/media/Photos` | 03:00 | `onChange` (15m) | Sun 06:00 | yes (`proton:restic/Photos`) | generated `pg_dump --clean --if-exists` into the restic staging directory |
 | `Videos` | rclone | `/var/lib/media/Videos` | 01:00 | `onChange` (15m) | Sun 07:00 | yes | — |
 | `Music` | rclone | `/var/lib/media/Music` | 05:00 | `onChange` (15m) | Sun 08:00 | yes | — |
-| `GitHub` | rclone | `/var/lib/github-mirrors` | 00:30 | timer only | Sun 10:00 | yes | `ghorg` refresh of the `smores56` mirrors (see below) |
+| `GitHub` | rclone | `/var/lib/github-mirrors` | 00:30 | timer only | Sun 10:00 | yes | `ghorg` refresh, then incremental `python-github-backup` metadata + verification (see below) |
 | `CloudflareTofu` | rclone | `/var/lib/cloudflare-tofu` | 00:15 | timer only | — | yes | — |
 
 Every dataset excludes `/.cache/**`, `**/.cache/**` and `/rclone.conf` by
@@ -248,21 +248,30 @@ command above.
 > (root-only, 0400) and deploy `/run/secrets/restic-password` before the first
 > scheduled run; without it every restic unit fails and raises the alert.
 
-## GitHub repo mirror
+## GitHub repo mirror and metadata
 
 `githubBackup` mirrors this host's GitHub repos onto the backup disk as
-bare git mirrors, driven by
+bare git mirrors plus a metadata tree, driven by
 [`modules/nixos/github-backup.nix`](../../nixos/github-backup.nix). GitHub
 remains the authoritative copy; the HDD mirror provides fast local restore and
 protection against an accidental repo deletion or account lockout, and the
 dataset is also copied to Proton (`offsite = true`). The first offsite seed is
-large; later runs move only the ref files ghorg rewrote plus any new packs.
-Measured deltas range from 213 small ref/config files (35 KiB, no new objects)
-to 45–52 files (2.2–2.6 MiB) when fetches bring objects. No periodic
+large; later runs move only the ref files ghorg rewrote plus any new packs and
+metadata files.
+Measured git deltas range from 213 small ref/config files (35 KiB, no new
+objects) to 45–52 files (2.2–2.6 MiB) when fetches bring objects. No periodic
 `git repack` runs, so packs are not rewritten and the copy-based mirror does
 not re-upload unchanged data.
 
-- **Refresh.** The dataset's `preBackup` runs
+Layout under `/var/lib/github-mirrors` (the dataset source):
+
+| Path | Contents |
+| --- | --- |
+| `<owner>_backup/<repo>` | ghorg bare mirror, wiki repo, LFS objects, one pack per fetch |
+| `meta/repositories/<repo>/` | pgb JSON: `issues/<n>.json`, `pulls/<n>.json`, comments/events/reviews/commits, labels, milestones, discussions, releases+assets, attachments, security advisories, plus per-resource `last_update` checkpoints |
+| `manifests/<date>/` | `repos.txt` (repo sets), `counts.json` (repo/issue/PR counts, mismatches, fsck sample), `run.log` |
+
+- **Refresh (daily).** The dataset's `preBackup` runs
   [`github-mirror.sh`](./github-mirror.sh) under [`gitconfig`](./gitconfig) via
   `GIT_CONFIG_GLOBAL`: [ghorg](https://github.com/gabrie30/ghorg)
   `clone --backup --clone-wiki --skip-forks` of `user.githubUser`, which
@@ -276,14 +285,46 @@ not re-upload unchanged data.
   so git does not rewrite packs behind the copy's back. The mirror therefore
   gains one pack per fetch that brought objects; a periodic `repack` would bound
   the count but re-copy every pack, so it is deliberately not run.
+- **Metadata (daily, incremental).** After ghorg,
+  [`github-metadata.sh`](./github-metadata.sh) runs
+  [python-github-backup](https://github.com/josegonzalez/python-github-backup)
+  with `-P -i` into `meta`: issues, issue comments/events, pulls, pull
+  comments/reviews/commits/details, labels, milestones, discussions, releases
+  and assets, attachments, and security advisories. `-i` uses pgb's per-repo
+  `issues/last_update` and `pulls/last_update` checkpoints and only fetches
+  what changed; deleted issues stay on disk (pgb never prunes). The nixpkgs pin
+  (0.64.0) has no `--issue-timeline`; events and comments cover that history.
+  Git and gists stay with ghorg — pgb is not asked to clone repositories.
+- **Verification.** [`github-verify.sh`](./github-verify.sh) runs after every
+  metadata pass and fails the whole GitHub preBackup if: the ghorg mirror repo
+  set differs from `gh api --paginate user/repos` (forks excluded, archived
+  included; ghorg's `<repo>.wiki` siblings are tied to their parent and not
+  treated as API repos); the pgb repo set differs from the mirror set; issue/PR
+  counts drift from GraphQL by more than `GITHUB_COUNT_DRIFT` (default 5 per
+  repo, for
+  time-of-check drift and issues deleted since pgb saw them); an incremental
+  run left a `last_update` checkpoint older than that run's marker; or a sample
+  (`GITHUB_FSCK_SAMPLE`, default 5) of bare mirrors fails `git fsck --full`.
+  Evidence lands in `manifests/<date>/` even on failure.
+- **Monthly full pass.** `github-metadata-full.service` (first Sunday 09:00,
+  `Persistent=true`) runs pgb **without** `-i` into `meta.new`, verifies it,
+  carries the live `last_update` checkpoints forward, and swaps `meta.new` over
+  `meta` while holding the shared host lock. The pgb run itself shares
+  `/run/lock/github-metadata.lock` with the daily pass, so the staging fetch
+  does not block the media datasets; only the swap takes the host lock. On any
+  failure the live `meta` is untouched and the staging tree is removed;
+  `meta.new`/`meta.old` are excluded from the dataset copy in case a swap
+  overlaps a run.
 - **Token.** Read at runtime from `githubBackup.tokenFile`
   (`/run/secrets/github-repo-pat`, a classic `repo`-scoped sops secret,
   root-owned mode 0400); never placed in the Nix store. This is a *different*
   token from the `github-key-pat` `bootstrap` uses for SSH-key registration.
-  Classic `repo` grants write access to every repo the account can reach; the
-  mirror only reads, and fine-grained tokens cannot read wikis. ghorg embeds
+  Classic `repo` grants write access to every repo the account can reach; all
+  three tools only read, and fine-grained tokens cannot read wikis. ghorg embeds
   the token in the `git clone`/`git remote set-url` URL, so it is visible in
-  root argv during a run (see the hardening list).
+  root argv during a run (see the hardening list). pgb and gh receive it as a
+  `file://` path and an environment variable respectively, so it never enters
+  their argv.
 - **Private-repo guard.** `githubBackup.probeRepo` names a known-private
   repo; the run fails unless that repo was refreshed in the current run. A token
   that lost `repo` scope still lists public repos and exits 0, and ghorg never
@@ -408,6 +449,24 @@ git fetch origin && git checkout main
 ```
 
 To push a mirror back to a remote, `git push --mirror <url>` from it.
+
+**GitHub metadata.** Issues, PRs, discussions, releases, and attachments are
+JSON snapshots, not restorable state: GitHub has no issue-import API that
+preserves numbers, comments, and cross-references. Treat them as archival — the
+readable record of what existed at the last run. They live in
+`/var/backup/GitHub/current/meta/repositories/<repo>/` (or `proton:GitHub`) and
+are read directly with `jq`:
+
+```sh
+jq -r '.title, .body, (.comment_data[]?.body)' \
+  /var/backup/GitHub/current/meta/repositories/sdlc/issues/170.json
+jq -r '.title, .body' \
+  /var/backup/GitHub/current/meta/repositories/sdlc/pulls/169.json
+```
+
+`manifests/<date>/counts.json` is the evidence that the snapshot matched
+GitHub at run time; `repos.txt` lists which repos were in the API, mirror, and
+metadata sets. Reconstructing a lost issue is a manual copy from the JSON.
 
 **Drill the whole thing.** [`drills/restore-drill.sh`](./drills/restore-drill.sh)
 is the executable form of the above:
@@ -569,6 +628,11 @@ dataset needs `backup.enable = true` (the backup disk).
   `/var/backup/GitHub/current`. `--skip-forks` also keeps forks out of the
   *listing*, so one forked before the first run is never mirrored — a deliberate
   scope choice, not a silent error. Archived repos are included.
+- pgb metadata is append-only in the same way: an issue or PR deleted on GitHub
+  stays in `meta/` until the monthly full pass replaces the tree. The count
+  check tolerates that drift up to `GITHUB_COUNT_DRIFT` per repo.
+- The GitHub full-check run at Sunday 10:00 runs `preBackup` again (ghorg + an
+  incremental pgb pass + verification) and then re-reads both copies.
 
 ### Hardening not yet done (accepted, from the final review)
 
@@ -579,7 +643,14 @@ dataset needs `backup.enable = true` (the backup disk).
 - ghorg puts the GitHub token in the `git` argv (`clone`/`remote set-url`), which
   any local user can read from `/proc/<pid>/cmdline` during a run; the wrapper
   strips a token left in a mirror's config before the copy, and the token is
-  root-only, but the argv window remains.
+  root-only, but the argv window remains. pgb receives `file://<token-file>` and
+  gh receives `GH_TOKEN` in its environment, so neither widens that window; the
+  environment is root-only like the file.
+- The monthly full pass stages under `meta.new` inside the dataset source. The
+  dataset excludes `meta.new`/`meta.old`, and the swap takes the host lock, but a
+  hard kill between the two renames can leave the live `meta` as `meta.old`
+  (recoverable by renaming it back); `meta.old` is deliberately not deleted by
+  the failure trap.
 - A mirrored repo can set `lfs.url` in `.lfsconfig`, redirecting the root-run LFS
   fetch to an arbitrary endpoint (blind SSRF). git-lfs ignores unsafe keys, so
   this is not code execution.

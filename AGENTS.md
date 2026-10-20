@@ -163,11 +163,13 @@ exits non-zero), `worktrees-branch-template` (branch naming from
 per-repo templates), `repos-list-links` (listing through linked org dirs), `zsh-config`
 (generated zsh startup files parse; only on a system with a zsh home) and
 `github-mirror-probe` (the GitHub mirror rejects a stale private-repo probe and
-scrubs a token-bearing origin). Run them after touching shell, git, ssh or
-backup settings, or `modules/lib/repo-workflow.nix`:
+scrubs a token-bearing origin) and `github-metadata` (pgb flags and token-by-file,
+manifest counts, stale/scope/count failures, and the full-pass swap). Run them
+after touching shell, git, ssh or backup settings, or
+`modules/lib/repo-workflow.nix`:
 
 ```sh
-nix build .#checks.aarch64-darwin.{git-work-routing,ssh-allowed-signers,ssh-pub-keys,worktrees-branch-template,repos-list-links,zsh-config,github-mirror-probe}
+nix build .#checks.aarch64-darwin.{git-work-routing,ssh-allowed-signers,ssh-pub-keys,worktrees-branch-template,repos-list-links,zsh-config,github-mirror-probe,github-metadata}
 ```
 
 Run `manual-steps-sync` after touching hosts, sops keys, `tofu/`, backup
