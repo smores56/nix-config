@@ -55,6 +55,10 @@ in
   };
   environment.systemPackages = [
     pkgs.fuse
+    # Kitty over SSH exports TERM=xterm-kitty; without the entry every
+    # terminfo consumer (less, journalctl, systemctl status) aborts with
+    # "'xterm-kitty': unknown terminal type."
+    pkgs.kitty.terminfo
   ];
 
   # Run dynamically-linked binaries that aren't patched for Nix.
