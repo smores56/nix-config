@@ -244,7 +244,7 @@ the next weekday after today. A weekend target rolls to Monday.
    through today; a later harvest picks up the rest of today. If `begin`
    refuses, compose from the existing notes and say the harvest was skipped
    and why.
-2. Compose with the Standup template:
+2. Compose with the Standup template, in its section order:
    - **Yesterday** — the newest `daily/` note before the target that has
      activity: what shipped or moved, ticket keys first.
    - **Today** — the plan for the target day: in-progress tickets
@@ -253,7 +253,9 @@ the next weekday after today. A weekend target rolls to Monday.
    - **Blockers** — PRs awaiting review for over a day, tickets flagged
      blocked, explicit blockers in notes; otherwise "None".
 3. Print `Standup for <target>`, then the draft in a code block for the
-   user to edit and paste. **Never post it.**
+   user to edit and paste. Write it as plain markdown: `-` bullets, never
+   `•` or other Unicode bullet glyphs, which chat tools paste as literal
+   text. **Never post it.**
 4. Save the draft as printed to `standups/<target>.md` and
    `brain-commit -m "standup: <target>"`.
 
