@@ -218,10 +218,13 @@ listener runs on the host.
 ### Backups
 
 `backup` (the backup disk; `modules/nixos/backup.nix`) plus one
-`backup.datasets.<Name>` entry per dataset drives an rclone 3-2-1
-pipeline — a versioned local mirror on the disk and, unless `offsite = false`,
-an append-only Proton mirror — with a per-dataset timer, failure marker and Cloudflare email alert. Media datasets can additionally set `onChange` to queue a run after a
-debounced batch of source changes, with the timer as the fallback. smortress
+`backup.datasets.<Name>` entry per dataset drives the backup pipeline. Two
+drivers coexist: `driver = "restic"` (Photos today) keeps a local restic
+repository on the disk and copies it byte-for-byte to Proton, while the legacy
+`rclone` driver (the default) keeps a versioned local mirror plus an append-only
+Proton mirror. Both have a per-dataset timer, failure marker, and Cloudflare
+email alert. Media datasets can additionally set `onChange` to queue a run after
+a debounced batch of source changes, with the timer as the fallback. smortress
 backs up `Photos`/`Videos`/`Music` offsite (and change-triggered) and mirrors the
 `smores56` GitHub repos both locally and offsite (`githubBackup`). The operator's guide
 — guarantees, trigger semantics, layout, restore and one-time prune procedures —

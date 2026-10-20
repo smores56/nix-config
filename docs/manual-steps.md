@@ -152,6 +152,17 @@ tokens.
 The mirror's probe repo (`sdlc`) must be refreshed on every run; a token
 that is valid but has lost `repo` scope fails the run.
 
+### restic-password
+
+<!-- manual-step: secret/restic-password -->
+
+The restic repository password for the Photos backup and restore drill,
+root-only at `/run/secrets/restic-password` (mode 0400). Stored in
+`secrets/smortress.yaml`; create it with `sops secrets/smortress.yaml`.
+Escrow a copy in Proton Pass and offline: without it both the local and Proton
+repositories are unreadable. Retrieve it with
+`nix run nixpkgs#sops -- -d --extract '["restic-password"]' secrets/smortress.yaml`.
+
 ### proton-pass-pat
 
 <!-- manual-step: secret/proton-pass-pat -->
@@ -224,12 +235,14 @@ delete them.
 
 ## Backup datasets
 
-Datasets come from `backup.datasets` on every NixOS host.
+Datasets come from `backup.datasets` on every NixOS host. Two drivers coexist
+while the migration is staged: `driver = "restic"` (Photos) writes a local
+restic repository plus an append-only Proton byte copy; every other dataset
+keeps the legacy `rclone` driver until T12.
 
 Each dataset runs `backup-<name>.service` on its timer and writes
-`/var/backup/<Name>/BACKUP-LAST-SUCCESS` after a run that verified the mirror or
-found nothing to verify. A run with a prior failure marker does not refresh it.
-Inspect runs with:
+`/var/backup/<Name>/BACKUP-LAST-SUCCESS` after a verified run. A run with a
+prior failure marker does not refresh it. Inspect runs with:
 
 ```sh
 systemctl list-timers 'backup-*'
@@ -281,14 +294,30 @@ rclone copy proton:Music /restore/Music --config /var/lib/backup/rclone.conf
 
 <!-- manual-step: dataset/Photos -->
 
-`/var/lib/media/Photos` (the Immich library), daily 03:00, full check Sundays
-06:00, change-triggered. A generated pre-unit dumps PostgreSQL as `postgres`;
-the driver copies it to `current/db/immich.dump` and fails the run if the
-dump is missing or stale. `thumbs` and `encoded-video` are excluded because
-Immich rebuilds them from the originals.
+`/var/lib/media/Photos` (the Immich library) uses the restic driver: daily
+03:00, full check Sundays 06:00, change-triggered. The local repository is
+`/var/backup/restic/Photos`; the append-only Proton copy is
+`proton:restic/Photos` (copied with `rclone copy`, never synced or pruned). The
+old rclone mirror under `/var/backup/Photos/current` is retained until the
+restic drill passes; its old units are no longer generated.
 
-Restore both the database dump and the library; the procedure (including
-`runuser -u postgres`) is in the backup README.
+The restic password is read at run time from `/run/secrets/restic-password`
+(root-only, mode 0400). Create the `restic-password` sops key in
+`secrets/smortress.yaml`, rebuild, and confirm the file exists before the first
+run — without it every restic unit fails and raises the alert. Escrow the same
+password offline and in Proton Pass before relying on the backup (T10 restores
+with the offline kit alone).
+
+A generated dump unit runs as `postgres` and writes Immich's documented plain
+SQL dump to `/var/lib/backup/restic-staging/photos/immich.sql.gz`; restic
+includes that directory in every snapshot. Immich's own scheduled dumps stay
+enabled as the fast local path. `thumbs` and `encoded-video` are excluded
+because Immich rebuilds them from the originals.
+
+Restore with `restic restore latest` from the local repository, or copy
+`proton:restic/Photos` back with `rclone copy` under
+`/run/lock/media-backup.lock` first, then restore and load the dump with
+`psql`. The exact commands are in the backup README.
 
 ### Videos
 

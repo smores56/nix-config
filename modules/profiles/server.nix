@@ -12,6 +12,7 @@
     ../nixos/nvidia.nix
     ../nixos/backup.nix
     ../nixos/backup-datasets.nix
+    ../nixos/backup-restic.nix
     ../nixos/github-backup.nix
     ../nixos/alerting.nix
     ../nixos/no-sleep.nix

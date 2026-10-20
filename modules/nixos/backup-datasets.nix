@@ -311,6 +311,11 @@ let
       Persistent = true;
     };
   };
+
+  # Only rclone datasets generate units here. A dataset with driver = "restic"
+  # is owned by modules/nixos/backup-restic.nix; keeping this filter in one
+  # place means the legacy Photos units disappear as soon as Photos moves.
+  rcloneDatasets = lib.filterAttrs (_: dataset: dataset.driver == "rclone") cfg.datasets;
 in
 {
   config = lib.mkIf (cfg.datasets != { }) {
@@ -323,7 +328,7 @@ in
     ++ lib.mapAttrsToList (name: dataset: {
       assertion = !dataset.postgres || dataset.preBackup != null;
       message = "backup.datasets.${name}.postgres requires a preBackup snippet that copies ${pgDumpFile name} into BACKUP_CURRENT/db.";
-    }) cfg.datasets
+    }) rcloneDatasets
     ++ lib.mapAttrsToList (name: dataset: {
       # cadences can trip on a slow-but-alive transfer. "0" disables the watchdog.
       # parseDurationSeconds accepts a far broader grammar (words, compounds,
@@ -338,11 +343,11 @@ in
           builtins.match "[0-9]+[smhd]?" dataset.stallTimeout != null && seconds != null && seconds >= 60
         );
       message = "backup.datasets.${name}.stallTimeout must be \"0\" (disabled) or \"<number><s|m|h|d>\" of at least 60s (two rclone 30s stats intervals), got \"${dataset.stallTimeout}\".";
-    }) cfg.datasets
+    }) rcloneDatasets
     ++ lib.mapAttrsToList (name: dataset: {
       assertion = dataset.fullCheckSchedule == null || dataset.fullCheckSchedule != "";
       message = "backup.datasets.${name}.fullCheckSchedule must be null (disabled) or a non-empty systemd OnCalendar expression, got \"${dataset.fullCheckSchedule}\".";
-    }) cfg.datasets
+    }) rcloneDatasets
     ++ lib.mapAttrsToList (name: dataset: {
       # The watcher parses the same compact grammar as the driver's timeout.
       assertion =
@@ -353,7 +358,7 @@ in
           && parseDurationSeconds dataset.onChange.debounce >= 1
         );
       message = "backup.datasets.${name}.onChange.debounce must be \"<number><s|m|h|d>\" of at least 1s, got \"${dataset.onChange.debounce}\".";
-    }) cfg.datasets;
+    }) rcloneDatasets;
 
     # The driver creates the host-wide lock itself; this only guarantees it
     # exists at mode 0600 (root-only) and never widens it. Each watched dataset
@@ -362,10 +367,10 @@ in
       "f /run/lock/media-backup.lock 0600 root root -"
     ]
     ++ lib.optional (lib.any (dataset: dataset.postgres) (
-      lib.attrValues cfg.datasets
+      lib.attrValues rcloneDatasets
     )) "d ${pgDumpDir} 0700 postgres postgres -"
     ++ lib.mapAttrsToList (name: _: "d ${queueDir name} 0700 root root -") (
-      lib.filterAttrs (_: dataset: dataset.onChange.enable) cfg.datasets
+      lib.filterAttrs (_: dataset: dataset.onChange.enable) rcloneDatasets
     );
 
     # rclone for ops/restore (the restore drill runs it as root); `backup` for
@@ -378,16 +383,16 @@ in
     systemd.services =
       lib.mapAttrs' (
         name: dataset: lib.nameValuePair (unitName name) (mkService name dataset false)
-      ) cfg.datasets
+      ) rcloneDatasets
       // lib.mapAttrs' (
         name: dataset: lib.nameValuePair "${unitName name}-fullcheck" (mkService name dataset true)
-      ) (lib.filterAttrs (_: dataset: dataset.fullCheckSchedule != null) cfg.datasets)
+      ) (lib.filterAttrs (_: dataset: dataset.fullCheckSchedule != null) rcloneDatasets)
       // lib.mapAttrs' (
         name: dataset: lib.nameValuePair "${unitName name}-watch" (mkWatchService name dataset)
-      ) (lib.filterAttrs (_: dataset: dataset.onChange.enable) cfg.datasets)
+      ) (lib.filterAttrs (_: dataset: dataset.onChange.enable) rcloneDatasets)
       // lib.mapAttrs' (
         name: dataset: lib.nameValuePair "${unitName name}-dump" (mkDumpService name dataset)
-      ) (lib.filterAttrs (_: dataset: dataset.postgres) cfg.datasets);
+      ) (lib.filterAttrs (_: dataset: dataset.postgres) rcloneDatasets);
 
     # DirectoryNotEmpty is re-checked after the backup service exits, so a
     # change during a run leaves a request behind and triggers exactly one more
@@ -401,14 +406,14 @@ in
           Unit = "${unitName name}.service";
         };
       }
-    ) (lib.filterAttrs (_: dataset: dataset.onChange.enable) cfg.datasets);
+    ) (lib.filterAttrs (_: dataset: dataset.onChange.enable) rcloneDatasets);
 
     systemd.timers =
       lib.mapAttrs' (
         name: dataset: lib.nameValuePair (unitName name) (mkTimer dataset.schedule)
-      ) cfg.datasets
+      ) rcloneDatasets
       // lib.mapAttrs' (
         name: dataset: lib.nameValuePair "${unitName name}-fullcheck" (mkTimer dataset.fullCheckSchedule)
-      ) (lib.filterAttrs (_: dataset: dataset.fullCheckSchedule != null) cfg.datasets);
+      ) (lib.filterAttrs (_: dataset: dataset.fullCheckSchedule != null) rcloneDatasets);
   };
 }

@@ -76,15 +76,20 @@ in
       onChange.enable = true;
     };
     backup.datasets.Photos = {
+      # Photos runs the restic driver: a local repository plus an append-only
+      # byte copy on Proton. The other datasets keep the rclone driver until
+      # T12. The old Photos rclone units stop being generated; the existing
+      # local mirror data is left in place.
+      driver = "restic";
+      repository = "/var/backup/restic/Photos";
+      protonPath = "restic/Photos";
       schedule = "*-*-* 03:00:00";
       fullCheckSchedule = "Sun *-*-* 06:00:00";
       timeout = "2h";
-      # A generated pre-unit dumps Postgres as the postgres user (NNP on, no
-      # runuser); this snippet copies that dump into the mirror and fails if the
-      # dump is missing or stale. `excludes` REPLACES the option default, so
-      # the cache/credential patterns are repeated here alongside the two
+      # restic patterns. `excludes` REPLACES the option default, so the
+      # cache/credential patterns are repeated here alongside the two
       # regenerable Immich derived trees (thumbs, encoded-video) that Immich
-      # rebuilds from the originals and that need not occupy a mirror.
+      # rebuilds from the originals and that need not occupy a backup.
       excludes = [
         "/.cache/**"
         "**/.cache/**"
@@ -92,33 +97,21 @@ in
         "/thumbs/**"
         "/encoded-video/**"
       ];
+      # The generated dump unit writes Immich's documented plain-SQL dump
+      # (pg_dump --clean --if-exists | gzip) to
+      # /var/lib/backup/restic-staging/photos/immich.sql.gz, and the restic
+      # backup includes that directory. Immich's own scheduled dumps stay
+      # enabled as the fast local path; they are not part of the offsite copy.
       postgres = true;
       onChange = {
         enable = true;
-        # Regenerable Immich trees excluded from the mirror must not trigger a
+        # Regenerable Immich trees excluded from the backup must not trigger a
         # run either; the storage-template originals under library/ still do.
         ignore = [
           "thumbs"
           "encoded-video"
         ];
       };
-      preBackup = ''
-        dump=/var/lib/postgresql/backups/photos.dump
-        test -s "$dump" || { echo "missing PostgreSQL dump: $dump"; exit 1; }
-        # postgres owns the dump directory; refuse a symlink so a compromised
-        # database cannot make root copy an arbitrary file into the mirror.
-        [ ! -L "$dump" ] || { echo "refusing symlinked PostgreSQL dump: $dump"; exit 1; }
-        now=$(date +%s)
-        mtime=$(stat -c %Y "$dump")
-        [ $((now - mtime)) -le 3600 ] || { echo "stale PostgreSQL dump: $dump"; exit 1; }
-        mkdir -p "$BACKUP_CURRENT/db"
-        # One stable name: copy never deletes, so dated names would accumulate
-        # a full dump per run locally and offsite forever. Overwrites keep the
-        # previous revision in the local versions/ tree; Proton holds the latest.
-        # Stage then rename so a concurrent read never sees a partial dump.
-        cp "$dump" "$BACKUP_CURRENT/db/immich.dump.tmp"
-        mv "$BACKUP_CURRENT/db/immich.dump.tmp" "$BACKUP_CURRENT/db/immich.dump"
-      '';
     };
     backup.datasets.Music = {
       schedule = "*-*-* 05:00:00";

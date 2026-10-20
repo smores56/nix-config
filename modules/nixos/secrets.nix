@@ -63,6 +63,13 @@
       github-repo-pat = {
         mode = "0400";
       };
+
+      # restic repository password for the Photos restic backup and its restore
+      # drill. Root-only; escrow a copy in Proton Pass and offline before
+      # relying on the repository.
+      restic-password = {
+        mode = "0400";
+      };
     };
 
     # Repoint the tunnel daemon at the decrypted credentials. The API token is
