@@ -1,4 +1,4 @@
-# Proton Drive as an on-demand FUSE mount (`fp`). The command stays in the
+# Proton Drive as an on-demand FUSE mount (`pm`). The command stays in the
 # foreground so the mount exists only while it runs; Ctrl-C, a dropped SSH
 # session, or closing the terminal unmounts it.
 #
@@ -121,7 +121,7 @@ let
 in
 {
   options.protonDrive = {
-    enable = lib.mkEnableOption "the on-demand Proton Drive FUSE mount (`fp`)";
+    enable = lib.mkEnableOption "the on-demand Proton Drive FUSE mount (`pm`)";
     mountPoint = lib.mkOption {
       type = lib.types.strMatching "[^/]+";
       default = "proton";
@@ -141,6 +141,6 @@ in
 
   config = lib.mkIf (isLinux && cfg.enable) {
     home.packages = [ protonMount ];
-    user.shellAbbrs.fp = "proton-mount";
+    user.shellAbbrs.pm = "proton-mount";
   };
 }

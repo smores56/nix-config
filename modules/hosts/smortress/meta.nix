@@ -24,7 +24,7 @@ in
       passwordFile = "/run/secrets/calibre-password";
     };
     # The `proton:` rclone remote lives in ~/.config/rclone/rclone.conf (not
-    # Nix-managed); `fp` mounts it on demand as ~/proton.
+    # Nix-managed); `pm` mounts it on demand as ~/proton.
     protonDrive.enable = true;
   };
 
