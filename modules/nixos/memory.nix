@@ -13,6 +13,7 @@
 let
   ports = import ../ports.nix;
   inherit (aiProviders) smortress;
+  memoryPackage = import ../features/ai/memory/package.nix { inherit pkgs; };
 
   # Loopback ports and the data root. Only the MCP port is shared with the
   # future tunnel ingress, so it lives in ports.nix; the rest stay local.
@@ -45,7 +46,7 @@ let
   graphitiConfig = pkgs.writeText "graphiti-mcp-config.yaml" ''
     server:
       transport: "http"
-      port: ${toString ports.memoryMcp}
+      port: ${toString ports.memoryGraphiti}
 
     llm:
       provider: "openai"
@@ -104,8 +105,17 @@ in
     # publishes only to loopback, so nothing here is reachable off-host.
     virtualisation.oci-containers.backend = "podman";
 
+    # The wrapper owns /var/lib/memory (index, audit, future export), so it
+    # needs a stable unprivileged owner; FalkorDB's subdirectory stays root-owned
+    # because the container runs rootful.
+    users.groups.memory = { };
+    users.users.memory = {
+      isSystemUser = true;
+      group = "memory";
+    };
+
     systemd.tmpfiles.rules = [
-      "d ${dataDir} 0700 root root -"
+      "d ${dataDir} 0750 memory memory -"
       "d ${dataDir}/falkordb 0700 root root -"
     ];
 
@@ -147,7 +157,7 @@ in
           "--security-opt=no-new-privileges"
           # The image's healthcheck targets its default port; retarget it. The
           # image's own interval/timeout values are kept.
-          "--health-cmd=curl -f http://127.0.0.1:${toString ports.memoryMcp}/health >/dev/null || exit 1"
+          "--health-cmd=curl -f http://127.0.0.1:${toString ports.memoryGraphiti}/health >/dev/null || exit 1"
           "--health-on-failure=kill"
         ];
         volumes = [ "${graphitiConfig}:/app/mcp/config/config.yaml:ro" ];
@@ -218,6 +228,74 @@ in
           sleep 1
         done
         echo "memory-graphiti-mcp: FalkorDB or the embedder did not become ready in 120s" >&2
+        exit 1
+      '';
+    };
+
+    # The wrapper is the only memory service the tunnel reaches. It validates
+    # the group header the shim sends, refuses work groups, dedupes writes, and
+    # gates them on the local models before Graphiti's in-memory queue can drop
+    # them. Raw Graphiti stays on memoryGraphiti and is never tunneled.
+    systemd.services.memory-mcp = {
+      description = "memory MCP wrapper (project groups, dedup, provenance)";
+      wantedBy = [ "multi-user.target" ];
+      wants = [
+        "memory-graphiti-mcp.service"
+        "llama-cpp-embed.service"
+      ];
+      after = [
+        "memory-graphiti-mcp.service"
+        "llama-cpp-embed.service"
+      ];
+      unitConfig = {
+        StartLimitIntervalSec = "1h";
+        StartLimitBurst = 10;
+      };
+      onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
+      serviceConfig = {
+        User = "memory";
+        Group = "memory";
+        ExecStart = "${memoryPackage}/bin/memory-mcp";
+        WorkingDirectory = dataDir;
+        StateDirectory = "memory";
+        StateDirectoryMode = "0750";
+        Environment = [
+          "MEMORY_MCP_HOST=127.0.0.1"
+          "MEMORY_MCP_PORT=${toString ports.memoryMcp}"
+          "MEMORY_GRAPHITI_URL=http://127.0.0.1:${toString ports.memoryGraphiti}/mcp"
+          "MEMORY_LLM_URL=http://127.0.0.1:${toString ports.llm}"
+          "MEMORY_EMBED_URL=http://127.0.0.1:${toString embeddingPort}"
+          "MEMORY_STATE_DIR=${dataDir}"
+        ];
+        # The pre-start probe bounds how long a stale graph or embedder can
+        # keep the unit in activation.
+        TimeoutStartSec = "2min";
+        Restart = "always";
+        RestartSec = "5s";
+        MemoryMax = "512M";
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        NoNewPrivileges = true;
+        PrivateDevices = true;
+        RestrictAddressFamilies = [
+          "AF_INET"
+          "AF_INET6"
+          "AF_UNIX"
+        ];
+        # Loopback only: the wrapper talks to Graphiti and the two model
+        # endpoints and needs no other network identity.
+        IPAddressAllow = "localhost";
+        IPAddressDeny = "any";
+      };
+      preStart = ''
+        for _ in $(seq 60); do
+          ${pkgs.curl}/bin/curl -sf http://127.0.0.1:${toString ports.memoryGraphiti}/health >/dev/null 2>&1 \
+            && ${pkgs.curl}/bin/curl -sf http://127.0.0.1:${toString embeddingPort}/health >/dev/null 2>&1 \
+            && exit 0
+          sleep 1
+        done
+        echo "memory-mcp: Graphiti or the embedder did not become ready in 60s" >&2
         exit 1
       '';
     };

@@ -291,10 +291,17 @@ model providers Maki may use.
 
 - `personal` (default): maki runs on the providers in
   `modules/features/ai/providers.nix`; smortress is reached through the tunnel,
-  over loopback forwards. A `graphiti` MCP server is generated into
-  `~/.config/maki/mcp.toml` at the loopback `ports.memoryMcp`; on client
-  machines the `cloudflared-memory` forward supplies the Cloudflare Access
-  service token, and on smortress Maki dials the service directly.
+  over loopback forwards. `~/.config/maki/mcp.toml` starts the
+  `memory-mcp-shim` stdio server (server name `graphiti`). The shim derives the
+  project group from Maki's cwd, refuses work repositories, and forwards MCP to
+  the loopback wrapper at `ports.memoryMcp` with `X-Memory-Group`/`X-Memory-Cwd`
+  headers; on client machines `cloudflared-memory` supplies the Cloudflare
+  Access service token. The raw Graphiti MCP stays on the internal
+  `ports.memoryGraphiti` and is never tunneled. The same package installs the
+  `memory` CLI (`memory write|search|promote|status`) for use on a client or on
+  smortress directly. Tombstones mark only the wrapper's index and audit log;
+  the Graphiti MCP API exposes no edge-invalidation tool, so graph facts are
+  left intact, and hard-delete tools are never forwarded to clients.
 - `work`: maki is OpenAI-only and gets no personal providers, search, or
   memory MCP.
   The default model is configured in `modules/features/ai/maki/default.nix`.

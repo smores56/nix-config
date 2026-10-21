@@ -12,6 +12,10 @@
   calibre = 8181;
   immich = 2283;
   ssh = 22;
-  # Graphiti MCP; the tunnel ingress and the Maki client read it.
+  # The memory wrapper is the only tunnel target for memory (the raw Graphiti
+  # MCP moved inside); the Maki shim and the `memory` CLI read memoryMcp.
   memoryMcp = 8182;
+  # Raw Graphiti MCP. Loopback only and never tunneled: the wrapper on
+  # memoryMcp owns validation, dedup, and work refusal.
+  memoryGraphiti = 8184;
 }

@@ -361,15 +361,31 @@ call it unattended. `api_key = "none"`; the tunnel and Access are the boundary.
 
 <!-- manual-step: service/smortress/memory -->
 
-`memory.sammohr.dev` → the loopback Graphiti MCP (`ports.memoryMcp`), TCP to
-the server's loopback, with the same service-auth policy. The server has no
-authentication of its own; Access is the only route. Personal machines run
-`cloudflared-memory`, which forwards loopback `ports.memoryMcp` and injects the
-Access service token, so Maki's generated `~/.config/maki/mcp.toml` contains
-only the loopback URL (server `graphiti`). On smortress, Maki dials the service
-directly.
+`memory.sammohr.dev` → the loopback memory wrapper (`ports.memoryMcp`), TCP to
+the server's loopback, with the same service-auth policy. The wrapper derives
+nothing itself: it validates the group header the Maki shim sends, refuses work
+groups, dedupes writes, and is the only tunnel target. The wrapper has no
+authentication of its own; Access is the only route. Raw Graphiti stays on the
+internal `ports.memoryGraphiti` (loopback, never tunneled).
 
-Apply the Memory Access application **before** rebuilding smortress:
+Personal machines run `cloudflared-memory`, which forwards loopback
+`ports.memoryMcp` and injects the Access service token. Maki's generated
+`~/.config/maki/mcp.toml` starts `memory-mcp-shim` (server `graphiti`); the shim
+derives the project group from Maki's cwd and forwards to the wrapper. The same
+package installs the `memory` CLI. The wrapper's SQLite index, audit log, and
+future export live under `/var/lib/memory`, owned by the `memory` system user
+(the FalkorDB subdirectory stays root-owned).
+
+Activate after changing the wrapper, shim, or package:
+
+```sh
+just switch smortress
+home-manager switch --flake .#smores@<personal-host>
+```
+
+The tunnel ingress and Access application are unchanged by this step. For a
+first deployment, apply the Memory Access application **before** rebuilding
+smortress:
 
 ```sh
 sudo nix run .#cloudflare-apply

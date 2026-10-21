@@ -7,7 +7,6 @@
 }:
 let
   inherit (aiProviders) neuralwatt smortress;
-  ports = import ../../../ports.nix;
 
   # Work uses the built-in OpenAI provider and Maki's own login storage,
   # with no personal providers and no search plugin.
@@ -40,6 +39,10 @@ let
     .${config.user.aiProfile};
 
   luaStrings = lib.concatMapStringsSep ", " builtins.toJSON;
+
+  # The wrapper, shim, and `memory` CLI are one derivation; personal homes get
+  # all three, work homes get none.
+  memoryPackage = import ../memory/package.nix { inherit pkgs; };
 
   # always_yolo skips permission prompts (deny rules still apply);
   # always_thinking forces the max reasoning level. bash is off by default in
@@ -145,15 +148,17 @@ let
     exec "$HOME/.local/bin/maki" "$@"
   '';
 
-  # Maki's Graphiti MCP. The URL is loopback on every personal machine: on
+  # Maki's memory MCP. The stdio shim inherits Maki's cwd, derives the project
+  # group there, refuses work repos, and forwards to the loopback wrapper with
+  # the group and cwd as headers. Maki's HTTP client sends neither, so a URL
+  # entry cannot do this. The wrapper is loopback on every personal machine: on
   # smortress it is the service itself, elsewhere cloudflared-memory forwards
-  # the same port and adds the Cloudflare Access service token, so no secret
-  # belongs in this file. The name must not collide with a built-in tool
-  # (`memory` is one), so it is `graphiti`. 90s stays under Cloudflare's ~100s
-  # origin timeout for a single response.
+  # the same port and adds the Cloudflare Access service token. The name must
+  # not collide with a built-in tool (`memory` is one), so it stays `graphiti`.
+  # 90s stays under Cloudflare's ~100s origin timeout for a single response.
   mcpToml = ''
     [mcp.graphiti]
-    url = "http://127.0.0.1:${toString ports.memoryMcp}/mcp"
+    command = ["${memoryPackage}/bin/memory-mcp-shim"]
     timeout = 90000
   '';
 
@@ -301,7 +306,8 @@ in
       pkgs.rtk
       makiSessionSearchBin
       makiSessionResume
-    ];
+    ]
+    ++ lib.optionals profile.memoryMcp [ memoryPackage ];
 
     user.shellAbbrs.ms = "pick maki-sessions maki-session-resume";
   };
