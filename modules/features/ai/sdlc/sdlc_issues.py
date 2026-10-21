@@ -53,6 +53,16 @@ query($owner: String!, $name: String!, $number: Int!) {
 """
 
 ACTIONS = ("show", "status", "review", "comment", "next", "approve", "complete", "cancel")
+ACTION_HELP = {
+    "show": "print the body and comments",
+    "status": "show approval and task state",
+    "review": "open tuicr and post the notes",
+    "comment": "open $EDITOR and post a comment",
+    "next": "print the next ready task",
+    "approve": "record design approval (TTY only)",
+    "complete": "close as done (terminal)",
+    "cancel": "close as canceled (terminal)",
+}
 REVIEW_ITEM_RE = re.compile(
     r"^\s*(\d+)\.\s+(?:\*\*\[[^\]]+\]\*\*\s+)?`([^`]+)`"
     r"(?:\s+\(commit\s+[0-9a-f]+\))?\s+-\s+(.*)$"
@@ -427,29 +437,122 @@ def preview_text(feature):
     )
 
 
-def write_picker_cable(tmp, features):
-    """Write the feature list and its previews for tv, with no live gh calls."""
+def excerpt(value, lines=20, chars=1600):
+    """Truncate untrusted body text to a preview-sized excerpt."""
+    text = clean(value or "").strip("\n")
+    if not text.strip():
+        return "(none)"
+    rows = text.split("\n")
+    kept = rows[:lines]
+    clipped = len(rows) > lines
+    out = "\n".join(kept)
+    if len(out) > chars:
+        out = out[:chars].rstrip()
+        clipped = True
+    return out + "\n…" if clipped else out
+
+
+def feature_facts(feature):
+    approval = approval_state(feature)
+    return [
+        "labels: %s" % (", ".join(sorted(labels_of(feature))) or "(none)"),
+        "approval: %s (%s)"
+        % (approval.state, clean(approval.reason) or "design matches"),
+        "design sha256: %s" % ((approval.design or "-")[:12]),
+    ]
+
+
+def task_lines(feature):
+    tasks = node_list(feature.get("subIssues"))
+    open_tasks = [task for task in tasks if task.get("state") != "CLOSED"]
+    return [
+        "sub-issues: %d open of %d" % (len(open_tasks), len(tasks)),
+    ] + [
+        "  #%d [%s] %s"
+        % (
+            task["number"],
+            "open" if task.get("state") != "CLOSED" else "closed",
+            one_line(task.get("title") or ""),
+        )
+        for task in tasks[:8]
+    ]
+
+
+def action_preview(feature, action):
+    """Describe one action against a feature, from local payload data only."""
+    lines = [
+        "#%d %s" % (feature["number"], one_line(feature.get("title") or "")),
+        "[%s] %s" % (display_status(feature), repo_names(feature) or "-"),
+        "",
+        "## %s" % action,
+        "%s: %s." % (action.capitalize(), ACTION_HELP[action]),
+    ]
+    if action in ("complete", "cancel"):
+        lines += [
+            "",
+            "WARNING: this is terminal — #%d becomes %s and there is no reopen "
+            "flow. Confirms with y/N before writing."
+            % (feature["number"], "done" if action == "complete" else "canceled"),
+        ]
+    if action in ("show", "review"):
+        lines += ["", "### body", excerpt(feature.get("body"))]
+        comments = feature.get("comments") or []
+        if action == "show" and comments:
+            lines += [
+                "",
+                "### latest comment (%s)" % clean(comment_author(comments[-1])),
+                excerpt((comments[-1].get("body") or ""), lines=6, chars=400),
+            ]
+    elif action == "status":
+        lines += ["", "### state"] + feature_facts(feature) + task_lines(feature)
+    elif action == "next":
+        lines += ["", "### tasks"] + task_lines(feature)
+    elif action == "approve":
+        approval = approval_state(feature)
+        lines += ["", "### approval"] + feature_facts(feature) + [
+            "approved sha256: %s" % (approval.approved or "-"),
+        ]
+    return "\n".join(lines) + "\n"
+
+
+def write_picker_channel(tmp, name, rows, previews, display, output="{split:\\t:0}"):
+    """Write a tv channel whose previews are precomputed files, with no live gh calls.
+
+    The preview command is a bare `cat` so it never blocks on the network; tv
+    resolves {split:\t:0} from the row to choose the file.
+    """
     cable = os.path.join(tmp, "cable")
-    previews = os.path.join(tmp, "previews")
+    previews_dir = os.path.join(tmp, "previews")
     os.makedirs(cable)
-    os.makedirs(previews)
-    source = os.path.join(tmp, "features.tsv")
+    os.makedirs(previews_dir)
+    source = os.path.join(tmp, "%s.tsv" % name)
     with open(source, "w") as fh:
-        fh.write("\n".join(path_row(feature) for feature in features) + "\n")
-    for feature in features:
-        with open(os.path.join(previews, "%d.md" % feature["number"]), "w") as fh:
-            fh.write(preview_text(feature))
-    preview = "cat %s/{split:\\t:0}.md" % shlex.quote(previews)
+        fh.write("\n".join(rows) + "\n")
+    for key, text in previews.items():
+        with open(os.path.join(previews_dir, "%s.md" % key), "w") as fh:
+            fh.write(text)
+    preview = "cat %s/{split:\\t:0}.md" % shlex.quote(previews_dir)
     channel = (
-        '[metadata]\nname = "sdlc-features"\nrequirements = ["sdlc"]\n\n'
+        '[metadata]\nname = "%s"\nrequirements = ["sdlc"]\n\n'
         '[source]\ncommand = "cat %s"\nentry_delimiter = "\\n"\n'
-        'display = "#{split:\\t:0} {split:\\t:1} [{split:\\t:2}] {split:\\t:3}"\n'
-        'output = "{split:\\t:0}"\n\n'
+        'display = "%s"\n'
+        'output = "%s"\n\n'
         '[preview]\ncommand = "%s"\n'
-    ) % (shlex.quote(source), preview)
-    with open(os.path.join(cable, "sdlc-features.toml"), "w") as fh:
+    ) % (name, shlex.quote(source), display, output, preview)
+    with open(os.path.join(cable, "%s.toml" % name), "w") as fh:
         fh.write(channel)
     return cable
+
+
+def write_picker_cable(tmp, features):
+    """Write the feature list and its previews for tv, with no live gh calls."""
+    return write_picker_channel(
+        tmp,
+        "sdlc-features",
+        [path_row(feature) for feature in features],
+        {str(feature["number"]): preview_text(feature) for feature in features},
+        display="#{split:\\t:0} #{split:\\t:1} [#{split:\\t:2}] {split:\\t:3}",
+    )
 
 
 # --- review roundtrip -------------------------------------------------------
@@ -587,8 +690,31 @@ def cwd_repo_name(cwd=None):
     return os.path.basename(proc.stdout.strip()) or None
 
 
-def pick_action():
-    return pick(list(ACTIONS), header="sdlc actions").strip()
+def pick_action(feature=None):
+    """Pick an action. With a feature, each action previews what it will do.
+
+    The feature payload is already in hand (or fetched once by cmd_ui), so the
+    previews are precomputed files read by `cat`; the picker never runs gh.
+    """
+    if feature is None or not shutil.which("tv"):
+        return pick(list(ACTIONS), header="sdlc actions").strip()
+    rows = ["%s\t%s" % (action, ACTION_HELP[action]) for action in ACTIONS]
+    with tempfile.TemporaryDirectory(prefix="sdlc-cable-") as tmp:
+        cable = write_picker_channel(
+            tmp,
+            "sdlc-actions",
+            rows,
+            {action: action_preview(feature, action) for action in ACTIONS},
+            display="#{split:\\t:0} {split:\\t:1}",
+        )
+        proc = subprocess.run(
+            ["tv", "--cable-dir", cable, "sdlc-actions"],
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+    if proc.returncode != 0 or not proc.stdout.strip():
+        raise CliError("selection canceled")
+    return proc.stdout.splitlines()[0].strip()
 
 
 def pick_feature(repo, all_states=False, features=None):
@@ -1051,8 +1177,16 @@ def cmd_ui(args):
     if len(actions) > 1:
         raise CliError("expected at most one action, got %s" % ", ".join(actions))
 
-    ref = features[0] if features else str(pick_feature(repo, all_states=args.all))
-    action = actions[0] if actions else pick_action()
+    if features:
+        ref = features[0]
+        # One fetch, only when the action picker will actually show previews.
+        feature = None if actions else resolve_feature(repo, ref)
+    else:
+        pool = feature_issues(repo, all_states=args.all)
+        number = pick_feature(repo, features=pool)
+        ref = str(number)
+        feature = next((item for item in pool if item["number"] == number), None)
+    action = actions[0] if actions else pick_action(feature)
     if action == "show":
         cmd_show(argparse.Namespace(feature=ref))
     elif action == "status":
