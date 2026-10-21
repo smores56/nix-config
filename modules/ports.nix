@@ -12,4 +12,7 @@
   calibre = 8181;
   immich = 2283;
   ssh = 22;
+  # Graphiti MCP; the Cloudflare Access ingress and the Maki client land in
+  # #217/#218. The embedder port stays module-local (no client ever dials it).
+  memoryMcp = 8182;
 }

@@ -29,6 +29,7 @@ in
     exposeSsh.enable = true;
     nvidia.enable = true;
     llm.enable = true;
+    memory.enable = true;
     noSleep.enable = true;
     webProxy = {
       enable = true;
