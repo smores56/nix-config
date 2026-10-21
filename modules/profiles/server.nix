@@ -2,6 +2,7 @@
 {
   home = [
     ../features/calibre.nix
+    ../features/proton-drive.nix
   ];
   nixos = [
     ../nixos/secrets.nix
