@@ -32,11 +32,21 @@ DEFAULT_POLL_SECONDS = 5.0
 DEFAULT_WRITE_TIMEOUT = 90.0
 MAX_FETCH = 5000
 REPAIR_REASON = "ingest repair: queued write never appeared in the graph"
+RECONCILE_REASON = "ingest reconcile: planned episode was never stored in the graph"
 
-COUNTERS = ("built", "queued", "duplicate", "skipped", "verified", "repaired", "failed")
+COUNTERS = ("built", "queued", "duplicate", "skipped", "reconciled", "verified", "repaired", "failed")
 
 _ID_TOKEN = re.compile(r"(?:^|;\s*)id=([0-9a-fA-F-]{36})")
 _HASH_TOKEN = re.compile(r"(?:^|;\s*)hash=([0-9a-f]{64})")
+
+
+def _provenance(description: str) -> dict[str, str]:
+    tokens: dict[str, str] = {}
+    for part in description.split("; "):
+        key, separator, value = part.partition("=")
+        if separator and key.strip():
+            tokens.setdefault(key.strip(), value.strip())
+    return tokens
 
 
 class IngestError(RuntimeError):
@@ -248,14 +258,79 @@ class IngestRunner:
             raise IngestError(result.text.strip() or "memory_write failed")
         return _episode_status(result.text)
 
-    async def _tombstone(self, entry: BatchEntry) -> None:
+    async def _tombstone(self, entry: BatchEntry, *, reason: str = REPAIR_REASON) -> None:
         result = await self.call_tool_fn(
             self._config_for(group=entry.episode.group),
             "memory_tombstone",
-            {"ref": entry.uuid, "reason": REPAIR_REASON},
+            {"ref": entry.uuid, "reason": reason},
         )
         if result.is_error:
             raise IngestError(result.text.strip() or "memory_tombstone failed")
+
+    async def _fetch_episodes(self, group: str, minimum: int) -> list[dict[str, object]]:
+        """Read at least `minimum` recent episodes, growing to MAX_FETCH."""
+        page = max(50, minimum)
+        while True:
+            episodes = await self.backend.get_episodes([group], page)
+            if len(episodes) < page or page >= MAX_FETCH:
+                return episodes
+            page = min(MAX_FETCH, page * 2)
+
+    async def _reconcile(self, queue: list[BatchEntry]) -> None:
+        """Tombstone planned rows that never reached the graph before writing.
+
+        A queued write that Graphiti dropped leaves the wrapper index row
+        `active`. A plain re-run then gets `Duplicate memory` for it and waits
+        out the whole verification window before repairing. One pass over
+        `get_episodes` per group finds those rows up front, so the write is a
+        real queue instead of a duplicate, and the repair path stays a fallback.
+        """
+        by_group: dict[str, list[BatchEntry]] = {}
+        for entry in queue:
+            by_group.setdefault(entry.episode.group, []).append(entry)
+
+        present_source_ids: set[tuple[str, str]] = set()
+        present_ids: set[str] = set()
+        present_hashes: set[str] = set()
+        for group, entries in by_group.items():
+            try:
+                episodes = await self._fetch_episodes(group, 2 * len(entries))
+            except BackendError as exc:
+                # Verification still protects the run; a reconcile failure must
+                # not block writes that were never attempted before.
+                self._log(f"reconcile {group}: {exc}; skipping pre-verification")
+                return
+            for episode in episodes:
+                description = str(
+                    episode.get("source_description") or episode.get("sourceDescription") or ""
+                )
+                present_ids.update(_ID_TOKEN.findall(description))
+                present_hashes.update(_HASH_TOKEN.findall(description))
+                tokens = _provenance(description)
+                if tokens.get("source") and tokens.get("source_id"):
+                    present_source_ids.add((tokens["source"], tokens["source_id"]))
+
+        missing = [
+            entry
+            for entry in queue
+            if entry.uuid not in present_ids
+            and entry.digest not in present_hashes
+            and (entry.episode.source, entry.episode.source_id) not in present_source_ids
+        ]
+        if not missing:
+            return
+        self._log(f"reconcile: {len(missing)} planned episode(s) absent from the graph")
+        for entry in missing:
+            try:
+                await self._tombstone(entry, reason=RECONCILE_REASON)
+            except (IngestError, UpstreamError) as exc:
+                # No index row means nothing to revive; the write is fresh.
+                if "no stored episode" not in str(exc):
+                    self._log(f"reconcile {entry.episode.source_id}: {exc}")
+                continue
+            self.report.bump(entry.episode.source, entry.episode.group, "reconciled")
+            if self.config.verbose:
+                self._log(f"reconciled {entry.episode.source} {entry.episode.source_id}")
 
     async def _verify(self, entries: list[BatchEntry], *, timeout: float) -> tuple[set[str], set[str]]:
         """Poll raw Graphiti until every uuid/hash appears, or the deadline passes."""
@@ -434,6 +509,8 @@ class IngestRunner:
                 started_at=started_at, elapsed=self.clock() - started, config=self.config
             )
             return report
+
+        await self._reconcile(queue)
 
         for offset in range(0, len(queue), self.config.batch):
             batch = queue[offset : offset + self.config.batch]

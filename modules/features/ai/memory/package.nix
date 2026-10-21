@@ -1,5 +1,5 @@
-# The memory wrapper, Maki's stdio shim, and the `memory` CLI. One derivation
-# with three console scripts so the server, the client shim, and the CLI can
+# The memory wrapper, Maki's stdio shim, the `memory` CLI, and Graphiti's
+# thinkless LLM proxy. One derivation so the server, clients, and proxy can
 # never drift apart.
 {
   pkgs,
@@ -24,6 +24,7 @@ pkgs.python3Packages.buildPythonApplication {
     httpx
     mcp
     starlette
+    uvicorn
   ];
 
   # Group derivation shells out to git. The wrappers prepend it to PATH so the
@@ -44,6 +45,7 @@ pkgs.python3Packages.buildPythonApplication {
     "memory_mcp.cli"
     "memory_mcp.ingest_runner"
     "memory_mcp.ingest_sources"
+    "memory_mcp.llm_proxy"
   ];
 
   meta = {

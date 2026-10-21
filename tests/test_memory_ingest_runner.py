@@ -20,6 +20,7 @@ class FakeGraph:
         self.descriptions = []
         self.status_ok = True
         self.verify_calls = 0
+        self.fetch_sizes = []
 
     async def get_status(self):
         if not self.status_ok:
@@ -28,6 +29,7 @@ class FakeGraph:
 
     async def get_episodes(self, group_ids, max_episodes):
         self.verify_calls += 1
+        self.fetch_sizes.append(max_episodes)
         return [
             {"source_description": description}
             for group, description in self.descriptions
@@ -36,9 +38,10 @@ class FakeGraph:
 
 
 class FakeWrapper:
-    def __init__(self, graph, *, drop=()):
+    def __init__(self, graph, *, drop=(), drop_always=()):
         self.graph = graph
         self.drop = set(drop)
+        self.drop_always = set(drop_always)
         self.dropped = set()
         self.calls = []
         self.active = {}
@@ -57,7 +60,12 @@ class FakeWrapper:
             for key, uid in self.active.items():
                 if uid == arguments["ref"]:
                     self.tombstoned.add(key)
-            return ToolResult(text="tombstoned", is_error=False)
+                    return ToolResult(text="tombstoned", is_error=False)
+            return ToolResult(
+                text=f"no stored episode in group {group} matches {arguments['ref']!r}; "
+                "use a uuid, content hash prefix, or exact name",
+                is_error=True,
+            )
         if tool == "memory_write":
             content = normalize_content(arguments["content"])
             digest = content_hash(content)
@@ -73,9 +81,12 @@ class FakeWrapper:
             self.active[key] = uid
             self.tombstoned.discard(key)
             source_id = headers.get("x-memory-source-id", "")
-            if source_id in self.drop and source_id not in self.dropped:
+            dropped = source_id in self.drop_always or (
+                source_id in self.drop and source_id not in self.dropped
+            )
+            if source_id in self.drop:
                 self.dropped.add(source_id)
-            else:
+            if not dropped:
                 self.graph.descriptions.append(
                     (
                         group,
@@ -145,7 +156,7 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(totals["verified"], 5)
         self.assertEqual(totals["failed"], 0)
         self.assertEqual(report["sources"]["sdlc"]["groups"]["smores56--sdlc"]["verified"], 5)
-        self.assertEqual(self.graph.verify_calls, 3)
+        self.assertEqual(self.graph.verify_calls, 4)  # one reconcile read, then one per batch
         stored = json.loads(Path(self.report_path).read_text())
         self.assertEqual(stored["totals"]["verified"], 5)
         state = json.loads(Path(self.state_path).read_text())
@@ -244,6 +255,65 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         report = await self.runner().run([plan])
         self.assertEqual(report["totals"]["skipped"], 1)
         self.assertEqual(len(self.wrapper.write_headers), 1)
+
+    async def test_rerun_reconciles_rows_that_never_reached_the_graph(self):
+        plan = Plan(source="sdlc", episodes=episodes(3))
+
+        # First run: extraction is broken, so the wrapper writes the rows but
+        # the graph never gets them (not even on the one repair attempt) and
+        # both verify passes miss. The index rows stay active.
+        self.wrapper = FakeWrapper(self.graph, drop_always={
+            "issue-1#section-1",
+            "issue-1#section-2",
+            "issue-1#section-3",
+        })
+        first = await self.runner().run([plan])
+        self.assertEqual(first["totals"]["failed"], 3)
+        self.assertEqual(self.graph.descriptions, [])
+
+        # Model fixed: the same plan re-runs with the index still active.
+        self.wrapper.drop_always = set()
+        self.wrapper.dropped = set()
+        calls_before = len(self.wrapper.calls)
+        second = await self.runner().run([plan])
+
+        totals = second["totals"]
+        self.assertEqual(totals["reconciled"], 3)
+        self.assertEqual(totals["queued"], 3)
+        self.assertEqual(totals["duplicate"], 0)
+        self.assertEqual(totals["repaired"], 0)
+        self.assertEqual(totals["verified"], 3)
+        self.assertEqual(totals["failed"], 0)
+        # Every tombstone comes before the first write of this run (after the
+        # status preflight).
+        second_calls = self.wrapper.calls[calls_before:]
+        self.assertEqual(second_calls[0], "memory_status")
+        self.assertEqual(second_calls[1:4], ["memory_tombstone"] * 3)
+        self.assertEqual(second_calls[4:], ["memory_write"] * 3)
+
+    async def test_reconcile_skips_episodes_already_in_the_graph(self):
+        entry = episodes(1)[0]
+        # Same provenance, different content identity: the reconcile match on
+        # source/source_id must still recognize it as present.
+        self.graph.descriptions.append(
+            (
+                entry.group,
+                "hash={}; id={}; cwd=/home/smores; actor=ingest; source={}; source_id={}".format(
+                    "0" * 64, "00000000-0000-0000-0000-000000000000", entry.source, entry.source_id
+                ),
+            )
+        )
+
+        report = await self.runner().run([Plan(source="sdlc", episodes=[entry])])
+
+        self.assertEqual(report["totals"]["reconciled"], 0)
+        self.assertNotIn("memory_tombstone", self.wrapper.calls)
+
+    async def test_reconcile_ignores_episodes_without_a_wrapper_row(self):
+        report = await self.runner().run([Plan(source="sdlc", episodes=episodes(1))])
+        self.assertEqual(report["totals"]["reconciled"], 0)
+        self.assertEqual(report["totals"]["failed"], 0)
+        self.assertEqual(report["totals"]["verified"], 1)
 
 
 if __name__ == "__main__":

@@ -369,6 +369,14 @@ tunnel target. The wrapper has no authentication of its own; Access is the only
 route. Raw Graphiti runs on an internal loopback port in
 `modules/nixos/memory.nix` and is never tunneled.
 
+Graphiti reaches the chat model through `memory-llm-proxy` on
+`127.0.0.1:8082`, which adds `reasoning_effort: "none"` to OpenAI chat
+completions. llama.cpp defaults to thinking and graphiti-core sends no
+per-request control, so extraction would generate reasoning until the token
+budget ran out and return empty content, which Graphiti drops. The proxy is
+loopback-only and never tunneled. Maki keeps using `ports.llm` (8081)
+directly; do not point it at 8082, and do not give the proxy a thinking mode.
+
 Personal machines run `cloudflared-memory`, which forwards loopback
 `ports.memoryMcp` and injects the Access service token. Maki's generated
 `~/.config/maki/mcp.toml` starts `memory-mcp-shim` (server `graphiti`) with
@@ -386,7 +394,7 @@ The wrapper's SQLite index and audit log live in `/var/lib/memory`, owned by the
 **not backed up** yet: there is no export or snapshot task for the graph volume
 or the index/audit, so losing the host loses both.
 
-Activate after changing the wrapper, shim, or package:
+Activate after changing the wrapper, shim, package, or LLM proxy:
 
 ```sh
 just switch smortress
@@ -398,6 +406,9 @@ Verify on smortress:
 ```sh
 systemctl status memory-mcp
 curl 127.0.0.1:8182/health
+systemctl status memory-llm-proxy
+curl 127.0.0.1:8082/v1/models   # proxied through to the chat model
+curl 127.0.0.1:8082/health
 cd ~/code/<repo> && memory status   # group, index counts, graph/model readiness
 ```
 
@@ -415,8 +426,11 @@ memory ingest all --limit 5 --batch 1   # small sample first
 Each run writes `~/.local/state/memory/ingest-<timestamp>.json` (counts per
 source and group, duplicates, repairs, failures) and updates
 `~/.local/state/memory/ingest-state.json`. To resume, run the same command
-again: verified `(source, source_id)` pairs are skipped and the wrapper still
-dedupes by content hash. Inspect `failures` in the report; a persistent missing
+again: verified `(source, source_id)` pairs are skipped, planned episodes that
+are missing from Graphiti are tombstoned in the wrapper index so the rewrite is
+not a duplicate, and the wrapper still dedupes by content hash. A re-run after
+an extraction outage therefore repairs the episodes that were queued while the
+model was failing. Inspect `failures` in the report; a persistent missing
 episode was tombstoned and rewritten once already. Extraction is one 27B chat
 call per episode, so a full corpus takes hours; keep the batch small (default 3)
 so Graphiti's in-memory queue does not drop work. For a long run, start it in a

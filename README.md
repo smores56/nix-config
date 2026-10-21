@@ -317,8 +317,16 @@ model providers Maki may use.
   `memory ingest all`. Re-runs skip verified `(source, source_id)` entries from
   `~/.local/state/memory/ingest-state.json`, and writes are still deduped by
   content hash. Reports land in `~/.local/state/memory/ingest-<timestamp>.json`;
-  `--dry-run` prints the plan without writing. Extraction is one 27B chat call
-  per episode (roughly 30-90s), so a full corpus takes hours.
+  `--dry-run` prints the plan without writing. Extraction goes through the
+  loopback `memory-llm-proxy` (`modules/features/ai/memory/src/memory_mcp/llm_proxy.py`,
+  `127.0.0.1:8082`): the chat server defaults to thinking and graphiti-core
+  sends no per-request control, so an extraction would spend its whole token
+  budget on reasoning and return empty content. Maki still uses `ports.llm`
+  (8081) directly, so interactive answers keep thinking. A re-run reconciles
+  the plan against Graphiti before writing: rows that were queued but never
+  extracted are tombstoned and rewritten, not reported as duplicates.
+  Extraction is one 27B chat call per episode (roughly 30-90s), so a full corpus
+  takes hours.
 
 - `work`: maki is OpenAI-only and gets no personal providers, search, or
   memory MCP.
