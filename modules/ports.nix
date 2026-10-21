@@ -12,4 +12,6 @@
   calibre = 8181;
   immich = 2283;
   ssh = 22;
+  # Graphiti MCP; the tunnel ingress and the Maki client read it.
+  memoryMcp = 8182;
 }
