@@ -396,6 +396,21 @@ class ListTest(GhTest):
         self.assertEqual(rows[0]["status"], "todo")
         self.assertEqual(rows[0]["repo"], "nix-config")
 
+    def test_human_format_appends_approval_suffixes(self):
+        cases = (
+            ((), "todo"),
+            (("status:approved",), "todo+approved"),
+            (("status:needs-reapproval",), "todo+needs-reapproval"),
+            (("status:approved", "status:needs-reapproval"), "todo+needs-reapproval"),
+        )
+        for extra, expected in cases:
+            with self.subTest(labels=extra):
+                labels = ["type:feature", "repo:nix-config", "status:todo", *extra]
+                self.serve_list([issue(9, "Feature", DESIGN, labels)])
+                out = self.run_cli("list")
+                self.assertEqual(out.returncode, 0, out.stderr)
+                self.assertEqual(out.stdout.strip(), "#9 [%s] nix-config Feature" % expected)
+
     def test_every_gh_call_names_the_registry_repo(self):
         self.run_cli("list")
         for call in self.calls():

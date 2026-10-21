@@ -22,14 +22,9 @@ from collections import namedtuple
 
 DEFAULT_REPO = "smores56/sdlc"
 HASH_RE = re.compile(r"(?m)^[ \t]*Approved design sha256:([0-9a-f]{64})[ \t]*$")
-ISSUE_URL_RE = re.compile(r"https?://\S+/issues/(\d+)")
-LIFECYCLE = ("todo", "in-progress", "done", "canceled")
 TERMINAL = ("done", "canceled")
-FEATURE_LABELS = ("type:feature",)
-APPROVAL_LABELS = ("status:needs-reapproval", "status:approved")
 
 FEATURE_FIELDS = "number,title,body,state,labels,comments,subIssues,url"
-LIST_FIELDS = "number,title,body,state,labels,comments,subIssues,url"
 TASK_FIELDS = "number,title,state,labels,blockedBy"
 NODE_FIELDS = "number,title,state,labels"
 
@@ -94,12 +89,12 @@ def one_line(value):
 # --- gh plumbing ------------------------------------------------------------
 
 
-def gh(*args, check=True, input=None):
+def gh(*args, input=None):
     try:
         proc = subprocess.run(["gh", *args], capture_output=True, text=True, input=input)
     except FileNotFoundError:
         raise CliError("gh not found on PATH")
-    if check and proc.returncode != 0:
+    if proc.returncode != 0:
         detail = proc.stderr.strip() or proc.stdout.strip() or "exit %d" % proc.returncode
         raise CliError("gh %s failed: %s" % (" ".join(args[:2]), detail))
     return proc.stdout
@@ -113,19 +108,19 @@ def gh_json(*args):
         raise CliError("gh %s returned invalid JSON" % " ".join(args[:2]))
 
 
-def gh_stdin(*args, body):
-    return gh(*args, input=body)
-
-
 def fetch_issue(repo, number, fields=FEATURE_FIELDS):
     return gh_json("issue", "view", str(number), "--repo", repo, "--json", fields)
 
 
+def split_repo(repo, what="registry repo"):
+    if "/" not in repo:
+        raise CliError("%s must be owner/name, got %r" % (what, repo))
+    return repo.split("/", 1)
+
+
 def fetch_feature_graph(repo, number):
     """One GraphQL round trip: the feature, its comments, and its task graph."""
-    if "/" not in repo:
-        raise CliError("registry repo must be owner/name, got %r" % repo)
-    owner, name = repo.split("/", 1)
+    owner, name = split_repo(repo)
     out = gh(
         "api",
         "graphql",
@@ -181,16 +176,6 @@ def display_status(issue):
     status = lifecycle_of(issue)
     if status is None:
         status = "closed" if issue.get("state") == "CLOSED" else "open"
-    return status
-
-
-def human_status(issue):
-    labels = labels_of(issue)
-    status = display_status(issue)
-    if "status:needs-reapproval" in labels:
-        return status + "+needs-reapproval"
-    if "status:approved" in labels:
-        return status + "+approved"
     return status
 
 
@@ -280,19 +265,11 @@ def comment_date(comment):
 
 
 def feature_issues(repo, all_states=False):
-    args = [
-        "issue",
-        "list",
-        "--repo",
-        repo,
-        "--state",
-        "all" if all_states else "open",
-        "--json",
-        LIST_FIELDS,
-        "--limit",
-        "500",
-    ]
-    issues = gh_json(*args)
+    issues = gh_json(
+        "issue", "list", "--repo", repo,
+        "--state", "all" if all_states else "open",
+        "--json", FEATURE_FIELDS, "--limit", "500",
+    )
     features = []
     for issue in issues:
         if "type:feature" not in labels_of(issue):
@@ -341,9 +318,8 @@ def task_state(task):
         return "closed"
     if open_blockers(task):
         return "blocked"
-    if lifecycle_of(task) == "todo":
-        return "ready"
-    return lifecycle_of(task) or "open"
+    status = lifecycle_of(task)
+    return "ready" if status == "todo" else status or "open"
 
 
 def sub_tasks(repo, feature):
@@ -354,10 +330,13 @@ def sub_tasks(repo, feature):
 
 
 def task_counts(tasks):
-    open_tasks = [task for task in tasks if task.get("state") != "CLOSED"]
-    ready = [task for task in tasks if task_state(task) == "ready"]
-    blocked = [task for task in tasks if task_state(task) == "blocked"]
-    return len(open_tasks), len(ready), len(blocked)
+    open_count = ready = blocked = 0
+    for task in tasks:
+        state = task_state(task)
+        open_count += task.get("state") != "CLOSED"
+        ready += state == "ready"
+        blocked += state == "blocked"
+    return open_count, ready, blocked
 
 
 # --- picker -----------------------------------------------------------------
@@ -416,23 +395,28 @@ def pick(candidates, header="sdlc features"):
     return proc.stdout.splitlines()[0]
 
 
-def path_row(issue):
-    return "\t".join(
-        [
-            str(issue["number"]),
-            one_line(issue.get("title") or ""),
-            display_status(issue),
-            clean(repo_names(issue) or "-"),
-        ]
-    )
-
-
-def preview_text(feature):
-    return "#%d %s\n[%s] %s\n\n%s\n" % (
+def summary(feature):
+    """The number/title/status/repo projection every list format shares."""
+    return (
         feature["number"],
         one_line(feature.get("title") or ""),
         display_status(feature),
-        repo_names(feature) or "-",
+        repo_names(feature),
+    )
+
+
+def path_row(issue):
+    number, title, status, repo = summary(issue)
+    return "\t".join([str(number), title, status, clean(repo or "-")])
+
+
+def preview_text(feature):
+    number, title, status, repo = summary(feature)
+    return "#%d %s\n[%s] %s\n\n%s\n" % (
+        number,
+        title,
+        status,
+        repo or "-",
         clean(feature.get("body") or ""),
     )
 
@@ -626,14 +610,6 @@ def review_marker(feature_number, note, body_lines=None):
     return "<!-- sdlc-review:n%d:%s -->" % (feature_number, digest)
 
 
-def review_location(note):
-    if note.start and note.end and note.end != note.start:
-        return "lines %d–%d" % (note.start, note.end)
-    if note.start:
-        return "line %d" % note.start
-    return "file"
-
-
 def render_review(feature_number, title, body, notes, markers=()):
     body_lines = body.split("\n")
     kept = []
@@ -643,7 +619,7 @@ def render_review(feature_number, title, body, notes, markers=()):
         if marker in seen:
             continue
         seen.add(marker)
-        kept.append(note)
+        kept.append((note, marker))
     if not kept:
         return ""
     digest = design_hash(body)
@@ -653,11 +629,14 @@ def render_review(feature_number, title, body, notes, markers=()):
         digest[:12] if digest else "none",
     )
     blocks = []
-    for note in kept:
-        block = [
-            review_marker(feature_number, note, body_lines),
-            "### %s" % review_location(note),
-        ]
+    for note, marker in kept:
+        if note.start and note.end and note.end != note.start:
+            location = "lines %d–%d" % (note.start, note.end)
+        elif note.start:
+            location = "line %d" % note.start
+        else:
+            location = "file"
+        block = [marker, "### %s" % location]
         quote = review_quote(note, body_lines)
         if quote:
             block += ["", quote]
@@ -764,30 +743,34 @@ def cmd_list(args):
             print(path_row(feature))
         return
     if args.format == "json":
-        print(
-            json.dumps(
-                [
-                    {
-                        "number": feature["number"],
-                        "title": one_line(feature.get("title")),
-                        "status": display_status(feature),
-                        "repo": repo_names(feature),
-                        "state": feature.get("state"),
-                        "approval": approval_state(feature).state,
-                        "url": feature.get("url"),
-                    }
-                    for feature in features
-                ],
-                indent=2,
+        rows = []
+        for feature in features:
+            number, title, status, repo = summary(feature)
+            rows.append(
+                {
+                    "number": number,
+                    "title": title,
+                    "status": status,
+                    "repo": repo,
+                    "state": feature.get("state"),
+                    "approval": approval_state(feature).state,
+                    "url": feature.get("url"),
+                }
             )
-        )
+        print(json.dumps(rows, indent=2))
         return
     for feature in features:
+        labels = labels_of(feature)
+        status = display_status(feature)
+        if "status:needs-reapproval" in labels:
+            status += "+needs-reapproval"
+        elif "status:approved" in labels:
+            status += "+approved"
         print(
             "#%d [%s] %s %s"
             % (
                 feature["number"],
-                human_status(feature),
+                status,
                 repo_names(feature) or "-",
                 one_line(feature.get("title") or ""),
             )
@@ -904,10 +887,9 @@ def cmd_approve(args):
     feature = next_feature(repo, args.feature, args.pick)
     if "type:feature" not in labels_of(feature):
         raise CliError("#%d is not a feature (missing type:feature); refusing to approve" % feature["number"])
-    section = design_section(feature.get("body"))
-    if section is None:
+    digest = design_hash(feature.get("body"))
+    if digest is None:
         raise CliError("#%d has no '## Design' section; refusing to approve" % feature["number"])
-    digest = hashlib.sha256(section.encode("utf-8")).hexdigest()
     prompts = (
         "approve #%d %r design sha256:%s? [y/N] "
         % (feature["number"], one_line(feature.get("title") or ""), digest)
@@ -923,49 +905,28 @@ def cmd_approve(args):
         edit += ["--remove-label", "status:needs-reapproval"]
     gh(*edit)
     gh(
-        "issue",
-        "comment",
-        str(feature["number"]),
-        "--repo",
-        repo,
-        "--body",
-        "Approved design sha256:%s" % digest,
+        "issue", "comment", str(feature["number"]), "--repo", repo,
+        "--body", "Approved design sha256:%s" % digest,
     )
     print("approved #%d sha256:%s" % (feature["number"], digest))
 
 
 def parse_created_url(output):
     # `gh issue create` has no --json; the printed URL is the only handle.
-    matches = ISSUE_URL_RE.findall(output)
-    url = re.search(r"https?://\S+/issues/\d+", output)
-    if not matches or url is None:
+    match = re.search(r"https?://\S+/issues/(\d+)", output)
+    if match is None:
         raise CliError("could not parse the issue URL from gh output: %r" % output.strip())
-    return int(matches[-1]), url.group(0)
+    return int(match.group(1)), match.group(0)
 
 
 def cmd_new(args):
-    if "/" not in args.repo:
-        raise CliError("--repo must be owner/name, got %r" % args.repo)
-    name = args.repo.split("/", 1)[1]
+    name = split_repo(args.repo, "--repo")[1]
     title = args.title or args.slug.replace("-", " ")
     body = "## Design\n\nPending.\n\n## Plan\n\n- [ ] T1: Scope the design\n"
-    output = gh(
-        "issue",
-        "create",
-        "--repo",
-        registry_repo(),
-        "--title",
-        title,
-        "--body",
-        body,
-        "--label",
-        "type:feature",
-        "--label",
-        "repo:%s" % name,
-        "--label",
-        "status:todo",
-    )
-    number, url = parse_created_url(output)
+    command = ["issue", "create", "--repo", registry_repo(), "--title", title, "--body", body]
+    for label in ("type:feature", "repo:%s" % name, "status:todo"):
+        command += ["--label", label]
+    number, url = parse_created_url(gh(*command))
     print("#%d %s" % (number, url))
 
 
@@ -1015,18 +976,10 @@ def cmd_task_add(args):
     feature = resolve_feature(repo, args.feature)
     blocked = resolve_needs(repo, feature, args.needs)
     command = [
-        "issue",
-        "create",
-        "--repo",
-        repo,
-        "--title",
-        args.title,
-        "--body",
-        "Part of #%d." % feature["number"],
-        "--parent",
-        str(feature["number"]),
-        "--label",
-        "status:todo",
+        "issue", "create", "--repo", repo, "--title", args.title,
+        "--body", "Part of #%d." % feature["number"],
+        "--parent", str(feature["number"]),
+        "--label", "status:todo",
     ]
     if blocked:
         command += ["--blocked-by", ",".join(str(number) for number in blocked)]
@@ -1129,15 +1082,9 @@ def cmd_review(args):
     if args.dry_run:
         print(comment, end="")
         return
-    url = gh_stdin(
-        "issue",
-        "comment",
-        str(feature["number"]),
-        "--repo",
-        repo,
-        "--body-file",
-        "-",
-        body=comment,
+    url = gh(
+        "issue", "comment", str(feature["number"]), "--repo", repo,
+        "--body-file", "-", input=comment,
     )
     print(
         "posted review notes to #%d %s"
@@ -1213,6 +1160,18 @@ def cmd_ui(args):
 # --- CLI --------------------------------------------------------------------
 
 
+def feature_arg(parser, required=True, help_text="issue number or title substring"):
+    parser.add_argument("feature", nargs=None if required else "?", help=help_text)
+
+
+def pick_arg(parser, help_text="pick an active feature"):
+    parser.add_argument("--pick", action="store_true", help=help_text)
+
+
+def all_arg(parser, help_text="include terminal features"):
+    parser.add_argument("--all", action="store_true", help=help_text)
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="sdlc",
@@ -1221,29 +1180,29 @@ def build_parser():
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("list", help="list features")
-    p.add_argument("--all", action="store_true", help="include closed, done, and canceled")
+    all_arg(p, "include closed, done, and canceled")
     p.add_argument("--repo", help="registry repo (default $SDLC_REPO)")
     p.add_argument("--format", choices=("human", "path", "json"), default="human")
-    p.add_argument("--pick", action="store_true", help="pick one feature and print its number")
+    pick_arg(p, "pick one feature and print its number")
     p.set_defaults(fn=cmd_list)
 
     p = sub.add_parser("show", help="print a feature body and comments")
-    p.add_argument("feature", help="issue number or title substring")
+    feature_arg(p)
     p.set_defaults(fn=cmd_show)
 
     p = sub.add_parser("status", help="approval and task state of a feature")
-    p.add_argument("feature", help="issue number or title substring")
+    feature_arg(p)
     p.set_defaults(fn=cmd_status)
 
     p = sub.add_parser("next", help="print the next ready task")
-    p.add_argument("feature", nargs="?", help="issue number or title substring")
-    p.add_argument("--pick", action="store_true", help="pick an active feature")
+    feature_arg(p, required=False)
+    pick_arg(p)
     p.set_defaults(fn=cmd_next)
 
     p = sub.add_parser("approve", help="record human approval of the design")
-    p.add_argument("feature", nargs="?", help="issue number or title substring")
+    feature_arg(p, required=False)
     p.add_argument("--yes", action="store_true", help="skip the TTY confirmation")
-    p.add_argument("--pick", action="store_true", help="pick an active feature")
+    pick_arg(p)
     p.set_defaults(fn=cmd_approve)
 
     p = sub.add_parser("new", help="create a feature issue")
@@ -1255,7 +1214,7 @@ def build_parser():
     task = sub.add_parser("task", help="manage task sub-issues")
     task_sub = task.add_subparsers(dest="task_command", required=True)
     p = task_sub.add_parser("add", help="create a task sub-issue")
-    p.add_argument("feature", help="feature issue number or title substring")
+    feature_arg(p, help_text="feature issue number or title substring")
     p.add_argument("title")
     p.add_argument("--needs", help="comma-separated T-labels or issue numbers")
     p.set_defaults(fn=cmd_task_add)
@@ -1269,26 +1228,26 @@ def build_parser():
         p.set_defaults(fn=cmd_task_transition(action))
 
     p = sub.add_parser("complete", help="close a feature as done")
-    p.add_argument("feature", help="issue number or title substring")
+    feature_arg(p)
     p.set_defaults(fn=cmd_feature_transition("done"))
 
     p = sub.add_parser("cancel", help="close a feature as canceled")
-    p.add_argument("feature", help="issue number or title substring")
+    feature_arg(p)
     p.set_defaults(fn=cmd_feature_transition("canceled"))
 
     p = sub.add_parser("ui", help="pick a feature and an action")
     p.add_argument("items", nargs="*", help="action and/or feature")
-    p.add_argument("--all", action="store_true", help="include terminal features")
+    all_arg(p)
     p.add_argument("--repo", help="registry repo (default $SDLC_REPO)")
     p.set_defaults(fn=cmd_ui)
 
     p = sub.add_parser("review", help="review a feature body in tuicr and post the notes")
-    p.add_argument("feature", help="issue number or title substring")
+    feature_arg(p)
     p.add_argument("--dry-run", action="store_true", help="print the comment instead of posting")
     p.set_defaults(fn=cmd_review)
 
     p = sub.add_parser("comment", help="comment on a feature in $EDITOR")
-    p.add_argument("feature", nargs="?", help="issue number or title substring")
+    feature_arg(p, required=False)
     p.set_defaults(fn=cmd_comment)
 
     return parser
