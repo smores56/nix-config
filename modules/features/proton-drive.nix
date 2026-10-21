@@ -5,7 +5,7 @@
 # Proton refresh tokens are single-use, so two concurrent rclone clients can
 # blank the session (rclone#9880). The nightly backups use the same account
 # through a different config, so the mount refuses to start while a backup unit
-# is active; do not leave it mounted across the backup windows.
+# is active, and a watcher stops it if a backup begins while it is mounted.
 {
   config,
   lib,
@@ -29,24 +29,29 @@ let
     text = ''
       mountpath=${lib.escapeShellArg mountPath}
       remote=${lib.escapeShellArg cfg.remote}
+      grace=${toString cfg.backupGrace}
+
+      # The *-watch units are always running; only the run and full-check units
+      # take the Proton credential.
+      backup_units() {
+        while read -r unit _; do
+          case "$unit" in
+            *-watch.service | *-dump.service | backup-freshness.service) continue ;;
+          esac
+          printf '%s\n' "$unit"
+        done < <(systemctl list-units --type=service --state=active --no-legend 'backup-*.service' 2>/dev/null || true)
+        return 0
+      }
 
       if mountpoint -q "$mountpath" 2>/dev/null; then
         echo "proton-mount: already mounted at $mountpath" >&2
         exit 1
       fi
 
-      # A concurrent refresh blanks the shared Proton session, so fail closed
-      # rather than racing a backup. The *-watch units are always running;
-      # only the run and full-check units take the Proton credential.
-      running=()
-      while read -r unit _; do
-        case "$unit" in
-          *-watch.service | *-dump.service | backup-freshness.service) continue ;;
-        esac
-        running+=("$unit")
-      done < <(systemctl list-units --type=service --state=active --no-legend 'backup-*.service' 2>/dev/null || true)
-      if ((''${#running[@]})); then
-        printf 'proton-mount: refusing to start while a backup is running:\n  %s\n' "''${running[*]}" >&2
+      # Fail closed rather than racing a backup's token refresh.
+      running="$(backup_units)"
+      if [[ -n "$running" ]]; then
+        printf 'proton-mount: refusing to start while a backup is running:\n%s\n' "$running" >&2
         exit 1
       fi
 
@@ -63,8 +68,12 @@ let
         --stats-one-line \
         "$@" &
       child=$!
+      watcher=""
 
       cleanup() {
+        if [[ -n "$watcher" ]]; then
+          kill "$watcher" 2>/dev/null || true
+        fi
         if kill -0 "$child" 2>/dev/null; then
           kill -TERM "$child" 2>/dev/null || true
           wait "$child" 2>/dev/null || true
@@ -76,10 +85,35 @@ let
             fusermount -u "$mountpath" 2>/dev/null || true
         fi
       }
+
+      # A backup can still start after the guard above. Warn, give in-flight
+      # work a grace period, then stop rclone (SIGTERM flushes pending writes).
+      watch_backups() {
+        while kill -0 "$child" 2>/dev/null; do
+          units="$(backup_units)"
+          if [[ -n "$units" ]]; then
+            printf 'proton-mount: backup started:\n%s\n' "$units" >&2
+            printf 'proton-mount: unmounting in %ss unless it finishes first; Ctrl-C now to stop sooner.\n' "$grace" >&2
+            sleep "$grace"
+            if [[ -z "$(backup_units)" ]]; then
+              printf 'proton-mount: backup finished; keeping the mount.\n' >&2
+              continue
+            fi
+            printf 'proton-mount: backup still running; stopping the mount.\n' >&2
+            kill -TERM "$child" 2>/dev/null || true
+            return 0
+          fi
+          sleep 5
+        done
+      }
+
       trap cleanup EXIT
       trap 'exit 130' INT
       trap 'exit 143' TERM
       trap 'exit 129' HUP
+
+      watch_backups &
+      watcher=$!
 
       wait "$child"
     '';
@@ -97,6 +131,11 @@ in
       type = lib.types.str;
       default = "proton:";
       description = "rclone remote and path to mount.";
+    };
+    backupGrace = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 60;
+      description = "Seconds the mount stays up after a backup starts, so in-flight work can finish before rclone is stopped.";
     };
   };
 
