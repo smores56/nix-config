@@ -73,10 +73,10 @@ let
       # Graphiti's extraction and dedup prompts ask for up to 16k tokens; the
       # MCP default of 4096 truncates a large episode into invalid JSON.
       max_tokens: 8192
-      # llama.cpp enforces json_schema via a GBNF grammar, but Graphiti's
-      # extraction schemas are large; json_object is the upstream-recommended
-      # mode for local servers and is what was verified end to end here.
-      structured_output_mode: "json_object"
+      # Grammar-enforced JSON. json_object relies on the model to comply and
+      # occasionally yields prose/empty output; the proxy already disables
+      # thinking for extraction, and json_schema makes every response parseable.
+      structured_output_mode: "json_schema"
       providers:
         openai:
           api_key: "none"
