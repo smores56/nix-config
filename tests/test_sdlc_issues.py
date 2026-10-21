@@ -117,15 +117,33 @@ if os.path.exists(path):
 '''
 
 FAKE_TV = '''#!{python}
-import json, os, sys
+import json, os, re, shlex, sys
 
 state = os.environ["FAKE_GH_STATE"]
 args = sys.argv[1:]
 sys.stderr.write("tv draws its ui here\\n")
 with open(os.path.join(state, "tv.jsonl"), "a") as fh:
     fh.write(json.dumps(args) + "\\n")
-if "sdlc-features" in args:
-    with open(os.path.join(state, "tv-feature.txt")) as fh:
+PICKS = {"sdlc-features": "tv-feature.txt", "sdlc-actions": "tv-action.txt"}
+if "--cable-dir" in args:
+    cable = args[args.index("--cable-dir") + 1]
+    name = args[args.index("--cable-dir") + 2]
+    with open(os.path.join(cable, name + ".toml")) as fh:
+        channel = fh.read()
+    # Snapshot the channel and its precomputed previews: the CLI deletes its
+    # temp dir on exit, so this is the only way a test can inspect them.
+    snap = os.path.join(state, "cable-" + name)
+    os.makedirs(snap, exist_ok=True)
+    with open(os.path.join(snap, name + ".toml"), "w") as fh:
+        fh.write(channel)
+    preview = re.search(r'^\\[preview\\]\\ncommand = "(.*)"$', channel, re.M).group(1)
+    preview_dir = shlex.split(preview)[1].split("{split")[0]
+    for entry in os.listdir(preview_dir):
+        with open(os.path.join(preview_dir, entry)) as fh:
+            text = fh.read()
+        with open(os.path.join(snap, entry), "w") as fh:
+            fh.write(text)
+    with open(os.path.join(state, PICKS[name])) as fh:
         sys.stdout.write(fh.read().strip() + "\\n")
     sys.exit(0)
 if "--source-command" in args:
@@ -270,6 +288,7 @@ class GhTest(unittest.TestCase):
         self.script("tuicr", FAKE_TUICR.replace("{python}", sys.executable))
         self.script("tv", FAKE_TV.replace("{python}", sys.executable))
         self.serve("tv-feature.txt", "1\n")
+        self.serve("tv-action.txt", "show\n")
 
     def reset_calls(self):
         path = os.path.join(self.state, "calls.jsonl")
@@ -947,12 +966,59 @@ class UiCliTest(GhTest):
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertIn("Use GitHub issues.", out.stdout)
         self.assertEqual(self.tv_calls(), [])
+        # Only cmd_show's own fetch: no preview cost when the action is explicit.
+        self.assertEqual([call[:2] for call in self.calls()], [["issue", "view"]])
 
     def test_feature_arg_opens_the_action_picker(self):
         out = self.run_cli("ui", "1")
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertIn("Use GitHub issues.", out.stdout)
         self.assertTrue(self.tv_calls())
+
+    def test_action_picker_channel_previews_every_action_locally(self):
+        out = self.run_cli("ui", "1")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        snap = os.path.join(self.state, "cable-sdlc-actions")
+        with open(os.path.join(snap, "sdlc-actions.toml")) as fh:
+            channel = fh.read()
+        self.assertIn('output = "{split:\\t:0}"', channel)
+        self.assertIn("[preview]", channel)
+        # The preview is a local cat over precomputed files: never gh or sdlc.
+        preview = channel.split("[preview]", 1)[1]
+        self.assertIn("command = \"cat ", preview)
+        self.assertNotIn("gh ", preview)
+        self.assertNotIn("sdlc status", preview)
+        previews = {}
+        for action in sdlc_issues.ACTIONS:
+            with open(os.path.join(snap, "%s.md" % action)) as fh:
+                previews[action] = fh.read()
+            self.assertIn("#1 Reduce bespoke tooling", previews[action])
+            self.assertIn("[todo] nix-config", previews[action])
+        self.assertIn("## show", previews["show"])
+        self.assertIn("Use GitHub issues.", previews["show"])
+        self.assertIn("## review", previews["review"])
+        self.assertIn("tuicr", previews["review"])
+        self.assertIn("type:feature", previews["status"])
+        self.assertIn("approval:", previews["approve"])
+        for action in ("complete", "cancel"):
+            self.assertIn("WARNING", previews[action])
+            self.assertIn("y/N", previews[action])
+            self.assertIn(action, previews[action])
+
+    def test_action_picker_adds_no_gh_calls_after_picking_a_feature(self):
+        self.serve("tv-action.txt", "complete\n")
+        out = self.run_cli("ui", stdin="n\n")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("not completed", out.stdout)
+        self.assertTrue(any("sdlc-actions" in call for call in self.tv_calls()))
+        self.assertEqual([call[:2] for call in self.calls()], [["issue", "list"]])
+
+    def test_feature_arg_costs_one_fetch_before_the_action_picker(self):
+        self.serve("tv-action.txt", "complete\n")
+        out = self.run_cli("ui", "1", stdin="n\n")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("not completed", out.stdout)
+        self.assertEqual([call[:2] for call in self.calls()], [["issue", "view"]])
 
     def test_action_arg_opens_the_feature_picker(self):
         out = self.run_cli("ui", "show")
@@ -1033,6 +1099,23 @@ class PickerCableTest(unittest.TestCase):
                 preview = fh.read()
             self.assertIn("#1 One", preview)
             self.assertIn("Use GitHub issues.", preview)
+
+
+class ActionPreviewTest(unittest.TestCase):
+    def test_previews_are_action_specific_and_truncate_long_bodies(self):
+        feature = issue(
+            7,
+            "Long one",
+            "line\n" * 200,
+            ["type:feature", "repo:nix-config", "status:todo"],
+        )
+        show = sdlc_issues.action_preview(feature, "show")
+        self.assertIn("## show", show)
+        self.assertIn("…", show)
+        self.assertLess(len(show.splitlines()), 60)
+        status = sdlc_issues.action_preview(feature, "status")
+        self.assertNotIn("…", status)
+        self.assertIn("approval:", status)
 
 
 class RepoNameTest(unittest.TestCase):

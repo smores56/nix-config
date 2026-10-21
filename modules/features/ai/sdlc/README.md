@@ -97,9 +97,12 @@ state; `gh` is the only backend.
 | `sn` | next ready task |
 | `sa` | approve |
 
-`sdlc ui` accepts the action and feature in either order. Terminal actions
-have no abbreviations; use the menu or `sdlc ui complete|cancel <feature>`.
-Both confirm with `[y/N]` (Enter declines).
+`sdlc ui` accepts the action and feature in either order. Both pickers preview
+what you are choosing: the action menu shows the picked feature's header and
+what each action would do to it, computed from the payload already in hand (the
+issue list, or one `gh issue view` when the feature was passed as an argument).
+Terminal actions have no abbreviations; use the menu or
+`sdlc ui complete|cancel <feature>`. Both confirm with `[y/N]` (Enter declines).
 
 ## Flow
 
@@ -115,7 +118,7 @@ registry is personal, so never file work features in it. See AGENTS.md.
 - `approve` is a human act; agents may read but not approve on their own.
 - Keep issue content free of secrets and credentials.
 - `status`, `next`, and `complete` fetch the feature, comments, sub-issues, and
-  `blocked-by` edges in one GraphQL round trip; picker previews are precomputed
-  from the issue list, so neither path makes per-task requests.
+  `blocked-by` edges in one GraphQL round trip; both picker previews are
+  precomputed local files read by `cat`, so neither picker waits on the network.
 - tuicr persists a review session per run in its own data directory. That is
   local cache, not ledger state; clean it with `tuicr review` if it grows.
