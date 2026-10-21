@@ -113,9 +113,10 @@ in
         [ $((now - mtime)) -le 3600 ] || { echo "stale PostgreSQL dump: $dump"; exit 1; }
         mkdir -p "$BACKUP_CURRENT/db"
         # One stable name: copy never deletes, so dated names would accumulate
-        # a full dump per run locally and offsite forever. Overwrites keep the
-        # previous revision in the local versions/ tree; Proton holds the latest.
-        # Stage then rename so a concurrent read never sees a partial dump.
+        # a full dump per run locally and offsite forever. This keeps only the
+        # latest dump (Proton holds the same one); a bad dump therefore replaces
+        # the previous recovery point. Stage then rename so a concurrent read
+        # never sees a partial dump.
         cp "$dump" "$BACKUP_CURRENT/db/immich.dump.tmp"
         mv "$BACKUP_CURRENT/db/immich.dump.tmp" "$BACKUP_CURRENT/db/immich.dump"
       '';

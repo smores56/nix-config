@@ -261,7 +261,8 @@ rsync -a /var/backup/Photos/current/ /restore/Photos/
 **Files, from offsite** (local disk lost):
 
 ```sh
-rclone copy proton:Photos /restore/Photos \
+sudo flock /run/lock/media-backup.lock \
+  rclone copy proton:Photos /restore/Photos \
   --config /var/lib/backup/rclone.conf --transfers 8 --checkers 16
 ```
 

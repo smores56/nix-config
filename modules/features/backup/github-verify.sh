@@ -162,7 +162,7 @@ while IFS= read -r name; do
   if ! grep -qxF "$name" "$work/api.names"; then
     continue
   fi
-  full_name=$(grep -F "$name"$'\t' "$work/api.tsv" | head -n1 | cut -f2)
+  full_name=$(awk -F'\t' -v n="$name" '$1==n {print $2; exit}' "$work/api.tsv")
   repo_owner="${full_name%%/*}"
   repo_name="${full_name#*/}"
   pgb_issues=$(find "$meta/repositories/$name/issues" -maxdepth 1 -type f -name '*.json' 2>/dev/null | wc -l)

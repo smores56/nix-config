@@ -301,7 +301,8 @@ account reaches, but these units only read.
 the drill, or:
 
 ```sh
-rclone copy proton:Music /restore/Music --config /var/lib/backup/rclone.conf
+sudo flock /run/lock/media-backup.lock \
+  rclone copy proton:Music /restore/Music --config /var/lib/backup/rclone.conf
 ```
 
 ### Photos

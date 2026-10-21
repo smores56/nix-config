@@ -177,7 +177,10 @@ if [ "$DRILL_ONLY_DB" != 1 ]; then
 
   step "1: source vs local (size/count + $N sha256)"
   src_size=$("$RCLONE" size "$SRC" --config "$CONF" "${EXCL_ARGS[@]}" 2>/dev/null || true)
-  loc_size=$("$RCLONE" size "$LOC" --config "$CONF" "${EXCL_ARGS[@]}" 2>/dev/null || true)
+  # A postgres dataset's dump lives only in the mirror (the preBackup writes it
+  # into current/db), so it must not count toward source-vs-local parity. The
+  # offsite check below still compares it, because both sides have it.
+  loc_size=$("$RCLONE" size "$LOC" --config "$CONF" "${EXCL_ARGS[@]}" --exclude '/db/**' 2>/dev/null || true)
   printf '%-10s ' source; printf '%s\n' "$src_size" | sed -E 's/Total objects: /n=/; s/Total size: /bytes=/' | tr '\n' ' '; echo
   printf '%-10s ' local; printf '%s\n' "$loc_size" | sed -E 's/Total objects: /n=/; s/Total size: /bytes=/' | tr '\n' ' '; echo
   # The counts must match; a failed `rclone size` yields an empty token, which
