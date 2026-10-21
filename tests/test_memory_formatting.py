@@ -4,24 +4,43 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "modules/features/ai/memory/src"))
 
-from memory_mcp.formatting import format_search, looks_path_like, path_query_note  # noqa: E402
+from memory_mcp.formatting import clip, format_search, looks_path_like, path_query_note  # noqa: E402
 
 
 class PathDetectionTests(unittest.TestCase):
-    def test_slashes_and_filenames_are_path_like(self):
-        for query in ("modules/nixos/memory.nix", "memory.nix", "src/main.py", "/etc/hosts"):
+    def test_paths_and_filenames_are_path_like(self):
+        for query in (
+            "modules/nixos/memory.nix",
+            "memory.nix",
+            "src/main.py",
+            "/etc/hosts",
+            "./src",
+            "../memory",
+            "~/code/nix-config",
+            "look at ./src please",
+        ):
             with self.subTest(query=query):
                 self.assertTrue(looks_path_like(query))
 
     def test_natural_language_is_not_path_like(self):
-        for query in ("how does memory dedup work", "why did the deploy fail", "ticket 218"):
+        for query in (
+            "how does memory dedup work",
+            "why did the deploy fail",
+            "ticket 218",
+            "e.g. this one",
+            "i.e. the wrapper",
+            "version 16.2",
+            "read/write paths",
+            "and/or",
+        ):
             with self.subTest(query=query):
                 self.assertFalse(looks_path_like(query))
 
-    def test_note_names_grep(self):
+    def test_note_is_one_line_and_names_grep_and_fts(self):
         note = path_query_note("src/main.py")
+        self.assertNotIn("\n", note)
         self.assertIn("grep", note)
-        self.assertIn("Nothing was invented", note)
+        self.assertIn("FTS", note)
 
 
 class FormatSearchTests(unittest.TestCase):
@@ -106,6 +125,76 @@ class FormatSearchTests(unittest.TestCase):
         )
         self.assertLessEqual(len(text), 1000 + 80)
         self.assertIn("truncated", text)
+
+    def test_upstream_labels_and_groups_are_clipped(self):
+        text = format_search(
+            query="q",
+            group="g",
+            groups_searched=["g"],
+            nodes=[
+                {
+                    "uuid": "n1",
+                    "name": "n1",
+                    "group_id": "g" * 500,
+                    "labels": ["L" * 500],
+                }
+            ],
+            facts=[],
+            episodes=[],
+        )
+        self.assertNotIn("g" * 200, text)
+        self.assertNotIn("L" * 200, text)
+
+    def test_partial_warnings_are_visible(self):
+        text = format_search(
+            query="q",
+            group="g",
+            groups_searched=["g"],
+            nodes=[{"uuid": "n1", "name": "n1", "group_id": "g"}],
+            facts=[],
+            episodes=[],
+            warnings=["facts search failed: graph exploded"],
+        )
+        self.assertIn("Partial results", text)
+        self.assertIn("facts search failed", text)
+
+    def test_partial_warnings_show_with_no_results(self):
+        text = format_search(
+            query="q",
+            group="g",
+            groups_searched=["g"],
+            nodes=[],
+            facts=[],
+            episodes=[],
+            warnings=["nodes search failed: timeout"],
+        )
+        self.assertIn("No memory results", text)
+        self.assertIn("Partial results", text)
+
+    def test_warnings_are_clipped(self):
+        text = format_search(
+            query="q",
+            group="g",
+            groups_searched=["g"],
+            nodes=[{"uuid": "n1", "name": "n1", "group_id": "g"}],
+            facts=[],
+            episodes=[],
+            warnings=["x" * 5000],
+        )
+        self.assertNotIn("x" * 600, text)
+        self.assertIn("…", text)
+
+
+class ClipTests(unittest.TestCase):
+    def test_short_text_is_unchanged(self):
+        self.assertEqual(clip("hello", 10), "hello")
+
+    def test_long_text_is_truncated_with_ellipsis(self):
+        self.assertEqual(clip("x" * 20, 10), "x" * 10 + "…")
+
+    def test_control_characters_are_stripped(self):
+        self.assertEqual(clip("a\x00b\x1b[31mc\u202ed", 50), "abcd")
+
 
 
 if __name__ == "__main__":

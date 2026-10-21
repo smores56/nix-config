@@ -1,7 +1,9 @@
+import asyncio
 import json
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "modules/features/ai/memory/src"))
@@ -12,8 +14,10 @@ from memory_mcp.graphiti import BackendError  # noqa: E402
 from memory_mcp.normalize import content_hash, episode_uuid, normalize_content  # noqa: E402
 from memory_mcp.readiness import ReadinessError  # noqa: E402
 from memory_mcp.schema import FALLBACK_TOOLS, FALLBACK_TOOL_NAMES  # noqa: E402
-from memory_mcp.store import Store  # noqa: E402
+from memory_mcp.store import Entry, Store, utcnow  # noqa: E402
 from memory_mcp.wrapper import (  # noqa: E402
+    DEFAULT_TOOL_TIMEOUT,
+    DEFAULT_UPSTREAM_TIMEOUT,
     MAX_CONTENT_CHARS,
     MAX_QUERY_CHARS,
     WrapperConfig,
@@ -28,28 +32,40 @@ class FakeBackend:
         self.facts = []
         self.episodes = []
         self.fail = False
+        self.fail_nodes = False
         self.fail_facts = False
+        self.delay = 0.0
+        self.calls = []
         self.status = {"status": "ok", "message": "connected"}
 
+    async def _maybe_sleep(self):
+        if self.delay:
+            await asyncio.sleep(self.delay)
+
     async def add_episode(self, **kwargs):
+        self.calls.append("add_episode")
+        await self._maybe_sleep()
         if self.fail:
             raise RuntimeError("graph exploded")
         self.added.append(kwargs)
         return {"message": "episode queued"}
 
     async def search_nodes(self, query, group_ids, max_nodes):
-        if self.fail:
-            raise RuntimeError("graph exploded")
+        self.calls.append("search_nodes")
+        await self._maybe_sleep()
+        if self.fail or self.fail_nodes:
+            raise BackendError("nodes unavailable")
         return self.nodes[:max_nodes]
 
     async def search_facts(self, query, group_ids, max_facts):
-        if self.fail:
-            raise RuntimeError("graph exploded")
-        if self.fail_facts:
+        self.calls.append("search_facts")
+        await self._maybe_sleep()
+        if self.fail or self.fail_facts:
             raise BackendError("facts unavailable")
         return self.facts[:max_facts]
 
     async def get_episodes(self, group_ids, max_episodes):
+        self.calls.append("get_episodes")
         return self.episodes[:max_episodes]
 
     async def get_status(self):
@@ -93,8 +109,10 @@ class WrapperTests(unittest.IsolatedAsyncioTestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def build(self):
-        config = WrapperConfig(state_dir=self.tmp.name, graphiti_url="http://127.0.0.1:1/mcp")
+    def build(self, **overrides):
+        values = {"state_dir": self.tmp.name, "graphiti_url": "http://127.0.0.1:1/mcp"}
+        values.update(overrides)
+        config = WrapperConfig(**values)
         return build_server(
             config,
             backend=self.backend,
@@ -266,21 +284,187 @@ class WrapperTests(unittest.IsolatedAsyncioTestCase):
         self.backend.fail_facts = True
         result = await self.call("memory_search", {"query": "graph store"})
         self.assertFalse(result.isError)
-        self.assertIn("FalkorDB", result.content[0].text)
+        text = result.content[0].text
+        self.assertIn("FalkorDB", text)
+        self.assertIn("Partial results", text)
+        self.assertIn("fact search failed", text)
+        self.assertEqual(self.audit()[-1]["status"], "partial")
 
-    async def test_path_like_query_returns_note_without_searching(self):
-        self.backend.fail = True  # would error if search were attempted
+    async def test_search_warns_when_nodes_fail_but_facts_return(self):
+        self.seed()
+        self.backend.fail_nodes = True
+        result = await self.call("memory_search", {"query": "graph store"})
+        self.assertFalse(result.isError)
+        self.assertIn("FalkorDB", result.content[0].text)
+        self.assertIn("node search failed", result.content[0].text)
+
+    async def test_search_only_errors_when_both_upstreams_fail(self):
+        self.seed()
+        self.backend.fail_nodes = True
+        self.backend.fail_facts = True
+        result = await self.call("memory_search", {"query": "graph store"})
+        self.assertTrue(result.isError)
+        self.assertIn("nodes unavailable", result.content[0].text)
+
+    async def test_path_like_query_still_searches_and_appends_a_note(self):
+        self.seed()
         result = await self.call("memory_search", {"query": "modules/nixos/memory.nix"})
         self.assertFalse(result.isError)
-        self.assertIn("grep", result.content[0].text)
-        self.assertIn("Nothing was invented", result.content[0].text)
-        self.assertEqual(self.audit()[-1]["status"], "path-note")
+        text = result.content[0].text
+        self.assertIn("search_nodes", self.backend.calls)
+        self.assertIn("Quoted memory", text)
+        self.assertIn("FalkorDB", text)
+        self.assertIn("FTS", text)
+        audit = self.audit()[-1]
+        self.assertEqual(audit["status"], "ok")
+        self.assertTrue(audit["path_like"])
+
+    async def test_prose_query_has_no_path_note(self):
+        self.seed()
+        result = await self.call("memory_search", {"query": "read/write graph store"})
+        self.assertNotIn("FTS", result.content[0].text)
 
     async def test_search_requires_the_embedder(self):
         self.probes.failures_list = ["embedder unavailable at http://127.0.0.1:8183"]
         result = await self.call("memory_search", {"query": "anything"})
         self.assertTrue(result.isError)
         self.assertIn("embedder", result.content[0].text)
+
+    def test_timeout_constants_fit_the_client_budgets(self):
+        self.assertLessEqual(DEFAULT_UPSTREAM_TIMEOUT, 25)
+        self.assertEqual(DEFAULT_TOOL_TIMEOUT, 60)
+        self.assertGreater(DEFAULT_TOOL_TIMEOUT, DEFAULT_UPSTREAM_TIMEOUT)
+
+    async def test_a_hung_tool_times_out_and_rolls_back(self):
+        self.backend.delay = 5
+        result = await self.call_with(self.build(tool_timeout=0.05), "memory_write", {"content": "slow"})
+        self.assertTrue(result.isError)
+        self.assertIn("timed out", result.content[0].text)
+        self.assertEqual(self.backend.added, [])
+        self.assertEqual(self.store.stats("owner--repo")["total"], 0)
+        self.assertEqual(self.audit()[-1]["status"], "timeout")
+
+    async def call_with(self, server, name, arguments):
+        async with create_connected_server_and_client_session(server) as session:
+            return await session.call_tool(name, arguments)
+
+    async def test_cwd_is_sanitized_before_use(self):
+        self.header_values = headers(
+            **{"x-memory-cwd": "/home/smores/\x1b[31mcode\x1b[0m\u202e\n/etc/passwd"}
+        )
+        result = await self.write("sanitized cwd")
+        self.assertFalse(result.isError)
+        self.assertIn("cwd=/home/smores/code;", self.backend.added[0]["source_description"])
+        self.assertIn("cwd: /home/smores/code", (await self.call("memory_status", {})).content[0].text)
+
+    async def test_relative_cwd_stays_rejected_after_sanitizing(self):
+        self.header_values = headers(**{"x-memory-cwd": "relative/\x1b[31mpath"})
+        result = await self.write("x")
+        self.assertTrue(result.isError)
+        self.assertIn("X-Memory-Cwd", result.content[0].text)
+
+    async def test_write_reply_clips_the_upstream_message(self):
+        self.backend.add_episode = self._long_message_backend
+        result = await self.write("long message")
+        self.assertFalse(result.isError)
+        self.assertLess(len(result.content[0].text), 1000)
+        self.assertIn("…", result.content[0].text)
+
+    async def _long_message_backend(self, **kwargs):
+        self.backend.added.append(kwargs)
+        return {"message": "y" * 5000}
+
+    async def test_status_clips_the_upstream_message(self):
+        self.backend.status = {"status": "ok", "message": "z" * 5000}
+        result = await self.call("memory_status", {})
+        self.assertLess(len(result.content[0].text), 2000)
+        self.assertIn("…", result.content[0].text)
+
+    async def test_writing_tombstoned_content_revives_it(self):
+        first = await self.write("revive me")
+        self.assertIn("Queued", first.content[0].text)
+        entry = self.store.find("owner--repo", content_hash("revive me"))
+        await self.call("memory_tombstone", {"ref": entry.uuid, "reason": "superseded"})
+        self.assertEqual(self.store.lookup("owner--repo", entry.content_hash).status, "tombstoned")
+
+        revived = await self.write("revive me")
+        self.assertFalse(revived.isError)
+        self.assertNotIn("Duplicate", revived.content[0].text)
+        self.assertIn("Revived", revived.content[0].text)
+        self.assertEqual(len(self.backend.added), 2)
+        stored = self.store.lookup("owner--repo", entry.content_hash)
+        self.assertEqual(stored.status, "active")
+        self.assertIsNone(stored.tombstoned_at)
+        self.assertEqual(self.audit()[-1]["status"], "revived")
+
+    async def test_a_stale_pending_write_is_retried(self):
+        content = "crashed write"
+        digest = content_hash(normalize_content(content))
+        old = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat().replace("+00:00", "Z")
+        self.store.insert(
+            Entry(
+                group="owner--repo",
+                content_hash=digest,
+                uuid=episode_uuid("owner--repo", digest),
+                name="crashed write",
+                content=content,
+                source="maki",
+                cwd="/home/smores/code/example",
+                created_at=old,
+                status="pending",
+            )
+        )
+        result = await self.write(content)
+        self.assertFalse(result.isError)
+        self.assertNotIn("Duplicate", result.content[0].text)
+        self.assertEqual(len(self.backend.added), 1)
+        self.assertEqual(self.store.lookup("owner--repo", digest).status, "active")
+        self.assertEqual(self.audit()[-1]["status"], "retried")
+
+    async def test_a_fresh_pending_write_is_not_a_duplicate(self):
+        content = "in flight"
+        digest = content_hash(normalize_content(content))
+        self.store.insert(
+            Entry(
+                group="owner--repo",
+                content_hash=digest,
+                uuid=episode_uuid("owner--repo", digest),
+                name="in flight",
+                content=content,
+                source="maki",
+                cwd="/home/smores/code/example",
+                created_at=utcnow(),
+                status="pending",
+            )
+        )
+        result = await self.write(content)
+        self.assertTrue(result.isError)
+        self.assertIn("in progress", result.content[0].text)
+        self.assertNotIn("Duplicate", result.content[0].text)
+        self.assertEqual(self.backend.added, [])
+        self.assertIn("pending", [line["status"] for line in self.audit()])
+
+    async def test_promote_rejects_every_non_global_target(self):
+        await self.write()
+        for target in ("other--repo", "owner--repo", "local--scratch"):
+            with self.subTest(target=target):
+                result = await self.call("memory_promote", {"ref": "promote me", "to": target})
+                self.assertTrue(result.isError)
+                self.assertIn("global group", result.content[0].text)
+        self.assertEqual(len(self.backend.added), 1)
+
+    async def test_promote_rejects_like_wildcards_in_the_ref(self):
+        await self.write()
+        result = await self.call("memory_promote", {"ref": "%%%%%%"})
+        self.assertTrue(result.isError)
+        self.assertIn("no stored episode", result.content[0].text)
+
+    async def test_promote_accepts_global_in_any_case(self):
+        await self.write()
+        result = await self.call("memory_promote", {"ref": "promote me", "to": "GLOBAL"})
+        self.assertFalse(result.isError)
+        self.assertIn("Promoted", result.content[0].text)
+        self.assertEqual(self.store.find("global", content_hash("promote me")).group, "global")
 
     async def write(self, content="promote me"):
         return await self.call("memory_write", {"content": content})

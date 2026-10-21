@@ -19,7 +19,12 @@ pkgs.python3Packages.buildPythonApplication {
   };
 
   build-system = [ pkgs.python3Packages.hatchling ];
-  dependencies = [ pkgs.python3Packages.mcp ];
+  dependencies = with pkgs.python3Packages; [
+    anyio
+    httpx
+    mcp
+    starlette
+  ];
 
   # Group derivation shells out to git. The wrappers prepend it to PATH so the
   # systemd unit and the home package behave the same without relying on the
@@ -33,7 +38,11 @@ pkgs.python3Packages.buildPythonApplication {
   ];
 
   doCheck = false;
-  pythonImportsCheck = [ "memory_mcp" ];
+  pythonImportsCheck = [
+    "memory_mcp.wrapper"
+    "memory_mcp.shim"
+    "memory_mcp.cli"
+  ];
 
   meta = {
     description = "Cross-machine memory MCP wrapper, shim, and CLI";

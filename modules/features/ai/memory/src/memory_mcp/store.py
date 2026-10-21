@@ -1,8 +1,8 @@
-"""SQLite index for dedup, provenance, promotions, tombstones, and audit.
+"""SQLite index for dedup, provenance, promotions, pending writes, and audit.
 
 The graph is the memory model, but Graphiti has no dedup and no arbitrary
 metadata. This index is the wrapper's authoritative record of what was written:
-it makes writes idempotent, keeps the content needed for promotion, and records
+it makes writes idempotent, keeps the content needed for promotion, and marks
 tombstones without ever calling Graphiti's hard-delete tools.
 """
 
@@ -14,13 +14,18 @@ import sqlite3
 import sys
 import threading
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
 DB_NAME = "index.sqlite"
 AUDIT_NAME = "audit.jsonl"
+
+# A pending row older than this belongs to a crashed attempt, not an in-flight
+# write: re-queueing it cannot double-write while the original request is still
+# bounded by the 60s tool deadline.
+PENDING_STALE_SECONDS = 120
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS episodes (
@@ -30,7 +35,6 @@ CREATE TABLE IF NOT EXISTS episodes (
     name TEXT NOT NULL,
     content TEXT NOT NULL,
     source TEXT NOT NULL,
-    source_id TEXT,
     cwd TEXT NOT NULL,
     created_at TEXT NOT NULL,
     tags TEXT NOT NULL DEFAULT '',
@@ -52,20 +56,25 @@ CREATE TABLE IF NOT EXISTS promotions (
     created_at TEXT NOT NULL,
     PRIMARY KEY (source_uuid, target_group)
 );
-
-CREATE TABLE IF NOT EXISTS tombstones (
-    group_id TEXT NOT NULL,
-    content_hash TEXT NOT NULL,
-    uuid TEXT NOT NULL,
-    actor TEXT NOT NULL,
-    reason TEXT NOT NULL,
-    created_at TEXT NOT NULL
-);
 """
 
 
 def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def pending_is_stale(entry: Entry, now: datetime | None = None) -> bool:
+    """Whether a pending row is old enough to belong to a crashed attempt."""
+    try:
+        moment = datetime.fromisoformat(entry.created_at.replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    reference = now or datetime.now(timezone.utc)
+    return (reference - moment).total_seconds() > PENDING_STALE_SECONDS
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 @dataclass(frozen=True)
@@ -78,7 +87,6 @@ class Entry:
     source: str
     cwd: str
     created_at: str
-    source_id: str | None = None
     tags: str = ""
     status: str = "active"
     promoted_from: str | None = None
@@ -95,6 +103,9 @@ class Store:
         self.state_dir.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.executescript(_SCHEMA)
+            # Superseded by `episodes.status` + `tombstoned_at`; drop it so an
+            # upgraded install does not keep a table nothing writes.
+            conn.execute("DROP TABLE IF EXISTS tombstones")
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -119,7 +130,6 @@ class Store:
             name=row["name"],
             content=row["content"],
             source=row["source"],
-            source_id=row["source_id"],
             cwd=row["cwd"],
             created_at=row["created_at"],
             tags=row["tags"],
@@ -144,8 +154,8 @@ class Store:
                     """
                     INSERT INTO episodes
                         (group_id, content_hash, uuid, name, content, source,
-                         source_id, cwd, created_at, tags, status, promoted_from)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         cwd, created_at, tags, status, promoted_from)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         entry.group,
@@ -154,7 +164,6 @@ class Store:
                         entry.name,
                         entry.content,
                         entry.source,
-                        entry.source_id,
                         entry.cwd,
                         entry.created_at,
                         entry.tags,
@@ -173,6 +182,33 @@ class Store:
                 (group, digest),
             )
 
+    def set_state(self, entry: Entry) -> None:
+        """Write every mutable field back; used for pending/active/tombstone transitions."""
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE episodes
+                SET uuid = ?, name = ?, content = ?, source = ?, cwd = ?, created_at = ?,
+                    tags = ?, status = ?, promoted_from = ?, tombstoned_at = ?, tombstone_reason = ?
+                WHERE group_id = ? AND content_hash = ?
+                """,
+                (
+                    entry.uuid,
+                    entry.name,
+                    entry.content,
+                    entry.source,
+                    entry.cwd,
+                    entry.created_at,
+                    entry.tags,
+                    entry.status,
+                    entry.promoted_from,
+                    entry.tombstoned_at,
+                    entry.tombstone_reason,
+                    entry.group,
+                    entry.content_hash,
+                ),
+            )
+
     def find(self, group: str, ref: str) -> Entry | None:
         reference = ref.strip()
         if not reference:
@@ -188,15 +224,18 @@ class Store:
             ).fetchone()
             if row is not None or len(reference) < 6:
                 return self._row(row)
-            pattern = reference.lower() + "%"
+            pattern = _escape_like(reference.lower()) + "%"
+            name_pattern = _escape_like(reference) + "%"
             row = conn.execute(
                 """
                 SELECT * FROM episodes
                 WHERE group_id = ?
-                  AND (content_hash LIKE ? OR uuid LIKE ? OR name LIKE ?)
+                  AND (content_hash LIKE ? ESCAPE '\\'
+                       OR uuid LIKE ? ESCAPE '\\'
+                       OR name LIKE ? ESCAPE '\\')
                 ORDER BY created_at DESC LIMIT 1
                 """,
-                (group, pattern, pattern, reference + "%"),
+                (group, pattern, pattern, name_pattern),
             ).fetchone()
         return self._row(row)
 
@@ -227,31 +266,25 @@ class Store:
             ).fetchone()
         return row is not None
 
-    def tombstone(self, entry: Entry, *, actor: str, reason: str) -> Entry:
+    def tombstone(self, entry: Entry, *, reason: str) -> Entry:
         at = utcnow()
-        with self._connect() as conn:
-            conn.execute(
-                """
-                UPDATE episodes
-                SET status = 'tombstoned', tombstoned_at = ?, tombstone_reason = ?
-                WHERE group_id = ? AND content_hash = ?
-                """,
-                (at, reason, entry.group, entry.content_hash),
-            )
-            conn.execute(
-                """
-                INSERT INTO tombstones
-                    (group_id, content_hash, uuid, actor, reason, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (entry.group, entry.content_hash, entry.uuid, actor, reason, at),
-            )
-        return replace(
-            entry,
+        updated = Entry(
+            group=entry.group,
+            content_hash=entry.content_hash,
+            uuid=entry.uuid,
+            name=entry.name,
+            content=entry.content,
+            source=entry.source,
+            cwd=entry.cwd,
+            created_at=entry.created_at,
+            tags=entry.tags,
             status="tombstoned",
+            promoted_from=entry.promoted_from,
             tombstoned_at=at,
             tombstone_reason=reason,
         )
+        self.set_state(updated)
+        return updated
 
     def stats(self, group: str) -> dict[str, object]:
         with self._connect() as conn:
@@ -261,6 +294,7 @@ class Store:
                     COUNT(*) AS total,
                     SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active,
                     SUM(CASE WHEN status = 'tombstoned' THEN 1 ELSE 0 END) AS tombstoned,
+                    SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
                     MAX(created_at) AS last_written
                 FROM episodes WHERE group_id = ?
                 """,
@@ -270,6 +304,7 @@ class Store:
             "total": row["total"] or 0,
             "active": row["active"] or 0,
             "tombstoned": row["tombstoned"] or 0,
+            "pending": row["pending"] or 0,
             "last_written": row["last_written"],
         }
 

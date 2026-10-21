@@ -8,10 +8,11 @@ models so Graphiti's queue cannot silently drop an episode.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Awaitable, Callable, Mapping
 
 from mcp.server.fastmcp import Context, FastMCP
@@ -19,9 +20,9 @@ from mcp.server.fastmcp.exceptions import ToolError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from .formatting import format_search, looks_path_like, path_query_note
+from .formatting import clip, format_search, looks_path_like, path_query_note
 from .graphiti import BackendError, GraphitiBackend
-from .groups import GLOBAL_GROUP, GroupRefused, sanitize_actor, validate_group
+from .groups import GLOBAL_GROUP, GroupRefused, sanitize_actor, sanitize_cwd, validate_group
 from .normalize import (
     content_hash,
     episode_name,
@@ -30,7 +31,7 @@ from .normalize import (
     normalize_tags,
 )
 from .readiness import HealthProbes, ReadinessError
-from .store import Entry, Store, utcnow
+from .store import Entry, Store, pending_is_stale, utcnow
 
 DEFAULT_STATE_DIR = "/var/lib/memory"
 DEFAULT_GRAPHITI_URL = "http://127.0.0.1:8184/mcp"
@@ -39,11 +40,20 @@ DEFAULT_EMBED_URL = "http://127.0.0.1:8183"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8182
 
+# One constant for the per-upstream-call budget. A composed search makes three
+# calls, so it stays well under the 60s overall deadline below (and that
+# deadline stays under Maki's 90s and the CLI's client timeout).
+DEFAULT_UPSTREAM_TIMEOUT = 20.0
+# One tool call must finish before the shim, CLI, Maki, or Cloudflare gives up.
+DEFAULT_TOOL_TIMEOUT = 60.0
+
 # Extracted episodes are session summaries or note sections, not source dumps.
 # A cap keeps a hostile or runaway client from parking megabytes in the graph
 # and blowing up extraction prompts.
 MAX_CONTENT_CHARS = 100_000
 MAX_QUERY_CHARS = 4_000
+MAX_CWD_CHARS = 1024
+MAX_MESSAGE_CHARS = 500
 
 HeadersProvider = Callable[[Context], Mapping[str, str]]
 
@@ -56,7 +66,8 @@ class WrapperConfig:
     embed_url: str = DEFAULT_EMBED_URL
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
-    upstream_timeout: float = 75.0
+    upstream_timeout: float = DEFAULT_UPSTREAM_TIMEOUT
+    tool_timeout: float = DEFAULT_TOOL_TIMEOUT
 
     @classmethod
     def from_env(cls) -> WrapperConfig:
@@ -67,7 +78,8 @@ class WrapperConfig:
             embed_url=os.environ.get("MEMORY_EMBED_URL", DEFAULT_EMBED_URL),
             host=os.environ.get("MEMORY_MCP_HOST", DEFAULT_HOST),
             port=int(os.environ.get("MEMORY_MCP_PORT", str(DEFAULT_PORT))),
-            upstream_timeout=float(os.environ.get("MEMORY_UPSTREAM_TIMEOUT", "75")),
+            upstream_timeout=float(os.environ.get("MEMORY_UPSTREAM_TIMEOUT", str(DEFAULT_UPSTREAM_TIMEOUT))),
+            tool_timeout=float(os.environ.get("MEMORY_TOOL_TIMEOUT", str(DEFAULT_TOOL_TIMEOUT))),
         )
 
 
@@ -97,15 +109,15 @@ def _call_context(ctx: Context, headers_provider: HeadersProvider) -> CallContex
     except GroupRefused as exc:
         raise ToolError(str(exc)) from exc
 
-    cwd = str(headers.get("x-memory-cwd", "")).strip()
+    cwd = sanitize_cwd(headers.get("x-memory-cwd"))
     if not cwd.startswith("/"):
         raise ToolError("missing or relative X-Memory-Cwd header; the shim sends the real cwd")
 
-    return CallContext(group=group, cwd=cwd[:4096], actor=sanitize_actor(headers.get("x-memory-actor")))
+    return CallContext(group=group, cwd=cwd[:MAX_CWD_CHARS], actor=sanitize_actor(headers.get("x-memory-actor")))
 
 
 def _audit_rejected(store: Store, tool: str, detail: str) -> None:
-    store.audit(actor="unknown", group="?", tool=tool, status="rejected", detail=detail[:300])
+    store.audit(actor="unknown", group="?", tool=tool, status="rejected", detail=clip(detail, 300))
 
 
 def _result_hash(text: str) -> str:
@@ -122,13 +134,17 @@ def _provenance(*, digest: str, cwd: str, source: str, tags: list[str], extra: s
 
 
 def _duplicate_message(entry: Entry, group: str) -> str:
-    note = ""
-    if entry.status == "tombstoned":
-        note = f" (it was tombstoned at {entry.tombstoned_at}: {entry.tombstone_reason or 'no reason'})"
     return (
         f"Duplicate memory: the same content is already stored in group {group} "
-        f"as {entry.uuid} (written {entry.created_at}){note}. Nothing was queued."
+        f"as {entry.uuid} (written {entry.created_at}). Nothing was queued."
     )
+
+
+def _rollback_write(store: Store, mode: str, group: str, digest: str, previous: Entry | None) -> None:
+    if mode == "new" or previous is None:
+        store.delete(group, digest)
+    else:
+        store.set_state(previous)
 
 
 def build_server(
@@ -161,16 +177,22 @@ def build_server(
             _audit_rejected(store, tool, str(exc))
             raise
         try:
-            return await action(info)
+            return await asyncio.wait_for(action(info), timeout=config.tool_timeout)
+        except TimeoutError as exc:
+            detail = f"{tool} timed out after {config.tool_timeout:g}s"
+            store.audit(actor=info.actor, group=info.group, tool=tool, status="timeout", detail=detail)
+            raise ToolError(f"{detail}; retry, narrow the query, or check the memory services") from exc
         except ToolError as exc:
-            store.audit(actor=info.actor, group=info.group, tool=tool, status="error", detail=str(exc)[:300])
+            store.audit(actor=info.actor, group=info.group, tool=tool, status="error", detail=clip(str(exc), 300))
             raise
         except (BackendError, ReadinessError) as exc:
-            store.audit(actor=info.actor, group=info.group, tool=tool, status="error", detail=str(exc)[:300])
-            raise ToolError(str(exc)) from exc
+            message = clip(str(exc), MAX_MESSAGE_CHARS)
+            store.audit(actor=info.actor, group=info.group, tool=tool, status="error", detail=message[:300])
+            raise ToolError(message) from exc
         except Exception as exc:  # keep the tool error shape consistent
-            store.audit(actor=info.actor, group=info.group, tool=tool, status="error", detail=repr(exc)[:300])
-            raise ToolError(f"{tool} failed: {type(exc).__name__}: {exc}") from exc
+            message = f"{tool} failed: {type(exc).__name__}: {clip(str(exc), MAX_MESSAGE_CHARS)}"
+            store.audit(actor=info.actor, group=info.group, tool=tool, status="error", detail=message[:300])
+            raise ToolError(message) from exc
 
     @mcp.tool(name="memory_write", structured_output=False)
     async def memory_write(ctx: Context, content: str, tags: list[str] | None = None) -> str:
@@ -188,26 +210,41 @@ def build_server(
                 raise ToolError(str(exc)) from exc
             cleaned_tags = normalize_tags(tags)
             digest = content_hash(normalized)
+            uid = episode_uuid(info.group, digest)
 
             existing = store.lookup(info.group, digest)
+            mode = "new"
             if existing is not None:
-                store.audit(
-                    actor=info.actor,
-                    group=info.group,
-                    tool="memory_write",
-                    status="duplicate",
-                    content_hash=digest,
-                    uuid=existing.uuid,
-                )
-                return _duplicate_message(existing, info.group)
+                if existing.status == "active":
+                    store.audit(
+                        actor=info.actor,
+                        group=info.group,
+                        tool="memory_write",
+                        status="duplicate",
+                        content_hash=digest,
+                        uuid=existing.uuid,
+                    )
+                    return _duplicate_message(existing, info.group)
+                if existing.status == "pending" and not pending_is_stale(existing):
+                    store.audit(
+                        actor=info.actor,
+                        group=info.group,
+                        tool="memory_write",
+                        status="pending",
+                        content_hash=digest,
+                        uuid=existing.uuid,
+                    )
+                    raise ToolError(
+                        "a write for this content is in progress; retry after that call finishes"
+                    )
+                mode = "revived" if existing.status == "tombstoned" else "retry"
 
             try:
                 await probes.require_write()
             except ReadinessError as exc:
                 raise ToolError(str(exc)) from exc
 
-            uid = episode_uuid(info.group, digest)
-            entry = Entry(
+            pending = Entry(
                 group=info.group,
                 content_hash=digest,
                 uuid=uid,
@@ -217,24 +254,43 @@ def build_server(
                 cwd=info.cwd,
                 created_at=utcnow(),
                 tags=",".join(cleaned_tags),
+                status="pending",
+                promoted_from=existing.promoted_from if existing is not None else None,
             )
-            if not store.insert(entry):
-                raced = store.lookup(info.group, digest)
-                store.audit(
-                    actor=info.actor,
-                    group=info.group,
-                    tool="memory_write",
-                    status="duplicate",
-                    content_hash=digest,
-                    uuid=raced.uuid if raced else uid,
-                )
-                return _duplicate_message(raced, info.group) if raced else _duplicate_message(entry, info.group)
+            if mode == "new":
+                if not store.insert(pending):
+                    # Lost a race with a concurrent write; re-run the decision
+                    # on the row that won instead of treating every loser as a
+                    # duplicate (a tombstoned or stale pending row is writable).
+                    raced = store.lookup(info.group, digest)
+                    if raced is None:
+                        return _duplicate_message(pending, info.group)
+                    if raced.status == "active":
+                        store.audit(
+                            actor=info.actor,
+                            group=info.group,
+                            tool="memory_write",
+                            status="duplicate",
+                            content_hash=digest,
+                            uuid=raced.uuid,
+                        )
+                        return _duplicate_message(raced, info.group)
+                    if raced.status == "pending" and not pending_is_stale(raced):
+                        raise ToolError(
+                            "a write for this content is in progress; retry after that call finishes"
+                        )
+                    existing = raced
+                    mode = "revived" if raced.status == "tombstoned" else "retry"
+                    pending = replace(pending, promoted_from=raced.promoted_from)
+                    store.set_state(pending)
+            else:
+                store.set_state(pending)
 
             try:
                 result = await backend.add_episode(
-                    name=entry.name,
-                    episode_body=entry.content,
-                    group_id=entry.group,
+                    name=pending.name,
+                    episode_body=pending.content,
+                    group_id=pending.group,
                     source="text",
                     source_description=_provenance(
                         digest=digest,
@@ -244,21 +300,29 @@ def build_server(
                         extra=f"id={uid}",
                     ),
                 )
+            except asyncio.CancelledError:
+                _rollback_write(store, mode, info.group, digest, existing)
+                raise
             except Exception as exc:
-                store.delete(info.group, digest)
-                raise ToolError(f"graph write failed and the index was rolled back: {exc}") from exc
+                _rollback_write(store, mode, info.group, digest, existing)
+                raise ToolError(
+                    f"graph write failed and the index was rolled back: {clip(str(exc), MAX_MESSAGE_CHARS)}"
+                ) from exc
 
+            store.set_state(replace(pending, status="active"))
+            status = {"revived": "revived", "retry": "retried"}.get(mode, "queued")
             store.audit(
                 actor=info.actor,
                 group=info.group,
                 tool="memory_write",
-                status="queued",
+                status=status,
                 content_hash=digest,
                 uuid=uid,
             )
+            verb = "Revived" if mode == "revived" else "Queued"
             message = result.get("message") if isinstance(result, dict) else None
-            queued = f" Graphiti: {message}" if message else ""
-            return f"Queued memory {uid} in group {info.group} (hash {digest[:12]}).{queued}"
+            queued = f" Graphiti: {clip(str(message), MAX_MESSAGE_CHARS)}" if message else ""
+            return f"{verb} memory {uid} in group {info.group} (hash {digest[:12]}).{queued}"
 
         return await guarded("memory_write", ctx, action)
 
@@ -272,16 +336,7 @@ def build_server(
                 raise ToolError("query is empty")
             if len(text) > MAX_QUERY_CHARS:
                 raise ToolError(f"query is longer than {MAX_QUERY_CHARS} characters")
-            if looks_path_like(text):
-                note = path_query_note(text)
-                store.audit(
-                    actor=info.actor,
-                    group=info.group,
-                    tool="memory_search",
-                    status="path-note",
-                    result_hash=_result_hash(note),
-                )
-                return note
+            path_like = looks_path_like(text)
 
             try:
                 await probes.require_search()
@@ -290,19 +345,26 @@ def build_server(
 
             clamped = max(1, min(int(limit), 10))
             groups = [info.group] if info.group == GLOBAL_GROUP else [info.group, GLOBAL_GROUP]
-            failures: list[str] = []
+            warnings: list[str] = []
+            node_error: BackendError | None = None
+            fact_error: BackendError | None = None
             try:
                 nodes = await backend.search_nodes(text, groups, clamped)
             except BackendError as exc:
                 nodes = []
-                failures.append(str(exc))
+                node_error = exc
+                warnings.append(f"node search failed: {clip(str(exc), 200)}")
             try:
                 facts = await backend.search_facts(text, groups, clamped)
             except BackendError as exc:
                 facts = []
-                failures.append(str(exc))
-            if failures and not nodes and not facts:
-                raise BackendError("; ".join(failures))
+                fact_error = exc
+                warnings.append(f"fact search failed: {clip(str(exc), 200)}")
+            if node_error and fact_error:
+                raise BackendError(
+                    f"memory search failed: {clip(str(node_error), 200)}; {clip(str(fact_error), 200)}"
+                )
+
             episodes: list[dict[str, Any]] = []
             try:
                 episodes = await backend.get_episodes(groups, 3)
@@ -316,14 +378,19 @@ def build_server(
                 nodes=nodes,
                 facts=facts,
                 episodes=episodes,
+                warnings=warnings,
             )
+            if path_like:
+                output = output.rstrip("\n") + "\n" + path_query_note(text) + "\n"
             store.audit(
                 actor=info.actor,
                 group=info.group,
                 tool="memory_search",
-                status="ok",
+                status="partial" if warnings else "ok",
                 nodes=len(nodes),
                 facts=len(facts),
+                path_like=path_like,
+                warnings=[clip(warning, 200) for warning in warnings],
                 result_hash=_result_hash(output),
             )
             return output
@@ -339,13 +406,15 @@ def build_server(
                 target = validate_group(to)
             except GroupRefused as exc:
                 raise ToolError(str(exc)) from exc
+            if target != GLOBAL_GROUP:
+                raise ToolError("memory_promote can only target the global group; other groups are refused")
             if target == info.group:
                 raise ToolError("source and target group are the same; nothing to promote")
 
             entry = store.find(info.group, ref)
             if entry is None:
                 raise ToolError(
-                    f"no stored episode in group {info.group} matches {ref!r}; "
+                    f"no stored episode in group {info.group} matches {clip(ref, 80)!r}; "
                     "use a uuid, content hash prefix, or exact name from memory_search"
                 )
             if entry.status == "tombstoned":
@@ -410,9 +479,14 @@ def build_server(
                         ),
                     ),
                 )
+            except asyncio.CancelledError:
+                store.delete(target, entry.content_hash)
+                raise
             except Exception as exc:
                 store.delete(target, entry.content_hash)
-                raise ToolError(f"promotion write failed and the index was rolled back: {exc}") from exc
+                raise ToolError(
+                    f"promotion write failed and the index was rolled back: {clip(str(exc), MAX_MESSAGE_CHARS)}"
+                ) from exc
 
             store.record_promotion(
                 source_uuid=entry.uuid,
@@ -453,7 +527,7 @@ def build_server(
 
             graph_line = f"graph: {graph_status.get('status') or 'unknown'}"
             if graph_status.get("message"):
-                graph_line += f" - {graph_status['message']}"
+                graph_line += f" - {clip(str(graph_status['message']), MAX_MESSAGE_CHARS)}"
             lines = [
                 "Memory status",
                 f"group: {info.group}",
@@ -464,7 +538,7 @@ def build_server(
                     f"{local['total']} total, last write {local['last_written'] or 'never'}"
                 ),
                 f"index global: {global_stats['active']} active, {global_stats['tombstoned']} tombstoned",
-                "models: " + ("ok" if not failures else "; ".join(failures)),
+                "models: " + ("ok" if not failures else "; ".join(clip(failure, 200) for failure in failures)),
                 graph_line,
             ]
             output = "\n".join(lines)
@@ -487,12 +561,12 @@ def build_server(
             entry = store.find(info.group, ref)
             if entry is None:
                 raise ToolError(
-                    f"no stored episode in group {info.group} matches {ref!r}; "
+                    f"no stored episode in group {info.group} matches {clip(ref, 80)!r}; "
                     "use a uuid, content hash prefix, or exact name"
                 )
             if entry.status == "tombstoned":
                 return f"Episode {entry.uuid} is already tombstoned ({entry.tombstoned_at})."
-            updated = store.tombstone(entry, actor=info.actor, reason=reason.strip()[:300])
+            updated = store.tombstone(entry, reason=clip(reason, 300))
             store.audit(
                 actor=info.actor,
                 group=info.group,
@@ -503,7 +577,8 @@ def build_server(
             )
             return (
                 f"Marked {updated.uuid} tombstoned in group {info.group}: {updated.tombstone_reason or 'no reason'}. "
-                "The graph episode remains; Graphiti's hard-delete tools are not exposed."
+                "The graph episode remains; Graphiti's hard-delete tools are not exposed. "
+                "Writing the same content again revives it."
             )
 
         return await guarded("memory_tombstone", ctx, action)

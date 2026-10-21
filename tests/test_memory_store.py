@@ -1,7 +1,10 @@
 import json
+import sqlite3
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "modules/features/ai/memory/src"))
@@ -13,7 +16,7 @@ from memory_mcp.normalize import (  # noqa: E402
     normalize_content,
     normalize_tags,
 )
-from memory_mcp.store import Entry, Store  # noqa: E402
+from memory_mcp.store import Entry, Store, pending_is_stale, utcnow  # noqa: E402
 
 
 class NormalizeTests(unittest.TestCase):
@@ -92,12 +95,52 @@ class StoreTests(unittest.TestCase):
     def test_tombstone_marks_status_without_deleting(self):
         entry = self.entry()
         self.store.insert(entry)
-        updated = self.store.tombstone(entry, actor="cli", reason="superseded")
+        updated = self.store.tombstone(entry, reason="superseded")
         self.assertEqual(updated.status, "tombstoned")
         self.assertIsNotNone(updated.tombstoned_at)
         self.assertEqual(self.store.lookup(entry.group, entry.content_hash).status, "tombstoned")
         self.assertEqual(self.store.stats(entry.group)["tombstoned"], 1)
         self.assertEqual(self.store.stats(entry.group)["active"], 0)
+
+    def test_revival_transitions_back_to_active(self):
+        entry = self.entry()
+        self.store.insert(entry)
+        tombstoned = self.store.tombstone(entry, reason="superseded")
+        revived = replace(tombstoned, status="active", tombstoned_at=None, tombstone_reason=None)
+        self.store.set_state(revived)
+        stored = self.store.lookup(entry.group, entry.content_hash)
+        self.assertEqual(stored.status, "active")
+        self.assertIsNone(stored.tombstoned_at)
+        self.assertIsNone(stored.tombstone_reason)
+
+    def test_pending_rows_are_counted(self):
+        self.store.insert(replace(self.entry(), status="pending"))
+        self.assertEqual(self.store.stats("owner--repo")["pending"], 1)
+        self.assertEqual(self.store.stats("owner--repo")["active"], 0)
+
+    def test_pending_staleness(self):
+        now = utcnow()
+        fresh = replace(self.entry(), status="pending", created_at=now)
+        self.assertFalse(pending_is_stale(fresh))
+        old = replace(
+            self.entry(),
+            status="pending",
+            created_at=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+        )
+        self.assertTrue(pending_is_stale(old))
+        self.assertTrue(pending_is_stale(replace(fresh, created_at="not-a-timestamp")))
+
+    def test_find_escapes_like_wildcards(self):
+        entry = replace(self.entry(), name="100%_done")
+        self.store.insert(entry)
+        self.assertIsNone(self.store.find(entry.group, "%%%%%%"))
+        self.assertIsNone(self.store.find(entry.group, "______"))
+        self.assertEqual(self.store.find(entry.group, "100%_done"), entry)
+
+    def test_tombstones_table_is_not_created(self):
+        with sqlite3.connect(self.store.db_path) as conn:
+            names = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        self.assertNotIn("tombstones", names)
 
     def test_promotion_bookkeeping(self):
         entry = self.entry()

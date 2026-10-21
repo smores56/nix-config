@@ -14,7 +14,7 @@ import os
 import sys
 
 from .client import ClientConfig, ToolResult, UpstreamError, call_tool
-from .groups import GroupRefused, WorkRefused, derive_group, validate_group
+from .groups import GroupRefused, derive_group, validate_group
 
 DEFAULT_URL = "http://127.0.0.1:8182/mcp"
 DEFAULT_TIMEOUT = 75.0
@@ -97,9 +97,6 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         group, cwd = resolve_context(args)
-    except WorkRefused as exc:
-        print(f"memory: {exc}", file=sys.stderr)
-        return 2
     except GroupRefused as exc:
         print(f"memory: {exc}", file=sys.stderr)
         return 2

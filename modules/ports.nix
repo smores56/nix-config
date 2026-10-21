@@ -1,21 +1,19 @@
-# Loopback ports for the co-located services. One value each, read by the
-# service listener, the tunnel ingress (for the exposed ones), and the clients'
-# loopback forwards, so they cannot drift apart. Every Access-protected service
-# (ssh/llm/memory) requires Access; calibre and immich are public with their own
-# app auth. A plain attrset (not a module): it lives outside
-# modules/{features,desktop,nixos} so import-tree leaves it alone, and modules
-# import it by relative path.
+# Loopback ports shared by more than one file: a service listener and its
+# tunnel ingress, or a service and a client default. Ports used by a single
+# module live with that module (the raw Graphiti MCP port, for example, is
+# internal to modules/nixos/memory.nix) so this file cannot claim to be a single
+# source it is not. Every Access-protected service (ssh/llm/memory) requires
+# Access; calibre and immich are public with their own app auth. A plain
+# attrset (not a module): it lives outside modules/{features,desktop,nixos} so
+# import-tree leaves it alone, and modules import it by relative path.
 {
   llm = 8081;
-  # Service listeners and their tunnel ingress read these, so the two cannot
-  # drift apart.
+  # Listener and tunnel ingress read this.
   calibre = 8181;
   immich = 2283;
   ssh = 22;
-  # The memory wrapper is the only tunnel target for memory (the raw Graphiti
-  # MCP moved inside); the Maki shim and the `memory` CLI read memoryMcp.
+  # The wrapper's listener, its tunnel ingress, and the generated Maki
+  # `mcp.toml` environment read this; the shim and CLI keep a matching
+  # standalone default.
   memoryMcp = 8182;
-  # Raw Graphiti MCP. Loopback only and never tunneled: the wrapper on
-  # memoryMcp owns validation, dedup, and work refusal.
-  memoryGraphiti = 8184;
 }

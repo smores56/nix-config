@@ -31,8 +31,9 @@ in
 
       src = inputs.self;
 
-      # The memory wrapper imports mcp in its unit tests. One env for the whole
-      # suite keeps the pinned nixpkgs and its mcp version in one place.
+      # The memory package's modules and tests import mcp, httpx, anyio, and
+      # starlette; mcp brings the rest transitively. One env for the whole suite
+      # keeps the pinned nixpkgs and its versions in one place.
       unitTestsPython = pkgs.python3.withPackages (ps: [ ps.mcp ]);
 
       mkEvalChecks =

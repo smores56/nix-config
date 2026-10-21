@@ -7,7 +7,7 @@ name = "memory-mcp"
 version = "0.1.0"
 description = "Project-scoped cross-machine memory: Graphiti MCP wrapper, stdio shim, and CLI"
 requires-python = ">=3.11"
-dependencies = [ "mcp>=1.27" ]
+dependencies = [ "mcp>=1.27", "httpx>=0.27", "starlette>=0.37", "anyio>=4" ]
 
 [project.scripts]
 memory-mcp = "memory_mcp.wrapper:main"

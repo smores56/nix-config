@@ -21,7 +21,7 @@ from mcp.types import CallToolResult, Prompt, TextContent, Tool
 
 from . import client
 from .client import ClientConfig, ToolResult, UpstreamError
-from .groups import GroupRefused, WorkRefused, derive_group
+from .groups import GroupRefused, derive_group
 from .schema import FALLBACK_TOOLS
 
 DEFAULT_URL = "http://127.0.0.1:8182/mcp"
@@ -120,9 +120,6 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         context = derive_group(cwd)
-    except WorkRefused as exc:
-        print(f"memory-mcp-shim: {exc}", file=sys.stderr)
-        return 2
     except GroupRefused as exc:
         print(f"memory-mcp-shim: {exc}", file=sys.stderr)
         return 2

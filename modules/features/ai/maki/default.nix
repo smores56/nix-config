@@ -44,6 +44,10 @@ let
   # all three, work homes get none.
   memoryPackage = import ../memory/package.nix { inherit pkgs; };
 
+  # ports.nix stays the source for the loopback wrapper URL; the shim keeps a
+  # matching default so it also works standalone.
+  ports = import ../../../ports.nix;
+
   # always_yolo skips permission prompts (deny rules still apply);
   # always_thinking forces the max reasoning level. bash is off by default in
   # maki, so enable it for the coding-agent toolset.
@@ -151,15 +155,32 @@ let
   # Maki's memory MCP. The stdio shim inherits Maki's cwd, derives the project
   # group there, refuses work repos, and forwards to the loopback wrapper with
   # the group and cwd as headers. Maki's HTTP client sends neither, so a URL
-  # entry cannot do this. The wrapper is loopback on every personal machine: on
-  # smortress it is the service itself, elsewhere cloudflared-memory forwards
-  # the same port and adds the Cloudflare Access service token. The name must
-  # not collide with a built-in tool (`memory` is one), so it stays `graphiti`.
-  # 90s stays under Cloudflare's ~100s origin timeout for a single response.
+  # entry cannot do this. Maki reads this file once at startup: restart it after
+  # a change, and after `cd`-ing to a different repo (`/cd` does not restart
+  # stdio children, so the group is fixed when Maki starts). The wrapper is
+  # loopback on every personal machine: on smortress it is the service itself,
+  # elsewhere cloudflared-memory forwards the same port and adds the Cloudflare
+  # Access service token. The name must not collide with a built-in tool
+  # (`memory` is one), so it stays `graphiti`. 90s stays above the wrapper's 60s
+  # tool deadline and under Cloudflare's ~100s origin timeout.
+  mcpEnvironment = {
+    MEMORY_MCP_URL = "http://127.0.0.1:${toString ports.memoryMcp}/mcp";
+    MEMORY_WORK_EMAIL = config.user.work.email;
+    MEMORY_WORK_OWNER_GLOB = config.user.work.githubOwnerGlob;
+    MEMORY_WORK_FLOW = config.user.work.flow;
+    MEMORY_WORK_SSH_MARKER = baseNameOf config.user.work.sshConfig;
+  };
+  mcpEnvironmentToml =
+    "{ "
+    + lib.concatStringsSep ", " (
+      lib.mapAttrsToList (key: value: "${key} = ${builtins.toJSON value}") mcpEnvironment
+    )
+    + " }";
   mcpToml = ''
     [mcp.graphiti]
     command = ["${memoryPackage}/bin/memory-mcp-shim"]
     timeout = 90000
+    environment = ${mcpEnvironmentToml}
   '';
 
   # Deny rules apply even under always_yolo — deny is consulted before

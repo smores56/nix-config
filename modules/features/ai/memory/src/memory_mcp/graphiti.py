@@ -42,7 +42,7 @@ def _items(payload: Any, *keys: str) -> list[dict[str, Any]]:
 
 
 class GraphitiBackend:
-    def __init__(self, url: str, timeout: float = 75.0) -> None:
+    def __init__(self, url: str, timeout: float = 20.0) -> None:
         self.url = url
         self.timeout = timeout
 

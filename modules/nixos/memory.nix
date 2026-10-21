@@ -15,12 +15,22 @@ let
   inherit (aiProviders) smortress;
   memoryPackage = import ../features/ai/memory/package.nix { inherit pkgs; };
 
-  # Loopback ports and the data root. Only the MCP port is shared with the
-  # future tunnel ingress, so it lives in ports.nix; the rest stay local.
+  # Loopback ports and the data root. The wrapper's port is the only one shared
+  # with the tunnel ingress, so it lives in ports.nix; Graphiti and the local
+  # services are private to this module.
   dbPort = 6379;
+  graphitiPort = 8184;
   embeddingPort = 8183;
-  dataDir = "/var/lib/memory";
+  # StateDirectory creates /var/lib/<name> for the wrapper; tmpfiles only adds
+  # the root-owned FalkorDB subdirectory, so the two never disagree.
+  stateDirectory = "memory";
+  dataDir = "/var/lib/${stateDirectory}";
   embeddingDim = 1024;
+
+  # Work markers come from the shared identity so the wrapper and the shim
+  # cannot disagree about what a work repo looks like.
+  work = config.user.work;
+  workSshMarker = baseNameOf work.sshConfig;
 
   # Tags alone are re-pushable upstream; the digests make the same commit pull
   # the same bytes on a fresh host or after `podman rmi`.
@@ -46,7 +56,7 @@ let
   graphitiConfig = pkgs.writeText "graphiti-mcp-config.yaml" ''
     server:
       transport: "http"
-      port: ${toString ports.memoryGraphiti}
+      port: ${toString graphitiPort}
 
     llm:
       provider: "openai"
@@ -98,6 +108,10 @@ in
         assertion = config.llm.enable;
         message = "memory requires llm.enable: extraction runs on the local chat model at ports.llm.";
       }
+      {
+        assertion = ports.memoryMcp != graphitiPort;
+        message = "ports.memoryMcp (the wrapper) and graphitiPort (internal Graphiti) must differ.";
+      }
     ];
 
     # The containers share the host network so the MCP server can reach llama.cpp
@@ -105,9 +119,10 @@ in
     # publishes only to loopback, so nothing here is reachable off-host.
     virtualisation.oci-containers.backend = "podman";
 
-    # The wrapper owns /var/lib/memory (index, audit, future export), so it
-    # needs a stable unprivileged owner; FalkorDB's subdirectory stays root-owned
-    # because the container runs rootful.
+    # StateDirectory owns /var/lib/memory for the wrapper (index, audit, future
+    # export); tmpfiles only creates FalkorDB's root-owned subdirectory because
+    # that container runs rootful. Keep the two in one place so they cannot
+    # disagree about the path.
     users.groups.memory = { };
     users.users.memory = {
       isSystemUser = true;
@@ -115,7 +130,6 @@ in
     };
 
     systemd.tmpfiles.rules = [
-      "d ${dataDir} 0750 memory memory -"
       "d ${dataDir}/falkordb 0700 root root -"
     ];
 
@@ -157,7 +171,7 @@ in
           "--security-opt=no-new-privileges"
           # The image's healthcheck targets its default port; retarget it. The
           # image's own interval/timeout values are kept.
-          "--health-cmd=curl -f http://127.0.0.1:${toString ports.memoryGraphiti}/health >/dev/null || exit 1"
+          "--health-cmd=curl -f http://127.0.0.1:${toString graphitiPort}/health >/dev/null || exit 1"
           "--health-on-failure=kill"
         ];
         volumes = [ "${graphitiConfig}:/app/mcp/config/config.yaml:ro" ];
@@ -235,7 +249,7 @@ in
     # The wrapper is the only memory service the tunnel reaches. It validates
     # the group header the shim sends, refuses work groups, dedupes writes, and
     # gates them on the local models before Graphiti's in-memory queue can drop
-    # them. Raw Graphiti stays on memoryGraphiti and is never tunneled.
+    # them. Raw Graphiti stays on the internal graphitiPort and is never tunneled.
     systemd.services.memory-mcp = {
       description = "memory MCP wrapper (project groups, dedup, provenance)";
       wantedBy = [ "multi-user.target" ];
@@ -257,15 +271,19 @@ in
         Group = "memory";
         ExecStart = "${memoryPackage}/bin/memory-mcp";
         WorkingDirectory = dataDir;
-        StateDirectory = "memory";
+        StateDirectory = stateDirectory;
         StateDirectoryMode = "0750";
         Environment = [
           "MEMORY_MCP_HOST=127.0.0.1"
           "MEMORY_MCP_PORT=${toString ports.memoryMcp}"
-          "MEMORY_GRAPHITI_URL=http://127.0.0.1:${toString ports.memoryGraphiti}/mcp"
+          "MEMORY_GRAPHITI_URL=http://127.0.0.1:${toString graphitiPort}/mcp"
           "MEMORY_LLM_URL=http://127.0.0.1:${toString ports.llm}"
           "MEMORY_EMBED_URL=http://127.0.0.1:${toString embeddingPort}"
           "MEMORY_STATE_DIR=${dataDir}"
+          "MEMORY_WORK_EMAIL=${work.email}"
+          "MEMORY_WORK_OWNER_GLOB=${work.githubOwnerGlob}"
+          "MEMORY_WORK_FLOW=${work.flow}"
+          "MEMORY_WORK_SSH_MARKER=${workSshMarker}"
         ];
         # The pre-start probe bounds how long a stale graph or embedder can
         # keep the unit in activation.
@@ -290,7 +308,7 @@ in
       };
       preStart = ''
         for _ in $(seq 60); do
-          ${pkgs.curl}/bin/curl -sf http://127.0.0.1:${toString ports.memoryGraphiti}/health >/dev/null 2>&1 \
+          ${pkgs.curl}/bin/curl -sf http://127.0.0.1:${toString graphitiPort}/health >/dev/null 2>&1 \
             && ${pkgs.curl}/bin/curl -sf http://127.0.0.1:${toString embeddingPort}/health >/dev/null 2>&1 \
             && exit 0
           sleep 1
