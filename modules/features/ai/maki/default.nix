@@ -8,8 +8,8 @@
 let
   inherit (aiProviders) neuralwatt smortress;
 
-  # Work uses the built-in OpenAI provider and Maki's own login storage,
-  # with no personal providers and no search plugin.
+  # Work uses the built-in OpenAI provider with a keychain API key, with no
+  # personal providers and no search plugin.
   profile =
     {
       personal = {
@@ -136,10 +136,21 @@ let
     )
   );
 
-  # Clear inherited endpoint overrides so work prompts reach OpenAI directly.
-  # Subscription credentials are managed by `maki auth login openai`.
+  # Work: the OpenAI API key lives in the login keychain and reaches maki
+  # alone. A global OPENAI_API_KEY would make the codex CLI bill the key; maki
+  # strips built-in provider keys from its bash and MCP children. Maki prefers
+  # stored OAuth tokens over the key, so run `maki auth logout openai` once.
+  # Any inherited endpoint override is dropped so prompts only go to OpenAI.
+  # Store the key with:
+  #   security add-generic-password -U -a "$USER" -s ${keychainService} -w
+  keychainService = "maki-openai-api-key";
   workEnv = ''
-    unset OPENAI_BASE_URL
+    unset OPENAI_API_KEY OPENAI_BASE_URL
+    if key=$(/usr/bin/security find-generic-password -s ${keychainService} -w 2>/dev/null); then
+      export OPENAI_API_KEY="$key"
+    else
+      echo "maki: no OpenAI key in keychain item '${keychainService}' (see modules/features/ai/maki/default.nix)" >&2
+    fi
   '';
 
   # Every launch must go through this, including zellij tabs from
@@ -321,6 +332,12 @@ in
       };
     };
     home.sessionPath = lib.mkBefore [ "${makiWrapper}/bin" ];
+    # Tool-owned rc files (the work host's ~/.zshrc chain) prepend
+    # ~/.local/bin after the session PATH, which would shadow the wrapper with
+    # the raw binary; re-assert it after ~/.zshrc is sourced (order 600).
+    programs.zsh.initContent = lib.mkOrder 700 ''
+      path=(${makiWrapper}/bin ''${path:#${makiWrapper}/bin})
+    '';
     # The ingest CLI derives repo paths and gh targets from this; the option is
     # the source of truth, so the Python default never drifts from the profile.
     home.sessionVariables = lib.optionalAttrs profile.memoryMcp {

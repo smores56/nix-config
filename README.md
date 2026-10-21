@@ -344,16 +344,18 @@ model providers Maki may use.
 - `work`: maki is OpenAI-only and gets no personal providers, search, or
   memory MCP.
   The default model is configured in `modules/features/ai/maki/default.nix`.
-  Sign in once per machine using your ChatGPT/Codex account:
+  Store an OpenAI API key once per machine in the login keychain (the prompt
+  keeps it out of shell history), then drop any earlier OAuth login, which
+  maki would otherwise prefer over the key:
 
   ```sh
-  maki auth login openai
+  security add-generic-password -U -a "$USER" -s maki-openai-api-key -w
+  maki auth logout openai
   ```
 
-  Choose ChatGPT login for subscription access. Maki stores and refreshes its
-  own credentials; an existing Codex CLI login does not replace this step.
-  Use `maki models` or `/model` to choose another available OpenAI model.
-  The wrapper clears `OPENAI_BASE_URL` so work prompts go directly to OpenAI.
+  The `maki` wrapper exports the key to maki alone and clears
+  `OPENAI_BASE_URL` so work prompts go directly to OpenAI; the codex CLI never
+  sees it. Use `maki models` or `/model` to choose another OpenAI model.
   Claude Code continues to use its own subscription login.
 
 ### Work hosts
