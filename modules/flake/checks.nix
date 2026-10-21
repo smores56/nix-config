@@ -187,6 +187,13 @@ in
               ];
               args = [ "${src}/modules/features/backup/backup_watch.sh" ];
             };
+            restore-drill = {
+              tools = [
+                pkgs.util-linux
+                pkgs.coreutils
+              ];
+              args = [ "${src}/modules/features/backup/drills/restore-drill.sh" ];
+            };
           }
           // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
             # The driver needs flock (util-linux), so this check is Linux-only.
@@ -334,6 +341,8 @@ in
               shellcheck ${src}/tests/backup_watch.sh
               bash -n ${src}/tests/backup_plain.sh
               shellcheck ${src}/tests/backup_plain.sh
+              bash -n ${src}/tests/restore_drill.sh
+              shellcheck ${src}/tests/restore_drill.sh
               bash -n ${src}/tests/manual_steps_sync.sh
               shellcheck ${src}/tests/manual_steps_sync.sh
               bash -n ${src}/tests/github_metadata.sh

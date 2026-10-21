@@ -269,39 +269,45 @@ if [ -n "${DRILL_PG_DB:-}" ]; then
     shopt -s nullglob
     dumps=("$LOC"/db/*.dump)
     shopt -u nullglob
-    DUMP=${dumps[${#dumps[@]}-1]:-}
+    # An empty glob leaves an empty array, and a negative index on an empty
+    # array is a bad subscript (bash 5), so guard the length first.
+    if [ "${#dumps[@]}" -gt 0 ]; then
+      DUMP=${dumps[$((${#dumps[@]} - 1))]}
+    fi
   fi
   if [ -z "$DUMP" ]; then
-    fail=$((fail + 1)); echo "FAIL no dump under $LOC/db"
+    fail=$((fail + 1))
+    echo "FAIL no dump under $LOC/db (omit DRILL_PG_DB for a dataset without a database)"
   else
     echo "dump: $DUMP ($(stat -c %s "$DUMP") bytes, $(stat -c %y "$DUMP"))"
-  fi
-  # Informational only: the live DB keeps changing after the dump, so its counts
-  # are printed for the operator and never used as a pass/fail criterion.
-  QUERY=${DRILL_PG_QUERY:-"select (select count(*) from asset) as assets, (select count(*) from album) as albums, (select count(*) from person) as people, (select count(*) from asset_face) as faces;"}
-  # A faithful, complete restore is asserted instead: pg_restore succeeded and
-  # the restored DB holds the expected tables with non-zero rows.
-  TABLES=${DRILL_PG_TABLES:-asset}
-  runuser -u postgres -- dropdb --if-exists "$DRILL"
-  runuser -u postgres -- createdb -O postgres "$DRILL"
-  # The dump sits behind the 0700 backup directory, which the postgres user
-  # cannot read; root opens it and streams it in on stdin instead.
-  if runuser -u postgres -- pg_restore --no-owner -d "$DRILL" < "$DUMP"; then
-    echo "OK   pg_restore $DUMP"
-  else
-    fail=$((fail + 1)); echo "FAIL pg_restore $DUMP"
-  fi
-  for table in $TABLES; do
-    rows=$(runuser -u postgres -- psql -d "$DRILL" -tAc "select count(*) from \"$table\"" 2>/dev/null || true)
-    if [ -n "$rows" ] && [ "$rows" -gt 0 ] 2>/dev/null; then
-      echo "OK   table $table rows=$rows"
+    # Informational only: the live DB keeps changing after the dump, so its
+    # counts are printed for the operator and never used as a pass/fail
+    # criterion.
+    QUERY=${DRILL_PG_QUERY:-"select (select count(*) from asset) as assets, (select count(*) from album) as albums, (select count(*) from person) as people, (select count(*) from asset_face) as faces;"}
+    # A faithful, complete restore is asserted instead: pg_restore succeeded
+    # and the restored DB holds the expected tables with non-zero rows.
+    TABLES=${DRILL_PG_TABLES:-asset}
+    runuser -u postgres -- dropdb --if-exists "$DRILL"
+    runuser -u postgres -- createdb -O postgres "$DRILL"
+    # The dump sits behind the 0700 backup directory, which the postgres user
+    # cannot read; root opens it and streams it in on stdin instead.
+    if runuser -u postgres -- pg_restore --no-owner -d "$DRILL" < "$DUMP"; then
+      echo "OK   pg_restore $DUMP"
     else
-      fail=$((fail + 1)); echo "FAIL table $table missing or empty (rows=${rows:-none})"
+      fail=$((fail + 1)); echo "FAIL pg_restore $DUMP"
     fi
-  done
-  echo "INFORMATION live counts (not a pass/fail criterion): $(runuser -u postgres -- psql -d "$DRILL_PG_DB" -tAc "$QUERY" 2>/dev/null || true)"
-  runuser -u postgres -- dropdb "$DRILL"
-  echo
+    for table in $TABLES; do
+      rows=$(runuser -u postgres -- psql -d "$DRILL" -tAc "select count(*) from \"$table\"" 2>/dev/null || true)
+      if [ -n "$rows" ] && [ "$rows" -gt 0 ] 2>/dev/null; then
+        echo "OK   table $table rows=$rows"
+      else
+        fail=$((fail + 1)); echo "FAIL table $table missing or empty (rows=${rows:-none})"
+      fi
+    done
+    echo "INFORMATION live counts (not a pass/fail criterion): $(runuser -u postgres -- psql -d "$DRILL_PG_DB" -tAc "$QUERY" 2>/dev/null || true)"
+    runuser -u postgres -- dropdb "$DRILL"
+    echo
+  fi
 fi
 
 if [ "$fail" -eq 0 ]; then
