@@ -31,6 +31,11 @@ in
 
       src = inputs.self;
 
+      # The memory package's modules and tests import mcp, httpx, anyio, and
+      # starlette; mcp brings the rest transitively. One env for the whole suite
+      # keeps the pinned nixpkgs and its versions in one place.
+      unitTestsPython = pkgs.python3.withPackages (ps: [ ps.mcp ]);
+
       mkEvalChecks =
         prefix: configs:
         lib.mapAttrs' (
@@ -301,7 +306,7 @@ in
           pkgs.runCommand "unit-tests"
             {
               nativeBuildInputs = [
-                pkgs.python3
+                unitTestsPython
                 pkgs.git
               ];
               # The brain-run tests pin TZ=America/New_York and call tzset();

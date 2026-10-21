@@ -121,9 +121,10 @@ in
   systemd.user.services = lib.mkMerge [
     (lib.mkIf (aiProfile == "personal" && !isServer) {
       cloudflared-llm = forward "llm" smortress.port;
-      # Maki's memory MCP is an HTTP server behind Access; the forward injects
-      # the service token, so ~/.config/maki/mcp.toml carries no secret. On
-      # smortress itself Maki dials the same loopback port directly.
+      # The memory wrapper is an HTTP MCP server behind Access; the shim adds
+      # the group headers and the forward injects the service token, so
+      # ~/.config/maki/mcp.toml carries no secret. On smortress itself the shim
+      # dials the same loopback port directly.
       cloudflared-memory = forward "memory" ports.memoryMcp;
     })
 

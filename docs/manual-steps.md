@@ -361,15 +361,49 @@ call it unattended. `api_key = "none"`; the tunnel and Access are the boundary.
 
 <!-- manual-step: service/smortress/memory -->
 
-`memory.sammohr.dev` → the loopback Graphiti MCP (`ports.memoryMcp`), TCP to
-the server's loopback, with the same service-auth policy. The server has no
-authentication of its own; Access is the only route. Personal machines run
-`cloudflared-memory`, which forwards loopback `ports.memoryMcp` and injects the
-Access service token, so Maki's generated `~/.config/maki/mcp.toml` contains
-only the loopback URL (server `graphiti`). On smortress, Maki dials the service
-directly.
+`memory.sammohr.dev` → the loopback memory wrapper (`ports.memoryMcp`), TCP to
+the server's loopback, with the same service-auth policy. The wrapper derives
+nothing itself: it validates the group header the Maki shim sends, refuses work
+groups, enforces a 60s deadline per tool call, dedupes writes, and is the only
+tunnel target. The wrapper has no authentication of its own; Access is the only
+route. Raw Graphiti runs on an internal loopback port in
+`modules/nixos/memory.nix` and is never tunneled.
 
-Apply the Memory Access application **before** rebuilding smortress:
+Personal machines run `cloudflared-memory`, which forwards loopback
+`ports.memoryMcp` and injects the Access service token. Maki's generated
+`~/.config/maki/mcp.toml` starts `memory-mcp-shim` (server `graphiti`) with
+`MEMORY_MCP_URL` and the work markers from `config.user.work` in its
+environment; the shim derives the project group from Maki's cwd and forwards to
+the wrapper. The same package installs the `memory` CLI.
+
+Maki reads `mcp.toml` once at startup, and the shim derives the group once when
+Maki starts it. Restart Maki after changing `mcp.toml` and after moving to a
+different repository: `/cd` does not restart stdio children, so the group stays
+fixed until Maki restarts.
+
+The wrapper's SQLite index and audit log live in `/var/lib/memory`, owned by the
+`memory` system user (the FalkorDB subdirectory stays root-owned). That path is
+**not backed up** yet: there is no export or snapshot task for the graph volume
+or the index/audit, so losing the host loses both.
+
+Activate after changing the wrapper, shim, or package:
+
+```sh
+just switch smortress
+just home-switch smores <personal-host>
+```
+
+Verify on smortress:
+
+```sh
+systemctl status memory-mcp
+curl 127.0.0.1:8182/health
+cd ~/code/<repo> && memory status   # group, index counts, graph/model readiness
+```
+
+The tunnel ingress and Access application are unchanged by this step. For a
+first deployment, apply the Memory Access application **before** rebuilding
+smortress:
 
 ```sh
 sudo nix run .#cloudflare-apply
