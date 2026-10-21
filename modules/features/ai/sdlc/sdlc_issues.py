@@ -354,7 +354,11 @@ def task_counts(tasks):
 
 
 def pick(candidates, header="sdlc features"):
-    """tv, then fzf, then a numbered prompt. Returns one candidate line."""
+    """tv, then fzf, then a numbered prompt. Returns one candidate line.
+
+    Only stdout is captured: both TUIs paint on stderr, so capturing that
+    hides the interface while they wait for keys.
+    """
     if not candidates:
         raise CliError("nothing to pick")
     if shutil.which("tv"):
@@ -371,7 +375,7 @@ def pick(candidates, header="sdlc features"):
                     "--input-header",
                     header,
                 ],
-                capture_output=True,
+                stdout=subprocess.PIPE,
                 text=True,
             )
         finally:
@@ -380,7 +384,7 @@ def pick(candidates, header="sdlc features"):
         proc = subprocess.run(
             ["fzf", "--delimiter", "\t", "--with-nth", "1,2,3,4"],
             input="\n".join(candidates) + "\n",
-            capture_output=True,
+            stdout=subprocess.PIPE,
             text=True,
         )
     else:
@@ -601,7 +605,9 @@ def pick_feature(repo, all_states=False, features=None):
     with tempfile.TemporaryDirectory(prefix="sdlc-cable-") as tmp:
         cable = write_picker_cable(tmp, features)
         proc = subprocess.run(
-            ["tv", "--cable-dir", cable, "sdlc-features"], capture_output=True, text=True
+            ["tv", "--cable-dir", cable, "sdlc-features"],
+            stdout=subprocess.PIPE,
+            text=True,
         )
     if proc.returncode != 0 or not proc.stdout.strip():
         raise CliError("selection canceled")

@@ -121,6 +121,7 @@ import json, os, sys
 
 state = os.environ["FAKE_GH_STATE"]
 args = sys.argv[1:]
+sys.stderr.write("tv draws its ui here\\n")
 with open(os.path.join(state, "tv.jsonl"), "a") as fh:
     fh.write(json.dumps(args) + "\\n")
 if "sdlc-features" in args:
@@ -395,6 +396,12 @@ class ListTest(GhTest):
         out = self.run_cli("list", "--all", "--pick", stdin="3\n", path="")
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertEqual(out.stdout.strip(), "3")
+
+    def test_pick_keeps_the_tv_ui_on_stderr(self):
+        self.fakes()
+        out = self.run_cli("list", "--all", "--pick", path="")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("tv draws its ui here", out.stderr)
 
 
 class ShowTest(GhTest):
@@ -952,6 +959,11 @@ class UiCliTest(GhTest):
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertIn("Use GitHub issues.", out.stdout)
         self.assertTrue(any("sdlc-features" in call for call in self.tv_calls()))
+
+    def test_feature_picker_keeps_the_tv_ui_on_stderr(self):
+        out = self.run_cli("ui", "show")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("tv draws its ui here", out.stderr)
 
     def test_complete_declines_by_default(self):
         out = self.run_cli("ui", "1", "complete", stdin="n\n")
