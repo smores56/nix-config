@@ -52,6 +52,14 @@ let
     GIT_CONFIG_GLOBAL = "${../features/backup/gitconfig}";
     GHORG_GITHUB_TOKEN = cfg.tokenFile;
     GITHUB_MIRRORS_ROOT = mirrorRoot;
+    # github-mirror.sh requires these; `env -i` means nothing else supplies
+    # them. GHORG_FETCH_GIT_LFS makes ghorg pull LFS objects, and the probe
+    # repo is what proves the token still sees private repos.
+    GHORG_ABSOLUTE_PATH_TO_CLONE_TO = mirrorRoot;
+    GHORG_PROBE_REPO = cfg.probeRepo;
+    GHORG_CLONE_TYPE = "user";
+    GHORG_SCM_TYPE = "github";
+    GHORG_FETCH_GIT_LFS = "true";
   };
   envArgs = lib.concatStringsSep " " (
     lib.mapAttrsToList (name: value: "${name}=${lib.escapeShellArg value}") mirrorEnv
