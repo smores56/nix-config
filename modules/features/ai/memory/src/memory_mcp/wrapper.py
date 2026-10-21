@@ -22,7 +22,14 @@ from starlette.responses import JSONResponse
 
 from .formatting import clip, format_search, looks_path_like, path_query_note
 from .graphiti import BackendError, GraphitiBackend
-from .groups import GLOBAL_GROUP, GroupRefused, sanitize_actor, sanitize_cwd, validate_group
+from .groups import (
+    GLOBAL_GROUP,
+    GroupRefused,
+    sanitize_actor,
+    sanitize_cwd,
+    sanitize_provenance,
+    validate_group,
+)
 from .normalize import (
     content_hash,
     episode_name,
@@ -88,6 +95,8 @@ class CallContext:
     group: str
     cwd: str
     actor: str
+    source: str
+    source_id: str
 
 
 def headers_from_context(ctx: Context) -> Mapping[str, str]:
@@ -113,7 +122,13 @@ def _call_context(ctx: Context, headers_provider: HeadersProvider) -> CallContex
     if not cwd.startswith("/"):
         raise ToolError("missing or relative X-Memory-Cwd header; the shim sends the real cwd")
 
-    return CallContext(group=group, cwd=cwd[:MAX_CWD_CHARS], actor=sanitize_actor(headers.get("x-memory-actor")))
+    return CallContext(
+        group=group,
+        cwd=cwd[:MAX_CWD_CHARS],
+        actor=sanitize_actor(headers.get("x-memory-actor")),
+        source=sanitize_provenance(headers.get("x-memory-source")) or sanitize_actor(headers.get("x-memory-actor")),
+        source_id=sanitize_provenance(headers.get("x-memory-source-id")),
+    )
 
 
 def _audit_rejected(store: Store, tool: str, detail: str) -> None:
@@ -124,8 +139,22 @@ def _result_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _provenance(*, digest: str, cwd: str, source: str, tags: list[str], extra: str = "") -> str:
-    parts = [f"hash={digest}", f"cwd={cwd}", f"source={source}"]
+def _provenance(
+    *,
+    digest: str,
+    uuid: str,
+    cwd: str,
+    source: str,
+    actor: str,
+    tags: list[str],
+    source_id: str = "",
+    extra: str = "",
+) -> str:
+    # `id` comes second so the 1000-character clip can never cut the identity
+    # that verification matches on, even with a long cwd or source_id.
+    parts = [f"hash={digest}", f"id={uuid}", f"cwd={cwd}", f"actor={actor}", f"source={source}"]
+    if source_id:
+        parts.append(f"source_id={source_id}")
     if tags:
         parts.append("tags=" + ",".join(tags))
     if extra:
@@ -250,9 +279,10 @@ def build_server(
                 uuid=uid,
                 name=episode_name(normalized, digest),
                 content=normalized,
-                source=info.actor,
+                source=info.source,
                 cwd=info.cwd,
                 created_at=utcnow(),
+                source_id=info.source_id,
                 tags=",".join(cleaned_tags),
                 status="pending",
                 promoted_from=existing.promoted_from if existing is not None else None,
@@ -294,10 +324,12 @@ def build_server(
                     source="text",
                     source_description=_provenance(
                         digest=digest,
+                        uuid=uid,
                         cwd=info.cwd,
-                        source=info.actor,
+                        source=info.source,
+                        actor=info.actor,
+                        source_id=info.source_id,
                         tags=cleaned_tags,
-                        extra=f"id={uid}",
                     ),
                 )
             except asyncio.CancelledError:
@@ -457,6 +489,7 @@ def build_server(
                 source=entry.source,
                 cwd=entry.cwd,
                 created_at=utcnow(),
+                source_id=entry.source_id,
                 tags=entry.tags,
                 promoted_from=info.group,
             )
@@ -471,12 +504,13 @@ def build_server(
                     source="text",
                     source_description=_provenance(
                         digest=entry.content_hash,
+                        uuid=target_uuid,
                         cwd=entry.cwd,
                         source=entry.source,
+                        actor=info.actor,
+                        source_id=entry.source_id,
                         tags=[tag for tag in entry.tags.split(",") if tag],
-                        extra=(
-                            f"id={target_uuid}; promoted_from={info.group}; promoted_by={info.actor}"
-                        ),
+                        extra=f"promoted_from={info.group}; promoted_by={info.actor}",
                     ),
                 )
             except asyncio.CancelledError:

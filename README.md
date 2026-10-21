@@ -297,7 +297,7 @@ model providers Maki may use.
   the loopback wrapper at `ports.memoryMcp` with `X-Memory-Group`/`X-Memory-Cwd`
   headers; on client machines `cloudflared-memory` supplies the Cloudflare
   Access service token. The raw Graphiti MCP runs on an internal loopback port
-  in `modules/nixos/memory.nix` and is never tunneled. The same package installs
+  in   `modules/nixos/memory.nix` and is never tunneled. The same package installs
   the `memory` CLI (`memory write|search|promote|status|tombstone`) for use on a
   client or on smortress directly. Tombstones mark only the wrapper's index and
   audit log; the Graphiti MCP API exposes no edge-invalidation tool, so graph
@@ -305,6 +305,21 @@ model providers Maki may use.
   Writing the same content again revives a tombstoned episode. The shim derives
   the group when Maki starts, so restart Maki after changing directories
   (`/cd` does not restart stdio children) and after any `mcp.toml` change.
+
+  **Bulk ingest.** `memory ingest {sdlc,notes,docs,all}` fills the graph from the
+  personal corpus: every sdlc issue section and substantial comment, the
+  markdown notes in `~/Documents` (group `global`), and each personal repo's
+  README/AGENTS/docs plus remote READMEs. Groups are `smores56--<repo>`, with
+  unlabeled sdlc tasks inheriting their feature's `repo:` label; work-owned
+  labels are refused. Episodes are verified against raw Graphiti after each
+  batch, and a missing episode is tombstoned and rewritten once. Run it on
+  smortress (the raw Graphiti port is loopback-only): `just memory-ingest` runs
+  `memory ingest all`. Re-runs skip verified `(source, source_id)` entries from
+  `~/.local/state/memory/ingest-state.json`, and writes are still deduped by
+  content hash. Reports land in `~/.local/state/memory/ingest-<timestamp>.json`;
+  `--dry-run` prints the plan without writing. Extraction is one 27B chat call
+  per episode (roughly 30-90s), so a full corpus takes hours.
+
 - `work`: maki is OpenAI-only and gets no personal providers, search, or
   memory MCP.
   The default model is configured in `modules/features/ai/maki/default.nix`.

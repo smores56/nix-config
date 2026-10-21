@@ -401,6 +401,34 @@ curl 127.0.0.1:8182/health
 cd ~/code/<repo> && memory status   # group, index counts, graph/model readiness
 ```
 
+**Corpus ingest.** `memory ingest all` (or `just memory-ingest`) reads the sdlc
+issue list through `gh`, the notes in `~/Documents`, and the personal clones in
+`~/code/github.com/smores56` plus remote READMEs. It must run on smortress: the
+raw Graphiti port (`127.0.0.1:8184`) is loopback-only, and verification and
+repair use it. A dry run prints the plan:
+
+```sh
+memory ingest all --dry-run
+memory ingest all --limit 5 --batch 1   # small sample first
+```
+
+Each run writes `~/.local/state/memory/ingest-<timestamp>.json` (counts per
+source and group, duplicates, repairs, failures) and updates
+`~/.local/state/memory/ingest-state.json`. To resume, run the same command
+again: verified `(source, source_id)` pairs are skipped and the wrapper still
+dedupes by content hash. Inspect `failures` in the report; a persistent missing
+episode was tombstoned and rewritten once already. Extraction is one 27B chat
+call per episode, so a full corpus takes hours; keep the batch small (default 3)
+so Graphiti's in-memory queue does not drop work. For a long run, start it in a
+transient user unit:
+
+```sh
+systemd-run --user --unit memory-ingest --collect --setenv=MEMORY_MCP_URL=http://127.0.0.1:8182/mcp \
+  --setenv=MEMORY_GRAPHITI_URL=http://127.0.0.1:8184/mcp -- memory ingest all
+systemctl --user status memory-ingest
+journalctl --user -u memory-ingest -f
+```
+
 The tunnel ingress and Access application are unchanged by this step. For a
 first deployment, apply the Memory Access application **before** rebuilding
 smortress:

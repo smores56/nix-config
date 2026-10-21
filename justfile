@@ -57,6 +57,10 @@ cloudflare-apply:
 cloudflare-tofu *args:
     sudo nix run .#cloudflare-tofu -- {{args}}
 
+# Ingest sdlc issues, personal notes, and repo docs into memory (on smortress).
+memory-ingest *args:
+    memory ingest all {{args}}
+
 # Show backup timers and failed backup units.
 backup-status:
     systemctl list-timers 'backup-*'

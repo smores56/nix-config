@@ -40,6 +40,7 @@ _ACTOR_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 _SCP_REMOTE = re.compile(r"^(?:[^@/]+@)?(?P<host>[^:/]+):(?P<path>.+)$")
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f\u200e\u200f\u202a-\u202e\u2066-\u2069]")
+MAX_PROVENANCE_CHARS = 200
 
 
 class GroupRefused(ValueError):
@@ -132,6 +133,19 @@ def sanitize_cwd(value: str | None) -> str:
     raw = str(value or "")
     first_line = raw.splitlines()[0] if raw else ""
     return _CONTROL.sub("", _ANSI_ESCAPE.sub("", first_line)).strip()
+
+
+def sanitize_provenance(value: str | None) -> str:
+    """Keep provenance to one plain line; headers come from the client, never the model.
+
+    `source`/`source_id` land in the SQLite row and in Graphiti's
+    `source_description`, so a newline or control character there would forge
+    provenance fields.
+    """
+    raw = str(value or "")
+    first_line = raw.splitlines()[0] if raw else ""
+    cleaned = _CONTROL.sub(" ", _ANSI_ESCAPE.sub("", first_line))
+    return " ".join(cleaned.split())[:MAX_PROVENANCE_CHARS].strip()
 
 
 def sanitize_slug(value: str) -> str:

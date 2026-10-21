@@ -117,5 +117,66 @@ class CliOutputTests(unittest.TestCase):
         self.assertIn("server unreachable", stderr.getvalue())
 
 
+class CliIngestTests(unittest.TestCase):
+    def test_ingest_flags_parse(self):
+        args = cli.build_parser().parse_args(
+            [
+                "--url",
+                "http://wrapper/mcp",
+                "ingest",
+                "all",
+                "--limit",
+                "10",
+                "--dry-run",
+                "--batch",
+                "2",
+                "--timeout",
+                "60",
+                "--notes-dir",
+                "/notes",
+                "--docs-root",
+                "/docs",
+                "--repo",
+                "kanbei",
+                "--repo-list",
+                "/repos.txt",
+                "--state",
+                "/state.json",
+                "--report",
+                "/report.json",
+                "--verbose",
+            ]
+        )
+        self.assertEqual(args.command, "ingest")
+        self.assertEqual(args.source, "all")
+        self.assertEqual(args.batch, 2)
+        self.assertEqual(args.repo, ["kanbei"])
+        self.assertTrue(args.dry_run and args.verbose)
+
+    def test_ingest_does_not_resolve_a_cwd_group(self):
+        seen = []
+
+        async def fake_ingest(args):
+            seen.append(args.source)
+            return {"failures": []}
+
+        with mock.patch.object(cli, "run_ingest", fake_ingest):
+            code = cli.main(["--group", "blitzy-work--repo", "ingest", "notes", "--dry-run"])
+        self.assertEqual(code, 0)
+        self.assertEqual(seen, ["notes"])
+
+    def test_ingest_failure_is_exit_one(self):
+        from memory_mcp.ingest_runner import IngestError
+
+        async def fake_ingest(_args):
+            raise IngestError("raw Graphiti is unreachable")
+
+        stderr = io.StringIO()
+        with mock.patch.object(cli, "run_ingest", fake_ingest), redirect_stderr(stderr):
+            code = cli.main(["ingest", "sdlc"])
+        self.assertEqual(code, 1)
+        self.assertIn("raw Graphiti", stderr.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()
