@@ -81,15 +81,15 @@ for non-HTTP services), optionally with Cloudflare Access in front.
 webProxy.services.immich = { port = 2283; };
 ```
 
-Calibre and Immich are public with their own app auth; `ssh` and `llm`
-require Access. `access.enable` is implemented only for the services in
-`webProxy.protected` (applications are hand-written in `tofu/`), and enabling
-it elsewhere fails evaluation.
+Calibre and Immich are public with their own app auth; `ssh`, `llm`, and
+`memory` require Access. `access.enable` is implemented only for the services
+in `webProxy.protected` (applications are hand-written in `tofu/`), and
+enabling it elsewhere fails evaluation.
 
 DNS and Access are managed by the minimal OpenTofu config in `tofu/`:
 
 - wildcard proxied CNAME `*.sammohr.dev` → `<tunnel>.cfargotunnel.com`;
-- `ssh` and `llm` Access applications;
+- `ssh`, `llm`, and `memory` Access applications;
 - email allow-list and service-auth policies;
 - tunnel-health and expiring-service-token notifications.
 
@@ -194,8 +194,8 @@ the dashboard, update `cloudflare-api-token` in `secrets/smortress.yaml`
 `sudo nix run .#cloudflare-plan`.
 
 **Access misconfiguration.** A typo that clears `access.enable` on
-`ssh`/`llm` fails evaluation (`modules/nixos/web-proxy.nix`), and OpenTofu has
-`prevent_destroy` on those apps and policies. An Access *policy* mistake (wrong
+`ssh`/`llm`/`memory` fails evaluation (`modules/nixos/web-proxy.nix`), and
+OpenTofu has `prevent_destroy` on those apps and policies. An Access *policy* mistake (wrong
 email) still locks out the browser — fix it in OpenTofu and apply, or in the
 dashboard as a break-glass step.
 
@@ -291,8 +291,12 @@ model providers Maki may use.
 
 - `personal` (default): maki runs on the providers in
   `modules/features/ai/providers.nix`; smortress is reached through the tunnel,
-  over loopback forwards.
-- `work`: maki is OpenAI-only and gets no personal providers or search.
+  over loopback forwards. A `graphiti` MCP server is generated into
+  `~/.config/maki/mcp.toml` at the loopback `ports.memoryMcp`; on client
+  machines the `cloudflared-memory` forward supplies the Cloudflare Access
+  service token, and on smortress Maki dials the service directly.
+- `work`: maki is OpenAI-only and gets no personal providers, search, or
+  memory MCP.
   The default model is configured in `modules/features/ai/maki/default.nix`.
   Sign in once per machine using your ChatGPT/Codex account:
 

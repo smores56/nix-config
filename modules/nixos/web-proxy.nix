@@ -9,12 +9,13 @@
 let
   cfg = config.webProxy;
 
-  # A typo that clears `access.enable` would publish sshd or the LLM to the
-  # internet. OpenTofu owns those two apps and their policies; this assertion
-  # stops the mistake before the tunnel ingress is applied.
+  # A typo that clears `access.enable` would publish sshd, the LLM, or the
+  # memory MCP to the internet. OpenTofu owns those apps and their policies;
+  # this assertion stops the mistake before the tunnel ingress is applied.
   protected = [
     "ssh"
     "llm"
+    "memory"
   ];
 in
 {
@@ -52,7 +53,7 @@ in
                     "ssh"
                   ];
                   default = "http";
-                  description = "Origin scheme cloudflared proxies to. Non-HTTP schemes (tcp/ssh) are reached from clients via `cloudflared access <tcp|ssh>`, not a browser.";
+                  description = "Origin scheme cloudflared proxies to. Non-HTTP schemes (tcp/ssh) are reached from clients via `cloudflared access <tcp|ssh>`, not a browser. An HTTP service reached only by unattended clients may also use tcp, so the client forward can inject the Access token (e.g. memory).";
                 };
                 access = {
                   enable = lib.mkEnableOption "Cloudflare Access in front of this endpoint (account IdP, shared allow-list)";

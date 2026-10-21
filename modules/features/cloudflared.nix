@@ -14,6 +14,7 @@ let
   aiProfile = config.user.aiProfile;
   domain = "sammohr.dev";
   isServer = builtins.elem "server" config.machine.profiles;
+  ports = import ../ports.nix;
   inherit (aiProviders) smortress;
   inherit (pkgs.stdenv.hostPlatform) isLinux;
 
@@ -120,6 +121,10 @@ in
   systemd.user.services = lib.mkMerge [
     (lib.mkIf (aiProfile == "personal" && !isServer) {
       cloudflared-llm = forward "llm" smortress.port;
+      # Maki's memory MCP is an HTTP server behind Access; the forward injects
+      # the service token, so ~/.config/maki/mcp.toml carries no secret. On
+      # smortress itself Maki dials the same loopback port directly.
+      cloudflared-memory = forward "memory" ports.memoryMcp;
     })
 
     # macOS has no tmpfs user runtime to put this in; the wrapper's

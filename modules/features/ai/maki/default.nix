@@ -7,6 +7,7 @@
 }:
 let
   inherit (aiProviders) neuralwatt smortress;
+  ports = import ../../../ports.nix;
 
   # Work uses the built-in OpenAI provider and Maki's own login storage,
   # with no personal providers and no search plugin.
@@ -24,6 +25,7 @@ let
         defaultModel = "neuralwatt/deepseek-v4.1-flash";
         privateHosts = [ ];
         searchPlugin = true;
+        memoryMcp = true;
       };
       work = {
         providers = [ ];
@@ -32,6 +34,7 @@ let
         privateHosts = [ ];
         searchPlugin = false;
         wrapperEnv = workEnv;
+        memoryMcp = false;
       };
     }
     .${config.user.aiProfile};
@@ -140,6 +143,18 @@ let
   makiWrapper = pkgs.writeShellScriptBin "maki" ''
     ${lib.optionalString (profile ? wrapperEnv) profile.wrapperEnv}
     exec "$HOME/.local/bin/maki" "$@"
+  '';
+
+  # Maki's Graphiti MCP. The URL is loopback on every personal machine: on
+  # smortress it is the service itself, elsewhere cloudflared-memory forwards
+  # the same port and adds the Cloudflare Access service token, so no secret
+  # belongs in this file. The name must not collide with a built-in tool
+  # (`memory` is one), so it is `graphiti`. 90s stays under Cloudflare's ~100s
+  # origin timeout for a single response.
+  mcpToml = ''
+    [mcp.graphiti]
+    url = "http://127.0.0.1:${toString ports.memoryMcp}/mcp"
+    timeout = 90000
   '';
 
   # Deny rules apply even under always_yolo — deny is consulted before
@@ -271,6 +286,12 @@ in
       ".config/maki/providers.toml" = {
         force = true;
         source = providersToml;
+      };
+    }
+    // lib.optionalAttrs profile.memoryMcp {
+      ".config/maki/mcp.toml" = {
+        force = true;
+        text = mcpToml;
       };
     };
     home.sessionPath = lib.mkBefore [ "${makiWrapper}/bin" ];
