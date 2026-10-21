@@ -165,6 +165,10 @@ in
               tools = [ pkgs.git ];
               args = [ "${src}/modules/features/backup/github-mirror.sh" ];
             };
+          }
+          // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+            # These checks need Linux-only tools (inotify-tools, util-linux
+            # flock), so they must not be evaluated or built on Darwin.
             github-metadata = {
               tools = [
                 pkgs.git
@@ -194,9 +198,6 @@ in
               ];
               args = [ "${src}/modules/features/backup/drills/restore-drill.sh" ];
             };
-          }
-          // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
-            # The driver needs flock (util-linux), so this check is Linux-only.
             backup-plain = {
               tools = [
                 # The same rclone generation the NixOS module overlays in
