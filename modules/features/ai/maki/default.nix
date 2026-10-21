@@ -321,6 +321,11 @@ in
       };
     };
     home.sessionPath = lib.mkBefore [ "${makiWrapper}/bin" ];
+    # The ingest CLI derives repo paths and gh targets from this; the option is
+    # the source of truth, so the Python default never drifts from the profile.
+    home.sessionVariables = lib.optionalAttrs profile.memoryMcp {
+      MEMORY_PERSONAL_OWNER = config.user.githubUser;
+    };
 
     home.packages = [
       makiWrapper

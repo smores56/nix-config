@@ -31,10 +31,14 @@ in
 
       src = inputs.self;
 
-      # The memory package's modules and tests import mcp, httpx, anyio, and
-      # starlette; mcp brings the rest transitively. One env for the whole suite
-      # keeps the pinned nixpkgs and its versions in one place.
-      unitTestsPython = pkgs.python3.withPackages (ps: [ ps.mcp ]);
+      # The memory package's modules and tests import mcp, httpx, anyio,
+      # starlette, and redis (the exact FalkorDB presence check); mcp brings the
+      # rest transitively. One env for the whole suite keeps the pinned nixpkgs
+      # and its versions in one place.
+      unitTestsPython = pkgs.python3.withPackages (ps: [
+        ps.mcp
+        ps.redis
+      ]);
 
       mkEvalChecks =
         prefix: configs:

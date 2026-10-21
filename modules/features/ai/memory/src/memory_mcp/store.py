@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS episodes (
     name TEXT NOT NULL,
     content TEXT NOT NULL,
     source TEXT NOT NULL,
+    source_id TEXT NOT NULL DEFAULT '',
     cwd TEXT NOT NULL,
     created_at TEXT NOT NULL,
     tags TEXT NOT NULL DEFAULT '',
@@ -87,6 +88,7 @@ class Entry:
     source: str
     cwd: str
     created_at: str
+    source_id: str = ""
     tags: str = ""
     status: str = "active"
     promoted_from: str | None = None
@@ -103,6 +105,11 @@ class Store:
         self.state_dir.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.executescript(_SCHEMA)
+            # `source_id` was dropped as unused before ingestion existed and is
+            # back now: additive, so old rows keep their empty provenance.
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(episodes)")}
+            if "source_id" not in columns:
+                conn.execute("ALTER TABLE episodes ADD COLUMN source_id TEXT NOT NULL DEFAULT ''")
             # Superseded by `episodes.status` + `tombstoned_at`; drop it so an
             # upgraded install does not keep a table nothing writes.
             conn.execute("DROP TABLE IF EXISTS tombstones")
@@ -131,6 +138,7 @@ class Store:
             content=row["content"],
             source=row["source"],
             cwd=row["cwd"],
+            source_id=row["source_id"],
             created_at=row["created_at"],
             tags=row["tags"],
             status=row["status"],
@@ -154,8 +162,8 @@ class Store:
                     """
                     INSERT INTO episodes
                         (group_id, content_hash, uuid, name, content, source,
-                         cwd, created_at, tags, status, promoted_from)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         cwd, created_at, source_id, tags, status, promoted_from)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         entry.group,
@@ -166,6 +174,7 @@ class Store:
                         entry.source,
                         entry.cwd,
                         entry.created_at,
+                        entry.source_id,
                         entry.tags,
                         entry.status,
                         entry.promoted_from,
@@ -189,7 +198,8 @@ class Store:
                 """
                 UPDATE episodes
                 SET uuid = ?, name = ?, content = ?, source = ?, cwd = ?, created_at = ?,
-                    tags = ?, status = ?, promoted_from = ?, tombstoned_at = ?, tombstone_reason = ?
+                    source_id = ?, tags = ?, status = ?, promoted_from = ?, tombstoned_at = ?,
+                    tombstone_reason = ?
                 WHERE group_id = ? AND content_hash = ?
                 """,
                 (
@@ -199,6 +209,7 @@ class Store:
                     entry.source,
                     entry.cwd,
                     entry.created_at,
+                    entry.source_id,
                     entry.tags,
                     entry.status,
                     entry.promoted_from,
@@ -277,6 +288,7 @@ class Store:
             source=entry.source,
             cwd=entry.cwd,
             created_at=entry.created_at,
+            source_id=entry.source_id,
             tags=entry.tags,
             status="tombstoned",
             promoted_from=entry.promoted_from,

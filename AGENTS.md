@@ -151,7 +151,9 @@ nix eval .#checks.x86_64-linux.eval-nixos-smorespro --apply 'x: true'
 The Python tools under `modules/features/ai/` have unit tests in `tests/`,
 run by the `checks` flake module. Locally: `nix run nixpkgs#python3 -- -m
 unittest discover -s tests`.
-Run them after touching `modules/features/ai/sdlc/`, maki session search, or `modules/features/ai/brain/`.
+Run them after touching `modules/features/ai/sdlc/`, `modules/features/ai/memory/`
+(wrapper, shim, CLI, ingest, LLM proxy), maki session search, or
+`modules/features/ai/brain/`.
 
 Script checks run each `tests/<name>.sh` against tools and files from a
 generated home, as the `<name>` flake check (`scriptChecks` in

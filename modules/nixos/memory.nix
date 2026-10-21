@@ -21,6 +21,12 @@ let
   dbPort = 6379;
   graphitiPort = 8184;
   embeddingPort = 8183;
+  # Graphiti reaches the chat model through a thinkless proxy on this port.
+  # Extraction must not generate reasoning (it spends the whole budget and
+  # returns empty content), while Maki keeps talking to ports.llm directly so
+  # interactive answers keep thinking. Deliberately not in ports.nix: only this
+  # module (listener plus Graphiti's config) reads it, and it is never tunneled.
+  llmProxyPort = 8082;
   # StateDirectory creates /var/lib/<name> for the wrapper; tmpfiles only adds
   # the root-owned FalkorDB subdirectory, so the two never disagree.
   stateDirectory = "memory";
@@ -74,7 +80,10 @@ let
       providers:
         openai:
           api_key: "none"
-          api_url: "http://127.0.0.1:${toString ports.llm}/v1"
+          # The thinkless proxy, not ports.llm: graphiti-core's OpenAI client
+          # sends no reasoning control, and the chat server defaults to
+          # thinking on.
+          api_url: "http://127.0.0.1:${toString llmProxyPort}/v1"
 
     embedder:
       provider: "openai"
@@ -111,6 +120,20 @@ in
       {
         assertion = ports.memoryMcp != graphitiPort;
         message = "ports.memoryMcp (the wrapper) and graphitiPort (internal Graphiti) must differ.";
+      }
+      {
+        assertion =
+          builtins.length (
+            lib.unique [
+              dbPort
+              graphitiPort
+              embeddingPort
+              llmProxyPort
+              ports.llm
+              ports.memoryMcp
+            ]
+          ) == 6;
+        message = "memory's loopback ports (FalkorDB, Graphiti, embedder, LLM proxy, ports.llm, ports.memoryMcp) must all differ.";
       }
     ];
 
@@ -213,10 +236,12 @@ in
       wants = [
         "memory-falkordb.service"
         "llama-cpp-embed.service"
+        "memory-llm-proxy.service"
       ];
       after = [
         "memory-falkordb.service"
         "llama-cpp-embed.service"
+        "memory-llm-proxy.service"
       ];
       unitConfig = {
         StartLimitIntervalSec = "1h";
@@ -246,6 +271,47 @@ in
       '';
     };
 
+    # Graphiti's only chat-model route. llama.cpp defaults to thinking, and
+    # graphiti-core cannot ask for reasoning_effort per request; this adds
+    # `reasoning_effort: "none"` to chat completions and forwards everything
+    # else (models, health, streaming) unchanged. Maki still calls ports.llm
+    # directly, so its thinking is untouched. Loopback only, no state.
+    systemd.services.memory-llm-proxy = {
+      description = "thinkless OpenAI-compatible proxy for Graphiti extraction";
+      wantedBy = [ "multi-user.target" ];
+      wants = [ "llama-cpp.service" ];
+      after = [ "llama-cpp.service" ];
+      unitConfig = {
+        StartLimitIntervalSec = "1h";
+        StartLimitBurst = 10;
+      };
+      onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
+      serviceConfig = {
+        DynamicUser = true;
+        ExecStart = "${memoryPackage}/bin/memory-llm-proxy";
+        Environment = [
+          "MEMORY_LLM_UPSTREAM=http://127.0.0.1:${toString ports.llm}"
+          "MEMORY_LLM_PROXY_HOST=127.0.0.1"
+          "MEMORY_LLM_PROXY_PORT=${toString llmProxyPort}"
+        ];
+        Restart = "always";
+        RestartSec = "5s";
+        # A streaming relay: buffers are per-connection, requests are tiny.
+        MemoryMax = "256M";
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        NoNewPrivileges = true;
+        PrivateDevices = true;
+        RestrictAddressFamilies = [
+          "AF_INET"
+          "AF_INET6"
+        ];
+        IPAddressAllow = "localhost";
+        IPAddressDeny = "any";
+      };
+    };
+
     # The wrapper is the only memory service the tunnel reaches. It validates
     # the group header the shim sends, refuses work groups, dedupes writes, and
     # gates them on the local models before Graphiti's in-memory queue can drop
@@ -256,10 +322,12 @@ in
       wants = [
         "memory-graphiti-mcp.service"
         "llama-cpp-embed.service"
+        "memory-llm-proxy.service"
       ];
       after = [
         "memory-graphiti-mcp.service"
         "llama-cpp-embed.service"
+        "memory-llm-proxy.service"
       ];
       unitConfig = {
         StartLimitIntervalSec = "1h";
@@ -277,7 +345,9 @@ in
           "MEMORY_MCP_HOST=127.0.0.1"
           "MEMORY_MCP_PORT=${toString ports.memoryMcp}"
           "MEMORY_GRAPHITI_URL=http://127.0.0.1:${toString graphitiPort}/mcp"
-          "MEMORY_LLM_URL=http://127.0.0.1:${toString ports.llm}"
+          # Readiness probes the proxy, not the chat model, so a dead proxy
+          # fails writes instead of letting Graphiti drop an episode.
+          "MEMORY_LLM_URL=http://127.0.0.1:${toString llmProxyPort}"
           "MEMORY_EMBED_URL=http://127.0.0.1:${toString embeddingPort}"
           "MEMORY_STATE_DIR=${dataDir}"
           "MEMORY_WORK_EMAIL=${work.email}"
@@ -310,10 +380,11 @@ in
         for _ in $(seq 60); do
           ${pkgs.curl}/bin/curl -sf http://127.0.0.1:${toString graphitiPort}/health >/dev/null 2>&1 \
             && ${pkgs.curl}/bin/curl -sf http://127.0.0.1:${toString embeddingPort}/health >/dev/null 2>&1 \
+            && ${pkgs.curl}/bin/curl -sf http://127.0.0.1:${toString llmProxyPort}/health >/dev/null 2>&1 \
             && exit 0
           sleep 1
         done
-        echo "memory-mcp: Graphiti or the embedder did not become ready in 60s" >&2
+        echo "memory-mcp: Graphiti, the embedder, or the LLM proxy did not become ready in 60s" >&2
         exit 1
       '';
     };
