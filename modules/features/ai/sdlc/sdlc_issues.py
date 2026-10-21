@@ -209,7 +209,7 @@ def design_section(body):
     if not match:
         return None
     lines = [line.rstrip() for line in match.group(1).split("\n")]
-    lines = [line for line in lines if not line.startswith(ANNOTATION_PREFIX)]
+    lines = [line for line in lines if not line.lstrip().startswith(ANNOTATION_PREFIX)]
     while lines and not lines[0]:
         lines.pop(0)
     while lines and not lines[-1]:
@@ -225,10 +225,14 @@ def design_hash(body):
 
 
 def approval_comment(issue):
+    # Only a comment that is exactly the approval line counts. Review text can
+    # quote an approval (or an agent can paste one), so a substring match would
+    # let an unrelated comment re-point the approved hash.
     for comment in reversed(issue.get("comments") or []):
-        hits = HASH_RE.findall(comment.get("body") or "")
-        if hits:
-            return hits[-1], comment
+        body = (comment.get("body") or "").strip()
+        match = HASH_RE.fullmatch(body)
+        if match:
+            return match.group(1), comment
     return None, None
 
 

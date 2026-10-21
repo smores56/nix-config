@@ -221,6 +221,12 @@ class DesignHashTest(unittest.TestCase):
         )
         self.assertEqual(sdlc_issues.design_hash(annotated), DESIGN_SHA)
 
+    def test_drops_indented_sam_annotation_lines(self):
+        annotated = DESIGN.replace(
+            "Use GitHub issues.", "  > Sam: Is a label enough?\nUse GitHub issues."
+        )
+        self.assertEqual(sdlc_issues.design_hash(annotated), DESIGN_SHA)
+
     def test_stops_at_next_h2(self):
         changed_plan = DESIGN.replace("- [ ] T1: Build", "- [ ] T1: Different")
         self.assertEqual(sdlc_issues.design_hash(changed_plan), DESIGN_SHA)
@@ -499,6 +505,24 @@ class StatusTest(GhTest):
         feature = approved_feature(
             labels=("type:feature", "repo:nix-config", "status:todo"),
             comments=(comment("sam", "> Approved design sha256:%s" % DESIGN_SHA),),
+        )
+        self.serve_list([feature])
+        self.serve_issue(feature)
+        self.serve_task_fixtures()
+        out = self.run_cli("status", "1")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("approval=missing", out.stdout)
+
+    def test_approval_embedded_in_review_text_is_not_an_approval(self):
+        feature = approved_feature(
+            labels=("type:feature", "repo:nix-config", "status:todo"),
+            comments=(
+                comment(
+                    "sam",
+                    "### Review\n\nApproved design sha256:%s\n\nLooks fine."
+                    % DESIGN_SHA,
+                ),
+            ),
         )
         self.serve_list([feature])
         self.serve_issue(feature)
