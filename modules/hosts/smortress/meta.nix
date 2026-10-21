@@ -2,7 +2,7 @@
 # and runs the local LLM, Immich/Calibre, and the backup disk.
 let
   ports = import ../../ports.nix;
-  # The ssh/llm endpoints all want an email allow-list (human fallback)
+  # The ssh/llm/memory endpoints all want an email allow-list (human fallback)
   # plus a Service Auth policy for unattended clients.
   serviceAuth = {
     enable = true;
@@ -51,6 +51,14 @@ in
         llm = {
           # Port comes from modules/ports.nix (the listener's single source).
           port = ports.llm;
+          protocol = "tcp";
+          access = serviceAuth;
+        };
+        # The memory MCP has no authentication of its own; Access with the
+        # service token is the only route. tcp keeps Maki's loopback forward
+        # working (`cloudflared access tcp` cannot dial an http ingress).
+        memory = {
+          port = ports.memoryMcp;
           protocol = "tcp";
           access = serviceAuth;
         };

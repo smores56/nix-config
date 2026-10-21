@@ -1,6 +1,6 @@
 # Cross-machine memory: Graphiti (episodes/entities/edges) over FalkorDB, with
-# a local llama.cpp embedder. The MCP origin is loopback-only until the
-# Cloudflare Access route and the MCP wrapper land. Everything here is
+# a local llama.cpp embedder. The MCP origin is private: loopback only, reached
+# off-host through the Cloudflare Access route. Everything here is
 # personal-only: the work machine runs its own Claude workflow and never
 # reaches this store.
 {

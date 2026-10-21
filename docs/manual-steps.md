@@ -199,9 +199,9 @@ Tofu providers come from `tofu/versions.tf`; notification policies come from
 <!-- manual-step: provider/cloudflare -->
 
 The only OpenTofu provider. The zone `sammohr.dev` already lives in the account;
-OpenTofu manages a wildcard proxied CNAME, the `ssh`/`llm` Access applications,
-the email allow-list and service-auth policies, and the tunnel-health and
-service-token-expiry notifications.
+OpenTofu manages a wildcard proxied CNAME, the `ssh`/`llm`/`memory` Access
+applications, the email allow-list and service-auth policies, and the
+tunnel-health and service-token-expiry notifications.
 
 Manual, one-time (dashboard):
 
@@ -209,8 +209,8 @@ Manual, one-time (dashboard):
   `cloudflared-credentials`).
 - Mint the Access service token(s) used by unattended clients; the service-auth
   policy references them. OpenTofu does not create tokens. One
-  `any_valid_service_token` policy covers both `ssh` and `llm`, so any service
-  token in the account reaches both endpoints.
+  `any_valid_service_token` policy covers `ssh`, `llm`, and `memory`, so any
+  service token in the account reaches all three endpoints.
 - Onboard the Email Service sending subdomain (`send.sammohr.dev`) and add its
   SPF/DKIM/DMARC records. Verify the destination (`sam@sammohr.dev`). Leave the
   apex DMARC record alone (`p=reject`).
@@ -328,10 +328,10 @@ change-triggered.
 ## Public services
 
 Services come from `webProxy.services` on each NixOS host. Each becomes
-`<name>.<domain>` through the tunnel. Only `ssh` and `llm` have Cloudflare
-Access applications (hand-written in `tofu/`); `access.enable` on any other
-service fails evaluation. Calibre and Immich are public and rely on their own
-app auth.
+`<name>.<domain>` through the tunnel. `ssh`, `llm`, and `memory` have
+Cloudflare Access applications (hand-written in `tofu/`); `access.enable` on
+any other service fails evaluation. Calibre and Immich are public and rely on
+their own app auth.
 
 ### smortress/calibre
 
@@ -356,6 +356,29 @@ the mobile app.
 
 `llm.sammohr.dev`, TCP to llama.cpp, with the service-auth policy so maki can
 call it unattended. `api_key = "none"`; the tunnel and Access are the boundary.
+
+### smortress/memory
+
+<!-- manual-step: service/smortress/memory -->
+
+`memory.sammohr.dev` → the loopback Graphiti MCP (`ports.memoryMcp`), TCP to
+the server's loopback, with the same service-auth policy. The server has no
+authentication of its own; Access is the only route. Personal machines run
+`cloudflared-memory`, which forwards loopback `ports.memoryMcp` and injects the
+Access service token, so Maki's generated `~/.config/maki/mcp.toml` contains
+only the loopback URL (server `graphiti`). On smortress, Maki dials the service
+directly.
+
+Apply the Memory Access application **before** rebuilding smortress:
+
+```sh
+sudo nix run .#cloudflare-apply
+just switch smortress
+```
+
+The wildcard CNAME already exists, so the rebuild adds the ingress; applying
+tofu first means Access is in place the moment the hostname starts routing.
+The email policy is inert for this TCP endpoint (service tokens only).
 
 ### smortress/ssh
 

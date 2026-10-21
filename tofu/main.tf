@@ -1,4 +1,4 @@
-# Five static edge objects. Ingress remains in Nix (modules/nixos/web-proxy.nix);
+# Six static edge objects. Ingress remains in Nix (modules/nixos/web-proxy.nix);
 # the tunnel itself and its Access service token stay operator-minted.
 
 resource "cloudflare_dns_record" "wildcard" {
@@ -69,6 +69,29 @@ resource "cloudflare_zero_trust_access_application" "llm" {
   account_id       = var.account_id
   name             = "llm"
   domain           = "llm.${var.domain}"
+  type             = "self_hosted"
+  session_duration = "24h"
+
+  policies = [
+    {
+      id         = cloudflare_zero_trust_access_policy.email.id
+      precedence = 1
+    },
+    {
+      id         = cloudflare_zero_trust_access_policy.service_auth.id
+      precedence = 2
+    },
+  ]
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "cloudflare_zero_trust_access_application" "memory" {
+  account_id       = var.account_id
+  name             = "memory"
+  domain           = "memory.${var.domain}"
   type             = "self_hosted"
   session_duration = "24h"
 
