@@ -31,6 +31,10 @@ in
 
       src = inputs.self;
 
+      # The memory wrapper imports mcp in its unit tests. One env for the whole
+      # suite keeps the pinned nixpkgs and its mcp version in one place.
+      unitTestsPython = pkgs.python3.withPackages (ps: [ ps.mcp ]);
+
       mkEvalChecks =
         prefix: configs:
         lib.mapAttrs' (
@@ -301,7 +305,7 @@ in
           pkgs.runCommand "unit-tests"
             {
               nativeBuildInputs = [
-                pkgs.python3
+                unitTestsPython
                 pkgs.git
               ];
               # The brain-run tests pin TZ=America/New_York and call tzset();
