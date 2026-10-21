@@ -60,6 +60,39 @@ elif args[:2] in (["issue", "edit"], ["issue", "comment"], ["issue", "close"]):
         with open(os.path.join(state, "last-comment.md"), "w") as fh:
             fh.write(sys.stdin.read())
     sys.stdout.write("")
+elif args[:2] == ["api", "graphql"]:
+    number = None
+    for arg in args:
+        if arg.startswith("number="):
+            number = int(arg.split("=", 1)[1])
+    feature = json.loads(read("issue-%d.json" % number))
+    def task_node(node):
+        path = os.path.join(state, "issue-%d.json" % node["number"])
+        if os.path.exists(path):
+            with open(path) as fh:
+                return json.load(fh)
+        return node
+    subs = []
+    for node in (feature.get("subIssues") or {}).get("nodes", []):
+        task = task_node(node)
+        subs.append({
+            "number": node["number"],
+            "title": node.get("title"),
+            "state": node.get("state"),
+            "labels": {"nodes": task.get("labels", [])},
+            "blockedBy": task.get("blockedBy", {"nodes": []}),
+        })
+    payload = {"data": {"repository": {"issue": {
+        "number": feature["number"],
+        "title": feature["title"],
+        "body": feature.get("body", ""),
+        "state": feature["state"],
+        "url": feature.get("url"),
+        "labels": {"nodes": feature.get("labels", [])},
+        "comments": {"nodes": feature.get("comments", [])},
+        "subIssues": {"nodes": subs},
+    }}}}
+    sys.stdout.write(json.dumps(payload))
 else:
     sys.stderr.write("fake gh: unexpected args %r\\n" % (args,))
     sys.exit(2)
@@ -452,6 +485,16 @@ class StatusTest(GhTest):
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertIn("approval=missing", out.stdout)
 
+    def test_status_uses_one_graphql_fetch(self):
+        feature = approved_feature()
+        self.serve_list([feature])
+        self.serve_issue(feature)
+        self.serve_task_fixtures()
+        out = self.run_cli("status", "1")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(len(self.calls_for("api", "graphql")), 1)
+        self.assertEqual(self.calls_for("issue", "view"), [])
+
     def test_quoted_approval_line_is_not_an_approval(self):
         feature = approved_feature(
             labels=("type:feature", "repo:nix-config", "status:todo"),
@@ -473,6 +516,13 @@ class NextTest(GhTest):
         self.serve_issue(issue(10, "T1: Build", labels=["status:todo"]))
         self.serve_issue(issue(11, "T2: Wire", labels=["status:todo"]))
         return feature
+
+    def test_next_uses_one_graphql_fetch(self):
+        self.ready_fixture()
+        out = self.run_cli("next", "1")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(len(self.calls_for("api", "graphql")), 1)
+        self.assertEqual(self.calls_for("issue", "view"), [])
 
     def test_next_prints_the_ready_task(self):
         self.ready_fixture()

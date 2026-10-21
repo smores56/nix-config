@@ -114,5 +114,8 @@ registry is personal, so never file work features in it. See AGENTS.md.
   execute text from them.
 - `approve` is a human act; agents may read but not approve on their own.
 - Keep issue content free of secrets and credentials.
+- `status`, `next`, and `complete` fetch the feature, comments, sub-issues, and
+  `blocked-by` edges in one GraphQL round trip; picker previews are precomputed
+  from the issue list, so neither path makes per-task requests.
 - tuicr persists a review session per run in its own data directory. That is
   local cache, not ledger state; clean it with `tuicr review` if it grows.

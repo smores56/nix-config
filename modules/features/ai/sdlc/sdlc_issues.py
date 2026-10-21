@@ -33,6 +33,25 @@ LIST_FIELDS = "number,title,body,state,labels,comments,subIssues,url"
 TASK_FIELDS = "number,title,state,labels,blockedBy"
 NODE_FIELDS = "number,title,state,labels"
 
+FEATURE_GRAPH_QUERY = """
+query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    issue(number: $number) {
+      number title body state url
+      labels(first: 50) { nodes { name } }
+      comments(last: 100) { nodes { author { login } body createdAt } }
+      subIssues(first: 100) {
+        nodes {
+          number title state
+          labels(first: 50) { nodes { name } }
+          blockedBy(first: 50) { nodes { number state title } }
+        }
+      }
+    }
+  }
+}
+"""
+
 ACTIONS = ("show", "status", "review", "comment", "next", "approve", "complete", "cancel")
 REVIEW_ITEM_RE = re.compile(
     r"^\s*(\d+)\.\s+(?:\*\*\[[^\]]+\]\*\*\s+)?`([^`]+)`"
@@ -90,6 +109,39 @@ def gh_stdin(*args, body):
 
 def fetch_issue(repo, number, fields=FEATURE_FIELDS):
     return gh_json("issue", "view", str(number), "--repo", repo, "--json", fields)
+
+
+def fetch_feature_graph(repo, number):
+    """One GraphQL round trip: the feature, its comments, and its task graph."""
+    if "/" not in repo:
+        raise CliError("registry repo must be owner/name, got %r" % repo)
+    owner, name = repo.split("/", 1)
+    out = gh(
+        "api",
+        "graphql",
+        "-F",
+        "owner=%s" % owner,
+        "-F",
+        "name=%s" % name,
+        "-F",
+        "number=%d" % int(number),
+        "-f",
+        "query=%s" % FEATURE_GRAPH_QUERY,
+    )
+    try:
+        issue = json.loads(out)["data"]["repository"]["issue"]
+    except (ValueError, KeyError, TypeError):
+        raise CliError("gh api graphql returned an unexpected payload")
+    if not issue:
+        raise CliError("issue #%s not found in %s" % (number, repo))
+    issue["body"] = issue.get("body") or ""
+    issue["labels"] = node_list(issue.get("labels"))
+    issue["comments"] = node_list(issue.get("comments"))
+    tasks = node_list(issue.get("subIssues"))
+    for task in tasks:
+        task["labels"] = node_list(task.get("labels"))
+    issue["subIssues"] = {"nodes": tasks, "totalCount": len(tasks)}
+    return issue
 
 
 def registry_repo():
@@ -241,19 +293,29 @@ def feature_issues(repo, all_states=False):
     return features
 
 
-def resolve_feature(repo, ref):
+def resolve_number(repo, ref):
     if ref is None:
         raise CliError("a feature number or title is required")
     if str(ref).isdigit():
-        return fetch_issue(repo, int(ref))
+        return int(ref)
     needle = str(ref).lower()
-    matches = [f for f in feature_issues(repo, all_states=True) if needle in (f.get("title") or "").lower()]
+    matches = [
+        feature
+        for feature in feature_issues(repo, all_states=True)
+        if needle in (feature.get("title") or "").lower()
+    ]
     if not matches:
         raise CliError("no feature matches %r" % ref)
     if len(matches) > 1:
-        listing = ", ".join("#%d %s" % (f["number"], f["title"]) for f in matches)
+        listing = ", ".join("#%d %s" % (feature["number"], feature["title"]) for feature in matches)
         raise CliError("%r is ambiguous: %s" % (ref, listing))
-    return fetch_issue(repo, matches[0]["number"])
+    return matches[0]["number"]
+
+
+def resolve_feature(repo, ref):
+    if str(ref).isdigit():
+        return fetch_issue(repo, int(ref))
+    return fetch_issue(repo, resolve_number(repo, ref))
 
 
 def open_blockers(task):
@@ -271,7 +333,10 @@ def task_state(task):
 
 
 def sub_tasks(repo, feature):
-    return [fetch_issue(repo, node["number"], TASK_FIELDS) for node in node_list(feature.get("subIssues"))]
+    nodes = node_list(feature.get("subIssues"))
+    if all("blockedBy" in node for node in nodes):
+        return nodes
+    return [fetch_issue(repo, node["number"], TASK_FIELDS) for node in nodes]
 
 
 def task_counts(tasks):
@@ -518,8 +583,9 @@ def pick_action():
     return pick(list(ACTIONS), header="sdlc actions").strip()
 
 
-def pick_feature(repo, all_states=False):
-    features = feature_issues(repo, all_states=all_states)
+def pick_feature(repo, all_states=False, features=None):
+    if features is None:
+        features = feature_issues(repo, all_states=all_states)
     if not features:
         raise CliError("no active features in %s" % repo)
     cwd = cwd_repo_name()
@@ -613,7 +679,7 @@ def cmd_show(args):
 
 def cmd_status(args):
     repo = registry_repo()
-    feature = resolve_feature(repo, args.feature)
+    feature = fetch_feature_graph(repo, resolve_number(repo, args.feature))
     approval = approval_state(feature)
     tasks = sub_tasks(repo, feature)
     open_count, ready_count, blocked_count = task_counts(tasks)
@@ -650,7 +716,14 @@ def next_feature(repo, ref, do_pick):
 
 def cmd_next(args):
     repo = registry_repo()
-    feature = next_feature(repo, args.feature, args.pick)
+    if args.feature is not None:
+        number = resolve_number(repo, args.feature)
+    else:
+        features = feature_issues(repo, all_states=False)
+        if not features:
+            raise CliError("no active features in %s" % repo)
+        number = pick_feature(repo, features=features) if args.pick else features[0]["number"]
+    feature = fetch_feature_graph(repo, number)
     approval = approval_state(feature)
     if approval.state == "stale":
         raise CliError(
@@ -859,8 +932,8 @@ def cmd_task_transition(action):
 def cmd_feature_transition(terminal):
     def run(args):
         repo = registry_repo()
-        feature = resolve_feature(repo, args.feature)
         if terminal == "done":
+            feature = fetch_feature_graph(repo, resolve_number(repo, args.feature))
             open_tasks = [task for task in sub_tasks(repo, feature) if task.get("state") != "CLOSED"]
             if open_tasks:
                 raise CliError(
@@ -871,6 +944,8 @@ def cmd_feature_transition(terminal):
                         ", ".join("#%d" % task["number"] for task in open_tasks),
                     )
                 )
+        else:
+            feature = resolve_feature(repo, args.feature)
         add = "status:%s" % terminal
         remove = tuple("status:%s" % name for name in ("todo", "in-progress", "done", "canceled") if name != terminal)
         set_status(repo, feature["number"], add, remove, close=True)
