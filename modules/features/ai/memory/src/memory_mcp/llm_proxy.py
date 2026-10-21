@@ -10,6 +10,14 @@ same server directly, so its thinking behavior is unchanged.
 Everything except chat completions is forwarded untouched; streaming responses
 are passed through without buffering because extraction progress is not the
 only consumer of this port.
+
+`/health` is a local liveness answer: it reports that this proxy is running, not
+that the chat model behind it is loaded. Operators check the model through the
+proxied `/v1/models` (see `docs/manual-steps.md`).
+
+Request bodies are capped at `MAX_REQUEST_BYTES` (extraction prompts are large,
+but a runaway or hostile client must not park gigabytes in memory), and reads
+have their own deadline so a stalled upstream cannot pin a worker forever.
 """
 
 from __future__ import annotations
@@ -29,6 +37,13 @@ DEFAULT_UPSTREAM = "http://127.0.0.1:8081"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8082
 DEFAULT_TIMEOUT = 600.0
+# A stalled upstream (no bytes, including during a stream) must not hold a
+# connection forever. Long extraction streams still emit tokens well inside it.
+DEFAULT_READ_TIMEOUT = 300.0
+DEFAULT_CONNECT_TIMEOUT = 10.0
+# Graphiti's largest extraction prompt is far below this; the cap bounds a
+# hostile client's memory instead of the legitimate case.
+MAX_REQUEST_BYTES = 10 * 1024 * 1024
 CHAT_COMPLETION_PATHS = frozenset({"/v1/chat/completions", "/chat/completions"})
 REASONING_EFFORT = "none"
 
@@ -83,11 +98,13 @@ def create_app(
     upstream: str | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
     timeout: float = DEFAULT_TIMEOUT,
+    read_timeout: float = DEFAULT_READ_TIMEOUT,
+    max_request_bytes: int = MAX_REQUEST_BYTES,
 ) -> Starlette:
     base_url = (upstream or os.environ.get("MEMORY_LLM_UPSTREAM", DEFAULT_UPSTREAM)).rstrip("/")
     client = httpx.AsyncClient(
         base_url=base_url,
-        timeout=httpx.Timeout(timeout),
+        timeout=httpx.Timeout(timeout, connect=DEFAULT_CONNECT_TIMEOUT, read=read_timeout),
         follow_redirects=False,
         transport=transport,
     )
@@ -101,11 +118,42 @@ def create_app(
 
     async def health(_request: Request) -> JSONResponse:
         # Local answer: a readiness probe should fail when this process is
-        # gone, not when the chat model is merely loading.
-        return JSONResponse({"status": "ok", "service": "memory-llm-proxy"})
+        # gone, not when the chat model is merely loading. It says nothing
+        # about the upstream; `/v1/models` does.
+        return JSONResponse(
+            {"status": "ok", "service": "memory-llm-proxy", "scope": "local"}
+        )
+
+    async def read_body(request: Request) -> bytes | None:
+        """Read at most `max_request_bytes`, or None when the body is larger."""
+        declared = request.headers.get("content-length")
+        if declared:
+            try:
+                if int(declared) > max_request_bytes:
+                    return None
+            except ValueError:
+                pass
+        chunks: list[bytes] = []
+        total = 0
+        async for chunk in request.stream():
+            total += len(chunk)
+            if total > max_request_bytes:
+                return None
+            chunks.append(chunk)
+        return b"".join(chunks)
 
     async def proxy(request: Request) -> Response:
-        body = await request.body()
+        body = await read_body(request)
+        if body is None:
+            return JSONResponse(
+                {
+                    "error": {
+                        "message": f"request body exceeds {max_request_bytes} bytes",
+                        "type": "request_too_large",
+                    }
+                },
+                status_code=413,
+            )
         if request.method == "POST" and request.url.path in CHAT_COMPLETION_PATHS:
             try:
                 body = inject_thinking_off(body)
@@ -121,6 +169,16 @@ def create_app(
         )
         try:
             upstream_response = await client.send(upstream_request, stream=True)
+        except httpx.TimeoutException as exc:
+            return JSONResponse(
+                {
+                    "error": {
+                        "message": f"upstream {base_url} timed out: {type(exc).__name__}: {exc}",
+                        "type": "upstream_timeout",
+                    }
+                },
+                status_code=504,
+            )
         except httpx.HTTPError as exc:
             return JSONResponse(
                 {

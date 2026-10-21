@@ -23,6 +23,7 @@ pkgs.python3Packages.buildPythonApplication {
     anyio
     httpx
     mcp
+    redis
     starlette
     uvicorn
   ];
@@ -45,6 +46,7 @@ pkgs.python3Packages.buildPythonApplication {
     "memory_mcp.cli"
     "memory_mcp.ingest_runner"
     "memory_mcp.ingest_sources"
+    "memory_mcp.graph_index"
     "memory_mcp.llm_proxy"
   ];
 

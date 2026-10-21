@@ -20,7 +20,15 @@ from .groups import GroupRefused, derive_group, validate_group
 DEFAULT_URL = "http://127.0.0.1:8182/mcp"
 DEFAULT_TIMEOUT = 75.0
 DEFAULT_NOTES_DIR = "~/Documents"
-DEFAULT_DOCS_ROOT = "~/code/github.com/smores56"
+DEFAULT_GRAPHITI_URL = "http://127.0.0.1:8184/mcp"
+DEFAULT_REDIS_URL = "redis://127.0.0.1:6379"
+
+
+def default_docs_root() -> str:
+    """`~/code/github.com/<owner>`, with the owner from the shared setting."""
+    from .ingest_sources import personal_owner
+
+    return f"~/code/github.com/{personal_owner()}"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -53,21 +61,47 @@ def build_parser() -> argparse.ArgumentParser:
     ingest.add_argument("--limit", type=int, help="Maximum episodes per source")
     ingest.add_argument("--dry-run", action="store_true", help="Print the episode plan; write nothing")
     ingest.add_argument("--report", help="Report path (default ~/.local/state/memory/ingest-<timestamp>.json)")
-    ingest.add_argument("--batch", type=int, default=3, help="Episodes written before verification (default 3)")
-    ingest.add_argument("--timeout", type=float, default=300.0, help="Verification timeout per batch (seconds)")
+    ingest.add_argument("--batch", type=int, default=1, help="Episodes written before verification (default 1)")
+    ingest.add_argument(
+        "--timeout", type=float, default=600.0, help="Grace per batch before an episode is absent (seconds)"
+    )
+    ingest.add_argument(
+        "--repair",
+        action="store_true",
+        help="Rewrite a previously attempted episode once, after an exact absence check",
+    )
+    ingest.add_argument(
+        "--reset-state",
+        action="store_true",
+        help="Archive the state file and treat this as a first run (requires --force)",
+    )
+    ingest.add_argument(
+        "--force",
+        action="store_true",
+        help="Acknowledge the destructive --reset-state; a reset re-attempts every planned episode",
+    )
     ingest.add_argument("--notes-dir", default=DEFAULT_NOTES_DIR)
-    ingest.add_argument("--docs-root", default=DEFAULT_DOCS_ROOT)
+    ingest.add_argument("--docs-root", default=None, help="Clone root (default ~/code/github.com/<owner>)")
     ingest.add_argument("--repo-list", help="File of repo names for docs ingestion, one per line")
     ingest.add_argument("--repo", action="append", default=[], help="Restrict docs to this repo (repeatable)")
     ingest.add_argument("--state", help="State path (default ~/.local/state/memory/ingest-state.json)")
-    ingest.add_argument("--graphiti-url", default=os.environ.get("MEMORY_GRAPHITI_URL", "http://127.0.0.1:8184/mcp"))
+    ingest.add_argument("--graphiti-url", default=os.environ.get("MEMORY_GRAPHITI_URL", DEFAULT_GRAPHITI_URL))
+    ingest.add_argument(
+        "--redis-url",
+        default=os.environ.get("MEMORY_REDIS_URL", DEFAULT_REDIS_URL),
+        help="FalkorDB URL used for exact presence checks",
+    )
     ingest.add_argument("--verbose", action="store_true", help="Log every episode to stderr")
 
     return parser
 
 
-def build_plans(args: argparse.Namespace):
-    """Build the episode plans for a source without touching the memory service."""
+def build_plans(args: argparse.Namespace) -> tuple[list, dict[str, str]]:
+    """Build the episode plans for a source without touching the memory service.
+
+    `all` runs each corpus independently: a failing source is reported and the
+    rest still ingest. A single named source fails the command instead.
+    """
     from .ingest_runner import IngestError
     from .ingest_sources import (
         SourceError,
@@ -78,42 +112,48 @@ def build_plans(args: argparse.Namespace):
         sdlc_plan,
     )
 
-    try:
-        if args.source == "sdlc":
-            plans = [sdlc_plan(fetch_issues())]
-        elif args.source == "notes":
-            plans = [notes_plan(args.notes_dir)]
-        elif args.source == "docs":
-            plans = [
-                docs_plan(
-                    args.docs_root,
-                    repos=repo_filter(args.repo_list, args.repo),
-                )
-            ]
-        else:
-            plans = [sdlc_plan(fetch_issues()), notes_plan(args.notes_dir)]
-            plans.append(docs_plan(args.docs_root, repos=repo_filter(args.repo_list, args.repo)))
-    except SourceError as exc:
-        raise IngestError(str(exc)) from exc
-    return [plan.limited(args.limit) for plan in plans]
+    builders = {
+        "sdlc": lambda: sdlc_plan(fetch_issues()),
+        "notes": lambda: notes_plan(args.notes_dir),
+        "docs": lambda: docs_plan(
+            args.docs_root or default_docs_root(),
+            repos=repo_filter(args.repo_list, args.repo),
+        ),
+    }
+    names = list(builders) if args.source == "all" else [args.source]
+    plans = []
+    errors: dict[str, str] = {}
+    for name in names:
+        try:
+            plans.append(builders[name]())
+        except SourceError as exc:
+            if args.source != "all":
+                raise IngestError(str(exc)) from exc
+            errors[name] = str(exc)
+    return [plan.limited(args.limit) for plan in plans], errors
 
 
 async def run_ingest(args: argparse.Namespace) -> dict[str, object]:
     from .ingest_runner import IngestRunner, RunnerConfig
 
-    plans = build_plans(args)
+    plans, source_errors = build_plans(args)
     config = RunnerConfig(
         wrapper_url=args.url,
         graphiti_url=args.graphiti_url,
+        redis_url=args.redis_url,
         cwd=os.path.abspath(args.cwd or os.getcwd()),
         batch=max(1, args.batch),
         verify_timeout=args.timeout,
         dry_run=args.dry_run,
         verbose=args.verbose,
+        repair=args.repair,
+        force=args.force,
+        reset_state=args.reset_state,
+        json_output=args.json,
         report_path=args.report,
         state_path=args.state,
     )
-    return await IngestRunner(config).run(plans)
+    return await IngestRunner(config).run(plans, source_errors=source_errors)
 
 
 def resolve_context(args: argparse.Namespace) -> tuple[str, str]:
@@ -166,6 +206,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "ingest":
         from .ingest_runner import IngestError
 
+        # `ingest` derives a group per episode; a single override would silently
+        # file the whole corpus under one group.
+        if args.group:
+            print(
+                "memory: --group is not valid with ingest; each corpus sets the group per episode",
+                file=sys.stderr,
+            )
+            return 2
         try:
             report = asyncio.run(run_ingest(args))
         except IngestError as exc:

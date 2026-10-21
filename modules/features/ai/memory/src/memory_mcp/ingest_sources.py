@@ -4,6 +4,10 @@ Each adapter is pure over an injected fetcher (`run_gh`, a filesystem walk), so
 the mapping and chunking are testable without the network. Every episode
 carries the group it belongs to and a stable `source_id`; the runner adds the
 content hash and provenance headers.
+
+Two safety rules live here: work repositories are refused by the same marker
+logic the cwd path uses (a personal fork still has the employer's upstream),
+and no path is read through a symlink that leaves the corpus root.
 """
 
 from __future__ import annotations
@@ -12,20 +16,28 @@ import json
 import os
 import re
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable
 
 from .chunking import document_title, episode_content, sections_for, source_ids
-from .groups import GroupRefused, owner_is_work, sanitize_slug, validate_group
+from .groups import (
+    GLOBAL_GROUP,
+    GitError,
+    GroupRefused,
+    owner_is_work,
+    sanitize_slug,
+    validate_group,
+    work_marker,
+)
 
-SDLC_REPO = "smores56/sdlc"
-SDLC_GROUP = "smores56--sdlc"
-NOTES_GROUP = "global"
-PERSONAL_OWNER = "smores56"
+DEFAULT_PERSONAL_OWNER = "smores56"
 MAX_DOC_BYTES = 200_000
 COMMENT_MIN_CHARS = 20
 GH_TIMEOUT_SECONDS = 120
+ISSUE_LIMIT = 1000
+REPO_LIMIT = 200
 
 SKIP_DIRS = frozenset(
     {
@@ -44,6 +56,8 @@ SKIP_DIRS = frozenset(
 )
 
 PART_OF = re.compile(r"Part of #(\d+)", re.IGNORECASE)
+# A task body that is nothing but a parent pointer: the title says everything.
+PARENT_POINTER_ONLY = re.compile(r"^Part of #\d+\.?$", re.IGNORECASE)
 REPO_LABEL = re.compile(r"^repo:(.+)$", re.IGNORECASE)
 COMMENT_ID = re.compile(r"issuecomment-(\d+)")
 
@@ -61,7 +75,6 @@ class Episode:
     group: str
     content: str
     tags: tuple[str, ...] = ()
-    origin: str = ""
 
 
 @dataclass(frozen=True)
@@ -76,17 +89,45 @@ class Plan:
     source: str
     episodes: list[Episode] = field(default_factory=list)
     skipped: list[Skip] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
     def limited(self, limit: int | None) -> Plan:
         if limit is None or limit <= 0 or len(self.episodes) <= limit:
             return self
-        return Plan(source=self.source, episodes=self.episodes[:limit], skipped=self.skipped)
+        return Plan(
+            source=self.source,
+            episodes=self.episodes[:limit],
+            skipped=self.skipped,
+            warnings=self.warnings,
+        )
+
+
+def personal_owner() -> str:
+    """The GitHub user whose repos and sdlc registry are ingested.
+
+    Deployed hosts set `MEMORY_PERSONAL_OWNER` from `config.user.githubUser`;
+    the default keeps a standalone install working.
+    """
+    return os.environ.get("MEMORY_PERSONAL_OWNER", "").strip() or DEFAULT_PERSONAL_OWNER
+
+
+def sdlc_repo() -> str:
+    return f"{personal_owner()}/sdlc"
+
+
+def sdlc_group() -> str:
+    return f"{personal_owner()}--sdlc"
+
+
+def _warn(message: str) -> None:
+    print(f"memory ingest: warning: {message}", file=sys.stderr)
 
 
 def run_gh(args: Iterable[str]) -> str:
+    argv = list(args)
     try:
         result = subprocess.run(
-            ["gh", *args],
+            ["gh", *argv],
             capture_output=True,
             text=True,
             timeout=GH_TIMEOUT_SECONDS,
@@ -98,7 +139,7 @@ def run_gh(args: Iterable[str]) -> str:
         raise SourceError(f"gh timed out after {GH_TIMEOUT_SECONDS}s") from exc
     if result.returncode != 0:
         message = result.stderr.strip() or f"gh exited {result.returncode}"
-        raise SourceError(f"gh {args[0]} failed: {message[:300]}")
+        raise SourceError(f"gh {argv[0]} failed: {message[:300]}")
     return result.stdout
 
 
@@ -111,7 +152,7 @@ def gh_json(args: Iterable[str]) -> object:
 
 def fetch_issues(runner: Callable[[Iterable[str]], str] = run_gh) -> list[dict[str, object]]:
     payload = runner(
-        ["issue", "list", "--repo", SDLC_REPO, "--state", "all", "--limit", "1000", "--json", ISSUE_FIELDS]
+        ["issue", "list", "--repo", sdlc_repo(), "--state", "all", "--limit", str(ISSUE_LIMIT), "--json", ISSUE_FIELDS]
     )
     try:
         issues = json.loads(payload) if isinstance(payload, str) else payload
@@ -119,7 +160,12 @@ def fetch_issues(runner: Callable[[Iterable[str]], str] = run_gh) -> list[dict[s
         raise SourceError(f"gh issue list returned invalid JSON: {exc}") from exc
     if not isinstance(issues, list):
         raise SourceError("gh issue list did not return a list")
-    return [issue for issue in issues if isinstance(issue, dict)]
+    filtered = [issue for issue in issues if isinstance(issue, dict)]
+    if len(issues) >= ISSUE_LIMIT:
+        _warn(
+            f"gh issue list returned exactly the {ISSUE_LIMIT}-issue limit; the list may be truncated"
+        )
+    return filtered
 
 
 def issue_number(issue: dict[str, object]) -> int:
@@ -133,12 +179,20 @@ def _labels(issue: dict[str, object]) -> list[str]:
     return [str(label.get("name", "")) for label in labels if isinstance(label, dict)]
 
 
-def repo_label(issue: dict[str, object]) -> str | None:
+def repo_labels(issue: dict[str, object]) -> list[str]:
+    """Every `repo:` label on the issue, in label order.
+
+    An issue can point at several repos; picking one silently would file its
+    episodes under an arbitrary group, so the caller writes to all of them.
+    """
+    found: list[str] = []
     for label in _labels(issue):
         match = REPO_LABEL.match(label)
         if match:
-            return match.group(1).strip()
-    return None
+            candidate = match.group(1).strip()
+            if candidate and candidate not in found:
+                found.append(candidate)
+    return found
 
 
 def group_for_repo_label(repo: str) -> str | None:
@@ -147,7 +201,7 @@ def group_for_repo_label(repo: str) -> str | None:
     if "--" in candidate:
         owner, name = candidate.split("--", 1)
     else:
-        owner, name = PERSONAL_OWNER, candidate
+        owner, name = personal_owner(), candidate
     if not name or owner_is_work(owner) or owner_is_work(name):
         return None
     try:
@@ -161,23 +215,31 @@ def parent_number(issue: dict[str, object]) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def resolve_group(
+def resolve_groups(
     number: int, issues: dict[int, dict[str, object]], seen: frozenset[int] = frozenset()
-) -> tuple[str, str]:
-    """Follow `Part of #N` to the nearest feature with a repo label."""
+) -> list[tuple[str, str]]:
+    """Resolve every group for an issue, following `Part of #N` when unlabeled.
+
+    Returns one `(group, reason)` pair per label; `group` is empty when the
+    label belongs to the employer, which the caller reports as a skip.
+    """
     issue = issues.get(number)
     if issue is None:
-        return SDLC_GROUP, "parent not in the issue list"
-    label = repo_label(issue)
-    if label:
-        group = group_for_repo_label(label)
-        if group is None:
-            return "", f"repo label {label!r} belongs to the employer"
-        return group, f"repo:{label}"
+        return [(sdlc_group(), "parent not in the issue list")]
+    labels = repo_labels(issue)
+    if labels:
+        resolved: list[tuple[str, str]] = []
+        for label in labels:
+            group = group_for_repo_label(label)
+            if group is None:
+                resolved.append(("", f"repo label {label!r} belongs to the employer"))
+            elif all(existing != group for existing, _reason in resolved):
+                resolved.append((group, f"repo:{label}"))
+        return resolved
     parent = parent_number(issue)
     if parent is None or parent in seen:
-        return SDLC_GROUP, "no repo label"
-    return resolve_group(parent, issues, seen | {number})
+        return [(sdlc_group(), "no repo label")]
+    return resolve_groups(parent, issues, seen | {number})
 
 
 def _comment_id(comment: dict[str, object], index: int) -> str:
@@ -189,20 +251,38 @@ def _comment_id(comment: dict[str, object], index: int) -> str:
     return raw or str(index + 1)
 
 
-def _issue_episodes(
-    issue: dict[str, object], group: str
-) -> tuple[list[Episode], list[Skip]]:
+def _issue_body_episode(number: int, issue: dict[str, object], title: str, ref: str, group: str) -> Episode:
+    """One episode for a body with no section of its own.
+
+    Short task bodies ("Part of #215.") and empty feature bodies would otherwise
+    be dropped, which loses the task's link and title entirely. A one-line body
+    that only points at a parent adds nothing to the title, so it uses the
+    title alone; any other body is kept under it.
+    """
+    body = str(issue.get("body") or "").strip()
+    compact = " ".join(body.split())
+    body_only_points_at_parent = bool(compact) and PARENT_POINTER_ONLY.fullmatch(compact) is not None
+    content = episode_content(ref, title, "", "" if body_only_points_at_parent else body)
+    return Episode(
+        source="sdlc",
+        source_id=f"issue-{number}#body",
+        group=group,
+        content=content,
+        tags=("sdlc", f"issue-{number}"),
+    )
+
+
+def _issue_episodes(issue: dict[str, object], group: str) -> list[Episode]:
     number = issue_number(issue)
     title = str(issue.get("title") or f"issue {number}")
-    ref = f"{SDLC_REPO}#{number}"
+    ref = f"{sdlc_repo()}#{number}"
     tags = ("sdlc", f"issue-{number}")
     episodes: list[Episode] = []
-    skipped: list[Skip] = []
 
     body = str(issue.get("body") or "").strip()
     sections = sections_for(body)
     if not sections:
-        skipped.append(Skip("sdlc", f"issue-{number}#body", "body is empty or boilerplate"))
+        episodes.append(_issue_body_episode(number, issue, title, ref, group))
     else:
         for section, source_id in zip(sections, source_ids(f"issue-{number}", sections)):
             episodes.append(
@@ -212,7 +292,6 @@ def _issue_episodes(
                     group=group,
                     content=episode_content(ref, title, section.label, section.body),
                     tags=tags,
-                    origin=ref,
                 )
             )
 
@@ -242,10 +321,9 @@ def _issue_episodes(
                         group=group,
                         content=episode_content(f"{ref} ({url})" if url else ref, title, label, section.body),
                         tags=tags,
-                        origin=ref,
                     )
                 )
-    return episodes, skipped
+    return episodes
 
 
 def sdlc_plan(issues: list[dict[str, object]]) -> Plan:
@@ -255,14 +333,22 @@ def sdlc_plan(issues: list[dict[str, object]]) -> Plan:
     skipped: list[Skip] = []
     for issue in ordered:
         number = issue_number(issue)
-        group, reason = resolve_group(number, by_number)
-        if not group:
-            skipped.append(Skip("sdlc", f"issue-{number}", reason))
-            continue
-        issue_episodes, issue_skips = _issue_episodes(issue, group)
-        episodes.extend(issue_episodes)
-        skipped.extend(issue_skips)
+        for group, reason in resolve_groups(number, by_number):
+            if not group:
+                skipped.append(Skip("sdlc", f"issue-{number}", reason))
+                continue
+            episodes.extend(_issue_episodes(issue, group))
     return Plan(source="sdlc", episodes=episodes, skipped=skipped)
+
+
+def _contained(path: Path, root: Path) -> bool:
+    """Whether `path` resolves inside `root` (symlinks included)."""
+    try:
+        resolved = path.resolve()
+        root_resolved = root.resolve()
+    except OSError:
+        return False
+    return resolved == root_resolved or root_resolved in resolved.parents
 
 
 def notes_plan(notes_dir: str) -> Plan:
@@ -271,12 +357,33 @@ def notes_plan(notes_dir: str) -> Plan:
         raise SourceError(f"notes directory not found: {root}")
     episodes: list[Episode] = []
     skipped: list[Skip] = []
-    for path in sorted(root.glob("*.md")):
-        if not path.is_file() or path.stat().st_size > MAX_DOC_BYTES:
+    for path in sorted(root.rglob("*.md")):
+        rel = path.relative_to(root)
+        ref = f"note:{rel}"
+        if path.is_symlink() and not _contained(path, root):
+            skipped.append(Skip("notes", f"{ref}#body", "symlink resolves outside the notes directory"))
             continue
-        text = path.read_text(encoding="utf-8", errors="replace")
+        if not _contained(path, root):
+            skipped.append(Skip("notes", f"{ref}#body", "path resolves outside the notes directory"))
+            continue
+        if not path.is_file():
+            if path.is_symlink():
+                skipped.append(Skip("notes", f"{ref}#body", "unreadable: broken symlink"))
+            continue
+        try:
+            size = path.stat().st_size
+        except OSError as exc:
+            skipped.append(Skip("notes", f"{ref}#body", f"unreadable: {exc}"))
+            continue
+        if size > MAX_DOC_BYTES:
+            skipped.append(Skip("notes", f"{ref}#body", "file exceeds 200 KB"))
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            skipped.append(Skip("notes", f"{ref}#body", f"unreadable: {exc}"))
+            continue
         title = document_title(text, path.stem)
-        ref = f"note:{path.name}"
         sections = sections_for(text)
         if not sections:
             skipped.append(Skip("notes", f"{ref}#body", "file is empty or boilerplate"))
@@ -286,21 +393,20 @@ def notes_plan(notes_dir: str) -> Plan:
                 Episode(
                     source="notes",
                     source_id=source_id,
-                    group=NOTES_GROUP,
+                    group=GLOBAL_GROUP,
                     content=episode_content(ref, title, section.label, section.body),
                     tags=("notes",),
-                    origin=str(path),
                 )
             )
     return Plan(source="notes", episodes=episodes, skipped=skipped)
 
 
 def local_doc_files(repo_root: Path) -> list[Path]:
-    """README, AGENTS, and docs/**/*.md, skipping generated and vendor trees."""
+    """README, AGENTS, and docs/**/*.md, skipping generated, vendor, and symlinked paths."""
     files: list[Path] = []
     for name in ("README.md", "AGENTS.md"):
         candidate = repo_root / name
-        if candidate.is_file():
+        if candidate.is_file() and not candidate.is_symlink() and _contained(candidate, repo_root):
             files.append(candidate)
     docs = repo_root / "docs"
     if docs.is_dir():
@@ -308,18 +414,22 @@ def local_doc_files(repo_root: Path) -> list[Path]:
             dirs[:] = sorted(
                 directory
                 for directory in dirs
-                if directory not in SKIP_DIRS and not directory.startswith("result-")
+                if directory not in SKIP_DIRS
+                and not directory.startswith("result-")
+                and not (Path(current) / directory).is_symlink()
             )
             for name in sorted(names):
                 if name.endswith(".md"):
-                    files.append(Path(current) / name)
+                    candidate = Path(current) / name
+                    if not candidate.is_symlink() and _contained(candidate, repo_root):
+                        files.append(candidate)
     return files
 
 
 def _doc_episodes(*, repo: str, relpath: str, text: str, source: str = "docs") -> tuple[list[Episode], list[Skip]]:
-    group = validate_group(f"{PERSONAL_OWNER}--{sanitize_slug(repo)}")
+    group = validate_group(f"{personal_owner()}--{sanitize_slug(repo)}")
     title = document_title(text, Path(relpath).name)
-    ref = f"{PERSONAL_OWNER}/{repo}/{relpath}"
+    ref = f"{personal_owner()}/{repo}/{relpath}"
     base = f"repo:{repo}:{relpath}"
     episodes: list[Episode] = []
     skipped: list[Skip] = []
@@ -335,26 +445,47 @@ def _doc_episodes(*, repo: str, relpath: str, text: str, source: str = "docs") -
                 group=group,
                 content=episode_content(ref, title, section.label, section.body),
                 tags=("docs", sanitize_slug(repo)),
-                origin=ref,
             )
         )
     return episodes, skipped
 
 
+def gh_api(path: str, accept: str) -> str:
+    return run_gh(["api", path, "-H", f"Accept: {accept}"])
+
+
 def repo_readme(repo: str) -> str | None:
+    """The repo README, or None when the repo has none.
+
+    Only a 404 is a skip: an auth, rate-limit, or network error must fail the
+    docs source instead of silently dropping every remaining README.
+    """
     try:
-        return run_gh(["api", f"repos/{PERSONAL_OWNER}/{repo}/readme", "-H", "Accept: application/vnd.github.raw"])
-    except SourceError:
-        return None
+        return gh_api(f"repos/{personal_owner()}/{repo}/readme", "application/vnd.github.raw")
+    except SourceError as exc:
+        message = str(exc)
+        if "HTTP 404" in message or "Not Found" in message or "Not found" in message:
+            return None
+        raise
 
 
 def personal_repos() -> list[dict[str, object]]:
     payload = gh_json(
-        ["repo", "list", PERSONAL_OWNER, "--limit", "200", "--json", "name,isArchived,isFork,description"]
+        ["repo", "list", personal_owner(), "--limit", str(REPO_LIMIT), "--json", "name,isArchived,isFork,description"]
     )
     if not isinstance(payload, list):
         raise SourceError("gh repo list did not return a list")
+    if len(payload) >= REPO_LIMIT:
+        _warn(f"gh repo list returned exactly the {REPO_LIMIT}-repo limit; the list may be truncated")
     return [repo for repo in payload if isinstance(repo, dict)]
+
+
+def _refuse_work_clone(repo_root: Path, repo: str) -> Skip | None:
+    """Skip a local clone that the shared work-marker logic calls work."""
+    marker = work_marker(str(repo_root))
+    if marker:
+        return Skip("docs", f"repo:{repo}", f"work repository ({marker}); refused")
+    return None
 
 
 def docs_plan(
@@ -371,24 +502,38 @@ def docs_plan(
     skipped: list[Skip] = []
     covered: set[str] = set()
 
-    for repo_root in sorted(path for path in root.iterdir() if path.is_dir()):
+    for repo_root in sorted((path for path in root.iterdir() if path.is_dir()), key=lambda path: path.name):
         repo = repo_root.name
         if repos is not None and repo not in repos:
+            continue
+        if repo_root.is_symlink() or not _contained(repo_root, root):
+            skipped.append(Skip("docs", f"repo:{repo}", "symlinked or resolves outside the docs root"))
+            covered.add(repo)
             continue
         if not (repo_root / ".git").exists():
             skipped.append(Skip("docs", f"repo:{repo}", "not a git clone"))
             continue
+        # Covered even when refused: its README must not be fetched remotely
+        # either, or a work repo's docs would land in the graph through gh.
         covered.add(repo)
+        try:
+            refusal = _refuse_work_clone(repo_root, repo)
+        except GitError as exc:
+            skipped.append(Skip("docs", f"repo:{repo}", f"cannot verify work status ({exc}); refused"))
+            continue
+        if refusal is not None:
+            skipped.append(refusal)
+            continue
         for path in local_doc_files(repo_root):
+            relpath = str(path.relative_to(repo_root))
             try:
                 if path.stat().st_size > MAX_DOC_BYTES:
-                    skipped.append(Skip("docs", f"repo:{repo}:{path.relative_to(repo_root)}", "file exceeds 200 KB"))
+                    skipped.append(Skip("docs", f"repo:{repo}:{relpath}", "file exceeds 200 KB"))
                     continue
                 text = path.read_text(encoding="utf-8", errors="replace")
             except OSError as exc:
-                skipped.append(Skip("docs", f"repo:{repo}:{path.relative_to(repo_root)}", f"unreadable: {exc}"))
+                skipped.append(Skip("docs", f"repo:{repo}:{relpath}", f"unreadable: {exc}"))
                 continue
-            relpath = str(path.relative_to(repo_root))
             doc_episodes, doc_skips = _doc_episodes(repo=repo, relpath=relpath, text=text)
             episodes.extend(doc_episodes)
             skipped.extend(doc_skips)

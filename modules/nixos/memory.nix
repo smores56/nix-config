@@ -24,7 +24,8 @@ let
   # Graphiti reaches the chat model through a thinkless proxy on this port.
   # Extraction must not generate reasoning (it spends the whole budget and
   # returns empty content), while Maki keeps talking to ports.llm directly so
-  # interactive answers keep thinking.
+  # interactive answers keep thinking. Deliberately not in ports.nix: only this
+  # module (listener plus Graphiti's config) reads it, and it is never tunneled.
   llmProxyPort = 8082;
   # StateDirectory creates /var/lib/<name> for the wrapper; tmpfiles only adds
   # the root-owned FalkorDB subdirectory, so the two never disagree.

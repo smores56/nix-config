@@ -1,24 +1,43 @@
-"""Batch ingest runner: write through the wrapper, verify in raw Graphiti, repair.
+"""Batch ingest runner: write through the wrapper, verify in the graph, repair on request.
 
 Graphiti extracts asynchronously and can drop an episode from its in-memory
-queue, so a queued write is not a stored episode. The runner keeps batches
-small, polls `get_episodes` until every uuid5 identity appears, and repairs a
-miss exactly once by tombstoning the index row and rewriting the content.
+queue, so a queued write is not a stored episode. Verification reads the
+FalkorDB graph directly (exact `id=`/`hash=`/`source`+`source_id` match); only
+when FalkorDB is unreachable does it fall back to Graphiti's window-limited
+`get_episodes`, and it says so.
+
+Safety rules, in order:
+
+- A write never replaces an episode unless the graph proves the old identity
+  (same group, same `source`+`source_id`) is absent. Graph-level removal is not
+  available (the wrapper exposes no delete), so rewriting a present or in-flight
+  episode is the only way to end up with a duplicate; therefore the default is
+  to record a failure and stop.
+- Reconcile tombstones only rows the state file says were attempted in an
+  earlier run. A first run has nothing to reconcile and audits nothing.
+- Repair (`--repair`) is opt-in and still applies only to entries that a prior
+  run attempted; `--force --reset-state` archives the state to start over.
+- State entries are keyed by `(group, source, source_id)`: a source that moves
+  to another group writes there, and a changed hash supersedes the old index
+  row (the old graph episode remains, by design).
 """
 
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import json
 import os
-import re
 import sys
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterator
 
 from .client import ClientConfig, ToolResult, UpstreamError, call_tool
+from .graph_index import DEFAULT_REDIS_URL, GraphIndex, Provenance, matches, parse_description
 from .graphiti import BackendError, GraphitiBackend
 from .ingest_sources import Episode, Plan
 from .normalize import content_hash, episode_uuid, normalize_content
@@ -26,27 +45,32 @@ from .store import utcnow
 
 DEFAULT_WRAPPER_URL = "http://127.0.0.1:8182/mcp"
 DEFAULT_GRAPHITI_URL = "http://127.0.0.1:8184/mcp"
-DEFAULT_BATCH = 3
-DEFAULT_VERIFY_TIMEOUT = 300.0
+# One in flight keeps Graphiti's queue from dropping work and makes a failure
+# attributable to one episode.
+DEFAULT_BATCH = 1
+# Extraction is one 27B chat call per episode (30-90s, longer under load); the
+# grace must outlast a slow extraction before an absent episode is a failure.
+DEFAULT_VERIFY_TIMEOUT = 600.0
 DEFAULT_POLL_SECONDS = 5.0
 DEFAULT_WRITE_TIMEOUT = 90.0
 MAX_FETCH = 5000
-REPAIR_REASON = "ingest repair: queued write never appeared in the graph"
-RECONCILE_REASON = "ingest reconcile: planned episode was never stored in the graph"
+FALLBACK_FETCH = 50
+REPAIR_REASON = "ingest repair: previously attempted write is absent from the graph"
+RECONCILE_REASON = "ingest reconcile: previously attempted write never reached the graph"
+SUPERSEDE_REASON = "ingest supersede: the source changed and a new version replaced this entry"
 
-COUNTERS = ("built", "queued", "duplicate", "skipped", "reconciled", "verified", "repaired", "failed")
-
-_ID_TOKEN = re.compile(r"(?:^|;\s*)id=([0-9a-fA-F-]{36})")
-_HASH_TOKEN = re.compile(r"(?:^|;\s*)hash=([0-9a-f]{64})")
-
-
-def _provenance(description: str) -> dict[str, str]:
-    tokens: dict[str, str] = {}
-    for part in description.split("; "):
-        key, separator, value = part.partition("=")
-        if separator and key.strip():
-            tokens.setdefault(key.strip(), value.strip())
-    return tokens
+COUNTERS = (
+    "built",
+    "queued",
+    "duplicate",
+    "skipped",
+    "adopted",
+    "superseded",
+    "reconciled",
+    "verified",
+    "repaired",
+    "failed",
+)
 
 
 class IngestError(RuntimeError):
@@ -73,6 +97,7 @@ def _atomic_write(path: Path, text: str) -> None:
 class RunnerConfig:
     wrapper_url: str = DEFAULT_WRAPPER_URL
     graphiti_url: str = DEFAULT_GRAPHITI_URL
+    redis_url: str = DEFAULT_REDIS_URL
     cwd: str = field(default_factory=os.getcwd)
     batch: int = DEFAULT_BATCH
     verify_timeout: float = DEFAULT_VERIFY_TIMEOUT
@@ -80,6 +105,10 @@ class RunnerConfig:
     write_timeout: float = DEFAULT_WRITE_TIMEOUT
     dry_run: bool = False
     verbose: bool = False
+    repair: bool = False
+    force: bool = False
+    reset_state: bool = False
+    json_output: bool = False
     report_path: str | None = None
     state_path: str | None = None
 
@@ -98,48 +127,191 @@ class BatchEntry:
     digest: str
     uuid: str
     content: str
+    prior_attempt: bool = False
 
 
 class IngestState:
-    """Verified `(source, source_id)` entries, so a re-run skips work already proven."""
+    """Attempted and verified `(group, source, source_id)` entries.
+
+    The key includes the group because a source can be relabeled or moved (a
+    task inheriting a different feature's `repo:` label); a moved source must
+    write to its new group instead of being skipped as already verified.
+    """
+
+    VERSION = 2
 
     def __init__(self, path: Path) -> None:
         self.path = path
-        self.entries: dict[str, dict[str, str]] = {}
+        self.entries: dict[str, dict[str, object]] = {}
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             payload = {}
-        verified = payload.get("verified") if isinstance(payload, dict) else None
+        if not isinstance(payload, dict):
+            return
+        entries = payload.get("entries")
+        if isinstance(entries, dict):
+            self.entries = {str(key): value for key, value in entries.items() if isinstance(value, dict)}
+        # Version 1 keyed verified rows by `(source, source_id)`; migrate them
+        # onto the group-aware key so an upgraded install keeps its history.
+        verified = payload.get("verified")
         if isinstance(verified, dict):
-            self.entries = {
-                str(key): value for key, value in verified.items() if isinstance(value, dict)
-            }
+            for key, value in verified.items():
+                if not isinstance(value, dict):
+                    continue
+                group = str(value.get("group") or "")
+                source, _, source_id = str(key).partition("\t")
+                if group:
+                    self._set(
+                        group,
+                        source,
+                        source_id,
+                        {
+                            "group": group,
+                            "source": source,
+                            "source_id": source_id,
+                            "hash": str(value.get("hash") or ""),
+                            "uuid": str(value.get("uuid") or ""),
+                            "attempted": True,
+                            "status": "verified",
+                            "verified_at": str(value.get("verified_at") or ""),
+                        },
+                    )
 
     @staticmethod
-    def key(source: str, source_id: str) -> str:
-        return f"{source}\t{source_id}"
+    def key(group: str, source: str, source_id: str) -> str:
+        return f"{group}\t{source}\t{source_id}"
 
-    def is_verified(self, source: str, source_id: str, digest: str) -> bool:
-        entry = self.entries.get(self.key(source, source_id))
-        return entry is not None and entry.get("hash") == digest
+    def _set(self, group: str, source: str, source_id: str, entry: dict[str, object]) -> None:
+        self.entries[self.key(group, source, source_id)] = entry
 
-    def mark(self, *, source: str, source_id: str, group: str, digest: str, uid: str) -> None:
-        self.entries[self.key(source, source_id)] = {
-            "group": group,
-            "hash": digest,
-            "uuid": uid,
-            "verified_at": utcnow(),
-        }
+    def entry(self, group: str, source: str, source_id: str) -> dict[str, object] | None:
+        current = self.entries.get(self.key(group, source, source_id))
+        return current if current and current.get("group") == group else None
+
+    def is_verified(self, group: str, source: str, source_id: str, digest: str) -> bool:
+        current = self.entry(group, source, source_id)
+        return bool(
+            current
+            and current.get("status") == "verified"
+            and current.get("hash") == digest
+        )
+
+    def was_attempted(self, group: str, source: str, source_id: str) -> bool:
+        current = self.entry(group, source, source_id)
+        return bool(current and current.get("attempted"))
+
+    def mark_attempted(self, *, group: str, source: str, source_id: str, digest: str, uid: str) -> None:
+        current = self.entry(group, source, source_id) or {}
+        self._set(
+            group,
+            source,
+            source_id,
+            {
+                **current,
+                "group": group,
+                "source": source,
+                "source_id": source_id,
+                "hash": digest,
+                "uuid": uid,
+                "attempted": True,
+                "status": "attempted",
+                "attempted_at": utcnow(),
+            },
+        )
+
+    def mark_verified(self, *, group: str, source: str, source_id: str, digest: str, uid: str) -> None:
+        current = self.entry(group, source, source_id) or {}
+        self._set(
+            group,
+            source,
+            source_id,
+            {
+                **current,
+                "group": group,
+                "source": source,
+                "source_id": source_id,
+                "hash": digest,
+                "uuid": uid,
+                "attempted": True,
+                "status": "verified",
+                "verified_at": utcnow(),
+                "last_error": "",
+            },
+        )
+
+    def mark_failed(self, *, group: str, source: str, source_id: str, digest: str, uid: str, error: str) -> None:
+        current = self.entry(group, source, source_id) or {}
+        try:
+            failures = int(current.get("failures") or 0)
+        except (TypeError, ValueError):
+            failures = 0
+        self._set(
+            group,
+            source,
+            source_id,
+            {
+                **current,
+                "group": group,
+                "source": source,
+                "source_id": source_id,
+                "hash": digest,
+                "uuid": uid,
+                "attempted": True,
+                "status": "failed",
+                "failed_at": utcnow(),
+                "failures": failures + 1,
+                "last_error": error[:300],
+            },
+        )
 
     def save(self) -> None:
-        _atomic_write(self.path, json.dumps({"version": 1, "verified": self.entries}, indent=2, sort_keys=True) + "\n")
+        _atomic_write(
+            self.path,
+            json.dumps({"version": self.VERSION, "entries": self.entries}, indent=2, sort_keys=True) + "\n",
+        )
+
+    def reset(self) -> Path | None:
+        """Archive the state file so the next run starts as a first run.
+
+        The archive keeps the audit trail; a reset is the documented way to
+        re-attempt every planned episode (and the only way to re-write one the
+        state still calls verified).
+        """
+        self.entries = {}
+        if not self.path.exists():
+            return None
+        backup = self.path.with_name(f"{self.path.name}.bak-{_stamp()}")
+        self.path.replace(backup)
+        return backup
+
+    @contextmanager
+    def lock(self) -> Iterator[None]:
+        """Exclusive, non-blocking lock so two ingests cannot interleave writes."""
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        lock_path = self.path.with_name(self.path.name + ".lock")
+        handle = lock_path.open("w", encoding="utf-8")
+        try:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError as exc:
+                raise IngestError(
+                    f"another ingest holds {lock_path}; wait for it to finish instead of running two"
+                ) from exc
+            yield
+        finally:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+            finally:
+                handle.close()
 
 
 class Report:
     def __init__(self) -> None:
         self.sources: dict[str, dict[str, dict[str, int]]] = {}
         self.failures: list[dict[str, str]] = []
+        self.source_errors: dict[str, str] = {}
+        self.presence = "falkordb"
 
     def bump(self, source: str, group: str, counter: str, amount: int = 1) -> None:
         bucket = self.sources.setdefault(source, {}).setdefault(group, {name: 0 for name in COUNTERS})
@@ -148,6 +320,12 @@ class Report:
     def fail(self, *, source: str, source_id: str, group: str, error: str) -> None:
         self.bump(source, group, "failed")
         self.failures.append({"source": source, "source_id": source_id, "group": group, "error": error[:300]})
+
+    def fail_source(self, source: str, error: str) -> None:
+        """A corpus source that could not be read at all; the run continues."""
+        self.source_errors[source] = error[:300]
+        self.bump(source, "source", "failed")
+        self.failures.append({"source": source, "source_id": "*", "group": "source", "error": error[:300]})
 
     def _totals(self, groups: dict[str, dict[str, int]]) -> dict[str, int]:
         totals = {name: 0 for name in COUNTERS}
@@ -167,6 +345,7 @@ class Report:
             sources[source] = {
                 "totals": totals,
                 "duplicate_rate": round(totals["duplicate"] / attempted, 4) if attempted else 0.0,
+                "error": self.source_errors.get(source, ""),
                 "groups": dict(sorted(groups.items())),
             }
         attempted = overall["queued"] + overall["duplicate"]
@@ -176,6 +355,7 @@ class Report:
             "elapsed_seconds": round(elapsed, 1),
             "batch": config.batch,
             "verify_timeout_seconds": config.verify_timeout,
+            "presence": self.presence,
             "dry_run": config.dry_run,
             "totals": overall,
             "duplicate_rate": round(overall["duplicate"] / attempted, 4) if attempted else 0.0,
@@ -198,6 +378,7 @@ class IngestRunner:
         backend: GraphitiBackend | None = None,
         call_tool_fn=call_tool,
         state: IngestState | None = None,
+        index: GraphIndex | None = None,
         sleep=asyncio.sleep,
         clock=time.monotonic,
     ) -> None:
@@ -205,9 +386,11 @@ class IngestRunner:
         self.backend = backend or GraphitiBackend(config.graphiti_url, timeout=60.0)
         self.call_tool_fn = call_tool_fn
         self.state = state or IngestState(config.resolved_state_path)
+        self.index = index or GraphIndex(config.redis_url)
         self.sleep = sleep
         self.clock = clock
         self.report = Report()
+        self._fallback_groups: set[str] = set()
 
     def _log(self, message: str) -> None:
         print(f"[ingest] {message}", file=sys.stderr)
@@ -245,6 +428,9 @@ class IngestRunner:
             raise IngestError(f"memory wrapper refused the preflight: {result.text.strip()[:300]}")
 
     async def _write(self, entry: BatchEntry) -> str:
+        arguments: dict[str, object] = {"content": entry.content}
+        if entry.episode.tags:
+            arguments["tags"] = list(entry.episode.tags)
         result: ToolResult = await self.call_tool_fn(
             self._config_for(
                 group=entry.episode.group,
@@ -252,118 +438,190 @@ class IngestRunner:
                 source_id=entry.episode.source_id,
             ),
             "memory_write",
-            {"content": entry.content},
+            arguments,
         )
         if result.is_error:
             raise IngestError(result.text.strip() or "memory_write failed")
         return _episode_status(result.text)
 
-    async def _tombstone(self, entry: BatchEntry, *, reason: str = REPAIR_REASON) -> None:
+    async def _tombstone(self, group: str, ref: str, *, reason: str) -> None:
         result = await self.call_tool_fn(
-            self._config_for(group=entry.episode.group),
+            self._config_for(group=group),
             "memory_tombstone",
-            {"ref": entry.uuid, "reason": reason},
+            {"ref": ref, "reason": reason},
         )
         if result.is_error:
             raise IngestError(result.text.strip() or "memory_tombstone failed")
 
-    async def _fetch_episodes(self, group: str, minimum: int) -> list[dict[str, object]]:
-        """Read at least `minimum` recent episodes, growing to MAX_FETCH."""
-        page = max(50, minimum)
+    async def _tombstone_entry(self, entry: BatchEntry, *, reason: str) -> bool:
+        """Tombstone the wrapper's index row for this entry; False when absent."""
+        return await self._tombstone_index(entry.episode.group, entry.uuid, reason=reason)
+
+    async def _tombstone_index(self, group: str, ref: str, *, reason: str) -> bool:
+        try:
+            await self._tombstone(group, ref, reason=reason)
+        except (IngestError, UpstreamError) as exc:
+            if "no stored episode" in str(exc):
+                return False
+            raise
+        return True
+
+    async def _fetch_episodes(self, group: str) -> list[dict[str, object]]:
+        """Fallback only: a window-limited read through Graphiti's MCP server."""
+        page = FALLBACK_FETCH
         while True:
             episodes = await self.backend.get_episodes([group], page)
             if len(episodes) < page or page >= MAX_FETCH:
                 return episodes
             page = min(MAX_FETCH, page * 2)
 
-    async def _reconcile(self, queue: list[BatchEntry]) -> None:
-        """Tombstone planned rows that never reached the graph before writing.
+    async def _presence(self, group: str) -> tuple[set[Provenance], str] | None:
+        """Presence tokens for one group, or None when neither read is available.
 
-        A queued write that Graphiti dropped leaves the wrapper index row
-        `active`. A plain re-run then gets `Duplicate memory` for it and waits
-        out the whole verification window before repairing. One pass over
-        `get_episodes` per group finds those rows up front, so the write is a
-        real queue instead of a duplicate, and the repair path stays a fallback.
+        The FalkorDB query is exact; `get_episodes` is the documented fallback
+        (window-limited) and is reported so an operator knows the run was
+        approximate.
         """
+        descriptions = await asyncio.to_thread(self.index.descriptions, group)
+        if descriptions is not None:
+            return {parse_description(description) for description in descriptions}, "falkordb"
+        if group not in self._fallback_groups:
+            self._fallback_groups.add(group)
+            self._log(f"presence {group}: FalkorDB {self.index.url} unavailable; falling back to get_episodes (window-limited)")
+        self.report.presence = "get_episodes"
+        try:
+            episodes = await self._fetch_episodes(group)
+        except BackendError as exc:
+            self._log(f"presence {group}: {exc}")
+            return None
+        return {
+            parse_description(str(episode.get("source_description") or episode.get("sourceDescription") or ""))
+            for episode in episodes
+        }, "get_episodes"
+
+    @staticmethod
+    def _present(entry: BatchEntry, provenance: set[Provenance]) -> bool:
+        return any(
+            matches(
+                candidate,
+                uid=entry.uuid,
+                digest=entry.digest,
+                source=entry.episode.source,
+                source_id=entry.episode.source_id,
+            )
+            for candidate in provenance
+        )
+
+    async def _reconcile(self, queue: list[BatchEntry]) -> list[BatchEntry]:
+        """Adopt or revive rows a previous run attempted; never audit a first run.
+
+        For every group independently: an episode the graph already holds is
+        adopted (the wrapper row is marked verified instead of re-queued), and
+        an absent one gets its index row tombstoned so the new write is a queue
+        rather than a duplicate. Groups that cannot be read leave their entries
+        unwritten instead of risking a second graph episode.
+        """
+        attempted = [entry for entry in queue if entry.prior_attempt]
+        if not attempted:
+            if queue:
+                self._log("reconcile: nothing attempted before; skipping (first run)")
+            return queue
+
+        decisions: dict[str, str] = {}
         by_group: dict[str, list[BatchEntry]] = {}
-        for entry in queue:
+        for entry in attempted:
             by_group.setdefault(entry.episode.group, []).append(entry)
 
-        present_source_ids: set[tuple[str, str]] = set()
-        present_ids: set[str] = set()
-        present_hashes: set[str] = set()
         for group, entries in by_group.items():
-            try:
-                episodes = await self._fetch_episodes(group, 2 * len(entries))
-            except BackendError as exc:
-                # Verification still protects the run; a reconcile failure must
-                # not block writes that were never attempted before.
-                self._log(f"reconcile {group}: {exc}; skipping pre-verification")
-                return
-            for episode in episodes:
-                description = str(
-                    episode.get("source_description") or episode.get("sourceDescription") or ""
-                )
-                present_ids.update(_ID_TOKEN.findall(description))
-                present_hashes.update(_HASH_TOKEN.findall(description))
-                tokens = _provenance(description)
-                if tokens.get("source") and tokens.get("source_id"):
-                    present_source_ids.add((tokens["source"], tokens["source_id"]))
-
-        missing = [
-            entry
-            for entry in queue
-            if entry.uuid not in present_ids
-            and entry.digest not in present_hashes
-            and (entry.episode.source, entry.episode.source_id) not in present_source_ids
-        ]
-        if not missing:
-            return
-        self._log(f"reconcile: {len(missing)} planned episode(s) absent from the graph")
-        for entry in missing:
-            try:
-                await self._tombstone(entry, reason=RECONCILE_REASON)
-            except (IngestError, UpstreamError) as exc:
-                # No index row means nothing to revive; the write is fresh.
-                if "no stored episode" not in str(exc):
+            presence = await self._presence(group)
+            for entry in entries:
+                # A changed hash is a new version of the same plan entry. Its
+                # content differs from anything already queued, so writing it
+                # cannot duplicate an episode; the previous index row is marked
+                # superseded (the graph episode remains by design).
+                current = self.state.entry(group, entry.episode.source, entry.episode.source_id) or {}
+                previous_digest = str(current.get("hash") or "")
+                if previous_digest and previous_digest != entry.digest:
+                    previous_uuid = str(current.get("uuid") or "")
+                    if previous_uuid:
+                        try:
+                            if await self._tombstone_index(group, previous_uuid, reason=SUPERSEDE_REASON):
+                                self.report.bump(entry.episode.source, group, "superseded")
+                        except (IngestError, UpstreamError) as exc:
+                            self._log(f"supersede {entry.episode.source_id}: {exc}")
+                    decisions[entry.uuid] = "write"
+                    continue
+                if presence is None:
+                    decisions[entry.uuid] = "unknown"
+                    continue
+                provenance, _backend = presence
+                if self._present(entry, provenance):
+                    decisions[entry.uuid] = "adopted"
+                    continue
+                try:
+                    await self._tombstone_entry(entry, reason=RECONCILE_REASON)
+                except (IngestError, UpstreamError) as exc:
                     self._log(f"reconcile {entry.episode.source_id}: {exc}")
+                    decisions[entry.uuid] = "unknown"
+                    continue
+                self.report.bump(entry.episode.source, entry.episode.group, "reconciled")
+                decisions[entry.uuid] = "write"
+                if self.config.verbose:
+                    self._log(f"reconciled {entry.episode.source} {entry.episode.source_id}")
+
+        remaining: list[BatchEntry] = []
+        for entry in queue:
+            decision = decisions.get(entry.uuid, "write")
+            if decision == "adopted":
+                self.report.bump(entry.episode.source, entry.episode.group, "adopted")
+                self.report.bump(entry.episode.source, entry.episode.group, "skipped")
+                self.state.mark_verified(
+                    group=entry.episode.group,
+                    source=entry.episode.source,
+                    source_id=entry.episode.source_id,
+                    digest=entry.digest,
+                    uid=entry.uuid,
+                )
+                if self.config.verbose:
+                    self._log(f"adopted {entry.episode.source} {entry.episode.source_id} (already in the graph)")
                 continue
-            self.report.bump(entry.episode.source, entry.episode.group, "reconciled")
-            if self.config.verbose:
-                self._log(f"reconciled {entry.episode.source} {entry.episode.source_id}")
+            if decision == "unknown":
+                self.report.fail(
+                    source=entry.episode.source,
+                    source_id=entry.episode.source_id,
+                    group=entry.episode.group,
+                    error=(
+                        "cannot prove the previously attempted episode is absent (FalkorDB and "
+                        "Graphiti are both unreadable); not rewritten"
+                    ),
+                )
+                continue
+            remaining.append(entry)
+        self.state.save()
+        return remaining
 
     async def _verify(self, entries: list[BatchEntry], *, timeout: float) -> tuple[set[str], set[str]]:
-        """Poll raw Graphiti until every uuid/hash appears, or the deadline passes."""
-        wanted: dict[str, tuple[str, str]] = {entry.uuid: (entry.episode.group, entry.digest) for entry in entries}
-        by_group: dict[str, list[tuple[str, str]]] = {}
-        for uid, (group, digest) in wanted.items():
-            by_group.setdefault(group, []).append((uid, digest))
-        fetch = {group: max(50, 2 * len(items)) for group, items in by_group.items()}
+        """Poll presence until every identity appears, or the grace period ends."""
+        wanted = {entry.uuid: entry for entry in entries}
+        by_group: dict[str, list[BatchEntry]] = {}
+        for entry in entries:
+            by_group.setdefault(entry.episode.group, []).append(entry)
         found: set[str] = set()
         deadline = self.clock() + timeout
 
         while True:
-            for group, items in by_group.items():
-                if all(uid in found for uid, _digest in items):
+            for group, group_entries in by_group.items():
+                if all(entry.uuid in found for entry in group_entries):
                     continue
-                try:
-                    episodes = await self.backend.get_episodes([group], fetch[group])
-                except BackendError as exc:
-                    self._log(f"verify {group}: {exc}")
-                    episodes = []
-                if len(episodes) >= fetch[group] and fetch[group] < MAX_FETCH:
-                    fetch[group] = min(MAX_FETCH, fetch[group] * 2)
-                for episode in episodes:
-                    description = str(
-                        episode.get("source_description") or episode.get("sourceDescription") or ""
-                    )
-                    ids = set(_ID_TOKEN.findall(description))
-                    hashes = set(_HASH_TOKEN.findall(description))
-                    for uid, digest in items:
-                        if uid in ids or digest in hashes:
-                            found.add(uid)
-            pending = set(wanted) - found
-            if not pending:
+                presence = await self._presence(group)
+                if presence is None:
+                    continue
+                provenance, _backend = presence
+                for entry in group_entries:
+                    if self._present(entry, provenance):
+                        found.add(entry.uuid)
+            missing = set(wanted) - found
+            if not missing:
                 break
             remaining = deadline - self.clock()
             if remaining <= 0:
@@ -371,18 +629,98 @@ class IngestRunner:
             await self.sleep(min(self.config.poll_seconds, remaining))
         return found, set(wanted) - found
 
+    def _mark_verified(self, entry: BatchEntry) -> None:
+        self.report.bump(entry.episode.source, entry.episode.group, "verified")
+        self.state.mark_verified(
+            group=entry.episode.group,
+            source=entry.episode.source,
+            source_id=entry.episode.source_id,
+            digest=entry.digest,
+            uid=entry.uuid,
+        )
+
+    def _mark_failed(self, entry: BatchEntry, error: str) -> None:
+        self.report.fail(
+            source=entry.episode.source,
+            source_id=entry.episode.source_id,
+            group=entry.episode.group,
+            error=error,
+        )
+        self.state.mark_failed(
+            group=entry.episode.group,
+            source=entry.episode.source,
+            source_id=entry.episode.source_id,
+            digest=entry.digest,
+            uid=entry.uuid,
+            error=error,
+        )
+
+    async def _repair(self, entry: BatchEntry, timeout: float) -> bool:
+        """Rewrite one absent, previously attempted entry after an exact re-check.
+
+        Returns True when the entry was handled (adopted or rewritten), False
+        when it stays failed. The presence check is repeated immediately before
+        the tombstone: Graphiti extracts asynchronously, so an episode that was
+        merely in flight at the grace deadline can land at any moment, and
+        rewriting it is exactly how a duplicate is created.
+        """
+        if not self.config.repair:
+            return False
+        if not entry.prior_attempt:
+            self._log(f"repair {entry.episode.source_id}: no earlier attempt in the state; refusing to rewrite")
+            return False
+        presence = await self._presence(entry.episode.group)
+        if presence is None or presence[1] != "falkordb":
+            self._log(f"repair {entry.episode.source_id}: FalkorDB unavailable; refusing an approximate repair")
+            return False
+        provenance, _backend = presence
+        if self._present(entry, provenance):
+            self._log(f"repair {entry.episode.source_id}: the episode landed during the grace; not rewriting")
+            self._mark_verified(entry)
+            self.report.bump(entry.episode.source, entry.episode.group, "adopted")
+            return True
+        try:
+            await self._tombstone_entry(entry, reason=REPAIR_REASON)
+            self.state.mark_attempted(
+                group=entry.episode.group,
+                source=entry.episode.source,
+                source_id=entry.episode.source_id,
+                digest=entry.digest,
+                uid=entry.uuid,
+            )
+            self.state.save()
+            status = await self._write(entry)
+        except (IngestError, UpstreamError) as exc:
+            self._mark_failed(entry, f"repair failed: {exc}")
+            return True
+        if status != "queued":
+            self._log(f"repair rewritten as {status} for {entry.episode.source_id}")
+        found, _missing = await self._verify([entry], timeout=timeout)
+        if entry.uuid in found:
+            self.report.bump(entry.episode.source, entry.episode.group, "repaired")
+            self._mark_verified(entry)
+        else:
+            self._mark_failed(
+                entry,
+                "episode is still absent from FalkorDB after one repair; not rewritten again",
+            )
+        return True
+
     async def _process_batch(self, batch: list[BatchEntry]) -> None:
         written: list[BatchEntry] = []
         for entry in batch:
+            self.state.mark_attempted(
+                group=entry.episode.group,
+                source=entry.episode.source,
+                source_id=entry.episode.source_id,
+                digest=entry.digest,
+                uid=entry.uuid,
+            )
+            self.state.save()
             try:
                 status = await self._write(entry)
             except (IngestError, UpstreamError) as exc:
-                self.report.fail(
-                    source=entry.episode.source,
-                    source_id=entry.episode.source_id,
-                    group=entry.episode.group,
-                    error=str(exc),
-                )
+                self._mark_failed(entry, str(exc))
                 self._log(f"write failed {entry.episode.source_id}: {exc}")
                 continue
             self.report.bump(entry.episode.source, entry.episode.group, status)
@@ -390,87 +728,66 @@ class IngestRunner:
             if self.config.verbose:
                 self._log(f"{status} {entry.episode.source} {entry.episode.source_id} -> {entry.episode.group}")
         if not written:
+            self.state.save()
             return
 
         found, missing = await self._verify(written, timeout=self.config.verify_timeout)
         for entry in written:
             if entry.uuid in found:
-                self.report.bump(entry.episode.source, entry.episode.group, "verified")
-                self.state.mark(
-                    source=entry.episode.source,
-                    source_id=entry.episode.source_id,
-                    group=entry.episode.group,
-                    digest=entry.digest,
-                    uid=entry.uuid,
+                self._mark_verified(entry)
+
+        repair_set = [entry for entry in written if entry.uuid in missing]
+        if repair_set:
+            self._log(
+                f"verification missed {len(repair_set)} episode(s) after the "
+                f"{self.config.verify_timeout:g}s grace"
+            )
+            for entry in repair_set:
+                if self.config.repair:
+                    handled = await self._repair(entry, self.config.verify_timeout)
+                    if handled:
+                        continue
+                self._mark_failed(
+                    entry,
+                    (
+                        "absent from the graph after the grace period; the index row was left in place "
+                        "so a re-run reconciles it (use --repair to rewrite it once, or "
+                        "--force --reset-state to start over)"
+                    ),
                 )
-        if missing:
-            repaired = [entry for entry in written if entry.uuid in missing]
-            self._log(f"verification missed {len(repaired)} episode(s); repairing once")
-            retry: list[BatchEntry] = []
-            for entry in repaired:
-                try:
-                    await self._tombstone(entry)
-                    status = await self._write(entry)
-                except (IngestError, UpstreamError) as exc:
-                    self.report.fail(
-                        source=entry.episode.source,
-                        source_id=entry.episode.source_id,
-                        group=entry.episode.group,
-                        error=f"repair failed: {exc}",
-                    )
-                    continue
-                if status != "queued":
-                    self._log(f"repair rewritten as {status} for {entry.episode.source_id}")
-                retry.append(entry)
-            if retry:
-                found_after, still_missing = await self._verify(retry, timeout=self.config.verify_timeout)
-                for entry in retry:
-                    if entry.uuid in found_after:
-                        self.report.bump(entry.episode.source, entry.episode.group, "repaired")
-                        self.report.bump(entry.episode.source, entry.episode.group, "verified")
-                        self.state.mark(
-                            source=entry.episode.source,
-                            source_id=entry.episode.source_id,
-                            group=entry.episode.group,
-                            digest=entry.digest,
-                            uid=entry.uuid,
-                        )
-                    else:
-                        self.report.fail(
-                            source=entry.episode.source,
-                            source_id=entry.episode.source_id,
-                            group=entry.episode.group,
-                            error="episode is still missing from Graphiti after one repair",
-                        )
         self.state.save()
 
     def _print_plan(self, plans: list[Plan], queue: list[BatchEntry], skipped_verified: int) -> None:
-        print("ingest plan (dry run)")
+        stream = sys.stderr if self.config.json_output else sys.stdout
+        print("ingest plan (dry run)", file=stream)
         for plan in plans:
             groups: dict[str, list[str]] = {}
             for episode in plan.episodes:
                 groups.setdefault(episode.group, []).append(episode.source_id)
             total = sum(len(ids) for ids in groups.values())
-            print(f"\n{plan.source}: {total} built, {len(plan.skipped)} skipped across {len(groups)} groups")
+            print(
+                f"\n{plan.source}: {total} built, {len(plan.skipped)} skipped across {len(groups)} groups",
+                file=stream,
+            )
             for group, ids in sorted(groups.items()):
-                print(f"  {group}: {len(ids)}")
-                print(f"    sample: {', '.join(ids[:4])}")
-        print(f"\nqueued for write: {len(queue)} (already verified: {skipped_verified})")
+                print(f"  {group}: {len(ids)}", file=stream)
+                print(f"    sample: {', '.join(ids[:4])}", file=stream)
+            if plan.warnings:
+                for warning in plan.warnings:
+                    print(f"  warning: {warning}", file=stream)
+        print(f"\nqueued for write: {len(queue)} (already verified: {skipped_verified})", file=stream)
 
-    async def run(self, plans: list[Plan]) -> dict[str, object]:
-        started_at = utcnow()
-        started = self.clock()
-        if not self.config.dry_run:
-            await self._check_services()
-
+    def _build_queue(self, plans: list[Plan]) -> tuple[list[BatchEntry], int]:
         queue: list[BatchEntry] = []
-        seen: set[tuple[str, str]] = set()
+        seen: set[tuple[str, str, str]] = set()
         already_verified = 0
         for plan in plans:
             for skip in plan.skipped:
                 self.report.bump(skip.source, "unassigned", "skipped")
                 if self.config.verbose:
                     self._log(f"skipped {skip.source} {skip.source_id}: {skip.reason}")
+            for warning in plan.warnings:
+                self._log(f"warning: {warning}")
             for episode in plan.episodes:
                 self.report.bump(episode.source, episode.group, "built")
                 try:
@@ -479,11 +796,11 @@ class IngestRunner:
                     self.report.bump(episode.source, episode.group, "skipped")
                     continue
                 digest = content_hash(normalized)
-                if self.state.is_verified(episode.source, episode.source_id, digest):
+                if self.state.is_verified(episode.group, episode.source, episode.source_id, digest):
                     already_verified += 1
                     self.report.bump(episode.source, episode.group, "skipped")
                     continue
-                identity = (episode.source, episode.source_id)
+                identity = (episode.group, episode.source, episode.source_id)
                 if identity in seen:
                     self.report.bump(episode.source, episode.group, "skipped")
                     if self.config.verbose:
@@ -496,40 +813,76 @@ class IngestRunner:
                         digest=digest,
                         uuid=episode_uuid(episode.group, digest),
                         content=normalized,
+                        prior_attempt=self.state.was_attempted(
+                            episode.group, episode.source, episode.source_id
+                        ),
                     )
                 )
+        return queue, already_verified
 
-        for plan in plans:
-            groups = {episode.group for episode in plan.episodes}
-            self._log(f"{plan.source}: {len(plan.episodes)} built, {len(plan.skipped)} skipped, {len(groups)} groups")
+    async def run(self, plans: list[Plan], *, source_errors: dict[str, str] | None = None) -> dict[str, object]:
+        started_at = utcnow()
+        started = self.clock()
+        if self.config.force and not self.config.reset_state:
+            raise IngestError("--force requires --reset-state: a reset is the only way to re-attempt verified entries")
+        if self.config.reset_state and not self.config.force:
+            raise IngestError("--reset-state requires --force: it archives the state and re-attempts every entry")
+        if not self.config.dry_run:
+            await self._check_services()
+
+        for source, error in (source_errors or {}).items():
+            self.report.fail_source(source, error)
 
         if self.config.dry_run:
+            queue, already_verified = self._build_queue(plans)
+            for plan in plans:
+                groups = {episode.group for episode in plan.episodes}
+                self._log(
+                    f"{plan.source}: {len(plan.episodes)} built, {len(plan.skipped)} skipped, {len(groups)} groups"
+                )
             self._print_plan(plans, queue, already_verified)
+            return self.report.to_dict(
+                started_at=started_at, elapsed=self.clock() - started, config=self.config
+            )
+
+        with self.state.lock():
+            if self.config.reset_state:
+                backup = self.state.reset()
+                self._log(
+                    f"state reset: archived {backup}" if backup else "state reset: no state file to archive"
+                )
+            queue, already_verified = self._build_queue(plans)
+            for plan in plans:
+                groups = {episode.group for episode in plan.episodes}
+                self._log(
+                    f"{plan.source}: {len(plan.episodes)} built, {len(plan.skipped)} skipped, {len(groups)} groups"
+                )
+
+            queue = await self._reconcile(queue)
+
+            batch_size = max(1, self.config.batch)
+            for offset in range(0, len(queue), batch_size):
+                batch = queue[offset : offset + batch_size]
+                self._log(f"batch {offset // batch_size + 1}: writing {len(batch)} episode(s)")
+                await self._process_batch(batch)
+
             report = self.report.to_dict(
                 started_at=started_at, elapsed=self.clock() - started, config=self.config
             )
+            path = self.config.resolved_report_path
+            _atomic_write(path, json.dumps(report, indent=2, sort_keys=True) + "\n")
+            self._log(f"report: {path}")
+            totals = report["totals"]
+            self._log(
+                "done: "
+                + ", ".join(f"{name}={totals[name]}" for name in COUNTERS)
+                + f", duplicate_rate={report['duplicate_rate']}, presence={report['presence']}"
+            )
             return report
 
-        await self._reconcile(queue)
 
-        for offset in range(0, len(queue), self.config.batch):
-            batch = queue[offset : offset + self.config.batch]
-            self._log(f"batch {offset // self.config.batch + 1}: writing {len(batch)} episode(s)")
-            await self._process_batch(batch)
-
-        report = self.report.to_dict(started_at=started_at, elapsed=self.clock() - started, config=self.config)
-        path = self.config.resolved_report_path
-        _atomic_write(path, json.dumps(report, indent=2, sort_keys=True) + "\n")
-        self._log(f"report: {path}")
-        totals = report["totals"]
-        self._log(
-            "done: "
-            + ", ".join(f"{name}={totals[name]}" for name in COUNTERS)
-            + f", duplicate_rate={report['duplicate_rate']}"
-        )
-        return report
-
-
-async def run_plans(plans: list[Plan], config: RunnerConfig, **kwargs) -> dict[str, object]:
+async def run_plans(
+    plans: list[Plan], config: RunnerConfig, *, source_errors: dict[str, str] | None = None, **kwargs
+) -> dict[str, object]:
     runner = IngestRunner(config, **kwargs)
-    return await runner.run(plans)
+    return await runner.run(plans, source_errors=source_errors)

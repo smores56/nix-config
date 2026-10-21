@@ -1,8 +1,12 @@
+import contextlib
+import io
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "modules/features/ai/memory/src"))
 
@@ -87,17 +91,17 @@ class SdlcGroupTests(unittest.TestCase):
             101: issue(101, body="Part of #100."),
             102: issue(102, body="Part of #101."),
         }
-        self.assertEqual(sources.resolve_group(102, issues)[0], "smores56--kanbei")
-        self.assertEqual(sources.resolve_group(101, issues)[0], "smores56--kanbei")
+        self.assertEqual(sources.resolve_groups(102, issues)[0][0], "smores56--kanbei")
+        self.assertEqual(sources.resolve_groups(101, issues)[0][0], "smores56--kanbei")
 
     def test_unlabeled_issue_falls_back_to_the_sdlc_group(self):
         issues = {1: issue(1, body="Just work.")}
-        self.assertEqual(sources.resolve_group(1, issues)[0], "smores56--sdlc")
+        self.assertEqual(sources.resolve_groups(1, issues)[0][0], "smores56--sdlc")
 
     def test_cycle_and_missing_parent_fall_back(self):
         issues = {1: issue(1, body="Part of #2."), 2: issue(2, body="Part of #1.")}
-        self.assertEqual(sources.resolve_group(1, issues)[0], "smores56--sdlc")
-        self.assertEqual(sources.resolve_group(9, issues)[0], "smores56--sdlc")
+        self.assertEqual(sources.resolve_groups(1, issues)[0][0], "smores56--sdlc")
+        self.assertEqual(sources.resolve_groups(9, issues)[0][0], "smores56--sdlc")
 
 
 class SdlcEpisodeTests(unittest.TestCase):
@@ -143,14 +147,41 @@ class SdlcEpisodeTests(unittest.TestCase):
         self.assertEqual(plan.episodes, [])
         self.assertEqual(plan.skipped[0].reason, "repo label 'blitzy-ai' belongs to the employer")
 
-    def test_task_with_only_a_part_of_body_builds_nothing(self):
+    def test_short_and_empty_bodies_still_become_one_episode(self):
         issues = [
             issue(5, title="Feature", labels=["repo:nix-config"], body=""),
             issue(6, title="Task", body="Part of #5."),
         ]
         plan = sources.sdlc_plan(issues)
-        self.assertEqual(plan.episodes, [])
-        self.assertEqual(len(plan.skipped), 2)
+        ids = [episode.source_id for episode in plan.episodes]
+        self.assertEqual(ids, ["issue-5#body", "issue-6#body"])
+        self.assertEqual(plan.episodes[0].content, "[smores56/sdlc#5] Feature")
+        self.assertEqual(plan.episodes[1].content, "[smores56/sdlc#6] Task")
+        self.assertEqual(plan.episodes[1].group, "smores56--nix-config")
+        self.assertEqual(plan.skipped, [])
+
+    def test_a_short_non_pointer_body_is_kept_under_the_title(self):
+        issues = [issue(7, title="Task", labels=["repo:nix-config"], body="Fix the login button.")]
+        plan = sources.sdlc_plan(issues)
+        self.assertEqual(len(plan.episodes), 1)
+        self.assertEqual(plan.episodes[0].content, "[smores56/sdlc#7] Task\n\nFix the login button.")
+
+    def test_multiple_repo_labels_write_to_every_group(self):
+        issues = [
+            issue(8, title="Both", labels=["repo:nix-config", "repo:kanbei"], body="## Design\n\n" + "x" * 120)
+        ]
+        plan = sources.sdlc_plan(issues)
+        groups = sorted(episode.group for episode in plan.episodes)
+        self.assertEqual(groups, ["smores56--kanbei", "smores56--nix-config"])
+        self.assertEqual(plan.skipped, [])
+
+    def test_a_work_label_is_reported_without_dropping_the_personal_one(self):
+        issues = [
+            issue(9, title="Mixed", labels=["repo:blitzy-ai", "repo:nix-config"], body="## Design\n\n" + "x" * 120)
+        ]
+        plan = sources.sdlc_plan(issues)
+        self.assertEqual([episode.group for episode in plan.episodes], ["smores56--nix-config"])
+        self.assertEqual(plan.skipped[0].reason, "repo label 'blitzy-ai' belongs to the employer")
 
     def test_limit_caps_each_source(self):
         issues = [issue(1, labels=["repo:nix-config"], body="## A\n\n" + "a" * 120 + "\n\n## B\n\n" + "b" * 120)]
@@ -175,6 +206,41 @@ class NotesTests(unittest.TestCase):
         with self.assertRaises(sources.SourceError):
             sources.notes_plan("/nonexistent/notes")
 
+    def test_nested_notes_are_walked_recursively(self):
+        with tempfile.TemporaryDirectory() as directory:
+            nested = Path(directory, "reading", "2026")
+            nested.mkdir(parents=True)
+            Path(nested, "dragons.md").write_text("# Dragons\n\n## Intro\n\n" + "d" * 120)
+            plan = sources.notes_plan(directory)
+        self.assertEqual(plan.episodes[0].source_id, "note:reading/2026/dragons.md#intro")
+
+    def test_oversize_notes_are_recorded_as_skips(self):
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "big.md").write_text("x" * (sources.MAX_DOC_BYTES + 1))
+            Path(directory, "ok.md").write_text("## Real\n\n" + "o" * 120)
+            plan = sources.notes_plan(directory)
+        skipped = {skip.source_id: skip.reason for skip in plan.skipped}
+        self.assertIn("exceeds 200 KB", skipped["note:big.md#body"])
+        self.assertEqual([episode.source_id for episode in plan.episodes], ["note:ok.md#real"])
+
+    def test_a_note_symlink_outside_the_root_is_skipped(self):
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside:
+            secret = Path(outside, "secret.md")
+            secret.write_text("## Secret\n\n" + "s" * 120)
+            Path(directory, "notes.md").symlink_to(secret)
+            Path(directory, "real.md").write_text("## Real\n\n" + "r" * 120)
+            plan = sources.notes_plan(directory)
+        self.assertEqual([episode.source_id for episode in plan.episodes], ["note:real.md#real"])
+        self.assertIn("outside the notes directory", plan.skipped[0].reason)
+
+    def test_a_broken_note_symlink_is_an_unreadable_skip(self):
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "gone.md").symlink_to(Path(directory, "missing.md"))
+            Path(directory, "real.md").write_text("## Real\n\n" + "r" * 120)
+            plan = sources.notes_plan(directory)
+        self.assertEqual([episode.source_id for episode in plan.episodes], ["note:real.md#real"])
+        self.assertIn("unreadable", plan.skipped[0].reason)
+
 
 class RepoFilterTests(unittest.TestCase):
     def test_repo_and_repo_list_merge(self):
@@ -194,55 +260,57 @@ class DocsTests(unittest.TestCase):
         (repo / ".git").mkdir(parents=True)
         return repo
 
-    def test_local_docs_are_sectioned_and_filtered(self):
-        with tempfile.TemporaryDirectory() as directory:
-            repo = self.make_repo(directory, "nix-config")
-            (repo / "README.md").write_text("# nix-config\n\n## Install\n\n" + "i" * 120)
-            (repo / "AGENTS.md").write_text("# Guide\n\n" + "g" * 120)
-            (repo / "docs").mkdir()
-            (repo / "docs" / "note.md").write_text("## Note\n\n" + "n" * 120)
-            (repo / "docs" / "big.md").write_text("x" * (sources.MAX_DOC_BYTES + 1))
-            (repo / ".worktrees").mkdir()
-            (repo / ".worktrees" / "skip.md").write_text("## Skip\n\n" + "s" * 120)
-            plan = sources.docs_plan(
-                directory,
-                repos={"nix-config"},
-                list_repos=lambda: [],
-                read_readme=lambda _repo: None,
+    def make_git_repo(self, root, name, *, remotes=()):
+        repo = Path(root, name)
+        repo.mkdir(parents=True)
+        subprocess.run(["git", "init", "-q", str(repo)], check=True, capture_output=True)
+        for remote_name, url in remotes:
+            subprocess.run(
+                ["git", "-C", str(repo), "remote", "add", remote_name, url], check=True, capture_output=True
             )
-        ids = {episode.source_id for episode in plan.episodes}
-        self.assertIn("repo:nix-config:README.md#install", ids)
-        self.assertIn("repo:nix-config:AGENTS.md#body", ids)
-        self.assertIn("repo:nix-config:docs/note.md#note", ids)
-        self.assertFalse(any("skip.md" in source_id for source_id in ids))
-        self.assertFalse(any("big.md" in source_id for source_id in ids))
-        self.assertTrue(all(episode.group == "smores56--nix-config" for episode in plan.episodes))
+        return repo
 
-    def test_remote_readmes_fill_in_uncloned_and_skip_archived_forks(self):
-        calls = []
-
-        def readme(repo):
-            calls.append(repo)
-            return "# " + repo + "\n\n" + "r" * 120 if repo else None
-
+    def test_a_personal_fork_of_a_work_repo_is_refused(self):
         with tempfile.TemporaryDirectory() as directory:
-            self.make_repo(directory, "sdlc")
-            plan = sources.docs_plan(
+            repo = self.make_git_repo(
                 directory,
-                repos=None,
-                list_repos=lambda: [
-                    {"name": "kanbei", "isArchived": False, "isFork": False},
-                    {"name": "old", "isArchived": True, "isFork": False},
-                    {"name": "fork", "isArchived": False, "isFork": True},
-                    {"name": "sdlc", "isArchived": False, "isFork": False},
+                "app",
+                remotes=[
+                    ("origin", "git@github.com:smores56/app.git"),
+                    ("upstream", "git@github.com:blitzy-ai/app.git"),
                 ],
-                read_readme=readme,
             )
-        self.assertEqual(calls, ["kanbei"])
-        ids = {episode.source_id for episode in plan.episodes}
-        self.assertIn("repo:kanbei:README.md#body", ids)
-        self.assertFalse(any(source_id.startswith("repo:old") for source_id in ids))
-        self.assertFalse(any(source_id.startswith("repo:fork") for source_id in ids))
+            (repo / "README.md").write_text("# App\n\n## Install\n\n" + "i" * 120)
+            plan = sources.docs_plan(
+                directory, repos=None, list_repos=lambda: [], read_readme=lambda _repo: None
+            )
+        self.assertEqual(plan.episodes, [])
+        self.assertEqual(plan.skipped[0].source_id, "repo:app")
+        self.assertIn("work repository", plan.skipped[0].reason)
+
+    def test_a_symlinked_clone_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside:
+            target = self.make_repo(outside, "real")
+            (target / "README.md").write_text("# Real\n\n## Install\n\n" + "i" * 120)
+            Path(directory, "linked").symlink_to(target, target_is_directory=True)
+            plan = sources.docs_plan(
+                directory, repos=None, list_repos=lambda: [], read_readme=lambda _repo: None
+            )
+        self.assertEqual(plan.episodes, [])
+        self.assertIn("outside the docs root", plan.skipped[0].reason)
+
+    def test_a_doc_symlink_outside_the_clone_is_skipped(self):
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside:
+            secret = Path(outside, "secret.md")
+            secret.write_text("# Secret\n\n## Hidden\n\n" + "s" * 120)
+            repo = self.make_git_repo(directory, "nix-config")
+            (repo / "README.md").symlink_to(secret)
+            (repo / "docs").mkdir()
+            (repo / "docs" / "linked.md").symlink_to(secret)
+            plan = sources.docs_plan(
+                directory, repos=None, list_repos=lambda: [], read_readme=lambda _repo: None
+            )
+        self.assertEqual(plan.episodes, [])
 
     def test_repo_filter_limits_both_local_and_remote(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -263,6 +331,47 @@ class FetchIssuesTests(unittest.TestCase):
         self.assertEqual(sources.fetch_issues(lambda _args: payload)[0]["number"], 1)
         with self.assertRaises(sources.SourceError):
             sources.fetch_issues(lambda _args: "{}")
+
+    def test_a_full_page_warns_about_truncation(self):
+        payload = json.dumps([{"number": number} for number in range(sources.ISSUE_LIMIT)])
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            issues = sources.fetch_issues(lambda _args: payload)
+        self.assertEqual(len(issues), sources.ISSUE_LIMIT)
+        self.assertIn("may be truncated", stderr.getvalue())
+
+    def test_a_full_repo_page_warns_about_truncation(self):
+        payload = [{"name": f"repo-{index}"} for index in range(sources.REPO_LIMIT)]
+        with mock.patch.object(sources, "gh_json", return_value=payload):
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                repos = sources.personal_repos()
+        self.assertEqual(len(repos), sources.REPO_LIMIT)
+        self.assertIn("may be truncated", stderr.getvalue())
+
+
+class ReadmeErrorTests(unittest.TestCase):
+    def test_a_404_means_no_readme(self):
+        error = sources.SourceError("gh api failed: gh: Not Found (HTTP 404)")
+        with mock.patch.object(sources, "gh_api", side_effect=error):
+            self.assertIsNone(sources.repo_readme("empty"))
+
+    def test_auth_and_network_errors_propagate(self):
+        for message in (
+            "gh api failed: HTTP 401: Bad credentials",
+            "gh api failed: HTTP 403: rate limit exceeded",
+            "dial tcp: no such host",
+        ):
+            with mock.patch.object(sources, "gh_api", side_effect=sources.SourceError(message)):
+                with self.assertRaises(sources.SourceError):
+                    sources.repo_readme("repo")
+
+    def test_docs_plan_propagates_readme_errors(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(sources.SourceError):
+                sources.docs_plan(
+                    directory,
+                    list_repos=lambda: [{"name": "kanbei", "isArchived": False, "isFork": False}],
+                    read_readme=lambda _repo: (_ for _ in ()).throw(sources.SourceError("HTTP 401")),
+                )
 
 
 if __name__ == "__main__":

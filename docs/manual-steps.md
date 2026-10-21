@@ -374,15 +374,21 @@ Graphiti reaches the chat model through `memory-llm-proxy` on
 completions. llama.cpp defaults to thinking and graphiti-core sends no
 per-request control, so extraction would generate reasoning until the token
 budget ran out and return empty content, which Graphiti drops. The proxy is
-loopback-only and never tunneled. Maki keeps using `ports.llm` (8081)
-directly; do not point it at 8082, and do not give the proxy a thinking mode.
+loopback-only and never tunneled; its port lives in `modules/nixos/memory.nix`
+because no other module reads it. Maki keeps using `ports.llm` (8081) directly;
+do not point it at 8082, and do not give the proxy a thinking mode. The proxy's
+`/health` only proves the proxy process is alive (Graphiti's readiness probes
+it); check the chat model through the proxied `/v1/models`. Request bodies over
+10 MB are rejected and an upstream read stall is a 504.
 
 Personal machines run `cloudflared-memory`, which forwards loopback
 `ports.memoryMcp` and injects the Access service token. Maki's generated
 `~/.config/maki/mcp.toml` starts `memory-mcp-shim` (server `graphiti`) with
 `MEMORY_MCP_URL` and the work markers from `config.user.work` in its
 environment; the shim derives the project group from Maki's cwd and forwards to
-the wrapper. The same package installs the `memory` CLI.
+the wrapper. The same package installs the `memory` CLI, and the personal
+profile exports `MEMORY_PERSONAL_OWNER` from `config.user.githubUser` for its
+ingest defaults.
 
 Maki reads `mcp.toml` once at startup, and the shim derives the group once when
 Maki starts it. Restart Maki after changing `mcp.toml` and after moving to a
@@ -412,29 +418,59 @@ curl 127.0.0.1:8082/health
 cd ~/code/<repo> && memory status   # group, index counts, graph/model readiness
 ```
 
-**Corpus ingest.** `memory ingest all` (or `just memory-ingest`) reads the sdlc
-issue list through `gh`, the notes in `~/Documents`, and the personal clones in
-`~/code/github.com/smores56` plus remote READMEs. It must run on smortress: the
-raw Graphiti port (`127.0.0.1:8184`) is loopback-only, and verification and
-repair use it. A dry run prints the plan:
+**Corpus ingest.** Deploy the LLM proxy before ingesting: until
+`just switch smortress` runs, Graphiti still extracts through the thinking
+model and drops episodes. Then, on smortress:
 
 ```sh
-memory ingest all --dry-run
-memory ingest all --limit 5 --batch 1   # small sample first
+systemctl status memory-llm-proxy
+curl 127.0.0.1:8082/v1/models        # the chat model answers through the proxy
+redis-cli -p 6379 GRAPH.LIST         # group graphs (read-only peek)
+memory ingest all --dry-run          # plan only; writes nothing
+memory ingest all --limit 5 --dry-run
+memory ingest all --limit 5          # small live sample, then the full run
 ```
 
+`memory ingest all` (or `just memory-ingest` for the full corpus) reads the sdlc
+issue list through `gh`, the markdown files under `~/Documents` (recursively),
+and the personal clones in `~/code/github.com/<owner>` plus remote READMEs. It
+must run on smortress: the raw Graphiti port (`127.0.0.1:8184`) and FalkorDB
+(`127.0.0.1:6379`) are loopback-only, and verification, reconcile, and repair
+read them. Every source runs independently under `all`; a source that cannot be
+read is reported in `sources.<name>.error` and in `failures` (with
+`source_id: "*"`) instead of aborting the others.
+
 Each run writes `~/.local/state/memory/ingest-<timestamp>.json` (counts per
-source and group, duplicates, repairs, failures) and updates
+source and group, duplicates, adopted/superseded/reconciled/repairs, failures,
+and which presence backend was used) and updates
 `~/.local/state/memory/ingest-state.json`. To resume, run the same command
-again: verified `(source, source_id)` pairs are skipped, planned episodes that
-are missing from Graphiti are tombstoned in the wrapper index so the rewrite is
-not a duplicate, and the wrapper still dedupes by content hash. A re-run after
-an extraction outage therefore repairs the episodes that were queued while the
-model was failing. Inspect `failures` in the report; a persistent missing
-episode was tombstoned and rewritten once already. Extraction is one 27B chat
-call per episode, so a full corpus takes hours; keep the batch small (default 3)
-so Graphiti's in-memory queue does not drop work. For a long run, start it in a
-transient user unit:
+again:
+
+- Verified `(group, source, source_id)` entries are skipped. A source that
+  moved to another group (a task inheriting a different `repo:` label) writes
+  to the new group, and changed content supersedes the old index row (the old
+  graph episode remains by design).
+- Episodes a previous run attempted but the graph never received are
+  tombstoned in the wrapper index and rewritten, so the write is a queue rather
+  than a duplicate. On a first run there is nothing to reconcile, so no
+  tombstone or "no stored episode" audit row is produced.
+- Episodes that are still absent after the 600s grace are recorded as failed
+  and **not** rewritten: Graphiti extracts asynchronously, so a late in-flight
+  episode would otherwise be duplicated, and the wrapper has no graph-level
+  delete. Inspect `failures`, then either re-run (reconcile handles the row) or
+  pass `--repair`, which rewrites a previously attempted entry once, and only
+  after FalkorDB proves the exact `id=`/`hash=`/`source`+`source_id` is absent.
+  When FalkorDB is unreachable the run falls back to `get_episodes` (the report
+  says `presence: get_episodes`) and repairs are refused.
+- `--force --reset-state` archives the state file (`ingest-state.json.bak-*`)
+  and treats the run as a first run; both flags are required because a reset
+  re-attempts every planned episode. The state file is `flock`ed, so a second
+  ingest exits instead of interleaving writes.
+
+Extraction is one 27B chat call per episode, so a full corpus takes hours. The
+default is `--batch 1` with a 600s per-episode grace; keeping one write in
+flight is what stops Graphiti's in-memory queue from dropping work. For a long
+run, start it in a transient user unit:
 
 ```sh
 systemd-run --user --unit memory-ingest --collect --setenv=MEMORY_MCP_URL=http://127.0.0.1:8182/mcp \

@@ -132,6 +132,9 @@ class CliIngestTests(unittest.TestCase):
                 "2",
                 "--timeout",
                 "60",
+                "--repair",
+                "--force",
+                "--reset-state",
                 "--notes-dir",
                 "/notes",
                 "--docs-root",
@@ -144,6 +147,8 @@ class CliIngestTests(unittest.TestCase):
                 "/state.json",
                 "--report",
                 "/report.json",
+                "--redis-url",
+                "redis://127.0.0.1:6399",
                 "--verbose",
             ]
         )
@@ -151,19 +156,26 @@ class CliIngestTests(unittest.TestCase):
         self.assertEqual(args.source, "all")
         self.assertEqual(args.batch, 2)
         self.assertEqual(args.repo, ["kanbei"])
+        self.assertEqual(args.redis_url, "redis://127.0.0.1:6399")
+        self.assertTrue(args.repair and args.force and args.reset_state)
         self.assertTrue(args.dry_run and args.verbose)
 
-    def test_ingest_does_not_resolve_a_cwd_group(self):
-        seen = []
+    def test_ingest_defaults_are_conservative(self):
+        args = cli.build_parser().parse_args(["ingest", "sdlc"])
+        self.assertEqual(args.batch, 1)
+        self.assertEqual(args.timeout, 600.0)
+        self.assertFalse(args.repair)
+        self.assertIsNone(args.docs_root)
 
-        async def fake_ingest(args):
-            seen.append(args.source)
-            return {"failures": []}
+    def test_group_is_rejected_with_ingest(self):
+        async def fake_ingest(_args):
+            raise AssertionError("ingest must not run with --group")
 
-        with mock.patch.object(cli, "run_ingest", fake_ingest):
-            code = cli.main(["--group", "blitzy-work--repo", "ingest", "notes", "--dry-run"])
-        self.assertEqual(code, 0)
-        self.assertEqual(seen, ["notes"])
+        stderr = io.StringIO()
+        with mock.patch.object(cli, "run_ingest", fake_ingest), redirect_stderr(stderr):
+            code = cli.main(["--group", "global", "ingest", "notes", "--dry-run"])
+        self.assertEqual(code, 2)
+        self.assertIn("--group is not valid with ingest", stderr.getvalue())
 
     def test_ingest_failure_is_exit_one(self):
         from memory_mcp.ingest_runner import IngestError
@@ -176,6 +188,80 @@ class CliIngestTests(unittest.TestCase):
             code = cli.main(["ingest", "sdlc"])
         self.assertEqual(code, 1)
         self.assertIn("raw Graphiti", stderr.getvalue())
+
+    def test_json_dry_run_emits_only_json_to_stdout(self):
+        from memory_mcp.ingest_sources import Episode, Plan
+
+        plans = [
+            Plan(
+                source="notes",
+                episodes=[Episode(source="notes", source_id="note:a.md#body", group="global", content="a " * 40)],
+            )
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with (
+                mock.patch.object(cli, "build_plans", return_value=(plans, {})),
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+            ):
+                code = cli.main(
+                    [
+                        "--json",
+                        "ingest",
+                        "notes",
+                        "--dry-run",
+                        "--state",
+                        str(Path(directory, "state.json")),
+                        "--report",
+                        str(Path(directory, "report.json")),
+                    ]
+                )
+        self.assertEqual(code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["dry_run"])
+        self.assertEqual(payload["totals"]["built"], 1)
+        self.assertNotIn("ingest plan", stdout.getvalue())
+        self.assertIn("ingest plan (dry run)", stderr.getvalue())
+
+    def test_all_reports_a_failed_source_and_runs_the_rest(self):
+        from memory_mcp import ingest_sources
+        from memory_mcp.ingest_sources import Episode, Plan
+
+        def failing_issues():
+            raise ingest_sources.SourceError("gh is not installed")
+
+        notes = Plan(
+            source="notes",
+            episodes=[Episode(source="notes", source_id="note:a.md#body", group="global", content="a " * 40)],
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            stdout = io.StringIO()
+            with (
+                mock.patch.object(ingest_sources, "fetch_issues", failing_issues),
+                mock.patch.object(ingest_sources, "notes_plan", lambda _dir: notes),
+                mock.patch.object(ingest_sources, "docs_plan", lambda *_a, **_k: Plan(source="docs")),
+                redirect_stdout(stdout),
+                redirect_stderr(io.StringIO()),
+            ):
+                code = cli.main(
+                    [
+                        "--json",
+                        "ingest",
+                        "all",
+                        "--dry-run",
+                        "--state",
+                        str(Path(directory, "state.json")),
+                        "--report",
+                        str(Path(directory, "report.json")),
+                    ]
+                )
+        self.assertEqual(code, 1)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["sources"]["sdlc"]["error"], "gh is not installed")
+        self.assertEqual(payload["sources"]["notes"]["totals"]["built"], 1)
+        self.assertEqual(payload["failures"][0]["source_id"], "*")
 
 
 if __name__ == "__main__":

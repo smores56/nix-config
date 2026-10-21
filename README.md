@@ -297,36 +297,49 @@ model providers Maki may use.
   the loopback wrapper at `ports.memoryMcp` with `X-Memory-Group`/`X-Memory-Cwd`
   headers; on client machines `cloudflared-memory` supplies the Cloudflare
   Access service token. The raw Graphiti MCP runs on an internal loopback port
-  in   `modules/nixos/memory.nix` and is never tunneled. The same package installs
-  the `memory` CLI (`memory write|search|promote|status|tombstone`) for use on a
-  client or on smortress directly. Tombstones mark only the wrapper's index and
-  audit log; the Graphiti MCP API exposes no edge-invalidation tool, so graph
-  facts are left intact, and hard-delete tools are never forwarded to clients.
-  Writing the same content again revives a tombstoned episode. The shim derives
-  the group when Maki starts, so restart Maki after changing directories
+  in `modules/nixos/memory.nix` and is never tunneled. The same package installs
+  the `memory` CLI (`memory write|search|promote|status|tombstone|ingest`) for
+  use on a client or on smortress directly. Tombstones mark only the wrapper's
+  index and audit log; the Graphiti MCP API exposes no edge-invalidation tool,
+  so graph facts are left intact, and hard-delete tools are never forwarded to
+  clients. Writing the same content again revives a tombstoned episode. The shim
+  derives the group when Maki starts, so restart Maki after changing directories
   (`/cd` does not restart stdio children) and after any `mcp.toml` change.
 
   **Bulk ingest.** `memory ingest {sdlc,notes,docs,all}` fills the graph from the
   personal corpus: every sdlc issue section and substantial comment, the
-  markdown notes in `~/Documents` (group `global`), and each personal repo's
-  README/AGENTS/docs plus remote READMEs. Groups are `smores56--<repo>`, with
-  unlabeled sdlc tasks inheriting their feature's `repo:` label; work-owned
-  labels are refused. Episodes are verified against raw Graphiti after each
-  batch, and a missing episode is tombstoned and rewritten once. Run it on
-  smortress (the raw Graphiti port is loopback-only): `just memory-ingest` runs
-  `memory ingest all`. Re-runs skip verified `(source, source_id)` entries from
-  `~/.local/state/memory/ingest-state.json`, and writes are still deduped by
-  content hash. Reports land in `~/.local/state/memory/ingest-<timestamp>.json`;
-  `--dry-run` prints the plan without writing. Extraction goes through the
-  loopback `memory-llm-proxy` (`modules/features/ai/memory/src/memory_mcp/llm_proxy.py`,
-  `127.0.0.1:8082`): the chat server defaults to thinking and graphiti-core
-  sends no per-request control, so an extraction would spend its whole token
-  budget on reasoning and return empty content. Maki still uses `ports.llm`
-  (8081) directly, so interactive answers keep thinking. A re-run reconciles
-  the plan against Graphiti before writing: rows that were queued but never
-  extracted are tombstoned and rewritten, not reported as duplicates.
-  Extraction is one 27B chat call per episode (roughly 30-90s), so a full corpus
-  takes hours.
+  markdown notes under `~/Documents` (recursively, group `global`), and each
+  personal repo's README/AGENTS/docs plus remote READMEs. Groups are
+  `smores56--<repo>`, with unlabeled sdlc tasks inheriting their feature's
+  `repo:` label and every `repo:` label honored when an issue has several;
+  work-owned labels and work clones are refused. Run it on smortress (the raw
+  Graphiti port is loopback-only): `just memory-ingest` runs `memory ingest all`.
+  Episodes are written one at a time (`--batch 1`) and verified against
+  FalkorDB directly (`MATCH (e:Episodic)`, matching `id=`/`hash=`/`source` +
+  `source_id`), because Graphiti's `get_episodes` is window-limited; it is used
+  only as a fallback when FalkorDB is unreachable, and the report says so. A
+  missing episode is a failure, not an automatic rewrite: after the 600s grace
+  (`--timeout`) the run records the failure so a re-run can reconcile it, and
+  `--repair` rewrites only entries a previous run attempted, and only after the
+  graph proves the identity absent. The wrapper exposes no graph-level delete,
+  so re-writing an absent-but-in-flight episode is the only way ingestion can
+  create a duplicate; that is why repair is opt-in. Re-runs skip verified
+  `(group, source, source_id)` entries from
+  `~/.local/state/memory/ingest-state.json` (a moved source writes to its new
+  group, and changed content supersedes the old index row). State is `flock`ed
+  against concurrent runs; `--force --reset-state` archives it and starts over.
+  Reports land in `~/.local/state/memory/ingest-<timestamp>.json`; `--dry-run`
+  prints the plan without writing, and `--json --dry-run` prints only JSON on
+  stdout. Extraction goes through the loopback `memory-llm-proxy`
+  (`modules/features/ai/memory/src/memory_mcp/llm_proxy.py`, `127.0.0.1:8082`):
+  the chat server defaults to thinking and graphiti-core sends no per-request
+  control, so an extraction would spend its whole token budget on reasoning and
+  return empty content. Maki still uses `ports.llm` (8081) directly, so
+  interactive answers keep thinking. A re-run reconciles the plan against the
+  graph before writing: rows a previous run queued but never extracted are
+  tombstoned and rewritten, and episodes that landed late are adopted instead of
+  duplicated. Extraction is one 27B chat call per episode (roughly 30-90s), so a
+  full corpus takes hours.
 
 - `work`: maki is OpenAI-only and gets no personal providers, search, or
   memory MCP.

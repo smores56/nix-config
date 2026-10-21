@@ -26,14 +26,19 @@ def response(*, status=200, payload=None, chunks=None, headers=None):
 
 
 class ProxyTests(unittest.IsolatedAsyncioTestCase):
-    def app(self, handler):
+    def app(self, handler, **kwargs):
         self.seen = []
 
         def record(request: httpx.Request) -> httpx.Response:
             self.seen.append(request)
             return handler(request)
 
-        return create_app(upstream="http://upstream", transport=httpx.MockTransport(record), timeout=5.0)
+        return create_app(
+            upstream="http://upstream",
+            transport=httpx.MockTransport(record),
+            timeout=5.0,
+            **kwargs,
+        )
 
     async def call(self, app, method, path, *, json_body=None, headers=None):
         async with httpx.AsyncClient(
@@ -129,8 +134,50 @@ class ProxyTests(unittest.IsolatedAsyncioTestCase):
         app = self.app(lambda request: response(status=500))
         reply = await self.call(app, "GET", "/health")
         self.assertEqual(reply.status_code, 200)
-        self.assertEqual(reply.json(), {"status": "ok", "service": "memory-llm-proxy"})
+        self.assertEqual(
+            reply.json(),
+            {"status": "ok", "service": "memory-llm-proxy", "scope": "local"},
+        )
         self.assertEqual(self.seen, [])
+
+    async def test_an_oversize_request_body_is_rejected(self):
+        app = self.app(lambda request: response(), max_request_bytes=64)
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://proxy"
+        ) as client:
+            reply = await client.post(
+                "/v1/chat/completions",
+                content=b"x" * 200,
+                headers={"content-type": "application/json"},
+            )
+        self.assertEqual(reply.status_code, 413)
+        self.assertEqual(reply.json()["error"]["type"], "request_too_large")
+        self.assertEqual(self.seen, [])
+
+    async def test_a_small_body_still_reaches_the_upstream(self):
+        app = self.app(lambda request: response(), max_request_bytes=64)
+        reply = await self.call(app, "POST", "/v1/chat/completions", json_body={"messages": []})
+        self.assertEqual(reply.status_code, 200)
+        self.assertEqual(len(self.seen), 1)
+
+    async def test_a_read_timeout_is_a_504(self):
+        def handler(request):
+            raise httpx.ReadTimeout("timed out reading", request=request)
+
+        app = self.app(handler)
+        reply = await self.call(app, "POST", "/v1/chat/completions", json_body={"messages": []})
+        self.assertEqual(reply.status_code, 504)
+        self.assertEqual(reply.json()["error"]["type"], "upstream_timeout")
+
+    async def test_the_read_timeout_is_configured_on_the_upstream_client(self):
+        app = create_app(
+            upstream="http://upstream",
+            transport=httpx.MockTransport(lambda request: response()),
+            timeout=5.0,
+            read_timeout=42.0,
+        )
+        self.assertEqual(app.state.client.timeout.read, 42.0)
+        self.assertEqual(app.state.client.timeout.connect, 10.0)
 
     async def test_invalid_json_on_a_chat_path_is_400(self):
         app = self.app(lambda request: response())
