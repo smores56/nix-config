@@ -192,10 +192,12 @@ in
           # root to host root: this bounds, but does not isolate, the damage.
           "--cap-drop=ALL"
           "--security-opt=no-new-privileges"
-          # The image's healthcheck targets its default port; retarget it. The
-          # image's own interval/timeout values are kept.
-          "--health-cmd=curl -f http://127.0.0.1:${toString graphitiPort}/health >/dev/null || exit 1"
-          "--health-on-failure=kill"
+          # The image's built-in healthcheck targets its default port 8000,
+          # while this instance listens on graphitiPort. Its transient systemd
+          # unit then fails during start and makes `nixos-rebuild switch` report
+          # a failed unit. The image's /health is static anyway; the wrapper's
+          # preStart is the real readiness gate.
+          "--no-healthcheck"
         ];
         volumes = [ "${graphitiConfig}:/app/mcp/config/config.yaml:ro" ];
         environment = {
