@@ -351,6 +351,25 @@ model providers Maki may use.
   chat model is unrelated to memory. Extraction is one hosted chat call per
   episode, so a full corpus takes hours.
 
+  **Backup and restore.** The registry is the system of record, so its snapshot
+  is the backup. `memory-export.timer` runs `memory-export.service` nightly as
+  root and writes `/var/lib/memory/export/<timestamp>/`: `registry.sqlite` from
+  SQLite's online backup API (the wrapper keeps writing under WAL),
+  `episodes.jsonl` with every episode's content and typed provenance,
+  `manifest.json` with the schema version, per-status counts, and file
+  checksums, and a best-effort `graph-<timestamp>.rdb` from one `BGSAVE`. A
+  failed graph snapshot is recorded in the manifest and makes the export exit
+  non-zero without invalidating the registry copy. Seven exports are kept.
+  `memory restore <dir>` verifies the checksums first, refuses a schema the
+  installed code cannot open, stops the memory services including FalkorDB,
+  parks the live registry and replaces it atomically, and restores the graph
+  snapshot only when it was taken at the same timestamp as the registry,
+  restarting FalkorDB to load it. Otherwise the graph is refused: a restored
+  registry cannot re-extract into an empty graph, so the rebuild path is wiping
+  both stores (`just memory-rebuild`) and re-ingesting. `just memory-export` /
+  `just memory-restore <dir>` are the operator shortcuts, and the drill is in
+  `docs/manual-steps.md`.
+
 - `work`: maki is OpenAI-only and gets no personal providers, search, or
   memory MCP.
   The default model is configured in `modules/features/ai/maki/default.nix`.

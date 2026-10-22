@@ -1,4 +1,4 @@
-"""`memory` CLI: write, search, get, retry, promote, status, tombstone, and ingest.
+"""`memory` CLI: write, search, get, retry, promote, status, tombstone, ingest, export, restore.
 
 Uses the same headers as the shim, so it works on a client through the loopback
 forward and on smortress directly. `--group` is an explicit override and is
@@ -16,6 +16,14 @@ import os
 import sys
 
 from .client import ClientConfig, ToolResult, UpstreamError, call_tool
+from .export import (
+    ExportError,
+    ExportInvalid,
+    GraphSnapshotError,
+    add_export_parser,
+    add_restore_parser,
+)
+from .export import dispatch as export_dispatch
 from .groups import GroupRefused, derive_group, validate_group
 
 DEFAULT_URL = "http://127.0.0.1:8182/mcp"
@@ -78,6 +86,11 @@ def build_parser() -> argparse.ArgumentParser:
     ingest.add_argument("--repo-list", help="File of repo names for docs ingestion, one per line")
     ingest.add_argument("--repo", action="append", default=[], help="Restrict docs to this repo (repeatable)")
     ingest.add_argument("--verbose", action="store_true", help="Log every skipped episode to stderr")
+
+    # Export and restore work on the local registry and graph volume: they take
+    # no group and never call the wrapper.
+    add_export_parser(sub)
+    add_restore_parser(sub)
 
     return parser
 
@@ -184,6 +197,12 @@ async def _invoke(args: argparse.Namespace, group: str, cwd: str) -> tuple[str, 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command in ("export", "restore"):
+        try:
+            return export_dispatch(args)
+        except (ExportError, ExportInvalid, GraphSnapshotError) as exc:
+            print(f"memory: {exc}", file=sys.stderr)
+            return 1
     if args.command == "ingest":
         from .ingest_runner import IngestError
 
