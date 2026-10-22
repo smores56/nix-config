@@ -78,6 +78,8 @@ class Planned:
 
 LookupFn = Callable[[str, list[str]], Awaitable[dict[str, dict[str, object]]]]
 SubmitFn = Callable[[dict[str, object]], Awaitable[dict[str, object]]]
+# A corpus that needs per-episode accounting (sessions) observes every outcome.
+Observer = Callable[[Episode, str], None]
 
 
 class IngestRunner:
@@ -139,7 +141,9 @@ class IngestRunner:
             raise IngestError("/internal/episodes did not return an object")
         return dict(result)
 
-    def _plan(self, plans: list[Plan]) -> tuple[list[Planned], dict[str, int]]:
+    def _plan(
+        self, plans: list[Plan], observer: Observer | None = None
+    ) -> tuple[list[Planned], dict[str, int]]:
         planned: list[Planned] = []
         counts = {"built": 0, "skipped": 0, "deduplicated": 0, "empty": 0}
         seen: set[tuple[str, str]] = set()
@@ -156,11 +160,13 @@ class IngestRunner:
                     normalized = normalize_content(episode.content)
                 except ValueError:
                     counts["empty"] += 1
+                    self._observe(observer, episode, "empty")
                     continue
                 digest = content_hash(normalized)
                 identity = (episode.group, digest)
                 if identity in seen:
                     counts["deduplicated"] += 1
+                    self._observe(observer, episode, "deduplicated")
                     continue
                 seen.add(identity)
                 planned.append(
@@ -176,6 +182,10 @@ class IngestRunner:
     def _log(self, message: str) -> None:
         print(f"[ingest] {message}", file=sys.stderr)
 
+    def _observe(self, observer: Observer | None, episode: Episode, outcome: str) -> None:
+        if observer is not None:
+            observer(episode, outcome)
+
     def _payload(self, planned: Planned) -> dict[str, object]:
         episode = planned.episode
         return {
@@ -189,10 +199,17 @@ class IngestRunner:
             "actor": "ingest",
         }
 
-    async def run(self, plans: list[Plan], *, source_errors: dict[str, str] | None = None) -> dict[str, object]:
+    async def run(
+        self,
+        plans: list[Plan],
+        *,
+        source_errors: dict[str, str] | None = None,
+        observer: Observer | None = None,
+        extras: dict[str, object] | None = None,
+    ) -> dict[str, object]:
         started_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
         started = self.clock()
-        planned, counts = self._plan(plans)
+        planned, counts = self._plan(plans, observer)
         failures: list[dict[str, str]] = []
         for source, error in (source_errors or {}).items():
             failures.append({"source": source, "source_id": "*", "group": "", "error": error})
@@ -213,6 +230,7 @@ class IngestRunner:
             "failures": failures,
             "source_errors": dict(source_errors or {}),
         }
+        report.update(extras or {})
 
         if self.config.dry_run:
             self._print_plan(plans, planned)
@@ -253,9 +271,11 @@ class IngestRunner:
             status = str(state.get("status") or "missing")
             if status in ("active", "pending", "tombstoned"):
                 report["totals"][status] += 1
+                self._observe(observer, item.episode, status)
                 return
             if status == "lookup_failed":
                 report["totals"]["failed"] += 1
+                self._observe(observer, item.episode, "failed")
                 failures.append(
                     {
                         "source": item.episode.source,
@@ -272,6 +292,7 @@ class IngestRunner:
                     await self.submit(self._payload(item))
                 except IngestError as exc:
                     report["totals"]["failed"] += 1
+                    self._observe(observer, item.episode, "failed")
                     failures.append(
                         {
                             "source": item.episode.source,
@@ -282,6 +303,7 @@ class IngestRunner:
                     )
                 else:
                     report["totals"]["submitted"] += 1
+                    self._observe(observer, item.episode, "submitted")
                 finally:
                     submit_seconds += self.clock() - began
 
