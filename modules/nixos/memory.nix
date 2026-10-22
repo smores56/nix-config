@@ -200,6 +200,12 @@ in
       isSystemUser = true;
       group = "memory";
     };
+    # `memory ingest` runs as the human user and authenticates to the wrapper's
+    # /internal routes with the token the wrapper writes into the state dir
+    # (0640 memory:memory, reachable because the dir is 0750). The tunnel is a
+    # raw TCP forward, so the wrapper cannot tell a tunneled client from a local
+    # one by peer address; the group alone may read that token.
+    users.users.${config.machine.username}.extraGroups = [ "memory" ];
 
     systemd.tmpfiles.rules = [
       "d ${dataDir}/falkordb 0700 root root -"
@@ -380,7 +386,9 @@ in
     # the group header the shim sends, refuses work groups, and records writes
     # as pending in the typed registry. A background reconciler proves each
     # write against FalkorDB and resolves it to active or failed. Raw Graphiti
-    # stays on the internal graphitiPort and is never tunneled.
+    # stays on the internal graphitiPort and is never tunneled. Because the
+    # tunnel delivers every request as loopback, the /internal ingest routes
+    # also require a per-start bearer token written into the state dir.
     systemd.services.memory-mcp = {
       description = "memory MCP wrapper (project groups, typed registry, reconciler)";
       wantedBy = [ "multi-user.target" ];

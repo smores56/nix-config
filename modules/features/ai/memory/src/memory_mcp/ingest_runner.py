@@ -22,6 +22,7 @@ from typing import Awaitable, Callable
 import httpx
 
 from .ingest_sources import Episode, Plan
+from .internal_auth import TokenError, read_token
 from .normalize import content_hash, episode_uuid, normalize_content
 
 DEFAULT_INTERNAL_URL = "http://127.0.0.1:8182"
@@ -59,6 +60,8 @@ class RunnerConfig:
     verbose: bool = False
     json_output: bool = False
     report_path: str | None = None
+    # Defaults to $MEMORY_INTERNAL_TOKEN_FILE, then /var/lib/memory/internal.token.
+    token_file: str | None = None
 
     @property
     def resolved_report_path(self) -> Path:
@@ -90,12 +93,23 @@ class IngestRunner:
         self._lookup_fn = lookup_fn
         self._submit_fn = submit_fn
         self.clock = clock
+        self._auth_header: str | None = None
+
+    def _authorization(self) -> str:
+        """Read the wrapper's internal token once per run."""
+        if self._auth_header is None:
+            try:
+                self._auth_header = f"Bearer {read_token(self.config.token_file)}"
+            except TokenError as exc:
+                raise IngestError(str(exc)) from exc
+        return self._auth_header
 
     async def _post(self, path: str, payload: dict[str, object]) -> object:
         url = self.config.internal_url.rstrip("/") + path
+        headers = {"Authorization": self._authorization()}
         try:
             async with httpx.AsyncClient(timeout=self.config.timeout) as client:
-                response = await client.post(url, json=payload)
+                response = await client.post(url, json=payload, headers=headers)
         except httpx.HTTPError as exc:
             raise IngestError(f"memory wrapper unreachable at {self.config.internal_url}: {exc}") from exc
         if response.status_code != 200:

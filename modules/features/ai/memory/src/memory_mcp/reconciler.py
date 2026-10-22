@@ -8,7 +8,11 @@ a bounded number of times and then marked `failed`.
 
 Retries never overlap an in-flight submission for the same content, re-check
 presence immediately before resubmitting, and pause while the model endpoint is
-unhealthy (rows stay pending rather than failing during an outage).
+unhealthy (rows stay pending rather than failing during an outage). Every graph
+call runs off the event loop, a pass is capped, and the first graph outage ends
+the pass: once the graph is unreachable, absence cannot be proven for any row.
+Writes are guarded on `status='pending'`, so a row tombstoned mid-pass is never
+resurrected and never audited.
 """
 
 from __future__ import annotations
@@ -31,7 +35,10 @@ DEFAULT_INTERVAL = 10.0
 DEFAULT_GRACE = 600.0
 DEFAULT_BACKOFF = 60.0
 DEFAULT_MAX_RETRIES = 2
-DEFAULT_BATCH = 500
+# A pass is a burst of blocking Redis round-trips off the event loop; keep it
+# short so one pass cannot starve the HTTP server or hold rows for minutes.
+MAX_BATCH = 100
+DEFAULT_BATCH = MAX_BATCH
 
 
 @dataclass(frozen=True)
@@ -67,9 +74,6 @@ class InFlight:
 
     def release(self, key: tuple[str, str]) -> None:
         self._keys.discard(key)
-
-    def __contains__(self, key: tuple[str, str]) -> bool:
-        return key in self._keys
 
 
 def _now() -> datetime:
@@ -112,8 +116,9 @@ class Reconciler:
             "backoff": 0,
             "inflight": 0,
             "unavailable": 0,
+            "changed": 0,
         }
-        rows = self.registry.pending(limit=self.config.batch)
+        rows = self.registry.pending(limit=max(1, min(self.config.batch, MAX_BATCH)))
         if not rows:
             return counts
         healthy = not await self.probes.failures()
@@ -122,13 +127,15 @@ class Reconciler:
         for row in rows:
             key = (row.group, row.content_hash)
             try:
-                found = self.graph.episode_for(row.group, row.content)
+                found = await asyncio.to_thread(self.graph.episode_for, row.group, row.content)
             except GraphUnavailable:
+                # Once the graph is unreachable, absence cannot be proven for
+                # any later row either: end the pass instead of hammering it.
                 counts["unavailable"] += 1
-                continue
+                break
 
             if found is not None:
-                self.registry.mark_active(
+                applied = self.registry.mark_active(
                     row.group,
                     row.content_hash,
                     found.uuid,
@@ -142,6 +149,9 @@ class Reconciler:
                         details={"graphiti_uuid": found.uuid},
                     ),
                 )
+                if not applied:
+                    counts["changed"] += 1
+                    continue
                 self._last_attempt.pop(key, None)
                 counts["active"] += 1
                 continue
@@ -161,7 +171,7 @@ class Reconciler:
                 reason = (
                     f"absent from the graph after {row.attempts} attempt(s) and {age:.0f}s"
                 )
-                self.registry.mark_failed(
+                applied = self.registry.mark_failed(
                     row.group,
                     row.content_hash,
                     reason,
@@ -175,6 +185,9 @@ class Reconciler:
                         details={"attempts": row.attempts, "age_seconds": round(age)},
                     ),
                 )
+                if not applied:
+                    counts["changed"] += 1
+                    continue
                 counts["failed"] += 1
                 continue
 
@@ -189,9 +202,11 @@ class Reconciler:
             try:
                 # A slow but successful submission must not be duplicated: prove
                 # absence again immediately before resubmitting.
-                found = self.graph.episode_for(row.group, row.content)
+                found = await asyncio.to_thread(
+                    self.graph.episode_for, row.group, row.content
+                )
                 if found is not None:
-                    self.registry.mark_active(
+                    applied = self.registry.mark_active(
                         row.group,
                         row.content_hash,
                         found.uuid,
@@ -205,15 +220,23 @@ class Reconciler:
                             details={"graphiti_uuid": found.uuid},
                         ),
                     )
+                    if not applied:
+                        counts["changed"] += 1
+                        continue
                     self._last_attempt.pop(key, None)
                     counts["active"] += 1
                 else:
-                    error = await self._resubmit(row)
+                    applied_retry, error = await self._resubmit(row)
                     self._last_attempt[key] = self._clock()
-                    if error is None:
+                    if not applied_retry:
+                        counts["changed"] += 1
+                    elif error is None:
                         counts["retried"] += 1
                     else:
                         counts["retry_failed"] += 1
+            except GraphUnavailable:
+                counts["unavailable"] += 1
+                break
             finally:
                 self.in_flight.release(key)
 
@@ -225,7 +248,7 @@ class Reconciler:
             return True
         return self._clock() - last >= self.config.backoff
 
-    async def _resubmit(self, row: RegistryEpisode) -> str | None:
+    async def _resubmit(self, row: RegistryEpisode) -> tuple[bool, str | None]:
         error: str | None = None
         try:
             await self.backend.add_episode(
@@ -240,7 +263,7 @@ class Reconciler:
             raise
         except Exception as exc:  # a failed retry is recorded, not raised
             error = clip(str(exc), 300)
-        self.registry.record_attempt(
+        stored = self.registry.record_attempt(
             row.group,
             row.content_hash,
             error=error,
@@ -254,7 +277,11 @@ class Reconciler:
                 details={"error": error} if error else {},
             ),
         )
-        return error
+        if stored is None:
+            # The row left `pending` under us (a tombstone, or a duplicate
+            # write): drop the result instead of resurrecting it.
+            return False, error
+        return True, error
 
     async def run(self) -> None:
         """Poll forever; the wrapper's lifespan cancels this task on shutdown."""

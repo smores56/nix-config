@@ -19,9 +19,12 @@ DEFAULT_REDIS_URL = "redis://127.0.0.1:6379"
 SOCKET_TIMEOUT = 5.0
 RELATES_TO = "RELATES_TO"
 
-EPISODIC_PRESENCE_QUERY = (
+# Every episode the same content produced, newest first. A revival re-extracts,
+# so the old tombstoned episode and the new one both exist: presence must bind
+# to the newest, and a tombstone must cover all of them.
+EPISODIC_MATCHES_QUERY = (
     "MATCH (e:Episodic) WHERE e.group_id=$g AND e.content=$c "
-    "RETURN e.uuid, e.created_at ORDER BY e.created_at ASC LIMIT 1"
+    "RETURN e.uuid, e.created_at ORDER BY e.created_at DESC"
 )
 # Exclusive: this episode is the only support, so invalidate the edge.
 _TOMBSTONE_EXCLUSIVE_QUERY = (
@@ -103,24 +106,36 @@ class GraphStore:
         return _rows(reply)
 
     def episode_for(self, group: str, content: str) -> EpisodeRef | None:
-        """The oldest graph episode whose content matches exactly, or None.
+        """The newest graph episode whose content matches exactly, or None.
+
+        Newest, not oldest: a revived row re-extracts into a new episode, and
+        reconciling must bind to that one rather than to the tombstoned
+        episode that shares its content.
 
         A missing FalkorDB graph is an empty group (nothing extracted yet), not
         an outage. GRAPH.LIST runs first so a presence check never materializes
         a graph for a group that has none.
         """
+        notes = self.matches(group, content)
+        return notes[0] if notes else None
+
+    def matches(self, group: str, content: str) -> list[EpisodeRef]:
+        """Every graph episode with this exact content, newest first."""
         names = self._graph_names()
         if names is None:
             raise GraphUnavailable("graph list unavailable")
         if group not in names:
-            return None
-        rows = self._query(group, EPISODIC_PRESENCE_QUERY, {"g": group, "c": content})
-        if not rows:
-            return None
-        row = rows[0]
-        if len(row) < 2 or row[0] is None:
-            return None
-        return EpisodeRef(uuid=_text(row[0]), created_at=_text(row[1] or ""))
+            return []
+        rows = self._query(group, EPISODIC_MATCHES_QUERY, {"g": group, "c": content})
+        return [
+            EpisodeRef(uuid=_text(row[0]), created_at=_text(row[1] if len(row) > 1 else ""))
+            for row in rows
+            if row and row[0] is not None
+        ]
+
+    def episode_uuids(self, group: str, content: str) -> list[str]:
+        """Every graph episode uuid for this content, newest first."""
+        return [note.uuid for note in self.matches(group, content)]
 
     def tombstone(self, group: str, episode_uuid: str, *, now: str) -> TombstoneResult:
         """Invalidate the episode's exclusive edges and detach it from shared ones."""

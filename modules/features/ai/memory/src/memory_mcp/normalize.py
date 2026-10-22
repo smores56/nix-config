@@ -23,6 +23,10 @@ def normalize_content(content: str) -> str:
     """
     if not isinstance(content, str):
         raise ValueError("content must be a string")
+    # SQLite stores TEXT as a C string: a NUL truncates the row silently, so the
+    # stored content would no longer hash to its own identity.
+    if "\x00" in content:
+        raise ValueError("content contains a NUL byte (U+0000), which a memory cannot store")
     text = content.replace("\r\n", "\n").replace("\r", "\n")
     lines = [_INLINE_WHITESPACE.sub(" ", line).rstrip() for line in text.split("\n")]
     text = "\n".join(lines)

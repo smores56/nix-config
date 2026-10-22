@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import sqlite3
-import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
@@ -20,6 +19,10 @@ from pathlib import Path
 from typing import Iterator, Mapping
 
 DB_NAME = "registry.sqlite"
+# Bumped whenever the schema below changes incompatibly. An unversioned or
+# foreign-versioned database is refused rather than migrated in place.
+SCHEMA_VERSION = 1
+LOOKUP_CHUNK = 500
 
 KINDS = ("text", "json", "message")
 ORIGINS = ("sdlc", "notes", "docs", "session", "agent")
@@ -80,6 +83,14 @@ CREATE TABLE IF NOT EXISTS audit (
 );
 CREATE INDEX IF NOT EXISTS audit_created ON audit (finished_at);
 """
+
+
+class SchemaVersionError(RuntimeError):
+    """The registry database is not the schema version this code writes."""
+
+
+class AmbiguousRef(ValueError):
+    """A reference prefix matches more than one registry row."""
 
 
 def utcnow() -> str:
@@ -145,14 +156,34 @@ def _json(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
 
+def _placeholders(values: tuple[str, ...] | list[str]) -> str:
+    return ",".join("?" for _ in values)
+
+
 class Registry:
     def __init__(self, state_dir: str) -> None:
         self.state_dir = Path(state_dir)
         self.db_path = self.state_dir / "registry.sqlite"
-        self._lock = threading.Lock()
         self.state_dir.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
+            self._ensure_schema(conn)
+
+    def _ensure_schema(self, conn: sqlite3.Connection) -> None:
+        version = int(conn.execute("PRAGMA user_version").fetchone()[0])
+        if version == SCHEMA_VERSION:
+            return
+        has_tables = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'episodes'"
+        ).fetchone()
+        if version == 0 and has_tables is None:
             conn.executescript(_SCHEMA)
+            conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            return
+        found = "unversioned" if version == 0 else str(version)
+        raise SchemaVersionError(
+            f"registry {self.db_path} has schema version {found}, expected {SCHEMA_VERSION}; "
+            "refusing to use it. Delete the database to rebuild the registry from the graph."
+        )
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -234,14 +265,6 @@ class Registry:
                 (group, digest),
             ).fetchone()
         return self._row(row)
-
-    def insert(self, entry: RegistryEpisode) -> bool:
-        try:
-            with self._connect() as conn:
-                self._insert(conn, entry)
-            return True
-        except sqlite3.IntegrityError:
-            return False
 
     @staticmethod
     def _insert(conn: sqlite3.Connection, entry: RegistryEpisode) -> None:
@@ -353,15 +376,23 @@ class Registry:
         digest: str,
         *,
         error: str | None = None,
+        from_statuses: tuple[str, ...] = ("pending",),
         audit: Audit | None = None,
     ) -> RegistryEpisode | None:
-        """Count one submission attempt and remember the latest error."""
+        """Count one submission attempt and remember the latest error.
+
+        The status guard keeps a concurrent tombstone authoritative: a row that
+        changed under the caller is left alone and no audit row is written.
+        """
         with self._connect() as conn:
-            conn.execute(
+            cursor = conn.execute(
                 "UPDATE episodes SET attempts = attempts + 1, last_error = ? "
-                "WHERE group_id = ? AND content_hash = ?",
-                (error, group, digest),
+                "WHERE group_id = ? AND content_hash = ? "
+                f"AND status IN ({_placeholders(from_statuses)})",
+                (error, group, digest, *from_statuses),
             )
+            if cursor.rowcount == 0:
+                return None
             self._audit(conn, audit)
             row = conn.execute(
                 "SELECT * FROM episodes WHERE group_id = ? AND content_hash = ?",
@@ -375,15 +406,21 @@ class Registry:
         digest: str,
         graphiti_uuid: str,
         *,
+        from_statuses: tuple[str, ...] = ("pending",),
         audit: Audit | None = None,
-    ) -> None:
+    ) -> bool:
+        """Resolve a row to active; False when the row is no longer in `from_statuses`."""
         with self._connect() as conn:
-            conn.execute(
+            cursor = conn.execute(
                 "UPDATE episodes SET status = 'active', graphiti_uuid = ?, last_error = NULL "
-                "WHERE group_id = ? AND content_hash = ?",
-                (graphiti_uuid, group, digest),
+                "WHERE group_id = ? AND content_hash = ? "
+                f"AND status IN ({_placeholders(from_statuses)})",
+                (graphiti_uuid, group, digest, *from_statuses),
             )
+            if cursor.rowcount == 0:
+                return False
             self._audit(conn, audit)
+        return True
 
     def mark_failed(
         self,
@@ -391,15 +428,21 @@ class Registry:
         digest: str,
         error: str,
         *,
+        from_statuses: tuple[str, ...] = ("pending",),
         audit: Audit | None = None,
-    ) -> None:
+    ) -> bool:
+        """Resolve a row to failed; False when the row is no longer in `from_statuses`."""
         with self._connect() as conn:
-            conn.execute(
+            cursor = conn.execute(
                 "UPDATE episodes SET status = 'failed', last_error = ? "
-                "WHERE group_id = ? AND content_hash = ?",
-                (error, group, digest),
+                "WHERE group_id = ? AND content_hash = ? "
+                f"AND status IN ({_placeholders(from_statuses)})",
+                (error, group, digest, *from_statuses),
             )
+            if cursor.rowcount == 0:
+                return False
             self._audit(conn, audit)
+        return True
 
     def tombstone(
         self,
@@ -407,18 +450,22 @@ class Registry:
         *,
         reason: str,
         audit: Audit | None = None,
-    ) -> RegistryEpisode:
+    ) -> RegistryEpisode | None:
+        """Mark the row tombstoned and return the stored row; None if it vanished."""
         at = utcnow()
-        updated = replace(
-            entry,
-            status="tombstoned",
-            tombstoned_at=at,
-            tombstone_reason=reason,
-        )
         with self._connect() as conn:
-            self._write(conn, updated)
+            conn.execute(
+                "UPDATE episodes SET status = 'tombstoned', tombstoned_at = ?, "
+                "tombstone_reason = ? WHERE group_id = ? AND content_hash = ?",
+                (at, reason, entry.group, entry.content_hash),
+            )
             self._audit(conn, audit)
-        return updated
+            row = conn.execute(
+                "SELECT * FROM episodes WHERE group_id = ? AND content_hash = ?",
+                (entry.group, entry.content_hash),
+            ).fetchone()
+        return self._row(row)
+
 
     def pending(self, *, limit: int = 500) -> list[RegistryEpisode]:
         with self._connect() as conn:
@@ -430,8 +477,13 @@ class Registry:
         return [entry for row in rows if (entry := self._row(row)) is not None]
 
     def find_exact(self, group: str, ref: str) -> RegistryEpisode | None:
-        """Exact uuid5, content-hash prefix (>=12 hex), or exact `origin:origin_ref`."""
-        reference = (ref or "").strip()
+        """Exact uuid5, content-hash prefix (>=12 hex), or exact `origin:origin_ref`.
+
+        References are matched case-insensitively: uuid5 and content hashes are
+        lowercase by construction, and an origin ref is a label, not payload.
+        A hash prefix that matches more than one row raises `AmbiguousRef`.
+        """
+        reference = (ref or "").strip().lower()
         if not reference:
             return None
         with self._connect() as conn:
@@ -445,20 +497,46 @@ class Registry:
                 row = conn.execute(
                     """
                     SELECT * FROM episodes
-                    WHERE group_id = ? AND origin || ':' || origin_ref = ?
+                    WHERE group_id = ? AND lower(origin || ':' || origin_ref) = ?
                    """,
                     (group, reference),
                 ).fetchone()
                 if row is not None:
                     return self._row(row)
-            if len(reference) >= 12 and all(char in "0123456789abcdefABCDEF" for char in reference):
+            if len(reference) >= 12 and all(char in "0123456789abcdef" for char in reference):
                 rows = conn.execute(
                     "SELECT * FROM episodes WHERE group_id = ? AND content_hash LIKE ? LIMIT 2",
-                    (group, reference.lower() + "%"),
+                    (group, reference + "%"),
                 ).fetchall()
-                if len(rows) == 1:
+                if len(rows) > 1:
+                    raise AmbiguousRef(
+                        f"{reference!r} matches more than one episode in group {group}; "
+                        "use a longer hash prefix or the registry uuid"
+                    )
+                if rows:
                     return self._row(rows[0])
         return None
+
+    def lookup_many(
+        self, group: str, digests: list[str], *, chunk: int = LOOKUP_CHUNK
+    ) -> dict[str, RegistryEpisode]:
+        """One chunked `IN (...)` lookup instead of a query per hash."""
+        wanted = list(dict.fromkeys(str(digest) for digest in digests if digest))
+        found: dict[str, RegistryEpisode] = {}
+        step = max(1, int(chunk))
+        with self._connect() as conn:
+            for offset in range(0, len(wanted), step):
+                part = wanted[offset : offset + step]
+                rows = conn.execute(
+                    "SELECT * FROM episodes WHERE group_id = ? "
+                    f"AND content_hash IN ({_placeholders(part)})",
+                    (group, *part),
+                ).fetchall()
+                for row in rows:
+                    entry = self._row(row)
+                    if entry is not None:
+                        found[entry.content_hash] = entry
+        return found
 
     def by_graphiti_uuids(self, uuids: set[str] | list[str]) -> dict[str, RegistryEpisode]:
         wanted = [str(uuid) for uuid in uuids if uuid]
@@ -531,5 +609,5 @@ class Registry:
         }
 
     def audit(self, audit: Audit) -> None:
-        with self._lock, self._connect() as conn:
+        with self._connect() as conn:
             self._audit(conn, audit)

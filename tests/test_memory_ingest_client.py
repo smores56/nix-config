@@ -3,6 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "modules/features/ai/memory/src"))
 
@@ -55,6 +56,38 @@ def episode(source_id="issue-1#design", content="a design section", group="owner
     return Episode(**values)
 
 
+class FakeResponse:
+    def __init__(self, payload, status_code=200):
+        self.payload = payload
+        self.status_code = status_code
+        self.text = json.dumps(payload)
+
+    def json(self):
+        return self.payload
+
+
+class FakeHTTPClient:
+    """Stands in for httpx.AsyncClient so `_post` can be observed."""
+
+    instances = []
+
+    def __init__(self, response, **kwargs):
+        self.response = response
+        self.kwargs = kwargs
+        self.calls = []
+        FakeHTTPClient.instances.append(self)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def post(self, url, *, json=None, headers=None):
+        self.calls.append({"url": url, "json": json, "headers": headers})
+        return self.response
+
+
 class IngestClientTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -70,6 +103,30 @@ class IngestClientTests(unittest.IsolatedAsyncioTestCase):
         }
         values.update(config)
         return IngestRunner(RunnerConfig(**values), lookup_fn=lookup, submit_fn=submit)
+
+    async def test_the_internal_routes_are_called_with_the_shared_token(self):
+        token_file = Path(self.tmp.name) / "internal.token"
+        token_file.write_text("run-token\n", encoding="utf-8")
+        client = FakeHTTPClient(FakeResponse({"a" * 64: {"status": "missing"}}))
+        runner = self.runner(None, None, token_file=str(token_file))
+        with mock.patch("memory_mcp.ingest_runner.httpx.AsyncClient", return_value=client):
+            await runner.lookup("global", ["a" * 64])
+            await runner.submit({"group": "global", "content": "x"})
+        self.assertEqual(
+            [call["url"] for call in client.calls],
+            [
+                "http://127.0.0.1:8182/internal/lookup",
+                "http://127.0.0.1:8182/internal/episodes",
+            ],
+        )
+        for call in client.calls:
+            self.assertEqual(call["headers"], {"Authorization": "Bearer run-token"})
+
+    async def test_a_missing_token_file_fails_the_run_clearly(self):
+        runner = self.runner(None, None, token_file=str(Path(self.tmp.name) / "absent.token"))
+        with self.assertRaises(IngestError) as caught:
+            await runner.lookup("global", ["a" * 64])
+        self.assertIn("internal token", str(caught.exception))
 
     async def test_missing_episodes_are_submitted_with_typed_provenance(self):
         lookup = FakeLookup()

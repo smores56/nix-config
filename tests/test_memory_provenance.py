@@ -125,7 +125,8 @@ class WrapperProvenanceTests(unittest.IsolatedAsyncioTestCase):
             status="active",
             graphiti_uuid="graph-1",
         )
-        self.registry.insert(entry)
+        self.registry.queue(entry)
+        self.registry.mark_active(entry.group, entry.content_hash, entry.graphiti_uuid)
         async with create_connected_server_and_client_session(self.build(self.headers())) as session:
             result = await session.call_tool("memory_get", {"ref": "sdlc:issue-215#design"})
         self.assertFalse(result.isError)

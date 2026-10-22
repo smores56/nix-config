@@ -5,22 +5,23 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "modules/features/ai/memory/src"))
 
 from mcp.shared.memory import create_connected_server_and_client_session  # noqa: E402
 from starlette.testclient import TestClient  # noqa: E402
 
-from memory_mcp.graph import GraphUnavailable, TombstoneResult  # noqa: E402
+from memory_mcp.graph import EpisodeRef, GraphUnavailable, TombstoneResult  # noqa: E402
 from memory_mcp.graphiti import BackendError  # noqa: E402
 from memory_mcp.normalize import content_hash, episode_uuid, normalize_content  # noqa: E402
 from memory_mcp.registry import Registry, RegistryEpisode, utcnow  # noqa: E402
+from memory_mcp.reconciler import Reconciler, ReconcilerConfig  # noqa: E402
 from memory_mcp.schema import FALLBACK_TOOLS, FALLBACK_TOOL_NAMES  # noqa: E402
 from memory_mcp.wrapper import (  # noqa: E402
     DEFAULT_TOOL_TIMEOUT,
     DEFAULT_UPSTREAM_TIMEOUT,
     MAX_CONTENT_CHARS,
+    MAX_INTERNAL_BODY_BYTES,
     MAX_QUERY_CHARS,
     WrapperConfig,
     build_server,
@@ -92,10 +93,23 @@ class FakeGraph:
         self.tombstoned = []
         self.result = TombstoneResult(invalidated=2, shared=1)
         self.unavailable = False
+        self.uuids = []
+        self.present = None
 
-    def tombstone(self, group, episode_uuid_value, *, now):
+    def _check(self):
         if self.unavailable:
             raise GraphUnavailable("connection refused")
+
+    def episode_uuids(self, group, content):
+        self._check()
+        return list(self.uuids)
+
+    def episode_for(self, group, content):
+        self._check()
+        return self.present
+
+    def tombstone(self, group, episode_uuid_value, *, now):
+        self._check()
         self.tombstoned.append((group, episode_uuid_value, now))
         return self.result
 
@@ -166,9 +180,27 @@ class WrapperTests(unittest.IsolatedAsyncioTestCase):
             "status": "active",
         }
         values.update(overrides)
-        entry = RegistryEpisode(**values)
-        self.registry.insert(entry)
-        return entry
+        return self.store(RegistryEpisode(**values))
+
+    def store(self, entry: RegistryEpisode) -> RegistryEpisode:
+        """Store a row in any status through the registry's public transitions."""
+        stored = self.registry.queue(entry)
+        if entry.status == "active" or entry.graphiti_uuid:
+            self.registry.mark_active(
+                entry.group,
+                entry.content_hash,
+                entry.graphiti_uuid or f"graph-{entry.content_hash[:12]}",
+            )
+        if entry.status == "failed":
+            self.registry.mark_failed(
+                entry.group, entry.content_hash, entry.last_error or "seeded"
+            )
+        elif entry.status == "tombstoned":
+            self.registry.tombstone(stored, reason=entry.tombstone_reason or "seeded")
+        elif entry.status == "pending":
+            for _ in range(entry.attempts):
+                self.registry.record_attempt(entry.group, entry.content_hash)
+        return stored
 
     async def test_tool_names_match_the_shim_fallback(self):
         async with create_connected_server_and_client_session(self.build()) as session:
@@ -314,7 +346,7 @@ class WrapperTests(unittest.IsolatedAsyncioTestCase):
             status="active",
             graphiti_uuid="ep-1",
         )
-        self.registry.insert(entry)
+        self.store(entry)
         self.backend.nodes = [
             {
                 "uuid": "node-1",
@@ -457,6 +489,87 @@ class WrapperTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.graph.tombstoned), 1)
         self.assertEqual([row["status"] for row in self.audit()[-2:]], ["tombstoned", "duplicate"])
 
+    async def test_a_second_tombstone_invalidates_the_revived_episode(self):
+        entry = self.seed_entry(status="active", content="revived", graphiti_uuid="graph-old")
+        self.graph.uuids = ["graph-old"]
+        first = await self.call("memory_tombstone", {"ref": entry.uuid, "reason": "first"})
+        self.assertFalse(first.isError)
+
+        revived = await self.call("memory_write", {"content": "revived"})
+        self.assertIn("Revived", revived.content[0].text)
+        self.assertEqual(self.registry.lookup(entry.group, entry.content_hash).status, "pending")
+
+        # The revival re-extracted: both the old and the new episode now match.
+        self.graph.uuids = ["graph-new", "graph-old"]
+        second = await self.call("memory_tombstone", {"ref": entry.uuid, "reason": "second"})
+        self.assertFalse(second.isError)
+        self.assertEqual(
+            [call[1] for call in self.graph.tombstoned],
+            ["graph-old", "graph-new", "graph-old"],
+        )
+        self.assertIn("Invalidated 4 exclusive edge(s)", second.content[0].text)
+        stored = self.registry.lookup(entry.group, entry.content_hash)
+        self.assertEqual(stored.status, "tombstoned")
+        self.assertEqual(stored.tombstone_reason, "second")
+
+    async def test_tombstoning_a_pending_row_writes_no_graph_state(self):
+        entry = self.seed_entry(content="never landed", status="pending")
+        result = await self.call("memory_tombstone", {"ref": entry.uuid})
+        self.assertFalse(result.isError)
+        self.assertEqual(self.graph.tombstoned, [])
+        self.assertEqual(self.registry.lookup(entry.group, entry.content_hash).status, "tombstoned")
+
+        # Even if the extraction lands afterwards, the reconciler must not
+        # resurrect the row.
+        self.graph.present = EpisodeRef(uuid="graph-1", created_at="2026-10-03T00:10:00Z")
+        reconciler = Reconciler(
+            self.registry,
+            self.graph,
+            self.backend,
+            self.probes,
+            config=ReconcilerConfig(grace=0, backoff=0),
+        )
+        counts = await reconciler.reconcile_once()
+        self.assertEqual(counts["active"], 0)
+        self.assertEqual(counts["retried"], 0)
+        self.assertEqual(
+            self.registry.lookup(entry.group, entry.content_hash).status, "tombstoned"
+        )
+
+    async def test_retry_marks_a_late_landed_episode_active_instead_of_resubmitting(self):
+        entry = self.seed_entry(status="failed", attempts=3, last_error="absent")
+        self.graph.present = EpisodeRef(uuid="graph-late", created_at="2026-10-03T00:10:00Z")
+        result = await self.call("memory_retry", {"ref": entry.uuid})
+        self.assertFalse(result.isError)
+        self.assertIn("already in the graph", result.content[0].text)
+        stored = self.registry.lookup(entry.group, entry.content_hash)
+        self.assertEqual(stored.status, "active")
+        self.assertEqual(stored.graphiti_uuid, "graph-late")
+        self.assertEqual(self.backend.added, [])
+
+    async def test_an_ambiguous_hash_prefix_is_a_clear_error(self):
+        for digest in ("a" * 64, "a" * 63 + "b"):
+            self.store(
+                RegistryEpisode(
+                    group="owner--repo",
+                    content_hash=digest,
+                    uuid=episode_uuid("owner--repo", digest),
+                    name=digest[:6],
+                    content=digest[:6],
+                    kind="text",
+                    origin="agent",
+                    origin_ref="",
+                    actor="maki",
+                    cwd="",
+                    tags=(),
+                    valid_at="2026-10-03T00:00:00Z",
+                    created_at="2026-10-03T00:00:00Z",
+                )
+            )
+        result = await self.call("memory_get", {"ref": "A" * 12})
+        self.assertTrue(result.isError)
+        self.assertIn("matches more than one episode", result.content[0].text)
+
     async def test_promote_copies_type_and_content_into_global(self):
         entry = self.seed_entry(
             status="active", origin="sdlc", origin_ref="issue-1#body", kind="json", content='{"a": 1}'
@@ -557,6 +670,8 @@ class WrapperTests(unittest.IsolatedAsyncioTestCase):
 
 
 class InternalRouteTests(unittest.TestCase):
+    TOKEN = "test-internal-token"
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.registry = Registry(self.tmp.name)
@@ -568,12 +683,28 @@ class InternalRouteTests(unittest.TestCase):
             probes=FakeProbes(),
             graph=FakeGraph(),
             start_reconciler=False,
+            internal_token=self.TOKEN,
         )
-        self.client = TestClient(server.streamable_http_app())
+        self.app = server.streamable_http_app()
+        # The tunnel forwards raw TCP to loopback, so Starlette sees 127.0.0.1
+        # for every tunneled request: the peer address proves nothing.
+        self.local = TestClient(self.app, client=("127.0.0.1", 40000))
+        self.remote = TestClient(self.app, client=("10.0.0.1", 40000))
 
     def tearDown(self):
-        self.client.close()
+        self.local.close()
+        self.remote.close()
         self.tmp.cleanup()
+
+    @property
+    def auth(self):
+        return {"Authorization": f"Bearer {self.TOKEN}"}
+
+    def audit(self):
+        import sqlite3
+
+        with sqlite3.connect(self.registry.db_path) as conn:
+            return conn.execute("SELECT tool, status FROM audit").fetchall()
 
     def test_loopback_detection(self):
         self.assertTrue(is_loopback("127.0.0.1"))
@@ -582,31 +713,77 @@ class InternalRouteTests(unittest.TestCase):
         self.assertFalse(is_loopback(None))
 
     def test_internal_routes_reject_non_loopback_peers(self):
-        response = self.client.post(
-            "/internal/episodes", json={"group": "global", "content": "x"}
+        response = self.remote.post(
+            "/internal/episodes", json={"group": "global", "content": "x"}, headers=self.auth
         )
         self.assertEqual(response.status_code, 403)
-        response = self.client.post(
-            "/internal/lookup", json={"group": "global", "hashes": ["a" * 64]}
+        self.assertIn("loopback", response.json()["error"])
+        response = self.remote.post(
+            "/internal/lookup", json={"group": "global", "hashes": ["a" * 64]}, headers=self.auth
         )
         self.assertEqual(response.status_code, 403)
+        self.assertIn("loopback", response.json()["error"])
+
+    def test_a_tunneled_request_without_the_token_is_rejected(self):
+        for path, payload in (
+            ("/internal/episodes", {"group": "global", "content": "tunneled"}),
+            ("/internal/lookup", {"group": "global", "hashes": ["a" * 64]}),
+        ):
+            with self.subTest(path=path):
+                response = self.local.post(path, json=payload)
+                self.assertEqual(response.status_code, 403)
+                self.assertIn("internal token", response.json()["error"])
+        self.assertEqual(self.registry.stats("global")["total"], 0)
+        self.assertEqual(self.backend.added, [])
+        self.assertEqual(self.audit(), [])
+
+    def test_a_wrong_or_malformed_token_is_rejected(self):
+        for header in (
+            {"Authorization": "Bearer wrong"},
+            {"Authorization": self.TOKEN},
+            {"Authorization": ""},
+        ):
+            with self.subTest(header=header):
+                response = self.local.post(
+                    "/internal/episodes",
+                    json={"group": "global", "content": "nope"},
+                    headers=header,
+                )
+                self.assertEqual(response.status_code, 403)
+        self.assertEqual(self.registry.stats("global")["total"], 0)
+        self.assertEqual(self.backend.added, [])
+
+    def test_the_server_writes_a_group_readable_token_at_startup(self):
+        with tempfile.TemporaryDirectory() as state_dir:
+            build_server(
+                WrapperConfig(state_dir=state_dir, graphiti_url="http://127.0.0.1:1/mcp"),
+                backend=self.backend,
+                registry=Registry(state_dir),
+                probes=FakeProbes(),
+                graph=FakeGraph(),
+                start_reconciler=False,
+            )
+            path = Path(state_dir) / "internal.token"
+            self.assertTrue(path.exists())
+            self.assertEqual(path.stat().st_mode & 0o777, 0o640)
+            self.assertTrue(path.read_text(encoding="utf-8").strip())
 
     def test_episodes_payload_validation(self):
-        with mock.patch("memory_mcp.wrapper.is_loopback", return_value=True):
-            cases = [
-                ({"content": "x"}, "group"),
-                ({"group": "global"}, "content"),
-                ({"group": "global", "content": "x", "kind": "binary"}, "kind"),
-                ({"group": "global", "content": "x", "origin": "web"}, "origin"),
-                ({"group": "global", "content": "x", "valid_at": "yesterday"}, "valid_at"),
-                ({"group": "global", "content": "x", "tags": "one"}, "tags"),
-                ({"group": "blitzy-ai--repo", "content": "x"}, "employer"),
-            ]
-            for payload, needle in cases:
-                with self.subTest(payload=payload):
-                    response = self.client.post("/internal/episodes", json=payload)
-                    self.assertEqual(response.status_code, 400)
-                    self.assertIn(needle, response.json()["error"])
+        cases = [
+            ({"content": "x"}, "group"),
+            ({"group": "global"}, "content"),
+            ({"group": "global", "content": "x", "kind": "binary"}, "kind"),
+            ({"group": "global", "content": "x", "origin": "web"}, "origin"),
+            ({"group": "global", "content": "x", "valid_at": "yesterday"}, "valid_at"),
+            ({"group": "global", "content": "x", "tags": "one"}, "tags"),
+            ({"group": "global", "content": "x\x00y"}, "NUL"),
+            ({"group": "blitzy-ai--repo", "content": "x"}, "employer"),
+        ]
+        for payload, needle in cases:
+            with self.subTest(payload=payload):
+                response = self.local.post("/internal/episodes", json=payload, headers=self.auth)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn(needle, response.json()["error"])
 
     def test_episodes_accepts_a_typed_payload(self):
         payload = {
@@ -619,8 +796,7 @@ class InternalRouteTests(unittest.TestCase):
             "tags": ["sdlc"],
             "actor": "ingest",
         }
-        with mock.patch("memory_mcp.wrapper.is_loopback", return_value=True):
-            response = self.client.post("/internal/episodes", json=payload)
+        response = self.local.post("/internal/episodes", json=payload, headers=self.auth)
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual(body["status"], "queued")
@@ -635,6 +811,13 @@ class InternalRouteTests(unittest.TestCase):
         self.assertEqual(stored.actor, "ingest")
         self.assertEqual(self.backend.added[-1]["source"], "json")
         self.assertEqual(self.backend.added[-1]["reference_time"], "2026-10-03T12:00:00Z")
+
+    def test_an_oversized_body_is_rejected_before_it_is_parsed(self):
+        payload = {"group": "global", "content": "x" * (MAX_INTERNAL_BODY_BYTES + 1)}
+        response = self.local.post("/internal/episodes", json=payload, headers=self.auth)
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(self.registry.stats("global")["total"], 0)
+        self.assertEqual(self.backend.added, [])
 
     def test_lookup_returns_typed_state_for_each_hash(self):
         entry = RegistryEpisode(
@@ -654,12 +837,13 @@ class InternalRouteTests(unittest.TestCase):
             status="active",
             graphiti_uuid="graph-1",
         )
-        self.registry.insert(entry)
-        with mock.patch("memory_mcp.wrapper.is_loopback", return_value=True):
-            response = self.client.post(
-                "/internal/lookup",
-                json={"group": "global", "hashes": ["a" * 64, "b" * 64]},
-            )
+        self.registry.queue(entry)
+        self.registry.mark_active("global", entry.content_hash, "graph-1")
+        response = self.local.post(
+            "/internal/lookup",
+            json={"group": "global", "hashes": ["a" * 64, "b" * 64]},
+            headers=self.auth,
+        )
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual(body["a" * 64]["status"], "active")
@@ -668,17 +852,47 @@ class InternalRouteTests(unittest.TestCase):
         self.assertEqual(body["b" * 64]["status"], "missing")
         self.assertIsNone(body["b" * 64]["graphiti_uuid"])
 
+    def test_lookup_answers_every_hash_in_one_request(self):
+        digests = [f"{index:064x}" for index in range(1, 4)]
+        for digest in digests[:2]:
+            self.registry.queue(
+                RegistryEpisode(
+                    group="global",
+                    content_hash=digest,
+                    uuid=episode_uuid("global", digest),
+                    name="n",
+                    content="c",
+                    kind="text",
+                    origin="notes",
+                    origin_ref="",
+                    actor="ingest",
+                    cwd="",
+                    tags=(),
+                    valid_at="2026-01-01T00:00:00Z",
+                    created_at="2026-01-01T00:00:00Z",
+                )
+            )
+        response = self.local.post(
+            "/internal/lookup", json={"group": "global", "hashes": digests}, headers=self.auth
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(set(body), set(digests))
+        self.assertEqual(body[digests[0]]["status"], "pending")
+        self.assertEqual(body[digests[2]]["status"], "missing")
+
     def test_lookup_validates_group_and_hashes(self):
-        with mock.patch("memory_mcp.wrapper.is_loopback", return_value=True):
-            bad_hash = self.client.post(
-                "/internal/lookup", json={"group": "global", "hashes": ["xyz"]}
-            )
-            self.assertEqual(bad_hash.status_code, 400)
-            bad_group = self.client.post(
-                "/internal/lookup", json={"group": "blitzy-ai--repo", "hashes": ["a" * 64]}
-            )
-            self.assertEqual(bad_group.status_code, 400)
-            self.assertIn("employer", bad_group.json()["error"])
+        bad_hash = self.local.post(
+            "/internal/lookup", json={"group": "global", "hashes": ["xyz"]}, headers=self.auth
+        )
+        self.assertEqual(bad_hash.status_code, 400)
+        bad_group = self.local.post(
+            "/internal/lookup",
+            json={"group": "blitzy-ai--repo", "hashes": ["a" * 64]},
+            headers=self.auth,
+        )
+        self.assertEqual(bad_group.status_code, 400)
+        self.assertIn("employer", bad_group.json()["error"])
 
 
 if __name__ == "__main__":

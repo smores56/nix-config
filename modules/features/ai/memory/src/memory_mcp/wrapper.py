@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import os
 import re
 import sys
@@ -38,6 +39,7 @@ from .groups import (
     sanitize_provenance,
     validate_group,
 )
+from .internal_auth import bearer_ok, write_token
 from .normalize import (
     MAX_TAG_LENGTH,
     content_hash,
@@ -52,6 +54,7 @@ from .reconciler import InFlight, Reconciler, build_default
 from .registry import (
     KINDS,
     ORIGINS,
+    AmbiguousRef,
     Audit,
     Registry,
     RegistryEpisode,
@@ -86,6 +89,9 @@ MAX_CWD_CHARS = 1024
 MAX_MESSAGE_CHARS = 500
 MAX_LOOKUP_HASHES = 10_000
 MAX_DETAIL_CHARS = 300
+# The internal routes take machine-built JSON only: a 10k-hash lookup is the
+# largest legitimate body, and episodes are capped at MAX_CONTENT_CHARS.
+MAX_INTERNAL_BODY_BYTES = 1_000_000
 
 _HASH = re.compile(r"^[0-9a-f]{64}$")
 
@@ -213,6 +219,42 @@ def _call_context(ctx: Context, headers_provider: HeadersProvider) -> CallContex
     )
 
 
+class BodyTooLarge(Exception):
+    """An internal request body exceeded MAX_INTERNAL_BODY_BYTES."""
+
+
+async def _bounded_body(request: Request, limit: int) -> bytes:
+    """Read the request body, aborting as soon as it passes `limit`."""
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > limit:
+        raise BodyTooLarge
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > limit:
+            raise BodyTooLarge
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+async def _internal_payload(request: Request) -> tuple[dict[str, Any] | None, JSONResponse | None]:
+    """Parse a bounded JSON object body, or return the error response."""
+    try:
+        raw = await _bounded_body(request, MAX_INTERNAL_BODY_BYTES)
+    except BodyTooLarge:
+        return None, JSONResponse(
+            {"error": f"request body exceeds {MAX_INTERNAL_BODY_BYTES} bytes"}, status_code=413
+        )
+    try:
+        payload = json.loads(raw) if raw else None
+    except ValueError:
+        return None, JSONResponse({"error": "invalid JSON body"}, status_code=400)
+    if not isinstance(payload, dict):
+        return None, JSONResponse({"error": "payload must be an object"}, status_code=400)
+    return payload, None
+
+
 def _result_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -265,6 +307,7 @@ def build_server(
     reconciler: Reconciler | None = None,
     start_reconciler: bool = True,
     headers_provider: HeadersProvider = headers_from_context,
+    internal_token: str | None = None,
 ) -> FastMCP:
     backend = backend or GraphitiBackend(config.graphiti_url, timeout=config.upstream_timeout)
     registry = registry or Registry(config.state_dir)
@@ -272,6 +315,9 @@ def build_server(
         llm_url=config.llm_url, embed_url=config.embed_url, embed_model=config.embed_model
     )
     graph = graph or GraphStore(config.redis_url)
+    # A fresh secret every start: the token file is the only thing that
+    # distinguishes a local ingest from a tunneled MCP client.
+    token = internal_token or write_token(config.state_dir)
     in_flight = reconciler.in_flight if reconciler is not None else InFlight()
     if reconciler is None:
         reconciler = build_default(
@@ -330,6 +376,15 @@ def build_server(
         streamable_http_path="/mcp",
         lifespan=lifespan,
     )
+
+    def resolve_entry(group: str, ref: str, *, guidance: str) -> RegistryEpisode:
+        try:
+            entry = registry.find_exact(group, ref)
+        except AmbiguousRef as exc:
+            raise ToolError(str(exc)) from exc
+        if entry is None:
+            raise ToolError(f"no stored episode in group {group} matches {clip(ref, 80)!r}; {guidance}")
+        return entry
 
     async def guarded(tool: str, ctx: Context, action: Callable[[CallContext], Awaitable[str]]) -> str:
         try:
@@ -640,13 +695,14 @@ def build_server(
         """Return one stored episode by exact uuid, hash prefix, or `origin:origin_ref`."""
 
         async def action(info: CallContext) -> str:
-            entry = registry.find_exact(info.group, ref)
-            if entry is None:
-                raise ToolError(
-                    f"no stored episode in group {info.group} matches {clip(ref, 80)!r}; "
+            entry = resolve_entry(
+                info.group,
+                ref,
+                guidance=(
                     "use the registry uuid, a hash prefix of at least 12 characters, "
                     "or an exact origin:origin_ref from memory_search"
-                )
+                ),
+            )
             lines = [
                 f"Memory {entry.uuid} in group {entry.group}",
                 f"provenance: {provenance_tag(entry)}",
@@ -682,14 +738,46 @@ def build_server(
         """Reset a failed episode's attempts and resubmit it."""
 
         async def action(info: CallContext) -> str:
-            entry = registry.find_exact(info.group, ref)
-            if entry is None:
-                raise ToolError(
-                    f"no stored episode in group {info.group} matches {clip(ref, 80)!r}"
-                )
+            entry = resolve_entry(
+                info.group,
+                ref,
+                guidance="use the registry uuid, a hash prefix, or an exact origin:origin_ref",
+            )
             if entry.status != "failed":
                 raise ToolError(
                     f"episode {entry.uuid} is {entry.status}; only failed episodes can be retried"
+                )
+            # The graph may already hold this content: an extraction that landed
+            # after the reconciler gave up must not be submitted a second time.
+            try:
+                found = await asyncio.to_thread(graph.episode_for, entry.group, entry.content)
+            except GraphUnavailable as exc:
+                raise ToolError(
+                    f"graph unavailable, so the retry was not submitted: {clip(str(exc), 200)}"
+                ) from exc
+            if found is not None:
+                applied = registry.mark_active(
+                    entry.group,
+                    entry.content_hash,
+                    found.uuid,
+                    from_statuses=("failed",),
+                    audit=Audit(
+                        actor=info.actor,
+                        group=entry.group,
+                        tool="memory_retry",
+                        status="active",
+                        content_hash=entry.content_hash,
+                        uuid=entry.uuid,
+                        details={"graphiti_uuid": found.uuid},
+                    ),
+                )
+                if not applied:
+                    raise ToolError(
+                        f"episode {entry.uuid} changed while the retry ran; re-run memory_get"
+                    )
+                return (
+                    f"Episode {entry.uuid} is already in the graph as {found.uuid}; "
+                    "marked it active instead of resubmitting."
                 )
             outcome = await perform_write(
                 info,
@@ -724,12 +812,13 @@ def build_server(
             if target == info.group:
                 raise ToolError("source and target group are the same; nothing to promote")
 
-            entry = registry.find_exact(info.group, ref)
-            if entry is None:
-                raise ToolError(
-                    f"no stored episode in group {info.group} matches {clip(ref, 80)!r}; "
+            entry = resolve_entry(
+                info.group,
+                ref,
+                guidance=(
                     "use the registry uuid, a content hash prefix, or an exact origin:origin_ref"
-                )
+                ),
+            )
             if entry.status == "tombstoned":
                 raise ToolError(f"episode {entry.uuid} is tombstoned and cannot be promoted")
 
@@ -849,12 +938,13 @@ def build_server(
         """Invalidate the graph edges this episode exclusively supports; keep the episode node."""
 
         async def action(info: CallContext) -> str:
-            entry = registry.find_exact(info.group, ref)
-            if entry is None:
-                raise ToolError(
-                    f"no stored episode in group {info.group} matches {clip(ref, 80)!r}; "
+            entry = resolve_entry(
+                info.group,
+                ref,
+                guidance=(
                     "use the registry uuid, a content hash prefix, or an exact origin:origin_ref"
-                )
+                ),
+            )
             if entry.status == "tombstoned":
                 audit(
                     "memory_tombstone",
@@ -866,14 +956,31 @@ def build_server(
                     details={"tombstoned_at": entry.tombstoned_at},
                 )
                 return f"Episode {entry.uuid} is already tombstoned ({entry.tombstoned_at})."
+            # A revived row re-extracts into a new episode, so every graph
+            # episode with this exact content is a tombstone target, not just
+            # the uuid recorded earlier. No graph match is fine: the row is
+            # still tombstoned and the status guard keeps it from coming back.
+            now = utcnow()
             result = TombstoneResult()
-            if entry.graphiti_uuid:
-                try:
-                    result = graph.tombstone(info.group, entry.graphiti_uuid, now=utcnow())
-                except GraphUnavailable as exc:
-                    raise ToolError(
-                        f"graph unavailable, so the tombstone was not applied: {clip(str(exc), 200)}"
-                    ) from exc
+            targets: list[str] = []
+            try:
+                targets = await asyncio.to_thread(
+                    graph.episode_uuids, info.group, entry.content
+                )
+                if entry.graphiti_uuid and entry.graphiti_uuid not in targets:
+                    targets.append(entry.graphiti_uuid)
+                for target in targets:
+                    partial = await asyncio.to_thread(
+                        graph.tombstone, info.group, target, now=now
+                    )
+                    result = TombstoneResult(
+                        invalidated=result.invalidated + partial.invalidated,
+                        shared=result.shared + partial.shared,
+                    )
+            except GraphUnavailable as exc:
+                raise ToolError(
+                    f"graph unavailable, so the tombstone was not applied: {clip(str(exc), 200)}"
+                ) from exc
             updated = registry.tombstone(
                 entry,
                 reason=clip(reason, MAX_DETAIL_CHARS),
@@ -887,9 +994,12 @@ def build_server(
                     details={
                         "invalidated_edges": result.invalidated,
                         "shared_edges": result.shared,
+                        "graph_episodes": len(targets),
                     },
                 ),
             )
+            if updated is None:
+                raise ToolError(f"episode {entry.uuid} disappeared from the registry")
             return (
                 f"Marked {updated.uuid} tombstoned in group {info.group}: "
                 f"{updated.tombstone_reason or 'no reason'}. Invalidated {result.invalidated} "
@@ -899,14 +1009,25 @@ def build_server(
 
         return await guarded("memory_tombstone", ctx, action)
 
-    async def _internal_episodes(request: Request) -> JSONResponse:
-        if not is_loopback(request.client.host if request.client else None):
+    def authorize_internal(request: Request) -> JSONResponse | None:
+        """The loopback check plus the shared token; None when the call is allowed."""
+        peer = request.client.host if request.client else None
+        if not is_loopback(peer):
             return JSONResponse({"error": "internal routes are loopback-only"}, status_code=403)
-        try:
-            payload = await request.json()
-        except Exception:
-            return JSONResponse({"error": "invalid JSON body"}, status_code=400)
-        if not isinstance(payload, dict):
+        if not bearer_ok(request.headers.get("authorization"), token):
+            return JSONResponse(
+                {"error": "missing or invalid internal token"}, status_code=403
+            )
+        return None
+
+    async def _internal_episodes(request: Request) -> JSONResponse:
+        denied = authorize_internal(request)
+        if denied is not None:
+            return denied
+        payload, invalid = await _internal_payload(request)
+        if invalid is not None:
+            return invalid
+        if payload is None:  # unreachable: _internal_payload returns exactly one
             return JSONResponse({"error": "payload must be an object"}, status_code=400)
         try:
             group = validate_group(str(payload.get("group") or ""))
@@ -947,13 +1068,13 @@ def build_server(
         return JSONResponse(outcome.as_dict())
 
     async def _internal_lookup(request: Request) -> JSONResponse:
-        if not is_loopback(request.client.host if request.client else None):
-            return JSONResponse({"error": "internal routes are loopback-only"}, status_code=403)
-        try:
-            payload = await request.json()
-        except Exception:
-            return JSONResponse({"error": "invalid JSON body"}, status_code=400)
-        if not isinstance(payload, dict):
+        denied = authorize_internal(request)
+        if denied is not None:
+            return denied
+        payload, invalid = await _internal_payload(request)
+        if invalid is not None:
+            return invalid
+        if payload is None:  # unreachable: _internal_payload returns exactly one
             return JSONResponse({"error": "payload must be an object"}, status_code=400)
         try:
             group = validate_group(str(payload.get("group") or ""))
@@ -975,8 +1096,9 @@ def build_server(
             return JSONResponse({"error": str(exc)}, status_code=400)
 
         result: dict[str, dict[str, object]] = {}
+        found = registry.lookup_many(group, hashes)
         for digest in hashes:
-            entry = registry.lookup(group, digest)
+            entry = found.get(digest)
             if entry is None:
                 result[digest] = {
                     "status": "missing",
