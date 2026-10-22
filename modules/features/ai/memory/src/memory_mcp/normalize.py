@@ -49,6 +49,20 @@ def episode_name(normalized: str, digest: str) -> str:
     return f"memory {digest[:12]}"
 
 
+def describe_source(origin: str, origin_ref: str, valid_at: str = "") -> str:
+    """A short human-readable label for Graphiti's `source_description`.
+
+    Nothing here is parsed back: identity and provenance live in the registry.
+    The description exists only so a graph inspector can tell where an episode
+    came from.
+    """
+    label = " ".join(f"{origin} {origin_ref}".split())
+    day = (valid_at or "")[:10]
+    if day:
+        label = f"{label} ({day})"
+    return label[:200] or origin
+
+
 def normalize_tags(tags: list[str] | None) -> list[str]:
     if not tags:
         return []
