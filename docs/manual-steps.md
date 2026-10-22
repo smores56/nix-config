@@ -447,7 +447,8 @@ deleting the file.
 
 **Backup.** The registry is the system of record, so its snapshot *is* the
 memory backup: it holds every episode's normalized content and typed
-provenance. The graph is a derived index and can be rebuilt by re-extraction.
+provenance. The graph is a derived index: it is rebuilt only by re-ingesting
+the corpus into a wiped store (`just memory-rebuild`).
 `memory-export.timer` runs `memory-export.service` daily (00:00 plus up to an
 hour of randomized delay, `Persistent=true`, as root because the FalkorDB data
 directory is root-owned) and writes one timestamped directory under
@@ -462,44 +463,76 @@ directory is root-owned) and writes one timestamped directory under
 - `manifest.json` — creation time, `PRAGMA user_version`, per-status counts, and
   the sha256 of each file;
 - `graph-<timestamp>.rdb` — the FalkorDB snapshot, when `BGSAVE` finished in
-  time. The exporter issues one `BGSAVE` per run and polls `INFO persistence`;
-  it never touches the AOF. A missing or failed graph snapshot is recorded in
-  the manifest (`graph: null` plus `graph_error`) and does not fail the run.
+  time. The exporter issues one `BGSAVE` per run and polls `INFO persistence`,
+  accepting `dump.rdb` only once the server's `rdb_last_save_time` has advanced
+  past the value it read before the save; it never touches the AOF. A missing
+  or failed graph snapshot is recorded in the manifest (`graph: null` plus
+  `graph_error`) and the registry export still stands, but the command exits
+  non-zero so the failed timer run is visible (and alerts, when
+  `alerting.enable` is on).
 
 Seven directories are kept; retention only deletes names that are export
-timestamps. Inspect a run with `journalctl -u memory-export.service`. Take one
-immediately with `just memory-export`.
+timestamps *and* whose `manifest.json` reads, so a partial export (a crashed or
+still-running run) is left for the operator rather than counted as one of the
+kept snapshots, and the directory a run just wrote is never a prune candidate.
+Inspect a run with `journalctl -u memory-export.service`. Take one immediately
+with `just memory-export`. An export refuses to run while a restore holds the
+lock described below.
 
 **Restore drill.** `sudo memory restore <export-dir>` verifies every manifest
 checksum *first*, refuses a registry schema other than the installed code's
-(a newer one this code cannot read; an older one the wrapper will not open), stops
-`memory-mcp`, `memory-graphiti-mcp`, and `memory-llm-proxy`, restores
-`registry.sqlite` (dropping the old `-wal`/`-shm`), and then handles the graph:
+(a newer one this code cannot read; an older one the wrapper will not open),
+then stops `memory-mcp`, `memory-graphiti-mcp`, `memory-llm-proxy`, and
+`memory-falkordb`. The graph store stops too: a running FalkorDB rewrites its
+AOF, which would resurrect the data the restore is replacing. The live
+`registry.sqlite` and its `-wal`/`-shm` are copied to
+`registry.sqlite.pre-restore-<timestamp>`, the export's registry is installed
+with one atomic rename, and only then are the replaced database's sidecars
+dropped. Ownership (`memory:memory`) is settled on the staged copy *before* the
+rename, so a failed `chown` leaves the previous registry in place, exits
+non-zero, and names the parked copy. Delete the `*.pre-restore-*` registry files
+once the restore checks out.
+
+The graph is handled after the registry:
 
 - the matching `graph-<timestamp>.rdb` is restored only when its timestamp
-  equals the registry snapshot's, and `FalkorDB` must be restarted afterwards
-  (it reads `dump.rdb` at startup). FalkorDB runs with `appendonly yes` and
-  Redis loads the AOF in preference to the RDB, so the restore renames the
-  existing `appendonlydir` to `appendonlydir.pre-restore-<timestamp>` — the old
-  AOF is kept, never deleted, and otherwise the restored snapshot would be
-  silently ignored;
+  equals the registry snapshot's. FalkorDB runs with `appendonly yes` and Redis
+  loads the AOF in preference to the RDB, so the restore renames the existing
+  `appendonlydir` to `appendonlydir.pre-restore-<timestamp>` — the old AOF is
+  kept, never deleted, and otherwise the restored snapshot would be silently
+  ignored. It then restarts `memory-falkordb`, because the RDB is only read at
+  startup, and reports `graph: restored` only after that restart. Delete the
+  parked `appendonlydir.pre-restore-*` once `GRAPH.LIST` and a search confirm
+  the graph is the restored one;
 - otherwise it refuses the graph, restores the registry alone, and tells you to
-  rebuild the graph from the registry: stop the two memory services, empty
-  `/var/lib/memory/falkordb`, start them, and run `just memory-ingest`.
-  Re-extraction of `active` rows is tracked in #219.
+  restore an export whose graph snapshot matches, or to rebuild **both** stores.
+  A graph cannot be rebuilt from a restored registry: `memory-ingest` skips rows
+  that already succeeded, so re-ingesting an `active` corpus into an empty graph
+  extracts nothing. `just memory-rebuild` wipes the FalkorDB data *and* the
+  registry, and only then does `just memory-ingest` rebuild anything
+  (re-extraction of `active` rows is tracked in #219).
 
 `--dry-run` verifies and prints the plan without stopping or writing anything;
-`--no-stop` skips the `systemctl stop` for a verification-only run;
-`--start` starts the services afterwards. The subcommand is `memory restore`
-next to `memory export` — not `memory export restore` — and the CLI is in the
-system profile on any host with `memory.enable`, so sudo finds it.
+`--no-stop` is accepted only together with `--dry-run`, because a real restore
+always stops the services (swapping files under a running store is how a restore
+corrupts itself); `--start` also starts `memory-llm-proxy`,
+`memory-graphiti-mcp`, and `memory-mcp` after the graph restart; `--owner
+user:group` sets the restored registry's owner (default `memory:memory`, an
+empty value skips it). A restore writes `<state>/.restore-in-progress` for its
+duration, and `memory export` refuses to run while it exists; a failed restore
+leaves it in place, so remove it once the state is reconciled. The subcommand is
+`memory restore` next to `memory export` — not `memory export restore` — and the
+CLI is in the system profile on any host with `memory.enable`, so sudo finds it.
 `just memory-restore <dir>` wraps it.
 
 The drill the check suite runs (`tests/memory_export_restore.sh`) is the same
 procedure against temp directories: a live WAL registry exports consistently, a
 tampered file and a newer schema are refused, retention prunes only its own
-directories, and a mismatched graph snapshot is rejected in favour of the
-rebuild path. It needs no root, no FalkorDB, and no network.
+complete directories, a mismatched graph snapshot is rejected in favour of the
+rebuild path, the stop set reaches `memory-falkordb` and the graph restore
+restarts it, a failed ownership step leaves the previous registry in place, and
+an export refuses to run while the restore lock exists. It needs no root, no
+FalkorDB, and no network.
 
 **Not in restic yet.** The restic backup migration is still pending, so nothing
 copies `/var/lib/memory/export` off the host. Until then the exports protect
@@ -531,8 +564,9 @@ registry starts empty: the first ingest after this deploy sees an **empty
 registry against a populated graph** and re-extracts the whole corpus,
 duplicating episodes the graph already holds. That is expected and bounded
 (one hosted extraction call per episode; the new rows become `active` when
-their extraction lands). Reconciling the two stores is the graph wipe/rebuild
-tracked in #219. Deploy the gateway before ingesting: until
+their extraction lands). Reconciling the two stores means wiping both of them
+(`just memory-rebuild`) and re-ingesting; making `memory-ingest` re-extract
+already-`active` rows is tracked in #219. Deploy the gateway before ingesting: until
 `just switch smortress` runs, Graphiti still extracts through the old route and
 drops episodes. Then, on smortress:
 

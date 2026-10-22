@@ -358,13 +358,17 @@ model providers Maki may use.
   `episodes.jsonl` with every episode's content and typed provenance,
   `manifest.json` with the schema version, per-status counts, and file
   checksums, and a best-effort `graph-<timestamp>.rdb` from one `BGSAVE`. A
-  failed graph snapshot is recorded in the manifest and never fails the export.
-  Seven exports are kept. `memory restore <dir>` verifies the checksums first,
-  refuses a schema the installed code cannot open, stops the memory services,
-  and restores the registry; the graph snapshot is used only when it was taken
-  at the same timestamp as the registry, otherwise the graph is rebuilt from
-  the registry. `just memory-export` / `just memory-restore <dir>` are the
-  operator shortcuts, and the drill is in `docs/manual-steps.md`.
+  failed graph snapshot is recorded in the manifest and makes the export exit
+  non-zero without invalidating the registry copy. Seven exports are kept.
+  `memory restore <dir>` verifies the checksums first, refuses a schema the
+  installed code cannot open, stops the memory services including FalkorDB,
+  parks the live registry and replaces it atomically, and restores the graph
+  snapshot only when it was taken at the same timestamp as the registry,
+  restarting FalkorDB to load it. Otherwise the graph is refused: a restored
+  registry cannot re-extract into an empty graph, so the rebuild path is wiping
+  both stores (`just memory-rebuild`) and re-ingesting. `just memory-export` /
+  `just memory-restore <dir>` are the operator shortcuts, and the drill is in
+  `docs/manual-steps.md`.
 
 - `work`: maki is OpenAI-only and gets no personal providers, search, or
   memory MCP.

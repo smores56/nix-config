@@ -483,11 +483,13 @@ in
 
     # Nightly export. The registry snapshot is the backup: it holds every
     # episode's content and provenance, so losing it loses memory. The graph is
-    # a derived index, so its BGSAVE snapshot is best-effort and the export
-    # succeeds without it. Root is required for the root-owned FalkorDB data
+    # a derived index, so its BGSAVE snapshot is best-effort: the files are
+    # written either way, but a missing graph exits non-zero so the timer's
+    # onFailure alert sees it. Root is required for the root-owned FalkorDB data
     # dir; the registry is only read, so the wrapper keeps writing under WAL.
     # `Type=oneshot` makes overlap impossible, and the timer re-runs a missed
-    # run after downtime (`Persistent`).
+    # run after downtime (`Persistent`). The export refuses to run while a
+    # restore holds /var/lib/memory/.restore-in-progress.
     systemd.services.memory-export = {
       description = "Export the memory registry and snapshot the graph";
       # No dependency on the wrapper: an export of the last good registry is
