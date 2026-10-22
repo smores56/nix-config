@@ -42,7 +42,7 @@ from .store import Entry, Store, pending_is_stale, utcnow
 
 DEFAULT_STATE_DIR = "/var/lib/memory"
 DEFAULT_GRAPHITI_URL = "http://127.0.0.1:8184/mcp"
-DEFAULT_LLM_URL = "http://127.0.0.1:8081"
+DEFAULT_LLM_URL = "http://127.0.0.1:8082"
 DEFAULT_EMBED_URL = "http://127.0.0.1:8183"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8182
@@ -71,6 +71,9 @@ class WrapperConfig:
     graphiti_url: str = DEFAULT_GRAPHITI_URL
     llm_url: str = DEFAULT_LLM_URL
     embed_url: str = DEFAULT_EMBED_URL
+    # Set for a remote embedder so readiness probes a real embedding rather
+    # than a /health endpoint the gateway does not serve for it.
+    embed_model: str | None = None
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
     upstream_timeout: float = DEFAULT_UPSTREAM_TIMEOUT
@@ -83,6 +86,7 @@ class WrapperConfig:
             graphiti_url=os.environ.get("MEMORY_GRAPHITI_URL", DEFAULT_GRAPHITI_URL),
             llm_url=os.environ.get("MEMORY_LLM_URL", DEFAULT_LLM_URL),
             embed_url=os.environ.get("MEMORY_EMBED_URL", DEFAULT_EMBED_URL),
+            embed_model=os.environ.get("MEMORY_EMBED_MODEL") or None,
             host=os.environ.get("MEMORY_MCP_HOST", DEFAULT_HOST),
             port=int(os.environ.get("MEMORY_MCP_PORT", str(DEFAULT_PORT))),
             upstream_timeout=float(os.environ.get("MEMORY_UPSTREAM_TIMEOUT", str(DEFAULT_UPSTREAM_TIMEOUT))),
@@ -186,7 +190,9 @@ def build_server(
 ) -> FastMCP:
     backend = backend or GraphitiBackend(config.graphiti_url, timeout=config.upstream_timeout)
     store = store or Store(config.state_dir)
-    probes = probes or HealthProbes(llm_url=config.llm_url, embed_url=config.embed_url)
+    probes = probes or HealthProbes(
+        llm_url=config.llm_url, embed_url=config.embed_url, embed_model=config.embed_model
+    )
 
     mcp = FastMCP(
         name="memory",
