@@ -44,6 +44,7 @@ pkgs.python3Packages.buildPythonApplication {
     "memory_mcp.wrapper"
     "memory_mcp.shim"
     "memory_mcp.cli"
+    "memory_mcp.export"
     "memory_mcp.ingest_runner"
     "memory_mcp.ingest_sources"
     "memory_mcp.graph"
