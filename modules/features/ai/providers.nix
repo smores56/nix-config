@@ -63,24 +63,29 @@ let
   # ── Neuralwatt ────────────────────────────────────────────────────────────
   # No per-model effort pinning: maki's always_thinking="max" (init.lua)
   # picks the level, and mkModel's thinking_fields spell its budget.
+  deepseekFlashModel = mkModel {
+    id = "deepseek-v4.1-flash";
+    context = 1048576;
+    output = 393216;
+    vision = true;
+    prompt = 0.15;
+    completion = 0.60;
+    cacheRead = 0.02;
+  };
+
   neuralwatt = {
     providerId = "neuralwatt";
     baseUrl = "https://api.neuralwatt.com/v1";
     keyEnv = "NEURALWATT_API_KEY";
+    # memory extraction reads models.deepseekFlash so Graphiti and maki cannot
+    # disagree about the model id.
+    models.deepseekFlash = deepseekFlashModel;
     # Windows are the upstream caps: deepseek serves its full 1M context, qwen
     # its 262K. Both report vision in the /v1/models capabilities, and maki only
     # learns that from this flag.
-    makiModels = map mkModel [
-      {
-        id = "deepseek-v4.1-flash";
-        context = 1048576;
-        output = 393216;
-        vision = true;
-        prompt = 0.15;
-        completion = 0.60;
-        cacheRead = 0.02;
-      }
-      {
+    makiModels = [
+      deepseekFlashModel
+      (mkModel {
         id = "qwen-3.8-27b";
         context = 262144;
         output = 131072;
@@ -88,7 +93,7 @@ let
         prompt = 0.45;
         completion = 3.20;
         cacheRead = 0.25;
-      }
+      })
     ];
   };
 

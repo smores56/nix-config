@@ -1,18 +1,24 @@
-"""Loopback OpenAI-compatible proxy that turns off thinking for Graphiti.
+"""Loopback OpenAI-compatible gateway in front of Neuralwatt.
 
-Graphiti's generic OpenAI client sends no per-request thinking control, and the
-qwen3.8 chat server defaults to thinking on: extraction spends the whole
-max_tokens budget as reasoning and returns empty content, which Graphiti drops.
-llama.cpp parses `reasoning_effort` on each chat completion, so this proxy adds
-`reasoning_effort: "none"` to chat requests only. Maki keeps talking to the
-same server directly, so its thinking behavior is unchanged.
+Graphiti's generic OpenAI client sends no per-request thinking control, and a
+reasoning model spends the whole max_tokens budget as reasoning on extraction,
+returning empty content that Graphiti drops. This gateway adds
+`reasoning_effort: "none"` to chat completions and leaves every other path
+(models, embeddings, health, streaming) untouched.
 
-Everything except chat completions is forwarded untouched; streaming responses
-are passed through without buffering because extraction progress is not the
-only consumer of this port.
+It is also the single egress point for Neuralwatt: the account key comes from a
+systemd credential (or `MEMORY_NEURALWATT_KEY_FILE`), and the gateway adds
+`Authorization: Bearer …` when the caller sent none. Graphiti and the wrapper
+stay key-less. A client-supplied credential is never overridden, but the
+dummy `api_key: "none"` that Graphiti's YAML requires (sent upstream as
+`Bearer none`) is treated as absent and replaced.
 
-`/health` is a local liveness answer: it reports that this proxy is running, not
-that the chat model behind it is loaded. Operators check the model through the
+A missing or empty key does not crash the process: `/health` still answers so
+the unit stays up, but every proxied request fails closed with a 503
+configuration error instead of leaking an unauthenticated call upstream.
+
+`/health` is a local liveness answer: it reports that this gateway is running,
+not that Neuralwatt is reachable. Operators check upstream access through the
 proxied `/v1/models` (see `docs/manual-steps.md`).
 
 Request bodies are capped at `MAX_REQUEST_BYTES` (extraction prompts are large,
@@ -23,8 +29,10 @@ have their own deadline so a stalled upstream cannot pin a worker forever.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, AsyncIterator
 
 import httpx
@@ -33,10 +41,16 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
-DEFAULT_UPSTREAM = "http://127.0.0.1:8081"
+logger = logging.getLogger("memory-mcp.llm-proxy")
+
+DEFAULT_UPSTREAM = "https://api.neuralwatt.com"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8082
 DEFAULT_TIMEOUT = 600.0
+# systemd's LoadCredential drops the sops secret here; the unit points
+# MEMORY_NEURALWATT_KEY_FILE at $CREDENTIALS_DIRECTORY instead.
+DEFAULT_KEY_FILE = "/run/secrets/neuralwatt-api-key"
+KEY_FILE_ENV = "MEMORY_NEURALWATT_KEY_FILE"
 # A stalled upstream (no bytes, including during a stream) must not hold a
 # connection forever. Long extraction streams still emit tokens well inside it.
 DEFAULT_READ_TIMEOUT = 300.0
@@ -46,6 +60,10 @@ DEFAULT_CONNECT_TIMEOUT = 10.0
 MAX_REQUEST_BYTES = 10 * 1024 * 1024
 CHAT_COMPLETION_PATHS = frozenset({"/v1/chat/completions", "/chat/completions"})
 REASONING_EFFORT = "none"
+# Graphiti's config requires a non-empty `api_key`, so it ships "none" and the
+# OpenAI SDK forwards it as `Authorization: Bearer none`. That placeholder is no
+# credential: the gateway replaces it instead of leaking it upstream.
+PLACEHOLDER_BEARERS = frozenset({"", "none"})
 
 # Connection-scoped headers are ours to terminate at each hop. The request
 # content-length is stale once a chat body is rewritten, and the upstream
@@ -85,8 +103,39 @@ def inject_thinking_off(body: bytes) -> bytes:
     return json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 
-def _request_headers(request: Request) -> dict[str, str]:
-    return {key: value for key, value in request.headers.items() if key.lower() not in REQUEST_STRIP}
+def load_api_key(*, api_key: str | None = None, key_file: str | None = None) -> str | None:
+    """The Neuralwatt key, or None when no usable credential is configured.
+
+    `api_key` is the test seam (and a debugging override); production reads the
+    path from `key_file`, then `MEMORY_NEURALWATT_KEY_FILE`, then
+    `DEFAULT_KEY_FILE`. Whitespace-only content counts as missing.
+    """
+    if api_key is not None:
+        return api_key.strip() or None
+    path = Path(key_file or os.environ.get(KEY_FILE_ENV, DEFAULT_KEY_FILE))
+    try:
+        key = path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        logger.warning("no Neuralwatt API key at %s: %s; proxied requests will fail closed", path, exc)
+        return None
+    if not key:
+        logger.warning("empty Neuralwatt API key at %s; proxied requests will fail closed", path)
+    return key or None
+
+
+def _is_placeholder_authorization(value: str) -> bool:
+    scheme, _, token = value.partition(" ")
+    return scheme.lower() == "bearer" and token.strip().lower() in PLACEHOLDER_BEARERS
+
+
+def _request_headers(request: Request, api_key: str | None) -> dict[str, str]:
+    headers = {key: value for key, value in request.headers.items() if key.lower() not in REQUEST_STRIP}
+    # A real caller credential wins: a direct client may hold a different
+    # Neuralwatt key, and silently swapping it would be surprising.
+    authorization = next((value for key, value in headers.items() if key.lower() == "authorization"), None)
+    if api_key and (authorization is None or _is_placeholder_authorization(authorization)):
+        headers["authorization"] = f"Bearer {api_key}"
+    return headers
 
 
 def _response_headers(response: httpx.Response) -> dict[str, str]:
@@ -100,8 +149,13 @@ def create_app(
     timeout: float = DEFAULT_TIMEOUT,
     read_timeout: float = DEFAULT_READ_TIMEOUT,
     max_request_bytes: int = MAX_REQUEST_BYTES,
+    api_key: str | None = None,
+    key_file: str | None = None,
 ) -> Starlette:
     base_url = (upstream or os.environ.get("MEMORY_LLM_UPSTREAM", DEFAULT_UPSTREAM)).rstrip("/")
+    # Read once at startup: a credential rotation restarts the unit, and a
+    # per-request read would turn a missing file into a partial outage.
+    resolved_key = load_api_key(api_key=api_key, key_file=key_file)
     client = httpx.AsyncClient(
         base_url=base_url,
         timeout=httpx.Timeout(timeout, connect=DEFAULT_CONNECT_TIMEOUT, read=read_timeout),
@@ -143,6 +197,22 @@ def create_app(
         return b"".join(chunks)
 
     async def proxy(request: Request) -> Response:
+        # Fail closed before reading a body we would only refuse: forwarding
+        # without the account key would bill nothing but return 401s from
+        # Neuralwatt, which is harder to diagnose than an explicit error.
+        if resolved_key is None:
+            return JSONResponse(
+                {
+                    "error": {
+                        "message": (
+                            "memory-llm-proxy has no Neuralwatt API key "
+                            f"(set {KEY_FILE_ENV}); refusing to proxy"
+                        ),
+                        "type": "configuration_error",
+                    }
+                },
+                status_code=503,
+            )
         body = await read_body(request)
         if body is None:
             return JSONResponse(
@@ -164,7 +234,7 @@ def create_app(
             request.method,
             request.url.path,
             params=request.url.query,
-            headers=_request_headers(request),
+            headers=_request_headers(request, resolved_key),
             content=body,
         )
         try:

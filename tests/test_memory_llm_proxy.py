@@ -1,7 +1,10 @@
 import json
+import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "modules/features/ai/memory/src"))
 
@@ -33,6 +36,7 @@ class ProxyTests(unittest.IsolatedAsyncioTestCase):
             self.seen.append(request)
             return handler(request)
 
+        kwargs.setdefault("api_key", "test-key")
         return create_app(
             upstream="http://upstream",
             transport=httpx.MockTransport(record),
@@ -189,6 +193,82 @@ class ProxyTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(reply.status_code, 400)
         self.assertEqual(self.seen, [])
+
+    async def test_the_neuralwatt_key_is_injected_when_the_client_sends_none(self):
+        app = self.app(lambda request: response())
+        await self.call(app, "POST", "/v1/chat/completions", json_body={"messages": []})
+        self.assertEqual(self.seen[0].headers["authorization"], "Bearer test-key")
+
+    async def test_a_client_supplied_authorization_is_never_overridden(self):
+        app = self.app(lambda request: response())
+        await self.call(
+            app,
+            "POST",
+            "/v1/chat/completions",
+            json_body={"messages": []},
+            headers={"authorization": "Bearer caller"},
+        )
+        self.assertEqual(self.seen[0].headers["authorization"], "Bearer caller")
+
+    async def test_a_placeholder_authorization_is_replaced_with_the_key(self):
+        # Graphiti's YAML needs a non-empty `api_key`, so it sends "Bearer none"
+        # and the OpenAI SDK forwards it. That placeholder must not reach
+        # Neuralwatt, or every extraction would 401.
+        app = self.app(lambda request: response())
+        await self.call(
+            app,
+            "POST",
+            "/v1/chat/completions",
+            json_body={"messages": []},
+            headers={"authorization": "Bearer none"},
+        )
+        self.assertEqual(self.seen[0].headers["authorization"], "Bearer test-key")
+
+    async def test_the_key_is_read_from_the_configured_file_at_startup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            key_file = Path(tmp) / "neuralwatt-api-key"
+            key_file.write_text("from-file\n", encoding="utf-8")
+            app = self.app(lambda request: response(), api_key=None, key_file=str(key_file))
+        await self.call(app, "GET", "/v1/models")
+        self.assertEqual(self.seen[0].headers["authorization"], "Bearer from-file")
+
+    async def test_the_key_file_path_comes_from_the_environment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            key_file = Path(tmp) / "neuralwatt-api-key"
+            key_file.write_text("from-env\n", encoding="utf-8")
+            env = {"MEMORY_NEURALWATT_KEY_FILE": str(key_file)}
+            with mock.patch.dict(os.environ, env):
+                app = self.app(lambda request: response(), api_key=None)
+        await self.call(app, "GET", "/v1/models")
+        self.assertEqual(self.seen[0].headers["authorization"], "Bearer from-env")
+
+    async def test_a_missing_key_refuses_proxied_requests_but_answers_health(self):
+        app = self.app(lambda request: response(), api_key=None, key_file="/nonexistent/key")
+
+        health = await self.call(app, "GET", "/health")
+        self.assertEqual(health.status_code, 200)
+
+        reply = await self.call(app, "POST", "/v1/chat/completions", json_body={"messages": []})
+        self.assertEqual(reply.status_code, 503)
+        self.assertEqual(reply.json()["error"]["type"], "configuration_error")
+        self.assertEqual(self.seen, [])
+
+    async def test_a_blank_key_file_is_treated_as_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            key_file = Path(tmp) / "neuralwatt-api-key"
+            key_file.write_text("\n", encoding="utf-8")
+            app = self.app(lambda request: response(), api_key=None, key_file=str(key_file))
+        reply = await self.call(app, "GET", "/v1/models")
+        self.assertEqual(reply.status_code, 503)
+        self.assertEqual(self.seen, [])
+
+    async def test_embeddings_are_authorized_but_left_unrewritten(self):
+        app = self.app(lambda request: response(payload={"data": []}))
+        payload = {"input": "hello", "model": "qwen3-embedding-8b"}
+        await self.call(app, "POST", "/v1/embeddings", json_body=payload)
+
+        self.assertEqual(self.seen[0].headers["authorization"], "Bearer test-key")
+        self.assertEqual(self.body(self.seen[0]), payload)
 
     async def test_hop_by_hop_and_stale_content_length_are_dropped(self):
         app = self.app(lambda request: response())

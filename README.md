@@ -297,7 +297,9 @@ model providers Maki may use.
   the loopback wrapper at `ports.memoryMcp` with `X-Memory-Group`/`X-Memory-Cwd`
   headers; on client machines `cloudflared-memory` supplies the Cloudflare
   Access service token. The raw Graphiti MCP runs on an internal loopback port
-  in `modules/nixos/memory.nix` and is never tunneled. The same package installs
+  in `modules/nixos/memory.nix` and is never tunneled. Extraction runs on
+  Neuralwatt through a loopback gateway that holds the key; embeddings default
+  to local bge-m3 (`memory.embedder`). The same package installs
   the `memory` CLI (`memory write|search|promote|status|tombstone|ingest`) for
   use on a client or on smortress directly. Tombstones mark only the wrapper's
   index and audit log; the Graphiti MCP API exposes no edge-invalidation tool,
@@ -331,15 +333,15 @@ model providers Maki may use.
   Reports land in `~/.local/state/memory/ingest-<timestamp>.json`; `--dry-run`
   prints the plan without writing, and `--json --dry-run` prints only JSON on
   stdout. Extraction goes through the loopback `memory-llm-proxy`
-  (`modules/features/ai/memory/src/memory_mcp/llm_proxy.py`, `127.0.0.1:8082`):
-  the chat server defaults to thinking and graphiti-core sends no per-request
-  control, so an extraction would spend its whole token budget on reasoning and
-  return empty content. Maki still uses `ports.llm` (8081) directly, so
-  interactive answers keep thinking. A re-run reconciles the plan against the
-  graph before writing: rows a previous run queued but never extracted are
-  tombstoned and rewritten, and episodes that landed late are adopted instead of
-  duplicated. Extraction is one 27B chat call per episode (roughly 30-90s), so a
-  full corpus takes hours.
+  (`modules/features/ai/memory/src/memory_mcp/llm_proxy.py`, `127.0.0.1:8082`)
+  to Neuralwatt: the gateway owns the API key and adds
+  `reasoning_effort: "none"`, because graphiti-core sends no per-request
+  control and a reasoning model would spend its whole token budget on reasoning
+  and return empty content. Maki's local chat model is unrelated to memory. A
+  re-run reconciles the plan against the graph before writing: rows a previous
+  run queued but never extracted are tombstoned and rewritten, and episodes that
+  landed late are adopted instead of duplicated. Extraction is one hosted chat
+  call per episode, so a full corpus takes hours.
 
 - `work`: maki is OpenAI-only and gets no personal providers, search, or
   memory MCP.
