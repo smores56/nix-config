@@ -364,10 +364,12 @@ call it unattended. `api_key = "none"`; the tunnel and Access are the boundary.
 `memory.sammohr.dev` → the loopback memory wrapper (`ports.memoryMcp`), TCP to
 the server's loopback, with the same service-auth policy. The wrapper derives
 nothing itself: it validates the group header the Maki shim sends, refuses work
-groups, enforces a 60s deadline per tool call, dedupes writes, and is the only
-tunnel target. The wrapper has no authentication of its own; Access is the only
-route. Raw Graphiti runs on an internal loopback port in
-`modules/nixos/memory.nix` and is never tunneled.
+groups, enforces a 60s deadline per tool call, and is the only tunnel target.
+The wrapper has no authentication of its own; Access is the only route. Raw
+Graphiti runs on an internal loopback port in `modules/nixos/memory.nix` and is
+never tunneled. The wrapper owns the typed registry, verifies queued writes
+against FalkorDB, and exposes loopback-only `/internal/episodes` and
+`/internal/lookup` for `memory ingest`.
 
 Graphiti extracts through `memory-llm-proxy` on `127.0.0.1:8082`, which is
 Memory's single egress point to Neuralwatt (`api.neuralwatt.com`). The gateway
@@ -421,10 +423,11 @@ Maki starts it. Restart Maki after changing `mcp.toml` and after moving to a
 different repository: `/cd` does not restart stdio children, so the group stays
 fixed until Maki restarts.
 
-The wrapper's SQLite index and audit log live in `/var/lib/memory`, owned by the
-`memory` system user (the FalkorDB subdirectory stays root-owned). That path is
-**not backed up** yet: there is no export or snapshot task for the graph volume
-or the index/audit, so losing the host loses both.
+The wrapper's typed registry (`registry.sqlite`, including the audit table)
+lives in `/var/lib/memory`, owned by the `memory` system user (the FalkorDB
+subdirectory stays root-owned). That path is **not backed up** yet: there is no
+export or snapshot task for the graph volume or the registry, so losing the host
+loses both.
 
 Activate after changing the wrapper, shim, package, or LLM proxy:
 
@@ -441,7 +444,7 @@ curl 127.0.0.1:8182/health
 systemctl status memory-llm-proxy
 curl 127.0.0.1:8082/v1/models   # proxied to Neuralwatt (needs the credential)
 curl 127.0.0.1:8082/health
-cd ~/code/<repo> && memory status   # group, index counts, graph/model readiness
+cd ~/code/<repo> && memory status   # group, registry counts, graph/model readiness
 ```
 
 **Corpus ingest.** Deploy the gateway before ingesting: until
@@ -459,48 +462,33 @@ memory ingest all --limit 5          # small live sample, then the full run
 
 `memory ingest all` (or `just memory-ingest` for the full corpus) reads the sdlc
 issue list through `gh`, the markdown files under `~/Documents` (recursively),
-and the personal clones in `~/code/github.com/<owner>` plus remote READMEs. It
-must run on smortress: the raw Graphiti port (`127.0.0.1:8184`) and FalkorDB
-(`127.0.0.1:6379`) are loopback-only, and verification, reconcile, and repair
-read them. Every source runs independently under `all`; a source that cannot be
-read is reported in `sources.<name>.error` and in `failures` (with
-`source_id: "*"`) instead of aborting the others.
+and the personal clones in `~/code/github.com/<owner>` plus remote READMEs. Run
+it on smortress, where the corpus lives and the wrapper's loopback is reachable;
+it never talks to Graphiti or FalkorDB directly. Every source runs independently
+under `all`; a source that cannot be read is reported in `source_errors` and in
+`failures` (with `source_id: "*"`) instead of aborting the others.
 
-Each run writes `~/.local/state/memory/ingest-<timestamp>.json` (counts per
-source and group, duplicates, adopted/superseded/reconciled/repairs, failures,
-and which presence backend was used) and updates
-`~/.local/state/memory/ingest-state.json`. To resume, run the same command
-again:
+Each run writes `~/.local/state/memory/ingest-<timestamp>.json` (build/lookup/
+submit counts, failures, and timings) and nothing else: the report is never read
+back. To resume, run the same command again. The client asks the wrapper's
+`/internal/lookup` which content hashes already exist:
 
-- Verified `(group, source, source_id)` entries are skipped. A source that
-  moved to another group (a task inheriting a different `repo:` label) writes
-  to the new group, and changed content supersedes the old index row (the old
-  graph episode remains by design).
-- Episodes a previous run attempted but the graph never received are
-  tombstoned in the wrapper index and rewritten, so the write is a queue rather
-  than a duplicate. On a first run there is nothing to reconcile, so no
-  tombstone or "no stored episode" audit row is produced.
-- Episodes that are still absent after the 600s grace are recorded as failed
-  and **not** rewritten: Graphiti extracts asynchronously, so a late in-flight
-  episode would otherwise be duplicated, and the wrapper has no graph-level
-  delete. Inspect `failures`, then either re-run (reconcile handles the row) or
-  pass `--repair`, which rewrites a previously attempted entry once, and only
-  after FalkorDB proves the exact `id=`/`hash=`/`source`+`source_id` is absent.
-  When FalkorDB is unreachable the run falls back to `get_episodes` (the report
-  says `presence: get_episodes`) and repairs are refused.
-- `--force --reset-state` archives the state file (`ingest-state.json.bak-*`)
-  and treats the run as a first run; both flags are required because a reset
-  re-attempts every planned episode. The state file is `flock`ed, so a second
-  ingest exits instead of interleaving writes.
+- `active` and `pending` rows are skipped. A source that moved to another group
+  looks missing there and is submitted to the new group.
+- `failed` rows are resubmitted, which resets their attempts. Tombstoned rows are
+  left alone until the content is deliberately written again.
+- Missing episodes are submitted through `/internal/episodes` with explicit
+  `kind` and `valid_at`; the wrapper records them as pending and its reconciler
+  resolves them. A retry is bounded and never overlaps an in-flight submission.
 
-Extraction is one hosted chat call per episode, so a full corpus takes hours. The
-default is `--batch 1` with a 600s per-episode grace; keeping one write in
-flight is what stops Graphiti's in-memory queue from dropping work. For a long
-run, start it in a transient user unit:
+Extraction is one hosted chat call per episode, so a full corpus takes hours.
+`--concurrency` (default 4) bounds simultaneous submissions; the wrapper's
+reconciler verifies them in the background. For a long run, start it in a
+transient user unit:
 
 ```sh
 systemd-run --user --unit memory-ingest --collect --setenv=MEMORY_MCP_URL=http://127.0.0.1:8182/mcp \
-  --setenv=MEMORY_GRAPHITI_URL=http://127.0.0.1:8184/mcp -- memory ingest all
+  -- memory ingest all
 systemctl --user status memory-ingest
 journalctl --user -u memory-ingest -f
 ```
