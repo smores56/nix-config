@@ -57,7 +57,7 @@ cloudflare-apply:
 cloudflare-tofu *args:
     sudo nix run .#cloudflare-tofu -- {{args}}
 
-# Ingest sdlc issues, personal notes, and repo docs into memory (on smortress).
+# Ingest sdlc issues, personal notes, repo docs, and a Maki session sample into memory (on smortress).
 memory-ingest *args:
     memory ingest all {{args}}
 

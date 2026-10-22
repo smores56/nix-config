@@ -600,6 +600,31 @@ back. To resume, run the same command again. The client asks the wrapper's
   `kind` and `valid_at`; the wrapper records them as pending and its reconciler
   resolves them. A retry is bounded and never overlaps an in-flight submission.
 
+**Maki sessions.** `memory ingest sessions` (and `memory ingest all`, which
+includes the session sample by default) reads Maki's JSONL transcripts from
+`$MAKI_SESSIONS_DIR`, else `$XDG_STATE_HOME/maki/sessions`, else
+`~/.local/share/maki/sessions` and `~/.maki/sessions`, and passes
+`--sessions-dir`/`--session-limit` to override either. The sample is the 50 most
+recently modified session files; each one is bounded to the first and last
+messages within a 24k-character transcript, so a 74 MB session cannot exhaust
+the token budget. Each session is summarized by `deepseek-v4.1-flash`
+(`MEMORY_SUMMARY_MODEL` overrides) at temperature 0 with a JSON-object response
+asking for a prose summary plus explicit decisions, constraints, errors, and
+user preferences; every one of those becomes its own episode, so all of a
+session's episodes share `origin=session` and `origin_ref=<session id>`.
+Session text is personal and leaves this machine for summarization through the
+loopback gateway; only the summary and the extracted items are stored, and a
+session whose cwd is a work checkout is refused before any request is made.
+
+The summary call runs from the operator's shell, not from a unit, so it reaches
+the gateway at `MEMORY_LLM_URL` (default `http://127.0.0.1:8082`) and needs no
+Neuralwatt key. Per-session wall time, prompt/completion `usage` tokens, and an
+estimated cost live under `sessions` in the run report; the prices are
+`MEMORY_SUMMARY_PRICE_IN`/`MEMORY_SUMMARY_PRICE_OUT` (USD per million, default
+0.15/0.60), and the summary line is printed on stderr. `--session-concurrency`
+(default 3) bounds simultaneous summary calls, and `--dry-run` parses and
+estimates tokens without calling the model.
+
 Extraction is one hosted chat call per episode, so a full corpus takes hours.
 `--concurrency` (default 4) bounds simultaneous submissions; the wrapper's
 reconciler verifies them in the background. For a long run, start it in a
