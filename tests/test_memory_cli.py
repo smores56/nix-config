@@ -130,6 +130,135 @@ class CliOutputTests(unittest.TestCase):
 
 
 class CliIngestTests(unittest.TestCase):
+    def test_sessions_flags_parse_with_a_default_sample(self):
+        args = cli.build_parser().parse_args(["ingest", "sessions"])
+        self.assertEqual(args.session_limit, 50)
+        self.assertEqual(args.session_concurrency, 3)
+        self.assertIsNone(args.sessions_dir)
+        self.assertEqual(cli.DEFAULT_SESSION_SAMPLE, 50)
+
+    def test_sessions_dry_run_reports_without_building_a_model_client(self):
+        from memory_mcp import session_summary
+
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "s-1.jsonl").write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "t": "header",
+                                "v": 2,
+                                "id": "s-1",
+                                "model": "m",
+                                "cwd": directory,
+                                "created_at": 1760000000,
+                            }
+                        ),
+                        json.dumps(
+                            {"t": "msg", "d": {"role": "user", "content": [{"type": "text", "text": "hello there"}]}}
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+            with (
+                mock.patch.object(
+                    session_summary,
+                    "SummaryClient",
+                    side_effect=AssertionError("a dry run must not build the gateway client"),
+                ),
+                redirect_stdout(stdout),
+                redirect_stderr(io.StringIO()),
+            ):
+                code = cli.main(
+                    [
+                        "--json",
+                        "ingest",
+                        "sessions",
+                        "--dry-run",
+                        "--sessions-dir",
+                        directory,
+                        "--report",
+                        str(Path(directory, "report.json")),
+                    ]
+                )
+            self.assertFalse(Path(directory, "report.json").exists())
+            self.assertEqual(code, 0)
+            payload = json.loads(stdout.getvalue())
+            self.assertTrue(payload["sessions"]["dry_run"])
+            self.assertEqual(payload["sessions"]["sampled"], 1)
+            self.assertEqual(payload["sessions"]["parsed"], 1)
+            self.assertGreater(payload["sessions"]["estimated_prompt_tokens"], 0)
+            self.assertNotIn("sessions", payload["source_errors"])
+
+    def test_all_includes_sessions_by_default(self):
+        from memory_mcp import cli as cli_module
+        from memory_mcp import ingest_sources
+        from memory_mcp.ingest_sources import Episode, Plan
+        from memory_mcp.sessions import SessionPlanResult
+
+        sessions_plan = Plan(
+            source="sessions",
+            episodes=[
+                Episode(
+                    source="session",
+                    source_id="s-1",
+                    group="global",
+                    content="a session summary worth storing",
+                    tags=("session", "s-1"),
+                )
+            ],
+        )
+        report = {"sampled": 1, "items": [], "dry_run": True}
+
+        async def fake_sessions(_args):
+            return SessionPlanResult(plan=sessions_plan, report=report)
+
+        with tempfile.TemporaryDirectory() as directory:
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with (
+                mock.patch.object(ingest_sources, "fetch_issues", lambda: []),
+                mock.patch.object(ingest_sources, "notes_plan", lambda _dir: Plan(source="notes")),
+                mock.patch.object(ingest_sources, "docs_plan", lambda *_a, **_k: Plan(source="docs")),
+                mock.patch.object(cli_module, "build_sessions", fake_sessions),
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+            ):
+                code = cli.main(
+                    [
+                        "--json",
+                        "ingest",
+                        "all",
+                        "--dry-run",
+                        "--report",
+                        str(Path(directory, "report.json")),
+                    ]
+                )
+        self.assertEqual(code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["totals"]["built"], 1)
+        self.assertEqual(payload["sessions"]["sampled"], 1)
+        self.assertIn("sessions: 1 sampled", stderr.getvalue())
+
+    def test_a_broken_sessions_source_fails_a_single_source_run(self):
+        from memory_mcp import cli as cli_module
+        from memory_mcp.sessions import SessionError
+
+        async def failing(_args):
+            raise SessionError("sessions directory not found: /nope")
+
+        stderr = io.StringIO()
+        with (
+            mock.patch.object(cli_module, "build_sessions", failing),
+            redirect_stderr(stderr),
+        ):
+            code = cli.main(["ingest", "sessions", "--dry-run"])
+        self.assertEqual(code, 1)
+        self.assertIn("sessions directory not found", stderr.getvalue())
+
     def test_ingest_flags_parse(self):
         args = cli.build_parser().parse_args(
             [

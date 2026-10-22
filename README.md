@@ -327,13 +327,14 @@ model providers Maki may use.
   covers the re-extracted episode too). Server details live in
   `modules/nixos/memory.nix`.
 
-  **Bulk ingest.** `memory ingest {sdlc,notes,docs,all}` plans the personal
-  corpus: every sdlc issue section and substantial comment, the markdown notes
-  under `~/Documents` (group `global`), and each personal repo's
-  README/AGENTS/docs plus remote READMEs. Groups are `smores56--<repo>`, with
-  unlabeled sdlc tasks inheriting their feature's `repo:` label and every
-  `repo:` label honored; work-owned labels and work clones are refused. The
-  client computes content hashes, calls the wrapper's loopback
+  **Bulk ingest.** `memory ingest {sdlc,notes,docs,sessions,all}` plans the
+  personal corpus: every sdlc issue section and substantial comment, the
+  markdown notes under `~/Documents` (group `global`), each personal repo's
+  README/AGENTS/docs plus remote READMEs, and Maki session transcripts. Groups
+  are `smores56--<repo>`, with unlabeled sdlc tasks inheriting their feature's
+  `repo:` label and every `repo:` label honored; work-owned labels and work
+  clones are refused. The client computes content hashes, calls the wrapper's
+  loopback
   `/internal/lookup`, and submits only missing or failed episodes through
   `/internal/episodes` with explicit kind and event time (`kind=json` for JSON
   sections, `valid_at` from issue/comment timestamps, note mtime, or a doc's
@@ -344,6 +345,34 @@ model providers Maki may use.
   loopback and the peer address proves nothing. `just memory-ingest` runs
   `memory ingest all` on smortress; reports land under
   `~/.local/state/memory/`, and `--dry-run` prints the plan without writing.
+
+  **Maki sessions.** `memory ingest sessions` reads Maki's JSONL sessions
+  (`$MAKI_SESSIONS_DIR`, else the XDG state/data dirs), takes the 50 most
+  recently modified by default (`--session-limit`), keeps first/last messages
+  within a 24k-character transcript budget, and summarizes each one with
+  `deepseek-v4.1-flash` through the same gateway (`temperature: 0`,
+  `json_object`). A summary becomes one `kind=text` episode and each explicit
+  decision, constraint, error, or user preference becomes its own episode, all
+  with `origin=session`, `origin_ref=<session id>`, and the session header's
+  `created_at` as `valid_at`. The session `cwd` picks the group with the same
+  rules as everything else, and a work checkout is refused before anything is
+  sent; a cwd that does not exist here is refused too, because its work markers
+  cannot be checked, so a cross-machine session must be ingested where its cwd
+  exists. Only the cwd's path components are checked for employer markers; text
+  inside a personal checkout is not scanned for employer content. Session text
+  is personal and leaves the machine for summarization; only the summary and
+  extracted items are stored. An unchanged session is not re-summarized: a
+  disposable cache at `$MEMORY_SESSIONS_CACHE` (default
+  `~/.local/state/memory/sessions.json`) keys on session id plus the bounded
+  transcript's SHA-256, so the model cannot paraphrase a session into a second
+  episode; a changed transcript is summarized again. The run report records
+  per-session wall time, prompt/completion tokens, and cost from
+  `MEMORY_SUMMARY_PRICE_IN`/`_OUT` (USD per million, default 0.15/0.60); a
+  missing `usage` block reports `unknown` rather than $0, and retries
+  accumulate tokens because every paid attempt counts. `--limit` bounds
+  episodes per source but not sessions: `--session-limit` bounds the session
+  sample, and `memory ingest all` spends about that many summary calls.
+  `memory ingest all` includes the session sample by default.
   Extraction goes through the loopback `memory-llm-proxy` to Neuralwatt: the
   gateway owns the API key and adds `reasoning_effort: "none"`, because
   graphiti-core sends no per-request control and a reasoning model would spend

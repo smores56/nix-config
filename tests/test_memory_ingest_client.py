@@ -257,6 +257,49 @@ class IngestClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report["totals"]["empty"], 1)
         self.assertEqual(report["totals"]["submitted"], 0)
 
+    async def test_extras_are_merged_and_the_observer_sees_every_outcome(self):
+        statuses = {
+            ("owner--repo", content_hash(normalize_content("already stored"))): {
+                "status": "active",
+                "uuid": "u-active",
+            },
+        }
+        outcomes = []
+        extras = {"sessions": {"sampled": 1, "items": [{"duplicates": 0}]}}
+
+        def observe(item, outcome):
+            outcomes.append((item.source_id, outcome))
+            extras["sessions"]["items"][0]["duplicates"] += outcome in ("active", "submitted")
+
+        episodes = [
+            episode(source_id="s1", content="already stored"),
+            episode(source_id="s2", content="brand new"),
+            episode(source_id="s3", content="brand new"),  # duplicate within the run
+            episode(source_id="s4", content="   "),
+        ]
+        report = await self.runner(FakeLookup(statuses), FakeSubmit()).run(
+            [Plan(source="sessions", episodes=episodes)], observer=observe, extras=extras
+        )
+
+        self.assertEqual(report["sessions"], extras["sessions"])
+        self.assertEqual(extras["sessions"]["items"][0]["duplicates"], 2)
+        self.assertEqual(
+            sorted(outcomes),
+            sorted(
+                [
+                    ("s1", "active"),
+                    ("s2", "submitted"),
+                    ("s3", "deduplicated"),
+                    ("s4", "empty"),
+                ]
+            ),
+        )
+
+    async def test_extras_reach_the_written_report(self):
+        extras = {"sessions": {"sampled": 0}}
+        await self.runner(FakeLookup(), FakeSubmit()).run([], extras=extras)
+        self.assertEqual(json.loads(self.report_path.read_text())["sessions"], {"sampled": 0})
+
 
 if __name__ == "__main__":
     unittest.main()
