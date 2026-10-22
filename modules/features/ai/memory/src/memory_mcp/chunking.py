@@ -8,6 +8,7 @@ shell snippet is sample output, not structure.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 
@@ -72,6 +73,15 @@ def _split_oversized(body: str) -> list[str]:
     return [piece for piece in pieces if piece]
 
 
+def is_json_document(text: str) -> bool:
+    """A short section that is a JSON object/array is still worth keeping."""
+    try:
+        value = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return False
+    return isinstance(value, (dict, list))
+
+
 def sections_for(text: str, *, min_chars: int = MIN_SECTION_CHARS) -> list[Section]:
     """Return the episode sections for a markdown document."""
     lines = text.replace("\r\n", "\n").replace("\r", "\n").splitlines()
@@ -94,7 +104,7 @@ def sections_for(text: str, *, min_chars: int = MIN_SECTION_CHARS) -> list[Secti
     sections: list[Section] = []
     for heading, chunk in raw:
         text_body = "\n".join(chunk).strip()
-        if len(text_body) < min_chars:
+        if len(text_body) < min_chars and not is_json_document(text_body):
             continue
         base = _slug(heading) if heading else "body"
         key = base

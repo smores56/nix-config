@@ -73,6 +73,8 @@ def issue(number, **kwargs):
         "labels": [{"name": name} for name in kwargs.get("labels", [])],
         "comments": kwargs.get("comments", []),
         "url": kwargs.get("url", f"https://github.com/smores56/sdlc/issues/{number}"),
+        "createdAt": kwargs.get("createdAt", "2026-10-01T00:00:00Z"),
+        "updatedAt": kwargs.get("updatedAt", "2026-10-02T00:00:00Z"),
     }
     return payload
 
@@ -189,6 +191,61 @@ class SdlcEpisodeTests(unittest.TestCase):
         self.assertEqual(len(plan.episodes), 1)
         self.assertEqual(plan.episodes[0].source_id, "issue-1#a")
 
+    def test_issue_and_comment_timestamps_become_valid_at(self):
+        issues = [
+            issue(
+                215,
+                labels=["repo:nix-config"],
+                body="## Design\n\n" + "d" * 120,
+                createdAt="2026-10-03T12:00:00Z",
+                comments=[
+                    {
+                        "author": {"login": "smores56"},
+                        "body": "## Note\n\n" + "c" * 120,
+                        "url": "https://github.com/smores56/sdlc/issues/215#issuecomment-1",
+                        "createdAt": "2026-10-04T08:30:00Z",
+                    }
+                ],
+            )
+        ]
+        plan = sources.sdlc_plan(issues)
+        self.assertEqual(plan.episodes[0].valid_at, "2026-10-03T12:00:00Z")
+        self.assertEqual(plan.episodes[-1].valid_at, "2026-10-04T08:30:00Z")
+
+    def test_a_json_body_section_is_kind_json_and_stored_as_pure_json(self):
+        body = '## Migration\n\n{"version": 2, "state": "migrated"}'
+        issues = [issue(300, labels=["repo:nix-config"], body=body)]
+        plan = sources.sdlc_plan(issues)
+        self.assertEqual(len(plan.episodes), 1)
+        episode = plan.episodes[0]
+        self.assertEqual(episode.kind, "json")
+        self.assertEqual(episode.content, '{"version": 2, "state": "migrated"}')
+        self.assertEqual(episode.source_id, "issue-300#migration")
+
+    def test_a_json_comment_is_kind_json(self):
+        issues = [
+            issue(
+                301,
+                labels=["repo:nix-config"],
+                body="## Design\n\n" + "d" * 120,
+                comments=[
+                    {
+                        "author": {"login": "smores56"},
+                        "body": '{"kind": "migration", "items": [1, 2]}',
+                        "url": "https://github.com/smores56/sdlc/issues/301#issuecomment-2",
+                        "createdAt": "2026-10-05T00:00:00Z",
+                    }
+                ],
+            )
+        ]
+        plan = sources.sdlc_plan(issues)
+        self.assertEqual(plan.episodes[-1].kind, "json")
+        self.assertEqual(plan.episodes[-1].content, '{"kind": "migration", "items": [1, 2]}')
+
+    def test_markdown_stays_text(self):
+        issues = [issue(302, labels=["repo:nix-config"], body="## Design\n\n" + "d" * 120)]
+        self.assertEqual(sources.sdlc_plan(issues).episodes[0].kind, "text")
+
 
 class NotesTests(unittest.TestCase):
     def test_notes_are_global_sections(self):
@@ -200,6 +257,8 @@ class NotesTests(unittest.TestCase):
         episode = plan.episodes[0]
         self.assertEqual(episode.group, "global")
         self.assertEqual(episode.source_id, "note:dragon-reading.md#intro")
+        self.assertEqual(episode.kind, "text")
+        self.assertTrue(episode.valid_at)
         self.assertTrue(episode.content.startswith("[note:dragon-reading.md] Dragons — Intro"))
 
     def test_missing_notes_dir_fails_clearly(self):
@@ -323,6 +382,41 @@ class DocsTests(unittest.TestCase):
                 read_readme=lambda _repo: None,
             )
         self.assertEqual(plan.episodes, [])
+
+    def test_doc_valid_at_comes_from_the_last_commit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = self.make_git_repo(directory, "nix-config")
+            (repo / "README.md").write_text("# Nix config\n\n## Docs\n\n" + "d" * 120)
+            env = {
+                **__import__("os").environ,
+                "GIT_AUTHOR_DATE": "2026-05-01T00:00:00+00:00",
+                "GIT_COMMITTER_DATE": "2026-05-01T00:00:00+00:00",
+            }
+            subprocess.run(["git", "-C", str(repo), "add", "README.md"], check=True, capture_output=True)
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repo),
+                    "-c",
+                    "user.email=smores56@example.com",
+                    "-c",
+                    "user.name=smores56",
+                    "commit",
+                    "-q",
+                    "-m",
+                    "docs",
+                ],
+                check=True,
+                capture_output=True,
+                env=env,
+            )
+            plan = sources.docs_plan(
+                directory, repos=None, list_repos=lambda: [], read_readme=lambda _repo: None
+            )
+        self.assertEqual(len(plan.episodes), 1)
+        self.assertEqual(plan.episodes[0].valid_at, "2026-05-01T00:00:00Z")
+        self.assertEqual(plan.episodes[0].kind, "text")
 
 
 class FetchIssuesTests(unittest.TestCase):

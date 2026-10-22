@@ -116,6 +116,18 @@ class CliOutputTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("server unreachable", stderr.getvalue())
 
+    def test_get_and_retry_map_to_the_matching_tools(self):
+        seen = []
+
+        async def fake_call(_config, tool, arguments):
+            seen.append((tool, arguments))
+            return ToolResult(text="ok", is_error=False)
+
+        with mock.patch.object(cli, "call_tool", fake_call), redirect_stdout(io.StringIO()):
+            self.assertEqual(cli.main(["--group", "global", "get", "ref-1"]), 0)
+            self.assertEqual(cli.main(["--group", "global", "retry", "ref-2"]), 0)
+        self.assertEqual(seen, [("memory_get", {"ref": "ref-1"}), ("memory_retry", {"ref": "ref-2"})])
+
 
 class CliIngestTests(unittest.TestCase):
     def test_ingest_flags_parse(self):
@@ -128,13 +140,10 @@ class CliIngestTests(unittest.TestCase):
                 "--limit",
                 "10",
                 "--dry-run",
-                "--batch",
+                "--concurrency",
                 "2",
                 "--timeout",
                 "60",
-                "--repair",
-                "--force",
-                "--reset-state",
                 "--notes-dir",
                 "/notes",
                 "--docs-root",
@@ -143,28 +152,22 @@ class CliIngestTests(unittest.TestCase):
                 "kanbei",
                 "--repo-list",
                 "/repos.txt",
-                "--state",
-                "/state.json",
                 "--report",
                 "/report.json",
-                "--redis-url",
-                "redis://127.0.0.1:6399",
                 "--verbose",
             ]
         )
         self.assertEqual(args.command, "ingest")
         self.assertEqual(args.source, "all")
-        self.assertEqual(args.batch, 2)
+        self.assertEqual(args.concurrency, 2)
         self.assertEqual(args.repo, ["kanbei"])
-        self.assertEqual(args.redis_url, "redis://127.0.0.1:6399")
-        self.assertTrue(args.repair and args.force and args.reset_state)
+        self.assertEqual(cli.internal_url(args.url), "http://wrapper")
         self.assertTrue(args.dry_run and args.verbose)
 
     def test_ingest_defaults_are_conservative(self):
         args = cli.build_parser().parse_args(["ingest", "sdlc"])
-        self.assertEqual(args.batch, 1)
-        self.assertEqual(args.timeout, 600.0)
-        self.assertFalse(args.repair)
+        self.assertEqual(args.concurrency, 4)
+        self.assertEqual(args.timeout, 60.0)
         self.assertIsNone(args.docs_root)
 
     def test_group_is_rejected_with_ingest(self):
@@ -181,13 +184,13 @@ class CliIngestTests(unittest.TestCase):
         from memory_mcp.ingest_runner import IngestError
 
         async def fake_ingest(_args):
-            raise IngestError("raw Graphiti is unreachable")
+            raise IngestError("wrapper unreachable")
 
         stderr = io.StringIO()
         with mock.patch.object(cli, "run_ingest", fake_ingest), redirect_stderr(stderr):
             code = cli.main(["ingest", "sdlc"])
         self.assertEqual(code, 1)
-        self.assertIn("raw Graphiti", stderr.getvalue())
+        self.assertIn("wrapper unreachable", stderr.getvalue())
 
     def test_json_dry_run_emits_only_json_to_stdout(self):
         from memory_mcp.ingest_sources import Episode, Plan
@@ -212,8 +215,6 @@ class CliIngestTests(unittest.TestCase):
                         "ingest",
                         "notes",
                         "--dry-run",
-                        "--state",
-                        str(Path(directory, "state.json")),
                         "--report",
                         str(Path(directory, "report.json")),
                     ]
@@ -251,16 +252,14 @@ class CliIngestTests(unittest.TestCase):
                         "ingest",
                         "all",
                         "--dry-run",
-                        "--state",
-                        str(Path(directory, "state.json")),
                         "--report",
                         str(Path(directory, "report.json")),
                     ]
                 )
         self.assertEqual(code, 1)
         payload = json.loads(stdout.getvalue())
-        self.assertEqual(payload["sources"]["sdlc"]["error"], "gh is not installed")
-        self.assertEqual(payload["sources"]["notes"]["totals"]["built"], 1)
+        self.assertEqual(payload["source_errors"]["sdlc"], "gh is not installed")
+        self.assertEqual(payload["totals"]["built"], 1)
         self.assertEqual(payload["failures"][0]["source_id"], "*")
 
 
