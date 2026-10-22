@@ -5,6 +5,7 @@
       exec ${pkgs.python3}/bin/python3 ${./sdlc_issues.py} "$@"
     '')
     pkgs.tuicr
+    pkgs.revdiff
   ];
 
   user.shellAbbrs = {

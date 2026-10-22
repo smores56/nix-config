@@ -66,6 +66,44 @@ let
       # --stdout to capture the export, and 0.27 carries the editor-stdio fix
       # (#740) that keeps the TUI's editor alive in that mode.
       tuicr = inputs.nixpkgs-unstable.legacyPackages.${system}.tuicr;
+
+      # Upstream's flake recipe: dependencies are vendored and the main
+      # package lives in ./app, so rename the produced binary.
+      revdiff =
+        let
+          unstable = inputs.nixpkgs-unstable.legacyPackages.${system};
+          version = "1.13.0";
+        in
+        unstable.buildGoModule {
+          pname = "revdiff";
+          inherit version;
+          src = unstable.fetchFromGitHub {
+            owner = "umputun";
+            repo = "revdiff";
+            tag = "v${version}";
+            hash = "sha256-qcah2Fx4u9AXEfb22R9BW3Rv9oYx+H8+KPGQVRjOr98=";
+          };
+          vendorHash = null;
+          subPackages = [ "app" ];
+          doCheck = false;
+          env.CGO_ENABLED = 0;
+          ldflags = [
+            "-s"
+            "-w"
+            "-X main.revision=${version}"
+          ];
+          postInstall = ''
+            mv $out/bin/app $out/bin/revdiff
+          '';
+          meta = {
+            description = "TUI for reviewing diffs, files, and documents with inline annotations";
+            homepage = "https://github.com/umputun/revdiff";
+            changelog = "https://github.com/umputun/revdiff/blob/v${version}/CHANGELOG.md";
+            license = lib.licenses.mit;
+            mainProgram = "revdiff";
+            platforms = lib.platforms.linux ++ lib.platforms.darwin;
+          };
+        };
     })
   ];
 
