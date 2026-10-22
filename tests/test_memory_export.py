@@ -8,6 +8,7 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "modules/features/ai/memory/src"))
 
@@ -68,7 +69,11 @@ def build_state(state_dir: Path, entries: list[RegistryEpisode]) -> Path:
 
 
 class FakeRedis:
-    """Just enough of the redis client for BGSAVE plus INFO persistence."""
+    """Just enough of the redis client for the save timestamp, BGSAVE, and INFO.
+
+    One reply per `INFO persistence` call, in order, so a test can script the
+    probe before the save separately from the polls after it.
+    """
 
     def __init__(self, replies: list[str], *, bgsave_error: Exception | None = None) -> None:
         self.replies = list(replies)
@@ -82,12 +87,26 @@ class FakeRedis:
                 raise self.bgsave_error
             return "Background saving started"
         if tuple(args) == ("INFO", "persistence"):
-            return self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
+            if not self.replies:
+                raise AssertionError("unscripted INFO persistence call")
+            return self.replies.pop(0)
         raise AssertionError(f"unexpected command {args}")
 
 
-IN_PROGRESS = "# Persistence\r\nrdb_bgsave_in_progress:1\r\nrdb_last_bgsave_status:ok\r\n"
-FINISHED = "# Persistence\r\nrdb_bgsave_in_progress:0\r\nrdb_last_bgsave_status:ok\r\n"
+def persistence(
+    *, last_save: int = 1_000, in_progress: int = 0, status: str = "ok"
+) -> str:
+    error = "" if status == "ok" else "\r\nrdb_last_bgsave_err:SOMETHING"
+    return (
+        f"# Persistence\r\nrdb_last_save_time:{last_save}\r\n"
+        f"rdb_bgsave_in_progress:{in_progress}\r\nrdb_last_bgsave_status:{status}{error}\r\n"
+    )
+
+
+BEFORE = persistence(last_save=1_000)
+IN_PROGRESS = persistence(last_save=1_000, in_progress=1)
+# The save completed, so the server's timestamp of its last save advanced.
+FINISHED = persistence(last_save=2_000)
 
 
 class TimestampTests(unittest.TestCase):
@@ -205,7 +224,7 @@ class GraphSnapshotTests(unittest.TestCase):
         )
 
     def test_bgsave_is_polled_until_it_finishes(self):
-        client = FakeRedis([IN_PROGRESS, FINISHED])
+        client = FakeRedis([BEFORE, IN_PROGRESS, FINISHED])
         result = self.snapshot(client, timeout=5.0)
         self.assertEqual(result.file, f"graph-{STAMP}.rdb")
         self.assertEqual(result.snapshot, STAMP)
@@ -213,42 +232,56 @@ class GraphSnapshotTests(unittest.TestCase):
         self.assertEqual(target.read_bytes(), b"RDBfake")
         self.assertEqual(result.sha256, file_sha256(target))
         self.assertEqual(
-            [command[0] for command in client.commands], ["BGSAVE", "INFO", "INFO"]
+            [command[0] for command in client.commands], ["INFO", "BGSAVE", "INFO", "INFO"]
         )
 
     def test_an_already_running_save_is_tolerated(self):
-        client = FakeRedis([FINISHED], bgsave_error=RuntimeError("Background save already in progress"))
+        client = FakeRedis([BEFORE, FINISHED], bgsave_error=RuntimeError("Background save already in progress"))
         self.assertTrue(self.snapshot(client, timeout=5.0).file)
 
     def test_a_failing_bgsave_is_an_error(self):
-        client = FakeRedis([FINISHED], bgsave_error=RuntimeError("MISCONF"))
+        client = FakeRedis([BEFORE], bgsave_error=RuntimeError("MISCONF"))
         with self.assertRaises(GraphSnapshotError) as caught:
             self.snapshot(client, timeout=5.0)
         self.assertIn("BGSAVE failed", str(caught.exception))
 
     def test_a_slow_save_times_out(self):
-        client = FakeRedis([IN_PROGRESS])
+        client = FakeRedis([BEFORE, IN_PROGRESS])
         with self.assertRaises(GraphSnapshotError) as caught:
             self.snapshot(client, timeout=0.0)
         self.assertIn("did not finish", str(caught.exception))
 
     def test_a_failed_save_is_reported(self):
-        client = FakeRedis(["rdb_bgsave_in_progress:0\r\nrdb_last_bgsave_status:err\r\n"])
+        client = FakeRedis([BEFORE, persistence(last_save=2_000, status="err")])
         with self.assertRaises(GraphSnapshotError) as caught:
             self.snapshot(client, timeout=1.0)
         self.assertIn("BGSAVE failed", str(caught.exception))
 
-    def test_a_stale_dump_is_not_taken_for_this_save(self):
+    def test_a_save_that_does_not_advance_the_timestamp_is_refused(self):
+        """A file that predates this save must never be taken for its output."""
+        client = FakeRedis([BEFORE, persistence(last_save=1_000)])
+        with self.assertRaises(GraphSnapshotError) as caught:
+            self.snapshot(client, timeout=1.0)
+        self.assertIn("not rewritten", str(caught.exception))
+        self.assertFalse((self.export_dir / f"graph-{STAMP}.rdb").exists())
+
+    def test_an_old_file_mtime_is_not_the_staleness_signal(self):
+        """Only the server's save timestamp decides; mtime is not consulted."""
         ancient = 1_000_000
         os.utime(self.graph_dir / "dump.rdb", (ancient, ancient))
+        result = self.snapshot(FakeRedis([BEFORE, FINISHED]), timeout=1.0)
+        self.assertEqual((self.export_dir / result.file).read_bytes(), b"RDBfake")
+
+    def test_a_server_without_save_timestamps_is_an_error(self):
+        client = FakeRedis(["# Persistence\r\nrdb_bgsave_in_progress:0\r\n"])
         with self.assertRaises(GraphSnapshotError) as caught:
-            self.snapshot(FakeRedis([FINISHED]), timeout=1.0)
-        self.assertIn("not rewritten", str(caught.exception))
+            self.snapshot(client, timeout=1.0)
+        self.assertIn("rdb_last_save_time", str(caught.exception))
 
     def test_a_missing_dump_is_an_error(self):
         (self.graph_dir / "dump.rdb").unlink()
         with self.assertRaises(GraphSnapshotError) as caught:
-            self.snapshot(FakeRedis([FINISHED]), timeout=1.0)
+            self.snapshot(FakeRedis([BEFORE, FINISHED]), timeout=1.0)
         self.assertIn("not readable", str(caught.exception))
 
     def test_parse_info_keeps_only_key_values(self):
@@ -290,7 +323,7 @@ class ExportTests(unittest.TestCase):
                     root=root / "exports",
                     state_dir=state,
                     graph_dir=graph_dir,
-                    graph_client=FakeRedis([IN_PROGRESS], bgsave_error=None),
+                    graph_client=FakeRedis([BEFORE, IN_PROGRESS], bgsave_error=None),
                     graph_timeout=0.0,
                 )
             )
@@ -313,7 +346,7 @@ class ExportTests(unittest.TestCase):
                     root=root / "exports",
                     state_dir=state,
                     graph_dir=graph_dir,
-                    graph_client=FakeRedis([FINISHED]),
+                    graph_client=FakeRedis([BEFORE, FINISHED]),
                 )
             )
             manifest = json.loads((result.directory / "manifest.json").read_text())
@@ -335,12 +368,19 @@ class ExportTests(unittest.TestCase):
 
 
 class PruneTests(unittest.TestCase):
+    def make_export(self, root: Path, name: str) -> Path:
+        """A timestamped directory that reads as a complete export."""
+        path = root / name
+        path.mkdir()
+        (path / "manifest.json").write_text(json.dumps({"snapshot": name}))
+        return path
+
     def test_retention_prunes_only_its_own_directories(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             names = ["2026-10-01T00-00-00Z", "2026-10-02T00-00-00Z", "2026-10-03T00-00-00Z"]
             for name in names:
-                (root / name).mkdir()
+                self.make_export(root, name)
             (root / "operator-notes").mkdir()
             (root / "2026-10-04T00-00-00Z.txt").write_text("not an export")
             (root / "latest").symlink_to(root / names[-1])
@@ -348,6 +388,47 @@ class PruneTests(unittest.TestCase):
             remaining = sorted(path.name for path in root.iterdir())
         self.assertEqual([path.name for path in pruned], [names[0]])
         self.assertEqual(remaining, sorted([names[1], names[2], "operator-notes", "2026-10-04T00-00-00Z.txt", "latest"]))
+
+    def test_a_partial_export_is_not_a_prune_candidate(self):
+        """A timestamped directory without a readable manifest is not an export."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("2026-09-01T00-00-00Z", "2026-09-02T00-00-00Z"):
+                self.make_export(root, name)
+            (root / "2026-09-03T00-00-00Z").mkdir()
+            (root / "2026-09-04T00-00-00Z").mkdir()
+            (root / "2026-09-04T00-00-00Z" / "manifest.json").write_text("{not json")
+            (root / "2026-09-05T00-00-00Z").mkdir()
+            (root / "2026-09-05T00-00-00Z" / "manifest.json").write_text("[]")
+            pruned = prune_exports(root, 1)
+            remaining = sorted(path.name for path in root.iterdir())
+        self.assertEqual([path.name for path in pruned], ["2026-09-01T00-00-00Z"])
+        for name in ("2026-09-03T00-00-00Z", "2026-09-04T00-00-00Z", "2026-09-05T00-00-00Z"):
+            self.assertIn(name, remaining)
+
+    def test_the_directory_just_written_is_never_pruned(self):
+        """A clock step can leave the newest export looking oldest; keep it."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("2026-10-02T00-00-00Z", "2026-10-03T00-00-00Z"):
+                self.make_export(root, name)
+            stepped = self.make_export(root, "2026-09-01T00-00-00Z")
+            pruned = prune_exports(root, 1, current=stepped)
+            remaining = sorted(path.name for path in root.iterdir())
+        self.assertEqual([path.name for path in pruned], ["2026-10-02T00-00-00Z"])
+        self.assertIn("2026-09-01T00-00-00Z", remaining)
+
+    def test_the_current_export_counts_toward_keep(self):
+        """Excluding it from the candidates must not make retention keep one extra."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("2026-10-01T00-00-00Z", "2026-10-02T00-00-00Z", "2026-10-03T00-00-00Z"):
+                self.make_export(root, name)
+            current = root / "2026-10-03T00-00-00Z"
+            pruned = prune_exports(root, 2, current=current)
+            remaining = sorted(path.name for path in root.iterdir())
+        self.assertEqual([path.name for path in pruned], ["2026-10-01T00-00-00Z"])
+        self.assertEqual(remaining, ["2026-10-02T00-00-00Z", "2026-10-03T00-00-00Z"])
 
     def test_retention_requires_a_positive_count(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -465,7 +546,7 @@ class RestoreTests(unittest.TestCase):
                 root,
                 [make_entry(1)],
                 graph_dir=graph_dir,
-                graph_client=FakeRedis([FINISHED]),
+                graph_client=FakeRedis([BEFORE, FINISHED]),
             )
             manifest = json.loads((result.directory / "manifest.json").read_text())
             # Pretend the graph arrived from an earlier run than the registry.
@@ -485,7 +566,12 @@ class RestoreTests(unittest.TestCase):
             self.assertFalse(graph_dump.exists())
             self.assertTrue((root / "restored" / "registry.sqlite").is_file())
         self.assertIn("does not belong", report.graph.reason)
-        self.assertIn("memory-ingest", export.graph_advice(report))
+        advice = export.graph_advice(report)
+        # `memory-ingest` skips rows that already exist, so a restored registry
+        # cannot be re-ingested into an empty graph: the advice must say so.
+        self.assertIn("memory-rebuild", advice)
+        self.assertIn("wipe both stores", advice)
+        self.assertNotIn("rebuild it from the restored registry", advice)
 
     def test_a_matching_graph_snapshot_is_restored(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -497,7 +583,7 @@ class RestoreTests(unittest.TestCase):
                 root,
                 [make_entry(1)],
                 graph_dir=graph_dir,
-                graph_client=FakeRedis([FINISHED]),
+                graph_client=FakeRedis([BEFORE, FINISHED]),
             )
             report = self.restore(result.directory, root)
             dump = (root / "graph" / "dump.rdb").read_bytes()
@@ -515,7 +601,7 @@ class RestoreTests(unittest.TestCase):
                 root,
                 [make_entry(1)],
                 graph_dir=graph_dir,
-                graph_client=FakeRedis([FINISHED]),
+                graph_client=FakeRedis([BEFORE, FINISHED]),
             )
             (root / "graph" / "appendonlydir").mkdir(parents=True)
             (root / "graph" / "appendonlydir" / "appendonly.aof").write_text("old graph")
@@ -524,7 +610,9 @@ class RestoreTests(unittest.TestCase):
             self.assertTrue(parked.is_dir())
             self.assertEqual(report.parked_aof, (parked.name,))
             self.assertEqual((root / "graph" / "dump.rdb").read_bytes(), b"RDBfake")
-            self.assertIn("AOF", export.graph_advice(report))
+            advice = export.graph_advice(report)
+            self.assertIn("AOF", advice)
+            self.assertIn("delete it once", advice)
 
     def test_a_tampered_graph_snapshot_keeps_the_registry(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -536,13 +624,188 @@ class RestoreTests(unittest.TestCase):
                 root,
                 [make_entry(1)],
                 graph_dir=graph_dir,
-                graph_client=FakeRedis([FINISHED]),
+                graph_client=FakeRedis([BEFORE, FINISHED]),
             )
             manifest = json.loads((result.directory / "manifest.json").read_text())
             (result.directory / manifest["graph"]["file"]).write_bytes(b"tampered")
             report = self.restore(result.directory, root)
         self.assertFalse(report.graph_restored)
         self.assertIn("sha256", report.graph.reason)
+
+    def test_restore_parks_the_live_registry_and_its_sidecars(self):
+        """The previous registry is copied aside before the swap, WAL included."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = self.export(root, [make_entry(1)])
+            state = root / "restored"
+            state.mkdir()
+            (state / "registry.sqlite").write_bytes(b"previous registry")
+            for suffix in ("-wal", "-shm"):
+                (state / f"registry.sqlite{suffix}").write_text(f"stale{suffix}")
+            report = self.restore(result.directory, root)
+            parked = state / f"registry.sqlite.pre-restore-{report.snapshot}"
+            leaked = sorted(
+                path.name for path in state.iterdir() if path.name.endswith(".restore-tmp")
+            )
+            live = sorted(path.name for path in state.iterdir())
+            self.assertEqual(report.parked_registry[0], parked)
+            self.assertEqual(parked.read_bytes(), b"previous registry")
+            self.assertEqual(
+                (state / f"{parked.name}-wal").read_text(), "stale-wal"
+            )
+            self.assertEqual(
+                (state / f"{parked.name}-shm").read_text(), "stale-shm"
+            )
+            # The replaced database's sidecars are gone; the restore's own WAL
+            # is what the wrapper will open.
+            self.assertEqual(leaked, [])
+            self.assertNotIn("registry.sqlite-wal", live)
+            self.assertNotIn("registry.sqlite-shm", live)
+            self.assertIn("registry.sqlite", live)
+
+    def test_a_failed_install_keeps_the_previous_registry(self):
+        """Ownership is settled before the swap, and a failure aborts the swap."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = self.export(root, [make_entry(1)])
+            state = root / "restored"
+            state.mkdir()
+            (state / "registry.sqlite").write_bytes(b"previous registry")
+            (state / "registry.sqlite-wal").write_text("stale-wal")
+            with self.assertRaises(ExportError) as caught:
+                restore(
+                    RestoreConfig(
+                        export_dir=result.directory,
+                        state_dir=state,
+                        graph_dir=root / "graph",
+                        stop_services=False,
+                        owner="memory-pre-restore-does-not-exist",
+                    )
+                )
+            parked = state / f"registry.sqlite.pre-restore-{result.directory.name}"
+            self.assertEqual((state / "registry.sqlite").read_bytes(), b"previous registry")
+            self.assertTrue((state / "registry.sqlite-wal").is_file())
+            self.assertTrue(parked.is_file())
+            self.assertTrue((state / ".restore-in-progress").is_file())
+            self.assertFalse((state / "registry.sqlite.restore-tmp").exists())
+        message = str(caught.exception)
+        self.assertIn("does not exist", message)
+        self.assertIn(str(parked), message)
+        self.assertIn(".restore-in-progress", message)
+
+    def test_services_stop_before_the_swap_and_falkordb_restarts_after(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            graph_dir = root / "falkordb"
+            graph_dir.mkdir()
+            (graph_dir / "dump.rdb").write_bytes(b"RDBfake")
+            result = self.export(
+                root,
+                [make_entry(1)],
+                graph_dir=graph_dir,
+                graph_client=FakeRedis([BEFORE, FINISHED]),
+            )
+            commands: list[tuple[str, ...]] = []
+            report = restore(
+                RestoreConfig(
+                    export_dir=result.directory,
+                    state_dir=root / "restored",
+                    graph_dir=root / "graph",
+                    owner=None,
+                    run=commands.append,
+                )
+            )
+        self.assertEqual(
+            commands[0],
+            ("systemctl", "stop", "memory-mcp", "memory-graphiti-mcp", "memory-llm-proxy", "memory-falkordb"),
+        )
+        # The restored RDB is inert until FalkorDB starts, so its restart is
+        # part of the restore, and `graph: restored` is reported after it.
+        self.assertEqual(commands[1], ("systemctl", "start", "memory-falkordb"))
+        self.assertEqual(report.restarted, ("memory-falkordb",))
+        # The writers stay down on purpose, so the advice still asks for them.
+        self.assertIn("start the memory services", export.graph_advice(report))
+        self.assertIn("restarted memory-falkordb", export.graph_advice(report))
+
+    def test_a_registry_only_restore_does_not_start_the_services(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = self.export(root, [make_entry(1)])
+            commands: list[tuple[str, ...]] = []
+            report = restore(
+                RestoreConfig(
+                    export_dir=result.directory,
+                    state_dir=root / "restored",
+                    graph_dir=root / "graph",
+                    owner=None,
+                    run=commands.append,
+                )
+            )
+        self.assertEqual(commands, [("systemctl", "stop", *export.MEMORY_UNITS)])
+        self.assertEqual(report.restarted, ())
+        self.assertIn("not restored", export.graph_advice(report))
+
+    def test_start_brings_the_writers_back_in_reverse_stop_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            graph_dir = root / "falkordb"
+            graph_dir.mkdir()
+            (graph_dir / "dump.rdb").write_bytes(b"RDBfake")
+            result = self.export(
+                root,
+                [make_entry(1)],
+                graph_dir=graph_dir,
+                graph_client=FakeRedis([BEFORE, FINISHED]),
+            )
+            commands: list[tuple[str, ...]] = []
+            restore(
+                RestoreConfig(
+                    export_dir=result.directory,
+                    state_dir=root / "restored",
+                    graph_dir=root / "graph",
+                    owner=None,
+                    start_services=True,
+                    run=commands.append,
+                )
+            )
+        self.assertEqual(
+            commands[1],
+            ("systemctl", "start", "memory-falkordb", "memory-llm-proxy", "memory-graphiti-mcp", "memory-mcp"),
+        )
+
+    def test_a_restore_holds_a_lock_that_blocks_exports(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = root / "state"
+            build_state(state, [make_entry(1)])
+            result = run_export(ExportConfig(root=root / "exports", state_dir=state, keep=7))
+            lock = state / ".restore-in-progress"
+            lock.write_text("stale\n")
+            with self.assertRaises(ExportError) as caught:
+                run_export(ExportConfig(root=root / "exports", state_dir=state, keep=7))
+            self.assertIn(".restore-in-progress", str(caught.exception))
+            with self.assertRaises(ExportError) as caught:
+                restore(
+                    RestoreConfig(
+                        export_dir=result.directory,
+                        state_dir=state,
+                        graph_dir=root / "graph",
+                        stop_services=False,
+                        owner=None,
+                    )
+                )
+            self.assertIn("another restore is running", str(caught.exception))
+            lock.unlink()
+            restore(
+                RestoreConfig(
+                    export_dir=result.directory,
+                    state_dir=state,
+                    graph_dir=root / "graph",
+                    stop_services=False,
+                    owner=None,
+                )
+            )
+            self.assertFalse(lock.exists())
 
     def test_dry_run_writes_nothing(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -562,12 +825,52 @@ class RestoreTests(unittest.TestCase):
                 verify_export(renamed)
 
 
+class SidecarTests(unittest.TestCase):
+    def test_sidecars_are_adopted_only_once_they_exist(self):
+        """The rw fallback writes; ownership must follow the files it creates."""
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / "state"
+            db = build_state(state, [make_entry(1)])
+            seen: list[bool] = []
+            adopt = export._adopt_sidecars
+            real_connect = export.sqlite3.connect
+
+            def ro_refuses(target, *args, **kwargs):
+                if "mode=ro" in str(target):
+                    raise sqlite3.OperationalError("unable to open database file")
+                return real_connect(target, *args, **kwargs)
+
+            def spy(path):
+                seen.append(path.with_name(path.name + "-shm").exists())
+                adopt(path)
+
+            export.sqlite3.connect = ro_refuses
+            export._adopt_sidecars = spy
+            try:
+                conn = export._open_source(db)
+                conn.close()
+            finally:
+                export.sqlite3.connect = real_connect
+                export._adopt_sidecars = adopt
+        self.assertEqual(seen, [True])
+
+
 class CliTests(unittest.TestCase):
     def run_cli(self, argv):
         out, err = io.StringIO(), io.StringIO()
         with redirect_stdout(out), redirect_stderr(err):
             code = cli.main(argv)
         return code, out.getvalue(), err.getvalue()
+
+    def fake_systemctl(self, root: Path) -> tuple[Path, Path]:
+        """A `systemctl` on PATH that records its arguments and succeeds."""
+        binary = root / "bin"
+        binary.mkdir()
+        log = root / "systemctl.log"
+        script = binary / "systemctl"
+        script.write_text(f'#!/bin/sh\nprintf "%s\\n" "$*" >>"{log}"\n')
+        script.chmod(0o755)
+        return binary, log
 
     def test_export_and_restore_through_the_cli(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -580,20 +883,66 @@ class CliTests(unittest.TestCase):
             self.assertEqual(code, 0, err)
             self.assertIn("exported", out)
             exported = next((root / "exports").iterdir())
-            code, out, err = self.run_cli(
+            binary, log = self.fake_systemctl(root)
+            with mock.patch.dict(os.environ, {"PATH": f"{binary}:{os.environ['PATH']}"}):
+                code, out, err = self.run_cli(
+                    [
+                        "restore",
+                        str(exported),
+                        "--state-dir",
+                        str(root / "restored"),
+                        "--graph-dir",
+                        str(root / "graph"),
+                        "--owner",
+                        "",
+                    ]
+                )
+            self.assertEqual(code, 0, err)
+            self.assertIn("restored", out)
+            self.assertTrue((root / "restored" / "registry.sqlite").is_file())
+            self.assertEqual(
+                log.read_text().splitlines(),
+                ["stop memory-mcp memory-graphiti-mcp memory-llm-proxy memory-falkordb"],
+            )
+
+    def test_no_stop_without_dry_run_is_refused(self):
+        """A real restore stops the services; only a dry run may skip them."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = root / "state"
+            build_state(state, [make_entry(1)])
+            exported = run_export(ExportConfig(state_dir=state, root=root / "exports")).directory
+            code, _, err = self.run_cli(
                 [
                     "restore",
                     str(exported),
                     "--state-dir",
                     str(root / "restored"),
-                    "--graph-dir",
-                    str(root / "graph"),
                     "--no-stop",
                 ]
             )
-            self.assertEqual(code, 0, err)
-            self.assertIn("restored", out)
-            self.assertTrue((root / "restored" / "registry.sqlite").is_file())
+            self.assertEqual(code, 1)
+            self.assertIn("--no-stop", err)
+            self.assertFalse((root / "restored").exists())
+
+    def test_a_failed_graph_snapshot_makes_the_export_exit_one(self):
+        """The registry export stands, but the timer must see the failure."""
+        result = export.ExportResult(
+            directory=Path("/nonexistent/2026-10-22T03-00-00Z"),
+            manifest={
+                "counts": {"total": 1},
+                "graph": None,
+                "graph_error": "BGSAVE did not finish within 1s",
+            },
+            pruned=(),
+        )
+        with mock.patch.object(export, "run_export", lambda _config: result):
+            code, out, err = self.run_cli(
+                ["export", "--root", "/nonexistent", "--state-dir", "/nonexistent"]
+            )
+        self.assertEqual(code, 1)
+        self.assertIn("exported", out)
+        self.assertIn("did not finish", err)
 
     def test_a_bad_export_exits_one(self):
         with tempfile.TemporaryDirectory() as directory:
