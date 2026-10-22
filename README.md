@@ -356,10 +356,22 @@ model providers Maki may use.
   with `origin=session`, `origin_ref=<session id>`, and the session header's
   `created_at` as `valid_at`. The session `cwd` picks the group with the same
   rules as everything else, and a work checkout is refused before anything is
-  sent. Session text is personal and leaves the machine for summarization; only
-  the summary and extracted items are stored. The run report records per-session
-  wall time, prompt/completion tokens, and an estimated cost from
-  `MEMORY_SUMMARY_PRICE_IN`/`_OUT` (USD per million, default 0.15/0.60).
+  sent; a cwd that does not exist here is refused too, because its work markers
+  cannot be checked, so a cross-machine session must be ingested where its cwd
+  exists. Only the cwd's path components are checked for employer markers; text
+  inside a personal checkout is not scanned for employer content. Session text
+  is personal and leaves the machine for summarization; only the summary and
+  extracted items are stored. An unchanged session is not re-summarized: a
+  disposable cache at `$MEMORY_SESSIONS_CACHE` (default
+  `~/.local/state/memory/sessions.json`) keys on session id plus the bounded
+  transcript's SHA-256, so the model cannot paraphrase a session into a second
+  episode; a changed transcript is summarized again. The run report records
+  per-session wall time, prompt/completion tokens, and cost from
+  `MEMORY_SUMMARY_PRICE_IN`/`_OUT` (USD per million, default 0.15/0.60); a
+  missing `usage` block reports `unknown` rather than $0, and retries
+  accumulate tokens because every paid attempt counts. `--limit` bounds
+  episodes per source but not sessions: `--session-limit` bounds the session
+  sample, and `memory ingest all` spends about that many summary calls.
   `memory ingest all` includes the session sample by default.
   Extraction goes through the loopback `memory-llm-proxy` to Neuralwatt: the
   gateway owns the API key and adds `reasoning_effort: "none"`, because

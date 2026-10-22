@@ -614,16 +614,32 @@ user preferences; every one of those becomes its own episode, so all of a
 session's episodes share `origin=session` and `origin_ref=<session id>`.
 Session text is personal and leaves this machine for summarization through the
 loopback gateway; only the summary and the extracted items are stored, and a
-session whose cwd is a work checkout is refused before any request is made.
+session whose cwd is a work checkout is refused before any request is made. A
+session whose cwd does not exist here is refused too, because its work markers
+cannot be checked: a cross-machine session must be ingested where its cwd
+exists. Only the cwd's path components are checked for employer markers; text
+inside a personal checkout is not scanned for employer content.
+
+An unchanged session is not re-summarized. A disposable cache at
+`$MEMORY_SESSIONS_CACHE` (default `~/.local/state/memory/sessions.json`) is
+keyed by session id plus the bounded transcript's SHA-256, so a repeated run
+reuses the earlier summary and cannot paraphrase the same session into a second
+episode; a changed transcript is summarized again. The cache is not a ledger:
+the registry still decides duplicates, and the file can be deleted at any time.
+`--limit` bounds episodes per source but not sessions; `--session-limit` bounds
+the sample, so `memory ingest all` spends about that many summary calls.
 
 The summary call runs from the operator's shell, not from a unit, so it reaches
 the gateway at `MEMORY_LLM_URL` (default `http://127.0.0.1:8082`) and needs no
 Neuralwatt key. Per-session wall time, prompt/completion `usage` tokens, and an
 estimated cost live under `sessions` in the run report; the prices are
 `MEMORY_SUMMARY_PRICE_IN`/`MEMORY_SUMMARY_PRICE_OUT` (USD per million, default
-0.15/0.60), and the summary line is printed on stderr. `--session-concurrency`
+0.15/0.60), and the summary line is printed on stderr. A missing `usage` block
+reports `cost unknown` rather than $0, and retries accumulate tokens because
+every paid attempt counts. `--session-concurrency`
 (default 3) bounds simultaneous summary calls, and `--dry-run` parses and
-estimates tokens without calling the model.
+estimates tokens without calling the model; a live run prints the sampled count
+and its token/cost estimate to stderr before the first call.
 
 Extraction is one hosted chat call per episode, so a full corpus takes hours.
 `--concurrency` (default 4) bounds simultaneous submissions; the wrapper's
