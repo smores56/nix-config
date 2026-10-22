@@ -448,6 +448,15 @@ class WrapperTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.graph.tombstoned, [])
         self.assertEqual(self.registry.lookup(entry.group, entry.content_hash).status, "tombstoned")
 
+    async def test_tombstone_is_idempotent_and_audited(self):
+        entry = self.seed_entry(status="active", graphiti_uuid="graph-1")
+        first = await self.call("memory_tombstone", {"ref": entry.uuid, "reason": "first"})
+        second = await self.call("memory_tombstone", {"ref": entry.uuid})
+        self.assertIn("tombstoned", first.content[0].text)
+        self.assertIn("already tombstoned", second.content[0].text)
+        self.assertEqual(len(self.graph.tombstoned), 1)
+        self.assertEqual([row["status"] for row in self.audit()[-2:]], ["tombstoned", "duplicate"])
+
     async def test_promote_copies_type_and_content_into_global(self):
         entry = self.seed_entry(
             status="active", origin="sdlc", origin_ref="issue-1#body", kind="json", content='{"a": 1}'

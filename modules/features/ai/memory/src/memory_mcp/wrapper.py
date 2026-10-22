@@ -856,6 +856,15 @@ def build_server(
                     "use the registry uuid, a content hash prefix, or an exact origin:origin_ref"
                 )
             if entry.status == "tombstoned":
+                audit(
+                    "memory_tombstone",
+                    "duplicate",
+                    actor=info.actor,
+                    group=info.group,
+                    content_hash=entry.content_hash,
+                    uuid=entry.uuid,
+                    details={"tombstoned_at": entry.tombstoned_at},
+                )
                 return f"Episode {entry.uuid} is already tombstoned ({entry.tombstoned_at})."
             result = TombstoneResult()
             if entry.graphiti_uuid:
@@ -956,6 +965,13 @@ def build_server(
             if any(not _HASH.fullmatch(item) for item in hashes):
                 raise ToolError("every hash must be a 64-character lowercase hex digest")
         except (ToolError, GroupRefused) as exc:
+            audit(
+                "internal_lookup",
+                "rejected",
+                actor="ingest",
+                group="?",
+                details={"error": clip(str(exc), MAX_DETAIL_CHARS)},
+            )
             return JSONResponse({"error": str(exc)}, status_code=400)
 
         result: dict[str, dict[str, object]] = {}
