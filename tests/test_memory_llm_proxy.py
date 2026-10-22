@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import sys
@@ -10,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "modules/features/ai/memory/s
 
 import httpx  # noqa: E402
 
+from memory_mcp import llm_proxy  # noqa: E402
 from memory_mcp.llm_proxy import create_app  # noqa: E402
 
 
@@ -26,6 +28,27 @@ def response(*, status=200, payload=None, chunks=None, headers=None):
         content=_chunks(body),
         headers=headers if headers is not None else {"content-type": "application/json"},
     )
+
+
+class RetryAfterTests(unittest.TestCase):
+    def test_delay_seconds_are_honoured(self):
+        self.assertEqual(llm_proxy._retry_after_seconds("7"), 7.0)
+
+    def test_an_http_date_becomes_a_delay(self):
+        self.assertIsNone(llm_proxy._retry_after_seconds(None))
+        # A date in the past means retry now; a far one is still capped.
+        self.assertEqual(llm_proxy._retry_after_seconds("Wed, 21 Oct 2015 07:28:00 GMT"), 0.0)
+        self.assertEqual(llm_proxy._retry_after_seconds("Fri, 21 Oct 2095 07:28:00 GMT"), llm_proxy.MAX_RETRY_AFTER)
+
+    def test_a_huge_delay_is_capped_and_a_garbage_value_is_ignored(self):
+        self.assertEqual(llm_proxy._retry_after_seconds("99999"), llm_proxy.MAX_RETRY_AFTER)
+        self.assertIsNone(llm_proxy._retry_after_seconds("soon"))
+
+    def test_backoff_grows_and_is_capped(self):
+        delays = [llm_proxy._backoff_seconds(attempt) for attempt in range(8)]
+        self.assertLessEqual(delays[0], llm_proxy.RETRY_BACKOFF_BASE)
+        self.assertLessEqual(delays[1], llm_proxy.RETRY_BACKOFF_BASE * 2)
+        self.assertTrue(all(delay <= llm_proxy.RETRY_BACKOFF_CAP for delay in delays))
 
 
 class ProxyTests(unittest.IsolatedAsyncioTestCase):
@@ -129,10 +152,13 @@ class ProxyTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("http://upstream", error["message"])
 
     async def test_upstream_error_status_is_forwarded(self):
+        # A 503 is retried first, so the final answer is the upstream's own.
         app = self.app(lambda request: response(status=503, payload={"error": {"message": "loading"}}))
-        reply = await self.call(app, "POST", "/v1/chat/completions", json_body={"messages": []})
+        with mock.patch.object(llm_proxy, "_sleep", new=mock.AsyncMock()):
+            reply = await self.call(app, "POST", "/v1/chat/completions", json_body={"messages": []})
         self.assertEqual(reply.status_code, 503)
         self.assertEqual(reply.json()["error"]["message"], "loading")
+        self.assertEqual(len(self.seen), 6)
 
     async def test_health_answers_locally_without_the_upstream(self):
         app = self.app(lambda request: response(status=500))
@@ -284,6 +310,147 @@ class ProxyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request.headers["x-keep"], "me")
         # The forward request's length matches the rewritten body, not the input.
         self.assertEqual(int(request.headers["content-length"]), len(request.content))
+
+    def test_the_default_limits_are_two_slots_and_six_attempts(self):
+        app = self.app(lambda request: response())
+        self.assertEqual(app.state.upstream_concurrency, 2)
+        self.assertEqual(app.state.upstream_retries, 6)
+
+    def test_the_limits_come_from_the_unit_environment(self):
+        env = {"MEMORY_UPSTREAM_CONCURRENCY": "3", "MEMORY_UPSTREAM_RETRIES": "2"}
+        with mock.patch.dict(os.environ, env):
+            app = self.app(lambda request: response())
+        self.assertEqual(app.state.upstream_concurrency, 3)
+        self.assertEqual(app.state.upstream_retries, 2)
+
+    async def test_concurrency_never_exceeds_the_configured_limit(self):
+        gate = {"active": 0, "peak": 0, "calls": 0}
+
+        async def handler(request):
+            gate["active"] += 1
+            gate["calls"] += 1
+            gate["peak"] = max(gate["peak"], gate["active"])
+            try:
+                # Long enough that every caller would overlap without a permit.
+                await asyncio.sleep(0.02)
+                return response()
+            finally:
+                gate["active"] -= 1
+
+        app = self.app(handler, upstream_concurrency=2)
+        replies = await asyncio.gather(
+            *(self.call(app, "POST", "/v1/chat/completions", json_body={"messages": []}) for _ in range(6))
+        )
+
+        self.assertEqual([reply.status_code for reply in replies], [200] * 6)
+        self.assertEqual(gate["calls"], 6)
+        self.assertEqual(gate["peak"], 2)
+
+    async def test_a_429_with_retry_after_is_retried_and_succeeds(self):
+        outcomes = [
+            response(status=429, payload={"error": {"message": "slow down"}}, headers={"retry-after": "0"}),
+            response(payload={"choices": [{"message": {"content": "{}"}}]}),
+        ]
+
+        def handler(request):
+            return outcomes.pop(0)
+
+        app = self.app(handler, upstream_retries=3)
+        with mock.patch.object(llm_proxy, "_sleep", new=mock.AsyncMock()) as sleep:
+            reply = await self.call(app, "POST", "/v1/chat/completions", json_body={"messages": []})
+
+        self.assertEqual(reply.status_code, 200)
+        self.assertEqual(reply.json()["choices"][0]["message"]["content"], "{}")
+        self.assertEqual(len(self.seen), 2)
+        sleep.assert_awaited_once_with(0.0)
+
+    async def test_exhausted_retries_return_the_upstream_429(self):
+        app = self.app(
+            lambda request: response(status=429, payload={"error": {"message": "rate limited"}}),
+            upstream_retries=3,
+        )
+        with mock.patch.object(llm_proxy, "_sleep", new=mock.AsyncMock()) as sleep:
+            reply = await self.call(app, "POST", "/v1/chat/completions", json_body={"messages": []})
+
+        self.assertEqual(reply.status_code, 429)
+        self.assertEqual(reply.json()["error"]["message"], "rate limited")
+        self.assertEqual(len(self.seen), 3)
+        # Two retries, both backed off: no Retry-After was offered.
+        self.assertEqual(sleep.await_count, 2)
+
+    async def test_a_503_is_retried_too(self):
+        outcomes = [
+            response(status=503, payload={"error": {"message": "overloaded"}}),
+            response(payload={"object": "list"}),
+        ]
+        app = self.app(lambda request: outcomes.pop(0), upstream_retries=2)
+        with mock.patch.object(llm_proxy, "_sleep", new=mock.AsyncMock()):
+            reply = await self.call(app, "GET", "/v1/models")
+
+        self.assertEqual(reply.status_code, 200)
+        self.assertEqual(reply.json(), {"object": "list"})
+        self.assertEqual(len(self.seen), 2)
+
+    async def test_a_400_is_not_retried(self):
+        app = self.app(
+            lambda request: response(status=400, payload={"error": {"message": "bad request"}}),
+            upstream_retries=3,
+        )
+        reply = await self.call(app, "POST", "/v1/chat/completions", json_body={"messages": []})
+
+        self.assertEqual(reply.status_code, 400)
+        self.assertEqual(reply.json()["error"]["message"], "bad request")
+        self.assertEqual(len(self.seen), 1)
+
+    async def test_a_streaming_response_is_never_retried_after_it_starts(self):
+        chunks = [b'data: {"choices":[{"delta":{"content":"{"}}]}\n\n', b"data: [DONE]\n\n"]
+
+        app = self.app(
+            lambda request: response(chunks=chunks, headers={"content-type": "text/event-stream"}),
+            upstream_retries=3,
+        )
+        reply = await self.call(app, "POST", "/v1/chat/completions", json_body={"stream": True, "messages": []})
+
+        self.assertEqual(reply.status_code, 200)
+        self.assertEqual(reply.content, b"".join(chunks))
+        self.assertEqual(len(self.seen), 1)
+
+    async def test_a_rejected_streaming_request_is_retried_before_any_body_is_sent(self):
+        chunk = b'data: {"choices":[{"delta":{"content":"{}"}}]}\n\n'
+        outcomes = [
+            response(status=429, chunks=[b"busy"], headers={"retry-after": "0"}),
+            response(chunks=[chunk], headers={"content-type": "text/event-stream"}),
+        ]
+        app = self.app(lambda request: outcomes.pop(0), upstream_retries=2)
+        with mock.patch.object(llm_proxy, "_sleep", new=mock.AsyncMock()):
+            reply = await self.call(app, "POST", "/v1/chat/completions", json_body={"stream": True, "messages": []})
+
+        self.assertEqual(reply.status_code, 200)
+        self.assertEqual(reply.content, chunk)
+        self.assertEqual(len(self.seen), 2)
+    async def test_a_stream_that_never_starts_still_releases_its_slot(self):
+        # A client that disconnects between the upstream send and the first
+        # chunk never runs the body iterator; the response itself must return
+        # the permit, or the limiter shrinks for the life of the process.
+        released = []
+
+        async def body():
+            yield b"x"
+
+        async def send(message):
+            raise RuntimeError("client disconnected")
+
+        async def receive():
+            return {"type": "http.disconnect"}
+
+        response = llm_proxy._ReleasingStreamingResponse(
+            body(), release=lambda: released.append(True), status_code=200, headers={}
+        )
+        try:
+            await response({"type": "http"}, receive, send)
+        except BaseException:  # noqa: BLE001 - the failure mode is not the point
+            pass
+        self.assertEqual(released, [True])
 
 
 if __name__ == "__main__":

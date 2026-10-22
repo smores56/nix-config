@@ -273,12 +273,15 @@ in
           # embedder width or FalkorDB rejects the vector. Same source as the
           # YAML dimensions above.
           EMBEDDING_DIM = toString embedder.dimensions;
-          # Hosted extraction has no local slot to queue behind; four in-flight
-          # episodes keep the reconciler busy without hammering the API. With
-          # the local embedder those calls queue behind llama-server's single
-          # slot, which is fine: embedding calls are far shorter than the chat
-          # generations this limit used to protect.
-          SEMAPHORE_LIMIT = "4";
+          # The account's PAYG tier allows 3 concurrent upstream slots, and the
+          # gateway's MEMORY_UPSTREAM_CONCURRENCY=2 already holds the real
+          # ceiling on upstream requests (a permit covers the whole request,
+          # including the streamed body). Two here keeps Graphiti's own queue
+          # from outrunning the gateway and leaves one slot for Maki's chat on
+          # the same key. Oversubscribing does not add throughput: the gateway
+          # logged 944 429s out of 2270 requests at 4 while a 1382-episode
+          # backfill starved, so lower these before anything else if 429s return.
+          SEMAPHORE_LIMIT = "2";
         };
       };
     };
@@ -368,6 +371,12 @@ in
           # %d is systemd's credential directory. The key reaches the process
           # only as a private file: never the environment, never the Nix store.
           "MEMORY_NEURALWATT_KEY_FILE=%d/neuralwatt-api-key"
+          # Two upstream slots of the tier's three, and six attempts (one try
+          # plus five retries) for a 429/503 rejection. Together these are the
+          # whole rate-limit story: the limiter keeps the tier's slots free and
+          # the retries absorb a burst instead of failing an episode.
+          "MEMORY_UPSTREAM_CONCURRENCY=2"
+          "MEMORY_UPSTREAM_RETRIES=6"
         ];
         # systemd reads the sops secret as root and hands the service a copy.
         # A missing key fails the unit instead of starting a gateway that would
@@ -437,7 +446,13 @@ in
           # Reconciler cadence: poll pending rows, tolerate a slow extraction,
           # and back off between bounded retries.
           "MEMORY_RECONCILE_INTERVAL=10"
-          "MEMORY_RECONCILE_GRACE=600"
+          # The grace must exceed how long a queued episode waits for an
+          # upstream slot, not how long one extraction takes. A large backfill
+          # (1382 episodes at two concurrent slots) drains over hours, so a
+          # 600s grace marked still-queued writes as failed and resubmitted
+          # them as duplicates. Twelve hours covers a day's queue; the wrapper
+          # still marks genuinely lost writes failed once it expires.
+          "MEMORY_RECONCILE_GRACE=43200"
           "MEMORY_RECONCILE_BACKOFF=60"
           "MEMORY_WORK_EMAIL=${work.email}"
           "MEMORY_WORK_OWNER_GLOB=${work.githubOwnerGlob}"
