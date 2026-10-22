@@ -36,15 +36,29 @@ class GraphitiBackendTests(unittest.IsolatedAsyncioTestCase):
             name="n",
             episode_body="body",
             group_id="owner--repo",
-            source_description="hash=abc",
+            source_description="sdlc issue-1#body",
+            source="json",
+            reference_time="2026-10-03T00:00:00Z",
         )
         self.assertEqual(result["message"], "queued")
         _headers, name, arguments = fake.calls[0]
         self.assertEqual(name, "add_memory")
         self.assertEqual(arguments["group_id"], "owner--repo")
-        self.assertEqual(arguments["source"], "text")
+        self.assertEqual(arguments["source"], "json")
+        self.assertEqual(arguments["reference_time"], "2026-10-03T00:00:00Z")
         # graphiti-core 0.31.2 must not receive a caller uuid for a new episode.
         self.assertNotIn("uuid", arguments)
+
+    async def test_reference_time_is_omitted_when_unknown(self):
+        backend, fake = self.backend(ToolResult(text='{"message": "queued"}', is_error=False))
+        await backend.add_episode(
+            name="n",
+            episode_body="body",
+            group_id="owner--repo",
+            source_description="agent",
+        )
+        self.assertNotIn("reference_time", fake.calls[0][2])
+        self.assertEqual(fake.calls[0][2]["source"], "text")
 
     async def test_error_payload_is_a_backend_error(self):
         backend, _fake = self.backend(ToolResult(text='{"error": "boom"}', is_error=False))
