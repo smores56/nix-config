@@ -530,6 +530,25 @@ The wildcard CNAME already exists, so the rebuild adds the ingress; applying
 tofu first means Access is in place the moment the hostname starts routing.
 The email policy is inert for this TCP endpoint (service tokens only).
 
+### Rebuilding the store
+
+The registry is authoritative and the graph is derived, so a rebuild is: stop
+the memory services, delete the graph data and the registry, start them again,
+and re-ingest. It is the only destructive memory operation, and it also changes
+the vector width when `memory.embedder` changes.
+
+```sh
+just switch smortress     # applies the embedder choice (qwen3, 4096-d)
+just memory-rebuild       # stop, wipe, start (sudo)
+just memory-ingest        # re-extract the corpus; hours, run in a user unit
+```
+
+`just memory-rebuild` removes `/var/lib/memory/falkordb/*`, `registry.sqlite*`,
+`index.sqlite*`, `audit.jsonl` and the internal token (regenerated at start).
+The first `memory ingest all` then treats every planned hash as missing and
+re-embeds the corpus at the new width. Do not run it while anything else is
+writing memory; there is no export to fall back on until #223 lands.
+
 ### smortress/ssh
 
 <!-- manual-step: service/smortress/ssh -->

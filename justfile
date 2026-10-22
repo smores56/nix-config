@@ -61,6 +61,13 @@ cloudflare-tofu *args:
 memory-ingest *args:
     memory ingest all {{args}}
 
+# Stop memory, wipe the derived graph and the registry, then start it again.
+memory-rebuild:
+    sudo systemctl stop memory-mcp memory-graphiti-mcp memory-llm-proxy
+    sudo find /var/lib/memory/falkordb -mindepth 1 -delete
+    sudo rm -f /var/lib/memory/registry.sqlite* /var/lib/memory/index.sqlite* /var/lib/memory/audit.jsonl /var/lib/memory/internal.token
+    sudo systemctl start memory-llm-proxy memory-graphiti-mcp memory-mcp
+
 # Show backup timers and failed backup units.
 backup-status:
     systemctl list-timers 'backup-*'
