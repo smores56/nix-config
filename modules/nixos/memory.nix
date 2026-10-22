@@ -71,8 +71,11 @@ let
       # would vary the JSON between identical episodes.
       temperature: 0.0
       # Graphiti's extraction and dedup prompts ask for up to 16k tokens; the
-      # MCP default of 4096 truncates a large episode into invalid JSON.
-      max_tokens: 8192
+      # MCP default of 4096 truncates a large episode into invalid JSON. An
+      # 8000-char section near MAX_SECTION_CHARS still needs more than 8192
+      # (measured: generation stopped at 8192 tokens, char ~8320 of the JSON),
+      # so match the documented ceiling. The chat server runs one 200k slot.
+      max_tokens: 16384
       # Grammar-enforced JSON. json_object relies on the model to comply and
       # occasionally yields prose/empty output; the proxy already disables
       # thinking for extraction, and json_schema makes every response parseable.
