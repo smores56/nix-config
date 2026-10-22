@@ -24,14 +24,32 @@ proxied `/v1/models` (see `docs/manual-steps.md`).
 Request bodies are capped at `MAX_REQUEST_BYTES` (extraction prompts are large,
 but a runaway or hostile client must not park gigabytes in memory), and reads
 have their own deadline so a stalled upstream cannot pin a worker forever.
+
+The account's PAYG tier allows three concurrent upstream slots, and Graphiti's
+own in-flight limit is not the same thing: a permit is held here for as long as
+the upstream request is open, including the streamed response body, so
+`MEMORY_UPSTREAM_CONCURRENCY` is the real ceiling on upstream slots. Overrunning
+it earns 429s that starve every queued extraction, so exceeding it is never
+worth it.
+
+A 429 (rate limited) or 503 (overloaded) is a rejection, not a result: the
+request never ran, so it is safe to retry. Those two statuses are retried up to
+`MEMORY_UPSTREAM_RETRIES` attempts, honouring `Retry-After` when present and
+falling back to jittered exponential backoff. Every other status, including all
+other 4xx, is returned unchanged, and nothing is retried once a response body
+has been handed to the client.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
+import random
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, AsyncIterator
 
@@ -64,6 +82,23 @@ REASONING_EFFORT = "none"
 # OpenAI SDK forwards it as `Authorization: Bearer none`. That placeholder is no
 # credential: the gateway replaces it instead of leaking it upstream.
 PLACEHOLDER_BEARERS = frozenset({"", "none"})
+# The PAYG tier has three concurrent slots and Maki's chat shares the key, so
+# two leaves one of them for interactive use. This is the ceiling on real
+# upstream slots; Graphiti's SEMAPHORE_LIMIT only bounds its own queue.
+DEFAULT_UPSTREAM_CONCURRENCY = 2
+UPSTREAM_CONCURRENCY_ENV = "MEMORY_UPSTREAM_CONCURRENCY"
+# Attempts, not retries: one try plus five retries covers a burst of 429s with
+# `Retry-After` without outliving the caller's own read deadline.
+DEFAULT_UPSTREAM_RETRIES = 6
+UPSTREAM_RETRIES_ENV = "MEMORY_UPSTREAM_RETRIES"
+# Rejections only. A 429 or 503 means the request never ran, so replaying it
+# cannot duplicate work; every other status is a real answer (or a client bug).
+RETRY_STATUSES = frozenset({429, 503})
+# An upstream `Retry-After` of minutes would park the request past the read
+# deadline and hold a permit for nothing; one minute is already generous.
+MAX_RETRY_AFTER = 60.0
+RETRY_BACKOFF_BASE = 1.0
+RETRY_BACKOFF_CAP = 30.0
 
 # Connection-scoped headers are ours to terminate at each hop. The request
 # content-length is stale once a chat body is rewritten, and the upstream
@@ -142,6 +177,84 @@ def _response_headers(response: httpx.Response) -> dict[str, str]:
     return {key: value for key, value in response.headers.items() if key.lower() not in RESPONSE_STRIP}
 
 
+class _ReleasingStreamingResponse(StreamingResponse):
+    """A proxied reply that gives its upstream slot back exactly once.
+
+    The body iterator normally releases the slot in its `finally`, but a client
+    that disconnects before the first iteration never runs it, and a leaked
+    permit would silently shrink the tier for the life of the process. The
+    release is idempotent, so both paths are safe.
+    """
+
+    def __init__(self, content: AsyncIterator[bytes], *, release, **kwargs: Any) -> None:
+        super().__init__(content, **kwargs)
+        self._release = release
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            self._release()
+
+
+def _env_int(name: str, default: int) -> int:
+    """A positive integer from the environment, or `default` with a warning.
+
+    A typo in the unit environment must not silently disable the limiter or
+    make every request fail; the boundary the caller asked for is the default.
+    """
+    raw = os.environ.get(name)
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning("%s=%r is not an integer; using %d", name, raw, default)
+        return default
+    if value < 1:
+        logger.warning("%s=%r must be at least 1; using %d", name, raw, default)
+        return default
+    return value
+
+
+def _retry_after_seconds(value: str | None, *, cap: float = MAX_RETRY_AFTER) -> float | None:
+    """The upstream's `Retry-After` as seconds, in `[0, cap]`, or None.
+
+    Both HTTP forms are legal: delay-seconds and an HTTP-date. A date in the
+    past (clock skew, a slow hop) means "retry now", not "give up".
+    """
+    if value is None:
+        return None
+    value = value.strip()
+    try:
+        seconds = float(value)
+    except ValueError:
+        try:
+            deadline = parsedate_to_datetime(value)
+        except (TypeError, ValueError):
+            return None
+        if deadline is None:
+            return None
+        if deadline.tzinfo is None:
+            deadline = deadline.replace(tzinfo=timezone.utc)
+        seconds = (deadline - datetime.now(timezone.utc)).total_seconds()
+    return min(max(seconds, 0.0), cap)
+
+
+def _backoff_seconds(attempt: int, *, base: float = RETRY_BACKOFF_BASE, cap: float = RETRY_BACKOFF_CAP) -> float:
+    """Jittered exponential backoff for retry `attempt` (0-based).
+
+    Half the window is fixed and half is random, so a burst of clients hitting
+    the same 429 does not retry in lockstep and re-trigger it.
+    """
+    ceiling = min(cap, base * 2**attempt)
+    return ceiling / 2 + random.uniform(0.0, ceiling / 2)
+
+
+async def _sleep(seconds: float) -> None:
+    await asyncio.sleep(seconds)
+
+
 def create_app(
     *,
     upstream: str | None = None,
@@ -151,8 +264,15 @@ def create_app(
     max_request_bytes: int = MAX_REQUEST_BYTES,
     api_key: str | None = None,
     key_file: str | None = None,
+    upstream_concurrency: int | None = None,
+    upstream_retries: int | None = None,
 ) -> Starlette:
     base_url = (upstream or os.environ.get("MEMORY_LLM_UPSTREAM", DEFAULT_UPSTREAM)).rstrip("/")
+    concurrency = upstream_concurrency or _env_int(UPSTREAM_CONCURRENCY_ENV, DEFAULT_UPSTREAM_CONCURRENCY)
+    retries = upstream_retries or _env_int(UPSTREAM_RETRIES_ENV, DEFAULT_UPSTREAM_RETRIES)
+    # Per app, not module-level: two apps in one process (tests, an embedder
+    # sidecar) must not share or exhaust each other's permits.
+    upstream_slots = asyncio.Semaphore(concurrency)
     # Read once at startup: a credential rotation restarts the unit, and a
     # per-request read would turn a missing file into a partial outage.
     resolved_key = load_api_key(api_key=api_key, key_file=key_file)
@@ -237,8 +357,58 @@ def create_app(
             headers=_request_headers(request, resolved_key),
             content=body,
         )
+
+        # Released by the body iterator, or by the response when a client
+        # disconnects before the first chunk. Either way, exactly once per
+        # returned response, so a permit can never leak.
+        slot_released = False
+
+        def release_slot() -> None:
+            nonlocal slot_released
+            if not slot_released:
+                slot_released = True
+                upstream_slots.release()
+
+        async def open_upstream(upstream_request: httpx.Request) -> httpx.Response:
+            """Send the request, retrying only a rejection, holding one slot.
+
+            The permit is taken before the send and handed to the response
+            body, so it covers the whole upstream request: a queued extraction
+            calls no model slot until it actually has one. On a retryable
+            status the response is closed and the permit released before
+            backing off, so sleeping never blocks the other slots.
+            """
+            for attempt in range(retries):
+                await upstream_slots.acquire()
+                try:
+                    upstream_response = await client.send(upstream_request, stream=True)
+                except BaseException:
+                    upstream_slots.release()
+                    raise
+                if upstream_response.status_code not in RETRY_STATUSES or attempt + 1 >= retries:
+                    return upstream_response
+                retry_after = upstream_response.headers.get("retry-after")
+                delay = _retry_after_seconds(retry_after)
+                if delay is None:
+                    delay = _backoff_seconds(attempt)
+                logger.warning(
+                    "upstream %s %s returned %d (attempt %d/%d); retrying in %.1fs",
+                    upstream_request.method,
+                    upstream_request.url.path,
+                    upstream_response.status_code,
+                    attempt + 1,
+                    retries,
+                    delay,
+                )
+                # Nothing has reached the client yet: this response is drained
+                # here, so a retry cannot follow a partially streamed body.
+                await upstream_response.aclose()
+                upstream_slots.release()
+                await _sleep(delay)
+            raise AssertionError("retry loop fell through")  # unreachable: last attempt returns
+
         try:
-            upstream_response = await client.send(upstream_request, stream=True)
+            upstream_response = await open_upstream(upstream_request)
         except httpx.TimeoutException as exc:
             return JSONResponse(
                 {
@@ -268,9 +438,14 @@ def create_app(
                     yield chunk
             finally:
                 await upstream_response.aclose()
+                # The slot is free only once the upstream request is done, not
+                # when its headers arrived: a streamed generation still holds
+                # one of the tier's three places.
+                release_slot()
 
-        return StreamingResponse(
+        return _ReleasingStreamingResponse(
             body_stream(),
+            release=release_slot,
             status_code=upstream_response.status_code,
             headers=_response_headers(upstream_response),
         )
@@ -285,6 +460,10 @@ def create_app(
     # Tests close the client through the ASGI lifespan; the server closes it on
     # shutdown. Exposing it keeps that explicit instead of implicit.
     app.state.client = client
+    # The effective limits are visible for tests and for an operator reading a
+    # live process, instead of being buried in the environment.
+    app.state.upstream_concurrency = concurrency
+    app.state.upstream_retries = retries
     return app
 
 

@@ -415,6 +415,24 @@ boundary. Its `/health` only proves the gateway process is alive; check upstream
 access through the proxied `/v1/models`. Request bodies over 10 MB are rejected,
 and an upstream read stall is a 504.
 
+The tier math is three concurrent upstream slots: two for memory
+(`MEMORY_UPSTREAM_CONCURRENCY=2`, mirrored by Graphiti's
+`SEMAPHORE_LIMIT=2`) and one left for Maki's own chat on the same key. The
+gateway's permit is held for the whole upstream request, streamed body
+included, so it — not Graphiti's semaphore — is the real ceiling, and
+oversubscribing only trades throughput for 429s: four in-flight episodes once
+earned 944 429s out of 2,270 requests in 20 minutes while a 1,382-episode
+backfill starved. A 429 or 503 is a rejection (the request never ran), so the
+gateway retries those two — `MEMORY_UPSTREAM_RETRIES=6` attempts, honouring
+`Retry-After` (seconds or HTTP-date, capped at 60 s) and otherwise backing off
+exponentially with jitter — and returns the upstream 429/503 unchanged once
+attempts run out. Nothing else is retried, and nothing is retried after a
+response body has started. Because a queue that large drains over hours, the
+wrapper's `MEMORY_RECONCILE_GRACE` is 12 hours: a shorter grace marked
+still-queued writes failed and resubmitted them as duplicates. If 429s appear
+again, lower `MEMORY_UPSTREAM_CONCURRENCY` (and `SEMAPHORE_LIMIT` with it)
+before anything else.
+
 Embeddings stay local by default: bge-m3 on `llama-cpp-embed` (`127.0.0.1:8183`,
 1024 dimensions). `memory.embedder = "neuralwatt"` sends them through the same
 gateway to `qwen3-embedding-8b` (4096 dimensions); the model is preview-only and
