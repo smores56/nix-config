@@ -29,6 +29,8 @@ from .groups import GroupRefused, derive_group, validate_group
 DEFAULT_URL = "http://127.0.0.1:8182/mcp"
 DEFAULT_TIMEOUT = 75.0
 DEFAULT_NOTES_DIR = "~/Documents"
+DEFAULT_SESSION_SAMPLE = 50
+DEFAULT_SESSION_CONCURRENCY = 3
 
 
 def default_docs_root() -> str:
@@ -74,9 +76,9 @@ def build_parser() -> argparse.ArgumentParser:
     tombstone.add_argument("ref")
     tombstone.add_argument("--reason", default="")
 
-    ingest = sub.add_parser("ingest", help="Bulk-ingest sdlc issues, personal notes, and repo docs")
-    ingest.add_argument("source", choices=["sdlc", "notes", "docs", "all"])
-    ingest.add_argument("--limit", type=int, help="Maximum episodes per source")
+    ingest = sub.add_parser("ingest", help="Bulk-ingest sdlc issues, personal notes, repo docs, and Maki sessions")
+    ingest.add_argument("source", choices=["sdlc", "notes", "docs", "sessions", "all"])
+    ingest.add_argument("--limit", type=int, help="Maximum episodes per source (not sessions)")
     ingest.add_argument("--dry-run", action="store_true", help="Print the episode plan; write nothing")
     ingest.add_argument("--report", help="Report path (default ~/.local/state/memory/ingest-<timestamp>.json)")
     ingest.add_argument("--concurrency", type=int, default=4, help="Concurrent submissions (default 4)")
@@ -85,6 +87,23 @@ def build_parser() -> argparse.ArgumentParser:
     ingest.add_argument("--docs-root", default=None, help="Clone root (default ~/code/github.com/<owner>)")
     ingest.add_argument("--repo-list", help="File of repo names for docs ingestion, one per line")
     ingest.add_argument("--repo", action="append", default=[], help="Restrict docs to this repo (repeatable)")
+    ingest.add_argument(
+        "--sessions-dir",
+        default=None,
+        help="Maki sessions directory (default: $MAKI_SESSIONS_DIR, then the XDG state/data dirs)",
+    )
+    ingest.add_argument(
+        "--session-limit",
+        type=int,
+        default=DEFAULT_SESSION_SAMPLE,
+        help=f"Most recent sessions to sample (default {DEFAULT_SESSION_SAMPLE}; `all` uses this too)",
+    )
+    ingest.add_argument(
+        "--session-concurrency",
+        type=int,
+        default=DEFAULT_SESSION_CONCURRENCY,
+        help=f"Concurrent summaries (default {DEFAULT_SESSION_CONCURRENCY})",
+    )
     ingest.add_argument("--verbose", action="store_true", help="Log every skipped episode to stderr")
 
     # Export and restore work on the local registry and graph volume: they take
@@ -119,7 +138,7 @@ def build_plans(args: argparse.Namespace) -> tuple[list, dict[str, str]]:
             repos=repo_filter(args.repo_list, args.repo),
         ),
     }
-    names = list(builders) if args.source == "all" else [args.source]
+    names = [name for name in builders if args.source in ("all", name)]
     plans = []
     errors: dict[str, str] = {}
     for name in names:
@@ -132,10 +151,50 @@ def build_plans(args: argparse.Namespace) -> tuple[list, dict[str, str]]:
     return [plan.limited(args.limit) for plan in plans], errors
 
 
+async def build_sessions(args: argparse.Namespace) -> "SessionPlanResult":
+    """Parse and (unless dry-run) summarize the sampled sessions.
+
+    A dry run never constructs the summary client, so it cannot reach the model
+    or the gateway.
+    """
+    from .sessions import SessionPlanResult, build_session_plan
+    from .session_summary import SummaryClient
+
+    if args.dry_run:
+        return await build_session_plan(
+            sessions_dir=args.sessions_dir,
+            limit=args.session_limit,
+            dry_run=True,
+            concurrency=args.session_concurrency,
+        )
+    async with SummaryClient() as client:
+        result: SessionPlanResult = await build_session_plan(
+            sessions_dir=args.sessions_dir,
+            limit=args.session_limit,
+            summarizer=client.summarize,
+            concurrency=args.session_concurrency,
+        )
+    return result
+
+
 async def run_ingest(args: argparse.Namespace) -> dict[str, object]:
-    from .ingest_runner import IngestRunner, RunnerConfig
+    from .ingest_runner import IngestError, IngestRunner, RunnerConfig
+    from .sessions import SessionError, session_observer, summary_line
 
     plans, source_errors = build_plans(args)
+    extras: dict[str, object] = {}
+    observer = None
+    if args.source in ("sessions", "all"):
+        try:
+            built = await build_sessions(args)
+        except SessionError as exc:
+            if args.source != "all":
+                raise IngestError(str(exc)) from exc
+            source_errors["sessions"] = str(exc)
+        else:
+            plans.append(built.plan)
+            extras["sessions"] = built.report
+            observer = session_observer(built.report)
     config = RunnerConfig(
         internal_url=internal_url(args.url),
         timeout=args.timeout,
@@ -145,7 +204,12 @@ async def run_ingest(args: argparse.Namespace) -> dict[str, object]:
         json_output=args.json,
         report_path=args.report,
     )
-    return await IngestRunner(config).run(plans, source_errors=source_errors)
+    report = await IngestRunner(config).run(
+        plans, source_errors=source_errors, observer=observer, extras=extras
+    )
+    if "sessions" in extras:
+        print(f"[ingest] {summary_line(extras['sessions'])}", file=sys.stderr)
+    return report
 
 
 def resolve_context(args: argparse.Namespace) -> tuple[str, str]:
