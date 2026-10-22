@@ -443,11 +443,71 @@ lives in `/var/lib/memory`, owned by the `memory` system user (the FalkorDB
 subdirectory stays root-owned). The database carries a `PRAGMA user_version`
 schema version; the wrapper refuses to start against an unversioned or
 newer/older one rather than migrating in place, so a schema change means
-deleting the file. That path is **not backed up** yet: there is no export or
-snapshot task for the graph volume or the registry, so losing the host loses
-both.
+deleting the file.
 
-Activate after changing the wrapper, shim, package, or LLM proxy:
+**Backup.** The registry is the system of record, so its snapshot *is* the
+memory backup: it holds every episode's normalized content and typed
+provenance. The graph is a derived index and can be rebuilt by re-extraction.
+`memory-export.timer` runs `memory-export.service` daily (00:00 plus up to an
+hour of randomized delay, `Persistent=true`, as root because the FalkorDB data
+directory is root-owned) and writes one timestamped directory under
+`/var/lib/memory/export` (mode 0700, root):
+
+- `registry.sqlite` — a consistent copy taken with SQLite's online backup API,
+  so the wrapper keeps writing under WAL while it is copied;
+- `episodes.jsonl` — every episode with typed provenance (group, uuid,
+  content_hash, kind, origin, origin_ref, actor, cwd, tags, valid_at,
+  created_at, status, graphiti_uuid, promotion and tombstone fields) *and* its
+  content, so memory is readable even without SQLite;
+- `manifest.json` — creation time, `PRAGMA user_version`, per-status counts, and
+  the sha256 of each file;
+- `graph-<timestamp>.rdb` — the FalkorDB snapshot, when `BGSAVE` finished in
+  time. The exporter issues one `BGSAVE` per run and polls `INFO persistence`;
+  it never touches the AOF. A missing or failed graph snapshot is recorded in
+  the manifest (`graph: null` plus `graph_error`) and does not fail the run.
+
+Seven directories are kept; retention only deletes names that are export
+timestamps. Inspect a run with `journalctl -u memory-export.service`. Take one
+immediately with `just memory-export`.
+
+**Restore drill.** `sudo memory restore <export-dir>` verifies every manifest
+checksum *first*, refuses a registry schema other than the installed code's
+(a newer one this code cannot read; an older one the wrapper will not open), stops
+`memory-mcp`, `memory-graphiti-mcp`, and `memory-llm-proxy`, restores
+`registry.sqlite` (dropping the old `-wal`/`-shm`), and then handles the graph:
+
+- the matching `graph-<timestamp>.rdb` is restored only when its timestamp
+  equals the registry snapshot's, and `FalkorDB` must be restarted afterwards
+  (it reads `dump.rdb` at startup). FalkorDB runs with `appendonly yes` and
+  Redis loads the AOF in preference to the RDB, so the restore renames the
+  existing `appendonlydir` to `appendonlydir.pre-restore-<timestamp>` — the old
+  AOF is kept, never deleted, and otherwise the restored snapshot would be
+  silently ignored;
+- otherwise it refuses the graph, restores the registry alone, and tells you to
+  rebuild the graph from the registry: stop the two memory services, empty
+  `/var/lib/memory/falkordb`, start them, and run `just memory-ingest`.
+  Re-extraction of `active` rows is tracked in #219.
+
+`--dry-run` verifies and prints the plan without stopping or writing anything;
+`--no-stop` skips the `systemctl stop` for a verification-only run;
+`--start` starts the services afterwards. The subcommand is `memory restore`
+next to `memory export` — not `memory export restore` — and the CLI is in the
+system profile on any host with `memory.enable`, so sudo finds it.
+`just memory-restore <dir>` wraps it.
+
+The drill the check suite runs (`tests/memory_export_restore.sh`) is the same
+procedure against temp directories: a live WAL registry exports consistently, a
+tampered file and a newer schema are refused, retention prunes only its own
+directories, and a mismatched graph snapshot is rejected in favour of the
+rebuild path. It needs no root, no FalkorDB, and no network.
+
+**Not in restic yet.** The restic backup migration is still pending, so nothing
+copies `/var/lib/memory/export` off the host. Until then the exports protect
+against corruption and mistakes on smortress, not against losing the machine;
+keep an occasional copy of the newest directory elsewhere.
+
+Activate after changing the wrapper, shim, package, LLM proxy, or export
+unit:
 
 ```sh
 just switch smortress
@@ -463,6 +523,7 @@ systemctl status memory-llm-proxy
 curl 127.0.0.1:8082/v1/models   # proxied to Neuralwatt (needs the credential)
 curl 127.0.0.1:8082/health
 cd ~/code/<repo> && memory status   # group, registry counts, graph/model readiness
+systemctl list-timers 'memory-export*' && journalctl -u memory-export -n 20
 ```
 
 **Corpus ingest.** The graph already holds episodes from earlier runs, but the
@@ -547,7 +608,10 @@ just memory-ingest        # re-extract the corpus; hours, run in a user unit
 `index.sqlite*`, `audit.jsonl` and the internal token (regenerated at start).
 The first `memory ingest all` then treats every planned hash as missing and
 re-embeds the corpus at the new width. Do not run it while anything else is
-writing memory; there is no export to fall back on until #223 lands.
+writing memory. Since #223 there is an export to fall back on: take one with
+`just memory-export` (or restore the newest with `just memory-restore <dir>`)
+before wiping, because a rebuild that goes wrong otherwise loses the registry,
+which is the system of record.
 
 ### smortress/ssh
 

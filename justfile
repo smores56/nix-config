@@ -61,6 +61,15 @@ cloudflare-tofu *args:
 memory-ingest *args:
     memory ingest all {{args}}
 
+# Snapshot the memory registry and the graph now (the nightly unit does this).
+memory-export:
+    sudo systemctl start memory-export.service
+    journalctl -u memory-export.service -n 20 --no-pager
+
+# Verify and restore one memory export (stops the memory services on smortress).
+memory-restore dir:
+    sudo memory restore {{dir}}
+
 # Stop memory, wipe the derived graph and the registry, then start it again.
 memory-rebuild:
     sudo systemctl stop memory-mcp memory-graphiti-mcp memory-llm-proxy

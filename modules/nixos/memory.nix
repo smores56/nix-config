@@ -32,6 +32,9 @@ let
   # the root-owned FalkorDB subdirectory, so the two never disagree.
   stateDirectory = "memory";
   dataDir = "/var/lib/${stateDirectory}";
+  # Nightly exports land here: root-owned (the exporter runs as root and reads
+  # the root-owned graph volume), never written by the wrapper.
+  exportDir = "${dataDir}/export";
 
   # Work markers come from the shared identity so the wrapper and the shim
   # cannot disagree about what a work repo looks like.
@@ -209,7 +212,13 @@ in
 
     systemd.tmpfiles.rules = [
       "d ${dataDir}/falkordb 0700 root root -"
+      "d ${exportDir} 0700 root root -"
     ];
+
+    # The operator restores with `sudo memory restore <dir>`, and sudo resolves
+    # commands on root's secure_path, so the CLI has to be in the system
+    # profile. The home profile keeps its own copy for Maki and ingest.
+    environment.systemPackages = [ memoryPackage ];
 
     virtualisation.oci-containers.containers = {
       memory-falkordb = {
@@ -229,9 +238,10 @@ in
           "--health-on-failure=kill"
         ];
         environment = {
-          # AOF is the only durability we need; disabling RDB keeps BGSAVE
-          # forks from spiking memory on a host with OOM history. Until the
-          # episode export lands, this volume is the only copy of the graph.
+          # AOF is the only durability we need; disabling scheduled RDB saves
+          # keeps BGSAVE forks from spiking memory on a host with OOM history.
+          # The nightly `memory-export` unit still asks for one explicit BGSAVE
+          # per run, which is the only RDB this store ever writes.
           REDIS_ARGS = "--appendonly yes --appendfsync everysec --save \"\"";
         };
       };
@@ -469,6 +479,83 @@ in
         echo "memory-mcp: Graphiti, the embedder, or the LLM proxy did not become ready in 60s" >&2
         exit 1
       '';
+    };
+
+    # Nightly export. The registry snapshot is the backup: it holds every
+    # episode's content and provenance, so losing it loses memory. The graph is
+    # a derived index, so its BGSAVE snapshot is best-effort and the export
+    # succeeds without it. Root is required for the root-owned FalkorDB data
+    # dir; the registry is only read, so the wrapper keeps writing under WAL.
+    # `Type=oneshot` makes overlap impossible, and the timer re-runs a missed
+    # run after downtime (`Persistent`).
+    systemd.services.memory-export = {
+      description = "Export the memory registry and snapshot the graph";
+      # No dependency on the wrapper: an export of the last good registry is
+      # exactly what to take while the memory services are down. Ordering only
+      # applies when both are in the same transaction (a boot catch-up run), so
+      # it never pulls the stack up for a maintenance stop.
+      after = [ "memory-mcp.service" ];
+      unitConfig = {
+        StartLimitIntervalSec = "1h";
+        StartLimitBurst = 3;
+      };
+      onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = lib.escapeShellArgs [
+          "${memoryPackage}/bin/memory-export"
+          "export"
+          "--root"
+          exportDir
+          "--state-dir"
+          dataDir
+          "--keep"
+          "7"
+          "--graph-url"
+          "redis://127.0.0.1:${toString dbPort}"
+          "--graph-dir"
+          "${dataDir}/falkordb"
+          "--graph-timeout"
+          "120"
+        ];
+        # A copy must never compete with the store it copies.
+        Nice = 19;
+        CPUWeight = 20;
+        IOSchedulingClass = "idle";
+        # Hard bounds: BGSAVE polling is bounded inside the command, and the
+        # unit itself cannot hold the timer slot past this.
+        TimeoutStartSec = "30min";
+        TimeoutStopSec = "30min";
+        # "full" leaves /var writable (the export and the graph live there)
+        # while the rest of the system stays read-only.
+        ProtectSystem = "full";
+        ProtectHome = true;
+        PrivateTmp = true;
+        NoNewPrivileges = true;
+        PrivateDevices = true;
+        ProtectKernelTunables = true;
+        ProtectControlGroups = true;
+        RestrictAddressFamilies = [
+          "AF_INET"
+          "AF_INET6"
+        ];
+        # Only FalkorDB on loopback is reachable.
+        IPAddressAllow = "localhost";
+        IPAddressDeny = "any";
+      };
+    };
+
+    systemd.timers.memory-export = {
+      description = "Nightly memory registry export";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnCalendar = "daily";
+        Persistent = true;
+        # Spread the BGSAVE and the copy away from midnight and from the
+        # backup timers.
+        RandomizedDelaySec = "1h";
+        Unit = "memory-export.service";
+      };
     };
 
     # A second llama.cpp instance: services.llama-cpp is single-instance, and
