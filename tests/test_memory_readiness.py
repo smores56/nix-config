@@ -77,9 +77,6 @@ class ReadinessTests(unittest.IsolatedAsyncioTestCase):
 
         failed = await probes.failures()
         self.assertEqual(len(failed), 2)
-        with self.assertRaises(ReadinessError) as raised:
-            await probes.require_write()
-        self.assertIn("memory write not queued", str(raised.exception))
 
 
 if __name__ == "__main__":

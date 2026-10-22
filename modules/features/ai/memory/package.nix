@@ -46,7 +46,10 @@ pkgs.python3Packages.buildPythonApplication {
     "memory_mcp.cli"
     "memory_mcp.ingest_runner"
     "memory_mcp.ingest_sources"
-    "memory_mcp.graph_index"
+    "memory_mcp.graph"
+    "memory_mcp.internal_auth"
+    "memory_mcp.registry"
+    "memory_mcp.reconciler"
     "memory_mcp.llm_proxy"
   ];
 

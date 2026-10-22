@@ -299,49 +299,57 @@ model providers Maki may use.
   Access service token. The raw Graphiti MCP runs on an internal loopback port
   in `modules/nixos/memory.nix` and is never tunneled. Extraction runs on
   Neuralwatt through a loopback gateway that holds the key; embeddings default
-  to local bge-m3 (`memory.embedder`). The same package installs
-  the `memory` CLI (`memory write|search|promote|status|tombstone|ingest`) for
-  use on a client or on smortress directly. Tombstones mark only the wrapper's
-  index and audit log; the Graphiti MCP API exposes no edge-invalidation tool,
-  so graph facts are left intact, and hard-delete tools are never forwarded to
-  clients. Writing the same content again revives a tombstoned episode. The shim
-  derives the group when Maki starts, so restart Maki after changing directories
-  (`/cd` does not restart stdio children) and after any `mcp.toml` change.
+  to local bge-m3 (`memory.embedder`). The same package installs the `memory`
+  CLI (`write|search|get|retry|promote|status|tombstone|ingest`) for use on a
+  client or on smortress directly. The shim derives the group when Maki starts,
+  so restart Maki after changing directories (`/cd` does not restart stdio
+  children) and after any `mcp.toml` change.
 
-  **Bulk ingest.** `memory ingest {sdlc,notes,docs,all}` fills the graph from the
-  personal corpus: every sdlc issue section and substantial comment, the
-  markdown notes under `~/Documents` (recursively, group `global`), and each
-  personal repo's README/AGENTS/docs plus remote READMEs. Groups are
-  `smores56--<repo>`, with unlabeled sdlc tasks inheriting their feature's
-  `repo:` label and every `repo:` label honored when an issue has several;
-  work-owned labels and work clones are refused. Run it on smortress (the raw
-  Graphiti port is loopback-only): `just memory-ingest` runs `memory ingest all`.
-  Episodes are written one at a time (`--batch 1`) and verified against
-  FalkorDB directly (`MATCH (e:Episodic)`, matching `id=`/`hash=`/`source` +
-  `source_id`), because Graphiti's `get_episodes` is window-limited; it is used
-  only as a fallback when FalkorDB is unreachable, and the report says so. A
-  missing episode is a failure, not an automatic rewrite: after the 600s grace
-  (`--timeout`) the run records the failure so a re-run can reconcile it, and
-  `--repair` rewrites only entries a previous run attempted, and only after the
-  graph proves the identity absent. The wrapper exposes no graph-level delete,
-  so re-writing an absent-but-in-flight episode is the only way ingestion can
-  create a duplicate; that is why repair is opt-in. Re-runs skip verified
-  `(group, source, source_id)` entries from
-  `~/.local/state/memory/ingest-state.json` (a moved source writes to its new
-  group, and changed content supersedes the old index row). State is `flock`ed
-  against concurrent runs; `--force --reset-state` archives it and starts over.
-  Reports land in `~/.local/state/memory/ingest-<timestamp>.json`; `--dry-run`
-  prints the plan without writing, and `--json --dry-run` prints only JSON on
-  stdout. Extraction goes through the loopback `memory-llm-proxy`
-  (`modules/features/ai/memory/src/memory_mcp/llm_proxy.py`, `127.0.0.1:8082`)
-  to Neuralwatt: the gateway owns the API key and adds
-  `reasoning_effort: "none"`, because graphiti-core sends no per-request
-  control and a reasoning model would spend its whole token budget on reasoning
-  and return empty content. Maki's local chat model is unrelated to memory. A
-  re-run reconciles the plan against the graph before writing: rows a previous
-  run queued but never extracted are tombstoned and rewritten, and episodes that
-  landed late are adopted instead of duplicated. Extraction is one hosted chat
-  call per episode, so a full corpus takes hours.
+  **Registry.** The wrapper is the only writer and holds a typed SQLite
+  registry (`registry.sqlite` under the service state directory): normalized
+  content, content-addressed identity, `kind`/`origin`/`origin_ref`/`valid_at`,
+  verification status, promotions, and the audit trail. Identity is
+  `uuid5(group, sha256(content))` and stays registry-only; the graph's own uuid
+  is recorded separately. A write returns after queueing, and a background
+  reconciler polls FalkorDB for pending rows by exact group and content,
+  resolving them to `active` with the newest matching graph uuid or, after a
+  grace period and a bounded set of retries, to `failed` (retries pause while
+  the model endpoint is unhealthy, and reconciler writes never overwrite a row
+  that left `pending`). `memory_get` returns a full episode by registry uuid,
+  hash prefix, or exact `origin:origin_ref` (case-insensitive; an ambiguous hash
+  prefix is an error); `memory_retry` marks a row active when its extraction
+  landed late instead of resubmitting it. Search
+  covers the caller's group plus `global` and tags each fact and episode with
+  typed provenance joined from the registry. A tombstone resolves every graph
+  episode with that exact content, invalidates the edges they exclusively
+  support and detaches them from shared edges, and keeps the episode nodes as
+  provenance; writing the same content again revives it (and a second tombstone
+  covers the re-extracted episode too). Server details live in
+  `modules/nixos/memory.nix`.
+
+  **Bulk ingest.** `memory ingest {sdlc,notes,docs,all}` plans the personal
+  corpus: every sdlc issue section and substantial comment, the markdown notes
+  under `~/Documents` (group `global`), and each personal repo's
+  README/AGENTS/docs plus remote READMEs. Groups are `smores56--<repo>`, with
+  unlabeled sdlc tasks inheriting their feature's `repo:` label and every
+  `repo:` label honored; work-owned labels and work clones are refused. The
+  client computes content hashes, calls the wrapper's loopback
+  `/internal/lookup`, and submits only missing or failed episodes through
+  `/internal/episodes` with explicit kind and event time (`kind=json` for JSON
+  sections, `valid_at` from issue/comment timestamps, note mtime, or a doc's
+  last commit). There is no client ledger: the registry is the single source of
+  truth, and the run report is never read back. Those two internal routes
+  require `Authorization: Bearer <token>` from `/var/lib/memory/internal.token`
+  (mode 0640, group `memory`), because the tunnel reaches the wrapper as
+  loopback and the peer address proves nothing. `just memory-ingest` runs
+  `memory ingest all` on smortress; reports land under
+  `~/.local/state/memory/`, and `--dry-run` prints the plan without writing.
+  Extraction goes through the loopback `memory-llm-proxy` to Neuralwatt: the
+  gateway owns the API key and adds `reasoning_effort: "none"`, because
+  graphiti-core sends no per-request control and a reasoning model would spend
+  its whole token budget on reasoning and return empty content. Maki's local
+  chat model is unrelated to memory. Extraction is one hosted chat call per
+  episode, so a full corpus takes hours.
 
 - `work`: maki is OpenAI-only and gets no personal providers, search, or
   memory MCP.

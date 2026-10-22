@@ -1,8 +1,9 @@
-"""Readiness gates for the model endpoints Graphiti depends on.
+"""Readiness gates for search and reconciler retries.
 
-Graphiti accepts an episode into an in-memory queue and can drop it if the
-extraction model is unavailable, so the wrapper checks the model endpoints
-before claiming a write succeeded. Reads only need the embedder.
+Writes are never gated: the registry accepts content offline and the graph is
+filled in when the extraction endpoint returns. The reconciler uses `failures`
+to pause retries while either model endpoint is down, and search still needs
+the embedder.
 
 Both endpoints default to the local services: extraction through the Neuralwatt
 gateway on loopback and embeddings from llama.cpp. A remote embedder sets
@@ -67,11 +68,6 @@ class HealthProbes:
         if not embedder:
             failed.append(f"embedder unavailable at {self.embed_url}")
         return failed
-
-    async def require_write(self) -> None:
-        failed = await self.failures()
-        if failed:
-            raise ReadinessError("; ".join(failed) + " (memory write not queued)")
 
     async def require_search(self) -> None:
         async with self._client() as client:

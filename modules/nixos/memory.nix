@@ -191,15 +191,21 @@ in
     # publishes only to loopback, so nothing here is reachable off-host.
     virtualisation.oci-containers.backend = "podman";
 
-    # StateDirectory owns /var/lib/memory for the wrapper (index, audit, future
-    # export); tmpfiles only creates FalkorDB's root-owned subdirectory because
-    # that container runs rootful. Keep the two in one place so they cannot
-    # disagree about the path.
+    # StateDirectory owns /var/lib/memory for the wrapper (the registry and
+    # future export); tmpfiles only creates FalkorDB's root-owned subdirectory
+    # because that container runs rootful. Keep the two in one place so they
+    # cannot disagree about the path.
     users.groups.memory = { };
     users.users.memory = {
       isSystemUser = true;
       group = "memory";
     };
+    # `memory ingest` runs as the human user and authenticates to the wrapper's
+    # /internal routes with the token the wrapper writes into the state dir
+    # (0640 memory:memory, reachable because the dir is 0750). The tunnel is a
+    # raw TCP forward, so the wrapper cannot tell a tunneled client from a local
+    # one by peer address; the group alone may read that token.
+    users.users.${config.machine.username}.extraGroups = [ "memory" ];
 
     systemd.tmpfiles.rules = [
       "d ${dataDir}/falkordb 0700 root root -"
@@ -312,7 +318,8 @@ in
       # The embedder is probed too, because every search and ingest needs it.
       # Extraction readiness is deliberately not a gate: reads and embedder
       # traffic do not need it, and the MCP's in-memory write queue can drop an
-      # episode while Neuralwatt is unreachable — the wrapper gates writes.
+      # episode while Neuralwatt is unreachable, so the wrapper records the
+      # write as pending and its reconciler verifies it later.
       preStart = ''
         for _ in $(seq 120); do
           ${pkgs.redis}/bin/redis-cli -h 127.0.0.1 -p ${toString dbPort} ping >/dev/null 2>&1 \
@@ -376,12 +383,14 @@ in
     };
 
     # The wrapper is the only memory service the tunnel reaches. It validates
-    # the group header the shim sends, refuses work groups, dedupes writes, and
-    # gates them on the model endpoints before Graphiti's in-memory queue can
-    # drop them. Raw Graphiti stays on the internal graphitiPort and is never
-    # tunneled.
+    # the group header the shim sends, refuses work groups, and records writes
+    # as pending in the typed registry. A background reconciler proves each
+    # write against FalkorDB and resolves it to active or failed. Raw Graphiti
+    # stays on the internal graphitiPort and is never tunneled. Because the
+    # tunnel delivers every request as loopback, the /internal ingest routes
+    # also require a per-start bearer token written into the state dir.
     systemd.services.memory-mcp = {
-      description = "memory MCP wrapper (project groups, dedup, provenance)";
+      description = "memory MCP wrapper (project groups, typed registry, reconciler)";
       wantedBy = [ "multi-user.target" ];
       wants = [
         "memory-graphiti-mcp.service"
@@ -409,11 +418,17 @@ in
           "MEMORY_MCP_HOST=127.0.0.1"
           "MEMORY_MCP_PORT=${toString ports.memoryMcp}"
           "MEMORY_GRAPHITI_URL=http://127.0.0.1:${toString graphitiPort}/mcp"
-          # Readiness probes the gateway, so a dead gateway fails writes
-          # instead of letting Graphiti drop an episode.
+          "MEMORY_REDIS_URL=redis://127.0.0.1:${toString dbPort}"
+          # Readiness probes the gateway so search and retries can pause when the
+          # model endpoint is down; writes are never gated on it.
           "MEMORY_LLM_URL=http://127.0.0.1:${toString llmProxyPort}"
           "MEMORY_EMBED_URL=${embedder.url}"
           "MEMORY_STATE_DIR=${dataDir}"
+          # Reconciler cadence: poll pending rows, tolerate a slow extraction,
+          # and back off between bounded retries.
+          "MEMORY_RECONCILE_INTERVAL=10"
+          "MEMORY_RECONCILE_GRACE=600"
+          "MEMORY_RECONCILE_BACKOFF=60"
           "MEMORY_WORK_EMAIL=${work.email}"
           "MEMORY_WORK_OWNER_GLOB=${work.githubOwnerGlob}"
           "MEMORY_WORK_FLOW=${work.flow}"

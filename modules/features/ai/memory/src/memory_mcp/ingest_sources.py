@@ -18,10 +18,17 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable
 
-from .chunking import document_title, episode_content, sections_for, source_ids
+from .chunking import (
+    document_title,
+    episode_content,
+    is_json_document,
+    sections_for,
+    source_ids,
+)
 from .groups import (
     GLOBAL_GROUP,
     GitError,
@@ -75,6 +82,8 @@ class Episode:
     group: str
     content: str
     tags: tuple[str, ...] = ()
+    kind: str = "text"
+    valid_at: str = ""
 
 
 @dataclass(frozen=True)
@@ -109,6 +118,53 @@ def personal_owner() -> str:
     the default keeps a standalone install working.
     """
     return os.environ.get("MEMORY_PERSONAL_OWNER", "").strip() or DEFAULT_PERSONAL_OWNER
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def utc_timestamp(value: object) -> str:
+    """Normalize an ISO timestamp to UTC Z; empty when it cannot be read."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        moment = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def file_timestamp(path: Path) -> str:
+    try:
+        moment = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+    except OSError:
+        return ""
+    return moment.isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def git_last_commit(repo_root: Path, relpath: str) -> str:
+    """The last commit time for one file, or empty outside git or on failure."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "log", "-1", "--format=%cI", "--", relpath],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    if result.returncode != 0:
+        return ""
+    return utc_timestamp(result.stdout.strip())
+
+
+def kind_for(body: str) -> str:
+    return "json" if is_json_document(body.strip()) else "text"
 
 
 def sdlc_repo() -> str:
@@ -251,7 +307,14 @@ def _comment_id(comment: dict[str, object], index: int) -> str:
     return raw or str(index + 1)
 
 
-def _issue_body_episode(number: int, issue: dict[str, object], title: str, ref: str, group: str) -> Episode:
+def _issue_body_episode(
+    number: int,
+    issue: dict[str, object],
+    title: str,
+    ref: str,
+    group: str,
+    valid_at: str,
+) -> Episode:
     """One episode for a body with no section of its own.
 
     Short task bodies ("Part of #215.") and empty feature bodies would otherwise
@@ -262,13 +325,19 @@ def _issue_body_episode(number: int, issue: dict[str, object], title: str, ref: 
     body = str(issue.get("body") or "").strip()
     compact = " ".join(body.split())
     body_only_points_at_parent = bool(compact) and PARENT_POINTER_ONLY.fullmatch(compact) is not None
-    content = episode_content(ref, title, "", "" if body_only_points_at_parent else body)
+    retained = "" if body_only_points_at_parent else body
+    kind = kind_for(retained)
+    # A JSON document must reach Graphiti as pure JSON so the json extraction
+    # prompt sees valid input; provenance stays in the registry.
+    content = retained if kind == "json" else episode_content(ref, title, "", retained)
     return Episode(
         source="sdlc",
         source_id=f"issue-{number}#body",
         group=group,
         content=content,
         tags=("sdlc", f"issue-{number}"),
+        kind=kind,
+        valid_at=valid_at,
     )
 
 
@@ -278,20 +347,33 @@ def _issue_episodes(issue: dict[str, object], group: str) -> list[Episode]:
     ref = f"{sdlc_repo()}#{number}"
     tags = ("sdlc", f"issue-{number}")
     episodes: list[Episode] = []
+    issue_valid = (
+        utc_timestamp(issue.get("createdAt"))
+        or utc_timestamp(issue.get("updatedAt"))
+        or _now_iso()
+    )
 
     body = str(issue.get("body") or "").strip()
     sections = sections_for(body)
     if not sections:
-        episodes.append(_issue_body_episode(number, issue, title, ref, group))
+        episodes.append(_issue_body_episode(number, issue, title, ref, group, issue_valid))
     else:
         for section, source_id in zip(sections, source_ids(f"issue-{number}", sections)):
+            kind = kind_for(section.body)
+            content = (
+                section.body
+                if kind == "json"
+                else episode_content(ref, title, section.label, section.body)
+            )
             episodes.append(
                 Episode(
                     source="sdlc",
                     source_id=source_id,
                     group=group,
-                    content=episode_content(ref, title, section.label, section.body),
+                    content=content,
                     tags=tags,
+                    kind=kind,
+                    valid_at=issue_valid,
                 )
             )
 
@@ -305,22 +387,32 @@ def _issue_episodes(issue: dict[str, object], group: str) -> list[Episode]:
                 continue
             author = str((comment.get("author") or {}).get("login") or "unknown")
             created = str(comment.get("createdAt") or "")
+            comment_valid = utc_timestamp(created) or issue_valid
             url = str(comment.get("url") or "")
             base = f"issue-{number}#comment-{_comment_id(comment, index)}"
             comment_sections = sections_for(text, min_chars=1)
             for section, source_id in zip(
                 comment_sections, source_ids(base, comment_sections)
             ):
-                label = f"comment by {author} on {created[:10]}"
-                if section.label:
-                    label += f" — {section.label}"
+                kind = kind_for(section.body)
+                if kind == "json":
+                    content = section.body
+                else:
+                    label = f"comment by {author} on {(created or comment_valid)[:10]}"
+                    if section.label:
+                        label += f" — {section.label}"
+                    content = episode_content(
+                        f"{ref} ({url})" if url else ref, title, label, section.body
+                    )
                 episodes.append(
                     Episode(
                         source="sdlc",
                         source_id=source_id,
                         group=group,
-                        content=episode_content(f"{ref} ({url})" if url else ref, title, label, section.body),
+                        content=content,
                         tags=tags,
+                        kind=kind,
+                        valid_at=comment_valid,
                     )
                 )
     return episodes
@@ -388,6 +480,7 @@ def notes_plan(notes_dir: str) -> Plan:
         if not sections:
             skipped.append(Skip("notes", f"{ref}#body", "file is empty or boilerplate"))
             continue
+        valid_at = file_timestamp(path) or _now_iso()
         for section, source_id in zip(sections, source_ids(ref, sections)):
             episodes.append(
                 Episode(
@@ -396,6 +489,8 @@ def notes_plan(notes_dir: str) -> Plan:
                     group=GLOBAL_GROUP,
                     content=episode_content(ref, title, section.label, section.body),
                     tags=("notes",),
+                    kind="text",
+                    valid_at=valid_at,
                 )
             )
     return Plan(source="notes", episodes=episodes, skipped=skipped)
@@ -426,7 +521,14 @@ def local_doc_files(repo_root: Path) -> list[Path]:
     return files
 
 
-def _doc_episodes(*, repo: str, relpath: str, text: str, source: str = "docs") -> tuple[list[Episode], list[Skip]]:
+def _doc_episodes(
+    *,
+    repo: str,
+    relpath: str,
+    text: str,
+    source: str = "docs",
+    valid_at: str = "",
+) -> tuple[list[Episode], list[Skip]]:
     group = validate_group(f"{personal_owner()}--{sanitize_slug(repo)}")
     title = document_title(text, Path(relpath).name)
     ref = f"{personal_owner()}/{repo}/{relpath}"
@@ -445,6 +547,8 @@ def _doc_episodes(*, repo: str, relpath: str, text: str, source: str = "docs") -
                 group=group,
                 content=episode_content(ref, title, section.label, section.body),
                 tags=("docs", sanitize_slug(repo)),
+                kind="text",
+                valid_at=valid_at or _now_iso(),
             )
         )
     return episodes, skipped
@@ -534,7 +638,12 @@ def docs_plan(
             except OSError as exc:
                 skipped.append(Skip("docs", f"repo:{repo}:{relpath}", f"unreadable: {exc}"))
                 continue
-            doc_episodes, doc_skips = _doc_episodes(repo=repo, relpath=relpath, text=text)
+            doc_episodes, doc_skips = _doc_episodes(
+                repo=repo,
+                relpath=relpath,
+                text=text,
+                valid_at=git_last_commit(repo_root, relpath) or file_timestamp(path) or _now_iso(),
+            )
             episodes.extend(doc_episodes)
             skipped.extend(doc_skips)
 
