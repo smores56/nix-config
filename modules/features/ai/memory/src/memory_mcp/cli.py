@@ -78,7 +78,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     ingest = sub.add_parser("ingest", help="Bulk-ingest sdlc issues, personal notes, repo docs, and Maki sessions")
     ingest.add_argument("source", choices=["sdlc", "notes", "docs", "sessions", "all"])
-    ingest.add_argument("--limit", type=int, help="Maximum episodes per source (not sessions)")
+    ingest.add_argument(
+        "--limit",
+        type=int,
+        help="Maximum episodes per source; does not apply to sessions (use --session-limit)",
+    )
     ingest.add_argument("--dry-run", action="store_true", help="Print the episode plan; write nothing")
     ingest.add_argument("--report", help="Report path (default ~/.local/state/memory/ingest-<timestamp>.json)")
     ingest.add_argument("--concurrency", type=int, default=4, help="Concurrent submissions (default 4)")
@@ -96,7 +100,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--session-limit",
         type=int,
         default=DEFAULT_SESSION_SAMPLE,
-        help=f"Most recent sessions to sample (default {DEFAULT_SESSION_SAMPLE}; `all` uses this too)",
+        help=(
+            f"Most recent sessions to sample, must be positive (default {DEFAULT_SESSION_SAMPLE}); "
+            "`all` spends about this many summary calls"
+        ),
     )
     ingest.add_argument(
         "--session-concurrency",
@@ -185,6 +192,8 @@ async def run_ingest(args: argparse.Namespace) -> dict[str, object]:
     extras: dict[str, object] = {}
     observer = None
     if args.source in ("sessions", "all"):
+        if args.session_limit is not None and args.session_limit <= 0:
+            raise IngestError("--session-limit must be a positive number")
         try:
             built = await build_sessions(args)
         except SessionError as exc:

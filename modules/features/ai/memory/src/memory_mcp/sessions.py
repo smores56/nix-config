@@ -15,22 +15,34 @@ the task, the end states the outcome), truncates each message to
 transcript fits `MAX_TRANSCRIPT_CHARS`. Every drop is marked in the transcript
 so the model knows text is missing.
 
-**Sampling.** `memory ingest sessions` reads the `--session-limit` (default 50)
-most recently modified session files and ranks them by file mtime, which is
-cheap for a multi-gigabyte corpus; `valid_at` still comes from the header's
-`created_at`.
+**Sampling.** `memory ingest sessions` reads the `--session-limit` (default 50,
+which must be positive) most recently modified session files and ranks them by
+file mtime, which is cheap for a multi-gigabyte corpus; `valid_at` still comes
+from the header's `created_at`. The general `--limit` does not apply to
+sessions: `memory ingest all` spends about `--session-limit` summary calls.
+A live run prints the sampled count and a token/cost estimate to stderr before
+the first model call.
 
 **Dedup.** Episode identity is the registry's content hash, as for every corpus
 (see `normalize.py`): a re-run against the same answers submits nothing, and
-the runner's `/internal/lookup` skips rows that already exist. Summaries are
-regenerated on every run, so a model that paraphrases produces new content and
-therefore a new episode; temperature 0 and a fixed prompt make that rare, and
-`--session-limit` keeps a repeated sample cheap. There is no session ledger.
+the runner's `/internal/lookup` skips rows that already exist. A summary cache
+(`session_cache.py`, keyed by session id and the SHA-256 of the bounded
+transcript) means an unchanged session is not re-summarized, so the model cannot
+paraphrase it into a second episode; a changed transcript is re-summarized. The
+cache is disposable and never decides duplicates: the registry still does.
+
+**Accepted limits.** Only the cwd's path components are checked for employer
+markers; text inside a personal checkout is not scanned for employer content.
+A transcript that changed is summarized again (the cache only covers unchanged
+ones).
 
 **Privacy.** A session body is personal content. It leaves the machine for
 summarization by Neuralwatt through the loopback gateway, and only the summary
 and the extracted decisions/constraints/errors/preferences are stored. A
-session whose cwd is a work checkout is refused before anything is sent.
+session whose cwd names or is a work checkout is refused before anything is
+sent. A session whose cwd does not exist here is also refused, because its work
+markers cannot be evaluated: cross-machine sessions must be ingested where
+their cwd exists.
 """
 
 from __future__ import annotations
@@ -38,6 +50,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -45,8 +58,9 @@ from pathlib import Path
 from typing import Awaitable, Callable
 
 from .chunking import episode_content
-from .groups import GitError, GroupRefused, derive_group, owner_is_work, sanitize_slug, validate_group
+from .groups import GitError, GroupRefused, derive_group, owner_is_work
 from .ingest_sources import Episode, Plan, Skip
+from .session_cache import SessionCache, transcript_digest
 from .session_summary import (
     DEFAULT_MODEL,
     Extraction,
@@ -69,6 +83,7 @@ ESTIMATED_COMPLETION_TOKENS = 400
 CHARS_PER_TOKEN = 4
 SKIP_FILES = frozenset({"cwd_latest.json"})
 DEFAULT_TITLE = "Maki session"
+MAX_TITLE_CHARS = 200
 # (model field, label used in an episode's context line)
 CATEGORIES = (
     ("decisions", "decision"),
@@ -122,6 +137,16 @@ class _Record:
     skip: dict[str, object] | None = None
     item: dict[str, object] | None = None
     episodes: list[Episode] = field(default_factory=list)
+    prepared: _Prepared | None = None
+
+
+@dataclass(frozen=True)
+class _Prepared:
+    """A parsed, grouped, bounded session ready for summarization."""
+
+    session: Session
+    group: str
+    transcript: str
 
 
 def _iso(epoch: int) -> str:
@@ -204,6 +229,12 @@ def _text_blocks(message: object) -> list[Message]:
     return [Message(role=str(role), text=text) for text in texts]
 
 
+def _normalize_title(value: str) -> str:
+    """One printable line, so a title cannot forge a second context line."""
+    printable = "".join(character if character.isprintable() else " " for character in value)
+    return " ".join(printable.split())[:MAX_TITLE_CHARS]
+
+
 def _title_fallback(messages: tuple[Message, ...], session_id: str) -> str:
     for message in messages:
         if message.role == "user":
@@ -245,7 +276,7 @@ def parse_session(path: Path) -> Session:
                 header = record
             elif kind == "meta":
                 if isinstance(record.get("title"), str):
-                    title = record["title"]
+                    title = _normalize_title(record["title"])
                 if isinstance(record.get("updated_at"), int) and not isinstance(record["updated_at"], bool):
                     updated_at = record["updated_at"]
             elif kind == "msg":
@@ -353,23 +384,26 @@ def _marker(omitted: int) -> str:
 def session_group(cwd: str) -> str:
     """The project group for a session cwd, with the shared work refusal.
 
-    A session can come from another machine, so its cwd may not exist here. The
-    path components are still checked against the employer owner patterns; a
-    missing personal path becomes `local--<basename>` because git cannot be
-    asked whether it was a repo. A refusal is fail-closed.
+    A session can come from another machine, where its cwd does not exist here.
+    The employer markers cannot then be evaluated, so the session is refused:
+    cross-machine sessions must be ingested where their cwd exists. A refusal is
+    fail-closed, and an existing path is still checked with git below.
     """
     path = Path(cwd).expanduser()
     for part in path.parts:
         if part not in ("/", "") and owner_is_work(part):
             raise GroupRefused(f"session cwd {cwd} names the employer ({part!r})")
-    if path.is_dir():
-        try:
-            return derive_group(str(path)).group
-        except GitError as exc:
-            raise GroupRefused(
-                f"cannot verify work status for session cwd {cwd} ({exc})"
-            ) from exc
-    return validate_group(f"local--{sanitize_slug(path.name or 'root')}")
+    if not path.is_dir():
+        raise GroupRefused(
+            f"session cwd {cwd} does not exist here; ingest it where its cwd exists "
+            "so the work markers can be checked"
+        )
+    try:
+        return derive_group(str(path)).group
+    except GitError as exc:
+        raise GroupRefused(
+            f"cannot verify work status for session cwd {cwd} ({exc})"
+        ) from exc
 
 
 def _categorized(extraction: Extraction) -> list[tuple[str, SummaryItem]]:
@@ -425,6 +459,7 @@ def _item_for(session: Session, group: str, omitted: int, transcript: str) -> di
         "completion_tokens": 0,
         "cost_usd": 0.0,
         "attempts": 0,
+        "cached": False,
         "episodes": 0,
         "duplicates": 0,
         "submitted": 0,
@@ -435,13 +470,36 @@ def _item_for(session: Session, group: str, omitted: int, transcript: str) -> di
     }
 
 
-def _totals(items: list[dict[str, object]], *, prices: Prices, dry_run: bool) -> dict[str, object]:
+def _estimated_cost(tokens: int, prices: Prices) -> float:
+    return round(
+        cost_usd(
+            tokens,
+            ESTIMATED_COMPLETION_TOKENS,
+            prices.input_per_million,
+            prices.output_per_million,
+        ),
+        6,
+    )
+
+
+def _totals(items: list[dict[str, object]], *, dry_run: bool) -> dict[str, object]:
     prompt = sum(int(item["prompt_tokens"]) for item in items)
     completion = sum(int(item["completion_tokens"]) for item in items)
+    # A missing `usage` block means the cost is unknown, not $0.
+    known_costs = [
+        float(item["cost_usd"])
+        for item in items
+        if isinstance(item["cost_usd"], (int, float))
+    ]
+    total_cost: object = (
+        round(sum(known_costs), 6)
+        if len(known_costs) == len(items)
+        else "unknown"
+    )
     return {
         "prompt_tokens": prompt,
         "completion_tokens": completion,
-        "cost_usd": round(cost_usd(prompt, completion, prices.input_per_million, prices.output_per_million), 6),
+        "cost_usd": total_cost,
         "estimated_prompt_tokens": sum(int(item["estimated_prompt_tokens"]) for item in items),
         "estimated_cost_usd": round(
             sum(float(item["estimated_cost_usd"]) for item in items), 6
@@ -463,67 +521,134 @@ async def build_session_plan(
     dry_run: bool = False,
     concurrency: int = DEFAULT_CONCURRENCY,
     prices: Prices | None = None,
+    cache: SessionCache | None = None,
+    cache_path: str | Path | None = None,
     clock: Callable[[], float] = time.monotonic,
 ) -> SessionPlanResult:
     """Parse the sampled sessions and summarize each unless `dry_run`."""
     if not dry_run and summarizer is None:
         raise SessionError("a summarizer is required unless this is a dry run")
+    if limit is not None and limit <= 0:
+        raise SessionError("--session-limit must be a positive number")
     resolved_prices = prices or prices_from_env()
     paths = sample_session_files(sessions_dir, limit)
-    semaphore = asyncio.Semaphore(max(1, concurrency))
 
-    async def handle(path: Path) -> _Record:
+    async def prepare(path: Path) -> _Record:
+        try:
+            session = parse_session(path)
+        except SessionError as exc:
+            return _Record(skip={"path": str(path), "reason": str(exc)})
+        try:
+            group = session_group(session.cwd)
+        except GroupRefused as exc:
+            return _Record(
+                skip={"session_id": session.id, "path": str(path), "reason": f"refused: {exc}"}
+            )
+        transcript, omitted = bounded_transcript(session.messages)
+        if not transcript:
+            return _Record(
+                skip={
+                    "session_id": session.id,
+                    "path": str(path),
+                    "reason": "no text messages in the session",
+                }
+            )
+        item = _item_for(session, group, omitted, transcript)
+        tokens = _estimate_tokens(transcript)
+        item["estimated_prompt_tokens"] = tokens
+        item["estimated_cost_usd"] = _estimated_cost(tokens, resolved_prices)
+        prepared = _Prepared(session=session, group=group, transcript=transcript)
+        return _Record(item=item, prepared=prepared)
+
+    prepared_outcomes = await asyncio.gather(
+        *(prepare(path) for path in paths), return_exceptions=True
+    )
+    records: list[_Record] = []
+    for path, outcome in zip(paths, prepared_outcomes):
+        if isinstance(outcome, _Record):
+            records.append(outcome)
+            continue
+        # One bad session must never abort the run; it becomes a skip with the
+        # exception type as its reason.
+        records.append(
+            _Record(
+                skip={
+                    "path": str(path),
+                    "reason": f"unexpected {type(outcome).__name__}: {outcome}",
+                }
+            )
+        )
+
+    if not dry_run and records:
+        prepared_records = [record for record in records if record.prepared is not None]
+        estimated_tokens = sum(
+            int(record.item["estimated_prompt_tokens"])
+            for record in prepared_records
+            if record.item is not None
+        )
+        estimated_cost = sum(
+            float(record.item["estimated_cost_usd"])
+            for record in prepared_records
+            if record.item is not None
+        )
+        print(
+            f"[ingest] sessions: {len(paths)} sampled, "
+            f"{len(prepared_records)} to summarize; estimated "
+            f"{_thousands(estimated_tokens)} input tokens, "
+            f"~${estimated_cost:.4f} before the first model call",
+            file=sys.stderr,
+        )
+
+    if dry_run:
+        return _session_plan_result(paths, records, sessions_dir, resolved_prices, dry_run=True, cache_hits=0)
+
+    resolved_cache = cache if cache is not None else SessionCache(cache_path)
+    semaphore = asyncio.Semaphore(max(1, concurrency))
+    cache_hits = 0
+
+    async def summarize(record: _Record) -> _Record:
+        nonlocal cache_hits
+        prepared = record.prepared
+        item = record.item
+        if prepared is None or item is None:
+            return record
+        session = prepared.session
         async with semaphore:
-            try:
-                session = parse_session(path)
-            except SessionError as exc:
-                return _Record(skip={"path": str(path), "reason": str(exc)})
-            try:
-                group = session_group(session.cwd)
-            except GroupRefused as exc:
-                return _Record(
-                    skip={"session_id": session.id, "path": str(path), "reason": f"refused: {exc}"}
-                )
-            transcript, omitted = bounded_transcript(session.messages)
-            if not transcript:
-                return _Record(
-                    skip={
-                        "session_id": session.id,
-                        "path": str(path),
-                        "reason": "no text messages in the session",
-                    }
-                )
-            item = _item_for(session, group, omitted, transcript)
-            if dry_run:
-                tokens = _estimate_tokens(transcript)
-                item["estimated_prompt_tokens"] = tokens
-                item["estimated_cost_usd"] = round(
-                    cost_usd(
-                        tokens,
-                        ESTIMATED_COMPLETION_TOKENS,
-                        resolved_prices.input_per_million,
-                        resolved_prices.output_per_million,
-                    ),
-                    6,
-                )
-                return _Record(item=item)
+            digest = transcript_digest(prepared.transcript)
+            cached = resolved_cache.get(
+                session.id, digest, session_path=session.path
+            )
+            if cached is not None:
+                cache_hits += 1
+                item["cached"] = True
+                episodes = episodes_for(session, prepared.group, cached)
+                item["episodes"] = len(episodes)
+                return _Record(item=item, episodes=episodes)
             started = clock()
             try:
-                result = await summarizer(transcript)  # type: ignore[misc]
+                result = await summarizer(prepared.transcript)  # type: ignore[misc]
             except SummaryError as exc:
                 item["failed"] = 1
                 item["error"] = str(exc)
                 item["wall_seconds"] = round(clock() - started, 3)
                 return _Record(
                     item=item,
-                    skip={"session_id": session.id, "path": str(path), "reason": str(exc)},
+                    skip={
+                        "session_id": session.id,
+                        "path": str(session.path),
+                        "reason": str(exc),
+                    },
                 )
-            episodes = episodes_for(session, group, result.extraction)
+            episodes = episodes_for(session, prepared.group, result.extraction)
             item.update(
                 wall_seconds=result.wall_seconds,
                 prompt_tokens=result.prompt_tokens,
                 completion_tokens=result.completion_tokens,
-                cost_usd=round(
+                attempts=result.attempts,
+                episodes=len(episodes),
+            )
+            if result.usage_known:
+                item["cost_usd"] = round(
                     cost_usd(
                         result.prompt_tokens,
                         result.completion_tokens,
@@ -531,14 +656,49 @@ async def build_session_plan(
                         resolved_prices.output_per_million,
                     ),
                     6,
-                ),
-                attempts=result.attempts,
-                episodes=len(episodes),
+                )
+            else:
+                item["cost_usd"] = "unknown"
+            resolved_cache.put(
+                session.id,
+                digest,
+                session_path=session.path,
+                extraction=result.extraction,
             )
             return _Record(item=item, episodes=episodes)
 
-    records = await asyncio.gather(*(handle(path) for path in paths))
+    outcomes = await asyncio.gather(
+        *(summarize(record) for record in records), return_exceptions=True
+    )
+    summarized: list[_Record] = []
+    for record, outcome in zip(records, outcomes):
+        if isinstance(outcome, _Record):
+            summarized.append(outcome)
+            continue
+        skip = dict(record.skip or {})
+        if record.item is not None:
+            record.item["failed"] = 1
+            record.item["error"] = f"unexpected {type(outcome).__name__}: {outcome}"
+            skip["session_id"] = record.item["session_id"]
+            skip["path"] = record.item["path"]
+        skip["reason"] = f"unexpected {type(outcome).__name__}: {outcome}"
+        summarized.append(_Record(item=record.item, skip=skip))
 
+    resolved_cache.save()
+    return _session_plan_result(
+        paths, summarized, sessions_dir, resolved_prices, dry_run=False, cache_hits=cache_hits
+    )
+
+
+def _session_plan_result(
+    paths: list[Path],
+    records: list[_Record],
+    sessions_dir: str | Path | None,
+    prices: Prices,
+    *,
+    dry_run: bool,
+    cache_hits: int,
+) -> SessionPlanResult:
     items = [record.item for record in records if record.item is not None]
     skips = [record.skip for record in records if record.skip is not None]
     episodes = [episode for record in records for episode in record.episodes]
@@ -556,17 +716,18 @@ async def build_session_plan(
         ],
         warnings=[] if paths else ["no Maki session files found in " + _dirs_label(sessions_dir)],
     )
-    totals = _totals(items, prices=resolved_prices, dry_run=dry_run)
+    totals = _totals(items, dry_run=dry_run)
     report: dict[str, object] = {
         "dry_run": dry_run,
         "model": os.environ.get("MEMORY_SUMMARY_MODEL", "").strip() or DEFAULT_MODEL,
         "prices": {
-            "input_per_million": resolved_prices.input_per_million,
-            "output_per_million": resolved_prices.output_per_million,
+            "input_per_million": prices.input_per_million,
+            "output_per_million": prices.output_per_million,
         },
         "sampled": len(paths),
         "parsed": len(items),
         "skipped": parse_skips,
+        "cache_hits": cache_hits,
         **totals,
         "items": items,
         "skips": skips,
@@ -595,7 +756,12 @@ def session_observer(report: dict[str, object]) -> Callable[[Episode, str], None
             item["submitted"] = int(item["submitted"]) + 1
             report["submitted"] = int(report.get("submitted") or 0) + 1
         elif outcome in ("failed", "empty"):
-            item["failed"] = int(item["failed"]) + 1
+            before = int(item["failed"])
+            item["failed"] = before + 1
+            if before == 0:
+                # `failed` in the report counts sessions with a failure, matching
+                # the plan-time total; the printed line derives it from items.
+                report["failed"] = int(report.get("failed") or 0) + 1
             item["error"] = item["error"] or f"episode {outcome}"
 
     return observe
@@ -619,7 +785,17 @@ def summary_line(report: dict[str, object]) -> str:
     parts = [f"sessions: {sampled} sampled", f"{int(report.get('summarized') or 0)} summarized"]
     if skipped:
         parts.append(f"{skipped} skipped")
-    failed = int(report.get("failed") or 0)
+    # Derive failures from the items so a post-plan observation is included; the
+    # plan-time field can be stale.
+    items = report.get("items")
+    if isinstance(items, list):
+        failed = sum(
+            1
+            for item in items
+            if isinstance(item, dict) and int(item.get("failed") or 0) > 0
+        )
+    else:
+        failed = int(report.get("failed") or 0)
     if failed:
         parts.append(f"{failed} failed")
     parts.append(
@@ -634,5 +810,9 @@ def summary_line(report: dict[str, object]) -> str:
         f"{_thousands(int(report.get('prompt_tokens') or 0))}/"
         f"{_thousands(int(report.get('completion_tokens') or 0))} tokens"
     )
-    parts.append(f"${float(report.get('cost_usd') or 0):.4f}")
+    cost = report.get("cost_usd")
+    if isinstance(cost, (int, float)):
+        parts.append(f"${float(cost):.4f}")
+    else:
+        parts.append("cost unknown")
     return ", ".join(parts)
