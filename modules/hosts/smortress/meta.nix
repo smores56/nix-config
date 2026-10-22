@@ -33,6 +33,10 @@ in
     nvidia.enable = true;
     llm.enable = true;
     memory.enable = true;
+    # The committed embedder: qwen3-embedding-8b (4096-d) through the gateway.
+    # Flip to "local" to fall back to bge-m3 at 1024-d; either way a wipe and
+    # re-ingest follows, because the vector width changes.
+    memory.embedder = "neuralwatt";
     noSleep.enable = true;
     webProxy = {
       enable = true;
