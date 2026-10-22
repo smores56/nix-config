@@ -369,17 +369,32 @@ tunnel target. The wrapper has no authentication of its own; Access is the only
 route. Raw Graphiti runs on an internal loopback port in
 `modules/nixos/memory.nix` and is never tunneled.
 
-Graphiti reaches the chat model through `memory-llm-proxy` on
-`127.0.0.1:8082`, which adds `reasoning_effort: "none"` to OpenAI chat
-completions. llama.cpp defaults to thinking and graphiti-core sends no
-per-request control, so extraction would generate reasoning until the token
-budget ran out and return empty content, which Graphiti drops. The proxy is
-loopback-only and never tunneled; its port lives in `modules/nixos/memory.nix`
-because no other module reads it. Maki keeps using `ports.llm` (8081) directly;
-do not point it at 8082, and do not give the proxy a thinking mode. The proxy's
-`/health` only proves the proxy process is alive (Graphiti's readiness probes
-it); check the chat model through the proxied `/v1/models`. Request bodies over
-10 MB are rejected and an upstream read stall is a 504.
+Graphiti extracts through `memory-llm-proxy` on `127.0.0.1:8082`, which is
+Memory's single egress point to Neuralwatt (`api.neuralwatt.com`). The gateway
+holds the account key — read from the `neuralwatt-api-key` sops secret through a
+systemd credential, never from the environment or the Nix store — injects
+`Authorization: Bearer …` to the upstream request (Graphiti's required
+`api_key: "none"` placeholder is replaced; a real client-supplied token is
+forwarded untouched), and adds
+`reasoning_effort: "none"` to chat completions. A reasoning model otherwise
+spends its whole token budget thinking and returns empty content, which
+Graphiti drops. Graphiti itself runs with `api_key: "none"`.
+
+Episode text goes to Neuralwatt by design; the work-group refusal runs before
+any write, so employer content never reaches it. Rotating the key is: update the
+sops secret, rebuild, and restart `memory-llm-proxy` (it reads the credential at
+start). A missing or empty credential fails the unit; if it is removed while the
+unit runs, every proxied request returns 503 `configuration_error` while
+`/health` keeps answering. The listener is loopback-only and never tunneled, and
+its `/health` only proves the gateway process is alive; check upstream access
+through the proxied `/v1/models`. Request bodies over 10 MB are rejected, and an
+upstream read stall is a 504.
+
+Embeddings stay local by default: bge-m3 on `llama-cpp-embed` (`127.0.0.1:8183`,
+1024 dimensions). `memory.embedder = "neuralwatt"` sends them through the same
+gateway to `qwen3-embedding-8b` (4096 dimensions); the model is preview-only and
+this account currently gets a 404, so the local service stays deployed either
+way and flipping the switch means re-embedding the corpus at a new width.
 
 Personal machines run `cloudflared-memory`, which forwards loopback
 `ports.memoryMcp` and injects the Access service token. Maki's generated
@@ -413,18 +428,18 @@ Verify on smortress:
 systemctl status memory-mcp
 curl 127.0.0.1:8182/health
 systemctl status memory-llm-proxy
-curl 127.0.0.1:8082/v1/models   # proxied through to the chat model
+curl 127.0.0.1:8082/v1/models   # proxied to Neuralwatt (needs the credential)
 curl 127.0.0.1:8082/health
 cd ~/code/<repo> && memory status   # group, index counts, graph/model readiness
 ```
 
-**Corpus ingest.** Deploy the LLM proxy before ingesting: until
-`just switch smortress` runs, Graphiti still extracts through the thinking
-model and drops episodes. Then, on smortress:
+**Corpus ingest.** Deploy the gateway before ingesting: until
+`just switch smortress` runs, Graphiti still extracts through the old route and
+drops episodes. Then, on smortress:
 
 ```sh
 systemctl status memory-llm-proxy
-curl 127.0.0.1:8082/v1/models        # the chat model answers through the proxy
+curl 127.0.0.1:8082/v1/models        # Neuralwatt answers through the gateway
 redis-cli -p 6379 GRAPH.LIST         # group graphs (read-only peek)
 memory ingest all --dry-run          # plan only; writes nothing
 memory ingest all --limit 5 --dry-run
@@ -467,7 +482,7 @@ again:
   re-attempts every planned episode. The state file is `flock`ed, so a second
   ingest exits instead of interleaving writes.
 
-Extraction is one 27B chat call per episode, so a full corpus takes hours. The
+Extraction is one hosted chat call per episode, so a full corpus takes hours. The
 default is `--batch 1` with a 600s per-episode grace; keeping one write in
 flight is what stops Graphiti's in-memory queue from dropping work. For a long
 run, start it in a transient user unit:
