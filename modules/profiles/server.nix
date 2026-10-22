@@ -9,6 +9,7 @@
     ../nixos/cloudflare-tofu.nix
     ../nixos/web-proxy.nix
     ../nixos/immich.nix
+    ../nixos/lobechat.nix
     ../nixos/llm.nix
     ../nixos/memory.nix
     ../nixos/nvidia.nix

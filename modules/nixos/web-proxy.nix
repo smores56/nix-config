@@ -16,6 +16,8 @@ let
     "ssh"
     "llm"
     "memory"
+    "chat"
+    "s3"
   ];
 in
 {

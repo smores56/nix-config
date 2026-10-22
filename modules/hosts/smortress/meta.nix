@@ -33,6 +33,7 @@ in
     nvidia.enable = true;
     llm.enable = true;
     memory.enable = true;
+    lobechat.enable = true;
     noSleep.enable = true;
     webProxy = {
       enable = true;
@@ -64,6 +65,20 @@ in
           port = ports.memoryMcp;
           protocol = "tcp";
           access = serviceAuth;
+        };
+        # LobeChat is the human-facing PWA; Access plus its own email/password
+        # login are the two layers. No service token: only the phone's browser
+        # reaches it.
+        chat = {
+          port = ports.lobechat;
+          access.enable = true;
+        };
+        # Presigned S3 URLs must be reachable from the phone. Access covers the
+        # origin; the open question in #227 is whether the Access session is
+        # shared with chat.<domain>, so verify downloads on the S24.
+        s3 = {
+          port = ports.rustfs;
+          access.enable = true;
         };
       };
     };
@@ -132,6 +147,34 @@ in
         cp "$dump" "$BACKUP_CURRENT/db/immich.dump.tmp"
         mv "$BACKUP_CURRENT/db/immich.dump.tmp" "$BACKUP_CURRENT/db/immich.dump"
       '';
+    };
+    # LobeChat itself is stateless: Postgres holds the schema and chat data,
+    # RustFS holds uploaded files. The generated secrets live under the source
+    # tree so a restore keeps sessions and S3 credentials valid.
+    backup.datasets.LobeChat = {
+      source = "/var/lib/lobechat";
+      schedule = "*-*-* 02:00:00";
+      fullCheckSchedule = "Sun *-*-* 10:00:00";
+      timeout = "2h";
+      postgres = true;
+      postgresDatabase = "lobechat";
+      preBackup = ''
+        dump=/var/lib/postgresql/backups/lobechat.dump
+        test -s "$dump" || { echo "missing PostgreSQL dump: $dump"; exit 1; }
+        [ ! -L "$dump" ] || { echo "refusing symlinked PostgreSQL dump: $dump"; exit 1; }
+        now=$(date +%s)
+        mtime=$(stat -c %Y "$dump")
+        [ $((now - mtime)) -le 3600 ] || { echo "stale PostgreSQL dump: $dump"; exit 1; }
+        mkdir -p "$BACKUP_CURRENT/db"
+        cp "$dump" "$BACKUP_CURRENT/db/lobechat.dump.tmp"
+        mv "$BACKUP_CURRENT/db/lobechat.dump.tmp" "$BACKUP_CURRENT/db/lobechat.dump"
+      '';
+    };
+    backup.datasets.RustFS = {
+      source = "/var/lib/rustfs";
+      schedule = "*-*-* 04:00:00";
+      fullCheckSchedule = "Sun *-*-* 11:00:00";
+      timeout = "2h";
     };
     backup.datasets.Music = {
       schedule = "*-*-* 05:00:00";

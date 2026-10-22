@@ -78,8 +78,8 @@ the code in [`backup.sh`](./backup.sh). This file is the operator's view.
 | `/run/backup-watch/<name>/` | request queue for a dataset with `onChange` enabled: the watcher creates a file per debounced batch, and the backup unit drains it |
 
 Proton paths are the dataset name under the remote: `proton:<Name>` — on
-smortress, `proton:Photos`, `proton:Videos`, `proton:Music`, `proton:GitHub`,
-and `proton:CloudflareTofu`.
+smortress, `proton:Photos`, `proton:Videos`, `proton:Music`, `proton:LobeChat`,
+`proton:RustFS`, `proton:GitHub`, and `proton:CloudflareTofu`.
 
 ## Datasets on smortress
 
@@ -88,6 +88,8 @@ and `proton:CloudflareTofu`.
 | `Photos` | `/var/lib/media/Photos` | 03:00 | `onChange` (15m) | Sun 06:00 | yes | `pg_dump -Fc` of `immich` into `current/db/immich.dump` |
 | `Videos` | `/var/lib/media/Videos` | 01:00 | `onChange` (15m) | Sun 07:00 | yes | — |
 | `Music` | `/var/lib/media/Music` | 05:00 | `onChange` (15m) | Sun 08:00 | yes | — |
+| `LobeChat` | `/var/lib/lobechat` | 02:00 | timer only | Sun 10:00 | yes | `pg_dump -Fc` of `lobechat` into `current/db/lobechat.dump` |
+| `RustFS` | `/var/lib/rustfs` | 04:00 | timer only | Sun 11:00 | yes | — |
 | `GitHub` | `/var/lib/github-mirrors` | 00:30 | timer only | Sun 10:00 | yes | `ghorg` refresh, then incremental `python-github-backup` metadata + verification (see below) |
 | `CloudflareTofu` | `/var/lib/cloudflare-tofu` | 00:15 | timer only | — | yes | — |
 

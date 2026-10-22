@@ -325,13 +325,34 @@ Restore both the database dump and the library; the procedure (including
 `/var/lib/media/Videos`, daily 01:00, full check Sundays 07:00, offsite and
 change-triggered.
 
+### LobeChat
+
+<!-- manual-step: dataset/LobeChat -->
+
+`/var/lib/lobechat`, daily 02:00, full check Sundays 10:00. The pre-unit dumps
+PostgreSQL as `postgres`; the driver copies it to `current/db/lobechat.dump` and
+fails the run if the dump is missing or stale. The source tree includes the
+generated secrets under `secrets/`, so a restore keeps sessions and S3
+credentials valid. Restore the dump into a scratch database with
+`runuser -u postgres -- pg_restore --no-owner -d <db>` (the backup README shows
+the full drill).
+
+### RustFS
+
+<!-- manual-step: dataset/RustFS -->
+
+`/var/lib/rustfs` (the LobeChat S3 bucket), daily 04:00, full check Sundays
+11:00, change-triggered. Restore by stopping `podman-rustfs` and copying
+`current/` back, or by uploading the objects with `mc`. The bucket itself is
+recreated by `lobechat-s3-bucket.service`; objects are not.
+
 ## Public services
 
 Services come from `webProxy.services` on each NixOS host. Each becomes
-`<name>.<domain>` through the tunnel. `ssh`, `llm`, and `memory` have
-Cloudflare Access applications (hand-written in `tofu/`); `access.enable` on
-any other service fails evaluation. Calibre and Immich are public and rely on
-their own app auth.
+`<name>.<domain>` through the tunnel. `ssh`, `llm`, `memory`, `chat`, and `s3`
+have Cloudflare Access applications (hand-written in `tofu/`); `access.enable`
+on any other service fails evaluation. Calibre and Immich are public and rely
+on their own app auth.
 
 ### smortress/calibre
 
@@ -491,6 +512,66 @@ just switch smortress
 The wildcard CNAME already exists, so the rebuild adds the ingress; applying
 tofu first means Access is in place the moment the hostname starts routing.
 The email policy is inert for this TCP endpoint (service tokens only).
+
+### smortress/chat
+
+<!-- manual-step: service/smortress/chat -->
+
+`chat.sammohr.dev` → the loopback LobeChat container (`ports.lobechat`), HTTP
+behind Access. LobeChat is the phone PWA; its own email/password login is the
+second layer. `AUTH_ALLOWED_EMAILS` admits only `config.user.email`, so no other
+account can be created.
+
+First start generates `/var/lib/lobechat/secrets` (root-owned) and copies the
+DB password to `/run/lobechat/db-password` (readable by `postgres`). It runs
+the full schema migration before answering; `lobechat-wait` gives it 600s. The
+image is pinned by digest, and `FTS_SEARCH_PROVIDER=pg_like` is required because
+the host Postgres has no ParadeDB `pg_search`.
+
+Knowledge-base embeddings use the shared bge-m3 server at
+`ports.memoryEmbed` through LobeChat's OpenAI-compatible `newapi` slot. Chat
+uses Neuralwatt `deepseek-v4.1-flash`; local `qwen3.8-27b` (the `vllm` slot) is
+the fallback. Brave search is enabled with the existing `brave-api-key`.
+
+**Graphiti MCP.** Add the server in the UI (Settings → Connectors → Add
+Custom Connector → Advanced → Headers); there is no env var for MCP servers.
+
+- URL: `http://127.0.0.1:8182/mcp`, transport `http` (streamable HTTP).
+- Headers: `X-Memory-Group: global`, `X-Memory-Cwd: /phone`,
+  `X-Memory-Actor: lobechat`, `X-Memory-Source: lobechat`,
+  `X-Memory-Source-Id: phone`.
+
+The wrapper has no auth of its own; loopback and the Access boundary are the
+controls.
+
+For the first deployment, apply the new Access applications before rebuilding:
+`sudo nix run .#cloudflare-apply`, then `just switch smortress`. The wildcard
+CNAME already exists, so the rebuild only adds the ingress.
+
+It refuses work groups and records the source/source-id in every episode's
+provenance. LobeChat's built-in Memory has no deployment-wide off
+switch: after the first login open Settings → Memory and disable it, so Graphiti
+is the only memory system.
+
+### smortress/s3
+
+<!-- manual-step: service/smortress/s3 -->
+
+`s3.sammohr.dev` → the loopback RustFS container (`ports.rustfs`) behind
+Access. LobeChat signs presigned URLs with this public endpoint and uses
+`http://127.0.0.1:9000` for server-side reads and writes. Browser uploads are
+presigned PUTs to the public endpoint, so they still need the `s3` Access
+session; only server-side work avoids it. The bucket (`lobe`) is created by
+`lobechat-s3-bucket.service`; RustFS root credentials are generated on first
+start and shared with LobeChat through `/run/lobechat`. RustFS is configured to
+allow CORS from `https://chat.<domain>`, and the Access app bypasses `OPTIONS`
+preflights so the browser can reach it.
+
+Access puts an interactive login in front of the presigned URL host. The
+cookie is host-scoped, so a `chat` session does not cover `s3`: on the S24,
+complete the Access login once on `s3.sammohr.dev` before uploading or
+downloading files. If that remains unreliable, the fallback in #227 is one
+Access application covering both hostnames or proxying downloads.
 
 ### smortress/ssh
 

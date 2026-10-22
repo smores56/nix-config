@@ -15,12 +15,12 @@ let
   inherit (aiProviders) smortress;
   memoryPackage = import ../features/ai/memory/package.nix { inherit pkgs; };
 
-  # Loopback ports and the data root. The wrapper's port is the only one shared
-  # with the tunnel ingress, so it lives in ports.nix; Graphiti and the local
-  # services are private to this module.
+  # Loopback ports and the data root. The wrapper's port and the embedder's
+  # port are shared (tunnel ingress and LobeChat's knowledge base) and live in
+  # ports.nix; Graphiti and the local services are private to this module.
   dbPort = 6379;
   graphitiPort = 8184;
-  embeddingPort = 8183;
+  embeddingPort = ports.memoryEmbed;
   # Graphiti reaches the chat model through a thinkless proxy on this port.
   # Extraction must not generate reasoning (it spends the whole budget and
   # returns empty content), while Maki keeps talking to ports.llm directly so
