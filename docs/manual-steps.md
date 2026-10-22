@@ -365,11 +365,26 @@ call it unattended. `api_key = "none"`; the tunnel and Access are the boundary.
 the server's loopback, with the same service-auth policy. The wrapper derives
 nothing itself: it validates the group header the Maki shim sends, refuses work
 groups, enforces a 60s deadline per tool call, and is the only tunnel target.
-The wrapper has no authentication of its own; Access is the only route. Raw
-Graphiti runs on an internal loopback port in `modules/nixos/memory.nix` and is
-never tunneled. The wrapper owns the typed registry, verifies queued writes
-against FalkorDB, and exposes loopback-only `/internal/episodes` and
-`/internal/lookup` for `memory ingest`.
+MCP tool calls are authenticated by Access alone. Raw Graphiti runs on an
+internal loopback port in `modules/nixos/memory.nix` and is never tunneled. The
+wrapper owns the typed registry, verifies queued writes against FalkorDB, and
+exposes `/internal/episodes` and `/internal/lookup` for `memory ingest`.
+
+Those two ingest routes carry a second gate. The tunnel is a raw TCP forward,
+so the wrapper sees `127.0.0.1` as the peer for every tunneled request and the
+loopback check can never tell a tunneled client from a local one. At startup
+the wrapper mints a random token into `/var/lib/memory/internal.token`
+(mode 0640, owned by the `memory` service group) and requires
+`Authorization: Bearer <token>` on both routes; the loopback check stays as
+defence in depth. `memory ingest` reads the same file, so the human user must
+be in the `memory` group — `modules/nixos/memory.nix` adds
+`users.users.<machine.username>.extraGroups` when `memory.enable` is set, and
+the membership only applies after `just switch smortress` **and** a fresh login
+session (or `newgrp memory`). `MEMORY_INTERNAL_TOKEN_FILE` overrides the path,
+which matters only for a deliberate run from another host: the token is
+regenerated on every wrapper start, so a copied file goes stale.
+`/internal/lookup` takes at most 10,000 hashes and both routes reject bodies
+over 1 MB.
 
 Graphiti extracts through `memory-llm-proxy` on `127.0.0.1:8082`, which is
 Memory's single egress point to Neuralwatt (`api.neuralwatt.com`). The gateway
@@ -425,9 +440,12 @@ fixed until Maki restarts.
 
 The wrapper's typed registry (`registry.sqlite`, including the audit table)
 lives in `/var/lib/memory`, owned by the `memory` system user (the FalkorDB
-subdirectory stays root-owned). That path is **not backed up** yet: there is no
-export or snapshot task for the graph volume or the registry, so losing the host
-loses both.
+subdirectory stays root-owned). The database carries a `PRAGMA user_version`
+schema version; the wrapper refuses to start against an unversioned or
+newer/older one rather than migrating in place, so a schema change means
+deleting the file. That path is **not backed up** yet: there is no export or
+snapshot task for the graph volume or the registry, so losing the host loses
+both.
 
 Activate after changing the wrapper, shim, package, or LLM proxy:
 
@@ -447,7 +465,13 @@ curl 127.0.0.1:8082/health
 cd ~/code/<repo> && memory status   # group, registry counts, graph/model readiness
 ```
 
-**Corpus ingest.** Deploy the gateway before ingesting: until
+**Corpus ingest.** The graph already holds episodes from earlier runs, but the
+registry starts empty: the first ingest after this deploy sees an **empty
+registry against a populated graph** and re-extracts the whole corpus,
+duplicating episodes the graph already holds. That is expected and bounded
+(one hosted extraction call per episode; the new rows become `active` when
+their extraction lands). Reconciling the two stores is the graph wipe/rebuild
+tracked in #219. Deploy the gateway before ingesting: until
 `just switch smortress` runs, Graphiti still extracts through the old route and
 drops episodes. Then, on smortress:
 

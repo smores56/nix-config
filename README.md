@@ -312,15 +312,20 @@ model providers Maki may use.
   `uuid5(group, sha256(content))` and stays registry-only; the graph's own uuid
   is recorded separately. A write returns after queueing, and a background
   reconciler polls FalkorDB for pending rows by exact group and content,
-  resolving them to `active` with the graph uuid or, after a grace period and a
-  bounded set of retries, to `failed` (retries pause while the model endpoint is
-  unhealthy). `memory_get` returns a full episode by registry uuid, hash prefix,
-  or exact `origin:origin_ref`; `memory_retry` resubmits a failed row. Search
+  resolving them to `active` with the newest matching graph uuid or, after a
+  grace period and a bounded set of retries, to `failed` (retries pause while
+  the model endpoint is unhealthy, and reconciler writes never overwrite a row
+  that left `pending`). `memory_get` returns a full episode by registry uuid,
+  hash prefix, or exact `origin:origin_ref` (case-insensitive; an ambiguous hash
+  prefix is an error); `memory_retry` marks a row active when its extraction
+  landed late instead of resubmitting it. Search
   covers the caller's group plus `global` and tags each fact and episode with
-  typed provenance joined from the registry. A tombstone invalidates the graph
-  edges the episode exclusively supports, detaches it from shared edges, and
-  keeps the episode node as provenance; writing the same content again revives
-  it. Server details live in `modules/nixos/memory.nix`.
+  typed provenance joined from the registry. A tombstone resolves every graph
+  episode with that exact content, invalidates the edges they exclusively
+  support and detaches them from shared edges, and keeps the episode nodes as
+  provenance; writing the same content again revives it (and a second tombstone
+  covers the re-extracted episode too). Server details live in
+  `modules/nixos/memory.nix`.
 
   **Bulk ingest.** `memory ingest {sdlc,notes,docs,all}` plans the personal
   corpus: every sdlc issue section and substantial comment, the markdown notes
@@ -333,7 +338,10 @@ model providers Maki may use.
   `/internal/episodes` with explicit kind and event time (`kind=json` for JSON
   sections, `valid_at` from issue/comment timestamps, note mtime, or a doc's
   last commit). There is no client ledger: the registry is the single source of
-  truth, and the run report is never read back. `just memory-ingest` runs
+  truth, and the run report is never read back. Those two internal routes
+  require `Authorization: Bearer <token>` from `/var/lib/memory/internal.token`
+  (mode 0640, group `memory`), because the tunnel reaches the wrapper as
+  loopback and the peer address proves nothing. `just memory-ingest` runs
   `memory ingest all` on smortress; reports land under
   `~/.local/state/memory/`, and `--dry-run` prints the plan without writing.
   Extraction goes through the loopback `memory-llm-proxy` to Neuralwatt: the
