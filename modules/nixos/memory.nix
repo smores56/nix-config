@@ -159,7 +159,9 @@ in
       llama.cpp (1024 dimensions, no egress); `neuralwatt` uses
       qwen3-embedding-8b through the memory-llm-proxy (4096 dimensions). The
       local service stays deployed either way, and switching re-embeds the
-      corpus at a new width.
+      corpus at a new width. qwen3-embedding-8b prefers an `Instruct: …` /
+      `Query:` prefix on queries that Graphiti's OpenAI embedder does not send,
+      so expect a small retrieval penalty.
     '';
   };
 
@@ -256,7 +258,10 @@ in
           # YAML dimensions above.
           EMBEDDING_DIM = toString embedder.dimensions;
           # Hosted extraction has no local slot to queue behind; four in-flight
-          # episodes keep the reconciler busy without hammering the API.
+          # episodes keep the reconciler busy without hammering the API. With
+          # the local embedder those calls queue behind llama-server's single
+          # slot, which is fine: embedding calls are far shorter than the chat
+          # generations this limit used to protect.
           SEMAPHORE_LIMIT = "4";
         };
       };

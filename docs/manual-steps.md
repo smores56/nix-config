@@ -382,19 +382,30 @@ Graphiti drops. Graphiti itself runs with `api_key: "none"`.
 
 Episode text goes to Neuralwatt by design; the work-group refusal runs before
 any write, so employer content never reaches it. Rotating the key is: update the
-sops secret, rebuild, and restart `memory-llm-proxy` (it reads the credential at
-start). A missing or empty credential fails the unit; if it is removed while the
-unit runs, every proxied request returns 503 `configuration_error` while
-`/health` keeps answering. The listener is loopback-only and never tunneled, and
-its `/health` only proves the gateway process is alive; check upstream access
-through the proxied `/v1/models`. Request bodies over 10 MB are rejected, and an
-upstream read stall is a 504.
+sops secret and rebuild — `sops.secrets.neuralwatt-api-key` restarts
+the gateway, which reads the credential once at start. A **missing** credential
+makes `LoadCredential` fail, so the gateway never starts and the wrapper's
+`preStart` (which waits on the gateway) fails with it: reads stop too. An
+**empty** credential lets the unit start; every proxied request then returns
+503 `configuration_error` while `/health` still answers. A real client-supplied
+token is forwarded untouched only when the gateway has a key — without one the
+503 is returned before headers are inspected.
+
+The listener is loopback-only and never tunneled, but it is **unauthenticated by
+design**: any local process that can reach `127.0.0.1:8082` can spend the
+Neuralwatt account through it. Treat the host's user boundary as the billing
+boundary. Its `/health` only proves the gateway process is alive; check upstream
+access through the proxied `/v1/models`. Request bodies over 10 MB are rejected,
+and an upstream read stall is a 504.
 
 Embeddings stay local by default: bge-m3 on `llama-cpp-embed` (`127.0.0.1:8183`,
 1024 dimensions). `memory.embedder = "neuralwatt"` sends them through the same
 gateway to `qwen3-embedding-8b` (4096 dimensions); the model is preview-only and
 this account currently gets a 404, so the local service stays deployed either
 way and flipping the switch means re-embedding the corpus at a new width.
+`qwen3-embedding-8b` prefers an `Instruct: …` / `Query:` prefix on queries;
+graphiti-core's OpenAI embedder sends the same text for queries and passages, so
+expect a small retrieval penalty.
 
 Personal machines run `cloudflared-memory`, which forwards loopback
 `ports.memoryMcp` and injects the Access service token. Maki's generated

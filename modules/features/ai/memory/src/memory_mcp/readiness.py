@@ -25,7 +25,9 @@ class ReadinessError(RuntimeError):
 class HealthProbes:
     llm_url: str
     embed_url: str
-    timeout: float = 2.0
+    # The chat probe is a WAN round trip to Neuralwatt, not a loopback hop, so
+    # the budget covers connect + response rather than one local socket write.
+    timeout: float = 10.0
     # Set only for a remote embedder (model id sent with a one-word probe).
     embed_model: str | None = None
     # Test seam; production talks to real endpoints.

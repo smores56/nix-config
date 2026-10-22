@@ -36,6 +36,9 @@
       neuralwatt-api-key = {
         owner = config.machine.username;
         mode = "0400";
+        # The memory gateway reads the credential once at start, so a new key
+        # only reaches it if the unit restarts.
+        restartUnits = [ "memory-llm-proxy.service" ];
       };
 
       # Brave Search API key; the fish init exports it for maki's websearch
