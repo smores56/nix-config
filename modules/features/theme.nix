@@ -21,6 +21,11 @@ let
 in
 {
   config = {
+    xdg.configFile."revdiff/config".text = ''
+      [Application Options]
+      theme = stylix
+    '';
+
     xdg.configFile."revdiff/themes/stylix".text = ''
       # name: stylix
       # description: generated from the Stylix base16 palette; do not edit
