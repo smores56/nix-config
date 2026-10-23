@@ -13,8 +13,8 @@ Definitions used throughout:
 * a hit's *rank* is the 1-based position of the first matching entry, and
   `None` when the block contains no match.
 
-The CLI clamps `--limit` per result type (five nodes, then five facts), so a
-block can be longer than `--limit`. Recall@k counts a hit only within the first
+The CLI clamps `--limit` per result type (up to `--limit` nodes and `--limit`
+facts, alternated by rank in one list), so a block can be longer than `--limit`. Recall@k counts a hit only within the first
 `k` entries, while MRR uses the first hit anywhere in the block; `hit_any`
 exposes the gap so a fact-only answer is not silently reported as a total miss.
 """
