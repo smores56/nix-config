@@ -29,6 +29,10 @@ in
   };
 
   nixosOptions = {
+    # LUKS on the 970 EVO uses `tpm2-device=auto` in the crypttab; the TPM
+    # token is enrolled after the first boot.
+    security.tpm2.enable = true;
+    boot.initrd.systemd.tpm2.enable = true;
     exposeSsh.enable = true;
     nvidia.enable = true;
     llm.enable = true;

@@ -47,6 +47,51 @@ generated hardware config, then run `nix run .#bootstrap`.
 - **Out-of-band access**: the physical console. There is no inbound SSH port;
   SSH is tunnel-only.
 
+#### LUKS shadow migration (970 EVO)
+
+The old Windows Samsung 970 EVO (`nvme1n1`, `SAMSUNG SSD 970 EVO 1TB`,
+serial `S5H9NS0NA57329Z`) is the transition disk. The 980 PRO stays as the
+rollback until the new system has booted twice.
+
+**Do not `nixos-rebuild switch` the migration worktree on the current 980 PRO
+system.** Its `disko.nix` declares `/` on `/dev/mapper/cryptroot`, which only
+exists after the 970 EVO install. Use the worktree only for `disko` and
+`nixos-install`.
+
+1. Back up and verify (Proton + `/var/backup`). Attach a console/keyboard for
+   the first boot. Confirm `nvme1n1` is the 970 EVO and not the current root:
+   `lsblk -o NAME,SIZE,MODEL,SERIAL,MOUNTPOINTS`.
+2. From the migration worktree, stage the new config so the flake sees it:
+   `git add modules/hosts/smortress/disko.nix modules/hosts/smortress/meta.nix`.
+3. Format and mount the 970 EVO. This **wipes nvme1n1** and prompts for the LUKS
+   passphrase twice; store it offline.
+   `sudo nix run github:nix-community/disko -- --mode destroy,format,mount --flake .#smortress`
+4. Copy the SSH host keys (the age identity that decrypts sops) into the new
+   root before the first boot:
+   `sudo mkdir -p /mnt/etc/ssh && sudo cp -a /etc/ssh/ssh_host_* /mnt/etc/ssh/ && sudo chmod 600 /mnt/etc/ssh/ssh_host_*_key`
+5. Install the system:
+   `sudo nixos-install --root /mnt --flake .#smortress --no-root-passwd`
+6. Stop the data services, then copy the data the backup/restore drill does not
+   recreate: `/home`, `/var/lib/media`, the Immich database (or restore the
+   `Photos` dump), `/var/lib/navidrome`, `/var/lib/calibre`, `/var/lib/memory`,
+   and any container volumes. Do not copy `/etc`, `/nix`, `/boot`, or
+   `/var/backup`; the backup HDD is mounted by label and must stay untouched.
+   See `modules/features/backup/README.md` for the restore procedure.
+7. First boot from the 970 EVO with the console attached. TPM is not enrolled
+   yet, so enter the LUKS passphrase. After login, set the `smores` password,
+   generate a recovery key and store it offline:
+   `sudo systemd-cryptenroll --recovery-key /dev/disk/by-partlabel/root`
+   Then enroll the TPM:
+   `sudo systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partlabel/root`
+   Reboot and confirm TPM auto-unlock. Keep the printed recovery key and
+   passphrase offline.
+8. Switch the firmware boot order to the 970 EVO. Keep the 980 PRO untouched
+   until the new system has booted twice; then merge the worktree branch and
+   optionally wipe/reuse the 980 PRO.
+
+The unencrypted 5TB HDD (`/dev/disk/by-label/backup`) is not part of this
+migration; its encryption/legacy plan is tracked separately in #250.
+
 ### smorespro
 
 <!-- manual-step: host/smorespro -->

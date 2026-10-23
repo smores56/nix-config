@@ -1,17 +1,18 @@
 # Declarative disk layout for smortress (see AGENTS.md). disko owns `/` and
 # `/boot` — it derives `fileSystems` from here — so hardware.nix omits them.
 #
-# The partition labels are pinned to `EFI`/`root` (disko's default would be
-# `disk-main-boot`/`disk-main-root`) so the derived `/dev/disk/by-partlabel/*`
-# devices match the already-installed disk: the running machine keeps booting
-# and a fresh install recreates the same labels.
+# The 970 EVO is the encrypted main disk for the LUKS migration; the 980 PRO
+# stays as the rollback until the new system has booted twice. Do **not**
+# `nixos-rebuild switch` this config on the old (980 PRO) system: it declares
+# `/` on `/dev/mapper/cryptroot`, which does not exist there. Run disko and
+# nixos-install from the migration worktree instead.
 #
-# Only the OS NVMe is managed: the backup HDD (sda, mounted at /var/backup by
-# modules/nixos/backup.nix) and the Windows NVMe (nvme1n1) are left untouched.
+# The backup HDD (sda, mounted at /var/backup by modules/nixos/backup.nix) is
+# left untouched.
 {
   disko.devices.disk.main = {
     type = "disk";
-    device = "/dev/disk/by-id/nvme-Samsung_SSD_980_PRO_1TB_S5P2NG0NC04320K";
+    device = "/dev/disk/by-id/nvme-Samsung_SSD_970_EVO_1TB_S5H9NS0NA57329Z";
     content = {
       type = "gpt";
       partitions = {
@@ -33,9 +34,24 @@
           size = "100%";
           label = "root";
           content = {
-            type = "filesystem";
-            format = "ext4";
-            mountpoint = "/";
+            type = "luks";
+            name = "cryptroot";
+            # Disko prompts for the LUKS passphrase twice when neither a
+            # passwordFile nor a keyFile is set. Store the passphrase offline.
+            settings = {
+              allowDiscards = true;
+              fallbackToPassword = true;
+              # Enroll the TPM after the first boot with
+              # systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7.
+              crypttabExtraOpts = [ "tpm2-device=auto" ];
+            };
+            # Generate a recovery key after install with
+            # systemd-cryptenroll --recovery-key; store it offline.
+            content = {
+              type = "filesystem";
+              format = "ext4";
+              mountpoint = "/";
+            };
           };
         };
       };
