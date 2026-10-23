@@ -71,9 +71,10 @@ memory-restore dir:
     sudo memory restore {{dir}}
 
 # Manually evaluate retrieval quality and project-boundary leaks on the live service.
-# Shells out to `memory`, so it needs the memory group; no sudo.
+# Shells out to `memory`, so it needs the memory group; no sudo. Args go before the
+# subcommand, e.g. `just memory-eval --only exact`.
 memory-eval *args:
-    sg memory -c 'nix run nixpkgs#python3 -- modules/features/ai/memory/eval/retrieval.py search-metrics {{args}}'
+    sg memory -c 'nix run nixpkgs#python3 -- modules/features/ai/memory/eval/retrieval.py {{args}} search-metrics'
     sg memory -c 'nix run nixpkgs#python3 -- modules/features/ai/memory/eval/retrieval.py leak-check'
 
 # Stop memory, wipe the derived graph and the registry, then start it again.

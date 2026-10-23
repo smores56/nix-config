@@ -23,18 +23,21 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import shutil
 import sqlite3
 import statistics
 import subprocess
 import sys
+import tempfile
 import time
 from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
 
-DEFAULT_REGISTRY = Path("/tmp/regcheck/eval-registry.sqlite")
+DEFAULT_REGISTRY = Path(os.environ.get("MEMORY_STATE_DIR", "/var/lib/memory")) / "registry.sqlite"
 DEFAULT_LIMIT = 5
 DEFAULT_QUERIES = Path(__file__).with_name("queries.json")
 DEFAULT_LEAK_QUERIES = Path(__file__).with_name("leak-queries.json")
@@ -184,16 +187,39 @@ def fts_query(text: str) -> str | None:
     return " OR ".join(f'"{term}"' for term in terms)
 
 
+def _snapshot_rows(registry: Path, group: str) -> list[str]:
+    """Row contents for `group` plus global, from the live database or a copy.
+
+    A live FalkorDB-side registry is WAL-mode: opening it read-only tries to
+    create the shared-memory file and fails with "attempt to write a readonly
+    database". Falling back to a copy of the database and its sidecars keeps
+    the harness usable against the running service without a manual step.
+    """
+    query = (
+        "SELECT content FROM episodes WHERE group_id IN (?, ?) "
+        "ORDER BY created_at, content_hash"
+    )
+    try:
+        with closing(sqlite3.connect(f"file:{registry}?mode=ro", uri=True)) as snapshot:
+            return [row[0] for row in snapshot.execute(query, (group, GLOBAL_GROUP))]
+    except sqlite3.OperationalError:
+        staging = Path(tempfile.mkdtemp(prefix="memory-eval-"))
+        for name in (registry.name, f"{registry.name}-wal", f"{registry.name}-shm"):
+            source = registry.with_name(name)
+            if source.exists():
+                shutil.copyfile(source, staging / name)
+        with closing(sqlite3.connect(staging / registry.name)) as snapshot:
+            return [row[0] for row in snapshot.execute(query, (group, GLOBAL_GROUP))]
+
+
 def build_fts(registry: Path, group: str) -> sqlite3.Connection:
     """In-memory FTS5 index of the snapshot rows for `group` plus global."""
     connection = sqlite3.connect(":memory:")
     connection.execute("CREATE VIRTUAL TABLE episodes_fts USING fts5(content)")
-    with closing(sqlite3.connect(f"file:{registry}?mode=ro", uri=True)) as snapshot:
-        rows = snapshot.execute(
-            "SELECT content FROM episodes WHERE group_id IN (?, ?) ORDER BY created_at, content_hash",
-            (group, GLOBAL_GROUP),
-        )
-        connection.executemany("INSERT INTO episodes_fts (content) VALUES (?)", rows)
+    connection.executemany(
+        "INSERT INTO episodes_fts (content) VALUES (?)",
+        ((content,) for content in _snapshot_rows(registry, group)),
+    )
     connection.commit()
     return connection
 

@@ -557,6 +557,24 @@ copies `/var/lib/memory/export` off the host. Until then the exports protect
 against corruption and mistakes on smortress, not against losing the machine;
 keep an occasional copy of the newest directory elsewhere.
 
+**Evaluation.** `just memory-eval` runs `modules/features/ai/memory/eval/` against
+the live store: 50 labelled queries (semantic, entity, temporal, exact) scored by
+recall@5 and MRR for the graph-backed `memory search` against an FTS5/bm25 index
+over the same registry rows, then 50 adversarial boundary queries that must
+return no entry from a foreign project group. First measured run (2026-10-23,
+1,385 episodes): recall@5 0.52 / MRR 0.40 against 0.86 / 0.60 for FTS5, mean
+search latency ~4.5 s against ~0.5 ms, and zero foreign-group hits. That is not
+an apples-to-apples verdict: the wrapper returns five nodes *then* five facts, so
+a fact-only answer can never occupy the first five entries (40 of 50 queries
+found their answer somewhere in the block, 26 within the top five), and the
+baseline ranks whole episodes while the graph ranks extracted facts and entities
+against gold strings that are verbatim corpus text. Community summaries stay off
+for now: the misses are single-fact lookups, not the multi-hop thematic questions
+summaries help with, and building them costs an extra pass over the corpus. Re-run
+the harness after search returns one ranked list of `limit` entries — that change,
+not summaries, is what the numbers argue for.
+
+
 Activate after changing the wrapper, shim, package, LLM proxy, or export
 unit:
 
