@@ -604,12 +604,32 @@ class Registry:
             ).fetchall()
         return [entry for row in rows if (entry := self._row(row)) is not None]
 
-    def pending(self, *, limit: int = 500) -> list[RegistryEpisode]:
+    def pending(
+        self,
+        *,
+        limit: int = 500,
+        after: tuple[str, str, str] | None = None,
+    ) -> list[RegistryEpisode]:
+        """One page of pending rows in queue order.
+
+        `after` is `(queue clock, content_hash, group_id)` of the last row a
+        caller inspected; the reconciler keeps it across passes so a backlog
+        larger than one batch is still walked end to end. The expression
+        matches the ORDER BY, because a row without a queue stamp sorts by its
+        write time.
+        """
+        clock = "COALESCE(NULLIF(queued_at, ''), created_at)"
+        params: list[object] = []
+        clause = "status = 'pending'"
+        if after is not None:
+            clause += f" AND ({clock}, content_hash, group_id) > (?, ?, ?)"
+            params.extend(after)
+        params.append(max(1, int(limit)))
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT * FROM episodes WHERE status = 'pending' "
-                "ORDER BY COALESCE(NULLIF(queued_at, ''), created_at) ASC LIMIT ?",
-                (max(1, int(limit)),),
+                f"SELECT *, {clock} AS queue_clock FROM episodes WHERE {clause} "
+                "ORDER BY queue_clock, content_hash, group_id LIMIT ?",
+                tuple(params),
             ).fetchall()
         return [entry for row in rows if (entry := self._row(row)) is not None]
 

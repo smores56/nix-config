@@ -318,7 +318,9 @@ model providers Maki may use.
   content, resolving them to `active` with the newest matching graph uuid or,
   after a grace period and a bounded set of retries, to `failed` (retries pause
   while the model endpoint is unhealthy, and reconciler writes never overwrite a
-  row that left `pending`). `memory_get` returns an episode by registry uuid, hash
+  row that left `pending`). A pass pages by the queue clock, so a backlog larger
+  than one batch is still walked instead of restarted. The MCP surface rejects a
+  request body over 1 MB before the handler reads it. `memory_get` returns an episode by registry uuid, hash
   prefix, or exact `origin:origin_ref` (case-insensitive; an ambiguous hash
   prefix is an error), falling back to `global` when the caller's group has no
   match, and caps the body at 16k characters with a trailer naming the full

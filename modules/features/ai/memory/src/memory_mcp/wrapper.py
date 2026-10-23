@@ -27,6 +27,8 @@ from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 import uvicorn
 from starlette.applications import Starlette
+from starlette.datastructures import Headers
+from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -98,6 +100,10 @@ MAX_DETAIL_CHARS = 300
 # The internal routes take machine-built JSON only: a 10k-hash lookup is the
 # largest legitimate body, and episodes are capped at MAX_CONTENT_CHARS.
 MAX_INTERNAL_BODY_BYTES = 1_000_000
+# The MCP surface takes JSON-RPC only: the largest legitimate call is a write
+# at MAX_CONTENT_CHARS, and an unbounded body would let one client park its
+# payload in memory (the unit caps at 512M).
+MAX_MCP_BODY_BYTES = 1_000_000
 # A reindex sweeps the registry in pages because a full corpus is thousands of
 # rows and the tool call has a deadline. Each requeued row costs a full
 # extraction, so one call requeues a bounded slice and the operator repeats it.
@@ -1332,6 +1338,68 @@ def build_server(
     return MemoryServer(mcp, reconciler, start_reconciler=start_reconciler)
 
 
+async def _reject_body(send: Any, detail: str) -> None:
+    body = json.dumps({"error": detail}).encode()
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 413,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode()),
+                (b"connection", b"close"),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": body})
+
+
+class BodyLimitMiddleware:
+    """Refuse an over-sized request body before the MCP handler reads it.
+
+    A declared `Content-Length` is checked up front; a chunked body is counted
+    as it arrives, and the read is cut off once it passes the cap.
+    """
+
+    def __init__(self, app: Any, *, limit: int = MAX_MCP_BODY_BYTES) -> None:
+        self.app = app
+        self.limit = limit
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        declared = Headers(scope=scope).get("content-length")
+        if declared is not None:
+            try:
+                declared_size = int(declared)
+            except ValueError:
+                await _reject_body(send, "invalid Content-Length")
+                return
+            if declared_size > self.limit:
+                await _reject_body(send, f"request body is over {self.limit} bytes")
+                return
+
+        received = 0
+
+        async def limited_receive() -> dict[str, Any]:
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body") or b"")
+                if received > self.limit:
+                    # Starlette's ExceptionMiddleware sits inside this app and
+                    # renders this as the 413; raising a private exception
+                    # would be caught by its ServerErrorMiddleware as a 500.
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"request body is over {self.limit} bytes",
+                    )
+            return message
+
+        await self.app(scope, limited_receive, send)
+
+
 @dataclass(frozen=True)
 class MemoryServer:
     """The MCP server plus the background reconciler that keeps it honest.
@@ -1367,7 +1435,7 @@ class MemoryServer:
                         print(f"memory reconciler crashed: {exc}", file=sys.stderr)
 
         app.router.lifespan_context = lifespan
-        return app
+        return BodyLimitMiddleware(app)
 
 
 def main() -> int:

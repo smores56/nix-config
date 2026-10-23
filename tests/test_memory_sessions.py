@@ -365,6 +365,27 @@ class SummaryClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(calls), 2)
         self.assertEqual(result.attempts, 2)
 
+    async def test_a_failed_summary_reports_the_tokens_its_attempts_spent(self):
+        def handler(_request):
+            return chat_response(None, content="not json at all")
+
+        with self.assertRaises(summary.SummaryError) as caught:
+            await self.call(handler)
+        error = caught.exception
+        self.assertEqual(error.attempts, 2)
+        self.assertEqual(error.prompt_tokens, 2400)
+        self.assertEqual(error.completion_tokens, 600)
+        self.assertTrue(error.usage_known)
+
+    async def test_a_failed_summary_with_no_paid_attempt_is_a_known_zero(self):
+        def handler(_request):
+            return httpx.Response(400, json={"error": {"message": "bad request"}})
+
+        with self.assertRaises(summary.SummaryError) as caught:
+            await self.call(handler)
+        self.assertEqual(caught.exception.prompt_tokens, 0)
+        self.assertTrue(caught.exception.usage_known)
+
     async def test_two_malformed_answers_fail_the_session(self):
         def handler(_request):
             return chat_response(None, content="not json at all")
@@ -540,7 +561,13 @@ class BuildPlanTests(unittest.IsolatedAsyncioTestCase):
         async def flaky(transcript):
             seen.append(transcript)
             if "Add a cowsay" in transcript and len(seen) == 1:
-                raise summary.SummaryError("gateway exploded")
+                raise summary.SummaryError(
+                    "gateway exploded",
+                    prompt_tokens=1000,
+                    completion_tokens=200,
+                    attempts=1,
+                    usage_known=True,
+                )
             return result()
 
         built = await sessions.build_session_plan(
@@ -552,6 +579,9 @@ class BuildPlanTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(built.report["summarized"], 1)
         self.assertEqual(len(built.plan.skipped), 1)
         self.assertIn("gateway exploded", built.plan.skipped[0].reason)
+        # The paid attempt is in the run's cost, and named as such.
+        self.assertGreater(built.report["failed_cost_usd"], 0)
+        self.assertIn("on failed sessions", sessions.summary_line(built.report))
 
     async def test_a_work_session_is_refused_before_the_model_runs(self):
         self.tmp = tempfile.TemporaryDirectory()
