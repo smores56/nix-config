@@ -253,11 +253,24 @@ class GroupValidationTests(unittest.TestCase):
         with mock.patch.dict(os.environ, overrides, clear=False):
             settings = groups.work_settings()
             self.assertTrue(groups.owner_is_work("acme-team", settings))
-            self.assertFalse(groups.owner_is_work("blitzy", settings))
+            self.assertFalse(groups.owner_is_work("smores56", settings))
             self.assertEqual(settings.flow, "local")
             self.assertEqual(settings.email, "dev@example.org")
             self.assertEqual(settings.email_domain, "example.org")
             self.assertEqual(settings.ssh_marker, "config.acme")
+
+    def test_configured_owner_globs_never_narrow_the_builtin_refusals(self):
+        # The deployed host sets `blitzy-*`, which would otherwise stop refusing
+        # the bare `blitzy` owner and every `blitzy--repo` group label.
+        with mock.patch.dict(os.environ, {"MEMORY_WORK_OWNER_GLOB": "blitzy-*"}, clear=False):
+            settings = groups.work_settings()
+        self.assertTrue(groups.owner_is_work("blitzy", settings))
+        self.assertTrue(groups.owner_is_work("blitzy-ai", settings))
+        for group in ("blitzy--repo", "blitzy-ai--repo"):
+            with self.subTest(group=group):
+                self.assertIsNotNone(groups.work_reason_for_group(group, settings))
+                with self.assertRaises(GroupRefused):
+                    groups.validate_group(group)
 
     def test_parse_remote_rejects_unparseable(self):
         self.assertIsNone(parse_remote("origin", "file:///tmp/repo"))

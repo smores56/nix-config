@@ -79,15 +79,28 @@ class WorkSettings:
         return self.email.rsplit("@", 1)[-1].lower() if "@" in self.email else self.email.lower()
 
 
+def _owner_globs() -> tuple[str, ...]:
+    """The built-in employer owners unioned with the configured ones.
+
+    Configuration may add an employer, never narrow the refusal set: a host that
+    sets `MEMORY_WORK_OWNER_GLOB=blitzy-*` still has to refuse the bare
+    `blitzy` owner, because `owner_is_work` matches whole owners.
+    """
+    configured = _env("MEMORY_WORK_OWNER_GLOB", "").split(",")
+    return tuple(
+        dict.fromkeys(
+            part.strip()
+            for part in (*DEFAULT_WORK_OWNER_GLOBS.split(","), *configured)
+            if part.strip()
+        )
+    )
+
+
 def work_settings() -> WorkSettings:
     return WorkSettings(
         flow=_env("MEMORY_WORK_FLOW", DEFAULT_WORK_FLOW),
         email=_env("MEMORY_WORK_EMAIL", DEFAULT_WORK_EMAIL),
-        owner_globs=tuple(
-            part.strip()
-            for part in _env("MEMORY_WORK_OWNER_GLOB", DEFAULT_WORK_OWNER_GLOBS).split(",")
-            if part.strip()
-        ),
+        owner_globs=_owner_globs(),
         ssh_marker=_env("MEMORY_WORK_SSH_MARKER", DEFAULT_WORK_SSH_MARKER),
     )
 
