@@ -293,6 +293,21 @@ The mirror token is the classic `repo`-scoped `github-repo-pat` (root-only,
 0400), shared by ghorg, pgb, and the verifier; it can write to every repo the
 account reaches, but these units only read.
 
+### MemoryExport
+
+<!-- manual-step: dataset/MemoryExport -->
+
+Copy of `/var/lib/memory/export` taken at 05:30 (the export itself runs nightly
+from `memory-export.timer`, from midnight with up to an hour of delay), mirrored
+locally to `/var/backup/MemoryExport/current` and offsite to
+`proton:MemoryExport` like the other datasets. Each directory holds one registry
+snapshot, the `episodes.jsonl` dump, the manifest, and a best-effort FalkorDB
+RDB of the same timestamp. The export directory keeps seven snapshots and the
+driver versions what it replaces, so the mirror grows until the versions are
+pruned by hand. Restore with `just memory-restore <dir>` from
+`/var/backup/MemoryExport/current`; when the graph snapshot is missing or older
+than the registry, replay it with `just memory-reindex --all` afterwards.
+
 ### Music
 
 <!-- manual-step: dataset/Music -->
@@ -538,9 +553,19 @@ The graph is handled after the registry:
   the graph is the restored one;
 - otherwise it refuses the graph, restores the registry alone, and tells you to
   restore an export whose graph snapshot matches, or to rebuild **both** stores.
-  A graph cannot be rebuilt from a restored registry: `memory-ingest` skips rows
-  that already succeeded, so re-ingesting an `active` corpus into an empty graph
-  extracts nothing. `just memory-rebuild` wipes the FalkorDB data *and* the
+  A restored registry does not rebuild with `memory-ingest`: it skips rows that
+  already succeeded, so re-ingesting an `active` corpus into an empty graph
+  extracts nothing. `just memory-reindex --all` is the replay path
+  (`memory reindex`): it reads every episode content for a group in one query,
+  requeues the active rows with no matching episode, and resubmits that slice
+  immediately, so extraction starts now rather than after the reconcile grace.
+  It is operator-only, defaults to the caller's group (`--all` for every group),
+  handles a bounded slice per call and is safe to repeat — a row is only
+  requeued when its episode is absent, and requeueing restarts its queue clock
+  so the reconciler waits the grace window for the extraction instead of
+  retrying it into `failed`. A group that looks almost entirely missing while
+  its graph is not empty is refused unless `--force` is passed, because that
+  usually means a wrong graph or a registry from another host. `just memory-rebuild` wipes the FalkorDB data *and* the
   registry, and only then does `just memory-ingest` rebuild anything
   (re-extraction of `active` rows is tracked in #219).
 
@@ -566,10 +591,11 @@ restarts it, a failed ownership step leaves the previous registry in place, and
 an export refuses to run while the restore lock exists. It needs no root, no
 FalkorDB, and no network.
 
-**Not in restic yet.** The restic backup migration is still pending, so nothing
-copies `/var/lib/memory/export` off the host. Until then the exports protect
-against corruption and mistakes on smortress, not against losing the machine;
-keep an occasional copy of the newest directory elsewhere.
+**Offsite.** `backup.datasets.MemoryExport` mirrors `/var/lib/memory/export`
+(the plain-tree, versioned driver) to the backup disk and Proton, so the
+registry and its graph snapshot survive losing smortress. Recovery order is:
+restore the export, then `memory reindex --all` when the graph snapshot is
+missing or older, then confirm with a search.
 
 **Evaluation.** `just memory-eval` runs `modules/features/ai/memory/eval/` against
 the live store: 50 labelled queries (semantic, entity, temporal, exact) scored by

@@ -300,7 +300,7 @@ model providers Maki may use.
   in `modules/nixos/memory.nix` and is never tunneled. Extraction runs on
   Neuralwatt through a loopback gateway that holds the key; embeddings default
   to local bge-m3 (`memory.embedder`). The same package installs the `memory`
-  CLI (`write|search|get|retry|promote|status|tombstone|ingest`) for use on a
+  CLI (`write|search|get|retry|promote|reindex|status|tombstone|ingest`) for use on a
   client or on smortress directly. The shim derives the group when Maki starts,
   so restart Maki after changing directories (`/cd` does not restart stdio
   children) and after any `mcp.toml` change.
@@ -402,11 +402,16 @@ model providers Maki may use.
   installed code cannot open, stops the memory services including FalkorDB,
   parks the live registry and replaces it atomically, and restores the graph
   snapshot only when it was taken at the same timestamp as the registry,
-  restarting FalkorDB to load it. Otherwise the graph is refused: a restored
-  registry cannot re-extract into an empty graph, so the rebuild path is wiping
-  both stores (`just memory-rebuild`) and re-ingesting. `just memory-export` /
-  `just memory-restore <dir>` are the operator shortcuts, and the drill is in
-  `docs/manual-steps.md`.
+  restarting FalkorDB to load it. Otherwise the graph is refused and
+  `memory reindex` is the replay path: one query per group collects the episode
+  contents, the active rows without a matching episode are requeued and
+  resubmitted at once, and the reconciler verifies each as extraction lands —
+  operator-only, safe to repeat, a bounded slice per call, and a group that
+  looks almost entirely missing while its graph is not empty needs `--force`.
+  `memory-ingest` cannot do this because it skips rows that already succeeded.
+  The export directory is mirrored offsite by the `MemoryExport` backup
+  dataset. `just memory-export` / `just memory-restore <dir>` are the operator
+  shortcuts, and the drill is in `docs/manual-steps.md`.
 
 - `work`: maki is OpenAI-only and gets no personal providers, search, or
   memory MCP.

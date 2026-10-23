@@ -901,7 +901,8 @@ def restore(config: RestoreConfig) -> RestoreReport:
             raise ExportError(
                 f"the registry is restored but installing the graph snapshot failed: {exc}; "
                 f"{lock} stays in place; the graph is a derived index, so `just memory-rebuild` "
-                "and a re-ingest rebuild it"
+                "and a re-ingest rebuild it, or restore the registry alone and replay it with "
+                "`memory reindex --all`"
             ) from exc
         try:
             parked = _park_aof(config.graph_dir, verified.snapshot)
@@ -986,11 +987,12 @@ def graph_advice(report: RestoreReport) -> str:
         )
         return f"graph: restored the matching snapshot{live}{parked}{writers}."
     return (
-        f"graph: not restored ({report.graph.reason}). The graph is a derived index, but it "
-        "cannot be rebuilt from a restored registry alone: `memory-ingest` skips rows that "
-        "are already active, so re-running it against a restored registry extracts nothing. "
-        "Restore an export whose graph snapshot matches this registry, or wipe both stores "
-        "(`just memory-rebuild`) and re-ingest the corpus."
+        f"graph: not restored ({report.graph.reason}). The graph is a derived index and this "
+        "registry can replay into it: `memory reindex --all` returns the active rows FalkorDB "
+        "no longer holds to pending, and the reconciler extracts them again (`memory-ingest` "
+        "cannot: it skips rows that are already active). Otherwise restore an export whose "
+        "graph snapshot matches this registry, or wipe both stores (`just memory-rebuild`) "
+        "and re-ingest the corpus."
     )
 
 

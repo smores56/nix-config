@@ -284,6 +284,60 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(stored.graphiti_uuid, "g-1")
         self.assertIsNone(stored.last_error)
 
+    def test_active_page_walks_in_creation_order(self):
+        for index, digest in enumerate(("a" * 64, "b" * 64, "c" * 64)):
+            entry = replace(
+                self.entry(digest=digest, status="active"),
+                created_at=f"2026-01-0{index + 1}T00:00:00Z",
+            )
+            self.seed(entry)
+        first = self.registry.active_page(after=None, limit=2)
+        self.assertEqual([entry.content_hash[:1] for entry in first], ["a", "b"])
+        cursor = (first[-1].created_at, first[-1].content_hash, first[-1].group)
+        rest = self.registry.active_page(after=cursor, limit=2)
+        self.assertEqual([entry.content_hash[:1] for entry in rest], ["c"])
+        end = (rest[-1].created_at, rest[-1].content_hash, rest[-1].group)
+        self.assertEqual(self.registry.active_page(after=end, limit=2), [])
+
+    def test_active_page_narrows_to_one_group(self):
+        self.seed(self.entry(group="a--one", digest="a" * 64, status="active"))
+        self.seed(self.entry(group="b--two", digest="b" * 64, status="active"))
+        rows = self.registry.active_page(after=None, limit=10, group="b--two")
+        self.assertEqual([entry.group for entry in rows], ["b--two"])
+
+    def test_requeue_many_restarts_the_queue_clock(self):
+        seeded = self.seed(self.entry(status="active"))
+        entry = self.registry.lookup(seeded.group, seeded.content_hash)
+        self.assertEqual(self.registry.requeue_many([entry], actor="cli"), 1)
+        stored = self.registry.lookup(entry.group, entry.content_hash)
+        self.assertEqual(stored.status, "pending")
+        self.assertEqual(stored.attempts, 0)
+        self.assertIsNone(stored.graphiti_uuid)
+        self.assertIsNone(stored.last_error)
+        self.assertGreater(stored.created_at, entry.created_at)
+        with sqlite3.connect(self.registry.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = [dict(row) for row in conn.execute("SELECT * FROM audit")]
+        self.assertEqual([(row["tool"], row["status"]) for row in rows], [("memory_reindex", "requeued")])
+        self.assertIn(entry.created_at, rows[0]["details"])
+
+    def test_requeue_many_ignores_rows_that_are_not_active(self):
+        for status in ("pending", "failed", "tombstoned"):
+            seeded = self.seed(self.entry(digest=status[0] * 64, status=status))
+            entry = self.registry.lookup(seeded.group, seeded.content_hash)
+            self.assertEqual(self.registry.requeue_many([entry], actor="cli"), 0, status)
+            self.assertEqual(self.registry.lookup(entry.group, entry.content_hash).status, status)
+
+    def test_requeue_many_keeps_a_row_whose_graph_uuid_changed(self):
+        seeded = self.seed(self.entry(status="active"))
+        entry = self.registry.lookup(seeded.group, seeded.content_hash)
+        self.registry.mark_active(entry.group, entry.content_hash, "graph-newer", from_statuses=("active",))
+        stale = replace(entry, graphiti_uuid="graph-old")
+        self.assertEqual(self.registry.requeue_many([stale], actor="cli"), 0)
+        stored = self.registry.lookup(entry.group, entry.content_hash)
+        self.assertEqual(stored.status, "active")
+        self.assertEqual(stored.graphiti_uuid, "graph-newer")
+
     def test_tombstone_wins_over_a_concurrent_state_write(self):
         entry = self.entry()
         self.seed(entry)

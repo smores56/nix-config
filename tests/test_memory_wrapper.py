@@ -9,9 +9,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "modules/features/ai/memory/src"))
 
+from unittest import mock  # noqa: E402
+
 from mcp.shared.memory import create_connected_server_and_client_session  # noqa: E402
 from starlette.testclient import TestClient  # noqa: E402
 
+from memory_mcp import groups as groups_module  # noqa: E402
+from memory_mcp.groups import WorkSettings  # noqa: E402
 from memory_mcp.graph import EpisodeRef, GraphUnavailable, TombstoneResult  # noqa: E402
 from memory_mcp.graphiti import BackendError  # noqa: E402
 from memory_mcp.normalize import content_hash, episode_uuid, normalize_content  # noqa: E402
@@ -20,6 +24,7 @@ from memory_mcp.reconciler import InFlight, Reconciler, ReconcilerConfig  # noqa
 from memory_mcp.schema import FALLBACK_TOOLS, FALLBACK_TOOL_NAMES  # noqa: E402
 from memory_mcp.wrapper import (  # noqa: E402
     DEFAULT_TOOL_TIMEOUT,
+    REINDEX_GUARD_MIN_ROWS,
     DEFAULT_UPSTREAM_TIMEOUT,
     MAX_CONTENT_CHARS,
     MAX_INTERNAL_BODY_BYTES,
@@ -96,10 +101,16 @@ class FakeGraph:
         self.unavailable = False
         self.uuids = []
         self.present = None
+        self.present_contents = None
+        self.contents_map = None
 
     def _check(self):
         if self.unavailable:
             raise GraphUnavailable("connection refused")
+
+    def contents(self, group):
+        self._check()
+        return dict((self.contents_map or {}).get(group, {}))
 
     def episode_uuids(self, group, content):
         self._check()
@@ -107,6 +118,10 @@ class FakeGraph:
 
     def episode_for(self, group, content, *, since=None):
         self._check()
+        if self.present_contents is not None:
+            if content in self.present_contents:
+                return EpisodeRef(uuid=f"graph-{content[:12]}", created_at="2026-01-02T00:00:00Z")
+            return None
         return self.present
 
     def tombstone(self, group, episode_uuid_value, *, now):
@@ -1040,3 +1055,158 @@ class ReconcilerLifespanTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReindexTests(WrapperTests):
+    """`memory_reindex` requeues the active rows whose graph episode is gone."""
+
+    def operator(self):
+        self.header_values = headers(**{"x-memory-actor": "cli"})
+
+    def graph_holds(self, *contents, group="owner--repo"):
+        mapping = {}
+        for content in contents:
+            mapping[content] = ("2026-10-03T00:00:00Z",)
+        self.graph.contents_map = {group: mapping}
+
+    async def test_requeues_only_rows_the_graph_lacks(self):
+        self.operator()
+        kept = self.seed_entry("kept")
+        lost = self.seed_entry("lost")
+        self.graph_holds(kept.content)
+        result = await self.call("memory_reindex", {})
+        self.assertFalse(result.isError)
+        self.assertEqual(self.registry.lookup("owner--repo", kept.content_hash).status, "active")
+        stored = self.registry.lookup("owner--repo", lost.content_hash)
+        self.assertEqual(stored.status, "pending")
+        self.assertEqual(stored.attempts, 1)
+        self.assertIsNone(stored.graphiti_uuid)
+        self.assertGreater(stored.created_at, lost.created_at)
+        self.assertEqual([call["episode_body"] for call in self.backend.added], [lost.content])
+        text = result.content[0].text
+        self.assertIn("checked 2 active row(s)", text)
+        self.assertIn("1 missing", text)
+        self.assertIn("requeued and resubmitted 1", text)
+
+    async def test_dry_run_counts_without_writing(self):
+        self.operator()
+        lost = self.seed_entry("lost")
+        self.graph.contents_map = {"owner--repo": {}}
+        result = await self.call("memory_reindex", {"dry_run": True})
+        self.assertFalse(result.isError)
+        self.assertEqual(self.registry.lookup("owner--repo", lost.content_hash).status, "active")
+        self.assertIn("1 missing", result.content[0].text)
+        self.assertIn("dry run, nothing written", result.content[0].text)
+        self.assertEqual(self.backend.added, [])
+
+    async def test_is_operator_only(self):
+        lost = self.seed_entry("lost")
+        self.graph.contents_map = {"owner--repo": {}}
+        result = await self.call("memory_reindex", {})
+        self.assertTrue(result.isError)
+        self.assertIn("operator-only", result.content[0].text)
+        self.assertEqual(self.registry.lookup("owner--repo", lost.content_hash).status, "active")
+
+    async def test_everywhere_skips_a_non_personal_group(self):
+        self.operator()
+        work = self.seed_entry("work", group="blitzy-org--repo")
+        personal = self.seed_entry("personal")
+        self.graph.contents_map = {"blitzy-org--repo": {}, "owner--repo": {}}
+        settings = WorkSettings(
+            flow="pr", email="smohr@blitzy.com", owner_globs=("blitzy-*",), ssh_marker="config.work"
+        )
+        with mock.patch.object(groups_module, "work_settings", lambda: settings):
+            result = await self.call("memory_reindex", {"everywhere": True})
+        self.assertIn("skipped 1 non-personal group(s)", result.content[0].text)
+        self.assertEqual(self.registry.lookup("blitzy-org--repo", work.content_hash).status, "active")
+        self.assertEqual(self.registry.lookup("owner--repo", personal.content_hash).status, "pending")
+
+    async def test_requeue_cap_continues_on_the_next_call(self):
+        self.operator()
+        for index in range(3):
+            self.seed_entry(f"lost-{index}", created_at=f"2026-10-0{index + 1}T00:00:00Z")
+        self.graph.contents_map = {"owner--repo": {}}
+        first = await self.call("memory_reindex", {"limit": 2})
+        self.assertIn("requeued and resubmitted 2", first.content[0].text)
+        self.assertIn("1 left for the next run", first.content[0].text)
+        second = await self.call("memory_reindex", {"limit": 2})
+        self.assertIn("requeued and resubmitted 1", second.content[0].text)
+        third = await self.call("memory_reindex", {"limit": 2})
+        self.assertIn("requeued and resubmitted 0", third.content[0].text)
+        self.assertEqual(len(self.backend.added), 3)
+
+    async def test_a_deferred_submission_stays_pending_for_the_reconciler(self):
+        self.operator()
+        lost = self.seed_entry("lost")
+        self.graph.contents_map = {"owner--repo": {}}
+        self.backend.fail = True
+        result = await self.call("memory_reindex", {"limit": 1})
+        self.assertFalse(result.isError)
+        self.assertIn("1 submission(s) deferred", result.content[0].text)
+        stored = self.registry.lookup("owner--repo", lost.content_hash)
+        self.assertEqual(stored.status, "pending")
+        self.assertEqual(stored.attempts, 1)
+        self.assertIsNotNone(stored.last_error)
+
+    async def test_clamps_the_limit(self):
+        self.operator()
+        for index in range(3):
+            self.seed_entry(f"lost-{index}", created_at=f"2026-10-0{index + 1}T00:00:00Z")
+        self.graph.contents_map = {"owner--repo": {}}
+        result = await self.call("memory_reindex", {"limit": 0})
+        self.assertIn("requeued and resubmitted 1", result.content[0].text)
+
+    async def test_refuses_when_the_graph_is_unreachable(self):
+        self.operator()
+        lost = self.seed_entry("lost")
+        self.graph.unavailable = True
+        result = await self.call("memory_reindex", {})
+        self.assertTrue(result.isError)
+        self.assertIn("graph unavailable", result.content[0].text)
+        self.assertEqual(self.registry.lookup("owner--repo", lost.content_hash).status, "active")
+
+    async def test_defaults_to_the_callers_group(self):
+        self.operator()
+        mine = self.seed_entry("mine")
+        other = self.seed_entry("other", group="other--repo")
+        self.graph.contents_map = {"owner--repo": {}, "other--repo": {}}
+        await self.call("memory_reindex", {})
+        self.assertEqual(self.registry.lookup("owner--repo", mine.content_hash).status, "pending")
+        self.assertEqual(self.registry.lookup("other--repo", other.content_hash).status, "active")
+
+    async def test_everywhere_covers_other_groups(self):
+        self.operator()
+        other = self.seed_entry("other", group="other--repo")
+        self.graph.contents_map = {"owner--repo": {}, "other--repo": {}}
+        result = await self.call("memory_reindex", {"everywhere": True})
+        self.assertIn("requeued and resubmitted 1", result.content[0].text)
+        self.assertEqual(self.registry.lookup("other--repo", other.content_hash).status, "pending")
+
+    async def test_stops_when_a_group_went_missing_but_the_graph_has_episodes(self):
+        self.operator()
+        for index in range(REINDEX_GUARD_MIN_ROWS):
+            self.seed_entry(f"lost-{index}", created_at=f"2026-10-01T00:{index:02d}:00Z")
+        self.graph.contents_map = {"owner--repo": {"something-else": ("2026-10-03T00:00:00Z",)}}
+        result = await self.call("memory_reindex", {})
+        self.assertTrue(result.isError)
+        self.assertIn("nothing was requeued", result.content[0].text)
+        self.assertEqual(self.registry.stats("owner--repo")["active"], REINDEX_GUARD_MIN_ROWS)
+
+    async def test_dry_run_reports_a_suspicious_group_instead_of_refusing(self):
+        self.operator()
+        for index in range(REINDEX_GUARD_MIN_ROWS):
+            self.seed_entry(f"lost-{index}", created_at=f"2026-10-01T00:{index:02d}:00Z")
+        self.graph.contents_map = {"owner--repo": {"something-else": ("2026-10-03T00:00:00Z",)}}
+        result = await self.call("memory_reindex", {"dry_run": True})
+        self.assertFalse(result.isError)
+        self.assertIn("force overrides", result.content[0].text)
+        self.assertEqual(self.registry.stats("owner--repo")["active"], REINDEX_GUARD_MIN_ROWS)
+
+    async def test_force_requeues_despite_the_guard(self):
+        self.operator()
+        for index in range(REINDEX_GUARD_MIN_ROWS):
+            self.seed_entry(f"lost-{index}", created_at=f"2026-10-01T00:{index:02d}:00Z")
+        self.graph.contents_map = {"owner--repo": {"something-else": ("2026-10-03T00:00:00Z",)}}
+        result = await self.call("memory_reindex", {"force": True, "limit": 10})
+        self.assertFalse(result.isError)
+        self.assertIn("requeued and resubmitted 10", result.content[0].text)

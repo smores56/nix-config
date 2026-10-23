@@ -294,6 +294,21 @@ class ReconcilerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(counts["waiting"], 1)
         self.assertEqual(self.registry.lookup(entry.group, entry.content_hash).status, "pending")
 
+    async def test_a_requeued_row_waits_out_the_grace_instead_of_failing(self):
+        entry = self.entry(created_at="2026-01-01T00:00:00Z")
+        self.registry.mark_active(entry.group, entry.content_hash, "graph-old")
+        active = self.registry.lookup(entry.group, entry.content_hash)
+        self.assertEqual(self.registry.requeue_many([active], actor="cli"), 1)
+        requeued = self.registry.lookup(entry.group, entry.content_hash)
+        # The queue clock restarts, so the row is inside the grace window even
+        # though the memory is months old: it waits for its replay instead of
+        # being resubmitted three times and marked failed in minutes.
+        self.assertGreater(requeued.created_at, "2026-10-22T12:00:00Z")
+        counts = await self.reconciler(FakeGraph()).reconcile_once()
+        self.assertEqual(counts["waiting"], 1)
+        self.assertEqual(counts["failed"], 0)
+        self.assertEqual(self.registry.lookup(entry.group, entry.content_hash).status, "pending")
+
     async def test_absent_past_grace_is_retried_once_per_pass(self):
         entry = self.entry()
         backend = FakeBackend()
