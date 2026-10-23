@@ -104,6 +104,10 @@ class Reconciler:
         self._now = now or _now
         self._sleep = sleep
         self._last_attempt: dict[tuple[str, str], float] = {}
+        # A pass that cannot read the graph changes nothing and says nothing;
+        # keep the reason so the loop can report it instead of stalling quietly.
+        self.last_error: str | None = None
+        self._reported_error: str | None = None
 
     async def reconcile_once(self) -> dict[str, int]:
         counts = {
@@ -119,6 +123,7 @@ class Reconciler:
             "changed": 0,
         }
         rows = self.registry.pending(limit=max(1, min(self.config.batch, MAX_BATCH)))
+        self.last_error = None
         if not rows:
             return counts
         healthy = not await self.probes.failures()
@@ -128,9 +133,10 @@ class Reconciler:
             key = (row.group, row.content_hash)
             try:
                 found = await asyncio.to_thread(self.graph.episode_for, row.group, row.content)
-            except GraphUnavailable:
+            except GraphUnavailable as exc:
                 # Once the graph is unreachable, absence cannot be proven for
                 # any later row either: end the pass instead of hammering it.
+                self.last_error = str(exc) or type(exc).__name__
                 counts["unavailable"] += 1
                 break
 
@@ -234,7 +240,8 @@ class Reconciler:
                         counts["retried"] += 1
                     else:
                         counts["retry_failed"] += 1
-            except GraphUnavailable:
+            except GraphUnavailable as exc:
+                self.last_error = str(exc) or type(exc).__name__
                 counts["unavailable"] += 1
                 break
             finally:
@@ -287,12 +294,34 @@ class Reconciler:
         """Poll forever; the wrapper's lifespan cancels this task on shutdown."""
         while True:
             try:
-                await self.reconcile_once()
+                counts = await self.reconcile_once()
+                self.report(counts)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # one bad pass must not kill the task
                 print(f"memory reconciler: {type(exc).__name__}: {exc}", file=sys.stderr)
             await self._sleep(self.config.interval)
+
+    def report(self, counts: dict[str, int]) -> None:
+        """Print what a pass achieved, and why a pass achieved nothing.
+
+        Repeated identical failures print once; without this line a registry
+        full of `pending` rows looks the same as a healthy idle store.
+        """
+        error = self.last_error
+        if error is None:
+            self._reported_error = None
+        elif error != self._reported_error:
+            print(f"memory reconciler: graph unavailable: {error}", file=sys.stderr)
+            self._reported_error = error
+        progressed = {
+            name: value
+            for name, value in counts.items()
+            if value and name in ("active", "failed", "retried", "retry_failed")
+        }
+        if progressed:
+            detail = ", ".join(f"{name}={value}" for name, value in progressed.items())
+            print(f"memory reconciler: {detail}", file=sys.stderr)
 
 
 def build_default(

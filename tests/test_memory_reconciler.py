@@ -1,9 +1,11 @@
 import asyncio
+import io
 import sqlite3
 import sys
 import tempfile
 import time
 import unittest
+from contextlib import redirect_stderr
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -332,6 +334,35 @@ class ReconcilerTests(unittest.IsolatedAsyncioTestCase):
         with sqlite3.connect(self.registry.db_path) as conn:
             rows = conn.execute("SELECT actor, tool, status FROM audit").fetchall()
         self.assertEqual(rows, [("reconciler", "reconciler", "active")])
+
+    async def test_a_pass_records_and_clears_the_graph_error(self):
+        self.entry()
+        reconciler = self.reconciler(FakeGraph(error=True))
+        counts = await reconciler.reconcile_once()
+        self.assertEqual(counts["unavailable"], 1)
+        self.assertEqual(reconciler.last_error, "connection refused")
+
+        reconciler.graph = FakeGraph(
+            [EpisodeRef(uuid="graph-1", created_at="2026-10-22T10:05:00Z")]
+        )
+        await reconciler.reconcile_once()
+        self.assertIsNone(reconciler.last_error)
+
+    def test_report_prints_a_repeated_graph_failure_once(self):
+        reconciler = self.reconciler(FakeGraph())
+        reconciler.last_error = "connection refused"
+        output = io.StringIO()
+        with redirect_stderr(output):
+            reconciler.report({"unavailable": 1})
+            reconciler.report({"unavailable": 1})
+        self.assertEqual(output.getvalue().count("graph unavailable"), 1)
+        self.assertIn("connection refused", output.getvalue())
+
+    def test_report_prints_the_progress_a_pass_made(self):
+        output = io.StringIO()
+        with redirect_stderr(output):
+            self.reconciler(FakeGraph()).report({"active": 100, "waiting": 4})
+        self.assertEqual(output.getvalue().strip(), "memory reconciler: active=100")
 
 
 if __name__ == "__main__":
