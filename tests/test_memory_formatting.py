@@ -4,7 +4,37 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "modules/features/ai/memory/src"))
 
-from memory_mcp.formatting import clip, format_search, looks_path_like, path_query_note  # noqa: E402
+from memory_mcp.formatting import (  # noqa: E402
+    clip,
+    format_search,
+    looks_path_like,
+    path_query_note,
+    provenance_tag,
+)
+from memory_mcp.registry import RegistryEpisode  # noqa: E402
+
+
+def registry_entry(**overrides):
+    values = {
+        "group": "global",
+        "content_hash": "a" * 64,
+        "uuid": "00000000-0000-0000-0000-000000000001",
+        "name": "decision",
+        "content": "decision text",
+        "kind": "text",
+        "origin": "sdlc",
+        "origin_ref": "smores56/sdlc#215#design",
+        "actor": "ingest",
+        "cwd": "",
+        "tags": (),
+        "valid_at": "2026-10-03T00:00:00Z",
+        "created_at": "2026-10-04T00:00:00Z",
+        "status": "active",
+        "graphiti_uuid": "ep-1",
+    }
+    values.update(overrides)
+    return RegistryEpisode(**values)
+
 
 
 class PathDetectionTests(unittest.TestCase):
@@ -57,6 +87,7 @@ class FormatSearchTests(unittest.TestCase):
         self.assertIn("owner--repo, global", text)
 
     def test_nodes_and_facts_carry_group_and_time(self):
+        entry = registry_entry()
         text = format_search(
             query="memory",
             group="owner--repo",
@@ -85,16 +116,110 @@ class FormatSearchTests(unittest.TestCase):
                     "uuid": "ep-1",
                     "name": "decision",
                     "created_at": "2026-01-02T00:00:00Z",
-                    "source_description": "hash=abc; cwd=/x; source=maki",
                     "group_id": "global",
                 }
             ],
+            provenance={"ep-1": entry},
         )
         self.assertIn("group=owner--repo", text)
         self.assertIn("2026-01-01T00:00:00Z", text)
         self.assertIn("invalidated=2026-03-01T00:00:00Z", text)
-        self.assertIn("episodes: decision (2026-01-02T00:00:00Z)", text)
+        self.assertIn("[sdlc smores56/sdlc#215#design · 2026-10-03]", text)
+        self.assertIn(f"id={entry.uuid}", text)
         self.assertIn("untrusted", text)
+
+    def test_unregistered_episodes_fall_back_to_a_short_uuid(self):
+        text = format_search(
+            query="q",
+            group="g",
+            groups_searched=["g"],
+            nodes=[],
+            facts=[{"uuid": "e1", "fact": "f", "group_id": "g", "episodes": ["ep-unknown"]}],
+            episodes=[],
+        )
+        self.assertIn("unregistered episode ep-unkno", text)
+
+    def test_provenance_tag_is_compact_and_typed(self):
+        self.assertEqual(
+            provenance_tag(registry_entry()), "[sdlc smores56/sdlc#215#design · 2026-10-03]"
+        )
+
+    def test_nodes_and_facts_alternate_by_rank(self):
+        nodes = [{"uuid": f"n{index}", "name": f"node-{index}", "group_id": "g"} for index in range(1, 4)]
+        facts = [{"uuid": f"f{index}", "fact": f"fact-{index}", "group_id": "g"} for index in range(1, 4)]
+        text = format_search(
+            query="q",
+            group="g",
+            groups_searched=["g"],
+            nodes=nodes,
+            facts=facts,
+            episodes=[],
+        )
+        heads = [line.split(" |")[0] for line in text.splitlines() if line.startswith("[")]
+        self.assertEqual(
+            heads,
+            ["[1] node", "[2] fact", "[3] node", "[4] fact", "[5] node", "[6] fact"],
+        )
+
+    def test_the_best_fact_is_not_pushed_below_the_top_five(self):
+        nodes = [{"uuid": f"n{index}", "name": f"node-{index}", "group_id": "g"} for index in range(1, 6)]
+        text = format_search(
+            query="q",
+            group="g",
+            groups_searched=["g"],
+            nodes=nodes,
+            facts=[{"uuid": "f1", "fact": "only-the-fact-answers-this", "group_id": "g"}],
+            episodes=[],
+        )
+        self.assertIn("[2] fact", text)
+
+    def test_collapsing_a_duplicate_keeps_the_numbering_contiguous(self):
+        node = {"uuid": "n1", "name": "same", "group_id": "g"}
+        text = format_search(
+            query="q",
+            group="g",
+            groups_searched=["g"],
+            nodes=[node, node],
+            facts=[{"uuid": "f1", "fact": "a fact", "group_id": "g"}],
+            episodes=[],
+        )
+        heads = [line.split(" |")[0] for line in text.splitlines() if line.startswith("[")]
+        self.assertEqual(heads, ["[1] node", "[2] fact"])
+
+    def test_truncation_never_leaves_a_head_without_its_body(self):
+        nodes = [
+            {"uuid": f"n{index}", "name": f"node-{index}", "summary": "x" * 300, "group_id": "g"}
+            for index in range(1, 4)
+        ]
+        facts = [
+            {"uuid": f"f{index}", "fact": f"fact-{index}", "group_id": "g"} for index in range(1, 4)
+        ]
+        text = format_search(
+            query="q",
+            group="g",
+            groups_searched=["g"],
+            nodes=nodes,
+            facts=facts,
+            episodes=[],
+            limit_chars=700,
+        )
+        self.assertIn("truncated", text)
+        body_before_trailer = text.splitlines()[-2]
+        self.assertFalse(body_before_trailer.startswith("["), body_before_trailer)
+
+    def test_one_kind_keeps_its_order_without_the_other(self):
+        facts = [{"uuid": f"f{index}", "fact": f"fact-{index}", "group_id": "g"} for index in range(1, 4)]
+        text = format_search(
+            query="q",
+            group="g",
+            groups_searched=["g"],
+            nodes=[],
+            facts=facts,
+            episodes=[],
+        )
+        self.assertLess(text.index("[1] fact"), text.index("fact-1"))
+        self.assertLess(text.index("fact-1"), text.index("fact-2"))
+        self.assertLess(text.index("fact-2"), text.index("fact-3"))
 
     def test_duplicates_are_collapsed(self):
         node = {"uuid": "n1", "name": "same", "group_id": "g"}

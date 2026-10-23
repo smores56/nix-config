@@ -112,10 +112,10 @@ in
           };
           flow = lib.mkOption {
             type = lib.types.enum [
-              "hybrid"
+              "local"
               "pr"
             ];
-            description = "How changes land: 'hybrid' opens a PR for feature work and commits quick fixes directly, 'pr' goes through pull requests.";
+            description = "How changes land: 'local' merges feature branches into main locally with no PR and commits quick fixes directly, 'pr' requires every change to land through a pull request.";
           };
           flatRepos = lib.mkOption {
             type = lib.types.nullOr (
@@ -145,7 +145,7 @@ in
     githubUser = lib.mkOption {
       type = lib.types.str;
       readOnly = true;
-      description = "Personal GitHub account; repos it owns use the hybrid flow.";
+      description = "Personal GitHub account; repos it owns use the local flow.";
     };
     codeRoot = lib.mkOption {
       type = lib.types.str;

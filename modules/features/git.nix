@@ -69,9 +69,9 @@ let
     }
     // branchSettings work.branchNaming;
   };
-  # Only repos the personal account owns get the hybrid flow; third-party
+  # Only repos the personal account owns get the local flow; third-party
   # checkouts get no flow at all.
-  personalIncludes = ownerIncludes cfg.githubUser { smores.flow = "hybrid"; };
+  personalIncludes = ownerIncludes cfg.githubUser { smores.flow = "local"; };
 
 in
 {

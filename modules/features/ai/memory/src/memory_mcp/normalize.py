@@ -23,6 +23,10 @@ def normalize_content(content: str) -> str:
     """
     if not isinstance(content, str):
         raise ValueError("content must be a string")
+    # SQLite stores TEXT as a C string: a NUL truncates the row silently, so the
+    # stored content would no longer hash to its own identity.
+    if "\x00" in content:
+        raise ValueError("content contains a NUL byte (U+0000), which a memory cannot store")
     text = content.replace("\r\n", "\n").replace("\r", "\n")
     lines = [_INLINE_WHITESPACE.sub(" ", line).rstrip() for line in text.split("\n")]
     text = "\n".join(lines)
@@ -47,6 +51,20 @@ def episode_name(normalized: str, digest: str) -> str:
         if candidate:
             return candidate[:MAX_NAME_LENGTH]
     return f"memory {digest[:12]}"
+
+
+def describe_source(origin: str, origin_ref: str, valid_at: str = "") -> str:
+    """A short human-readable label for Graphiti's `source_description`.
+
+    Nothing here is parsed back: identity and provenance live in the registry.
+    The description exists only so a graph inspector can tell where an episode
+    came from.
+    """
+    label = " ".join(f"{origin} {origin_ref}".split())
+    day = (valid_at or "")[:10]
+    if day:
+        label = f"{label} ({day})"
+    return label[:200] or origin
 
 
 def normalize_tags(tags: list[str] | None) -> list[str]:

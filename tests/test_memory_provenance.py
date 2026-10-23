@@ -1,5 +1,3 @@
-import json
-import sqlite3
 import sys
 import tempfile
 import unittest
@@ -11,7 +9,7 @@ from mcp.shared.memory import create_connected_server_and_client_session  # noqa
 
 from memory_mcp.groups import MAX_PROVENANCE_CHARS, sanitize_provenance  # noqa: E402
 from memory_mcp.normalize import content_hash, episode_uuid, normalize_content  # noqa: E402
-from memory_mcp.store import DB_NAME, Entry, Store  # noqa: E402
+from memory_mcp.registry import Registry, RegistryEpisode  # noqa: E402
 from memory_mcp.wrapper import WrapperConfig, build_server  # noqa: E402
 
 
@@ -36,17 +34,21 @@ class SanitizeProvenanceTests(unittest.TestCase):
 class FakeBackend:
     def __init__(self):
         self.added = []
+        self.status = {"status": "ok"}
 
     async def add_episode(self, **kwargs):
         self.added.append(kwargs)
         return {"message": "episode queued"}
 
     async def get_status(self):
-        return {"status": "ok"}
+        return self.status
 
 
 class FakeProbes:
     async def require_write(self):
+        return None
+
+    async def require_search(self):
         return None
 
     async def failures(self):
@@ -56,115 +58,88 @@ class FakeProbes:
 class WrapperProvenanceTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.store = Store(self.tmp.name)
+        self.registry = Registry(self.tmp.name)
         self.backend = FakeBackend()
 
     def tearDown(self):
         self.tmp.cleanup()
 
     def build(self, headers):
-        server = build_server(
+        return build_server(
             WrapperConfig(state_dir=self.tmp.name, graphiti_url="http://127.0.0.1:1/mcp"),
             backend=self.backend,
-            store=self.store,
+            registry=self.registry,
             probes=FakeProbes(),
             headers_provider=lambda _ctx: headers,
-        )
-        return server
+            start_reconciler=False,
+        ).mcp
 
-    async def test_source_headers_land_in_the_index_and_graph_description(self):
-        headers = {
+    def headers(self, **overrides):
+        values = {
             "x-memory-group": "smores56--nix-config",
             "x-memory-cwd": "/home/smores/code/example",
-            "x-memory-actor": "ingest",
-            "x-memory-source": "sdlc",
-            "x-memory-source-id": "issue-215#design",
+            "x-memory-actor": "maki",
         }
-        async with create_connected_server_and_client_session(self.build(headers)) as session:
-            result = await session.call_tool("memory_write", {"content": "A design section"})
+        values.update(overrides)
+        return values
+
+    async def test_agent_write_is_typed_and_has_a_human_description(self):
+        async with create_connected_server_and_client_session(self.build(self.headers())) as session:
+            result = await session.call_tool("memory_write", {"content": "A design section", "tags": ["Design"]})
         self.assertFalse(result.isError)
-        description = self.backend.added[0]["source_description"]
-        self.assertIn("source=sdlc", description)
-        self.assertIn("source_id=issue-215#design", description)
-        self.assertIn("actor=ingest", description)
-        self.assertIn(f"id={episode_uuid('smores56--nix-config', content_hash(normalize_content('A design section')))}", description)
+        added = self.backend.added[0]
+        self.assertEqual(added["source"], "text")
+        self.assertIn("reference_time", added)
+        description = added["source_description"]
+        self.assertTrue(description.startswith("agent"))
+        self.assertNotIn("=", description)
+        self.assertNotIn("uuid", added)
 
-        stored = self.store.lookup("smores56--nix-config", content_hash(normalize_content("A design section")))
-        self.assertEqual(stored.source, "sdlc")
-        self.assertEqual(stored.source_id, "issue-215#design")
+        stored = self.registry.lookup(
+            "smores56--nix-config", content_hash(normalize_content("A design section"))
+        )
+        self.assertEqual(stored.kind, "text")
+        self.assertEqual(stored.origin, "agent")
+        self.assertEqual(stored.actor, "maki")
+        self.assertEqual(stored.tags, ("design",))
+        self.assertEqual(stored.uuid, episode_uuid("smores56--nix-config", stored.content_hash))
+        self.assertEqual(stored.status, "pending")
+        self.assertEqual(stored.attempts, 1)
 
-    async def test_source_defaults_to_the_actor_and_source_id_is_empty(self):
-        headers = {
-            "x-memory-group": "global",
-            "x-memory-cwd": "/home/smores/code/example",
-            "x-memory-actor": "cli",
-        }
-        async with create_connected_server_and_client_session(self.build(headers)) as session:
-            await session.call_tool("memory_write", {"content": "plain memory"})
-        description = self.backend.added[0]["source_description"]
-        self.assertIn("source=cli", description)
-        self.assertNotIn("source_id=", description)
-        stored = self.store.lookup("global", content_hash(normalize_content("plain memory")))
-        self.assertEqual(stored.source, "cli")
-        self.assertEqual(stored.source_id, "")
+    async def test_get_returns_typed_provenance_for_an_ingested_row(self):
+        digest = content_hash("A design section")
+        entry = RegistryEpisode(
+            group="smores56--nix-config",
+            content_hash=digest,
+            uuid=episode_uuid("smores56--nix-config", digest),
+            name="design",
+            content="A design section",
+            kind="text",
+            origin="sdlc",
+            origin_ref="issue-215#design",
+            actor="ingest",
+            cwd="",
+            tags=("sdlc",),
+            valid_at="2026-10-03T00:00:00Z",
+            created_at="2026-10-04T00:00:00Z",
+            status="active",
+            graphiti_uuid="graph-1",
+        )
+        self.registry.queue(entry)
+        self.registry.mark_active(entry.group, entry.content_hash, entry.graphiti_uuid)
+        async with create_connected_server_and_client_session(self.build(self.headers())) as session:
+            result = await session.call_tool("memory_get", {"ref": "sdlc:issue-215#design"})
+        self.assertFalse(result.isError)
+        text = result.content[0].text
+        self.assertIn("[sdlc issue-215#design · 2026-10-03]", text)
+        self.assertIn(f"Memory {entry.uuid}", text)
+        self.assertIn("A design section", text)
+        self.assertIn("graph-1", text)
 
-
-class StoreMigrationTests(unittest.TestCase):
-    def test_source_id_column_is_added_to_an_old_index(self):
-        with tempfile.TemporaryDirectory() as directory:
-            db = Path(directory) / DB_NAME
-            connection = sqlite3.connect(db)
-            connection.executescript(
-                """
-                CREATE TABLE episodes (
-                    group_id TEXT NOT NULL,
-                    content_hash TEXT NOT NULL,
-                    uuid TEXT NOT NULL,
-                    name TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    source TEXT NOT NULL,
-                    cwd TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    tags TEXT NOT NULL DEFAULT '',
-                    status TEXT NOT NULL DEFAULT 'active',
-                    promoted_from TEXT,
-                    tombstoned_at TEXT,
-                    tombstone_reason TEXT,
-                    PRIMARY KEY (group_id, content_hash)
-                );
-                """
-            )
-            connection.execute(
-                "INSERT INTO episodes VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                ("global", "a" * 64, "uuid", "name", "content", "maki", "/tmp", "2026-01-01T00:00:00Z", "", "active", None, None, None),
-            )
-            connection.commit()
-            connection.close()
-
-            store = Store(directory)
-            entry = store.lookup("global", "a" * 64)
-            self.assertEqual(entry.source_id, "")
-
-            new = Entry(
-                group="global",
-                content_hash="b" * 64,
-                uuid="uuid2",
-                name="name2",
-                content="content2",
-                source="sdlc",
-                cwd="/tmp",
-                created_at="2026-01-01T00:00:00Z",
-                source_id="issue-1#body",
-            )
-            self.assertTrue(store.insert(new))
-            self.assertEqual(store.lookup("global", "b" * 64), new)
-
-    def test_audit_keeps_json_lines_parseable(self):
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(directory)
-            store.audit(actor="ingest", group="global", tool="memory_write", status="queued")
-            record = json.loads(store.audit_path.read_text())
-            self.assertEqual(record["actor"], "ingest")
+    async def test_no_legacy_index_file_is_created(self):
+        self.build(self.headers())
+        self.assertTrue((Path(self.tmp.name) / "registry.sqlite").exists())
+        self.assertFalse((Path(self.tmp.name) / "index.sqlite").exists())
 
 
 if __name__ == "__main__":

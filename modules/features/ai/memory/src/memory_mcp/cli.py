@@ -1,9 +1,10 @@
-"""`memory` CLI: write, search, promote, status, tombstone, and ingest.
+"""`memory` CLI: write, search, get, retry, promote, reindex, status, tombstone, ingest, export, restore.
 
 Uses the same headers as the shim, so it works on a client through the loopback
 forward and on smortress directly. `--group` is an explicit override and is
-validated with the same work refusal as the header path. `ingest` runs only
-where raw Graphiti is reachable (smortress) and sets the group per episode.
+validated with the same work refusal as the header path. `ingest` plans as the
+user and submits through the wrapper's loopback routes, so the registry stays
+the single ledger and single writer.
 """
 
 from __future__ import annotations
@@ -15,13 +16,21 @@ import os
 import sys
 
 from .client import ClientConfig, ToolResult, UpstreamError, call_tool
+from .export import (
+    ExportError,
+    ExportInvalid,
+    GraphSnapshotError,
+    add_export_parser,
+    add_restore_parser,
+)
+from .export import dispatch as export_dispatch
 from .groups import GroupRefused, derive_group, validate_group
 
 DEFAULT_URL = "http://127.0.0.1:8182/mcp"
 DEFAULT_TIMEOUT = 75.0
 DEFAULT_NOTES_DIR = "~/Documents"
-DEFAULT_GRAPHITI_URL = "http://127.0.0.1:8184/mcp"
-DEFAULT_REDIS_URL = "redis://127.0.0.1:6379"
+DEFAULT_SESSION_SAMPLE = 50
+DEFAULT_SESSION_CONCURRENCY = 3
 
 
 def default_docs_root() -> str:
@@ -29,6 +38,11 @@ def default_docs_root() -> str:
     from .ingest_sources import personal_owner
 
     return f"~/code/github.com/{personal_owner()}"
+
+
+def internal_url(wrapper_url: str) -> str:
+    """The loopback HTTP origin behind the MCP URL (`.../mcp`)."""
+    return wrapper_url.rstrip("/").removesuffix("/mcp")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -46,52 +60,77 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("query")
     search.add_argument("--limit", type=int, default=5)
 
+    get = sub.add_parser("get", help="Show one full episode by exact reference")
+    get.add_argument("ref", help="Registry uuid, hash prefix (>=12), or origin:origin_ref")
+
+    retry = sub.add_parser("retry", help="Reset a failed episode's attempts and resubmit it")
+    retry.add_argument("ref")
+
     promote = sub.add_parser("promote", help="Copy an episode to the global group")
-    promote.add_argument("ref", help="Episode uuid, content hash (or prefix), or name")
+    promote.add_argument("ref", help="Registry uuid, hash prefix (>=12), or origin:origin_ref")
     promote.add_argument("--to", default="global")
 
-    sub.add_parser("status", help="Show group, index counts, and readiness")
+    reindex = sub.add_parser(
+        "reindex", help="Requeue active episodes the graph no longer holds (operator)"
+    )
+    reindex.add_argument("--all", action="store_true", help="Every group, not just this project's")
+    reindex.add_argument("--dry-run", action="store_true", help="Report without writing")
+    reindex.add_argument(
+        "--force",
+        action="store_true",
+        help="Requeue even when a group looks almost entirely missing",
+    )
+    reindex.add_argument(
+        "--limit", type=int, default=200, help="Most rows to requeue in this call (default 200)"
+    )
 
-    tombstone = sub.add_parser("tombstone", help="Mark an episode superseded without deleting it")
+    sub.add_parser("status", help="Show group, registry counts, and readiness")
+
+    tombstone = sub.add_parser("tombstone", help="Invalidate the edges an episode supports")
     tombstone.add_argument("ref")
     tombstone.add_argument("--reason", default="")
 
-    ingest = sub.add_parser("ingest", help="Bulk-ingest sdlc issues, personal notes, and repo docs")
-    ingest.add_argument("source", choices=["sdlc", "notes", "docs", "all"])
-    ingest.add_argument("--limit", type=int, help="Maximum episodes per source")
+    ingest = sub.add_parser("ingest", help="Bulk-ingest sdlc issues, personal notes, repo docs, and Maki sessions")
+    ingest.add_argument("source", choices=["sdlc", "notes", "docs", "sessions", "all"])
+    ingest.add_argument(
+        "--limit",
+        type=int,
+        help="Maximum episodes per source; does not apply to sessions (use --session-limit)",
+    )
     ingest.add_argument("--dry-run", action="store_true", help="Print the episode plan; write nothing")
     ingest.add_argument("--report", help="Report path (default ~/.local/state/memory/ingest-<timestamp>.json)")
-    ingest.add_argument("--batch", type=int, default=1, help="Episodes written before verification (default 1)")
-    ingest.add_argument(
-        "--timeout", type=float, default=600.0, help="Grace per batch before an episode is absent (seconds)"
-    )
-    ingest.add_argument(
-        "--repair",
-        action="store_true",
-        help="Rewrite a previously attempted episode once, after an exact absence check",
-    )
-    ingest.add_argument(
-        "--reset-state",
-        action="store_true",
-        help="Archive the state file and treat this as a first run (requires --force)",
-    )
-    ingest.add_argument(
-        "--force",
-        action="store_true",
-        help="Acknowledge the destructive --reset-state; a reset re-attempts every planned episode",
-    )
+    ingest.add_argument("--concurrency", type=int, default=4, help="Concurrent submissions (default 4)")
+    ingest.add_argument("--timeout", type=float, default=60.0, help="Per-request timeout (seconds)")
     ingest.add_argument("--notes-dir", default=DEFAULT_NOTES_DIR)
     ingest.add_argument("--docs-root", default=None, help="Clone root (default ~/code/github.com/<owner>)")
     ingest.add_argument("--repo-list", help="File of repo names for docs ingestion, one per line")
     ingest.add_argument("--repo", action="append", default=[], help="Restrict docs to this repo (repeatable)")
-    ingest.add_argument("--state", help="State path (default ~/.local/state/memory/ingest-state.json)")
-    ingest.add_argument("--graphiti-url", default=os.environ.get("MEMORY_GRAPHITI_URL", DEFAULT_GRAPHITI_URL))
     ingest.add_argument(
-        "--redis-url",
-        default=os.environ.get("MEMORY_REDIS_URL", DEFAULT_REDIS_URL),
-        help="FalkorDB URL used for exact presence checks",
+        "--sessions-dir",
+        default=None,
+        help="Maki sessions directory (default: $MAKI_SESSIONS_DIR, then the XDG state/data dirs)",
     )
-    ingest.add_argument("--verbose", action="store_true", help="Log every episode to stderr")
+    ingest.add_argument(
+        "--session-limit",
+        type=int,
+        default=DEFAULT_SESSION_SAMPLE,
+        help=(
+            f"Most recent sessions to sample, must be positive (default {DEFAULT_SESSION_SAMPLE}); "
+            "`all` spends about this many summary calls"
+        ),
+    )
+    ingest.add_argument(
+        "--session-concurrency",
+        type=int,
+        default=DEFAULT_SESSION_CONCURRENCY,
+        help=f"Concurrent summaries (default {DEFAULT_SESSION_CONCURRENCY})",
+    )
+    ingest.add_argument("--verbose", action="store_true", help="Log every skipped episode to stderr")
+
+    # Export and restore work on the local registry and graph volume: they take
+    # no group and never call the wrapper.
+    add_export_parser(sub)
+    add_restore_parser(sub)
 
     return parser
 
@@ -120,7 +159,7 @@ def build_plans(args: argparse.Namespace) -> tuple[list, dict[str, str]]:
             repos=repo_filter(args.repo_list, args.repo),
         ),
     }
-    names = list(builders) if args.source == "all" else [args.source]
+    names = [name for name in builders if args.source in ("all", name)]
     plans = []
     errors: dict[str, str] = {}
     for name in names:
@@ -133,27 +172,67 @@ def build_plans(args: argparse.Namespace) -> tuple[list, dict[str, str]]:
     return [plan.limited(args.limit) for plan in plans], errors
 
 
+async def build_sessions(args: argparse.Namespace) -> "SessionPlanResult":
+    """Parse and (unless dry-run) summarize the sampled sessions.
+
+    A dry run never constructs the summary client, so it cannot reach the model
+    or the gateway.
+    """
+    from .sessions import SessionPlanResult, build_session_plan
+    from .session_summary import SummaryClient
+
+    if args.dry_run:
+        return await build_session_plan(
+            sessions_dir=args.sessions_dir,
+            limit=args.session_limit,
+            dry_run=True,
+            concurrency=args.session_concurrency,
+        )
+    async with SummaryClient() as client:
+        result: SessionPlanResult = await build_session_plan(
+            sessions_dir=args.sessions_dir,
+            limit=args.session_limit,
+            summarizer=client.summarize,
+            concurrency=args.session_concurrency,
+        )
+    return result
+
+
 async def run_ingest(args: argparse.Namespace) -> dict[str, object]:
-    from .ingest_runner import IngestRunner, RunnerConfig
+    from .ingest_runner import IngestError, IngestRunner, RunnerConfig
+    from .sessions import SessionError, session_observer, summary_line
 
     plans, source_errors = build_plans(args)
+    extras: dict[str, object] = {}
+    observer = None
+    if args.source in ("sessions", "all"):
+        if args.session_limit is not None and args.session_limit <= 0:
+            raise IngestError("--session-limit must be a positive number")
+        try:
+            built = await build_sessions(args)
+        except SessionError as exc:
+            if args.source != "all":
+                raise IngestError(str(exc)) from exc
+            source_errors["sessions"] = str(exc)
+        else:
+            plans.append(built.plan)
+            extras["sessions"] = built.report
+            observer = session_observer(built.report)
     config = RunnerConfig(
-        wrapper_url=args.url,
-        graphiti_url=args.graphiti_url,
-        redis_url=args.redis_url,
-        cwd=os.path.abspath(args.cwd or os.getcwd()),
-        batch=max(1, args.batch),
-        verify_timeout=args.timeout,
+        internal_url=internal_url(args.url),
+        timeout=args.timeout,
+        concurrency=max(1, args.concurrency),
         dry_run=args.dry_run,
         verbose=args.verbose,
-        repair=args.repair,
-        force=args.force,
-        reset_state=args.reset_state,
         json_output=args.json,
         report_path=args.report,
-        state_path=args.state,
     )
-    return await IngestRunner(config).run(plans, source_errors=source_errors)
+    report = await IngestRunner(config).run(
+        plans, source_errors=source_errors, observer=observer, extras=extras
+    )
+    if "sessions" in extras:
+        print(f"[ingest] {summary_line(extras['sessions'])}", file=sys.stderr)
+    return report
 
 
 def resolve_context(args: argparse.Namespace) -> tuple[str, str]:
@@ -181,10 +260,19 @@ async def _invoke(args: argparse.Namespace, group: str, cwd: str) -> tuple[str, 
         arguments = {"content": _read_content(args.content)}
     elif args.command == "search":
         arguments = {"query": args.query, "limit": args.limit}
+    elif args.command in ("get", "retry"):
+        arguments = {"ref": args.ref}
     elif args.command == "promote":
         arguments = {"ref": args.ref, "to": args.to}
     elif args.command == "tombstone":
         arguments = {"ref": args.ref, "reason": args.reason}
+    elif args.command == "reindex":
+        arguments = {
+            "everywhere": args.all,
+            "dry_run": args.dry_run,
+            "force": args.force,
+            "limit": args.limit,
+        }
     else:
         arguments = {}
 
@@ -203,6 +291,18 @@ async def _invoke(args: argparse.Namespace, group: str, cwd: str) -> tuple[str, 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command in ("export", "restore"):
+        try:
+            return export_dispatch(args)
+        except (ExportError, ExportInvalid, GraphSnapshotError) as exc:
+            print(f"memory: {exc}", file=sys.stderr)
+            return 1
+    if args.command == "reindex" and args.all and args.group:
+        print(
+            "memory: --group and --all are exclusive; --all already covers every group",
+            file=sys.stderr,
+        )
+        return 2
     if args.command == "ingest":
         from .ingest_runner import IngestError
 

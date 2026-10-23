@@ -13,7 +13,9 @@ dependencies = [ "mcp>=1.27", "httpx>=0.27", "starlette>=0.37", "anyio>=4", "uvi
 memory-mcp = "memory_mcp.wrapper:main"
 memory-mcp-shim = "memory_mcp.shim:main"
 memory = "memory_mcp.cli:main"
-# Graphiti-only proxy: extraction must not think; Maki keeps using 8081.
+# Nightly export entry point: stdlib only, so it runs without the MCP deps.
+memory-export = "memory_mcp.export:main"
+# Neuralwatt gateway: carries the account key and keeps extraction thinking off.
 memory-llm-proxy = "memory_mcp.llm_proxy:main"
 
 [tool.hatch.build.targets.wheel]

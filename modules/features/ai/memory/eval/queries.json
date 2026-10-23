@@ -1,0 +1,302 @@
+[
+  {
+    "query": "Why is the graph database run as a container rather than packaged in nixpkgs?",
+    "group": "smores56--nix-config",
+    "gold": "SSPLv1",
+    "category": "semantic"
+  },
+  {
+    "query": "How do I keep an off-site cold copy of the photo library?",
+    "group": "smores56--nix-config",
+    "gold": "Proton Drive",
+    "category": "semantic"
+  },
+  {
+    "query": "How does a failed systemd job reach my phone?",
+    "group": "smores56--nix-config",
+    "gold": "ntfy",
+    "category": "semantic"
+  },
+  {
+    "query": "Where does the agent keep a running record of what it learned across sessions?",
+    "group": "smores56--nix-config",
+    "gold": "brain vault",
+    "category": "semantic"
+  },
+  {
+    "query": "Which machine hosts the memory service?",
+    "group": "smores56--nix-config",
+    "gold": "smortress",
+    "category": "entity"
+  },
+  {
+    "query": "Which model performs entity extraction for memory?",
+    "group": "smores56--nix-config",
+    "gold": "deepseek-v4.1-flash",
+    "category": "entity"
+  },
+  {
+    "query": "Which embedding model did memory commit to?",
+    "group": "smores56--nix-config",
+    "gold": "qwen3-embedding-8b",
+    "category": "entity"
+  },
+  {
+    "query": "Which markdown language server was chosen for the second-brain vault?",
+    "group": "smores56--nix-config",
+    "gold": "markdown-oxide",
+    "category": "entity"
+  },
+  {
+    "query": "Which tool mirrors whole GitHub organizations onto the backup disk?",
+    "group": "smores56--nix-config",
+    "gold": "ghorg",
+    "category": "entity"
+  },
+  {
+    "query": "Which came first: removing Tailscale or adding ntfy service alerts?",
+    "group": "smores56--nix-config",
+    "gold": "Replace Tailscale with Cloudflare Tunnel access to smortress",
+    "category": "temporal"
+  },
+  {
+    "query": "When was a phone-first chat client over the memory graph designed?",
+    "group": "smores56--nix-config",
+    "gold": "Phone-first LobeChat over Graphiti memory",
+    "category": "temporal"
+  },
+  {
+    "query": "What did the restore that swapped the graph under a live database force us to change?",
+    "group": "smores56--nix-config",
+    "gold": "memory-falkordb",
+    "category": "temporal"
+  },
+  {
+    "query": "What was the dictation feature re-scoped to after the custom streaming model was dropped?",
+    "group": "smores56--nix-config",
+    "gold": "Live voice dictation into the editor",
+    "category": "temporal"
+  },
+  {
+    "query": "Which rclone flag was exclusive with a companion flag and broke the seed?",
+    "group": "smores56--nix-config",
+    "gold": "--files-from0",
+    "category": "exact"
+  },
+  {
+    "query": "Which AeroSpace setting pins workspaces to specific monitors?",
+    "group": "smores56--nix-config",
+    "gold": "workspace-to-monitor-force-assignment",
+    "category": "exact"
+  },
+  {
+    "query": "Which module file declares the Immich photo service?",
+    "group": "smores56--nix-config",
+    "gold": "modules/features/immich.nix",
+    "category": "exact"
+  },
+  {
+    "query": "Which public key file does personal commit signing read?",
+    "group": "smores56--nix-config",
+    "gold": "id_personal.pub",
+    "category": "exact"
+  },
+  {
+    "query": "Why can the graph be discarded and rebuilt without losing anything?",
+    "group": "local--smores",
+    "gold": "content-addressed",
+    "category": "semantic"
+  },
+  {
+    "query": "Who is allowed to write episodes to the registry and the graph?",
+    "group": "local--smores",
+    "gold": "Single writer",
+    "category": "semantic"
+  },
+  {
+    "query": "What happens to a write between acceptance and the graph catching up?",
+    "group": "local--smores",
+    "gold": "reconciler",
+    "category": "semantic"
+  },
+  {
+    "query": "Why did the big ingest run fail to submit every episode?",
+    "group": "local--smores",
+    "gold": "Permission denied",
+    "category": "semantic"
+  },
+  {
+    "query": "Which gateway serves extraction and embedding calls?",
+    "group": "local--smores",
+    "gold": "Neuralwatt",
+    "category": "entity"
+  },
+  {
+    "query": "Which local model is kept only as an embedding fallback?",
+    "group": "local--smores",
+    "gold": "bge-m3",
+    "category": "entity"
+  },
+  {
+    "query": "Which exception does Graphiti 0.31.2 raise for an unknown episode?",
+    "group": "local--smores",
+    "gold": "NodeNotFoundError",
+    "category": "entity"
+  },
+  {
+    "query": "Which group must a login session carry for ingest to work?",
+    "group": "local--smores",
+    "gold": "memory:x:977:smores",
+    "category": "entity"
+  },
+  {
+    "query": "What did the embedding endpoint return once the access grant landed?",
+    "group": "local--smores",
+    "gold": "access was later granted",
+    "category": "temporal"
+  },
+  {
+    "query": "Which review finding was about the work-group check failing open?",
+    "group": "local--smores",
+    "gold": "fail-open work check",
+    "category": "temporal"
+  },
+  {
+    "query": "What HTTP status came back for the preview embedding model?",
+    "group": "local--smores",
+    "gold": "HTTP 404",
+    "category": "exact"
+  },
+  {
+    "query": "Which header carries the project group from the stdio shim?",
+    "group": "local--smores",
+    "gold": "X-Memory-Group",
+    "category": "exact"
+  },
+  {
+    "query": "Which edge attribute does the wrapper rewrite for tombstones?",
+    "group": "local--smores",
+    "gold": "invalid_at",
+    "category": "exact"
+  },
+  {
+    "query": "How is agent-authored code prevented from doing unsafe things?",
+    "group": "smores56--kanbei",
+    "gold": "capability-scoped",
+    "category": "semantic"
+  },
+  {
+    "query": "Where does the harness keep its state so projects stay clean?",
+    "group": "smores56--kanbei",
+    "gold": "XDG_STATE_HOME",
+    "category": "semantic"
+  },
+  {
+    "query": "What is the source of truth for history while SQLite is only a view?",
+    "group": "smores56--kanbei",
+    "gold": "append-only",
+    "category": "semantic"
+  },
+  {
+    "query": "Why is the project named after a chained strategist?",
+    "group": "smores56--kanbei",
+    "gold": "Kuroda Kanbei",
+    "category": "semantic"
+  },
+  {
+    "query": "Which language do the live extensions use?",
+    "group": "smores56--kanbei",
+    "gold": "Luau",
+    "category": "entity"
+  },
+  {
+    "query": "Which crate implements the capability model?",
+    "group": "smores56--kanbei",
+    "gold": "kanbei-capabilities",
+    "category": "entity"
+  },
+  {
+    "query": "Which file is the memory projection database?",
+    "group": "smores56--kanbei",
+    "gold": "projection.sqlite",
+    "category": "entity"
+  },
+  {
+    "query": "Which compressed file records memory transitions?",
+    "group": "smores56--kanbei",
+    "gold": "transitions.jsonl.zst",
+    "category": "entity"
+  },
+  {
+    "query": "Which milestone came first: the durable kernel or the live module substrate?",
+    "group": "smores56--kanbei",
+    "gold": "M1 Milestone Report",
+    "category": "temporal"
+  },
+  {
+    "query": "When did the live module substrate milestone complete?",
+    "group": "smores56--kanbei",
+    "gold": "2026-08-29",
+    "category": "temporal"
+  },
+  {
+    "query": "Which acceptance matrix identifiers gate the milestones?",
+    "group": "smores56--kanbei",
+    "gold": "R-21/H-06",
+    "category": "exact"
+  },
+  {
+    "query": "How many tests does the M2 report claim?",
+    "group": "smores56--kanbei",
+    "gold": "202 tests",
+    "category": "exact"
+  },
+  {
+    "query": "Which rustc version does the workspace pin?",
+    "group": "smores56--kanbei",
+    "gold": "rustc 1.98.0",
+    "category": "exact"
+  },
+  {
+    "query": "Which downloader did I settle on for the film?",
+    "group": "local--dev",
+    "gold": "aria2",
+    "category": "semantic"
+  },
+  {
+    "query": "What did I change after the tool call timing out killed the first download?",
+    "group": "local--dev",
+    "gold": "detached",
+    "category": "temporal"
+  },
+  {
+    "query": "Which film did I try to torrent?",
+    "group": "local--dev",
+    "gold": "Paris, Texas",
+    "category": "entity"
+  },
+  {
+    "query": "Which e-reader model did I research cases for?",
+    "group": "local--dev",
+    "gold": "Xteink X4 Pro",
+    "category": "entity"
+  },
+  {
+    "query": "What did I run after the first download attempt was killed at 120s?",
+    "group": "local--dev",
+    "gold": "setsid",
+    "category": "temporal"
+  },
+  {
+    "query": "Which tracker hostname timed out every minute?",
+    "group": "local--dev",
+    "gold": "p4p.arenabg.com",
+    "category": "exact"
+  },
+  {
+    "query": "Which magnet link prefix did the client need to accept?",
+    "group": "local--dev",
+    "gold": "magnet:?xt=",
+    "category": "exact"
+  }
+]

@@ -207,6 +207,13 @@ in
               ];
               args = [ "${src}/modules/features/backup/drills/restore-drill.sh" ];
             };
+            # Exercises `memory export`/`restore` against temp dirs: a live WAL
+            # registry, checksums, retention, the schema guard, and the graph
+            # mismatch path. No root, no FalkorDB, no network.
+            memory-export-restore = {
+              tools = [ pkgs.python3 ];
+              args = [ "${src}/modules/features/ai/memory/src" ];
+            };
             backup-plain = {
               tools = [
                 # The same rclone generation the NixOS module overlays in
@@ -353,6 +360,8 @@ in
               shellcheck ${src}/tests/backup_plain.sh
               bash -n ${src}/tests/restore_drill.sh
               shellcheck ${src}/tests/restore_drill.sh
+              bash -n ${src}/tests/memory_export_restore.sh
+              shellcheck ${src}/tests/memory_export_restore.sh
               bash -n ${src}/tests/manual_steps_sync.sh
               shellcheck ${src}/tests/manual_steps_sync.sh
               bash -n ${src}/tests/github_metadata.sh

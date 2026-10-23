@@ -70,21 +70,22 @@ class GraphitiBackend:
         group_id: str,
         source_description: str,
         source: str = "text",
+        reference_time: str | None = None,
     ) -> dict[str, Any]:
         # Deliberately no `uuid`: graphiti-core 0.31.2 treats a supplied uuid as
         # an existing episode lookup, so a new uuid fails in the queue worker
-        # with "node <uuid> not found". The wrapper keeps its uuid5 identity in
-        # SQLite and sends it in source_description as `id=`.
-        payload = await self._call(
-            "add_memory",
-            {
-                "name": name,
-                "episode_body": episode_body,
-                "group_id": group_id,
-                "source": source,
-                "source_description": source_description,
-            },
-        )
+        # with "node <uuid> not found". The registry keeps the uuid5 identity
+        # and records the graph's own uuid after reconciliation.
+        arguments: dict[str, object] = {
+            "name": name,
+            "episode_body": episode_body,
+            "group_id": group_id,
+            "source": source,
+            "source_description": source_description,
+        }
+        if reference_time:
+            arguments["reference_time"] = reference_time
+        payload = await self._call("add_memory", arguments)
         if isinstance(payload, dict):
             return payload
         return {"message": str(payload)}

@@ -33,6 +33,10 @@ in
     nvidia.enable = true;
     llm.enable = true;
     memory.enable = true;
+    # The committed embedder: qwen3-embedding-8b (4096-d) through the gateway.
+    # Flip to "local" to fall back to bge-m3 at 1024-d; either way a wipe and
+    # re-ingest follows, because the vector width changes.
+    memory.embedder = "neuralwatt";
     lobechat.enable = true;
     noSleep.enable = true;
     webProxy = {
@@ -197,6 +201,15 @@ in
         "/.terraform/**"
         "/terraform.tfstate.lock.info"
       ];
+    };
+    # The memory export is the recovery copy: the graph is derived and the
+    # registry is small (one SQLite file plus one RDB per night). Root-owned,
+    # and the driver runs as root, so nothing else needs access.
+    backup.datasets.MemoryExport = {
+      source = "/var/lib/memory/export";
+      schedule = "*-*-* 05:30:00";
+      timeout = "2h";
+      onChange.enable = true;
     };
     alerting = {
       enable = true;

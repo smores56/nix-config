@@ -57,9 +57,46 @@ cloudflare-apply:
 cloudflare-tofu *args:
     sudo nix run .#cloudflare-tofu -- {{args}}
 
-# Ingest sdlc issues, personal notes, and repo docs into memory (on smortress).
+# Ingest sdlc issues, personal notes, repo docs, and a Maki session sample into memory (on smortress).
 memory-ingest *args:
     memory ingest all {{args}}
+
+# Show the memory queue: counts per status and group, plus the last 10 minutes of extractions.
+memory-status:
+    sg memory -c 'memory status'
+    sg memory -c 'cp /var/lib/memory/registry.sqlite /tmp/memory-status.sqlite'
+    nix shell nixpkgs#sqlite -c sqlite3 /tmp/memory-status.sqlite "select status, count(*) from episodes group by status;" "select group_id, sum(status = 'pending') as pending, sum(status = 'active') as active from episodes group by group_id order by pending desc;"
+    -journalctl -u memory-graphiti-mcp --since '10 min ago' --no-pager | grep -c 'Successfully processed'
+
+# Snapshot the memory registry and the graph now (the nightly unit does this).
+memory-export:
+    sudo systemctl start memory-export.service
+    journalctl -u memory-export.service -n 20 --no-pager
+
+# Verify and restore one memory export (stops the memory services on smortress).
+memory-restore dir:
+    sudo memory restore {{dir}}
+
+# Manually evaluate retrieval quality and project-boundary leaks on the live service.
+# Shells out to `memory`, so it needs the memory group; no sudo. Args go before the
+# subcommand, e.g. `just memory-eval --only exact`.
+memory-eval *args:
+    sg memory -c 'nix run nixpkgs#python3 -- modules/features/ai/memory/eval/retrieval.py {{args}} search-metrics'
+    sg memory -c 'nix run nixpkgs#python3 -- modules/features/ai/memory/eval/retrieval.py leak-check'
+
+# Requeue active rows the graph no longer holds (after a registry-only restore).
+# Repeat until it reports nothing left; each call requeues a bounded slice.
+memory-reindex *args:
+    sg memory -c 'memory reindex {{args}}'
+
+# Stop memory, wipe the derived graph and the registry, then start it again.
+# FalkorDB must stop before its directory is wiped: a running instance rewrites
+# its AOF and would recreate what this deletes.
+memory-rebuild:
+    sudo systemctl stop memory-mcp memory-graphiti-mcp memory-llm-proxy memory-falkordb
+    sudo find /var/lib/memory/falkordb -mindepth 1 -delete
+    sudo rm -f /var/lib/memory/registry.sqlite* /var/lib/memory/index.sqlite* /var/lib/memory/audit.jsonl /var/lib/memory/internal.token /var/lib/memory/.restore-in-progress
+    sudo systemctl start memory-falkordb memory-llm-proxy memory-graphiti-mcp memory-mcp
 
 # Show backup timers and failed backup units.
 backup-status:
