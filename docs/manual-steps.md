@@ -830,6 +830,11 @@ models are not comparable. Chat uses Neuralwatt `deepseek-v4.1-flash`; local
 `qwen3.8-27b` (the `vllm` slot) is the fallback. Brave search is enabled with
 the existing `brave-api-key`.
 
+The model lists spell abilities explicitly (`<context:fc:vision>`). An
+env-listed model without `fc` is treated as unable to call tools, which hides
+agent mode, web search, and MCP entirely; that is the only place LobeChat
+learns those abilities for a custom model.
+
 **Graphiti MCP.** Add the server in the UI (Settings → Connectors → Add
 Custom Connector → Advanced → Headers); there is no env var for MCP servers.
 

@@ -366,12 +366,15 @@ in
           NEWAPI_PROXY_URL = embedding.url;
           # Chat: Neuralwatt by default; the local qwen is the fallback.
           OPENAI_PROXY_URL = "https://api.neuralwatt.com/v1";
-          OPENAI_MODEL_LIST = "-all,+deepseek-v4.1-flash";
+          # Env-listed models start with no abilities. Without `fc`, LobeChat
+          # treats the model as unable to call tools and hides agent mode, web
+          # search, and MCP. The suffix is `<context:capability:...>`.
+          OPENAI_MODEL_LIST = "-all,+deepseek-v4.1-flash<1048576:fc:vision>";
           DEFAULT_AGENT_CONFIG = "model=deepseek-v4.1-flash;provider=openai";
           SYSTEM_AGENT = "default=openai/deepseek-v4.1-flash";
           VLLM_API_KEY = "none";
           VLLM_PROXY_URL = "http://127.0.0.1:${toString ports.llm}/v1";
-          VLLM_MODEL_LIST = "-all,+qwen3.8-27b";
+          VLLM_MODEL_LIST = "-all,+qwen3.8-27b<200192:fc>";
           # The MCP connector, the embedder, and the local chat fallback all
           # live on loopback; the server-side SSRF guard must allow that.
           SSRF_ALLOW_PRIVATE_IP_ADDRESS = "1";
