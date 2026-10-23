@@ -106,10 +106,14 @@ Terminal actions have no abbreviations; use the menu or
 
 ## Flow
 
-`git config smores.flow` decides how changes land. `hybrid` (personal):
-feature work uses a worktree, branch, and PR; quick fixes commit directly;
-investigations are read-only. `pr` (work): always a worktree and PR. The
-registry is personal, so never file work features in it. See AGENTS.md.
+`git config smores.flow` decides the landing gate; independently, the
+classify step (quick fix | investigation | feature) decides whether the SDLC
+funnel runs. `local` (personal): no PR; feature work uses a worktree, branch,
+`review`, then a local merge to `main`; quick fixes commit directly;
+investigations are read-only. `pr` (work): every change lands through a PR,
+though one PR may cover several SDLC tasks; quick fixes skip the funnel but
+still need a PR. The registry is personal, so never file work features in it.
+See AGENTS.md.
 
 ## Notes
 

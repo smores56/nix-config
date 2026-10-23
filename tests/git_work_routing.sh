@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Exercises the generated git config against scratch repos: work-owner
 # remotes (every URL form and casing, worktrees, mixed remotes) pick up the
-# work identity and ssh route, the personal owner gets the hybrid flow, and
+# work identity and ssh route, the personal owner gets the local flow, and
 # everything else keeps only the personal defaults.
 #
 # Usage: git_work_routing.sh <gitconfig>, with the expected values in the
@@ -72,7 +72,7 @@ mkdir outside
 for dir in scp scp-slash scp-nouser ssh ssh-port ssh-nouser https https-user upper mixed; do
   expect_work "$dir"
 done
-for dir in own repo-named-like-work; do expect_personal "$dir" hybrid; done
+for dir in own repo-named-like-work; do expect_personal "$dir" local; done
 for dir in third-party lookalike-owner lookalike-host outside; do expect_personal "$dir" ""; done
 
 git -C scp -c user.name=t -c commit.gpgsign=false commit -q --allow-empty -m init

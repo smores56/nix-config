@@ -4,9 +4,11 @@ Guidance for AI coding agents working in this repository.
 
 ## Working branch
 
-This repo's `smores.flow` is `hybrid`: feature work gets a worktree, branch,
-and PR; quick fixes land directly on `main` with no worktree. Investigations
-are read-only. Explicit user instructions override the flow.
+This repo's `smores.flow` is `local`: feature work gets a worktree and branch,
+is reviewed, and merges to `main` locally with no PR; quick fixes land
+directly on `main`. Investigations are read-only. The classify step (quick fix
+| investigation | feature) decides whether the SDLC funnel runs; the flow only
+decides the landing gate. Explicit user instructions override the flow.
 
 ## Documentation
 

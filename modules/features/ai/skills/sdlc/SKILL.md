@@ -63,8 +63,9 @@ PR.
   `comment` are human-interactive; agents use `list|show|status|next`.
   `--pick` prefers `tv`, then `fzf`, then a numbered prompt. No justfile and
   no local state.
-- Evidence, not checkboxes: a feature names its merged PR, and the PR links
-  the task issue; a quick fix commit says `Refs #<issue>`. Status follows
+- Evidence, not checkboxes: a feature names its landing artifact — in `pr`
+  repos the merged PR, which links the task issue; in `local` repos the merge
+  commit on `main`; a quick fix commit says `Refs #<issue>`. Status follows
   that evidence.
 
 ## Approval
@@ -102,12 +103,15 @@ Design and plan review happen in the terminal:
 
 ## Flow and worktrees
 
-`git config smores.flow` decides how changes land. `hybrid` (personal):
-feature work gets a worktree, branch, and PR; quick fixes commit directly;
-investigations are read-only. `pr` (work): always worktree and PR, never
-merge. Unset: the repo's own contribution rules. Follow AGENTS.md for
-`worktrees new`, branch names, and commits; this skill adds only the
-design/plan/gate layer.
+`git config smores.flow` decides the landing gate; independently, the
+classify step (quick fix | investigation | feature) decides whether the SDLC
+funnel runs. `local` (personal): no PR; feature work gets a worktree and
+branch, `review`, then a local merge to `main`; quick fixes commit directly;
+investigations are read-only. `pr` (work): every change lands through a PR,
+though one PR may cover several SDLC tasks; quick fixes skip the funnel but
+still need a PR; never merge. Unset: the repo's own contribution rules. Follow
+AGENTS.md for `worktrees new`, branch names, and commits; this skill adds only
+the design/plan/gate layer.
 
 ## Rules
 

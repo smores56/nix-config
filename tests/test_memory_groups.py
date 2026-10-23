@@ -247,14 +247,14 @@ class GroupValidationTests(unittest.TestCase):
         overrides = {
             "MEMORY_WORK_OWNER_GLOB": "acme-*",
             "MEMORY_WORK_EMAIL": "dev@example.org",
-            "MEMORY_WORK_FLOW": "hybrid",
+            "MEMORY_WORK_FLOW": "local",
             "MEMORY_WORK_SSH_MARKER": "config.acme",
         }
         with mock.patch.dict(os.environ, overrides, clear=False):
             settings = groups.work_settings()
             self.assertTrue(groups.owner_is_work("acme-team", settings))
             self.assertFalse(groups.owner_is_work("blitzy", settings))
-            self.assertEqual(settings.flow, "hybrid")
+            self.assertEqual(settings.flow, "local")
             self.assertEqual(settings.email, "dev@example.org")
             self.assertEqual(settings.email_domain, "example.org")
             self.assertEqual(settings.ssh_marker, "config.acme")

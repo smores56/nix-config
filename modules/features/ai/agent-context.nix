@@ -32,9 +32,9 @@ let
     "- Before a non-trivial decision stands, spawn a fresh read-only subagent to argue against it"
     "- Commit messages and PR titles: Conventional Commits (feat, fix, refactor, chore, docs, test, perf, ci) with `type(scope): description` in repos with `smores.flow` set; elsewhere follow the repo's own convention (contributing docs, installed team skills, recent merged PRs)"
     "- Push immediately after committing; no `Co-Authored-By` trailers"
-    "- How changes land follows `git config smores.flow` in the repo:"
-    "  - `hybrid` (personal repos): feature work → worktree → commit and push per change → `review` → open a PR with `gh pr create` → merge after review → `worktrees prune`; quick fixes commit directly to `main`; investigations are read-only"
-    "  - `pr` (work repos): worktree → commit and push per change → `review` → open a PR with `gh pr create`; never merge to main yourself. Never file work features in the personal `sdlc` registry — run sdlc phases in the conversation with the human approving in chat"
+    "- How changes land follows `git config smores.flow`, independently of the classify step (quick fix | investigation | feature) that decides whether the SDLC funnel runs:"
+    "  - `local` (personal repos): no PR. Feature work → worktree → commit and push per change → `review` → merge to `main` locally → push → `worktrees prune`; quick fixes commit directly to `main`; investigations are read-only. `Refs #<issue>` in commits is fine; close issues with `sdlc`/`gh issue close`"
+    "  - `pr` (work repos): every change lands through a PR with `gh pr create`; one PR may cover several SDLC tasks. Quick fixes may skip the SDLC funnel but still need a PR; never merge to main yourself. Never file work features in the personal `sdlc` registry — run sdlc phases in the conversation with the human approving in chat"
     "  - unset (third-party checkouts): follow the repo's own contribution rules"
   ]
   ++ workHostLines
