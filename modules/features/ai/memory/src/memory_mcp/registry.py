@@ -19,9 +19,10 @@ from pathlib import Path
 from typing import Iterator, Mapping
 
 DB_NAME = "registry.sqlite"
-# Bumped whenever the schema below changes incompatibly. An unversioned or
-# foreign-versioned database is refused rather than migrated in place.
-SCHEMA_VERSION = 1
+# Bumped whenever the schema below changes. A database one or more versions
+# behind is migrated in place on open (`_MIGRATIONS`); anything older, newer or
+# unversioned is refused rather than guessed at.
+SCHEMA_VERSION = 2
 LOOKUP_CHUNK = 500
 
 KINDS = ("text", "json", "message")
@@ -43,6 +44,7 @@ CREATE TABLE IF NOT EXISTS episodes (
     tags TEXT NOT NULL DEFAULT '[]',
     valid_at TEXT NOT NULL,
     created_at TEXT NOT NULL,
+    queued_at TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'pending',
     attempts INTEGER NOT NULL DEFAULT 0,
     last_error TEXT,
@@ -58,6 +60,7 @@ CREATE INDEX IF NOT EXISTS episodes_uuid ON episodes (uuid);
 CREATE INDEX IF NOT EXISTS episodes_created ON episodes (group_id, created_at);
 CREATE INDEX IF NOT EXISTS episodes_graphiti_uuid ON episodes (graphiti_uuid);
 CREATE INDEX IF NOT EXISTS episodes_status ON episodes (status);
+CREATE INDEX IF NOT EXISTS episodes_queue ON episodes (status, queued_at);
 
 CREATE TABLE IF NOT EXISTS promotions (
     source_uuid TEXT NOT NULL,
@@ -83,6 +86,25 @@ CREATE TABLE IF NOT EXISTS audit (
 );
 CREATE INDEX IF NOT EXISTS audit_created ON audit (finished_at);
 """
+
+
+def _migrate_1_to_2(conn: sqlite3.Connection) -> None:
+    """Split the queue clock from the write time.
+
+    `queued_at` is when a row entered the pending queue (the reconciler's grace,
+    the pending order and the stale-write window read it); `created_at` stays
+    the write time. Guarded by `table_info` so a re-entry after an interrupted
+    run is a no-op.
+    """
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(episodes)")}
+    if "queued_at" not in columns:
+        conn.execute("ALTER TABLE episodes ADD COLUMN queued_at TEXT NOT NULL DEFAULT ''")
+    conn.execute("UPDATE episodes SET queued_at = created_at WHERE queued_at = ''")
+    conn.execute("CREATE INDEX IF NOT EXISTS episodes_queue ON episodes (status, queued_at)")
+
+
+# One entry per version a database may be at; each migrates exactly one hop.
+_MIGRATIONS = {1: _migrate_1_to_2}
 
 
 class SchemaVersionError(RuntimeError):
@@ -128,6 +150,8 @@ class RegistryEpisode:
     tags: tuple[str, ...]
     valid_at: str
     created_at: str
+    # "" on a row built in memory; the registry stores created_at instead
+    queued_at: str = ""
     status: str = "pending"
     attempts: int = 0
     last_error: str | None = None
@@ -160,6 +184,49 @@ def _placeholders(values: tuple[str, ...] | list[str]) -> str:
     return ",".join("?" for _ in values)
 
 
+def _ensure_schema(conn: sqlite3.Connection, db_path: Path) -> None:
+    version = int(conn.execute("PRAGMA user_version").fetchone()[0])
+    if version == SCHEMA_VERSION:
+        return
+    has_tables = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'episodes'"
+    ).fetchone()
+    if version == 0 and has_tables is None:
+        # DDL autocommits under sqlite3's legacy isolation, so the schema and
+        # its version have to ride in one explicit transaction: otherwise a
+        # kill before the PRAGMA leaves an unversioned database that this code
+        # then refuses forever.
+        conn.executescript(
+            "BEGIN IMMEDIATE;\n" + _SCHEMA + f"\nPRAGMA user_version = {SCHEMA_VERSION};\nCOMMIT;"
+        )
+        return
+    if has_tables is not None and 0 < version < SCHEMA_VERSION:
+        conn.execute("BEGIN IMMEDIATE")
+        while version < SCHEMA_VERSION:
+            _MIGRATIONS[version](conn)
+            version += 1
+            conn.execute(f"PRAGMA user_version = {version}")
+        return
+    found = "unversioned" if version == 0 else str(version)
+    raise SchemaVersionError(
+        f"registry {db_path} has schema version {found}, expected {SCHEMA_VERSION}; "
+        "refusing to use it. Delete the database to rebuild the registry from the graph."
+    )
+
+
+def migrate_registry(path: Path) -> None:
+    """Migrate one registry file in place (a restore stages the export's copy)."""
+    conn = sqlite3.connect(path, timeout=10)
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=10000")
+        _ensure_schema(conn, path)
+        conn.commit()
+    finally:
+        conn.close()
+
+
 class Registry:
     def __init__(self, state_dir: str) -> None:
         self.state_dir = Path(state_dir)
@@ -169,21 +236,7 @@ class Registry:
             self._ensure_schema(conn)
 
     def _ensure_schema(self, conn: sqlite3.Connection) -> None:
-        version = int(conn.execute("PRAGMA user_version").fetchone()[0])
-        if version == SCHEMA_VERSION:
-            return
-        has_tables = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'episodes'"
-        ).fetchone()
-        if version == 0 and has_tables is None:
-            conn.executescript(_SCHEMA)
-            conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
-            return
-        found = "unversioned" if version == 0 else str(version)
-        raise SchemaVersionError(
-            f"registry {self.db_path} has schema version {found}, expected {SCHEMA_VERSION}; "
-            "refusing to use it. Delete the database to rebuild the registry from the graph."
-        )
+        _ensure_schema(conn, self.db_path)
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -222,6 +275,7 @@ class Registry:
             tags=tags,
             valid_at=row["valid_at"],
             created_at=row["created_at"],
+            queued_at=row["queued_at"] or row["created_at"],
             status=row["status"],
             attempts=row["attempts"],
             last_error=row["last_error"],
@@ -272,10 +326,10 @@ class Registry:
             """
             INSERT INTO episodes
                 (group_id, content_hash, uuid, name, content, kind, origin, origin_ref,
-                 actor, cwd, tags, valid_at, created_at, status, attempts, last_error,
-                 graphiti_uuid, promoted_from_group, promoted_by, promoted_at,
+                 actor, cwd, tags, valid_at, created_at, queued_at, status, attempts,
+                 last_error, graphiti_uuid, promoted_from_group, promoted_by, promoted_at,
                  tombstoned_at, tombstone_reason)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 entry.group,
@@ -291,6 +345,7 @@ class Registry:
                 _json(list(entry.tags)),
                 entry.valid_at,
                 entry.created_at,
+                entry.queued_at or entry.created_at,
                 entry.status,
                 entry.attempts,
                 entry.last_error,
@@ -308,8 +363,9 @@ class Registry:
             """
             UPDATE episodes SET
                 uuid = ?, name = ?, content = ?, kind = ?, origin = ?, origin_ref = ?,
-                actor = ?, cwd = ?, tags = ?, valid_at = ?, created_at = ?, status = ?,
-                attempts = ?, last_error = ?, graphiti_uuid = ?, promoted_from_group = ?,
+                actor = ?, cwd = ?, tags = ?, valid_at = ?, queued_at = ?,
+                status = ?, attempts = ?, last_error = ?, graphiti_uuid = ?,
+                promoted_from_group = ?,
                 promoted_by = ?, promoted_at = ?, tombstoned_at = ?, tombstone_reason = ?
             WHERE group_id = ? AND content_hash = ?
             """,
@@ -324,7 +380,7 @@ class Registry:
                 entry.cwd,
                 _json(list(entry.tags)),
                 entry.valid_at,
-                entry.created_at,
+                entry.queued_at or entry.created_at,
                 entry.status,
                 entry.attempts,
                 entry.last_error,
@@ -341,8 +397,10 @@ class Registry:
 
     def queue(self, entry: RegistryEpisode, *, audit: Audit | None = None) -> RegistryEpisode:
         """Insert or replace a row as pending, clearing any prior graph identity."""
+        # A row that never left the queue was queued when it was written.
         pending = replace(
             entry,
+            queued_at=entry.queued_at or entry.created_at,
             status="pending",
             attempts=0,
             last_error=None,
@@ -368,7 +426,11 @@ class Registry:
                     )
                 self._write(conn, pending)
             self._audit(conn, audit)
-        return pending
+            stored = conn.execute(
+                "SELECT * FROM episodes WHERE group_id = ? AND content_hash = ?",
+                (pending.group, pending.content_hash),
+            ).fetchone()
+        return self._row(stored) or pending
 
     def record_attempt(
         self,
@@ -471,11 +533,11 @@ class Registry:
     ) -> int:
         """Return active rows whose graph episode is gone to pending, in one transaction.
 
-        `created_at` is the queue clock: the reconciler measures its grace from
-        it and `pending()` orders by it, so a requeued row has to re-enter the
-        queue now or it would be resubmitted and marked failed within minutes
-        of a restore, while its extraction is still waiting upstream. The write
-        time it replaces stays in the audit row.
+        `queued_at` is the queue clock: the reconciler measures its grace from it
+        and `pending()` orders by it, so a requeued row has to re-enter the queue
+        now or it would be resubmitted and marked failed within minutes of a
+        restore, while its extraction is still waiting upstream. `created_at`,
+        the write time, is left alone.
 
         The status and graph-uuid guards keep a row that changed under the
         caller (a concurrent write re-extracted it, or a tombstone landed)
@@ -487,7 +549,7 @@ class Registry:
             for entry in entries:
                 cursor = conn.execute(
                     "UPDATE episodes SET status = 'pending', attempts = 0, last_error = NULL, "
-                    "graphiti_uuid = NULL, created_at = ? "
+                    "graphiti_uuid = NULL, queued_at = ? "
                     "WHERE group_id = ? AND content_hash = ? AND status = 'active' "
                     "AND graphiti_uuid IS ?",
                     (at, entry.group, entry.content_hash, entry.graphiti_uuid),
@@ -546,7 +608,7 @@ class Registry:
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT * FROM episodes WHERE status = 'pending' "
-                "ORDER BY created_at ASC LIMIT ?",
+                "ORDER BY COALESCE(NULLIF(queued_at, ''), created_at) ASC LIMIT ?",
                 (max(1, int(limit)),),
             ).fetchall()
         return [entry for row in rows if (entry := self._row(row)) is not None]

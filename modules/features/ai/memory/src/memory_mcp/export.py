@@ -40,7 +40,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Sequence
 
-from .registry import SCHEMA_VERSION, STATUSES
+from .registry import SCHEMA_VERSION, STATUSES, migrate_registry
 
 REGISTRY_FILE = "registry.sqlite"
 EPISODES_FILE = "episodes.jsonl"
@@ -87,6 +87,7 @@ EPISODE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("tags", "tags"),
     ("valid_at", "valid_at"),
     ("created_at", "created_at"),
+    ("queued_at", "queued_at"),
     ("status", "status"),
     ("graphiti_uuid", "graphiti_uuid"),
     ("promoted_from_group", "promoted_from_group"),
@@ -804,12 +805,19 @@ def _park_registry(registry_path: Path, snapshot: str) -> tuple[Path, ...]:
     return tuple(parked)
 
 
-def _install(source: Path, target: Path, *, owner: str | None) -> None:
-    """Stage the copy, hand it to its owner, then replace in one rename."""
+def _install(source: Path, target: Path, *, owner: str | None, upgrade: bool = False) -> None:
+    """Stage the copy, migrate it, hand it to its owner, then replace in one rename.
+
+    `upgrade` migrates an older registry while the previous file is still
+    parked, so a failed migration aborts the restore instead of surfacing as a
+    crash loop days later.
+    """
     target.parent.mkdir(parents=True, exist_ok=True)
     staging = target.with_name(target.name + ".restore-tmp")
     shutil.copyfile(source, staging)
     try:
+        if upgrade:
+            migrate_registry(staging)
         _fix_owner(staging, owner)
         os.replace(staging, target)
     except BaseException:
@@ -837,7 +845,8 @@ def restore(config: RestoreConfig) -> RestoreReport:
 
     Order matters: verification runs before anything is stopped, and the schema
     is checked before the live registry is touched. A newer schema is refused
-    outright: this code cannot read it, and migrating in place is not a thing.
+    outright: this code cannot read it. An older one is migrated in place by
+    the wrapper on the next start.
     The live registry is parked first, replaced atomically, and only then are
     its WAL sidecars dropped: they belong to the database that was replaced.
     """
@@ -847,11 +856,13 @@ def restore(config: RestoreConfig) -> RestoreReport:
             f"the export's registry schema is {verified.schema_version}, "
             f"this code writes {config.schema_version}; refusing to restore a newer schema"
         )
-    if verified.schema_version < config.schema_version:
+    # An older registry is installed as-is and migrated the next time the
+    # wrapper opens it (`Registry._ensure_schema`), so a restore is not tied to
+    # the release that took the export.
+    if verified.schema_version < 1:
         raise ExportInvalid(
-            f"the export's registry schema is {verified.schema_version}, "
-            f"this code writes {config.schema_version}; the wrapper refuses to open it, "
-            "so restore it with the matching release instead"
+            f"the export's registry schema is {verified.schema_version}; "
+            "there is no migration path from an unversioned registry"
         )
     registry_path = config.state_dir / REGISTRY_FILE
     report = RestoreReport(
@@ -871,7 +882,12 @@ def restore(config: RestoreConfig) -> RestoreReport:
         config.run(("systemctl", "stop", *config.units))
     parked_registry = _park_registry(registry_path, verified.snapshot)
     try:
-        _install(verified.directory / REGISTRY_FILE, registry_path, owner=config.owner)
+        _install(
+            verified.directory / REGISTRY_FILE,
+            registry_path,
+            owner=config.owner,
+            upgrade=verified.schema_version < config.schema_version,
+        )
     except (ExportError, OSError) as exc:
         parked_note = (
             f"the previous registry is parked at {parked_registry[0]}; copy it back over "

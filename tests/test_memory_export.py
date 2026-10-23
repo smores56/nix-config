@@ -171,6 +171,7 @@ class RegistrySnapshotTests(unittest.TestCase):
             "tags",
             "valid_at",
             "created_at",
+            "queued_at",
             "status",
             "graphiti_uuid",
             "promoted_from_group",
@@ -541,22 +542,39 @@ class RestoreTests(unittest.TestCase):
             self.assertFalse((root / "restored" / "registry.sqlite").exists())
         self.assertIn("newer schema", str(caught.exception))
 
-    def test_an_older_schema_is_refused(self):
+    def test_an_older_schema_is_migrated_on_restore(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             result = self.export(root, [make_entry(1)])
-            with self.assertRaises(ExportInvalid) as caught:
-                restore(
-                    RestoreConfig(
-                        export_dir=result.directory,
-                        state_dir=root / "restored",
-                        graph_dir=root / "graph",
-                        stop_services=False,
-                        owner=None,
-                        schema_version=SCHEMA_VERSION + 1,
-                    )
+            db = result.directory / "registry.sqlite"
+            conn = sqlite3.connect(db)
+            conn.execute("DROP INDEX IF EXISTS episodes_queue")
+            conn.execute("ALTER TABLE episodes DROP COLUMN queued_at")
+            conn.execute("PRAGMA user_version = 1")
+            conn.commit()
+            conn.close()
+            manifest = json.loads((result.directory / "manifest.json").read_text())
+            manifest["schema_version"] = 1
+            manifest["files"]["registry.sqlite"]["sha256"] = file_sha256(db)
+            manifest["files"]["registry.sqlite"]["bytes"] = db.stat().st_size
+            (result.directory / "manifest.json").write_text(json.dumps(manifest))
+            report = self.restore(result.directory, root)
+            self.assertEqual(report.schema_version, 1)
+            restored = root / "restored" / "registry.sqlite"
+            self.assertTrue(restored.exists())
+            # Installed already migrated: the restore upgrades the staged copy
+            # while the previous registry is still parked.
+            with sqlite3.connect(restored) as check:
+                self.assertEqual(
+                    check.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION
                 )
-        self.assertIn("schema", str(caught.exception))
+                self.assertEqual(
+                    check.execute("SELECT count(*) FROM episodes WHERE queued_at = ''").fetchone()[0],
+                    0,
+                )
+            registry = Registry(str(restored.parent))
+            stored = registry.lookup(make_entry(1).group, make_entry(1).content_hash)
+            self.assertEqual(stored.queued_at, stored.created_at)
 
     def test_a_mismatched_graph_snapshot_falls_back_to_a_rebuild(self):
         with tempfile.TemporaryDirectory() as directory:

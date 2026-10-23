@@ -310,12 +310,15 @@ model providers Maki may use.
   content, content-addressed identity, `kind`/`origin`/`origin_ref`/`valid_at`,
   verification status, promotions, and the audit trail. Identity is
   `uuid5(group, sha256(content))` and stays registry-only; the graph's own uuid
-  is recorded separately. A write returns after queueing, and a background
-  reconciler polls FalkorDB for pending rows by exact group and content,
-  resolving them to `active` with the newest matching graph uuid or, after a
-  grace period and a bounded set of retries, to `failed` (retries pause while
-  the model endpoint is unhealthy, and reconciler writes never overwrite a row
-  that left `pending`). `memory_get` returns an episode by registry uuid, hash
+  is recorded separately. `created_at` is the write time and `queued_at` the
+  queue clock (a replay resets it), so the grace, retry spacing and pending
+  order measure the queue, not the age of the memory; the schema migrates
+  forward in place one version at a time. A write returns after queueing, and a
+  background reconciler polls FalkorDB for pending rows by exact group and
+  content, resolving them to `active` with the newest matching graph uuid or,
+  after a grace period and a bounded set of retries, to `failed` (retries pause
+  while the model endpoint is unhealthy, and reconciler writes never overwrite a
+  row that left `pending`). `memory_get` returns an episode by registry uuid, hash
   prefix, or exact `origin:origin_ref` (case-insensitive; an ambiguous hash
   prefix is an error), falling back to `global` when the caller's group has no
   match, and caps the body at 16k characters with a trailer naming the full

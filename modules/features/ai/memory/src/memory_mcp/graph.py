@@ -157,8 +157,8 @@ class GraphStore:
         reconciling must bind to that one rather than to the tombstoned
         episode that shares its content.
 
-        `since` (a registry `created_at`) drops episodes older than that
-        instant. A tombstone keeps its episode node on purpose, so without the
+        `since` (a registry queue clock, `queued_at`) drops episodes older than
+        that instant. A tombstone keeps its episode node on purpose, so without the
         bound a revived row would go active against the very episode it was
         revived from; the episode for this write is always newer.
 
