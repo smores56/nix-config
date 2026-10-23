@@ -260,7 +260,15 @@ def _text(value: object) -> str:
 
 
 def parse_info(reply: object) -> dict[str, str]:
-    """`INFO` returns `# Section` headers and `key:value` lines."""
+    """`INFO` returns `# Section` headers and `key:value` lines.
+
+    redis-py answers `INFO` with a parsed mapping; raw protocol replies (and
+    the fakes in the tests) are bulk strings. Both shapes are accepted, because
+    reading only the string shape made every snapshot claim the server was not
+    FalkorDB.
+    """
+    if isinstance(reply, Mapping):
+        return {str(key): str(value) for key, value in reply.items()}
     fields: dict[str, str] = {}
     for line in _text(reply).splitlines():
         line = line.strip()

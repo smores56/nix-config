@@ -75,7 +75,7 @@ class FakeRedis:
     probe before the save separately from the polls after it.
     """
 
-    def __init__(self, replies: list[str], *, bgsave_error: Exception | None = None) -> None:
+    def __init__(self, replies: list[object], *, bgsave_error: Exception | None = None) -> None:
         self.replies = list(replies)
         self.bgsave_error = bgsave_error
         self.commands: list[tuple[object, ...]] = []
@@ -235,6 +235,24 @@ class GraphSnapshotTests(unittest.TestCase):
             [command[0] for command in client.commands], ["INFO", "BGSAVE", "INFO", "INFO"]
         )
 
+    def test_a_parsed_info_mapping_is_accepted(self):
+        client = FakeRedis(
+            [
+                {
+                    "rdb_last_save_time": 1_000,
+                    "rdb_bgsave_in_progress": 0,
+                    "rdb_last_bgsave_status": "ok",
+                },
+                {
+                    "rdb_last_save_time": 2_000,
+                    "rdb_bgsave_in_progress": 0,
+                    "rdb_last_bgsave_status": "ok",
+                },
+            ]
+        )
+        result = self.snapshot(client, timeout=5.0)
+        self.assertEqual(result.file, f"graph-{STAMP}.rdb")
+
     def test_an_already_running_save_is_tolerated(self):
         client = FakeRedis([BEFORE, FINISHED], bgsave_error=RuntimeError("Background save already in progress"))
         self.assertTrue(self.snapshot(client, timeout=5.0).file)
@@ -287,6 +305,10 @@ class GraphSnapshotTests(unittest.TestCase):
     def test_parse_info_keeps_only_key_values(self):
         fields = parse_info("# Persistence\r\naof_enabled:1\r\nrdb_bgsave_in_progress:0\r\n\r\n")
         self.assertEqual(fields, {"aof_enabled": "1", "rdb_bgsave_in_progress": "0"})
+
+    def test_parse_info_accepts_a_parsed_mapping(self):
+        fields = parse_info({"rdb_last_save_time": 1_000, "rdb_bgsave_in_progress": 0})
+        self.assertEqual(fields, {"rdb_last_save_time": "1000", "rdb_bgsave_in_progress": "0"})
 
 
 class ExportTests(unittest.TestCase):
