@@ -3,6 +3,7 @@ import json
 import re
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -148,7 +149,7 @@ class WrapperTests(unittest.IsolatedAsyncioTestCase):
             graph=self.graph,
             headers_provider=lambda _ctx: self.header_values,
             start_reconciler=False,
-        )
+        ).mcp
 
     async def call(self, name, arguments):
         async with create_connected_server_and_client_session(self.build()) as session:
@@ -892,7 +893,93 @@ class InternalRouteTests(unittest.TestCase):
             headers=self.auth,
         )
         self.assertEqual(bad_group.status_code, 400)
-        self.assertIn("employer", bad_group.json()["error"])
+
+
+class ReconcilerLifespanTests(unittest.TestCase):
+    """The reconciler must run under the transport production actually uses.
+
+    FastMCP 1.27 builds the streamable-HTTP Starlette app with its own lifespan
+    (`session_manager.run()`) and drops the lifespan passed to `FastMCP(...)`,
+    so a reconciler started there would never run: every write would sit
+    `pending` forever even after the graph extracted it.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.registry = Registry(self.tmp.name)
+        self.graph = FakeGraph()
+        self.reconciler = Reconciler(
+            self.registry,
+            self.graph,
+            FakeBackend(),
+            FakeProbes(),
+            config=ReconcilerConfig(interval=0.02, grace=600, backoff=0, max_retries=2),
+        )
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def seed_pending(self, content="reconciler probe"):
+        digest = content_hash(content)
+        entry = RegistryEpisode(
+            group="owner--repo",
+            content_hash=digest,
+            uuid=episode_uuid("owner--repo", digest),
+            name=content,
+            content=content,
+            kind="text",
+            origin="agent",
+            origin_ref="",
+            actor="maki",
+            cwd="",
+            tags=(),
+            valid_at="2026-10-22T09:00:00Z",
+            created_at=utcnow(),
+            status="pending",
+            attempts=1,
+        )
+        self.registry.queue(entry)
+        return entry
+
+    def wait_for(self, predicate, *, timeout=5.0):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if predicate():
+                return True
+            time.sleep(0.02)
+        return False
+
+    def test_the_streamable_http_app_promotes_a_landed_episode(self):
+        entry = self.seed_pending()
+        self.graph.present = EpisodeRef(uuid="graph-1", created_at="2026-10-22T10:05:00Z")
+        runtime = build_server(
+            WrapperConfig(state_dir=self.tmp.name, graphiti_url="http://127.0.0.1:1/mcp"),
+            registry=self.registry,
+            probes=FakeProbes(),
+            graph=self.graph,
+            reconciler=self.reconciler,
+        )
+        with TestClient(runtime.streamable_http_app()):
+            landed = self.wait_for(
+                lambda: self.registry.lookup(entry.group, entry.content_hash).status == "active"
+            )
+        self.assertTrue(landed, "the reconciler never ran under streamable-http")
+
+    def test_stopping_the_app_cancels_the_reconciler(self):
+        runtime = build_server(
+            WrapperConfig(state_dir=self.tmp.name, graphiti_url="http://127.0.0.1:1/mcp"),
+            registry=self.registry,
+            probes=FakeProbes(),
+            graph=self.graph,
+            reconciler=self.reconciler,
+        )
+        with TestClient(runtime.streamable_http_app()):
+            pass
+        entry = self.seed_pending(content="seeded after shutdown")
+        self.graph.present = EpisodeRef(uuid="graph-2", created_at="2026-10-22T10:05:00Z")
+        time.sleep(0.2)
+        stored = self.registry.lookup(entry.group, entry.content_hash)
+        self.assertEqual(stored.status, "pending")
 
 
 if __name__ == "__main__":

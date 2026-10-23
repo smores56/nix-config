@@ -72,7 +72,7 @@ class WrapperProvenanceTests(unittest.IsolatedAsyncioTestCase):
             probes=FakeProbes(),
             headers_provider=lambda _ctx: headers,
             start_reconciler=False,
-        )
+        ).mcp
 
     def headers(self, **overrides):
         values = {

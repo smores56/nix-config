@@ -25,6 +25,8 @@ from typing import Any, Awaitable, Callable, Mapping
 
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
+import uvicorn
+from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -353,17 +355,6 @@ def build_server(
             )
         )
 
-    @asynccontextmanager
-    async def lifespan(_server: FastMCP):
-        task = asyncio.create_task(reconciler.run()) if start_reconciler else None
-        try:
-            yield {}
-        finally:
-            if task is not None:
-                task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await task
-
     mcp = FastMCP(
         name="memory",
         instructions=(
@@ -374,7 +365,6 @@ def build_server(
         host=config.host,
         port=config.port,
         streamable_http_path="/mcp",
-        lifespan=lifespan,
     )
 
     def resolve_entry(group: str, ref: str, *, guidance: str) -> RegistryEpisode:
@@ -1129,7 +1119,41 @@ def build_server(
     async def health(_request: Request) -> JSONResponse:  # pragma: no cover - HTTP wiring
         return JSONResponse({"status": "ok", "service": "memory-mcp"})
 
-    return mcp
+    return MemoryServer(mcp, reconciler, start_reconciler=start_reconciler)
+
+
+@dataclass(frozen=True)
+class MemoryServer:
+    """The MCP server plus the background reconciler that keeps it honest.
+
+    FastMCP 1.27 builds the streamable-HTTP Starlette app with its own lifespan
+    (`session_manager.run()`) and drops the lifespan passed to `FastMCP(...)`,
+    so a reconciler started there would never run in production. Startup is
+    composed onto the app here instead.
+    """
+
+    mcp: FastMCP
+    reconciler: Reconciler
+    start_reconciler: bool = True
+
+    def streamable_http_app(self) -> Starlette:
+        app = self.mcp.streamable_http_app()
+        session_lifespan = app.router.lifespan_context
+
+        @asynccontextmanager
+        async def lifespan(_app: Starlette):
+            task = asyncio.create_task(self.reconciler.run()) if self.start_reconciler else None
+            try:
+                async with session_lifespan(_app) as state:
+                    yield state
+            finally:
+                if task is not None:
+                    task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await task
+
+        app.router.lifespan_context = lifespan
+        return app
 
 
 def main() -> int:
@@ -1139,5 +1163,10 @@ def main() -> int:
     except Exception as exc:
         print(f"memory-mcp: failed to initialize: {exc}", file=sys.stderr)
         return 1
-    server.run(transport="streamable-http")
+    uvicorn.run(
+        server.streamable_http_app(),
+        host=config.host,
+        port=config.port,
+        log_level="info",
+    )
     return 0
