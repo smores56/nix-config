@@ -11,7 +11,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "modules/features/ai/memory/src"))
 
-from memory_mcp.graph import EpisodeRef, GraphUnavailable  # noqa: E402
+from memory_mcp.graph import (  # noqa: E402
+    EpisodeRef,
+    GraphStore,
+    GraphUnavailable,
+    TombstoneResult,
+)
 from memory_mcp.normalize import content_hash, episode_uuid  # noqa: E402
 from memory_mcp.reconciler import MAX_BATCH, InFlight, Reconciler, ReconcilerConfig  # noqa: E402
 from memory_mcp.registry import Registry, RegistryEpisode  # noqa: E402
@@ -25,11 +30,19 @@ class FakeGraph:
         self.error = error
         self.calls = []
 
-    def episode_for(self, group, content):
-        self.calls.append((group, content))
+    def episode_for(self, group, content, *, since=None):
+        self.calls.append((group, content, since))
         if self.error:
             raise GraphUnavailable("connection refused")
         return self.results.pop(0) if self.results else None
+
+    def episode_uuids(self, group, content):
+        if self.error:
+            raise GraphUnavailable("connection refused")
+        return []
+
+    def tombstone(self, group, episode_uuid_value, *, now):
+        return TombstoneResult()
 
 
 class FakeBackend:
@@ -68,9 +81,15 @@ class RacingGraph:
         self.entry = entry
         self.ref = ref
 
-    def episode_for(self, group, content):
+    def episode_for(self, group, content, *, since=None):
         self.registry.tombstone(self.entry, reason="superseded while reconciling")
         return self.ref
+
+    def episode_uuids(self, group, content):
+        return []
+
+    def tombstone(self, group, episode_uuid_value, *, now):
+        return TombstoneResult()
 
 
 class RacingBackend:
@@ -94,10 +113,48 @@ class BlockingGraph:
         self.delay = delay
         self.calls = 0
 
-    def episode_for(self, group, content):
+    def episode_for(self, group, content, *, since=None):
         self.calls += 1
         time.sleep(self.delay)
         raise GraphUnavailable("connection refused")
+
+    def episode_uuids(self, group, content):
+        raise GraphUnavailable("connection refused")
+
+    def tombstone(self, group, episode_uuid_value, *, now):
+        raise GraphUnavailable("connection refused")
+
+
+class StubRedis:
+    """A FalkorDB client that always returns the same episode rows."""
+
+    def __init__(self, rows):
+        self.rows = rows
+
+    def execute_command(self, *args):
+        if args[0] == "GRAPH.LIST":
+            return [b"owner--repo"]
+        return [["header"], list(self.rows), []]
+
+
+class SweepGraph:
+    """Pending content is absent; its episodes appear only to the sweep."""
+
+    def __init__(self, uuids=()):
+        self.uuids = list(uuids)
+        self.scans = 0
+        self.tombstoned = []
+
+    def episode_for(self, group, content, *, since=None):
+        return None
+
+    def episode_uuids(self, group, content):
+        self.scans += 1
+        return list(self.uuids)
+
+    def tombstone(self, group, episode_uuid_value, *, now):
+        self.tombstoned.append((group, episode_uuid_value, now))
+        return TombstoneResult()
 
 
 class ReconcilerTests(unittest.IsolatedAsyncioTestCase):
@@ -168,6 +225,68 @@ class ReconcilerTests(unittest.IsolatedAsyncioTestCase):
         stored = self.registry.lookup(entry.group, entry.content_hash)
         self.assertEqual(stored.status, "active")
         self.assertEqual(stored.graphiti_uuid, "graph-1")
+
+    async def test_a_revived_row_does_not_bind_to_the_tombstoned_episode(self):
+        # The registry stamps `Z` and the graph `+00:00`, and a tombstone keeps
+        # its episode, so the bound must compare instants: the old episode
+        # predates this write and is not its extraction.
+        entry = self.entry(created_at="2026-10-22T10:00:00Z")
+        graph = GraphStore(client=StubRedis([["ep-old", "2026-10-22T09:00:00+00:00"]]))
+        counts = await self.reconciler(
+            graph, config=ReconcilerConfig(grace=86400, backoff=60)
+        ).reconcile_once()
+        self.assertEqual(counts["active"], 0)
+        self.assertEqual(counts["waiting"], 1)
+        stored = self.registry.lookup(entry.group, entry.content_hash)
+        self.assertEqual(stored.status, "pending")
+        self.assertIsNone(stored.graphiti_uuid)
+
+    async def test_a_graph_episode_newer_than_the_row_activates_it(self):
+        entry = self.entry(created_at="2026-10-22T10:00:00Z")
+        graph = GraphStore(
+            client=StubRedis(
+                [
+                    ["ep-new", "2026-10-22T10:05:00+00:00"],
+                    ["ep-old", "2026-10-22T09:00:00+00:00"],
+                ]
+            )
+        )
+        counts = await self.reconciler(graph).reconcile_once()
+        self.assertEqual(counts["active"], 1)
+        stored = self.registry.lookup(entry.group, entry.content_hash)
+        self.assertEqual(stored.graphiti_uuid, "ep-new")
+
+    async def test_a_tombstone_before_extraction_invalidates_the_late_episode(self):
+        entry = self.entry(content="tombstoned while pending")
+        stored = self.registry.tombstone(entry, reason="forget this")
+        self.assertIsNone(stored.graphiti_uuid)
+        graph = SweepGraph(["ep-late"])
+        reconciler = self.reconciler(graph)
+
+        counts = await reconciler.reconcile_once()
+
+        self.assertEqual(counts["swept"], 1)
+        self.assertEqual([call[1] for call in graph.tombstoned], ["ep-late"])
+        swept = self.registry.lookup(entry.group, entry.content_hash)
+        self.assertEqual(swept.status, "tombstoned")
+        self.assertEqual(swept.tombstoned_at, stored.tombstoned_at)
+        self.assertEqual(swept.graphiti_uuid, "ep-late")
+
+        scans = graph.scans
+        counts = await reconciler.reconcile_once()
+
+        self.assertEqual(counts["swept"], 0)
+        self.assertEqual(graph.scans, scans)
+
+    async def test_the_tombstone_sweep_is_skipped_while_the_graph_is_unavailable(self):
+        entry = self.entry(content="tombstoned while pending")
+        self.registry.tombstone(entry, reason="forget this")
+        graph = FakeGraph(error=True)
+        counts = await self.reconciler(graph).reconcile_once()
+        self.assertEqual(counts["unavailable"], 1)
+        stored = self.registry.lookup(entry.group, entry.content_hash)
+        self.assertEqual(stored.status, "tombstoned")
+        self.assertIsNone(stored.graphiti_uuid)
 
     async def test_a_pending_row_within_the_grace_window_waits(self):
         entry = self.entry(created_at="2026-10-22T11:55:00Z")

@@ -14,6 +14,7 @@ against the live store (`MATCH ()-[r:RELATES_TO]->() RETURN type(r)`).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 DEFAULT_REDIS_URL = "redis://127.0.0.1:6379"
 SOCKET_TIMEOUT = 5.0
@@ -70,6 +71,32 @@ def _rows(reply: object) -> list[list[object]]:
     return []
 
 
+def moment(value: str | None) -> datetime | None:
+    """Parse an ISO timestamp from either store, or None when unreadable.
+
+    The graph writes `...+00:00` and the registry `...Z`, so the two are never
+    compared as strings; both are parsed and compared as instants.
+    """
+    text = (value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+
+
+def _not_older(ref: EpisodeRef, bound: datetime) -> bool:
+    """Does the episode postdate (or coincide with) the bound?
+
+    An unreadable graph timestamp cannot prove the episode came after the
+    tombstone, so it is not treated as a revival match.
+    """
+    created = moment(ref.created_at)
+    return created is not None and created >= bound
+
+
 class GraphStore:
     def __init__(self, url: str = DEFAULT_REDIS_URL, *, client: object | None = None) -> None:
         self.url = url
@@ -92,7 +119,6 @@ class GraphStore:
         except Exception as exc:
             raise GraphUnavailable(str(exc)) from exc
         return {_text(name) for name in reply or []}
-
     def _query(self, group: str, query: str, params: dict[str, object]) -> list[list[object]]:
         try:
             reply = self._redis().execute_command(
@@ -105,18 +131,28 @@ class GraphStore:
             raise GraphUnavailable(str(exc)) from exc
         return _rows(reply)
 
-    def episode_for(self, group: str, content: str) -> EpisodeRef | None:
+    def episode_for(
+        self, group: str, content: str, *, since: str | None = None
+    ) -> EpisodeRef | None:
         """The newest graph episode whose content matches exactly, or None.
 
         Newest, not oldest: a revived row re-extracts into a new episode, and
         reconciling must bind to that one rather than to the tombstoned
         episode that shares its content.
 
+        `since` (a registry `created_at`) drops episodes older than that
+        instant. A tombstone keeps its episode node on purpose, so without the
+        bound a revived row would go active against the very episode it was
+        revived from; the episode for this write is always newer.
+
         A missing FalkorDB graph is an empty group (nothing extracted yet), not
         an outage. GRAPH.LIST runs first so a presence check never materializes
         a graph for a group that has none.
         """
         notes = self.matches(group, content)
+        bound = moment(since) if since is not None else None
+        if bound is not None:
+            notes = [note for note in notes if _not_older(note, bound)]
         return notes[0] if notes else None
 
     def matches(self, group: str, content: str) -> list[EpisodeRef]:

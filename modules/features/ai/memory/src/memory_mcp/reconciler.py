@@ -13,6 +13,11 @@ call runs off the event loop, a pass is capped, and the first graph outage ends
 the pass: once the graph is unreachable, absence cannot be proven for any row.
 Writes are guarded on `status='pending'`, so a row tombstoned mid-pass is never
 resurrected and never audited.
+
+Each pass then sweeps rows that were tombstoned before their extraction landed
+(`tombstoned` with no graph uuid): the episode Graphiti creates afterwards is
+still live in the graph, so it is invalidated like a manual tombstone and its
+uuid recorded to stop the rescan.
 """
 
 from __future__ import annotations
@@ -121,24 +126,38 @@ class Reconciler:
             "inflight": 0,
             "unavailable": 0,
             "changed": 0,
+            "swept": 0,
         }
         rows = self.registry.pending(limit=max(1, min(self.config.batch, MAX_BATCH)))
         self.last_error = None
-        if not rows:
-            return counts
-        healthy = not await self.probes.failures()
         now = self._now()
+        if rows:
+            await self._reconcile_pending(rows, counts, now)
+        # The sweep runs after the pending pass and is skipped once the graph
+        # proved unreachable: absence is then unknowable for it too.
+        if self.last_error is None:
+            await self._sweep_tombstoned(counts, now)
+        return counts
+
+    async def _reconcile_pending(
+        self, rows: list[RegistryEpisode], counts: dict[str, int], now: datetime
+    ) -> None:
+        healthy = not await self.probes.failures()
 
         for row in rows:
             key = (row.group, row.content_hash)
             try:
-                found = await asyncio.to_thread(self.graph.episode_for, row.group, row.content)
+                # Bound to this row's own write: a tombstoned episode with the
+                # same content is kept on purpose and is not this extraction.
+                found = await asyncio.to_thread(
+                    self.graph.episode_for, row.group, row.content, since=row.created_at
+                )
             except GraphUnavailable as exc:
                 # Once the graph is unreachable, absence cannot be proven for
                 # any later row either: end the pass instead of hammering it.
                 self.last_error = str(exc) or type(exc).__name__
                 counts["unavailable"] += 1
-                break
+                return
 
             if found is not None:
                 applied = self.registry.mark_active(
@@ -209,7 +228,7 @@ class Reconciler:
                 # A slow but successful submission must not be duplicated: prove
                 # absence again immediately before resubmitting.
                 found = await asyncio.to_thread(
-                    self.graph.episode_for, row.group, row.content
+                    self.graph.episode_for, row.group, row.content, since=row.created_at
                 )
                 if found is not None:
                     applied = self.registry.mark_active(
@@ -243,11 +262,54 @@ class Reconciler:
             except GraphUnavailable as exc:
                 self.last_error = str(exc) or type(exc).__name__
                 counts["unavailable"] += 1
-                break
+                return
             finally:
                 self.in_flight.release(key)
 
-        return counts
+    async def _sweep_tombstoned(self, counts: dict[str, int], now: datetime) -> None:
+        """Invalidate graph episodes that landed after their row was tombstoned.
+
+        A tombstone on a row whose extraction had not landed yet cannot reach
+        the episode Graphiti creates later, and the row leaves `pending` at
+        tombstone time, so the pending pass never sees it. Such a row stays
+        `tombstoned` with no graph uuid; this pass finds its episodes anyway,
+        invalidates them through the same path a manual tombstone uses, and
+        records the newest uuid so the row is not rescanned.
+        """
+        rows = self.registry.tombstoned_unverified(
+            limit=max(1, min(self.config.batch, MAX_BATCH))
+        )
+        stamp = now.isoformat()
+        for row in rows:
+            try:
+                uuids = await asyncio.to_thread(
+                    self.graph.episode_uuids, row.group, row.content
+                )
+                for uuid_value in uuids:
+                    await asyncio.to_thread(
+                        self.graph.tombstone, row.group, uuid_value, now=stamp
+                    )
+            except GraphUnavailable as exc:
+                self.last_error = str(exc) or type(exc).__name__
+                counts["unavailable"] += 1
+                return
+            if not uuids:
+                continue
+            recorded = self.registry.record_graph_uuid(
+                row,
+                uuids[0],
+                audit=Audit(
+                    actor="reconciler",
+                    group=row.group,
+                    tool="reconciler",
+                    status="tombstoned",
+                    content_hash=row.content_hash,
+                    uuid=row.uuid,
+                    details={"graphiti_uuid": uuids[0], "late_episodes": len(uuids)},
+                ),
+            )
+            if recorded:
+                counts["swept"] += 1
 
     def _backoff_elapsed(self, key: tuple[str, str]) -> bool:
         last = self._last_attempt.get(key)
@@ -317,7 +379,7 @@ class Reconciler:
         progressed = {
             name: value
             for name, value in counts.items()
-            if value and name in ("active", "failed", "retried", "retry_failed")
+            if value and name in ("active", "failed", "retried", "retry_failed", "swept")
         }
         if progressed:
             detail = ", ".join(f"{name}={value}" for name, value in progressed.items())

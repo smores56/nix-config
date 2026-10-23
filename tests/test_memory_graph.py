@@ -74,6 +74,29 @@ class GraphPresenceTests(unittest.TestCase):
         self.assertEqual(store.episode_uuids("global", "c"), ["ep-new", "ep-old"])
         self.assertEqual(store.episode_for("global", "c").uuid, "ep-new")
 
+    def test_a_since_bound_drops_an_episode_that_predates_it(self):
+        client = FakeRedis(
+            graph_names=("global",),
+            reply=reply([["ep-old", "2026-01-01T00:00:00+00:00"]]),
+        )
+        store = GraphStore(client=client)
+        self.assertIsNone(store.episode_for("global", "c", since="2026-01-02T00:00:00Z"))
+        # Tombstoning counts on the unbounded helpers still seeing it.
+        self.assertEqual(store.episode_uuids("global", "c"), ["ep-old"])
+
+    def test_a_since_bound_keeps_an_episode_at_or_after_it(self):
+        client = FakeRedis(
+            graph_names=("global",),
+            reply=reply(
+                [
+                    ["ep-new", "2026-01-02T00:00:00+00:00"],
+                    ["ep-old", "2026-01-01T00:00:00Z"],
+                ]
+            ),
+        )
+        ref = GraphStore(client=client).episode_for("global", "c", since="2026-01-01T12:00:00Z")
+        self.assertEqual(ref.uuid, "ep-new")
+
     def test_a_missing_graph_has_no_matches(self):
         client = FakeRedis(graph_names=("other",))
         self.assertEqual(GraphStore(client=client).episode_uuids("global", "c"), [])

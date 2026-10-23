@@ -466,7 +466,6 @@ class Registry:
             ).fetchone()
         return self._row(row)
 
-
     def pending(self, *, limit: int = 500) -> list[RegistryEpisode]:
         with self._connect() as conn:
             rows = conn.execute(
@@ -475,6 +474,50 @@ class Registry:
                 (max(1, int(limit)),),
             ).fetchall()
         return [entry for row in rows if (entry := self._row(row)) is not None]
+
+    def tombstoned_unverified(self, *, limit: int = 500) -> list[RegistryEpisode]:
+        """Tombstoned rows with no graph episode recorded yet.
+
+        `graphiti_uuid IS NULL` marks a tombstone that landed before extraction
+        did: the episode Graphiti creates later is still live in the graph and
+        still turns up in search. Once the sweep records a uuid, the row leaves
+        this set.
+
+        Newest first: a row whose episode never appears would otherwise pin the
+        head of the queue forever, and a just-tombstoned write is the one whose
+        extraction is still in flight.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM episodes WHERE status = 'tombstoned' "
+                "AND graphiti_uuid IS NULL ORDER BY tombstoned_at DESC LIMIT ?",
+                (max(1, int(limit)),),
+            ).fetchall()
+        return [entry for row in rows if (entry := self._row(row)) is not None]
+
+    def record_graph_uuid(
+        self,
+        entry: RegistryEpisode,
+        graphiti_uuid: str,
+        *,
+        audit: Audit | None = None,
+    ) -> bool:
+        """Attach a graph uuid to a tombstoned row; status and tombstoned_at stay.
+
+        The sweep uses this to stop rescanning a row it has already
+        invalidated. Guarded on `status='tombstoned'`, so a row revived while
+        the sweep ran keeps its fresh identity instead of the stale uuid.
+        """
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "UPDATE episodes SET graphiti_uuid = ? WHERE group_id = ? "
+                "AND content_hash = ? AND status = 'tombstoned'",
+                (graphiti_uuid, entry.group, entry.content_hash),
+            )
+            if cursor.rowcount == 0:
+                return False
+            self._audit(conn, audit)
+        return True
 
     def find_exact(self, group: str, ref: str) -> RegistryEpisode | None:
         """Exact uuid5, content-hash prefix (>=12 hex), or exact `origin:origin_ref`.
