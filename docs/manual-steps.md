@@ -49,13 +49,12 @@ generated hardware config, then run `nix run .#bootstrap`.
 
 #### LUKS shadow migration (970 EVO)
 
-**Do not run this yet.** The boot-unlock mechanism is pending: Clevis/Tang is
-preferred, with TPM + PIN + initrd SSH as the fallback. The current `disko.nix`
-uses `tpm2-device=auto` and step 7 enrolls the TPM; both change with the
-choice. The 970 EVO is still untouched.
 The old Windows Samsung 970 EVO (`nvme1n1`, `SAMSUNG SSD 970 EVO 1TB`,
 serial `S5H9NS0NA57329Z`) is the transition disk. The 980 PRO stays as the
 rollback until the new system has booted twice.
+
+**Do not run this yet.** Clevis/Tang is chosen, but the Tang Pi and the
+`cryptroot.jwe` must exist first. The 970 EVO is untouched.
 
 **Do not `nixos-rebuild switch` the migration worktree on the current 980 PRO
 system.** Its `disko.nix` declares `/` on `/dev/mapper/cryptroot`, which only
@@ -65,33 +64,87 @@ exists after the 970 EVO install. Use the worktree only for `disko` and
 1. Back up and verify (Proton + `/var/backup`). Attach a console/keyboard for
    the first boot. Confirm `nvme1n1` is the 970 EVO and not the current root:
    `lsblk -o NAME,SIZE,MODEL,SERIAL,MOUNTPOINTS`.
-2. From the migration worktree, stage the new config so the flake sees it:
+2. Bring up the Tang Pi first: see **Tang Pi (Clevis)** below. Give it a
+   static IP/DHCP reservation and Ethernet; allow TCP 7654 from smortress only.
+3. From the migration worktree, stage the new config so the flake sees it:
    `git add modules/hosts/smortress/disko.nix modules/hosts/smortress/meta.nix`.
-3. Format and mount the 970 EVO. This **wipes nvme1n1** and prompts for the LUKS
+4. Format and mount the 970 EVO. This **wipes nvme1n1** and prompts for the LUKS
    passphrase twice; store it offline.
    `sudo nix run github:nix-community/disko -- --mode destroy,format,mount --flake .#smortress`
-4. Copy the SSH host keys (the age identity that decrypts sops) into the new
+5. Generate the Clevis JWE from the same passphrase and add the Clevis config:
+   ```
+   read -rsp 'LUKS passphrase: ' pass; echo
+   printf '%s' "$pass" | clevis encrypt tang '{"url":"http://<pi>:7654"}' > modules/hosts/smortress/cryptroot.jwe
+   unset pass
+   ```
+   Add to `modules/hosts/smortress/meta.nix` `nixosOptions`:
+   ```nix
+   boot.initrd.clevis = {
+     enable = true;
+     useTang = true;
+     devices.cryptroot.secretFile = ./cryptroot.jwe;
+   };
+   boot.initrd.network.enable = true;
+   boot.initrd.availableKernelModules = [ "<nic-driver>" ];
+   ```
+   Replace `<nic-driver>` with the smortress NIC module (`lspci -k` /
+   `ethtool -i`), then `git add cryptroot.jwe modules/hosts/smortress/meta.nix`.
+6. Copy the SSH host keys (the age identity that decrypts sops) into the new
    root before the first boot:
    `sudo mkdir -p /mnt/etc/ssh && sudo cp -a /etc/ssh/ssh_host_* /mnt/etc/ssh/ && sudo chmod 600 /mnt/etc/ssh/ssh_host_*_key`
-5. Install the system:
+7. Install the system:
    `sudo nixos-install --root /mnt --flake .#smortress --no-root-passwd`
-6. Stop the data services, then copy the data the backup/restore drill does not
+8. Stop the data services, then copy the data the backup/restore drill does not
    recreate: `/home`, `/var/lib/media`, the Immich database (or restore the
    `Photos` dump), `/var/lib/navidrome`, `/var/lib/calibre`, `/var/lib/memory`,
    and any container volumes. Do not copy `/etc`, `/nix`, `/boot`, or
    `/var/backup`; the backup HDD is mounted by label and must stay untouched.
    See `modules/features/backup/README.md` for the restore procedure.
-7. First boot from the 970 EVO with the console attached. TPM is not enrolled
-   yet, so enter the LUKS passphrase. After login, set the `smores` password,
-   generate a recovery key and store it offline:
+9. First boot from the 970 EVO with the console attached. Clevis should unlock
+   automatically via Tang; if the Pi/network is down, enter the LUKS passphrase.
+   Generate a recovery key and store it offline:
    `sudo systemd-cryptenroll --recovery-key /dev/disk/by-partlabel/root`
-   Then enroll the TPM:
-   `sudo systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partlabel/root`
-   Reboot and confirm TPM auto-unlock. Keep the printed recovery key and
-   passphrase offline.
-8. Switch the firmware boot order to the 970 EVO. Keep the 980 PRO untouched
-   until the new system has booted twice; then merge the worktree branch and
-   optionally wipe/reuse the 980 PRO.
+   Do not enroll a TPM LUKS slot. Test one boot with the Pi up and one with it
+   down.
+10. Switch the firmware boot order to the 970 EVO. Keep the 980 PRO untouched
+    until the new system has booted twice; then merge the worktree branch and
+    optionally wipe/reuse the 980 PRO.
+
+#### Tang Pi (Clevis)
+
+The Pi runs Tang on the LAN and is treated as sensitive: its keys in
+`/var/db/tang` plus the disk can unlock the disk. Keep it patched, firewalled to
+smortress, and off the public internet. A closet Pi protects a stolen smortress
+only if the thief does not take the Pi; that is the accepted risk.
+
+Raspberry Pi OS / Debian, from this repo:
+
+```
+scp scripts/tang-pi.sh pi@<pi>:
+ssh pi@<pi> 'sudo ./tang-pi.sh --allow <smortress-ip>/32'
+```
+
+Give the Pi a static IP/DHCP reservation and prefer Ethernet. The script installs
+`tang`, enables `tangd.socket`, prints the Tang URL/port (default 7654), and
+applies a `ufw` rule if `--allow` is set. Verify with
+`ss -ltn | grep 7654` and `systemctl status tangd.socket`.
+
+NixOS Pi alternative:
+
+```nix
+services.tang = {
+  enable = true;
+  listenStream = [ "7654" ];
+  ipAddressAllow = [ "192.168.1.0/24" ];
+};
+networking.firewall.allowedTCPPorts = [ 7654 ];
+```
+
+If the Pi is rebuilt, its Tang keys change; re-run the Clevis JWE generation
+with the LUKS passphrase. Keep the passphrase and printed recovery key offline.
+The Clevis module and fallback behavior are documented at
+`boot.initrd.clevis` (`nixos/modules/system/boot/clevis.md`) and
+https://wiki.nixos.org/wiki/Remote_disk_unlocking.
 
 The unencrypted 5TB HDD (`/dev/disk/by-label/backup`) is not part of this
 migration; its encryption/legacy plan is tracked separately in #250.

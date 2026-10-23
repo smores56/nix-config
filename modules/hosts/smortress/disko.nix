@@ -41,9 +41,8 @@
             settings = {
               allowDiscards = true;
               fallbackToPassword = true;
-              # Enroll the TPM after the first boot with
-              # systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7.
-              crypttabExtraOpts = [ "tpm2-device=auto" ];
+              # Clevis/Tang decrypts the passphrase in initrd; no TPM LUKS
+              # slot, which would let a stolen whole machine boot.
             };
             # Generate a recovery key after install with
             # systemd-cryptenroll --recovery-key; store it offline.
