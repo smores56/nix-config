@@ -284,7 +284,12 @@ in
         "podman-rustfs.service"
         "lobechat-secrets.service"
       ];
-      path = [ pkgs.coreutils ];
+      # mc resolves its config dir through `getent passwd`, which a bare
+      # systemd PATH does not provide.
+      path = [
+        pkgs.coreutils
+        pkgs.getent
+      ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
