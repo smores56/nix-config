@@ -84,6 +84,11 @@ memory-eval *args:
     sg memory -c 'nix run nixpkgs#python3 -- modules/features/ai/memory/eval/retrieval.py {{args}} search-metrics'
     sg memory -c 'nix run nixpkgs#python3 -- modules/features/ai/memory/eval/retrieval.py leak-check'
 
+# Requeue active rows the graph no longer holds (after a registry-only restore).
+# Repeat until it reports nothing left; each call requeues a bounded slice.
+memory-reindex *args:
+    sg memory -c 'memory reindex {{args}}'
+
 # Stop memory, wipe the derived graph and the registry, then start it again.
 # FalkorDB must stop before its directory is wiped: a running instance rewrites
 # its AOF and would recreate what this deletes.

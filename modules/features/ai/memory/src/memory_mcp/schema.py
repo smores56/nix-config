@@ -93,6 +93,38 @@ FALLBACK_TOOLS: list[dict[str, object]] = [
         },
     },
     {
+        "name": "memory_reindex",
+        "description": (
+            "Operator-only (the memory CLI): requeue active episodes whose graph episode is gone, "
+            "so the reconciler extracts them again."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "everywhere": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Every group, not just this project's.",
+                },
+                "dry_run": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Report without writing.",
+                },
+                "force": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Requeue even when a group looks almost entirely missing.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "default": 200,
+                    "description": "Most rows to requeue in this call.",
+                },
+            },
+        },
+    },
+    {
         "name": "memory_status",
         "description": "Report the derived group, typed registry counts, and model/graph readiness.",
         "inputSchema": {"type": "object", "properties": {}},

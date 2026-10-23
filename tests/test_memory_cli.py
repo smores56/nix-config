@@ -68,6 +68,28 @@ class CliOutputTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(out.strip(), "Memory status")
 
+    def test_reindex_passes_scope_and_limit_to_the_tool(self):
+        calls = []
+
+        async def fake_call(_config, tool, arguments):
+            calls.append((tool, arguments))
+            return ToolResult(text="reindexed", is_error=False)
+
+        with mock.patch.object(cli, "call_tool", fake_call), redirect_stdout(io.StringIO()):
+            code = cli.main(["reindex", "--dry-run", "--limit", "7", "--all"])
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            calls,
+            [("memory_reindex", {"everywhere": True, "dry_run": True, "force": False, "limit": 7})],
+        )
+
+    def test_reindex_refuses_group_with_all(self):
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            code = cli.main(["--group", "owner--repo", "reindex", "--all"])
+        self.assertEqual(code, 2)
+        self.assertIn("exclusive", stderr.getvalue())
+
     def test_json_output(self):
         code, out, _err = self.run_cli(
             ["--group", "global", "--json", "search", "anything"],

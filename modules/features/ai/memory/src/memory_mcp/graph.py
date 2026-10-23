@@ -27,6 +27,11 @@ EPISODIC_MATCHES_QUERY = (
     "MATCH (e:Episodic) WHERE e.group_id=$g AND e.content=$c "
     "RETURN e.uuid, e.created_at ORDER BY e.created_at DESC"
 )
+# One query per group instead of one per row: a reindex compares the whole
+# active set, and thousands of round-trips do not fit a tool deadline.
+EPISODIC_CONTENTS_QUERY = (
+    "MATCH (e:Episodic) WHERE e.group_id=$g RETURN e.content, e.created_at"
+)
 # Exclusive: this episode is the only support, so invalidate the edge.
 _TOMBSTONE_EXCLUSIVE_QUERY = (
     f"MATCH (a)-[r:{RELATES_TO}]->(b) WHERE $ep IN r.episodes AND size(r.episodes) <= 1 "
@@ -85,6 +90,18 @@ def moment(value: str | None) -> datetime | None:
     except ValueError:
         return None
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+
+
+def not_older(created_at: str | None, bound: datetime | None) -> bool:
+    """Does `created_at` postdate (or coincide with) the bound?
+
+    An unreadable graph timestamp cannot prove the episode came after the
+    bound, so it does not count as a match.
+    """
+    if bound is None:
+        return True
+    created = moment(created_at)
+    return created is not None and created >= bound
 
 
 def _not_older(ref: EpisodeRef, bound: datetime) -> bool:
@@ -154,6 +171,22 @@ class GraphStore:
         if bound is not None:
             notes = [note for note in notes if _not_older(note, bound)]
         return notes[0] if notes else None
+
+    def contents(self, group: str) -> dict[str, tuple[str, ...]]:
+        """Every episode timestamp in one group, keyed by exact episode content."""
+        names = self._graph_names()
+        if names is None:
+            raise GraphUnavailable("graph list unavailable")
+        if group not in names:
+            return {}
+        stamps: dict[str, list[str]] = {}
+        for row in self._query(group, EPISODIC_CONTENTS_QUERY, {"g": group}):
+            if not row or row[0] is None:
+                continue
+            content = _text(row[0])
+            stamp = _text(row[1]) if len(row) > 1 and row[1] is not None else ""
+            stamps.setdefault(content, []).append(stamp)
+        return {content: tuple(values) for content, values in stamps.items()}
 
     def matches(self, group: str, content: str) -> list[EpisodeRef]:
         """Every graph episode with this exact content, newest first."""

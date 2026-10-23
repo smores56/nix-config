@@ -31,7 +31,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from .formatting import clip, format_search, looks_path_like, path_query_note, provenance_tag
-from .graph import GraphStore, GraphUnavailable, TombstoneResult
+from .graph import GraphStore, GraphUnavailable, TombstoneResult, moment, not_older
 from .graphiti import BackendError, GraphitiBackend
 from .groups import (
     GLOBAL_GROUP,
@@ -98,6 +98,17 @@ MAX_DETAIL_CHARS = 300
 # The internal routes take machine-built JSON only: a 10k-hash lookup is the
 # largest legitimate body, and episodes are capped at MAX_CONTENT_CHARS.
 MAX_INTERNAL_BODY_BYTES = 1_000_000
+# A reindex sweeps the registry in pages because a full corpus is thousands of
+# rows and the tool call has a deadline. Each requeued row costs a full
+# extraction, so one call requeues a bounded slice and the operator repeats it.
+REINDEX_PAGE = 500
+REINDEX_DEFAULT = 200
+# Each requeued row is also submitted, one at a time; 2000 submissions would not
+# fit the 60 s tool deadline.
+REINDEX_MAX = 500
+# Below this many rows a high miss rate is ordinary; above it, a group that is
+# almost entirely missing means the graph and the registry disagree.
+REINDEX_GUARD_MIN_ROWS = 50
 
 _HASH = re.compile(r"^[0-9a-f]{64}$")
 
@@ -268,7 +279,7 @@ def _result_hash(text: str) -> str:
 def _duplicate_message(entry: RegistryEpisode, group: str) -> str:
     return (
         f"Duplicate memory: the same content is already stored in group {group} "
-        f"as {entry.uuid} (written {entry.created_at}). Nothing was queued."
+        f"as {entry.uuid} (last queued {entry.created_at}). Nothing was queued."
     )
 
 
@@ -301,6 +312,18 @@ def _payload_tags(value: object) -> list[str]:
     if not isinstance(value, list) or any(not isinstance(tag, str) for tag in value):
         raise ToolError("tags must be an array of strings")
     return [tag[:MAX_TAG_LENGTH] for tag in value]
+
+
+def _active_rows(registry: Registry, group: str | None) -> list[RegistryEpisode]:
+    """Every active row, optionally for one group, in queue order."""
+    rows: list[RegistryEpisode] = []
+    after: tuple[str, str, str] | None = None
+    while True:
+        page = registry.active_page(after=after, limit=REINDEX_PAGE, group=group)
+        if not page:
+            return rows
+        rows.extend(page)
+        after = (page[-1].created_at, page[-1].content_hash, page[-1].group)
 
 
 def build_server(
@@ -587,6 +610,23 @@ def build_server(
         if error:
             text += f" Submission was deferred: {error}. It will be retried."
         return WriteOutcome(text, status, group, uuid, digest)
+
+    async def _replay(row: RegistryEpisode) -> str | None:
+        """Submit one stored row to Graphiti; return the error, if any."""
+        try:
+            await backend.add_episode(
+                name=row.name,
+                episode_body=row.content,
+                group_id=row.group,
+                source=row.kind,
+                reference_time=row.valid_at,
+                source_description=describe_source(row.origin, row.origin_ref, row.valid_at),
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # the reconciler retries a deferred submission
+            return clip(str(exc), MAX_MESSAGE_CHARS)
+        return None
 
     def _pending_expired(entry: RegistryEpisode, now: str, stale: float) -> bool:
         moment = age_seconds(entry.created_at, datetime.fromisoformat(now.replace("Z", "+00:00")))
@@ -904,6 +944,147 @@ def build_server(
             )
 
         return await guarded("memory_promote", ctx, action)
+
+    @mcp.tool(name="memory_reindex", structured_output=False)
+    async def memory_reindex(
+        ctx: Context,
+        everywhere: bool = False,
+        dry_run: bool = False,
+        force: bool = False,
+        limit: int = REINDEX_DEFAULT,
+    ) -> str:
+        """Operator-only (the memory CLI): requeue and resubmit rows the graph no longer holds."""
+
+        async def action(info: CallContext) -> str:
+            # Requeuing a corpus spends model tokens at two upstream slots for
+            # hours: an operator decision, not something a prompt-injected
+            # agent may start.
+            if info.actor != "cli":
+                raise ToolError("reindex is operator-only; ask the human")
+            cap = max(1, min(int(limit), REINDEX_MAX))
+            scope_group = None if everywhere else info.group
+
+            rows = await asyncio.to_thread(_active_rows, registry, scope_group)
+            by_group: dict[str, list[RegistryEpisode]] = {}
+            for row in rows:
+                by_group.setdefault(row.group, []).append(row)
+
+            missing: list[RegistryEpisode] = []
+            checked = 0
+            skipped: list[str] = []
+            warnings: list[str] = []
+            try:
+                for group_id, group_rows in by_group.items():
+                    if everywhere:
+                        try:
+                            validate_group(group_id)
+                        except GroupRefused:
+                            skipped.append(group_id)
+                            continue
+                    episodes = await asyncio.to_thread(graph.contents, group_id)
+                    checked += len(group_rows)
+                    absent = [
+                        row
+                        for row in group_rows
+                        if not any(
+                            not_older(stamp, moment(row.created_at))
+                            for stamp in episodes.get(row.content, ())
+                        )
+                    ]
+                    # A group whose episodes exist but almost none match can be
+                    # a wrong graph name or a registry from another host.
+                    # Requeueing thousands of rows on that signal costs hours
+                    # of extraction, so stop and let the operator look.
+                    suspicious = bool(episodes) and (
+                        (len(absent) >= REINDEX_GUARD_MIN_ROWS
+                         and len(absent) * 10 >= len(group_rows) * 9)
+                        or len(absent) == len(group_rows)
+                    )
+                    if suspicious and not force:
+                        if not dry_run:
+                            raise ToolError(
+                                f"{len(absent)} of {len(group_rows)} active rows in {group_id} "
+                                f"have no episode while the graph holds {len(episodes)}; "
+                                "nothing was requeued. Check the group and the graph, or "
+                                "pass force."
+                            )
+                        warnings.append(
+                            f"{group_id}: {len(absent)} of {len(group_rows)} rows look missing "
+                            "while the graph is not empty (force overrides)"
+                        )
+                    missing.extend(absent)
+            except GraphUnavailable as exc:
+                raise ToolError(
+                    f"graph unavailable, so nothing was requeued: {clip(str(exc), 200)}"
+                ) from exc
+
+            selected = missing[:cap]
+            requeued = deferred = 0
+            if not dry_run:
+                for row in selected:
+                    applied = await asyncio.to_thread(
+                        registry.requeue_many, [row], actor=info.actor, tool="memory_reindex"
+                    )
+                    if not applied:
+                        continue
+                    requeued += 1
+                    error = await _replay(row)
+                    deferred += 1 if error else 0
+                    await asyncio.to_thread(
+                        registry.record_attempt,
+                        row.group,
+                        row.content_hash,
+                        error=error,
+                        audit=Audit(
+                            actor=info.actor,
+                            group=row.group,
+                            tool="memory_reindex",
+                            status="retried" if error is None else "retry_failed",
+                            content_hash=row.content_hash,
+                            uuid=row.uuid,
+                            details={"error": error} if error else {},
+                        ),
+                    )
+
+            scope = "every group" if everywhere else f"group {info.group}"
+            parts = [
+                f"Reindex {scope}: checked {checked} active row(s), "
+                f"{checked - len(missing)} still in the graph, {len(missing)} missing"
+            ]
+            if dry_run:
+                parts.append("dry run, nothing written")
+            else:
+                parts.append(f"requeued and resubmitted {requeued}")
+                if deferred:
+                    parts.append(f"{deferred} submission(s) deferred to the reconciler")
+                remaining = len(missing) - requeued
+                if remaining > 0:
+                    parts.append(f"{remaining} left for the next run (cap {cap})")
+                elif requeued:
+                    parts.append("the reconciler verifies them as extraction lands")
+            if skipped:
+                parts.append(f"skipped {len(skipped)} non-personal group(s)")
+            parts.extend(warnings)
+            text = "; ".join(parts) + "."
+            audit(
+                "memory_reindex",
+                "dry-run" if dry_run else "ok",
+                actor=info.actor,
+                group="*" if everywhere else info.group,
+                details={
+                    "everywhere": everywhere,
+                    "force": force,
+                    "checked": checked,
+                    "missing": len(missing),
+                    "requeued": requeued,
+                    "deferred": deferred,
+                    "skipped_groups": skipped,
+                    "warnings": warnings,
+                },
+            )
+            return text
+
+        return await guarded("memory_reindex", ctx, action)
 
     @mcp.tool(name="memory_status", structured_output=False)
     async def memory_status(ctx: Context) -> str:

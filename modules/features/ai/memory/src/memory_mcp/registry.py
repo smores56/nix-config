@@ -466,6 +466,82 @@ class Registry:
             ).fetchone()
         return self._row(row)
 
+    def requeue_many(
+        self, entries: Sequence[RegistryEpisode], *, actor: str, tool: str = "memory_reindex"
+    ) -> int:
+        """Return active rows whose graph episode is gone to pending, in one transaction.
+
+        `created_at` is the queue clock: the reconciler measures its grace from
+        it and `pending()` orders by it, so a requeued row has to re-enter the
+        queue now or it would be resubmitted and marked failed within minutes
+        of a restore, while its extraction is still waiting upstream. The write
+        time it replaces stays in the audit row.
+
+        The status and graph-uuid guards keep a row that changed under the
+        caller (a concurrent write re-extracted it, or a tombstone landed)
+        untouched. Returns how many rows were requeued.
+        """
+        at = utcnow()
+        applied = 0
+        with self._connect() as conn:
+            for entry in entries:
+                cursor = conn.execute(
+                    "UPDATE episodes SET status = 'pending', attempts = 0, last_error = NULL, "
+                    "graphiti_uuid = NULL, created_at = ? "
+                    "WHERE group_id = ? AND content_hash = ? AND status = 'active' "
+                    "AND graphiti_uuid IS ?",
+                    (at, entry.group, entry.content_hash, entry.graphiti_uuid),
+                )
+                if cursor.rowcount == 0:
+                    continue
+                self._audit(
+                    conn,
+                    Audit(
+                        actor=actor,
+                        group=entry.group,
+                        tool=tool,
+                        status="requeued",
+                        content_hash=entry.content_hash,
+                        uuid=entry.uuid,
+                        details={
+                            "graphiti_uuid": entry.graphiti_uuid,
+                            "written_at": entry.created_at,
+                        },
+                    ),
+                )
+                applied += 1
+        return applied
+
+    def active_page(
+        self,
+        *,
+        after: tuple[str, str, str] | None,
+        limit: int,
+        group: str | None = None,
+    ) -> list[RegistryEpisode]:
+        """One page of active rows in `(created_at, content_hash, group_id)` order.
+
+        The cursor tuple orders deterministically and survives rows leaving the
+        page: requeued rows drop out of `active`, so a walk that keeps the last
+        seen row continues past them.
+        """
+        clauses = ["status = 'active'"]
+        params: list[object] = []
+        if group is not None:
+            clauses.append("group_id = ?")
+            params.append(group)
+        if after is not None:
+            clauses.append("(created_at, content_hash, group_id) > (?, ?, ?)")
+            params.extend(after)
+        params.append(max(1, int(limit)))
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM episodes WHERE " + " AND ".join(clauses) + " "
+                "ORDER BY created_at, content_hash, group_id LIMIT ?",
+                tuple(params),
+            ).fetchall()
+        return [entry for row in rows if (entry := self._row(row)) is not None]
+
     def pending(self, *, limit: int = 500) -> list[RegistryEpisode]:
         with self._connect() as conn:
             rows = conn.execute(

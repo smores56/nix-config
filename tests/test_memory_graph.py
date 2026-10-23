@@ -4,11 +4,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "modules/features/ai/memory/src"))
 
+from datetime import datetime, timezone  # noqa: E402
+
 from memory_mcp.graph import (  # noqa: E402
+    EPISODIC_CONTENTS_QUERY,
     EPISODIC_MATCHES_QUERY,
     RELATES_TO,
     GraphStore,
     GraphUnavailable,
+    not_older,
 )
 
 
@@ -121,6 +125,41 @@ class GraphPresenceTests(unittest.TestCase):
     def test_unknown_content_is_absent(self):
         client = FakeRedis(graph_names=("global",), reply=reply([]))
         self.assertIsNone(GraphStore(client=client).episode_for("global", "x"))
+
+    def test_contents_groups_timestamps_by_content(self):
+        client = FakeRedis(
+            graph_names=("owner--repo",),
+            reply=reply(
+                [
+                    ["a", "2026-01-01T00:00:00Z"],
+                    ["a", "2026-01-02T00:00:00Z"],
+                    ["b", None],
+                ]
+            ),
+        )
+        contents = GraphStore(client=client).contents("owner--repo")
+        self.assertEqual(contents["a"], ("2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z"))
+        self.assertEqual(contents["b"], ("",))
+        _command, graph, query = client.calls[-1]
+        self.assertEqual(graph, "owner--repo")
+        self.assertIn(EPISODIC_CONTENTS_QUERY, query)
+
+    def test_contents_of_a_missing_graph_is_empty(self):
+        client = FakeRedis(graph_names=("global",))
+        self.assertEqual(GraphStore(client=client).contents("owner--repo"), {})
+        self.assertEqual([call[0] for call in client.calls], ["GRAPH.LIST"])
+
+    def test_contents_raises_when_the_database_is_unreachable(self):
+        client = FakeRedis(list_error=RuntimeError("connection refused"))
+        with self.assertRaises(GraphUnavailable):
+            GraphStore(client=client).contents("owner--repo")
+
+    def test_not_older_treats_an_unreadable_stamp_as_no_match(self):
+        bound = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        self.assertTrue(not_older("2026-01-02T00:00:00Z", bound))
+        self.assertFalse(not_older("", bound))
+        self.assertFalse(not_older("not-a-time", bound))
+        self.assertTrue(not_older("", None))
 
     def test_an_unknown_graph_error_is_an_empty_group(self):
         client = FakeRedis(

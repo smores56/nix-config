@@ -1,4 +1,4 @@
-"""`memory` CLI: write, search, get, retry, promote, status, tombstone, ingest, export, restore.
+"""`memory` CLI: write, search, get, retry, promote, reindex, status, tombstone, ingest, export, restore.
 
 Uses the same headers as the shim, so it works on a client through the loopback
 forward and on smortress directly. `--group` is an explicit override and is
@@ -69,6 +69,20 @@ def build_parser() -> argparse.ArgumentParser:
     promote = sub.add_parser("promote", help="Copy an episode to the global group")
     promote.add_argument("ref", help="Registry uuid, hash prefix (>=12), or origin:origin_ref")
     promote.add_argument("--to", default="global")
+
+    reindex = sub.add_parser(
+        "reindex", help="Requeue active episodes the graph no longer holds (operator)"
+    )
+    reindex.add_argument("--all", action="store_true", help="Every group, not just this project's")
+    reindex.add_argument("--dry-run", action="store_true", help="Report without writing")
+    reindex.add_argument(
+        "--force",
+        action="store_true",
+        help="Requeue even when a group looks almost entirely missing",
+    )
+    reindex.add_argument(
+        "--limit", type=int, default=200, help="Most rows to requeue in this call (default 200)"
+    )
 
     sub.add_parser("status", help="Show group, registry counts, and readiness")
 
@@ -252,6 +266,13 @@ async def _invoke(args: argparse.Namespace, group: str, cwd: str) -> tuple[str, 
         arguments = {"ref": args.ref, "to": args.to}
     elif args.command == "tombstone":
         arguments = {"ref": args.ref, "reason": args.reason}
+    elif args.command == "reindex":
+        arguments = {
+            "everywhere": args.all,
+            "dry_run": args.dry_run,
+            "force": args.force,
+            "limit": args.limit,
+        }
     else:
         arguments = {}
 
@@ -276,6 +297,12 @@ def main(argv: list[str] | None = None) -> int:
         except (ExportError, ExportInvalid, GraphSnapshotError) as exc:
             print(f"memory: {exc}", file=sys.stderr)
             return 1
+    if args.command == "reindex" and args.all and args.group:
+        print(
+            "memory: --group and --all are exclusive; --all already covers every group",
+            file=sys.stderr,
+        )
+        return 2
     if args.command == "ingest":
         from .ingest_runner import IngestError
 
