@@ -52,6 +52,7 @@ _PATH_PREFIXES = ("/", "./", "../", "~/")
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f\u200e\u200f\u202a-\u202e\u2066-\u2069]")
 _WORD_PAIR = re.compile(r"^[A-Za-z]+/[A-Za-z]+$")
+_HEAD = re.compile(r"^\[\d+\] (?:node|fact)\b")
 
 
 def clip(value: str, limit: int) -> str:
@@ -176,6 +177,25 @@ def _episode_line(episode: dict[str, Any], provenance: Mapping[str, RegistryEpis
     return text
 
 
+def _interleaved_entries(
+    nodes: list[dict[str, Any]], facts: list[dict[str, Any]]
+) -> list[tuple[str, dict[str, Any]]]:
+    """Alternate the two searches rank by rank, best first.
+
+    Each list is already ordered by its own Graphiti search, and the two score
+    scales are unrelated, so fuse by rank rather than by score. Listing every
+    node before any fact buried fact-only answers: while the node list was
+    full, no fact could reach the top five. Alternating costs nodes the fourth
+    and fifth slots, which `docs/manual-steps.md` weighs against the gain.
+    """
+    merged: list[tuple[int, int, str, dict[str, Any]]] = []
+    for order, (kind, items) in enumerate((("node", nodes), ("fact", facts))):
+        for position, item in enumerate(items, start=1):
+            merged.append((position, order, kind, item))
+    merged.sort(key=lambda row: (row[0], row[1]))
+    return [(kind, item) for _, _, kind, item in merged]
+
+
 def format_search(
     *,
     query: str,
@@ -213,19 +233,19 @@ def format_search(
 
     seen: set[str] = set()
     index = 1
-    for node in nodes:
-        key = f"node:{node.get('uuid') or node.get('name')}"
+    for kind, item in _interleaved_entries(nodes, facts):
+        key = (
+            f"node:{item.get('uuid') or item.get('name')}"
+            if kind == "node"
+            else f"fact:{item.get('uuid') or item.get('fact')}"
+        )
         if key in seen:
             continue
         seen.add(key)
-        lines.append(_node_line(index, node))
-        index += 1
-    for fact in facts:
-        key = f"fact:{fact.get('uuid') or fact.get('fact')}"
-        if key in seen:
-            continue
-        seen.add(key)
-        lines.extend(_fact_line(index, fact, episode_index))
+        if kind == "node":
+            lines.append(_node_line(index, item))
+        else:
+            lines.extend(_fact_line(index, item, episode_index))
         index += 1
 
     if episodes:
@@ -238,4 +258,10 @@ def format_search(
         return text
     cut = text[:limit_chars]
     cut = cut[: cut.rfind("\n")] if "\n" in cut else cut
-    return cut + "\n… (truncated; narrow the query or lower the limit)\n"
+    kept = cut.splitlines()
+    # A cut between a head line and its body would leave a numbered entry with
+    # nothing under it, which still occupies a rank for anything parsing the
+    # block.
+    while kept and _HEAD.match(kept[-1]):
+        kept.pop()
+    return "\n".join(kept) + "\n… (truncated; narrow the query or lower the limit)\n"

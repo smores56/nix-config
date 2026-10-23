@@ -577,16 +577,19 @@ recall@5 and MRR for the graph-backed `memory search` against an FTS5/bm25 index
 over the same registry rows, then 50 adversarial boundary queries that must
 return no entry from a foreign project group. First measured run (2026-10-23,
 1,385 episodes): recall@5 0.52 / MRR 0.40 against 0.86 / 0.60 for FTS5, mean
-search latency ~4.5 s against ~0.5 ms, and zero foreign-group hits. That is not
-an apples-to-apples verdict: the wrapper returns five nodes *then* five facts, so
-a fact-only answer can never occupy the first five entries (40 of 50 queries
-found their answer somewhere in the block, 26 within the top five), and the
-baseline ranks whole episodes while the graph ranks extracted facts and entities
-against gold strings that are verbatim corpus text. Community summaries stay off
+search latency ~4.5 s against ~0.5 ms, and zero foreign-group hits. The baseline
+ranks whole episodes while the graph ranks extracted facts and entities against
+gold strings that are verbatim corpus text, so the comparison is directionally
+useful, not apples to apples. That run also exposed a structural miss: the
+wrapper listed every node before any fact, so while the node list was full no
+fact could reach the top five. Formatting now alternates the two ranked lists;
+re-scoring the recorded blocks on the drained corpus (1,357 rows) moved recall@5
+from 0.54 to 0.66 and MRR from 0.39 to 0.42, and cut answers landing beyond the
+top five from 13 to 7. Those gains are partly a scoring artifact: a gold token
+that merely appears inside an extracted fact sentence counts as a hit there, so
+fact-heavy positions score generously. Community summaries stay off
 for now: the misses are single-fact lookups, not the multi-hop thematic questions
-summaries help with, and building them costs an extra pass over the corpus. Re-run
-the harness after search returns one ranked list of `limit` entries — that change,
-not summaries, is what the numbers argue for.
+summaries help with, and building them costs an extra pass over the corpus.
 
 Search cost on smortress over loopback (same 50 queries): p50 5.2 s, p95 7.9 s,
 max 13.1 s, against ~1 ms for FTS5; a returned block is about 1.2–1.4k tokens,

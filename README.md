@@ -324,9 +324,11 @@ model providers Maki may use.
   CLI): a model-callable promote would let a prompt-injected agent publish
   project content into `global`, which every project's search includes. Search
   covers the caller's group plus `global` and tags each fact and episode with
-  typed provenance joined from the registry. A tombstone resolves every graph
-  episode with that exact content, invalidates the edges they exclusively
-  support and detaches them from shared edges, and keeps the episode nodes as
+  typed provenance joined from the registry. The node and fact searches are
+  alternated by rank into one numbered list, so a fact-only answer is not buried
+  behind the node list.
+  A tombstone resolves every graph episode with that exact content, invalidates
+  the edges they exclusively support and detaches them from shared edges, and keeps the episode nodes as
   provenance; writing the same content again revives it, and the reconciler
   binds the revived row only to a graph episode newer than the write (a second
   tombstone covers the re-extracted episode too). A row tombstoned before its
