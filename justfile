@@ -61,6 +61,13 @@ cloudflare-tofu *args:
 memory-ingest *args:
     memory ingest all {{args}}
 
+# Show the memory queue: counts per status and group, plus the last 10 minutes of extractions.
+memory-status:
+    sg memory -c 'memory status'
+    sg memory -c 'cp /var/lib/memory/registry.sqlite /tmp/memory-status.sqlite'
+    nix shell nixpkgs#sqlite -c sqlite3 /tmp/memory-status.sqlite "select status, count(*) from episodes group by status;" "select group_id, sum(status = 'pending') as pending, sum(status = 'active') as active from episodes group by group_id order by pending desc;"
+    -journalctl -u memory-graphiti-mcp --since '10 min ago' --no-pager | grep -c 'Successfully processed'
+
 # Snapshot the memory registry and the graph now (the nightly unit does this).
 memory-export:
     sudo systemctl start memory-export.service
