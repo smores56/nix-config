@@ -150,7 +150,7 @@ class Reconciler:
                 # Bound to this row's own write: a tombstoned episode with the
                 # same content is kept on purpose and is not this extraction.
                 found = await asyncio.to_thread(
-                    self.graph.episode_for, row.group, row.content, since=row.created_at
+                    self.graph.episode_for, row.group, row.content, since=row.queued_at
                 )
             except GraphUnavailable as exc:
                 # Once the graph is unreachable, absence cannot be proven for
@@ -181,7 +181,7 @@ class Reconciler:
                 counts["active"] += 1
                 continue
 
-            age = age_seconds(row.created_at, now)
+            age = age_seconds(row.queued_at, now)
             if age is None:
                 age = 0.0
             if age <= self.config.grace:
@@ -228,7 +228,7 @@ class Reconciler:
                 # A slow but successful submission must not be duplicated: prove
                 # absence again immediately before resubmitting.
                 found = await asyncio.to_thread(
-                    self.graph.episode_for, row.group, row.content, since=row.created_at
+                    self.graph.episode_for, row.group, row.content, since=row.queued_at
                 )
                 if found is not None:
                     applied = self.registry.mark_active(

@@ -288,6 +288,16 @@ class ReconcilerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stored.status, "tombstoned")
         self.assertIsNone(stored.graphiti_uuid)
 
+    async def test_the_grace_window_is_measured_from_the_queue_clock(self):
+        self.entry(created_at="2026-01-01T00:00:00Z", queued_at="2026-10-22T11:55:00Z")
+        counts = await self.reconciler(FakeGraph()).reconcile_once()
+        self.assertEqual(counts["waiting"], 1)
+
+    async def test_an_old_queue_clock_is_retried_even_for_a_new_write(self):
+        self.entry(created_at="2026-10-22T11:59:00Z", queued_at="2026-01-01T00:00:00Z")
+        counts = await self.reconciler(FakeGraph(), FakeBackend()).reconcile_once()
+        self.assertEqual(counts["retried"], 1)
+
     async def test_a_pending_row_within_the_grace_window_waits(self):
         entry = self.entry(created_at="2026-10-22T11:55:00Z")
         counts = await self.reconciler(FakeGraph()).reconcile_once()
@@ -302,8 +312,10 @@ class ReconcilerTests(unittest.IsolatedAsyncioTestCase):
         requeued = self.registry.lookup(entry.group, entry.content_hash)
         # The queue clock restarts, so the row is inside the grace window even
         # though the memory is months old: it waits for its replay instead of
-        # being resubmitted three times and marked failed in minutes.
-        self.assertGreater(requeued.created_at, "2026-10-22T12:00:00Z")
+        # being resubmitted three times and marked failed in minutes. The write
+        # time stays put.
+        self.assertEqual(requeued.created_at, "2026-01-01T00:00:00Z")
+        self.assertGreater(requeued.queued_at, "2026-10-22T12:00:00Z")
         counts = await self.reconciler(FakeGraph()).reconcile_once()
         self.assertEqual(counts["waiting"], 1)
         self.assertEqual(counts["failed"], 0)

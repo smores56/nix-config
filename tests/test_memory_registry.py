@@ -79,6 +79,57 @@ class NormalizeTests(unittest.TestCase):
         self.assertEqual(describe_source("agent", "", ""), "agent")
 
 
+V1_SCHEMA = """
+CREATE TABLE episodes (
+    group_id TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    uuid TEXT NOT NULL,
+    name TEXT NOT NULL,
+    content TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'text',
+    origin TEXT NOT NULL DEFAULT 'agent',
+    origin_ref TEXT NOT NULL DEFAULT '',
+    actor TEXT NOT NULL DEFAULT 'unknown',
+    cwd TEXT NOT NULL DEFAULT '',
+    tags TEXT NOT NULL DEFAULT '[]',
+    valid_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    graphiti_uuid TEXT,
+    promoted_from_group TEXT,
+    promoted_by TEXT,
+    promoted_at TEXT,
+    tombstoned_at TEXT,
+    tombstone_reason TEXT,
+    PRIMARY KEY (group_id, content_hash)
+);
+CREATE TABLE promotions (
+    source_uuid TEXT NOT NULL,
+    target_uuid TEXT NOT NULL,
+    source_group TEXT NOT NULL,
+    target_group TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (source_uuid, target_group)
+);
+CREATE TABLE audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_at TEXT NOT NULL,
+    finished_at TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    group_id TEXT NOT NULL,
+    tool TEXT NOT NULL,
+    status TEXT NOT NULL,
+    content_hash TEXT,
+    uuid TEXT,
+    details TEXT NOT NULL DEFAULT '{}'
+);
+PRAGMA user_version = 1;
+"""
+
+
 class RegistryTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -122,6 +173,7 @@ class RegistryTests(unittest.TestCase):
             tags=("one", "two"),
             valid_at="2026-01-01T00:00:00Z",
             created_at="2026-01-01T00:00:00Z",
+            queued_at="2026-01-01T00:00:00Z",
             status=status,
         )
 
@@ -244,8 +296,16 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(stats["active"], 0)
 
     def test_pending_lists_only_pending_rows_oldest_first(self):
-        newer = replace(self.entry(digest="b" * 64), created_at="2026-01-02T00:00:00Z")
-        older = replace(self.entry(digest="c" * 64), created_at="2026-01-01T00:00:00Z")
+        newer = replace(
+            self.entry(digest="b" * 64),
+            created_at="2026-01-02T00:00:00Z",
+            queued_at="2026-01-02T00:00:00Z",
+        )
+        older = replace(
+            self.entry(digest="c" * 64),
+            created_at="2026-01-01T00:00:00Z",
+            queued_at="2026-01-01T00:00:00Z",
+        )
         self.seed(newer)
         self.seed(older)
         self.seed(self.entry(digest="d" * 64, status="active"))
@@ -314,7 +374,8 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(stored.attempts, 0)
         self.assertIsNone(stored.graphiti_uuid)
         self.assertIsNone(stored.last_error)
-        self.assertGreater(stored.created_at, entry.created_at)
+        self.assertEqual(stored.created_at, entry.created_at)
+        self.assertGreater(stored.queued_at, entry.queued_at)
         with sqlite3.connect(self.registry.db_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = [dict(row) for row in conn.execute("SELECT * FROM audit")]
@@ -398,6 +459,32 @@ class RegistryTests(unittest.TestCase):
             version = conn.execute("PRAGMA user_version").fetchone()[0]
         self.assertEqual(version, SCHEMA_VERSION)
 
+    def test_pending_orders_by_the_queue_clock(self):
+        first = self.entry(digest="a" * 64)
+        second = self.entry(digest="b" * 64)
+        self.registry.queue(replace(first, created_at="2026-01-01T00:00:00Z", queued_at="2026-02-01T00:00:00Z"))
+        self.registry.queue(replace(second, created_at="2026-01-02T00:00:00Z", queued_at="2026-01-05T00:00:00Z"))
+        self.assertEqual(
+            [row.content_hash for row in self.registry.pending()], ["b" * 64, "a" * 64]
+        )
+
+    def test_a_requeue_leaves_the_recorded_write_time_alone(self):
+        seeded = self.seed(self.entry(status="active"))
+        entry = self.registry.lookup(seeded.group, seeded.content_hash)
+        self.registry.requeue_many([entry], actor="cli")
+        stored = self.registry.lookup(entry.group, entry.content_hash)
+        self.assertEqual(stored.created_at, entry.created_at)
+        self.assertEqual(self.registry.stats(entry.group)["last_written"], entry.created_at)
+
+    def test_a_repeat_write_keeps_the_original_write_time(self):
+        entry = self.registry.queue(self.entry())
+        # A repeat write is a fresh queue event: no queue stamp yet, new time.
+        again = self.registry.queue(
+            replace(self.entry(), created_at="2026-05-05T00:00:00Z", queued_at="")
+        )
+        self.assertEqual(again.created_at, entry.created_at)
+        self.assertEqual(again.queued_at, "2026-05-05T00:00:00Z")
+
     def test_a_newer_schema_version_is_refused(self):
         with sqlite3.connect(self.registry.db_path) as conn:
             conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION + 1}")
@@ -424,3 +511,104 @@ class RegistryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SchemaMigrationTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = Path(self.tmp.name) / "registry.sqlite"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def v1_database(self) -> None:
+        conn = sqlite3.connect(self.path)
+        conn.executescript(V1_SCHEMA)
+        conn.execute(
+            "INSERT INTO episodes (group_id, content_hash, uuid, name, content, valid_at, "
+            "created_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "owner--repo",
+                "a" * 64,
+                "uuid-1",
+                "an old memory",
+                "the content",
+                "2026-01-01T00:00:00Z",
+                "2026-01-02T00:00:00Z",
+                "active",
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+    def test_a_v1_registry_is_migrated_and_backfilled(self):
+        self.v1_database()
+        registry = Registry(self.tmp.name)
+        with sqlite3.connect(self.path) as conn:
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION)
+        stored = registry.lookup("owner--repo", "a" * 64)
+        self.assertEqual(stored.created_at, "2026-01-02T00:00:00Z")
+        self.assertEqual(stored.queued_at, "2026-01-02T00:00:00Z")
+
+    def test_the_migration_adds_rows_through_the_normal_queue(self):
+        self.v1_database()
+        registry = Registry(self.tmp.name)
+        entry = RegistryEpisode(
+            group="owner--repo",
+            content_hash="b" * 64,
+            uuid="uuid-2",
+            name="new",
+            content="new content",
+            kind="text",
+            origin="agent",
+            origin_ref="",
+            actor="maki",
+            cwd="/home/smores/code/x",
+            tags=(),
+            valid_at="2026-01-01T00:00:00Z",
+            created_at="2026-01-03T00:00:00Z",
+            queued_at="2026-01-03T00:00:00Z",
+        )
+        self.assertEqual(registry.queue(entry), entry)
+        self.assertEqual(registry.stats("owner--repo")["total"], 2)
+
+    def test_an_interrupted_migration_resumes(self):
+        # The ALTER committed but the version stamp did not: the next open must
+        # finish the job instead of dying on "duplicate column".
+        self.v1_database()
+        with sqlite3.connect(self.path) as conn:
+            conn.execute("ALTER TABLE episodes ADD COLUMN queued_at TEXT NOT NULL DEFAULT ''")
+            conn.commit()
+        registry = Registry(self.tmp.name)
+        with sqlite3.connect(self.path) as conn:
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION)
+        self.assertEqual(registry.lookup("owner--repo", "a" * 64).queued_at, "2026-01-02T00:00:00Z")
+
+    def test_a_newer_schema_is_still_refused(self):
+        self.v1_database()
+        with sqlite3.connect(self.path) as conn:
+            conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION + 1}")
+            conn.commit()
+        with self.assertRaises(SchemaVersionError) as caught:
+            Registry(self.tmp.name)
+        self.assertIn("refusing", str(caught.exception))
+
+    def test_the_queue_stamps_the_write_time_as_the_queue_clock(self):
+        registry = Registry(self.tmp.name)
+        entry = RegistryEpisode(
+            group="owner--repo",
+            content_hash="c" * 64,
+            uuid="uuid-3",
+            name="n",
+            content="c",
+            kind="text",
+            origin="agent",
+            origin_ref="",
+            actor="maki",
+            cwd="/home/smores/code/x",
+            tags=(),
+            valid_at="2026-01-01T00:00:00Z",
+            created_at="2026-01-04T00:00:00Z",
+        )
+        registry.queue(entry)
+        self.assertEqual(registry.lookup(entry.group, entry.content_hash).queued_at, entry.created_at)

@@ -279,7 +279,7 @@ def _result_hash(text: str) -> str:
 def _duplicate_message(entry: RegistryEpisode, group: str) -> str:
     return (
         f"Duplicate memory: the same content is already stored in group {group} "
-        f"as {entry.uuid} (last queued {entry.created_at}). Nothing was queued."
+        f"as {entry.uuid} (last queued {entry.queued_at}). Nothing was queued."
     )
 
 
@@ -629,7 +629,7 @@ def build_server(
         return None
 
     def _pending_expired(entry: RegistryEpisode, now: str, stale: float) -> bool:
-        moment = age_seconds(entry.created_at, datetime.fromisoformat(now.replace("Z", "+00:00")))
+        moment = age_seconds(entry.queued_at, datetime.fromisoformat(now.replace("Z", "+00:00")))
         return moment is None or moment > stale
 
     @mcp.tool(name="memory_write", structured_output=False)
@@ -803,7 +803,7 @@ def build_server(
             # after the reconciler gave up must not be submitted a second time.
             try:
                 found = await asyncio.to_thread(
-                    graph.episode_for, entry.group, entry.content, since=entry.created_at
+                    graph.episode_for, entry.group, entry.content, since=entry.queued_at
                 )
             except GraphUnavailable as exc:
                 raise ToolError(
@@ -987,7 +987,7 @@ def build_server(
                         row
                         for row in group_rows
                         if not any(
-                            not_older(stamp, moment(row.created_at))
+                            not_older(stamp, moment(row.queued_at))
                             for stamp in episodes.get(row.content, ())
                         )
                     ]

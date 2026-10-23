@@ -488,9 +488,17 @@ fixed until Maki restarts.
 The wrapper's typed registry (`registry.sqlite`, including the audit table)
 lives in `/var/lib/memory`, owned by the `memory` system user (the FalkorDB
 subdirectory stays root-owned). The database carries a `PRAGMA user_version`
-schema version; the wrapper refuses to start against an unversioned or
-newer/older one rather than migrating in place, so a schema change means
-deleting the file.
+schema version. A database one version behind is migrated in place on open
+(`ALTER`/backfill statements in one transaction); an unversioned one, or one
+newer than the code, is refused rather than guessed at. Restoring an export
+taken before a schema bump is therefore fine: it is installed as-is and
+migrated the next time the wrapper starts.
+
+`created_at` is when the memory was written; `queued_at` is when it last
+entered the pending queue (a replay sets it again, a repeat write keeps the
+original `created_at`). The reconciler's grace window, the stale-write window,
+the presence bound and `pending()` order read `queued_at`, so a replay starts
+with a fresh grace instead of inheriting a months-old one.
 
 **Backup.** The registry is the system of record, so its snapshot *is* the
 memory backup: it holds every episode's normalized content and typed
@@ -505,7 +513,8 @@ directory is root-owned) and writes one timestamped directory under
   so the wrapper keeps writing under WAL while it is copied;
 - `episodes.jsonl` — every episode with typed provenance (group, uuid,
   content_hash, kind, origin, origin_ref, actor, cwd, tags, valid_at,
-  created_at, status, graphiti_uuid, promotion and tombstone fields) *and* its
+  created_at, queued_at, status, graphiti_uuid, promotion and tombstone
+  fields) *and* its
   content, so memory is readable even without SQLite;
 - `manifest.json` — creation time, `PRAGMA user_version`, per-status counts, and
   the sha256 of each file;

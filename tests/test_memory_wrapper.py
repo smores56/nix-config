@@ -282,6 +282,20 @@ class WrapperTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.registry.lookup("owner--repo", entry.content_hash).attempts, 0)
         self.assertEqual(self.audit()[-1]["status"], "pending")
 
+    async def test_the_stale_window_uses_the_queue_clock(self):
+        self.seed_entry(status="pending", created_at="2000-01-01T00:00:00Z", queued_at=utcnow())
+        result = await self.call("memory_write", {"content": "promote me"})
+        self.assertFalse(result.isError)
+        self.assertIn("already queued", result.content[0].text)
+        self.assertEqual(self.backend.added, [])
+
+    async def test_an_old_queue_clock_resubmits_a_fresh_write(self):
+        self.seed_entry(status="pending", created_at=utcnow(), queued_at="2000-01-01T00:00:00Z")
+        result = await self.call("memory_write", {"content": "promote me"})
+        self.assertFalse(result.isError)
+        self.assertIn("Re-queued", result.content[0].text)
+        self.assertEqual(len(self.backend.added), 1)
+
     async def test_a_stale_pending_write_is_resubmitted(self):
         self.seed_entry(status="pending", created_at="2000-01-01T00:00:00Z")
         result = await self.call("memory_write", {"content": "promote me"})
@@ -1081,7 +1095,8 @@ class ReindexTests(WrapperTests):
         self.assertEqual(stored.status, "pending")
         self.assertEqual(stored.attempts, 1)
         self.assertIsNone(stored.graphiti_uuid)
-        self.assertGreater(stored.created_at, lost.created_at)
+        self.assertEqual(stored.created_at, lost.created_at)
+        self.assertGreater(stored.queued_at, lost.queued_at)
         self.assertEqual([call["episode_body"] for call in self.backend.added], [lost.content])
         text = result.content[0].text
         self.assertIn("checked 2 active row(s)", text)
