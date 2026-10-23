@@ -18,7 +18,7 @@ import json
 import os
 import re
 import sys
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Mapping
@@ -310,7 +310,7 @@ def build_server(
     start_reconciler: bool = True,
     headers_provider: HeadersProvider = headers_from_context,
     internal_token: str | None = None,
-) -> FastMCP:
+) -> MemoryServer:
     backend = backend or GraphitiBackend(config.graphiti_url, timeout=config.upstream_timeout)
     registry = registry or Registry(config.state_dir)
     probes = probes or HealthProbes(
@@ -1149,8 +1149,12 @@ class MemoryServer:
             finally:
                 if task is not None:
                     task.cancel()
-                    with suppress(asyncio.CancelledError):
+                    try:
                         await task
+                    except asyncio.CancelledError:
+                        pass
+                    except Exception as exc:  # a crashed loop must not fail shutdown
+                        print(f"memory reconciler crashed: {exc}", file=sys.stderr)
 
         app.router.lifespan_context = lifespan
         return app

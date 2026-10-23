@@ -16,7 +16,7 @@ from memory_mcp.graph import EpisodeRef, GraphUnavailable, TombstoneResult  # no
 from memory_mcp.graphiti import BackendError  # noqa: E402
 from memory_mcp.normalize import content_hash, episode_uuid, normalize_content  # noqa: E402
 from memory_mcp.registry import Registry, RegistryEpisode, utcnow  # noqa: E402
-from memory_mcp.reconciler import Reconciler, ReconcilerConfig  # noqa: E402
+from memory_mcp.reconciler import InFlight, Reconciler, ReconcilerConfig  # noqa: E402
 from memory_mcp.schema import FALLBACK_TOOLS, FALLBACK_TOOL_NAMES  # noqa: E402
 from memory_mcp.wrapper import (  # noqa: E402
     DEFAULT_TOOL_TIMEOUT,
@@ -893,6 +893,7 @@ class InternalRouteTests(unittest.TestCase):
             headers=self.auth,
         )
         self.assertEqual(bad_group.status_code, 400)
+        self.assertIn("employer", bad_group.json()["error"])
 
 
 class ReconcilerLifespanTests(unittest.TestCase):
@@ -966,20 +967,46 @@ class ReconcilerLifespanTests(unittest.TestCase):
         self.assertTrue(landed, "the reconciler never ran under streamable-http")
 
     def test_stopping_the_app_cancels_the_reconciler(self):
+        class SpyReconciler:
+            def __init__(self):
+                self.in_flight = InFlight()
+                self.cancelled = False
+
+            async def run(self):
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    self.cancelled = True
+                    raise
+
+        spy = SpyReconciler()
         runtime = build_server(
             WrapperConfig(state_dir=self.tmp.name, graphiti_url="http://127.0.0.1:1/mcp"),
             registry=self.registry,
             probes=FakeProbes(),
             graph=self.graph,
-            reconciler=self.reconciler,
+            reconciler=spy,
         )
         with TestClient(runtime.streamable_http_app()):
             pass
-        entry = self.seed_pending(content="seeded after shutdown")
-        self.graph.present = EpisodeRef(uuid="graph-2", created_at="2026-10-22T10:05:00Z")
-        time.sleep(0.2)
-        stored = self.registry.lookup(entry.group, entry.content_hash)
-        self.assertEqual(stored.status, "pending")
+        self.assertTrue(spy.cancelled, "shutdown left the reconciler running")
+
+    def test_a_crashed_reconciler_does_not_fail_shutdown(self):
+        class CrashingReconciler:
+            in_flight = InFlight()
+
+            async def run(self):
+                raise RuntimeError("loop exploded")
+
+        runtime = build_server(
+            WrapperConfig(state_dir=self.tmp.name, graphiti_url="http://127.0.0.1:1/mcp"),
+            registry=self.registry,
+            probes=FakeProbes(),
+            graph=self.graph,
+            reconciler=CrashingReconciler(),
+        )
+        with TestClient(runtime.streamable_http_app()):
+            pass
 
 
 if __name__ == "__main__":
