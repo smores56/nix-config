@@ -433,6 +433,20 @@ still-queued writes failed and resubmitted them as duplicates. If 429s appear
 again, lower `MEMORY_UPSTREAM_CONCURRENCY` (and `SEMAPHORE_LIMIT` with it)
 before anything else.
 
+A gateway outage is not a submission error. Graphiti answers `add_memory` with
+200 and extracts from an in-memory queue, so a dead gateway leaves a `pending`
+row with no episode in the graph (`Failed to process episode … Connection
+error` in `journalctl -u memory-graphiti-mcp`) and the wrapper never prints its
+"submission was deferred" line; the registry row is the only copy. The grace
+above bounds when the reconciler replays it, so a drill needs a runtime
+override — `MEMORY_RECONCILE_GRACE=300` in
+`/run/systemd/system/memory-mcp.service.d/`, `daemon-reload`, restart — then the
+first pass past the grace resubmits the content and the row goes `active` once
+the episode is verified. Drilled 2026-10-23 with the gateway stopped: the write
+stayed `pending` with zero graph episodes, replayed into exactly one episode
+~20 s after the override restart, was searchable, and a repeat write of the same
+content reported the existing uuid instead of queueing a second extraction.
+
 Embeddings stay local by default: bge-m3 on `llama-cpp-embed` (`127.0.0.1:8183`,
 1024 dimensions). `memory.embedder = "neuralwatt"` sends them through the same
 gateway to `qwen3-embedding-8b` (4096 dimensions); the model is preview-only and
