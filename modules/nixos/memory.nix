@@ -47,6 +47,15 @@ let
   work = config.user.work;
   workSshMarker = baseNameOf work.sshConfig;
 
+  # One value for the two timings that must agree. The reconcile grace is how
+  # long a queued episode may wait for an upstream slot before it counts as
+  # lost; the pending-stale window is when a repeat write re-queues it. A
+  # shorter stale window re-queued writes that were merely queued behind a
+  # large backfill, resetting created_at/attempts and paying for another
+  # extraction. A large backfill (1382 episodes at two slots) drains over
+  # hours, so twelve hours covers a day's queue.
+  reconcileGraceSeconds = 43200;
+
   # Tags alone are re-pushable upstream; the digests make the same commit pull
   # the same bytes on a fresh host or after `podman rmi`.
   # FalkorDB is SSPLv1 and not in nixpkgs, so a container is the only route.
@@ -452,13 +461,10 @@ in
           # Reconciler cadence: poll pending rows, tolerate a slow extraction,
           # and back off between bounded retries.
           "MEMORY_RECONCILE_INTERVAL=10"
-          # The grace must exceed how long a queued episode waits for an
-          # upstream slot, not how long one extraction takes. A large backfill
-          # (1382 episodes at two concurrent slots) drains over hours, so a
-          # 600s grace marked still-queued writes as failed and resubmitted
-          # them as duplicates. Twelve hours covers a day's queue; the wrapper
-          # still marks genuinely lost writes failed once it expires.
-          "MEMORY_RECONCILE_GRACE=43200"
+          # See reconcileGraceSeconds above; the pending-stale window derives
+          # from the same value so the two cannot drift apart.
+          "MEMORY_RECONCILE_GRACE=${toString reconcileGraceSeconds}"
+          "MEMORY_PENDING_STALE_SECONDS=${toString reconcileGraceSeconds}"
           "MEMORY_RECONCILE_BACKOFF=60"
           "MEMORY_WORK_EMAIL=${work.email}"
           "MEMORY_WORK_OWNER_GLOB=${work.githubOwnerGlob}"

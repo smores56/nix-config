@@ -315,16 +315,23 @@ model providers Maki may use.
   resolving them to `active` with the newest matching graph uuid or, after a
   grace period and a bounded set of retries, to `failed` (retries pause while
   the model endpoint is unhealthy, and reconciler writes never overwrite a row
-  that left `pending`). `memory_get` returns a full episode by registry uuid,
-  hash prefix, or exact `origin:origin_ref` (case-insensitive; an ambiguous hash
-  prefix is an error); `memory_retry` marks a row active when its extraction
-  landed late instead of resubmitting it. Search
+  that left `pending`). `memory_get` returns an episode by registry uuid, hash
+  prefix, or exact `origin:origin_ref` (case-insensitive; an ambiguous hash
+  prefix is an error), falling back to `global` when the caller's group has no
+  match, and caps the body at 16k characters with a trailer naming the full
+  length; `memory_retry` marks a row active when its extraction landed late
+  instead of resubmitting it. `memory_promote` is operator-only (the `memory`
+  CLI): a model-callable promote would let a prompt-injected agent publish
+  project content into `global`, which every project's search includes. Search
   covers the caller's group plus `global` and tags each fact and episode with
   typed provenance joined from the registry. A tombstone resolves every graph
   episode with that exact content, invalidates the edges they exclusively
   support and detaches them from shared edges, and keeps the episode nodes as
-  provenance; writing the same content again revives it (and a second tombstone
-  covers the re-extracted episode too). Server details live in
+  provenance; writing the same content again revives it, and the reconciler
+  binds the revived row only to a graph episode newer than the write (a second
+  tombstone covers the re-extracted episode too). A row tombstoned before its
+  extraction landed is swept on later passes, so that episode is invalidated
+  too. Server details live in
   `modules/nixos/memory.nix`.
 
   **Bulk ingest.** `memory ingest {sdlc,notes,docs,sessions,all}` plans the

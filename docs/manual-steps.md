@@ -631,7 +631,9 @@ back. To resume, run the same command again. The client asks the wrapper's
 - `active` and `pending` rows are skipped. A source that moved to another group
   looks missing there and is submitted to the new group.
 - `failed` rows are resubmitted, which resets their attempts. Tombstoned rows are
-  left alone until the content is deliberately written again.
+  left alone until the content is deliberately written again, and the
+  reconciler invalidates any graph episode their extraction produced after the
+  tombstone.
 - Missing episodes are submitted through `/internal/episodes` with explicit
   `kind` and `valid_at`; the wrapper records them as pending and its reconciler
   resolves them. A retry is bounded and never overlaps an in-flight submission.
