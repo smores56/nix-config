@@ -574,6 +574,12 @@ summaries help with, and building them costs an extra pass over the corpus. Re-r
 the harness after search returns one ranked list of `limit` entries — that change,
 not summaries, is what the numbers argue for.
 
+Search cost on smortress over loopback (same 50 queries): p50 5.2 s, p95 7.9 s,
+max 13.1 s, against ~1 ms for FTS5; a returned block is about 1.2–1.4k tokens,
+inside the 2k budget the design targets. A Maki client adds tunnel latency on
+top of that.
+
+
 
 Activate after changing the wrapper, shim, package, LLM proxy, or export
 unit:
