@@ -612,6 +612,26 @@ class RestoreTests(unittest.TestCase):
         self.assertTrue(report.graph_restored)
         self.assertEqual(dump, b"RDBfake")
 
+    def test_a_dry_run_reports_the_matching_snapshot_it_would_restore(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            graph_dir = root / "falkordb"
+            graph_dir.mkdir()
+            (graph_dir / "dump.rdb").write_bytes(b"RDBfake")
+            result = self.export(
+                root,
+                [make_entry(1)],
+                graph_dir=graph_dir,
+                graph_client=FakeRedis([BEFORE, FINISHED]),
+            )
+            report = self.restore(result.directory, root, dry_run=True)
+            lines = list(export._report_lines(report, dry_run=True))
+        self.assertFalse(report.restored)
+        graph_lines = [line for line in lines if line.startswith("graph:")]
+        self.assertEqual(len(graph_lines), 1)
+        self.assertIn("would restore graph-", graph_lines[0])
+        self.assertIn("(matching snapshot)", graph_lines[0])
+
     def test_a_matching_restore_parks_the_old_aof(self):
         """FalkorDB loads the AOF first, so the restored RDB needs it out of the way."""
         with tempfile.TemporaryDirectory() as directory:

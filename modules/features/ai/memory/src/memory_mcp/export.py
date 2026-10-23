@@ -1004,6 +1004,12 @@ def _report_lines(report: RestoreReport, *, dry_run: bool) -> Iterator[str]:
             f"previous registry: {report.parked_registry[0]}"
             " (kept; delete it once the restore checks out)"
         )
+    if dry_run and report.graph.accepted and report.graph.path is not None:
+        # A dry run writes nothing, so `graph_restored` stays false; without
+        # this line a good export printed the "cannot be rebuilt" warning and
+        # looked unusable.
+        yield f"graph: would restore {report.graph.path.name} (matching snapshot)"
+        return
     yield graph_advice(report)
 
 
