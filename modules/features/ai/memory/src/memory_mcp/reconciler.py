@@ -113,6 +113,9 @@ class Reconciler:
         # keep the reason so the loop can report it instead of stalling quietly.
         self.last_error: str | None = None
         self._reported_error: str | None = None
+        # Where the last pending pass stopped, so the next one pages instead of
+        # scanning the same rows again.
+        self._pending_cursor: tuple[str, str, str] | None = None
 
     async def reconcile_once(self) -> dict[str, int]:
         counts = {
@@ -128,11 +131,34 @@ class Reconciler:
             "changed": 0,
             "swept": 0,
         }
-        rows = self.registry.pending(limit=max(1, min(self.config.batch, MAX_BATCH)))
+        batch = max(1, min(self.config.batch, MAX_BATCH))
+        rows = self.registry.pending(limit=batch, after=self._pending_cursor)
+        if not rows and self._pending_cursor is not None:
+            self._pending_cursor = None
+            rows = self.registry.pending(limit=batch)
+        if rows:
+            # Page, do not restart: rows stuck in `waiting` at the front would
+            # otherwise hide a backlog larger than one batch forever. A short
+            # page wraps to the front on the next pass.
+            last = rows[-1]
+            self._pending_cursor = (
+                (last.queued_at or last.created_at, last.content_hash, last.group)
+                if len(rows) >= batch
+                else None
+            )
         self.last_error = None
         now = self._now()
         if rows:
             await self._reconcile_pending(rows, counts, now)
+            progressed = any(
+                counts[name]
+                for name in ("active", "failed", "retried", "retry_failed", "swept", "changed")
+            )
+            if self.last_error is not None or not progressed:
+                # An aborted page was not fully inspected, and a page where
+                # nothing was due says nothing about the rows before it: go
+                # back to the front instead of silently walking past them.
+                self._pending_cursor = None
         # The sweep runs after the pending pass and is skipped once the graph
         # proved unreachable: absence is then unknowable for it too.
         if self.last_error is None:

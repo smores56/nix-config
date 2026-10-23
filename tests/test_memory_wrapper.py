@@ -12,7 +12,10 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "modules/features/ai/memory/s
 from unittest import mock  # noqa: E402
 
 from mcp.shared.memory import create_connected_server_and_client_session  # noqa: E402
+from starlette.responses import PlainTextResponse  # noqa: E402
+from starlette.routing import Route  # noqa: E402
 from starlette.testclient import TestClient  # noqa: E402
+from starlette.applications import Starlette  # noqa: E402
 
 from memory_mcp import groups as groups_module  # noqa: E402
 from memory_mcp.groups import WorkSettings  # noqa: E402
@@ -28,6 +31,8 @@ from memory_mcp.wrapper import (  # noqa: E402
     DEFAULT_UPSTREAM_TIMEOUT,
     MAX_CONTENT_CHARS,
     MAX_INTERNAL_BODY_BYTES,
+    BodyLimitMiddleware,
+    MAX_MCP_BODY_BYTES,
     MAX_QUERY_CHARS,
     WrapperConfig,
     build_server,
@@ -1023,6 +1028,39 @@ class ReconcilerLifespanTests(unittest.TestCase):
                 lambda: self.registry.lookup(entry.group, entry.content_hash).status == "active"
             )
         self.assertTrue(landed, "the reconciler never ran under streamable-http")
+
+    def test_the_mcp_app_rejects_a_declared_oversized_body(self):
+        runtime = build_server(
+            WrapperConfig(state_dir=self.tmp.name, graphiti_url="http://127.0.0.1:1/mcp"),
+            registry=self.registry,
+            probes=FakeProbes(),
+            graph=self.graph,
+            start_reconciler=False,
+        )
+        with TestClient(runtime.streamable_http_app()) as client:
+            response = client.post(
+                "/mcp",
+                content=b"x" * (MAX_MCP_BODY_BYTES + 1),
+                headers={"content-type": "application/json"},
+            )
+        self.assertEqual(response.status_code, 413)
+        self.assertIn(b"over", response.content)
+
+    def test_a_streamed_body_over_the_cap_is_a_413(self):
+        # A real Starlette app, so the exception is rendered by the same
+        # ExceptionMiddleware the MCP app uses.
+        async def endpoint(request):
+            await request.body()
+            return PlainTextResponse("ok")
+
+        app = BodyLimitMiddleware(
+            Starlette(routes=[Route("/mcp", endpoint, methods=["POST"])]), limit=100
+        )
+        chunk = b"x" * 60
+        with TestClient(app) as client:
+            response = client.post("/mcp", content=iter([chunk, chunk]))
+        self.assertEqual(response.status_code, 413)
+        self.assertIn("over", response.text)
 
     def test_stopping_the_app_cancels_the_reconciler(self):
         class SpyReconciler:

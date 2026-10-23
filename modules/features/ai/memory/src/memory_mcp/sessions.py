@@ -496,6 +496,15 @@ def _totals(items: list[dict[str, object]], *, dry_run: bool) -> dict[str, objec
         if len(known_costs) == len(items)
         else "unknown"
     )
+    failed_costs = [
+        float(item["cost_usd"])
+        for item in items
+        if int(item["failed"]) > 0 and isinstance(item["cost_usd"], (int, float))
+    ]
+    failed = sum(1 for item in items if int(item["failed"]) > 0)
+    failed_cost: object = (
+        round(sum(failed_costs), 6) if len(failed_costs) == failed else "unknown"
+    )
     return {
         "prompt_tokens": prompt,
         "completion_tokens": completion,
@@ -509,7 +518,8 @@ def _totals(items: list[dict[str, object]], *, dry_run: bool) -> dict[str, objec
         "submitted": sum(int(item["submitted"]) for item in items),
         "wall_seconds": round(sum(float(item["wall_seconds"]) for item in items), 3),
         "summarized": sum(1 for item in items if not dry_run and not item["error"]),
-        "failed": sum(1 for item in items if int(item["failed"]) > 0),
+        "failed": failed,
+        "failed_cost_usd": failed_cost,
     }
 
 
@@ -630,6 +640,22 @@ async def build_session_plan(
             except SummaryError as exc:
                 item["failed"] = 1
                 item["error"] = str(exc)
+                item["attempts"] = exc.attempts
+                item["prompt_tokens"] = exc.prompt_tokens
+                item["completion_tokens"] = exc.completion_tokens
+                item["cost_usd"] = (
+                    round(
+                        cost_usd(
+                            exc.prompt_tokens,
+                            exc.completion_tokens,
+                            resolved_prices.input_per_million,
+                            resolved_prices.output_per_million,
+                        ),
+                        6,
+                    )
+                    if exc.usage_known
+                    else "unknown"
+                )
                 item["wall_seconds"] = round(clock() - started, 3)
                 return _Record(
                     item=item,
@@ -815,4 +841,29 @@ def summary_line(report: dict[str, object]) -> str:
         parts.append(f"${float(cost):.4f}")
     else:
         parts.append("cost unknown")
+    # Recompute from the items: a post-plan failure (a refused submission) can
+    # flip an item after the totals were computed.
+    failed_cost: object
+    if isinstance(items, list):
+        known = [
+            float(item["cost_usd"])
+            for item in items
+            if isinstance(item, dict)
+            and int(item.get("failed") or 0) > 0
+            and isinstance(item.get("cost_usd"), (int, float))
+        ]
+        unknown = any(
+            isinstance(item, dict)
+            and int(item.get("failed") or 0) > 0
+            and not isinstance(item.get("cost_usd"), (int, float))
+            for item in items
+        )
+        failed_cost = "unknown" if unknown else round(sum(known), 6)
+    else:
+        failed_cost = report.get("failed_cost_usd")
+    if failed:
+        if isinstance(failed_cost, (int, float)) and failed_cost > 0:
+            parts.append(f"${float(failed_cost):.4f} on failed sessions")
+        elif failed_cost == "unknown":
+            parts.append("failed cost unknown")
     return ", ".join(parts)

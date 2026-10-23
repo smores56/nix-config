@@ -72,7 +72,26 @@ or invent. Use an empty list when a category does not appear.
 
 
 class SummaryError(RuntimeError):
-    """The gateway could not produce a usable summary for one session."""
+    """The gateway could not produce a usable summary for one session.
+
+    Carries what the attempts spent: a 200 whose answer is unusable is paid
+    for, and a failed session must not look free in the run report.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        attempts: int = 0,
+        usage_known: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.prompt_tokens = prompt_tokens
+        self.completion_tokens = completion_tokens
+        self.attempts = attempts
+        self.usage_known = usage_known
 
 
 @dataclass(frozen=True)
@@ -333,6 +352,9 @@ class SummaryClient:
         prompt_tokens = 0
         completion_tokens = 0
         usage_known = False
+        # Any 200 is billable even when its answer is unusable; a run that only
+        # saw errors never spent anything, so its cost is a known zero.
+        paid = False
         last_error = "no attempt was made"
         while attempts <= self.retries:
             attempts += 1
@@ -345,8 +367,16 @@ class SummaryClient:
                 detail = response.text.strip()[:200]
                 last_error = f"gateway returned HTTP {response.status_code}: {detail}"
                 if response.status_code in FATAL_STATUSES:
-                    raise SummaryError(last_error)
+                    raise SummaryError(
+                        last_error,
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        attempts=attempts,
+                        usage_known=usage_known or not paid,
+                    )
                 continue
+            # A 200 is billable whether or not its body parses.
+            paid = True
             try:
                 payload = response.json()
             except ValueError:
@@ -374,4 +404,10 @@ class SummaryClient:
                 model=self.model,
                 usage_known=usage_known,
             )
-        raise SummaryError(last_error)
+        raise SummaryError(
+            last_error,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            attempts=attempts,
+            usage_known=usage_known or not paid,
+        )

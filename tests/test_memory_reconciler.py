@@ -321,6 +321,28 @@ class ReconcilerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(counts["failed"], 0)
         self.assertEqual(self.registry.lookup(entry.group, entry.content_hash).status, "pending")
 
+    async def test_a_backlog_larger_than_the_batch_is_paged(self):
+        # Four due rows, batch 2: the second pass must inspect the last two
+        # instead of retrying the first two again.
+        for index in range(4):
+            self.entry(
+                content=f"row-{index}",
+                created_at="2026-10-22T09:00:00Z",
+                queued_at=f"2026-10-0{index + 1}T00:00:00Z",
+            )
+        backend = FakeBackend()
+        reconciler = self.reconciler(
+            FakeGraph(), backend, config=ReconcilerConfig(grace=600, backoff=0, batch=2)
+        )
+        first = await reconciler.reconcile_once()
+        first_rows = {call["episode_body"] for call in backend.added}
+        second = await reconciler.reconcile_once()
+        second_rows = {call["episode_body"] for call in backend.added} - first_rows
+        self.assertEqual(first["retried"], 2)
+        self.assertEqual(first_rows, {"row-0", "row-1"})
+        self.assertEqual(second["retried"], 2)
+        self.assertEqual(second_rows, {"row-2", "row-3"})
+
     async def test_absent_past_grace_is_retried_once_per_pass(self):
         entry = self.entry()
         backend = FakeBackend()
