@@ -1,0 +1,252 @@
+[
+  {
+    "query": "How does kanbei enforce capability scopes in its Rust kernel?",
+    "group": "smores56--nix-config",
+    "foreign_group": "smores56--kanbei"
+  },
+  {
+    "query": "What is the memory layout under XDG_STATE_HOME for the agent harness?",
+    "group": "smores56--nix-config",
+    "foreign_group": "smores56--kanbei"
+  },
+  {
+    "query": "Which milestone report claims 202 tests and rustc 1.98.0?",
+    "group": "smores56--nix-config",
+    "foreign_group": "smores56--kanbei"
+  },
+  {
+    "query": "What is the projection database filename for kanbei?",
+    "group": "smores56--nix-config",
+    "foreign_group": "smores56--kanbei"
+  },
+  {
+    "query": "Why is kanbei named after Kuroda Kanbei?",
+    "group": "smores56--nix-config",
+    "foreign_group": "smores56--kanbei"
+  },
+  {
+    "query": "Which crates implement the kanbei module substrate?",
+    "group": "smores56--nix-config",
+    "foreign_group": "smores56--kanbei"
+  },
+  {
+    "query": "Why is the SQLite registry authoritative over the graph?",
+    "group": "smores56--nix-config",
+    "foreign_group": "local--smores"
+  },
+  {
+    "query": "Which models handle extraction and embeddings for the memory wrapper?",
+    "group": "smores56--nix-config",
+    "foreign_group": "local--smores"
+  },
+  {
+    "query": "What error did the embedding endpoint return for qwen3-embedding-8b?",
+    "group": "smores56--nix-config",
+    "foreign_group": "local--smores"
+  },
+  {
+    "query": "Why did the ingest fail with Permission denied on the internal token?",
+    "group": "smores56--nix-config",
+    "foreign_group": "local--smores"
+  },
+  {
+    "query": "Which torrent client and flags did I use for the movie download?",
+    "group": "smores56--nix-config",
+    "foreign_group": "local--dev"
+  },
+  {
+    "query": "Which e-reader model did I research cases for?",
+    "group": "smores56--nix-config",
+    "foreign_group": "local--dev"
+  },
+  {
+    "query": "What did I record about 7Ai's compiler architecture?",
+    "group": "smores56--nix-config",
+    "foreign_group": "global"
+  },
+  {
+    "query": "What did I say the 7Ai query service stored in Postgres?",
+    "group": "smores56--nix-config",
+    "foreign_group": "global"
+  },
+  {
+    "query": "Where does the memory registry SQLite file live on smortress?",
+    "group": "smores56--kanbei",
+    "foreign_group": "smores56--nix-config"
+  },
+  {
+    "query": "How do I regenerate the Cloudflare Tunnel ingress records?",
+    "group": "smores56--kanbei",
+    "foreign_group": "smores56--nix-config"
+  },
+  {
+    "query": "Which rclone flag broke during the media backup seed?",
+    "group": "smores56--kanbei",
+    "foreign_group": "smores56--nix-config"
+  },
+  {
+    "query": "What does the ntfy alert send when a watched unit fails?",
+    "group": "smores56--kanbei",
+    "foreign_group": "smores56--nix-config"
+  },
+  {
+    "query": "Which AeroSpace option pins workspaces to monitors?",
+    "group": "smores56--kanbei",
+    "foreign_group": "smores56--nix-config"
+  },
+  {
+    "query": "How does a fresh host fetch its SSH public keys?",
+    "group": "smores56--kanbei",
+    "foreign_group": "smores56--nix-config"
+  },
+  {
+    "query": "Which blitzy work repo does the work profile clone?",
+    "group": "smores56--kanbei",
+    "foreign_group": "smores56--nix-config"
+  },
+  {
+    "query": "What extraction model does the memory service use?",
+    "group": "smores56--kanbei",
+    "foreign_group": "local--smores"
+  },
+  {
+    "query": "Why is the registry the system of record and the graph derived?",
+    "group": "smores56--kanbei",
+    "foreign_group": "local--smores"
+  },
+  {
+    "query": "Which embedding fallback model is kept locally?",
+    "group": "smores56--kanbei",
+    "foreign_group": "local--smores"
+  },
+  {
+    "query": "Which movie did I download with aria2?",
+    "group": "smores56--kanbei",
+    "foreign_group": "local--dev"
+  },
+  {
+    "query": "Which tracker host timed out during the torrent download?",
+    "group": "smores56--kanbei",
+    "foreign_group": "local--dev"
+  },
+  {
+    "query": "Which host runs the memory service and its FalkorDB container?",
+    "group": "local--smores",
+    "foreign_group": "smores56--nix-config"
+  },
+  {
+    "query": "Which systemd units does memory restore stop and start?",
+    "group": "local--smores",
+    "foreign_group": "smores56--nix-config"
+  },
+  {
+    "query": "Where is the nightly export and restore drill documented?",
+    "group": "local--smores",
+    "foreign_group": "smores56--nix-config"
+  },
+  {
+    "query": "Which module configures Immich on smortress?",
+    "group": "local--smores",
+    "foreign_group": "smores56--nix-config"
+  },
+  {
+    "query": "How are Cloudflare Access service tokens documented for the MCP endpoint?",
+    "group": "local--smores",
+    "foreign_group": "smores56--nix-config"
+  },
+  {
+    "query": "Which ticket covers the phone-first LobeChat UI?",
+    "group": "local--smores",
+    "foreign_group": "smores56--nix-config"
+  },
+  {
+    "query": "What does the kanbei enforcement kernel do?",
+    "group": "local--smores",
+    "foreign_group": "smores56--kanbei"
+  },
+  {
+    "query": "Which crate records transitions.jsonl.zst?",
+    "group": "local--smores",
+    "foreign_group": "smores56--kanbei"
+  },
+  {
+    "query": "How many tests are in the kanbei M2 report?",
+    "group": "local--smores",
+    "foreign_group": "smores56--kanbei"
+  },
+  {
+    "query": "Which language are kanbei's live modules written in?",
+    "group": "local--smores",
+    "foreign_group": "smores56--kanbei"
+  },
+  {
+    "query": "Which film did I torrent in the dev session?",
+    "group": "local--smores",
+    "foreign_group": "local--dev"
+  },
+  {
+    "query": "What did the e-reader case research conclude?",
+    "group": "local--smores",
+    "foreign_group": "local--dev"
+  },
+  {
+    "query": "How do I rebuild the FalkorDB graph after losing the AOF?",
+    "group": "local--dev",
+    "foreign_group": "smores56--nix-config"
+  },
+  {
+    "query": "Which rclone dataset mirrors photos to Proton?",
+    "group": "local--dev",
+    "foreign_group": "smores56--nix-config"
+  },
+  {
+    "query": "What is in the AeroSpace docked layout?",
+    "group": "local--dev",
+    "foreign_group": "smores56--nix-config"
+  },
+  {
+    "query": "Which nix module declares the dictation service?",
+    "group": "local--dev",
+    "foreign_group": "smores56--nix-config"
+  },
+  {
+    "query": "How do I run the memory restore drill on smortress?",
+    "group": "local--dev",
+    "foreign_group": "smores56--nix-config"
+  },
+  {
+    "query": "Which employer email goes into the work sops file?",
+    "group": "local--dev",
+    "foreign_group": "smores56--nix-config"
+  },
+  {
+    "query": "What does kanbei's head.json contain?",
+    "group": "local--dev",
+    "foreign_group": "smores56--kanbei"
+  },
+  {
+    "query": "Which Rust crates make up kanbei's kernel?",
+    "group": "local--dev",
+    "foreign_group": "smores56--kanbei"
+  },
+  {
+    "query": "Which milestone report mentions 202 tests?",
+    "group": "local--dev",
+    "foreign_group": "smores56--kanbei"
+  },
+  {
+    "query": "Why is the SQLite registry the authority for memory?",
+    "group": "local--dev",
+    "foreign_group": "local--smores"
+  },
+  {
+    "query": "What did the memory review find about the fail-open work check?",
+    "group": "local--dev",
+    "foreign_group": "local--smores"
+  },
+  {
+    "query": "Which embedding model did memory commit to?",
+    "group": "local--dev",
+    "foreign_group": "local--smores"
+  }
+]
