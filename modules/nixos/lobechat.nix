@@ -26,6 +26,23 @@ let
   rustfsData = "/var/lib/rustfs";
   bucket = "lobe";
 
+  # LobeChat asks for 1024 dimensions on every knowledge-base call and its
+  # pgvector column is fixed at 1024, so both embedders answer at that width:
+  # bge-m3 natively, qwen3-embedding-8b truncated by the API (verified local).
+  # Follow `memory.embedder` so the KB and the graph never disagree about the
+  # model behind a vector; changing it requires re-indexing the KB.
+  embedding =
+    if config.memory.embedder == "neuralwatt" then
+      {
+        model = "qwen3-embedding-8b";
+        url = "http://127.0.0.1:${toString ports.memoryLlmProxy}/v1";
+      }
+    else
+      {
+        model = "bge-m3";
+        url = "http://127.0.0.1:${toString ports.memoryEmbed}/v1";
+      };
+
   # Multi-arch index digests: a tag re-push upstream cannot silently change the
   # bytes. LobeHub v2 is server-DB-only; the frozen 1.x `lobe-chat-database`
   # images still expect the removed NextAuth variables.
@@ -177,7 +194,7 @@ in
       }
       {
         assertion = config.memory.enable;
-        message = "lobechat requires memory.enable: knowledge-base embeddings use the shared bge-m3 server.";
+        message = "lobechat requires memory.enable: it reuses memory's Graphiti MCP wrapper and embedder.";
       }
       {
         assertion = config.sops.secrets ? brave-api-key && config.sops.secrets ? neuralwatt-api-key;
@@ -336,12 +353,12 @@ in
           S3_SET_ACL = "0";
           S3_REGION = "us-east-1";
           SEARCH_PROVIDERS = "brave";
-          # Knowledge-base embeddings: bge-m3 is OpenAI-compatible, but it is a
-          # different base URL from the chat provider, so it rides the
-          # OpenAI-compatible NewAPI slot instead of OPENAI_PROXY_URL.
-          DEFAULT_FILES_CONFIG = "embedding_model=newapi/bge-m3";
+          # Knowledge-base embeddings: an OpenAI-compatible server that is not
+          # the chat provider, so it rides the NewAPI slot. LobeChat sends
+          # `dimensions: 1024` on every call, matching its schema's column.
+          DEFAULT_FILES_CONFIG = "embedding_model=newapi/${embedding.model}";
           NEWAPI_API_KEY = "none";
-          NEWAPI_PROXY_URL = "http://127.0.0.1:${toString ports.memoryEmbed}/v1";
+          NEWAPI_PROXY_URL = embedding.url;
           # Chat: Neuralwatt by default; the local qwen is the fallback.
           OPENAI_PROXY_URL = "https://api.neuralwatt.com/v1";
           OPENAI_MODEL_LIST = "-all,+deepseek-v4.1-flash";
@@ -382,12 +399,18 @@ in
         "lobechat-db-init.service"
         "lobechat-s3-bucket.service"
       ];
-      wants = [ "podman-rustfs.service" ];
+      wants = [
+        "podman-rustfs.service"
+        "memory-llm-proxy.service"
+        "llama-cpp-embed.service"
+      ];
       after = [
         "lobechat-secrets.service"
         "lobechat-db-init.service"
         "lobechat-s3-bucket.service"
         "podman-rustfs.service"
+        "memory-llm-proxy.service"
+        "llama-cpp-embed.service"
       ];
       path = [ pkgs.coreutils ];
       preStart = "${lobechatEnvScript}";

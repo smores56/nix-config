@@ -820,13 +820,15 @@ the full schema migration before answering; `lobechat-wait` gives it 600s. The
 image is pinned by digest, and `FTS_SEARCH_PROVIDER=pg_like` is required because
 the host Postgres has no ParadeDB `pg_search`.
 
-Knowledge-base embeddings use bge-m3 at `ports.memoryEmbed` through LobeChat's
-OpenAI-compatible `newapi` slot. The knowledge base is its own vector store, so
-it does not follow `memory.embedder`: the graph embeds at 4096-d through
-Neuralwatt while the KB stays at 1024-d on the local CPU server, which memory
-keeps deployed as its fallback. Chat uses Neuralwatt `deepseek-v4.1-flash`;
-local `qwen3.8-27b` (the `vllm` slot) is the fallback. Brave search is enabled
-with the existing `brave-api-key`.
+Knowledge-base embeddings follow `memory.embedder` through LobeChat's
+OpenAI-compatible `newapi` slot: qwen3-embedding-8b through the loopback memory
+gateway (`ports.memoryLlmProxy`), or bge-m3 on `ports.memoryEmbed`. Either way
+the response is 1024-d, because LobeChat sends `dimensions: 1024` on every call
+and its pgvector column is fixed at that width. Switching the embedder keeps
+the schema but requires re-indexing the knowledge base: vectors from different
+models are not comparable. Chat uses Neuralwatt `deepseek-v4.1-flash`; local
+`qwen3.8-27b` (the `vllm` slot) is the fallback. Brave search is enabled with
+the existing `brave-api-key`.
 
 **Graphiti MCP.** Add the server in the UI (Settings → Connectors → Add
 Custom Connector → Advanced → Headers); there is no env var for MCP servers.

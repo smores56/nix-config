@@ -16,8 +16,12 @@
   # `mcp.toml` environment read this; the shim and CLI keep a matching
   # standalone default.
   memoryMcp = 8182;
-  # bge-m3: memory's listener and LobeChat's knowledge-base client.
+  # bge-m3: memory's local embedder, also LobeChat's knowledge-base client when
+  # `memory.embedder` is `local`.
   memoryEmbed = 8183;
+  # The memory-LLM gateway: Graphiti's extraction route, and LobeChat's
+  # knowledge-base client when `memory.embedder` is `neuralwatt`.
+  memoryLlmProxy = 8082;
   # LobeChat listener and its tunnel ingress.
   lobechat = 3210;
   # RustFS S3 API listener and its tunnel ingress.
