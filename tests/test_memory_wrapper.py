@@ -105,7 +105,7 @@ class FakeGraph:
         self._check()
         return list(self.uuids)
 
-    def episode_for(self, group, content):
+    def episode_for(self, group, content, *, since=None):
         self._check()
         return self.present
 
@@ -437,6 +437,24 @@ class WrapperTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(missing.isError)
         self.assertIn("no stored episode", missing.content[0].text)
 
+    async def test_get_resolves_a_global_episode_from_a_project_group(self):
+        entry = self.seed_entry(
+            content="shared decision", group="global", status="active", graphiti_uuid="graph-global"
+        )
+        result = await self.call("memory_get", {"ref": entry.uuid})
+        self.assertFalse(result.isError)
+        self.assertIn(f"Memory {entry.uuid} in group global", result.content[0].text)
+        self.assertIn("shared decision", result.content[0].text)
+
+    async def test_get_caps_a_long_body_and_names_the_full_length(self):
+        entry = self.seed_entry(content="long body " * 3000, status="active")
+        self.assertGreater(len(entry.content), 16_000)
+        result = await self.call("memory_get", {"ref": entry.uuid})
+        text = result.content[0].text
+        self.assertIn("… (truncated;", text)
+        self.assertIn(f"{len(entry.content)} characters total", text)
+        self.assertLess(len(text), len(entry.content))
+
     async def test_retry_resets_a_failed_row_and_resubmits(self):
         entry = self.seed_entry(status="failed", attempts=3, last_error="absent")
         result = await self.call("memory_retry", {"ref": entry.uuid})
@@ -572,6 +590,7 @@ class WrapperTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("matches more than one episode", result.content[0].text)
 
     async def test_promote_copies_type_and_content_into_global(self):
+        self.header_values = headers(**{"x-memory-actor": "cli"})
         entry = self.seed_entry(
             status="active", origin="sdlc", origin_ref="issue-1#body", kind="json", content='{"a": 1}'
         )
@@ -584,7 +603,7 @@ class WrapperTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(promoted.origin, "sdlc")
         self.assertEqual(promoted.origin_ref, "issue-1#body")
         self.assertEqual(promoted.promoted_from_group, "owner--repo")
-        self.assertEqual(promoted.promoted_by, "maki")
+        self.assertEqual(promoted.promoted_by, "cli")
         self.assertEqual(promoted.status, "pending")
         self.assertEqual(self.backend.added[-1]["group_id"], "global")
         self.assertEqual(self.backend.added[-1]["source"], "json")
@@ -593,6 +612,7 @@ class WrapperTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("already promoted", again.content[0].text)
 
     async def test_promote_rejects_non_global_targets_and_tombstoned_sources(self):
+        self.header_values = headers(**{"x-memory-actor": "cli"})
         entry = self.seed_entry()
         for target in ("other--repo", "owner--repo", "local--scratch"):
             with self.subTest(target=target):
@@ -605,10 +625,19 @@ class WrapperTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("tombstoned", result.content[0].text)
 
     async def test_promote_refuses_work_targets(self):
+        self.header_values = headers(**{"x-memory-actor": "cli"})
         entry = self.seed_entry()
         result = await self.call("memory_promote", {"ref": entry.uuid, "to": "blitzy-org--repo"})
         self.assertTrue(result.isError)
         self.assertIn("employer", result.content[0].text)
+
+    async def test_promote_is_operator_only(self):
+        entry = self.seed_entry(status="active")
+        result = await self.call("memory_promote", {"ref": entry.uuid})
+        self.assertTrue(result.isError)
+        self.assertIn("operator-only", result.content[0].text)
+        self.assertIsNone(self.registry.lookup("global", entry.content_hash))
+        self.assertEqual(self.audit()[-1]["status"], "error")
 
     async def test_status_reports_registry_counts(self):
         self.seed_entry(status="active")
