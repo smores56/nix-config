@@ -32,6 +32,12 @@ let
   # the root-owned FalkorDB subdirectory, so the two never disagree.
   stateDirectory = "memory";
   dataDir = "/var/lib/${stateDirectory}";
+  # FalkorDB publishes its port through podman, so the DNATed packet's
+  # destination is the container address, not 127.0.0.1: a unit whose
+  # IPAddressAllow lists only localhost has its SYN dropped and sits in
+  # SYN_SENT until the client times out. The subnet is podman's default
+  # network (`podman0`); keep the two in step if it is ever changed.
+  podmanSubnet = "10.88.0.0/16";
   # Nightly exports land here: root-owned (the exporter runs as root and reads
   # the root-owned graph volume), never written by the wrapper.
   exportDir = "${dataDir}/export";
@@ -479,8 +485,12 @@ in
           "AF_UNIX"
         ];
         # Loopback only: the wrapper talks to Graphiti and the two model
-        # endpoints and needs no other network identity.
-        IPAddressAllow = "localhost";
+        # endpoints and needs no other network identity. FalkorDB arrives
+        # post-DNAT from the podman subnet, so that range is allowed too.
+        IPAddressAllow = [
+          "localhost"
+          podmanSubnet
+        ];
         IPAddressDeny = "any";
       };
       preStart = ''
@@ -556,8 +566,12 @@ in
           "AF_INET"
           "AF_INET6"
         ];
-        # Only FalkorDB on loopback is reachable.
-        IPAddressAllow = "localhost";
+        # Only FalkorDB on loopback is reachable; it answers post-DNAT from
+        # the podman subnet, which is why that range is allowed as well.
+        IPAddressAllow = [
+          "localhost"
+          podmanSubnet
+        ];
         IPAddressDeny = "any";
       };
     };
