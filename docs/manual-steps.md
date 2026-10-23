@@ -49,6 +49,10 @@ generated hardware config, then run `nix run .#bootstrap`.
 
 #### LUKS shadow migration (970 EVO)
 
+**Do not run this yet.** The boot-unlock mechanism is pending: Clevis/Tang is
+preferred, with TPM + PIN + initrd SSH as the fallback. The current `disko.nix`
+uses `tpm2-device=auto` and step 7 enrolls the TPM; both change with the
+choice. The 970 EVO is still untouched.
 The old Windows Samsung 970 EVO (`nvme1n1`, `SAMSUNG SSD 970 EVO 1TB`,
 serial `S5H9NS0NA57329Z`) is the transition disk. The 980 PRO stays as the
 rollback until the new system has booted twice.
