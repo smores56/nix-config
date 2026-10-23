@@ -577,16 +577,16 @@ recall@5 and MRR for the graph-backed `memory search` against an FTS5/bm25 index
 over the same registry rows, then 50 adversarial boundary queries that must
 return no entry from a foreign project group. First measured run (2026-10-23,
 1,385 episodes): recall@5 0.52 / MRR 0.40 against 0.86 / 0.60 for FTS5, mean
-search latency ~4.5 s against ~0.5 ms, and zero foreign-group hits. The baseline
-ranks whole episodes while the graph ranks extracted facts and entities against
-gold strings that are verbatim corpus text, so the comparison is directionally
-useful, not apples to apples. That run also exposed a structural miss: the
-wrapper listed every node before any fact, so while the node list was full no
-fact could reach the top five. Formatting now alternates the two ranked lists;
-re-scoring the recorded blocks on the drained corpus (1,357 rows) moved recall@5
-from 0.54 to 0.66 and MRR from 0.39 to 0.42, and cut answers landing beyond the
-top five from 13 to 7. Those gains are partly a scoring artifact: a gold token
-that merely appears inside an extracted fact sentence counts as a hit there, so
+search latency ~4.5 s against ~0.5 ms, and zero foreign-group hits. That run
+exposed a structural miss: the wrapper listed every node before any fact, so
+while the node list was full no fact could reach the top five. The block now
+alternates the two ranked lists; the same 50 queries on the drained corpus
+(1,357 rows) measure recall@5 0.66 / MRR 0.42 against 0.78 / 0.55 for FTS5 at
+mean 4.1 s against 0.7 ms — 40 of 50 answered somewhere in the block, 33 within
+the top five, still zero foreign-group hits. Read both comparisons with care:
+the baseline ranks whole episodes while the graph ranks extracted facts and
+entities against gold strings that are verbatim corpus text, and a gold token
+that merely appears inside an extracted fact sentence counts as a hit for it, so
 fact-heavy positions score generously. Community summaries stay off
 for now: the misses are single-fact lookups, not the multi-hop thematic questions
 summaries help with, and building them costs an extra pass over the corpus.
