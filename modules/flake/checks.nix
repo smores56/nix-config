@@ -160,6 +160,12 @@ in
               tools = [ pkgs.openssh ];
               args = [ (homeExe "ssh-pub-keys") ];
             };
+            # The admin-key wrapper must fail closed: no identity file, and no
+            # leftover plaintext key that sops would load behind its back.
+            sops-age-key = {
+              tools = [ ];
+              args = [ hc.home.sessionVariables.SOPS_AGE_KEY_CMD ];
+            };
             worktrees-branch-template.args = [ (homeExe "worktrees") ];
             repos-list-links.args = [ (homeExe "repos") ];
             brain-leak-guard = {
