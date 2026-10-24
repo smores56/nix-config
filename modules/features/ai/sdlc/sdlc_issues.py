@@ -5,7 +5,7 @@ Global and self-contained: it needs `gh` and nothing from this repo's justfile
 or local state. Feature = issue labeled type:feature; tasks = sub-issues with
 blocked-by links; approval = the status:approved label plus a comment holding
 the canonical design hash. `ui` uses `tv` when present; `review` launches
-`tuicr`.
+`revdiff`.
 """
 
 import argparse
@@ -51,22 +51,21 @@ ACTIONS = ("show", "status", "review", "comment", "next", "approve", "complete",
 ACTION_HELP = {
     "show": "print the body and comments",
     "status": "show approval and task state",
-    "review": "open tuicr and post the notes",
+    "review": "open revdiff and post the notes",
     "comment": "open $EDITOR and post a comment",
     "next": "print the next ready task",
     "approve": "record design approval (TTY only)",
     "complete": "close as done (terminal)",
     "cancel": "close as canceled (terminal)",
 }
-REVIEW_ITEM_RE = re.compile(
-    r"^\s*(\d+)\.\s+(?:\*\*\[[^\]]+\]\*\*\s+)?`([^`]+)`"
-    r"(?:\s+\(commit\s+[0-9a-f]+\))?\s+-\s+(.*)$"
+REVDIFF_NOTE_RE = re.compile(
+    r"^## (?P<file>.+?):(?P<start>\d+)(?:-(?P<end>\d+))? \((?P<type>\+|-| )\)$"
 )
-ANCHOR_RE = re.compile(r"^(?P<file>.+?)(?::~?(?P<start>\d+)(?:-~?(?P<end>\d+))?)?$")
+REVDIFF_FILE_RE = re.compile(r"^## (?P<file>.+) \(file-level\)$")
 REVIEW_MARKER_RE = re.compile(r"<!-- sdlc-review:n\d+:[0-9a-f]{12} -->")
 
 Approval = namedtuple("Approval", "state design approved comment reason")
-ReviewNote = namedtuple("ReviewNote", "anchor file start end text")
+ReviewNote = namedtuple("ReviewNote", "file start end text")
 
 
 class CliError(Exception):
@@ -542,44 +541,33 @@ def write_picker_cable(tmp, features):
 # --- review roundtrip -------------------------------------------------------
 
 
-def parse_tuicr_export(text):
-    """Parse tuicr's numbered markdown export into anchored notes."""
+def parse_revdiff_annotations(text):
+    """Parse revdiff's `## file:line (type)` records into anchored notes."""
     notes = []
     current = None
     for raw in (text or "").split("\n"):
-        match = REVIEW_ITEM_RE.match(raw)
-        if match:
-            anchor = match.group(2)
-            parsed = ANCHOR_RE.match(anchor)
+        note_match = REVDIFF_NOTE_RE.match(raw)
+        file_match = None if note_match else REVDIFF_FILE_RE.match(raw)
+        if note_match or file_match:
+            parsed = note_match or file_match
             current = {
-                "anchor": anchor,
                 "file": parsed.group("file"),
-                "start": int(parsed.group("start")) if parsed.group("start") else None,
-                "end": int(parsed.group("end")) if parsed.group("end") else None,
-                "indent": len(match.group(1)) + 2,
-                "lines": [match.group(3)],
+                "start": int(note_match.group("start")) if note_match else None,
+                "end": int(note_match.group("end")) if note_match and note_match.group("end") else None,
+                "lines": [],
             }
             notes.append(current)
         elif current is not None:
-            if not raw.strip():
-                current["lines"].append("")
-            elif raw[:1].isspace():
-                # tuicr indents continuation lines; column-0 text is a footer.
-                lead = len(raw) - len(raw.lstrip(" "))
-                current["lines"].append(raw[min(lead, current["indent"]) :])
+            # revdiff prefixes body lines that would look like a record header.
+            escaped = raw.startswith(" ") and raw[1:].lstrip(" ").startswith("## ")
+            current["lines"].append(raw[1:] if escaped else raw)
     for note in notes:
         lines = note["lines"]
         while lines and not lines[-1].strip():
             lines.pop()
         note["text"] = "\n".join(line.rstrip() for line in lines).strip()
     return [
-        ReviewNote(
-            note["anchor"],
-            note["file"],
-            note["start"],
-            note["end"],
-            note["text"],
-        )
+        ReviewNote(note["file"], note["start"], note["end"], note["text"])
         for note in notes
     ]
 
@@ -1047,24 +1035,31 @@ def cmd_review(args):
     repo = registry_repo()
     feature = resolve_feature(repo, args.feature)
     body = feature.get("body") or ""
-    with tempfile.TemporaryDirectory(prefix="sdlc-review-") as tmp:
-        path = os.path.join(tmp, "issue-%d.md" % feature["number"])
-        with open(path, "w") as fh:
-            fh.write(body)
-        export_path = os.path.join(tmp, "export.md")
-        try:
-            with open(export_path, "w") as out:
-                proc = subprocess.run(["tuicr", "--stdout", "--file", path], stdout=out)
-        except FileNotFoundError:
-            raise CliError("tuicr not found on PATH")
-        if proc.returncode != 0:
-            raise CliError("tuicr exited %d" % proc.returncode)
-        with open(export_path) as fh:
-            export = fh.read()
+    name = "issue-%d.md" % feature["number"]
+    env = {key: value for key, value in os.environ.items() if key != "REVDIFF_OUTPUT"}
+    try:
+        proc = subprocess.run(
+            ["revdiff", "--stdin", "--stdin-name", name],
+            input=body,
+            stdout=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            env=env,
+        )
+    except FileNotFoundError:
+        raise CliError("revdiff not found on PATH")
+    if proc.returncode not in (0, 10):
+        raise CliError("revdiff exited %d" % proc.returncode)
 
-    notes = parse_tuicr_export(export)
+    notes = parse_revdiff_annotations(proc.stdout)
+    anchored = sorted({note.file for note in notes if note.file != name})
+    if anchored:
+        raise CliError(
+            "revdiff anchored to %s, not %s: the body parsed as a diff"
+            % (", ".join(anchored), name)
+        )
     if not notes:
-        print("no review notes (export with y or :wq in tuicr)")
+        print("no review notes (annotate in revdiff, then quit with q)")
         return
     existing = "\n".join(
         clean(comment.get("body") or "") for comment in feature.get("comments") or []
@@ -1241,7 +1236,7 @@ def build_parser():
     p.add_argument("--repo", help="registry repo (default $SDLC_REPO)")
     p.set_defaults(fn=cmd_ui)
 
-    p = sub.add_parser("review", help="review a feature body in tuicr and post the notes")
+    p = sub.add_parser("review", help="review a feature body in revdiff and post the notes")
     feature_arg(p)
     p.add_argument("--dry-run", action="store_true", help="print the comment instead of posting")
     p.set_defaults(fn=cmd_review)
