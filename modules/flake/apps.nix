@@ -222,7 +222,22 @@
 
             export CLOUDFLARE_API_TOKEN
             CLOUDFLARE_API_TOKEN=$(tr -d '[:space:]' < "$token_file")
-            export TF_VAR_account_id="''${CLOUDFLARE_ACCOUNT_ID:-$(cat /etc/cloudflare-tofu/account-id)}"
+            # An empty account id is not a plan-time error: OpenTofu sends it to
+            # the API, which rejects account-scoped resources mid-apply after
+            # others have already changed. The tunnel credentials carry the same
+            # account tag, so they cover a missing or dangling /etc entry.
+            account_id="''${CLOUDFLARE_ACCOUNT_ID:-}"
+            if [ -z "$account_id" ] && [ -r /etc/cloudflare-tofu/account-id ]; then
+              account_id=$(cat /etc/cloudflare-tofu/account-id)
+            fi
+            if [ -z "$account_id" ]; then
+              account_id=$(jq -er '.AccountTag' "$creds")
+            fi
+            [ -n "$account_id" ] || {
+              echo "${name}: no Cloudflare account id; set CLOUDFLARE_ACCOUNT_ID" >&2
+              exit 1
+            }
+            export TF_VAR_account_id="$account_id"
             export TF_VAR_domain="''${CLOUDFLARE_DOMAIN:-sammohr.dev}"
             export TF_VAR_email="''${CLOUDFLARE_ALERT_EMAIL:-sam@sammohr.dev}"
             export TF_VAR_tunnel_id
