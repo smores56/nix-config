@@ -240,6 +240,25 @@ Create or reissue the tunnel under Zero Trust → Networks → Tunnels and paste
 JSON here. Changing the tunnel means rebuilding the host and re-running
 `cloudflare-apply`.
 
+**Adopting existing objects.** An apply against an account that already has the
+wildcard CNAME or the Access applications fails with `81053`/`11010`
+("already exists"): those objects predate OpenTofu and must be imported, not
+recreated. Import IDs are `<zone_id>/<record_id>` for the record and
+`accounts/<account_id>/<app_id>` for applications:
+
+```sh
+sudo nix run .#cloudflare-tofu -- import cloudflare_dns_record.wildcard '<zone_id>/<record_id>'
+sudo nix run .#cloudflare-tofu -- import cloudflare_zero_trust_access_application.ssh 'accounts/<account_id>/<app_id>'
+```
+
+List the IDs from `/zones/<zone>/dns_records` and
+`/accounts/<account>/access/apps`; the access policies and notification policies
+are normally in state already. The account ID comes from
+`CLOUDFLARE_ACCOUNT_ID`, then `/etc/cloudflare-tofu/account-id`, then the
+credentials JSON's `AccountTag`; the app exits rather than send an empty value,
+which otherwise surfaces as `missing required account_id parameter` midway
+through an apply.
+
 ### github-repo-pat
 
 <!-- manual-step: secret/github-repo-pat -->
