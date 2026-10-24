@@ -35,8 +35,8 @@ Cross-cutting values flow through `config.machine.*` and `config.user.*`
 Feature options live in the module that owns them (`webProxy`, `backup`,
 `immich`, `calibre`, `alerting`, …).
 
-Operator-only steps — tokens, Cloudflare objects, host provisioning, backup
-datasets, public services, flake apps, and alerts — live in
+Operator-only steps — tokens, the admin sops key, Cloudflare objects, host
+provisioning, backup datasets, public services, flake apps, and alerts — live in
 [`docs/manual-steps.md`](docs/manual-steps.md). `checks.manual-steps-sync`
 fails when the configuration gains an item without a matching anchor, or when
 the document drifts ahead of the configuration.
@@ -190,8 +190,8 @@ then run the `bootstrap` app.
 **Cloudflare token invalid or rotated.** The running tunnel keeps serving
 existing hostnames, but plan/apply fail until the token is fixed. Rotate it in
 the dashboard, update `cloudflare-api-token` in `secrets/smortress.yaml`
-(`sops secrets/smortress.yaml`), and redeploy. Check with
-`sudo nix run .#cloudflare-plan`.
+(`sops secrets/smortress.yaml` on a machine holding the admin key), and
+redeploy. Check with `sudo nix run .#cloudflare-plan`.
 
 **Access misconfiguration.** A typo that clears `access.enable` on
 `ssh`/`llm`/`memory` fails evaluation (`modules/nixos/web-proxy.nix`), and
@@ -199,11 +199,21 @@ OpenTofu has `prevent_destroy` on those apps and policies. An Access *policy* mi
 email) still locks out the browser — fix it in OpenTofu and apply, or in the
 dashboard as a break-glass step.
 
-**sops cannot decrypt (host key lost).** The `smortress` age recipient in
-`.sops.yaml` is derived from `/etc/ssh/ssh_host_ed25519_key`; losing that key
-means `secrets/smortress.yaml` cannot be decrypted. Restore the key, or
-re-key: add a fresh recipient to `.sops.yaml` and re-encrypt with the admin
-age key.
+**sops cannot decrypt on smortress (host key lost).** The `smortress` age
+recipient in `.sops.yaml` is derived from `/etc/ssh/ssh_host_ed25519_key`, so
+activation cannot decrypt `secrets/smortress.yaml`. The admin identity
+(`~/.config/sops/keys.age`, on a laptop only) still can: edit the secrets
+there, add the replacement host recipient to `.sops.yaml`, then
+`sops updatekeys secrets/smortress.yaml`.
+
+**Admin key lost, or its passphrase lost.** No host keeps a copy, so nothing on
+smortress can stand in for it and every `sops` edit fails (`sops-age-key`
+reports the missing file). Recovery is a new identity, not a restore: mint
+`keys.age`, swap `&admin` in `.sops.yaml`, run
+`sops updatekeys secrets/smortress.yaml`, then delete any leftover plaintext
+`~/.config/sops/age/keys.txt` — after that the old key is dead, but everything
+it could read must still be rotated. Runbook: *Admin age key (keys.age)* in
+[`docs/manual-steps.md`](docs/manual-steps.md#admin-age-key-keysage).
 
 ### Service failure alerts
 
@@ -523,8 +533,9 @@ root (`/etc/ssh/...`) via `--extra-files`.
 ### Headless login and token rotation
 
 `bootstrap` logs in non-interactively when the host's sops secrets hold the
-tokens. The token inventory, scopes, minting, rotation, and per-provider
-failure behavior are documented once in
-[`docs/manual-steps.md`](docs/manual-steps.md#secrets). `modules/nixos/secrets.nix`
+tokens. The token inventory, scopes, minting, the rotation checklist, and
+per-provider failure behavior are documented once in
+[`docs/manual-steps.md`](docs/manual-steps.md#secrets); that file also carries
+the admin-key runbook. `modules/nixos/secrets.nix`
 declares the keys, so a missing key fails activation — provision the tokens
 before the next `nixos-rebuild switch`.

@@ -87,15 +87,99 @@ manages the user environment.
 
 ## Secrets
 
-All secrets live in `secrets/smortress.yaml`, which only smortress can decrypt.
-Edit them with:
+All secrets live in `secrets/smortress.yaml`, encrypted to two recipients: the
+smortress SSH host key (sops-nix decrypts at activation) and the admin identity
+`keys.age` (for edits). No host holds the admin identity, so edit from a laptop
+that has it:
 
 ```sh
-nix shell nixpkgs#sops -c sops secrets/smortress.yaml
+sops secrets/smortress.yaml
 ```
 
-After editing, commit and run `sudo nixos-rebuild switch` on smortress so
-sops-nix redeploys `/run/secrets`. Never place a secret in the Nix store.
+`sops` and `age` come from `modules/features/sops.nix`, which also points
+`SOPS_AGE_KEY_CMD` at the `sops-age-key` wrapper. After editing, commit and run
+`sudo nixos-rebuild switch` on smortress so sops-nix redeploys `/run/secrets`.
+Never place a secret in the Nix store.
+
+### Admin age key (keys.age)
+
+The admin identity is a single age key, stored passphrase-encrypted as
+`~/.config/sops/keys.age` on the operator's laptops (smorespro, smoreswork) and
+nowhere else. smortress keeps only its SSH host key, so a compromised server
+yields no identity that can re-encrypt `secrets/` or read anything already
+committed.
+
+`sops` receives the identity through `SOPS_AGE_KEY_CMD` → `sops-age-key` →
+`age --decrypt ~/.config/sops/keys.age`. `age` prompts on the tty and sops reads
+the identity from the wrapper's stdout, so the passphrase never lands in argv,
+the environment, or the store, and one sops run costs one prompt.
+
+Create it once on a laptop:
+
+```sh
+mkdir -p ~/.config/sops
+age-keygen | age --passphrase -o ~/.config/sops/keys.age
+age --decrypt ~/.config/sops/keys.age | age-keygen -y   # prints the recipient
+```
+
+Copy the encrypted file to another laptop as-is (the passphrase travels
+separately). Put the recipient into `.sops.yaml` as `&admin`, then re-encrypt
+the data key to the new recipient list:
+
+```sh
+sops updatekeys secrets/smortress.yaml   # one prompt; values are untouched
+```
+
+Verify the laptop holds a working identity:
+
+```sh
+sops -d secrets/smortress.yaml > /dev/null   # one prompt, exit 0
+```
+
+**Passphrase custody.** Proton Pass plus an off-site copy on offline media (not
+another machine). Keep the two apart; either alone is worthless. Losing both
+means losing the identity — nothing can unwrap `keys.age`. The secrets
+themselves survive (smortress's host key still decrypts them), so recovery is
+minting a new identity and re-keying (below), not restoring the old one.
+
+**Editing rule.** Every `sops` edit and `sops updatekeys` runs from a machine
+holding `keys.age`. On smortress the wrapper fails with `keys.age is missing or
+unreadable`, which is the point: edit or rotate on a laptop, commit, then
+`sudo nixos-rebuild switch` on smortress. `SOPS_AGE_KEY_CMD` is a session
+variable, so reopen a shell that predates the last switch.
+
+**Replace the admin identity** (also the path after a lost passphrase or a
+suspected leak):
+
+1. Mint a new `keys.age` (above) and swap the `&admin` recipient in
+   `.sops.yaml`.
+2. Re-encrypt the data key to the new recipient list. From a laptop that still
+   holds the old identity: `sops updatekeys secrets/smortress.yaml`. If that
+   identity is gone (lost passphrase), the host key is the only way in — as
+   root on smortress, from a repo checkout:
+   ```sh
+   sudo SOPS_AGE_KEY="$(ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key)" \
+     nix shell nixpkgs#sops -c sops updatekeys secrets/smortress.yaml
+   ```
+   Either path drops the old recipient stanza, so the old identity can no
+   longer decrypt the data key. Removing the recipient from `.sops.yaml` is the
+   revocation.
+3. Prove it while the old key still exists — the recipient list is readable
+   without decrypting, and sops tries every identity source it can find, so
+   drop the wrapper for the negative test:
+   ```sh
+   grep -o 'age1[0-9a-z]*' secrets/smortress.yaml | sort -u   # new admin + host only
+   env -u SOPS_AGE_KEY_CMD SOPS_AGE_KEY="$(cat ~/.config/sops/age/keys.txt)" \
+     sops -d secrets/smortress.yaml > /dev/null               # must fail
+   ```
+4. Delete the plaintext `~/.config/sops/age/keys.txt` on every host and user
+   (`rm ~/.config/sops/age/keys.txt`). sops reads that path as a built-in
+   default even when `SOPS_AGE_KEY_CMD` is set, so a leftover copy keeps
+   decrypting with the retired key.
+5. Re-encryption does not un-leak what the old key already read: rotate every
+   credential in the checklist below.
+6. Commit and rebuild smortress. The host recipient is unchanged, so secret
+   delivery needs no host change.
 
 ### cloudflare-api-token
 
@@ -170,8 +254,9 @@ Settings → Access tokens.
 <!-- manual-step: secret/calibre-password -->
 
 OPDS password for the single `smores56` user, user-readable. The service
-re-applies it on every start, so rotating is: edit this key, rebuild, restart
-`calibre-server` (the rebuild restarts it) and refresh OPDS clients.
+re-applies it on every start, so rotating is: edit this key, rebuild,
+`systemctl --user restart calibre-server` (a rebuild does not restart a user
+unit whose definition is unchanged) and refresh OPDS clients.
 
 ### neuralwatt-api-key
 
@@ -188,6 +273,148 @@ console, update this key, rebuild, and open a new shell.
 Brave Search API key, user-readable, exported by the fish init for maki's
 websearch plugin. Page Assist keeps its own copy in the browser. Rotate in the
 Brave dashboard, update this key, rebuild, and open a new shell.
+
+### Rotation checklist
+
+The retired admin key could read every value here, so re-encryption alone is
+not enough — rotate the upstream credential too. Per item: mint the new
+credential, `sops secrets/smortress.yaml`, commit, `sudo nixos-rebuild switch`
+on smortress, prove it, then revoke the old one. The tunnel credentials and the
+rclone session are the two that are not a plain token swap.
+
+#### cloudflare-api-token
+
+Dashboard only (My Profile → API Tokens → Create Token, scopes above; there is
+no CLI minting). Then:
+
+```sh
+sops secrets/smortress.yaml          # replace cloudflare-api-token
+sudo nixos-rebuild switch            # redeploys /run/secrets/cloudflare-api-token
+sudo nix run .#cloudflare-plan       # proves the new token
+```
+
+Delete the old token row. `cloudflare-email@` and `backup-freshness` read the
+file at run time, so no unit restart is needed.
+
+#### github-key-pat
+
+Mint a new token with the scopes above (web). Then:
+
+```sh
+sops secrets/smortress.yaml
+sudo nixos-rebuild switch
+GH_TOKEN="$(cat /run/secrets/github-key-pat)" gh api user -q .login
+```
+
+Revoke the old token under Developer settings → Personal access tokens.
+
+#### github-repo-pat
+
+Mint a new classic `repo` token (web). Then replace the secret, rebuild, and
+prove it with a mirror run — a valid token that lost `repo` fails the run:
+
+```sh
+sudo systemctl start backup-github.service
+journalctl -u backup-github.service -n 50
+```
+
+Revoke the old token. The mirror keeps the old value until the next
+`preBackup`, so the run above is the proof.
+
+#### proton-pass-pat
+
+Mint under Proton Pass → Settings → Access tokens (read-only Hosting and
+Identity, one-year cap). Replace the secret, rebuild, then re-login on
+smortress, which consumed the old PAT in place:
+
+```sh
+PROTON_PASS_PERSONAL_ACCESS_TOKEN="$(cat /run/secrets/proton-pass-pat)" \
+PROTON_PASS_KEY_PROVIDER=fs pass-cli login
+systemctl --user restart proton-pass-agent
+```
+
+Revoke the old token in Proton Pass. `ssh-pub-keys` and the `cloudflared-access`
+wrapper use the `pass-cli` session, so they recover with the agent restart.
+
+#### calibre-password
+
+The single `smores56` OPDS account. `modules/features/calibre.nix` re-applies
+the password in `ExecStartPre` on every start of the user unit `calibre-server`,
+and a rebuild does not restart a user unit whose definition did not change:
+
+```sh
+sops secrets/smortress.yaml          # replace calibre-password
+sudo nixos-rebuild switch            # redeploys /run/secrets/calibre-password
+systemctl --user restart calibre-server
+```
+
+Refresh the OPDS clients' saved credentials.
+
+#### neuralwatt-api-key
+
+Mint a new key in the Neuralwatt console and revoke the old one there (web).
+Replace the secret and rebuild; sops-nix restarts `memory-llm-proxy.service`
+through the secret's `restartUnits`, so the gateway picks the new key up:
+
+```sh
+sops secrets/smortress.yaml
+sudo nixos-rebuild switch
+```
+
+Open a new shell for `NEURALWATT_API_KEY` (the fish init exports it at shell
+start), and restart any agent session that cached the old key.
+
+#### brave-api-key
+
+Regenerate the key in the Brave dashboard (web). Replace the secret, rebuild,
+open a new shell for `BRAVE_API_KEY`, and update Page Assist's own copy in the
+extension settings — it does not read the sops file.
+
+#### cloudflared-credentials
+
+cloudflared 2026.7.2 has no `rotate-secret` subcommand (`cloudflared tunnel
+--help` lists login/create/route/run/list/…/token), so do not script this. The
+dashboard's Refresh token rotates the token of a token-managed tunnel; whether
+it yields a new `TunnelSecret` for this locally-managed tunnel is unverified, so
+recreate the tunnel instead — from the console, since the tunnel is the only
+path to the host. `AccountTag` stays (it is the Cloudflare account); `TunnelID`
+and `TunnelSecret` change:
+
+1. Create the tunnel in Zero Trust → Networks → Tunnels (dashboard: Networking
+   → Tunnels), keeping `webProxy.tunnelName` as the label; `cloudflared tunnel
+   create smortress` from a laptop with `cloudflared tunnel login` does the same
+   and writes `~/.cloudflared/<uuid>.json`.
+2. Paste the new JSON into `cloudflared-credentials`, rebuild, then
+   `sudo systemctl restart cloudflared-tunnel-smortress`.
+3. The `TunnelID` changed, so re-point DNS: `sudo nix run .#cloudflare-plan`,
+   then apply.
+4. Delete the old tunnel.
+
+#### Proton rclone token
+
+The backup mirror and `pm` authenticate to Proton through rclone, in
+`/var/lib/backup/rclone.conf` (root) and `~/.config/rclone/rclone.conf` (user,
+both on smortress); neither is Nix-managed and neither is in sops. Re-auth once
+and copy the refreshed `[proton]` block to the other config — Proton refresh
+tokens are single-use, so two reconnects against one account blank each other.
+As the user on smortress, with no backup running and `pm` unmounted (the file
+holds only `[proton]`):
+
+```sh
+rclone config reconnect proton:      # account password + 2FA; rewrites the [proton] block
+sudo install -o root -g root -m 0600 ~/.config/rclone/rclone.conf /var/lib/backup/rclone.conf
+```
+
+Prove the root copy:
+
+```sh
+sudo rclone --config /var/lib/backup/rclone.conf lsf proton: --max-depth 1
+```
+
+Revoke the old login at account.proton.me → Settings → All settings → Security
+and privacy → Session management (verified page; whether rclone appears as its
+own session there is unverified). Run the backups again via their timers, or
+`sudo systemctl start backup-photos.service` for an immediate check.
 
 ## Providers
 
