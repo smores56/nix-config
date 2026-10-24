@@ -28,15 +28,18 @@ pkgs.python3Packages.buildPythonApplication {
     uvicorn
   ];
 
-  # Group derivation shells out to git. The wrappers prepend it to PATH so the
-  # systemd unit and the home package behave the same without relying on the
-  # caller's PATH.
+  # Group derivation shells out to git; the file-search server shells out to
+  # ripgrep. The wrappers prepend both so the systemd unit and the home package
+  # behave the same without relying on the caller's PATH.
   nativeBuildInputs = [ pkgs.makeWrapper ];
   makeWrapperArgs = [
     "--prefix"
     "PATH"
     ":"
-    (lib.makeBinPath [ pkgs.git ])
+    (lib.makeBinPath [
+      pkgs.git
+      pkgs.ripgrep
+    ])
   ];
 
   doCheck = false;
@@ -52,6 +55,9 @@ pkgs.python3Packages.buildPythonApplication {
     "memory_mcp.registry"
     "memory_mcp.reconciler"
     "memory_mcp.llm_proxy"
+    "memory_mcp.files"
+    "memory_mcp.connector_seed"
+    "memory_mcp.lobechat_ingest"
   ];
 
   meta = {
