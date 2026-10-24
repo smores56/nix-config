@@ -835,8 +835,9 @@ env-listed model without `fc` is treated as unable to call tools, which hides
 agent mode, web search, and MCP entirely; that is the only place LobeChat
 learns those abilities for a custom model.
 
-**Graphiti MCP.** Add the server in the UI (Settings → Connectors → Add
-Custom Connector → Advanced → Headers); there is no env var for MCP servers.
+**Graphiti MCP.** `lobechat-connectors.service` seeds the connector as a
+`user_connectors` row, so every client logged into the account already lists it;
+the app syncs the tool list on the first agent run. For reference, the row is:
 
 - URL: `http://127.0.0.1:8182/mcp`, transport `http` (streamable HTTP).
 - Headers: `X-Memory-Group: global`, `X-Memory-Cwd: /phone`,
@@ -854,10 +855,11 @@ For the first deployment, apply the new Access applications before rebuilding:
 `sudo nix run .#cloudflare-apply`, then `just switch smortress`. The wildcard
 CNAME already exists, so the rebuild only adds the ingress.
 
-It refuses work groups and records the source/source-id in every episode's
-provenance. LobeChat's built-in Memory has no deployment-wide off
+It refuses work groups. LobeChat's built-in Memory has no deployment-wide off
 switch: after the first login open Settings → Memory and disable it, so Graphiti
-is the only memory system.
+is the only memory system. The seed only inserts missing rows, so a UI edit
+wins; on a fresh deployment, create the account first and then run
+`sudo systemctl restart lobechat-connectors`.
 
 ### smortress/s3
 
@@ -882,8 +884,9 @@ Access application covering both hostnames or proxying downloads.
 ### Phone file search
 
 `files-mcp` is a read-only file-search MCP on loopback `ports.filesMcp` over
-`/home/smores/{code,Documents,Downloads,dev}`. Add it in LobeChat as a second
-custom connector: `http://127.0.0.1:8185/mcp`, transport HTTP, no headers.
+`/home/smores/{code,Documents,Downloads,dev}`. The connector seed adds it as a
+second `user_connectors` row (`http://127.0.0.1:8185/mcp`, HTTP, no headers), so
+clients get it without setup; the app syncs its tools on the first agent run.
 
 Tools: `file_search` (file names and contents), `file_read` (one file, with
 line numbers), and `file_list`. Paths outside the roots, secret-like files

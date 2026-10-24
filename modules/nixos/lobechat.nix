@@ -158,6 +158,60 @@ let
       -c 'CREATE EXTENSION IF NOT EXISTS vector'
   '';
 
+  # The file connector exists only when the server does; the memory one is
+  # asserted above.
+  filesConnectorSql = lib.optionalString (config.filesearch.enable or false) ''
+    INSERT INTO user_connectors
+      (user_id, identifier, name, source_type, mcp_server_url, mcp_connection_type,
+       status, is_enabled, metadata)
+    SELECT u.id, 'files', 'Home files', 'custom',
+           'http://127.0.0.1:${toString ports.filesMcp}/mcp', 'http',
+           'connected', true,
+           jsonb_build_object('description', 'Read-only search over allowlisted home directories')
+    FROM users u
+    WHERE NOT EXISTS (
+      SELECT 1 FROM user_connectors c
+      WHERE c.user_id = u.id AND c.identifier = 'files'
+        AND c.workspace_id IS NULL AND c.agent_id IS NULL
+    );
+  '';
+
+  # LobeChat 2.2.20 has no server-side MCP configuration: a connector is a
+  # `user_connectors` row, with non-secret headers in `metadata.customHeaders`.
+  # Seeding both loopback servers once per user means every client (and a fresh
+  # PWA install) already has them. The inserts never update an existing row, so
+  # a UI edit or a later sync wins; the app fills the tool lists on the first
+  # agent run.
+  connectorSeedScript = pkgs.writeShellScript "lobechat-connector-seed" ''
+    set -euo pipefail
+    export PGPASSWORD="$(cat ${runtimeDir}/db-password)"
+    ${config.services.postgresql.package}/bin/psql \
+      -h 127.0.0.1 -U lobechat -d lobechat -v ON_ERROR_STOP=1 <<'SQL'
+    INSERT INTO user_connectors
+      (user_id, identifier, name, source_type, mcp_server_url, mcp_connection_type,
+       status, is_enabled, metadata)
+    SELECT u.id, 'memory', 'Graphiti memory', 'custom',
+           'http://127.0.0.1:${toString ports.memoryMcp}/mcp', 'http',
+           'connected', true,
+           jsonb_build_object(
+             'description', 'Personal memory through the Graphiti MCP wrapper',
+             'customHeaders', jsonb_build_object(
+               'X-Memory-Group', 'global',
+               'X-Memory-Cwd', '/phone',
+               'X-Memory-Actor', 'lobechat'
+             )
+           )
+    FROM users u
+    WHERE NOT EXISTS (
+      SELECT 1 FROM user_connectors c
+      WHERE c.user_id = u.id AND c.identifier = 'memory'
+        AND c.workspace_id IS NULL AND c.agent_id IS NULL
+    );
+
+    ${filesConnectorSql}
+    SQL
+  '';
+
   # LobeChat expects the bucket to exist; it does not create it. mc is smaller
   # than the AWS CLI and speaks path-style against RustFS.
   bucketScript = pkgs.writeShellScript "lobechat-s3-bucket" ''
@@ -297,6 +351,28 @@ in
         TimeoutStartSec = "5min";
         Restart = "on-failure";
         RestartSec = "10s";
+        NoNewPrivileges = true;
+        PrivateTmp = true;
+      };
+    };
+
+    # Runs after the container so the schema exists and the user row is there.
+    # A no-op when both connectors are already present.
+    systemd.services.lobechat-connectors = {
+      description = "Seed LobeChat's loopback MCP connectors";
+      wantedBy = [ "multi-user.target" ];
+      requires = [
+        "lobechat-secrets.service"
+        "podman-lobechat.service"
+      ];
+      after = [
+        "lobechat-secrets.service"
+        "podman-lobechat.service"
+      ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = connectorSeedScript;
         NoNewPrivileges = true;
         PrivateTmp = true;
       };
