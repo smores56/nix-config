@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODULE_DIR = os.path.join(HERE, "..", "modules", "features", "ai", "sdlc")
@@ -98,22 +99,26 @@ else:
     sys.exit(2)
 '''
 
-FAKE_TUICR = '''#!{python}
+FAKE_REVDIFF = '''#!{python}
 import json, os, sys
 
 state = os.environ["FAKE_GH_STATE"]
 args = sys.argv[1:]
-with open(os.path.join(state, "tuicr.jsonl"), "a") as fh:
+with open(os.path.join(state, "revdiff.jsonl"), "a") as fh:
     fh.write(json.dumps(args) + "\\n")
-if "--file" in args:
-    with open(args[args.index("--file") + 1]) as fh:
-        source = fh.read()
-    with open(os.path.join(state, "reviewed-body.md"), "w") as fh:
-        fh.write(source)
-path = os.path.join(state, "tuicr-export.md")
+source = sys.stdin.read()
+with open(os.path.join(state, "reviewed-body.md"), "w") as fh:
+    fh.write(source)
+with open(os.path.join(state, "revdiff-env.json"), "w") as fh:
+    json.dump({"REVDIFF_OUTPUT": os.environ.get("REVDIFF_OUTPUT")}, fh)
+path = os.path.join(state, "revdiff-export.md")
 if os.path.exists(path):
     with open(path) as fh:
         sys.stdout.write(fh.read())
+exit_path = os.path.join(state, "revdiff-exit.txt")
+if os.path.exists(exit_path):
+    with open(exit_path) as fh:
+        sys.exit(int(fh.read().strip()))
 '''
 
 FAKE_TV = '''#!{python}
@@ -156,15 +161,20 @@ sys.exit(1)
 '''
 
 EXPORT = (
-    "I reviewed your code and have the following comments. Please address them.\n\n"
-    "1. `body.md:7` - Make this a link.\n"
-    "2. `body.md:13-15` - Split the plan.\n"
+    "## issue-1.md:7 ( )\n"
+    "Make this a link.\n"
+    "\n"
+    "## issue-1.md:13-15 ( )\n"
+    "Split the plan.\n"
 )
 
-TYPED_EXPORT = (
-    "## Session: body.md@main/worktree\n\n"
-    "1. **[ISSUE]** `body.md:7` - Typed note.\n"
-    "2. **[SUGGESTION]** `body.md:13-15` (commit abc1234) - Range note.\n"
+FILE_EXPORT = (
+    "## issue-1.md (file-level)\n"
+    "Body is long.\n"
+    "\n"
+    "## issue-1.md:13 ( )\n"
+    " first\n"
+    "second\n"
 )
 
 
@@ -285,7 +295,7 @@ class GhTest(unittest.TestCase):
         self.serve("issue-%d.json" % iss["number"], iss)
 
     def fakes(self):
-        self.script("tuicr", FAKE_TUICR.replace("{python}", sys.executable))
+        self.script("revdiff", FAKE_REVDIFF.replace("{python}", sys.executable))
         self.script("tv", FAKE_TV.replace("{python}", sys.executable))
         self.serve("tv-feature.txt", "1\n")
         self.serve("tv-action.txt", "show\n")
@@ -305,8 +315,8 @@ class GhTest(unittest.TestCase):
     def calls_for(self, *prefix):
         return [call for call in self.calls() if call[: len(prefix)] == list(prefix)]
 
-    def tuicr_calls(self):
-        path = os.path.join(self.state, "tuicr.jsonl")
+    def revdiff_calls(self):
+        path = os.path.join(self.state, "revdiff.jsonl")
         if not os.path.exists(path):
             return []
         with open(path) as fh:
@@ -815,39 +825,42 @@ class FeatureTerminalTest(GhTest):
         self.assertEqual(len(self.calls_for("issue", "close")), 1)
 
 
-class TuicrExportTest(unittest.TestCase):
-    def test_parses_file_line_and_range_anchors(self):
-        notes = sdlc_issues.parse_tuicr_export(EXPORT)
-        self.assertEqual([n.anchor for n in notes], ["body.md:7", "body.md:13-15"])
-        self.assertEqual(notes[0].file, "body.md")
+class RevdiffExportTest(unittest.TestCase):
+    def test_parses_line_and_range_anchors(self):
+        notes = sdlc_issues.parse_revdiff_annotations(EXPORT)
+        self.assertEqual(notes[0].file, "issue-1.md")
         self.assertEqual((notes[0].start, notes[0].end), (7, None))
         self.assertEqual((notes[1].start, notes[1].end), (13, 15))
         self.assertEqual(notes[0].text, "Make this a link.")
 
-    def test_keeps_continuation_lines(self):
-        text = "1. `a.md:3` - first\n  second line\n\n2. `a.md` - file note\n"
-        notes = sdlc_issues.parse_tuicr_export(text)
-        self.assertEqual(notes[0].text, "first\nsecond line")
-        self.assertEqual((notes[1].start, notes[1].end), (None, None))
+    def test_parses_file_level_and_multiline_annotations(self):
+        notes = sdlc_issues.parse_revdiff_annotations(FILE_EXPORT)
+        self.assertEqual((notes[0].start, notes[0].end), (None, None))
+        self.assertEqual(notes[0].text, "Body is long.")
+        self.assertEqual(notes[1].text, "first\nsecond")
 
-    def test_ignores_the_preamble(self):
-        self.assertEqual(sdlc_issues.parse_tuicr_export("nothing here\n"), [])
+    def test_parses_diff_line_types(self):
+        text = "## a.go:1 (-)\nremoved\n\n## a.go:2 (+)\nadded\n"
+        notes = sdlc_issues.parse_revdiff_annotations(text)
+        self.assertEqual([(note.start, note.text) for note in notes], [(1, "removed"), (2, "added")])
 
-    def test_parses_typed_and_commit_scoped_items(self):
-        notes = sdlc_issues.parse_tuicr_export(TYPED_EXPORT)
-        self.assertEqual([note.start for note in notes], [7, 13])
-        self.assertEqual(notes[0].text, "Typed note.")
-        self.assertEqual(notes[1].text, "Range note.")
+    def test_ignores_text_before_the_first_header(self):
+        self.assertEqual(sdlc_issues.parse_revdiff_annotations("nothing here\n"), [])
 
     def test_preserves_blank_lines_inside_a_note(self):
-        text = "1. `a.md:3` - first\n   \n   second paragraph\n"
-        notes = sdlc_issues.parse_tuicr_export(text)
+        text = "## a.md:3 ( )\nfirst\n\nsecond paragraph\n"
+        notes = sdlc_issues.parse_revdiff_annotations(text)
         self.assertEqual(notes[0].text, "first\n\nsecond paragraph")
+
+    def test_unescapes_body_lines_that_look_like_headers(self):
+        text = "## a.md:3 ( )\n ## not a record\n  ## pre-indented\n"
+        notes = sdlc_issues.parse_revdiff_annotations(text)
+        self.assertEqual(notes[0].text, "## not a record\n ## pre-indented")
 
 
 class ReviewRenderTest(unittest.TestCase):
-    def note(self, anchor="body.md:7", start=7, end=None, text="Make this a link."):
-        return sdlc_issues.ReviewNote(anchor, "body.md", start, end, text)
+    def note(self, start=7, end=None, text="Make this a link."):
+        return sdlc_issues.ReviewNote("issue-1.md", start, end, text)
 
     def test_quotes_the_anchored_body_lines(self):
         text = sdlc_issues.render_review(1, "Title", DESIGN, [self.note()])
@@ -859,7 +872,7 @@ class ReviewRenderTest(unittest.TestCase):
 
     def test_quotes_ranges(self):
         text = sdlc_issues.render_review(
-            1, "Title", DESIGN, [self.note("body.md:13-15", 13, 15, "Split it.")]
+            1, "Title", DESIGN, [self.note(start=13, end=15, text="Split it.")]
         )
         self.assertIn("> ## Plan", text)
         self.assertIn("> - [ ] T1: Build", text)
@@ -878,8 +891,8 @@ class ReviewRenderTest(unittest.TestCase):
     def test_marker_ignores_line_shift_but_tracks_content(self):
         body = "x\ny\nsame\nsame\n"
         lines = body.split("\n")
-        first = sdlc_issues.ReviewNote("f:3", "f", 3, None, "note")
-        shifted = sdlc_issues.ReviewNote("f:4", "f", 4, None, "note")
+        first = sdlc_issues.ReviewNote("f", 3, None, "note")
+        shifted = sdlc_issues.ReviewNote("f", 4, None, "note")
         self.assertEqual(
             sdlc_issues.review_marker(1, first, lines),
             sdlc_issues.review_marker(1, shifted, lines),
@@ -898,18 +911,18 @@ class ReviewCliTest(GhTest):
         self.fakes()
 
     def export(self, text=EXPORT):
-        self.serve("tuicr-export.md", text)
+        self.serve("revdiff-export.md", text)
 
     def posted(self):
         with open(os.path.join(self.state, "last-comment.md")) as fh:
             return fh.read()
 
-    def test_hands_the_body_to_tuicr_in_stdout_mode(self):
+    def test_hands_the_body_to_revdiff_on_stdin(self):
         self.export()
         self.run_cli("review", "1")
-        args = self.tuicr_calls()[0]
-        self.assertIn("--stdout", args)
-        self.assertIn("--file", args)
+        args = self.revdiff_calls()[0]
+        self.assertIn("--stdin", args)
+        self.assertEqual(args[args.index("--stdin-name") + 1], "issue-1.md")
         with open(os.path.join(self.state, "reviewed-body.md")) as fh:
             self.assertEqual(fh.read(), DESIGN)
 
@@ -937,6 +950,28 @@ class ReviewCliTest(GhTest):
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertIn("no review notes", out.stdout)
         self.assertEqual(self.calls_for("issue", "comment"), [])
+
+    def test_accepts_exit_code_10_for_annotations(self):
+        self.export()
+        self.serve("revdiff-exit.txt", "10")
+        out = self.run_cli("review", "1")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("> Use GitHub issues.", self.posted())
+
+    def test_rejects_anchors_when_the_body_parsed_as_a_diff(self):
+        self.export("## foo.go:1 (-)\nwhy?\n")
+        out = self.run_cli("review", "1")
+        self.assertNotEqual(out.returncode, 0)
+        self.assertIn("parsed as a diff", out.stderr)
+        self.assertEqual(self.calls_for("issue", "comment"), [])
+
+    def test_ignores_revdiff_output_env(self):
+        self.export()
+        with mock.patch.dict(os.environ, {"REVDIFF_OUTPUT": "/tmp/revdiff-should-not-write"}):
+            out = self.run_cli("review", "1")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        with open(os.path.join(self.state, "revdiff-env.json")) as fh:
+            self.assertIsNone(json.load(fh)["REVDIFF_OUTPUT"])
 
     def test_second_run_skips_markers_already_posted(self):
         self.export()
@@ -1012,7 +1047,7 @@ class UiCliTest(GhTest):
         self.assertIn("## show", previews["show"])
         self.assertIn("Use GitHub issues.", previews["show"])
         self.assertIn("## review", previews["review"])
-        self.assertIn("tuicr", previews["review"])
+        self.assertIn("revdiff", previews["review"])
         self.assertIn("type:feature", previews["status"])
         self.assertIn("approval:", previews["approve"])
         for action in ("complete", "cancel"):

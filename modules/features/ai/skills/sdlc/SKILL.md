@@ -86,12 +86,12 @@ final newline, SHA-256 of UTF-8.
 
 Design and plan review happen in the terminal:
 
-1. The human runs `sdlc review <feature>` (`sr`): it dumps the issue body,
-   opens it in `tuicr --file`, and posts the anchored notes as one comment
-   when the review is exported (`y` or `:wq`). Use `--dry-run` to print
-   instead of posting. Content-hash markers make a repeat run skip notes
-   already on the issue. Agents must not launch the TUI; read the posted
-   comment with `sdlc show <feature>`.
+1. The human runs `sdlc review <feature>` (`sr`): it pipes the issue body to
+   `revdiff --stdin`, and posts the anchored notes as one comment when the
+   review quits with `q`. Use `--dry-run` to print instead of posting.
+   Content-hash markers make a repeat run skip notes already on the issue.
+   Agents must not launch the TUI; read the posted comment with
+   `sdlc show <feature>`.
 2. Alternatively, `sdlc show <feature>` (or `gh issue view <n> --repo
    $SDLC_REPO --json body`) into a local markdown file and annotate with
    `> Sam:` markers — questions or revision requests.
