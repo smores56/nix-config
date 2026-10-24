@@ -118,9 +118,11 @@ Create it once on a laptop:
 
 ```sh
 mkdir -p ~/.config/sops
-age-keygen | age --passphrase -o ~/.config/sops/keys.age
+(umask 077; age-keygen | age --passphrase -o ~/.config/sops/keys.age)
 age --decrypt ~/.config/sops/keys.age | age-keygen -y   # prints the recipient
 ```
+
+`age` creates the file `0644`; the subshell's `umask` keeps it `0600`.
 
 Copy the encrypted file to another laptop as-is (the passphrase travels
 separately). Put the recipient into `.sops.yaml` as `&admin`, then re-encrypt
@@ -130,11 +132,32 @@ the data key to the new recipient list:
 sops updatekeys secrets/smortress.yaml   # one prompt; values are untouched
 ```
 
+`updatekeys` re-wraps only the *data key*: an identity that already unwrapped
+it keeps decrypting every current and future value. After the recipient swap,
+rotate the data key itself so the retired identity is useless:
+
+```sh
+sops rotate --in-place secrets/smortress.yaml   # new data key, same values
+```
+
 Verify the laptop holds a working identity:
 
 ```sh
 sops -d secrets/smortress.yaml > /dev/null   # one prompt, exit 0
 ```
+
+**Move it off every host.** After copying `keys.age` to the laptops, delete the
+copy on smortress along with any passphrase file next to it, then prove the
+host holds no admin identity:
+
+```sh
+rm -f ~/.config/sops/keys.age /run/user/$(id -u)/age-*passphrase
+test ! -e ~/.config/sops/keys.age
+env -u SOPS_AGE_KEY_CMD sops -d secrets/smortress.yaml >/dev/null   # must fail
+```
+
+The wrapper refuses to run while a plaintext `~/.config/sops/age/keys.txt`
+exists, because sops would load that default even with `SOPS_AGE_KEY_CMD` set.
 
 **Passphrase custody.** Proton Pass plus an off-site copy on offline media (not
 another machine). Keep the two apart; either alone is worthless. Losing both
@@ -143,27 +166,35 @@ themselves survive (smortress's host key still decrypts them), so recovery is
 minting a new identity and re-keying (below), not restoring the old one.
 
 **Editing rule.** Every `sops` edit and `sops updatekeys` runs from a machine
-holding `keys.age`. On smortress the wrapper fails with `keys.age is missing or
-unreadable`, which is the point: edit or rotate on a laptop, commit, then
-`sudo nixos-rebuild switch` on smortress. `SOPS_AGE_KEY_CMD` is a session
-variable, so reopen a shell that predates the last switch.
+holding `keys.age`. On smortress the wrapper fails, which is the point: edit or
+rotate on a laptop, commit, then `sudo nixos-rebuild switch` on smortress. The
+message is printed on the terminal, because sops swallows the command's stderr.
+`SOPS_AGE_KEY_CMD` is a session variable, so reopen a shell that predates the
+last switch.
 
 **Replace the admin identity** (also the path after a lost passphrase or a
 suspected leak):
 
 1. Mint a new `keys.age` (above) and swap the `&admin` recipient in
    `.sops.yaml`.
-2. Re-encrypt the data key to the new recipient list. From a laptop that still
-   holds the old identity: `sops updatekeys secrets/smortress.yaml`. If that
-   identity is gone (lost passphrase), the host key is the only way in — as
-   root on smortress, from a repo checkout:
+2. Re-encrypt the data key to the new recipient list, then rotate the data key.
+   From a laptop that still holds the old identity:
    ```sh
-   sudo SOPS_AGE_KEY="$(ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key)" \
-     nix shell nixpkgs#sops -c sops updatekeys secrets/smortress.yaml
+   sops updatekeys secrets/smortress.yaml
+   sops rotate --in-place secrets/smortress.yaml
    ```
-   Either path drops the old recipient stanza, so the old identity can no
-   longer decrypt the data key. Removing the recipient from `.sops.yaml` is the
-   revocation.
+   If that identity is gone (lost passphrase), the host key is the only way in.
+   The substitution must run inside `sudo` — the host key is root-only, and
+   `$(...)` would otherwise run as your user and yield an empty key:
+   ```sh
+   sudo nix shell nixpkgs#sops nixpkgs#ssh-to-age -c sh -c '
+     export SOPS_AGE_KEY="$(ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key)"
+     sops updatekeys -y secrets/smortress.yaml
+     sops rotate --in-place secrets/smortress.yaml'
+   sudo chown "$USER" secrets/smortress.yaml
+   ```
+   Either path drops the old recipient stanza and gives the values a new data
+   key, so the old identity can no longer decrypt them.
 3. Prove it while the old key still exists — the recipient list is readable
    without decrypting, and sops tries every identity source it can find, so
    drop the wrapper for the negative test:
@@ -176,8 +207,8 @@ suspected leak):
    (`rm ~/.config/sops/age/keys.txt`). sops reads that path as a built-in
    default even when `SOPS_AGE_KEY_CMD` is set, so a leftover copy keeps
    decrypting with the retired key.
-5. Re-encryption does not un-leak what the old key already read: rotate every
-   credential in the checklist below.
+5. Re-encryption and the data-key rotation do not un-leak what the old key
+   already read: rotate every credential in the checklist below.
 6. Commit and rebuild smortress. The host recipient is unchanged, so secret
    delivery needs no host change.
 
@@ -384,11 +415,15 @@ and `TunnelSecret` change:
    → Tunnels), keeping `webProxy.tunnelName` as the label; `cloudflared tunnel
    create smortress` from a laptop with `cloudflared tunnel login` does the same
    and writes `~/.cloudflared/<uuid>.json`.
-2. Paste the new JSON into `cloudflared-credentials`, rebuild, then
-   `sudo systemctl restart cloudflared-tunnel-smortress`.
-3. The `TunnelID` changed, so re-point DNS: `sudo nix run .#cloudflare-plan`,
-   then apply.
-4. Delete the old tunnel.
+2. Paste the new JSON into `cloudflared-credentials` and rebuild. Do not
+   restart cloudflared yet: SSH is tunnel-only, so restarting before DNS moves
+   strands you without a console.
+3. The `TunnelID` changed, so re-point DNS first: `sudo nix run .#cloudflare-plan`,
+   review, then apply. The old connector keeps serving its hostnames until it
+   restarts.
+4. `sudo systemctl restart cloudflared-tunnel-smortress`, then confirm SSH and
+   the LLM/OPDS hostnames still answer.
+5. Delete the old tunnel and its DNS records.
 
 #### Proton rclone token
 

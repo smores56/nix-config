@@ -210,9 +210,10 @@ there, add the replacement host recipient to `.sops.yaml`, then
 smortress can stand in for it and every `sops` edit fails (`sops-age-key`
 reports the missing file). Recovery is a new identity, not a restore: mint
 `keys.age`, swap `&admin` in `.sops.yaml`, run
-`sops updatekeys secrets/smortress.yaml`, then delete any leftover plaintext
-`~/.config/sops/age/keys.txt` — after that the old key is dead, but everything
-it could read must still be rotated. Runbook: *Admin age key (keys.age)* in
+`sops updatekeys secrets/smortress.yaml`, then `sops rotate --in-place
+secrets/smortress.yaml` (`updatekeys` alone keeps the old data key), then delete
+any leftover plaintext `~/.config/sops/age/keys.txt`. Everything the old key
+could read must still be rotated. Runbook: *Admin age key (keys.age)* in
 [`docs/manual-steps.md`](docs/manual-steps.md#admin-age-key-keysage).
 
 ### Service failure alerts
