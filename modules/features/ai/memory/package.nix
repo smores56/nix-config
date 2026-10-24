@@ -57,6 +57,7 @@ pkgs.python3Packages.buildPythonApplication {
     "memory_mcp.llm_proxy"
     "memory_mcp.files"
     "memory_mcp.connector_seed"
+    "memory_mcp.lobechat_ingest"
   ];
 
   meta = {

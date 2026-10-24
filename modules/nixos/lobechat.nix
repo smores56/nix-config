@@ -408,6 +408,62 @@ in
       };
     };
 
+    # Nightly: summarize new phone topics into Graphiti. Timer-only; the first
+    # run bootstraps the last two days, later runs use per-topic cursors.
+    systemd.services.lobechat-memory-ingest = {
+      description = "Summarize new LobeChat topics into Graphiti memory";
+      requires = [
+        "lobechat-secrets.service"
+        "postgresql.service"
+        "memory-mcp.service"
+        "memory-llm-proxy.service"
+      ];
+      after = [
+        "lobechat-secrets.service"
+        "postgresql.service"
+        "memory-mcp.service"
+        "memory-llm-proxy.service"
+      ];
+      path = [ config.services.postgresql.package ];
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${memoryPackage}/bin/memory-lobechat-ingest";
+        StateDirectory = "lobechat-ingest";
+        Environment = [
+          "LOBE_INGEST_STATE_DIR=/var/lib/lobechat-ingest"
+          "LOBE_INGEST_DB_PASSWORD_FILE=/run/lobechat/db-password"
+          "LOBE_INGEST_LLM_URL=http://127.0.0.1:${toString ports.memoryLlmProxy}/v1"
+          "LOBE_INGEST_MCP_URL=http://127.0.0.1:${toString ports.memoryMcp}/mcp"
+          "LOBE_INGEST_MODEL=deepseek-v4.1-flash"
+        ];
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        PrivateDevices = true;
+        NoNewPrivileges = true;
+        ProtectKernelTunables = true;
+        ProtectKernelModules = true;
+        ProtectControlGroups = true;
+        RestrictAddressFamilies = [
+          "AF_INET"
+          "AF_INET6"
+        ];
+        IPAddressAllow = "localhost";
+        IPAddressDeny = "any";
+        TimeoutStartSec = "30min";
+      };
+      onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
+    };
+
+    systemd.timers.lobechat-memory-ingest = {
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnCalendar = "*-*-* 04:30:00";
+        Persistent = true;
+        RandomizedDelaySec = "10min";
+      };
+    };
+
     virtualisation.oci-containers.backend = "podman";
 
     virtualisation.oci-containers.containers = {

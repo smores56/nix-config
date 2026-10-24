@@ -21,6 +21,8 @@ memory-llm-proxy = "memory_mcp.llm_proxy:main"
 memory-file-mcp = "memory_mcp.files:main"
 # Prints the SQL that seeds LobeChat's connector tool lists.
 memory-connector-seed = "memory_mcp.connector_seed:main"
+# Nightly summaries of new LobeChat messages into Graphiti.
+memory-lobechat-ingest = "memory_mcp.lobechat_ingest:main"
 
 [tool.hatch.build.targets.wheel]
 packages = [ "src/memory_mcp" ]

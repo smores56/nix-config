@@ -896,6 +896,18 @@ remote is enough. `.git`-ignored trees are skipped, which includes unmerged
 `.worktrees` checkouts; a file that exists only on an unmerged branch is not
 searchable until it is on the checked-out tree.
 
+### Phone memory ingestion
+
+`lobechat-memory-ingest` runs nightly at 04:30 (persistent timer). It reads
+messages newer than a per-topic cursor from the `lobechat` database, asks
+`deepseek-v4.1-flash` through `ports.memoryLlmProxy` for 1-5 durable bullets,
+and writes one episode per topic through the memory wrapper as
+`actor=lobechat`, `cwd=/phone` in the shared `global` group. The first run
+bootstraps the last two days; later runs only see new messages. State is
+`/var/lib/lobechat-ingest/state.json`, and a failed topic keeps its cursor so
+the next night retries it. Run it by hand with
+`sudo systemctl start lobechat-memory-ingest`.
+
 ### smortress/ssh
 
 <!-- manual-step: service/smortress/ssh -->
