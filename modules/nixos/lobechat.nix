@@ -19,6 +19,7 @@
 let
   cfg = config.lobechat;
   ports = import ../ports.nix;
+  memoryPackage = import ../features/ai/memory/package.nix { inherit pkgs; };
 
   stateDir = "/var/lib/lobechat";
   secretsDir = "${stateDir}/secrets";
@@ -176,40 +177,69 @@ let
     );
   '';
 
+  # The local MCP servers whose tools the seed copies into the connector rows.
+  seedEndpoints = [
+    {
+      identifier = "memory";
+      url = "http://127.0.0.1:${toString ports.memoryMcp}/mcp";
+      headers = {
+        "X-Memory-Group" = "global";
+        "X-Memory-Cwd" = "/phone";
+        "X-Memory-Actor" = "lobechat";
+      };
+    }
+  ]
+  ++ lib.optional (config.filesearch.enable or false) {
+    identifier = "files";
+    url = "http://127.0.0.1:${toString ports.filesMcp}/mcp";
+    headers = { };
+  };
+
   # LobeChat 2.2.20 has no server-side MCP configuration: a connector is a
   # `user_connectors` row, with non-secret headers in `metadata.customHeaders`.
   # Seeding both loopback servers once per user means every client (and a fresh
   # PWA install) already has them. The inserts never update an existing row, so
-  # a UI edit or a later sync wins; the app fills the tool lists on the first
-  # agent run.
+  # a UI edit or a later sync wins; the live tool lists are copied at the same
+  # time, and the app keeps them fresh afterwards.
   connectorSeedScript = pkgs.writeShellScript "lobechat-connector-seed" ''
-    set -euo pipefail
-    export PGPASSWORD="$(cat ${runtimeDir}/db-password)"
-    ${config.services.postgresql.package}/bin/psql \
-      -h 127.0.0.1 -U lobechat -d lobechat -v ON_ERROR_STOP=1 <<'SQL'
-    INSERT INTO user_connectors
-      (user_id, identifier, name, source_type, mcp_server_url, mcp_connection_type,
-       status, is_enabled, metadata)
-    SELECT u.id, 'memory', 'Graphiti memory', 'custom',
-           'http://127.0.0.1:${toString ports.memoryMcp}/mcp', 'http',
-           'connected', true,
-           jsonb_build_object(
-             'description', 'Personal memory through the Graphiti MCP wrapper',
-             'customHeaders', jsonb_build_object(
-               'X-Memory-Group', 'global',
-               'X-Memory-Cwd', '/phone',
-               'X-Memory-Actor', 'lobechat'
-             )
-           )
-    FROM users u
-    WHERE NOT EXISTS (
-      SELECT 1 FROM user_connectors c
-      WHERE c.user_id = u.id AND c.identifier = 'memory'
-        AND c.workspace_id IS NULL AND c.agent_id IS NULL
-    );
+        set -euo pipefail
+        export PGPASSWORD="$(cat ${runtimeDir}/db-password)"
+        ${config.services.postgresql.package}/bin/psql \
+          -h 127.0.0.1 -U lobechat -d lobechat -v ON_ERROR_STOP=1 <<'SQL'
+        INSERT INTO user_connectors
+          (user_id, identifier, name, source_type, mcp_server_url, mcp_connection_type,
+           status, is_enabled, metadata)
+        SELECT u.id, 'memory', 'Graphiti memory', 'custom',
+               'http://127.0.0.1:${toString ports.memoryMcp}/mcp', 'http',
+               'connected', true,
+               jsonb_build_object(
+                 'description', 'Personal memory through the Graphiti MCP wrapper',
+                 'customHeaders', jsonb_build_object(
+                   'X-Memory-Group', 'global',
+                   'X-Memory-Cwd', '/phone',
+                   'X-Memory-Actor', 'lobechat'
+                 )
+               )
+        FROM users u
+        WHERE NOT EXISTS (
+          SELECT 1 FROM user_connectors c
+          WHERE c.user_id = u.id AND c.identifier = 'memory'
+            AND c.workspace_id IS NULL AND c.agent_id IS NULL
+        );
 
-    ${filesConnectorSql}
-    SQL
+        ${filesConnectorSql}
+        SQL
+
+        # The app only fetches a connector's tools on the first agent run. Copy the
+        # live tool lists now so a fresh client has them before any chat.
+        endpoints=$(mktemp)
+        cat > "$endpoints" <<'JSON'
+    ${builtins.toJSON seedEndpoints}
+        JSON
+        CONNECTOR_SEED_ENDPOINTS="$(cat "$endpoints")" \
+          ${memoryPackage}/bin/memory-connector-seed \
+          | ${config.services.postgresql.package}/bin/psql \
+              -h 127.0.0.1 -U lobechat -d lobechat -v ON_ERROR_STOP=1
   '';
 
   # LobeChat expects the bucket to exist; it does not create it. mc is smaller

@@ -56,6 +56,7 @@ pkgs.python3Packages.buildPythonApplication {
     "memory_mcp.reconciler"
     "memory_mcp.llm_proxy"
     "memory_mcp.files"
+    "memory_mcp.connector_seed"
   ];
 
   meta = {

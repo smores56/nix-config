@@ -19,6 +19,8 @@ memory-export = "memory_mcp.export:main"
 memory-llm-proxy = "memory_mcp.llm_proxy:main"
 # Read-only file search over allowlisted personal directories.
 memory-file-mcp = "memory_mcp.files:main"
+# Prints the SQL that seeds LobeChat's connector tool lists.
+memory-connector-seed = "memory_mcp.connector_seed:main"
 
 [tool.hatch.build.targets.wheel]
 packages = [ "src/memory_mcp" ]
