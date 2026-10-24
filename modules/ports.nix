@@ -22,6 +22,8 @@
   # The memory-LLM gateway: Graphiti's extraction route, and LobeChat's
   # knowledge-base client when `memory.embedder` is `neuralwatt`.
   memoryLlmProxy = 8082;
+  # Read-only file-search MCP: listener and LobeChat's connector.
+  filesMcp = 8185;
   # LobeChat listener and its tunnel ingress.
   lobechat = 3210;
   # RustFS S3 API listener and its tunnel ingress.

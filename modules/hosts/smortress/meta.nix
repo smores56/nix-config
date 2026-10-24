@@ -38,6 +38,17 @@ in
     # re-ingest follows, because the vector width changes.
     memory.embedder = "neuralwatt";
     lobechat.enable = true;
+    # Read-only search for the phone; work checkouts inside these roots are
+    # refused by the server's employer check.
+    filesearch = {
+      enable = true;
+      roots = [
+        "/home/smores/code"
+        "/home/smores/Documents"
+        "/home/smores/Downloads"
+        "/home/smores/dev"
+      ];
+    };
     noSleep.enable = true;
     webProxy = {
       enable = true;

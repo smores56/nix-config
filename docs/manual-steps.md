@@ -879,6 +879,20 @@ complete the Access login once on `s3.sammohr.dev` before uploading or
 downloading files. If that remains unreliable, the fallback in #227 is one
 Access application covering both hostnames or proxying downloads.
 
+### Phone file search
+
+`files-mcp` is a read-only file-search MCP on loopback `ports.filesMcp` over
+`/home/smores/{code,Documents,Downloads,dev}`. Add it in LobeChat as a second
+custom connector: `http://127.0.0.1:8185/mcp`, transport HTTP, no headers.
+
+Tools: `file_search` (file names and contents), `file_read` (one file, with
+line numbers), and `file_list`. Paths outside the roots, secret-like files
+(`.env*`, keys, `.ssh`, `.gnupg`), and employer checkouts are refused; the
+employer check reuses memory's markers, so `smores.flow=pr` or a `blitzy-*`
+remote is enough. `.git`-ignored trees are skipped, which includes unmerged
+`.worktrees` checkouts; a file that exists only on an unmerged branch is not
+searchable until it is on the checked-out tree.
+
 ### smortress/ssh
 
 <!-- manual-step: service/smortress/ssh -->

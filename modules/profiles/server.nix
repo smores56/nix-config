@@ -12,6 +12,7 @@
     ../nixos/lobechat.nix
     ../nixos/llm.nix
     ../nixos/memory.nix
+    ../nixos/filesearch.nix
     ../nixos/nvidia.nix
     ../nixos/backup.nix
     ../nixos/backup-datasets.nix
