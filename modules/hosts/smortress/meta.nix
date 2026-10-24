@@ -190,6 +190,19 @@ in
       schedule = "*-*-* 04:00:00";
       fullCheckSchedule = "Sun *-*-* 11:00:00";
       timeout = "2h";
+      # `excludes` REPLACES the option default, so repeat the cache and
+      # credential patterns. RustFS rewrites its usage and scanner caches
+      # continuously; they are derived, so a live mirror can never be
+      # point-in-time for them and the restore drill would fail on a sample.
+      excludes = [
+        "/.cache/**"
+        "**/.cache/**"
+        "/rclone.conf"
+        "/.rustfs.sys/tmp/**"
+        "/.rustfs.sys/buckets/.usage*"
+        "/.rustfs.sys/buckets/.bloomcycle.bin"
+        "/.rustfs.sys/buckets/.scanner-pause-backlog.json"
+      ];
     };
     backup.datasets.Music = {
       schedule = "*-*-* 05:00:00";

@@ -93,6 +93,14 @@ smortress, `proton:Photos`, `proton:Videos`, `proton:Music`, `proton:LobeChat`,
 | `GitHub` | `/var/lib/github-mirrors` | 00:30 | timer only | Sun 10:00 | yes | `ghorg` refresh, then incremental `python-github-backup` metadata + verification (see below) |
 | `CloudflareTofu` | `/var/lib/cloudflare-tofu` | 00:15 | timer only | — | yes | — |
 
+`RustFS` also excludes its derived caches and temporary tree
+(`/.rustfs.sys/tmp/**`, `/.rustfs.sys/buckets/.usage*`,
+`/.rustfs.sys/buckets/.bloomcycle.bin`,
+`/.rustfs.sys/buckets/.scanner-pause-backlog.json`): RustFS rewrites them
+continuously and rebuilds them on start, so a live mirror can never be
+point-in-time for them, and sampling one in the restore drill is flaky by
+construction.
+
 Every dataset excludes `/.cache/**`, `**/.cache/**` and `/rclone.conf` by
 default (the `excludes` option default). That keeps regenerable caches (at the
 source root and nested) and a stray `rclone.conf` at the source root out of
