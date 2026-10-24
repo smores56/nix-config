@@ -181,8 +181,9 @@ Layout under `/var/lib/github-mirrors` (the dataset source):
   overlaps a run.
 - **Token.** Read at runtime from `githubBackup.tokenFile`
   (`/run/secrets/github-repo-pat`, a classic `repo`-scoped sops secret,
-  root-owned mode 0400); never placed in the Nix store. This is a *different*
-  token from the `github-key-pat` `bootstrap` uses for SSH-key registration.
+  root-owned mode 0400); never placed in the Nix store. This is the only GitHub
+  token on the host: `bootstrap` uses the device-code flow instead of a stored
+  provisioning PAT.
   Classic `repo` grants write access to every repo the account can reach; all
   three tools only read, and fine-grained tokens cannot read wikis. ghorg embeds
   the token in the `git clone`/`git remote set-url` URL, so it is visible in

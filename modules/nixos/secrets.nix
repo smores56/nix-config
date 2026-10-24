@@ -48,18 +48,6 @@
         mode = "0400";
       };
 
-      # Provisioning PAT, readable by the user so `bootstrap` can log in
-      # non-interactively (`gh auth login --with-token`, `pass-cli login`).
-      # Populate with `sops secrets/smortress.yaml` (see README).
-      github-key-pat = {
-        owner = config.machine.username;
-        mode = "0400";
-      };
-      proton-pass-pat = {
-        owner = config.machine.username;
-        mode = "0400";
-      };
-
       # A `repo`-scoped PAT, read only by the root GitHub-backup service
       # (modules/nixos/github-backup.nix). Root-owned, so the user's shell cannot
       # read it.

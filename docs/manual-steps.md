@@ -240,19 +240,6 @@ Create or reissue the tunnel under Zero Trust → Networks → Tunnels and paste
 JSON here. Changing the tunnel means rebuilding the host and re-running
 `cloudflare-apply`.
 
-### github-key-pat
-
-<!-- manual-step: secret/github-key-pat -->
-
-User-readable token used by `bootstrap` for `gh auth login --with-token`.
-Classic token with `write:public_key` and `write:ssh_signing_key`, or a
-fine-grained token with the account permissions "Git SSH keys: write" and "SSH
-signing keys: write". Mint at GitHub → Settings → Developer settings → Personal
-access tokens.
-
-A lapsed token fails `bootstrap` hard; blank the secret and rebuild to fall back
-to the device-code flow.
-
 ### github-repo-pat
 
 <!-- manual-step: secret/github-repo-pat -->
@@ -270,15 +257,6 @@ The mirror's probe repo (`sdlc`) must be refreshed on every run; a token
 that is valid but has lost `repo` scope fails the run. The verifier also fails
 when the token's repo listing no longer matches the mirror, so a scope loss is
 caught the same night.
-
-### proton-pass-pat
-
-<!-- manual-step: secret/proton-pass-pat -->
-
-`pass-cli` personal access token, user-readable, scoped read-only to the
-Hosting and Identity vaults. Proton caps these at one year. Used by `bootstrap`,
-`ssh-pub-keys`, and the `cloudflared-access` wrapper. Mint under Proton Pass →
-Settings → Access tokens.
 
 ### calibre-password
 
@@ -327,18 +305,6 @@ sudo nix run .#cloudflare-plan       # proves the new token
 Delete the old token row. `cloudflare-email@` and `backup-freshness` read the
 file at run time, so no unit restart is needed.
 
-#### github-key-pat
-
-Mint a new token with the scopes above (web). Then:
-
-```sh
-sops secrets/smortress.yaml
-sudo nixos-rebuild switch
-GH_TOKEN="$(cat /run/secrets/github-key-pat)" gh api user -q .login
-```
-
-Revoke the old token under Developer settings → Personal access tokens.
-
 #### github-repo-pat
 
 Mint a new classic `repo` token (web). Then replace the secret, rebuild, and
@@ -351,21 +317,6 @@ journalctl -u backup-github.service -n 50
 
 Revoke the old token. The mirror keeps the old value until the next
 `preBackup`, so the run above is the proof.
-
-#### proton-pass-pat
-
-Mint under Proton Pass → Settings → Access tokens (read-only Hosting and
-Identity, one-year cap). Replace the secret, rebuild, then re-login on
-smortress, which consumed the old PAT in place:
-
-```sh
-PROTON_PASS_PERSONAL_ACCESS_TOKEN="$(cat /run/secrets/proton-pass-pat)" \
-PROTON_PASS_KEY_PROVIDER=fs pass-cli login
-systemctl --user restart proton-pass-agent
-```
-
-Revoke the old token in Proton Pass. `ssh-pub-keys` and the `cloudflared-access`
-wrapper use the `pass-cli` session, so they recover with the agent restart.
 
 #### calibre-password
 
