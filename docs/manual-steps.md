@@ -905,8 +905,8 @@ and writes one episode per topic through the memory wrapper as
 `actor=lobechat`, `cwd=/phone` in the shared `global` group. The first run
 bootstraps the last two days; later runs only see new messages. State is
 `/var/lib/lobechat-ingest/state.json`, and a failed topic keeps its cursor so
-the next night retries it. Run it by hand with
-`sudo systemctl start lobechat-memory-ingest`.
+the next night retries it. A topic with nothing durable advances without
+writing. Run it by hand with `sudo systemctl start lobechat-memory-ingest`.
 
 ### smortress/ssh
 
