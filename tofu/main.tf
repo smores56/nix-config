@@ -156,6 +156,40 @@ resource "cloudflare_zero_trust_access_application" "s3" {
   }
 }
 
+# Presigned uploads/downloads are cross-origin fetches, which never send the
+# Access cookie, so an Access session cannot cover them. Object paths are
+# protected by SigV4 instead: RustFS rejects anything unsigned, and the API
+# remains the only surface (the console is disabled).
+resource "cloudflare_zero_trust_access_policy" "s3_objects_bypass" {
+  account_id = var.account_id
+  name       = "s3 object paths (presigned)"
+  decision   = "bypass"
+  include    = [{ everyone = {} }]
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "cloudflare_zero_trust_access_application" "s3_objects" {
+  account_id       = var.account_id
+  name             = "s3 objects (presigned)"
+  domain           = "s3.${var.domain}/lobe"
+  type             = "self_hosted"
+  session_duration = "24h"
+
+  policies = [
+    {
+      id         = cloudflare_zero_trust_access_policy.s3_objects_bypass.id
+      precedence = 1
+    },
+  ]
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
 resource "cloudflare_notification_policy" "tunnel_health" {
   account_id = var.account_id
   name       = "tunnel health"

@@ -867,19 +867,22 @@ wins; on a fresh deployment, create the account first and then run
 
 `s3.sammohr.dev` → the loopback RustFS container (`ports.rustfs`) behind
 Access. LobeChat signs presigned URLs with this public endpoint and uses
-`http://127.0.0.1:9000` for server-side reads and writes. Browser uploads are
-presigned PUTs to the public endpoint, so they still need the `s3` Access
-session; only server-side work avoids it. The bucket (`lobe`) is created by
-`lobechat-s3-bucket.service`; RustFS root credentials are generated on first
-start and shared with LobeChat through `/run/lobechat`. RustFS is configured to
-allow CORS from `https://chat.<domain>`, and the Access app bypasses `OPTIONS`
-preflights so the browser can reach it.
+`http://127.0.0.1:9000` for server-side reads and writes. The bucket (`lobe`)
+is created by `lobechat-s3-bucket.service`; RustFS root credentials are
+generated on first start and shared with LobeChat through `/run/lobechat`.
+RustFS is configured to allow CORS from `https://chat.<domain>`.
+
+Browser uploads and downloads are cross-origin fetches to a presigned URL, and
+such fetches do not send the Access cookie, so the `s3` application cannot cover
+them. The object path (`/lobe`) therefore has its own Access application with a
+**Bypass** policy: RustFS's SigV4 check is the gate, unsigned requests get
+`403`, and the bucket is never listable. The rest of the host stays behind the
+email policy. If that bypass is ever removed, uploads fail with
+`CORS Missing Allow Origin` because the PUT is redirected to the login page.
 
 Access puts an interactive login in front of the presigned URL host. The
-cookie is host-scoped, so a `chat` session does not cover `s3`: on the S24,
-complete the Access login once on `s3.sammohr.dev` before uploading or
-downloading files. If that remains unreliable, the fallback in #227 is one
-Access application covering both hostnames or proxying downloads.
+cookie is host-scoped, so a `chat` session does not cover `s3`; the bypass
+application is what makes the object path usable.
 
 ### Phone file search
 
