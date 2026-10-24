@@ -15,12 +15,26 @@ let
   sopsAgeKey = pkgs.writeShellApplication {
     name = "sops-age-key";
     text = ''
-      key="$HOME/.config/sops/keys.age"
+      # sops captures only this command's stdout: stderr is folded into its own
+      # error, so the operator is told why on the tty as well.
+      fail() {
+        echo "sops-age-key: $*" >&2
+        { echo "sops-age-key: $*" > /dev/tty; } 2>/dev/null || true
+        exit 1
+      }
+
+      # sops loads this built-in default even when SOPS_AGE_KEY_CMD is set, so a
+      # leftover plaintext identity would silently bypass the passphrase.
+      legacy="''${XDG_CONFIG_HOME:-$HOME/.config}/sops/age/keys.txt"
+      if [ -e "$legacy" ]; then
+        fail "remove the retired plaintext identity $legacy"
+      fi
+
+      key="''${XDG_CONFIG_HOME:-$HOME/.config}/sops/keys.age"
       # Checked here rather than letting age fail, so the error names the file
       # that has to be provisioned instead of age's generic passphrase prompt.
       if [ ! -r "$key" ]; then
-        echo "sops-age-key: $key is missing or unreadable; provision the passphrase-wrapped admin age identity there" >&2
-        exit 1
+        fail "$key is missing or unreadable; provision the passphrase-wrapped admin age identity there"
       fi
       exec ${pkgs.age}/bin/age --decrypt "$key"
     '';
