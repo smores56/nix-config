@@ -175,6 +175,12 @@ let
       WHERE c.user_id = u.id AND c.identifier = 'files'
         AND c.workspace_id IS NULL AND c.agent_id IS NULL
     );
+
+    -- A user-scoped connector is discoverable but not attached to an agent
+    -- unless its identifier is in that agent's plugin list.
+    UPDATE agents
+    SET plugins = coalesce(plugins, '[]'::jsonb) || '["files"]'::jsonb
+    WHERE NOT (coalesce(plugins, '[]'::jsonb) ? 'files');
   '';
 
   # The local MCP servers whose tools the seed copies into the connector rows.
@@ -224,6 +230,12 @@ let
       WHERE c.user_id = u.id AND c.identifier = 'memory'
         AND c.workspace_id IS NULL AND c.agent_id IS NULL
     );
+
+    -- A user-scoped connector is discoverable but not attached to an agent
+    -- unless its identifier is in that agent's plugin list.
+    UPDATE agents
+    SET plugins = coalesce(plugins, '[]'::jsonb) || '["memory"]'::jsonb
+    WHERE NOT (coalesce(plugins, '[]'::jsonb) ? 'memory');
 
     ${filesConnectorSql}
   '';
