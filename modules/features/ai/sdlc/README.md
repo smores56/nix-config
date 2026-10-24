@@ -4,7 +4,7 @@ Agentic SDLC for personal feature work. The ledger is a private GitHub Issues
 repo (default `smores56/sdlc`, override with `$SDLC_REPO`); `sdlc` is the
 stateless CLI over it. There is no local checkout and no state directory.
 `gh` is the backend; `sdlc ui` uses `tv` when present, and `sdlc review` needs
-`tuicr`.
+`revdiff`.
 
 ## Lifecycle
 
@@ -49,12 +49,12 @@ without explicit human approval in the session.
 
 `sdlc review <feature>` (`sr`) is the line-anchored path:
 
-1. Dump the issue body to a temp file.
-2. `tuicr --stdout --file <body>` — annotate lines, ranges, or the file.
-   Finish with tuicr's export (`y` or `:wq`); quitting without exporting
-   posts nothing.
-3. Parse the export, quote each anchored body line, and post one aggregated
-   comment (`## Review — #<n> ...`) with a hidden per-note marker.
+1. Pipe the issue body to `revdiff --stdin --stdin-name issue-<n>.md`.
+2. Annotate lines or the file, then quit with `q` to emit the annotations.
+   `Q` discards them instead.
+3. Parse the `## file:line (type)` records, quote each anchored body line,
+   and post one aggregated comment (`## Review — #<n> ...`) with a hidden
+   per-note marker.
 4. The markers make re-runs idempotent: notes already on the issue are
    skipped. `--dry-run` prints the comment instead of posting.
 
@@ -69,7 +69,7 @@ belongs in comments or the Plan.
 
 ```sh
 sdlc ui [<action>] [<feature>] [--all] [--repo owner/repo]  # picker or direct
-sdlc review <feature> [--dry-run]   # tuicr review -> one issue comment
+sdlc review <feature> [--dry-run]   # revdiff review -> one issue comment
 sdlc comment [<feature>]            # comment in $EDITOR
 sdlc list [--all] [--repo owner/repo] [--format human|path|json] [--pick]
 sdlc show <feature>            # body + comment thread
@@ -92,7 +92,7 @@ state; `gh` is the only backend.
 | `s` | `sdlc ui` — pick a feature, then an action |
 | `ss` / `st` | show / status |
 | `sl` | list |
-| `sr` | review in tuicr and post the notes |
+| `sr` | review in revdiff and post the notes |
 | `sc` | comment in `$EDITOR` |
 | `sn` | next ready task |
 | `sa` | approve |
@@ -124,5 +124,7 @@ See AGENTS.md.
 - `status`, `next`, and `complete` fetch the feature, comments, sub-issues, and
   `blocked-by` edges in one GraphQL round trip; both picker previews are
   precomputed local files read by `cat`, so neither picker waits on the network.
-- tuicr persists a review session per run in its own data directory. That is
-  local cache, not ledger state; clean it with `tuicr review` if it grows.
+- revdiff's stdin mode is a read-only scratch buffer: opening the source file
+  (`e`) and reloading (`R`) are unavailable. Annotations are emitted when you
+  quit with `q`; revdiff also auto-saves them under
+  `~/.config/revdiff/history/stdin/` if the handoff is lost.

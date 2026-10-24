@@ -1,7 +1,7 @@
 keys:
   # `admin` is the operator's age key; a host's key is its SSH host key
   # (`ssh-to-age -i <host>.pub`; `nix run .#host-key` prints it).
-  - &admin age1pehwade3sd0mhf0aegvavsurmtqeffl2tnk9w8rty2u4xugf0ygq9e20pc
+  - &admin age1clqsa9h07xs3zftkkcnl4ag4u3pq2qty0p3dl8wc0u77fkegryhs9u72kt
   - &smortress age19k8s634eqfnptm8fngc8c3yl5cyk5t4wqgaukya4j6kjtvzm2q9sq674ru
 creation_rules:
   # One rule per host: `secrets/<host>.yaml` is encrypted to admin + that host.

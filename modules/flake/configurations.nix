@@ -62,11 +62,6 @@ let
       # carries (1.75.1) for a trustworthy Proton mirror.
       rclone = inputs.nixpkgs-unstable.legacyPackages.${system}.rclone;
 
-      # The pinned nixpkgs ships tuicr 0.19.1. The review bridge redirects
-      # --stdout to capture the export, and 0.27 carries the editor-stdio fix
-      # (#740) that keeps the TUI's editor alive in that mode.
-      tuicr = inputs.nixpkgs-unstable.legacyPackages.${system}.tuicr;
-
       # Upstream's flake recipe: dependencies are vendored and the main
       # package lives in ./app, so rename the produced binary.
       revdiff =

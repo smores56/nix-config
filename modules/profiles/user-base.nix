@@ -8,6 +8,7 @@
     ../features/ssh.nix
     ../features/ssh-keys.nix
     ../features/proton-pass.nix
+    ../features/sops.nix
     ../features/cloudflared.nix
     ../features/theme.nix
   ];
