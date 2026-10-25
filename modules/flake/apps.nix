@@ -254,6 +254,103 @@
       cloudflarePlan = cloudflareTofu "cloudflare-plan" "plan";
       cloudflareApply = cloudflareTofu "cloudflare-apply" "apply";
       cloudflareCommand = cloudflareTofu "cloudflare-tofu" "";
+
+      # One interactive Proton login, written straight into the mount's state
+      # dir. protondrive has no `config reconnect`, and rclone cannot use a
+      # security-key 2FA factor, so this asks for the password (obscured through
+      # stdin, never argv) and a TOTP code, then proves the login by listing the
+      # remote before swapping the config in under a stopped mount.
+      protonAuth = pkgs.writeShellApplication {
+        name = "proton-auth";
+        runtimeInputs = [
+          pkgs.coreutils
+          pkgs.rclone
+          pkgs.systemd
+          pkgs.util-linux
+        ];
+        text = ''
+          if [ "$(id -u)" -ne 0 ]; then
+            echo "proton-auth: run as root (the mount and its token are proton-owned)" >&2
+            exit 1
+          fi
+
+          state=/var/lib/proton
+          config=$state/rclone.conf
+          pending=$state/rclone.conf.pending
+          unit=proton-mount.service
+
+          if ! systemctl cat "$unit" >/dev/null 2>&1; then
+            echo "proton-auth: $unit is not installed; enable protonDrive on this host first" >&2
+            exit 1
+          fi
+
+          install -d -o proton -g proton -m 0700 "$state"
+          rm -f "$pending"
+
+          if [ -s "$config" ]; then
+            echo "proton-auth: replacing the stored credentials. protondrive has no"
+            echo "proton-auth: reconnect, so this logs in again; revoke the previous"
+            echo "proton-auth: session in Proton afterwards."
+          fi
+
+          read -r -p "Proton username (email): " username
+          read -r -s -p "Proton password: " password
+          echo
+          read -r -s -p "Mailbox password (blank for a one-password account): " mailbox
+          echo
+          read -r -p "2FA code (6 digits; blank if TOTP is disabled): " code
+
+          obscure() { printf '%s' "$1" | rclone obscure -; }
+
+          umask 077
+          {
+            printf '[proton]\n'
+            printf 'type = protondrive\n'
+            printf 'username = %s\n' "$username"
+            printf 'password = %s\n' "$(obscure "$password")"
+            if [ -n "$mailbox" ]; then
+              printf 'mailbox_password = %s\n' "$(obscure "$mailbox")"
+            fi
+            printf 'enable_caching = false\n'
+          } >"$pending"
+          chown proton:proton "$pending"
+          chmod 600 "$pending"
+
+          echo "proton-auth: logging in and storing the refresh token..."
+          login_args=()
+          [ -n "$code" ] && login_args+=(--protondrive-2fa "$code")
+          if ! runuser -u proton -- env HOME="$state" \
+            rclone --config "$pending" lsd proton: "''${login_args[@]}" >/dev/null; then
+            rm -f "$pending"
+            echo "proton-auth: login failed. rclone cannot use security-key 2FA;" >&2
+            echo "proton-auth: keep a TOTP factor enabled on the Proton account." >&2
+            exit 1
+          fi
+          unset password mailbox code
+
+          if ! grep -q '^client_refresh_token' "$pending"; then
+            rm -f "$pending"
+            echo "proton-auth: login succeeded but no refresh token was written" >&2
+            exit 1
+          fi
+
+          # Swap under a stopped mount: rclone rewrites this file in place when it
+          # refreshes, so replacing it while running would drop the new token.
+          systemctl stop "$unit" 2>/dev/null || true
+          systemctl reset-failed "$unit" 2>/dev/null || true
+          mv -f "$pending" "$config"
+          chown proton:proton "$config"
+          chmod 600 "$config"
+          systemctl start "$unit"
+
+          if ! mountpoint -q /srv/proton; then
+            echo "proton-auth: $unit did not bring the mount up:" >&2
+            systemctl status --no-pager -l "$unit" >&2 || true
+            exit 1
+          fi
+          echo "proton-auth: credentials written to $config; /srv/proton is mounted"
+        '';
+      };
     in
     {
       packages.bootstrap = bootstrap;
@@ -290,5 +387,13 @@
         type = "app";
         program = "${cloudflareCommand}/bin/cloudflare-tofu";
       };
+      # `sudo nix run .#proton-auth` — the one interactive Proton login a new
+      # machine needs (also called by `bootstrap` when the mount is installed
+      # and its config is missing).
+      apps.proton-auth = {
+        type = "app";
+        program = "${protonAuth}/bin/proton-auth";
+      };
+      packages.proton-auth = protonAuth;
     };
 }

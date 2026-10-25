@@ -413,38 +413,38 @@ kernel enforces those modes), which means `proton`, root and members of group
 down the path itself is a root-owned `0770 root:proton` directory: not
 world-writable, so a crashed mount cannot be used to fill the root filesystem.
 
-Create the config once, as the `proton` user (the service's first start has
-already created `/var/lib/proton`; if it has not, run
-`sudo install -d -o proton -g proton -m 0700 /var/lib/proton`):
+Create the config with the flake app. It runs the login as the `proton` user,
+writes only a 0600 `proton:proton` file, proves the login, and starts the mount:
 
 ```sh
-sudo -u proton rclone --config /var/lib/proton/rclone.conf config
+sudo nix run .#proton-auth
 ```
 
-Choose "New remote", name it `proton` — the section name is
-`protonDrive.remote` without the trailing colon, i.e. the `proton:` mount reads
-section `proton` — pick type `protondrive`, and answer the username/password/2FA
-prompts. Prove it and start the mount:
+It prompts for the Proton email, the password (not echoed; handed to rclone
+through stdin, never argv), an optional mailbox password, and a TOTP code.
+rclone cannot use a security-key factor, so keep TOTP enabled on the account
+even with keys enrolled. `bootstrap` runs this automatically when the unit is
+installed and the config is missing.
+
+Verify:
 
 ```sh
-sudo -u proton rclone --config /var/lib/proton/rclone.conf lsf proton: --max-depth 1
-sudo systemctl restart proton-mount
 mountpoint /srv/proton && ls /srv/proton
 systemctl status proton-mount-health.service
 ```
 
 Re-auth when the token expires (the health timer emails, or a backend query
-through the mount's RC fails while the mount stays up). Stop the mount first:
-it is the only process allowed to touch the token, and a second client
-refreshing it would blank the mount's copy (Proton refresh tokens are
-single-use). rclone 1.75.1 reconnects the remote in place, then the mount starts
-again on the new token:
+through the mount's RC fails while the mount stays up). `protondrive` has no
+`config reconnect` (`backend doesn't support reconnect or authorize`), so the
+same app logs in again and replaces the config under a stopped mount:
 
 ```sh
-sudo systemctl stop proton-mount
-sudo -u proton rclone --config /var/lib/proton/rclone.conf config reconnect proton:
-sudo systemctl start proton-mount
+sudo nix run .#proton-auth
 ```
+
+The superseded session stays valid until you revoke it; the app prints that
+reminder. Never edit this config while the mount runs: rclone rewrites it in
+place on refresh.
 
 If a start fails with "start request repeated too quickly", the unit hit its
 start limit (5 starts in an hour); clear the counter before starting it:
@@ -1273,6 +1273,20 @@ duplicates.
 
 `sudo nix run .#cloudflare-tofu -- <args>` runs raw `tofu` in the state
 directory, for `import`, `state list`, `state rm`, and recovery.
+
+### proton-auth
+
+<!-- manual-step: app/proton-auth -->
+
+`sudo nix run .#proton-auth` performs the single interactive Proton login a
+machine with `protonDrive` enabled needs (and the re-auth after the token
+expires). It prompts for the email, password (not echoed, passed to rclone via
+stdin), optional mailbox password, and a TOTP code; writes
+`/var/lib/proton/rclone.conf` as `proton` 0600; proves the login with `lsd`;
+then swaps the file in under a stopped `proton-mount` and starts it. `bootstrap`
+calls it when the unit exists and the config is missing. rclone has no
+security-key 2FA, and `protondrive` has no `config reconnect`, so re-auth is
+another run of this app rather than an in-place reconnect.
 
 ## Alert paths
 

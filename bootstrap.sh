@@ -313,6 +313,27 @@ elif is_nixos; then
   warn "Add modules/hosts/${HOSTNAME}/meta.nix (with nixos = true) and re-run."
 fi
 
+# ── Phase 8: Proton mount credentials ────────────────────────────
+
+# Only the host with protonDrive enabled installs this unit. rclone cannot
+# provision Proton unattended (password + a TOTP code are required, and
+# security-key 2FA is unsupported), so this is the single interactive step a
+# fresh machine needs; everything else is in Nix.
+if is_nixos && systemctl cat proton-mount.service >/dev/null 2>&1; then
+  if sudo test -s /var/lib/proton/rclone.conf; then
+    skip "Proton mount credentials already provisioned"
+  else
+    info "Provisioning Proton Drive credentials (one interactive login)..."
+    if sudo nix run --extra-experimental-features nix-command \
+      --extra-experimental-features flakes "${REPO_DIR}#proton-auth"; then
+      ok "Proton mount credentials provisioned"
+    else
+      warn "Proton login failed; run 'sudo nix run .#proton-auth' when ready."
+      warn "Until then /srv/proton stays unmounted and offsite backups refuse to run."
+    fi
+  fi
+fi
+
 # ── Done ──────────────────────────────────────────────────────────
 
 echo ""
