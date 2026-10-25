@@ -167,8 +167,13 @@ in
           "--default-permissions"
           "--umask"
           "007"
+          # Long enough that a backup's walk over the whole tree reads one cached
+          # listing instead of re-listing every directory from Proton every
+          # minute (~2s per directory, which dominated a Photos run). Writers
+          # through the mount invalidate their own entries, so this only delays
+          # changes made elsewhere (phone/web) until the next re-list or restart.
           "--dir-cache-time"
-          "1m"
+          "1h"
           "--poll-interval"
           "0"
           "--protondrive-enable-caching=false"
