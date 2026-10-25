@@ -19,6 +19,7 @@ in
       transmission_4-gtk
       discord
       krita
+      proton-authenticator
       steam
     ];
   };
