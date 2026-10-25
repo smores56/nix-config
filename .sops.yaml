@@ -1,13 +1,29 @@
 keys:
-  # `admin` is the operator's age key; a host's key is its SSH host key
-  # (`ssh-to-age -i <host>.pub`; `nix run .#host-key` prints it).
+  # `admin` is the operator's age identity (`keys.age` on a laptop, never on a
+  # host); a host's key is its SSH host key (`ssh-to-age -i <host>.pub`;
+  # `nix run .#host-key` prints it).
   - &admin age1clqsa9h07xs3zftkkcnl4ag4u3pq2qty0p3dl8wc0u77fkegryhs9u72kt
   - &smortress age19k8s634eqfnptm8fngc8c3yl5cyk5t4wqgaukya4j6kjtvzm2q9sq674ru
+  - &smorespro age1ng2qumh78k49jy468kermj7qtxgtmtusqtuwjexpnzav3qv5uufq6zugcv
 creation_rules:
-  # One rule per host: `secrets/<host>.yaml` is encrypted to admin + that host.
-  # Add a key above and a rule here for each new host (see AGENTS.md).
+  # Host-only secrets: the admin identity plus that host. Only services on the
+  # host consume these, so no other machine needs to decrypt them.
   - path_regex: secrets/smortress\.yaml$
     key_groups:
       - age:
           - *admin
           - *smortress
+  - path_regex: secrets/smorespro\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *smorespro
+  # Cross-host user secrets (Maki provider keys, the account password hash,
+  # owner-scoped PATs). Every NixOS host that must read a copy is a recipient;
+  # adding a host here means it can read the whole shared file.
+  - path_regex: secrets/common\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *smortress
+          - *smorespro
