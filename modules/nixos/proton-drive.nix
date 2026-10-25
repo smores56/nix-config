@@ -137,7 +137,13 @@ in
         UMask = "0077";
         StateDirectory = "proton";
         StateDirectoryMode = "0700";
-        ExecStartPre = precheck;
+        # An unclean stop can leave the RC socket behind; binding over it fails
+        # the next start, which Restart=always would loop on. The precheck runs
+        # first so a missing config still gets the actionable message.
+        ExecStartPre = [
+          precheck
+          "${pkgs.coreutils}/bin/rm -f ${lib.escapeShellArg rcSocket}"
+        ];
         ExecStart = lib.escapeShellArgs [
           "${pkgs.rclone}/bin/rclone"
           "mount"
