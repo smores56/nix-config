@@ -67,7 +67,7 @@ in
             }
           );
           default = { };
-          description = "Services to expose, keyed by subdomain: each becomes <sub>.<domain> -> <protocol>://127.0.0.1:<port>, with a proxied DNS CNAME to the tunnel reconciled on every activation.";
+          description = "Services to expose, keyed by subdomain: each becomes a connector ingress rule <sub>.<domain> -> <protocol>://127.0.0.1:<port>. No DNS is written here: OpenTofu owns the single proxied wildcard CNAME that fronts the tunnel (tofu/main.tf), so every subdomain resolves through it.";
         };
       };
     };
