@@ -13,11 +13,9 @@ creation_rules:
       - age:
           - *admin
           - *smortress
-  - path_regex: secrets/smorespro\.yaml$
-    key_groups:
-      - age:
-          - *admin
-          - *smorespro
+  # No `secrets/smorespro.yaml`: smorespro's material is either cross-host
+  # (common.yaml) or a runtime file, never a host-scoped sops secret. Add a
+  # rule here if that ever changes.
   # Cross-host user secrets (Maki provider keys, the account password hash,
   # owner-scoped PATs). Every NixOS host that must read a copy is a recipient;
   # adding a host here means it can read the whole shared file.
