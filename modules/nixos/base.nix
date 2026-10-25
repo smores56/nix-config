@@ -61,6 +61,15 @@ in
     pkgs.kitty.terminfo
   ];
 
+  # Flake support must be system-wide, not just in the user's
+  # ~/.config/nix/nix.conf: root runs the flake apps (`sudo nix run
+  # .#proton-auth`, `.#cloudflare-apply`, `nixos-rebuild --flake`) and would
+  # otherwise need --extra-experimental-features on every invocation.
+  nix.settings.experimental-features = [
+    "nix-command"
+    "flakes"
+  ];
+
   # The setuid fusermount3 wrapper in /run/wrappers/bin, which unprivileged FUSE
   # mounts (rclone, sshfs) need. Enabling it here keeps the helper independent of
   # gvfs happening to pull fuse in; proton-drive.nix adds user_allow_other.
