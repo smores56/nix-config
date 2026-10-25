@@ -197,7 +197,11 @@ in
         # fusermount3 helper, which NoNewPrivileges (and a strict
         # ProtectSystem/ReadWritePaths view) would block, and allow-other
         # consumers must still write through the mount.
-        PrivateTmp = true;
+        #
+        # Never add PrivateTmp or PrivateMounts here: either gives the unit its
+        # own mount namespace, so the FUSE mount would exist only inside it and
+        # the host, the health check, and the backup's mountpoint preflight would
+        # all see the empty underlying directory instead.
         RestrictAddressFamilies = [
           "AF_UNIX"
           "AF_INET"
