@@ -37,8 +37,11 @@ in
         UserKnownHostsFile = "~/.ssh/known_hosts";
         # Reuse one transport per destination: a fresh cloudflared ProxyCommand
         # also re-resolves the Access token via pass-cli, ~1.7s per invocation.
+        # The socket lives in the per-user runtime dir, not ~/.ssh (the design
+        # forbids private-key-adjacent state there); an unset XDG_RUNTIME_DIR
+        # makes ssh ignore the keyword, which just disables sharing.
         ControlMaster = "auto";
-        ControlPath = "~/.ssh/master-%r@%n:%p";
+        ControlPath = "\${XDG_RUNTIME_DIR}/ssh-%C";
         ControlPersist = "10m";
       };
     };
