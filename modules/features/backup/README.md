@@ -235,16 +235,15 @@ Layout under `/var/lib/github-mirrors` (the dataset source):
    Proton `setattr` round trip and hundreds of them dominate the run. After the
    copy the driver polls the mount's RC (`vfs/queue`, `vfs/stats`, `core/stats`)
    until the VFS upload queue is empty.
-5. Verify the mirror: `rclone check --one-way` scoped with `--files-from0` to
-   the paths the copy wrote this run, or skipped entirely when it wrote nothing.
-   The comparison is `--checksum` for a remote target and `--size-only` for a
-   path target. A path target's check reads the mount's VFS metadata — the same
-   view the drain just proved was accepted by Proton — because re-listing the
-   dataset from Proton (`vfs/forget`) cost ~9s per changed file here and pushed
-   a Photos run past its timeout. Offsite datasets check local↔remote; a
-   local-only dataset (`offsite = false`) checks source↔local instead. A
+5. Verify the mirror: for an rclone-remote target, `rclone check --one-way
+   --checksum` scoped with `--files-from0` to the paths the copy wrote this run
+   (or skipped entirely when it wrote nothing). A path target skips the check:
+   it is a FUSE mount, and a per-file Proton walk costs ~2s per object, so a
+   Photos run cannot finish inside its timeout. There the drain (step 4) is the
+   completion proof and the restore drill is the periodic Proton-side read-back.
+   A local-only dataset (`offsite = false`) checks source↔local instead. A
    `--full-check` run (per-dataset `fullCheckSchedule`) walks the whole mirror
-   instead.
+   for remote targets.
 
 6. On success the unit is done. On failure the driver writes a detailed
    `BACKUP-FAILED` marker from inside the run; if the run was killed before that

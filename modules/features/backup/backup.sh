@@ -591,11 +591,18 @@ run_backup() {
       copy "$LOCAL" "$OFFSITE_TARGET" \
       ${EXCLUDE_FLAGS[@]+"${EXCLUDE_FLAGS[@]}"}
     if [[ -n $OFFSITE_RC_SOCKET ]]; then
-      # The copy reached the mount's VFS cache only: wait for the mount to hand
-      # it to Proton before verifying the mirror.
+      # A path target is the FUSE mount: the copy's exit means the bytes reached
+      # the VFS, and the drain means the mount handed all of them to Proton. A
+      # per-file Proton check is the only extra evidence, and it costs ~2s per
+      # object through FUSE (re-listing the destination tree), which does not
+      # fit a dataset timeout for Photos. Trust the drain here; the restore
+      # drill is the periodic Proton-side read-back.
       wait_for_uploads
+      echo "offsite copy accepted by the mount upload queue; Proton-side verification is the restore drill"
+      verified=1
+    else
+      verify_mirror offsite "$OFFSITE_COMPARE" "$LOCAL" "$OFFSITE_TARGET" "$offsite_log" && verified=1
     fi
-    verify_mirror offsite "$OFFSITE_COMPARE" "$LOCAL" "$OFFSITE_TARGET" "$offsite_log" && verified=1
   else
     verify_mirror local checksum "$SOURCE" "$LOCAL" "$local_log" && verified=1
   fi
