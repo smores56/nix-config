@@ -29,7 +29,6 @@ in
     };
     file.".config/nix/nix.conf".text = ''
       warn-dirty = false
-      accept-flake-config = true
       experimental-features = nix-command flakes
     '';
     file."Library/Fonts/.home-manager-fonts-version" = lib.mkIf isDarwin (
