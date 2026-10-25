@@ -9,6 +9,7 @@
   nixos = [
     ../nixos/base.nix
     ../nixos/networking.nix
+    ../nixos/secrets-common.nix
     ../nixos/ssh.nix
   ];
 }

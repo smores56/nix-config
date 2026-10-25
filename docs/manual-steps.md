@@ -87,13 +87,21 @@ manages the user environment.
 
 ## Secrets
 
-All secrets live in `secrets/smortress.yaml`, encrypted to two recipients: the
-smortress SSH host key (sops-nix decrypts at activation) and the admin identity
-`keys.age` (for edits). No host holds the admin identity, so edit from a laptop
-that has it:
+Secrets are split by scope:
+
+- `secrets/smortress.yaml` — host-only material for smortress (Cloudflare token,
+  tunnel JSON, calibre password, the mirror's repo PAT, brave), encrypted to the
+  admin identity plus the smortress host key.
+- `secrets/common.yaml` — cross-host user secrets (neuralwatt, the `smores`
+  password hash, owner-scoped PATs), encrypted to the admin identity plus every
+  NixOS host key (`smortress`, `smorespro`). Each of those hosts can read the
+  whole file, so host-only keys must not go in it.
+
+No host holds the admin identity, so edit from a laptop that has it:
 
 ```sh
 sops secrets/smortress.yaml
+sops secrets/common.yaml
 ```
 
 `sops` and `age` come from `modules/features/sops.nix`, which also points
@@ -290,9 +298,10 @@ unit whose definition is unchanged) and refresh OPDS clients.
 
 <!-- manual-step: secret/neuralwatt-api-key -->
 
-Hosted-inference key, user-readable, exported by the fish init as
-`NEURALWATT_API_KEY` for maki's provider config. Rotate in the Neuralwatt
-console, update this key, rebuild, and open a new shell.
+Hosted-inference key in `secrets/common.yaml`, user-readable on every NixOS
+host, exported by the fish init as `NEURALWATT_API_KEY` for maki's provider
+config. Rotate in the Neuralwatt console, update the common file, rebuild each
+host, and open a new shell.
 
 ### brave-api-key
 
@@ -358,8 +367,8 @@ Replace the secret and rebuild; sops-nix restarts `memory-llm-proxy.service`
 through the secret's `restartUnits`, so the gateway picks the new key up:
 
 ```sh
-sops secrets/smortress.yaml
-sudo nixos-rebuild switch
+sops secrets/common.yaml
+sudo nixos-rebuild switch        # on smortress and smorespro
 ```
 
 Open a new shell for `NEURALWATT_API_KEY` (the fish init exports it at shell
