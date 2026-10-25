@@ -1,8 +1,10 @@
 # Generic rclone 3-2-1 backup: one oneshot service + timer per
 # backup.datasets.<Name>. Each run keeps a versioned local mirror
-# (`copy` + `--backup-dir`) and, unless offsite is disabled, an append-only
-# checksummed mirror to the remote. The rationale for copy-over-sync and the
-# unchecked-hash guard lives in modules/features/backup/backup.sh.
+# (`copy` + `--backup-dir`) and, unless offsite is disabled, an offsite mirror:
+# checksum-verified for an rclone remote, size-verified for a path target (the
+# Proton mount, which is FUSE and cannot hash-cheaply). The rationale for
+# copy-over-sync and the verification rules lives in
+# modules/features/backup/backup.sh.
 {
   config,
   lib,
@@ -11,6 +13,24 @@
 }:
 let
   cfg = config.backup;
+
+  # An absolute `remote` is a filesystem path (the Proton mount): the driver
+  # writes plain files there and needs no rclone credential of its own.
+  pathRemote = lib.hasPrefix "/" cfg.remote;
+
+  # proton-drive.nix owns the mount and its RC socket (in the 0700 state dir).
+  # The driver drains the mount's VFS upload queue and forgets the cached
+  # listing through it, so a path target's success means Proton holds the copy.
+  offsiteRcSocket = "/var/lib/proton/rc.sock";
+
+  # A copy into an unmounted path would fill the root filesystem instead of the
+  # remote, so refuse it before the transfer rather than hours into it.
+  mountCheck = pkgs.writeShellScript "backup-remote-mount-check" ''
+    if ! ${pkgs.util-linux}/bin/mountpoint -q ${lib.escapeShellArg cfg.remote}; then
+      echo "backup: offsite target ${cfg.remote} is not a mountpoint; start proton-mount.service (an expired Proton token is the usual cause)" >&2
+      exit 1
+    fi
+  '';
 
   # The driver is a self-contained shell script; writeShellApplication pins its
   # runtime tools on PATH, so the unit needs no implicit system PATH. It keeps
@@ -122,12 +142,17 @@ let
         "--source ${lib.escapeShellArg source}"
         "--backup-root ${lib.escapeShellArg cfg.mountPoint}"
         "--remote ${lib.escapeShellArg cfg.remote}"
-        "--rclone-config ${lib.escapeShellArg cfg.rcloneConfig}"
         "--stall-timeout ${lib.escapeShellArg dataset.stallTimeout}"
         "--timeout ${lib.escapeShellArg dataset.timeout}"
       ]
+      ++ lib.optional (!pathRemote) "--rclone-config ${lib.escapeShellArg cfg.rcloneConfig}"
       ++ lib.optional fullCheck "--full-check"
       ++ lib.optional dataset.offsite "--offsite"
+      # Only a path target has a mount to drain and forget through; an rclone
+      # remote blocks until its own uploads finish.
+      ++ lib.optional (
+        dataset.offsite && pathRemote
+      ) "--offsite-rc-socket ${lib.escapeShellArg offsiteRcSocket}"
       # Materialised as a script file: a multi-line snippet cannot be a single
       # systemd ExecStart argument (newlines terminate the directive). Built only
       # when set, so a null preBackup never forces writeShellScript.
@@ -215,11 +240,15 @@ let
       unitConfig.RequiresMountsFor = [ cfg.mountPoint ];
       # Only a dataset whose preBackup dumps Postgres needs the server (and must
       # not race a DB restart at boot); a generic dataset must not depend on it.
+      # A path remote is the Proton mount, which has to be up before the copy.
       after =
         lib.optional dataset.postgres "postgresql.service"
-        ++ lib.optional dataset.postgres "${unitName name}-dump.service";
+        ++ lib.optional dataset.postgres "${unitName name}-dump.service"
+        ++ lib.optional (dataset.offsite && pathRemote) "proton-mount.service";
       # Start the dump unit with this run and fail the run if the dump fails.
-      requires = lib.optional dataset.postgres "${unitName name}-dump.service";
+      requires =
+        lib.optional dataset.postgres "${unitName name}-dump.service"
+        ++ lib.optional (dataset.offsite && pathRemote) "proton-mount.service";
       # The Cloudflare email template is the alert path; reference it only when
       # enabled, or systemd logs a dead-job error.
       onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
@@ -264,17 +293,26 @@ let
         # A watched dataset drains its request queue here: changes that arrive
         # during the run create new requests, and the path unit re-checks the
         # directory when the service exits (one follow-up run, never a loss).
-        ExecStartPre = [
-          "+${pkgs.coreutils}/bin/install -d -m 0700 ${lib.escapeShellArg dir} ${
-            lib.escapeShellArg (dir + "/current")
-          } ${lib.escapeShellArg (dir + "/versions")}"
-        ]
-        ++ lib.optional dataset.onChange.enable "+${pkgs.findutils}/bin/find ${lib.escapeShellArg (queueDir name)} -mindepth 1 -delete";
-        # Every dataset shares one Proton credential, and Proton refresh tokens
-        # are single-use: two concurrent rclone clients blank the session
-        # (rclone#9880). The driver owns the host-wide lock at
-        # /run/lock/media-backup.lock (created mode 0600) and serializes inside
-        # itself, so the unit must not wrap ExecStart in its own flock.
+        ExecStartPre =
+          lib.optional (dataset.offsite && pathRemote) mountCheck
+          ++ [
+            # The `+` runs this privileged, after RequiresMountsFor, so the
+            # dataset folders always exist on the real disk even on a mid-session
+            # `switch`. A watched dataset drains its request queue here: changes
+            # that arrive during the run create new requests, and the path unit
+            # re-checks the directory when the service exits (one follow-up run,
+            # never a loss).
+            "+${pkgs.coreutils}/bin/install -d -m 0700 ${lib.escapeShellArg dir} ${
+              lib.escapeShellArg (dir + "/current")
+            } ${lib.escapeShellArg (dir + "/versions")}"
+          ]
+          ++ lib.optional dataset.onChange.enable "+${pkgs.findutils}/bin/find ${lib.escapeShellArg (queueDir name)} -mindepth 1 -delete";
+        # Offsite datasets all write through the one Proton mount (or share one
+        # rclone remote), so the driver's host-wide lock at
+        # /run/lock/media-backup.lock keeps their transfers from competing for
+        # the mount's upload bandwidth and VFS cache. The driver owns the lock
+        # (created mode 0600) and serializes itself, so the unit must not wrap
+        # ExecStart in its own flock.
         ExecStart = "${backup}/bin/backup ${mkArgs name dataset fullCheck}";
         ExecStopPost = [ stopPost ];
       };

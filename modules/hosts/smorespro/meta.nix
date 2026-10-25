@@ -8,4 +8,10 @@
   nixosOptions = {
     fingerprint.enable = true;
   };
+
+  homeOptions = {
+    # `pm` is an sshfs mount of smortress:/srv/proton, so the client holds no
+    # Proton credential; smortress itself uses /srv/proton directly.
+    protonDrive.enable = true;
+  };
 }

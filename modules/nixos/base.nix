@@ -61,6 +61,11 @@ in
     pkgs.kitty.terminfo
   ];
 
+  # The setuid fusermount3 wrapper in /run/wrappers/bin, which unprivileged FUSE
+  # mounts (rclone, sshfs) need. Enabling it here keeps the helper independent of
+  # gvfs happening to pull fuse in; proton-drive.nix adds user_allow_other.
+  programs.fuse.enable = true;
+
   # Run dynamically-linked binaries that aren't patched for Nix.
   programs.nix-ld.enable = true;
   programs.nix-ld.libraries = with pkgs; [
