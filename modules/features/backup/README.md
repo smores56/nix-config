@@ -231,16 +231,21 @@ Layout under `/var/lib/github-mirrors` (the dataset source):
 4. Offsite copy → `/srv/proton/<Name>` (the mount's filesystem). With an
    rclone-remote target it is `<remote>:<Name>` and carries
    `--protondrive-replace-existing-draft=true` (uploads only; never used to
-   delete). A path target is then drained: the driver polls the mount's RC
-   (`vfs/queue`, `core/stats`) until the VFS upload queue is empty and calls
-   `vfs/forget` for `/<Name>`, so the mount re-lists that dataset from Proton.
+   delete). A path target gets `--no-update-modtime`: every mtime fix-up is a
+   Proton `setattr` round trip and hundreds of them dominate the run. After the
+   copy the driver polls the mount's RC (`vfs/queue`, `vfs/stats`, `core/stats`)
+   until the VFS upload queue is empty.
 5. Verify the mirror: `rclone check --one-way` scoped with `--files-from0` to
    the paths the copy wrote this run, or skipped entirely when it wrote nothing.
    The comparison is `--checksum` for a remote target and `--size-only` for a
-   path target (freshly listed from Proton by the `vfs/forget` above). Offsite
-   datasets check local↔remote; a local-only dataset (`offsite = false`) checks
-   source↔local instead. A `--full-check` run (per-dataset
-   `fullCheckSchedule`) walks the whole mirror instead.
+   path target. A path target's check reads the mount's VFS metadata — the same
+   view the drain just proved was accepted by Proton — because re-listing the
+   dataset from Proton (`vfs/forget`) cost ~9s per changed file here and pushed
+   a Photos run past its timeout. Offsite datasets check local↔remote; a
+   local-only dataset (`offsite = false`) checks source↔local instead. A
+   `--full-check` run (per-dataset `fullCheckSchedule`) walks the whole mirror
+   instead.
+
 6. On success the unit is done. On failure the driver writes a detailed
    `BACKUP-FAILED` marker from inside the run; if the run was killed before that
    could happen, `ExecStopPost` writes a generic one (it never overwrites the

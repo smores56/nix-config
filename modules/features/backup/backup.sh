@@ -471,17 +471,14 @@ wait_for_uploads() {
   done
 }
 
-# Forget the mount's cached listing for this dataset, so the --size-only check
-# below re-lists it from Proton instead of answering from the VFS cache. rclone
-# 1.75's `vfs/forget dir=` clears that directory and its whole subtree (there is
-# no recursive parameter yet) and marks the parent listing stale.
-forget_offsite_listing() {
-  local target=/$NAME
-  if ! rclone rc --unix-socket "$OFFSITE_RC_SOCKET" vfs/forget dir="$target" \
-    >"$WORK/forget.log" 2>&1; then
-    fail "could not drop the mount's cached listing for $target: $(tail -n 3 "$WORK/forget.log")"
-  fi
-}
+# The mount's VFS metadata is the acknowledged view of what it uploaded: the
+# drain above waits until the queue is empty, so a stat here is answered from
+# that cache instead of one Proton API call per file. Re-listing from Proton
+# (`vfs/forget`) looked stronger but cost ~9s per changed file on this mount —
+# hundreds of files pushed a run past its dataset timeout while the copy itself
+# had already completed. The check therefore verifies the driver wrote every
+# local file into the mount, not Proton's copy of it; the drain is what proves
+# Proton received those writes.
 
 # verify_mirror LABEL COMPARE SOURCE DEST COPY_LOG
 # Returns 0 when the mirror was verified this run and 1 when the check was
@@ -568,6 +565,7 @@ run_backup() {
   fi
 
   local local_log=$WORK/local.log offsite_log=$WORK/offsite.log
+  local offsite_path_flags=()
   local local_args=(${CONFIG_FLAGS[@]+"${CONFIG_FLAGS[@]}"} "${NET_FLAGS[@]}" "${STATS_FLAGS[@]}")
   # With no offsite leg the local copy's log is the only record of what changed,
   # so it (and only it) emits JSON for the local check to scope against.
@@ -581,16 +579,21 @@ run_backup() {
     # PROTON_FLAGS carries --protondrive-replace-existing-draft: a failed Proton
     # upload leaves a draft, and without it the retry dies with "a draft exist".
     # A path target is the mount's filesystem, so it gets no backend flags.
+    # A path target is FUSE: every mtime fix-up is a Proton setattr round trip,
+    # and hundreds of them dominate the run. Sizes still decide the copy, and
+    # the datetime is not part of the mirror contract.
+    if [[ -n $OFFSITE_RC_SOCKET ]]; then
+      offsite_path_flags+=(--no-update-modtime)
+    fi
     run_step "offsite copy" "$STALL_SECONDS" "$offsite_log" 3 -- rclone \
       ${CONFIG_FLAGS[@]+"${CONFIG_FLAGS[@]}"} "${NET_FLAGS[@]}" "${STATS_FLAGS[@]}" "${COPY_LOG_FLAGS[@]}" \
-      ${PROTON_FLAGS[@]+"${PROTON_FLAGS[@]}"} \
+      ${PROTON_FLAGS[@]+"${PROTON_FLAGS[@]}"} ${offsite_path_flags[@]+"${offsite_path_flags[@]}"} \
       copy "$LOCAL" "$OFFSITE_TARGET" \
       ${EXCLUDE_FLAGS[@]+"${EXCLUDE_FLAGS[@]}"}
     if [[ -n $OFFSITE_RC_SOCKET ]]; then
       # The copy reached the mount's VFS cache only: wait for the mount to hand
-      # it to Proton, then drop the cached listing the check would otherwise read.
+      # it to Proton before verifying the mirror.
       wait_for_uploads
-      forget_offsite_listing
     fi
     verify_mirror offsite "$OFFSITE_COMPARE" "$LOCAL" "$OFFSITE_TARGET" "$offsite_log" && verified=1
   else
