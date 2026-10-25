@@ -319,13 +319,20 @@
           echo "proton-auth: logging in and storing the refresh token..."
           login_args=()
           [ -n "$code" ] && login_args+=(--protondrive-2fa "$code")
+          login_log=$(mktemp)
           if ! runuser -u proton -- env HOME="$state" \
-            rclone --config "$pending" lsd proton: "''${login_args[@]}" >/dev/null; then
-            rm -f "$pending"
-            echo "proton-auth: login failed. rclone cannot use security-key 2FA;" >&2
-            echo "proton-auth: keep a TOTP factor enabled on the Proton account." >&2
+            rclone --config "$pending" lsd proton: "''${login_args[@]}" \
+            >"$login_log" 2>&1; then
+            echo "proton-auth: login failed; rclone said:" >&2
+            tail -n 6 "$login_log" >&2
+            rm -f "$pending" "$login_log"
+            echo "proton-auth: common causes: wrong login or mailbox password; a wrong" >&2
+            echo "proton-auth: or expired TOTP code; TOTP not enabled (rclone cannot use" >&2
+            echo "proton-auth: a security key); or HTTP 429 rate limiting, which needs a" >&2
+            echo "proton-auth: wait before retrying." >&2
             exit 1
           fi
+          rm -f "$login_log"
           unset password mailbox code
 
           if ! grep -q '^client_refresh_token' "$pending"; then
