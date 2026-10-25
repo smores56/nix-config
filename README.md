@@ -240,7 +240,12 @@ Media datasets can additionally set `onChange` to queue a run after
 a debounced batch of source changes, with the timer as the fallback. smortress
 backs up `Photos`/`Videos`/`Music` offsite (and change-triggered) and mirrors the
 `smores56` GitHub repos (git plus issue/PR metadata) both locally and offsite
-(`githubBackup`). The operator's guide
+(`githubBackup`). The offsite target is a path, not an rclone remote: a single
+`rclone mount` at `/srv/proton` (`modules/nixos/proton-drive.nix`) owns the only
+Proton token, and the backups write through it as plain files; a Linux client's
+`pm` is an sshfs mount of the same tree. Setting `backup.remote` to a bare
+remote name (plus `backup.rcloneConfig`) still works for a host without that
+mount. The operator's guide
 — guarantees, trigger semantics, layout, restore and one-time prune procedures —
 is [`modules/features/backup/README.md`](modules/features/backup/README.md).
 

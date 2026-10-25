@@ -5,10 +5,12 @@
 #
 # Covers the guarantees the backup units depend on: copy (never sync) with a
 # versioned local mirror, an append-only plain offsite tree, a checksum check
-# scoped to the changed paths, empty-source refusal, same-day version collisions,
+# scoped to the changed paths, a size-only check for a filesystem-path offsite
+# target (the Proton mount), empty-source refusal, same-day version collisions,
 # marker lifecycle, the whole-tree --full-check, the local-only verify pair, the
-# preBackup environment, and the stall watchdog. Everything lives under a
-# temporary directory; no host lock or Proton remote is touched.
+# preBackup environment, the missing offsite RC socket refusal, and the stall
+# watchdog. Everything lives under a temporary directory; no host lock or Proton
+# remote is touched.
 set -euo pipefail
 
 DRIVER=${1:?usage: backup_plain.sh <path-to-backup.sh>}
@@ -57,6 +59,23 @@ driver() {
 
 expect_ok() {
   driver "$@" || fail "driver failed (args: $*)"
+}
+
+# Run the driver against a filesystem-path offsite target (the host's Proton
+# mount): no rclone config at all, because the mount owns the credential.
+PATH_ROOT=$ROOT/mount
+driver_path() {
+  : >"$LAST"
+  bash "$DRIVER" \
+    --name Photos \
+    --source "$SRC" \
+    --backup-root "$BACKUP_ROOT" \
+    --remote "$PATH_ROOT" \
+    --date "$DATE" \
+    --stall-timeout 0 \
+    --timeout 5m \
+    --no-lock \
+    "$@" >>"$LAST" 2>&1
 }
 
 echo one >"$SRC/one.txt"
@@ -169,7 +188,38 @@ HOOK_OUT=$ROOT/hook.out bash "$DRIVER" --name Hooked --source "$SRC" \
 [[ $(cat "$ROOT/hook.out") == "$DATE|$BACKUP_ROOT/Hooked/current|$SRC" ]] ||
   fail "preBackup environment is wrong: $(cat "$ROOT/hook.out")"
 
-# 10. Stall watchdog: a step whose counters stop advancing is killed, retried,
+# 10. A path remote writes <path>/<Name>, needs no rclone config, and verifies
+# by size instead of hashing through FUSE.
+mkdir -p "$PATH_ROOT"
+echo path >"$SRC/three.txt"
+driver_path --offsite || fail "path-form offsite run failed"
+[[ -f $PATH_ROOT/Photos/three.txt ]] || fail "path-form target did not receive the copy"
+[[ ! -e $PATH_ROOT/Photos/versions ]] || fail "path-form target has a versions/ directory"
+grep -qF "copy $BACKUP_ROOT/Photos/current $PATH_ROOT/Photos" "$LAST" ||
+  fail "path-form offsite copy did not target <path>/<Name>"
+grep -q 'check --size-only --one-way' "$LAST" || fail "path-form check was not size-only"
+grep -q -- '--files-from0' "$LAST" || fail "path-form check was not scoped to changed paths"
+if grep -q 'protondrive-replace-existing-draft' "$LAST"; then
+  fail "path-form copy used a Proton remote backend flag"
+fi
+if grep -q -- '--config' "$LAST"; then fail "path-form run used an rclone config"; fi
+
+# The path-form full check still walks the whole tree, size-only.
+driver_path --offsite --full-check || fail "path-form full-check run failed"
+path_full=$(grep -F 'check --size-only --one-way' "$LAST" || true)
+[[ -n $path_full ]] || fail "path-form full check had no size-only check step"
+[[ $path_full != *--files-from0* ]] || fail "path-form full check was still scoped"
+
+# 11. A path target told to use a mount RC socket must have a live one: without
+# the mount's upload queue there is no proof the copy ever reached the backend,
+# so the run fails before copying and leaves a detailed marker.
+if driver_path --offsite --offsite-rc-socket "$ROOT/missing.sock"; then
+  fail "a missing offsite RC socket was accepted"
+fi
+grep -q 'offsite RC socket .* is missing' "$BACKUP_ROOT/Photos/BACKUP-FAILED" ||
+  fail "missing RC socket left no detailed failure marker"
+
+# 12. Stall watchdog: a step whose counters stop advancing is killed, retried,
 # and fails the run. BACKUP_STATS_INTERVAL=1 keeps the test quick; production
 # keeps the 30s cadence and the Nix assertion keeps stallTimeout >= 60s.
 mkdir -p "$ROOT/fakebin"

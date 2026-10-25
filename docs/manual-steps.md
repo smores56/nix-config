@@ -395,31 +395,96 @@ and `TunnelSecret` change:
    the LLM/OPDS hostnames still answer.
 5. Delete the old tunnel and its DNS records.
 
-#### Proton rclone token
+## Proton mount (smortress)
 
-The backup mirror and `pm` authenticate to Proton through rclone, in
-`/var/lib/backup/rclone.conf` (root) and `~/.config/rclone/rclone.conf` (user,
-both on smortress); neither is Nix-managed and neither is in sops. Re-auth once
-and copy the refreshed `[proton]` block to the other config — Proton refresh
-tokens are single-use, so two reconnects against one account blank each other.
-As the user on smortress, with no backup running and `pm` unmounted (the file
-holds only `[proton]`):
+One `rclone mount` of the Proton account at `/srv/proton`, run by the dedicated
+`proton` system user (`modules/nixos/proton-drive.nix`). It is the only process
+that authenticates to Proton: the refresh token lives in
+`/var/lib/proton/rclone.conf` (0600 `proton:proton`) and nowhere else — not in
+sops and not in the Nix store, because Proton rewrites the token in place when
+it refreshes. The backup units write through the mount (`/srv/proton/<Name>`),
+and `pm` on a Linux client is an sshfs mount of `smortress:/srv/proton`, so
+neither holds a credential.
+
+Access is group-only. The mount serves dirs `0770` and files `0660` owned by
+`proton:proton` (`--umask 007` with `--allow-other --default-permissions`, so the
+kernel enforces those modes), which means `proton`, root and members of group
+`proton`; no other local user can read or write through it. While the mount is
+down the path itself is a root-owned `0770 root:proton` directory: not
+world-writable, so a crashed mount cannot be used to fill the root filesystem.
+
+Create the config once, as the `proton` user (the service's first start has
+already created `/var/lib/proton`; if it has not, run
+`sudo install -d -o proton -g proton -m 0700 /var/lib/proton`):
 
 ```sh
-rclone config reconnect proton:      # account password + 2FA; rewrites the [proton] block
-sudo install -o root -g root -m 0600 ~/.config/rclone/rclone.conf /var/lib/backup/rclone.conf
+sudo -u proton rclone --config /var/lib/proton/rclone.conf config
 ```
 
-Prove the root copy:
+Choose "New remote", name it `proton` — the section name is
+`protonDrive.remote` without the trailing colon, i.e. the `proton:` mount reads
+section `proton` — pick type `protondrive`, and answer the username/password/2FA
+prompts. Prove it and start the mount:
 
 ```sh
-sudo rclone --config /var/lib/backup/rclone.conf lsf proton: --max-depth 1
+sudo -u proton rclone --config /var/lib/proton/rclone.conf lsf proton: --max-depth 1
+sudo systemctl restart proton-mount
+mountpoint /srv/proton && ls /srv/proton
+systemctl status proton-mount-health.service
 ```
 
-Revoke the old login at account.proton.me → Settings → All settings → Security
-and privacy → Session management (verified page; whether rclone appears as its
-own session there is unverified). Run the backups again via their timers, or
-`sudo systemctl start backup-photos.service` for an immediate check.
+Re-auth when the token expires (the health timer emails, or a backend query
+through the mount's RC fails while the mount stays up). Stop the mount first:
+it is the only process allowed to touch the token, and a second client
+refreshing it would blank the mount's copy (Proton refresh tokens are
+single-use). rclone 1.75.1 reconnects the remote in place, then the mount starts
+again on the new token:
+
+```sh
+sudo systemctl stop proton-mount
+sudo -u proton rclone --config /var/lib/proton/rclone.conf config reconnect proton:
+sudo systemctl start proton-mount
+```
+
+If a start fails with "start request repeated too quickly", the unit hit its
+start limit (5 starts in an hour); clear the counter before starting it:
+
+```sh
+sudo systemctl reset-failed proton-mount
+```
+
+Revoke the superseded login at account.proton.me → Settings → All settings →
+Security and privacy → Session management (verified page; whether rclone
+appears as its own session there is unverified). Then run a backup to prove the
+write path: `sudo systemctl start backup-photos.service`.
+
+Failure modes: a missing or unreadable config fails `proton-mount.service`'s
+`ExecStartPre` with an actionable message (it never silently serves an empty
+directory). An expired token does **not** stop rclone, and `ls` on the mount
+still exits 0 (it answers from the VFS cache), so
+`proton-mount-health.timer` (hourly at :17, `Persistent`) lists the backend
+through the mount's own RC (`operations/list` on `/var/lib/proton/rc.sock`,
+which only `proton` and root can reach) and alerts through `cloudflare-email`
+when that call fails or times out. The backup units require
+`proton-mount.service`, preflight `mountpoint -q /srv/proton` before copying —
+without that, an unmounted path would fill the root filesystem — then wait for
+the mount's VFS upload queue to drain through the same socket and drop the
+dataset's cached listing before the size-only check, so a recorded success means
+Proton holds the files; a missing socket or a queue that never drains fails the
+run. `pm` reports "nothing mounted at /srv/proton" instead of mounting an empty
+directory.
+
+Restarting the mount stops every backup unit that requires it
+(`Requires=proton-mount.service`), so do it outside their schedule. `ExecStop`
+unmounts lazily (`fusermount3 -uz`) with `TimeoutStopSec=30s`, so a wedged
+Proton read cannot hold the stop; the kernel finishes detaching afterwards.
+
+Delete the superseded configs once the mount works — nothing reads them now:
+
+```sh
+rm ~/.config/rclone/rclone.conf
+sudo rm -f /var/lib/backup/rclone.conf
+```
 
 ## Providers
 
@@ -463,8 +528,12 @@ delete them.
 Datasets come from `backup.datasets` on every NixOS host. Each one is driven by
 the shell driver [`backup.sh`](../modules/features/backup/backup.sh), packaged
 as `backup`; a manual run passes the same flags the unit uses (`--name`,
-`--source`, `--backup-root`, `--remote`, `--rclone-config`, `--offsite`,
-`--exclude`, `--full-check`).
+`--source`, `--backup-root`, `--remote`, `--offsite`, `--exclude`,
+`--full-check`). `--remote` is either an rclone remote name (then also pass
+`--rclone-config`) or a filesystem path — smortress uses `/srv/proton`, the
+Proton mount, which needs no config but does need
+`--offsite-rc-socket /var/lib/proton/rc.sock` so the driver can drain the
+mount's upload queue and forget its cached listing before checking.
 
 Each dataset runs `backup-<name>.service` on its timer and writes
 `/var/backup/<Name>/BACKUP-LAST-SUCCESS` after a run that verified the mirror or
@@ -498,7 +567,7 @@ Losing state is recoverable by importing the existing objects
 <!-- manual-step: dataset/GitHub -->
 
 Git bare mirrors plus issue/PR metadata under `/var/lib/github-mirrors`,
-nightly 00:30, local and offsite (`proton:GitHub`). Seeded on 2026-10-19; later
+nightly 00:30, local and offsite (`/srv/proton/GitHub`). Seeded on 2026-10-19; later
 runs transfer deltas only. The pre-unit refreshes every repo with ghorg, then
 runs `python-github-backup` incrementally into `meta/`, and fails unless the
 probe repo (`sdlc`) was refreshed. It also fails on a repo-set mismatch against
@@ -516,7 +585,7 @@ jq . /var/lib/github-mirrors/manifests/$(date -u +%F)/counts.json
 ```
 
 Restore a repository from `/var/backup/GitHub/current/smores56_backup/<repo>`
-(or `proton:GitHub`). It is a bare mirror: clone from it directly, or push it
+(or `/srv/proton/GitHub`). It is a bare mirror: clone from it directly, or push it
 back with `git push --mirror`. Issues, PRs, discussions, releases, and
 attachments are archived JSON under `.../current/meta/repositories/<repo>/`,
 not restorable state: GitHub has no issue-import that preserves numbers and
@@ -532,7 +601,7 @@ account reaches, but these units only read.
 Copy of `/var/lib/memory/export` taken at 05:30 (the export itself runs nightly
 from `memory-export.timer`, from midnight with up to an hour of delay), mirrored
 locally to `/var/backup/MemoryExport/current` and offsite to
-`proton:MemoryExport` like the other datasets. Each directory holds one registry
+`/srv/proton/MemoryExport` like the other datasets. Each directory holds one registry
 snapshot, the `episodes.jsonl` dump, the manifest, and a best-effort FalkorDB
 RDB of the same timestamp. The export directory keeps seven snapshots and the
 driver versions what it replaces, so the mirror grows until the versions are
@@ -549,7 +618,7 @@ the drill, or:
 
 ```sh
 sudo flock /run/lock/media-backup.lock \
-  rclone copy proton:Music /restore/Music --config /var/lib/backup/rclone.conf
+  rclone copy /srv/proton/Music /restore/Music
 ```
 
 ### Photos

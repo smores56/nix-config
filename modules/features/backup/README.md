@@ -37,14 +37,23 @@ the code in [`backup.sh`](./backup.sh). This file is the operator's view.
   compromised local box cannot delete from the remote.
 - **The offsite mirror is verified — incrementally.** The offsite copy logs
   every file it wrote (`--use-json-log`), and the run finishes with
-  `rclone check --checksum --one-way --files-from0 <those paths>`, so only what
-  changed is re-read instead of the whole tree (a full walk of a large unchanged
-  dataset reads the entire mirror for no new information). When the copy wrote
+  `rclone check --one-way --files-from0 <those paths>`, so only what changed is
+  re-read instead of the whole tree (a full walk of a large unchanged dataset
+  reads the entire mirror for no new information). The comparison is
+  `--checksum` for an rclone-remote target and `--size-only` for a path target
+  (`/srv/proton`, the Proton FUSE mount): reading content hashes back through
+  FUSE would stream the whole archive from Proton again. A path target is
+  verified only after the mount's own RC (`/var/lib/proton/rc.sock`) reports an
+  empty VFS upload queue and the mount forgets its cached listing for the
+  dataset — the mount uploads asynchronously, so without that wait-and-forget
+  the check would answer from the VFS cache and pass with nothing on Proton. A
+  missing socket or a queue that never drains fails the run. When the copy wrote
   nothing the check is skipped: the mirror is unchanged since the last run. A
   skipped check never clears a prior failure's `BACKUP-FAILED` marker — only a
   run that actually verified the mirror does. A periodic whole-mirror
   `--full-check` (per-dataset `fullCheckSchedule`) still walks everything to
-  catch drift in old files. rclone exits 0 even when
+  catch drift in old files; on a path target that walk is size-only too. rclone
+  exits 0 even when
   it compared nothing, so the `"<n> hashes could not be checked"` summary is
   parsed and any non-zero count fails the run: an unverified mirror is not a
   backup.
@@ -71,15 +80,20 @@ the code in [`backup.sh`](./backup.sh). This file is the operator's view.
 | `/var/backup/<Name>/db/` | pre-backup database dumps (dataset's `preBackup`) |
 | `/var/backup/<Name>/BACKUP-FAILED` | failure marker: detailed one written by the driver, generic fallback by `ExecStopPost` |
 | `/var/backup/<Name>/BACKUP-LAST-SUCCESS` | last run that verified the mirror, or found nothing to verify; the freshness timer watches its mtime |
-| `/var/lib/backup/rclone.conf` | Proton remote config, mode 0600, **runtime only — never in the Nix store** |
+| `/srv/proton` | the single Proton `rclone mount` (`modules/nixos/proton-drive.nix`), owned by the `proton` user; offsite copies land under it. Mounted, dirs are 0770 and files 0660 `proton:proton` (group `proton` only); unmounted, the path is a root-owned `0770 root:proton` directory |
+| `/var/lib/proton/rc.sock` | the mount's own rclone RC socket, inside the 0700 state dir: the driver drains the upload queue and forgets cached listings through it, and the health check queries the backend |
+| `/var/lib/proton/rclone.conf` | the only Proton token, mode 0600 `proton:proton`, **runtime only — never in the Nix store or sops**; only the mount process reads it |
 | `/var/lib/github-mirrors/<owner>_backup/<repo>` | ghorg bare git mirrors, refreshed in place (Disk 1) |
 | `/var/backup/GitHub/current` | local mirror of the GitHub mirrors (Disk 2) |
-| `/run/lock/media-backup.lock` | driver-owned lock, mode 0600, serializing the datasets that share the one Proton credential; local-only datasets take `/run/lock/media-backup-<name>.lock` instead |
+| `/run/lock/media-backup.lock` | driver-owned lock, mode 0600, serializing the datasets that write through the one offsite target; local-only datasets take `/run/lock/media-backup-<name>.lock` instead |
 | `/run/backup-watch/<name>/` | request queue for a dataset with `onChange` enabled: the watcher creates a file per debounced batch, and the backup unit drains it |
 
-Proton paths are the dataset name under the remote: `proton:<Name>` — on
-smortress, `proton:Photos`, `proton:Videos`, `proton:Music`, `proton:LobeChat`,
-`proton:RustFS`, `proton:GitHub`, and `proton:CloudflareTofu`.
+Offsite paths are the dataset name under the target: `/srv/proton/<Name>` — on
+smortress, `/srv/proton/Photos`, `/srv/proton/Videos`, `/srv/proton/Music`,
+`/srv/proton/LobeChat`, `/srv/proton/RustFS`, `/srv/proton/GitHub`, and
+`/srv/proton/CloudflareTofu`. Only the mount authenticates to Proton, so a
+backup run needs no rclone config; `backup.remote` still accepts a remote name
+(`proton`, plus `backup.rcloneConfig`) for a host without the mount.
 
 ## Datasets on smortress
 
@@ -207,20 +221,26 @@ Layout under `/var/lib/github-mirrors` (the dataset source):
    `preBackup`, so a dataset whose `preBackup` creates the source is not
    rejected for starting empty.
 2. The driver takes the lock for the dataset (created mode 0600): the shared
-   `/run/lock/media-backup.lock` for offsite datasets — Proton refresh tokens are
-   single-use, so two concurrent rclone clients would blank the session
-   (rclone#9880) — and `/run/lock/media-backup-<name>.lock` for local-only ones.
+   `/run/lock/media-backup.lock` for offsite datasets — they all write through
+   the one offsite target, so serializing keeps their transfers from competing
+   for the mount's upload bandwidth and VFS cache — and
+   `/run/lock/media-backup-<name>.lock` for local-only ones.
    A queued dataset simply waits. Manual `backup` runs and the restore drill take
    the same lock.
 3. Local copy → `current/`, overwritten revisions to `versions/<date>/`.
-4. Offsite copy → `proton:<Name>` with
+4. Offsite copy → `/srv/proton/<Name>` (the mount's filesystem). With an
+   rclone-remote target it is `<remote>:<Name>` and carries
    `--protondrive-replace-existing-draft=true` (uploads only; never used to
-   delete).
-5. Verify the mirror: `rclone check --checksum --one-way` scoped with
-   `--files-from0` to the paths the copy wrote this run, or skipped entirely when
-   it wrote nothing. Offsite datasets check local↔remote; a local-only dataset
-   (`offsite = false`) checks source↔local instead. A `--full-check` run
-   (per-dataset `fullCheckSchedule`) walks the whole mirror instead.
+   delete). A path target is then drained: the driver polls the mount's RC
+   (`vfs/queue`, `core/stats`) until the VFS upload queue is empty and calls
+   `vfs/forget` for `/<Name>`, so the mount re-lists that dataset from Proton.
+5. Verify the mirror: `rclone check --one-way` scoped with `--files-from0` to
+   the paths the copy wrote this run, or skipped entirely when it wrote nothing.
+   The comparison is `--checksum` for a remote target and `--size-only` for a
+   path target (freshly listed from Proton by the `vfs/forget` above). Offsite
+   datasets check local↔remote; a local-only dataset (`offsite = false`) checks
+   source↔local instead. A `--full-check` run (per-dataset
+   `fullCheckSchedule`) walks the whole mirror instead.
 6. On success the unit is done. On failure the driver writes a detailed
    `BACKUP-FAILED` marker from inside the run; if the run was killed before that
    could happen, `ExecStopPost` writes a generic one (it never overwrites the
@@ -273,9 +293,13 @@ rsync -a /var/backup/Photos/current/ /restore/Photos/
 
 ```sh
 sudo flock /run/lock/media-backup.lock \
-  rclone copy proton:Photos /restore/Photos \
-  --config /var/lib/backup/rclone.conf --transfers 8 --checkers 16
+  rclone copy /srv/proton/Photos /restore/Photos --transfers 8 --checkers 16
 ```
+
+The offsite tree is read through the mount; if `proton-mount.service` is down,
+start it first (see `docs/manual-steps.md`, "Proton mount (smortress)").
+Restarting the mount also stops every `backup-*` unit that requires it
+(`Requires=proton-mount.service`), so re-auth outside the backup schedule.
 
 Add `--backup-dir`-style recovery by reaching into the same path's local
 `versions/` if the mirror still exists.
@@ -310,7 +334,7 @@ To push a mirror back to a remote, `git push --mirror <url>` from it.
 JSON snapshots, not restorable state: GitHub has no issue-import API that
 preserves numbers, comments, and cross-references. Treat them as archival — the
 readable record of what existed at the last run. They live in
-`/var/backup/GitHub/current/meta/repositories/<repo>/` (or `proton:GitHub`) and
+`/var/backup/GitHub/current/meta/repositories/<repo>/` (or `/srv/proton/GitHub`) and
 are read directly with `jq`:
 
 ```sh
@@ -338,21 +362,22 @@ sudo FULL_OFFSITE=1 bash modules/features/backup/drills/restore-drill.sh Photos
 sudo DRILL_PG_DB=immich DRILL_ONLY_DB=1 bash modules/features/backup/drills/restore-drill.sh Photos
 ```
 
-Every offsite rclone operation walks the entire remote, which is minutes on a
-30k-object Proton tree, so the default drill deliberately avoids one: it restores
+Every offsite rclone operation walks the entire offsite tree, which is minutes on
+a 30k-object Proton tree, so the default drill deliberately avoids one: it restores
 a handful of files *by path* (`rclone copyto`). The nightly check now verifies
 only the files that changed, so the whole-mirror content verification is this
 `FULL_OFFSITE=1` walk (or a manual `backup ... --full-check`). Opt into the
 expensive walk with `FULL_OFFSITE=1`, which streams progress so it never looks
-hung. Per-fetch `FETCH_TIMEOUT` (default 300s) and the same network flags the
+hung; on a path target that walk compares sizes rather than hashes. Per-fetch
+`FETCH_TIMEOUT` (default 300s) and the same network flags the
 backup uses keep a wedged Proton session from hanging the drill. Like `backup`,
-the drill takes the host-wide `/run/lock/media-backup.lock`, so it serializes
-with any scheduled run instead of racing it for the single-use Proton session.
+the drill takes the host-wide `/run/lock/media-backup.lock`, so it never reads a
+tree that a scheduled run is simultaneously writing.
 
 ## Pruning a mirror (one-time)
 
 The routine pipeline only ever *adds*: `copy` never deletes, so a file removed
-from the source lives on in `current/` and in `proton:<Name>` forever. That is
+from the source lives on in `current/` and in `/srv/proton/<Name>` forever. That is
 the point — an accidental source deletion cannot reach the backup. There is no
 automated prune, and there should not be one: making the mirror track source
 deletions is exactly the `sync` failure mode the pipeline refuses.
@@ -365,7 +390,6 @@ path MUST be excluded or `sync` deletes every dump:
 ```sh
 # 1. Review what would be deleted. --dry-run touches nothing.
 sudo rclone sync /var/lib/media/Photos /var/backup/Photos/current \
-  --config /var/lib/backup/rclone.conf \
   --exclude '/db/**' \
   --exclude '/.cache/**' --exclude '**/.cache/**' --exclude '/rclone.conf' \
   --dry-run
@@ -385,13 +409,13 @@ Notes:
   new runs no longer copy them, but they remain in the existing mirrors. To
   reclaim them, delete the subtrees explicitly from both mirrors:
   `rclone delete /var/backup/Photos/current/thumbs` and `.../encoded-video`, and
-  `rclone purge proton:Photos/thumbs` and `proton:Photos/encoded-video`.
-- The offsite leg needs the same treatment, but a bare `sync` against Proton
-  aborts its delete phase on any IO error. For a whole subtree, `rclone purge`
-  the affected `proton:<Name>/<subtree>` and re-`copy` from the (now smaller)
-  source; for scattered files use the `--files-from` recipe below.
+  `rclone purge /srv/proton/Photos/thumbs` and `/srv/proton/Photos/encoded-video`.
+- The offsite leg needs the same treatment, but a bare `sync` aborts its delete
+  phase on any IO error. For a whole subtree, `rclone purge` the affected
+  `/srv/proton/<Name>/<subtree>` and re-`copy` from the (now smaller) source; for
+  scattered files use the `--files-from` recipe below.
 - Run it under the host lock (or outside the backup windows) so it does not race
-  a scheduled run for the single-use Proton session.
+  a scheduled run that is writing the same mount.
 - This is a **one-time** operation. Do not put it on a timer or make it routine:
   a mirror that follows deletions is no longer a backup.
 
@@ -406,8 +430,8 @@ a bare `sync` at all. Delete the exact set instead — same one-time rules apply
 #   library/admin/2021/2021-05-03/IMG_1234.jpg
 LIST=~/photos-purge-list.txt
 
-for target in /var/backup/Photos/current proton:Photos; do
-  sudo flock /run/lock/media-backup.lock rclone --config /var/lib/backup/rclone.conf \
+for target in /var/backup/Photos/current /srv/proton/Photos; do
+  sudo flock /run/lock/media-backup.lock rclone \
     delete "$target" --files-from "$LIST" --dry-run -v   # drop --dry-run to delete
 done
 ```
@@ -420,7 +444,7 @@ done
   that prefix a listed path, so it does not enumerate the whole mirror (crucial
   on Proton, where a full walk is rate-limited and slow).
 - Run under the host lock (`flock /run/lock/media-backup.lock`) so it cannot race
-  a scheduled run for the single-use Proton session.
+  a scheduled run that is writing the same mount.
 
 ## Adding a dataset
 
@@ -503,8 +527,24 @@ dataset needs `backup.enable = true` (the backup disk).
 - Only systemd's `RequiresMountsFor` guards the backup disk: a manual/seed
   `backup` run with the disk absent writes the whole mirror onto `/` and
   reports success.
-- `/var/lib/backup/rclone.conf` is documented as 0600/root but nothing creates
-  or enforces it; a looser-mode copy is accepted silently.
+- `/var/lib/proton/rclone.conf` is the one Proton credential: mode 0600,
+  `proton:proton`, created and rewritten by the operator/mount. Nothing enforces
+  the mode. Through `/srv/proton` the mount serves files to `proton`, root and
+  members of group `proton` only: files are 0660 and dirs 0770 (`--umask 007`),
+  and `--default-permissions` makes the kernel enforce those modes, so another
+  local user can see the path but not read or write through it.
+- A path target is checked by size, not content: through FUSE a checksum
+  read-back would stream the archive again, so a same-size corruption survives
+  the nightly and weekly checks (the drill's sampled sha256 still catches it in
+  the local mirror).
+- A path target's check reads Proton, not the mount's VFS cache: the driver
+  waits for the mount's upload queue to drain and forgets the dataset's cached
+  listing first. An upload that *fails* still surfaces in `journalctl -u
+  proton-mount`, not in the dataset's own result: the queue empties on an
+  errored upload (with retries) rather than staying full, so a permanently
+  failing upload can be seen only by the mount's log and by the next run's
+  size-only comparison, which then fails. The mount health timer is what notices
+  a wedged or de-authorised mount.
 - Every verification layer (both copies, `rclone check`, the drill) applies the
   same exclude list, so an over-broad or mistyped exclude removes files from the
   source listing, both mirrors, the check, and the drill sample alike — the loss

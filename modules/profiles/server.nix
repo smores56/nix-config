@@ -2,7 +2,6 @@
 {
   home = [
     ../features/calibre.nix
-    ../features/proton-drive.nix
   ];
   nixos = [
     ../nixos/secrets.nix
@@ -16,6 +15,7 @@
     ../nixos/nvidia.nix
     ../nixos/backup.nix
     ../nixos/backup-datasets.nix
+    ../nixos/proton-drive.nix
     ../nixos/github-backup.nix
     ../nixos/alerting.nix
     ../nixos/no-sleep.nix

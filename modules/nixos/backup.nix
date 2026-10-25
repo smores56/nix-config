@@ -24,12 +24,12 @@ in
         rcloneConfig = lib.mkOption {
           type = lib.types.path;
           default = "/var/lib/backup/rclone.conf";
-          description = "rclone config holding the offsite remote (mode 0600, owned by root). Read at runtime; never placed in the Nix store.";
+          description = "rclone config holding the offsite remote (mode 0600, owned by root). Read at runtime; never placed in the Nix store. Only used when `remote` names an rclone remote; a path remote needs none.";
         };
         remote = lib.mkOption {
           type = lib.types.str;
           default = "proton";
-          description = "rclone remote name for offsite mirrors, e.g. \"proton\".";
+          description = "Offsite target: an rclone remote name (e.g. \"proton\", written as `<remote>:<Name>`) or an absolute filesystem path (e.g. \"/srv/proton\", the Proton FUSE mount, written as `<path>/<Name>`).";
         };
         datasets = lib.mkOption {
           type = lib.types.attrsOf (

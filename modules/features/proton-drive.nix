@@ -1,11 +1,9 @@
-# Proton Drive as an on-demand FUSE mount (`pm`). The command stays in the
-# foreground so the mount exists only while it runs; Ctrl-C, a dropped SSH
-# session, or closing the terminal unmounts it.
+# `pm`: Proton Drive on a client, as an sshfs mount of smortress:/srv/proton.
 #
-# Proton refresh tokens are single-use, so two concurrent rclone clients can
-# blank the session (rclone#9880). The nightly backups use the same account
-# through a different config, so the mount refuses to start while a backup unit
-# is active, and a watcher stops it if a backup begins while it is mounted.
+# The server owns the single rclone mount and its token (see
+# modules/nixos/proton-drive.nix), so no client ever holds a Proton credential.
+# The command stays in the foreground: Ctrl-C or a dropped connection unmounts
+# it, and nothing keeps a stale handle on the remote tree.
 {
   config,
   lib,
@@ -22,125 +20,70 @@ let
     name = "proton-mount";
     runtimeInputs = [
       pkgs.coreutils
-      pkgs.rclone
-      pkgs.systemd
+      pkgs.openssh
+      pkgs.sshfs
       pkgs.util-linux
     ];
     text = ''
       mountpath=${lib.escapeShellArg mountPath}
-      remote=${lib.escapeShellArg cfg.remote}
-      grace=${toString cfg.backupGrace}
+      host=smortress
+      remote=${lib.escapeShellArg cfg.serverPath}
 
-      # The *-watch units are always running; only the run and full-check units
-      # take the Proton credential.
-      backup_units() {
-        while read -r unit _; do
-          case "$unit" in
-            *-watch.service | *-dump.service | backup-freshness.service) continue ;;
-          esac
-          printf '%s\n' "$unit"
-        done < <(systemctl list-units --type=service --state=active --no-legend 'backup-*.service' 2>/dev/null || true)
-        return 0
-      }
-
-      if mountpoint -q "$mountpath" 2>/dev/null; then
-        echo "proton-mount: already mounted at $mountpath" >&2
+      # A leftover FUSE mount (a killed sshfs leaves ENOTCONN) or a pm already
+      # running here would make sshfs fail with a misleading error, so name it.
+      if mountpoint -q "$mountpath"; then
+        printf 'proton-mount: %s is already a mountpoint (another pm, or a stale one).\n' "$mountpath" >&2
+        printf 'proton-mount: if no pm is running there, clear it with: fusermount3 -uz %s\n' "$mountpath" >&2
         exit 1
       fi
 
-      # Fail closed rather than racing a backup's token refresh.
-      running="$(backup_units)"
-      if [[ -n "$running" ]]; then
-        printf 'proton-mount: refusing to start while a backup is running:\n%s\n' "$running" >&2
+      # sshfs reports the same generic disconnect for a down mount and a refused
+      # login, so probe the two separately and name the broken one.
+      if ! ssh -o BatchMode=yes -o ConnectTimeout=15 "$host" true; then
+        printf 'proton-mount: ssh to %s failed (tunnel down, or your key is not accepted there).\n' "$host" >&2
+        printf 'proton-mount: check with: ssh %s true\n' "$host" >&2
+        exit 1
+      fi
+      if ! ssh -o BatchMode=yes -o ConnectTimeout=15 "$host" mountpoint -q "$remote"; then
+        printf 'proton-mount: %s has nothing mounted at %s.\n' "$host" "$remote" >&2
+        printf 'proton-mount: on %s run: sudo systemctl restart proton-mount (an expired token is the usual cause)\n' "$host" >&2
         exit 1
       fi
 
       mkdir -p "$mountpath"
-      printf 'proton-mount: %s -> %s\n' "$remote" "$mountpath" >&2
-      printf 'Writable: changes upload when a file closes. Ctrl-C to unmount.\n' >&2
+      printf 'proton-mount: %s:%s -> %s\n' "$host" "$remote" "$mountpath" >&2
+      printf 'Disconnect (network drop, laptop sleep) reconnects; Ctrl-C unmounts.\n' >&2
 
-      # Run rclone in the background so a signal to this script alone (not just
-      # the terminal's process group) still tears the mount down.
-      rclone mount "$remote" "$mountpath" \
-        --vfs-cache-mode writes \
-        --dir-cache-time 30s \
-        --poll-interval 0 \
-        --stats-one-line \
-        "$@" &
-      child=$!
-      watcher=""
-
-      cleanup() {
-        if [[ -n "$watcher" ]]; then
-          kill "$watcher" 2>/dev/null || true
-        fi
-        if kill -0 "$child" 2>/dev/null; then
-          kill -TERM "$child" 2>/dev/null || true
-          wait "$child" 2>/dev/null || true
-        fi
-        if mountpoint -q "$mountpath" 2>/dev/null; then
-          # The setuid wrapper from /run/wrappers does the unmount; the store
-          # binary cannot mount as an unprivileged user.
-          fusermount3 -u "$mountpath" 2>/dev/null ||
-            fusermount -u "$mountpath" 2>/dev/null || true
-        fi
-      }
-
-      # A backup can still start after the guard above. Warn, give in-flight
-      # work a grace period, then stop rclone (SIGTERM flushes pending writes).
-      watch_backups() {
-        while kill -0 "$child" 2>/dev/null; do
-          units="$(backup_units)"
-          if [[ -n "$units" ]]; then
-            printf 'proton-mount: backup started:\n%s\n' "$units" >&2
-            printf 'proton-mount: unmounting in %ss unless it finishes first; Ctrl-C now to stop sooner.\n' "$grace" >&2
-            sleep "$grace"
-            if [[ -z "$(backup_units)" ]]; then
-              printf 'proton-mount: backup finished; keeping the mount.\n' >&2
-              continue
-            fi
-            printf 'proton-mount: backup still running; stopping the mount.\n' >&2
-            kill -TERM "$child" 2>/dev/null || true
-            return 0
-          fi
-          sleep 5
-        done
-      }
-
-      trap cleanup EXIT
-      trap 'exit 130' INT
-      trap 'exit 143' TERM
-      trap 'exit 129' HUP
-
-      watch_backups &
-      watcher=$!
-
-      wait "$child"
+      # `exec`: sshfs handles SIGINT/SIGTERM by unmounting itself, so there is
+      # no wrapper left to trap signals or hang on a dead connection.
+      # ConnectTimeout/BatchMode reach ssh (sshfs forwards -o there), so an Access
+      # ProxyCommand that cannot complete fails instead of hanging the mount.
+      exec sshfs "$host:$remote" "$mountpath" \
+        -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,follow_symlinks,dir_cache=yes,ConnectTimeout=15,BatchMode=yes
     '';
   };
 in
 {
   options.protonDrive = {
-    enable = lib.mkEnableOption "the on-demand Proton Drive FUSE mount (`pm`)";
+    enable = lib.mkEnableOption "the on-demand Proton Drive sshfs mount (`pm`)";
     mountPoint = lib.mkOption {
       type = lib.types.strMatching "[^/]+";
       default = "proton";
       description = "Directory under the home directory to mount Proton Drive on.";
     };
-    remote = lib.mkOption {
+    serverPath = lib.mkOption {
       type = lib.types.str;
-      default = "proton:";
-      description = "rclone remote and path to mount.";
-    };
-    backupGrace = lib.mkOption {
-      type = lib.types.ints.positive;
-      default = 60;
-      description = "Seconds the mount stays up after a backup starts, so in-flight work can finish before rclone is stopped.";
+      default = "/srv/proton";
+      description = "Mountpoint of the server's Proton Drive mount (protonDrive.mountPoint on smortress).";
     };
   };
 
+  # Linux only: macOS has no macFUSE here, so smoreswork keeps rsync-only access.
   config = lib.mkIf (isLinux && cfg.enable) {
-    home.packages = [ protonMount ];
+    home.packages = [
+      pkgs.sshfs
+      protonMount
+    ];
     user.shellAbbrs.pm = "proton-mount";
   };
 }

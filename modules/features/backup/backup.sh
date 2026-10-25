@@ -16,24 +16,40 @@
 #   The remote is a plain append-only mirror -- stale files there are harmless and
 #   are never pruned, so a lost local disk cannot take the offsite copy with it.
 #
-# Every mirror is verified with `rclone check --checksum --one-way`, scoped to the
-# files the copy actually wrote this run (`--files-from0`) instead of the whole
-# tree. Which pair is compared depends on the dataset: the offsite copy against
-# the local mirror, or -- for a local-only dataset (`--offsite` absent) -- the
-# source against the local mirror. When nothing changed the check is skipped and
+# Every mirror is verified with `rclone check --one-way`, scoped to the files
+# the copy actually wrote this run (`--files-from0`) instead of the whole tree.
+# Which pair is compared depends on the dataset: the offsite copy against the
+# local mirror, or -- for a local-only dataset (`--offsite` absent) -- the source
+# against the local mirror. When nothing changed the check is skipped and
 # `--full-check` forces the whole-tree walk for a periodic integrity scan.
 # rclone exits 0 even when it could not compare anything (e.g. a hash-less
 # backend), so the "<n> hashes could not be checked" summary is parsed and any
 # non-zero count is a hard failure: an unverified mirror is not a backup.
+#
+# The offsite target is either an rclone remote (`<remote>:<Name>`) or an
+# absolute filesystem path (`<path>/<Name>`, typically the host's Proton FUSE
+# mount). A path target is verified with `--size-only`: its files live behind
+# FUSE, so a checksum read-back would stream the whole archive from Proton
+# again. A path target also needs no rclone config, because only the mount
+# process authenticates.
+#
+# A path target also needs `--offsite-rc-socket`: the mount uploads
+# asynchronously (`--vfs-write-back`), so the copy's exit only means the bytes
+# reached the VFS cache, and a `--size-only` check would read that same cache.
+# The driver therefore waits on the mount's own RC until the upload queue is
+# empty, then invalidates the mount's cached listing for the dataset, so the
+# check compares against what Proton actually holds. A socket that is missing
+# or a queue that never drains fails the run: a backup is not "done" until the
+# offsite copy exists at the destination.
 #
 # Every rclone step is watched for stalled progress: a transfer that stops
 # advancing its stats counters is killed and retried (the copy is resumable).
 # rclone's own idle timeout does not catch a wedged upload session, which once
 # hung a seed run for 18h while it held the shared Proton lock.
 #
-# The rclone config (holding the Proton credential) is read from a file at
-# runtime, never passed on the command line (argv leaks to `ps`) and never baked
-# into the Nix store.
+# An rclone config (for a remote-name target) is read from a file at runtime,
+# never passed on the command line (argv leaks to `ps`) and never baked into
+# the Nix store.
 #
 # Deliberate losses versus the deleted Python driver: the stall watchdog samples
 # the log every 30s instead of on every streamed line (rclone logs its counters
@@ -42,8 +58,10 @@ set -uo pipefail
 umask 077
 
 # Host-wide run lock shared by every entry point (systemd timer, manual
-# `backup`, seed runs). Serializing here stops two rclone clients blanking the
-# single-use Proton refresh token (rclone#9880). Created 0600 in /run/lock.
+# `backup`, seed runs). Offsite datasets all write through the same offsite
+# target (one Proton mount or one rclone remote), so serializing keeps their
+# transfers from competing for the mount's upload bandwidth and VFS cache.
+# Created 0600 in /run/lock.
 LOCK_PATH=/run/lock/media-backup.lock
 # rclone logs a stats block this often; the watchdog cannot observe progress at
 # a finer cadence. BACKUP_STATS_INTERVAL is a test-only override: the Nix module
@@ -79,6 +97,7 @@ BACKUP_ROOT=""
 REMOTE="proton"
 RCLONE_CONFIG=""
 OFFSITE=0
+OFFSITE_RC_SOCKET=""
 FULL_CHECK=0
 DRY_RUN=0
 NO_LOCK=0
@@ -90,8 +109,10 @@ EXCLUDES=()
 
 usage() {
   cat >&2 <<'EOF'
-usage: backup --name NAME --source DIR --backup-root DIR --rclone-config FILE
-              [--remote NAME] [--offsite] [--pre-backup SCRIPT] [--exclude GLOB]...
+usage: backup --name NAME --source DIR --backup-root DIR
+              [--remote NAME|PATH] [--rclone-config FILE] [--offsite]
+              [--offsite-rc-socket FILE]
+              [--pre-backup SCRIPT] [--exclude GLOB]...
               [--stall-timeout DUR] [--timeout DUR] [--date DATE]
               [--full-check] [--dry-run] [--no-lock]
 EOF
@@ -155,6 +176,10 @@ while (($# > 0)); do
       OFFSITE=1
       shift
       ;;
+    --offsite-rc-socket)
+      OFFSITE_RC_SOCKET=${2:?}
+      shift 2
+      ;;
     --pre-backup)
       PRE_BACKUP=${2:?}
       shift 2
@@ -192,7 +217,19 @@ while (($# > 0)); do
   esac
 done
 
-[[ -n $NAME && -n $SOURCE && -n $BACKUP_ROOT && -n $RCLONE_CONFIG ]] || usage
+[[ -n $NAME && -n $SOURCE && -n $BACKUP_ROOT ]] || usage
+# A path target is the Proton mount and needs no credential; a remote-name
+# target authenticates with the config, so require one explicitly instead of
+# letting rclone fall back to a stray config in $HOME.
+is_path_target() { [[ $REMOTE == /* ]]; }
+is_path_target || [[ -n $RCLONE_CONFIG ]] ||
+  die "--rclone-config is required when --remote names an rclone remote"
+# The RC socket is the mounted rclone's control endpoint; an rclone-remote
+# target has no mount behind it (rclone blocks until its uploads finish there).
+if [[ -n $OFFSITE_RC_SOCKET ]]; then
+  ((OFFSITE)) || die "--offsite-rc-socket requires --offsite: nothing is copied through a mount"
+  is_path_target || die "--offsite-rc-socket only applies to a path target (the Proton mount), not an rclone remote"
+fi
 # The name is a local path component and a remote folder, and the date becomes a
 # version folder: both must be single tokens that cannot escape the backup tree.
 [[ $NAME =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && $NAME != *..* ]] ||
@@ -205,8 +242,12 @@ STALL_SECONDS=$(parse_duration "$STALL") ||
   die "stall-timeout ${STALL_SECONDS}s is below twice the rclone stats interval; pass 0 to disable"
 TIMEOUT_SECONDS=$(parse_duration "$STEP_TIMEOUT") ||
   die "invalid --timeout '$STEP_TIMEOUT': use <number><s|m|h|d>"
+# How long the mount's upload queue may take to drain after the offsite copy. The
+# run's own wall-clock budget is the bound; `--timeout 0` (no step timeout)
+# falls back to the driver default so a queue that never drains cannot pass.
+DRAIN_LIMIT=$((TIMEOUT_SECONDS > 0 ? TIMEOUT_SECONDS : 12 * 3600))
 if ((NO_LOCK)) && [[ ${BACKUP_ALLOW_NO_LOCK:-} != 1 ]]; then
-  die "--no-lock requires BACKUP_ALLOW_NO_LOCK=1: bypassing the host-wide lock risks two rclone clients blanking the single-use Proton token"
+  die "--no-lock requires BACKUP_ALLOW_NO_LOCK=1: bypassing the host-wide lock lets concurrent runs compete for the shared offsite target"
 fi
 
 DATASET_DIR=$BACKUP_ROOT/$NAME
@@ -214,7 +255,30 @@ LOCAL=$DATASET_DIR/current
 VERSIONS=$DATASET_DIR/versions
 MARKER=$DATASET_DIR/BACKUP-FAILED
 LAST_SUCCESS=$DATASET_DIR/BACKUP-LAST-SUCCESS
-OFFSITE_TARGET=$REMOTE:$NAME
+
+# `remote:Name` for an rclone remote, `path/Name` for a filesystem path. One
+# helper so the copy, the check, and the dry run cannot disagree on the layout.
+offsite_target() {
+  if is_path_target; then
+    printf '%s/%s' "${REMOTE%/}" "$1"
+  else
+    printf '%s:%s' "${REMOTE%:}" "$1"
+  fi
+}
+OFFSITE_TARGET=$(offsite_target "$NAME")
+
+CONFIG_FLAGS=()
+[[ -n $RCLONE_CONFIG ]] && CONFIG_FLAGS=(--config "$RCLONE_CONFIG")
+# A path target is verified by size: re-reading content hashes through FUSE
+# would pull the entire archive from Proton again. A remote keeps hashes.
+if is_path_target; then
+  OFFSITE_COMPARE=size-only
+  # Proton's draft-replacement retry only exists on the remote backend.
+  PROTON_FLAGS=()
+else
+  OFFSITE_COMPARE=checksum
+  PROTON_FLAGS=(--protondrive-replace-existing-draft=true)
+fi
 
 EXCLUDE_FLAGS=()
 for pattern in ${EXCLUDES[@]+"${EXCLUDES[@]}"}; do EXCLUDE_FLAGS+=(--exclude "$pattern"); done
@@ -340,11 +404,11 @@ moved_data() {
 }
 
 build_check() {
-  # build_check SOURCE DEST [PATHS_FILE]
-  CHECK=(rclone --config "$RCLONE_CONFIG" "${NET_FLAGS[@]}" "${STATS_FLAGS[@]}"
-    check --checksum --one-way "$1" "$2")
-  if [[ -n ${3:-} ]]; then
-    CHECK+=(--files-from0 "$3")
+  # build_check COMPARE SOURCE DEST [PATHS_FILE]
+  CHECK=(rclone ${CONFIG_FLAGS[@]+"${CONFIG_FLAGS[@]}"} "${NET_FLAGS[@]}" "${STATS_FLAGS[@]}"
+    check "--$1" --one-way "$2" "$3")
+  if [[ -n ${4:-} ]]; then
+    CHECK+=(--files-from0 "$4")
   else
     # Excluded files never enter the mirror, so a whole-tree walk must apply the
     # same patterns; a scoped check names files the excludes never match.
@@ -366,11 +430,64 @@ assert_check_ok() {
   fi
 }
 
-# verify_mirror LABEL SOURCE DEST COPY_LOG
+# True when the mount has nothing left to push to Proton. `vfs/queue` lists
+# pending *and* in-flight uploads, and `vfs/stats` counts them directly; the
+# mount's core/stats `transferring`/`checking` catch a transfer that is running
+# but no longer queued. (Its `transfers` counter is not used: it stays non-zero
+# after an upload finishes.) All calls go through the mount's own RC, never a
+# second Proton client.
+vfs_drained() {
+  local queue cache active
+  queue=$(rclone rc --unix-socket "$OFFSITE_RC_SOCKET" vfs/queue 2>/dev/null |
+    jq -r '.queue | length' 2>/dev/null) || return 1
+  cache=$(rclone rc --unix-socket "$OFFSITE_RC_SOCKET" vfs/stats 2>/dev/null |
+    jq -r '((.diskCache.uploadsQueued // 0) + (.diskCache.uploadsInProgress // 0))' 2>/dev/null) || return 1
+  active=$(rclone rc --unix-socket "$OFFSITE_RC_SOCKET" core/stats 2>/dev/null |
+    jq -r '[((.transferring // []) | length), (.checking // 0)] | add' 2>/dev/null) || return 1
+  [[ $queue =~ ^[0-9]+$ && $cache =~ ^[0-9]+$ && $active =~ ^[0-9]+$ ]] || return 1
+  ((queue == 0 && cache == 0 && active == 0))
+}
+
+# The mount uploads asynchronously (--vfs-write-back), so the copy's exit only
+# means the bytes reached the VFS cache. Block until the mount has handed
+# everything to Proton; a queue that never drains fails the run instead of
+# letting it record success.
+wait_for_uploads() {
+  local pending
+  local deadline=$((SECONDS + DRAIN_LIMIT))
+  while :; do
+    [[ -S $OFFSITE_RC_SOCKET ]] ||
+      fail "offsite RC socket $OFFSITE_RC_SOCKET disappeared; proton-mount.service is down"
+    if vfs_drained; then
+      echo "offsite upload queue drained"
+      return 0
+    fi
+    if ((SECONDS >= deadline)); then
+      pending=$(rclone rc --unix-socket "$OFFSITE_RC_SOCKET" vfs/queue 2>/dev/null |
+        jq -r '[.queue[] | .name] | join(", ")' 2>/dev/null || true)
+      fail "offsite upload queue did not drain within ${DRAIN_LIMIT}s (still queued: ${pending:-unavailable}); Proton is not receiving the copy"
+    fi
+    sleep 5
+  done
+}
+
+# Forget the mount's cached listing for this dataset, so the --size-only check
+# below re-lists it from Proton instead of answering from the VFS cache. rclone
+# 1.75's `vfs/forget dir=` clears that directory and its whole subtree (there is
+# no recursive parameter yet) and marks the parent listing stale.
+forget_offsite_listing() {
+  local target=/$NAME
+  if ! rclone rc --unix-socket "$OFFSITE_RC_SOCKET" vfs/forget dir="$target" \
+    >"$WORK/forget.log" 2>&1; then
+    fail "could not drop the mount's cached listing for $target: $(tail -n 3 "$WORK/forget.log")"
+  fi
+}
+
+# verify_mirror LABEL COMPARE SOURCE DEST COPY_LOG
 # Returns 0 when the mirror was verified this run and 1 when the check was
 # skipped, so the caller never clears a prior failure's marker on a skip.
 verify_mirror() {
-  local label=$1 src=$2 dest=$3 copy_log=$4
+  local label=$1 compare=$2 src=$3 dest=$4 copy_log=$5
   local check_log=$WORK/check.log paths=$WORK/paths
   if ((FULL_CHECK == 0)); then
     extract_paths "$copy_log" >"$paths"
@@ -380,9 +497,9 @@ verify_mirror() {
       printf 'no %s changes; skipping verification\n' "$label"
       return 1
     fi
-    build_check "$src" "$dest" "$paths"
+    build_check "$compare" "$src" "$dest" "$paths"
   else
-    build_check "$src" "$dest"
+    build_check "$compare" "$src" "$dest"
   fi
   run_step "$label check" "$STALL_SECONDS" "$check_log" 3 -- "${CHECK[@]}"
   assert_check_ok "$label" "$check_log"
@@ -417,6 +534,10 @@ require_source() {
 
 run_backup() {
   DATE=$(resolve_date "$DATE")
+  # Without the mount's RC there is no way to prove the copy reached Proton, so
+  # fail before copying rather than after a multi-hour run.
+  [[ -z $OFFSITE_RC_SOCKET || -S $OFFSITE_RC_SOCKET ]] ||
+    fail "offsite RC socket $OFFSITE_RC_SOCKET is missing; proton-mount.service is down or was not built with --rc"
   install -d -m 0700 "$LOCAL" "$VERSIONS/$DATE" || fail "cannot create $DATASET_DIR"
 
   # preBackup runs first, outside the host lock, and may *produce* the source (a
@@ -436,8 +557,9 @@ run_backup() {
   require_source
 
   if ((NO_LOCK == 0)); then
-    # Proton refresh tokens are single-use, so offsite datasets serialize on the
-    # host-wide lock; a local-only dataset only needs to serialize with itself.
+    # Offsite datasets all write through the same target (one Proton mount or
+    # one rclone remote), so they serialize on the host-wide lock; a local-only
+    # dataset only needs to serialize with itself.
     if ((OFFSITE)); then
       acquire_lock "$LOCK_PATH"
     else
@@ -446,7 +568,7 @@ run_backup() {
   fi
 
   local local_log=$WORK/local.log offsite_log=$WORK/offsite.log
-  local local_args=(--config "$RCLONE_CONFIG" "${NET_FLAGS[@]}" "${STATS_FLAGS[@]}")
+  local local_args=(${CONFIG_FLAGS[@]+"${CONFIG_FLAGS[@]}"} "${NET_FLAGS[@]}" "${STATS_FLAGS[@]}")
   # With no offsite leg the local copy's log is the only record of what changed,
   # so it (and only it) emits JSON for the local check to scope against.
   ((OFFSITE)) || local_args+=("${COPY_LOG_FLAGS[@]}")
@@ -456,16 +578,23 @@ run_backup() {
 
   local verified=0
   if ((OFFSITE)); then
-    # --protondrive-replace-existing-draft: a failed Proton upload leaves a
-    # draft, and without this the retry dies with "a draft exist".
+    # PROTON_FLAGS carries --protondrive-replace-existing-draft: a failed Proton
+    # upload leaves a draft, and without it the retry dies with "a draft exist".
+    # A path target is the mount's filesystem, so it gets no backend flags.
     run_step "offsite copy" "$STALL_SECONDS" "$offsite_log" 3 -- rclone \
-      --config "$RCLONE_CONFIG" "${NET_FLAGS[@]}" "${STATS_FLAGS[@]}" "${COPY_LOG_FLAGS[@]}" \
-      --protondrive-replace-existing-draft=true \
+      ${CONFIG_FLAGS[@]+"${CONFIG_FLAGS[@]}"} "${NET_FLAGS[@]}" "${STATS_FLAGS[@]}" "${COPY_LOG_FLAGS[@]}" \
+      ${PROTON_FLAGS[@]+"${PROTON_FLAGS[@]}"} \
       copy "$LOCAL" "$OFFSITE_TARGET" \
       ${EXCLUDE_FLAGS[@]+"${EXCLUDE_FLAGS[@]}"}
-    verify_mirror offsite "$LOCAL" "$OFFSITE_TARGET" "$offsite_log" && verified=1
+    if [[ -n $OFFSITE_RC_SOCKET ]]; then
+      # The copy reached the mount's VFS cache only: wait for the mount to hand
+      # it to Proton, then drop the cached listing the check would otherwise read.
+      wait_for_uploads
+      forget_offsite_listing
+    fi
+    verify_mirror offsite "$OFFSITE_COMPARE" "$LOCAL" "$OFFSITE_TARGET" "$offsite_log" && verified=1
   else
-    verify_mirror local "$SOURCE" "$LOCAL" "$local_log" && verified=1
+    verify_mirror local checksum "$SOURCE" "$LOCAL" "$local_log" && verified=1
   fi
 
   # Clear the marker only when the mirror was actually verified this run: a
@@ -483,18 +612,18 @@ run_backup() {
 print_dry_run() {
   local args
   [[ -n $PRE_BACKUP ]] && printf '+ %s\n' "$PRE_BACKUP"
-  args=(rclone --config "$RCLONE_CONFIG" "${NET_FLAGS[@]}" "${STATS_FLAGS[@]}")
+  args=(rclone ${CONFIG_FLAGS[@]+"${CONFIG_FLAGS[@]}"} "${NET_FLAGS[@]}" "${STATS_FLAGS[@]}")
   ((OFFSITE)) || args+=("${COPY_LOG_FLAGS[@]}")
   args+=(copy "$SOURCE" "$LOCAL" --backup-dir "$VERSIONS/$DATE")
   args+=(${EXCLUDE_FLAGS[@]+"${EXCLUDE_FLAGS[@]}"})
   printf '+ %s\n' "$(quote_args "${args[@]}")"
   if ((OFFSITE)); then
-    printf '+ %s\n' "$(quote_args rclone --config "$RCLONE_CONFIG" "${NET_FLAGS[@]}" \
-      "${STATS_FLAGS[@]}" "${COPY_LOG_FLAGS[@]}" --protondrive-replace-existing-draft=true \
+    printf '+ %s\n' "$(quote_args rclone ${CONFIG_FLAGS[@]+"${CONFIG_FLAGS[@]}"} "${NET_FLAGS[@]}" \
+      "${STATS_FLAGS[@]}" "${COPY_LOG_FLAGS[@]}" ${PROTON_FLAGS[@]+"${PROTON_FLAGS[@]}"} \
       copy "$LOCAL" "$OFFSITE_TARGET" ${EXCLUDE_FLAGS[@]+"${EXCLUDE_FLAGS[@]}"})"
-    build_check "$LOCAL" "$OFFSITE_TARGET"
+    build_check "$OFFSITE_COMPARE" "$LOCAL" "$OFFSITE_TARGET"
   else
-    build_check "$SOURCE" "$LOCAL"
+    build_check checksum "$SOURCE" "$LOCAL"
   fi
   printf '+ %s\n' "$(quote_args "${CHECK[@]}")"
 }

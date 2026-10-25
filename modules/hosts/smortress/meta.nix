@@ -23,9 +23,6 @@ in
       # this lands.
       passwordFile = "/run/secrets/calibre-password";
     };
-    # The `proton:` rclone remote lives in ~/.config/rclone/rclone.conf (not
-    # Nix-managed); `pm` mounts it on demand as ~/proton.
-    protonDrive.enable = true;
   };
 
   nixosOptions = {
@@ -109,6 +106,13 @@ in
     # These generic datasets replaced the old Immich-specific backup
     # pipeline, which has been removed.
     backup.enable = true;
+    # Offsite is this host's Proton Drive mount, not an rclone remote: the mount
+    # owns the only token and the backups write through it as plain files.
+    backup.remote = "/srv/proton";
+    protonDrive.enable = true;
+    # Full checks through the mount compare sizes only (a checksum read-back
+    # would stream the whole archive through FUSE into the cache), so a weekly
+    # full check costs one Proton walk rather than a full re-download.
     backup.datasets.Videos = {
       schedule = "*-*-* 01:00:00";
       fullCheckSchedule = "Sun *-*-* 07:00:00";

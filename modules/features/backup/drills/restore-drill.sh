@@ -14,19 +14,20 @@
 #   Dataset  name of a backup.datasets.<Dataset> entry (e.g. Photos)
 #   samples  files to hash-compare source vs local vs offsite (default 20)
 #
-# Cost model: ANY offsite rclone operation walks the whole remote. On a 30k-object
-# Proton tree a full walk takes minutes, so the default drill never does one — it
-# restores a few named files by path (cheap). The nightly check is now scoped to
-# the files that changed, so whole-mirror content verification is this drill's
-# FULL_OFFSITE=1 walk (`rclone check`), or a `backup --full-check` run.
+# Cost model: ANY offsite rclone operation walks the whole offsite target. On a
+# 30k-object Proton tree a full walk takes minutes, so the default drill never
+# does one — it restores a few named files by path (cheap). The nightly check is
+# scoped to the files that changed, so whole-mirror content verification is this
+# drill's FULL_OFFSITE=1 walk (`rclone check`), or a `backup --full-check` run.
 #
-# The whole drill holds the same host-wide flock the driver takes, because every
-# dataset shares one Proton credential and two concurrent rclone clients blank
-# the single-use refresh token (rclone#9880).
+# The whole drill holds the same host-wide flock the driver takes, so its offsite
+# reads never race a run that is writing the same trees.
 #
 # Env overrides (defaults match the smortress datasets):
-#   RCLONE CONF            rclone binary and config
-#   SRC LOC REMOTE         source dir, local mirror, remote path
+#   RCLONE CONF            rclone binary and config (a remote-name target only;
+#                          a path target such as /srv/proton needs no config)
+#   SRC LOC REMOTE         source dir, local mirror, offsite target
+#                          (`remote:Name` or a path such as /srv/proton/Name)
 #   N                      files hashed source-vs-local (default 20)
 #   OFFN                   named files restored from offsite (default 3)
 #   EXCLUDES               rclone exclude args (defaults to the unit's, else drops .cache + secrets)
@@ -94,8 +95,25 @@ done
 
 SRC=${SRC:-${unit_source:-/var/lib/media/$NAME}}
 LOC=${LOC:-/var/backup/$NAME/current}
-REMOTE=${REMOTE:-${unit_remote:+${unit_remote}:${NAME}}}
-REMOTE=${REMOTE:-proton:$NAME}
+# Same target shape as the driver: `remote:Name` for an rclone remote,
+# `path/Name` for a filesystem path (the host's Proton mount).
+if [ -n "${REMOTE:-}" ]; then
+  :
+elif [ -n "${unit_remote:-}" ]; then
+  case $unit_remote in
+    /*) REMOTE="${unit_remote%/}/$NAME" ;;
+    *) REMOTE="${unit_remote%:}:$NAME" ;;
+  esac
+else
+  REMOTE=proton:$NAME
+fi
+
+# A path target is served by the Proton mount, which owns the only credential;
+# passing a config there would be a second client of the same account.
+case $REMOTE in
+  /*) CONF_ARGS=() ;;
+  *) CONF_ARGS=(--config "$CONF") ;;
+  esac
 
 # Exclude args, in priority order: EXCLUDES env, the unit's --exclude list, the
 # smortress defaults. Kept as an array so patterns with spaces stay intact.
@@ -169,18 +187,18 @@ if [ "$DRILL_ONLY_DB" != 1 ]; then
   # it applies to the copy, so the sample is exactly what is in the mirror (N5).
   # Filenames may contain spaces or glob characters, so the list is read into an
   # array and every use is quoted.
-  if ! "$RCLONE" lsf "$SRC" --recursive --files-only --config "$CONF" "${EXCL_ARGS[@]}" 2>/dev/null \
+  if ! "$RCLONE" lsf "$SRC" --recursive --files-only "${CONF_ARGS[@]}" "${EXCL_ARGS[@]}" 2>/dev/null \
     | shuf -n "$N" > "$TMP/list"; then
     fail=$((fail + 1)); echo "FAIL could not list source $SRC"
   fi
   mapfile -t samples < "$TMP/list"
 
   step "1: source vs local (size/count + $N sha256)"
-  src_size=$("$RCLONE" size "$SRC" --config "$CONF" "${EXCL_ARGS[@]}" 2>/dev/null || true)
+  src_size=$("$RCLONE" size "$SRC" "${CONF_ARGS[@]}" "${EXCL_ARGS[@]}" 2>/dev/null || true)
   # A postgres dataset's dump lives only in the mirror (the preBackup writes it
   # into current/db), so it must not count toward source-vs-local parity. The
   # offsite check below still compares it, because both sides have it.
-  loc_size=$("$RCLONE" size "$LOC" --config "$CONF" "${EXCL_ARGS[@]}" --exclude '/db/**' 2>/dev/null || true)
+  loc_size=$("$RCLONE" size "$LOC" "${CONF_ARGS[@]}" "${EXCL_ARGS[@]}" --exclude '/db/**' 2>/dev/null || true)
   printf '%-10s ' source; printf '%s\n' "$src_size" | sed -E 's/Total objects: /n=/; s/Total size: /bytes=/' | tr '\n' ' '; echo
   printf '%-10s ' local; printf '%s\n' "$loc_size" | sed -E 's/Total objects: /n=/; s/Total size: /bytes=/' | tr '\n' ' '; echo
   # The counts must match; a failed `rclone size` yields an empty token, which
@@ -222,7 +240,7 @@ if [ "$DRILL_ONLY_DB" != 1 ]; then
     mkdir -p "$(dirname "$dest")"
     printf 'fetch %s ... ' "$rel"
     if timeout "$FETCH_TIMEOUT" "$RCLONE" copyto "$REMOTE/$rel" "$dest" \
-      --config "$CONF" "${NET[@]}" -q; then
+      "${CONF_ARGS[@]}" "${NET[@]}" -q; then
       # Both hashes must actually be read; a failed sha256sum yields an empty
       # token and an empty-vs-empty comparison would print a false OK.
       src_hash=$(sha256sum "$SRC/$rel" 2>/dev/null | cut -d' ' -f1) || true
@@ -242,12 +260,18 @@ if [ "$DRILL_ONLY_DB" != 1 ]; then
 
   if [ "$FULL_OFFSITE" = 1 ]; then
     # `rclone check` already traverses every object, so there is no separate
-    # `rclone size` walk here (that would walk the remote twice).
+    # `rclone size` walk here (that would walk the remote twice). A path target
+    # is the Proton mount, where content hashes would stream the whole archive
+    # through FUSE; compare sizes instead, matching the driver's offsite check.
+    case $REMOTE in
+      /*) CHECK_COMPARE=--size-only ;;
+      *) CHECK_COMPARE=--checksum ;;
+    esac
     step "3: offsite walk (slow — every object on the remote)"
-    echo "running: rclone check --checksum --one-way local offsite"
+    echo "running: rclone check $CHECK_COMPARE --one-way local offsite"
     check_rc=0
-    check_out=$("$RCLONE" check --checksum --one-way "$LOC" "$REMOTE" \
-      --config "$CONF" "${NET[@]}" "${STATS[@]}" "${EXCL_ARGS[@]}" 2>&1) || check_rc=$?
+    check_out=$("$RCLONE" check "$CHECK_COMPARE" --one-way "$LOC" "$REMOTE" \
+      "${CONF_ARGS[@]}" "${NET[@]}" "${STATS[@]}" "${EXCL_ARGS[@]}" 2>&1) || check_rc=$?
     printf '%s\n' "$check_out" | tail -5
     # A non-zero exit means files differ or are missing; do not swallow it.
     if [ "$check_rc" -ne 0 ]; then
