@@ -29,7 +29,6 @@ in
 
       "*" = {
         IdentityFile = "${config.user.sshKey}.pub";
-        ForwardAgent = false;
         Compression = false;
         ServerAliveInterval = 0;
         ServerAliveCountMax = 3;

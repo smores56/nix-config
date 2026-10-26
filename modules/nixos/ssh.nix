@@ -8,8 +8,10 @@ let
   authorizedKeys = [
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEu3DfhswY9f9hum/0OhAw2833CkZOP6wVKW5yJk6GpU sam@sammohr.dev"
     # k1 (touch + PIN) — personal and work identities.
-    "sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIJDAVumkw2stzDLJY/pHp1RYJnBZysEkFOCd2lzYh8mTAAAABHNzaDo= smores personal signing k1"
-    "sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIEruLOejXEQnbEJqaJOUA6xY8vVCVQv/UTgLMC8TFcjHAAAABHNzaDo= smores work signing k1"
+    # no-touch-required: SSH is free after login (the PIN comes from the
+    # session cache); presence is the laptop login, not this signature.
+    "no-touch-required sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIDLiB81jggq+Oa2K+zUTeIQkWf/UsfgZt4vgezUtuPBAAAAABHNzaDo= smores personal k1"
+    "no-touch-required sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIMmKpZP/35tlH3Z7vM/Tje53S6MvB4Qj6miakUyf/tHJAAAABHNzaDo= smores work k1"
   ];
 in
 {

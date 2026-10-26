@@ -116,6 +116,18 @@ in
     # would also outlive the credential decision, so the design keeps this
     # host out of connection reuse.
     ControlMaster = "no";
+    # pam_rssh (sudo) and git signing sign through the forwarded agent; the
+    # login credentials are listed explicitly so the touch-required sudo key is
+    # not tried on every connection.
+    # Forward the FIDO2 agent specifically (not the global Pass agent) so
+    # pam_rssh on the server sees the sudo credential.
+    ForwardAgent = "\${XDG_RUNTIME_DIR}/fido2-agent";
+    IdentityAgent = "\${XDG_RUNTIME_DIR}/fido2-agent";
+    IdentitiesOnly = "yes";
+    IdentityFile = [
+      "~/.config/ssh-sk/k1/personal.pub"
+      "~/.config/ssh-sk/k1/work.pub"
+    ];
     ProxyCommand = "${cloudflared-access}/bin/cloudflared-access ssh --hostname %h";
   };
 
