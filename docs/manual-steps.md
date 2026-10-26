@@ -316,6 +316,28 @@ printf '%s' "$pw" | nix run nixpkgs#mkpasswd -- -m sha-512 -s -S "$salt" | grep 
 After deploying, `sudo passwd -S smores` must show `P`; `su - smores` from a
 console proves the password before auto-login is removed.
 
+### github-personal-pat
+
+<!-- manual-step: secret/github-personal-pat -->
+
+Fine-grained, **owner-wide** PAT for `smores56`, user-readable in
+`secrets/common.yaml`. Consumed by `github-credential-helper` and `gh-pat`
+(`modules/features/github-credentials.nix`) for HTTPS git and `gh` where the SSH
+agent is not available (Maki's sandbox). Permissions: Contents RW, Pull requests
+RW, Issues RW, Metadata R — no SSH-key or signing-key permissions. Expires in 90
+days; mint a replacement, update the common file, rebuild both hosts, revoke the
+old token.
+
+### github-work-pat
+
+<!-- manual-step: secret/github-work-pat -->
+
+The same shape for the work org matching `user.work.githubOwnerGlob`
+(`blitzy-*`). The credential helper selects it from the repository owner in
+git's request (`path=owner/repo`), so work and personal tokens never mix. The org
+may require fine-grained-token approval and SSO authorization; rotate on the same
+90-day cadence.
+
 ### neuralwatt-api-key
 
 <!-- manual-step: secret/neuralwatt-api-key -->

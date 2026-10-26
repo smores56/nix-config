@@ -28,6 +28,21 @@
     # into /run/secrets-for-users before the users activation, which is the only
     # stage that can read hashedPasswordFile. Root-owned by assertion in
     # sops-nix; the plaintext password exists only off-site.
+    # Owner-scoped fine-grained PATs for Maki (and HTTPS git when the agent is
+    # not around). Readable by the user because Maki runs as that uid; the
+    # sandbox's credential helper selects by repository owner. No key
+    # management: SSH/signing stay on the FIDO2 path.
+    github-personal-pat = {
+      sopsFile = ../../secrets/common.yaml;
+      owner = config.machine.username;
+      mode = "0400";
+    };
+    github-work-pat = {
+      sopsFile = ../../secrets/common.yaml;
+      owner = config.machine.username;
+      mode = "0400";
+    };
+
     smores-password-hash = {
       sopsFile = ../../secrets/common.yaml;
       neededForUsers = true;

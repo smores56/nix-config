@@ -6,6 +6,7 @@
     ../features/ai/maki/default.nix
     ../features/ai/sdlc/default.nix
     ../features/ai/skills/default.nix
+    ../features/github-credentials.nix
   ];
   nixos = [ ];
 }
