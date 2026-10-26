@@ -173,7 +173,7 @@ in
           # through the mount invalidate their own entries, so this only delays
           # changes made elsewhere (phone/web) until the next re-list or restart.
           "--dir-cache-time"
-          "1h"
+          "24h"
           "--poll-interval"
           "0"
           "--protondrive-enable-caching=false"
