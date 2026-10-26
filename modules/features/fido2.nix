@@ -45,9 +45,10 @@ let
     '';
   };
 
-  # ssh-agent runs as a systemd user service with no tty, so it can only answer
-  # the token's PIN prompt through SSH_ASKPASS. This never prompts: a missing
-  # cache is a clear failure, not a hidden hang.
+  # ssh invokes this through SSH_ASKPASS_REQUIRE=force for the PKCS#11 PIN.
+  # Lenient: the first use in a session prompts once on the tty and caches, so
+  # an unlock that cannot supply the PIN (fingerprint/password) still works; a
+  # PIV login will later populate it without prompting.
   askpass = pkgs.writeShellApplication {
     name = "ssh-pin-askpass";
     runtimeInputs = [ pkgs.coreutils ];
@@ -57,11 +58,25 @@ let
         *PIN* | *pin*) ;;
         *) exit 1 ;;
       esac
-      if [ ! -r "${pinFile}" ]; then
-        echo "ssh-pin-askpass: no cached FIDO2 PIN; run fido2-pin-cache" >&2
+      if [ -r "${pinFile}" ]; then
+        cat "${pinFile}"
+        exit 0
+      fi
+      if [ ! -r /dev/tty ]; then
+        echo "ssh-pin-askpass: no cached PIN and no tty; run fido2-pin-cache" >&2
         exit 1
       fi
-      cat "${pinFile}"
+      umask 077
+      mkdir -p "${pinDir}"
+      read -rsp 'FIDO2/PIV PIN: ' pin < /dev/tty
+      printf '\n' > /dev/tty
+      if [ -z "$pin" ]; then
+        exit 1
+      fi
+      printf '%s' "$pin" > "${pinFile}"
+      chmod 600 "${pinFile}"
+      printf '%s\n' "$pin"
+      unset pin
     '';
   };
 
@@ -88,11 +103,7 @@ let
 
   # Personal/work are no-touch (SSH is free); sudo is touch-required, which is
   # the only gesture in daily use.
-  loginKeys = [
-    ".config/ssh-sk/k1/personal"
-    ".config/ssh-sk/k1/work"
-    ".config/ssh-sk/k1/sudo"
-  ];
+  loginKeys = [ ".config/ssh-sk/k1/sudo" ];
   signingKeys = [ ".config/ssh-sk/k1/signing" ];
 
   agentEnv = [
@@ -105,7 +116,14 @@ in
     home.packages = [
       cachePin
       askpass
+      pkgs.opensc
     ];
+
+    # The PKCS#11 / agent PIN prompt goes through this helper. `force` is
+    # required because ssh prefers the tty otherwise; non-PIN prompts fail
+    # closed (all hosts are key-only).
+    home.sessionVariables.SSH_ASKPASS = lib.getExe askpass;
+    home.sessionVariables.SSH_ASKPASS_REQUIRE = "force";
 
     # A dedicated agent rather than `services.ssh-agent`: the Proton Pass agent
     # still owns the global SSH_AUTH_SOCK (git/GitHub until that moves to HTTPS),

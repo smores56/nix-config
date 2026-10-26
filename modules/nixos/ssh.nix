@@ -3,15 +3,13 @@ let
   ports = import ../ports.nix;
   user = config.machine.username;
   # Public halves of the login credentials. Private halves never touch a host:
-  # the FIDO2 credentials live on the YubiKeys, the legacy software identity is
-  # served by the Proton Pass agent until all three keys are enrolled.
+  # the PIV key lives in the YubiKey's slot 9c, the legacy software identity is
+  # served by the Proton Pass agent until it is retired.
   authorizedKeys = [
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEu3DfhswY9f9hum/0OhAw2833CkZOP6wVKW5yJk6GpU sam@sammohr.dev"
-    # k1 (touch + PIN) — personal and work identities.
-    # no-touch-required: SSH is free after login (the PIN comes from the
-    # session cache); presence is the laptop login, not this signature.
-    "no-touch-required sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIDLiB81jggq+Oa2K+zUTeIQkWf/UsfgZt4vgezUtuPBAAAAABHNzaDo= smores personal k1"
-    "no-touch-required sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIMmKpZP/35tlH3Z7vM/Tje53S6MvB4Qj6miakUyf/tHJAAAABHNzaDo= smores work k1"
+    # k1 PIV slot 9c: PIV PIN every signature, touch policy NEVER. The PIN
+    # comes from the per-session cache, so SSH needs an unlocked machine.
+    "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBASivBY5k3ECMzzLQcFfJ+vmP0F92RkKPjbVLBNpf/o35XzY745wxKvE8rTSAG8p2Kf0/4adbK4oiPRbv5bWz6M= smores piv k1"
   ];
 in
 {
