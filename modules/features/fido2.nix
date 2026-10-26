@@ -110,6 +110,24 @@ let
     "SSH_ASKPASS=${lib.getExe askpass}"
     "SSH_ASKPASS_REQUIRE=force"
   ];
+
+  # pam_p11 authorizes the PIV key by matching the token's certificate against
+  # PEM certs in ~/.eid/authorized_certificates. Certificates are public, so
+  # they live here rather than in a vault. Rotating a PIV key means replacing
+  # its entry; an entry for a key that is not plugged in is harmless.
+  pivCerts = [
+    ''
+      -----BEGIN CERTIFICATE-----
+      MIIBLzCB1qADAgECAhRR7+BDMvQsbYMZKOCOOiOcdI5O0zAKBggqhkjOPQQDAjAY
+      MRYwFAYDVQQDDA1zbW9yZXMgazEgc3NoMB4XDTI2MTAyNjA0MzkzOFoXDTM2MTAy
+      MzA0MzkzOFowGDEWMBQGA1UEAwwNc21vcmVzIGsxIHNzaDBZMBMGByqGSM49AgEG
+      CCqGSM49AwEHA0IABASivBY5k3ECMzzLQcFfJ+vmP0F92RkKPjbVLBNpf/o35XzY
+      745wxKvE8rTSAG8p2Kf0/4adbK4oiPRbv5bWz6MwCgYIKoZIzj0EAwIDSAAwRQIh
+      AOVuv+nQSs9ixwla7EHLOSTAdox5Mtc6WxkbiEY+5ByvAiA84FwuKj/tq7ITL1yP
+      WvfroV7yvFeEKb+QfRFTc7jktQ==
+      -----END CERTIFICATE-----
+    ''
+  ];
 in
 {
   config = lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
@@ -124,6 +142,11 @@ in
     # closed (all hosts are key-only).
     home.sessionVariables.SSH_ASKPASS = lib.getExe askpass;
     home.sessionVariables.SSH_ASKPASS_REQUIRE = "force";
+
+    # The greeter's pam_p11 reads this through root, so a store symlink is fine.
+    # A locked PIV PIN makes pam_p11 return PAM_MAXTRIES, which aborts the stack:
+    # remove the key to fall back to the password.
+    home.file.".eid/authorized_certificates".text = lib.concatStringsSep "\n" pivCerts;
 
     # A dedicated agent rather than `services.ssh-agent`: the Proton Pass agent
     # still owns the global SSH_AUTH_SOCK (git/GitHub until that moves to HTTPS),
