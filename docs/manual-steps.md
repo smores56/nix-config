@@ -294,6 +294,28 @@ re-applies it on every start, so rotating is: edit this key, rebuild,
 `systemctl --user restart calibre-server` (a rebuild does not restart a user
 unit whose definition is unchanged) and refresh OPDS clients.
 
+### smores-password-hash
+
+<!-- manual-step: secret/smores-password-hash -->
+
+SHA-512 crypt hash of the `smores` account password, in `secrets/common.yaml`.
+Root-owned and `neededForUsers`, so sops-nix decrypts it before the users
+activation; `users.mutableUsers = false` makes the declared hash win on every
+rebuild (a manual `passwd` cannot drift it). The plaintext password is off-site
+only.
+
+Validate a candidate hash without exposing the password:
+
+```sh
+read -rsp 'hash: ' hash; echo
+salt=$(printf '%s' "$hash" | cut -d'$' -f3)
+read -rsp 'password: ' pw; echo
+printf '%s' "$pw" | nix run nixpkgs#mkpasswd -- -m sha-512 -s -S "$salt" | grep -qxF "$hash" && echo MATCH
+```
+
+After deploying, `sudo passwd -S smores` must show `P`; `su - smores` from a
+console proves the password before auto-login is removed.
+
 ### neuralwatt-api-key
 
 <!-- manual-step: secret/neuralwatt-api-key -->

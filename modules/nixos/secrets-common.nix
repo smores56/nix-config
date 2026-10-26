@@ -23,5 +23,21 @@
       # at start; naming a unit other hosts lack would fail their activation.
       restartUnits = lib.optional (config.systemd.services ? memory-llm-proxy) "memory-llm-proxy.service";
     };
+
+    # SHA-512 crypt hash of the account password. `neededForUsers` decrypts it
+    # into /run/secrets-for-users before the users activation, which is the only
+    # stage that can read hashedPasswordFile. Root-owned by assertion in
+    # sops-nix; the plaintext password exists only off-site.
+    smores-password-hash = {
+      sopsFile = ../../secrets/common.yaml;
+      neededForUsers = true;
+    };
   };
+
+  # One account, declared rather than mutable: the sops hash is re-applied on
+  # every activation and any account not declared here is removed. This is what
+  # makes the password survive reinstalls instead of being a one-time `passwd`.
+  users.mutableUsers = false;
+  users.users.${config.machine.username}.hashedPasswordFile =
+    config.sops.secrets.smores-password-hash.path;
 }
