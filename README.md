@@ -164,10 +164,10 @@ ssh-add -L                                    # should list the identity
 systemctl --user restart proton-pass-agent    # macOS: launchctl kickstart -k gui/$(id -u)/org.nix-community.home.proton-pass-agent
 ```
 
-Then run `ssh-pub-keys` to fetch any missing `~/.ssh/*.pub` and refresh
+Then run `ssh-pub-keys` to write the committed `~/.ssh/*.pub` and refresh
 `~/.ssh/allowed_signers` (every `home-manager switch` and bootstrap also run
-it). It only fetches missing files, so after replacing a key in the vault
-delete its `.pub` first, e.g. `rm ~/.ssh/id_work.pub && ssh-pub-keys`.
+it). The public keys are literals in `modules/features/ssh-keys.nix`, so a key
+rotation happens there and every host picks it up at the next switch.
 
 The Access token is cached per login in
 `$XDG_RUNTIME_DIR/cloudflared-access/token` (0600, tmpfs) by

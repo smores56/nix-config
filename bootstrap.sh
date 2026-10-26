@@ -154,12 +154,12 @@ HM_BIN="${XDG_STATE_HOME:-${HOME}/.local/state}/home-manager/gcroots/current-hom
 [ -d "$HM_BIN" ] || err "home-manager switch left no generation at ${HM_BIN}"
 export PATH="${HM_BIN}:${PATH}"
 
-# ── Phase 4: SSH identities from Proton Pass ──────────────────────
+# ── Phase 4: SSH identities ───────────────────────────────────────
 #
-# Identities live in Proton Pass; the agent home-manager installed serves their
-# private halves over SSH_AUTH_SOCK, so nothing is generated here. The public
-# halves are fetched from the vault by `ssh-pub-keys` (modules/features/
-# ssh-keys.nix), the same command every switch runs.
+# The public halves are committed (modules/features/ssh-keys.nix) and written by
+# `ssh-pub-keys`, the same command every switch runs. The private halves still
+# live in Proton Pass; the agent home-manager installed serves them over
+# SSH_AUTH_SOCK, so nothing is generated here.
 
 # A headless host logs in with the vault's PAT (sops-delivered, non-interactive);
 # elsewhere the session is established interactively in a browser. Always the

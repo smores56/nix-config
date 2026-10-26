@@ -1,8 +1,7 @@
 # The key files on disk that ssh (`IdentityFile`), git signing and signature
-# verification read. Proton Pass holds every identity: its agent serves the
-# private halves (proton-pass.nix), and `ssh-pub-keys` fetches the public halves
-# from the vault. Activation and bootstrap both run `ssh-pub-keys`, so a fresh
-# host and a long-lived one end up in the same state.
+# verification read. The public halves are committed here (public by definition),
+# so a fresh machine needs no vault round trip to get them; the private halves
+# stay in Proton Pass (until the FIDO2 enrollment in T1), served by its agent.
 {
   config,
   lib,
@@ -13,25 +12,25 @@ let
   cfg = config.user;
   expandHome = lib.replaceStrings [ "~" ] [ "$HOME" ];
 
-  # title is the vault item; email is the principal its signatures verify as.
+  # `pubkey` selects which agent key ssh offers and what allowed_signers trusts.
+  # Rotating a key means updating the literal here; every host picks it up at the
+  # next switch.
   identities = [
     {
-      title = "Personal";
       key = cfg.sshKey;
       inherit (cfg) email;
+      pubkey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEu3DfhswY9f9hum/0OhAw2833CkZOP6wVKW5yJk6GpU sam@sammohr.dev";
     }
     {
-      title = "Work";
       key = cfg.work.sshKey;
       inherit (cfg.work) email;
+      pubkey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ8f4okBI4niVjsR+lkgvfhRtVt1c/hRZ8POoBaQySog smohr@blitzy.com";
     }
   ];
-  vault = "Identity";
   allowedSigners = "~/.ssh/allowed_signers";
 
   # Signatures only verify against keys listed here; rebuilt from whichever
-  # .pub files exist, so a host without the work key still trusts the personal
-  # one.
+  # keys exist, so a host without the work key still trusts the personal one.
   allowedSignersWriter = pkgs.writeShellApplication {
     name = "ssh-allowed-signers";
     runtimeInputs = [ pkgs.coreutils ];
@@ -58,9 +57,10 @@ let
     '';
   };
 
-  # Fetches only missing files, then refreshes allowed_signers. Exits non-zero
-  # while any key is still missing so bootstrap can tell; activation ignores
-  # that, since it runs before bootstrap has logged pass-cli in.
+  # Writes the committed public halves and refreshes allowed_signers. This is
+  # declarative: a changed key in Nix replaces the file at the next activation.
+  # Activation ignores failures (it may run before ~/.ssh is writable); bootstrap
+  # surfaces them.
   sshPubKeys = pkgs.writeShellApplication {
     name = "ssh-pub-keys";
     runtimeInputs = [
@@ -68,55 +68,34 @@ let
       pkgs.openssh
     ];
     text = ''
-      # Appended, not in runtimeInputs: an earlier pass-cli on PATH (the test's
-      # fake) wins, and activation's bare PATH still finds this one.
-      PATH=$PATH:${config.services.proton-pass-agent.package}/bin
-      # The agent's provider: any other makes pass-cli force a logout and
-      # delete the session, and activation does not see session variables.
-      export PROTON_PASS_KEY_PROVIDER=${config.home.sessionVariables.PROTON_PASS_KEY_PROVIDER}
-
-      # Every failure returns instead of exiting, so one bad key never stops
-      # the next or leaves a temp file behind.
-      fetch() {
-        local title=$1 dest=$2 dir key tmp
-        [ -s "$dest" ] && return 0
-        key=$(pass-cli item view --vault-name ${vault} --item-title "$title" --field public_key </dev/null) \
-          || return 1
-        # Exactly "<type> <base64> [comment]" (no authorized_keys options,
-        # no CR) that ssh-keygen also parses: an error printed to stdout must
-        # not land where ssh and git will trust it, and allowed_signers reads
-        # the first two fields as type and key.
-        [[ $key =~ ^(ssh|ecdsa|sk)-[^[:space:]]+\ [A-Za-z0-9+/]+=*(\ [^[:cntrl:]]*)?$ ]] || return 1
+      # Matches "<type> <base64> [comment]" and parses with ssh-keygen, so a
+      # malformed literal never becomes a file ssh and git will trust.
+      write_key() {
+        local dest=$1 pubkey=$2 dir tmp
         dir=$(dirname "$dest")
-        # Always: home-manager may have created ~/.ssh first with the umask.
         mkdir -p "$dir" && chmod 700 "$dir" || return 1
         tmp=$(mktemp "$dest.XXXXXX") || return 1
-        if printf '%s\n' "$key" >"$tmp" \
+        if printf '%s\n' "$pubkey" >"$tmp" \
           && ssh-keygen -l -f "$tmp" >/dev/null 2>&1 \
           && chmod 644 "$tmp" \
           && mv "$tmp" "$dest"; then
-          echo "ssh-pub-keys: wrote $dest from Proton Pass" >&2
+          echo "ssh-pub-keys: wrote $dest" >&2
         else
           rm -f "$tmp"
           return 1
         fi
       }
 
-      missing=0
+      failed=0
       ${lib.concatMapStrings (i: ''
-        fetch ${lib.escapeShellArg i.title} "${expandHome i.key}.pub" || {
-          echo "ssh-pub-keys: no usable '${i.title}' key from the ${vault} vault (see any pass-cli error above)" >&2
-          missing=1
+        write_key "${expandHome i.key}.pub" ${lib.escapeShellArg i.pubkey} || {
+          echo "ssh-pub-keys: could not write ${i.key}.pub" >&2
+          failed=1
         }
       '') identities}
       ${lib.getExe allowedSignersWriter}
 
-      if ((missing)); then
-        echo "ssh-pub-keys: if pass-cli is logged out, log in with" >&2
-        echo "  PROTON_PASS_KEY_PROVIDER=$PROTON_PASS_KEY_PROVIDER pass-cli login --interactive" >&2
-        echo "then run ssh-pub-keys; otherwise check the item exists in the ${vault} vault." >&2
-        exit 1
-      fi
+      exit "$failed"
     '';
   };
 in
