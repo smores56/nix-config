@@ -116,6 +116,10 @@ in
     security.pam.services.sudo.fprintAuth = false;
     security.pam.services.su.fprintAuth = false;
     security.pam.services.login.fprintAuth = false;
+    # greetd gets pam_fprintd from the default and would block ~30s waiting for
+    # a finger before PAM reaches the password; the lock screen and console use
+    # the "login" stack above.
+    security.pam.services.greetd.fprintAuth = false;
 
     systemd.services.fprintd-reader-cache = {
       description = "Cache the fingerprint reader's USB host controller";

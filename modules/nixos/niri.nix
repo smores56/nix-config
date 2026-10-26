@@ -36,13 +36,12 @@
     greetd = {
       enable = true;
       settings = {
+        # A greeter, not a session: running niri-session in default_session
+        # would auto-login even without initial_session (greetd uses
+        # default_session for the greeter slot). Removing initial_session alone
+        # is not enough.
         default_session = {
-          command = "niri-session";
-          user = config.machine.username;
-        };
-        initial_session = {
-          command = "niri-session";
-          user = config.machine.username;
+          command = "${pkgs.tuigreet}/bin/tuigreet --time --remember --cmd niri-session";
         };
       };
     };

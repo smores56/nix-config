@@ -112,6 +112,10 @@ in
   programs.ssh.settings."smortress" = {
     HostName = "ssh.${domain}";
     User = "smores";
+    # Every connection to the host re-runs the Access check. A shared master
+    # would also outlive the credential decision, so the design keeps this
+    # host out of connection reuse.
+    ControlMaster = "no";
     ProxyCommand = "${cloudflared-access}/bin/cloudflared-access ssh --hostname %h";
   };
 

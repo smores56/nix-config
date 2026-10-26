@@ -36,7 +36,8 @@ in
       };
     };
     security.sudo.wheelNeedsPassword = false;
-    nix.settings.trusted-users = [ config.machine.username ];
+    # No trusted-users: the default (root only) stops the user from changing
+    # substituters, signing keys, or --option on a rebuild.
     # sshd authenticates against the vault's shared identity; the server only
     # ever holds the public half.
     users.users.${config.machine.username}.openssh.authorizedKeys.keys = authorizedKeys;
