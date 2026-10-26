@@ -3,10 +3,8 @@ let
   ports = import ../ports.nix;
   user = config.machine.username;
   # Public halves of the login credentials. Private halves never touch a host:
-  # the PIV key lives in the YubiKey's slot 9c, the legacy software identity is
-  # served by the Proton Pass agent until it is retired.
+  # the PIV key lives in the YubiKey's slot 9c.
   authorizedKeys = [
-    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEu3DfhswY9f9hum/0OhAw2833CkZOP6wVKW5yJk6GpU sam@sammohr.dev"
     # k1 PIV slot 9c: PIV PIN every signature, touch policy NEVER. The PIN
     # comes from the per-session cache, so SSH needs an unlocked machine.
     "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBASivBY5k3ECMzzLQcFfJ+vmP0F92RkKPjbVLBNpf/o35XzY745wxKvE8rTSAG8p2Kf0/4adbK4oiPRbv5bWz6M= smores piv k1"
@@ -58,9 +56,21 @@ in
         ];
       };
     };
-    # Stays false until pam_rssh is wired; then it must become true for sudo to
-    # consult PAM at all.
-    security.sudo.wheelNeedsPassword = false;
+    # sudo must consult PAM for pam_rssh to run; the password remains the
+    # fallback after the sufficient rssh module.
+    security.sudo.wheelNeedsPassword = true;
+
+    # The sudo credential is a separate FIDO2 key (touch + PIN), never used for
+    # login. It is forwarded to the server through the client's fido2-agent; the
+    # PIN comes from that machine's session cache, so only the touch remains.
+    environment.etc."ssh/sudo_authorized_keys".text = ''
+      sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIBKmIXzSQgeLk6giTV0Tsa+XoGJiZtx067FccDUxGUCbAAAABHNzaDo= smores sudo k1
+    '';
+    security.pam.rssh = {
+      enable = true;
+      settings.auth_key_file = "/etc/ssh/sudo_authorized_keys";
+    };
+    security.pam.services.sudo.rssh = true;
     # The server only ever holds public halves.
     users.users.${user}.openssh.authorizedKeys.keys = authorizedKeys;
   };
