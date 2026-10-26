@@ -59,6 +59,9 @@ in
     # sudo must consult PAM for pam_rssh to run; the password remains the
     # fallback after the sufficient rssh module.
     security.sudo.wheelNeedsPassword = true;
+    # One touch per TTY per 15 minutes: sudo records a successful (key or
+    # password) auth in its own timestamp, so repeat sudos skip PAM entirely.
+    security.sudo.extraConfig = "Defaults timestamp_timeout=15";
 
     # The sudo credential is a separate FIDO2 key (touch + PIN), never used for
     # login. It is forwarded to the server through the client's fido2-agent; the
