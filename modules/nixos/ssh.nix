@@ -1,10 +1,15 @@
 { config, lib, ... }:
 let
   ports = import ../ports.nix;
-  # The vault's shared personal identity (design D6). Servers only ever hold
-  # the public half; clients get the private half over SSH_AUTH_SOCK.
+  user = config.machine.username;
+  # Public halves of the login credentials. Private halves never touch a host:
+  # the FIDO2 credentials live on the YubiKeys, the legacy software identity is
+  # served by the Proton Pass agent until all three keys are enrolled.
   authorizedKeys = [
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEu3DfhswY9f9hum/0OhAw2833CkZOP6wVKW5yJk6GpU sam@sammohr.dev"
+    # k1 (touch + PIN) — personal and work identities.
+    "sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIJDAVumkw2stzDLJY/pHp1RYJnBZysEkFOCd2lzYh8mTAAAABHNzaDo= smores personal signing k1"
+    "sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIEruLOejXEQnbEJqaJOUA6xY8vVCVQv/UTgLMC8TFcjHAAAABHNzaDo= smores work signing k1"
   ];
 in
 {
@@ -22,12 +27,30 @@ in
           port = ports.ssh;
         }
       ];
+      # Only the root-owned Nix-managed file; a writable ~/.ssh/authorized_keys
+      # would bypass the server-side policy.
+      authorizedKeysInHomedir = false;
       settings = {
         # Key-only: no passwords, no keyboard-interactive, no root login.
         PasswordAuthentication = false;
         KbdInteractiveAuthentication = false;
         PermitRootLogin = "no";
         PubkeyAuthentication = true;
+        # One factor. FIDO2 keys must assert user verification (the PIN); the
+        # option has no effect on non-FIDO2 keys, so the legacy identity keeps
+        # working until it is retired.
+        AuthenticationMethods = "publickey";
+        PubkeyAuthOptions = "verify-required";
+        AllowUsers = [ user ];
+        # sshfs (pm) uses the SFTP subsystem, not TCP forwarding; the agent is
+        # forwarded for pam_rssh and signing.
+        AllowTcpForwarding = "no";
+        AllowAgentForwarding = "yes";
+        # Every credential the agent offers is tried until one matches, and a
+        # rejected offer counts against this limit; with 3 keys x 2 identities
+        # the default 6 is too small.
+        MaxAuthTries = 10;
+        LoginGraceTime = 20;
         # Accept COLORTERM and TERM from client for truecolor support over SSH
         AcceptEnv = [
           "COLORTERM"
@@ -35,11 +58,10 @@ in
         ];
       };
     };
+    # Stays false until pam_rssh is wired; then it must become true for sudo to
+    # consult PAM at all.
     security.sudo.wheelNeedsPassword = false;
-    # No trusted-users: the default (root only) stops the user from changing
-    # substituters, signing keys, or --option on a rebuild.
-    # sshd authenticates against the vault's shared identity; the server only
-    # ever holds the public half.
-    users.users.${config.machine.username}.openssh.authorizedKeys.keys = authorizedKeys;
+    # The server only ever holds public halves.
+    users.users.${user}.openssh.authorizedKeys.keys = authorizedKeys;
   };
 }
