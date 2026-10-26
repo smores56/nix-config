@@ -71,6 +71,14 @@ in
   # with "PC/SC not available" even though FIDO2 works.
   services.pcscd.enable = true;
 
+  # pcscd runs as the `pcscd` user (upstream unit). ccid's generic rule matches
+  # ID_USB_INTERFACES, which is not always populated when it runs, leaving the
+  # daemon with libusb_open: LIBUSB_ERROR_ACCESS and no readers. Match the
+  # YubiKey vendor directly.
+  services.udev.extraRules = ''
+    SUBSYSTEM=="usb", ATTR{idVendor}=="1050", GROUP="pcscd", MODE="0660"
+  '';
+
   # Flake support must be system-wide, not just in the user's
   # ~/.config/nix/nix.conf: root runs the flake apps (`sudo nix run
   # .#proton-auth`, `.#cloudflare-apply`, `nixos-rebuild --flake`) and would
