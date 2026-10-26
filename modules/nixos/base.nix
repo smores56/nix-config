@@ -59,7 +59,17 @@ in
     # terminfo consumer (less, journalctl, systemctl status) aborts with
     # "'xterm-kitty': unknown terminal type."
     pkgs.kitty.terminfo
+    # YubiKey PIV tooling (enrollment, pcscd below). FIDO2 credentials use USB
+    # HID directly and need none of this.
+    pkgs.opensc
+    pkgs.p11-kit
+    pkgs.yubico-piv-tool
+    pkgs.yubikey-manager
   ];
+
+  # `ykman piv` and pam_p11 reach the key through PC/SC; without pcscd they fail
+  # with "PC/SC not available" even though FIDO2 works.
+  services.pcscd.enable = true;
 
   # Flake support must be system-wide, not just in the user's
   # ~/.config/nix/nix.conf: root runs the flake apps (`sudo nix run
