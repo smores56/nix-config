@@ -167,7 +167,7 @@ in
               args = [ hc.home.sessionVariables.SOPS_AGE_KEY_CMD ];
             };
             worktrees-branch-template.args = [ (homeExe "worktrees") ];
-            repos-list-links.args = [ (homeExe "repos") ];
+            repos-routing.args = [ (homeExe "repos") ];
             brain-leak-guard = {
               tools = [ ];
               args = [ "${src}" ] ++ employerIdentifiers;

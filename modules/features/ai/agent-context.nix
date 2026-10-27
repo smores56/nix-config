@@ -11,7 +11,7 @@ let
   workHostLines = lib.optionals (config.machine.workHost && flatRepos != null) [
     "- This is a work host: work checkouts live flat in `${flatRepos.dir}`${
       lib.optionalString (flatRepos.envVar != null) " (`\$${flatRepos.envVar}`)"
-    }, and `${cfg.codeRoot}/github.com/<owner>` links there on demand when `repos get` first fetches an owner matching `${cfg.work.githubOwnerGlob}`, so repo and worktree paths may print under `${flatRepos.dir}`; clone with `repos get` as usual"
+    }; `repos get` routes GitHub owners matching `${cfg.work.githubOwnerGlob}` there directly, and `repos list` includes both roots"
     "- The work tooling's shell functions and aliases come from `~/.zshrc`, which this host's interactive zsh loads; if your shell didn't (e.g. a non-interactive or other shell), run them as `zsh -ic '<function> && <command>'` so the env a function exports reaches the command"
   ];
 
@@ -23,7 +23,7 @@ let
     "- Start from the problem, not a solution — state what's wrong or needed; a suspected approach is context, not the goal"
     "- First move on any request: classify aloud — quick fix, investigation, or feature — and act. Features run the `sdlc` skill (research → brainstorm → [grill] → plan → human approval → build → review & fix); quick fixes skip the funnel; investigations are read-only. In `pr`-flow work repos the skill's phases run in the conversation, without the personal registry"
     "- Resuming: the issues-only registry (`smores56/sdlc`, `$SDLC_REPO`) is driven by `s`: the human picks a feature then an action (`sr` reviews the body in revdiff and posts the notes); agents call the CLI literally (`sdlc list`, `sdlc show <n>`, `sdlc status <n>`, `sdlc next <n>`), because the `sl`/`ss`/`st`/`sn` abbreviations exist only in an interactive shell. Never resume from conversation memory"
-    "- Repos live under `${cfg.codeRoot}/github.com/<owner>/<repo>`; clone with `repos get <owner/repo>` — never `git clone`, `git worktree add`, `git checkout -b`, or Claude's EnterWorktree"
+    "- Ordinary repos live under `${cfg.codeRoot}/github.com/<owner>/<repo>`; clone with `repos get <owner/repo>` — never `git clone`, `git worktree add`, `git checkout -b`, or Claude's EnterWorktree"
     "- Worktrees live under each repo's `.worktrees/` via `worktrees new`; it prints JSON — use its `path` as cwd, never `cd`"
     "- Start task worktrees with `worktrees new --slug <kebab-slug> --task \"<description>\"` (creates branch + worktree); pass `--ticket <KEY>` whenever the work has a ticket (repos that don't name branches by ticket ignore it) and `--type <fix|feat|…>` when it asks for one"
     "- Branches come from `worktrees new`, which renders the repo's template (`git config smores.branchTemplate`); never hand-build a branch name, even where an installed team skill shows `git checkout -b`"

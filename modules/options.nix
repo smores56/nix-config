@@ -122,7 +122,7 @@ in
               lib.types.submodule {
                 options = {
                   dir = lib.mkOption {
-                    # Absolute, no trailing slash: it becomes link targets.
+                    # Absolute, no trailing slash.
                     type = lib.types.strMatching "/.*[^/]";
                     description = "Absolute directory holding every work checkout flat as <dir>/<repo>, the layout the employer's tooling expects.";
                   };
@@ -150,7 +150,7 @@ in
     codeRoot = lib.mkOption {
       type = lib.types.str;
       readOnly = true;
-      description = "Root directory under which all git repos live. Layout: <codeRoot>/<host>/<owner>/<repo>.";
+      description = "Root for ordinary git checkouts: <codeRoot>/<host>/<owner>/<repo>. Work hosts may also use user.work.flatRepos.";
     };
     shell = lib.mkOption {
       type = lib.types.enum [

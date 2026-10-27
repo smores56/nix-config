@@ -6,9 +6,9 @@
 let
   cfg = config.user;
 
-  # Work orgs live flat in one folder; `repos get` links an owner dir into it
-  # on demand, so no owner name is baked into the config.
-  workFlatDir = if cfg.work.flatRepos != null then cfg.work.flatRepos.dir else "";
+  workFlatDir =
+    if config.machine.workHost && cfg.work.flatRepos != null then cfg.work.flatRepos.dir else "";
+  legacyFlatDir = if cfg.work.flatRepos != null then cfg.work.flatRepos.dir else "";
 
   # Shared by `repos` and `worktrees`: host, owner, repo of the cwd's origin.
   originParts = ''
@@ -58,40 +58,100 @@ let
       # REPOS_CODE_ROOT redirects both listing and `get`, for tests.
       ROOT=''${REPOS_CODE_ROOT:-$CODE_ROOT}
       WORK_FLAT=${lib.escapeShellArg workFlatDir}
-      # REPOS_WORK_FLAT overrides the flat folder, for tests.
-      WORK_FLAT=''${REPOS_WORK_FLAT:-$WORK_FLAT}
+      # REPOS_WORK_FLAT overrides the flat folder, including disabling it in tests.
+      WORK_FLAT=''${REPOS_WORK_FLAT-$WORK_FLAT}
+      LEGACY_FLAT=${lib.escapeShellArg legacyFlatDir}
+      LEGACY_FLAT=''${REPOS_LEGACY_FLAT-$LEGACY_FLAT}
       WORK_OWNER_GLOB=${lib.escapeShellArg cfg.work.githubOwnerGlob}
 
-      # Follows symlinked owner dirs (user.work.flatRepos links several
-      # orgs to one folder), listing each checkout once: under the owner its
-      # origin names, else the first path that reaches it.
+      # The flat work folder is a separate root. Ignore old owner links to it
+      # while they exist, rather than scanning every checkout through each link.
       list_repos() {
-        # REPOS_CODE_ROOT only redirects listing, for tests; `get` always
-        # clones under the configured root.
-        local code_root=''${REPOS_CODE_ROOT:-$CODE_ROOT}
-        [ -d "$code_root" ] || exit 0
-        local path real owner origin_owner
+        local list_owner path flat_root=$WORK_FLAT flat_real="" owner_real real origin_owner owner_name
         local -A chosen=() matched=()
-        while IFS= read -r path; do
-          git -C "$path" rev-parse --git-dir >/dev/null 2>&1 || continue
-          real=$(cd -- "$path" && pwd -P)
-          owner=''${path%/*}
-          owner=''${owner##*/}
-          # Only paths reached through a link can be aliases; skip the origin
-          # lookup for the rest.
-          origin_owner=$owner
-          if [ "$real" != "$path" ]; then
-            origin_owner=$( (cd -- "$path" && origin_parts) | cut -f2 || true)
+        shopt -s nullglob dotglob
+        if [ -z "$flat_root" ] && [ -n "$LEGACY_FLAT" ] && [ -d "$LEGACY_FLAT" ]; then
+          # Older versions could create these links on personal hosts too. Only
+          # expose that root there when such a link actually exists.
+          owner_real=$(cd -- "$LEGACY_FLAT" && pwd -P)
+          for list_owner in "$ROOT"/*/*; do
+            if [ -L "$list_owner" ] && [ -d "$list_owner" ] && [ "$(cd -- "$list_owner" && pwd -P)" = "$owner_real" ]; then
+              flat_root=$LEGACY_FLAT
+              break
+            fi
+          done
+        fi
+        if [ -n "$flat_root" ] && [ -d "$flat_root" ]; then
+          flat_real=$(cd -- "$flat_root" && pwd -P)
+        fi
+        {
+          for list_owner in "$ROOT"/*/*; do
+            [ -d "$list_owner" ] || continue
+            if [ -L "$list_owner" ]; then
+              owner_real=$(cd -- "$list_owner" && pwd -P)
+              [ -z "$flat_real" ] || [ "$owner_real" != "$flat_real" ] || continue
+            fi
+            for path in "$list_owner"/*; do
+              [ -d "$path" ] || continue
+              if [ -d "$path/.git" ] || [ -f "$path/.git" ]; then
+                real=$(cd -- "$path" && pwd -P)
+                owner_name=''${list_owner##*/}
+                origin_owner=$owner_name
+                if [ "$real" != "$path" ]; then
+                  origin_owner=$( (cd -- "$path" && origin_parts) | cut -f2 || true)
+                fi
+                if [ "''${origin_owner,,}" = "''${owner_name,,}" ]; then
+                  [ -n "''${matched[$real]-}" ] || { matched[$real]=1; chosen[$real]=$path; }
+                elif [ -z "''${chosen[$real]-}" ]; then
+                  chosen[$real]=$path
+                fi
+              fi
+            done
+          done
+          for real in "''${!chosen[@]}"; do
+            printf '%s\n' "''${chosen[$real]}"
+          done
+          if [ -n "$flat_real" ]; then
+            for path in "$flat_root"/*; do
+              [ -d "$path" ] || continue
+              if [ -d "$path/.git" ] || [ -f "$path/.git" ]; then
+                printf '%s\n' "$path"
+              fi
+            done
           fi
-          if [ "''${origin_owner,,}" = "''${owner,,}" ]; then
-            [ -n "''${matched[$real]-}" ] || { matched[$real]=1; chosen[$real]=$path; }
-          elif [ -z "''${chosen[$real]-}" ]; then
-            chosen[$real]=$path
+        } | sort -u
+      }
+
+      # GitHub names are case-insensitive even when the local filesystem isn't.
+      # Refuse both flat-name collisions and checkouts still in old org dirs.
+      check_work_destination() {
+        local host_dir owner_dir candidate flat_real="" owner_real name
+        shopt -s nullglob dotglob
+        for candidate in "$WORK_FLAT"/*; do
+          name=''${candidate##*/}
+          if [ "$name" != "$repo" ] && [ "''${name,,}" = "''${repo,,}" ]; then
+            printf 'repos get: %s conflicts with %s (GitHub names are case-insensitive)\n' "$dest" "$candidate" >&2
+            return 1
           fi
-        done < <(find -L "$code_root" -mindepth 3 -maxdepth 3 -type d 2>/dev/null | sort)
-        for real in "''${!chosen[@]}"; do
-          printf '%s\n' "''${chosen[$real]}"
-        done | sort
+        done
+        [ ! -d "$WORK_FLAT" ] || flat_real=$(cd -- "$WORK_FLAT" && pwd -P)
+        for host_dir in "$ROOT"/*; do
+          name=''${host_dir##*/}
+          [ -d "$host_dir" ] && [ "''${name,,}" = github.com ] || continue
+          for owner_dir in "$host_dir"/*; do
+            name=''${owner_dir##*/}
+            [ -d "$owner_dir" ] && [ "''${name,,}" = "''${owner,,}" ] || continue
+            owner_real=$(cd -- "$owner_dir" && pwd -P)
+            [ -z "$flat_real" ] || [ "$owner_real" != "$flat_real" ] || continue
+            for candidate in "$owner_dir"/*; do
+              name=''${candidate##*/}
+              if [ "''${name,,}" = "''${repo,,}" ]; then
+                printf 'repos get: existing checkout or path at %s; inspect it before using %s\n' "$candidate" "$dest" >&2
+                return 1
+              fi
+            done
+          done
+        done
       }
 
       normalize_repo() {
@@ -142,27 +202,21 @@ let
           [ $# -eq 2 ] || { printf 'usage: repos get <repo-or-url>\n' >&2; exit 2; }
           parts=$(normalize_repo "$2")
           IFS=$'\t' read -r host owner repo <<< "$parts"
-          # A work owner's dir links to the flat folder before the clone, so
-          # the checkout lands there while its normal path keeps working.
+          dest="$ROOT/$host/$owner/$repo"
           if [ -n "$WORK_FLAT" ]; then
             shopt -s nocasematch
             # shellcheck disable=SC2053
-            if [[ $owner == $WORK_OWNER_GLOB ]]; then
-              link="$ROOT/$host/$owner"
-              if [ ! -e "$link" ] && [ ! -L "$link" ]; then
-                mkdir -p "$(dirname "$link")"
-                ln -s -- "$WORK_FLAT" "$link"
-              fi
+            if [[ $host == github.com && $owner == $WORK_OWNER_GLOB ]]; then
+              dest="$WORK_FLAT/$repo"
+              check_work_destination
             fi
             shopt -u nocasematch
           fi
-          dest="$ROOT/$host/$owner/$repo"
           url="git@$host:$owner/$repo.git"
-          if [ -e "$dest" ]; then
+          if [ -e "$dest" ] || [ -L "$dest" ]; then
             existing=$( (cd -- "$dest" && origin_parts 2>/dev/null) | cut -f2,3 | tr '\t' / || true)
             if [ -n "$existing" ] && [ "''${existing,,}" != "''${owner,,}/''${repo,,}" ]; then
-              # Linked work orgs share one flat folder, one checkout per name.
-              printf 'repos get: %s is already a checkout of %s (%s resolves into a shared folder)\n' "$dest" "$existing" "$(dirname "$dest")" >&2
+              printf 'repos get: %s is already a checkout of %s (work repos share one flat folder)\n' "$dest" "$existing" >&2
             else
               printf 'repos get: destination exists: %s\n' "$dest" >&2
             fi

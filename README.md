@@ -483,16 +483,10 @@ profile) applies
 `modules/features/work-host.nix` holds the mechanics, and no employer name
 appears outside those option values.
 
-- **Flat folder:** employer tooling that wants every checkout in one folder
-  gets it. `<codeRoot>/github.com/<owner>` for any owner matching
-  `user.work.githubOwnerGlob` is a symlink to `flatRepos.dir`, so
-  `repos get <owner>/<repo>` lands there while the usual path keeps working,
-  and `repos list` shows each checkout once. The owner is linked on demand by
-  `repos get`, so no owner name is baked into the config. `flatRepos.envVar`
-  is exported for the tooling.
-- **Links are created on demand** by `repos get` before a work clone. An org
-  dir that already exists as a real directory is not converted; move its
-  checkouts into the flat folder manually once.
+- **Flat folder:** employer tooling and `repos get` share `flatRepos.dir` for
+  GitHub owners matching `user.work.githubOwnerGlob`. `repos list` discovers those
+  checkouts directly as well as ordinary repos under `codeRoot`;
+  `flatRepos.envVar` is exported for the tooling. No org links are created.
 - **zsh is the shell** (`user.shell` follows `workHost`; fish isn't
   enabled). HM owns `$ZDOTDIR` (`~/.config/zsh`, set from `~/.zshenv`) and
   sources the tooling-owned plain `~/.zshrc` right after compinit, so its
@@ -505,10 +499,12 @@ appears outside those option values.
   the tooling's functions as `zsh -ic '<function> && <command>'` when their
   shell didn't load `~/.zshrc`.
 
-Limits: the flat folder holds one checkout per name across all linked orgs,
-and also the tooling's own state (env files, credentials), which is then
-reachable under the org paths. Repo and worktree paths print under the flat
-folder. Links stay when an org is dropped from the list.
+Limits: the flat folder holds one checkout per name across work orgs. An
+existing checkout is never overwritten by `repos get`; same-name repos from
+different orgs must be handled separately. A checkout still in an org directory
+must be inspected before cloning it into the flat folder. Legacy org links to
+the flat folder are ignored by discovery and can be removed after checking their
+consumers.
 
 ### Adding a new host
 

@@ -171,7 +171,7 @@ remote URL), `ssh-allowed-signers`
 (signature verification), `ssh-pub-keys` (committed `.pub` keys
 written and trusted, stale files replaced, a malformed key writes nothing and
 exits non-zero), `worktrees-branch-template` (branch naming from
-per-repo templates), `repos-list-links` (listing through linked org dirs), `zsh-config`
+per-repo templates), `repos-routing` (flat work repo discovery and routing), `zsh-config`
 (generated zsh startup files parse; only on a system with a zsh home) and
 `github-mirror-probe` (the GitHub mirror rejects a stale private-repo probe and
 scrubs a token-bearing origin), `github-metadata` (pgb flags and token-by-file,
@@ -183,8 +183,8 @@ after touching shell, git, ssh or backup settings, or
 `modules/lib/repo-workflow.nix`:
 
 ```sh
-nix build .#checks.aarch64-darwin.{git-work-routing,ssh-allowed-signers,ssh-pub-keys,worktrees-branch-template,repos-list-links,zsh-config,github-mirror-probe,github-metadata}
-nix build .#checks.x86_64-linux.{backup-watch,backup-plain,manual-steps-sync}
+nix build .#checks.aarch64-darwin.{git-work-routing,ssh-allowed-signers,ssh-pub-keys,worktrees-branch-template,repos-routing,zsh-config,github-mirror-probe}
+nix build .#checks.x86_64-linux.{backup-watch,backup-plain,github-metadata,manual-steps-sync}
 ```
 
 Run `manual-steps-sync` after touching hosts, sops keys, `tofu/`, backup
