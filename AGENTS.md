@@ -53,7 +53,14 @@ files by concern, not by host.
 | `tofu/` | minimal Cloudflare DNS/Access/notification objects; run via the `cloudflare-*` flake apps |
 | `modules/features/backup/` | Shell rclone driver (`backup.sh`), shell watcher, operator README, GitHub-mirror helpers and restore drill |
 | `modules/desktop/aerospace/` | AeroSpace config + `aerospace-layout` |
-| `tests/` | Python unit tests for the repo's tools plus `tests/*.sh` shell checks (all run via flake checks) |
+| `tests/` | Python/Node unit tests and shell/module checks for the repo's tools (all run via flake checks) |
+
+The optional native Slack connector lives in `modules/features/ai/slack-mcp`.
+Keep desktop credentials out of source, Nix evaluation, logs, and fixtures. Its
+operator-only authorization stores them in Keychain. Preserve the exact read
+allowlist and in-memory-only backend caches when updating the pinned server.
+Run `just test-slack` after changing it. Do not publish employer-specific skills
+or workspace data with this generic integration.
 
 Feature options live in the module that owns them (`webProxy` in
 `modules/nixos/web-proxy.nix`, `backup` in `modules/nixos/backup.nix`,

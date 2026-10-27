@@ -319,6 +319,21 @@ in
               touch $out
             '';
 
+        slack-mcp =
+          pkgs.runCommand "slack-mcp-check"
+            {
+              nativeBuildInputs = [ pkgs.nodejs_24 ];
+            }
+            ''
+              node --check ${src}/modules/features/ai/slack-mcp/session.mjs
+              node --check ${src}/modules/features/ai/slack-mcp/leveldb.mjs
+              node --test ${src}/tests/slack-mcp.test.mjs ${src}/tests/slack-leveldb-state.test.mjs
+              touch $out
+            '';
+
+        slack-mcp-module = import ../../tests/slack-mcp-module.nix { inherit pkgs; };
+        slack-mcp-backend = import ../features/ai/slack-mcp/backend.nix { inherit pkgs; };
+
         unit-tests =
           pkgs.runCommand "unit-tests"
             {

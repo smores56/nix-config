@@ -451,6 +451,30 @@ model providers Maki may use.
   sees it. Use `maki models` or `/model` to choose another OpenAI model.
   Claude Code continues to use its own subscription login.
 
+#### Native Slack MCP
+
+`modules/features/ai/slack-mcp` supplies an optional read-only connector for work
+Maki on macOS. `slackMcp.enable` defaults off; the work laptop opts in through
+its host metadata. It does not enable the rest of the AI tooling. The module
+installs `maki-slack`, a native-Slack skill, and Maki's MCP configuration. The
+profile gate controls deployment only; it does not restrict an independently
+installed Maki's selected provider. Verify Maki's allowed models before enabling
+Slack in a session. Do not expose work Slack to a personal or unapproved model.
+
+The connector reads the signed-in Slack desktop session during explicit operator
+authorization and stores credentials in macOS Keychain. It exposes eight read
+operations, blocks all other tool calls, and uses a hash-pinned backend with
+in-memory-only workspace caches. No runtime npm download or OAuth app is needed.
+Desktop-session credentials remain broadly privileged: the tool allowlist is
+not an OAuth scope restriction, and Keychain is not isolation from other
+same-user processes. Returned Slack content can enter the model's context and
+Maki's session history. Files and attachment contents are not exposed.
+
+See [the work laptop's manual steps](docs/manual-steps.md#smoreswork) for
+workspace selection, refresh, and Keychain removal. Restart Maki after changing
+its MCP configuration or refreshing the stored session. `just --list` includes
+the authentication and offline test commands.
+
 ### Work hosts
 
 A home with `workHost = true` (`modules/options.nix`, derived from its

@@ -1,0 +1,902 @@
+diff --git a/pkg/provider/cache_test.go b/pkg/provider/cache_test.go
+--- a/pkg/provider/cache_test.go
++++ b/pkg/provider/cache_test.go
+@@ -3,156 +3,15 @@
+ import (
+ 	"encoding/json"
+ 	"os"
+-	"path/filepath"
+ 	"sync"
+ 	"sync/atomic"
+ 	"testing"
+ 	"time"
+ 
+-	"github.com/slack-go/slack"
+ 	"github.com/stretchr/testify/assert"
+ 	"github.com/stretchr/testify/require"
+ )
+ 
+-// TestGetCacheTTL tests the app-specific logic in getCacheTTL:
+-// - Default when env not set
+-// - Numeric seconds fallback (app-specific parsing path)
+-// - Invalid input handling
+-// - Negative value rejection (P1 bug fix)
+-func TestGetCacheTTL(t *testing.T) {
+-	tests := []struct {
+-		name     string
+-		envValue string
+-		expected time.Duration
+-	}{
+-		{
+-			name:     "default when env not set",
+-			envValue: "",
+-			expected: defaultCacheTTL,
+-		},
+-		{
+-			name:     "valid duration passes through",
+-			envValue: "2h",
+-			expected: 2 * time.Hour,
+-		},
+-		{
+-			name:     "numeric seconds fallback path",
+-			envValue: "3600",
+-			expected: 3600 * time.Second,
+-		},
+-		{
+-			name:     "zero disables TTL",
+-			envValue: "0",
+-			expected: 0,
+-		},
+-		{
+-			name:     "invalid input falls back to default",
+-			envValue: "invalid",
+-			expected: defaultCacheTTL,
+-		},
+-		{
+-			name:     "negative duration rejected - falls back to default",
+-			envValue: "-1h",
+-			expected: defaultCacheTTL,
+-		},
+-		{
+-			name:     "negative seconds rejected - falls back to default",
+-			envValue: "-3600",
+-			expected: defaultCacheTTL,
+-		},
+-	}
+-
+-	for _, tt := range tests {
+-		t.Run(tt.name, func(t *testing.T) {
+-			oldVal := os.Getenv("SLACK_MCP_CACHE_TTL")
+-			defer os.Setenv("SLACK_MCP_CACHE_TTL", oldVal)
+-
+-			if tt.envValue == "" {
+-				os.Unsetenv("SLACK_MCP_CACHE_TTL")
+-			} else {
+-				os.Setenv("SLACK_MCP_CACHE_TTL", tt.envValue)
+-			}
+-
+-			result := getCacheTTL()
+-			assert.Equal(t, tt.expected, result)
+-		})
+-	}
+-}
+-
+-// TestCacheExpiry verifies the actual cache expiry logic used in refreshChannelsInternal.
+-// This tests the production code path: file exists → check mtime → compare to TTL.
+-func TestCacheExpiry(t *testing.T) {
+-	tempDir, err := os.MkdirTemp("", "slack-mcp-cache-expiry-test")
+-	require.NoError(t, err)
+-	defer os.RemoveAll(tempDir)
+-
+-	t.Run("isCacheExpired returns correct result based on file mtime", func(t *testing.T) {
+-		// This helper mirrors the logic in refreshChannelsInternal
+-		isCacheExpired := func(cacheFile string, ttl time.Duration) bool {
+-			if ttl == 0 {
+-				return false // TTL disabled
+-			}
+-			fileInfo, err := os.Stat(cacheFile)
+-			if err != nil {
+-				return true // File doesn't exist, treat as expired
+-			}
+-			return time.Since(fileInfo.ModTime()) > ttl
+-		}
+-
+-		cacheFile := filepath.Join(tempDir, "test_cache.json")
+-		err := os.WriteFile(cacheFile, []byte(`[]`), 0644)
+-		require.NoError(t, err)
+-
+-		// Fresh file should not be expired
+-		assert.False(t, isCacheExpired(cacheFile, 1*time.Hour),
+-			"fresh cache should not be expired")
+-
+-		// Set mtime to 2 hours ago
+-		oldTime := time.Now().Add(-2 * time.Hour)
+-		err = os.Chtimes(cacheFile, oldTime, oldTime)
+-		require.NoError(t, err)
+-
+-		// Old file should be expired
+-		assert.True(t, isCacheExpired(cacheFile, 1*time.Hour),
+-			"2 hour old cache should be expired with 1h TTL")
+-
+-		// TTL=0 should never expire
+-		assert.False(t, isCacheExpired(cacheFile, 0),
+-			"cache should never expire when TTL=0")
+-
+-		// Nonexistent file should be treated as expired
+-		assert.True(t, isCacheExpired(filepath.Join(tempDir, "nonexistent.json"), 1*time.Hour),
+-			"nonexistent cache should be treated as expired")
+-	})
+-
+-	t.Run("stale cache detected after server restart simulation", func(t *testing.T) {
+-		// This is the key scenario: MCP server restarts after 3 days,
+-		// cache file is still on disk with old mtime
+-		cacheFile := filepath.Join(tempDir, "stale_cache.json")
+-
+-		channels := []Channel{{ID: "C123", Name: "#old-channel"}}
+-		data, err := json.Marshal(channels)
+-		require.NoError(t, err)
+-		err = os.WriteFile(cacheFile, data, 0644)
+-		require.NoError(t, err)
+-
+-		// Set mtime to 3 days ago (simulating server was down)
+-		threeDaysAgo := time.Now().Add(-72 * time.Hour)
+-		err = os.Chtimes(cacheFile, threeDaysAgo, threeDaysAgo)
+-		require.NoError(t, err)
+-
+-		// Verify the production code would detect this as stale
+-		fileInfo, err := os.Stat(cacheFile)
+-		require.NoError(t, err)
+-
+-		cacheAge := time.Since(fileInfo.ModTime())
+-		ttl := getCacheTTL() // default 1 hour
+-
+-		assert.True(t, cacheAge > ttl,
+-			"cache from 3 days ago (age=%v) should exceed default TTL (%v)", cacheAge, ttl)
+-	})
+-}
+-
+ // TestChannelCacheRoundTrip verifies that Channel structs survive JSON serialization.
+ // This catches bugs in struct tags or field types that would corrupt cache data.
+ func TestChannelCacheRoundTrip(t *testing.T) {
+@@ -208,7 +67,6 @@
+ 
+ // TestChannelLookupByName verifies the inverse map lookup pattern used in resolveChannelID.
+ func TestChannelLookupByName(t *testing.T) {
+-	// Build maps the same way refreshChannelsInternal does
+ 	channels := []Channel{
+ 		{ID: "C123", Name: "#general"},
+ 		{ID: "C456", Name: "#random"},
+@@ -310,25 +168,6 @@
+ 	})
+ }
+ 
+-// TestGetCacheDir verifies the cache directory is created correctly.
+-func TestGetCacheDir(t *testing.T) {
+-	dir := getCacheDir()
+-
+-	assert.NotEmpty(t, dir, "cache dir should not be empty")
+-	assert.Contains(t, dir, "slack-mcp-server", "cache dir should contain app name")
+-
+-	// Directory should exist after getCacheDir() creates it
+-	info, err := os.Stat(dir)
+-	require.NoError(t, err, "cache directory should exist")
+-	assert.True(t, info.IsDir(), "cache path should be a directory")
+-}
+-
+-// TestDefaultCacheTTLIs24Hours verifies that the default cache TTL is 24 hours.
+-func TestDefaultCacheTTLIs24Hours(t *testing.T) {
+-	assert.Equal(t, 24*time.Hour, defaultCacheTTL,
+-		"default cache TTL should be 24 hours")
+-}
+-
+ // TestAtomicReadyFlags verifies that usersReady and channelsReady are atomic.Bool
+ // and safe for concurrent access. This test is meaningful under `go test -race`.
+ func TestAtomicReadyFlags(t *testing.T) {
+@@ -360,102 +199,6 @@
+ 	assert.True(t, channelsReady.Load())
+ }
+ 
+-// TestRefreshingFlagPreventsConcurrentRefreshes verifies that CompareAndSwap on
+-// the refreshing flag prevents a second background refresh from starting.
+-func TestRefreshingFlagPreventsConcurrentRefreshes(t *testing.T) {
+-	var refreshing atomic.Bool
+-
+-	// First caller succeeds
+-	assert.True(t, refreshing.CompareAndSwap(false, true),
+-		"first refresh should acquire the flag")
+-
+-	// Second caller is blocked
+-	assert.False(t, refreshing.CompareAndSwap(false, true),
+-		"second refresh should be blocked while first is in progress")
+-
+-	// After first completes, next one can proceed
+-	refreshing.Store(false)
+-	assert.True(t, refreshing.CompareAndSwap(false, true),
+-		"refresh should succeed after previous one completes")
+-}
+-
+-// TestStaleWhileRevalidateReadyFlag verifies the stale-while-revalidate pattern:
+-// when an expired cache file exists, the ready flag is set immediately from stale data,
+-// without waiting for a fresh API fetch.
+-func TestStaleWhileRevalidateReadyFlag(t *testing.T) {
+-	tempDir, err := os.MkdirTemp("", "slack-mcp-swr-test")
+-	require.NoError(t, err)
+-	defer os.RemoveAll(tempDir)
+-
+-	cacheFile := filepath.Join(tempDir, "users_cache.json")
+-
+-	// Write a valid cache file with user data
+-	users := []struct {
+-		ID   string `json:"id"`
+-		Name string `json:"name"`
+-	}{
+-		{ID: "U001", Name: "alice"},
+-		{ID: "U002", Name: "bob"},
+-	}
+-	data, err := json.Marshal(users)
+-	require.NoError(t, err)
+-	err = os.WriteFile(cacheFile, data, 0644)
+-	require.NoError(t, err)
+-
+-	// Set mtime to 48 hours ago (well past 24h default TTL)
+-	staleTime := time.Now().Add(-48 * time.Hour)
+-	err = os.Chtimes(cacheFile, staleTime, staleTime)
+-	require.NoError(t, err)
+-
+-	// Simulate the stale-while-revalidate logic from refreshUsersInternal:
+-	// 1. Read and unmarshal cache
+-	// 2. Build snapshot and set ready flag
+-	// 3. Check TTL — expired means we'd spawn background refresh
+-	var usersReady atomic.Bool
+-	var usersSnapshot atomic.Pointer[UsersCache]
+-
+-	fileData, err := os.ReadFile(cacheFile)
+-	require.NoError(t, err)
+-
+-	type simpleUser struct {
+-		ID   string `json:"id"`
+-		Name string `json:"name"`
+-	}
+-	var cachedUsers []simpleUser
+-	err = json.Unmarshal(fileData, &cachedUsers)
+-	require.NoError(t, err)
+-
+-	// Build snapshot (mirrors refreshUsersInternal logic)
+-	snapshot := &UsersCache{
+-		Users:    make(map[string]slack.User, len(cachedUsers)),
+-		UsersInv: make(map[string]string, len(cachedUsers)),
+-	}
+-	for _, u := range cachedUsers {
+-		snapshot.Users[u.ID] = slack.User{ID: u.ID, Name: u.Name}
+-		snapshot.UsersInv[u.Name] = u.ID
+-	}
+-	usersSnapshot.Store(snapshot)
+-	usersReady.Store(true)
+-
+-	// Ready flag should be true immediately (before any background refresh)
+-	assert.True(t, usersReady.Load(),
+-		"ready flag should be set immediately from stale cache")
+-
+-	// Snapshot should contain the stale data
+-	loaded := usersSnapshot.Load()
+-	require.NotNil(t, loaded)
+-	assert.Len(t, loaded.Users, 2, "snapshot should contain cached users")
+-	assert.Equal(t, "U001", loaded.Users["U001"].ID)
+-	assert.Equal(t, "U002", loaded.UsersInv["bob"])
+-
+-	// Verify the cache IS expired (would trigger background refresh)
+-	fileInfo, err := os.Stat(cacheFile)
+-	require.NoError(t, err)
+-	cacheAge := time.Since(fileInfo.ModTime())
+-	assert.True(t, cacheAge > defaultCacheTTL,
+-		"cache should be detected as expired (age=%v > TTL=%v)", cacheAge, defaultCacheTTL)
+-}
+-
+ // TestGetMinRefreshInterval tests the rate limiting configuration parsing.
+ func TestGetMinRefreshInterval(t *testing.T) {
+ 	tests := []struct {
+@@ -548,72 +291,3 @@
+ 	assert.Equal(t, []int{1, 2}, order,
+ 		"second fetch should wait for first to complete")
+ }
+-
+-// TestEmptyAPIResultGuard verifies that an empty API result does not overwrite
+-// valid cached data. This tests the guard pattern in fetchAndStoreUsers/fetchAndStoreChannels.
+-func TestEmptyAPIResultGuard(t *testing.T) {
+-	tempDir, err := os.MkdirTemp("", "slack-mcp-empty-guard-test")
+-	require.NoError(t, err)
+-	defer os.RemoveAll(tempDir)
+-
+-	cacheFile := filepath.Join(tempDir, "users_cache.json")
+-
+-	// Write a valid cache file with user data
+-	validData := []slack.User{
+-		{ID: "U001", Name: "alice"},
+-		{ID: "U002", Name: "bob"},
+-	}
+-	data, err := json.MarshalIndent(validData, "", "  ")
+-	require.NoError(t, err)
+-	err = os.WriteFile(cacheFile, data, 0644)
+-	require.NoError(t, err)
+-
+-	// Simulate the guard: API returns empty result
+-	emptyUsers := []slack.User{}
+-	assert.Len(t, emptyUsers, 0, "simulated API returned zero users")
+-
+-	// The guard should prevent overwriting the cache file
+-	// (In production code: if len(users) == 0 { return nil })
+-	if len(emptyUsers) == 0 {
+-		// Don't write to cache — verify original data is preserved
+-		preserved, err := os.ReadFile(cacheFile)
+-		require.NoError(t, err)
+-
+-		var loadedUsers []slack.User
+-		err = json.Unmarshal(preserved, &loadedUsers)
+-		require.NoError(t, err)
+-		assert.Len(t, loadedUsers, 2, "original cache should be preserved when API returns empty")
+-		assert.Equal(t, "U001", loadedUsers[0].ID)
+-	}
+-}
+-
+-// TestEmptyCacheFileTreatedAsMiss verifies that an empty cache file (valid JSON [])
+-// is treated as a cache miss rather than valid data with zero entries.
+-func TestEmptyCacheFileTreatedAsMiss(t *testing.T) {
+-	tempDir, err := os.MkdirTemp("", "slack-mcp-empty-cache-test")
+-	require.NoError(t, err)
+-	defer os.RemoveAll(tempDir)
+-
+-	cacheFile := filepath.Join(tempDir, "users_cache.json")
+-
+-	// Write an empty but valid JSON array
+-	err = os.WriteFile(cacheFile, []byte(`[]`), 0644)
+-	require.NoError(t, err)
+-
+-	// Read and unmarshal
+-	data, err := os.ReadFile(cacheFile)
+-	require.NoError(t, err)
+-
+-	var cachedUsers []slack.User
+-	err = json.Unmarshal(data, &cachedUsers)
+-	require.NoError(t, err)
+-
+-	// The guard: empty cache should be treated as a miss
+-	assert.Len(t, cachedUsers, 0, "empty cache file should unmarshal to zero users")
+-
+-	// In production code, this triggers: "treating as cache miss"
+-	// and falls through to fetchAndStoreUsers instead of setting ready=true
+-	isCacheMiss := len(cachedUsers) == 0
+-	assert.True(t, isCacheMiss,
+-		"empty cache file should be treated as cache miss, not valid data")
+-}
+diff --git a/pkg/provider/api_no_disk_cache_test.go b/pkg/provider/api_no_disk_cache_test.go
+new file mode 100644
+--- /dev/null
++++ b/pkg/provider/api_no_disk_cache_test.go
+@@ -0,0 +1,527 @@
++package provider
++
++import (
++	"context"
++	"errors"
++	"io"
++	"io/fs"
++	"net/http"
++	"os"
++	"path/filepath"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/korotovsky/slack-mcp-server/pkg/provider/edge"
++	"github.com/rusq/slackdump/v3/auth"
++	"github.com/slack-go/slack"
++	"github.com/stretchr/testify/require"
++	"go.uber.org/zap"
++	"golang.org/x/time/rate"
++)
++
++type noDiskSlackClient struct {
++	SlackAPI
++	users        []slack.User
++	channels     []slack.Channel
++	usersErr     error
++	channelsErr  error
++	bootErr      error
++	usersInfoErr error
++	onConnect    func()
++	usersCalls   int
++	channelCalls int
++	channelPage  func(context.Context, *slack.GetConversationsParameters) ([]slack.Channel, string, error)
++}
++
++func (m *noDiskSlackClient) GetUsersContext(ctx context.Context, options ...slack.GetUsersOption) ([]slack.User, error) {
++	m.usersCalls++
++	return m.users, m.usersErr
++}
++
++func (m *noDiskSlackClient) ClientUserBoot(ctx context.Context) (*edge.ClientUserBootResponse, error) {
++	if m.onConnect != nil {
++		m.onConnect()
++	}
++	return &edge.ClientUserBootResponse{IMs: []edge.IM{{User: "UCONNECT", IsExtShared: true}}}, m.bootErr
++}
++
++func (m *noDiskSlackClient) GetUsersInfo(users ...string) (*[]slack.User, error) {
++	result := []slack.User{{ID: "UCONNECT", Name: "external"}}
++	return &result, m.usersInfoErr
++}
++
++func (m *noDiskSlackClient) GetConversationsContext(ctx context.Context, params *slack.GetConversationsParameters) ([]slack.Channel, string, error) {
++	m.channelCalls++
++	if m.channelPage != nil {
++		return m.channelPage(ctx, params)
++	}
++	return m.channels, "", m.channelsErr
++}
++
++func newNoDiskSlackClient() *noDiskSlackClient {
++	return &noDiskSlackClient{
++		users: []slack.User{{ID: "UAPI", Name: "alice", RealName: "Alice"}},
++		channels: []slack.Channel{
++			{GroupConversation: slack.GroupConversation{
++				Conversation: slack.Conversation{ID: "CAPI", NameNormalized: "general"},
++				Name:         "general",
++			}},
++			{GroupConversation: slack.GroupConversation{
++				Conversation: slack.Conversation{ID: "DAPI", IsIM: true, User: "UAPI"},
++			}},
++		},
++	}
++}
++
++func newNoDiskProvider(client *noDiskSlackClient) *ApiProvider {
++	ap := newWithXOXP("stdio", auth.ValueAuth{}, zap.NewNop())
++	ap.client = client
++	ap.rateLimiter = rate.NewLimiter(rate.Inf, 1)
++	return ap
++}
++
++func noDiskCacheRoot(t *testing.T) string {
++	t.Helper()
++	root := t.TempDir()
++	t.Setenv("HOME", filepath.Join(root, "home"))
++	t.Setenv("XDG_CACHE_HOME", filepath.Join(root, "xdg"))
++	t.Setenv("SLACK_MCP_XOXP_TOKEN", "demo")
++	t.Setenv("SLACK_MCP_XOXB_TOKEN", "")
++	t.Setenv("SLACK_MCP_XOXC_TOKEN", "demo")
++	t.Setenv("SLACK_MCP_XOXD_TOKEN", "demo")
++	t.Setenv("SLACK_MCP_MIN_REFRESH_INTERVAL", "0")
++	t.Setenv("SLACK_MCP_USERS_CACHE", "")
++	t.Setenv("SLACK_MCP_CHANNELS_CACHE", "")
++	t.Chdir(root)
++	return root
++}
++
++func noDiskEntries(t *testing.T, root string) map[string]string {
++	t.Helper()
++	entries := make(map[string]string)
++	require.NoError(t, filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
++		if err != nil {
++			return err
++		}
++		if path == root {
++			return nil
++		}
++		if entry.IsDir() {
++			entries[path+"/"] = ""
++			return nil
++		}
++		data, err := os.ReadFile(path)
++		entries[path] = string(data)
++		return err
++	}))
++	return entries
++}
++
++func seedNoDiskFiles(t *testing.T, root string) {
++	t.Helper()
++	cacheDir, err := os.UserCacheDir()
++	require.NoError(t, err)
++	for _, dir := range []string{root, filepath.Join(cacheDir, "slack-mcp-server")} {
++		require.NoError(t, os.MkdirAll(dir, 0700))
++		for _, prefix := range []string{"", "demo_"} {
++			require.NoError(t, os.WriteFile(filepath.Join(dir, prefix+"users_cache.json"), []byte(`[{"id":"UDISK","name":"disk"}]`), 0600))
++			require.NoError(t, os.WriteFile(filepath.Join(dir, prefix+"channels_cache_v2.json"), []byte(`[{"id":"CDISK","name":"#disk"}]`), 0600))
++		}
++	}
++	require.NoError(t, os.MkdirAll(filepath.Join(root, "overrides"), 0700))
++	require.NoError(t, os.WriteFile(filepath.Join(root, "overrides", "users.json"), []byte(`[{"id":"UDISK","name":"disk"}]`), 0600))
++	require.NoError(t, os.WriteFile(filepath.Join(root, "overrides", "channels.json"), []byte(`[{"id":"CDISK","name":"#disk"}]`), 0600))
++}
++
++func TestNoDiskCacheStartupAndRefresh(t *testing.T) {
++	constructors := map[string]func(string, auth.ValueAuth, *zap.Logger) *ApiProvider{
++		"oauth":   newWithXOXP,
++		"session": newWithXOXC,
++	}
++	for name, constructor := range constructors {
++		for _, mode := range []struct {
++			name      string
++			overrides bool
++			existing  bool
++			noHome    bool
++		}{
++			{name: "default"},
++			{name: "overrides", overrides: true},
++			{name: "existing", existing: true},
++			{name: "existing-overrides", overrides: true, existing: true},
++			{name: "no-home", noHome: true},
++		} {
++			t.Run(name+"/"+mode.name, func(t *testing.T) {
++				root := noDiskCacheRoot(t)
++				if mode.overrides {
++					t.Setenv("SLACK_MCP_USERS_CACHE", filepath.Join(root, "overrides", "users.json"))
++					t.Setenv("SLACK_MCP_CHANNELS_CACHE", filepath.Join(root, "overrides", "channels.json"))
++				}
++				if mode.existing {
++					seedNoDiskFiles(t, root)
++				}
++				if mode.noHome {
++					t.Setenv("HOME", "")
++					t.Setenv("XDG_CACHE_HOME", "")
++				}
++				before := noDiskEntries(t, root)
++				ap := constructor("stdio", auth.ValueAuth{}, zap.NewNop())
++				require.Empty(t, ap.ProvideUsersMap().Users)
++				require.Empty(t, ap.ProvideChannelsMaps().Channels)
++				ready, err := ap.IsReady()
++				require.False(t, ready)
++				require.ErrorIs(t, err, ErrUsersNotReady)
++				require.Equal(t, before, noDiskEntries(t, root))
++
++				client := newNoDiskSlackClient()
++				ap.client = client
++				ap.rateLimiter = rate.NewLimiter(rate.Inf, 1)
++				ctx := context.Background()
++				require.NoError(t, ap.RefreshUsers(ctx))
++				ready, err = ap.IsReady()
++				require.False(t, ready)
++				require.ErrorIs(t, err, ErrChannelsNotReady)
++				require.NoError(t, ap.RefreshChannels(ctx))
++				require.Equal(t, 1, client.usersCalls)
++				require.Equal(t, 1, client.channelCalls)
++				users := ap.ProvideUsersMap()
++				channels := ap.ProvideChannelsMaps()
++				require.Equal(t, "UAPI", users.UsersInv["alice"])
++				require.Equal(t, "UCONNECT", users.UsersInv["external"])
++				require.Equal(t, "CAPI", channels.ChannelsInv["#general"])
++				require.Equal(t, "DAPI", channels.ChannelsInv["@alice"])
++				require.NotContains(t, users.Users, "UDISK")
++				require.NotContains(t, channels.Channels, "CDISK")
++				ready, err = ap.IsReady()
++				require.NoError(t, err)
++				require.True(t, ready)
++				require.Equal(t, before, noDiskEntries(t, root))
++
++				client.users[0].Name = "bob"
++				client.channels[0].NameNormalized = "updated"
++				require.NoError(t, ap.ForceRefreshUsers(ctx))
++				require.NoError(t, ap.ForceRefreshChannels(ctx))
++				require.Equal(t, 2, client.usersCalls)
++				require.Equal(t, 2, client.channelCalls)
++				require.Equal(t, "UAPI", ap.ProvideUsersMap().UsersInv["bob"])
++				require.Equal(t, "UCONNECT", ap.ProvideUsersMap().UsersInv["external"])
++				require.NotContains(t, ap.ProvideUsersMap().UsersInv, "alice")
++				require.Equal(t, "CAPI", ap.ProvideChannelsMaps().ChannelsInv["#updated"])
++				require.Equal(t, "DAPI", ap.ProvideChannelsMaps().ChannelsInv["@bob"])
++				require.NotContains(t, ap.ProvideChannelsMaps().ChannelsInv, "#general")
++				require.Equal(t, "UAPI", users.UsersInv["alice"])
++				require.Equal(t, "CAPI", channels.ChannelsInv["#general"])
++				require.Equal(t, before, noDiskEntries(t, root))
++			})
++		}
++	}
++}
++
++func TestNoDiskCacheStartupRetries(t *testing.T) {
++	root := noDiskCacheRoot(t)
++	client := newNoDiskSlackClient()
++	ap := newNoDiskProvider(client)
++	ctx := context.Background()
++	failure := errors.New("Slack unavailable")
++	client.usersErr = failure
++	client.channelsErr = failure
++	require.ErrorIs(t, ap.RefreshUsers(ctx), failure)
++	require.ErrorIs(t, ap.RefreshChannels(ctx), failure)
++	require.False(t, ap.usersReady.Load())
++	require.False(t, ap.channelsReady.Load())
++
++	users, channels := client.users, client.channels
++	client.users, client.channels = nil, nil
++	client.usersErr, client.channelsErr = nil, nil
++	require.Error(t, ap.RefreshUsers(ctx))
++	require.Error(t, ap.RefreshChannels(ctx))
++	require.False(t, ap.usersReady.Load())
++	require.False(t, ap.channelsReady.Load())
++
++	client.users, client.channels = users, channels
++	require.NoError(t, ap.RefreshUsers(ctx))
++	require.NoError(t, ap.RefreshChannels(ctx))
++	require.Equal(t, 3, client.usersCalls)
++	require.Equal(t, 3, client.channelCalls)
++	ready, err := ap.IsReady()
++	require.NoError(t, err)
++	require.True(t, ready)
++	require.Equal(t, "UAPI", ap.ProvideUsersMap().UsersInv["alice"])
++	require.Equal(t, "DAPI", ap.ProvideChannelsMaps().ChannelsInv["@alice"])
++	require.Empty(t, noDiskEntries(t, root))
++}
++
++func TestNoDiskCacheChannelRefreshPreservesSnapshot(t *testing.T) {
++	for _, mode := range []string{"api-error", "later-page-error", "later-page-canceled", "empty"} {
++		t.Run(mode, func(t *testing.T) {
++			root := noDiskCacheRoot(t)
++			t.Setenv("SLACK_MCP_MIN_REFRESH_INTERVAL", "1h")
++			client := newNoDiskSlackClient()
++			ap := newNoDiskProvider(client)
++			require.NoError(t, ap.RefreshUsers(context.Background()))
++			require.NoError(t, ap.RefreshChannels(context.Background()))
++			snapshot := ap.ProvideChannelsMaps()
++			require.Equal(t, "CAPI", snapshot.ChannelsInv["#general"])
++			require.Equal(t, "DAPI", snapshot.ChannelsInv["@alice"])
++			require.Len(t, snapshot.Channels, 2)
++
++			channels := client.channels
++			channels[0].NameNormalized = "updated"
++			failure := errors.New("Slack unavailable")
++			ctx, cancel := context.WithCancel(context.Background())
++			defer cancel()
++			switch mode {
++			case "api-error":
++				client.channelsErr = failure
++			case "later-page-error", "later-page-canceled":
++				if mode == "later-page-canceled" {
++					failure = context.Canceled
++				}
++				client.channelPage = func(ctx context.Context, params *slack.GetConversationsParameters) ([]slack.Channel, string, error) {
++					require.NotEmpty(t, params.Types)
++					if params.Cursor == "" {
++						if mode == "later-page-canceled" {
++							cancel()
++						}
++						return channels[:1], "next", nil
++					}
++					require.Equal(t, "next", params.Cursor)
++					return nil, "", failure
++				}
++			case "empty":
++				client.channels = nil
++				failure = nil
++			}
++
++			err := ap.ForceRefreshChannels(ctx)
++			if failure != nil {
++				require.ErrorIs(t, err, failure)
++			} else {
++				require.NoError(t, err)
++			}
++			require.Same(t, snapshot, ap.ProvideChannelsMaps())
++			ready, err := ap.IsReady()
++			require.NoError(t, err)
++			require.True(t, ready)
++			require.Equal(t, "CAPI", ap.ProvideChannelsMaps().ChannelsInv["#general"])
++			require.Equal(t, "DAPI", ap.ProvideChannelsMaps().ChannelsInv["@alice"])
++			require.NotContains(t, ap.ProvideChannelsMaps().ChannelsInv, "#updated")
++			calls := client.channelCalls
++			require.ErrorIs(t, ap.ForceRefreshChannels(context.Background()), ErrRefreshRateLimited)
++			require.Equal(t, calls, client.channelCalls)
++
++			require.Nil(t, ap.GetChannels(ctx, []string{"public_channel"}))
++			require.Nil(t, ap.GetChannelsType(ctx, "public_channel"))
++			require.Same(t, snapshot, ap.ProvideChannelsMaps())
++			client.channels, client.channelsErr, client.channelPage = channels, nil, nil
++			ap.lastForcedChannelsRefresh = time.Now().Add(-2 * time.Hour)
++			require.NoError(t, ap.ForceRefreshChannels(context.Background()))
++			require.NotSame(t, snapshot, ap.ProvideChannelsMaps())
++			require.Equal(t, "CAPI", ap.ProvideChannelsMaps().ChannelsInv["#updated"])
++			require.Equal(t, "DAPI", ap.ProvideChannelsMaps().ChannelsInv["@alice"])
++			require.NotContains(t, ap.ProvideChannelsMaps().ChannelsInv, "#general")
++			require.Equal(t, "CAPI", snapshot.ChannelsInv["#general"])
++			require.Empty(t, noDiskEntries(t, root))
++		})
++	}
++}
++
++type noDiskHTTPClient func(*http.Request) (*http.Response, error)
++
++func (f noDiskHTTPClient) Do(req *http.Request) (*http.Response, error) {
++	return f(req)
++}
++
++func TestNoDiskCacheEnterpriseChannelRefreshPreservesSnapshot(t *testing.T) {
++	for _, mode := range []string{"first-page-api-error", "second-page-api-error", "second-page-http-error"} {
++		t.Run(mode, func(t *testing.T) {
++			root := noDiskCacheRoot(t)
++			ctx := context.Background()
++			ap := newNoDiskProvider(newNoDiskSlackClient())
++			require.NoError(t, ap.RefreshUsers(ctx))
++			fail := false
++			calls := 0
++			failure := errors.New("synthetic HTTP failure")
++			httpClient := noDiskHTTPClient(func(req *http.Request) (*http.Response, error) {
++				body := `{"ok":true}`
++				switch req.URL.Path {
++				case "/api/client.userBoot":
++					body = `{"ok":true,"channels":[{"id":"CEDGE","name":"edge","name_normalized":"edge"}]}`
++				case "/api/im.list", "/api/search.modules.channels", "/api/client.counts":
++				case "/api/conversations.list":
++					calls++
++					if err := req.ParseForm(); err != nil {
++						return nil, err
++					}
++					cursor := req.Form.Get("cursor")
++					if fail && (mode == "first-page-api-error" || cursor == "next") {
++						if mode == "second-page-http-error" {
++							return nil, failure
++						}
++						body = `{"ok":false,"error":"synthetic_page_failure"}`
++					} else if cursor == "" {
++						body = `{"ok":true,"channels":[{"id":"CEDGE","name":"duplicate","name_normalized":"duplicate"},{"id":"CSTD1","name":"standard-one","name_normalized":"standard-one"}],"response_metadata":{"next_cursor":"next"}}`
++					} else if cursor == "next" {
++						body = `{"ok":true,"channels":[{"id":"CSTD2","name":"standard-two","name_normalized":"standard-two"}]}`
++					} else {
++						return nil, errors.New("unexpected cursor: " + cursor)
++					}
++				default:
++					return nil, errors.New("unexpected request: " + req.URL.Path)
++				}
++				return &http.Response{
++					StatusCode: http.StatusOK,
++					Header:     http.Header{"Content-Type": {"application/json"}},
++					Body:       io.NopCloser(strings.NewReader(body)),
++					Request:    req,
++				}, nil
++			})
++			info := &slack.AuthTestResponse{URL: "https://workspace.invalid/", TeamID: "TTEST"}
++			edgeClient, err := edge.NewWithInfo(info, auth.ValueAuth{}, edge.OptionHTTPClient(httpClient))
++			require.NoError(t, err)
++			client := &MCPSlackClient{
++				slackClient:  slack.New("synthetic", slack.OptionAPIURL(info.URL+"api/"), slack.OptionHTTPClient(httpClient)),
++				edgeClient:   edgeClient,
++				isEnterprise: true,
++			}
++			ap.client = client
++			require.NoError(t, ap.RefreshChannels(ctx))
++			require.Equal(t, 2, calls)
++			snapshot := ap.ProvideChannelsMaps()
++			require.Len(t, snapshot.Channels, 3)
++			require.Equal(t, "CEDGE", snapshot.ChannelsInv["#edge"])
++			require.Equal(t, "CSTD2", snapshot.ChannelsInv["#standard-two"])
++
++			fail = true
++			err = ap.ForceRefreshChannels(ctx)
++			if mode == "second-page-http-error" {
++				require.ErrorIs(t, err, failure)
++			} else {
++				require.EqualError(t, err, "synthetic_page_failure")
++			}
++			require.Same(t, snapshot, ap.ProvideChannelsMaps())
++			require.Equal(t, "CSTD2", ap.ProvideChannelsMaps().ChannelsInv["#standard-two"])
++			ready, err := ap.IsReady()
++			require.NoError(t, err)
++			require.True(t, ready)
++			require.False(t, client.edgeFailed)
++
++			channels, cursor, err := client.GetConversationsContext(ctx, &slack.GetConversationsParameters{Types: AllChanTypes})
++			require.Error(t, err)
++			require.Nil(t, channels)
++			require.Empty(t, cursor)
++			fresh := newNoDiskProvider(newNoDiskSlackClient())
++			fresh.client = client
++			require.Error(t, fresh.RefreshChannels(ctx))
++			require.False(t, fresh.channelsReady.Load())
++			require.Empty(t, fresh.ProvideChannelsMaps().Channels)
++
++			fail = false
++			require.NoError(t, ap.ForceRefreshChannels(ctx))
++			require.NotSame(t, snapshot, ap.ProvideChannelsMaps())
++			require.Equal(t, snapshot, ap.ProvideChannelsMaps())
++			require.Empty(t, noDiskEntries(t, root))
++		})
++	}
++}
++
++func TestNoDiskCacheUserRefreshPreservesSnapshot(t *testing.T) {
++	for _, refreshed := range []bool{false, true} {
++		for _, mode := range []string{"boot-error", "user-info-error"} {
++			name := "startup/"
++			if refreshed {
++				name = "refresh/"
++			}
++			t.Run(name+mode, func(t *testing.T) {
++				root := noDiskCacheRoot(t)
++				client := newNoDiskSlackClient()
++				ap := newNoDiskProvider(client)
++				ctx := context.Background()
++				if refreshed {
++					require.NoError(t, ap.RefreshUsers(ctx))
++					require.NoError(t, ap.RefreshChannels(ctx))
++				}
++				snapshot := ap.ProvideUsersMap()
++				client.users[0].Name = "bob"
++				client.onConnect = func() {
++					require.Same(t, snapshot, ap.ProvideUsersMap())
++					require.Equal(t, refreshed, ap.usersReady.Load())
++				}
++				failure := errors.New("synthetic Slack Connect failure")
++				if mode == "boot-error" {
++					client.bootErr = failure
++				} else {
++					client.usersInfoErr = failure
++				}
++				require.ErrorIs(t, ap.RefreshUsers(ctx), failure)
++				require.Same(t, snapshot, ap.ProvideUsersMap())
++				require.Equal(t, refreshed, ap.usersReady.Load())
++				require.NotContains(t, snapshot.UsersInv, "bob")
++				if refreshed {
++					require.Equal(t, "UCONNECT", snapshot.UsersInv["external"])
++					require.Equal(t, "UAPI", snapshot.UsersInv["alice"])
++					ready, err := ap.IsReady()
++					require.NoError(t, err)
++					require.True(t, ready)
++				}
++
++				client.bootErr, client.usersInfoErr = nil, nil
++				require.NoError(t, ap.RefreshUsers(ctx))
++				require.NotSame(t, snapshot, ap.ProvideUsersMap())
++				require.Equal(t, "UAPI", ap.ProvideUsersMap().UsersInv["bob"])
++				require.Equal(t, "UCONNECT", ap.ProvideUsersMap().UsersInv["external"])
++				require.True(t, ap.usersReady.Load())
++				client.onConnect = nil
++				client.usersInfoErr = failure
++				client.users = append(client.users, slack.User{ID: "UCONNECT", Name: "direct"})
++				require.NoError(t, ap.RefreshUsers(ctx))
++				require.Equal(t, "UCONNECT", ap.ProvideUsersMap().UsersInv["direct"])
++				require.NotContains(t, ap.ProvideUsersMap().UsersInv, "external")
++				require.Empty(t, noDiskEntries(t, root))
++			})
++		}
++	}
++}
++
++func TestNoDiskCacheForcedRefreshInterval(t *testing.T) {
++	root := noDiskCacheRoot(t)
++	t.Setenv("SLACK_MCP_MIN_REFRESH_INTERVAL", "1h")
++	client := newNoDiskSlackClient()
++	ap := newNoDiskProvider(client)
++	ctx := context.Background()
++	require.NoError(t, ap.RefreshUsers(ctx))
++	require.NoError(t, ap.RefreshChannels(ctx))
++	require.NoError(t, ap.ForceRefreshUsers(ctx))
++	require.NoError(t, ap.ForceRefreshChannels(ctx))
++	require.ErrorIs(t, ap.ForceRefreshUsers(ctx), ErrRefreshRateLimited)
++	require.ErrorIs(t, ap.ForceRefreshChannels(ctx), ErrRefreshRateLimited)
++	require.Equal(t, 2, client.usersCalls)
++	require.Equal(t, 2, client.channelCalls)
++
++	ap.lastForcedUsersRefresh = time.Now().Add(-2 * time.Hour)
++	ap.lastForcedChannelsRefresh = time.Now().Add(-2 * time.Hour)
++	require.NoError(t, ap.ForceRefreshUsers(ctx))
++	require.NoError(t, ap.ForceRefreshChannels(ctx))
++	require.Equal(t, 3, client.usersCalls)
++	require.Equal(t, 3, client.channelCalls)
++	require.Empty(t, noDiskEntries(t, root))
++}
++
++func TestNoDiskCacheChannelFiltering(t *testing.T) {
++	root := noDiskCacheRoot(t)
++	client := newNoDiskSlackClient()
++	ap := newNoDiskProvider(client)
++	ctx := context.Background()
++	require.NoError(t, ap.RefreshUsers(ctx))
++	ims := ap.GetChannels(ctx, []string{"im"})
++	require.Len(t, ims, 1)
++	require.Equal(t, "@alice", ims[0].Name)
++	require.Equal(t, "CAPI", ap.ProvideChannelsMaps().ChannelsInv["#general"])
++	public := ap.GetChannels(ctx, []string{"public_channel"})
++	require.Len(t, public, 1)
++	require.Equal(t, "#general", public[0].Name)
++	require.Len(t, ap.GetChannels(ctx, nil), 2)
++	require.Equal(t, 3, client.channelCalls)
++	require.Empty(t, noDiskEntries(t, root))
++}
