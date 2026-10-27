@@ -4,6 +4,7 @@
   system = "aarch64-darwin";
   username = "sam";
   home = true;
+  homeOptions.slackMcp.enable = true;
 
   user = {
     aiProfile = "work";

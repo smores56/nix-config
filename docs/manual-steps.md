@@ -85,6 +85,57 @@ user; on a laptop whose OS hostname is not `smoreswork`, override both:
 MDM enrollment, FileVault, and OS updates stay with the employer; this repo only
 manages the user environment.
 
+The optional native Slack connector is enabled by `homeOptions.slackMcp.enable`
+in this host's metadata. The work-profile check controls deployment, not Maki's
+model selection. Before using Slack, verify that Maki runs only your approved
+work provider; this standalone module does not install or override its provider
+configuration. Keep Slack signed in to the workspace you intend to expose.
+
+When migrating an existing unmanaged connector, Home Manager refuses to clobber
+its files. Back up `~/.config/maki/mcp.toml` and any existing
+`~/.agents/skills/native-slack` outside the repository, then apply with
+`home-manager switch -b before-slack-mcp --flake .#sam@smoreswork`.
+The backup files must not contain credentials. Preserve unrelated MCP entries
+by configuring them separately before replacing a combined unmanaged file.
+
+After applying the home configuration:
+
+```sh
+maki-slack auth
+maki-slack auth --team WORKSPACE_ID
+```
+
+The first command lists authenticated workspaces without saving credentials.
+Choose the intended ID for the second command. macOS may prompt for access to
+Slack Safe Storage or the login Keychain. The helper saves the selected session
+as service `maki-slack-mcp`, account `desktop-session`, and verifies it by reading
+it back and checking Slack's authenticated identity. Never paste tokens into a
+terminal command, commit them, or put them in a Nix option.
+
+Restart Maki and check `/mcp`: Slack should be Running. If a sign-out or session
+rotation invalidates authentication, repeat the two commands and restart Maki.
+This setup uses your Slack desktop credentials, not Claude's connector or its
+approval settings. It can read only conversations your account can access;
+write operations and attachment downloads are not exposed. Returned messages
+may be retained in Maki's conversation history.
+
+Keychain protects credentials at rest, but the item is accessible through the
+trusted macOS `security` utility and is not a sandbox against same-user tools.
+Cookie extraction opens Slack's database read-only; SQLite may still take locks
+or maintain shared-memory state. If safe LevelDB extraction fails while Slack is
+writing, quit Slack and retry rather than using a partial or older record.
+Workspace lookup caches remain in memory and are refetched after restart.
+
+To remove access, disable `slackMcp.enable`, apply the home, stop existing Maki
+sessions, then delete the saved item:
+
+```sh
+security delete-generic-password -a desktop-session -s maki-slack-mcp
+```
+
+Deleting this copy does not revoke the original Slack desktop session. If you
+suspect compromise, revoke that session through Slack as well.
+
 ## Secrets
 
 Secrets are split by scope:

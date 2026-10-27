@@ -17,6 +17,12 @@ check-build:
 test:
     nix run nixpkgs#python3 -- -m unittest discover -s tests
 
+test-slack:
+    nix build .#checks.$(nix eval --impure --raw --expr builtins.currentSystem).slack-mcp .#checks.$(nix eval --impure --raw --expr builtins.currentSystem).slack-mcp-module .#checks.$(nix eval --impure --raw --expr builtins.currentSystem).slack-mcp-backend --no-link
+
+slack-auth *args:
+    maki-slack auth {{args}}
+
 # Format the tree.
 fmt:
     nix fmt
