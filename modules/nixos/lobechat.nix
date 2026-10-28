@@ -278,6 +278,18 @@ let
     echo "lobechat: no answer on 127.0.0.1:${toString ports.lobechat} after 600s" >&2
     exit 1
   '';
+
+  # `memory-mcp` is a Type=simple uvicorn server; After= only waits for exec,
+  # not for the listener. The connector seed makes one attempt, so probe the
+  # endpoint before it runs.
+  memoryReadinessScript = pkgs.writeShellScript "lobechat-memory-wait" ''
+    for _ in $(seq 300); do
+      ${pkgs.curl}/bin/curl -s --max-time 2 -o /dev/null http://127.0.0.1:${toString ports.memoryMcp}/mcp && exit 0
+      sleep 1
+    done
+    echo "lobechat: memory wrapper did not listen on 127.0.0.1:${toString ports.memoryMcp} after 300s" >&2
+    exit 1
+  '';
 in
 {
   options.lobechat.enable = lib.mkEnableOption "the phone-first LobeChat deployment over Graphiti memory";
@@ -406,11 +418,15 @@ in
       requires = [
         "lobechat-secrets.service"
         "podman-lobechat.service"
+        "memory-mcp.service"
       ];
       after = [
         "lobechat-secrets.service"
         "podman-lobechat.service"
+        "memory-mcp.service"
       ];
+      path = [ pkgs.coreutils ];
+      preStart = "${memoryReadinessScript}";
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;

@@ -839,6 +839,39 @@ regenerated on every wrapper start, so a copied file goes stale.
 `/internal/lookup` takes at most 10,000 hashes and both routes reject bodies
 over 1 MB.
 
+The FalkorDB and Graphiti containers run rootless as the `memory` user (uid
+982, subuid/subgid range 200000-265535). The first switch from the old rootful
+layout must take a fresh export, stop all four units, and hand the graph to
+`memory` before activation:
+
+```sh
+sudo systemctl start memory-export.service       # known-good pre-migration copy
+sudo systemctl stop memory-mcp memory-graphiti-mcp memory-llm-proxy memory-falkordb
+sudo chown -R memory:memory /var/lib/memory/falkordb
+just switch smortress
+ss -ltnp 'sport = :6379'                         # must be 127.0.0.1
+sudo -u memory XDG_RUNTIME_DIR=/run/user/982 podman ps
+sudo podman ps -a                                # stale rootful containers?
+memory status                                    # graph: ok
+redis-cli -h 127.0.0.1 -p 6379 DBSIZE            # compare with the export
+sudo systemctl start memory-export.service       # exercise the rootless export path
+journalctl -u memory-export.service -n 20 --no-pager
+```
+
+If a stale container is still holding `127.0.0.1:6379`, remove it from the
+store that owns it: `sudo podman rm -f memory-falkordb memory-graphiti-mcp`
+or the same `podman rm` as the `memory` user. The rootless image store lives
+under `/var/lib/memory/.local/share/containers`; do not add it to backups. After
+`memory restore`, the graph directory and snapshot are owned by `memory`,
+matching the rootless container. The first switch also pulls both images into
+the rootless store; after verification, `sudo podman system prune -a` reclaims
+the old rootful copies.
+
+To roll back, stop the four units, switch to the pre-T5 generation (or a
+checkout before these commits), `sudo chown -R root:root
+/var/lib/memory/falkordb`, and start the units. The rootless store can remain;
+only the graph ownership has to return to root.
+
 Graphiti extracts through `memory-llm-proxy` on `127.0.0.1:8082`, which is
 Memory's single egress point to Neuralwatt (`api.neuralwatt.com`). The gateway
 holds the account key — read from the `neuralwatt-api-key` sops secret through a
@@ -925,7 +958,8 @@ fixed until Maki restarts.
 
 The wrapper's typed registry (`registry.sqlite`, including the audit table)
 lives in `/var/lib/memory`, owned by the `memory` system user (the FalkorDB
-subdirectory stays root-owned). The database carries a `PRAGMA user_version`
+subdirectory is owned by `memory` as well, so rootless podman can write it).
+The database carries a `PRAGMA user_version`
 schema version. A database one version behind is migrated in place on open
 (`ALTER`/backfill statements in one transaction); an unversioned one, or one
 newer than the code, is refused rather than guessed at. Restoring an export
@@ -943,8 +977,8 @@ memory backup: it holds every episode's normalized content and typed
 provenance. The graph is a derived index: it is rebuilt only by re-ingesting
 the corpus into a wiped store (`just memory-rebuild`).
 `memory-export.timer` runs `memory-export.service` daily (00:00 plus up to an
-hour of randomized delay, `Persistent=true`, as root because the FalkorDB data
-directory is root-owned) and writes one timestamped directory under
+hour of randomized delay, `Persistent=true`, as root so it can stop/start the
+services and read the graph directory) and writes one timestamped directory under
 `/var/lib/memory/export` (mode 0700, root):
 
 - `registry.sqlite` — a consistent copy taken with SQLite's online backup API,
