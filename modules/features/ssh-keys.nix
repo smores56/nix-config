@@ -140,9 +140,8 @@ let
       exit "$failed"
     '';
   };
-  # The host must keep no software private keys in ~/.ssh: identities come
-  # from the agent/security key. Activation runs this, and the flake check
-  # exercises it against scratch keys.
+  # Identities normally come from the agent/security key. Work hosts may keep
+  # gcloud's one conventional key file, which is managed by the Google CLI.
   sshNoPrivateKeys = pkgs.writeShellApplication {
     name = "ssh-no-private-keys";
     runtimeInputs = [
@@ -157,6 +156,11 @@ let
       failures=0
       while IFS= read -r -d "" file; do
         [ -f "$file" ] || continue
+        if [ "''${2:-}" = --allow-gcloud-key ] \
+          && [ "$file" = "''${ssh_dir%/}/google_compute_engine" ] \
+          && [ ! -L "$file" ]; then
+          continue
+        fi
         if head -c 11 "$file" | grep -q -- '-----BEGIN'; then
           echo "ssh-no-private-keys: private key in $file" >&2
           failures=$((failures + 1))
@@ -184,7 +188,7 @@ in
   '';
 
   home.activation.checkSshPrivateKeys = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    run ${lib.getExe sshNoPrivateKeys} "$HOME/.ssh"
+    run ${lib.getExe sshNoPrivateKeys} "$HOME/.ssh" ${lib.optionalString config.machine.workHost "--allow-gcloud-key"}
   '';
 
   programs.git.settings.gpg.ssh.allowedSignersFile = allowedSigners;

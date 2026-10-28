@@ -173,7 +173,8 @@ are answered; host-key and presence prompts fail closed), `ssh-pub-keys`
 (committed `.pub` keys
 written and trusted, stale files replaced, a malformed key writes nothing and
 exits non-zero), `ssh-no-private-keys` (a private key, including a symlink,
-anywhere in `~/.ssh` fails; public-only and missing directories pass),
+anywhere in `~/.ssh` fails, except the work-host gcloud key; public-only and
+missing directories pass),
 `worktrees-branch-template` (branch naming from
 per-repo templates), `repos-routing` (flat work repo discovery and routing), `zsh-config`
 (generated zsh startup files parse; only on a system with a zsh home) and

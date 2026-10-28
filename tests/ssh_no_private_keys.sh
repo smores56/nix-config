@@ -34,6 +34,23 @@ rm "$work/.ssh/id_linked"
 mkdir "$work/.ssh/nested"
 ssh-keygen -q -t ed25519 -N "" -f "$work/.ssh/nested/id_nested"
 "$tool" "$work/.ssh" >/dev/null 2>&1 && fail "nested private key was accepted"
+rm "$work/.ssh/nested/id_nested"
+
+# Only the explicit work-host exception allows the root gcloud key.
+ssh-keygen -q -t ed25519 -N "" -f "$work/.ssh/google_compute_engine"
+"$tool" "$work/.ssh" >/dev/null 2>&1 && fail "gcloud key accepted without exception"
+"$tool" "$work/.ssh" --allow-gcloud-key >/dev/null 2>&1 || fail "gcloud key rejected with exception"
+cp "$work/linked" "$work/.ssh/id_other"
+"$tool" "$work/.ssh" --allow-gcloud-key >/dev/null 2>&1 && fail "other private key accepted with exception"
+rm "$work/.ssh/id_other"
+
+# The exception must not accept a symlink or a similarly named nested key.
+rm "$work/.ssh/google_compute_engine"
+ln -s "$work/linked" "$work/.ssh/google_compute_engine"
+"$tool" "$work/.ssh" --allow-gcloud-key >/dev/null 2>&1 && fail "gcloud symlink accepted"
+rm "$work/.ssh/google_compute_engine"
+cp "$work/linked" "$work/.ssh/nested/google_compute_engine"
+"$tool" "$work/.ssh" --allow-gcloud-key >/dev/null 2>&1 && fail "nested gcloud key accepted"
 
 # A missing directory is fine (fresh host).
 "$tool" "$work/absent" >/dev/null 2>&1 || fail "missing directory was rejected"

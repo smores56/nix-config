@@ -168,6 +168,9 @@ Then run `ssh-pub-keys` to write the committed `~/.ssh/*.pub` and refresh
 `~/.ssh/allowed_signers` (every `home-manager switch` and bootstrap also run
 it). The public keys are literals in `modules/features/ssh-keys.nix`, so a key
 rotation happens there and every host picks it up at the next switch.
+The work Mac permits the Google Cloud CLI's `~/.ssh/google_compute_engine`
+private key as an exception to the local private-key check; this software key
+remains on disk. Other private keys and symlinked keys are still rejected.
 
 The Access token is cached per login in
 `$XDG_RUNTIME_DIR/cloudflared-access/token` (0600, tmpfs) by
