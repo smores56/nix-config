@@ -36,11 +36,12 @@ in
         UserKnownHostsFile = "~/.ssh/known_hosts";
         # Reuse one transport per destination: a fresh cloudflared ProxyCommand
         # also re-resolves the Access token via pass-cli, ~1.7s per invocation.
-        # The socket lives in the per-user runtime dir, not ~/.ssh (the design
-        # forbids private-key-adjacent state there); an unset XDG_RUNTIME_DIR
-        # makes ssh ignore the keyword, which just disables sharing.
+        # The socket lives in a per-user 0700 dir, not ~/.ssh (the design
+        # forbids private-key-adjacent state there). An unset variable is a
+        # fatal config error, not a skipped keyword, so darwin (no
+        # XDG_RUNTIME_DIR) uses its launchd-set TMPDIR instead.
         ControlMaster = "auto";
-        ControlPath = "\${XDG_RUNTIME_DIR}/ssh-%C";
+        ControlPath = if isLinux then "\${XDG_RUNTIME_DIR}/ssh-%C" else "\${TMPDIR}/ssh-%C";
         ControlPersist = "10m";
       };
     };

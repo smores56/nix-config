@@ -116,12 +116,13 @@ in
     # would also outlive the credential decision, so the design keeps this
     # host out of connection reuse.
     ControlMaster = "no";
-    # pam_rssh (sudo) signs through the forwarded FIDO2 agent, whose credential
-    # is touch-required.
-    ForwardAgent = "\${XDG_RUNTIME_DIR}/fido2-agent";
     ProxyCommand = "${cloudflared-access}/bin/cloudflared-access ssh --hostname %h";
   }
   // lib.optionalAttrs isLinux {
+    # pam_rssh (sudo) signs through the forwarded FIDO2 agent, whose credential
+    # is touch-required. darwin runs no fido2-agent, so it forwards nothing and
+    # sudo there falls back to the password.
+    ForwardAgent = "\${XDG_RUNTIME_DIR}/fido2-agent";
     # PIV slot 9a, loaded into fido2-agent by yk-login (PIN ONCE, touch NEVER).
     # No PKCS11Provider: the provider stays in the agent so the card session and
     # PIN never leave it.
