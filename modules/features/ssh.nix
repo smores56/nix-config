@@ -34,14 +34,16 @@ in
         ServerAliveCountMax = 3;
         HashKnownHosts = false;
         UserKnownHostsFile = "~/.ssh/known_hosts";
+      }
+      // lib.optionalAttrs isLinux {
         # Reuse one transport per destination: a fresh cloudflared ProxyCommand
         # also re-resolves the Access token via pass-cli, ~1.7s per invocation.
-        # The socket lives in a per-user 0700 dir, not ~/.ssh (the design
-        # forbids private-key-adjacent state there). An unset variable is a
-        # fatal config error, not a skipped keyword, so darwin (no
-        # XDG_RUNTIME_DIR) uses its launchd-set TMPDIR instead.
+        # The socket lives in the per-user runtime dir, not ~/.ssh (the design
+        # forbids private-key-adjacent state there). darwin shares nothing: it
+        # has no XDG_RUNTIME_DIR (an unset ${VAR} is a fatal config error), and
+        # its TMPDIR is too long for a socket path.
         ControlMaster = "auto";
-        ControlPath = if isLinux then "\${XDG_RUNTIME_DIR}/ssh-%C" else "\${TMPDIR}/ssh-%C";
+        ControlPath = "\${XDG_RUNTIME_DIR}/ssh-%C";
         ControlPersist = "10m";
       };
     };
