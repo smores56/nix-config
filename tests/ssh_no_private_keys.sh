@@ -28,6 +28,12 @@ rm "$work/.ssh/id_private"
 ssh-keygen -q -t ed25519 -N "" -f "$work/linked"
 ln -s "$work/linked" "$work/.ssh/id_linked"
 "$tool" "$work/.ssh" >/dev/null 2>&1 && fail "symlinked private key was accepted"
+rm "$work/.ssh/id_linked"
+
+# Nested private keys count too.
+mkdir "$work/.ssh/nested"
+ssh-keygen -q -t ed25519 -N "" -f "$work/.ssh/nested/id_nested"
+"$tool" "$work/.ssh" >/dev/null 2>&1 && fail "nested private key was accepted"
 
 # A missing directory is fine (fresh host).
 "$tool" "$work/absent" >/dev/null 2>&1 || fail "missing directory was rejected"
