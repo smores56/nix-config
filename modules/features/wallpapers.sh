@@ -39,49 +39,115 @@ classify() {
   fi
 }
 
-# Lists are NUL-delimited and the counter is digits-only, so neither a filename
-# nor a marker can inject a record or bash arithmetic.
-counter_of() {
-  value=0
-  if [ -s "$1" ]; then
-    value=$(cat "$1")
-    case "$value" in
-      *[!0-9]* | '') value=0 ;;
-    esac
-    value=$((10#$value))
-  fi
-  printf '%s\n' "$value"
-}
-
-# One bucket counter shared by every display of that aspect; the display's rank
-# within the run shifts the pick, so two same-aspect panels differ while a
-# skipped display cannot permanently collapse their phase.
-pick_at() {
-  if [ "$#" -ne 3 ]; then
-    log "usage: wallpapers pick-at <list> <counter> <rank>"
+# Rotation is random without replacement: a bucket keeps a shuffled queue of the
+# images it has not shown yet, so a cycle repeats nothing until it runs dry.
+# Entries that left the bucket are dropped from the queue. <used> carries the
+# images already shown earlier in this run, so a queue drained mid-run cannot
+# hand a second display of the same aspect an image the first one already has.
+next_pick() {
+  if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then
+    log "usage: wallpapers pick <list> <queue> [<used>]"
     exit 2
   fi
   list=$1
-  counter=$2
-  rank=$3
-  case "$counter$rank" in
-    *[!0-9]* | '') 
-      log "not a counter/rank: $counter $rank"
-      exit 2
-      ;;
-  esac
-  files=()
-  mapfile -d '' -t files <"$list" 2>/dev/null || true
-  if [ "${#files[@]}" -eq 0 ]; then
+  queue=$2
+  used=${3:-}
+  local -a all=() queued=() rest=() candidates=()
+  local file picked=''
+  mapfile -d '' -t all <"$list" 2>/dev/null || true
+  if [ "${#all[@]}" -eq 0 ]; then
     log "no wallpapers in $list"
     return 1
   fi
-  count=${#files[@]}
-  printf '%s\n' "${files[$(((10#$counter + 10#$rank) % count))]}"
+  declare -A present=()
+  for file in "${all[@]}"; do
+    present["$file"]=1
+  done
+  declare -A shown=()
+  if [ -n "$used" ] && [ -s "$used" ]; then
+    mapfile -d '' -t queued <"$used" 2>/dev/null || true
+    for file in "${queued[@]}"; do
+      shown["$file"]=1
+    done
+  fi
+  if [ -s "$queue" ]; then
+    mapfile -d '' -t queued <"$queue" 2>/dev/null || true
+    for file in "${queued[@]}"; do
+      [ -n "${present[$file]:-}" ] || continue
+      if [ -z "$picked" ]; then
+        picked=$file
+      else
+        rest+=("$file")
+      fi
+    done
+  fi
+  if [ -z "$picked" ]; then
+    for file in "${all[@]}"; do
+      [ -z "${shown[$file]:-}" ] || continue
+      candidates+=("$file")
+    done
+    # Every image of the aspect is already on screen this run; reuse is the
+    # only option left.
+    if [ "${#candidates[@]}" -eq 0 ]; then
+      candidates=("${all[@]}")
+    fi
+    mapfile -d '' -t queued < <(printf '%s\0' "${candidates[@]}" | shuf -z) || true
+    if [ "${#queued[@]}" -eq 0 ]; then
+      log "could not shuffle $list"
+      return 1
+    fi
+    picked=${queued[0]}
+    rest=("${queued[@]:1}")
+  fi
+  if [ -d "$queue" ]; then
+    log "$queue is a directory"
+    return 1
+  fi
+  # A temp file plus rename keeps a torn write from losing the cycle, and
+  # printf with no arguments would still write one empty record.
+  if [ "${#rest[@]}" -gt 0 ]; then
+    printf '%s\0' "${rest[@]}" >"$queue.new" || {
+      log "cannot write $queue.new"
+      return 1
+    }
+  else
+    : >"$queue.new" || {
+      log "cannot write $queue.new"
+      return 1
+    }
+  fi
+  mv "$queue.new" "$queue" || {
+    log "cannot replace $queue"
+    return 1
+  }
+  printf '%s\n' "$picked"
 }
 
-# The lock is taken at dispatch, before either the transfer or the scan, so a
-# manual run cannot --delete underneath a timer run's classify pass.
+# A display that could not be set must not consume its image; put the pick back
+# at the head so the next run offers it again. Callers only unpick what they
+# have not recorded in <used>, so the second display of an aspect may still
+# take it.
+unpick() {
+  queue=$1
+  file=$2
+  if ! printf '%s\0' "$file" >"$queue.new"; then
+    log "cannot write $queue.new"
+    return 1
+  fi
+  if [ -s "$queue" ] && ! cat "$queue" >>"$queue.new"; then
+    log "cannot read $queue"
+    return 1
+  fi
+  mv "$queue.new" "$queue" || {
+    log "cannot replace $queue"
+    return 1
+  }
+}
+# The lock is taken at dispatch, before either the transfer or the scan, so on
+# Linux a manual run cannot --delete underneath a timer run's classify pass.
+# macOS has no flock here; launchd never double-starts the agent, and queue
+# updates are a temp file plus rename, so only a manual run overlapping the
+# agent can lose a pick.
 lock() {
   if [ -L "$cache" ]; then
     log "$cache is a symlink; refusing to use it"
@@ -98,20 +164,44 @@ lock() {
 }
 
 sync_cache() {
-  # An unmounted Proton tree is an empty directory on smortress, and --delete
-  # would then erase the only cached set. Refuse to sync an empty source.
   rsync_ssh=(-e 'ssh -o StrictHostKeyChecking=yes -o ConnectTimeout=20')
-  if ! listing=$(timeout 120 rsync --list-only "${rsync_ssh[@]}" "$source_url" 2>/dev/null) ||
-    [ -z "$listing" ]; then
-    log "source is empty or unreachable; keeping the cached set"
+  # Bounds a stalled stream so it cannot wedge the launchd agent: launchd will
+  # not start a second instance while this one runs. --timeout is the I/O
+  # timeout; --contimeout would be a daemon-only flag that rsync rejects on the
+  # ssh transport, so the connect bound lives in ssh's ConnectTimeout.
+  #
+  # An unmounted Proton tree is an empty directory on smortress, and --delete
+  # would then erase the only cached set, so the listing is checked first.
+  # A failed listing or transfer still reports failure so the timer does not
+  # look green, but dispatch applies from the cache regardless: rotation has to
+  # survive an outage. The probe's stderr is kept because ssh failures are
+  # otherwise silent. Both bounds plus apply fit TimeoutStartSec=20min.
+  probe_start=$SECONDS
+  probe_err="$cache/.probe.err"
+  if listing=$(timeout 240 rsync --list-only "${rsync_ssh[@]}" "$source_url" 2>"$probe_err"); then
+    if [ -z "$listing" ]; then
+      log "source listing is empty; keeping the cached set"
+      return 1
+    fi
+  else
+    status=$?
+    log "listing failed (status $status, $((SECONDS - probe_start))s): $(head -c 300 "$probe_err" | tr '\n' ' ')"
+    # A slow or flaky transport can starve the listing while a transfer still
+    # works. Without a listing the deletes stay off, so this can only add files;
+    # the run still reports the failure.
+    if ! timeout 720 rsync -rt --no-owner --no-group \
+      "${rsync_ssh[@]}" --timeout=120 "$source_url" "$dest/"; then
+      log "transfer without deletes failed too"
+    fi
     return 1
   fi
-  # Bounded so a stalled stream cannot wedge the launchd agent: launchd will
-  # not start a second instance while this one runs. --timeout is the I/O
-  # timeout; --contimeout would be a daemon-only flag and rsync rejects it on
-  # the ssh transport, so the connect bound lives in ssh's ConnectTimeout.
-  timeout 1800 rsync -rt --delete --no-owner --no-group \
-    "${rsync_ssh[@]}" --timeout=120 "$source_url" "$dest/"
+  # --delete-after so a transfer killed mid-flight leaves the old files in
+  # place instead of a half-emptied cache.
+  if ! timeout 780 rsync -rt --delete-after --no-owner --no-group \
+    "${rsync_ssh[@]}" --timeout=120 "$source_url" "$dest/"; then
+    log "transfer failed after $((SECONDS - probe_start))s"
+    return 1
+  fi
 }
 
 # Bucket the cached files by measured pixels, not by their folder: an image can
@@ -155,8 +245,7 @@ classify_cache() {
   LC_ALL=C sort -z -o "$out/Ultrawide.list" "$out/Ultrawide.list"
 }
 
-# Sets one image per display and advances a bucket's counter only after a run
-# that placed at least one image from it.
+# Sets one image per display, drawing each from that aspect's queue.
 apply_linux() {
   work=$1
   if ! outputs=$(niri msg --json outputs); then
@@ -171,56 +260,36 @@ apply_linux() {
     log "no active outputs"
     return 1
   fi
-  counter_Standard=$(counter_of "$state/counter-Standard")
-  counter_Ultrawide=$(counter_of "$state/counter-Ultrawide")
-  rank_Standard=0
-  rank_Ultrawide=0
-  used_Standard=0
-  used_Ultrawide=0
   set=0
   while IFS=$'\t' read -r connector width height; do
     if ! bucket=$(bucket_of "$width" "$height"); then
       log "$connector has an unusable mode ${width}x${height}; skipping"
       continue
     fi
-    case "$bucket" in
-      Standard)
-        rank=$rank_Standard
-        rank_Standard=$((rank_Standard + 1))
-        counter=$counter_Standard
-        ;;
-      Ultrawide)
-        rank=$rank_Ultrawide
-        rank_Ultrawide=$((rank_Ultrawide + 1))
-        counter=$counter_Ultrawide
-        ;;
-    esac
-    if ! picture=$(pick_at "$work/$bucket.list" "$counter" "$rank"); then
+    if ! picture=$(next_pick "$work/$bucket.list" "$state/queue-$bucket" "$work/used-$bucket"); then
       log "$connector has no $bucket images; leaving it unchanged"
       continue
     fi
     log "$connector ${width}x${height} -> $bucket $(basename "$picture")"
     if ! noctalia msg wallpaper-set "$connector" "$picture"; then
       log "noctalia rejected $connector"
+      unpick "$state/queue-$bucket" "$picture"
       continue
     fi
-    applied=$(noctalia msg wallpaper-get "$connector") || continue
+    applied=$(noctalia msg wallpaper-get "$connector") || {
+      unpick "$state/queue-$bucket" "$picture"
+      continue
+    }
     if [ "$applied" != "$picture" ]; then
       log "$connector reports '$applied' after setting '$picture'"
+      unpick "$state/queue-$bucket" "$picture"
       continue
     fi
-    case "$bucket" in
-      Standard) used_Standard=1 ;;
-      Ultrawide) used_Ultrawide=1 ;;
-    esac
+    # Recorded only now: a pick that failed to land may still be offered to the
+    # next display of this aspect.
+    printf '%s\0' "$picture" >>"$work/used-$bucket"
     set=$((set + 1))
   done <"$work/displays"
-  if [ "$used_Standard" -eq 1 ]; then
-    printf '%s\n' "$((counter_Standard + 1))" >"$state/counter-Standard"
-  fi
-  if [ "$used_Ultrawide" -eq 1 ]; then
-    printf '%s\n' "$((counter_Ultrawide + 1))" >"$state/counter-Ultrawide"
-  fi
   if [ "$set" -eq 0 ]; then
     log "no display could be set"
     return 1
@@ -250,12 +319,6 @@ apply_macos() {
     log "system_profiler reports $display_count displays, System Events $desktop_count desktops; refusing to guess"
     return 1
   fi
-  counter_Standard=$(counter_of "$state/counter-Standard")
-  counter_Ultrawide=$(counter_of "$state/counter-Ultrawide")
-  rank_Standard=0
-  rank_Ultrawide=0
-  used_Standard=0
-  used_Ultrawide=0
   set=0
   : >"$work/expected"
   ordinal=0
@@ -263,55 +326,43 @@ apply_macos() {
     ordinal=$((ordinal + 1))
     if ! bucket=$(bucket_of "$width" "$height"); then
       log "display $ordinal has an unusable resolution ${width}x${height}"
+      printf '\n' >>"$work/expected"
       continue
     fi
-    case "$bucket" in
-      Standard)
-        rank=$rank_Standard
-        rank_Standard=$((rank_Standard + 1))
-        counter=$counter_Standard
-        ;;
-      Ultrawide)
-        rank=$rank_Ultrawide
-        rank_Ultrawide=$((rank_Ultrawide + 1))
-        counter=$counter_Ultrawide
-        ;;
-    esac
-    if ! picture=$(pick_at "$work/$bucket.list" "$counter" "$rank"); then
+    if ! picture=$(next_pick "$work/$bucket.list" "$state/queue-$bucket" "$work/used-$bucket"); then
       log "display $ordinal has no $bucket images; leaving it unchanged"
       printf '\n' >>"$work/expected"
       continue
     fi
-    printf '%s\n' "$picture" >>"$work/expected"
     log "display $ordinal ${width}x${height} -> $bucket $(basename "$picture")"
     # NSWorkspace is broken on macOS 26+: setDesktopImageURL applies one image
     # to every display or silently keeps the old one. System Events still lands
     # per desktop; it needs Automation approval once.
-    /usr/bin/osascript - "$ordinal" "$picture" <<'APPLESCRIPT'
+    if ! /usr/bin/osascript - "$ordinal" "$picture" <<'APPLESCRIPT'
 on run argv
   set idx to (item 1 of argv) as integer
   set picture_path to item 2 of argv
   tell application "System Events" to set picture of (item idx of (every desktop)) to picture_path
 end run
 APPLESCRIPT
-    case "$bucket" in
-      Standard) used_Standard=1 ;;
-      Ultrawide) used_Ultrawide=1 ;;
-    esac
+    then
+      log "could not set desktop $ordinal"
+      unpick "$state/queue-$bucket" "$picture"
+      printf '\n' >>"$work/expected"
+      continue
+    fi
+    printf '%s\n' "$picture" >>"$work/expected"
+    # Recorded only now: a pick that failed to land may still be offered to the
+    # next display of this aspect.
+    printf '%s\0' "$picture" >>"$work/used-$bucket"
     set=$((set + 1))
   done <"$work/displays"
-  if [ "$used_Standard" -eq 1 ]; then
-    printf '%s\n' "$((counter_Standard + 1))" >"$state/counter-Standard"
-  fi
-  if [ "$used_Ultrawide" -eq 1 ]; then
-    printf '%s\n' "$((counter_Ultrawide + 1))" >"$state/counter-Ultrawide"
-  fi
   if [ "$set" -eq 0 ]; then
     log "no display could be set"
     return 1
   fi
-  # Read back through the same System Events model used to set, joined without
-  # a trailing newline so it compares line-for-line with `expected`.
+  # Read back through the same System Events model used to set, one line per
+  # desktop, so it lines up with `expected`.
   /usr/bin/osascript - "$desktop_count" <<'APPLESCRIPT' >"$work/applied"
 on run argv
   set n to (item 1 of argv) as integer
@@ -325,7 +376,16 @@ on run argv
   return out
 end run
 APPLESCRIPT
-  if ! diff -u "$work/expected" "$work/applied"; then
+  # Compare per desktop so a silent no-op names the desktop that kept its old
+  # image instead of only failing the whole run.
+  paste -d '\t' "$work/expected" "$work/applied" >"$work/readback"
+  mismatch=0
+  while IFS=$'\t' read -r want got; do
+    if [ "$want" = "$got" ]; then continue; fi
+    log "desktop read-back wants '$want', got '$got'"
+    mismatch=1
+  done <"$work/readback"
+  if [ "$mismatch" -eq 1 ]; then
     log "wallpaper read-back does not match what was set"
     return 1
   fi
@@ -348,8 +408,12 @@ apply() {
 case "${1:-sync}" in
   sync)
     lock
-    sync_cache
+    # Apply even when the sync failed: the cache is the client's source of
+    # truth, but the failure still has to reach the unit status.
+    status=0
+    sync_cache || status=$?
     apply
+    exit "$status"
     ;;
   apply)
     lock
@@ -359,17 +423,13 @@ case "${1:-sync}" in
     shift
     classify "$@"
     ;;
-  pick-at)
+  pick)
     shift
-    pick_at "$@"
+    next_pick "$@"
     ;;
-  counter)
+  unpick)
     shift
-    if [ "$#" -ne 1 ]; then
-      log "usage: wallpapers counter <state-file>"
-      exit 2
-    fi
-    counter_of "$1"
+    unpick "$@"
     ;;
   buckets)
     shift
@@ -380,7 +440,7 @@ case "${1:-sync}" in
     classify_cache "$1" "$2"
     ;;
   *)
-    log "usage: wallpapers [sync|apply|classify W H|pick-at LIST COUNTER RANK|counter FILE|buckets DIR OUT]"
+    log "usage: wallpapers [sync|apply|classify W H|pick LIST QUEUE [USED]|unpick QUEUE FILE|buckets DIR OUT]"
     exit 2
     ;;
 esac

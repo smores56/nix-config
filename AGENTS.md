@@ -170,7 +170,7 @@ generated home, as the `<name>` flake check (`scriptChecks` in
 remote URL), `ssh-allowed-signers`
 (signature verification), `ssh-pin-askpass` (only the two PIN prompt shapes
 are answered; host-key and presence prompts fail closed), `wallpapers` (aspect
-buckets by measured pixels, NUL-delimited rotation without same-aspect
+buckets by measured pixels, NUL-delimited queue rotation without same-aspect
 collisions, control-character names skipped) and `wallpapers-askpass` (only
 the PIV prompt is answered; host-key, presence, and a failing Keychain read
 fail closed with no PIN on stdout), `ssh-pub-keys`

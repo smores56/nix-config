@@ -289,8 +289,9 @@ sparse overlay holding only settings that deviate from the Nix base, so GUI
 tweaks persist while Nix stays the base layer. The wallpaper is owned by the
 `wallpapers` feature: it rsyncs the curated Proton collection into
 `~/.cache/wallpapers`, buckets each image by its measured aspect, and sets one
-per display (Noctalia IPC on Niri, System Events on macOS). Noctalia's own
-rotation is disabled so the two never fight.
+per display (Noctalia IPC on Niri, System Events on macOS), picking at random
+without repeats until that aspect's set runs out. Noctalia's own rotation is
+disabled so the two never fight.
 
 ### Work identity
 

@@ -630,9 +630,14 @@ sudo rm -f /var/lib/backup/rclone.conf
 ## Wallpapers (smorespro, smoreswork)
 
 `modules/features/wallpapers.nix` rsyncs `<mount>/Wallpapers` from smortress
-into `~/.cache/wallpapers`, buckets every image by measured pixels (any file
-wider than 2:1 is ultrawide), and sets one image per display. The folder layout
-under `Wallpapers/` is curation only; keep images within two levels of it.
+into `~/.cache/wallpapers`, buckets every image by measured pixels (2:1 or
+wider is ultrawide), and sets one image per display, picked at random from that
+aspect's queue: nothing repeats until the aspect's set is exhausted, then a
+fresh cycle starts. The folder layout under `Wallpapers/` is curation only; keep
+images within two levels of it. A failed or empty listing skips the transfer, so
+a dropped mount can never erase the cache, and rotation still runs from the
+cached set; the unit status or agent log records the failure. Rotation state is
+`~/.cache/wallpapers/state/queue-<Bucket>`; deleting it just starts a new cycle.
 
 On smorespro the first run happens when `graphical-session.target` starts
 (login) and every 3 h after that. Nothing to provision: the forwarded PIV agent
