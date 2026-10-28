@@ -166,7 +166,7 @@ let
           echo "ssh-no-private-keys: private key in $file" >&2
           failures=$((failures + 1))
         fi
-      done < <(find "$ssh_dir" -maxdepth 1 \( -type f -o -type l \) -print0)
+      done < <(find "$ssh_dir" \( -type f -o -type l \) -print0)
       [ "$failures" -eq 0 ]
     '';
   };
