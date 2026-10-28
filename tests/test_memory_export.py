@@ -1,6 +1,8 @@
+import grp
 import io
 import json
 import os
+import pwd
 import sqlite3
 import sys
 import tempfile
@@ -478,6 +480,35 @@ class RestoreTests(unittest.TestCase):
                 **kwargs,
             )
         )
+
+    def test_restore_hands_the_graph_to_the_service_account(self):
+        owner = f"{pwd.getpwuid(os.getuid()).pw_name}:{grp.getgrgid(os.getgid()).gr_name}"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            graph_dir = root / "falkordb"
+            graph_dir.mkdir()
+            (graph_dir / "dump.rdb").write_bytes(b"RDBfake")
+            result = self.export(
+                root,
+                [make_entry(1)],
+                graph_dir=graph_dir,
+                graph_client=FakeRedis([BEFORE, FINISHED]),
+            )
+            restore(
+                RestoreConfig(
+                    export_dir=result.directory,
+                    state_dir=root / "restored",
+                    graph_dir=root / "graph",
+                    stop_services=False,
+                    owner=owner,
+                )
+            )
+            graph = root / "graph"
+            self.assertEqual(graph.stat().st_uid, os.getuid())
+            self.assertEqual(graph.stat().st_mode & 0o777, 0o700)
+            dump = graph / "dump.rdb"
+            self.assertEqual(dump.stat().st_uid, os.getuid())
+            self.assertEqual(dump.stat().st_mode & 0o777, 0o640)
 
     def test_restore_round_trips_the_registry(self):
         with tempfile.TemporaryDirectory() as directory:
