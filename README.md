@@ -564,6 +564,14 @@ setup.
 on first boot. When that directory exists, `install` delivers it into the new
 root (`/etc/ssh/...`) via `--extra-files`.
 
+**Before reinstalling an existing machine**, run `nix run .#key-backup` and
+upload the printed archive and checksum to a Proton Pass Note item. It carries
+the FIDO2 credential handles in `~/.config/ssh-sk` (destroyed by the wipe) and,
+when it can find it, the host SSH key. After `bootstrap` on the new system,
+`nix run .#key-restore -- <bundle>` puts them back and prints the `sudo install`
+commands for the host key. See
+[`docs/manual-steps.md`](docs/manual-steps.md#key-backup).
+
 ### Headless login and token rotation
 
 `bootstrap` logs in non-interactively when the host's sops secrets hold the

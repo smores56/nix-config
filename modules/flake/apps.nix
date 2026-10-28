@@ -187,6 +187,423 @@
         '';
       };
 
+      # Packages the FIDO2 credential handles (the files that make a YubiKey
+      # usable for sudo/signing) so a wiped machine can be rebuilt without
+      # re-enrolling the keys. PIV private keys are generated on the token and
+      # cannot be exported, so they are not part of any backup.
+      yubikeyKeys = import ../lib/yubikey-keys.nix;
+      yubikeyPubkeys = pkgs.writeText "yubikey-pubkeys" (
+        pkgs.lib.concatMapStrings (k: "${k.key}\t${k.pubkey}\n") (yubikeyKeys.signing ++ yubikeyKeys.sudo)
+      );
+
+      key-backup = pkgs.writeShellApplication {
+        name = "key-backup";
+        runtimeInputs = with pkgs; [
+          coreutils
+          findutils
+          gawk
+          gnutar
+          gzip
+          openssh
+        ];
+        text = ''
+          umask 077
+
+          hostkey=""
+          while [ "$#" -gt 0 ]; do
+            case "$1" in
+              --host-key)
+                if [ "$#" -lt 2 ]; then
+                  echo "key-backup: --host-key needs a path" >&2
+                  exit 1
+                fi
+                hostkey="$2"
+                shift 2
+                ;;
+              -h | --help)
+                echo "Usage: nix run .#key-backup -- [--host-key <path>]"
+                exit 0
+                ;;
+              *)
+                echo "key-backup: unknown argument: $1" >&2
+                exit 1
+                ;;
+            esac
+          done
+
+          if [ "$(id -u)" -eq 0 ]; then
+            echo "key-backup: run as the user who owns the handles, not root" >&2
+            exit 1
+          fi
+
+          host="$(uname -n)"
+          host="''${host%%.*}"
+          state_dir="''${XDG_STATE_HOME:-$HOME/.local/state}/key-backup"
+          install -d -m 700 "$state_dir"
+
+          stage="$(mktemp -d)"
+          trap 'rm -rf "$stage"' EXIT
+          mkdir -p "$stage/home" "$stage/root"
+
+          pubkeys="''${KEY_PUBKEYS:-${yubikeyPubkeys}}"
+          expected_pubkey() {
+            awk -F '\t' -v k="$1" '$1 == k { print $2; exit }' "$pubkeys"
+          }
+          first_two() {
+            awk '{ print $1" "$2 }'
+          }
+
+          handles=0
+          missing=()
+          for n in 1 2 3; do
+            for role in sudo signing; do
+              src="$HOME/.config/ssh-sk/k$n/$role"
+              if [ ! -f "$src" ]; then
+                missing+=("k$n/$role")
+                continue
+              fi
+
+              expected="$(expected_pubkey "k$n/$role")"
+              if [ -z "$expected" ]; then
+                echo "key-backup: k$n/$role has no committed public key in modules/lib/yubikey-keys.nix" >&2
+                exit 1
+              fi
+              if ! got="$(ssh-keygen -y -P "" -f "$src" 2>/dev/null)"; then
+                echo "key-backup: k$n/$role is passphrase-protected or unreadable; the agents expect an empty file passphrase" >&2
+                exit 1
+              fi
+              if [ "$(printf '%s\n' "$expected" | first_two)" != "$(printf '%s\n' "$got" | first_two)" ]; then
+                echo "key-backup: k$n/$role does not match the committed public key; re-enroll it" >&2
+                exit 1
+              fi
+
+              install -D -m 600 "$src" "$stage/home/.config/ssh-sk/k$n/$role"
+              handles=$((handles + 1))
+            done
+          done
+
+          if [ "$handles" -eq 0 ]; then
+            echo "key-backup: no FIDO2 handles under $HOME/.config/ssh-sk" >&2
+            echo "key-backup: run this on a laptop where the keys are enrolled and yk-login works" >&2
+            exit 1
+          fi
+
+          # The enrollment script is untracked today, so this bundle is its only
+          # copy besides the machine being wiped. From the report directory keep
+          # public artifacts only; a report may hold PUK or management-key text.
+          if [ -f "$HOME/dev/setup-yubikey.sh" ]; then
+            install -D -m 700 "$HOME/dev/setup-yubikey.sh" "$stage/home/dev/setup-yubikey.sh"
+          fi
+          if [ -d "$HOME/yubikey-setup" ]; then
+            find "$HOME/yubikey-setup" -type f \( -name '*.pub' -o -name '*.crt' -o -name '*.pem' \) -print0 |
+              while IFS= read -r -d "" fn; do
+                install -D -m 644 "$fn" "$stage/home/yubikey-setup/''${fn#"$HOME/yubikey-setup/"}"
+              done
+          fi
+
+          # The host key is the host's sops identity. `host-key` writes it to
+          # secrets/hosts/<host>/ (gitignored); include it when this runs from
+          # the checkout, or take an explicit --host-key.
+          if [ -z "$hostkey" ]; then
+            candidate="$PWD/secrets/hosts/$host/etc/ssh/ssh_host_ed25519_key"
+            if [ -f "$candidate" ]; then
+              hostkey="$candidate"
+            fi
+          fi
+          hostkey_state=no
+          if [ -n "$hostkey" ]; then
+            if [ ! -f "$hostkey" ]; then
+              echo "key-backup: no such host key: $hostkey" >&2
+              exit 1
+            fi
+            install -D -m 600 "$hostkey" "$stage/root/etc/ssh/ssh_host_ed25519_key"
+            if [ -f "$hostkey.pub" ]; then
+              install -D -m 644 "$hostkey.pub" "$stage/root/etc/ssh/ssh_host_ed25519_key.pub"
+            fi
+            hostkey_state=yes
+          fi
+
+          {
+            printf 'host: %s\n' "$host"
+            printf 'created: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            printf 'source-home: %s\n' "$HOME"
+            printf 'handles: %s\n' "$handles"
+            printf 'host-key: %s\n' "$hostkey_state"
+            if [ "''${#missing[@]}" -gt 0 ]; then
+              printf 'missing: %s\n' "''${missing[*]}"
+            else
+              printf 'missing: none\n'
+            fi
+            printf '\n'
+            printf 'FIDO2 credential handles: the private half stays on each YubiKey\n'
+            printf 'and cannot be exported. Host key: %s (the sops identity for this host).\n' "$hostkey_state"
+            printf 'No PIN or PUK is included. If setup-yubikey.sh is present, review it\n'
+            printf 'before upload; the report directory contributes only public certs.\n'
+          } >"$stage/MANIFEST"
+
+          (
+            cd "$stage"
+            find home root -type f -print0 | sort -z | xargs -0 sha256sum
+          ) >"$stage/SHA256SUMS"
+
+          archive="$state_dir/$host-restore-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+          tar -C "$stage" -czf "$archive" .
+          chmod 600 "$archive"
+          sha256sum "$archive" | awk '{ print $1 }' >"$archive.sha256"
+          chmod 600 "$archive.sha256"
+
+          cat <<EOF
+          key-backup: wrote $archive
+          key-backup: checksum $archive.sha256
+
+          Upload both files to Proton Pass:
+            1. Create a Note item named "nix-config restore bundle — $host"
+               in the vault that holds recovery material.
+            2. Attach the .tar.gz and the .sha256, then save.
+            3. Once Pass shows them, remove the local copies:
+                 shred -u "$archive" "$archive.sha256"
+
+          Proton Pass encrypts attachments end-to-end; the archive itself is not
+          separately encrypted. Restoring needs the physical YubiKey plus the PIN
+          for signing or a touch for sudo. The admin age key
+          (~/.config/sops/keys.age) is deliberately not in the bundle.
+
+          Restore on a fresh machine after bootstrap:
+            nix run .#key-restore -- <downloaded-bundle.tar.gz>
+          EOF
+        '';
+      };
+
+      key-restore = pkgs.writeShellApplication {
+        name = "key-restore";
+        runtimeInputs = with pkgs; [
+          coreutils
+          findutils
+          gawk
+          gnutar
+          gzip
+          gnused
+          openssh
+        ];
+        text = ''
+          usage() {
+            cat <<'EOF'
+          Usage: nix run .#key-restore -- <bundle.tar.gz> [--force] [--no-verify]
+
+          Restores the FIDO2 credential handles and the host key from a Proton
+          Pass backup made by `nix run .#key-backup`. Run it after
+          `nix run .#bootstrap`.
+          EOF
+          }
+
+          umask 077
+          force=0
+          verify=1
+          archive=""
+          while [ "$#" -gt 0 ]; do
+            case "$1" in
+              --force) force=1 ;;
+              --no-verify) verify=0 ;;
+              -h | --help)
+                usage
+                exit 0
+                ;;
+              --*)
+                echo "key-restore: unknown option: $1" >&2
+                usage >&2
+                exit 1
+                ;;
+              *)
+                if [ -n "$archive" ]; then
+                  echo "key-restore: more than one bundle given" >&2
+                  exit 1
+                fi
+                archive="$1"
+                ;;
+            esac
+            shift
+          done
+
+          if [ "$(id -u)" -eq 0 ]; then
+            echo "key-restore: run as the user, not root" >&2
+            exit 1
+          fi
+
+          if [ -z "$archive" ]; then
+            usage >&2
+            exit 1
+          fi
+          if [ ! -f "$archive" ]; then
+            echo "key-restore: no such file: $archive" >&2
+            exit 1
+          fi
+
+          if [ "$verify" -eq 1 ]; then
+            if [ ! -f "$archive.sha256" ]; then
+              echo "key-restore: missing $archive.sha256; pass --no-verify only if you checked the checksum yourself" >&2
+              exit 1
+            fi
+            want="$(awk 'NR == 1 { print $1 }' "$archive.sha256")"
+            got="$(sha256sum "$archive" | awk '{ print $1 }')"
+            if [ "$want" != "$got" ]; then
+              echo "key-restore: checksum mismatch for $archive" >&2
+              exit 1
+            fi
+            echo "key-restore: checksum OK"
+          else
+            echo "key-restore: skipping the outer checksum (--no-verify)" >&2
+          fi
+
+          stage="$(mktemp -d)"
+          trap 'rm -rf "$stage"' EXIT
+          tar --no-same-owner --no-same-permissions -C "$stage" -xzf "$archive"
+
+          if [ -n "$(find "$stage" -type l -print -quit)" ]; then
+            echo "key-restore: the bundle contains symlinks; refusing" >&2
+            exit 1
+          fi
+          for f in MANIFEST SHA256SUMS; do
+            if [ ! -f "$stage/$f" ]; then
+              echo "key-restore: $f is missing; not a key-backup bundle" >&2
+              exit 1
+            fi
+          done
+          (
+            cd "$stage"
+            find home root -type f -print0 | sort -z | xargs -0 sha256sum >.recomputed
+            if ! cmp -s .recomputed SHA256SUMS; then
+              echo "key-restore: SHA256SUMS does not match the archive contents" >&2
+              exit 1
+            fi
+          )
+
+          host="$(sed -n 's/^host: //p' "$stage/MANIFEST")"
+          created="$(sed -n 's/^created: //p' "$stage/MANIFEST")"
+          missing="$(sed -n 's/^missing: //p' "$stage/MANIFEST")"
+          echo "key-restore: bundle from $host ($created)"
+          if [ -n "$missing" ] && [ "$missing" != none ]; then
+            echo "key-restore: the backup was missing: $missing" >&2
+          fi
+
+          pubkeys="''${KEY_PUBKEYS:-${yubikeyPubkeys}}"
+          expected_pubkey() {
+            awk -F '\t' -v k="$1" '$1 == k { print $2; exit }' "$pubkeys"
+          }
+          first_two() {
+            awk '{ print $1" "$2 }'
+          }
+
+          # Refuse before writing anything if a handle or extra file already
+          # exists, or if any handle does not match the committed public half.
+          # A partial restore would leave the machine in a state yk-login cannot
+          # explain.
+          for n in 1 2 3; do
+            for role in sudo signing; do
+              src="$stage/home/.config/ssh-sk/k$n/$role"
+              [ -f "$src" ] || continue
+              dest="$HOME/.config/ssh-sk/k$n/$role"
+              if [ -e "$dest" ] && [ "$force" -eq 0 ]; then
+                echo "key-restore: $dest already exists; pass --force to replace it" >&2
+                exit 1
+              fi
+
+              expected="$(expected_pubkey "k$n/$role")"
+              if [ -z "$expected" ]; then
+                echo "key-restore: k$n/$role has no committed public key in modules/lib/yubikey-keys.nix" >&2
+                exit 1
+              fi
+              if ! got="$(ssh-keygen -y -P "" -f "$src" 2>/dev/null)"; then
+                echo "key-restore: k$n/$role is passphrase-protected or unreadable" >&2
+                exit 1
+              fi
+              if [ "$(printf '%s\n' "$expected" | first_two)" != "$(printf '%s\n' "$got" | first_two)" ]; then
+                echo "key-restore: k$n/$role does not match the committed public key" >&2
+                exit 1
+              fi
+            done
+          done
+
+          extras=()
+          if [ -f "$stage/home/dev/setup-yubikey.sh" ]; then
+            extras+=("$stage/home/dev/setup-yubikey.sh:$HOME/dev/setup-yubikey.sh:700")
+          fi
+          if [ -d "$stage/home/yubikey-setup" ]; then
+            while IFS= read -r -d "" fn; do
+              rel="''${fn#"$stage/home/"}"
+              extras+=("$fn:$HOME/$rel:644")
+            done < <(find "$stage/home/yubikey-setup" -type f -print0)
+          fi
+          for entry in "''${extras[@]}"; do
+            dest="''${entry#*:}"
+            dest="''${dest%:*}"
+            if [ -e "$dest" ] && [ "$force" -eq 0 ]; then
+              echo "key-restore: $dest already exists; pass --force to replace it" >&2
+              exit 1
+            fi
+          done
+
+          installed=0
+          for n in 1 2 3; do
+            for role in sudo signing; do
+              src="$stage/home/.config/ssh-sk/k$n/$role"
+              [ -f "$src" ] || continue
+              install -D -m 600 "$src" "$HOME/.config/ssh-sk/k$n/$role"
+              installed=$((installed + 1))
+            done
+          done
+          if [ "$installed" -eq 0 ]; then
+            echo "key-restore: the bundle contains no handles" >&2
+            exit 1
+          fi
+
+          for entry in "''${extras[@]}"; do
+            src="''${entry%%:*}"
+            rest="''${entry#*:}"
+            dest="''${rest%:*}"
+            mode="''${rest##*:}"
+            install -D -m "$mode" "$src" "$dest"
+          done
+
+          hostkey_state=no
+          if [ -f "$stage/root/etc/ssh/ssh_host_ed25519_key" ]; then
+            keydir="$HOME/.local/state/key-restore/etc/ssh"
+            install -D -m 600 "$stage/root/etc/ssh/ssh_host_ed25519_key" "$keydir/ssh_host_ed25519_key"
+            if [ -f "$stage/root/etc/ssh/ssh_host_ed25519_key.pub" ]; then
+              install -D -m 644 "$stage/root/etc/ssh/ssh_host_ed25519_key.pub" "$keydir/ssh_host_ed25519_key.pub"
+            fi
+            hostkey_state=yes
+          fi
+
+          cat <<EOF
+          key-restore: installed $installed handle(s) under $HOME/.config/ssh-sk
+
+          Next:
+            home-manager switch        # if bootstrap has not already written the .pub files
+            yk-login                   # loads the handles, caches the PIN
+            ssh smortress true         # no prompt
+            ssh -t smortress sudo true # one touch
+          EOF
+
+          if [ "$hostkey_state" = yes ]; then
+            cat <<EOF
+
+          The host key was extracted to $HOME/.local/state/key-restore/etc/ssh.
+          Install it as root before the first reboot:
+            sudo install -D -m 600 "$HOME/.local/state/key-restore/etc/ssh/ssh_host_ed25519_key" /etc/ssh/ssh_host_ed25519_key
+            sudo install -D -m 644 "$HOME/.local/state/key-restore/etc/ssh/ssh_host_ed25519_key.pub" /etc/ssh/ssh_host_ed25519_key.pub
+            sudo systemctl restart sshd
+          EOF
+          else
+            cat <<EOF
+
+          No host key was in the bundle. Copy secrets/hosts/$host/ from the
+          operator checkout, or mint a new one with nix run .#host-key and
+          re-key .sops.yaml.
+          EOF
+          fi
+        '';
+      };
+
       # Runs the minimal Cloudflare OpenTofu config from a root-owned state
       # directory. The API token and tunnel UUID stay in sops-decrypted files;
       # account/email inputs are non-secret.
@@ -363,6 +780,10 @@
       packages.bootstrap = bootstrap;
       packages.install = install;
       packages.host-key = host-key;
+      # `nix run .#key-backup` — archive the FIDO2 handles for Proton Pass.
+      packages.key-backup = key-backup;
+      # `nix run .#key-restore -- <bundle>` — restore them on a fresh machine.
+      packages.key-restore = key-restore;
       # `nix run github:smores56/nix-config#bootstrap` — the fresh-machine entry
       # point.
       apps.bootstrap = {
@@ -379,6 +800,16 @@
       apps.host-key = {
         type = "app";
         program = "${host-key}/bin/host-key";
+      };
+      # `nix run .#key-backup` / `..#key-restore -- <bundle>` — move the FIDO2
+      # handles between a machine and Proton Pass.
+      apps.key-backup = {
+        type = "app";
+        program = "${key-backup}/bin/key-backup";
+      };
+      apps.key-restore = {
+        type = "app";
+        program = "${key-restore}/bin/key-restore";
       };
       # `sudo nix run .#cloudflare-plan` / `..#cloudflare-apply`.
       apps.cloudflare-plan = {

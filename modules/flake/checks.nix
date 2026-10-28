@@ -179,6 +179,20 @@ in
               ];
               args = [ (homeExe "ssh-no-private-keys") ];
             };
+            key-bundle = {
+              tools = [
+                pkgs.coreutils
+                pkgs.findutils
+                pkgs.gawk
+                pkgs.gnutar
+                pkgs.gzip
+                pkgs.openssh
+              ];
+              args = [
+                (lib.getExe inputs.self.packages.${system}.key-backup)
+                (lib.getExe inputs.self.packages.${system}.key-restore)
+              ];
+            };
             # The admin-key wrapper must fail closed: no identity file, and no
             # leftover plaintext key that sops would load behind its back.
             sops-age-key = {

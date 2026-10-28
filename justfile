@@ -47,6 +47,14 @@ install host target:
 host-key host:
     nix run .#host-key -- {{host}}
 
+# Archive the FIDO2 handles for Proton Pass before wiping a machine.
+key-backup:
+    nix run .#key-backup
+
+# Restore the FIDO2 handles from a Proton Pass bundle.
+key-restore bundle *args:
+    nix run .#key-restore -- "{{bundle}}" {{args}}
+
 # Bootstrap a fresh machine.
 bootstrap:
     nix run .#bootstrap

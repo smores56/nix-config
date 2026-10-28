@@ -202,43 +202,10 @@ let
 
   # pam_p11 authorizes the PIV key by matching the token's certificate against
   # PEM certs in ~/.eid/authorized_certificates. Certificates are public, so
-  # they live here rather than in a vault. Rotating a PIV key means replacing
-  # its entry; an entry for a key that is not plugged in is harmless.
-  pivCerts = [
-    ''
-      -----BEGIN CERTIFICATE-----
-      MIIBMDCB1qADAgECAhR4tiY5gZCGTZgBnW76TPDWBGR7VzAKBggqhkjOPQQDAjAY
-      MRYwFAYDVQQDDA1zbW9yZXMgazEgc3NoMB4XDTI2MTAyODA0MzEzMloXDTM2MTAy
-      NTA0MzEzMlowGDEWMBQGA1UEAwwNc21vcmVzIGsxIHNzaDBZMBMGByqGSM49AgEG
-      CCqGSM49AwEHA0IABJ34zXLDQMZYvFX1q1fEMJ1/uGWvAtQUmu7/lzGqdWJBSAo2
-      RPiYeeCZnA7AIhfwSwCIIv1sJWgopllQifFmZEcwCgYIKoZIzj0EAwIDSQAwRgIh
-      AP2V70tKT1Ut7pBSkqaABwU0Ij8cDzrYCsqPCQp4rLWGAiEAvRRusWNxDMLJCxHY
-      fjDnco2dt7sdTkliMbd7uzAQ4+c=
-      -----END CERTIFICATE-----
-    ''
-    ''
-      -----BEGIN CERTIFICATE-----
-      MIIBLjCB1qADAgECAhREWEi/BU/qWkjMHDuVHYBIYuMIsDAKBggqhkjOPQQDAjAY
-      MRYwFAYDVQQDDA1zbW9yZXMgazIgc3NoMB4XDTI2MTAyODA0NDExNVoXDTM2MTAy
-      NTA0NDExNVowGDEWMBQGA1UEAwwNc21vcmVzIGsyIHNzaDBZMBMGByqGSM49AgEG
-      CCqGSM49AwEHA0IABMcpVmF/c9KcRgBlgRVp/gjrtjuB/+0U1nURKnep+dAt1NtU
-      ztpWtwlz7o3drWTHzydNaGZ39uO21TQ3rxMEOBAwCgYIKoZIzj0EAwIDRwAwRAIg
-      TygCfMMGUsvQ0b60XDMTJ2Vs8vZgsglCI6bNoUa22XACICcJugvUvzTHxtD2/cvg
-      vZ66ytZ/F25nsyjapawuM2u5
-      -----END CERTIFICATE-----
-    ''
-    ''
-      -----BEGIN CERTIFICATE-----
-      MIIBLzCB1qADAgECAhQNgBLrrrhYYyEckpeZ73CcVx3qmzAKBggqhkjOPQQDAjAY
-      MRYwFAYDVQQDDA1zbW9yZXMgazMgc3NoMB4XDTI2MTAyODA0NDUxMVoXDTM2MTAy
-      NTA0NDUxMVowGDEWMBQGA1UEAwwNc21vcmVzIGszIHNzaDBZMBMGByqGSM49AgEG
-      CCqGSM49AwEHA0IABOJHHVoKZWLnC1EVMVxFv9eNOtkZ+tJFI5TctBvOuzGAfYV0
-      rlm6xv37RF2Pf+8DjUVEnwh9aGYwUsEFOoHUrPMwCgYIKoZIzj0EAwIDSAAwRQIg
-      Ni881xXm/Zwvln7EcDoCBec6ckzXVF7Ost3WQ/FC3WACIQDWsRYP70YD93Dx0fx5
-      VFG+aCbn3QjouLjIkay42iAK/g==
-      -----END CERTIFICATE-----
-    ''
-  ];
+  # they live in yubikey-keys.nix rather than a vault. Rotating a PIV key means
+  # replacing its entry; an entry for a key that is not plugged in is harmless.
+  yubikeyKeys = import ../lib/yubikey-keys.nix;
+  pivCerts = map (k: k.cert) yubikeyKeys.piv;
 in
 {
   config = lib.mkIf pkgs.stdenv.hostPlatform.isLinux {

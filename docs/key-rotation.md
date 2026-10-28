@@ -4,18 +4,25 @@ Public keys and certificates live in the repo; private key material never
 does. The three YubiKeys (`k1`, `k2`, `k3`) are interchangeable and every
 authorized list carries all three. The operator setup script is
 `~/dev/setup-yubikey.sh` on `smorespro` (it is not tracked yet); it produces
-`~/yubikey-setup/kN/` with the public material and a report.
+`~/yubikey-setup/kN/` with the public material and a report. The script is
+included in the Proton Pass restore bundle (below) until it moves into the
+repo; only public certificates are taken from the report directory.
+
+The FIDO2 credential *handles* under `~/.config/ssh-sk/kN/{sudo,signing}` are
+per-machine files: the private half is on the token, but OpenSSH needs the
+handle to use it. A machine wipe loses them, so run `nix run .#key-backup`
+before reinstalling and restore with `nix run .#key-restore` afterwards (see
+`docs/manual-steps.md`). PIV private keys cannot be exported and are unaffected
+by a wipe.
 
 ## Enrollment checklist
 
 For each key:
 
-1. Run `setup-yubikey.sh N` (or `--replace` when re-enrolling), then commit:
-   - PIV 9a public key: `modules/nixos/ssh.nix` `authorizedKeys` and
-     `modules/features/ssh-keys.nix` `yubikeyIdentities`
-   - PIV 9a certificate: `modules/features/fido2.nix` `pivCerts`
-   - sudo public key: `modules/nixos/ssh.nix` `sudo_authorized_keys`
-   - signing public key: `modules/features/ssh-keys.nix` `yubikeyIdentities`
+1. Run `setup-yubikey.sh N` (or `--replace` when re-enrolling), then commit
+   the PIV 9a public key + certificate, sudo public key, and signing public key
+   to `modules/lib/yubikey-keys.nix`. That file is the single source for sshd,
+   pam_p11, allowed_signers, and the bundle's integrity check.
 2. Run `home-manager switch` on `smorespro` and `smortress`, then run
    `yk-login` in a terminal after login.
 3. Test `ssh smortress true`, `ssh -t smortress sudo true` (one touch, no PIN),
@@ -25,6 +32,34 @@ For each key:
 6. Register the PIV and signing keys on GitHub as **signing** keys only.
    Never register either as an authentication key.
 7. For `smoreswork`, see the smart-card section below.
+8. On the machine holding the handles, run `nix run .#key-backup` and upload the
+   archive and checksum to the Proton Pass restore item (see
+   `docs/manual-steps.md`). Repeat after any re-enrollment changes a handle.
+
+## Reinstalling a machine
+
+A wipe does not touch the YubiKeys: PIV private keys are generated on-device and
+cannot be exported, and the FIDO2 private half never leaves the token. The only
+YubiKey material a wipe destroys is `~/.config/ssh-sk/kN/{sudo,signing}`, the
+credential handles OpenSSH must present to the token.
+
+1. Before wiping, on that machine: `nix run .#key-backup`, then attach the
+   printed `.tar.gz` and `.sha256` to the Pass restore item and shred the local
+   copies.
+2. Install and `nix run .#bootstrap`.
+3. Download the two files from Pass and run
+   `nix run .#key-restore -- <bundle>.tar.gz`.
+4. `home-manager switch`, `yk-login`, then verify `ssh smortress true` and
+   `ssh -t smortress sudo true`.
+
+The host SSH key is included when `key-backup` finds it (the checkout's
+`secrets/hosts/<host>/` or an explicit `--host-key`); restore prints the
+`sudo install` commands for `/etc/ssh`. This matters because a wipe destroys
+both `/etc/ssh` and usually the gitignored checkout copy. The admin age key
+(`~/.config/sops/keys.age`) is deliberately excluded: it is the root of the
+secrets tree and stays passphrase-encrypted on both laptops, so a wiped
+`smorespro` still leaves `smoreswork`'s copy. PINs and PUKs are never written
+to the bundle.
 
 ## Lost or stolen key
 

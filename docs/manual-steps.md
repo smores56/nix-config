@@ -1407,6 +1407,52 @@ Generates the pre-generated host SSH key under the gitignored
 `.sops.yaml` as a key and as a `secrets/<host>.yaml` creation rule, then
 `sops updatekeys secrets/<host>.yaml`.
 
+### key-backup
+
+<!-- manual-step: app/key-backup -->
+
+Run `nix run .#key-backup` on a machine **before** wiping or reinstalling it.
+It archives `~/.config/ssh-sk/k{1,2,3}/{sudo,signing}` — the FIDO2 credential
+*handles* that make the YubiKeys usable for sudo and git signing — plus the
+untracked `~/dev/setup-yubikey.sh`, the public certificates from
+`~/yubikey-setup/`, and the host SSH key when it can find it. A machine wipe
+destroys the handles; without them OpenSSH cannot use the credential even with
+the right key inserted.
+
+The private half of a FIDO2 credential and every PIV private key live on the
+YubiKey and cannot be exported. The bundle also carries the host SSH key (the
+host's sops identity) because a wipe destroys `/etc/ssh` and usually the
+gitignored `secrets/hosts/<host>/` copy too. Pass it explicitly with
+`--host-key <path>` when the checkout does not have it. The admin age key
+(`~/.config/sops/keys.age`) and every PIN/PUK are **not** included; their
+custody stays separate. Keep the enrollment script free of secrets, and review
+it before upload; only public certificates are taken from `~/yubikey-setup/`.
+
+Upload the printed `.tar.gz` and `.sha256` to a Proton Pass **Note** item named
+`nix-config restore bundle — <host>` (Pass encrypts attachments end-to-end),
+then `shred -u` the local copies. Keep the archive and its checksum together:
+the restore refuses to proceed without the checksum file.
+
+### key-restore
+
+<!-- manual-step: app/key-restore -->
+
+After `nix run .#bootstrap` on the freshly installed machine, download the two
+files from the Proton Pass item and run:
+
+```sh
+nix run .#key-restore -- ~/Downloads/<host>-restore-<time>.tar.gz
+```
+
+It verifies the outer checksum, refuses to overwrite existing handles or extra
+files without `--force`, and checks every handle against the committed public
+halves in `modules/lib/yubikey-keys.nix` before writing anything. `--no-verify`
+skips only the outer checksum. When the bundle contains the host key, restore
+prints the `sudo install` commands for `/etc/ssh`; it never writes there itself.
+Then run `yk-login` (and `home-manager switch` if bootstrap did not already
+write the public keys), and verify with `ssh smortress true` and
+`ssh -t smortress sudo true`.
+
 ### cloudflare-plan
 
 <!-- manual-step: app/cloudflare-plan -->

@@ -30,32 +30,11 @@ let
 
   # One entry per YubiKey and credential. The public halves are committed, so
   # a fresh host writes the files ssh/git need without the key inserted.
-  yubikeyIdentities = [
-    {
-      key = "~/.config/ssh-sk/piv-k1";
-      pubkey = "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBJ34zXLDQMZYvFX1q1fEMJ1/uGWvAtQUmu7/lzGqdWJBSAo2RPiYeeCZnA7AIhfwSwCIIv1sJWgopllQifFmZEc= smores piv k1";
-    }
-    {
-      key = "~/.config/ssh-sk/piv-k2";
-      pubkey = "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBMcpVmF/c9KcRgBlgRVp/gjrtjuB/+0U1nURKnep+dAt1NtUztpWtwlz7o3drWTHzydNaGZ39uO21TQ3rxMEOBA= smores piv k2";
-    }
-    {
-      key = "~/.config/ssh-sk/piv-k3";
-      pubkey = "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBOJHHVoKZWLnC1EVMVxFv9eNOtkZ+tJFI5TctBvOuzGAfYV0rlm6xv37RF2Pf+8DjUVEnwh9aGYwUsEFOoHUrPM= smores piv k3";
-    }
-    {
-      key = "~/.config/ssh-sk/k1/signing";
-      pubkey = "sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIONu9lg+sGskfOnluRJc+K4QpIKmrPG9AZdkQGUnOwAPAAAAC3NzaDpzaWduLWsx smores sign k1";
-    }
-    {
-      key = "~/.config/ssh-sk/k2/signing";
-      pubkey = "sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIL3jMFzM8BHpOKzCdd9rFMDYcKGgYELD3/Be3HDSN/UUAAAAC3NzaDpzaWduLWsy smores sign k2";
-    }
-    {
-      key = "~/.config/ssh-sk/k3/signing";
-      pubkey = "sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIJb8e2eGxTw6x8gDgrT0ZhyBr1tT48mZRKtQcCSDwqlCAAAAC3NzaDpzaWduLWsz smores sign k3";
-    }
-  ];
+  yubikeyKeys = import ../lib/yubikey-keys.nix;
+  yubikeyIdentities = map (k: {
+    key = "~/.config/ssh-sk/${k.key}";
+    inherit (k) pubkey;
+  }) (yubikeyKeys.piv ++ yubikeyKeys.signing);
 
   pubkeys = softwareIdentities ++ yubikeyIdentities;
   allowedSigners = "~/.ssh/allowed_signers";

@@ -1,17 +1,11 @@
 { config, lib, ... }:
 let
   ports = import ../ports.nix;
-  user = config.machine.username;
   # Public halves of the login credentials. Private halves never touch a host:
   # each PIV key lives in its YubiKey's slot 9a.
-  authorizedKeys = [
-    # PIV slot 9a: PIN ONCE, touch NEVER. The PIN is unlocked once per login by
-    # yk-login and the agent keeps the PIV session; all three keys are
-    # interchangeable.
-    "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBJ34zXLDQMZYvFX1q1fEMJ1/uGWvAtQUmu7/lzGqdWJBSAo2RPiYeeCZnA7AIhfwSwCIIv1sJWgopllQifFmZEc= smores piv k1"
-    "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBMcpVmF/c9KcRgBlgRVp/gjrtjuB/+0U1nURKnep+dAt1NtUztpWtwlz7o3drWTHzydNaGZ39uO21TQ3rxMEOBA= smores piv k2"
-    "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBOJHHVoKZWLnC1EVMVxFv9eNOtkZ+tJFI5TctBvOuzGAfYV0rlm6xv37RF2Pf+8DjUVEnwh9aGYwUsEFOoHUrPM= smores piv k3"
-  ];
+  keys = import ../lib/yubikey-keys.nix;
+  user = config.machine.username;
+  authorizedKeys = map (k: k.pubkey) keys.piv;
 in
 {
   options.exposeSsh.enable = lib.mkEnableOption "sshd bound to loopback for Cloudflare Tunnel access";
@@ -69,11 +63,9 @@ in
     # The sudo credential is a separate FIDO2 key (touch only, no PIN), never
     # used for login. It is forwarded to the server through the client's
     # fido2-agent. All three keys are enrolled.
-    environment.etc."ssh/sudo_authorized_keys".text = ''
-      sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIFtNyORYKzj2dpr3AnGla4hMyteHsn1uviR2cBNjrH1HAAAAC3NzaDpzdWRvLWsx smores sudo k1
-      sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIHg8qZdcbsoYPfFCntYiqZkKbDOQucuWh1Y9ue8bW1AlAAAAC3NzaDpzdWRvLWsy smores sudo k2
-      sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAILGL65a4LnBEjlj+tXGZiiU/94xcd9JPvgUcAaFDoRLbAAAAC3NzaDpzdWRvLWsz smores sudo k3
-    '';
+    environment.etc."ssh/sudo_authorized_keys".text = lib.concatMapStrings (
+      k: "${k.pubkey}\n"
+    ) keys.sudo;
     security.pam.rssh = {
       enable = true;
       settings.auth_key_file = "/etc/ssh/sudo_authorized_keys";
