@@ -140,10 +140,15 @@ repos stays on the work software key.
    ```sh
    sc_auth pair -u sam -h <9a hash from sc_auth identities>
    ```
-   Every key already has a 9d certificate (`9d-kN.crt` in
-   `~/yubikey-setup/kN/`); macOS uses 9a for authentication and 9d for the
-   keychain/volume. Do not enable FileVault smart-card unlock. Repeat until
-   `sc_auth list -u sam` shows all three hashes.
+   macOS also wants a 9d certificate for the keychain/volume. If a key does
+   not have one, generate it (operator, per key, output path required):
+   ```sh
+   ykman piv keys generate 9d /tmp/9d-kN.pub --algorithm ECCP256 --pin-policy ONCE
+   ykman piv certificates generate 9d /tmp/9d-kN.pub --subject "CN=smores 9d kN" --valid-days 3650
+   ```
+   macOS uses 9a for authentication and 9d for the keychain/volume. Do not
+   enable FileVault smart-card unlock. Repeat until `sc_auth list -u sam`
+   shows all three 9a hashes.
 3. After the T1 branch is deployed, test SSH with each key:
    ```sh
    ssh smortress true

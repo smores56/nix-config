@@ -142,6 +142,7 @@ in
                 pkgs.gawk
                 pkgs.gnutar
                 pkgs.gzip
+                pkgs.gnugrep
                 pkgs.openssh
               ];
               args = [
@@ -333,6 +334,38 @@ in
             }
           )
         );
+
+        yubikey-lists =
+          let
+            keys = import ../lib/yubikey-keys.nix;
+            file =
+              ext: k: content:
+              pkgs.writeText "${lib.replaceStrings [ "/" ] [ "-" ] k.key}.${ext}" content;
+            names = xs: lib.concatStringsSep " " (map (k: k.key) xs);
+          in
+          pkgs.runCommand "yubikey-lists"
+            {
+              nativeBuildInputs = [
+                pkgs.openssh
+                pkgs.openssl
+              ];
+            }
+            ''
+              test ${toString (builtins.length keys.piv)} -eq 3
+              test ${toString (builtins.length keys.signing)} -eq 3
+              test ${toString (builtins.length keys.sudo)} -eq 3
+              test "${names keys.piv}" = "piv-k1 piv-k2 piv-k3"
+              test "${names keys.signing}" = "k1/signing k2/signing k3/signing"
+              test "${names keys.sudo}" = "k1/sudo k2/sudo k3/sudo"
+
+              ${lib.concatMapStrings (k: ''
+                ssh-keygen -l -f ${file "pub" k k.pubkey} >/dev/null
+              '') (keys.piv ++ keys.signing ++ keys.sudo)}
+              ${lib.concatMapStrings (k: ''
+                openssl x509 -in ${file "crt" k k.cert} -noout -subject >/dev/null
+              '') keys.piv}
+              touch $out
+            '';
 
         format =
           pkgs.runCommand "format-check"

@@ -328,8 +328,9 @@
             fi
             printf '\n'
             printf 'FIDO2 credential handles only: the private half stays on each\n'
-            printf 'YubiKey and cannot be exported. No host key, admin age key, PIN,\n'
-            printf 'or PUK is included.\n'
+            printf 'YubiKey and cannot be exported. The handle files contain no host\n'
+            printf 'key, admin age key, PIN, or PUK; the enrollment script is data,\n'
+            printf 'so review it.\n'
           } >"$stage/MANIFEST"
 
           (

@@ -1420,8 +1420,9 @@ inserted. The setup script is restored as **data** (0600), not executable;
 review it and `chmod +x` after a restore.
 
 The private half of a FIDO2 credential and every PIV private key live on the
-YubiKey and cannot be exported. The bundle contains no host SSH key, no admin
-age key (`~/.config/sops/keys.age`), and no PIN or PUK. The host key comes from
+YubiKey and cannot be exported. The handle files contain no host SSH key, no
+admin age key (`~/.config/sops/keys.age`), and no PIN or PUK; the enrollment
+script is bundled as data, so review it. The host key comes from
 `secrets/hosts/<host>/` via `install`; keep that directory in the operator
 checkout (or copy `/etc/ssh/ssh_host_ed25519_key` to it) before wiping. If it is
 lost, mint a replacement with `nix run .#host-key` and re-key `.sops.yaml`.

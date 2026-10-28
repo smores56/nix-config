@@ -49,6 +49,16 @@ archive=$(find "$src/.local/state/key-backup" -name '*.tar.gz' -print -quit)
 [ "$(mode "$archive")" = "-rw-------" ] || fail "archive is not 0600"
 [ "$(mode "$archive.sha256")" = "-rw-------" ] || fail "checksum is not 0600"
 
+contents="$(tar -tzf "$archive")"
+for forbidden in keys.age "root/"; do
+  case "$contents" in
+    *"$forbidden"*) fail "bundle contains forbidden $forbidden" ;;
+  esac
+done
+for wanted in home/.config/ssh-sk/k1/sudo home/dev/setup-yubikey.sh; do
+  grep -qF "$wanted" <<<"$contents" || fail "bundle is missing $wanted"
+done
+
 dst="$root/dst"
 mkdir -p "$dst"
 run_restore "$dst" "$archive" >/dev/null
