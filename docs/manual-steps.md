@@ -1324,6 +1324,12 @@ writing. Run it by hand with `sudo systemctl start lobechat-memory-ingest`.
 `cloudflared access ssh`. `ssh` must keep Access enabled; evaluation fails
 otherwise.
 
+`smortress` logs in with the PIV keys in slot 9a, loaded into `fido2-agent` by
+`yk-login`. If `ssh smortress` starts failing after another PIV client ran
+(`pam_p11` at the greeter, `ykman piv`), the card session was reset; run
+`yk-login` again. If that happens daily, fall back to slot 9c with PIN policy
+ALWAYS plus the askpass cache (the pre-T1 layout).
+
 ## Flake apps
 
 Apps come from `modules/flake/apps.nix`. Run them as `nix run .#<name>`; from

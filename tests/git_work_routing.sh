@@ -32,9 +32,20 @@ repo() {
   done
 }
 
+expect_signing() {
+  local dir=$1 want=$2
+  if [ "$SIGNING_KEY_MODE" = agent ]; then
+    expect "$dir" user.signingkey ""
+    [ -n "$(git -C "$dir" config --get gpg.ssh.defaultKeyCommand || true)" ] ||
+      { echo "FAIL $dir gpg.ssh.defaultKeyCommand is empty"; failures=$((failures + 1)); }
+  else
+    expect "$dir" user.signingkey "$want"
+  fi
+}
+
 expect_work() {
   expect "$1" user.email "$WORK_EMAIL"
-  expect "$1" user.signingkey "$WORK_KEY.pub"
+  expect_signing "$1" "$WORK_KEY.pub"
   expect "$1" core.sshCommand "ssh -F $WORK_SSH_CONFIG"
   expect "$1" smores.branchTemplate "$WORK_BRANCH_TEMPLATE"
   expect "$1" smores.branchTemplateUnticketed "$WORK_BRANCH_UNTICKETED"
@@ -43,7 +54,7 @@ expect_work() {
 
 expect_personal() {
   expect "$1" user.email "$PERSONAL_EMAIL"
-  expect "$1" user.signingkey "$PERSONAL_KEY.pub"
+  expect_signing "$1" "$PERSONAL_KEY.pub"
   expect "$1" core.sshCommand ""
   expect "$1" smores.branchTemplate "$PERSONAL_BRANCH_TEMPLATE"
   expect "$1" smores.branchTemplateUnticketed "$PERSONAL_BRANCH_UNTICKETED"

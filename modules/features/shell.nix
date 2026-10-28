@@ -8,6 +8,35 @@ let
   shell = config.user.shell;
   isFish = shell == "fish";
   isZsh = shell == "zsh";
+  isServer = builtins.elem "server" config.machine.profiles;
+
+  # Keep the command in the scrollback before the YubiKey touch. Put it on the
+  # session PATH (not in home.packages) so Maki's sandbox PATH, which binds
+  # ~/.nix-profile/bin, does not see a sudo command at all.
+  sudoWrapper = pkgs.writeShellScriptBin "sudo" ''
+    printf 'sudo: %s\n' "$*" >&2
+    exec /run/wrappers/bin/sudo "$@"
+  '';
+
+  # After a reconnect the old forwarded agent path is dead. Point panes at a
+  # stable symlink so zellij shells keep working; the next login repoints it.
+  sshAuthSockHookFish = ''
+    if set -q SSH_AUTH_SOCK; and string match -q '/tmp/ssh-*/agent.*' $SSH_AUTH_SOCK
+      if not set -q XDG_RUNTIME_DIR
+        set -gx XDG_RUNTIME_DIR /run/user/(id -u)
+      end
+      ln -sfn $SSH_AUTH_SOCK $XDG_RUNTIME_DIR/ssh-agent.sock
+      set -gx SSH_AUTH_SOCK $XDG_RUNTIME_DIR/ssh-agent.sock
+    end
+  '';
+  sshAuthSockHookZsh = ''
+    if [ -n "''${SSH_AUTH_SOCK:-}" ] && [[ $SSH_AUTH_SOCK == /tmp/ssh-*/agent.* ]]; then
+      : "''${XDG_RUNTIME_DIR:=/run/user/$(id -u)}"
+      export XDG_RUNTIME_DIR
+      ln -sfn "$SSH_AUTH_SOCK" "$XDG_RUNTIME_DIR/ssh-agent.sock"
+      export SSH_AUTH_SOCK="$XDG_RUNTIME_DIR/ssh-agent.sock"
+    fi
+  '';
 
   # Renames the tab holding this shell's pane, not the focused one, which
   # differs once you switch tabs while a command runs. Shells compute the
@@ -64,7 +93,7 @@ in
       fish_terminal_skip_dsr = "1";
     };
 
-    sessionPath = [
+    sessionPath = lib.optionals isServer [ "${sudoWrapper}/bin" ] ++ [
       "/opt/homebrew/bin"
       "/usr/local/bin"
       "${config.home.homeDirectory}/.local/bin"
@@ -141,6 +170,7 @@ in
               set -gx BRAVE_API_KEY (cat /run/secrets/brave-api-key)
           end
         '')
+        (lib.mkIf isServer (lib.mkAfter sshAuthSockHookFish))
       ];
 
       inherit (config.user) shellAbbrs;
@@ -285,7 +315,10 @@ in
       # shells then run /etc/zprofile's path_helper, which moves the system
       # dirs ahead of Nix and HM. Both files rebuild the same order as fish:
       # HM's sessionPath, then the Nix profile, then the system.
-      envExtra = lib.mkIf (!config.machine.nixos) zshPathInit;
+      envExtra = lib.mkMerge [
+        (lib.mkIf (!config.machine.nixos) zshPathInit)
+        (lib.mkIf isServer (lib.mkAfter sshAuthSockHookZsh))
+      ];
       profileExtra = lib.mkIf (!config.machine.nixos) zshPathInit;
 
       initContent = lib.mkMerge [

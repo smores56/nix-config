@@ -62,6 +62,84 @@ let
       # carries (1.75.1) for a trustworthy Proton mirror.
       rclone = inputs.nixpkgs-unstable.legacyPackages.${system}.rclone;
 
+      # YubiKey FIDO2 note: OpenSSH's libfido2 lists the same token twice
+      # (USB HID + PC/SC). Do not override libfido2/openssh here: changing
+      # either hash cascades through qtwebengine, KDE, and PySide and forces
+      # hours of source builds that the binary cache cannot satisfy. The
+      # fido2 module wraps ssh-sk-helper with a no-PC/SC libfido2 instead.
+
+      # doccstat/pam_rssh adds the user-presence flag check (upstream issue
+      # #38), so sudo rejects a touchless signature even from a compromised
+      # agent. The fork vendors its agent dependency, so no submodules. This is
+      # a full buildRustPackage definition because overrideAttrs cannot
+      # recompute cargoDeps after cargoHash changes.
+      pam_rssh = prev.rustPlatform.buildRustPackage (finalAttrs: {
+        pname = "pam_rssh";
+        version = "unstable-2026-10-28";
+        src = prev.fetchFromGitHub {
+          owner = "doccstat";
+          repo = "pam_rssh";
+          rev = "116992cdae05728abf19ea0d81f264d50dd0910e";
+          hash = "sha256-v9/WuYAlSXGrQ+c7K+pdFr3BhG9ZtprvYYJL540EbDA=";
+          fetchSubmodules = false;
+        };
+        cargoHash = "sha256-gph4kAScKjFg1KsPb98dDg3uDeHBagM5PqkhGYkIVvg=";
+
+        postPatch = ''
+          substituteInPlace src/auth_keys.rs \
+            --replace '/bin/echo' '${prev.coreutils}/bin/echo' \
+            --replace '/bin/false' '${prev.coreutils}/bin/false'
+        '';
+
+        nativeBuildInputs = [
+          prev.pkg-config
+          prev.libclang
+        ];
+        buildInputs = [
+          prev.openssl
+          prev.pam
+        ];
+        env = {
+          USER = "nixbld";
+          LIBCLANG_PATH = "${prev.libclang.lib}/lib";
+          BINDGEN_EXTRA_CLANG_ARGS = "-I${prev.glibc.dev}/include";
+        };
+
+        checkFlags = [
+          # Fails because it tries finding authorized_keys in /home/$USER.
+          "--skip=tests::parse_user_authorized_keys"
+          # Skip unsupported DSA keys since OpenSSH v10.
+          "--skip=sign_verify::test_dsa_sign_verify"
+        ];
+
+        nativeCheckInputs = [ prev.openssh ];
+
+        preCheck = ''
+          export HOME=$(mktemp -d)
+          mkdir $HOME/.ssh
+          ssh-keygen -q -N "" -t ecdsa -b 521 -f $HOME/.ssh/id_ecdsa521
+          ssh-keygen -q -N "" -t ecdsa -b 384 -f $HOME/.ssh/id_ecdsa384
+          ssh-keygen -q -N "" -t ecdsa -b 256 -f $HOME/.ssh/id_ecdsa256
+          ssh-keygen -q -N "" -t ed25519 -f $HOME/.ssh/id_ed25519
+          ssh-keygen -q -N "" -t rsa -f $HOME/.ssh/id_rsa
+          export SSH_AUTH_SOCK=$HOME/ssh-agent.sock
+          eval $(ssh-agent -a $SSH_AUTH_SOCK)
+          ssh-add $HOME/.ssh/id_ecdsa521
+          ssh-add $HOME/.ssh/id_ecdsa384
+          ssh-add $HOME/.ssh/id_ecdsa256
+          ssh-add $HOME/.ssh/id_ed25519
+          ssh-add $HOME/.ssh/id_rsa
+        '';
+
+        meta = {
+          description = "PAM module for authenticating via ssh-agent, written in Rust (doccstat fork with UP check)";
+          homepage = "https://github.com/doccstat/pam_rssh";
+          license = prev.lib.licenses.mit;
+          platforms = prev.lib.platforms.linux;
+          maintainers = with prev.lib.maintainers; [ xyenon ];
+        };
+      });
+
       # Upstream's flake recipe: dependencies are vendored and the main
       # package lives in ./app, so rename the produced binary.
       revdiff =

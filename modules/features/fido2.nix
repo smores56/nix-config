@@ -18,65 +18,143 @@ let
   pinDir = "$XDG_RUNTIME_DIR/fido2";
   pinFile = "${pinDir}/pin";
 
-  cachePin = pkgs.writeShellApplication {
-    name = "fido2-pin-cache";
-    runtimeInputs = [ pkgs.coreutils ];
+  # OpenSSH's only libfido2 consumer is libexec/ssh-sk-helper. The default
+  # libfido2 links PC/SC, so with pcscd running (PIV) it enumerates the same
+  # YubiKey twice (USB HID + PC/SC) and OpenSSH asks for a touch just to pick
+  # one. Point the helper at a libfido2 built without PC/SC via LD_LIBRARY_PATH:
+  # OpenSC/pam_p11 still talk to pcscd directly for PIV, and no OpenSSH package
+  # hash changes, so the binary cache still supplies it.
+  libfido2NoPcsc = pkgs.libfido2.override { withPcsclite = false; };
+  skHelper = pkgs.writeShellApplication {
+    name = "ssh-sk-helper-no-pcsc";
     text = ''
-      if [ -s "${pinFile}" ]; then
-        echo "fido2-pin-cache: PIN already cached for this session"
-        exit 0
-      fi
-      if [ ! -t 0 ]; then
-        echo "fido2-pin-cache: run this in a terminal (needs a tty to hide input)" >&2
-        exit 1
-      fi
-      umask 077
-      mkdir -p "${pinDir}"
-      read -rsp 'FIDO2 PIN: ' pin
-      echo
-      if [ -z "$pin" ]; then
-        echo "fido2-pin-cache: empty PIN, nothing cached" >&2
-        exit 1
-      fi
-      printf '%s' "$pin" > "${pinFile}"
-      chmod 600 "${pinFile}"
-      unset pin
-      echo "fido2-pin-cache: cached for this login session"
+      # Replace any inherited LD_LIBRARY_PATH: the helper's RUNPATH supplies
+      # its other dependencies, and only libfido2 must come from here.
+      export LD_LIBRARY_PATH="${libfido2NoPcsc}/lib"
+      exec "${pkgs.openssh}/libexec/ssh-sk-helper" "$@"
     '';
   };
 
-  # ssh invokes this through SSH_ASKPASS_REQUIRE=force for the PKCS#11 PIN.
-  # Lenient: the first use in a session prompts once on the tty and caches, so
-  # an unlock that cannot supply the PIN (fingerprint/password) still works; a
-  # PIV login will later populate it without prompting.
+  pinAskpass = pkgs.writeShellScriptBin "yk-login-pin-askpass" ''
+    exec ${pkgs.coreutils}/bin/cat "''${XDG_RUNTIME_DIR:?}/fido2/pin"
+  '';
+
+  # ssh invokes this through SSH_ASKPASS_REQUIRE=force. It answers only the
+  # two real PIN prompts and never prompts on a tty: the agent has no tty, and
+  # a presence request must be visible rather than silently answered.
   askpass = pkgs.writeShellApplication {
     name = "ssh-pin-askpass";
-    runtimeInputs = [ pkgs.coreutils ];
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.libnotify
+    ];
     text = ''
-      # ssh/ssh-agent pass the prompt as $1; a confirmation prompt is not a PIN.
       case "''${1:-}" in
-        *PIN* | *pin*) ;;
+        "Enter PIN for '"*) ;;
+        "Enter PIN"*" key "*) ;;
+        "Confirm user presence for key"*)
+          notify-send -u critical "YubiKey touch requested" "$1" || true
+          exit 1
+          ;;
         *) exit 1 ;;
       esac
+
       if [ -r "${pinFile}" ]; then
         cat "${pinFile}"
         exit 0
       fi
-      if [ ! -r /dev/tty ]; then
-        echo "ssh-pin-askpass: no cached PIN and no tty; run fido2-pin-cache" >&2
+
+      echo "ssh-pin-askpass: no cached PIN; run yk-login" >&2
+      exit 1
+    '';
+  };
+
+  # yk-login is the only place the PIN is read. It verifies the PIN against
+  # the FIDO2 applet before caching it (so a typo cannot be replayed), refuses
+  # below four retries, then loads the PIV provider and the three sudo/signing
+  # handles into their agents. The PIV PIN lives in ssh-pkcs11-helper memory;
+  # the cache file remains only for the FIDO2 signing credential.
+  ykLogin = pkgs.writeShellApplication {
+    name = "yk-login";
+    runtimeInputs = [
+      pkgs.yubikey-manager
+      pkgs.openssh
+      pkgs.opensc
+      pkgs.coreutils
+      pkgs.gnugrep
+      pkgs.gnused
+      pkgs.systemd
+    ];
+    text = ''
+      runtime="''${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR is not set}"
+      pin_dir="$runtime/fido2"
+      pin_file="$pin_dir/pin"
+
+      if [ ! -t 0 ]; then
+        echo "yk-login: run this in a terminal (needs a tty to hide input)" >&2
         exit 1
       fi
+
+      read -rsp 'YubiKey PIN: ' pin
+      echo
+      [[ $pin =~ ^[0-9]{8}$ ]] || {
+        echo "yk-login: PIN must be exactly 8 digits" >&2
+        exit 1
+      }
+
+      info=$(ykman fido info 2>&1) || {
+        echo "yk-login: could not read FIDO2 info" >&2
+        exit 1
+      }
+      attempts=$(printf '%s\n' "$info" | sed -n 's/^PIN:[[:space:]]*\([0-9][0-9]*\) attempt(s) remaining.*/\1/p')
+      if [ -z "$attempts" ]; then
+        echo "yk-login: FIDO2 PIN is not set (or retries are unavailable)" >&2
+        exit 1
+      fi
+      if [ "$attempts" -lt 4 ]; then
+        echo "yk-login: only $attempts FIDO2 retries remain; refusing to send the PIN" >&2
+        exit 1
+      fi
+
+      if ! ykman fido access verify-pin --pin "$pin" >/dev/null 2>&1; then
+        echo "yk-login: PIN rejected; $(ykman fido info 2>/dev/null | sed -n 's/^PIN:[[:space:]]*/PIN: /p')" >&2
+        exit 1
+      fi
+
       umask 077
-      mkdir -p "${pinDir}"
-      read -rsp 'FIDO2/PIV PIN: ' pin < /dev/tty
-      printf '\n' > /dev/tty
-      if [ -z "$pin" ]; then
-        exit 1
-      fi
-      printf '%s' "$pin" > "${pinFile}"
-      chmod 600 "${pinFile}"
-      printf '%s\n' "$pin"
+      mkdir -p "$pin_dir"
+      printf '%s' "$pin" >"$pin_file"
+      chmod 600 "$pin_file"
       unset pin
+
+      # Another PIV client (pam_p11, ykman, the old 9c fallback) resets OpenSC's
+      # verified state. Start fresh agents so a stale provider cannot fail with
+      # "agent refused operation"; the cache above is already verified.
+      systemctl --user restart fido2-agent.service fido2-sign-agent.service
+      for _ in $(seq 1 50); do
+        [ -S "$runtime/fido2-agent" ] && [ -S "$runtime/fido2-sign-agent" ] && break
+        sleep 0.1
+      done
+      [ -S "$runtime/fido2-agent" ] && [ -S "$runtime/fido2-sign-agent" ] || {
+        echo "yk-login: the fido2 agents did not start" >&2
+        exit 1
+      }
+
+      agent="$runtime/fido2-agent"
+      if ! SSH_AUTH_SOCK="$agent" ssh-add -l 2>/dev/null | grep -q 'PIV AUTH pubkey'; then
+        SSH_AUTH_SOCK="$agent" \
+          SSH_ASKPASS="${lib.getExe pinAskpass}" \
+          SSH_ASKPASS_REQUIRE=force \
+          ssh-add -s "${pkgs.opensc}/lib/opensc-pkcs11.so"
+      fi
+
+      ${lib.getExe (loader "fido2-agent-load" "fido2-agent" loginKeys)}
+      ${lib.getExe (loader "fido2-sign-load" "fido2-sign-agent" signingKeys)}
+
+      for sock in fido2-agent fido2-sign-agent; do
+        echo "==> $sock"
+        SSH_AUTH_SOCK="$runtime/$sock" ssh-add -l || true
+      done
     '';
   };
 
@@ -85,13 +163,16 @@ let
   loader =
     name: sockSuffix: keys:
     pkgs.writeShellApplication {
-      name = name;
+      inherit name;
       runtimeInputs = [
         pkgs.openssh
         pkgs.coreutils
       ];
       text = ''
         export SSH_AUTH_SOCK="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/${sockSuffix}"
+        # yk-login invokes this loader directly, so do not rely on the caller
+        # having the agent service's environment.
+        export SSH_SK_HELPER="${lib.getExe skHelper}"
         ${lib.concatMapStrings (k: ''
           key="$HOME/${k}"
           if [ -f "$key" ]; then
@@ -101,14 +182,22 @@ let
       '';
     };
 
-  # Personal/work are no-touch (SSH is free); sudo is touch-required, which is
-  # the only gesture in daily use.
-  loginKeys = [ ".config/ssh-sk/k1/sudo" ];
-  signingKeys = [ ".config/ssh-sk/k1/signing" ];
+  # All three keys are interchangeable; load every handle that exists.
+  loginKeys = map (n: ".config/ssh-sk/k${n}/sudo") [
+    "1"
+    "2"
+    "3"
+  ];
+  signingKeys = map (n: ".config/ssh-sk/k${n}/signing") [
+    "1"
+    "2"
+    "3"
+  ];
 
   agentEnv = [
     "SSH_ASKPASS=${lib.getExe askpass}"
     "SSH_ASKPASS_REQUIRE=force"
+    "SSH_SK_HELPER=${lib.getExe skHelper}"
   ];
 
   # pam_p11 authorizes the PIV key by matching the token's certificate against
@@ -118,13 +207,35 @@ let
   pivCerts = [
     ''
       -----BEGIN CERTIFICATE-----
-      MIIBLzCB1qADAgECAhRR7+BDMvQsbYMZKOCOOiOcdI5O0zAKBggqhkjOPQQDAjAY
-      MRYwFAYDVQQDDA1zbW9yZXMgazEgc3NoMB4XDTI2MTAyNjA0MzkzOFoXDTM2MTAy
-      MzA0MzkzOFowGDEWMBQGA1UEAwwNc21vcmVzIGsxIHNzaDBZMBMGByqGSM49AgEG
-      CCqGSM49AwEHA0IABASivBY5k3ECMzzLQcFfJ+vmP0F92RkKPjbVLBNpf/o35XzY
-      745wxKvE8rTSAG8p2Kf0/4adbK4oiPRbv5bWz6MwCgYIKoZIzj0EAwIDSAAwRQIh
-      AOVuv+nQSs9ixwla7EHLOSTAdox5Mtc6WxkbiEY+5ByvAiA84FwuKj/tq7ITL1yP
-      WvfroV7yvFeEKb+QfRFTc7jktQ==
+      MIIBMDCB1qADAgECAhR4tiY5gZCGTZgBnW76TPDWBGR7VzAKBggqhkjOPQQDAjAY
+      MRYwFAYDVQQDDA1zbW9yZXMgazEgc3NoMB4XDTI2MTAyODA0MzEzMloXDTM2MTAy
+      NTA0MzEzMlowGDEWMBQGA1UEAwwNc21vcmVzIGsxIHNzaDBZMBMGByqGSM49AgEG
+      CCqGSM49AwEHA0IABJ34zXLDQMZYvFX1q1fEMJ1/uGWvAtQUmu7/lzGqdWJBSAo2
+      RPiYeeCZnA7AIhfwSwCIIv1sJWgopllQifFmZEcwCgYIKoZIzj0EAwIDSQAwRgIh
+      AP2V70tKT1Ut7pBSkqaABwU0Ij8cDzrYCsqPCQp4rLWGAiEAvRRusWNxDMLJCxHY
+      fjDnco2dt7sdTkliMbd7uzAQ4+c=
+      -----END CERTIFICATE-----
+    ''
+    ''
+      -----BEGIN CERTIFICATE-----
+      MIIBLjCB1qADAgECAhREWEi/BU/qWkjMHDuVHYBIYuMIsDAKBggqhkjOPQQDAjAY
+      MRYwFAYDVQQDDA1zbW9yZXMgazIgc3NoMB4XDTI2MTAyODA0NDExNVoXDTM2MTAy
+      NTA0NDExNVowGDEWMBQGA1UEAwwNc21vcmVzIGsyIHNzaDBZMBMGByqGSM49AgEG
+      CCqGSM49AwEHA0IABMcpVmF/c9KcRgBlgRVp/gjrtjuB/+0U1nURKnep+dAt1NtU
+      ztpWtwlz7o3drWTHzydNaGZ39uO21TQ3rxMEOBAwCgYIKoZIzj0EAwIDRwAwRAIg
+      TygCfMMGUsvQ0b60XDMTJ2Vs8vZgsglCI6bNoUa22XACICcJugvUvzTHxtD2/cvg
+      vZ66ytZ/F25nsyjapawuM2u5
+      -----END CERTIFICATE-----
+    ''
+    ''
+      -----BEGIN CERTIFICATE-----
+      MIIBLzCB1qADAgECAhQNgBLrrrhYYyEckpeZ73CcVx3qmzAKBggqhkjOPQQDAjAY
+      MRYwFAYDVQQDDA1zbW9yZXMgazMgc3NoMB4XDTI2MTAyODA0NDUxMVoXDTM2MTAy
+      NTA0NDUxMVowGDEWMBQGA1UEAwwNc21vcmVzIGszIHNzaDBZMBMGByqGSM49AgEG
+      CCqGSM49AwEHA0IABOJHHVoKZWLnC1EVMVxFv9eNOtkZ+tJFI5TctBvOuzGAfYV0
+      rlm6xv37RF2Pf+8DjUVEnwh9aGYwUsEFOoHUrPMwCgYIKoZIzj0EAwIDSAAwRQIg
+      Ni881xXm/Zwvln7EcDoCBec6ckzXVF7Ost3WQ/FC3WACIQDWsRYP70YD93Dx0fx5
+      VFG+aCbn3QjouLjIkay42iAK/g==
       -----END CERTIFICATE-----
     ''
   ];
@@ -132,7 +243,7 @@ in
 {
   config = lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
     home.packages = [
-      cachePin
+      ykLogin
       askpass
       pkgs.opensc
     ];
@@ -142,6 +253,9 @@ in
     # closed (all hosts are key-only).
     home.sessionVariables.SSH_ASKPASS = lib.getExe askpass;
     home.sessionVariables.SSH_ASKPASS_REQUIRE = "force";
+    # ssh/ssh-add/ssh-keygen launch ssh-sk-helper for HID operations; use the
+    # no-PC/SC libfido2 so a running pcscd does not duplicate the YubiKey.
+    home.sessionVariables.SSH_SK_HELPER = lib.getExe skHelper;
 
     # The greeter's pam_p11 reads this through root, so a store symlink is fine.
     # A locked PIV PIN makes pam_p11 return PAM_MAXTRIES, which aborts the stack:
@@ -159,25 +273,12 @@ in
       };
       Service = {
         Type = "simple";
-        ExecStart = "${pkgs.openssh}/bin/ssh-agent -D -a %t/fido2-agent";
+        # OpenSSH 10.4 refuses ssh-add -s providers that are not in the
+        # agent's allow-list. Permit only the OpenSC PKCS#11 module.
+        ExecStart = "${pkgs.openssh}/bin/ssh-agent -D -P ${pkgs.opensc}/lib/opensc-pkcs11.so -a %t/fido2-agent";
         Environment = agentEnv;
         Restart = "on-failure";
         RestartSec = 2;
-      };
-      Install.WantedBy = [ "default.target" ];
-    };
-
-    systemd.user.services.fido2-agent-load = {
-      Unit = {
-        Description = "Load the YubiKey login credentials into fido2-agent";
-        After = [ "fido2-agent.service" ];
-        Requires = [ "fido2-agent.service" ];
-        PartOf = [ "fido2-agent.service" ];
-      };
-      Service = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-        ExecStart = lib.getExe (loader "fido2-agent-load" "fido2-agent" loginKeys);
       };
       Install.WantedBy = [ "default.target" ];
     };
@@ -194,21 +295,6 @@ in
         Environment = agentEnv;
         Restart = "on-failure";
         RestartSec = 2;
-      };
-      Install.WantedBy = [ "default.target" ];
-    };
-
-    systemd.user.services.fido2-sign-load = {
-      Unit = {
-        Description = "Load the signing credential into fido2-sign-agent";
-        After = [ "fido2-sign-agent.service" ];
-        Requires = [ "fido2-sign-agent.service" ];
-        PartOf = [ "fido2-sign-agent.service" ];
-      };
-      Service = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-        ExecStart = lib.getExe (loader "fido2-sign-load" "fido2-sign-agent" signingKeys);
       };
       Install.WantedBy = [ "default.target" ];
     };
