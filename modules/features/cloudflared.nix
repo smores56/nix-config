@@ -15,6 +15,7 @@ let
   domain = "sammohr.dev";
   isServer = builtins.elem "server" config.machine.profiles;
   ports = import ../ports.nix;
+  yubikeyKeys = import ../lib/yubikey-keys.nix;
   inherit (aiProviders) smortress;
   inherit (pkgs.stdenv.hostPlatform) isLinux;
 
@@ -128,11 +129,7 @@ in
     # PIN never leave it.
     IdentityAgent = "\${XDG_RUNTIME_DIR}/fido2-agent";
     IdentitiesOnly = "yes";
-    IdentityFile = [
-      "~/.config/ssh-sk/piv-k1.pub"
-      "~/.config/ssh-sk/piv-k2.pub"
-      "~/.config/ssh-sk/piv-k3.pub"
-    ];
+    IdentityFile = map (k: "~/.config/ssh-sk/${k.key}.pub") yubikeyKeys.piv;
   }
   // lib.optionalAttrs (!isLinux) {
     # T4/macOS: CryptoTokenKit is not used; OpenSC prompts the PIN on the tty.

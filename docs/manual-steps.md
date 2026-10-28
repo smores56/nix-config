@@ -1413,25 +1413,25 @@ Generates the pre-generated host SSH key under the gitignored
 
 Run `nix run .#key-backup` on a machine **before** wiping or reinstalling it.
 It archives `~/.config/ssh-sk/k{1,2,3}/{sudo,signing}` — the FIDO2 credential
-*handles* that make the YubiKeys usable for sudo and git signing — plus the
-untracked `~/dev/setup-yubikey.sh`, the public certificates from
-`~/yubikey-setup/`, and the host SSH key when it can find it. A machine wipe
-destroys the handles; without them OpenSSH cannot use the credential even with
-the right key inserted.
+*handles* that make the YubiKeys usable for sudo and git signing — and the
+untracked `~/dev/setup-yubikey.sh` if present. A machine wipe destroys the
+handles; without them OpenSSH cannot use the credential even with the right key
+inserted. The setup script is restored as **data** (0600), not executable;
+review it and `chmod +x` after a restore.
 
 The private half of a FIDO2 credential and every PIV private key live on the
-YubiKey and cannot be exported. The bundle also carries the host SSH key (the
-host's sops identity) because a wipe destroys `/etc/ssh` and usually the
-gitignored `secrets/hosts/<host>/` copy too. Pass it explicitly with
-`--host-key <path>` when the checkout does not have it. The admin age key
-(`~/.config/sops/keys.age`) and every PIN/PUK are **not** included; their
-custody stays separate. Keep the enrollment script free of secrets, and review
-it before upload; only public certificates are taken from `~/yubikey-setup/`.
+YubiKey and cannot be exported. The bundle contains no host SSH key, no admin
+age key (`~/.config/sops/keys.age`), and no PIN or PUK. The host key comes from
+`secrets/hosts/<host>/` via `install`; keep that directory in the operator
+checkout (or copy `/etc/ssh/ssh_host_ed25519_key` to it) before wiping. If it is
+lost, mint a replacement with `nix run .#host-key` and re-key `.sops.yaml`.
 
 Upload the printed `.tar.gz` and `.sha256` to a Proton Pass **Note** item named
 `nix-config restore bundle — <host>` (Pass encrypts attachments end-to-end),
 then `shred -u` the local copies. Keep the archive and its checksum together:
-the restore refuses to proceed without the checksum file.
+the restore refuses to proceed without the checksum file. An incomplete backup
+prints a warning naming the missing handles; do not wipe until it says
+`handles: 6`.
 
 ### key-restore
 
@@ -1444,14 +1444,13 @@ files from the Proton Pass item and run:
 nix run .#key-restore -- ~/Downloads/<host>-restore-<time>.tar.gz
 ```
 
-It verifies the outer checksum, refuses to overwrite existing handles or extra
-files without `--force`, and checks every handle against the committed public
-halves in `modules/lib/yubikey-keys.nix` before writing anything. `--no-verify`
-skips only the outer checksum. When the bundle contains the host key, restore
-prints the `sudo install` commands for `/etc/ssh`; it never writes there itself.
-Then run `yk-login` (and `home-manager switch` if bootstrap did not already
-write the public keys), and verify with `ssh smortress true` and
-`ssh -t smortress sudo true`.
+It verifies the outer checksum, refuses to overwrite existing handles or the
+script without `--force`, and checks every handle's public half and application
+against the committed keys in `modules/lib/yubikey-keys.nix` before writing
+anything. `--no-verify` skips only the outer checksum; it cannot skip the
+committed-key check. Then run `home-manager switch` if bootstrap did not
+already write the public keys, `yk-login`, and verify with
+`ssh smortress true` and `ssh -t smortress sudo true`.
 
 ### cloudflare-plan
 

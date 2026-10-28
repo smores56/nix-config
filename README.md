@@ -169,7 +169,7 @@ systemctl --user restart proton-pass-agent    # macOS: launchctl kickstart -k gu
 
 Then run `ssh-pub-keys` to write the committed `~/.ssh/*.pub` and refresh
 `~/.ssh/allowed_signers` (every `home-manager switch` and bootstrap also run
-it). The public keys are literals in `modules/features/ssh-keys.nix`, so a key
+it). The public keys are literals in `modules/lib/yubikey-keys.nix`, so a key
 rotation happens there and every host picks it up at the next switch.
 The work Mac permits the Google Cloud CLI's `~/.ssh/google_compute_engine`
 private key as an exception to the local private-key check; this software key
@@ -566,10 +566,11 @@ root (`/etc/ssh/...`) via `--extra-files`.
 
 **Before reinstalling an existing machine**, run `nix run .#key-backup` and
 upload the printed archive and checksum to a Proton Pass Note item. It carries
-the FIDO2 credential handles in `~/.config/ssh-sk` (destroyed by the wipe) and,
-when it can find it, the host SSH key. After `bootstrap` on the new system,
-`nix run .#key-restore -- <bundle>` puts them back and prints the `sudo install`
-commands for the host key. See
+the FIDO2 credential handles in `~/.config/ssh-sk` (destroyed by the wipe) and
+the untracked enrollment script. After `bootstrap` on the new system,
+`nix run .#key-restore -- <bundle>` puts them back. The host SSH key is not in
+the bundle: keep `secrets/hosts/<host>/` in an operator checkout (or copy
+`/etc/ssh/ssh_host_ed25519_key` into it) before wiping. See
 [`docs/manual-steps.md`](docs/manual-steps.md#key-backup).
 
 ### Headless login and token rotation

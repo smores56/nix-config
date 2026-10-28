@@ -1,7 +1,7 @@
 # The key files on disk that ssh (`IdentityFile`), git signing and signature
-# verification read. The public halves are committed here (public by definition),
-# so a fresh machine needs no vault round trip to get them; the private halves
-# stay in Proton Pass (until the FIDO2 enrollment in T1), served by its agent.
+# verification read. The public halves are committed in
+# modules/lib/yubikey-keys.nix (public by definition), so a fresh machine needs
+# no vault round trip to get them; the private halves stay on the YubiKeys.
 {
   config,
   lib,

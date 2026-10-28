@@ -5,8 +5,8 @@ does. The three YubiKeys (`k1`, `k2`, `k3`) are interchangeable and every
 authorized list carries all three. The operator setup script is
 `~/dev/setup-yubikey.sh` on `smorespro` (it is not tracked yet); it produces
 `~/yubikey-setup/kN/` with the public material and a report. The script is
-included in the Proton Pass restore bundle (below) until it moves into the
-repo; only public certificates are taken from the report directory.
+included in the Proton Pass restore bundle (below) as data until it moves into
+the repo; the report directory is not copied.
 
 The FIDO2 credential *handles* under `~/.config/ssh-sk/kN/{sudo,signing}` are
 per-machine files: the private half is on the token, but OpenSSH needs the
@@ -43,30 +43,34 @@ cannot be exported, and the FIDO2 private half never leaves the token. The only
 YubiKey material a wipe destroys is `~/.config/ssh-sk/kN/{sudo,signing}`, the
 credential handles OpenSSH must present to the token.
 
+Before wiping, make sure `secrets/hosts/<host>/etc/ssh/ssh_host_ed25519_key` is
+in an operator checkout (smortress holds smorespro's) or copy
+`/etc/ssh/ssh_host_ed25519_key` into it: that host key is the sops identity and
+is **not** in the Pass bundle. If it is lost, mint a replacement with
+`nix run .#host-key -- <host>` and re-key `.sops.yaml`.
+
 1. Before wiping, on that machine: `nix run .#key-backup`, then attach the
    printed `.tar.gz` and `.sha256` to the Pass restore item and shred the local
-   copies.
-2. Install and `nix run .#bootstrap`.
+   copies. The output must say `handles: 6`; a missing handle is a lost leg.
+2. Install and `nix run .#bootstrap` (deliver the host key via
+   `secrets/hosts/<host>/`).
 3. Download the two files from Pass and run
    `nix run .#key-restore -- <bundle>.tar.gz`.
-4. `home-manager switch`, `yk-login`, then verify `ssh smortress true` and
-   `ssh -t smortress sudo true`.
+4. `home-manager switch` if needed, `yk-login`, then verify
+   `ssh smortress true` and `ssh -t smortress sudo true`.
 
-The host SSH key is included when `key-backup` finds it (the checkout's
-`secrets/hosts/<host>/` or an explicit `--host-key`); restore prints the
-`sudo install` commands for `/etc/ssh`. This matters because a wipe destroys
-both `/etc/ssh` and usually the gitignored checkout copy. The admin age key
-(`~/.config/sops/keys.age`) is deliberately excluded: it is the root of the
-secrets tree and stays passphrase-encrypted on both laptops, so a wiped
-`smorespro` still leaves `smoreswork`'s copy. PINs and PUKs are never written
-to the bundle.
+The admin age key (`~/.config/sops/keys.age`) is deliberately excluded: it is
+the root of the secrets tree and stays passphrase-encrypted on both laptops, so
+a wiped `smorespro` still leaves `smoreswork`'s copy. PINs and PUKs are never
+written to the bundle. The enrollment script is restored as 0600 data; review
+it and `chmod +x` before running it.
 
 ## Lost or stolen key
 
-1. Remove the key's three lines from `modules/nixos/ssh.nix`
-   (`authorizedKeys` and `sudo_authorized_keys`), its 9a certificate from
-   `pivCerts`, and its PIV/signing entries from `ssh-keys.nix`
-   (`yubikeyIdentities`).
+1. Remove the key's entries from `modules/lib/yubikey-keys.nix` (its PIV 9a
+   public key and certificate, sudo public key, and signing public key). That
+   file feeds sshd's `authorized_keys`, `/etc/ssh/sudo_authorized_keys`,
+   pam_p11's certificate list, and `allowed_signers`.
 2. Run `home-manager switch` on `smorespro` and `smortress`. If the key was
    with a laptop, also revoke that machine's Cloudflare Access service token,
    rotate the Maki PATs, and sign out Proton sessions (see below).

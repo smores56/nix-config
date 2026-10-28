@@ -183,16 +183,8 @@ let
     };
 
   # All three keys are interchangeable; load every handle that exists.
-  loginKeys = map (n: ".config/ssh-sk/k${n}/sudo") [
-    "1"
-    "2"
-    "3"
-  ];
-  signingKeys = map (n: ".config/ssh-sk/k${n}/signing") [
-    "1"
-    "2"
-    "3"
-  ];
+  loginKeys = map (k: ".config/ssh-sk/${k.key}") yubikeyKeys.sudo;
+  signingKeys = map (k: ".config/ssh-sk/${k.key}") yubikeyKeys.signing;
 
   agentEnv = [
     "SSH_ASKPASS=${lib.getExe askpass}"

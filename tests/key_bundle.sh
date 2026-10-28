@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Round-trip a FIDO2 handle bundle. A normal ed25519 key stands in for the
 # hardware-backed handle: the bundle code only copies and fingerprints files,
-# so it exercises the same path without a YubiKey. KEY_PUBKEYS supplies the
+# so it exercises the same path without a YubiKey. --pubkeys supplies the
 # committed public-half map the real build embeds.
 set -euo pipefail
 
@@ -33,13 +33,13 @@ wrongkeys="$root/wrongkeys"
 printf 'k1/sudo\t%s\n' "$(awk '{print $1" "$2}' "$root/wrong.pub")" >"$wrongkeys"
 
 run_backup() {
-  env -u XDG_STATE_HOME HOME="$src" KEY_PUBKEYS="$pubkeys" "$backup" "$@"
+  env -u XDG_STATE_HOME HOME="$src" "$backup" --pubkeys "$pubkeys" "$@"
 }
 
 run_restore() {
   local home="$1"
   shift
-  env -u XDG_STATE_HOME HOME="$home" KEY_PUBKEYS="$pubkeys" "$restore" "$@"
+  env -u XDG_STATE_HOME HOME="$home" "$restore" --pubkeys "$pubkeys" "$@"
 }
 
 run_backup >/dev/null
@@ -55,7 +55,7 @@ run_restore "$dst" "$archive" >/dev/null
 cmp "$src/.config/ssh-sk/k1/sudo" "$dst/.config/ssh-sk/k1/sudo" \
   || fail "restored handle differs"
 [ "$(mode "$dst/.config/ssh-sk/k1/sudo")" = "-rw-------" ] || fail "handle is not 0600"
-[ "$(mode "$dst/dev/setup-yubikey.sh")" = "-rwx------" ] || fail "script is not 0700"
+[ "$(mode "$dst/dev/setup-yubikey.sh")" = "-rw-------" ] || fail "script is not 0600"
 
 # A second restore must refuse to clobber an existing handle.
 if run_restore "$dst" "$archive" >/dev/null 2>&1; then
@@ -66,7 +66,7 @@ run_restore "$dst" "$archive" --force >/dev/null
 # A handle must match the committed public half.
 dst_wrong="$root/dst-wrong"
 mkdir -p "$dst_wrong"
-if env -u XDG_STATE_HOME HOME="$dst_wrong" KEY_PUBKEYS="$wrongkeys" "$restore" "$archive" >/dev/null 2>&1; then
+if env -u XDG_STATE_HOME HOME="$dst_wrong" "$restore" --pubkeys "$wrongkeys" "$archive" >/dev/null 2>&1; then
   fail "accepted a handle that does not match the public half"
 fi
 

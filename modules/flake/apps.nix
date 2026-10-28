@@ -209,19 +209,20 @@
         text = ''
           umask 077
 
-          hostkey=""
+          pubkeys="${yubikeyPubkeys}"
           while [ "$#" -gt 0 ]; do
             case "$1" in
-              --host-key)
+              --pubkeys)
                 if [ "$#" -lt 2 ]; then
-                  echo "key-backup: --host-key needs a path" >&2
+                  echo "key-backup: --pubkeys needs a path" >&2
                   exit 1
                 fi
-                hostkey="$2"
+                pubkeys="$2"
                 shift 2
+                continue
                 ;;
               -h | --help)
-                echo "Usage: nix run .#key-backup -- [--host-key <path>]"
+                echo "Usage: nix run .#key-backup"
                 exit 0
                 ;;
               *)
@@ -243,9 +244,8 @@
 
           stage="$(mktemp -d)"
           trap 'rm -rf "$stage"' EXIT
-          mkdir -p "$stage/home" "$stage/root"
+          mkdir -p "$stage/home"
 
-          pubkeys="''${KEY_PUBKEYS:-${yubikeyPubkeys}}"
           expected_pubkey() {
             awk -F '\t' -v k="$1" '$1 == k { print $2; exit }' "$pubkeys"
           }
@@ -255,32 +255,30 @@
 
           handles=0
           missing=()
-          for n in 1 2 3; do
-            for role in sudo signing; do
-              src="$HOME/.config/ssh-sk/k$n/$role"
-              if [ ! -f "$src" ]; then
-                missing+=("k$n/$role")
-                continue
-              fi
+          while IFS=$'\t' read -r key expected; do
+            [ -n "$key" ] || continue
+            src="$HOME/.config/ssh-sk/$key"
+            if [ ! -f "$src" ]; then
+              missing+=("$key")
+              continue
+            fi
 
-              expected="$(expected_pubkey "k$n/$role")"
-              if [ -z "$expected" ]; then
-                echo "key-backup: k$n/$role has no committed public key in modules/lib/yubikey-keys.nix" >&2
-                exit 1
-              fi
-              if ! got="$(ssh-keygen -y -P "" -f "$src" 2>/dev/null)"; then
-                echo "key-backup: k$n/$role is passphrase-protected or unreadable; the agents expect an empty file passphrase" >&2
-                exit 1
-              fi
-              if [ "$(printf '%s\n' "$expected" | first_two)" != "$(printf '%s\n' "$got" | first_two)" ]; then
-                echo "key-backup: k$n/$role does not match the committed public key; re-enroll it" >&2
-                exit 1
-              fi
+            if [ -z "$expected" ]; then
+              echo "key-backup: $key has no committed public key in modules/lib/yubikey-keys.nix" >&2
+              exit 1
+            fi
+            if ! got="$(ssh-keygen -y -P "" -f "$src" 2>/dev/null)"; then
+              echo "key-backup: $key is passphrase-protected or unreadable; the agents expect an empty file passphrase" >&2
+              exit 1
+            fi
+            if [ "$(printf '%s\n' "$expected" | first_two)" != "$(printf '%s\n' "$got" | first_two)" ]; then
+              echo "key-backup: $key does not match the committed public key; re-enroll it" >&2
+              exit 1
+            fi
 
-              install -D -m 600 "$src" "$stage/home/.config/ssh-sk/k$n/$role"
-              handles=$((handles + 1))
-            done
-          done
+            install -D -m 600 "$src" "$stage/home/.config/ssh-sk/$key"
+            handles=$((handles + 1))
+          done <"$pubkeys"
 
           if [ "$handles" -eq 0 ]; then
             echo "key-backup: no FIDO2 handles under $HOME/.config/ssh-sk" >&2
@@ -289,38 +287,13 @@
           fi
 
           # The enrollment script is untracked today, so this bundle is its only
-          # copy besides the machine being wiped. From the report directory keep
-          # public artifacts only; a report may hold PUK or management-key text.
+          # copy besides the machine being wiped. Keep it non-executable and
+          # review it before running after a restore; it may carry operator
+          # choices the repo should own.
+          script_state=no
           if [ -f "$HOME/dev/setup-yubikey.sh" ]; then
-            install -D -m 700 "$HOME/dev/setup-yubikey.sh" "$stage/home/dev/setup-yubikey.sh"
-          fi
-          if [ -d "$HOME/yubikey-setup" ]; then
-            find "$HOME/yubikey-setup" -type f \( -name '*.pub' -o -name '*.crt' -o -name '*.pem' \) -print0 |
-              while IFS= read -r -d "" fn; do
-                install -D -m 644 "$fn" "$stage/home/yubikey-setup/''${fn#"$HOME/yubikey-setup/"}"
-              done
-          fi
-
-          # The host key is the host's sops identity. `host-key` writes it to
-          # secrets/hosts/<host>/ (gitignored); include it when this runs from
-          # the checkout, or take an explicit --host-key.
-          if [ -z "$hostkey" ]; then
-            candidate="$PWD/secrets/hosts/$host/etc/ssh/ssh_host_ed25519_key"
-            if [ -f "$candidate" ]; then
-              hostkey="$candidate"
-            fi
-          fi
-          hostkey_state=no
-          if [ -n "$hostkey" ]; then
-            if [ ! -f "$hostkey" ]; then
-              echo "key-backup: no such host key: $hostkey" >&2
-              exit 1
-            fi
-            install -D -m 600 "$hostkey" "$stage/root/etc/ssh/ssh_host_ed25519_key"
-            if [ -f "$hostkey.pub" ]; then
-              install -D -m 644 "$hostkey.pub" "$stage/root/etc/ssh/ssh_host_ed25519_key.pub"
-            fi
-            hostkey_state=yes
+            install -D -m 600 "$HOME/dev/setup-yubikey.sh" "$stage/home/dev/setup-yubikey.sh"
+            script_state=yes
           fi
 
           {
@@ -328,22 +301,21 @@
             printf 'created: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             printf 'source-home: %s\n' "$HOME"
             printf 'handles: %s\n' "$handles"
-            printf 'host-key: %s\n' "$hostkey_state"
+            printf 'setup-script: %s\n' "$script_state"
             if [ "''${#missing[@]}" -gt 0 ]; then
               printf 'missing: %s\n' "''${missing[*]}"
             else
               printf 'missing: none\n'
             fi
             printf '\n'
-            printf 'FIDO2 credential handles: the private half stays on each YubiKey\n'
-            printf 'and cannot be exported. Host key: %s (the sops identity for this host).\n' "$hostkey_state"
-            printf 'No PIN or PUK is included. If setup-yubikey.sh is present, review it\n'
-            printf 'before upload; the report directory contributes only public certs.\n'
+            printf 'FIDO2 credential handles only: the private half stays on each\n'
+            printf 'YubiKey and cannot be exported. No host key, admin age key, PIN,\n'
+            printf 'or PUK is included.\n'
           } >"$stage/MANIFEST"
 
           (
             cd "$stage"
-            find home root -type f -print0 | sort -z | xargs -0 sha256sum
+            find home -type f -print0 | sort -z | xargs -0 sha256sum
           ) >"$stage/SHA256SUMS"
 
           archive="$state_dir/$host-restore-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
@@ -352,9 +324,15 @@
           sha256sum "$archive" | awk '{ print $1 }' >"$archive.sha256"
           chmod 600 "$archive.sha256"
 
+          if [ "''${#missing[@]}" -gt 0 ]; then
+            echo "key-backup: WARNING: incomplete backup; missing: ''${missing[*]}" >&2
+            echo "key-backup: fix the missing handles before you wipe the machine" >&2
+          fi
+
           cat <<EOF
           key-backup: wrote $archive
           key-backup: checksum $archive.sha256
+          key-backup: handles: $handles, setup script: $script_state
 
           Upload both files to Proton Pass:
             1. Create a Note item named "nix-config restore bundle — $host"
@@ -365,8 +343,8 @@
 
           Proton Pass encrypts attachments end-to-end; the archive itself is not
           separately encrypted. Restoring needs the physical YubiKey plus the PIN
-          for signing or a touch for sudo. The admin age key
-          (~/.config/sops/keys.age) is deliberately not in the bundle.
+          for signing or a touch for sudo. The host SSH key and the admin age key
+          (~/.config/sops/keys.age) have separate custody.
 
           Restore on a fresh machine after bootstrap:
             nix run .#key-restore -- <downloaded-bundle.tar.gz>
@@ -390,9 +368,8 @@
             cat <<'EOF'
           Usage: nix run .#key-restore -- <bundle.tar.gz> [--force] [--no-verify]
 
-          Restores the FIDO2 credential handles and the host key from a Proton
-          Pass backup made by `nix run .#key-backup`. Run it after
-          `nix run .#bootstrap`.
+          Restores the FIDO2 credential handles from a Proton Pass backup made
+          by `nix run .#key-backup`. Run it after `nix run .#bootstrap`.
           EOF
           }
 
@@ -400,10 +377,20 @@
           force=0
           verify=1
           archive=""
+          pubkeys="${yubikeyPubkeys}"
           while [ "$#" -gt 0 ]; do
             case "$1" in
               --force) force=1 ;;
               --no-verify) verify=0 ;;
+              --pubkeys)
+                if [ "$#" -lt 2 ]; then
+                  echo "key-restore: --pubkeys needs a path" >&2
+                  exit 1
+                fi
+                pubkeys="$2"
+                shift 2
+                continue
+                ;;
               -h | --help)
                 usage
                 exit 0
@@ -454,6 +441,11 @@
             echo "key-restore: skipping the outer checksum (--no-verify)" >&2
           fi
 
+          if tar -tvzf "$archive" | awk 'substr($0, 1, 1) ~ /[lh]/ { found=1 } END { exit !found }'; then
+            echo "key-restore: the bundle contains links; refusing" >&2
+            exit 1
+          fi
+
           stage="$(mktemp -d)"
           trap 'rm -rf "$stage"' EXIT
           tar --no-same-owner --no-same-permissions -C "$stage" -xzf "$archive"
@@ -470,7 +462,7 @@
           done
           (
             cd "$stage"
-            find home root -type f -print0 | sort -z | xargs -0 sha256sum >.recomputed
+            find home -type f -print0 | sort -z | xargs -0 sha256sum >.recomputed
             if ! cmp -s .recomputed SHA256SUMS; then
               echo "key-restore: SHA256SUMS does not match the archive contents" >&2
               exit 1
@@ -481,11 +473,15 @@
           created="$(sed -n 's/^created: //p' "$stage/MANIFEST")"
           missing="$(sed -n 's/^missing: //p' "$stage/MANIFEST")"
           echo "key-restore: bundle from $host ($created)"
+          current="$(uname -n)"
+          current="''${current%%.*}"
+          if [ "$host" != "$current" ]; then
+            echo "key-restore: bundle was made on $host; restoring handles on $current" >&2
+          fi
           if [ -n "$missing" ] && [ "$missing" != none ]; then
             echo "key-restore: the backup was missing: $missing" >&2
           fi
 
-          pubkeys="''${KEY_PUBKEYS:-${yubikeyPubkeys}}"
           expected_pubkey() {
             awk -F '\t' -v k="$1" '$1 == k { print $2; exit }' "$pubkeys"
           }
@@ -493,85 +489,66 @@
             awk '{ print $1" "$2 }'
           }
 
-          # Refuse before writing anything if a handle or extra file already
-          # exists, or if any handle does not match the committed public half.
-          # A partial restore would leave the machine in a state yk-login cannot
-          # explain.
-          for n in 1 2 3; do
-            for role in sudo signing; do
-              src="$stage/home/.config/ssh-sk/k$n/$role"
-              [ -f "$src" ] || continue
-              dest="$HOME/.config/ssh-sk/k$n/$role"
-              if [ -e "$dest" ] && [ "$force" -eq 0 ]; then
-                echo "key-restore: $dest already exists; pass --force to replace it" >&2
-                exit 1
-              fi
-
-              expected="$(expected_pubkey "k$n/$role")"
-              if [ -z "$expected" ]; then
-                echo "key-restore: k$n/$role has no committed public key in modules/lib/yubikey-keys.nix" >&2
-                exit 1
-              fi
-              if ! got="$(ssh-keygen -y -P "" -f "$src" 2>/dev/null)"; then
-                echo "key-restore: k$n/$role is passphrase-protected or unreadable" >&2
-                exit 1
-              fi
-              if [ "$(printf '%s\n' "$expected" | first_two)" != "$(printf '%s\n' "$got" | first_two)" ]; then
-                echo "key-restore: k$n/$role does not match the committed public key" >&2
-                exit 1
-              fi
-            done
-          done
-
-          extras=()
-          if [ -f "$stage/home/dev/setup-yubikey.sh" ]; then
-            extras+=("$stage/home/dev/setup-yubikey.sh:$HOME/dev/setup-yubikey.sh:700")
-          fi
-          if [ -d "$stage/home/yubikey-setup" ]; then
-            while IFS= read -r -d "" fn; do
-              rel="''${fn#"$stage/home/"}"
-              extras+=("$fn:$HOME/$rel:644")
-            done < <(find "$stage/home/yubikey-setup" -type f -print0)
-          fi
-          for entry in "''${extras[@]}"; do
-            dest="''${entry#*:}"
-            dest="''${dest%:*}"
+          # Refuse before writing anything if a handle already exists or does
+          # not match the committed public half. A partial restore would leave
+          # the machine in a state yk-login cannot explain.
+          while IFS=$'\t' read -r key _; do
+            [ -n "$key" ] || continue
+            src="$stage/home/.config/ssh-sk/$key"
+            [ -f "$src" ] || continue
+            dest="$HOME/.config/ssh-sk/$key"
             if [ -e "$dest" ] && [ "$force" -eq 0 ]; then
               echo "key-restore: $dest already exists; pass --force to replace it" >&2
               exit 1
             fi
+
+            expected="$(expected_pubkey "$key")"
+            if [ -z "$expected" ]; then
+              echo "key-restore: $key has no committed public key in modules/lib/yubikey-keys.nix" >&2
+              exit 1
+            fi
+            if ! got="$(ssh-keygen -y -P "" -f "$src" 2>/dev/null)"; then
+              echo "key-restore: $key is passphrase-protected or unreadable" >&2
+              exit 1
+            fi
+            if [ "$(printf '%s\n' "$expected" | first_two)" != "$(printf '%s\n' "$got" | first_two)" ]; then
+              echo "key-restore: $key does not match the committed public key" >&2
+              exit 1
+            fi
+          done <"$pubkeys"
+
+          # Reject a handle the repo does not know about; the map is the
+          # authoritative credential inventory.
+          for src in "$stage"/home/.config/ssh-sk/*/*; do
+            [ -f "$src" ] || continue
+            key="''${src#"$stage/home/.config/ssh-sk/"}"
+            if ! awk -F '\t' -v k="$key" '$1 == k { found=1 } END { exit !found }' "$pubkeys"; then
+              echo "key-restore: $key is not a committed credential" >&2
+              exit 1
+            fi
           done
 
+          if [ -f "$stage/home/dev/setup-yubikey.sh" ] && [ -e "$HOME/dev/setup-yubikey.sh" ] && [ "$force" -eq 0 ]; then
+            echo "key-restore: $HOME/dev/setup-yubikey.sh already exists; pass --force to replace it" >&2
+            exit 1
+          fi
+
           installed=0
-          for n in 1 2 3; do
-            for role in sudo signing; do
-              src="$stage/home/.config/ssh-sk/k$n/$role"
-              [ -f "$src" ] || continue
-              install -D -m 600 "$src" "$HOME/.config/ssh-sk/k$n/$role"
-              installed=$((installed + 1))
-            done
-          done
+          while IFS=$'\t' read -r key _; do
+            [ -n "$key" ] || continue
+            src="$stage/home/.config/ssh-sk/$key"
+            [ -f "$src" ] || continue
+            install -D -m 600 "$src" "$HOME/.config/ssh-sk/$key"
+            installed=$((installed + 1))
+          done <"$pubkeys"
           if [ "$installed" -eq 0 ]; then
             echo "key-restore: the bundle contains no handles" >&2
             exit 1
           fi
 
-          for entry in "''${extras[@]}"; do
-            src="''${entry%%:*}"
-            rest="''${entry#*:}"
-            dest="''${rest%:*}"
-            mode="''${rest##*:}"
-            install -D -m "$mode" "$src" "$dest"
-          done
-
-          hostkey_state=no
-          if [ -f "$stage/root/etc/ssh/ssh_host_ed25519_key" ]; then
-            keydir="$HOME/.local/state/key-restore/etc/ssh"
-            install -D -m 600 "$stage/root/etc/ssh/ssh_host_ed25519_key" "$keydir/ssh_host_ed25519_key"
-            if [ -f "$stage/root/etc/ssh/ssh_host_ed25519_key.pub" ]; then
-              install -D -m 644 "$stage/root/etc/ssh/ssh_host_ed25519_key.pub" "$keydir/ssh_host_ed25519_key.pub"
-            fi
-            hostkey_state=yes
+          if [ -f "$stage/home/dev/setup-yubikey.sh" ]; then
+            install -D -m 600 "$stage/home/dev/setup-yubikey.sh" "$HOME/dev/setup-yubikey.sh"
+            echo "key-restore: restored the enrollment script as data; review it, then chmod +x" >&2
           fi
 
           cat <<EOF
@@ -582,25 +559,12 @@
             yk-login                   # loads the handles, caches the PIN
             ssh smortress true         # no prompt
             ssh -t smortress sudo true # one touch
-          EOF
 
-          if [ "$hostkey_state" = yes ]; then
-            cat <<EOF
-
-          The host key was extracted to $HOME/.local/state/key-restore/etc/ssh.
-          Install it as root before the first reboot:
-            sudo install -D -m 600 "$HOME/.local/state/key-restore/etc/ssh/ssh_host_ed25519_key" /etc/ssh/ssh_host_ed25519_key
-            sudo install -D -m 644 "$HOME/.local/state/key-restore/etc/ssh/ssh_host_ed25519_key.pub" /etc/ssh/ssh_host_ed25519_key.pub
-            sudo systemctl restart sshd
+          The host SSH key and the admin age key are not in this bundle: the host
+          key comes from secrets/hosts/<host>/ via install, or is re-minted with
+          nix run .#host-key and re-keyed in .sops.yaml; the admin identity stays
+          on the laptops.
           EOF
-          else
-            cat <<EOF
-
-          No host key was in the bundle. Copy secrets/hosts/$host/ from the
-          operator checkout, or mint a new one with nix run .#host-key and
-          re-key .sops.yaml.
-          EOF
-          fi
         '';
       };
 
