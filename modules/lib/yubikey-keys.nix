@@ -4,6 +4,11 @@
 # keys, git's allowed_signers, pam_p11's certificate file, and the handle
 # integrity check in `key-backup`/`key-restore`. Private halves never leave
 # the token, so nothing here is secret.
+#
+# `piv` entries are slot 9a (PIN ONCE, touch NEVER, SSH login and git signing
+# on smortress). `signing` entries are no-touch-required + verify-required and
+# are loaded only into fido2-sign-agent. `sudo` entries are touch-required with
+# no verify-required and are loaded only into fido2-agent for pam_rssh.
 {
   piv = [
     {
