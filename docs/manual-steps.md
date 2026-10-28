@@ -839,6 +839,26 @@ regenerated on every wrapper start, so a copied file goes stale.
 `/internal/lookup` takes at most 10,000 hashes and both routes reject bodies
 over 1 MB.
 
+The FalkorDB and Graphiti containers run rootless as the `memory` user (uid
+982, subuid/subgid range 200000-265535). The first switch from the old rootful
+layout must stop the old containers before activation chowns their data:
+
+```sh
+sudo systemctl stop memory-graphiti-mcp memory-falkordb
+sudo chown -R memory:memory /var/lib/memory/falkordb
+just switch smortress
+ss -ltnp 'sport = :6379'                         # must be 127.0.0.1
+sudo -u memory XDG_RUNTIME_DIR=/run/user/982 podman ps
+sudo podman ps -a                                # stale rootful containers?
+```
+
+If a stale container is still holding `127.0.0.1:6379`, remove it from the
+store that owns it: `sudo podman rm -f memory-falkordb memory-graphiti-mcp`
+or the same `podman rm` as the `memory` user. The rootless image store lives
+under `/var/lib/memory/.local/share/containers`; do not add it to backups. After
+`memory restore`, the graph snapshot is owned by `memory`, matching the rootless
+container.
+
 Graphiti extracts through `memory-llm-proxy` on `127.0.0.1:8082`, which is
 Memory's single egress point to Neuralwatt (`api.neuralwatt.com`). The gateway
 holds the account key — read from the `neuralwatt-api-key` sops secret through a

@@ -313,7 +313,9 @@ model providers Maki may use.
   the loopback wrapper at `ports.memoryMcp` with `X-Memory-Group`/`X-Memory-Cwd`
   headers; on client machines `cloudflared-memory` supplies the Cloudflare
   Access service token. The raw Graphiti MCP runs on an internal loopback port
-  in `modules/nixos/memory.nix` and is never tunneled. Extraction runs on
+  in `modules/nixos/memory.nix` and is never tunneled. FalkorDB and Graphiti run
+  rootless as the `memory` user; only FalkorDB's published loopback port is
+  reachable. Extraction runs on
   Neuralwatt through a loopback gateway that holds the key; embeddings default
   to local bge-m3 (`memory.embedder`). The same package installs the `memory`
   CLI (`write|search|get|retry|promote|reindex|status|tombstone|ingest`) for use on a

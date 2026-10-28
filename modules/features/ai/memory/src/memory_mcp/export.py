@@ -912,7 +912,9 @@ def restore(config: RestoreConfig) -> RestoreReport:
     parked: tuple[str, ...] = ()
     if verified.graph.accepted and verified.graph.path is not None:
         try:
-            _install(verified.graph.path, config.graph_dir / "dump.rdb", owner=None)
+            # FalkorDB runs rootless as `memory`; a root-owned dump would be
+            # unreadable after the restore.
+            _install(verified.graph.path, config.graph_dir / "dump.rdb", owner=config.owner)
         except (ExportError, OSError) as exc:
             raise ExportError(
                 f"the registry is restored but installing the graph snapshot failed: {exc}; "

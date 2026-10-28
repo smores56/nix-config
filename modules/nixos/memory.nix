@@ -29,18 +29,23 @@ let
   # LobeChat's knowledge base reads it too when `memory.embedder` is
   # `neuralwatt`; it is never tunneled.
   llmProxyPort = ports.memoryLlmProxy;
-  # StateDirectory creates /var/lib/<name> for the wrapper; tmpfiles only adds
-  # the root-owned FalkorDB subdirectory, so the two never disagree.
+  # StateDirectory creates /var/lib/<name> for the wrapper; tmpfiles owns the
+  # memory-owned FalkorDB subdirectory, so the two never disagree.
   stateDirectory = "memory";
   dataDir = "/var/lib/${stateDirectory}";
-  # FalkorDB publishes its port through podman, so the DNATed packet's
-  # destination is the container address, not 127.0.0.1: a unit whose
-  # IPAddressAllow lists only localhost has its SYN dropped and sits in
-  # SYN_SENT until the client times out. The subnet is podman's default
-  # network (`podman0`); keep the two in step if it is ever changed.
+  # Rootless podman needs a stable uid for its user-manager units and
+  # subordinate-id range. These values are the ones already assigned on
+  # smortress; pinning them keeps `RequiresMountsFor` and `user@` valid
+  # instead of interpolating a null uid during evaluation.
+  memoryUid = 982;
+  memoryGid = 977;
+  memorySubidStart = 200000;
+  # Kept for the rootful rollback generation. Rootless forwarding presents the
+  # database on loopback, so this range is removed in a follow-up after the
+  # rootless switch is verified.
   podmanSubnet = "10.88.0.0/16";
   # Nightly exports land here: root-owned (the exporter runs as root and reads
-  # the root-owned graph volume), never written by the wrapper.
+  # the memory-owned graph volume), never written by the wrapper.
   exportDir = "${dataDir}/export";
 
   # Work markers come from the shared identity so the wrapper and the shim
@@ -207,17 +212,35 @@ in
 
     # The containers share the host network so the MCP server can reach llama.cpp
     # and the embedder on 127.0.0.1 without binding either to a bridge. FalkorDB
-    # publishes only to loopback, so nothing here is reachable off-host.
+    # publishes only to loopback, so nothing here is reachable off-host. Both
+    # containers run rootless as `memory`; the user manager and subordinate ids
+    # are part of the service contract, not an operator preference.
     virtualisation.oci-containers.backend = "podman";
 
-    # StateDirectory owns /var/lib/memory for the wrapper (the registry and
-    # future export); tmpfiles only creates FalkorDB's root-owned subdirectory
-    # because that container runs rootful. Keep the two in one place so they
-    # cannot disagree about the path.
-    users.groups.memory = { };
+    users.groups.memory = {
+      gid = memoryGid;
+    };
     users.users.memory = {
       isSystemUser = true;
+      uid = memoryUid;
       group = "memory";
+      home = dataDir;
+      createHome = true;
+      # The human user must keep group access to the wrapper token and registry.
+      homeMode = "0750";
+      linger = true;
+      subUidRanges = [
+        {
+          startUid = memorySubidStart;
+          count = 65536;
+        }
+      ];
+      subGidRanges = [
+        {
+          startGid = memorySubidStart;
+          count = 65536;
+        }
+      ];
     };
     # `memory ingest` runs as the human user and authenticates to the wrapper's
     # /internal routes with the token the wrapper writes into the state dir
@@ -227,7 +250,12 @@ in
     users.users.${config.machine.username}.extraGroups = [ "memory" ];
 
     systemd.tmpfiles.rules = [
-      "d ${dataDir}/falkordb 0700 root root -"
+      # `Z` migrates the existing rootful AOF/RDB files to the rootless service
+      # account while preserving file modes. Stop the old container first (the
+      # operator step in docs/manual-steps.md); otherwise it can write a new
+      # root-owned segment after this runs.
+      "d ${dataDir}/falkordb 0700 memory memory -"
+      "Z ${dataDir}/falkordb - memory memory -"
       "d ${exportDir} 0700 root root -"
     ];
 
@@ -240,10 +268,12 @@ in
       memory-falkordb = {
         serviceName = "memory-falkordb";
         image = falkordbImage;
+        podman.user = "memory";
         ports = [ "127.0.0.1:${toString dbPort}:6379" ];
         volumes = [ "${dataDir}/falkordb:/var/lib/falkordb/data" ];
         extraOptions = [
-          # redis-server needs no capabilities and the data dir is root-owned.
+          # redis-server needs no capabilities; the bind mount is owned by the
+          # rootless service account.
           "--cap-drop=ALL"
           "--security-opt=no-new-privileges"
           "--health-cmd=redis-cli ping"
@@ -265,12 +295,13 @@ in
       memory-graphiti-mcp = {
         serviceName = "memory-graphiti-mcp";
         image = graphitiImage;
+        podman.user = "memory";
         extraOptions = [
           "--network=host"
           # This process ingests untrusted text and drives an LLM. It shares
           # the host's loopback through host networking, so drop capabilities
-          # and block setuid escalation. Rootful podman still maps container
-          # root to host root: this bounds, but does not isolate, the damage.
+          # and block setuid escalation. Rootless podman maps container root to
+          # the `memory` user; the user namespace remains the boundary.
           "--cap-drop=ALL"
           "--security-opt=no-new-privileges"
           # The image's built-in healthcheck targets its default port 8000,
@@ -309,6 +340,18 @@ in
     # email, not flap forever; 10 starts in an hour is generous for a flaky
     # pull. TimeoutStartSec bounds a hung image pull (the module default is 0).
     systemd.services.memory-falkordb = {
+      # `linger-users.service` only enables lingering; it does not order the
+      # container after the user manager. Start the runtime directory and user
+      # manager explicitly so rootless podman has cgroups and XDG_RUNTIME_DIR.
+      requires = [
+        "user-runtime-dir@${toString memoryUid}.service"
+        "user@${toString memoryUid}.service"
+      ];
+      after = [
+        "user-runtime-dir@${toString memoryUid}.service"
+        "user@${toString memoryUid}.service"
+      ];
+      environment.XDG_RUNTIME_DIR = "/run/user/${toString memoryUid}";
       unitConfig = {
         StartLimitIntervalSec = "1h";
         StartLimitBurst = 10;
@@ -322,12 +365,19 @@ in
     };
 
     systemd.services.memory-graphiti-mcp = {
+      requires = [
+        "user-runtime-dir@${toString memoryUid}.service"
+        "user@${toString memoryUid}.service"
+      ];
+      environment.XDG_RUNTIME_DIR = "/run/user/${toString memoryUid}";
       wants = [
         "memory-falkordb.service"
         "memory-llm-proxy.service"
       ]
       ++ lib.optional localEmbedder "llama-cpp-embed.service";
       after = [
+        "user-runtime-dir@${toString memoryUid}.service"
+        "user@${toString memoryUid}.service"
         "memory-falkordb.service"
         "memory-llm-proxy.service"
       ]
