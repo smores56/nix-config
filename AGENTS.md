@@ -184,13 +184,15 @@ manifest counts, stale/scope/count failures, and the full-pass swap),
 `backup-watch` (watcher debounce/ignore/queue semantics), `backup-plain`
 (copy-never-sync, versions, scoped check, markers and the stall watchdog against
 local rclone remotes), and `key-bundle` (FIDO2 handle round-trip: 0600 modes,
-outer and inner checksums, moved bundle, --force, public-half mismatch). Run them
+outer and inner checksums, moved bundle, --force, public-half mismatch), and
+`sshd-settings` (rendered `sshd -T`: key-only auth, verify-required, no
+root/password/kbd-interactive, loopback listen, no home authorized_keys). Run them
 after touching shell, git, ssh or backup settings, or
 `modules/lib/repo-workflow.nix`:
 
 ```sh
 nix build .#checks.aarch64-darwin.{git-work-routing,ssh-allowed-signers,ssh-pub-keys,worktrees-branch-template,repos-routing,zsh-config,github-mirror-probe}
-nix build .#checks.x86_64-linux.{backup-watch,backup-plain,github-metadata,key-bundle,manual-steps-sync}
+nix build .#checks.x86_64-linux.{backup-watch,backup-plain,github-metadata,key-bundle,manual-steps-sync,sshd-settings}
 ```
 
 Run `manual-steps-sync` after touching hosts, sops keys, `tofu/`, backup

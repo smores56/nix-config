@@ -482,6 +482,39 @@ in
       }
       // homeChecks
       // nixosChecks
-      // scriptChecks;
+      // scriptChecks
+      // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+        sshd-settings =
+          pkgs.runCommand "sshd-settings-check"
+            {
+              nativeBuildInputs = [
+                pkgs.coreutils
+                pkgs.gnugrep
+                pkgs.openssh
+              ];
+            }
+            ''
+              key=$(mktemp)
+              rm -f "$key"
+              ssh-keygen -q -t ed25519 -N "" -f "$key"
+              sshd -T -f ${
+                config.flake.nixosConfigurations.smortress.config.environment.etc."ssh/sshd_config".source
+              } -h "$key" 2>/dev/null >settings
+              grep -Fx 'AuthenticationMethods publickey' settings
+              grep -Fx 'pubkeyauthoptions verify-required' settings
+              grep -Fx 'PasswordAuthentication no' settings
+              grep -Fx 'KbdInteractiveAuthentication no' settings
+              grep -Fx 'PermitRootLogin no' settings
+              grep -Fx 'PermitEmptyPasswords no' settings
+              grep -Fx 'AllowTcpForwarding no' settings
+              grep -Fx 'AllowAgentForwarding yes' settings
+              grep -Fx 'AllowUsers smores' settings
+              grep -Fx 'MaxAuthTries 10' settings
+              grep -Fx 'LoginGraceTime 20' settings
+              ! grep -q '^AuthorizedKeysFile .*\.ssh/authorized_keys' settings
+              grep -q '^listenaddress 127\.0\.0\.1:' settings
+              touch $out
+            '';
+      };
     };
 }
