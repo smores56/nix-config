@@ -26,14 +26,11 @@
         mode = "0400";
       };
 
-      # maki's hosted-inference key lives in secrets/common.yaml
-      # (secrets-common.nix): every personal host reads it.
-      # Brave Search API key; the fish init exports it for maki's websearch
-      # plugin and Page Assist uses its own copy in the browser.
-      brave-api-key = {
-        owner = config.machine.username;
-        mode = "0400";
-      };
+      # Brave Search API key for LobeChat's web search. Only the container's
+      # root-run preStart renders it into the env file, and Page Assist keeps
+      # its own copy in the browser; sops-nix's root 0400 default is enough.
+      # Maki's websearch uses tinyfish-api-key instead.
+      brave-api-key = { };
 
       # A `repo`-scoped PAT, read only by the root GitHub-backup service
       # (modules/nixos/github-backup.nix). Root-owned, so the user's shell cannot

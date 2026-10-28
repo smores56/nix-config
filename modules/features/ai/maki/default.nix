@@ -71,16 +71,16 @@ let
         default_model = "${profile.defaultModel}",
         allowed_models = { ${luaStrings profile.allowedModels} },
       },
-      -- Personal search uses the Brave Search API over https; no private host
-      -- allowlist is needed. The smortress provider uses its own client.
+      -- Personal search uses the TinyFish Search API over https; no private
+      -- host allowlist is needed. The smortress provider uses its own client.
       net = {
         allowed_private_hosts = { ${luaStrings profile.privateHosts} },
       },
       plugins = {
         bash = { enabled = true },
         -- The bundled websearch only speaks Exa/You.com; on personal hosts
-        -- the owned plugin below uses the Brave Search API instead, and work
-        -- has no search.
+        -- the owned plugin below uses the TinyFish Search API instead, and
+        -- work has no search.
         websearch = { enabled = false },
         -- Bundled project-scoped memory: the `memory` tool, tag-based
         -- retrieval, plain markdown files under the maki state dir.
@@ -95,7 +95,7 @@ let
 
   # Permissions manifest for the Lua plugins under ./lua. `run` is needed by
   # spawn_session's maki.fn.jobstart (process spawn); `net` lets
-  # websearch_owned reach the Brave Search API.
+  # websearch_owned reach the TinyFish Search API.
   pluginToml = ''
     [permissions]
     fs_read = true

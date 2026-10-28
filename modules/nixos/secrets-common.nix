@@ -24,6 +24,14 @@
       restartUnits = lib.optional (config.systemd.services ? memory-llm-proxy) "memory-llm-proxy.service";
     };
 
+    # Maki's web search key. The fish init exports it as TINYFISH_API_KEY on
+    # every NixOS host, so the user must be able to read it.
+    tinyfish-api-key = {
+      sopsFile = ../../secrets/common.yaml;
+      owner = config.machine.username;
+      mode = "0400";
+    };
+
     # SHA-512 crypt hash of the account password. `neededForUsers` decrypts it
     # into /run/secrets-for-users before the users activation, which is the only
     # stage that can read hashedPasswordFile. Root-owned by assertion in

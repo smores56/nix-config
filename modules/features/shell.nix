@@ -160,14 +160,14 @@ in
               source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.fish
           end
         '')
-        # sops-nix provisions these 0400 user-owned secrets on smortress; other
-        # hosts do not have the paths and skip them.
+        # sops-nix provisions these 0400 user-owned secrets on NixOS hosts;
+        # hosts without them skip the block.
         (lib.mkIf config.machine.nixos ''
           if test -r /run/secrets/neuralwatt-api-key
               set -gx NEURALWATT_API_KEY (cat /run/secrets/neuralwatt-api-key)
           end
-          if test -r /run/secrets/brave-api-key
-              set -gx BRAVE_API_KEY (cat /run/secrets/brave-api-key)
+          if test -r /run/secrets/tinyfish-api-key
+              set -gx TINYFISH_API_KEY (cat /run/secrets/tinyfish-api-key)
           end
         '')
         (lib.mkIf isServer (lib.mkAfter sshAuthSockHookFish))

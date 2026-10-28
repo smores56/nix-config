@@ -75,9 +75,9 @@ fprintd-list "$USER"
 Fingerprint auth is for the lock screen only; it is deliberately not enabled
 for `sudo`/`su`.
 
-Maki's personal profile on this host has no `NEURALWATT_API_KEY` or
-`BRAVE_API_KEY`: those secrets live only in `secrets/smortress.yaml`. Use the
-`work` AI profile or provision keys out of band.
+Maki's personal profile on this host reads `NEURALWATT_API_KEY` and
+`TINYFISH_API_KEY` from `secrets/common.yaml`, which names smorespro as a
+recipient.
 
 ### smoreswork
 
@@ -155,10 +155,10 @@ Secrets are split by scope:
 - `secrets/smortress.yaml` — host-only material for smortress (Cloudflare token,
   tunnel JSON, calibre password, the mirror's repo PAT, brave), encrypted to the
   admin identity plus the smortress host key.
-- `secrets/common.yaml` — cross-host user secrets (neuralwatt, the `smores`
-  password hash, owner-scoped PATs), encrypted to the admin identity plus every
-  NixOS host key (`smortress`, `smorespro`). Each of those hosts can read the
-  whole file, so host-only keys must not go in it.
+- `secrets/common.yaml` — cross-host user secrets (neuralwatt, tinyfish, the
+  `smores` password hash, owner-scoped PATs), encrypted to the admin identity
+  plus every NixOS host key (`smortress`, `smorespro`). Each of those hosts can
+  read the whole file, so host-only keys must not go in it.
 
 No host holds the admin identity, so edit from a laptop that has it:
 
@@ -410,13 +410,23 @@ host, exported by the fish init as `NEURALWATT_API_KEY` for maki's provider
 config. Rotate in the Neuralwatt console, update the common file, rebuild each
 host, and open a new shell.
 
+### tinyfish-api-key
+
+<!-- manual-step: secret/tinyfish-api-key -->
+
+Web search key in `secrets/common.yaml`, user-readable on every NixOS host,
+exported by the fish init as `TINYFISH_API_KEY` for maki's `websearch` tool.
+Rotate at [agent.tinyfish.ai](https://agent.tinyfish.ai/api-keys), update the
+common file, rebuild each host, and open a new shell.
+
 ### brave-api-key
 
 <!-- manual-step: secret/brave-api-key -->
 
-Brave Search API key, user-readable, exported by the fish init for maki's
-websearch plugin. Page Assist keeps its own copy in the browser. Rotate in the
-Brave dashboard, update this key, rebuild, and open a new shell.
+Brave Search API key for LobeChat's web search on smortress. LobeChat's env
+script reads the sops path, and Page Assist keeps its own copy in the browser.
+Maki no longer reads it. Rotate in the Brave dashboard, update this key,
+rebuild, and restart the LobeChat container.
 
 ### Rotation checklist
 
@@ -481,11 +491,26 @@ sudo nixos-rebuild switch        # on smortress and smorespro
 Open a new shell for `NEURALWATT_API_KEY` (the fish init exports it at shell
 start), and restart any agent session that cached the old key.
 
+#### tinyfish-api-key
+
+Mint a new key at [agent.tinyfish.ai](https://agent.tinyfish.ai/api-keys) and
+revoke the old one there (web). Replace the secret and rebuild every NixOS
+host:
+
+```sh
+sops secrets/common.yaml
+sudo nixos-rebuild switch        # on smortress and smorespro
+```
+
+Open a new shell for `TINYFISH_API_KEY` (the fish init exports it at shell
+start), and restart any agent session that cached the old key.
+
 #### brave-api-key
 
 Regenerate the key in the Brave dashboard (web). Replace the secret, rebuild,
-open a new shell for `BRAVE_API_KEY`, and update Page Assist's own copy in the
-extension settings — it does not read the sops file.
+and restart `podman-lobechat.service` so its env file is regenerated; update
+Page Assist's own copy in the extension settings — it does not read the sops
+file.
 
 #### cloudflared-credentials
 
