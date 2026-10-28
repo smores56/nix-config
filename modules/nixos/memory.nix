@@ -40,10 +40,6 @@ let
   memoryUid = 982;
   memoryGid = 977;
   memorySubidStart = 200000;
-  # Kept for the rootful rollback generation. Rootless forwarding presents the
-  # database on loopback, so this range is removed in a follow-up after the
-  # rootless switch is verified.
-  podmanSubnet = "10.88.0.0/16";
   # Nightly exports land here: root-owned (the exporter runs as root and reads
   # the memory-owned graph volume), never written by the wrapper.
   exportDir = "${dataDir}/export";
@@ -542,12 +538,9 @@ in
           "AF_UNIX"
         ];
         # Loopback only: the wrapper talks to Graphiti and the two model
-        # endpoints and needs no other network identity. FalkorDB arrives
-        # post-DNAT from the podman subnet, so that range is allowed too.
-        IPAddressAllow = [
-          "localhost"
-          podmanSubnet
-        ];
+        # endpoints and needs no other network identity. Rootless podman's
+        # port forward presents FalkorDB on loopback, not a podman subnet.
+        IPAddressAllow = "localhost";
         IPAddressDeny = "any";
       };
       preStart = ''
@@ -623,12 +616,9 @@ in
           "AF_INET"
           "AF_INET6"
         ];
-        # Only FalkorDB on loopback is reachable; it answers post-DNAT from
-        # the podman subnet, which is why that range is allowed as well.
-        IPAddressAllow = [
-          "localhost"
-          podmanSubnet
-        ];
+        # Only FalkorDB on loopback is reachable; rootless port forwarding
+        # presents it on localhost, not a podman subnet.
+        IPAddressAllow = "localhost";
         IPAddressDeny = "any";
       };
     };

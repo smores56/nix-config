@@ -406,10 +406,12 @@ in
       requires = [
         "lobechat-secrets.service"
         "podman-lobechat.service"
+        "memory-mcp.service"
       ];
       after = [
         "lobechat-secrets.service"
         "podman-lobechat.service"
+        "memory-mcp.service"
       ];
       serviceConfig = {
         Type = "oneshot";
