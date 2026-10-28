@@ -34,11 +34,14 @@ in
         ServerAliveCountMax = 3;
         HashKnownHosts = false;
         UserKnownHostsFile = "~/.ssh/known_hosts";
+      }
+      // lib.optionalAttrs isLinux {
         # Reuse one transport per destination: a fresh cloudflared ProxyCommand
         # also re-resolves the Access token via pass-cli, ~1.7s per invocation.
         # The socket lives in the per-user runtime dir, not ~/.ssh (the design
-        # forbids private-key-adjacent state there); an unset XDG_RUNTIME_DIR
-        # makes ssh ignore the keyword, which just disables sharing.
+        # forbids private-key-adjacent state there). darwin shares nothing: it
+        # has no XDG_RUNTIME_DIR (an unset ${VAR} is a fatal config error), and
+        # its TMPDIR is too long for a socket path.
         ControlMaster = "auto";
         ControlPath = "\${XDG_RUNTIME_DIR}/ssh-%C";
         ControlPersist = "10m";
