@@ -140,15 +140,51 @@ let
       exit "$failed"
     '';
   };
+  # The host must keep no software private keys in ~/.ssh: identities come
+  # from the agent/security key. Activation runs this, and the flake check
+  # exercises it against scratch keys.
+  sshNoPrivateKeys = pkgs.writeShellApplication {
+    name = "ssh-no-private-keys";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.findutils
+      pkgs.gnugrep
+      pkgs.openssh
+    ];
+    text = ''
+      ssh_dir="''${1:-$HOME/.ssh}"
+      [ -d "$ssh_dir" ] || exit 0
+      failures=0
+      while IFS= read -r -d "" file; do
+        [ -f "$file" ] || continue
+        if head -c 11 "$file" | grep -q -- '-----BEGIN'; then
+          echo "ssh-no-private-keys: private key in $file" >&2
+          failures=$((failures + 1))
+          continue
+        fi
+        if ssh-keygen -y -P "" -f "$file" >/dev/null 2>&1; then
+          echo "ssh-no-private-keys: private key in $file" >&2
+          failures=$((failures + 1))
+        fi
+      done < <(find "$ssh_dir" -maxdepth 1 \( -type f -o -type l \) -print0)
+      [ "$failures" -eq 0 ]
+    '';
+  };
+
 in
 {
   home.packages = [
     sshPubKeys
     allowedSignersWriter
+    sshNoPrivateKeys
   ];
 
   home.activation.sshPubKeys = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     run ${lib.getExe sshPubKeys} || true
+  '';
+
+  home.activation.checkSshPrivateKeys = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    run ${lib.getExe sshNoPrivateKeys} "$HOME/.ssh"
   '';
 
   programs.git.settings.gpg.ssh.allowedSignersFile = allowedSigners;

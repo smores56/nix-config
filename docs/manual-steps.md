@@ -46,6 +46,18 @@ generated hardware config, then run `nix run .#bootstrap`.
   (see Recovery in `README.md`).
 - **Out-of-band access**: the physical console. There is no inbound SSH port;
   SSH is tunnel-only.
+- **Maki sandbox**: `m` runs Maki through `agent-sandbox` (bubblewrap). It
+  binds only the current repo/worktree, `~/.config/maki`, `~/.cache/maki`,
+  `~/.local/{share,state}/maki`, the two PATs, and (on laptops) the
+  `fido2-sign-agent` socket. `~/.ssh`, `/srv/proton`, `/run/secrets` beyond
+  the PATs, and the other agent sockets are absent.
+- **Maki signing key**: the first activation generates
+  `~/.config/maki/signing_ed25519` (0600, host-local, never committed) and
+  prints its public half in the activation log. Add that key to
+  `~/.ssh/allowed_signers` for the Maki principal (T1) and register it on
+  GitHub as a **signing** key only. The sandbox mounts it read-only; nothing
+  outside the sandbox uses it. Rotate by deleting the key pair, switching, and
+  replacing the old public key in `allowed_signers` and on GitHub.
 
 ### smorespro
 
