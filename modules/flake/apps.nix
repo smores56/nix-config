@@ -585,7 +585,23 @@
             echo "key-restore: restored the enrollment script as data; review it, then chmod +x" >&2
           fi
 
-          cat <<EOF
+          if [ "$(uname -s)" = Darwin ]; then
+            cat <<EOF
+          key-restore: installed $installed handle(s) under $HOME/.config/ssh-sk
+
+          Next:
+            home-manager switch
+            launchctl kickstart -k gui/$(id -u)/org.nix-community.home.smortress-sudo-agent
+            ssh smortress true
+            ssh -t smortress sudo true
+
+          The host SSH key and the admin age key are not in this bundle: the host
+          key comes from secrets/hosts/<host>/ via install, or is re-minted with
+          nix run .#host-key and re-keyed in .sops.yaml; the admin identity stays
+          on the laptops.
+          EOF
+          else
+            cat <<EOF
           key-restore: installed $installed handle(s) under $HOME/.config/ssh-sk
 
           Next:
@@ -599,6 +615,7 @@
           nix run .#host-key and re-keyed in .sops.yaml; the admin identity stays
           on the laptops.
           EOF
+          fi
         '';
       };
 

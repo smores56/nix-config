@@ -117,9 +117,11 @@ PIN is never replayed: `yk-login` verifies the PIN before writing the cache.
 
 ## smoreswork (work Mac)
 
-The Mac does not use the Linux `fido2-agent` or the PIN cache. Its SSH host
-block uses OpenSC's PC/SC provider, so the PIN is typed on the tty per
-connection. Signing on work repos stays on the work software key.
+The Mac does not use the Linux `fido2-agent` or the PIN cache for login. Its
+SSH host block uses OpenSC's PC/SC provider, so the PIN is typed on the tty
+per connection. A launchd agent (`smortress-sudo-agent`) holds only the three
+sudo handles and is forwarded to smortress for `pam_rssh`; signing on work
+repos stays on the work software key.
 
 1. Insert a key and list identities:
    ```sh
@@ -147,11 +149,24 @@ connection. Signing on work repos stays on the work software key.
    ssh smortress true
    ```
    The Mac uses OpenSC's `PKCS11Provider` and prompts for the PIV PIN on the
-   tty; there is no agent or PIN cache on macOS. All three keys should work.
-4. `sudo` on smortress from the Mac is the remaining T4 piece: it needs a
-   local `ssh-agent` holding the three sudo handles (launchd), which is not in
-   the T1 branch. Until T4 lands, use `smorespro` or the console for sudo from
-   the work Mac.
+   tty; there is no login agent or PIN cache on macOS. All three keys should
+   work.
+4. `sudo` on smortress from the Mac uses the launchd
+   `smortress-sudo-agent` (`~/.ssh/sudo-agent.sock`), which loads the three
+   `~/.config/ssh-sk/k*/sudo` handles and is forwarded by `Host smortress`.
+   The handles must be on the Mac: restore the Pass bundle
+   (`nix run .#key-restore -- <bundle>.tar.gz`) or copy them, then restart the
+   agent so it re-reads them:
+   ```sh
+   launchctl kickstart -k gui/$(id -u)/org.nix-community.home.smortress-sudo-agent
+   ```
+   Test `ssh -t smortress sudo true`: one touch, no PIN. If the agent has no
+   handles, sudo falls back to the password. Any local process can ask the
+   forwarded agent for a signature and the only signal is the key blinking;
+   treat an unexpected touch request as an attack. Verify with:
+   ```sh
+   SSH_AUTH_SOCK=~/.ssh/sudo-agent.sock ssh-add -l   # three sudo keys
+   ```
 5. Do not enable FileVault smart-card unlock. Verify:
    ```sh
    fdesetup status

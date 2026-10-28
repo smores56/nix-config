@@ -84,6 +84,36 @@ let
     '';
   };
 
+  # macOS has no systemd fido2-agent. smortress sudo uses a forwarded agent
+  # holding only the touch-only sudo handles; launchd keeps the agent alive and
+  # reloads the handles after a crash.
+  sudoAgent = pkgs.writeShellApplication {
+    name = "smortress-sudo-agent";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.openssh
+    ];
+    text = ''
+      sock="$HOME/.ssh/sudo-agent.sock"
+      install -d -m 700 "$(dirname "$sock")"
+      rm -f "$sock"
+      ssh-agent -D -a "$sock" &
+      agent=$!
+      trap 'kill "$agent" 2>/dev/null || true' EXIT
+      for _ in $(seq 1 50); do
+        [ -S "$sock" ] && break
+        sleep 0.1
+      done
+      for key in "$HOME"/.config/ssh-sk/k*/sudo; do
+        [ -f "$key" ] || continue
+        if ! SSH_AUTH_SOCK="$sock" ssh-add "$key" >/dev/null; then
+          echo "smortress-sudo-agent: could not load $key" >&2
+        fi
+      done
+      wait "$agent"
+    '';
+  };
+
   # A loopback forward for one tunnel service; maki points at 127.0.0.1:<port>.
   forward = sub: port: {
     Unit = {
@@ -121,8 +151,8 @@ in
   }
   // lib.optionalAttrs isLinux {
     # pam_rssh (sudo) signs through the forwarded FIDO2 agent, whose credential
-    # is touch-required. darwin runs no fido2-agent, so it forwards nothing and
-    # sudo there falls back to the password.
+    # is touch-required. On darwin the launchd sudo agent below provides the
+    # same forwarded socket.
     ForwardAgent = "\${XDG_RUNTIME_DIR}/fido2-agent";
     # PIV slot 9a, loaded into fido2-agent by yk-login (PIN ONCE, touch NEVER).
     # No PKCS11Provider: the provider stays in the agent so the card session and
@@ -134,6 +164,15 @@ in
   // lib.optionalAttrs (!isLinux) {
     # T4/macOS: CryptoTokenKit is not used; OpenSC prompts the PIN on the tty.
     PKCS11Provider = "${pkgs.opensc}/lib/opensc-pkcs11.so";
+    # IdentitiesOnly also filters PKCS#11 keys; list the committed public
+    # halves so the PIV login identity is still offered.
+    IdentityFile = map (k: "~/.config/ssh-sk/${k.key}.pub") yubikeyKeys.piv;
+    IdentitiesOnly = "yes";
+    # No fido2-agent on macOS: forward the launchd agent that holds only the
+    # touch-only sudo handles, so pam_rssh needs a touch and no PIN. The socket
+    # lives in ~/.ssh because launchd cannot know the per-session TMPDIR; it is
+    # 0600 inside the 0700 directory and is not key material.
+    ForwardAgent = "${config.home.homeDirectory}/.ssh/sudo-agent.sock";
   };
 
   # A personal client reaches the server's llm over the tunnel; a work
@@ -174,4 +213,18 @@ in
       };
     })
   ];
+
+  # Keep the macOS sudo agent alive and reload the handles after a crash.
+  launchd.agents.smortress-sudo-agent = lib.mkIf (!isLinux) {
+    enable = true;
+    config = {
+      ProgramArguments = [ "${sudoAgent}/bin/smortress-sudo-agent" ];
+      EnvironmentVariables.HOME = config.home.homeDirectory;
+      ThrottleInterval = 5;
+      RunAtLoad = true;
+      KeepAlive = true;
+      StandardOutPath = "${config.home.homeDirectory}/Library/Logs/smortress-sudo-agent.log";
+      StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/smortress-sudo-agent.err";
+    };
+  };
 }
