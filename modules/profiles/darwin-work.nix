@@ -6,6 +6,7 @@
     ../features/work-host.nix
     ../desktop/aerospace/default.nix
     ../desktop/macos-screenshot.nix
+    ../features/wallpapers.nix
   ];
   nixos = [ ];
 }

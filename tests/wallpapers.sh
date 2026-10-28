@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Aspect buckets, counters and per-display picks are pure: fixed dimensions
+# and a fixed list must always yield the same image.
+# Usage: wallpapers.sh <wallpapers>
+set -euo pipefail
+
+wallpapers=$1
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
+fail() {
+  echo "FAIL $*" >&2
+  exit 1
+}
+
+expect() {
+  local want=$1
+  shift
+  local got
+  got=$("$@") || fail "command failed: $*"
+  [ "$got" = "$want" ] || fail "got '$got', want '$want' from: $*"
+}
+
+# 16:9 and friends are standard; 21:9 and wider are ultrawide; 2.0 is the edge.
+expect Standard "$wallpapers" classify 2560 1440
+expect Standard "$wallpapers" classify 1920 1080
+expect Standard "$wallpapers" classify 1999 1000
+expect Ultrawide "$wallpapers" classify 2000 1000
+expect Ultrawide "$wallpapers" classify 3440 1440
+expect Ultrawide "$wallpapers" classify 5120 2160
+
+# Bad dimensions must fail loudly, not silently pick a bucket.
+if "$wallpapers" classify 1920 0 >/dev/null 2>&1; then
+  fail "zero height accepted"
+fi
+if "$wallpapers" classify abc 1080 >/dev/null 2>&1; then
+  fail "non-numeric width accepted"
+fi
+
+# The counter is the rotation position; the rank shifts it for the second and
+# later displays of the same aspect, so they never show the same image.
+mkdir -p "$work/images"
+: >"$work/images/a.jpg"
+: >"$work/images/b.jpg"
+: >"$work/images/c.jpg"
+printf '%s\0' \
+  "$work/images/a.jpg" \
+  "$work/images/b.jpg" \
+  "$work/images/c.jpg" >"$work/list"
+
+expect "$work/images/a.jpg" "$wallpapers" pick-at "$work/list" 0 0
+expect "$work/images/b.jpg" "$wallpapers" pick-at "$work/list" 1 0
+expect "$work/images/c.jpg" "$wallpapers" pick-at "$work/list" 2 0
+expect "$work/images/a.jpg" "$wallpapers" pick-at "$work/list" 3 0
+expect "$work/images/b.jpg" "$wallpapers" pick-at "$work/list" 0 1
+expect "$work/images/c.jpg" "$wallpapers" pick-at "$work/list" 0 2
+
+# A corrupt or absent counter is 0, and a leading zero is still decimal.
+printf 'garbage\n' >"$work/bad"
+expect 0 "$wallpapers" counter "$work/bad"
+expect 0 "$wallpapers" counter "$work/missing"
+printf '08\n' >"$work/leading"
+expect 8 "$wallpapers" counter "$work/leading"
+if "$wallpapers" pick-at "$work/list" x 0 >/dev/null 2>&1; then
+  fail "non-numeric counter accepted"
+fi
+
+# An empty bucket (no image of that aspect) is an error, not an empty path.
+: >"$work/empty"
+if "$wallpapers" pick-at "$work/empty" 0 0 >/dev/null 2>&1; then
+  fail "empty list picked an image"
+fi
+
+# The production bucketing path, against real pixels: the folder layout does
+# not decide the bucket, the measured aspect does.
+mkdir -p "$work/imgs" "$work/out"
+magick -size 2000x1000 xc:red "$work/imgs/wide.png"
+magick -size 1600x900 xc:blue "$work/imgs/standard.png"
+: >"$work/imgs/notes.txt"
+"$wallpapers" buckets "$work/imgs" "$work/out"
+tr '\0' '\n' <"$work/out/Ultrawide.list" | grep -qxF "$work/imgs/wide.png" ||
+  fail "2000x1000 was not bucketed as Ultrawide"
+tr '\0' '\n' <"$work/out/Standard.list" | grep -qxF "$work/imgs/standard.png" ||
+  fail "1600x900 was not bucketed as Standard"
+[ "$(tr '\0' '\n' <"$work/out/Standard.list" | wc -l)" -eq 1 ] ||
+  fail "non-image files reach a bucket"
+
+# A name with a control character is skipped rather than forging a record.
+mkdir -p "$work/odd" "$work/oddout"
+magick -size 2000x1000 xc:green "$work/odd/wide.png"
+magick -size 2000x1000 xc:green "$work/odd/$(printf 'bad\nname.png')"
+"$wallpapers" buckets "$work/odd" "$work/oddout" 2>/dev/null
+[ "$(tr '\0' '\n' <"$work/oddout/Ultrawide.list" | wc -l)" -eq 1 ] ||
+  fail "a newline in a filename was bucketed"
+
+echo "wallpapers ok"

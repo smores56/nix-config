@@ -72,7 +72,9 @@ in
       wallpaper = {
         enabled = true;
         fill_color = "#${config.lib.stylix.colors.base00}";
-        automation.enabled = true;
+        # The wallpapers module owns selection per output; Noctalia's own
+        # rotation would fight it, and its state file outranks this setting.
+        automation.enabled = false;
       };
 
       weather = {

@@ -602,6 +602,47 @@ rm ~/.config/rclone/rclone.conf
 sudo rm -f /var/lib/backup/rclone.conf
 ```
 
+## Wallpapers (smorespro, smoreswork)
+
+`modules/features/wallpapers.nix` rsyncs `<mount>/Wallpapers` from smortress
+into `~/.cache/wallpapers`, buckets every image by measured pixels (any file
+wider than 2:1 is ultrawide), and sets one image per display. The folder layout
+under `Wallpapers/` is curation only; keep images within two levels of it.
+
+On smorespro the first run happens when `graphical-session.target` starts
+(login) and every 3 h after that. Nothing to provision: the forwarded PIV agent
+from `yk-login` authenticates the rsync.
+
+smoreswork runs it from a LaunchAgent, which has no tty, so three operator
+steps are needed once:
+
+1. Put the PIV login PIN in the login Keychain. `-A` lets the unattended agent
+   read it without a dialog; anything else running as you can read it too, but
+   the PIN alone cannot sign without the YubiKey.
+
+   ```sh
+   read -rs PIN && security add-generic-password -a "$USER" -s smortress-piv-pin -w "$PIN" -A && unset PIN
+   ```
+
+2. Approve the Automation prompt ("… wants to control System Events") the
+   first time the agent sets a wallpaper. Until then the run fails and leaves
+   the current wallpaper; it retries on the next interval.
+
+3. Make sure `ssh smortress true` has succeeded once, so the host key is in
+   `~/.ssh/known_hosts`: the job sets `StrictHostKeyChecking=yes`.
+
+Verify from a terminal (prompts for the PIN) or kick the agent:
+
+```sh
+wallpapers sync
+launchctl kickstart -k gui/$(id -u)/org.nix-community.home.wallpapers
+tail -n 20 ~/Library/Logs/wallpapers.log
+```
+
+When the PIV PIN changes, replace the Keychain item in the same step. A stale
+PIN is sent to the card once per run, and the PIV retry counter locks after
+three; update the item before that happens.
+
 ## Providers
 
 Tofu providers come from `tofu/versions.tf`; notification policies come from
