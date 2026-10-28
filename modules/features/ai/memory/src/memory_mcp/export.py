@@ -719,13 +719,14 @@ def _systemctl(command: Sequence[str]) -> None:
         )
 
 
-def _fix_owner(path: Path, owner: str | None) -> None:
+def _fix_owner(path: Path, owner: str | None, *, mode: int = 0o640) -> None:
     """The wrapper writes the registry as its own user; a root copy must match.
 
     This runs on the staging copy, before it replaces anything: an ownership
     failure has to abort the restore while the previous registry is still in
     place, not leave a file the `memory` user cannot write. `owner=None` skips
-    it (a non-root verification against temp dirs).
+    it (a non-root verification against temp dirs). Directories use 0700 so the
+    rootless FalkorDB can write its AOF.
     """
     if not owner:
         return
@@ -741,7 +742,7 @@ def _fix_owner(path: Path, owner: str | None) -> None:
     except (KeyError, ImportError):
         gid = -1
     try:
-        os.chmod(path, 0o640)
+        os.chmod(path, mode)
         os.chown(path, uid, gid)
     except OSError as exc:
         raise ExportError(f"could not hand {path} to {owner}: {exc}") from exc
@@ -912,8 +913,11 @@ def restore(config: RestoreConfig) -> RestoreReport:
     parked: tuple[str, ...] = ()
     if verified.graph.accepted and verified.graph.path is not None:
         try:
-            # FalkorDB runs rootless as `memory`; a root-owned dump would be
-            # unreadable after the restore.
+            # FalkorDB runs rootless as `memory`; a root-owned dump or graph
+            # directory would be unreadable after the restore.
+            if config.owner:
+                config.graph_dir.mkdir(parents=True, exist_ok=True)
+                _fix_owner(config.graph_dir, config.owner, mode=0o700)
             _install(verified.graph.path, config.graph_dir / "dump.rdb", owner=config.owner)
         except (ExportError, OSError) as exc:
             raise ExportError(

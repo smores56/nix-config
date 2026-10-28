@@ -39,6 +39,9 @@ let
   # instead of interpolating a null uid during evaluation.
   memoryUid = 982;
   memoryGid = 977;
+  # Only `smores` is a normal user on this host; NixOS auto-allocates normal
+  # users' ranges on the 100000 + 65536k lattice. If another normal user is
+  # ever added, switch this to autoSubUidGidRange or move the range.
   memorySubidStart = 200000;
   # Nightly exports land here: root-owned (the exporter runs as root and reads
   # the memory-owned graph volume), never written by the wrapper.
@@ -560,8 +563,9 @@ in
     # episode's content and provenance, so losing it loses memory. The graph is
     # a derived index, so its BGSAVE snapshot is best-effort: the files are
     # written either way, but a missing graph exits non-zero so the timer's
-    # onFailure alert sees it. Root is required for the root-owned FalkorDB data
-    # dir; the registry is only read, so the wrapper keeps writing under WAL.
+    # onFailure alert sees it. Root is required to stop/start services and read
+    # the memory-owned graph dir; the registry is only read, so the wrapper
+    # keeps writing under WAL.
     # `Type=oneshot` makes overlap impossible, and the timer re-runs a missed
     # run after downtime (`Persistent`). The export refuses to run while a
     # restore holds /var/lib/memory/.restore-in-progress.
