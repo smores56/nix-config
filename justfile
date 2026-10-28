@@ -48,8 +48,8 @@ host-key host:
     nix run .#host-key -- {{host}}
 
 # Archive the FIDO2 handles for Proton Pass before wiping a machine.
-key-backup:
-    nix run .#key-backup
+key-backup *args:
+    nix run .#key-backup -- {{args}}
 
 # Restore the FIDO2 handles from a Proton Pass bundle.
 key-restore bundle *args:

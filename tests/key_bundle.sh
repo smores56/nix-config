@@ -2,11 +2,16 @@
 # Round-trip a FIDO2 handle bundle. A normal ed25519 key stands in for the
 # hardware-backed handle: the bundle code only copies and fingerprints files,
 # so it exercises the same path without a YubiKey. --pubkeys supplies the
-# committed public-half map the real build embeds.
+# committed public-half map the real build embeds, and a generated ed25519 key
+# stands in for /etc/ssh so the host-key backup and `--host-key` restore run
+# without root.
 set -euo pipefail
 
 backup=${1:?usage: key_bundle.sh <key-backup> <key-restore>}
 restore=${2:?usage: key_bundle.sh <key-backup> <key-restore>}
+
+# The bundle hooks (--pubkeys, --target-dir, --sops-file) are gated behind this.
+export KEY_BUNDLE_TEST=1
 
 root=$(mktemp -d)
 trap 'rm -rf "$root"' EXIT
@@ -32,8 +37,15 @@ printf 'k1/sudo\t%s\n' "$(awk '{print $1" "$2}' "$src/.config/ssh-sk/k1/sudo.pub
 wrongkeys="$root/wrongkeys"
 printf 'k1/sudo\t%s\n' "$(awk '{print $1" "$2}' "$root/wrong.pub")" >"$wrongkeys"
 
+# key-backup now requires .sops.yaml in the working directory, so every backup
+# runs from a scratch checkout.
+checkout="$root/checkout"
+mkdir -p "$checkout"
+: >"$checkout/flake.nix"
+printf 'keys:\n' >"$checkout/.sops.yaml"
+
 run_backup() {
-  env -u XDG_STATE_HOME HOME="$src" "$backup" --pubkeys "$pubkeys" "$@"
+  ( cd "$checkout" && env -u XDG_STATE_HOME HOME="$src" "$backup" --pubkeys "$pubkeys" --no-host-key "$@" )
 }
 
 run_restore() {
@@ -112,7 +124,200 @@ fi
 partialkeys="$root/partialkeys"
 cp "$pubkeys" "$partialkeys"
 printf 'k1/signing\t%s\n' "$(awk '{print $1" "$2}' "$src/.config/ssh-sk/k1/sudo.pub")" >>"$partialkeys"
-if env -u XDG_STATE_HOME HOME="$src" "$backup" --pubkeys "$partialkeys" >/dev/null 2>&1; then
+if ( cd "$checkout" && env -u XDG_STATE_HOME HOME="$src" "$backup" --pubkeys "$partialkeys" --no-host-key ) >/dev/null 2>&1; then
   fail "archived a partial set without --allow-incomplete"
 fi
-env -u XDG_STATE_HOME HOME="$src" "$backup" --pubkeys "$partialkeys" --allow-incomplete >/dev/null
+( cd "$checkout" && env -u XDG_STATE_HOME HOME="$src" "$backup" --pubkeys "$partialkeys" --no-host-key --allow-incomplete ) >/dev/null
+
+# The host key is the host's sops identity: it must travel in the bundle, be
+# restorable into the checkout `install` reads, and the recipient must match
+# `&<host>` in .sops.yaml at backup time as well as at restore time.
+test_host="$(uname -n)"
+test_host="${test_host%%.*}"
+
+hkdir="$root/hk"
+mkdir -p "$hkdir"
+ssh-keygen -q -t ed25519 -N "" -C "test host key" -f "$hkdir/ssh_host_ed25519_key"
+hk_recipient="$(ssh-to-age -i "$hkdir/ssh_host_ed25519_key.pub")"
+
+hk_sops="$root/hk-sops.yaml"
+printf 'keys:\n  - &%s %s\n' "$test_host" "$hk_recipient" >"$hk_sops"
+hk_checkout="$root/hk-checkout"
+mkdir -p "$hk_checkout"
+: >"$hk_checkout/flake.nix"
+cp "$hk_sops" "$hk_checkout/.sops.yaml"
+
+hk_state="$root/hk-state"
+run_hk_backup() {
+  ( cd "$hk_checkout" && env XDG_STATE_HOME="$hk_state" HOME="$src" "$backup" \
+    --pubkeys "$pubkeys" --host-key-path "$hkdir/ssh_host_ed25519_key" "$@" )
+}
+
+run_hk_backup >/dev/null
+hk_archive=$(find "$hk_state/key-backup" -name '*.tar.gz' -print -quit)
+[ -n "$hk_archive" ] || fail "key-backup --host-key-path wrote no archive"
+hk_contents="$(tar -tzf "$hk_archive")"
+grep -qF "etc/ssh/ssh_host_ed25519_key" <<<"$hk_contents" || fail "bundle is missing the host key"
+grep -qF "etc/ssh/ssh_host_ed25519_key.pub" <<<"$hk_contents" || fail "bundle is missing the host key's public half"
+hk_manifest="$(tar -xOzf "$hk_archive" ./MANIFEST)"
+grep -qE '^host-key: yes$' <<<"$hk_manifest" || fail "MANIFEST does not record the host key"
+grep -qF "the host SSH key" <<<"$hk_manifest" || fail "MANIFEST does not describe the host key it holds"
+grep -qF "host-key-recipient: $hk_recipient" <<<"$hk_manifest" \
+  || fail "MANIFEST does not record the derived recipient"
+[ "$(awk -F ': ' '/^host: /{print $2}' <<<"$hk_manifest")" = "$test_host" ] \
+  || fail "MANIFEST records the wrong host"
+
+hk_home="$root/hk-home"
+mkdir -p "$hk_home"
+hk_dest="$root/hk-target/etc/ssh"
+run_hk_restore() {
+  env -u XDG_STATE_HOME HOME="$hk_home" "$restore" --pubkeys "$pubkeys" "$@"
+}
+
+run_hk_restore --sops-file "$hk_sops" "$hk_archive" --host-key \
+  --target-dir "$hk_dest" >/dev/null
+cmp "$hkdir/ssh_host_ed25519_key" "$hk_dest/ssh_host_ed25519_key" \
+  || fail "restored host key differs"
+[ "$(mode "$hk_dest/ssh_host_ed25519_key")" = "-rw-------" ] || fail "host key is not 0600"
+[ "$(mode "$hk_dest/ssh_host_ed25519_key.pub")" = "-rw-r--r--" ] || fail "host key public is not 0644"
+[ ! -e "$hk_home/.config/ssh-sk" ] || fail "--host-key installed handles"
+
+if run_hk_restore --sops-file "$hk_sops" "$hk_archive" --host-key \
+  --target-dir "$hk_dest" >/dev/null 2>&1; then
+  fail "overwrote the host key without --force"
+fi
+
+# The documented default destination: cwd is a checkout with flake.nix, and
+# install reads secrets/hosts/<host>/ from there.
+run_restore_checkout() {
+  ( cd "$hk_checkout" && env -u XDG_STATE_HOME HOME="$hk_home" "$restore" \
+    --pubkeys "$pubkeys" "$@" )
+}
+run_restore_checkout "$hk_archive" --host-key >/dev/null
+default_dest="$hk_checkout/secrets/hosts/$test_host/etc/ssh/ssh_host_ed25519_key"
+[ -f "$default_dest" ] || fail "--host-key did not write the default secrets/hosts/<host>/ path"
+[ "$(mode "$default_dest")" = "-rw-------" ] || fail "default host key is not 0600"
+
+# Outside a checkout, with no --target-dir, it must refuse rather than scatter
+# secrets/hosts/ into the current directory.
+nodir="$root/no-checkout"
+mkdir -p "$nodir"
+if (
+  cd "$nodir"
+  env -u XDG_STATE_HOME HOME="$hk_home" "$restore" --pubkeys "$pubkeys" \
+    --sops-file "$hk_sops" "$hk_archive" --host-key >/dev/null 2>&1
+); then
+  fail "--host-key ran outside a checkout"
+fi
+[ ! -e "$nodir/secrets" ] || fail "--host-key wrote outside a checkout"
+
+# The recipient check fails closed: no anchor, or no .sops.yaml at all.
+noanchor="$root/no-anchor.yaml"
+printf 'keys:\n  - &other %s\n' "$hk_recipient" >"$noanchor"
+if run_hk_restore --sops-file "$noanchor" "$hk_archive" --host-key \
+  --target-dir "$root/hk-nomatch" >/dev/null 2>&1; then
+  fail "installed a host key with no &<host> anchor"
+fi
+if run_hk_restore --sops-file "$root/absent.yaml" "$hk_archive" --host-key \
+  --target-dir "$root/hk-nosops" >/dev/null 2>&1; then
+  fail "installed a host key with no .sops.yaml"
+fi
+
+# A host key the host's secrets are not encrypted to must be refused, and
+# --force must not turn that check off.
+wrongsops="$root/wrong-sops.yaml"
+printf 'keys:\n  - &%s %s\n' "$test_host" "age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq" >"$wrongsops"
+if run_hk_restore --sops-file "$wrongsops" "$hk_archive" --host-key \
+  --target-dir "$root/hk-wrong" >/dev/null 2>&1; then
+  fail "installed a host key that does not match .sops.yaml"
+fi
+if run_hk_restore --sops-file "$wrongsops" "$hk_archive" --host-key \
+  --target-dir "$root/hk-wrong" --force >/dev/null 2>&1; then
+  fail "--force disabled the .sops.yaml recipient check"
+fi
+
+# A MANIFEST host name that escapes secrets/hosts/ is refused even when the
+# attacker also supplies a matching anchor.
+evil="$root/evil"
+mkdir -p "$evil"
+tar -C "$evil" -xzf "$hk_archive"
+awk '/^host: /{ print "host: ../../pwned"; next } { print }' "$evil/MANIFEST" >"$evil/MANIFEST.new"
+mv "$evil/MANIFEST.new" "$evil/MANIFEST"
+tar -C "$evil" -czf "$root/evil.tar.gz" .
+evilsops="$root/evil-sops.yaml"
+printf 'keys:\n  - &../../pwned %s\n' "$hk_recipient" >"$evilsops"
+if run_hk_restore --sops-file "$evilsops" "$root/evil.tar.gz" --host-key \
+  --no-verify --target-dir "$root/hk-evil" >/dev/null 2>&1; then
+  fail "restored a key for an escaping MANIFEST host name"
+fi
+
+# Without a host key in the archive the mode fails instead of writing nothing.
+if run_hk_restore --sops-file "$hk_sops" "$archive" --host-key \
+  --target-dir "$root/hk-missing" >/dev/null 2>&1; then
+  fail "--host-key accepted a bundle without a host key"
+fi
+
+# Backups made with --no-host-key stay valid and say so.
+no_hk_manifest="$(tar -xOzf "$archive" ./MANIFEST)"
+grep -qE '^host-key: no$' <<<"$no_hk_manifest" \
+  || fail "--no-host-key backups do not record the missing host key"
+grep -qF "handles only" <<<"$no_hk_manifest" \
+  || fail "a host-key-less MANIFEST still claims to hold the host key"
+
+# Backup-side recipient checks fail closed.
+if (
+  cd "$root"
+  env -u XDG_STATE_HOME HOME="$src" "$backup" --pubkeys "$pubkeys" \
+    --host-key-path "$hkdir/ssh_host_ed25519_key" >/dev/null 2>&1
+); then
+  fail "key-backup archived the host key without .sops.yaml"
+fi
+noanchor_checkout="$root/hk-noanchor"
+mkdir -p "$noanchor_checkout"
+: >"$noanchor_checkout/flake.nix"
+printf 'keys:\n  - &other %s\n' "$hk_recipient" >"$noanchor_checkout/.sops.yaml"
+if (
+  cd "$noanchor_checkout"
+  env XDG_STATE_HOME="$root/hk-bad-state" HOME="$src" "$backup" --pubkeys "$pubkeys" \
+    --host-key-path "$hkdir/ssh_host_ed25519_key" >/dev/null 2>&1
+); then
+  fail "key-backup archived a host key with no &<host> anchor"
+fi
+mismatch_checkout="$root/hk-mismatch"
+mkdir -p "$mismatch_checkout"
+: >"$mismatch_checkout/flake.nix"
+printf 'keys:\n  - &%s %s\n' "$test_host" "age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq" >"$mismatch_checkout/.sops.yaml"
+if (
+  cd "$mismatch_checkout"
+  env XDG_STATE_HOME="$root/hk-bad-state" HOME="$src" "$backup" --pubkeys "$pubkeys" \
+    --host-key-path "$hkdir/ssh_host_ed25519_key" >/dev/null 2>&1
+); then
+  fail "key-backup archived a host key that does not match .sops.yaml"
+fi
+if (
+  cd "$hk_checkout"
+  env XDG_STATE_HOME="$root/hk-bad-state" HOME="$src" "$backup" --pubkeys "$pubkeys" \
+    --no-host-key >/dev/null 2>&1
+); then
+  fail "key-backup let --no-host-key skip a host that .sops.yaml binds"
+fi
+
+# An unreadable host key aborts the backup instead of producing a bundle that
+# silently lacks the sops identity.
+printf 'not a private key\n' >"$root/badkey"
+if run_hk_backup --host-key-path "$root/badkey" >/dev/null 2>&1; then
+  fail "archived a bundle after failing to read the host key"
+fi
+if run_hk_backup --host-key-path "$root/does-not-exist" >/dev/null 2>&1; then
+  fail "archived a bundle for a missing host key path"
+fi
+
+# A machine with no enrolled handles can still archive its host key.
+onlykeys="$root/only-keys"
+: >"$onlykeys"
+( cd "$hk_checkout" && env XDG_STATE_HOME="$root/only-state" HOME="$src" "$backup" \
+  --pubkeys "$onlykeys" --host-key-path "$hkdir/ssh_host_ed25519_key" ) >/dev/null
+only_archive=$(find "$root/only-state/key-backup" -name '*.tar.gz' -print -quit)
+[ -n "$only_archive" ] || fail "key-backup refused a host-key-only backup"
+grep -qE '^handles: 0$' <<<"$(tar -xOzf "$only_archive" ./MANIFEST)" \
+  || fail "host-key-only backup does not record zero handles"

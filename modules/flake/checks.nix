@@ -159,6 +159,7 @@ in
                 pkgs.gzip
                 pkgs.gnugrep
                 pkgs.openssh
+                pkgs.ssh-to-age
               ];
               args = [
                 (lib.getExe inputs.self.packages.${system}.key-backup)

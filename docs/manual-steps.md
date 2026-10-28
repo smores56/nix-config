@@ -29,9 +29,14 @@ The always-on server (NixOS, x86_64), and the only host that decrypts
 `secrets/smortress.yaml`. Reinstall from a blank disk with:
 
 ```sh
-nix run .#host-key -- smortress
+nix run .#key-restore -- <bundle>.tar.gz --host-key   # existing identity
 nix run .#install -- smortress root@<target-ip>
 ```
+
+`nix run .#host-key -- smortress` is only for a brand-new host: it mints a new
+identity, so `.sops.yaml` and the rules for that host must be re-encrypted with
+`sops updatekeys` first. On an existing host it replaces the key its secrets are
+encrypted to, and `install` then refuses to proceed.
 
 `install` wipes the target's disks, applies `modules/hosts/smortress/disko.nix`,
 generates `hardware.nix`, and delivers the pre-generated host key. Commit the
@@ -1484,19 +1489,31 @@ Generates the pre-generated host SSH key under the gitignored
 
 Run `nix run .#key-backup` on a machine **before** wiping or reinstalling it.
 It archives `~/.config/ssh-sk/k{1,2,3}/{sudo,signing}` — the FIDO2 credential
-*handles* that make the YubiKeys usable for sudo and git signing — and the
-untracked `~/dev/setup-yubikey.sh` if present. A machine wipe destroys the
-handles; without them OpenSSH cannot use the credential even with the right key
-inserted. The setup script is restored as **data** (0600), not executable;
-review it and `chmod +x` after a restore.
+*handles* that make the YubiKeys usable for sudo and git signing — the host SSH
+key, and the untracked `~/dev/setup-yubikey.sh` if present. A machine wipe
+destroys the handles; without them OpenSSH cannot use the credential even with
+the right key inserted. The setup script is restored as **data** (0600), not
+executable; review it and `chmod +x` after a restore.
+
+The host key is read from its live location, `/etc/ssh/ssh_host_ed25519_key`,
+which is 0600 root, so the run asks for `sudo` once. The checkout copy under
+`secrets/hosts/<host>/` is only what `install` reads, never the source of truth.
+The MANIFEST records `host-key: yes` and the derived age recipient, and the run
+fails when that recipient is not `&<host>` in `.sops.yaml`. Run it from the
+nix-config checkout: the recipient check needs that file, so running from another
+directory is a refusal, not a skip. It also fails when the live key cannot be
+read: a warning would let a wipe destroy the host's sops identity silently. Run
+it from an interactive shell so the single `sudo` read can
+prompt. `--no-host-key` is the explicit opt-out for a machine that has no host
+identity of its own (the macOS laptops are home-only), and it is refused when
+`.sops.yaml` binds `&<host>` to a key; `--host-key-path` points
+at another key and exists for tests. If the key is ever lost, mint a replacement
+with `nix run .#host-key -- <host>` and re-key `.sops.yaml`.
 
 The private half of a FIDO2 credential and every PIV private key live on the
-YubiKey and cannot be exported. The handle files contain no host SSH key, no
-admin age key (`~/.config/sops/keys.age`), and no PIN or PUK; the enrollment
-script is bundled as data, so review it. The host key comes from
-`secrets/hosts/<host>/` via `install`; keep that directory in the operator
-checkout (or copy `/etc/ssh/ssh_host_ed25519_key` to it) before wiping. If it is
-lost, mint a replacement with `nix run .#host-key` and re-key `.sops.yaml`.
+YubiKey and cannot be exported. No admin age key (`~/.config/sops/keys.age`),
+PIN, or PUK is in the bundle; the enrollment script is bundled as data, so
+review it.
 
 Upload the printed `.tar.gz` and `.sha256` to a Proton Pass **Note** item named
 `nix-config restore bundle — <host>` (Pass encrypts attachments end-to-end),
@@ -1508,21 +1525,40 @@ handles; `--allow-incomplete` archives a deliberate partial set. Do not wipe
 until the handle count matches the inventory in `modules/lib/yubikey-keys.nix`
 (six today).
 
+None of that protects the host key the bundle now carries: it is a plaintext
+private SSH key. Reading the Pass item is enough to impersonate `<host>` and to
+decrypt every secret that host is a recipient of — no YubiKey, PIN, or touch
+involved. The admin age key stays out of the bundle; the host identity does not.
+
 ### key-restore
 
 <!-- manual-step: app/key-restore -->
 
-After `nix run .#bootstrap` on the freshly installed machine, download the two
-files from the Proton Pass item and run:
+Download the two files from the Proton Pass item. Two modes, in this order:
 
 ```sh
+# In the operator checkout, BEFORE install: put the host key where install reads it
+nix run .#key-restore -- ~/Downloads/<host>-restore-<time>.tar.gz --host-key
+
+# On the new machine, after bootstrap: restore the FIDO2 handles
 nix run .#key-restore -- ~/Downloads/<host>-restore-<time>.tar.gz
 ```
+
+`--host-key` writes only `secrets/hosts/<host>/etc/ssh/ssh_host_ed25519_key`
+(0600) and its public half (0644). It must run inside the checkout and it fails
+closed: no `.sops.yaml`, no
+`&<host> <age1...>` anchor, or a key that derives a different recipient all
+abort — there is no flag to skip that check, because installing such a key
+produces a host that cannot read its own secrets. `--force` only replaces
+existing files. The default mode never installs the host key.
 
 It verifies the outer checksum, refuses to overwrite existing handles or the
 script without `--force`, and checks every handle's public half and application
 against the committed keys in `modules/lib/yubikey-keys.nix` before writing
-anything. It does not inspect the touch/PIN flags, which live in the private
+anything. The checksums detect corruption, not tampering: an attacker who can
+rewrite the Pass item can rewrite the `.sha256` too. The `&<host>` anchor in
+`.sops.yaml` is the only authenticity control, and only `--host-key` enforces
+it. It does not inspect the touch/PIN flags, which live in the private
 file; a flagged credential is still bound to the same token. `--no-verify` skips only the outer checksum; it cannot skip the
 committed-key check. Then run `home-manager switch` if bootstrap did not
 already write the public keys, `yk-login`, and verify with

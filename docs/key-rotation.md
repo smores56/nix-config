@@ -43,20 +43,25 @@ cannot be exported, and the FIDO2 private half never leaves the token. The only
 YubiKey material a wipe destroys is `~/.config/ssh-sk/kN/{sudo,signing}`, the
 credential handles OpenSSH must present to the token.
 
-Before wiping, make sure `secrets/hosts/<host>/etc/ssh/ssh_host_ed25519_key` is
-in an operator checkout (smortress holds smorespro's) or copy
-`/etc/ssh/ssh_host_ed25519_key` into it: that host key is the sops identity and
-is **not** in the Pass bundle. If it is lost, mint a replacement with
-`nix run .#host-key -- <host>` and re-key `.sops.yaml`.
+`key-backup` archives the live `/etc/ssh/ssh_host_ed25519_key` — the host's sops
+identity — into the bundle, so no separate copy is needed. In the operator
+checkout, `nix run .#key-restore -- <bundle> --host-key` writes it to
+`secrets/hosts/<host>/` for `install`; that mode fails closed when `.sops.yaml`
+has no `&<host>` anchor or the key derives a different recipient. If it is ever
+lost, mint a replacement with `nix run .#host-key -- <host>` and re-key
+`.sops.yaml`.
 
-1. Before wiping, on that machine: `nix run .#key-backup`, then attach the
-   printed `.tar.gz` and `.sha256` to the Pass restore item and remove the local
-   copies (`shred -u` or `rm -P`). The handle count must match the inventory in
-   `modules/lib/yubikey-keys.nix` (six today); a missing handle is a lost leg.
-   `key-backup` fails on a partial set unless `--allow-incomplete` is given.
-2. Install and `nix run .#bootstrap` (deliver the host key via
-   `secrets/hosts/<host>/`).
-3. Download the two files from Pass and run
+1. Before wiping, on that machine: `nix run .#key-backup` (add `--no-host-key`
+   on a machine with no host identity of its own, such as `smoreswork`), then
+   attach the printed `.tar.gz` and `.sha256` to the Pass restore item and
+   remove the local copies (`shred -u` or `rm -P`). The handle count must match
+   the inventory in `modules/lib/yubikey-keys.nix` (six today); a missing handle
+   is a lost leg. `key-backup` fails on a partial set unless
+   `--allow-incomplete` is given.
+2. Download the two files from Pass and, in the operator checkout, run
+   `nix run .#key-restore -- <bundle>.tar.gz --host-key` to write
+   `secrets/hosts/<host>/` before installing.
+3. Install and `nix run .#bootstrap`; then restore the handles with
    `nix run .#key-restore -- <bundle>.tar.gz`.
 4. `home-manager switch` if needed, `yk-login`, then verify
    `ssh smortress true` and `ssh -t smortress sudo true`.

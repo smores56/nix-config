@@ -121,7 +121,9 @@ per-user setup.
 `secrets/hosts/<hostname>/` and prints the sops age recipient (add it to
 `.sops.yaml`, then `sops updatekeys`). When that directory exists, `install`
 delivers it into the new root (`/etc/ssh/...`) via `--extra-files`, so the host
-decrypts its own secrets on first boot.
+decrypts its own secrets on first boot. For an existing machine, `key-backup`
+archives the live key and `key-restore --host-key` recreates that directory
+before `install`.
 
 ## Repo-specific code quality
 
@@ -188,7 +190,8 @@ manifest counts, stale/scope/count failures, and the full-pass swap),
 `backup-watch` (watcher debounce/ignore/queue semantics), `backup-plain`
 (copy-never-sync, versions, scoped check, markers and the stall watchdog against
 local rclone remotes), and `key-bundle` (FIDO2 handle round-trip: 0600 modes,
-outer and inner checksums, moved bundle, --force, public-half mismatch), and
+outer and inner checksums, moved bundle, --force, public-half mismatch, host-key
+restore and its `.sops.yaml` recipient check), and
 `sshd-settings` (rendered `sshd -T`: key-only auth, verify-required, no
 root/password/kbd-interactive, loopback listen, no home authorized_keys). Run them
 after touching shell, git, ssh or backup settings, or

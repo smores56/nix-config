@@ -570,11 +570,15 @@ root (`/etc/ssh/...`) via `--extra-files`.
 
 **Before reinstalling an existing machine**, run `nix run .#key-backup` and
 upload the printed archive and checksum to a Proton Pass Note item. It carries
-the FIDO2 credential handles in `~/.config/ssh-sk` (destroyed by the wipe) and
-the untracked enrollment script. After `bootstrap` on the new system,
-`nix run .#key-restore -- <bundle>` puts them back. The host SSH key is not in
-the bundle: keep `secrets/hosts/<host>/` in an operator checkout (or copy
-`/etc/ssh/ssh_host_ed25519_key` into it) before wiping. See
+the FIDO2 credential handles in `~/.config/ssh-sk` (destroyed by the wipe), the
+untracked enrollment script, and the host SSH key read from
+`/etc/ssh/ssh_host_ed25519_key` (one `sudo` prompt; add `--no-host-key` on a
+machine with no host identity of its own). The bundle therefore carries a
+plaintext private SSH key: whoever can read the Pass item can impersonate the
+host and decrypt its sops secrets. In the operator checkout,
+`nix run .#key-restore -- <bundle> --host-key` writes `secrets/hosts/<host>/`
+before `install`; after `bootstrap` on the new system,
+`nix run .#key-restore -- <bundle>` puts the handles back. See
 [`docs/manual-steps.md`](docs/manual-steps.md#key-backup).
 
 ### Headless login and token rotation
