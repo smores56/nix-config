@@ -202,6 +202,10 @@ datasets, `webProxy` services, flake apps, or alert paths:
 nix build .#checks.x86_64-linux.manual-steps-sync
 ```
 
+Run `yubikey-lists` after changing `modules/lib/yubikey-keys.nix` or an
+authorized list; it checks three entries per role, parses every public key and
+PIV certificate, and checks the rendered smortress authorized-key lists.
+
 For home-manager changes, run `home-manager switch --flake .#smores@<host>`
 (e.g. `.#smores@smortress` on this machine) to verify activation succeeds
 (not just evaluation).

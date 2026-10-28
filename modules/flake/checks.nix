@@ -357,6 +357,17 @@ in
               test "${names keys.piv}" = "piv-k1 piv-k2 piv-k3"
               test "${names keys.signing}" = "k1/signing k2/signing k3/signing"
               test "${names keys.sudo}" = "k1/sudo k2/sudo k3/sudo"
+              test ${toString (builtins.length config.flake.nixosConfigurations.smortress.config.users.users.smores.openssh.authorizedKeys.keys)} -eq 3
+              test ${
+                toString (
+                  builtins.length (
+                    builtins.filter (s: s != "") (
+                      lib.splitString "\n"
+                        config.flake.nixosConfigurations.smortress.config.environment.etc."ssh/sudo_authorized_keys".text
+                    )
+                  )
+                )
+              } -eq 3
 
               ${lib.concatMapStrings (k: ''
                 ssh-keygen -l -f ${file "pub" k k.pubkey} >/dev/null
