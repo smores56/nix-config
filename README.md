@@ -27,6 +27,9 @@ Key directories under `modules/`:
 | `lib/` | helper libraries |
 | `tests/` | Python unit tests for the repo's tools and shell checks |
 
+For shared Niri/AeroSpace shortcuts, see
+[`docs/desktop-parity.md`](docs/desktop-parity.md).
+
 Television cables live with their owning feature modules: `features/tv/`
 for repository navigation and `features/ai/maki/` for Maki sessions.
 

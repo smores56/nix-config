@@ -8,6 +8,14 @@ let
   # transient systemd units, so the shell adds no meaningful latency.
   noctalia = cmd: "noctalia msg ${cmd}";
 
+  shared = import ../shared-bindings.nix { inherit lib; };
+  sharedBinds = builtins.listToAttrs (
+    map (binding: {
+      name = "Mod+Ctrl+${lib.optionalString binding.shift "Shift+"}${binding.key}";
+      value.action = binding.niri;
+    }) shared.bindings
+  );
+
   directionKeys = {
     Left = "left";
     Right = "right";
@@ -36,16 +44,10 @@ let
     ) directionKeys;
 
   workspaceBinds = builtins.listToAttrs (
-    builtins.concatMap (i: [
-      {
-        name = "Mod+${toString i}";
-        value.action.focus-workspace = i;
-      }
-      {
-        name = "Mod+Ctrl+${toString i}";
-        value.action.move-column-to-workspace = i;
-      }
-    ]) (lib.range 1 9)
+    map (i: {
+      name = "Mod+${toString i}";
+      value.action.focus-workspace = i;
+    }) (lib.range 1 9)
   );
 in
 {
@@ -62,7 +64,7 @@ in
       "Mod+F".action.maximize-column = [ ];
       "Mod+Shift+F".action.fullscreen-window = [ ];
       "Mod+M".action.maximize-window-to-edges = [ ];
-      "Mod+Ctrl+F".action.expand-column-to-available-width = [ ];
+      "Mod+Alt+F".action.expand-column-to-available-width = [ ];
       "Mod+V".action.toggle-window-floating = [ ];
       "Mod+Shift+V".action.switch-focus-between-floating-and-tiling = [ ];
       "Mod+W".action.toggle-column-tabbed-display = [ ];
@@ -76,13 +78,13 @@ in
 
       "Mod+Home".action.focus-column-first = [ ];
       "Mod+End".action.focus-column-last = [ ];
-      "Mod+Ctrl+Home".action.move-column-to-first = [ ];
-      "Mod+Ctrl+End".action.move-column-to-last = [ ];
+      "Mod+Alt+Home".action.move-column-to-first = [ ];
+      "Mod+Alt+End".action.move-column-to-last = [ ];
 
       "Mod+R".action.switch-preset-column-width = [ ];
       "Mod+Shift+R".action.switch-preset-column-width-back = [ ];
-      "Mod+Ctrl+Shift+R".action.switch-preset-window-height = [ ];
-      "Mod+Ctrl+R".action.reset-window-height = [ ];
+      "Mod+Alt+Shift+R".action.switch-preset-window-height = [ ];
+      "Mod+Alt+R".action.reset-window-height = [ ];
       "Mod+Minus".action.set-column-width = "-10%";
       "Mod+Equal".action.set-column-width = "+10%";
       "Mod+Shift+Minus".action.set-window-height = "-10%";
@@ -93,13 +95,9 @@ in
       "Mod+Comma".action.consume-window-into-column = [ ];
       "Mod+Period".action.expel-window-from-column = [ ];
       "Mod+C".action.center-column = [ ];
-      "Mod+Ctrl+C".action.center-visible-columns = [ ];
+      "Mod+Alt+Shift+C".action.center-visible-columns = [ ];
 
       "Mod+Shift+Space".action.switch-layout = "prev";
-
-      "Print".action.screenshot = [ ];
-      "Ctrl+Print".action.screenshot-screen = [ ];
-      "Alt+Print".action.screenshot-window = [ ];
 
       "XF86AudioRaiseVolume".action.spawn = [
         "wpctl"
@@ -181,13 +179,14 @@ in
       "Mod+Ctrl+Shift+WheelScrollUp".action.move-column-left = [ ];
     }
     // mkColumnDirectionBinds "Mod" "focus-column" "focus-window"
-    // mkColumnDirectionBinds "Mod+Ctrl" "move-column" "move-window"
     // mkDirectionBinds "Mod+Shift" (dir: {
       "focus-monitor-${dir}" = [ ];
     })
-    // mkDirectionBinds "Mod+Ctrl+Shift" (dir: {
+    // mkDirectionBinds "Mod+Alt+Shift" (dir: {
       "move-column-to-monitor-${dir}" = [ ];
     })
-    // workspaceBinds;
+    // workspaceBinds
+    // shared.screenshots.niri
+    // sharedBinds;
   };
 }

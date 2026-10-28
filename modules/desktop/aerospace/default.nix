@@ -7,12 +7,13 @@
 let
   noti = "${pkgs.noti}/bin/noti";
 
-  allDirections = [
-    "left"
-    "right"
-    "up"
-    "down"
-  ];
+  shared = import ../shared-bindings.nix { inherit lib; };
+  sharedBindings = builtins.listToAttrs (
+    map (binding: {
+      name = "cmd-ctrl-${lib.optionalString binding.shift "shift-"}${lib.toLower binding.key}";
+      value = binding.aerospace;
+    }) (lib.filter (binding: binding.aerospace != null) shared.bindings)
+  );
   gapAmount = 6;
   gapsConfig = [
     { monitor.built-in = gapAmount; }
@@ -30,7 +31,6 @@ let
     );
 
   mkWorkspaceBindings = binding: actionFn: mkPrefixedBindings binding (lib.range 1 9) actionFn;
-  mkAllDirectionBindings = binding: actionFn: mkPrefixedBindings binding allDirections actionFn;
 
   # Patterns are case-insensitive regexes over monitor names; the first
   # connected one wins. Work prefers any external, so with one external plus
@@ -119,9 +119,6 @@ let
     in
     "exec-and-forget ${apply}";
 
-  # Without all-monitors-outer-frame, focus and move stop at the current
-  # monitor's edge instead of continuing onto the adjacent monitor.
-  crossMonitor = "--boundaries all-monitors-outer-frame";
 in
 {
   home.packages = [ aerospaceLayout ];
@@ -167,16 +164,13 @@ in
 
       mode = {
         main.binding = {
-          cmd-ctrl-minus = "resize smart -30";
-          cmd-ctrl-equal = "resize smart +30";
           cmd-ctrl-0 = "balance-sizes";
           cmd-ctrl-e = "layout tiles horizontal vertical";
           cmd-ctrl-a = "layout accordion horizontal vertical";
           # r for restore; no macOS or app default claims cmd-ctrl-r.
           cmd-ctrl-r = applyLayout;
         }
-        // mkAllDirectionBindings "cmd-ctrl" (d: "focus ${crossMonitor} ${d}")
-        // mkAllDirectionBindings "cmd-ctrl-shift" (d: "move ${crossMonitor} ${d}")
+        // sharedBindings
         // mkWorkspaceBindings "ctrl-alt" (i: "workspace ${toString i}")
         // mkWorkspaceBindings "ctrl-alt-shift" (i: [
           "move-node-to-workspace ${toString i}"
