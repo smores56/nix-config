@@ -156,10 +156,10 @@ export PATH="${HM_BIN}:${PATH}"
 
 # ── Phase 4: SSH identities ───────────────────────────────────────
 #
-# The public halves are committed (modules/features/ssh-keys.nix) and written by
-# `ssh-pub-keys`, the same command every switch runs. The private halves still
-# live in Proton Pass; the agent home-manager installed serves them over
-# SSH_AUTH_SOCK, so nothing is generated here.
+# The public halves are committed (modules/lib/yubikey-keys.nix) and written by
+# `ssh-pub-keys`, the same command every switch runs. The private halves stay on
+# the YubiKeys and are loaded by the fido2 agents after `yk-login`, so nothing
+# is generated here.
 
 # A headless host logs in with the vault's PAT (sops-delivered, non-interactive);
 # elsewhere the session is established interactively in a browser. Always the

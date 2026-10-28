@@ -1428,10 +1428,13 @@ lost, mint a replacement with `nix run .#host-key` and re-key `.sops.yaml`.
 
 Upload the printed `.tar.gz` and `.sha256` to a Proton Pass **Note** item named
 `nix-config restore bundle — <host>` (Pass encrypts attachments end-to-end),
-then `shred -u` the local copies. Keep the archive and its checksum together:
-the restore refuses to proceed without the checksum file. An incomplete backup
-prints a warning naming the missing handles; do not wipe until it says
-`handles: 6`.
+then remove the local copies (`shred -u` on Linux, `rm -P` on macOS). Keep the
+archive and its checksum together, with the `.sha256` named `<archive>.sha256`;
+the file holds a bare hash, so renaming both together still works. The restore
+refuses to proceed without it. An incomplete backup fails and names the missing
+handles; `--allow-incomplete` archives a deliberate partial set. Do not wipe
+until the handle count matches the inventory in `modules/lib/yubikey-keys.nix`
+(six today).
 
 ### key-restore
 
@@ -1447,7 +1450,8 @@ nix run .#key-restore -- ~/Downloads/<host>-restore-<time>.tar.gz
 It verifies the outer checksum, refuses to overwrite existing handles or the
 script without `--force`, and checks every handle's public half and application
 against the committed keys in `modules/lib/yubikey-keys.nix` before writing
-anything. `--no-verify` skips only the outer checksum; it cannot skip the
+anything. It does not inspect the touch/PIN flags, which live in the private
+file; a flagged credential is still bound to the same token. `--no-verify` skips only the outer checksum; it cannot skip the
 committed-key check. Then run `home-manager switch` if bootstrap did not
 already write the public keys, `yk-login`, and verify with
 `ssh smortress true` and `ssh -t smortress sudo true`.

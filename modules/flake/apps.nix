@@ -210,11 +210,14 @@
           umask 077
 
           pubkeys="${yubikeyPubkeys}"
+          allow_incomplete=0
           while [ "$#" -gt 0 ]; do
             case "$1" in
+              --allow-incomplete) allow_incomplete=1; shift ;;
+              # Test hook: the build embeds the committed map.
               --pubkeys)
-                if [ "$#" -lt 2 ]; then
-                  echo "key-backup: --pubkeys needs a path" >&2
+                if [ "$#" -lt 2 ] || [ ! -r "$2" ]; then
+                  echo "key-backup: --pubkeys needs a readable path" >&2
                   exit 1
                 fi
                 pubkeys="$2"
@@ -222,7 +225,7 @@
                 continue
                 ;;
               -h | --help)
-                echo "Usage: nix run .#key-backup"
+                echo "Usage: nix run .#key-backup [--allow-incomplete]"
                 exit 0
                 ;;
               *)
@@ -246,9 +249,6 @@
           trap 'rm -rf "$stage"' EXIT
           mkdir -p "$stage/home"
 
-          expected_pubkey() {
-            awk -F '\t' -v k="$1" '$1 == k { print $2; exit }' "$pubkeys"
-          }
           first_two() {
             awk '{ print $1" "$2 }'
           }
@@ -280,9 +280,24 @@
             handles=$((handles + 1))
           done <"$pubkeys"
 
+          for src in "$HOME"/.config/ssh-sk/*/sudo "$HOME"/.config/ssh-sk/*/signing; do
+            [ -f "$src" ] || continue
+            key="''${src#"$HOME/.config/ssh-sk/"}"
+            if ! awk -F '\t' -v k="$key" '$1 == k { found=1 } END { exit !found }' "$pubkeys"; then
+              echo "key-backup: WARNING: $key is on disk but not in modules/lib/yubikey-keys.nix; not backed up" >&2
+            fi
+          done
+
           if [ "$handles" -eq 0 ]; then
             echo "key-backup: no FIDO2 handles under $HOME/.config/ssh-sk" >&2
             echo "key-backup: run this on a laptop where the keys are enrolled and yk-login works" >&2
+            exit 1
+          fi
+
+          map_count="$(awk -F '\t' 'NF && $1 != "" { n++ } END { print n + 0 }' "$pubkeys")"
+          if [ "$handles" -lt "$map_count" ] && [ "$allow_incomplete" -eq 0 ]; then
+            echo "key-backup: incomplete: $handles of $map_count committed handles" >&2
+            echo "key-backup: fix the missing keys, or pass --allow-incomplete to archive a partial set" >&2
             exit 1
           fi
 
@@ -290,6 +305,10 @@
           # copy besides the machine being wiped. Keep it non-executable and
           # review it before running after a restore; it may carry operator
           # choices the repo should own.
+          if [ -f flake.nix ] && [ ! -f "secrets/hosts/$host/etc/ssh/ssh_host_ed25519_key" ]; then
+            echo "key-backup: WARNING: secrets/hosts/$host/... is absent from this checkout; preserve the host key separately before wiping" >&2
+          fi
+
           script_state=no
           if [ -f "$HOME/dev/setup-yubikey.sh" ]; then
             install -D -m 600 "$HOME/dev/setup-yubikey.sh" "$stage/home/dev/setup-yubikey.sh"
@@ -315,11 +334,13 @@
 
           (
             cd "$stage"
-            find home -type f -print0 | sort -z | xargs -0 sha256sum
+            find . -type f ! -name MANIFEST ! -name SHA256SUMS -print0 |
+              sort -z | xargs -0 -r sha256sum
           ) >"$stage/SHA256SUMS"
 
-          archive="$state_dir/$host-restore-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+          archive="$state_dir/''${host}-restore-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
           tar -C "$stage" -czf "$archive" .
+          tar -tzf "$archive" >/dev/null
           chmod 600 "$archive"
           sha256sum "$archive" | awk '{ print $1 }' >"$archive.sha256"
           chmod 600 "$archive.sha256"
@@ -327,6 +348,12 @@
           if [ "''${#missing[@]}" -gt 0 ]; then
             echo "key-backup: WARNING: incomplete backup; missing: ''${missing[*]}" >&2
             echo "key-backup: fix the missing handles before you wipe the machine" >&2
+          fi
+
+          if command -v shred >/dev/null 2>&1; then
+            remove="shred -u"
+          else
+            remove="rm -P"
           fi
 
           cat <<EOF
@@ -339,7 +366,7 @@
                in the vault that holds recovery material.
             2. Attach the .tar.gz and the .sha256, then save.
             3. Once Pass shows them, remove the local copies:
-                 shred -u "$archive" "$archive.sha256"
+                 $remove "$archive" "$archive.sha256"
 
           Proton Pass encrypts attachments end-to-end; the archive itself is not
           separately encrypted. Restoring needs the physical YubiKey plus the PIN
@@ -382,9 +409,10 @@
             case "$1" in
               --force) force=1 ;;
               --no-verify) verify=0 ;;
+              # Test hook: the build embeds the committed map.
               --pubkeys)
-                if [ "$#" -lt 2 ]; then
-                  echo "key-restore: --pubkeys needs a path" >&2
+                if [ "$#" -lt 2 ] || [ ! -r "$2" ]; then
+                  echo "key-restore: --pubkeys needs a readable path" >&2
                   exit 1
                 fi
                 pubkeys="$2"
@@ -441,13 +469,18 @@
             echo "key-restore: skipping the outer checksum (--no-verify)" >&2
           fi
 
+          if tar -tzf "$archive" | awk '/^\// || /(^|\/)\.\.(\/|$)/ { found=1 } END { exit !found }'; then
+            echo "key-restore: the bundle contains unsafe paths; refusing" >&2
+            exit 1
+          fi
           if tar -tvzf "$archive" | awk 'substr($0, 1, 1) ~ /[lh]/ { found=1 } END { exit !found }'; then
             echo "key-restore: the bundle contains links; refusing" >&2
             exit 1
           fi
 
           stage="$(mktemp -d)"
-          trap 'rm -rf "$stage"' EXIT
+          recomputed="$stage.recomputed"
+          trap 'rm -rf "$stage" "$recomputed"' EXIT
           tar --no-same-owner --no-same-permissions -C "$stage" -xzf "$archive"
 
           if [ -n "$(find "$stage" -type l -print -quit)" ]; then
@@ -462,8 +495,9 @@
           done
           (
             cd "$stage"
-            find home -type f -print0 | sort -z | xargs -0 sha256sum >.recomputed
-            if ! cmp -s .recomputed SHA256SUMS; then
+            find . -type f ! -name MANIFEST ! -name SHA256SUMS -print0 |
+              sort -z | xargs -0 -r sha256sum >"$recomputed"
+            if ! cmp -s "$recomputed" SHA256SUMS; then
               echo "key-restore: SHA256SUMS does not match the archive contents" >&2
               exit 1
             fi
@@ -497,7 +531,7 @@
             src="$stage/home/.config/ssh-sk/$key"
             [ -f "$src" ] || continue
             dest="$HOME/.config/ssh-sk/$key"
-            if [ -e "$dest" ] && [ "$force" -eq 0 ]; then
+            if { [ -e "$dest" ] || [ -L "$dest" ]; } && [ "$force" -eq 0 ]; then
               echo "key-restore: $dest already exists; pass --force to replace it" >&2
               exit 1
             fi
@@ -528,7 +562,7 @@
             fi
           done
 
-          if [ -f "$stage/home/dev/setup-yubikey.sh" ] && [ -e "$HOME/dev/setup-yubikey.sh" ] && [ "$force" -eq 0 ]; then
+          if [ -f "$stage/home/dev/setup-yubikey.sh" ] && { [ -e "$HOME/dev/setup-yubikey.sh" ] || [ -L "$HOME/dev/setup-yubikey.sh" ]; } && [ "$force" -eq 0 ]; then
             echo "key-restore: $HOME/dev/setup-yubikey.sh already exists; pass --force to replace it" >&2
             exit 1
           fi

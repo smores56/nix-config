@@ -3,9 +3,9 @@ let
   ports = import ../ports.nix;
   # Public halves of the login credentials. Private halves never touch a host:
   # each PIV key lives in its YubiKey's slot 9a.
-  keys = import ../lib/yubikey-keys.nix;
+  yubikeyKeys = import ../lib/yubikey-keys.nix;
   user = config.machine.username;
-  authorizedKeys = map (k: k.pubkey) keys.piv;
+  authorizedKeys = map (k: k.pubkey) yubikeyKeys.piv;
 in
 {
   options.exposeSsh.enable = lib.mkEnableOption "sshd bound to loopback for Cloudflare Tunnel access";
@@ -65,7 +65,7 @@ in
     # fido2-agent. All three keys are enrolled.
     environment.etc."ssh/sudo_authorized_keys".text = lib.concatMapStrings (
       k: "${k.pubkey}\n"
-    ) keys.sudo;
+    ) yubikeyKeys.sudo;
     security.pam.rssh = {
       enable = true;
       settings.auth_key_file = "/etc/ssh/sudo_authorized_keys";

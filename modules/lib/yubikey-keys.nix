@@ -9,6 +9,9 @@
 # on smortress). `signing` entries are no-touch-required + verify-required and
 # are loaded only into fido2-sign-agent. `sudo` entries are touch-required with
 # no verify-required and are loaded only into fido2-agent for pam_rssh.
+#
+# `key` is the relative path under ~/.config/ssh-sk (piv-k1 vs k1/signing);
+# `piv` entries also carry the pam_p11 certificate.
 {
   piv = [
     {

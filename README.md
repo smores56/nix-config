@@ -58,7 +58,7 @@ nix run github:smores56/nix-config#bootstrap
 
 The served copy at `bootstrap.sammohr.dev` is not provisioned by this repo;
 use the flake app above. It clones the repo via `ghq`, runs
-`home-manager switch`, fetches the SSH public keys from the Proton Pass vault,
+`home-manager switch`, writes the committed SSH public keys,
 authenticates GitHub, and (on NixOS) applies the system configuration.
 
 ### Manual

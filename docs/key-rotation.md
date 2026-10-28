@@ -50,8 +50,10 @@ is **not** in the Pass bundle. If it is lost, mint a replacement with
 `nix run .#host-key -- <host>` and re-key `.sops.yaml`.
 
 1. Before wiping, on that machine: `nix run .#key-backup`, then attach the
-   printed `.tar.gz` and `.sha256` to the Pass restore item and shred the local
-   copies. The output must say `handles: 6`; a missing handle is a lost leg.
+   printed `.tar.gz` and `.sha256` to the Pass restore item and remove the local
+   copies (`shred -u` or `rm -P`). The handle count must match the inventory in
+   `modules/lib/yubikey-keys.nix` (six today); a missing handle is a lost leg.
+   `key-backup` fails on a partial set unless `--allow-incomplete` is given.
 2. Install and `nix run .#bootstrap` (deliver the host key via
    `secrets/hosts/<host>/`).
 3. Download the two files from Pass and run

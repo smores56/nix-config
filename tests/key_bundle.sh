@@ -97,3 +97,12 @@ sha256sum "$archive" | awk '{print $1}' >"$root/bad.tar.gz.sha256"
 if run_restore "$root/dst-bad" "$root/bad.tar.gz" >/dev/null 2>&1; then
   fail "accepted a tampered archive"
 fi
+
+# A partial set fails unless explicitly allowed.
+partialkeys="$root/partialkeys"
+cp "$pubkeys" "$partialkeys"
+printf 'k1/signing\t%s\n' "$(awk '{print $1" "$2}' "$src/.config/ssh-sk/k1/sudo.pub")" >>"$partialkeys"
+if env -u XDG_STATE_HOME HOME="$src" "$backup" --pubkeys "$partialkeys" >/dev/null 2>&1; then
+  fail "archived a partial set without --allow-incomplete"
+fi
+env -u XDG_STATE_HOME HOME="$src" "$backup" --pubkeys "$partialkeys" --allow-incomplete >/dev/null
