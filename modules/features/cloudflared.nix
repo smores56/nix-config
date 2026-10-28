@@ -116,14 +116,26 @@ in
     # would also outlive the credential decision, so the design keeps this
     # host out of connection reuse.
     ControlMaster = "no";
-    # Authentication is the PIV key in slot 9c, used through OpenSC: PIN-only
-    # (touch policy NEVER), and the PIN comes from the session cache, so SSH
-    # needs an unlocked machine but no gesture.
-    PKCS11Provider = "${pkgs.opensc}/lib/opensc-pkcs11.so";
     # pam_rssh (sudo) signs through the forwarded FIDO2 agent, whose credential
     # is touch-required.
     ForwardAgent = "\${XDG_RUNTIME_DIR}/fido2-agent";
     ProxyCommand = "${cloudflared-access}/bin/cloudflared-access ssh --hostname %h";
+  }
+  // lib.optionalAttrs isLinux {
+    # PIV slot 9a, loaded into fido2-agent by yk-login (PIN ONCE, touch NEVER).
+    # No PKCS11Provider: the provider stays in the agent so the card session and
+    # PIN never leave it.
+    IdentityAgent = "\${XDG_RUNTIME_DIR}/fido2-agent";
+    IdentitiesOnly = "yes";
+    IdentityFile = [
+      "~/.config/ssh-sk/piv-k1.pub"
+      "~/.config/ssh-sk/piv-k2.pub"
+      "~/.config/ssh-sk/piv-k3.pub"
+    ];
+  }
+  // lib.optionalAttrs (!isLinux) {
+    # T4/macOS: CryptoTokenKit is not used; OpenSC prompts the PIN on the tty.
+    PKCS11Provider = "${pkgs.opensc}/lib/opensc-pkcs11.so";
   };
 
   # A personal client reaches the server's llm over the tunnel; a work

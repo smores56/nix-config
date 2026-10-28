@@ -12,10 +12,10 @@ let
   cfg = config.user;
   expandHome = lib.replaceStrings [ "~" ] [ "$HOME" ];
 
-  # `pubkey` selects which agent key ssh offers and what allowed_signers trusts.
-  # Rotating a key means updating the literal here; every host picks it up at the
-  # next switch.
-  identities = [
+  # Software identities are retained for the legacy GitHub-auth path until
+  # T0c removes the Pass agent; the YubiKey keys below are the only git
+  # signing identities going forward.
+  softwareIdentities = [
     {
       key = cfg.sshKey;
       inherit (cfg) email;
@@ -27,6 +27,37 @@ let
       pubkey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ8f4okBI4niVjsR+lkgvfhRtVt1c/hRZ8POoBaQySog smohr@blitzy.com";
     }
   ];
+
+  # One entry per YubiKey and credential. The public halves are committed, so
+  # a fresh host writes the files ssh/git need without the key inserted.
+  yubikeyIdentities = [
+    {
+      key = "~/.config/ssh-sk/piv-k1";
+      pubkey = "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBJ34zXLDQMZYvFX1q1fEMJ1/uGWvAtQUmu7/lzGqdWJBSAo2RPiYeeCZnA7AIhfwSwCIIv1sJWgopllQifFmZEc= smores piv k1";
+    }
+    {
+      key = "~/.config/ssh-sk/piv-k2";
+      pubkey = "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBMcpVmF/c9KcRgBlgRVp/gjrtjuB/+0U1nURKnep+dAt1NtUztpWtwlz7o3drWTHzydNaGZ39uO21TQ3rxMEOBA= smores piv k2";
+    }
+    {
+      key = "~/.config/ssh-sk/piv-k3";
+      pubkey = "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBOJHHVoKZWLnC1EVMVxFv9eNOtkZ+tJFI5TctBvOuzGAfYV0rlm6xv37RF2Pf+8DjUVEnwh9aGYwUsEFOoHUrPM= smores piv k3";
+    }
+    {
+      key = "~/.config/ssh-sk/k1/signing";
+      pubkey = "sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIONu9lg+sGskfOnluRJc+K4QpIKmrPG9AZdkQGUnOwAPAAAAC3NzaDpzaWduLWsx smores sign k1";
+    }
+    {
+      key = "~/.config/ssh-sk/k2/signing";
+      pubkey = "sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIL3jMFzM8BHpOKzCdd9rFMDYcKGgYELD3/Be3HDSN/UUAAAAC3NzaDpzaWduLWsy smores sign k2";
+    }
+    {
+      key = "~/.config/ssh-sk/k3/signing";
+      pubkey = "sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIJb8e2eGxTw6x8gDgrT0ZhyBr1tT48mZRKtQcCSDwqlCAAAAC3NzaDpzaWduLWsz smores sign k3";
+    }
+  ];
+
+  pubkeys = softwareIdentities ++ yubikeyIdentities;
   allowedSigners = "~/.ssh/allowed_signers";
 
   # Signatures only verify against keys listed here; rebuilt from whichever
@@ -51,7 +82,18 @@ let
       {
         ${lib.concatMapStrings (i: ''
           entry ${lib.escapeShellArg i.email} "${expandHome i.key}.pub"
-        '') identities}
+        '') softwareIdentities}
+        ${lib.concatMapStrings (i: ''
+          entry ${lib.escapeShellArg cfg.email} "${expandHome i.key}.pub"
+          entry ${lib.escapeShellArg cfg.work.email} "${expandHome i.key}.pub"
+        '') yubikeyIdentities}
+        ${lib.optionalString (builtins.elem "server" config.machine.profiles) ''
+          maki_key="$HOME/.config/maki/signing_ed25519.pub"
+          if [ -s "$maki_key" ]; then
+            entry ${lib.escapeShellArg cfg.email} "$maki_key"
+            entry ${lib.escapeShellArg cfg.work.email} "$maki_key"
+          fi
+        ''}
       } >"$tmp"
       mv "$tmp" "$out"
     '';
@@ -92,7 +134,7 @@ let
           echo "ssh-pub-keys: could not write ${i.key}.pub" >&2
           failed=1
         }
-      '') identities}
+      '') pubkeys}
       ${lib.getExe allowedSignersWriter}
 
       exit "$failed"

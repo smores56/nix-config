@@ -161,7 +161,9 @@ Script checks run each `tests/<name>.sh` against tools and files from a
 generated home, as the `<name>` flake check (`scriptChecks` in
 `modules/flake/checks.nix`): `git-work-routing` (work vs personal identity by
 remote URL), `ssh-allowed-signers`
-(signature verification), `ssh-pub-keys` (committed `.pub` keys
+(signature verification), `ssh-pin-askpass` (only the two PIN prompt shapes
+are answered; host-key and presence prompts fail closed), `ssh-pub-keys`
+(committed `.pub` keys
 written and trusted, stale files replaced, a malformed key writes nothing and
 exits non-zero), `worktrees-branch-template` (branch naming from
 per-repo templates), `repos-list-links` (listing through linked org dirs), `zsh-config`

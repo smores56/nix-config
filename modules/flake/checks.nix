@@ -96,6 +96,9 @@ in
             PERSONAL_BRANCH_TEMPLATE = d.branchNaming.template;
             PERSONAL_BRANCH_UNTICKETED = toString d.branchNaming.unticketed;
             PERSONAL_OWNER = d.githubUser;
+            # Linux selects the key from the agent; Darwin keeps the software
+            # key path for the work Mac.
+            SIGNING_KEY_MODE = if hc.programs.git.settings.gpg.ssh ? defaultKeyCommand then "agent" else "file";
           };
           # Every spelling of the employer the work options reveal; the brain
           # files must stay generic, so none may appear in them.
@@ -155,6 +158,13 @@ in
             ssh-allowed-signers = {
               tools = [ pkgs.openssh ];
               args = [ (homeExe "ssh-allowed-signers") ];
+            };
+            ssh-pin-askpass = {
+              tools = [
+                pkgs.coreutils
+                pkgs.gnugrep
+              ];
+              args = [ (homeExe "ssh-pin-askpass") ];
             };
             ssh-pub-keys = {
               tools = [ pkgs.openssh ];
