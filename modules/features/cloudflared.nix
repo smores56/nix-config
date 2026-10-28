@@ -60,8 +60,17 @@ let
     text = ''
       export PROTON_PASS_KEY_PROVIDER="''${PROTON_PASS_KEY_PROVIDER:-fs}"
 
-      runtime="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-      cache="$runtime/${tokenCache}/token"
+      # macOS has no XDG_RUNTIME_DIR and no tmpfs user runtime, so only probe
+      # the cache when a runtime dir exists; Linux keeps its /run/user/<uid>
+      # fallback for sessions that never got the variable (cron, sudo -u).
+      runtime="''${XDG_RUNTIME_DIR:-}"
+      if [ -z "$runtime" ]; then
+        runtime=${if isLinux then "/run/user/$(id -u)" else "\"\""}
+      fi
+      cache=""
+      if [ -n "$runtime" ] && [ -d "$runtime" ]; then
+        cache="$runtime/${tokenCache}/token"
+      fi
 
       # Two lines (id, secret); IFS= keeps any surrounding whitespace.
       read_token() {
@@ -70,7 +79,7 @@ let
         [ -n "$token_id" ] && [ -n "$token_secret" ]
       }
 
-      if ! read_token < "$cache" 2>/dev/null; then
+      if [ -z "$cache" ] || ! read_token < "$cache" 2>/dev/null; then
         if ! read_token < <(pass-cli inject -f -i ${tokenTemplate}); then
           echo "cloudflared-access: could not resolve the Cloudflare Access service token (is pass-cli logged in?)" >&2
           exit 1

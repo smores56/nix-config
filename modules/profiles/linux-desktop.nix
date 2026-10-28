@@ -7,6 +7,7 @@
     ../desktop/niri/noctalia.nix
     ../desktop/linux-apps.nix
     ../features/dictation/default.nix
+    ../features/wallpapers.nix
   ];
   nixos = [
     ../nixos/desktop.nix

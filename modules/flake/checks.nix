@@ -73,6 +73,21 @@ in
       scriptHome = lib.findFirst (_: true) null homesHere;
       # zsh only renders on work hosts, so its check needs a home that has it.
       zshHome = lib.findFirst (home: home.config.programs.zsh.enable) null homesHere;
+      # wallpapers also only renders on graphical hosts; pick by its package so
+      # the check does not depend on attribute ordering.
+      wallpapersHome = lib.findFirst (
+        home: builtins.any (p: lib.getName p == "wallpapers") home.config.home.packages
+      ) null homesHere;
+      wallpapersExe = lib.getExe (
+        lib.findFirst (
+          p: lib.getName p == "wallpapers"
+        ) (throw "wallpapers not in home.packages") wallpapersHome.config.home.packages
+      );
+      askpassExe = lib.getExe (
+        lib.findFirst (
+          p: lib.getName p == "wallpapers-askpass"
+        ) (throw "wallpapers-askpass not in home.packages") wallpapersHome.config.home.packages
+      );
       scriptChecks =
         let
           hc = scriptHome.config;
@@ -277,6 +292,20 @@ in
               ];
             };
           }
+          // lib.optionalAttrs (wallpapersHome != null) {
+            wallpapers = {
+              tools = [
+                pkgs.coreutils
+                pkgs.imagemagick
+                pkgs.gnugrep
+              ];
+              args = [ wallpapersExe ];
+            };
+            wallpapers-askpass = {
+              tools = [ pkgs.coreutils ];
+              args = [ askpassExe ];
+            };
+          }
         );
 
       # Inventory for manual-steps-sync. File-derived items (hosts, sops keys,
@@ -334,6 +363,29 @@ in
             }
           )
         );
+
+        # The two rendered planes must stay in step with the design: a Linux
+        # timer that runs after the session is up, a launchd agent that can
+        # answer the PIV PIN unattended, and Noctalia no longer rotating.
+        wallpapers-units =
+          let
+            pro = config.flake.homeConfigurations."smores@smorespro".config;
+            work = config.flake.homeConfigurations."sam@smoreswork".config;
+          in
+          pkgs.runCommand "wallpapers-units" { } ''
+            test "${pro.systemd.user.services.wallpapers.Service.Type}" = "oneshot"
+            test "${pro.systemd.user.services.wallpapers.Service.TimeoutStartSec}" = "20min"
+            test "${lib.concatStringsSep " " pro.systemd.user.services.wallpapers.Unit.After}" = "graphical-session.target"
+            test "${lib.concatStringsSep " " pro.systemd.user.services.wallpapers.Install.WantedBy}" = "graphical-session.target"
+            test "${lib.boolToString (lib.any (lib.hasInfix "sync") pro.systemd.user.services.wallpapers.Service.ExecStart)}" = "true"
+            test "${pro.systemd.user.timers.wallpapers.Timer.OnUnitInactiveSec}" = "3h"
+            test "${lib.concatStringsSep " " pro.systemd.user.timers.wallpapers.Install.WantedBy}" = "timers.target"
+            test "${lib.boolToString pro.programs.noctalia.settings.wallpaper.automation.enabled}" = "false"
+            test "${toString work.launchd.agents.wallpapers.config.StartInterval}" = "10800"
+            test "${work.launchd.agents.wallpapers.config.EnvironmentVariables.SSH_ASKPASS_REQUIRE}" = "force"
+            test "${lib.boolToString (lib.hasInfix "wallpapers-askpass" work.launchd.agents.wallpapers.config.EnvironmentVariables.SSH_ASKPASS)}" = "true"
+            touch $out
+          '';
 
         yubikey-lists =
           let
