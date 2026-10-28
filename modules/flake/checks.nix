@@ -170,6 +170,15 @@ in
               tools = [ pkgs.openssh ];
               args = [ (homeExe "ssh-pub-keys") ];
             };
+            ssh-no-private-keys = {
+              tools = [
+                pkgs.openssh
+                pkgs.coreutils
+                pkgs.findutils
+                pkgs.gnugrep
+              ];
+              args = [ (homeExe "ssh-no-private-keys") ];
+            };
             # The admin-key wrapper must fail closed: no identity file, and no
             # leftover plaintext key that sops would load behind its back.
             sops-age-key = {
