@@ -5,6 +5,7 @@
     ../features/cargo.nix
     ../features/work-host.nix
     ../desktop/aerospace/default.nix
+    ../desktop/macos-screenshot.nix
   ];
   nixos = [ ];
 }

@@ -306,6 +306,18 @@ in
     in
     {
       checks = {
+        desktop-bindings = evalCheck "desktop-bindings" (
+          toString (
+            import ../../tests/shared_desktop_bindings.nix {
+              inherit lib;
+              niriBindings =
+                config.flake.homeConfigurations."smores@smorespro".config.programs.niri.settings.binds;
+              aerospaceBindings =
+                config.flake.homeConfigurations."sam@smoreswork".config.programs.aerospace.settings.mode.main.binding;
+            }
+          )
+        );
+
         format =
           pkgs.runCommand "format-check"
             {
