@@ -107,9 +107,11 @@ sync_cache() {
     return 1
   fi
   # Bounded so a stalled stream cannot wedge the launchd agent: launchd will
-  # not start a second instance while this one runs.
+  # not start a second instance while this one runs. --timeout is the I/O
+  # timeout; --contimeout would be a daemon-only flag and rsync rejects it on
+  # the ssh transport, so the connect bound lives in ssh's ConnectTimeout.
   timeout 1800 rsync -rt --delete --no-owner --no-group \
-    "${rsync_ssh[@]}" --contimeout=20 --timeout=120 "$source_url" "$dest/"
+    "${rsync_ssh[@]}" --timeout=120 "$source_url" "$dest/"
 }
 
 # Bucket the cached files by measured pixels, not by their folder: an image can

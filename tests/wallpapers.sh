@@ -94,3 +94,10 @@ magick -size 2000x1000 xc:green "$work/odd/$(printf 'bad\nname.png')"
   fail "a newline in a filename was bucketed"
 
 echo "wallpapers ok"
+
+# rsync accepts --contimeout only for daemon transports; over `-e ssh` it exits
+# with a usage error before transferring, so the timer would fail every run.
+script=$(readlink -f "$wallpapers")
+if grep -v '^[[:space:]]*#' "$script" | grep -q -- '--contimeout'; then
+  fail "daemon-only rsync option breaks the ssh transport"
+fi
