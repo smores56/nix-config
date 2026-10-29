@@ -28,15 +28,12 @@
     enable = true;
     # Lives in the LUKS root, never in the store or the repo.
     pkiBundle = "/var/lib/sbctl";
-    # nixos-anywhere cannot carry keys into a disk it is about to wipe, and lzbt
-    # refuses to write unsigned artifacts without them (allowUnsigned defaults
-    # to this option), so the first install needs the keys generated on the
-    # host itself. The generate-sb-keys service runs on first boot; every later
-    # switch-to-configuration then signs, and the operator enrolls the keys.
+    # Keys were generated on first boot by the generate-sb-keys service (the
+    # first install cannot carry them). This is deliberately off now: it also
+    # implies allowUnsigned, and a missing key pair must fail the bootloader
+    # install instead of silently writing unsigned artifacts.
     autoGenerateKeys.enable = false;
-    # 1 GiB ESP: lzbt keeps a kernel + initrd per generation. Once the keys are
-    # enrolled and Secure Boot is on, turn autoGenerateKeys off (it also
-    # implies allowUnsigned) and keep this bound.
+    # 1 GiB ESP: lzbt keeps a kernel + initrd per generation.
     configurationLimit = 10;
   };
 
