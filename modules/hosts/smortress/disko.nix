@@ -1,30 +1,28 @@
 # Declarative disk layout for smortress (see AGENTS.md). disko owns `/` and
 # `/boot` — it derives `fileSystems` from here — so hardware.nix omits them.
 #
-# MIGRATION TARGET: the 970 EVO is the temporary staging system (T2, #270).
-# The 980 PRO keeps its data until the final install, so this is only used
-# with `disko` + `nixos-install` from the running 980 — never with
-# `nixos-rebuild` on the 980 (it would declare `/` on the other disk).
+# The 980 PRO is the final encrypted root: LUKS2 with the passphrase slot plus
+# a Clevis `sss` slot (Tang + TPM2 on PCR 7) bound after the first boot (T2,
+# #250). Never run `nixos-rebuild` from this layout on a machine that is not
+# already the 980's installed system.
 #
-# The staging disk's labels are deliberately `EFI-tmp`/`root-tmp`. The 980
-# already owns `EFI`/`root`, and two partitions with the same PARTLABEL make
-# `/dev/disk/by-partlabel/*` resolve to whichever device udev saw last. The
-# final system on the 980 uses the canonical `EFI`/`root`; the 970 keeps the
-# -tmp labels so it stays a safe rollback even while installed alongside.
+# The staging install used the 970 EVO with `EFI-tmp`/`root-tmp` labels to
+# avoid duplicate `/dev/disk/by-partlabel/*` symlinks. The final system owns
+# the canonical `EFI`/`root`; the 970 keeps the -tmp labels as a rollback.
 #
-# Only the OS NVMe is managed: the backup HDD (sda, mounted at /var/backup by
-# modules/nixos/backup.nix) and the 980 PRO are left untouched.
+# Only the OS NVMe is managed: the backup HDD (sda) and the 970 EVO are left
+# untouched.
 {
   disko.devices.disk.main = {
     type = "disk";
-    device = "/dev/disk/by-id/nvme-Samsung_SSD_970_EVO_1TB_S5H9NS0NA57329Z";
+    device = "/dev/disk/by-id/nvme-Samsung_SSD_980_PRO_1TB_S5P2NG0NC04320K";
     content = {
       type = "gpt";
       partitions = {
         boot = {
           size = "1G";
           type = "EF00";
-          label = "EFI-tmp";
+          label = "EFI";
           content = {
             type = "filesystem";
             format = "vfat";
@@ -37,7 +35,7 @@
         };
         root = {
           size = "100%";
-          label = "root-tmp";
+          label = "root";
           content = {
             type = "luks";
             name = "root";
@@ -45,10 +43,8 @@
               # TRIM passes through to the NVMe; accepted trade: discard leaks
               # which blocks are in use, not their contents.
               allowDiscards = true;
-              # The passphrase slot is the mandatory recovery path; Clevis is
-              # bound as an additional keyslot later, never the only one.
-              # fallbackToPassword is implied by systemd stage 1 and would trip
-              # its assertion if set here.
+              # No fallbackToPassword: systemd stage 1 implies it and asserts
+              # against the option.
             };
             content = {
               type = "filesystem";
