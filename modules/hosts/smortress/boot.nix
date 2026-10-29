@@ -26,6 +26,29 @@
   security.tpm2.enable = true;
   boot.initrd.systemd.tpm2.enable = true;
 
+  # Clevis sss: the Tang share and the TPM2 share (sealed to PCR 7) are both
+  # required. The JWE is committed: it is ciphertext, and the identical token
+  # already lives in the LUKS header. Stage 1 decrypts it to
+  # /clevis-root/decrypted before systemd-cryptsetup@root; if either share
+  # fails, systemd falls back to the passphrase slot.
+  boot.initrd.clevis = {
+    enable = true;
+    useTang = true;
+    devices.root.secretFile = ./root.jwe;
+  };
+
+  # Tang must be reachable before the Clevis unit runs. Match by MAC because
+  # initrd link names are not guaranteed; the wired NIC is the only one with a
+  # static address. Cable down or Tang down means a passphrase prompt.
+  boot.initrd.systemd.network = {
+    enable = true;
+    networks."10-lan" = {
+      matchConfig.MACAddress = "3c:7c:3f:82:69:61";
+      address = [ "10.0.0.125/24" ];
+    };
+  };
+  boot.initrd.availableKernelModules = [ "igc" ];
+
   # Lanzaboote replaces the systemd-boot module enabled by base.nix; the
   # firmware must load the signed stub for PCR 7 to measure our Secure Boot
   # policy rather than a bootloader we did not sign.
