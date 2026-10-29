@@ -29,22 +29,13 @@
     ];
   };
 
+  # greetd is not enabled here: a greeter is a host concern (e.g.
+  # modules/hosts/smorespro/greeter.nix), and niri must start from the login
+  # session, never from greetd's default_session.
   services = {
     libinput.enable = true;
     upower.enable = true;
     power-profiles-daemon.enable = true;
-    greetd = {
-      enable = true;
-      settings = {
-        # A greeter, not a session: running niri-session in default_session
-        # would auto-login even without initial_session (greetd uses
-        # default_session for the greeter slot). Removing initial_session alone
-        # is not enough.
-        default_session = {
-          command = "${pkgs.tuigreet}/bin/tuigreet --time --remember --cmd niri-session";
-        };
-      };
-    };
   };
 
   nix.settings = {

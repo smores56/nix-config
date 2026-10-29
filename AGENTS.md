@@ -34,14 +34,18 @@ routine.
 
 Modules are composed by profiles, not auto-imported. `modules/flake/configurations.nix`
 reads each host's `default.nix`, which lists profile files explicitly; each
-profile contributes paths to the home plane, the NixOS plane, or both. Place
-files by concern, not by host.
+profile contributes paths to the home plane, the NixOS plane, or both. The same
+file may list host-local modules under `nixos` for a concern that only one
+machine has (smorespro's LUKS/Secure Boot chain and greeter); those names never
+reach `machine.profiles`. Place files by concern, not by host. The
+`linux-desktop` profile deliberately ships no display manager: a graphical host
+adds its greeter as a host-local module.
 
 | Location | What goes here |
 |---|---|
 | `modules/options.nix` | `machine.*` host facts, `user.*` identity/preferences, and the server-profile assertion |
 | `modules/profiles/` | six opt-in profiles: `cli`, `user-base`, `ai-tools`, `linux-desktop`, `darwin-work`, `server` |
-| `modules/hosts/` | per-host `meta.nix` (facts + option values), `default.nix` (explicit profile list), optional `hardware.nix` and `disko.nix` |
+| `modules/hosts/` | per-host `meta.nix` (facts + option values), `default.nix` (explicit profile list plus optional `nixos` host-local modules), optional `hardware.nix`, `disko.nix`, and those host-only modules |
 | `modules/home.nix` | home-manager base (fonts, nix.conf, darwin helpers) |
 | `modules/features/` | cross-platform home-manager modules (shell, editor, git, packages, theme, ai) |
 | `modules/desktop/` | desktop-environment modules (niri, aerospace) |
@@ -82,7 +86,11 @@ Hosts are discovered from `modules/hosts/*/`; adding one never edits
    `home = true`, optional `user` overrides (machine name/system are fixed from\n`meta.nix`), and option values under
    `homeOptions`/`nixosOptions` (e.g. `fingerprint.enable = true`).
 2. `modules/hosts/<hostname>/default.nix` — the explicit profile list
-   (`../../profiles/cli.nix`, …) composed into this host.
+   (`../../profiles/cli.nix`, …) composed into this host, plus optional
+   host-local modules (`nixos = [ ./boot.nix ]`, `home = [ … ]`) that only this
+   machine evaluates. Use this for host-scoped configuration that needs a real
+   module (`lib.mkForce`, `imports` of a flake input's module), which
+   `meta.nix` cannot express because it is data.
 3. `modules/hosts/<hostname>/disko.nix` — the declarative disk layout for a
    NixOS host. disko owns `fileSystems` for `/` and `/boot` (and `boot` when it
    manages an EF02 partition), so `hardware.nix` omits them. Pin each
@@ -100,8 +108,9 @@ planes, so identity and host facts are written once.
 
 ### Provisioning a blank NixOS machine
 
-`git add` the host's `meta.nix` + `disko.nix` first (flakes only see tracked
-files), then from the checkout:
+`git add` the host's whole directory (`meta.nix`, `disko.nix`, any host-local
+modules) first — flakes only see tracked files, and `install` rejects untracked
+files there. Then from the checkout:
 
 ```
 nix run .#host-key -- <hostname>   # generate the host key, print its age recipient
@@ -128,8 +137,8 @@ before `install`.
 ## Repo-specific code quality
 
 - **Nix style**: `nix fmt` before committing.
-- **Imports are explicit.** Only modules listed by a host's profiles are
-  evaluated; gate behavior on `machine.*`/`user.*` and on the feature's own
+- **Imports are explicit.** Only modules listed by a host's profiles or its
+  `nixos` list are evaluated; gate behavior on `machine.*`/`user.*` and on the feature's own
   options (`webProxy.enable`, `backup.enable`, …). `mkEnableOption` is for
   optional subfeatures that default to off; do not add a top-level `enable`
   for a whole module.

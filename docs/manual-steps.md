@@ -68,17 +68,126 @@ generated hardware config, then run `nix run .#bootstrap`.
 
 <!-- manual-step: host/smorespro -->
 
-Intel laptop (NixOS). Install with the same `host-key`/`install` flow as
-smortress, then enroll the fingerprint reader once after activation:
+Intel laptop (NixOS), the only graphical host: Niri, noctalia-greeter with the
+YubiKey PIV as one prompt, and a LUKS root that the TPM unlocks with a PIN
+under Secure Boot (`modules/hosts/smorespro/{boot,greeter,disko}.nix`). A fresh
+install wipes the NVMe.
+
+Prerequisites, all of them:
+
+1. This host config is **on `main` and pushed**. `bootstrap` clones
+   `github:smores56/nix-config` and rebuilds from it; booting the new machine
+   from `main`'s pre-LUKS layout leaves it unable to mount its root.
+2. `nix run .#key-backup` already ran on the old install and the bundle (which
+   carries the host key) is in Proton Pass.
+3. Run everything below from the **operator checkout on another machine**
+   (smortress), never on the target: `nixos-anywhere` kexecs the target and the
+   run dies with it.
+4. Do **not** `nixos-rebuild switch` the old unencrypted install with this
+   configuration: its initrd would look for a LUKS device that does not exist.
 
 ```sh
+# 1. The host identity `install` delivers. install refuses without it, and an
+#    installed machine without it cannot decrypt its own secrets.
+nix run .#key-restore -- ~/Downloads/smorespro-restore-<time>.tar.gz --host-key
+
+# 2. Wipes the disk, formats the LUKS root, installs. Needs a terminal: the
+#    passphrase prompt is interactive, and a piped or empty value would become
+#    the only keyslot. Keep the passphrase; it stays after the TPM is enrolled.
+nix run .#install -- smorespro root@<target-ip>
+```
+
+`install` rewrites `modules/hosts/smorespro/hardware.nix`; commit the generated
+file and re-apply hand-added lines (e.g. `hardware.cpu.intel.npu.enable`) before
+step 4.
+
+The first boot asks for that passphrase (no TPM key exists yet). Then, on the
+new machine:
+
+```sh
+# 3. Prove the passphrase slot survived the format before trusting it.
+sudo cryptsetup luksDump /dev/disk/by-partlabel/root   # exactly one keyslot
+
+# 4. Recovery key: print it, store it off-site and in phone Pass. Do this
+#    before enrolling the TPM.
+sudo systemd-cryptenroll --recovery-key /dev/disk/by-partlabel/root
+
+# 5. Home config, FIDO2 handles, SSH (fresh installs have no checkout yet)
+nix run github:smores56/nix-config#bootstrap
+cd ~/code/github.com/smores56/nix-config
+nix run .#key-restore -- ~/Downloads/smorespro-restore-<time>.tar.gz
+yk-login
+ssh smortress true
+```
+
+Secure Boot comes next, because the TPM step binds PCR 7, which measures the
+Secure Boot policy (`db`): enrolling the TPM first leaves a keyslot that stops
+unsealing the moment Secure Boot is turned on. The first boot generated this
+machine's keys (`sbctl` service; plaintext only inside the LUKS root).
+
+```sh
+# 6. Sign the ESP with those keys and verify the signature before enrolling.
+sudo nixos-rebuild boot --flake .#smorespro
+sudo sbctl verify                    # every EFI binary "is signed"
+sudo sbctl status                    # keys present, Secure Boot: Disabled
+
+# 7. Reboot into the firmware, set a firmware password, and put Secure Boot
+#    into setup mode (Framework: "Administer Secure Boot" → delete the PK, KEK
+#    and db entries; never "Erase all Secure Boot Settings" or "Clear all keys").
+sudo sbctl enroll-keys --microsoft --firmware-builtin
+
+# 8. Reboot, turn **Enforce Secure Boot** on in the same firmware menu (enrolling
+#    does not enable enforcement), then confirm:
+bootctl status                       # Secure Boot: enabled (user)
+```
+
+`--microsoft` keeps Microsoft-signed option ROMs (and the vendor update path)
+bootable; dropping it can leave the machine without video. `--firmware-builtin`
+keeps the certificates the Framework firmware shipped with, which its own
+updates are signed against. Never erase the `dbx`.
+
+```sh
+# 9. TPM + PIN, bound to PCR 7. The PIN is new: distinct from the YubiKey PIN
+#    and from the account password. Wrong PINs count against the TPM lockout.
+sudo systemd-cryptenroll --tpm2-device=auto --tpm2-with-pin=yes --tpm2-pcrs=7 /dev/disk/by-partlabel/root
+
+# 10. Reboot and prove it: the TPM PIN prompt appears, the PIN boots, three
+#     wrong PINs fall back to the passphrase, and the recovery key still opens
+#     the root. Only then is the slot trustworthy.
+```
+
+`--tpm2-pcrs=7` is mandatory: systemd 258+ binds no PCRs unless asked, and an
+unbound TPM slot unlocks on any machine that gets the disk. Never bind PCR 4,
+which changes on every rebuild. The passphrase slot and the recovery key stay:
+after a firmware update, a cleared fTPM, or a new `db`, re-enroll the TPM slot
+with `sudo systemd-cryptenroll --wipe-slot=tpm2 --tpm2-device=auto
+--tpm2-with-pin=yes --tpm2-pcrs=7 /dev/disk/by-partlabel/root`, or unlock with
+the recovery key.
+
+Once the slot is enrolled, flip the install crutch off in
+`modules/hosts/smorespro/boot.nix`: set `boot.lanzaboote.autoGenerateKeys.enable
+= false` (that also restores `allowUnsigned = false`, so a missing key pair can
+never silently install unsigned boot artifacts again), push, and on the machine
+`git pull && sudo nixos-rebuild switch --flake .#smorespro`.
+
+```sh
+# 11. Fingerprint (lock screen only; PAM has it on neither sudo, greetd, nor
+#     polkit, so it cannot authorize root)
 fprintd-enroll
 fprintd-verify
 fprintd-list "$USER"
 ```
 
-Fingerprint auth is for the lock screen only; it is deliberately not enabled
-for `sudo`/`su`.
+Login: with the YubiKey inserted the greeter's first prompt is the 8-digit PIV
+PIN (pam_p11 on the `greetd` stack only, with a digits-only PIN regex so a typed
+password is rejected locally instead of burning a PIV retry); without a key the
+password prompt follows. The lock screen accepts the fingerprint or the account
+password, never the PIV: pam_p11 on `login` would turn a password attempt into a
+PIV attempt. There is no greetd auto-login.
+
+The greeter does not rate-limit PIV attempts: anyone at the unlocked-room
+greeter can burn the eight-try budget and force the off-site PUK. Keep the key
+with you, and treat a "PIN blocked" result as a physical-access signal.
 
 Maki's personal profile on this host reads `NEURALWATT_API_KEY` and
 `TINYFISH_API_KEY` from `secrets/common.yaml`, which names smorespro as a
@@ -1472,7 +1581,15 @@ provisioned by this repo; use the flake app.
 
 `nix run .#install -- <host> root@<ip>`. Runs nixos-anywhere and the host's
 disko layout (wiping disks), generates and writes the host's `hardware.nix`, and
-delivers `secrets/hosts/<host>/` when present.
+delivers `secrets/hosts/<host>/` into the new root. It refuses to run when that
+directory is missing, when its key derives a recipient other than the
+`&<host>` anchor in `.sops.yaml`, or when that key cannot decrypt
+`secrets/<host>.yaml` (or `secrets/common.yaml`): restore the identity with
+`nix run .#key-restore -- <bundle> --host-key` first. Only a brand-new host
+mints one (`nix run .#host-key -- <host>`, then `sops updatekeys`), and
+`INSTALL_ALLOW_MISSING_HOST_KEY=1` is the explicit opt-out for a test machine
+that should not read secrets. A LUKS host asks for its passphrase while disko
+formats the disk. Extra arguments are forwarded to nixos-anywhere.
 
 ### host-key
 

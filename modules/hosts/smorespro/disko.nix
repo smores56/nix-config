@@ -31,10 +31,21 @@
         root = {
           size = "100%";
           label = "root";
+          # The root filesystem stays the same; only its container changes, so
+          # /dev/disk/by-partlabel/root is now a LUKS header and
+          # /dev/mapper/root is the ext4 the mountpoint names.
           content = {
-            type = "filesystem";
-            format = "ext4";
-            mountpoint = "/";
+            type = "luks";
+            name = "root";
+            # TRIM passes through to the NVMe; without it the disk never learns
+            # which blocks are free and write amplification grows. Accepted
+            # trade: discard leaks which blocks are in use, not their contents.
+            settings.allowDiscards = true;
+            content = {
+              type = "filesystem";
+              format = "ext4";
+              mountpoint = "/";
+            };
           };
         };
       };

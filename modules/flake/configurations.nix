@@ -240,10 +240,12 @@ let
     else
       meta;
 
-  # A host names its profiles explicitly; each profile contributes module paths
-  # to the home and NixOS planes. The names also drive machine.graphical/
-  # wayland/workHost and the server-profile assertion.
-  hostProfiles =
+  # default.nix is data, not a module. `profiles` names the shared profiles
+  # (they drive machine.graphical/wayland/workHost and the server-profile
+  # assertion); `nixos` lists modules that exist on that host alone, such as a
+  # disk layout's LUKS options or its greeter. Host-local modules are not
+  # profiles: their names never reach machine.profiles.
+  hostDefault =
     name:
     let
       path = hostsDir + "/${name}/default.nix";
@@ -252,14 +254,28 @@ let
           import path
         else
           throw "modules/hosts/${name}/ has no default.nix (see AGENTS.md)";
+      allowed = [
+        "profiles"
+        "nixos"
+      ];
+      unknown = builtins.filter (key: !(builtins.elem key allowed)) (builtins.attrNames m);
     in
+    if unknown != [ ] then
+      throw "modules/hosts/${name}/default.nix has unknown keys: ${lib.concatStringsSep ", " unknown}"
+    else
+      m;
+
+  hostProfiles =
+    name:
     map (p: {
       name = lib.removeSuffix ".nix" (baseNameOf (toString p));
       inherit p;
-    }) m.profiles;
+    }) (hostDefault name).profiles;
 
   profileModules =
     name: kind: lib.concatMap (profile: (import profile.p).${kind} or [ ]) (hostProfiles name);
+
+  hostModules = name: (hostDefault name).nixos or [ ];
 
   hostModule = args: profileNames: {
     machine = (args.machine or { }) // {
@@ -320,6 +336,7 @@ let
       ]
       ++ nixosModules
       ++ profileModules args.hostname "nixos"
+      ++ hostModules args.hostname
       ++ lib.optionals (builtins.elem "linux-desktop" profileNames) [ niri.nixosModules.niri ]
       # hardware.nix is optional so a host can be authored (meta.nix +
       # disko.nix) before nixos-anywhere generates it during the install; the

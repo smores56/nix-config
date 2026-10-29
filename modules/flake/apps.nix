@@ -85,6 +85,14 @@
             git ls-files --error-unmatch "$host_dir/$f" >/dev/null 2>&1 \
               || { echo "error: $host_dir/$f is not tracked by git — commit it (flakes only see tracked files)" >&2; exit 1; }
           done
+          # Host-local modules (`nixos = [ ./boot.nix ]`) are read by the flake
+          # too; untracked ones pass the checks above and fail late in the eval.
+          untracked="$(git ls-files --others --exclude-standard "$host_dir")"
+          if [ -n "$untracked" ]; then
+            echo "error: $host_dir has untracked files — commit them (flakes only see tracked files):" >&2
+            printf '%s\n' "$untracked" >&2
+            exit 1
+          fi
 
           hardware="$host_dir/hardware.nix"
 

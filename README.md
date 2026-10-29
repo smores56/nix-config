@@ -18,7 +18,7 @@ Key directories under `modules/`:
 |---|---|
 | `options.nix` | `machine.*` host facts, `user.*` identity/preferences, server-profile assertion |
 | `profiles/` | six opt-in profiles: `cli`, `user-base`, `ai-tools`, `linux-desktop`, `darwin-work`, `server` |
-| `hosts/` | per-host `meta.nix` (facts + option values), `default.nix` (explicit profiles), optional `hardware.nix` and `disko.nix` |
+| `hosts/` | per-host `meta.nix` (facts + option values), `default.nix` (explicit profiles plus optional `nixos` host-local modules), optional `hardware.nix`, `disko.nix`, and those host-only modules |
 | `home.nix` | home-manager base (fonts, nix.conf, darwin helpers) |
 | `flake/` | flake-parts modules (configurations, checks, formatter) |
 | `features/` | cross-platform home-manager modules (shell, editor, git, packages, theme, ai) |
@@ -529,7 +529,10 @@ adding one never edits `modules/flake/configurations.nix`.
    (e.g. `fingerprint.enable = true`).
 2. `default.nix` — the explicit profile list this host composes
    (`../../profiles/cli.nix`, …). Profiles contribute modules to the home and
-   NixOS planes.
+   NixOS planes. The same file may list host-local modules under `nixos` for
+   one machine's concern that needs a real module (e.g. smorespro's `boot.nix`
+   and `greeter.nix`). `linux-desktop` ships no display manager; a graphical
+   host adds its greeter here.
 3. For a NixOS host, `disko.nix` — the declarative disk layout. disko owns
    `fileSystems` for `/` and `/boot`, so `hardware.nix` omits them; pin each
    partition's `label` for stable `/dev/disk/by-partlabel` devices.

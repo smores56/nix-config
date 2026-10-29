@@ -23,6 +23,22 @@
       url = "github:noctalia-dev/noctalia";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # Greeter for smorespro (see modules/hosts/smorespro/greeter.nix). Its own
+    # greetd client relays greetd's auth_message stream, so pam_p11's PIN
+    # prompt and the password prompt stay distinct; tuigreet could not run
+    # without also auto-starting a session. Pinned to the v1.7.0 rev.
+    noctalia-greeter = {
+      url = "github:noctalia-dev/noctalia-greeter/af0bf4b1e1c40738db917b04c9c0563b4f718953";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    # Secure Boot for smorespro (see modules/hosts/smorespro/boot.nix). Pinned to
+    # the v1.2.0 rev: a branch would change the signing and boot-entry layout at
+    # every lock update, which must be deliberate on an enforced machine
+    # (PCR 7 measures the firmware's Secure Boot policy, not lzbt itself).
+    lanzaboote = {
+      url = "github:nix-community/lanzaboote/c1c5edd31802d181c8aa2c71588995d93425d650";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     concord = {
       url = "github:chojs23/concord";
       inputs.nixpkgs.follows = "nixpkgs";

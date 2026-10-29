@@ -120,6 +120,9 @@ in
     # a finger before PAM reaches the password; the lock screen and console use
     # the "login" stack above.
     security.pam.services.greetd.fprintAuth = false;
+    # polkit drives pkexec and every desktop admin prompt. fprintd's default
+    # would let one finger authorize root, the same CVE-2024-37408 surface.
+    security.pam.services.polkit-1.fprintAuth = false;
 
     systemd.services.fprintd-reader-cache = {
       description = "Cache the fingerprint reader's USB host controller";
