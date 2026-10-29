@@ -47,6 +47,12 @@
       address = [ "10.0.0.125/24" ];
     };
   };
+  # Defaults to false with systemd stage 1, which leaves the static address
+  # (and no default route) in place across switch-root. NetworkManager then
+  # sees the link as "connected (externally)" and never activates its DHCP
+  # profile, so the tunnel and DNS never come up. Flush it and let stage 2
+  # own the interface.
+  boot.initrd.network.flushBeforeStage2 = true;
   boot.initrd.availableKernelModules = [ "igc" ];
 
   # Lanzaboote replaces the systemd-boot module enabled by base.nix; the
