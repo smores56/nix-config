@@ -131,10 +131,12 @@ sudo nixos-rebuild boot --flake .#smorespro
 sudo sbctl verify                    # every EFI binary "is signed"
 sudo sbctl status                    # keys present, Secure Boot: Disabled
 
-# 7. Reboot into the firmware, set a firmware password, and put Secure Boot
-#    into setup mode (Framework: "Administer Secure Boot" → delete the PK, KEK
-#    and db entries; never "Erase all Secure Boot Settings" or "Clear all keys").
-sudo sbctl enroll-keys --microsoft --firmware-builtin
+# 7. Reboot into the firmware (F2), set the supervisor password under Security,
+#    then Administer Secure Boot → "Erase all Secure Boot Settings" to enter
+#    setup mode (Framework's documented path; it deletes PK/KEK/db). Boot back
+#    into NixOS and confirm `sbctl status` reports Setup Mode: Enabled and
+#    Secure Boot: Disabled before enrolling:
+sudo sbctl enroll-keys --microsoft --firmware-builtin   # also restores Framework's KEK/db
 
 # 8. Reboot, turn **Enforce Secure Boot** on in the same firmware menu (enrolling
 #    does not enable enforcement), then confirm:
