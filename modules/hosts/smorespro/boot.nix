@@ -33,7 +33,7 @@
     # to this option), so the first install needs the keys generated on the
     # host itself. The generate-sb-keys service runs on first boot; every later
     # switch-to-configuration then signs, and the operator enrolls the keys.
-    autoGenerateKeys.enable = true;
+    autoGenerateKeys.enable = false;
     # 1 GiB ESP: lzbt keeps a kernel + initrd per generation. Once the keys are
     # enrolled and Secure Boot is on, turn autoGenerateKeys off (it also
     # implies allowUnsigned) and keep this bound.
