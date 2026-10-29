@@ -6,4 +6,7 @@
     ../../profiles/ai-tools.nix
     ../../profiles/server.nix
   ];
+  # Host-local modules (read by modules/flake/configurations.nix): the Secure
+  # Boot + TPM boot chain exists only on this machine.
+  nixos = [ ./boot.nix ];
 }
