@@ -264,6 +264,101 @@ security delete-generic-password -a desktop-session -s maki-slack-mcp
 Deleting this copy does not revoke the original Slack desktop session. If you
 suspect compromise, revoke that session through Slack as well.
 
+## Tang Pi
+
+smortress's root disk gets a Clevis `sss` policy (Tang share + TPM2 share bound
+to PCR 7, T2 in #250). The Pi is not a NixOS host in this flake: it runs
+Raspberry Pi OS (Debian trixie, aarch64) and only `tang`.
+
+Threat model: Tang keys are plaintext on the Pi. A stolen disk alone, a live USB
+on the LAN, or a Secure-Boot-off boot cannot unseal the TPM share; a thief who
+takes the server and the Pi together decrypts. Keep the Pi patched, on the LAN
+only, and never forward the Tang port through Cloudflare or the router.
+
+Current server, recorded 2026-10-29:
+
+```
+Address:     10.0.0.193/24 on wlan0 (DHCP; reserve it in the router)
+WiFi:        NetworkManager profile SmoresNet (/etc/NetworkManager/system-connections/)
+Tang:        15-2, listening on TCP 7654
+Keys:        /var/lib/tang, user _tang
+Allowlist:   127.0.0.1/32, 10.0.0.125/32, 10.0.0.135/32
+             (smortress wired and wireless; route to the Pi uses 10.0.0.125)
+```
+
+### Install
+
+```sh
+sudo apt install -y tang
+sudo systemctl enable --now tangd.socket
+```
+
+The trixie package installs the upstream units, which default to port **80**
+and `/var/lib/tang`. Override the port so the URL matches the Clevis step (the
+empty assignment resets the list first):
+
+```sh
+sudo mkdir -p /etc/systemd/system/tangd.socket.d
+sudo tee /etc/systemd/system/tangd.socket.d/port.conf >/dev/null <<'EOF'
+[Socket]
+ListenStream=
+ListenStream=7654
+EOF
+sudo systemctl daemon-reload && sudo systemctl restart tangd.socket
+```
+
+### Restrict to smortress
+
+Raspberry Pi OS ships no enabled firewall (no `ufw`, no `nft`). Restrict the
+socket and the per-connection service with systemd address filtering. Loopback
+must stay allowed or the local check below fails; both smortress interfaces are
+listed so a dead Ethernet link does not turn every boot into a passphrase
+prompt:
+
+```sh
+sudo mkdir -p /etc/systemd/system/tangd.socket.d \
+  /etc/systemd/system/tangd@.service.d
+sudo tee /etc/systemd/system/tangd.socket.d/allow.conf >/dev/null <<'EOF'
+[Socket]
+IPAddressDeny=any
+IPAddressAllow=127.0.0.1/32 10.0.0.125/32 10.0.0.135/32
+EOF
+sudo tee /etc/systemd/system/tangd@.service.d/allow.conf >/dev/null <<'EOF'
+[Service]
+IPAddressDeny=any
+IPAddressAllow=127.0.0.1/32 10.0.0.125/32 10.0.0.135/32
+EOF
+sudo systemctl daemon-reload && sudo systemctl restart tangd.socket
+```
+
+Verify on the Pi that loopback answers and a non-allowlisted source does not:
+
+```sh
+curl -sf -o /dev/null -w '%{http_code}\n' http://127.0.0.1:7654/adv   # 200
+curl -s -m 3 --interface 10.0.0.193 -o /dev/null -w '%{http_code}\n' \
+  http://10.0.0.193:7654/adv                                          # 000
+```
+
+Then from smortress: `curl -sf http://10.0.0.193:7654/adv`.
+
+### Record the values
+
+These are public (Tang advertises them on `/adv`); they are recorded so the
+Clevis step can check trust-on-first-use and confirm a re-bound JWE still points
+at the same server. `tang-show-keys` on the Pi prints one thumbprint per key:
+
+```
+Tang URL: http://10.0.0.193:7654
+tang-show-keys 7654 output:
+  rnazNy47pX3hb89qAYeyQkE8YeF0oWY60XTgUEnXKr8
+```
+
+The package generated the two keys (`ES512` verify, `ECMR` derive) under
+`/var/lib/tang` at first start. If the Pi is rebuilt its keys change: re-run the
+Clevis bind (T2 step 6) with the LUKS passphrase. Do not back the Tang keys up as
+a way to avoid that; the passphrase slot plus the offline recovery key are the
+recovery path.
+
 ## Secrets
 
 Secrets are split by scope:
