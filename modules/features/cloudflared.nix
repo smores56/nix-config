@@ -184,6 +184,24 @@ in
     ForwardAgent = "${config.home.homeDirectory}/.ssh/sudo-agent.sock";
   };
 
+  # The Tang Pi is LAN-only: no tunnel, no proxy. Same PIV slot 9a identity as
+  # smortress, so a laptop with yk-login (or OpenSC on macOS) needs no extra
+  # secret. The literal address is a second pattern so old commands still match.
+  programs.ssh.settings."tang-pi 10.0.0.193" = {
+    HostName = "10.0.0.193";
+    User = "smores";
+  }
+  // lib.optionalAttrs isLinux {
+    IdentityAgent = "\${XDG_RUNTIME_DIR}/fido2-agent";
+    IdentitiesOnly = "yes";
+    IdentityFile = map (k: "~/.config/ssh-sk/${k.key}.pub") yubikeyKeys.piv;
+  }
+  // lib.optionalAttrs (!isLinux) {
+    PKCS11Provider = "${pkgs.opensc}/lib/opensc-pkcs11.so";
+    IdentityFile = map (k: "~/.config/ssh-sk/${k.key}.pub") yubikeyKeys.piv;
+    IdentitiesOnly = "yes";
+  };
+
   # A personal client reaches the server's llm over the tunnel; a work
   # profile reaches its own, and smortress itself uses loopback, so neither
   # needs these forwards.

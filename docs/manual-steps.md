@@ -381,6 +381,18 @@ SSH_AUTH_SOCK="$XDG_RUNTIME_DIR/fido2-agent" ssh -o IdentitiesOnly=yes \
   -i ~/.config/ssh-sk/piv-k3.pub smores@10.0.0.193
 ```
 
+`modules/features/cloudflared.nix` defines `Host tang-pi 10.0.0.193` for Linux
+and macOS, so after a home-manager switch plain `ssh tang-pi` picks the PIV
+identity (agent on Linux, PKCS#11 on macOS). Pin the host key once per laptop;
+`SSH_ASKPASS_REQUIRE=force` correctly sends the `yes/no` prompt to the PIN
+helper, which refuses it, so the first connection fails until this is done:
+
+```sh
+echo '10.0.0.193 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAQcI4/G5fQWGgkF1s7zkhWrXz/64LWeUJYh3SB231B2' \
+  >> ~/.ssh/known_hosts
+ssh-keygen -lf ~/.ssh/known_hosts | grep 10.0.0.193   # SHA256:fulskYo5kn62Xn9qgIiqtIexW3WLgg1QONyjDelnInM
+```
+
 `sudo` still prompts for the `smores` account password (a second factor after
 the key), and root has no `authorized_keys`. If every key is lost, the console
 password still boots and logs in; do not remove the password slot.
