@@ -76,6 +76,10 @@ sudo clevis luks bind -d /dev/disk/by-partlabel/root sss \
   '{"t":2,"pins":{"tang":[{"url":"http://10.0.0.193:7654"}],"tpm2":{"pcr_bank":"sha256","pcr_ids":"7"}}}'
 ```
 
+The bind is interactive: it asks for the existing LUKS passphrase and to trust
+the Tang advertisement. Compare the advertisement against `tang-show-keys` and
+answer yes, or pass `-y` once it matches.
+
 Bind only while the final 980 is booted with Secure Boot enforced: PCR 7
 measures the Secure Boot policy, so a firmware update, a cleared fTPM, or a
 changed `db` invalidates the TPM share. Never bind without `pcr_ids`; never
@@ -84,6 +88,9 @@ bind PCR 0/2/4. The passphrase still boots when the policy fails.
 Export the token's JWE for the initrd and commit it — it is ciphertext, and the
 LUKS header already contains the same token. It is not a secret; the Tang
 private key and the TPM are.
+
+Find the token id with `sudo clevis luks list -d /dev/disk/by-partlabel/root`
+(usually `0`).
 
 ```sh
 sudo cryptsetup token export --token-id <id> /dev/disk/by-partlabel/root > /tmp/token.json
@@ -98,8 +105,18 @@ compact serialization (`protected.encrypted_key.iv.ciphertext.tag`), so
 
 `boot.initrd.clevis` decrypts it to `/clevis-root/decrypted` before
 `systemd-cryptsetup@root`; the initrd reaches Tang through the wired NIC
-(`enp7s0`, static `10.0.0.125/24`) and falls back to the passphrase prompt when
-the Tang or TPM share cannot be satisfied.
+(matched by MAC, static `10.0.0.125/24`) and falls back to the passphrase
+prompt when the Tang or TPM share cannot be satisfied. The initrd waits at
+most 10 s for that link and 30 s for the Clevis unit, so a dead cable or a
+wedged Tang reaches the prompt instead of hanging.
+
+Stage 2 must then take the link back from the initrd. `flushBeforeStage2`
+clears the initrd address, and `networkmanager-reclaim-wired` is the
+load-bearing guard: when NetworkManager reports the device as "connected
+(externally)", it disconnects, flushes, and reconnects the declarative
+`smortress-wired` DHCP profile. If a boot comes up with `10.0.0.125` and no
+default route, inspect `journalctl -u networkmanager-reclaim-wired -b`; the
+tunnel is unreachable without it.
 
 Secure Boot: enable AMD fTPM, set the UEFI supervisor password, and enter Setup
 Mode by deleting **PK only** (never "Clear all keys" — that drops `dbx`). Then
@@ -134,7 +151,19 @@ keeps those labels as the rollback; the 980 owns `EFI`/`root`.
 
 After a `db`/firmware change, replace the Clevis slot and re-export the JWE:
 `sudo clevis luks unbind -d /dev/disk/by-partlabel/root -s <slot>`, re-run the
-bind above, and regenerate `root.jwe`.
+bind above, and regenerate `root.jwe`. Then **rebuild** (`sudo nixos-rebuild
+boot`): lzbt embeds the JWE in the signed UKI, so without it the next boot
+still uses the old token. An older generation keeps its older JWE too, so
+rolling back after a re-bind prompts for the passphrase until it is rebuilt.
+
+After the migration's `rsync --numeric-ids`, ownership is the source system's,
+not this install's: Immich's user was `987:983` on the old root and is
+`999:999` now. `chown -R immich:immich /var/lib/media/Photos` (and the
+equivalent for each service) or the service gets `EACCES` on its own files.
+
+The fresh install also lost the rclone session under `/var/lib/proton/`; run
+`sudo nix run .#proton-auth` before trusting the offsite copies, and confirm
+`proton-mount` is active.
 
 ### smorespro
 
