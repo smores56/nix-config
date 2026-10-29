@@ -53,6 +53,42 @@
   # profile, so the tunnel and DNS never come up. Flush it and let stage 2
   # own the interface.
   boot.initrd.network.flushBeforeStage2 = true;
+
+  # Belt and braces for the handoff: the initrd's static Tang address has
+  # been observed to survive switch-root, leaving NetworkManager with an
+  # "externally connected" device and no DHCP activation (no default route,
+  # no DNS). Define the wired profile declaratively and force it once NM and
+  # the profile writer are up; the flush above is a no-op when it ran.
+  networking.networkmanager.ensureProfiles.profiles.smortress-wired = {
+    connection = {
+      id = "smortress-wired";
+      type = "ethernet";
+    };
+    ipv4.method = "auto";
+    ipv6.method = "auto";
+  };
+
+  systemd.services.networkmanager-reclaim-wired = {
+    description = "Reclaim enp7s0 from the initrd's static network config";
+    wantedBy = [ "multi-user.target" ];
+    after = [
+      "NetworkManager.service"
+      "NetworkManager-ensure-profiles.service"
+    ];
+    wants = [
+      "NetworkManager.service"
+      "NetworkManager-ensure-profiles.service"
+    ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      ${pkgs.iproute2}/bin/ip addr flush dev enp7s0 || true
+      ${pkgs.networkmanager}/bin/nmcli connection up smortress-wired
+    '';
+  };
+
   boot.initrd.availableKernelModules = [ "igc" ];
 
   # Lanzaboote replaces the systemd-boot module enabled by base.nix; the
