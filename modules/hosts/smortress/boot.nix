@@ -83,7 +83,10 @@
       Type = "oneshot";
       RemainAfterExit = true;
     };
+    # Bring the profile down first so the flush cannot leave an already-active
+    # connection without an address; `up` then re-acquires the DHCP lease.
     script = ''
+      ${pkgs.networkmanager}/bin/nmcli connection down smortress-wired 2>/dev/null || true
       ${pkgs.iproute2}/bin/ip addr flush dev enp7s0 || true
       ${pkgs.networkmanager}/bin/nmcli connection up smortress-wired
     '';
