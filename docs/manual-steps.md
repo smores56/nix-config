@@ -278,7 +278,7 @@ only, and never forward the Tang port through Cloudflare or the router.
 Current server, recorded 2026-10-29:
 
 ```
-Address:     10.0.0.193/24 on wlan0 (DHCP; reserve it in the router)
+Address:     10.0.0.193/24 on wlan0 (DHCP reservation for b8:27:eb:29:b8:4d)
 WiFi:        NetworkManager profile SmoresNet (/etc/NetworkManager/system-connections/)
 Tang:        15-2, listening on TCP 7654
 Keys:        /var/lib/tang, user _tang
