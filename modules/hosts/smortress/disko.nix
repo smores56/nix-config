@@ -47,7 +47,8 @@
               allowDiscards = true;
               # The passphrase slot is the mandatory recovery path; Clevis is
               # bound as an additional keyslot later, never the only one.
-              fallbackToPassword = true;
+              # fallbackToPassword is implied by systemd stage 1 and would trip
+              # its assertion if set here.
             };
             content = {
               type = "filesystem";
