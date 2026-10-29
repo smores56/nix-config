@@ -86,9 +86,15 @@ LUKS header already contains the same token. It is not a secret; the Tang
 private key and the TPM are.
 
 ```sh
-sudo cryptsetup token export --token-id <id> /dev/disk/by-partlabel/root \
-  | jq -r .jwe > modules/hosts/smortress/root.jwe
+sudo cryptsetup token export --token-id <id> /dev/disk/by-partlabel/root > /tmp/token.json
+jq -r '.jwe | [.protected, (.encrypted_key // ""), .iv, .ciphertext, .tag] | join(".")' \
+  /tmp/token.json | tr -d '\n' > modules/hosts/smortress/root.jwe
+sudo clevis decrypt < modules/hosts/smortress/root.jwe >/dev/null   # must exit 0
 ```
+
+The token stores the JWE as a JSON object; `clevis decrypt` reads only the
+compact serialization (`protected.encrypted_key.iv.ciphertext.tag`), so
+`jq -r .jwe` produces a file the initrd cannot decrypt.
 
 `boot.initrd.clevis` decrypts it to `/clevis-root/decrypted` before
 `systemd-cryptsetup@root`; the initrd reaches Tang through the wired NIC
