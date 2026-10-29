@@ -107,7 +107,6 @@ in
             WORK_BRANCH_UNTICKETED = toString d.work.branchNaming.unticketed;
             WORK_OWNER = lib.replaceStrings [ "*" ] [ "routing-test" ] d.work.githubOwnerGlob;
             PERSONAL_EMAIL = d.email;
-            PERSONAL_KEY = d.sshKey;
             PERSONAL_BRANCH_TEMPLATE = d.branchNaming.template;
             PERSONAL_BRANCH_UNTICKETED = toString d.branchNaming.unticketed;
             PERSONAL_OWNER = d.githubUser;

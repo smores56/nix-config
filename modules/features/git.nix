@@ -160,10 +160,6 @@ in
           user = {
             name = "Sam Mohr";
             inherit (cfg) email;
-          }
-          // lib.optionalAttrs (!isLinux) {
-            # The work Mac keeps its existing software-key signing path (T4).
-            signingkey = "${cfg.sshKey}.pub";
           };
           core = {
             excludesFile = "~/.gitignore";

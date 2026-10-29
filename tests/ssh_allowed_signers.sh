@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Runs the generated allowed_signers writer against scratch keys, then checks
-# ssh signatures verify for the right principal only, and that a host without
-# the work key still gets the personal entry.
+# Runs the generated allowed_signers writer against scratch keys: the work
+# software identity verifies for its own principal only, the retired personal
+# key verifies for nobody, and a missing work key leaves no software entries.
 #
-# Usage: ssh_allowed_signers.sh <writer>, with PERSONAL_EMAIL and WORK_EMAIL.
+# Usage: ssh_allowed_signers.sh <writer>, with WORK_EMAIL.
 set -euo pipefail
 
 writer=$1
@@ -29,10 +29,10 @@ verifies() {
 }
 
 "$writer"
-verifies id_personal "$PERSONAL_EMAIL" || fail "personal key does not verify as $PERSONAL_EMAIL"
 verifies id_work "$WORK_EMAIL" || fail "work key does not verify as $WORK_EMAIL"
-verifies id_work "$PERSONAL_EMAIL" && fail "work key verifies as $PERSONAL_EMAIL"
-verifies id_personal "$WORK_EMAIL" && fail "personal key verifies as $WORK_EMAIL"
+verifies id_personal "$WORK_EMAIL" && fail "retired personal key still verifies as $WORK_EMAIL"
+verifies id_work "sam@sammohr.dev" && fail "work key verifies as the personal principal"
+verifies id_personal "sam@sammohr.dev" && fail "retired personal key still verifies"
 
 # A hand-pasted .pub often lacks the trailing newline.
 printf '%s' "$(cat "$HOME/.ssh/id_work.pub")" >"$HOME/.ssh/id_work.pub.tmp"
@@ -42,11 +42,11 @@ verifies id_work "$WORK_EMAIL" || fail "work key without trailing newline does n
 
 rm "$HOME/.ssh/id_work.pub"
 "$writer"
-verifies id_personal "$PERSONAL_EMAIL" || fail "personal entry lost without the work key"
-[[ $(grep -c . "$signers") == 1 ]] || fail "expected one entry without the work key"
+verifies id_work "$WORK_EMAIL" && fail "work key still verifies without its .pub"
+[[ $(grep -c . "$signers" || true) == 0 ]] || fail "expected no software entries without the work key"
 
 if ((failures)); then
   echo "$failures allowed_signers expectation(s) failed"
   exit 1
 fi
-echo "ssh allowed signers: ok"
+echo "ssh-allowed-signers ok"

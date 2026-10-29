@@ -195,9 +195,14 @@ repos stays on the work software key.
    `cloudflared` credentials.
 2. If a YubiKey was with the device, remove its three public entries as in
    “Lost or stolen key” and remove it from Proton 2FA.
-3. Rotate the Maki personal/work PATs, revoke the old tokens, and re-run
+3. `smoreswork` only: unpair the smart card (`sc_auth unpair -u sam -h <hash>`
+   for each hash in `sc_auth list -u sam`), remove the machine's
+   `smortress-sudo-agent` socket, and have the employer rotate the FileVault
+   recovery key and institutional recovery material — the repo does not own
+   either.
+4. Rotate the Maki personal/work PATs, revoke the old tokens, and re-run
    `sops` deployment.
-4. Sign out Proton web sessions and rotate the Proton password if the device
+5. Sign out Proton web sessions and rotate the Proton password if the device
    could read the session.
-5. On the phone, use the account console to remote-wipe and remove the device
+6. On the phone, use the account console to remote-wipe and remove the device
    from Proton/Cloudflare sessions.

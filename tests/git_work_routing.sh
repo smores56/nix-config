@@ -54,7 +54,8 @@ expect_work() {
 
 expect_personal() {
   expect "$1" user.email "$PERSONAL_EMAIL"
-  expect_signing "$1" "$PERSONAL_KEY.pub"
+  # No personal software identity is trusted or configured any more.
+  expect_signing "$1" ""
   expect "$1" core.sshCommand ""
   expect "$1" smores.branchTemplate "$PERSONAL_BRANCH_TEMPLATE"
   expect "$1" smores.branchTemplateUnticketed "$PERSONAL_BRANCH_UNTICKETED"

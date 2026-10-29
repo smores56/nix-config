@@ -77,11 +77,6 @@ in
       readOnly = true;
       description = "Default git identity.";
     };
-    sshKey = lib.mkOption {
-      type = lib.types.str;
-      readOnly = true;
-      description = "Personal SSH key path without extension; its `.pub` is fetched from Proton Pass and offered via the agent, which holds the private half.";
-    };
     branchNaming = lib.mkOption {
       type = branchNamingType;
       readOnly = true;
@@ -200,7 +195,6 @@ in
 
     user = {
       email = "sam@sammohr.dev";
-      sshKey = "~/.ssh/id_personal";
       branchNaming.template = "smores/{slug}";
       work = {
         email = "smohr@blitzy.com";

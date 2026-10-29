@@ -20,15 +20,15 @@ in
     # Host pattern). Directive names use upstream OpenSSH casing (HostName,
     # IdentityFile, …); booleans render as yes/no automatically.
     settings = {
+      # GitHub is HTTPS + a fine-grained PAT (modules/features/git.nix); no SSH
+      # identity is offered, because the hardware keys are registered as
+      # signing keys only and the personal software key is retired.
       "github.com" = {
         HostName = "github.com";
         User = "git";
-        IdentityFile = "${config.user.sshKey}.pub";
-        IdentitiesOnly = true;
       };
 
       "*" = {
-        IdentityFile = "${config.user.sshKey}.pub";
         Compression = false;
         ServerAliveInterval = 0;
         ServerAliveCountMax = 3;

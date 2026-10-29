@@ -12,15 +12,11 @@ let
   cfg = config.user;
   expandHome = lib.replaceStrings [ "~" ] [ "$HOME" ];
 
-  # Software identities are retained for the legacy GitHub-auth path until
-  # T0c removes the Pass agent; the YubiKey keys below are the only git
-  # signing identities going forward.
+  # The only software identity left is the work one, whose private half stays in
+  # the employer agent/keychain and whose public half the work Mac's git config
+  # references (T4). The personal software key was retired with the Pass agent;
+  # keeping its public half here would leave dead trust in allowed_signers.
   softwareIdentities = [
-    {
-      key = cfg.sshKey;
-      inherit (cfg) email;
-      pubkey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEu3DfhswY9f9hum/0OhAw2833CkZOP6wVKW5yJk6GpU sam@sammohr.dev";
-    }
     {
       key = cfg.work.sshKey;
       inherit (cfg.work) email;
@@ -115,6 +111,9 @@ let
         }
       '') pubkeys}
       ${lib.getExe allowedSignersWriter}
+      # The personal software identity was retired with the Pass agent; a host
+      # that still has its public half should not keep offering it.
+      rm -f "$HOME/.ssh/id_personal.pub"
 
       exit "$failed"
     '';
