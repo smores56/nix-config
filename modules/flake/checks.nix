@@ -353,6 +353,25 @@ in
     in
     {
       checks = {
+        # Build every operator app. writeShellApplication runs shellcheck at
+        # build time; without this, a lint error in an app only shows up when
+        # someone runs it (which is how a broken `install` reached main).
+        apps = pkgs.linkFarm "apps-check" (
+          map
+            (p: {
+              inherit (p) name;
+              path = p;
+            })
+            [
+              inputs.self.packages.${system}.bootstrap
+              inputs.self.packages.${system}.host-key
+              inputs.self.packages.${system}.install
+              inputs.self.packages.${system}.key-backup
+              inputs.self.packages.${system}.key-restore
+              inputs.self.packages.${system}.proton-auth
+            ]
+        );
+
         desktop-bindings = evalCheck "desktop-bindings" (
           toString (
             import ../../tests/shared_desktop_bindings.nix {
