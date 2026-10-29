@@ -42,11 +42,21 @@
   # static address. Cable down or Tang down means a passphrase prompt.
   boot.initrd.systemd.network = {
     enable = true;
+    # A dead link must not hide the passphrase prompt for two minutes.
+    wait-online.timeout = 10;
     networks."10-lan" = {
       matchConfig.MACAddress = "3c:7c:3f:82:69:61";
       address = [ "10.0.0.125/24" ];
+      # The initrd only needs the Tang route; drop the router advertisement so
+      # no DHCPv6 address is acquired and then torn down at switch-root.
+      networkConfig.IPv6AcceptRA = false;
     };
   };
+
+  # Tang can accept the TCP connection and then stall; clevis's curl has no
+  # overall timeout. Cap the unit so a wedged Tang reaches the passphrase
+  # prompt instead of waiting out the initrd default.
+  boot.initrd.systemd.services.cryptsetup-clevis-root.serviceConfig.TimeoutStartSec = "30s";
   # Defaults to false with systemd stage 1, which leaves the static address
   # (and no default route) in place across switch-root. NetworkManager then
   # sees the link as "connected (externally)" and never activates its DHCP
@@ -54,23 +64,29 @@
   # own the interface.
   boot.initrd.network.flushBeforeStage2 = true;
 
-  # Belt and braces for the handoff: the initrd's static Tang address has
-  # been observed to survive switch-root, leaving NetworkManager with an
+  # Belt and braces for the handoff: even with flushBeforeStage2 the initrd's
+  # static address has survived switch-root, leaving NetworkManager with an
   # "externally connected" device and no DHCP activation (no default route,
   # no DNS). Define the wired profile declaratively and force it once NM and
-  # the profile writer are up; the flush above is a no-op when it ran.
+  # the profile writer are up.
   networking.networkmanager.ensureProfiles.profiles.smortress-wired = {
     connection = {
       id = "smortress-wired";
       type = "ethernet";
+      interface-name = "enp7s0";
+      autoconnect = true;
+      # Win over the auto-created "Wired connection 1" on the same link.
+      autoconnect-priority = 10;
     };
     ipv4.method = "auto";
     ipv6.method = "auto";
   };
 
   systemd.services.networkmanager-reclaim-wired = {
-    description = "Reclaim enp7s0 from the initrd's static network config";
+    description = "Reclaim the wired link from the initrd's static config";
     wantedBy = [ "multi-user.target" ];
+    # Consumers of network-online must not run against the un-reclaimed link.
+    before = [ "NetworkManager-wait-online.service" ];
     after = [
       "NetworkManager.service"
       "NetworkManager-ensure-profiles.service"
@@ -82,13 +98,31 @@
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
+      TimeoutStartSec = 60;
     };
-    # Bring the profile down first so the flush cannot leave an already-active
-    # connection without an address; `up` then re-acquires the DHCP lease.
+    # Only the initrd leaves the device "connected (externally)"; a normal
+    # boot is a no-op. In that state, drop the device so the flush cannot strip
+    # an active connection, then reconnect by profile so DHCP re-applies the
+    # default route and DNS. Retry: failing here boots the box unreachable.
     script = ''
-      ${pkgs.networkmanager}/bin/nmcli connection down smortress-wired 2>/dev/null || true
-      ${pkgs.iproute2}/bin/ip addr flush dev enp7s0 || true
-      ${pkgs.networkmanager}/bin/nmcli connection up smortress-wired
+      set -eu
+      nmcli=${pkgs.networkmanager}/bin/nmcli
+      device="$($nmcli -t -f DEVICE,TYPE device status | awk -F: '$2=="ethernet"{print $1; exit}')"
+      [ -n "$device" ] || exit 0
+      state="$($nmcli -t -f GENERAL.STATE device show "$device" 2>/dev/null || true)"
+      case "$state" in
+        *"(externally)"*) ;;
+        *) exit 0 ;;
+      esac
+      $nmcli device disconnect "$device" || true
+      ${pkgs.iproute2}/bin/ip addr flush dev "$device" || true
+      for attempt in 1 2 3 4 5; do
+        if $nmcli connection up smortress-wired; then
+          exit 0
+        fi
+        sleep 2
+      done
+      exit 1
     '';
   };
 
