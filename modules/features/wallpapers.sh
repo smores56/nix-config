@@ -298,7 +298,10 @@ apply_linux() {
 
 apply_macos() {
   work=$1
-  /usr/sbin/system_profiler SPDisplaysDataType -json >"$work/displays.json" || return 1
+  /usr/sbin/system_profiler SPDisplaysDataType -json >"$work/displays.json" || {
+    log "system_profiler failed"
+    return 1
+  }
   jq -r '
     [.SPDisplaysDataType[]?.spdisplays_ndrvs[]?
       | (._spdisplays_resolution // .spdisplays_resolution
@@ -312,7 +315,13 @@ apply_macos() {
     return 1
   fi
   display_count=$(awk 'END { print NR }' "$work/displays")
-  desktop_count=$(/usr/bin/osascript -e 'tell application "System Events" to count every desktop') || return 1
+  # Every AppleEvent is bounded: an unanswered Automation (TCC) prompt or a
+  # wedged System Events otherwise blocks on Apple's 120s default timeout, per
+  # call, which reads as a hang in a launchd job nobody watches.
+  if ! desktop_count=$(timeout 30 /usr/bin/osascript -e 'tell application "System Events" to count every desktop'); then
+    log "could not ask System Events for the desktop count"
+    return 1
+  fi
   # A display the profiler cannot describe would shift every later index and
   # put one display's rotation history on another; refuse rather than guess.
   if [ "$display_count" != "$desktop_count" ]; then
@@ -338,7 +347,7 @@ apply_macos() {
     # NSWorkspace is broken on macOS 26+: setDesktopImageURL applies one image
     # to every display or silently keeps the old one. System Events still lands
     # per desktop; it needs Automation approval once.
-    if ! /usr/bin/osascript - "$ordinal" "$picture" <<'APPLESCRIPT'
+    if ! timeout 30 /usr/bin/osascript - "$ordinal" "$picture" <<'APPLESCRIPT'
 on run argv
   set idx to (item 1 of argv) as integer
   set picture_path to item 2 of argv
@@ -363,7 +372,7 @@ APPLESCRIPT
   fi
   # Read back through the same System Events model used to set, one line per
   # desktop, so it lines up with `expected`.
-  /usr/bin/osascript - "$desktop_count" <<'APPLESCRIPT' >"$work/applied"
+  if ! timeout 60 /usr/bin/osascript - "$desktop_count" <<'APPLESCRIPT' >"$work/applied"
 on run argv
   set n to (item 1 of argv) as integer
   set out to ""
@@ -376,6 +385,10 @@ on run argv
   return out
 end run
 APPLESCRIPT
+  then
+    log "could not read the wallpapers back"
+    return 1
+  fi
   # Compare per desktop so a silent no-op names the desktop that kept its old
   # image instead of only failing the whole run.
   paste -d '\t' "$work/expected" "$work/applied" >"$work/readback"
@@ -391,7 +404,7 @@ APPLESCRIPT
   fi
   # desktoppr reads through the NSWorkspace API macOS 26 broke; keep it as a
   # logged cross-check only.
-  desktoppr 2>/dev/null | while IFS= read -r line; do log "desktoppr: $line"; done || true
+    timeout 20 desktoppr 2>/dev/null | while IFS= read -r line; do log "desktoppr: $line"; done || true
 }
 
 apply() {
