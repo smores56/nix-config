@@ -64,6 +64,72 @@ generated hardware config, then run `nix run .#bootstrap`.
   outside the sandbox uses it. Rotate by deleting the key pair, switching, and
   replacing the old public key in `allowed_signers` and on GitHub.
 
+#### Encrypted root and Secure Boot (T2)
+
+The 980 PRO is the final LUKS2 root. `/dev/disk/by-partlabel/root` is the
+header, `/dev/mapper/root` is ext4. The **passphrase slot stays** and is the
+console break-glass path. Clevis adds an `sss` slot that needs **both** shares,
+Tang and TPM2 on PCR 7:
+
+```sh
+sudo clevis luks bind -d /dev/disk/by-partlabel/root sss \
+  '{"t":2,"pins":{"tang":[{"url":"http://10.0.0.193:7654"}],"tpm2":{"pcr_bank":"sha256","pcr_ids":"7"}}}'
+```
+
+Bind only while the final 980 is booted with Secure Boot enforced: PCR 7
+measures the Secure Boot policy, so a firmware update, a cleared fTPM, or a
+changed `db` invalidates the TPM share. Never bind without `pcr_ids`; never
+bind PCR 0/2/4. The passphrase still boots when the policy fails.
+
+Export the token's JWE for the initrd and commit it — it is ciphertext, and the
+LUKS header already contains the same token. It is not a secret; the Tang
+private key and the TPM are.
+
+```sh
+sudo cryptsetup token export --token-id <id> /dev/disk/by-partlabel/root \
+  | jq -r .jwe > modules/hosts/smortress/root.jwe
+```
+
+`boot.initrd.clevis` decrypts it to `/clevis-root/decrypted` before
+`systemd-cryptsetup@root`; the initrd reaches Tang through the wired NIC
+(`enp7s0`, static `10.0.0.125/24`) and falls back to the passphrase prompt when
+the Tang or TPM share cannot be satisfied.
+
+Secure Boot: enable AMD fTPM, set the UEFI supervisor password, and enter Setup
+Mode by deleting **PK only** (never "Clear all keys" — that drops `dbx`). Then
+`sudo sbctl create-keys`, `sudo nixos-rebuild boot`, `sudo chattr -i
+/sys/firmware/efi/efivars/*` when enrollment reports immutable variables,
+`sudo sbctl enroll-keys --microsoft`, reboot, and enforce. On ASUS boards set
+`OS Type = Windows UEFI Mode`; `Other OS` can leave enforcement off.
+
+**Never `sudo sbctl sign` anything under `/boot/EFI/nixos/`.** The lzbt stub
+embeds each kernel/initrd's SHA-256 (the base32 suffix of the filename);
+signing rewrites the file and the next boot fails with "Kernel hash does not
+match! Did you run lzbt?". Only the stubs are signed, and lzbt signs them.
+`/boot` is `0700`, so globs must expand as root:
+
+```sh
+sudo sh -c 'sbctl verify /boot/EFI/Linux/nixos-generation-*.efi'   # all ✓
+sudo nix-shell -p openssl --run 'for file in /boot/EFI/nixos/*.efi; do
+  hash=$(openssl dgst -sha256 -binary "$file" | base32 | tr -d = | LC_ALL=C tr [:upper:] [:lower:])
+  [[ $file == *$hash.efi ]] || echo "CORRUPT: $file"; done'
+```
+
+If a kernel or initrd is corrupt, delete it and run `nixos-rebuild boot`. If no
+generation boots, mount root and ESP from an installer (use
+`/dev/disk/by-partlabel/root` / `EFI`, not `/dev/nvmeXn1` — enumeration
+changes), delete the corrupt files, and run `nixos-rebuild boot` inside
+`nixos-enter`.
+
+The migration ran two installed disks at once, so the staging system on the 970
+used `EFI-tmp`/`root-tmp` labels: duplicate `EFI`/`root` PARTLABELs make
+`/dev/disk/by-partlabel/*` resolve to whichever device udev saw last. The 970
+keeps those labels as the rollback; the 980 owns `EFI`/`root`.
+
+After a `db`/firmware change, replace the Clevis slot and re-export the JWE:
+`sudo clevis luks unbind -d /dev/disk/by-partlabel/root -s <slot>`, re-run the
+bind above, and regenerate `root.jwe`.
+
 ### smorespro
 
 <!-- manual-step: host/smorespro -->
