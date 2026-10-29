@@ -341,6 +341,50 @@ curl -s -m 3 --interface 10.0.0.193 -o /dev/null -w '%{http_code}\n' \
 
 Then from smortress: `curl -sf http://10.0.0.193:7654/adv`.
 
+### SSH access
+
+The Pi sits where attaching a keyboard and monitor is painful, so SSH is
+key-only and the console password is only the recovery path. Stock Raspberry Pi
+OS allows passwords and root; `/etc/ssh/sshd_config.d/10-hardening.conf`:
+
+```sh
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin no
+AllowUsers smores
+AuthenticationMethods publickey
+PubkeyAuthentication yes
+X11Forwarding no
+AllowAgentForwarding no
+AllowTcpForwarding no
+PermitTunnel no
+MaxAuthTries 10
+LoginGraceTime 20
+ClientAliveInterval 300
+ClientAliveCountMax 2
+```
+
+`~smores/.ssh/authorized_keys` holds exactly two kinds of key:
+
+- the smortress software key, `from="10.0.0.125,10.0.0.135"` (both smortress
+  interfaces). The private half is `~/.config/pi/ssh/id_ed25519` on smortress
+  (0600, outside Maki's sandbox, never committed). It is useless from any other
+  source address.
+- the three YubiKey PIV 9a public keys from `modules/lib/yubikey-keys.nix`, for
+  the laptops. Linux needs the fido2 agent from `yk-login`; macOS prompts for
+  the PIV PIN through OpenSC:
+
+```sh
+# Linux laptop, after yk-login
+SSH_AUTH_SOCK="$XDG_RUNTIME_DIR/fido2-agent" ssh -o IdentitiesOnly=yes \
+  -i ~/.config/ssh-sk/piv-k1.pub -i ~/.config/ssh-sk/piv-k2.pub \
+  -i ~/.config/ssh-sk/piv-k3.pub smores@10.0.0.193
+```
+
+`sudo` still prompts for the `smores` account password (a second factor after
+the key), and root has no `authorized_keys`. If every key is lost, the console
+password still boots and logs in; do not remove the password slot.
+
 ### Record the values
 
 These are public (Tang advertises them on `/adv`); they are recorded so the
