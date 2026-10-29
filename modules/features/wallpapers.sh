@@ -1,11 +1,21 @@
-# Wallpaper sync/selection body; wallpapers.nix substitutes @PLATFORM@,
-# @SOURCE@ and @CACHE@ and wraps this with errexit/nounset/pipefail.
+# Wallpaper sync/selection body; wallpapers.nix substitutes the platform, the
+# source URL, the cache path and the Keychain askpass path, then wraps this with
+# errexit/nounset/pipefail.
 
 platform=@PLATFORM@
 source_url=@SOURCE@
 cache=@CACHE@
 dest="$cache/Wallpapers"
 state="$cache/state"
+
+# macOS must never wait on a tty for the PIV PIN: a launchd run has no tty, and
+# an interactive run otherwise sits at the prompt until sshd's LoginGraceTime
+# expires, per key offered. Answer from the Keychain instead; the helper fails
+# closed in 15s. Linux forwards the agent, so it needs none of this.
+if [ "$platform" = darwin ]; then
+  export SSH_ASKPASS=@ASKPASS@
+  export SSH_ASKPASS_REQUIRE=force
+fi
 
 log() { printf 'wallpapers: %s\n' "$*" >&2; }
 

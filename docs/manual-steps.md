@@ -758,7 +758,10 @@ On smorespro the first run happens when `graphical-session.target` starts
 from `yk-login` authenticates the rsync.
 
 smoreswork runs it from a LaunchAgent, which has no tty, so three operator
-steps are needed once:
+steps are needed once. `wallpapers` exports `SSH_ASKPASS` and
+`SSH_ASKPASS_REQUIRE=force` on macOS, so a manual `wallpapers sync` uses the
+same Keychain PIN and never sits at a terminal prompt; without the item it
+fails closed instead of hanging.
 
 1. Put the PIV login PIN in the login Keychain. `-A` lets the unattended agent
    read it without a dialog; anything else running as you can read it too, but

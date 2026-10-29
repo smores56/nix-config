@@ -21,11 +21,12 @@ let
   # wrapper supplies errexit/nounset/pipefail and a pinned PATH.
   script =
     builtins.replaceStrings
-      [ "@PLATFORM@" "@SOURCE@" "@CACHE@" ]
+      [ "@PLATFORM@" "@SOURCE@" "@CACHE@" "@ASKPASS@" ]
       [
         (if isLinux then "linux" else "darwin")
         (lib.escapeShellArg source)
         (lib.escapeShellArg cacheDir)
+        (lib.escapeShellArg (lib.getExe askpass))
       ]
       (builtins.readFile ./wallpapers.sh);
 

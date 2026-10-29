@@ -129,8 +129,6 @@ magick -size 2000x1000 xc:green "$work/odd/$(printf 'bad\nname.png')"
 [ "$(tr '\0' '\n' <"$work/oddout/Ultrawide.list" | wc -l)" -eq 1 ] ||
   fail "a newline in a filename was bucketed"
 
-echo "wallpapers ok"
-
 # rsync accepts --contimeout only for daemon transports; over `-e ssh` it exits
 # with a usage error before transferring, so the timer would fail every run.
 script=$(readlink -f "$wallpapers")
@@ -142,3 +140,9 @@ fi
 # leave the cache half-emptied.
 grep -v '^[[:space:]]*#' "$script" | grep -q -- '--delete-after' ||
   fail "rsync must delete after the transfer"
+
+# Every placeholder the module substitutes must be gone from the built script.
+if grep -q '@[A-Z]*@' "$script"; then
+  fail "an unsubstituted placeholder reached the script"
+fi
+echo "wallpapers ok"
