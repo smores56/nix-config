@@ -138,11 +138,11 @@
               preflight="secrets/common.yaml"
             fi
             if [ -n "$preflight" ]; then
-              # Blank the admin-key command: sops runs it eagerly even though
-              # this preflight supplies the host key, and it would otherwise
-              # prompt for (or fail to find) the operator's passphrase here.
-              if SOPS_AGE_KEY="$(ssh-to-age -private-key -i "$key_priv")" \
-                SOPS_AGE_KEY_CMD="" \
+              # Drop the admin-key command: sops runs it eagerly even though this
+              # preflight supplies the host key; an empty value makes it try to
+              # execute "" and crash, so unset it instead.
+              if env -u SOPS_AGE_KEY_CMD \
+                SOPS_AGE_KEY="$(ssh-to-age -private-key -i "$key_priv")" \
                 sops --decrypt "$preflight" >/dev/null 2>&1; then
                 echo "Host key decrypts $preflight"
               else
