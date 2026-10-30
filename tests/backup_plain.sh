@@ -244,4 +244,38 @@ retries=$(grep -c 'stalled, retry' "$LAST" || true)
 grep -q 'no transfer progress' "$BACKUP_ROOT/Stalled/BACKUP-FAILED" ||
   fail "stall left no detailed failure marker"
 
+# 13. A dataset queued behind the shared lock defers instead of spending its
+# whole run budget waiting: it exits 75 (a result the units treat as success),
+# writes no failure marker, and leaves the success timestamp untouched. A
+# queued run must never look like a broken one.
+LOCK=$ROOT/media-backup.lock
+: >"$LOCK"
+exec 8>>"$LOCK"
+flock 8
+# Case 11 left a failure marker behind; a deferral must not add or clear one.
+rm -f "$BACKUP_ROOT/Photos/BACKUP-FAILED"
+before_defer=$(cat "$BACKUP_ROOT/Photos/BACKUP-LAST-SUCCESS")
+: >"$LAST"
+defer_rc=0
+BACKUP_LOCK_PATH=$LOCK bash "$DRIVER" \
+  --name Photos --source "$SRC" --backup-root "$BACKUP_ROOT" \
+  --remote test --rclone-config "$CONF" --date "$DATE" --stall-timeout 0 \
+  --timeout 5m --lock-wait 1s --offsite >>"$LAST" 2>&1 || defer_rc=$?
+((defer_rc == 75)) || fail "a queued run exited $defer_rc instead of deferring (75)"
+grep -q 'backup deferred' "$LAST" || fail "deferral was not reported"
+[[ ! -e $BACKUP_ROOT/Photos/BACKUP-FAILED ]] || fail "a deferred run wrote a failure marker"
+[[ $(cat "$BACKUP_ROOT/Photos/BACKUP-LAST-SUCCESS") == "$before_defer" ]] ||
+  fail "a deferred run refreshed the success timestamp"
+
+# Releasing the lock lets the same dataset run normally on the shared path.
+flock -u 8
+exec 8>&-
+: >"$LAST"
+BACKUP_LOCK_PATH=$LOCK bash "$DRIVER" \
+  --name Photos --source "$SRC" --backup-root "$BACKUP_ROOT" \
+  --remote test --rclone-config "$CONF" --date "$DATE" --stall-timeout 0 \
+  --timeout 5m --lock-wait 5s --offsite >>"$LAST" 2>&1 ||
+  fail "a run could not take a free shared lock"
+grep -q 'backup deferred' "$LAST" && fail "an uncontended run deferred"
+
 echo "backup_plain.sh: ok"

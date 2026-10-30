@@ -144,6 +144,7 @@ let
         "--remote ${lib.escapeShellArg cfg.remote}"
         "--stall-timeout ${lib.escapeShellArg dataset.stallTimeout}"
         "--timeout ${lib.escapeShellArg dataset.timeout}"
+        "--lock-wait ${lib.escapeShellArg dataset.lockWait}"
       ]
       ++ lib.optional (!pathRemote) "--rclone-config ${lib.escapeShellArg cfg.rcloneConfig}"
       ++ lib.optional fullCheck "--full-check"
@@ -288,6 +289,9 @@ let
         ];
         # Cap the wall-clock run: a seed copy can take hours, a stuck one must not.
         TimeoutStartSec = dataset.timeout;
+        # A deferral (the offsite lock was held past lockWait) is not a failure:
+        # the run did no work, wrote no marker, and the next timer retries.
+        SuccessExitStatus = [ 75 ];
         # The `+` runs this privileged, after RequiresMountsFor, so the dataset
         # folders always exist on the real disk even on a mid-session `switch`.
         # A watched dataset drains its request queue here: changes that arrive
@@ -400,6 +404,19 @@ in
           builtins.match "[0-9]+[smhd]?" dataset.stallTimeout != null && seconds != null && seconds >= 60
         );
       message = "backup.datasets.${name}.stallTimeout must be \"0\" (disabled) or \"<number><s|m|h|d>\" of at least 60s (two rclone 30s stats intervals), got \"${dataset.stallTimeout}\".";
+    }) cfg.datasets
+    ++ lib.mapAttrsToList (name: dataset: {
+      # A wait longer than the run cap means systemd kills the queued run before
+      # it can defer, which is the failure mode lockWait exists to prevent.
+      assertion =
+        let
+          wait = parseDurationSeconds dataset.lockWait;
+          cap = parseDurationSeconds dataset.timeout;
+        in
+        builtins.match "[0-9]+[smhd]?" dataset.lockWait != null
+        && wait != null
+        && (wait == 0 || cap == null || cap == 0 || wait < cap);
+      message = "backup.datasets.${name}.lockWait must be \"0\" (wait forever) or \"<number><s|m|h|d>\" shorter than timeout, got \"${dataset.lockWait}\" with timeout \"${dataset.timeout}\".";
     }) cfg.datasets
     ++ lib.mapAttrsToList (name: dataset: {
       assertion = dataset.fullCheckSchedule == null || dataset.fullCheckSchedule != "";

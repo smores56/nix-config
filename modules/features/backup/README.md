@@ -225,8 +225,15 @@ Layout under `/var/lib/github-mirrors` (the dataset source):
    the one offsite target, so serializing keeps their transfers from competing
    for the mount's upload bandwidth and VFS cache — and
    `/run/lock/media-backup-<name>.lock` for local-only ones.
-   A queued dataset simply waits. Manual `backup` runs and the restore drill take
-   the same lock.
+   A queued dataset waits up to `lockWait` (per-dataset, default 20m), then
+   **defers**: it exits 75, which the unit lists in `SuccessExitStatus`, so a
+   busy lock is not a failure, no marker is written, the success timestamp stays
+   put, and the next timer run retries. Without the bound, a long off-hours or
+   on-change run of another dataset made the queued unit sit out its whole
+   `TimeoutStartSec` and get killed with zero work done — indistinguishable from
+   a broken dataset. A dataset that keeps deferring still trips the freshness
+   alert, because its timestamp never advances. Manual `backup` runs and the
+   restore drill take the same lock; pass `--lock-wait 0` to wait forever.
 3. Local copy → `current/`, overwritten revisions to `versions/<date>/`.
 4. Offsite copy → `/srv/proton/<Name>` (the mount's filesystem). With an
    rclone-remote target it is `<remote>:<Name>` and carries
@@ -252,8 +259,10 @@ Layout under `/var/lib/github-mirrors` (the dataset source):
    (`cloudflare-email@%n.service`).
 
 `TimeoutStartSec` (per-dataset `timeout`) is a wall-clock backstop only; a stuck
-run is normally caught by `stallTimeout` in ~30m. A `TimeoutStartSec` kill
-cannot run the in-process marker, which is why the marker is in `ExecStopPost`.
+run is normally caught by `stallTimeout` in ~30m. Keep `lockWait` well under it:
+a kill during the lock wait is exactly what the deferral exists to avoid. A
+`TimeoutStartSec` kill cannot run the in-process marker, which is why the marker
+is in `ExecStopPost`.
 
 ## Event-driven trigger (optional)
 
@@ -460,6 +469,7 @@ backup.datasets.Books = {
   schedule = "*-*-* 07:00:00";
   # fullCheckSchedule = "Sun *-*-* 06:00:00";  # extra whole-mirror check
   # timeout = "12h";       # wall-clock backstop
+  # lockWait = "20m";      # offsite-lock wait before deferring; "0" waits forever
   # offsite = false;       # local-only dataset
   # stallTimeout = "30m";  # "0" disables; otherwise must be >= 60s
   # excludes = [ "/.cache/**" "**/.cache/**" "/rclone.conf" ];  # defaults; override to add more

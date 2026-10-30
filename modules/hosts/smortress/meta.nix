@@ -220,7 +220,10 @@ in
     backup.datasets.CloudflareTofu = {
       source = "/var/lib/cloudflare-tofu";
       schedule = "*-*-* 00:15:00";
-      timeout = "30m";
+      # The offsite lock can be held for the better part of an hour by a
+      # media run; the wait is bounded, so the cap only has to leave room for
+      # a tiny copy after it.
+      timeout = "1h";
       onChange.enable = true;
       excludes = [
         "/.cache/**"

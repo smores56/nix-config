@@ -197,8 +197,9 @@ per-repo templates), `repos-routing` (flat work repo discovery and routing), `zs
 scrubs a token-bearing origin), `github-metadata` (pgb flags and token-by-file,
 manifest counts, stale/scope/count failures, and the full-pass swap),
 `backup-watch` (watcher debounce/ignore/queue semantics), `backup-plain`
-(copy-never-sync, versions, scoped check, markers and the stall watchdog against
-local rclone remotes), and `key-bundle` (FIDO2 handle round-trip: 0600 modes,
+(copy-never-sync, versions, scoped check, markers, the stall watchdog, and the
+bounded offsite-lock wait that defers instead of failing, against local rclone
+remotes), and `key-bundle` (FIDO2 handle round-trip: 0600 modes,
 outer and inner checksums, moved bundle, --force, public-half mismatch, host-key
 restore and its `.sops.yaml` recipient check), and
 `sshd-settings` (rendered `sshd -T`: key-only auth, verify-required, no

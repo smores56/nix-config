@@ -62,7 +62,16 @@ umask 077
 # target (one Proton mount or one rclone remote), so serializing keeps their
 # transfers from competing for the mount's upload bandwidth and VFS cache.
 # Created 0600 in /run/lock.
-LOCK_PATH=/run/lock/media-backup.lock
+# BACKUP_LOCK_PATH is a test-only override: the suite needs a lock it can hold
+# while a queued run tries to take it.
+LOCK_PATH=${BACKUP_LOCK_PATH:-/run/lock/media-backup.lock}
+# How long a run waits for that lock before deferring. A queued dataset must not
+# spend its whole systemd TimeoutStartSec on someone else's transfer: it would be
+# killed with no work done, which is indistinguishable from a broken dataset.
+# `0` waits forever, for a manual seed run that must not give up.
+LOCK_WAIT=20m
+# Deferral exit status (EX_TEMPFAIL). The units list it in SuccessExitStatus.
+DEFER_EXIT=75
 # rclone logs a stats block this often; the watchdog cannot observe progress at
 # a finer cadence. BACKUP_STATS_INTERVAL is a test-only override: the Nix module
 # still asserts a >=60s stallTimeout, which is twice the production cadence.
@@ -113,8 +122,8 @@ usage: backup --name NAME --source DIR --backup-root DIR
               [--remote NAME|PATH] [--rclone-config FILE] [--offsite]
               [--offsite-rc-socket FILE]
               [--pre-backup SCRIPT] [--exclude GLOB]...
-              [--stall-timeout DUR] [--timeout DUR] [--date DATE]
-              [--full-check] [--dry-run] [--no-lock]
+              [--stall-timeout DUR] [--timeout DUR] [--lock-wait DUR]
+              [--date DATE] [--full-check] [--dry-run] [--no-lock]
 EOF
   exit 2
 }
@@ -196,6 +205,10 @@ while (($# > 0)); do
       STEP_TIMEOUT=${2:?}
       shift 2
       ;;
+    --lock-wait)
+      LOCK_WAIT=${2:?}
+      shift 2
+      ;;
     --date)
       DATE=${2:?}
       shift 2
@@ -242,6 +255,8 @@ STALL_SECONDS=$(parse_duration "$STALL") ||
   die "stall-timeout ${STALL_SECONDS}s is below twice the rclone stats interval; pass 0 to disable"
 TIMEOUT_SECONDS=$(parse_duration "$STEP_TIMEOUT") ||
   die "invalid --timeout '$STEP_TIMEOUT': use <number><s|m|h|d>"
+LOCK_WAIT_SECONDS=$(parse_duration "$LOCK_WAIT") ||
+  die "invalid --lock-wait '$LOCK_WAIT': use <number><s|m|h|d> or 0"
 # How long the mount's upload queue may take to drain after the offsite copy. The
 # run's own wall-clock budget is the bound; `--timeout 0` (no step timeout)
 # falls back to the driver default so a queue that never drains cannot pass.
@@ -299,14 +314,28 @@ fail() {
   exit 1
 }
 
+# A deferral is not a failure: the run did no work, so it writes no marker and
+# keeps the previous success timestamp. The units treat exit 75 as success, and
+# the next timer run tries again; a dataset that keeps deferring still trips the
+# freshness alert, because the timestamp does not move.
+defer() {
+  printf 'backup deferred: %s\n' "$(sanitize "$*")" >&2
+  exit "$DEFER_EXIT"
+}
+
 acquire_lock() {
   local path=$1
   exec 9>>"$path" || fail "cannot open lock $path"
-  if ! flock -n 9; then
+  flock -n 9 && return 0
+  if ((LOCK_WAIT_SECONDS == 0)); then
     # A silent multi-hour block is indistinguishable from a hang, so say so.
     echo "waiting for lock $path ..."
     flock 9 || fail "cannot acquire lock $path"
+    return 0
   fi
+  echo "waiting up to ${LOCK_WAIT_SECONDS}s for lock $path ..."
+  flock -w "$LOCK_WAIT_SECONDS" 9 ||
+    defer "lock $path was still held after ${LOCK_WAIT_SECONDS}s"
 }
 
 # A stalled run keeps printing stats whose counters do not advance, so only a new

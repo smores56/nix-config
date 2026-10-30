@@ -88,6 +88,11 @@ in
                   default = "12h";
                   description = "systemd TimeSpan cap on a run (TimeoutStartSec). Generous for the first seed run; shorten later.";
                 };
+                lockWait = lib.mkOption {
+                  type = lib.types.str;
+                  default = "20m";
+                  description = "How long a run waits for the host-wide offsite lock before deferring. Offsite datasets serialize on that lock, and an off-hours or on-change run of another dataset can hold it for much longer than this, so the wait must be bounded well under `timeout`; a deferred run exits 75, which the unit treats as success, and the next timer run retries. \"0\" waits forever (manual seed runs).";
+                };
                 stallTimeout = lib.mkOption {
                   type = lib.types.str;
                   default = "30m";
