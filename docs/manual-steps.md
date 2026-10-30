@@ -1305,6 +1305,63 @@ Restore both the database dump and the library; the procedure (including
 `/var/lib/media/Videos`, daily 01:00, full check Sundays 07:00, offsite and
 change-triggered.
 
+### Calibre
+
+<!-- manual-step: dataset/Calibre -->
+
+`/var/lib/media/Calibre`, daily 02:30, full check Sundays 09:00, offsite and
+change-triggered. The library moved out of `~/Calibre Library` so it is on the
+media dataset and writable by the agent ingest queue.
+
+1. Deploy the new home and NixOS configs (the tmpfiles rule makes
+   `/var/lib/media`, `Music`, `Videos`, `Calibre`, and `Calibre-Ingest`
+   `smores:users` 0775; `Photos` stays `immich:immich`).
+2. Run `calibre-migrate` once. It stops `calibre-server`, moves the old
+   library, and starts the server again.
+3. The agent writes books and `manifest.json` to
+   `/var/lib/media/Calibre-Ingest`; the `calibre-ingest` user timer applies
+   them every minute. It stops the OPDS server while `calibredb` holds the
+   library and restarts it afterwards. Processed and failed files move to the
+   queue's `processed/` and `failed/` subdirectories.
+
+### Agent sandbox
+
+`agent-sandbox <harness>` is the explicit same-UID boundary; `m` is a fish/zsh
+abbreviation for `agent-sandbox maki`. Install `maki` manually in
+`~/.local/bin` (there is no wrapper), and run plain `maki` only when you mean
+to work unsandboxed. `agent-sandbox-check` runs the real boundary and asserts
+the core properties.
+
+The sandbox binds an explicit config allowlist and masks the whole `~/.config`;
+if a tool needs its config, add the directory to `CONFIG_ALLOW` in
+`modules/lib/agent-sandbox.nix`. `~/.ssh` contains no keys: `allowed_signers`
+and `known_hosts` live in `~/.config/ssh`, and the home-manager activation
+moves them there. The agent's SSH credential is the no-touch signing key, and
+every host authorizes it with a forced `agent-ssh` command that re-enters the
+sandbox.
+
+One-time cleanup (already run for the personal hosts): `agent-sandbox-cleanup
+--yes` deletes the retired Maki software signing key, the `~/.config/pi` SSH
+key (tang-pi is console-only), the `~/.config/gh/hosts.yml` OAuth token, the
+cliphist database, and the fish history. Remove the retired Maki signing key
+from GitHub's signing keys afterwards.
+
+Clipboard history is deliberately not persisted: the cliphist database is
+removed and the sandbox masks `~/.cache/cliphist`. There is no same-UID
+permission that makes a live history unreadable without root; not storing it is
+the only reliable hardening.
+
+Photos: create a scoped Immich API key with asset upload/read and album
+create/read only, add it as `immich-agent-api-key` in `secrets/common.yaml`
+(and the `secret/immich-agent-api-key` anchor), deploy, and the sandbox binds
+it at `/run/agent/immich-key` as `IMMICH_API_KEY`. The agent never writes
+`/var/lib/media/Photos` directly.
+
+Work Mac: create Keychain items `maki-openai-api-key` and `maki-github-pat`.
+The host-side launcher reads them before entering the sandbox because
+`securityd` is denied inside; `maki-github-pat` should be a scoped token and
+is injected as `GH_TOKEN` for `gh` and HTTPS git.
+
 ### LobeChat
 
 <!-- manual-step: dataset/LobeChat -->

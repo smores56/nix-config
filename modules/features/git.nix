@@ -100,7 +100,7 @@ let
           exit 1
         }
       ''}
-      allowed="$HOME/.ssh/allowed_signers"
+      allowed="$HOME/.config/ssh/allowed_signers"
       [ -r "$allowed" ] || exit 1
       keys=$(ssh-add -L 2>/dev/null) || exit 1
       while read -r type body _; do

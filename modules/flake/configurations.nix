@@ -58,6 +58,10 @@ let
 
       concord = concord.packages.${system}.default;
 
+      # Agent sandbox: 0.12.0 fixes CVE-2026-87766 (setup-time symlink
+      # traversal). The pinned nixpkgs ships 0.11.2.
+      bubblewrap = inputs.nixpkgs-unstable.legacyPackages.${system}.bubblewrap;
+
       # See the nixpkgs-unstable input: rclone needs the protondrive fixes it
       # carries (1.75.1) for a trustworthy Proton mirror.
       rclone = inputs.nixpkgs-unstable.legacyPackages.${system}.rclone;

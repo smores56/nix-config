@@ -33,7 +33,7 @@ let
   }) (yubikeyKeys.piv ++ yubikeyKeys.signing);
 
   pubkeys = softwareIdentities ++ yubikeyIdentities;
-  allowedSigners = "~/.ssh/allowed_signers";
+  allowedSigners = "~/.config/ssh/allowed_signers";
 
   # Signatures only verify against keys listed here; rebuilt from whichever
   # keys exist, so a host without the work key still trusts the personal one.
@@ -42,8 +42,9 @@ let
     runtimeInputs = [ pkgs.coreutils ];
     text = ''
       out=${expandHome allowedSigners}
-      # No ~/.ssh yet (fresh host) means no keys to verify against.
-      [ -d "$(dirname "$out")" ] || exit 0
+      # No config directory yet (fresh host) means no keys to verify against.
+      mkdir -p "$(dirname "$out")" 2>/dev/null || exit 0
+      chmod 700 "$(dirname "$out")" 2>/dev/null || true
       tmp=$(mktemp "$out.XXXXXX")
       entry() {
         # principal, git-only namespace, then key type and body (no comment)
@@ -62,13 +63,6 @@ let
           entry ${lib.escapeShellArg cfg.email} "${expandHome i.key}.pub"
           entry ${lib.escapeShellArg cfg.work.email} "${expandHome i.key}.pub"
         '') yubikeyIdentities}
-        ${lib.optionalString (builtins.elem "server" config.machine.profiles) ''
-          maki_key="$HOME/.config/maki/signing_ed25519.pub"
-          if [ -s "$maki_key" ]; then
-            entry ${lib.escapeShellArg cfg.email} "$maki_key"
-            entry ${lib.escapeShellArg cfg.work.email} "$maki_key"
-          fi
-        ''}
       } >"$tmp"
       mv "$tmp" "$out"
     '';
@@ -112,8 +106,9 @@ let
       '') pubkeys}
       ${lib.getExe allowedSignersWriter}
       # The personal software identity was retired with the Pass agent; a host
-      # that still has its public half should not keep offering it.
-      rm -f "$HOME/.ssh/id_personal.pub"
+      # that still has its public half should not keep offering it. The work
+      # public half moved out of ~/.ssh with the rest of the key material.
+      rm -f "$HOME/.ssh/id_personal.pub" "$HOME/.ssh/id_work.pub"
 
       exit "$failed"
     '';
@@ -163,6 +158,21 @@ in
 
   home.activation.sshPubKeys = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     run ${lib.getExe sshPubKeys} || true
+  '';
+
+  # Move the public material out of ~/.ssh (zero key/config storage there).
+  # The only files left are the generated public ssh config and the
+  # per-session forwarded-agent sockets.
+  home.activation.sshLayout = lib.hm.dag.entryAfter [ "sshPubKeys" ] ''
+    ${pkgs.coreutils}/bin/mkdir -p "$HOME/.config/ssh"
+    if [ -f "$HOME/.ssh/known_hosts" ] && [ ! -e "$HOME/.config/ssh/known_hosts" ]; then
+      ${pkgs.coreutils}/bin/cp "$HOME/.ssh/known_hosts" "$HOME/.config/ssh/known_hosts"
+    fi
+    ${pkgs.coreutils}/bin/rm -f \
+      "$HOME/.ssh/allowed_signers" \
+      "$HOME/.ssh/config.work" \
+      "$HOME/.ssh/id_work.pub" \
+      "$HOME/.ssh/id_personal.pub"
   '';
 
   home.activation.checkSshPrivateKeys = lib.hm.dag.entryAfter [ "writeBoundary" ] ''

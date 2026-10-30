@@ -8,11 +8,11 @@ set -euo pipefail
 
 writer=$1
 export HOME=$PWD/home
-mkdir -p "$HOME/.ssh"
+mkdir -p "$HOME/.config/ssh"
 for key in id_personal id_work; do
-  ssh-keygen -q -t ed25519 -N "" -C "$key" -f "$HOME/.ssh/$key"
+  ssh-keygen -q -t ed25519 -N "" -C "$key" -f "$HOME/.config/ssh/$key"
 done
-signers=$HOME/.ssh/allowed_signers
+signers=$HOME/.config/ssh/allowed_signers
 failures=0
 
 fail() {
@@ -24,7 +24,7 @@ verifies() {
   local key=$1 principal=$2
   echo payload >msg
   rm -f msg.sig
-  ssh-keygen -q -Y sign -f "$HOME/.ssh/$key" -n git msg
+  ssh-keygen -q -Y sign -f "$HOME/.config/ssh/$key" -n git msg
   ssh-keygen -q -Y verify -f "$signers" -I "$principal" -n git -s msg.sig <msg >/dev/null 2>&1
 }
 
@@ -35,12 +35,12 @@ verifies id_work "sam@sammohr.dev" && fail "work key verifies as the personal pr
 verifies id_personal "sam@sammohr.dev" && fail "retired personal key still verifies"
 
 # A hand-pasted .pub often lacks the trailing newline.
-printf '%s' "$(cat "$HOME/.ssh/id_work.pub")" >"$HOME/.ssh/id_work.pub.tmp"
-mv "$HOME/.ssh/id_work.pub.tmp" "$HOME/.ssh/id_work.pub"
+printf '%s' "$(cat "$HOME/.config/ssh/id_work.pub")" >"$HOME/.config/ssh/id_work.pub.tmp"
+mv "$HOME/.config/ssh/id_work.pub.tmp" "$HOME/.config/ssh/id_work.pub"
 "$writer" || fail "writer failed on a .pub without a trailing newline"
 verifies id_work "$WORK_EMAIL" || fail "work key without trailing newline does not verify"
 
-rm "$HOME/.ssh/id_work.pub"
+rm "$HOME/.config/ssh/id_work.pub"
 "$writer"
 verifies id_work "$WORK_EMAIL" && fail "work key still verifies without its .pub"
 [[ $(grep -c . "$signers" || true) == 0 ]] || fail "expected no software entries without the work key"

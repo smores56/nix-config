@@ -428,7 +428,11 @@ in
               test "${names keys.piv}" = "piv-k1 piv-k2 piv-k3"
               test "${names keys.signing}" = "k1/signing k2/signing k3/signing"
               test "${names keys.sudo}" = "k1/sudo k2/sudo k3/sudo"
-              test ${toString (builtins.length config.flake.nixosConfigurations.smortress.config.users.users.smores.openssh.authorizedKeys.keys)} -eq 3
+              test ${toString (builtins.length config.flake.nixosConfigurations.smortress.config.users.users.smores.openssh.authorizedKeys.keys)} -eq 6
+              printf '%s\n' ${lib.escapeShellArgs config.flake.nixosConfigurations.smortress.config.users.users.smores.openssh.authorizedKeys.keys} >authorized_keys
+              test "$(grep -c 'command="' authorized_keys)" -eq 3
+              test "$(grep -c 'no-user-rc' authorized_keys)" -eq 3
+              test "$(grep -c 'no-agent-forwarding' authorized_keys)" -eq 3
               test ${
                 toString (
                   builtins.length (
@@ -591,6 +595,7 @@ in
               grep -Fx 'AllowTcpForwarding no' settings
               grep -Fx 'AllowAgentForwarding yes' settings
               grep -Fx 'AllowUsers smores' settings
+              grep -Fx 'PermitUserRC no' settings
               grep -Fx 'MaxAuthTries 10' settings
               grep -Fx 'LoginGraceTime 20' settings
               ! grep -q '^AuthorizedKeysFile .*\.ssh/authorized_keys' settings

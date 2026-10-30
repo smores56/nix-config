@@ -22,7 +22,7 @@ dest() {
 }
 
 # A stale/invalid file must be replaced, not kept.
-mkdir -p "$work/.ssh"
+mkdir -p "$work/.config/ssh"
 printf 'ssh-ed25519 AAAAstale stale\n' >"$(dest "$WORK_KEY")"
 
 HOME="$work" "$script" || fail "script exited non-zero"
@@ -30,14 +30,14 @@ HOME="$work" "$script" || fail "script exited non-zero"
 file=$(dest "$WORK_KEY")
 [ -s "$file" ] || fail "missing $file"
 ssh-keygen -l -f "$file" >/dev/null 2>&1 || fail "unparsable $file"
-grep -q "$WORK_EMAIL namespaces=\"git\" ssh-ed25519 " "$work/.ssh/allowed_signers" ||
+grep -q "$WORK_EMAIL namespaces=\"git\" ssh-ed25519 " "$work/.config/ssh/allowed_signers" ||
   fail "allowed_signers lacks the $WORK_EMAIL principal"
-[ ! -e "$work/.ssh/id_personal.pub" ] || fail "the retired personal key was written"
+[ ! -e "$work/.config/ssh/id_personal.pub" ] || fail "the retired personal key was written"
 
 # Idempotent: a second run produces identical files.
-before=$(sha256sum "$file" "$work/.ssh/allowed_signers")
+before=$(sha256sum "$file" "$work/.config/ssh/allowed_signers")
 HOME="$work" "$script" >/dev/null 2>&1 || fail "second run exited non-zero"
-after=$(sha256sum "$file" "$work/.ssh/allowed_signers")
+after=$(sha256sum "$file" "$work/.config/ssh/allowed_signers")
 [ "$before" = "$after" ] || fail "second run changed the files"
 
 if (($failures)); then

@@ -33,7 +33,7 @@ in
         ServerAliveInterval = 0;
         ServerAliveCountMax = 3;
         HashKnownHosts = false;
-        UserKnownHostsFile = "~/.ssh/known_hosts";
+        UserKnownHostsFile = "~/.config/ssh/known_hosts";
       }
       // lib.optionalAttrs isLinux {
         # Reuse one transport per destination: a fresh cloudflared ProxyCommand

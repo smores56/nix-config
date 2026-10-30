@@ -52,6 +52,7 @@ adds its greeter as a host-local module.
 | `modules/nixos/` | NixOS system modules (base, desktop, networking, ssh, etc.) |
 | `modules/flake/` | flake-parts modules (configurations, checks, formatter) |
 | `modules/lib/` | helper libraries |
+| `modules/features/agent-sandbox/` | the same-UID agent boundary; lists/backends in `modules/lib/agent-sandbox.{nix,sh}` |
 | `modules/features/ai/` | AI tooling: assistant context, brain, maki, providers, sdlc, skills |
 | `modules/features/tv/` | Television repository and worktree cables |
 | `tofu/` | minimal Cloudflare DNS/Access/notification objects; run via the `cloudflare-*` flake apps |

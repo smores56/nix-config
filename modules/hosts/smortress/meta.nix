@@ -22,10 +22,22 @@ in
       # plaintext ~/.config/calibre-server/password, which is retired once
       # this lands.
       passwordFile = "/run/secrets/calibre-password";
+      # The library lives on the media dataset so it is backed up and the
+      # agent's ingest queue can write it without a home exception.
+      library = "/var/lib/media/Calibre";
     };
   };
 
   nixosOptions = {
+    # Media is agent-writable except Immich's managed Photos library. The
+    # backup driver runs as root and can read smores-owned sources.
+    systemd.tmpfiles.rules = [
+      "d /var/lib/media 0775 smores users -"
+      "Z /var/lib/media/Music 0775 smores users -"
+      "Z /var/lib/media/Videos 0775 smores users -"
+      "d /var/lib/media/Calibre 0775 smores users -"
+      "d /var/lib/media/Calibre-Ingest 0775 smores users -"
+    ];
     exposeSsh.enable = true;
     nvidia.enable = true;
     llm.enable = true;
@@ -127,6 +139,12 @@ in
       fullCheckSchedule = "Sun *-*-* 07:00:00";
       # Incrementals run in minutes; 2h is a wall-clock backstop so a
       # deadlock trips fast (stallTimeout catches a stalled transfer sooner).
+      timeout = "2h";
+      onChange.enable = true;
+    };
+    backup.datasets.Calibre = {
+      schedule = "*-*-* 02:30:00";
+      fullCheckSchedule = "Sun *-*-* 09:00:00";
       timeout = "2h";
       onChange.enable = true;
     };

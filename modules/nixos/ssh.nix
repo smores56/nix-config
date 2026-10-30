@@ -1,11 +1,28 @@
-{ config, lib, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
   ports = import ../ports.nix;
   # Public halves of the login credentials. Private halves never touch a host:
   # each PIV key lives in its YubiKey's slot 9a.
   yubikeyKeys = import ../lib/yubikey-keys.nix;
   user = config.machine.username;
-  authorizedKeys = map (k: k.pubkey) yubikeyKeys.piv;
+  # The agent gets the no-touch signing credential only, and every host
+  # forces its sessions into the sandbox. The PIV login keys keep normal
+  # interactive shells.
+  agentSandbox = import ../lib/agent-sandbox.nix {
+    inherit pkgs lib;
+    home = config.users.users.${user}.home;
+    isServer = builtins.elem "server" config.machine.profiles;
+    isDarwin = false;
+  };
+  forcedKey =
+    k:
+    ''command="${agentSandbox.agentSsh}/bin/agent-ssh",no-user-rc,no-port-forwarding,no-agent-forwarding,no-X11-forwarding ${k.pubkey}'';
+  authorizedKeys = map (k: k.pubkey) yubikeyKeys.piv ++ map forcedKey yubikeyKeys.signing;
 in
 {
   options.exposeSsh.enable = lib.mkEnableOption "sshd bound to loopback for Cloudflare Tunnel access";
@@ -43,6 +60,9 @@ in
           # forwarded for pam_rssh and signing.
           AllowTcpForwarding = "no";
           AllowAgentForwarding = "yes";
+          # A per-key command= does NOT suppress ~/.ssh/rc; no-user-rc on the
+          # signing keys and this global setting both close it.
+          PermitUserRC = false;
           # Every credential the agent offers is tried until one matches, and a
           # rejected offer counts against this limit; with 3 keys x 2 identities
           # the default 6 is too small.
@@ -55,8 +75,13 @@ in
           ];
         };
       };
-      # The server only ever holds public halves.
-      users.users.${user}.openssh.authorizedKeys.keys = authorizedKeys;
+      # The server only ever holds public halves. The forced command is
+      # executed by the login shell; the wrapper skips fish's user config for
+      # exactly that command and runs fish normally everywhere else.
+      users.users.${user} = {
+        shell = lib.mkForce agentSandbox.agentLoginShell;
+        openssh.authorizedKeys.keys = authorizedKeys;
+      };
     })
 
     (lib.mkIf (config.exposeSsh.enable || config.sudoKey.enable) {

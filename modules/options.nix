@@ -99,7 +99,7 @@ in
           };
           sshKey = lib.mkOption {
             type = lib.types.str;
-            description = "Work SSH key path without extension; its `.pub` is fetched from Proton Pass and offered via the agent, which holds the private half.";
+            description = "Work SSH key path without extension; its committed `.pub` lives under ~/.config/ssh and is offered via the employer agent, which holds the private half.";
           };
           sshConfig = lib.mkOption {
             type = lib.types.str;
@@ -208,8 +208,8 @@ in
           dir = "${homeDirectory}/Blitzy";
           envVar = "BLITZY_REPOS_DIR";
         };
-        sshKey = "~/.ssh/id_work";
-        sshConfig = "~/.ssh/config.work";
+        sshKey = "~/.config/ssh/id_work";
+        sshConfig = "~/.config/ssh/config.work";
         flow = "pr";
       };
       githubUser = "smores56";

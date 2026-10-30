@@ -13,6 +13,10 @@ check:
 check-build:
     nix flake check
 
+# Run the real sandbox and assert the boundary.
+agent-sandbox-check:
+    agent-sandbox-check
+
 # Run the Python unit suite.
 test:
     nix run nixpkgs#python3 -- -m unittest discover -s tests

@@ -301,7 +301,7 @@ Work is split across independent switches:
 
 - **Per repo, on every host:** repos with a remote under the GitHub owner
   glob in `user.work` (`modules/options.nix`) get the work email,
-  signing key, ssh route (`~/.ssh/config.work`, work key only), branch
+  signing key, ssh route (`~/.config/ssh/config.work`, work key only), branch
   naming and PR flow, via git `includeIf hasconfig:remote.*.url`
   (`modules/features/git.nix`). Any matching remote counts, so a fork with a
   work `upstream` is a work repo. Tooling reads the result from
@@ -460,10 +460,24 @@ model providers Maki may use.
   maki auth logout openai
   ```
 
-  The `maki` wrapper exports the key to maki alone and clears
-  `OPENAI_BASE_URL` so work prompts go directly to OpenAI; the codex CLI never
-  sees it. Use `maki models` or `/model` to choose another OpenAI model.
-  Claude Code continues to use its own subscription login.
+  The `agent-sandbox` launcher reads the keychain item outside the sandbox and
+  injects `OPENAI_API_KEY` into the agent; the codex CLI never sees it. Plain
+  `maki` outside the sandbox does not get the key. Use `maki models` or
+  `/model` to choose another OpenAI model. Claude Code continues to use its own
+  subscription login.
+
+#### Agent sandbox
+
+`agent-sandbox <harness>` runs any agent harness with a fast, same-UID
+path/privilege boundary: bwrap on Linux and `sandbox-exec` on macOS. `m` is a
+shell abbreviation for `agent-sandbox maki`; plain `maki` is installed manually
+in `~/.local/bin` and runs unsandboxed. The sandbox gives the agent a
+read-only home plus a short write allowlist, masks credentials and the whole
+`~/.config`, and exposes only the no-touch signing agent. Every personal host
+authorizes that signing key with a forced `agent-ssh` command, so remote
+sessions re-enter the same sandbox and `sudo` is not invocable. The lists and
+backend live in `modules/lib/agent-sandbox.nix`; operator steps are in
+`docs/manual-steps.md`.
 
 #### Native Slack MCP
 
