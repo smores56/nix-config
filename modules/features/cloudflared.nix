@@ -276,6 +276,10 @@ in
     IdentityAgent = "\${XDG_RUNTIME_DIR}/fido2-agent";
     IdentitiesOnly = "yes";
     IdentityFile = map (k: "~/.config/ssh-sk/${k.key}.pub") yubikeyKeys.piv;
+    # The sandbox gets only the no-touch signing agent, not fido2-agent (which
+    # also holds the sudo handle); forward it to a distinct streamlocal path.
+    RemoteForward = [ "/run/user/1000/agent-sign /run/user/1000/fido2-sign-agent" ];
+    StreamLocalBindUnlink = "yes";
   }
   // lib.optionalAttrs (!isLinux) {
     # T4/macOS: CryptoTokenKit is not used; OpenSC prompts the PIN on the tty.
