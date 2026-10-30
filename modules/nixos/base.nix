@@ -38,6 +38,8 @@ in
 
   users.users.${cfg.username} = {
     isNormalUser = true;
+    # Pin the uid: the pam_rssh socket path is derived from it.
+    uid = 1000;
     description = "Sam Mohr";
     extraGroups = [
       "networkmanager"

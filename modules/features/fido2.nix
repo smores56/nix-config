@@ -196,6 +196,9 @@ let
   # PEM certs in ~/.eid/authorized_certificates. Certificates are public, so
   # they live in yubikey-keys.nix rather than a vault. Rotating a PIV key means
   # replacing its entry; an entry for a key that is not plugged in is harmless.
+  # Sudo handles are loaded at login only where a local agent is consumed; on
+  # a server pam_rssh uses the forwarded one.
+  isServer = builtins.elem "server" config.machine.profiles;
   yubikeyKeys = import ../lib/yubikey-keys.nix;
   pivCerts = map (k: k.cert) yubikeyKeys.piv;
 in
@@ -238,6 +241,27 @@ in
         Environment = agentEnv;
         Restart = "on-failure";
         RestartSec = 2;
+      };
+      Install.WantedBy = [ "default.target" ];
+    };
+
+    # The sudo handles need no PIN, so load them at login. A laptop has no
+    # forwarded agent: without this, local pam_rssh sees an empty agent and
+    # sudo falls back to the password until yk-login runs.
+    systemd.user.services.fido2-agent-load = lib.mkIf (!isServer) {
+      Unit = {
+        Description = "Load the touch-only sudo handles into fido2-agent";
+        After = [ "fido2-agent.service" ];
+        Wants = [ "fido2-agent.service" ];
+        # A restart (yk-login) clears the agent; re-run the load with it.
+        PartOf = [ "fido2-agent.service" ];
+      };
+      Service = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        # Type=simple: ssh-agent may not have created the socket yet.
+        ExecStartPre = "${lib.getExe pkgs.bashNonInteractive} -c 'for ((i = 0; i < 300; i++)); do [ -S %t/fido2-agent ] && exit 0; sleep 0.1; done; exit 1'";
+        ExecStart = "${lib.getExe (loader "fido2-agent-load" "fido2-agent" loginKeys)}";
       };
       Install.WantedBy = [ "default.target" ];
     };

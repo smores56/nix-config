@@ -274,12 +274,23 @@ never silently install unsigned boot artifacts again), push, and on the machine
 `git pull && sudo nixos-rebuild switch --flake .#smorespro`.
 
 ```sh
-# 11. Fingerprint (lock screen only; PAM has it on neither sudo, greetd, nor
-#     polkit, so it cannot authorize root)
+# 11. Fingerprint (lock screen only; pam_fprintd is on neither sudo, greetd,
+#     nor polkit, so a finger cannot authorize root)
 fprintd-enroll
 fprintd-verify
 fprintd-list "$USER"
 ```
+
+YubiKey sudo has no sshd and no PIN: `pam_rssh` on the `sudo` stack dials the
+lock-screen agent at `/run/user/1000/fido2-agent`, which `fido2-agent-load`
+fills with the three touch-only handles at login. Verify with the key inserted:
+`sudo -v` shows `Please touch the device`, one touch succeeds, and a second
+`sudo -v` inside five minutes does nothing. With the handles gone
+(`SSH_AUTH_SOCK=/run/user/1000/fido2-agent ssh-add -D`) or no key present,
+`sudo` falls back to the account password. `id -u` must already be `1000`
+before the first switch that ships this configuration: the socket path is
+derived from the pinned uid, and renumbering an existing account does not
+chown `$HOME`.
 
 Login: with the YubiKey inserted the greeter's first prompt is the 8-digit PIV
 PIN (pam_p11 on the `greetd` stack only, with a digits-only PIN regex so a typed

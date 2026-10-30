@@ -7,6 +7,8 @@
 
   nixosOptions = {
     fingerprint.enable = true;
+    # YubiKey sudo without an sshd: pam_rssh dials the local fido2-agent.
+    sudoKey.enable = true;
   };
 
   homeOptions = {
