@@ -117,8 +117,8 @@ in
     security.pam.services.su.fprintAuth = false;
     security.pam.services.login.fprintAuth = false;
     # greetd gets pam_fprintd from the default and would block ~30s waiting for
-    # a finger before PAM reaches the password; the lock screen and console use
-    # the "login" stack above.
+    # a finger before PAM reaches the PIN or password. Keep it off here; a host
+    # may opt in with a short timeout and max-tries (smorespro's greeter does).
     security.pam.services.greetd.fprintAuth = false;
     # polkit drives pkexec and every desktop admin prompt. fprintd's default
     # would let one finger authorize root, the same CVE-2024-37408 surface.

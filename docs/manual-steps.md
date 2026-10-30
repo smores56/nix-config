@@ -292,12 +292,14 @@ before the first switch that ships this configuration: the socket path is
 derived from the pinned uid, and renumbering an existing account does not
 chown `$HOME`.
 
-Login: with the YubiKey inserted the greeter's first prompt is the 8-digit PIV
-PIN (pam_p11 on the `greetd` stack only, with a digits-only PIN regex so a typed
-password is rejected locally instead of burning a PIV retry); without a key the
-password prompt follows. The lock screen accepts the fingerprint or the account
-password, never the PIV: pam_p11 on `login` would turn a password attempt into a
-PIV attempt. There is no greetd auto-login.
+Login: fingerprint is tried first (5 s, one try), then with the YubiKey
+inserted the 8-digit PIV PIN, then the account password. At the lock screen the
+fingerprint unlocks over D-Bus, or type the 8-digit PIN (pam_p11 on the `login`
+stack), or the password; the digits-only regex refuses a password locally
+instead of sending it to the card. The same `login` stack serves the text
+console. The pinned noctalia (5.1.0) hands the typed text to every PAM prompt;
+upgrading past 5.4.0 makes it answer only the first, so carry the 16-line
+`passwordSent` patch or adopt upstream #4132. There is no greetd auto-login.
 
 The greeter does not rate-limit PIV attempts: anyone at the unlocked-room
 greeter can burn the eight-try budget and force the off-site PUK. Keep the key
