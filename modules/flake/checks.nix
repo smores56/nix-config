@@ -597,6 +597,114 @@ in
               grep -q '^listenaddress 127\.0\.0\.1:' settings
               touch $out
             '';
+
+        # The auth stack is the security property: a jump that skips the wrong
+        # line, a control that falls through, or a probe that is not a store
+        # path silently changes which credential is accepted. A pam_exec probe
+        # that cannot run makes its module return SYSTEM_ERR; under
+        # default=ignore that skips the card gate, pam_p11 then runs and its
+        # default=die denies - a lockout, not a degradation.
+        pam-auth-gates =
+          let
+            pam = config.flake.nixosConfigurations.smorespro.config.security.pam.services;
+            rendered = service: pkgs.writeText "pam-${service}.rendered" pam.${service}.text;
+            expected =
+              name: lines: pkgs.writeText "pam-${name}.expected" (lib.concatStringsSep "\n" lines + "\n");
+            # The module is the first store path on the line; the control is
+            # everything before it, which may itself contain a space.
+            modules = ''
+              ${pkgs.gawk}/bin/awk '$1 == "auth" {
+                for (i = 2; i <= NF; i++)
+                  if ($i ~ /^\/nix\/store\//) { n = split($i, p, "/"); print p[n]; break }
+              }' "$1"
+            '';
+            controls = ''
+              ${pkgs.gawk}/bin/awk '$1 == "auth" {
+                s = $0; sub(/^auth /, "", s); i = index(s, " /nix/store/"); print substr(s, 1, i - 1)
+              }' "$1"
+            '';
+          in
+          pkgs.runCommand "pam-auth-gates-check"
+            {
+              nativeBuildInputs = [
+                pkgs.coreutils
+                pkgs.diffutils
+                pkgs.gawk
+                pkgs.gnugrep
+              ];
+            }
+            ''
+              modules() {
+                ${modules}
+              }
+              controls() {
+                ${controls}
+              }
+              probe() {  # the executable pam_exec runs, straightened per line
+                ${pkgs.gawk}/bin/awk '$1 == "auth" && /pam_exec\.so/ {
+                  p = ""
+                  for (i = 1; i <= NF; i++)
+                    if ($i ~ /^\/nix\/store\// && $i !~ /pam_exec\.so$/) p = $i
+                  print p
+                }' "$1"
+              }
+
+              # greeter: lid gate -> fprintd -> card gate -> p11 (die) -> unix.
+              modules ${rendered "greetd"} > greetd.modules
+              diff -u ${
+                expected "greetd-modules" [
+                  "pam_exec.so"
+                  "pam_fprintd.so"
+                  "pam_exec.so"
+                  "pam_p11.so"
+                  "pam_unix.so"
+                  "pam_deny.so"
+                ]
+              } greetd.modules
+              controls ${rendered "greetd"} > greetd.controls
+              diff -u ${
+                expected "greetd-controls" [
+                  "[success=1 default=ignore]"
+                  "sufficient"
+                  "[success=1 default=ignore]"
+                  "[success=done default=die]"
+                  "sufficient"
+                  "required"
+                ]
+              } greetd.controls
+
+              # lock screen: card gate -> p11 (die) -> unix. Fingerprint is a
+              # D-Bus path, so pam_fprintd must not be here.
+              modules ${rendered "login"} > login.modules
+              diff -u ${
+                expected "login-modules" [
+                  "pam_exec.so"
+                  "pam_p11.so"
+                  "pam_unix.so"
+                  "pam_deny.so"
+                ]
+              } login.modules
+              controls ${rendered "login"} > login.controls
+              diff -u ${
+                expected "login-controls" [
+                  "[success=1 default=ignore]"
+                  "[success=done default=die]"
+                  "sufficient"
+                  "required"
+                ]
+              } login.controls
+
+              probe ${rendered "greetd"} > greetd.probes
+              probe ${rendered "login"} > login.probes
+              grep -q . greetd.probes
+              grep -q . login.probes
+              for p in $(cat greetd.probes login.probes); do
+                test -x "$p"
+                grep -q '^/nix/store/' <<< "$p"
+              done
+
+              touch $out
+            '';
       };
     };
 }

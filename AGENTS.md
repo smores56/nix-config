@@ -202,13 +202,16 @@ local rclone remotes), and `key-bundle` (FIDO2 handle round-trip: 0600 modes,
 outer and inner checksums, moved bundle, --force, public-half mismatch, host-key
 restore and its `.sops.yaml` recipient check), and
 `sshd-settings` (rendered `sshd -T`: key-only auth, verify-required, no
-root/password/kbd-interactive, loopback listen, no home authorized_keys). Run them
-after touching shell, git, ssh or backup settings, or
+root/password/kbd-interactive, loopback listen, no home authorized_keys), and
+`pam-auth-gates` (rendered PAM: the greeter's lid and card gates sit immediately
+before `pam_fprintd` and `pam_p11`, `pam_p11` terminates on both success and
+failure, the lock screen has no `pam_fprintd`, and every probe is an executable
+store path). Run them after touching shell, git, ssh, PAM or backup settings, or
 `modules/lib/repo-workflow.nix`:
 
 ```sh
 nix build .#checks.aarch64-darwin.{git-work-routing,ssh-allowed-signers,ssh-pub-keys,worktrees-branch-template,repos-routing,zsh-config,github-mirror-probe}
-nix build .#checks.x86_64-linux.{backup-watch,backup-plain,github-metadata,key-bundle,manual-steps-sync,sshd-settings}
+nix build .#checks.x86_64-linux.{backup-watch,backup-plain,github-metadata,key-bundle,manual-steps-sync,pam-auth-gates,sshd-settings}
 ```
 
 Run `manual-steps-sync` after touching hosts, sops keys, `tofu/`, backup
