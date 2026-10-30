@@ -142,7 +142,8 @@ let
       pkgs.systemd
       pkgs.util-linux
       pkgs.yubikey-manager
-      pkgs.zenity
+      pkgs.fuzzel
+      pkgs.libnotify
     ];
     text = ''
       runtime="''${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR is not set}"
@@ -167,19 +168,22 @@ let
       if has_piv; then exit 0; fi
 
       if [ ! -s "$pin_file" ]; then
-        pin=$(zenity --password --title="YubiKey PIN" 2>/dev/null) || exit 1
+        # fuzzel --prompt-only is a free-text masked prompt: no stdin, no list.
+        # The namespace keeps the window out of screencasts.
+        pin=$(fuzzel --dmenu --prompt-only="YubiKey PIN" --password='*' \
+          --namespace=pin --cache=/dev/null 2>/dev/null) || exit 1
         if [[ ! $pin =~ ^[0-9]{8}$ ]]; then
-          zenity --error --text="Enter the 8-digit YubiKey PIN." 2>/dev/null || true
+          notify-send -a yk-ensure "YubiKey" "Enter the 8-digit YubiKey PIN." 2>/dev/null || true
           exit 1
         fi
         attempts=$(ykman fido info 2>/dev/null |
           sed -n 's/^PIN:[[:space:]]*\([0-9][0-9]*\) attempt(s) remaining.*/\1/p')
         if [ -z "$attempts" ] || [ "$attempts" -lt 4 ]; then
-          zenity --error --text="Fewer than 4 YubiKey retries remain; refusing to send the PIN." 2>/dev/null || true
+          notify-send -a yk-ensure "YubiKey" "Fewer than 4 retries remain; refusing to send the PIN." 2>/dev/null || true
           exit 1
         fi
         if ! ykman fido access verify-pin --pin "$pin" >/dev/null 2>&1; then
-          zenity --error --text="The YubiKey rejected that PIN." 2>/dev/null || true
+          notify-send -a yk-ensure "YubiKey" "The YubiKey rejected that PIN." 2>/dev/null || true
           exit 1
         fi
         umask 077
