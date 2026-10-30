@@ -242,7 +242,10 @@ in
   home.packages = [
     pkgs.cloudflared
     cloudflared-access
-  ];
+  ]
+  # The ssh_config only names this path; without installing it here the
+  # activation would not realise the wrapper and every ProxyCommand would fail.
+  ++ lib.optional isLinux ykEnsureProxy;
 
   # smortress is reached only through the tunnel: cloudflared proxies to its
   # loopback sshd (modules/nixos/ssh.nix). `%h` expands to HostName.
