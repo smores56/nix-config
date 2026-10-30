@@ -1143,13 +1143,61 @@ systemctl status backup-photos.service
 journalctl -u backup-photos.service -n 100
 ```
 
-A failed run leaves `BACKUP-FAILED`. The freshness timer emails when
-`BACKUP-LAST-SUCCESS` is older than the dataset's limit (default 26h; weekly
-datasets get 8d). The operator guide — guarantees, trigger semantics, restore,
-and prune procedures — is
+A failed run leaves `BACKUP-FAILED`. A run that never started because another
+dataset held the shared offsite lock past its `lockWait` leaves
+`BACKUP-DEFERRED` instead, and re-queues a watched dataset so the change is not
+lost until the next timer. The freshness timer emails when `BACKUP-LAST-SUCCESS`
+is older than the dataset's limit (default 26h; weekly datasets get 8d), when a
+deferral is the last thing that happened, and when a failure marker is newer
+than the last success. The operator guide — guarantees, trigger semantics,
+restore, and prune procedures — is
 [`modules/features/backup/README.md`](../modules/features/backup/README.md).
 Run [`drills/restore-drill.sh`](../modules/features/backup/drills/restore-drill.sh)
 when changing the driver.
+
+### Encrypted backup disk
+
+`/var/backup` on smortress is the 4.5T HDD (`ata-ST5000LM000-2AN170_WCJ42WX0`).
+It is LUKS-encrypted: opened at boot from `/etc/crypttab` with a root-only
+keyfile on the encrypted root (so boot stays unattended), with a LUKS passphrase
+slot as the recovery path if the root is ever lost. The option is
+`backup.luks` in [`modules/nixos/backup.nix`](../modules/nixos/backup.nix);
+smortress turns it on in `modules/hosts/smortress/meta.nix` together with
+`backup.device = "/dev/mapper/backup"`.
+
+Formatting destroys everything on the disk, so the offsite mirrors under
+`/srv/proton/<Name>` are the restore source. Do it in this order:
+
+```sh
+# 1. Prove the offsite copies first: every dataset must have a fresh success
+#    and no verification error.
+systemctl list-timers 'backup-*'
+sudo ls -l /var/backup/*/BACKUP-LAST-SUCCESS
+
+# 2. Stop the timers and the watchers, then unmount the plain ext4 disk.
+sudo systemctl stop 'backup-*.timer' 'backup-*.path'
+sudo umount /var/backup
+
+# 3. Keyfile (kept on the encrypted root) + a passphrase slot for recovery.
+sudo install -d -m 0700 /etc/luks
+sudo sh -c 'head -c 64 /dev/urandom > /etc/luks/backup.key && chmod 0400 /etc/luks/backup.key'
+sudo cryptsetup luksFormat --label backup-luks /dev/disk/by-id/ata-ST5000LM000-2AN170_WCJ42WX0
+sudo cryptsetup luksAddKey /dev/disk/by-id/ata-ST5000LM000-2AN170_WCJ42WX0 /etc/luks/backup.key
+sudo cryptsetup luksDump /dev/disk/by-id/ata-ST5000LM000-2AN170_WCJ42WX0  # 2 keyslots
+sudo cryptsetup open --key-file /etc/luks/backup.key \
+  /dev/disk/by-id/ata-ST5000LM000-2AN170_WCJ42WX0 backup
+sudo mkfs.ext4 -L backup /dev/mapper/backup
+sudo mount /dev/mapper/backup /var/backup
+```
+
+Then enable `backup.luks` and `backup.device = "/dev/mapper/backup"` in
+`modules/hosts/smortress/meta.nix`, rebuild, and reboot: `/etc/crypttab` opens
+the disk from the keyfile before the mount, `nofail` keeps a missing keyfile
+from blocking boot, and the units (which declare `RequiresMountsFor`) fail
+loudly instead of writing to the root filesystem. Restore each mirror with
+`sudo rclone copy /srv/proton/<Name> /var/backup/<Name>/current`, then start the
+timers again. Rotate the Cloudflare API token and tunnel credentials in the same
+session (see the rotation checklist above), since they sat on the plaintext disk.
 
 ### CloudflareTofu
 

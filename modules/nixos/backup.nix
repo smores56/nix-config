@@ -2,7 +2,15 @@
 # only the mount; each backup feature writes into its own folder beneath it.
 # Mounted with `nofail` so a missing/failed disk never blocks boot — the
 # backup services declare `RequiresMountsFor`, so they fail loudly instead.
-{ config, lib, ... }:
+# With `luks.enable` the filesystem sits on /dev/mapper/<name>, opened at boot
+# from /etc/crypttab by a keyfile on the encrypted root (passphrase slot as the
+# recovery path), so the disk is never readable off the machine.
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
   cfg = config.backup;
 in
@@ -20,6 +28,25 @@ in
           type = lib.types.str;
           default = "/dev/disk/by-label/backup";
           description = "Block device or by-label/by-uuid path of the backup disk.";
+        };
+        luks = {
+          enable = lib.mkEnableOption "encrypting the backup disk with LUKS (keyfile unlock, plus an offline passphrase slot)";
+          device = lib.mkOption {
+            type = lib.types.nullOr lib.types.str;
+            default = null;
+            example = "/dev/disk/by-id/ata-WDC_WD50EZRX-00MVLB1_WMC3H0D5XKSY";
+            description = "The encrypted partition to open at boot: a stable by-id path, never a kernel name like /dev/sda1.";
+          };
+          name = lib.mkOption {
+            type = lib.types.str;
+            default = "backup";
+            description = "mapper name; the filesystem lives on /dev/mapper/<name>, which `device` defaults to when this is enabled.";
+          };
+          keyFile = lib.mkOption {
+            type = lib.types.str;
+            default = "/etc/luks/backup.key";
+            description = "Root-only keyfile created by the operator (mode 0400). It lives on the encrypted root, so the disk still opens unattended; the LUKS passphrase slot is the recovery path if the root is lost.";
+          };
         };
         rcloneConfig = lib.mkOption {
           type = lib.types.path;
@@ -135,6 +162,15 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # The encrypted disk is opened by systemd-cryptsetup from /etc/crypttab (a
+    # keyfile on the encrypted root, so boot stays unattended). `nofail` keeps a
+    # missing disk or keyfile from blocking boot: the units declare
+    # RequiresMountsFor, so they fail loudly instead.
+    environment.etc.crypttab.text = lib.mkIf (
+      cfg.luks.enable && cfg.luks.device != null
+    ) "${cfg.luks.name} ${cfg.luks.device} ${cfg.luks.keyFile} luks,nofail\n";
+    environment.systemPackages = lib.optional cfg.luks.enable pkgs.cryptsetup;
+
     fileSystems.${cfg.mountPoint} = {
       inherit (cfg) device;
       fsType = "ext4";
@@ -144,5 +180,20 @@ in
         "x-systemd.device-timeout=10"
       ];
     };
+
+    assertions = [
+      {
+        assertion = !cfg.luks.enable || cfg.luks.device != null;
+        message = "backup.luks.enable needs backup.luks.device (the by-id path of the encrypted partition).";
+      }
+      {
+        assertion = !cfg.luks.enable || lib.hasPrefix "/dev/mapper/${cfg.luks.name}" cfg.device;
+        message = "backup.device must stay on /dev/mapper/${cfg.luks.name} while backup.luks is enabled; the filesystem lives inside the mapping.";
+      }
+      {
+        assertion = !cfg.luks.enable || lib.hasPrefix "/" cfg.luks.keyFile;
+        message = "backup.luks.keyFile must be an absolute path on the root filesystem.";
+      }
+    ];
   };
 }
