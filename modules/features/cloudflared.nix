@@ -123,6 +123,106 @@ let
     '';
   };
 
+  # Lazy PIV PIN collection for the Linux client. The smortress ProxyCommand
+  # runs this before the tunnel: no-op once the agent holds the PIV key,
+  # otherwise one graphical prompt, verified before caching. A non-interactive
+  # caller (the wallpaper timer) sets YK_ENSURE_NO_PROMPT and fails instead of
+  # opening an unannounced dialog.
+  ykPinAskpass = pkgs.writeShellScriptBin "yk-ensure-askpass" ''
+    exec ${pkgs.coreutils}/bin/cat "''${XDG_RUNTIME_DIR:?}/fido2/pin"
+  '';
+  ykEnsure = pkgs.writeShellApplication {
+    name = "yk-ensure";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.gnugrep
+      pkgs.gnused
+      pkgs.opensc
+      pkgs.openssh
+      pkgs.systemd
+      pkgs.util-linux
+      pkgs.yubikey-manager
+      pkgs.zenity
+    ];
+    text = ''
+      runtime="''${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR is not set}"
+      agent="$runtime/fido2-agent"
+      pin_dir="$runtime/fido2"
+      pin_file="$pin_dir/pin"
+
+      has_piv() {
+        [ -S "$agent" ] && SSH_AUTH_SOCK="$agent" ssh-add -l 2>/dev/null |
+          grep -q 'PIV AUTH pubkey'
+      }
+
+      if has_piv; then exit 0; fi
+      if [ "''${YK_ENSURE_NO_PROMPT:-0}" = 1 ] ||
+        { [ -z "''${WAYLAND_DISPLAY:-}" ] && [ -z "''${DISPLAY:-}" ]; }; then
+        exit 1
+      fi
+
+      # Two parallel ssh calls must not race into two prompts or two verifies.
+      exec 9>"$runtime/fido2-ensure.lock"
+      flock 9
+      if has_piv; then exit 0; fi
+
+      if [ ! -s "$pin_file" ]; then
+        pin=$(zenity --password --title="YubiKey PIN" 2>/dev/null) || exit 1
+        if [[ ! $pin =~ ^[0-9]{8}$ ]]; then
+          zenity --error --text="Enter the 8-digit YubiKey PIN." 2>/dev/null || true
+          exit 1
+        fi
+        attempts=$(ykman fido info 2>/dev/null |
+          sed -n 's/^PIN:[[:space:]]*\([0-9][0-9]*\) attempt(s) remaining.*/\1/p')
+        if [ -z "$attempts" ] || [ "$attempts" -lt 4 ]; then
+          zenity --error --text="Fewer than 4 YubiKey retries remain; refusing to send the PIN." 2>/dev/null || true
+          exit 1
+        fi
+        if ! ykman fido access verify-pin --pin "$pin" >/dev/null 2>&1; then
+          zenity --error --text="The YubiKey rejected that PIN." 2>/dev/null || true
+          exit 1
+        fi
+        umask 077
+        mkdir -p "$pin_dir"
+        printf '%s' "$pin" >"$pin_file"
+        chmod 600 "$pin_file"
+        unset pin
+      fi
+
+      load_provider() {
+        SSH_AUTH_SOCK="$agent" \
+          SSH_ASKPASS="${lib.getExe ykPinAskpass}" \
+          SSH_ASKPASS_REQUIRE=force \
+          ssh-add -s "${pkgs.opensc}/lib/opensc-pkcs11.so"
+      }
+
+      if ! load_provider >/dev/null 2>&1; then
+        # pam_p11 or ykman may have reset the provider's verified state.
+        systemctl --user restart fido2-agent.service
+        for _ in $(seq 1 50); do
+          [ -S "$agent" ] && break
+          sleep 0.1
+        done
+        load_provider >/dev/null
+      fi
+    '';
+  };
+  ykEnsureProxy = pkgs.writeShellApplication {
+    name = "yk-ensure-proxy";
+    text = ''
+      ${lib.getExe ykEnsure}
+      exec "$@"
+    '';
+  };
+
+  # The laptop's smortress path collects the PIV PIN on first use; the server
+  # and the other hosts keep the plain tunnel.
+  smortressProxy =
+    if isLinux && !isServer then
+      "${lib.getExe ykEnsureProxy} ${cloudflared-access}/bin/cloudflared-access ssh --hostname %h"
+    else
+      "${cloudflared-access}/bin/cloudflared-access ssh --hostname %h";
+
   # A loopback forward for one tunnel service; maki points at 127.0.0.1:<port>.
   forward = sub: port: {
     Unit = {
@@ -156,7 +256,7 @@ in
     # would also outlive the credential decision, so the design keeps this
     # host out of connection reuse.
     ControlMaster = "no";
-    ProxyCommand = "${cloudflared-access}/bin/cloudflared-access ssh --hostname %h";
+    ProxyCommand = smortressProxy;
   }
   // lib.optionalAttrs isLinux {
     # pam_rssh (sudo) signs through the forwarded FIDO2 agent, whose credential

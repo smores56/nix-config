@@ -96,6 +96,8 @@ in
       TimeoutStartSec = "20min";
       Restart = "on-failure";
       RestartSec = 30;
+      # The SSH proxy must not open an unannounced PIN dialog from a timer.
+      Environment = [ "YK_ENSURE_NO_PROMPT=1" ];
       ExecStart = "${wallpapers}/bin/wallpapers sync";
     };
     # The login run: graphical-session.target is started by the session manager.
