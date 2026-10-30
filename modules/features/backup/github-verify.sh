@@ -71,7 +71,10 @@ export GH_CONFIG_DIR="$gh_config"
 
 # forks are out of scope for both ghorg (--skip-forks) and pgb (no -F);
 # archived repos are included by all three and must be in the mirror.
-if ! gh api --paginate "user/repos?per_page=100" \
+# `affiliation=owner` matches ghorg's clone scope: without it /user/repos also
+# returns repos the token merely collaborates on or that live in an org, which
+# ghorg never mirrors and pgb cannot fully enumerate (the pull counts differ).
+if ! gh api --paginate "user/repos?per_page=100&affiliation=owner" \
   --jq '.[] | select(.fork != true) | [.name, .full_name] | @tsv' >"$work/api.tsv"; then
   say "gh api user/repos failed"
   exit 1
