@@ -433,6 +433,10 @@ in
               test "$(grep -c 'command="' authorized_keys)" -eq 3
               test "$(grep -c 'no-user-rc' authorized_keys)" -eq 3
               test "$(grep -c 'no-agent-forwarding' authorized_keys)" -eq 3
+              shell=${config.flake.nixosConfigurations.smortress.config.users.users.smores.shell}
+              cmd=$(grep -o '/nix/store/[^"]*agent-ssh' "$shell/bin/agent-login-shell" | head -1)
+              test -n "$cmd"
+              grep -F "command=\"$cmd\"" authorized_keys
               test ${
                 toString (
                   builtins.length (
@@ -570,6 +574,22 @@ in
       // nixosChecks
       // scriptChecks
       // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+        agent-sandbox-static =
+          pkgs.runCommand "agent-sandbox-static-check"
+            {
+              nativeBuildInputs = [ pkgs.gnugrep ];
+            }
+            ''
+              grep -F -- '--clearenv' ${../lib/agent-sandbox.sh}
+              grep -F -- '--unshare-pid' ${../lib/agent-sandbox.sh}
+              grep -F -- '--unshare-user' ${../lib/agent-sandbox.sh}
+              grep -F -- '--tmpfs /run' ${../lib/agent-sandbox.sh}
+              grep -F -- 'no-user-rc' ${../nixos/ssh.nix}
+              grep -F -- 'agent-ssh' ${../nixos/ssh.nix}
+              grep -F -- 'Photos' ${../lib/agent-sandbox.nix}
+              ! grep -F -- '(allow default)' ${../lib/agent-sandbox.sh}
+              touch $out
+            '';
         sshd-settings =
           pkgs.runCommand "sshd-settings-check"
             {

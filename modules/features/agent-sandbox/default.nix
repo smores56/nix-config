@@ -22,7 +22,6 @@ let
       isServer
       isDarwin
       ;
-    home = config.home.homeDirectory;
   };
 in
 {
@@ -74,6 +73,8 @@ in
               grep -q "^NoNewPrivs:[[:space:]]*1" /proc/self/status
             fi
             test -z "$(command -v sudo || true)"
+            test ! -e /run/wrappers/bin/sudo
+            test ! -e /run/current-system/sw/bin/sudo
             test -z "$(ls -A "$HOME/.ssh")"
             test -z "$(ls -A "$HOME/.config")"
             ! touch "$HOME/.agent-sandbox-probe" 2>/dev/null

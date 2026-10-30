@@ -3,7 +3,6 @@
 {
   pkgs,
   lib,
-  home,
   isServer,
   isDarwin,
 }:
@@ -13,22 +12,19 @@ let
   # bubblewrap from nixpkgs-unstable on Linux.
   bwrap = if isDarwin then null else pkgs.bubblewrap;
 
-  path = lib.makeBinPath (
-    [
-      pkgs.coreutils
-      pkgs.findutils
-      pkgs.gnugrep
-      pkgs.gnused
-      pkgs.bash
-      pkgs.git
-      pkgs.openssh
-      pkgs.ripgrep
-      pkgs.jq
-      pkgs.gh
-      pkgs.nix
-    ]
-    ++ lib.optionals (!isDarwin) [ pkgs.bubblewrap ]
-  );
+  path = lib.makeBinPath [
+    pkgs.coreutils
+    pkgs.findutils
+    pkgs.gnugrep
+    pkgs.gnused
+    pkgs.bash
+    pkgs.git
+    pkgs.openssh
+    pkgs.ripgrep
+    pkgs.jq
+    pkgs.gh
+    pkgs.nix
+  ];
 
   homeRw = [
     "$HOME/code"
@@ -71,6 +67,10 @@ let
     "$HOME/.cache/mozilla"
     "$HOME/.cache/chromium"
     "$HOME/.cache/gh"
+    "$HOME/.mozilla"
+    "$HOME/.var/app"
+    "$HOME/.local/share/Steam"
+    "$HOME/Library"
   ]
   ++ lib.optionals (!isDarwin) [ "/var/lib/media/Photos" ];
 
@@ -82,6 +82,8 @@ let
     "$HOME/.pypirc"
     "$HOME/.cargo/credentials.toml"
     "$HOME/.local/state/lesshst"
+    "$HOME/.zsh_history"
+    "$HOME/.python_history"
   ];
 
   configAllow = [
@@ -209,9 +211,11 @@ let
     [gpg "ssh"]
         allowedSignersFile = ~/.local/state/agent/config/allowed_signers
         defaultKeyCommand = ~/.local/state/agent/config/bin/gpg-ssh-default-key
+        program = ${pkgs.openssh}/bin/ssh-keygen
 
     [core]
         sshCommand = ssh -F ~/.local/state/agent/config/ssh_config
+    ${lib.optionalString isDarwin "[commit]\n        gpgsign = false\n"}
   '';
 
   sshConfig = pkgs.writeText "agent-sandbox-ssh-config" ''

@@ -172,7 +172,9 @@ in
       "$HOME/.ssh/allowed_signers" \
       "$HOME/.ssh/config.work" \
       "$HOME/.ssh/id_work.pub" \
-      "$HOME/.ssh/id_personal.pub"
+      "$HOME/.ssh/id_personal.pub" \
+      "$HOME/.ssh/known_hosts" \
+      "$HOME/.ssh/known_hosts.old"
   '';
 
   home.activation.checkSshPrivateKeys = lib.hm.dag.entryAfter [ "writeBoundary" ] ''

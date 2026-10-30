@@ -15,7 +15,6 @@ let
   # interactive shells.
   agentSandbox = import ../lib/agent-sandbox.nix {
     inherit pkgs lib;
-    home = config.users.users.${user}.home;
     isServer = builtins.elem "server" config.machine.profiles;
     isDarwin = false;
   };
@@ -82,6 +81,9 @@ in
         shell = lib.mkForce agentSandbox.agentLoginShell;
         openssh.authorizedKeys.keys = authorizedKeys;
       };
+      # pam_shells/chsh read this; the shell also lands in systemPackages via
+      # users-groups.nix, which creates /run/current-system/sw/bin/<name>.
+      environment.shells = [ agentSandbox.agentLoginShell ];
     })
 
     (lib.mkIf (config.exposeSsh.enable || config.sudoKey.enable) {
@@ -128,6 +130,15 @@ in
         {
           assertion = !config.sudoKey.enable || config.users.users.${user}.uid != null;
           message = "sudoKey needs a pinned uid for the fido2-agent socket path";
+        }
+        {
+          assertion =
+            !config.exposeSsh.enable
+            || (
+              builtins.any (p: (p.name or "") == "agent-login-shell") config.environment.systemPackages
+              && builtins.any (p: (p.name or "") == "agent-login-shell") config.environment.shells
+            );
+          message = "the forced-SSH login shell must be installed and listed in environment.shells";
         }
       ];
     }

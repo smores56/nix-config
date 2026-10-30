@@ -18,6 +18,10 @@ fi
 
 home=$HOME
 agent_config="$home/.local/state/agent/config"
+if [ -L "$agent_config" ]; then
+  echo "agent-sandbox: refusing a symlinked agent config dir: $agent_config" >&2
+  exit 1
+fi
 mkdir -p \
   "$agent_config" \
   "$agent_config/bin" \
@@ -73,6 +77,7 @@ prepare_darwin_config() {
     rm -rf "$dest"
     cp -a "$src" "$dest"
   done
+  rm -f "$agent_config/allowed_signers" "$agent_config/known_hosts" "$agent_config/gitconfig" "$agent_config/ssh_config"
   if [ -r "$home/.config/ssh/allowed_signers" ]; then
     cp "$home/.config/ssh/allowed_signers" "$agent_config/allowed_signers"
   fi
@@ -81,7 +86,12 @@ prepare_darwin_config() {
   fi
   cp "$AGENT_GIT_CONFIG" "$agent_config/gitconfig"
   cp "$AGENT_SSH_CONFIG" "$agent_config/ssh_config"
+  if [ -L "$agent_config/bin" ]; then
+    echo "agent-sandbox: refusing a symlinked config bin dir" >&2
+    exit 1
+  fi
   mkdir -p "$agent_config/bin"
+  rm -f "$agent_config/bin/ssh" "$agent_config/bin/gh" "$agent_config/bin/gpg-ssh-default-key" "$agent_config/bin/agent-sandbox-git-credential"
   cp "$AGENT_SSH_SHIM" "$agent_config/bin/ssh"
   cp "$AGENT_GH_SHIM" "$agent_config/bin/gh"
   cp "$AGENT_SIGNING_KEY_COMMAND" "$agent_config/bin/gpg-ssh-default-key"
@@ -179,6 +189,8 @@ if [ "$(uname -s)" = Darwin ]; then
     echo '(allow signal (target same-sandbox))'
     echo '(allow pseudo-tty)'
     echo '(allow network*)'
+    echo '(deny file-read* file-write* (subpath "/private/tmp/com.apple.launchd"))'
+    echo "(deny file-read* file-write* (subpath \"${TMPDIR:-/tmp}/com.apple.launchd\"))"
     for svc in "${MACH_ALLOW[@]}"; do
       echo "(allow mach-lookup (global-name \"$svc\"))"
     done
@@ -210,11 +222,11 @@ args=(
   --tmpfs /run
   --dir /run/secrets
   --dir /run/agent
-  --dir /run/agent/bin
   --dir /run/agent/runtime
   --ro-bind /nix/store /nix/store
   --ro-bind /etc /etc
   --ro-bind /bin /bin
+  --ro-bind-try /usr /usr
   --ro-bind-try /nix/var/nix/daemon-socket/socket /nix/var/nix/daemon-socket/socket
   --ro-bind "$home" "$home"
 )
@@ -240,7 +252,7 @@ for d in "${HOME_MASK_DIRS[@]}"; do
 done
 for f in "${HOME_MASK_FILES[@]}"; do
   # --file cannot create a mountpoint under a read-only home. A read-only
-  # /dev/null bind makes reads fail (EPERM), which is the deny we want.
+  # /dev/null bind denies the file (reads are empty or EPERM); it is still a mask.
   [ -e "$f" ] && args+=(--ro-bind /dev/null "$f")
 done
 

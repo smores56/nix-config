@@ -67,42 +67,85 @@ let
       set -euo pipefail
       inbox=${lib.escapeShellArg cfg.ingestDir}
       library=${lib.escapeShellArg cfg.library}
-      mkdir -p "$inbox/processed" "$inbox/failed"
+      canonical=${lib.escapeShellArg cfg.ingestDir}
 
-      mapfile -t entries < <(find "$inbox" -mindepth 1 -maxdepth 1 -type f ! -name manifest.json -printf '%f\n')
-      [ -f "$inbox/manifest.json" ] || [ "''${#entries[@]}" -gt 0 ] || exit 0
+      # The queue lives in an agent-writable tree. Refuse a symlinked queue or
+      # processed/failed directories, and confine every manifest path to the
+      # queue; otherwise this timer is an unsandboxed arbitrary-file reader
+      # (and mover) for the agent.
+      [ -d "$inbox" ] && [ ! -L "$inbox" ] || exit 0
+      [ "$(realpath -e "$inbox")" = "$canonical" ] || {
+        echo "calibre-ingest: queue is a symlink or relocated: $inbox" >&2
+        exit 1
+      }
+      for sub in processed failed; do
+        if [ -L "$inbox/$sub" ]; then
+          echo "calibre-ingest: $inbox/$sub is a symlink" >&2
+          exit 1
+        fi
+        mkdir -p "$inbox/$sub"
+      done
+      manifest="$inbox/manifest.json"
+      if [ -L "$manifest" ]; then
+        echo "calibre-ingest: manifest is a symlink" >&2
+        exit 1
+      fi
+
+      safe_file() {
+        local p=$1 candidate
+        case "$p" in
+          "" | /* | *..*) return 1 ;;
+        esac
+        candidate=$(realpath -m "$inbox/$p") || return 1
+        case "$candidate" in
+          "$canonical"/*) ;;
+          *) return 1 ;;
+        esac
+        [ -f "$candidate" ] && [ ! -L "$candidate" ] || return 1
+        printf '%s' "$candidate"
+      }
+
+      mapfile -d "" -t entries < <(find "$inbox" -mindepth 1 -maxdepth 1 -type f ! -name manifest.json -printf '%f\0')
+      [ -f "$manifest" ] || [ "''${#entries[@]}" -gt 0 ] || exit 0
 
       systemctl --user stop calibre-server.service || true
       trap 'systemctl --user start calibre-server.service || true' EXIT
 
-      if [ -f "$inbox/manifest.json" ]; then
-        jq -c '.[]' "$inbox/manifest.json" | while IFS= read -r entry; do
-          op=$(jq -r '.op' <<<"$entry")
-          case "$op" in
-            add)
-              path=$(jq -r '.path' <<<"$entry")
-              if [ -f "$inbox/$path" ]; then
-                if calibredb add --with-library "$library" "$inbox/$path"; then
-                  mv "$inbox/$path" "$inbox/processed/"
+      if [ -f "$manifest" ]; then
+        if ! jq -e 'type == "array"' "$manifest" >/dev/null; then
+          echo "calibre-ingest: manifest is not a JSON array" >&2
+          mv "$manifest" "$inbox/failed/manifest.$(date +%s).json"
+        else
+          jq -c '.[]' "$manifest" | while IFS= read -r entry; do
+            op=$(jq -r '.op' <<<"$entry")
+            case "$op" in
+              add)
+                path=$(jq -r '.path' <<<"$entry")
+                file=$(safe_file "$path") || {
+                  echo "calibre-ingest: rejected manifest path: $path" >&2
+                  continue
+                }
+                if calibredb add --with-library "$library" "$file"; then
+                  mv "$file" "$inbox/processed/"
                 else
-                  mv "$inbox/$path" "$inbox/failed/"
+                  mv "$file" "$inbox/failed/"
                 fi
-              fi
-              ;;
-            set_metadata)
-              id=$(jq -r '.id' <<<"$entry")
-              while IFS= read -r field; do
-                calibredb set_metadata --with-library "$library" "$id" --field "$field" \
-                  || true
-              done < <(jq -r '.fields | to_entries[] | "\(.key):\(.value)"' <<<"$entry")
-              ;;
-          esac
-        done
-        mv "$inbox/manifest.json" "$inbox/processed/manifest.$(date +%s).json"
+                ;;
+              set_metadata)
+                id=$(jq -r '.id' <<<"$entry")
+                while IFS= read -r field; do
+                  calibredb set_metadata --with-library "$library" "$id" --field "$field" \
+                    || true
+                done < <(jq -r '.fields | to_entries[] | "\(.key):\(.value)"' <<<"$entry")
+                ;;
+            esac
+          done
+          mv "$manifest" "$inbox/processed/manifest.$(date +%s).json"
+        fi
       fi
 
       for name in "''${entries[@]}"; do
-        [ -f "$inbox/$name" ] || continue
+        [ -f "$inbox/$name" ] && [ ! -L "$inbox/$name" ] || continue
         if calibredb add --with-library "$library" "$inbox/$name"; then
           mv "$inbox/$name" "$inbox/processed/"
         else
