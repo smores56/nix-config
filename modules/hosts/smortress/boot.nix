@@ -107,7 +107,7 @@
     script = ''
       set -eu
       nmcli=${pkgs.networkmanager}/bin/nmcli
-      device="$($nmcli -t -f DEVICE,TYPE device status | awk -F: '$2=="ethernet"{print $1; exit}')"
+      device="$($nmcli -t -f DEVICE,TYPE device status | ${pkgs.gawk}/bin/awk -F: '$2=="ethernet"{print $1; exit}')"
       [ -n "$device" ] || exit 0
       state="$($nmcli -t -f GENERAL.STATE device show "$device" 2>/dev/null || true)"
       case "$state" in
@@ -120,7 +120,7 @@
         if $nmcli connection up smortress-wired; then
           exit 0
         fi
-        sleep 2
+        ${pkgs.coreutils}/bin/sleep 2
       done
       exit 1
     '';
