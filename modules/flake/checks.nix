@@ -599,28 +599,45 @@ in
             '';
 
         # The auth stack is the security property: a jump that skips the wrong
-        # line, a control that falls through, or a probe that is not a store
-        # path silently changes which credential is accepted. A pam_exec probe
-        # that cannot run makes its module return SYSTEM_ERR; under
-        # default=ignore that skips the card gate, pam_p11 then runs and its
-        # default=die denies - a lockout, not a degradation.
+        # line, a control that falls through, or a probe in the wrong slot
+        # silently changes which credential is accepted. A pam_exec probe that
+        # cannot run returns SYSTEM_ERR; under default=ignore the gate is
+        # skipped, pam_p11 then runs, and only its authinfo_unavail=ignore keeps
+        # that from locking the password out.
         pam-auth-gates =
           let
-            pam = config.flake.nixosConfigurations.smorespro.config.security.pam.services;
-            rendered = service: pkgs.writeText "pam-${service}.rendered" pam.${service}.text;
+            cfg = config.flake.nixosConfigurations.smorespro.config;
+            rendered =
+              service: pkgs.writeText "pam-${service}.rendered" cfg.security.pam.services.${service}.text;
             expected =
               name: lines: pkgs.writeText "pam-${name}.expected" (lib.concatStringsSep "\n" lines + "\n");
-            # The module is the first store path on the line; the control is
-            # everything before it, which may itself contain a space.
-            modules = ''
-              ${pkgs.gawk}/bin/awk '$1 == "auth" {
-                for (i = 2; i <= NF; i++)
-                  if ($i ~ /^\/nix\/store\//) { n = split($i, p, "/"); print p[n]; break }
-              }' "$1"
+            # One line per auth rule: control, module basename, then the args
+            # with every store path reduced to its basename. That pins the
+            # order, the controls, the arguments and which probe sits where
+            # without depending on store hashes. Rules carrying no store path
+            # (a bare pam_deny) pass through unchanged.
+            normalize = ''
+              ${pkgs.gawk}/bin/awk '
+                $1 == "auth" {
+                  s = $0; sub(/ # .*$/, "", s)
+                  i = index(s, " /nix/store/")
+                  if (i == 0) { print s; next }
+                  ctl = substr(s, 6, i - 6)
+                  n = split(substr(s, i + 1), t, " ")
+                  out = ctl
+                  for (j = 1; j <= n; j++) {
+                    if (t[j] ~ /^\/nix\/store\//) { m = split(t[j], p, "/"); out = out " " p[m] }
+                    else out = out " " t[j]
+                  }
+                  print out
+                }' "$1"
             '';
-            controls = ''
-              ${pkgs.gawk}/bin/awk '$1 == "auth" {
-                s = $0; sub(/^auth /, "", s); i = index(s, " /nix/store/"); print substr(s, 1, i - 1)
+            probes = ''
+              ${pkgs.gawk}/bin/awk '$1 == "auth" && /pam_exec\.so/ {
+                p = ""
+                for (i = 1; i <= NF; i++)
+                  if ($i ~ /^\/nix\/store\// && $i !~ /pam_exec\.so$/) p = $i
+                print p
               }' "$1"
             '';
           in
@@ -634,74 +651,58 @@ in
               ];
             }
             ''
-              modules() {
-                ${modules}
+              normalize() {
+                ${normalize}
               }
-              controls() {
-                ${controls}
-              }
-              probe() {  # the executable pam_exec runs, straightened per line
-                ${pkgs.gawk}/bin/awk '$1 == "auth" && /pam_exec\.so/ {
-                  p = ""
-                  for (i = 1; i <= NF; i++)
-                    if ($i ~ /^\/nix\/store\// && $i !~ /pam_exec\.so$/) p = $i
-                  print p
-                }' "$1"
+              probes() {
+                ${probes}
               }
 
-              # greeter: lid gate -> fprintd -> card gate -> p11 (die) -> unix.
-              modules ${rendered "greetd"} > greetd.modules
+              # greeter: lid gate -> fprintd -> card gate -> p11 -> unix.
+              normalize ${rendered "greetd"} > greetd.stack
               diff -u ${
-                expected "greetd-modules" [
-                  "pam_exec.so"
-                  "pam_fprintd.so"
-                  "pam_exec.so"
-                  "pam_p11.so"
-                  "pam_unix.so"
-                  "pam_deny.so"
+                expected "greetd" [
+                  "[success=1 default=ignore] pam_exec.so quiet quiet_log pam-lid-closed"
+                  "sufficient pam_fprintd.so timeout=5 max-tries=1"
+                  "[success=1 default=ignore] pam_exec.so quiet quiet_log pam-ccid-absent"
+                  "[success=done authinfo_unavail=ignore default=die] pam_p11.so opensc-pkcs11.so ^[0-9]{8}$"
+                  "sufficient pam_unix.so likeauth nullok try_first_pass"
+                  "required pam_deny.so"
                 ]
-              } greetd.modules
-              controls ${rendered "greetd"} > greetd.controls
-              diff -u ${
-                expected "greetd-controls" [
-                  "[success=1 default=ignore]"
-                  "sufficient"
-                  "[success=1 default=ignore]"
-                  "[success=done default=die]"
-                  "sufficient"
-                  "required"
-                ]
-              } greetd.controls
+              } greetd.stack
 
-              # lock screen: card gate -> p11 (die) -> unix. Fingerprint is a
-              # D-Bus path, so pam_fprintd must not be here.
-              modules ${rendered "login"} > login.modules
+              # lock screen: card gate -> p11 -> unix, and no pam_fprintd
+              # (Noctalia drives the sensor over D-Bus).
+              normalize ${rendered "login"} > login.stack
               diff -u ${
-                expected "login-modules" [
-                  "pam_exec.so"
-                  "pam_p11.so"
-                  "pam_unix.so"
-                  "pam_deny.so"
+                expected "login" [
+                  "[success=1 default=ignore] pam_exec.so quiet quiet_log pam-ccid-absent"
+                  "[success=done authinfo_unavail=ignore default=die] pam_p11.so opensc-pkcs11.so ^[0-9]{8}$"
+                  "sufficient pam_unix.so likeauth nullok try_first_pass"
+                  "required pam_deny.so"
                 ]
-              } login.modules
-              controls ${rendered "login"} > login.controls
-              diff -u ${
-                expected "login-controls" [
-                  "[success=1 default=ignore]"
-                  "[success=done default=die]"
-                  "sufficient"
-                  "required"
-                ]
-              } login.controls
+              } login.stack
 
-              probe ${rendered "greetd"} > greetd.probes
-              probe ${rendered "login"} > login.probes
-              grep -q . greetd.probes
-              grep -q . login.probes
-              for p in $(cat greetd.probes login.probes); do
-                test -x "$p"
-                grep -q '^/nix/store/' <<< "$p"
-              done
+              # Both probes must be executable store paths: a relative or
+              # missing probe is a SYSTEM_ERR, and for the card gate that means
+              # pam_p11 runs unguarded on every attempt.
+              probes ${rendered "greetd"} > greetd.probes
+              probes ${rendered "login"} > login.probes
+              test "$(wc -l < greetd.probes)" -eq 2
+              test "$(wc -l < login.probes)" -eq 1
+              for p in $(cat greetd.probes login.probes); do test -x "$p"; done
+
+              # The gates belong to smorespro's two services alone. A stray
+              # global p11/fprintd option would put a PIN-or-nothing module in
+              # front of sudo and every admin prompt, and this check would
+              # otherwise stay green.
+              ${lib.concatStringsSep "\n" (
+                map (svc: "! grep -qE 'pam_(p11|fprintd|exec)\\.so' ${rendered svc}") [
+                  "sudo"
+                  "su"
+                  "polkit-1"
+                ]
+              )}
 
               touch $out
             '';

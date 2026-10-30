@@ -220,8 +220,9 @@ in
     home.sessionVariables.SSH_SK_HELPER = lib.getExe skHelper;
 
     # The greeter's pam_p11 reads this through root, so a store symlink is fine.
-    # A locked PIV PIN makes pam_p11 return PAM_MAXTRIES, which aborts the stack:
-    # remove the key to fall back to the password.
+    # A locked PIV PIN makes pam_p11 report AUTHINFO_UNAVAIL, which the stack
+    # treats as "step aside": the password still unlocks without removing the
+    # key (see modules/hosts/smorespro/greeter.nix).
     home.file.".eid/authorized_certificates".text = lib.concatStringsSep "\n" pivCerts;
 
     # A dedicated agent rather than `services.ssh-agent`: the Proton Pass agent
