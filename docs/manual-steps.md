@@ -274,8 +274,8 @@ never silently install unsigned boot artifacts again), push, and on the machine
 `git pull && sudo nixos-rebuild switch --flake .#smorespro`.
 
 ```sh
-# 11. Fingerprint (lock screen only; pam_fprintd is on neither sudo, greetd,
-#     nor polkit, so a finger cannot authorize root)
+# 11. Fingerprint (greeter and lock screen; pam_fprintd is only on greetd,
+#     never sudo, su, polkit-1, or login)
 fprintd-enroll
 fprintd-verify
 fprintd-list "$USER"
@@ -292,18 +292,44 @@ before the first switch that ships this configuration: the socket path is
 derived from the pinned uid, and renumbering an existing account does not
 chown `$HOME`.
 
-Login: fingerprint is tried first (5 s, one try), then with the YubiKey
-inserted the 8-digit PIV PIN, then the account password. At the lock screen the
-fingerprint unlocks over D-Bus, or type the 8-digit PIN (pam_p11 on the `login`
-stack), or the password; the digits-only regex refuses a password locally
-instead of sending it to the card. The same `login` stack serves the text
-console. The pinned noctalia (5.1.0) hands the typed text to every PAM prompt;
-upgrading past 5.4.0 makes it answer only the first, so carry the 16-line
-`passwordSent` patch or adopt upstream #4132. There is no greetd auto-login.
+Login and unlock attempt a factor only when it can succeed:
+
+- **Greeter:** lid gate → `pam_fprintd` (`timeout=5 max-tries=1`) → CCID gate →
+  `pam_p11` → `pam_unix`. A closed lid skips the fingerprint; no reader skips
+  the PIV path, so the password is the first prompt.
+- **Lock screen (Noctalia):** fingerprint over D-Bus starts on lock, after a
+  failed password, and on resume; it never blocks the password path. PAM against
+  `login`: CCID gate → `pam_p11` → `pam_unix`. The text console shares `login`.
+- **`pam_p11` control** is `[success=done authinfo_unavail=ignore default=die]`:
+  a correct PIN stops the stack (exactly one prompt); `AUTHINFO_UNAVAIL` (no
+  matching certificate, a locked PIV, or pcscd down) falls through to the
+  password; a wrong PIN or non-PIN text denies, so a typed password never
+  reaches the card and never burns a retry.
+- **Measured on smorespro (2026-10-30):** lid-closed login 65 ms; lid-open
+  5.39 s (the fingerprint wait); successful password 53 ms; failed attempt
+  1.7–2.7 s.
+
+The gates are `pam_exec` probes built with `pkgs.writeShellApplication` (store
+paths that own their `PATH`). `pam_exec` passes an **empty** environment, so a
+bare command exits 127 and the gate silently no-ops. The card probe is a build
+input because a missing one runs `pam_p11` and its `default=die` would lock out
+the password entirely. `pam-auth-gates` pins both full stacks and asserts
+`sudo`/`su`/`polkit-1` carry no `p11`/`fprintd`/`exec`.
+
+Noctalia's `passwordSent` guard landed in **v5.3.0** (PR #4294), not 5.4.1. The
+strict stack never issues a second prompt, so the guard is unreachable and the
+shell is no longer pinned for auth reasons; a shell upgrade is a separate
+change.
 
 The greeter does not rate-limit PIV attempts: anyone at the unlocked-room
-greeter can burn the eight-try budget and force the off-site PUK. Keep the key
-with you, and treat a "PIN blocked" result as a physical-access signal.
+greeter can burn the eight-try budget. A locked PIN now falls back to the
+password, but treat "PIN blocked" as a physical-access signal. Keep the key
+with you.
+
+Post-change verification: lid closed + key out → password in ≤200 ms; lid open
+→ fingerprint; lid open + key out → ~5.4 s then password; the seven-case
+one-prompt matrix passes including a wrong password; and
+`nix build .#checks.x86_64-linux.pam-auth-gates` stays green.
 
 Maki's personal profile on this host reads `NEURALWATT_API_KEY` and
 `TINYFISH_API_KEY` from `secrets/common.yaml`, which names smorespro as a
