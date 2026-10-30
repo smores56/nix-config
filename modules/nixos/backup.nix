@@ -166,9 +166,12 @@ in
     # keyfile on the encrypted root, so boot stays unattended). `nofail` keeps a
     # missing disk or keyfile from blocking boot: the units declare
     # RequiresMountsFor, so they fail loudly instead.
-    environment.etc.crypttab.text = lib.mkIf (
-      cfg.luks.enable && cfg.luks.device != null
-    ) "${cfg.luks.name} ${cfg.luks.device} ${cfg.luks.keyFile} luks,nofail\n";
+    # The entry must not exist at all unless LUKS is on: declaring
+    # `environment.etc.crypttab.text` under a false condition still creates the
+    # file entry, which then has neither `text` nor `source` and fails the build.
+    environment.etc = lib.mkIf (cfg.luks.enable && cfg.luks.device != null) {
+      crypttab.text = "${cfg.luks.name} ${cfg.luks.device} ${cfg.luks.keyFile} luks,nofail\n";
+    };
     environment.systemPackages = lib.optional cfg.luks.enable pkgs.cryptsetup;
 
     fileSystems.${cfg.mountPoint} = {
