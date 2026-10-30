@@ -85,11 +85,17 @@ in
     Unit = {
       Description = "Rotate wallpapers from the Proton mount";
       After = [ "graphical-session.target" ];
+      # The login start races the compositor/agent; retry a bounded number of
+      # times rather than losing the run until the three-hour timer.
+      StartLimitIntervalSec = 600;
+      StartLimitBurst = 10;
     };
     Service = {
       Type = "oneshot";
       # A wedged rsync or Keychain prompt must not pin the timer forever.
       TimeoutStartSec = "20min";
+      Restart = "on-failure";
+      RestartSec = 30;
       ExecStart = "${wallpapers}/bin/wallpapers sync";
     };
     # The login run: graphical-session.target is started by the session manager.

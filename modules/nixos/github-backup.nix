@@ -40,6 +40,7 @@ let
       pkgs.git-lfs
       pkgs.jq
       pkgs.gawk
+      pkgs.gnugrep
       pkgs.findutils
       pkgs.util-linux
       pkgs.coreutils
