@@ -35,14 +35,18 @@ let
     "$HOME/.cargo/registry"
     "$HOME/.cargo/git"
     "$HOME/.npm"
-    "$HOME/.bun"
-    "$HOME/.yarn"
-    "$HOME/.deno"
+    "$HOME/.bun/install/cache"
     "$HOME/.local/state/agent"
     "$HOME/.local/share/agent"
     "$HOME/.cache/agent"
   ]
   ++ lib.optionals (!isDarwin) [ "/var/lib/media" ];
+
+  # Read-only exceptions carved out of a writable parent (the user PATH must
+  # not become an agent-writable executable directory).
+  homeRo = [
+    "$HOME/.cache/.bun/bin"
+  ];
 
   homeMaskDirs = [
     "$HOME/.ssh"
@@ -119,6 +123,9 @@ let
   configFile = pkgs.writeText "agent-sandbox.conf" ''
     HOME_RW=(
     ${lib.concatMapStrings (p: "  \"${p}\"\n") homeRw}
+    )
+    HOME_RO=(
+    ${lib.concatMapStrings (p: "  \"${p}\"\n") homeRo}
     )
     HOME_MASK_DIRS=(
     ${lib.concatMapStrings (p: "  \"${p}\"\n") homeMaskDirs}

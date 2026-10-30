@@ -112,7 +112,7 @@ build_env_args() {
     "USER=${USER:-smores}"
     "LOGNAME=${LOGNAME:-${USER:-smores}}"
     "PWD=$start"
-    "PATH=$agent_config/bin:$home/.local/bin:$home/.nix-profile/bin:$AGENT_SANDBOX_PATH"
+    "PATH=$agent_config/bin:$home/.local/bin:$home/.nix-profile/bin:$home/.cargo/bin:$home/.bun/bin:$home/.deno/bin:$home/.wasmer/bin:$AGENT_SANDBOX_PATH"
     "TMPDIR=/tmp"
     "SHELL=/bin/sh"
     "XDG_STATE_HOME=$home/.local/state/agent"
@@ -167,6 +167,7 @@ if [ "$(uname -s)" = Darwin ]; then
     echo '(version 1)'
     echo '(deny default)'
     echo '(allow process-exec (subpath "/nix/store") (subpath "/bin") (subpath "/usr/bin") (subpath "/usr/sbin") (subpath "/usr/local") (subpath "/opt/homebrew") (subpath "/Library/Developer") (subpath "'"$home/.local/bin"'") (subpath "'"$agent_config/bin"'"))'
+    echo "(allow process-exec (subpath \"$home/.cargo/bin\") (subpath \"$home/.bun/bin\") (subpath \"$home/.deno/bin\") (subpath \"$home/.wasmer/bin\"))"
     for exe in "${EXEC_DENY[@]}"; do
       echo "(deny process-exec (literal \"/usr/bin/$exe\"))"
       echo "(deny process-exec (literal \"/bin/$exe\"))"
@@ -184,6 +185,9 @@ if [ "$(uname -s)" = Darwin ]; then
       echo "(allow file-write* (subpath \"$d\"))"
     done
     echo "(allow file-write* (subpath \"$agent_config\"))"
+    for d in "${HOME_RO[@]}"; do
+      echo "(deny file-write* (subpath \"$d\"))"
+    done
     echo '(allow sysctl-read)'
     echo '(allow process-info* (target same-sandbox))'
     echo '(allow signal (target same-sandbox))'
@@ -233,6 +237,9 @@ args=(
 
 for d in "${HOME_RW[@]}"; do
   args+=(--bind-try "$d" "$d")
+done
+for d in "${HOME_RO[@]}"; do
+  args+=(--ro-bind-try "$d" "$d")
 done
 
 # Config allowlist: read-only copies inside the agent config dir. Bind before
