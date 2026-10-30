@@ -246,15 +246,16 @@ grep -q 'no transfer progress' "$BACKUP_ROOT/Stalled/BACKUP-FAILED" ||
 
 # 13. A dataset queued behind the shared lock defers instead of spending its
 # whole run budget waiting: it exits 75 (a result the units treat as success),
-# writes no failure marker, and leaves the success timestamp untouched. A
-# queued run must never look like a broken one.
+# writes a deferral marker for the freshness alert, and touches nothing else.
 LOCK=$ROOT/media-backup.lock
 : >"$LOCK"
 exec 8>>"$LOCK"
 flock 8
-# Case 11 left a failure marker behind; a deferral must not add or clear one.
-rm -f "$BACKUP_ROOT/Photos/BACKUP-FAILED"
+# Case 11 left a failure marker behind: a deferral must neither add nor clear
+# one, because the failure it records is still unresolved.
+[[ -e $BACKUP_ROOT/Photos/BACKUP-FAILED ]] || fail "expected the case-11 failure marker"
 before_defer=$(cat "$BACKUP_ROOT/Photos/BACKUP-LAST-SUCCESS")
+versions_before=$(find "$BACKUP_ROOT/Photos/versions" -mindepth 1 -maxdepth 1 -type d | wc -l)
 : >"$LAST"
 defer_rc=0
 BACKUP_LOCK_PATH=$LOCK bash "$DRIVER" \
@@ -263,7 +264,11 @@ BACKUP_LOCK_PATH=$LOCK bash "$DRIVER" \
   --timeout 5m --lock-wait 1s --offsite >>"$LAST" 2>&1 || defer_rc=$?
 ((defer_rc == 75)) || fail "a queued run exited $defer_rc instead of deferring (75)"
 grep -q 'backup deferred' "$LAST" || fail "deferral was not reported"
-[[ ! -e $BACKUP_ROOT/Photos/BACKUP-FAILED ]] || fail "a deferred run wrote a failure marker"
+[[ -e $BACKUP_ROOT/Photos/BACKUP-FAILED ]] || fail "a deferred run cleared the failure marker"
+[[ -e $BACKUP_ROOT/Photos/BACKUP-DEFERRED ]] || fail "a deferred run left no deferral marker"
+versions_after=$(find "$BACKUP_ROOT/Photos/versions" -mindepth 1 -maxdepth 1 -type d | wc -l)
+((versions_after == versions_before)) ||
+  fail "a deferred run created a version folder ($versions_before -> $versions_after)"
 [[ $(cat "$BACKUP_ROOT/Photos/BACKUP-LAST-SUCCESS") == "$before_defer" ]] ||
   fail "a deferred run refreshed the success timestamp"
 
@@ -277,5 +282,6 @@ BACKUP_LOCK_PATH=$LOCK bash "$DRIVER" \
   --timeout 5m --lock-wait 5s --offsite >>"$LAST" 2>&1 ||
   fail "a run could not take a free shared lock"
 grep -q 'backup deferred' "$LAST" && fail "an uncontended run deferred"
+[[ ! -e $BACKUP_ROOT/Photos/BACKUP-DEFERRED ]] || fail "a real run left the deferral marker"
 
 echo "backup_plain.sh: ok"

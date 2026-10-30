@@ -269,6 +269,7 @@ DATASET_DIR=$BACKUP_ROOT/$NAME
 LOCAL=$DATASET_DIR/current
 VERSIONS=$DATASET_DIR/versions
 MARKER=$DATASET_DIR/BACKUP-FAILED
+DEFERRED=$DATASET_DIR/BACKUP-DEFERRED
 LAST_SUCCESS=$DATASET_DIR/BACKUP-LAST-SUCCESS
 
 # `remote:Name` for an rclone remote, `path/Name` for a filesystem path. One
@@ -319,7 +320,18 @@ fail() {
 # the next timer run tries again; a dataset that keeps deferring still trips the
 # freshness alert, because the timestamp does not move.
 defer() {
-  printf 'backup deferred: %s\n' "$(sanitize "$*")" >&2
+  local message
+  message=$(sanitize "$*")
+  if ((DRY_RUN == 0)); then
+    # The freshness check must be able to tell "nothing copied" from "nothing
+    # needed copying": with only deferrals there is no successful run to borrow
+    # a timestamp from, so record the attempt and let the age run from the last
+    # real success (or from never).
+    install -d -m 0700 "$DATASET_DIR" 2>/dev/null || true
+    { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" "$message"; } \
+      >"$DEFERRED" 2>/dev/null || true
+  fi
+  printf 'backup deferred: %s\n' "$message" >&2
   exit "$DEFER_EXIT"
 }
 
@@ -334,8 +346,14 @@ acquire_lock() {
     return 0
   fi
   echo "waiting up to ${LOCK_WAIT_SECONDS}s for lock $path ..."
-  flock -w "$LOCK_WAIT_SECONDS" 9 ||
-    defer "lock $path was still held after ${LOCK_WAIT_SECONDS}s"
+  local rc=0
+  flock -w "$LOCK_WAIT_SECONDS" 9 || rc=$?
+  # flock exits 1 only when the wait expired; a broken lock setup (bad fd, a
+  # missing binary, a bad argument) must not masquerade as a deferral, which
+  # the units treat as success.
+  ((rc == 0)) && return 0
+  ((rc == 1)) || fail "cannot acquire lock $path (flock exit $rc)"
+  defer "lock $path was still held after ${LOCK_WAIT_SECONDS}s"
 }
 
 # A stalled run keeps printing stats whose counters do not advance, so only a new
@@ -564,7 +582,7 @@ run_backup() {
   # fail before copying rather than after a multi-hour run.
   [[ -z $OFFSITE_RC_SOCKET || -S $OFFSITE_RC_SOCKET ]] ||
     fail "offsite RC socket $OFFSITE_RC_SOCKET is missing; proton-mount.service is down or was not built with --rc"
-  install -d -m 0700 "$LOCAL" "$VERSIONS/$DATE" || fail "cannot create $DATASET_DIR"
+  install -d -m 0700 "$LOCAL" || fail "cannot create $DATASET_DIR"
 
   # preBackup runs first, outside the host lock, and may *produce* the source (a
   # producer-style dataset starts empty), so the emptiness check must follow it.
@@ -592,6 +610,14 @@ run_backup() {
       acquire_lock "/run/lock/media-backup-${NAME}.lock"
     fi
   fi
+
+  # The version folder is created only once the lock is held: a deferral did no
+  # work, and an empty versions/<date> left behind would shift the next run's
+  # version naming.
+  install -d -m 0700 "$VERSIONS/$DATE" || fail "cannot create $VERSIONS/$DATE"
+  # This run is really happening now, so a previous deferral no longer describes
+  # the dataset's state.
+  rm -f "$DEFERRED"
 
   local local_log=$WORK/local.log offsite_log=$WORK/offsite.log
   local offsite_path_flags=()

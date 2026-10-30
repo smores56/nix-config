@@ -109,9 +109,16 @@ let
         # be stale yet.
         [ -d "$dir/current" ] || return 0
         file="$dir/BACKUP-LAST-SUCCESS"
+        failed="$dir/BACKUP-FAILED"
+        deferred="$dir/BACKUP-DEFERRED"
         flag="/run/backup-freshness/$name.alerted"
         if [ -e "$file" ]; then
           mtime=$(stat -c %Y "$file" 2>/dev/null || echo 0)
+        elif [ -e "$deferred" ]; then
+          # A deferral copied nothing, so there is no successful run to borrow a
+          # timestamp from: the dataset is stale by definition, however green the
+          # unit looks (a deferral exits 75, which the unit treats as success).
+          mtime=0
         else
           # No marker yet (first run since the marker landed). Fall back to the
           # unit's last successful run so epoch 0 does not look ~56 years stale.
@@ -126,9 +133,17 @@ let
           fi
         fi
         age=$((now - mtime))
-        if [ "$age" -gt "$max" ]; then
+        # A failure marker newer than the last success is a live failure the age
+        # cannot see: the mirror is unverified even if a recent run finished.
+        unverified=0
+        if [ -e "$failed" ] && { [ ! -e "$file" ] || [ "$failed" -nt "$file" ]; }; then
+          unverified=1
+        fi
+        if [ "$age" -gt "$max" ] || [ "$unverified" -eq 1 ]; then
           if [ ! -e "$flag" ]; then
-            if [ -e "$file" ]; then
+            if [ "$unverified" -eq 1 ]; then
+              body="The last $name backup failed: $(head -c 300 "$failed" 2>/dev/null || true)"
+            elif [ -e "$file" ]; then
               body="No successful $name backup for $((age / 3600))h (limit $((max / 3600))h). Check: systemctl status $unit; journalctl -u $unit"
             else
               body="No successful $name backup recorded (no BACKUP-LAST-SUCCESS marker). Check: systemctl status $unit; journalctl -u $unit"

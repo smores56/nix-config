@@ -231,8 +231,15 @@ let
           # The in-process marker (driver) carries the real error; only fall back
           # to a generic one when the run was killed before that could run.
           if [ ! -e ${lib.escapeShellArg marker} ]; then
-            printf '%s exit=%s\n' "$SERVICE_RESULT" "''${EXIT_CODE:-?}" > ${lib.escapeShellArg marker}
+            printf '%s exit=%s\n' "$SERVICE_RESULT" "''${EXIT_STATUS:-?}" > ${lib.escapeShellArg marker}
           fi
+        fi
+        # 75 is a deferral: the run never took the lock, and ExecStartPre had
+        # already drained the on-change queue, so without a fresh request the
+        # watched change would be lost until the next timer.
+        if [ "''${EXIT_STATUS:-}" = 75 ] && [ -d ${lib.escapeShellArg (queueDir name)} ]; then
+          ${pkgs.coreutils}/bin/printf 'deferred\n' \
+            >${lib.escapeShellArg (queueDir name)}/deferred-$(${pkgs.coreutils}/bin/date -u +%Y%m%dT%H%M%S).queue
         fi
       '';
     in
@@ -407,7 +414,11 @@ in
     }) cfg.datasets
     ++ lib.mapAttrsToList (name: dataset: {
       # A wait longer than the run cap means systemd kills the queued run before
-      # it can defer, which is the failure mode lockWait exists to prevent.
+      # it can defer, which is the failure mode lockWait exists to prevent. The
+      # unit always renders --lock-wait, so "0" (wait forever) stays a CLI-only
+      # affordance: as a dataset value it would put the unbounded wait back into
+      # a unit. timeout needs the same grammar guard, or an unparseable value
+      # ("90min") silently disables the comparison.
       assertion =
         let
           wait = parseDurationSeconds dataset.lockWait;
@@ -415,8 +426,11 @@ in
         in
         builtins.match "[0-9]+[smhd]?" dataset.lockWait != null
         && wait != null
-        && (wait == 0 || cap == null || cap == 0 || wait < cap);
-      message = "backup.datasets.${name}.lockWait must be \"0\" (wait forever) or \"<number><s|m|h|d>\" shorter than timeout, got \"${dataset.lockWait}\" with timeout \"${dataset.timeout}\".";
+        && wait > 0
+        && builtins.match "[0-9]+[smhd]?" dataset.timeout != null
+        && cap != null
+        && wait < cap;
+      message = "backup.datasets.${name}.lockWait must be \"<number><s|m|h|d>\" (at least 1s, never \"0\") and shorter than timeout \"<number><s|m|h|d>\", got \"${dataset.lockWait}\" with timeout \"${dataset.timeout}\".";
     }) cfg.datasets
     ++ lib.mapAttrsToList (name: dataset: {
       assertion = dataset.fullCheckSchedule == null || dataset.fullCheckSchedule != "";

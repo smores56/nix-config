@@ -227,13 +227,18 @@ Layout under `/var/lib/github-mirrors` (the dataset source):
    `/run/lock/media-backup-<name>.lock` for local-only ones.
    A queued dataset waits up to `lockWait` (per-dataset, default 20m), then
    **defers**: it exits 75, which the unit lists in `SuccessExitStatus`, so a
-   busy lock is not a failure, no marker is written, the success timestamp stays
-   put, and the next timer run retries. Without the bound, a long off-hours or
-   on-change run of another dataset made the queued unit sit out its whole
-   `TimeoutStartSec` and get killed with zero work done — indistinguishable from
-   a broken dataset. A dataset that keeps deferring still trips the freshness
-   alert, because its timestamp never advances. Manual `backup` runs and the
-   restore drill take the same lock; pass `--lock-wait 0` to wait forever.
+   busy lock is not a failure. A deferral leaves `BACKUP-FAILED` and
+   `BACKUP-LAST-SUCCESS` untouched, records `BACKUP-DEFERRED`, and — for a
+   watched dataset, whose queue `ExecStartPre` already drained — re-queues a
+   request from `ExecStopPost`, so the change is retried instead of waiting for
+   the next timer. Without the bound, a long off-hours or on-change run of
+   another dataset made the queued unit sit out its whole `TimeoutStartSec` and
+   get killed with zero work done — indistinguishable from a broken dataset.
+   `backup-freshness` alerts on a `BACKUP-DEFERRED` without a newer
+   `BACKUP-LAST-SUCCESS` and on a `BACKUP-FAILED` newer than the last success,
+   so deferring or failing never hides behind a green unit. Manual `backup` runs
+   and the restore drill take the same lock; pass `--lock-wait 0` to wait
+   forever (the units always get a positive value from `lockWait`).
 3. Local copy → `current/`, overwritten revisions to `versions/<date>/`.
 4. Offsite copy → `/srv/proton/<Name>` (the mount's filesystem). With an
    rclone-remote target it is `<remote>:<Name>` and carries
@@ -256,7 +261,9 @@ Layout under `/var/lib/github-mirrors` (the dataset source):
    `BACKUP-FAILED` marker from inside the run; if the run was killed before that
    could happen, `ExecStopPost` writes a generic one (it never overwrites the
    detailed marker). `onFailure` sends the Cloudflare email alert
-   (`cloudflare-email@%n.service`).
+   (`cloudflare-email@%n.service`), and `backup-freshness` also alerts on a
+   marker newer than the last success, so a failure stays visible after a later
+   deferral turns the unit green.
 
 `TimeoutStartSec` (per-dataset `timeout`) is a wall-clock backstop only; a stuck
 run is normally caught by `stallTimeout` in ~30m. Keep `lockWait` well under it:
