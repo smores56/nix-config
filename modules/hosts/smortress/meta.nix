@@ -109,16 +109,15 @@ in
     # Offsite is this host's Proton Drive mount, not an rclone remote: the mount
     # owns the only token and the backups write through it as plain files.
     backup.remote = "/srv/proton";
-    # The HDD is the one disk that still holds a plaintext mirror. Turning this
-    # on (with the device) moves /var/backup inside a LUKS mapping opened from
-    # /etc/crypttab by a keyfile on the encrypted root; the format procedure is
-    # in docs/manual-steps.md ("Encrypted backup disk"). Both lines land
-    # together: the filesystem exists only inside the mapping.
-    # backup.device = "/dev/mapper/backup";
-    # backup.luks = {
-    #   enable = true;
-    #   device = "/dev/disk/by-id/ata-ST5000LM000-2AN170_WCJ42WX0";
-    # };
+    # The HDD is LUKS-encrypted: /var/backup lives inside a mapping opened at
+    # boot from /etc/crypttab by a keyfile on the encrypted root. Both settings
+    # belong together — the filesystem exists only inside the mapping. The format
+    # and re-key procedure is in docs/manual-steps.md ("Encrypted backup disk").
+    backup.device = "/dev/mapper/backup";
+    backup.luks = {
+      enable = true;
+      device = "/dev/disk/by-id/ata-ST5000LM000-2AN170_WCJ42WX0";
+    };
     protonDrive.enable = true;
     # Full checks through the mount compare sizes only (a checksum read-back
     # would stream the whole archive through FUSE into the cache), so a weekly
