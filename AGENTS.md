@@ -202,13 +202,17 @@ local rclone remotes), and `key-bundle` (FIDO2 handle round-trip: 0600 modes,
 outer and inner checksums, moved bundle, --force, public-half mismatch, host-key
 restore and its `.sops.yaml` recipient check), and
 `sshd-settings` (rendered `sshd -T`: key-only auth, verify-required, no
-root/password/kbd-interactive, loopback listen, no home authorized_keys). Run them
-after touching shell, git, ssh or backup settings, or
-`modules/lib/repo-workflow.nix`:
+root/password/kbd-interactive, loopback listen, no home authorized_keys), and
+`pam-auth-gates` (rendered PAM for smorespro: the full control and argument list
+of `greetd` and `login`, with the lid gate before `pam_fprintd` and the card gate
+before `pam_p11`, `pam_p11` falling through only on `AUTHINFO_UNAVAIL`, no
+`pam_fprintd` on the lock screen, no `p11`/`fprintd`/`exec` on sudo, su or
+polkit, and both probes as executable store paths). Run them after touching
+shell, git, ssh, PAM or backup settings, or `modules/lib/repo-workflow.nix`:
 
 ```sh
 nix build .#checks.aarch64-darwin.{git-work-routing,ssh-allowed-signers,ssh-pub-keys,worktrees-branch-template,repos-routing,zsh-config,github-mirror-probe}
-nix build .#checks.x86_64-linux.{backup-watch,backup-plain,github-metadata,key-bundle,manual-steps-sync,sshd-settings}
+nix build .#checks.x86_64-linux.{backup-watch,backup-plain,github-metadata,key-bundle,manual-steps-sync,pam-auth-gates,sshd-settings}
 ```
 
 Run `manual-steps-sync` after touching hosts, sops keys, `tofu/`, backup

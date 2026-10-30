@@ -267,7 +267,9 @@ fprintd-verify        # test
 fprintd-list "$USER"  # confirm enrolled prints
 ```
 
-The lock screen talks to fprintd over D-Bus, so it needs no PAM setup.
+The lock screen talks to fprintd over D-Bus; its PAM stack is the shared
+`login` service, customized on smorespro in
+`modules/hosts/smorespro/greeter.nix` (lid-gated fingerprint, PIV, one prompt).
 Fingerprint auth is deliberately disabled for `sudo`/`su` (see
 `modules/nixos/fprintd.nix`).
 
