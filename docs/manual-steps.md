@@ -1165,8 +1165,10 @@ slot as the recovery path if the root is ever lost. The option is
 smortress turns it on in `modules/hosts/smortress/meta.nix` together with
 `backup.device = "/dev/mapper/backup"`.
 
-Formatting destroys everything on the disk, so the offsite mirrors under
-`/srv/proton/<Name>` are the restore source. Do it in this order:
+Formatting destroys everything on the disk. The offsite mirrors under
+`/srv/proton/<Name>` are the safety net (they are why this is safe at all), but
+the recovery path is a re-seed from the live sources, not a Proton download.
+Do it in this order:
 
 ```sh
 # 1. Prove the offsite copies first: every dataset must have a fresh success
@@ -1194,9 +1196,26 @@ Then enable `backup.luks` and `backup.device = "/dev/mapper/backup"` in
 `modules/hosts/smortress/meta.nix`, rebuild, and reboot: `/etc/crypttab` opens
 the disk from the keyfile before the mount, `nofail` keeps a missing keyfile
 from blocking boot, and the units (which declare `RequiresMountsFor`) fail
-loudly instead of writing to the root filesystem. Restore each mirror with
-`sudo rclone copy /srv/proton/<Name> /var/backup/<Name>/current`, then start the
-timers again. Rotate the Cloudflare API token and tunnel credentials in the same
+loudly instead of writing to the root filesystem.
+
+**Re-seed from the sources, do not restore from Proton.** The local mirror is
+copy #2 and is derived: every byte in it comes from the live source. A Proton
+restore is the slow path — measured reads through the mount are ~3.4 MB/s, so
+281G is most of a day — while re-seeding reads the same disk the source lives
+on. The `versions/` history is local-only by design and is *not* on Proton, so it
+is lost either way; nothing unique to the old disk is recoverable from offsite.
+After the reboot:
+
+```sh
+sudo systemctl start backup-cloudflaretofu.service backup-github.service \
+  backup-memoryexport.service backup-lobechat.service backup-rustfs.service
+sudo systemctl start backup-photos.service   # 144G source -> local, ~20 min
+sudo systemctl start backup-videos.service backup-music.service
+```
+
+Each run copies source → new local mirror and finds nothing new to upload, so
+the offsite leg costs the drain walk only. Then confirm the markers and start
+the timers. Rotate the Cloudflare API token and tunnel credentials in the same
 session (see the rotation checklist above), since they sat on the plaintext disk.
 
 ### CloudflareTofu
