@@ -66,6 +66,11 @@ let
       # carries (1.75.1) for a trustworthy Proton mirror.
       rclone = inputs.nixpkgs-unstable.legacyPackages.${system}.rclone;
 
+      # The pinned nixpkgs ships bitwarden-desktop 2026.6.1 on electron_39,
+      # which the security policy marks EOL (anything below 41). Unstable
+      # carries 2026.9.0 on electron_43.
+      bitwarden-desktop = inputs.nixpkgs-unstable.legacyPackages.${system}.bitwarden-desktop;
+
       # YubiKey FIDO2 note: OpenSSH's libfido2 lists the same token twice
       # (USB HID + PC/SC). Do not override libfido2/openssh here: changing
       # either hash cascades through qtwebengine, KDE, and PySide and forces
