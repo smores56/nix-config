@@ -57,7 +57,27 @@ in
           AllowUsers = [ user ];
           # sshfs (pm) uses the SFTP subsystem, not TCP forwarding; the agent is
           # forwarded for pam_rssh and signing.
-          AllowTcpForwarding = "no";
+          #
+          # `remote` rather than `no` only to unlock streamlocal forwarding:
+          # sshd gates remote Unix-socket forwards on this same flag, so `no`
+          # also refuses the client's `RemoteForward …/agent-sign`
+          # (mindrot bug 3686, still open). No server-side TCP listener or
+          # egress can be set up: every remote TCP listen is denied below, and
+          # local forwarding stays off.
+          AllowTcpForwarding = "remote";
+          # Denies every TCP -R listen, which is what "no" was really for. Not
+          # consulted for Unix-socket forwarding (`remote_open_match` returns
+          # early when a listen path is set), so it cannot block agent-sign.
+          PermitListen = "none";
+          # Remote only: the sandbox receives the laptop's signing agent through
+          # a socket the client's RemoteForward creates. Local streamlocal
+          # forwarding (into the server) is not needed and stays denied.
+          AllowStreamLocalForwarding = "remote";
+          # sshd leaves a remote-forwarded socket behind when the session ends,
+          # and /run/user/1000 persists (linger), so without this every second
+          # connection fails to bind and silently loses the signing agent.
+          # The client's own StreamLocalBindUnlink only covers -L listeners.
+          StreamLocalBindUnlink = "yes";
           AllowAgentForwarding = "yes";
           # A per-key command= does NOT suppress ~/.ssh/rc; no-user-rc on the
           # signing keys and this global setting both close it.

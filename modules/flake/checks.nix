@@ -612,7 +612,10 @@ in
               grep -Fx 'KbdInteractiveAuthentication no' settings
               grep -Fx 'PermitRootLogin no' settings
               grep -Fx 'PermitEmptyPasswords no' settings
-              grep -Fx 'AllowTcpForwarding no' settings
+              grep -Fx 'AllowTcpForwarding remote' settings
+              grep -Fx 'permitlisten none' settings
+              grep -Fx 'AllowStreamLocalForwarding remote' settings
+              grep -Fxi 'streamlocalbindunlink yes' settings
               grep -Fx 'AllowAgentForwarding yes' settings
               grep -Fx 'AllowUsers smores' settings
               grep -Fx 'PermitUserRC no' settings

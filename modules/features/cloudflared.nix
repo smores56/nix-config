@@ -278,8 +278,17 @@ in
     IdentityFile = map (k: "~/.config/ssh-sk/${k.key}.pub") yubikeyKeys.piv;
     # The sandbox gets only the no-touch signing agent, not fido2-agent (which
     # also holds the sudo handle); forward it to a distinct streamlocal path.
+    # The remote path is the server's fixed sandbox socket, so it hardcodes uid
+    # 1000, matching the pin in modules/nixos/base.nix. The forward only binds
+    # on a session whose key grants port forwarding — the PIV identity used
+    # here — not on the restricted signing keys.
     RemoteForward = [ "/run/user/1000/agent-sign /run/user/1000/fido2-sign-agent" ];
+    # The server also needs StreamLocalBindUnlink (it defaults to no there); the
+    # client option only covers its own -L listeners.
     StreamLocalBindUnlink = "yes";
+    # A refused forward must be loud: without this the session comes up with a
+    # dead signing agent and signing fails later, far from the cause.
+    ExitOnForwardFailure = "yes";
   }
   // lib.optionalAttrs (!isLinux) {
     # T4/macOS: CryptoTokenKit is not used; OpenSC prompts the PIN on the tty.
