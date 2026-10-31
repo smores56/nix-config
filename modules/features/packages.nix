@@ -45,6 +45,9 @@
 
         # fun stuff
         cbonsai
+
+        # Security
+        bitwarden-cli
       ]
       ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
         libiconv

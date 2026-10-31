@@ -1,5 +1,4 @@
 {
-  config,
   lib,
   pkgs,
   ...
@@ -21,6 +20,9 @@ in
       krita
       proton-authenticator
       steam
+      tutanota-desktop
+      bitwarden-menu
+      bitwarden-desktop
     ];
   };
 }
