@@ -67,6 +67,11 @@ in
                   default = null;
                   description = "Directory to back up. Defaults to /var/lib/media/<Name>.";
                 };
+                homeSource = lib.mkOption {
+                  type = lib.types.bool;
+                  default = false;
+                  description = "The source lives under /home, which the unit hides (`ProtectHome`). Set this to expose /home read-only for the run; the mirror is written outside /home, so read-only is all a source needs.";
+                };
                 offsite = lib.mkOption {
                   type = lib.types.bool;
                   default = true;

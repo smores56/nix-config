@@ -143,6 +143,10 @@ in
       onChange.enable = true;
     };
     backup.datasets.Calibre = {
+      # The library lives in the user's home, not /var/lib/media: the calibre
+      # server and the FanFicFare ingest both write there.
+      source = "/home/smores/Calibre Library";
+      homeSource = true;
       schedule = "*-*-* 02:30:00";
       fullCheckSchedule = "Sun *-*-* 09:00:00";
       timeout = "2h";

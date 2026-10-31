@@ -280,7 +280,10 @@ let
         # is deliberately absent: each dataset would need its own ReadWritePaths.
         NoNewPrivileges = true;
         PrivateTmp = true;
-        ProtectHome = true;
+        # A dataset whose source is under /home (the Calibre library) needs
+        # /home visible; read-only is enough, because the copy only reads the
+        # source and the mirror is written to the backup disk.
+        ProtectHome = if dataset.homeSource then "read-only" else true;
         ProtectKernelTunables = true;
         ProtectKernelModules = true;
         ProtectControlGroups = true;
@@ -362,7 +365,9 @@ let
       # Reads the source, writes only its queue; no network access is needed.
       NoNewPrivileges = true;
       PrivateTmp = true;
-      ProtectHome = true;
+      # The watcher must see the source too, or a home-sourced dataset never
+      # queues a run.
+      ProtectHome = if dataset.homeSource then "read-only" else true;
       ProtectSystem = "strict";
       ReadWritePaths = [ (queueDir name) ];
       ProtectKernelTunables = true;
