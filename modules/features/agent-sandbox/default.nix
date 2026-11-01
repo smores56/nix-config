@@ -66,46 +66,54 @@ in
           pkgs.gnugrep
         ];
         text = ''
-          sb=${sandbox.agentSandbox}/bin/agent-sandbox
-          # shellcheck disable=SC2016 # the inner script is evaluated by /bin/sh
-          "$sb" /bin/sh -c '
-            set -eu
-            if [ -r /proc/self/status ]; then
-              grep -q "^NoNewPrivs:[[:space:]]*1" /proc/self/status
-            fi
-            test -z "$(command -v sudo || true)"
-            test ! -e /run/wrappers/bin/sudo
-            test ! -e /run/current-system/sw/bin/sudo
-            test -z "$(ls -A "$HOME/.ssh")"
-            test -z "$(ls -A "$HOME/.config")"
-            ! touch "$HOME/.agent-sandbox-probe" 2>/dev/null
-            if [ -d "$HOME/code" ]; then
-              touch "$HOME/code/.agent-sandbox-probe"
-              rm "$HOME/code/.agent-sandbox-probe"
-            fi
-            if [ -d /var/lib/media ]; then
-              touch /var/lib/media/.agent-sandbox-probe
-              rm /var/lib/media/.agent-sandbox-probe
-              mkdir /var/lib/media/.agent-sandbox-probe-dir
-              rmdir /var/lib/media/.agent-sandbox-probe-dir
-            fi
-            if [ -d /var/lib/media/Photos ]; then
-              test -z "$(ls -A /var/lib/media/Photos)"
-              ! touch /var/lib/media/Photos/.agent-sandbox-probe 2>/dev/null
-            fi
-            if [ -d /var/lib/media/Calibre-Ingest ]; then
-              touch /var/lib/media/Calibre-Ingest/.agent-sandbox-probe
-              rm /var/lib/media/Calibre-Ingest/.agent-sandbox-probe
-            fi
-            repo=$(find "$HOME/code" "$HOME/dev" -maxdepth 8 -name .git -type d -prune -print 2>/dev/null | head -n 1)
-            if [ -n "$repo" ]; then
-              ! touch "$repo/config" 2>/dev/null
-              ! touch "$repo/hooks/.agent-sandbox-probe" 2>/dev/null
-            fi
-            command -v maki >/dev/null && maki --version >/dev/null
-            nix store ping >/dev/null 2>&1
-          '
-          echo "agent-sandbox-check: ok"
+                    sb=${sandbox.agentSandbox}/bin/agent-sandbox
+                    # shellcheck disable=SC2016 # the inner script is evaluated by /bin/sh
+                    "$sb" /bin/sh -c '
+                      set -eu
+                      if [ -r /proc/self/status ]; then
+                        grep -q "^NoNewPrivs:[[:space:]]*1" /proc/self/status
+                      fi
+                      test -z "$(command -v sudo || true)"
+                      test ! -e /run/wrappers/bin/sudo
+                      test ! -e /run/current-system/sw/bin/sudo
+                      test -z "$(ls -A "$HOME/.ssh")"
+                      test -z "$(ls -A "$HOME/.config")"
+                      ! touch "$HOME/.agent-sandbox-probe" 2>/dev/null
+                      if [ -d "$HOME/code" ]; then
+                        touch "$HOME/code/.agent-sandbox-probe"
+                        rm "$HOME/code/.agent-sandbox-probe"
+                      fi
+                      if [ -d /var/lib/media ]; then
+                        touch /var/lib/media/.agent-sandbox-probe
+                        rm /var/lib/media/.agent-sandbox-probe
+                        mkdir /var/lib/media/.agent-sandbox-probe-dir
+                        rmdir /var/lib/media/.agent-sandbox-probe-dir
+                      fi
+                      if [ -d /var/lib/media/Photos ]; then
+                        test -z "$(ls -A /var/lib/media/Photos)"
+                        ! touch /var/lib/media/Photos/.agent-sandbox-probe 2>/dev/null
+                      fi
+                      if [ -d /var/lib/media/Calibre-Ingest ]; then
+                        touch /var/lib/media/Calibre-Ingest/.agent-sandbox-probe
+                        rm /var/lib/media/Calibre-Ingest/.agent-sandbox-probe
+                      fi
+                      repo_count=0
+                      while IFS= read -r repo; do
+                        [ -n "$repo" ] || continue
+                        repo_count=$((repo_count + 1))
+                        ! touch "$repo/config" 2>/dev/null
+                        ! touch "$repo/hooks/.agent-sandbox-probe" 2>/dev/null
+                        if [ "$repo_count" -ge 5 ]; then
+                          break
+                        fi
+                      done <<EOF
+          $(find "$HOME/code" "$HOME/dev" -maxdepth 8 -name .git -type d -prune -print 2>/dev/null)
+          EOF
+                      test ! -e /run/user
+                      command -v maki >/dev/null && maki --version >/dev/null
+                      nix store ping >/dev/null 2>&1
+                    '
+                    echo "agent-sandbox-check: ok"
         '';
       })
     ];

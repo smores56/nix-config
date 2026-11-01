@@ -459,6 +459,7 @@ in
               printf '%s\n' ${lib.escapeShellArgs config.flake.nixosConfigurations.smortress.config.users.users.smores.openssh.authorizedKeys.keys} >authorized_keys
               test "$(grep -c 'command="' authorized_keys)" -eq 3
               test "$(grep -c 'no-user-rc' authorized_keys)" -eq 3
+              test "$(grep -c 'no-touch-required' authorized_keys)" -eq 3
               test "$(grep -c 'no-agent-forwarding' authorized_keys)" -eq 3
               shell=${config.flake.nixosConfigurations.smortress.config.users.users.smores.shell}
               cmd=$(grep -o '/nix/store/[^"]*agent-ssh' "$shell/bin/agent-login-shell" | head -1)
@@ -612,6 +613,7 @@ in
               grep -F -- '--unshare-user' ${../lib/agent-sandbox.sh}
               grep -F -- '--tmpfs /run' ${../lib/agent-sandbox.sh}
               grep -F -- 'no-user-rc' ${../nixos/ssh.nix}
+              grep -F -- 'no-touch-required' ${../nixos/ssh.nix}
               grep -F -- 'agent-ssh' ${../nixos/ssh.nix}
               grep -F -- 'Photos' ${../lib/agent-sandbox.nix}
               grep -F -- 'gitdir/hooks' ${../lib/agent-sandbox.sh}

@@ -64,6 +64,9 @@ let
     "$HOME/.local/share/memory"
     "$HOME/.local/share/proton-pass-cli"
     "$HOME/.local/share/maki"
+    "$HOME/.claude"
+    "$HOME/.codex"
+    # ~/.agents/skills is Nix-managed and shared with maki; leave it readable.
     "$HOME/.local/state/key-backup"
     "$HOME/.local/state/memory"
     "$HOME/.local/state/maki"
@@ -89,6 +92,7 @@ let
     "$HOME/.local/state/lesshst"
     "$HOME/.zsh_history"
     "$HOME/.python_history"
+    "$HOME/.claude.json"
   ];
 
   configAllow = [

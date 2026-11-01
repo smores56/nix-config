@@ -478,9 +478,10 @@ in `~/.local/bin` and runs unsandboxed. The sandbox gives the agent a
 read-only home plus a short write allowlist, masks credentials and the whole
 `~/.config`, and exposes only the no-touch signing agent. Every personal host
 authorizes that signing key with a forced `agent-ssh` command, so remote
-sessions re-enter the same sandbox and `sudo` is not invocable. The lists and
-backend live in `modules/lib/agent-sandbox.nix`; operator steps are in
-`docs/manual-steps.md`.
+sessions re-enter the same sandbox and `sudo` is not invocable. On macOS there
+is no signing agent to forward yet, so sandboxed commits there are unsigned.
+The lists and backend live in `modules/lib/agent-sandbox.nix`; operator steps
+are in `docs/manual-steps.md`.
 
 #### Native Slack MCP
 

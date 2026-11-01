@@ -124,6 +124,9 @@ build_env_args() {
     "GIT_CONFIG_GLOBAL=$agent_config/gitconfig"
     "GIT_CONFIG_SYSTEM=/dev/null"
     "MAKI_LOG=/tmp/maki.log"
+    # Keep pre-commit hook environments out of the shared ~/.cache: a hook it
+    # writes there would run for the human outside the sandbox.
+    "PRE_COMMIT_HOME=$home/.cache/agent/pre-commit"
   )
   add_env TERM
   add_env COLORTERM
@@ -137,7 +140,12 @@ build_env_args() {
   add_env TINYFISH_API_KEY
   add_env IMMICH_API_KEY
   add_env OPENAI_API_KEY
-  add_env GH_TOKEN
+  # GH_TOKEN is inherited only on macOS, where the launcher injects the PAT
+  # from Keychain. On Linux the gh shim/credential helper select a PAT by
+  # repository owner; passing the caller's token would defeat that split.
+  if [ "$(uname -s)" = Darwin ]; then
+    add_env GH_TOKEN
+  fi
   if [ -n "$signing_sock" ]; then
     ENV_ARGS+=("SSH_AUTH_SOCK=/run/agent/sign")
   fi
@@ -192,6 +200,7 @@ if [ "$(uname -s)" = Darwin ]; then
     echo '(allow process-info* (target same-sandbox))'
     echo '(allow signal (target same-sandbox))'
     echo '(allow pseudo-tty)'
+    echo '(allow process-fork)'
     echo '(allow network*)'
     echo '(deny file-read* file-write* (subpath "/private/tmp/com.apple.launchd"))'
     echo "(deny file-read* file-write* (subpath \"${TMPDIR:-/tmp}/com.apple.launchd\"))"

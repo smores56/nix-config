@@ -20,7 +20,7 @@ let
   };
   forcedKey =
     k:
-    ''command="${agentSandbox.agentSsh}/bin/agent-ssh",no-user-rc,no-port-forwarding,no-agent-forwarding,no-X11-forwarding ${k.pubkey}'';
+    ''command="${agentSandbox.agentSsh}/bin/agent-ssh",no-touch-required,no-user-rc,no-port-forwarding,no-agent-forwarding,no-X11-forwarding ${k.pubkey}'';
   authorizedKeys = map (k: k.pubkey) yubikeyKeys.piv ++ map forcedKey yubikeyKeys.signing;
 in
 {

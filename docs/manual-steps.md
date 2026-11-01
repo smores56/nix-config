@@ -59,16 +59,21 @@ generated hardware config, then run `nix run .#bootstrap`.
   cargo/npm/bun caches and `/var/lib/media` are read-write, the nine
   allowlisted config dirs are read-only copies, and `~/.cache/.bun/bin` is
   read-only inside its writable parent — and
-  the secret allowlist is five credentials (two PATs, Neuralwatt, TinyFish, and
-  the Immich key). `~/.ssh`, `~/.config/{ssh-sk,sops}`,
-  `/srv/proton`, the PIV/sudo agent, and every other secret are absent; only
-  the no-touch signing agent is forwarded in. `/var/lib/media/Photos` is masked
+  the secret allowlist is six credentials (two PATs, Neuralwatt, TinyFish, the
+  Immich key, and the Cloudflare Access token when present). `~/.ssh`,
+  `~/.config/{ssh-sk,sops}`, `/srv/proton`, the PIV/sudo agent, and every other
+    secret are absent; only
+  the no-touch signing agent is forwarded in (Linux; the work Mac has no
+  signing agent yet, so its sandboxed commits are unsigned). `/var/lib/media/Photos`
+ is masked
   by a tmpfs applied after every bind, so it reads empty and is not writable
   even though the media tree as a whole is.
 - **Maki signing**: there is no software signing key. Commits made inside the
   sandbox sign through the forwarded FIDO2 signing agent (`gpg.ssh.defaultKeyCommand`,
   `gpg.format=ssh`), and the sandbox git config sets `commit.gpgsign = true`, so
-  a commit cannot be unsigned there. The default key is chosen from `ssh-add -L`
+  signing is the default. `commit.gpgsign` is config, not enforcement: a
+  deliberate `git commit --no-gpg-sign` still produces an unsigned commit, which
+  the review or PR checks catch. The default key is chosen from `ssh-add -L`
   and must appear in `~/.config/ssh/allowed_signers`; add a hardware key for the
   `sam@sammohr.dev` principal (the same entry that signs outside) and register it
   on GitHub as a **signing** key only. A retired `~/.config/maki/signing_ed25519`
