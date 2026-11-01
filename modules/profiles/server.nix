@@ -14,6 +14,7 @@
     ../nixos/filesearch.nix
     ../nixos/nvidia.nix
     ../nixos/backup.nix
+    ../nixos/restic-backup.nix
     ../nixos/backup-datasets.nix
     ../nixos/proton-drive.nix
     ../nixos/github-backup.nix

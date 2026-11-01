@@ -26,6 +26,12 @@
         mode = "0400";
       };
 
+      # restic: repo password plus the R2 S3 credentials (root-only; the
+      # backup units run as root). The R2 endpoint lives in the module.
+      restic-password = { };
+      r2-access-key-id = { };
+      r2-secret-access-key = { };
+
       # Brave Search API key for LobeChat's web search. Only the container's
       # root-run preStart renders it into the env file, and Page Assist keeps
       # its own copy in the browser; sops-nix's root 0400 default is enough.
