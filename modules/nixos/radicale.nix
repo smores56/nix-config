@@ -3,12 +3,7 @@
 # `dav.sammohr.dev` through the tunnel with its own bcrypt auth: CalDAV clients
 # (DAVx5, khal, vdirsyncer, macOS Calendar) cannot complete a Cloudflare Access
 # browser login, so Access is deliberately not in front of it.
-{
-  config,
-  lib,
-  pkgs,
-  ...
-}:
+{ config, ... }:
 let
   ports = import ../ports.nix;
 in
@@ -26,17 +21,6 @@ in
       storage.filesystem_folder = "/var/lib/data/radicale";
       rights.type = "owner_only";
     };
-  };
-
-  # The durable tree is 0750 smores:users; radicale needs traverse only, so it
-  # joins users and its own collection dir stays 0750 radicale:radicale.
-  users.users.radicale.extraGroups = [ "users" ];
-
-  # PrivateUsers maps smores:users to nobody:nogroup inside the unit, so the
-  # durable tree would be unreachable; keep host IDs and grant users explicitly.
-  systemd.services.radicale.serviceConfig = {
-    PrivateUsers = lib.mkForce false;
-    SupplementaryGroups = [ "users" ];
   };
 
   systemd.tmpfiles.rules = [
