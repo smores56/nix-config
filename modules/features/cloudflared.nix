@@ -31,8 +31,9 @@ let
   '';
 
   # A host that deploys its own service token through sops overrides both the
-  # cache and Proton Pass. A NixOS host's sops-nix path is probed at runtime
-  # (/run/secrets); home-manager sops knows its path at build time.
+  # cache and Proton Pass. Only a home-manager declaration is visible here; a
+  # NixOS-side one is probed at runtime (/run/secrets) and only works when it
+  # hands the user access.
   sopsTokenFile =
     if config.sops.secrets ? cloudflare-access-ssh-token then
       config.sops.secrets.cloudflare-access-ssh-token.path

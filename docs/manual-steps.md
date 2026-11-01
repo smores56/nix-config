@@ -583,7 +583,7 @@ Secrets are split by scope:
   sshd host key, so its identity is a dedicated age key at
   `~/.config/sops/smoreswork.key` (`sops.age.keyFile`); sops-nix cannot prompt
   for a passphrase at home-manager activation, so that file stays unwrapped and
-  `0600`.
+  `0600`. Provisioning is in *smoreswork sops key* below.
 - `secrets/common.yaml` — cross-host user secrets (neuralwatt, tinyfish, the
   `smores` password hash, owner-scoped PATs), encrypted to the admin identity
   plus every host's key (`smortress`, `smorespro`, `smoreswork`). Each of those
@@ -712,6 +712,33 @@ suspected leak):
 6. Commit and rebuild smortress. The host recipient is unchanged, so secret
    delivery needs no host change.
 
+### smoreswork sops key
+
+The work Mac decrypts at home-manager activation, which cannot prompt, so it
+uses a plaintext age identity instead of the passphrase-wrapped `keys.age`. Its
+recipient is `&smoreswork` in `.sops.yaml`.
+
+```sh
+mkdir -p ~/.config/sops
+(umask 077; age-keygen -o ~/.config/sops/smoreswork.key)
+age-keygen -y ~/.config/sops/smoreswork.key      # must match &smoreswork
+chmod 600 ~/.config/sops/smoreswork.key
+```
+
+Copy the file to the Mac unchanged and delete any intermediate copy: without a
+passphrase, that file *is* the key. Before the first switch, prove it is a
+recipient and that the file is committed:
+
+```sh
+SOPS_AGE_KEY_FILE="$HOME/.config/sops/smoreswork.key" \
+  sops -d secrets/smoreswork.yaml >/dev/null
+git add secrets/smoreswork.yaml     # flakes only see tracked files
+```
+
+A missing or wrong key does not fail `darwin-rebuild switch`: sops-nix runs from
+a LaunchAgent there. After switching, check `ls ~/.config/sops-nix/secrets` and
+`~/Library/Logs/SopsNix/stderr`.
+
 ### cloudflare-api-token
 
 <!-- manual-step: secret/cloudflare-api-token -->
@@ -766,8 +793,13 @@ through an apply.
 Per-host Cloudflare Access service token for `cloudflared access ssh`, exported
 as `TUNNEL_SERVICE_TOKEN_ID` and `TUNNEL_SERVICE_TOKEN_SECRET`. The value is two
 lines: the client ID, then the client secret. `cloudflared-access`
-(`modules/features/cloudflared.nix`) reads the host's sops secret when the host
-deploys one and falls back to Proton Pass otherwise.
+(`modules/features/cloudflared.nix`) reads the token from the host's sops
+deployment when a module declares it, and otherwise from the login-time cache
+or Proton Pass.
+
+A NixOS declaration must hand the user access (`owner`/`mode`, as
+`modules/nixos/secrets-common.nix` does), because the proxy runs as the user;
+without that the 0400 root file is unreadable and the fallback wins.
 
 Mint one token per client machine under Zero Trust → Access → Service Auth, then
 paste both lines as `cloudflare-access-ssh-token` in that host's file

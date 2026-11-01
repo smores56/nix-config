@@ -35,7 +35,7 @@ routine.
 Modules are composed by profiles, not auto-imported. `modules/flake/configurations.nix`
 reads each host's `default.nix`, which lists profile files explicitly; each
 profile contributes paths to the home plane, the NixOS plane, or both. The same
-file may list host-local modules under `nixos` for a concern that only one
+file may list host-local modules under `home` and `nixos` for a concern that only one
 machine has (smorespro's LUKS/Secure Boot chain and greeter); those names never
 reach `machine.profiles`. Place files by concern, not by host. The
 `linux-desktop` profile deliberately ships no display manager: a graphical host
@@ -45,7 +45,7 @@ adds its greeter as a host-local module.
 |---|---|
 | `modules/options.nix` | `machine.*` host facts, `user.*` identity/preferences, and the server-profile assertion |
 | `modules/profiles/` | six opt-in profiles: `cli`, `user-base`, `ai-tools`, `linux-desktop`, `darwin-work`, `server` |
-| `modules/hosts/` | per-host `meta.nix` (facts + option values), `default.nix` (explicit profile list plus optional `nixos` host-local modules), optional `hardware.nix`, `disko.nix`, and those host-only modules |
+| `modules/hosts/` | per-host `meta.nix` (facts + option values), `default.nix` (explicit profile list plus optional `home`/`nixos` host-local modules), optional `hardware.nix`, `disko.nix`, and those host-only modules |
 | `modules/home.nix` | home-manager base (fonts, nix.conf, darwin helpers) |
 | `modules/features/` | cross-platform home-manager modules (shell, editor, git, packages, theme, ai) |
 | `modules/desktop/` | desktop-environment modules (niri, aerospace) |

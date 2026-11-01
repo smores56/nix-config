@@ -9,11 +9,16 @@
   ...
 }:
 let
-  hostSecrets = ../../secrets/smoreswork.yaml;
-  commonSecretsFile = ../../secrets/common.yaml;
+  # The operator commits this file (see "smoreswork sops key" in
+  # docs/manual-steps.md). Flakes only see tracked files, and until it exists
+  # the flake must still evaluate, so the whole module is gated on it.
+  hostSecrets = ../../../secrets/smoreswork.yaml;
+  commonSecretsFile = ../../../secrets/common.yaml;
 
-  # The operator creates the host file (docs/manual-steps.md); until it is
-  # committed the flake must still evaluate, so the module is gated on it.
+  # Deployed at the operator's request. Nothing on Darwin reads them yet: the
+  # PATs come from Keychain, maki's work profile is OpenAI-only, and the
+  # password hash and immich key are NixOS/sandbox-only. They exist as 0400
+  # files under ${xdg.configHome}/sops-nix/secrets until a consumer is wired.
   commonSecrets = [
     "github-personal-pat"
     "github-work-pat"
