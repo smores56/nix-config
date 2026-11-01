@@ -577,10 +577,17 @@ Secrets are split by scope:
 - `secrets/smortress.yaml` — host-only material for smortress (Cloudflare token,
   tunnel JSON, calibre password, the mirror's repo PAT, brave), encrypted to the
   admin identity plus the smortress host key.
+- `secrets/smorespro.yaml` — host-only material for smorespro. Its age identity
+  is the SSH host key smorespro keeps solely for sops, since it runs no sshd.
+- `secrets/smoreswork.yaml` — host-only material for the work Mac. It has no
+  sshd host key, so its identity is a dedicated age key at
+  `~/.config/sops/smoreswork.key` (`sops.age.keyFile`); sops-nix cannot prompt
+  for a passphrase at home-manager activation, so that file stays unwrapped and
+  `0600`.
 - `secrets/common.yaml` — cross-host user secrets (neuralwatt, tinyfish, the
   `smores` password hash, owner-scoped PATs), encrypted to the admin identity
-  plus every NixOS host key (`smortress`, `smorespro`). Each of those hosts can
-  read the whole file, so host-only keys must not go in it.
+  plus every host's key (`smortress`, `smorespro`, `smoreswork`). Each of those
+  hosts can read the whole file, so host-only keys must not go in it.
 
 No host holds the admin identity, so edit from a laptop that has it:
 

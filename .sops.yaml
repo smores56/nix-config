@@ -1,10 +1,13 @@
 keys:
   # `admin` is the operator's age identity (`keys.age` on a laptop, never on a
-  # host); a host's key is its SSH host key (`ssh-to-age -i <host>.pub`;
-  # `nix run .#host-key` prints it).
+  # host); a NixOS host's key is its SSH host key (`ssh-to-age -i <host>.pub`;
+  # `nix run .#host-key` prints it). A home-only Darwin host has no sshd host
+  # key to derive from, so smoreswork uses a dedicated age key at
+  # `~/.config/sops/smoreswork.key` (`sops.age.keyFile`).
   - &admin age1clqsa9h07xs3zftkkcnl4ag4u3pq2qty0p3dl8wc0u77fkegryhs9u72kt
   - &smortress age19k8s634eqfnptm8fngc8c3yl5cyk5t4wqgaukya4j6kjtvzm2q9sq674ru
   - &smorespro age1ng2qumh78k49jy468kermj7qtxgtmtusqtuwjexpnzav3qv5uufq6zugcv
+  - &smoreswork age15mcd3zu8teatdq8d6kcgztd26w4dxm8gcvhpgdmkl7nmsew2tuus0l94ak
 creation_rules:
   # Host-only secrets: the admin identity plus that host. Only services on the
   # host consume these, so no other machine needs to decrypt them.
@@ -18,8 +21,13 @@ creation_rules:
       - age:
           - *admin
           - *smorespro
+  - path_regex: secrets/smoreswork\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *smoreswork
   # Cross-host user secrets (Maki provider keys, the account password hash,
-  # owner-scoped PATs). Every NixOS host that must read a copy is a recipient;
+  # owner-scoped PATs). Every machine that must read a copy is a recipient;
   # adding a host here means it can read the whole shared file.
   - path_regex: secrets/common\.yaml$
     key_groups:
@@ -27,3 +35,4 @@ creation_rules:
           - *admin
           - *smortress
           - *smorespro
+          - *smoreswork
