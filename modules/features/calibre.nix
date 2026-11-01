@@ -209,7 +209,7 @@ in
         };
         ingestDir = lib.mkOption {
           type = lib.types.str;
-          default = "/var/lib/data/books-ingest";
+          default = "/var/lib/agent/books-ingest";
           description = "Queue the agent writes books and manifest.json to; a user timer runs calibredb with the server stopped.";
         };
       };

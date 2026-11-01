@@ -101,9 +101,9 @@ in
               test -z "$(ls -A /var/lib/data/photos)"
               ! touch /var/lib/data/photos/.agent-sandbox-probe 2>/dev/null
             fi
-            if [ -d /var/lib/data/books-ingest ]; then
-              touch /var/lib/data/books-ingest/.agent-sandbox-probe
-              rm /var/lib/data/books-ingest/.agent-sandbox-probe
+            if [ -d /var/lib/agent/books-ingest ]; then
+              touch /var/lib/agent/books-ingest/.agent-sandbox-probe
+              rm /var/lib/agent/books-ingest/.agent-sandbox-probe
             fi
             repo_list="$XDG_STATE_HOME/agent-sandbox-repos"
             find "$HOME/code" "$HOME/dev" -maxdepth 8 -name .git -type d -prune -print >"$repo_list" 2>/dev/null || true

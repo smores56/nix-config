@@ -35,7 +35,8 @@ in
       "d /var/lib/data 0750 smores users -"
       "d /var/lib/data/music 0775 smores users -"
       "d /var/lib/data/books 0775 smores users -"
-      "d /var/lib/data/books-ingest 0775 smores users -"
+      "d /var/lib/agent 0775 smores users -"
+      "d /var/lib/agent/books-ingest 0775 smores users -"
     ];
     exposeSsh.enable = true;
     nvidia.enable = true;

@@ -7,9 +7,10 @@ set -euo pipefail
 [ "$(id -u)" = 0 ] || { echo "run as root" >&2; exit 1; }
 
 data=/var/lib/data
+agent=/var/lib/agent
 media=/var/lib/media
 
-install -d -o smores -g users -m 0775 "$data/music" "$data/books" "$data/books-ingest"
+install -d -o smores -g users -m 0775 "$agent" "$data/music" "$data/books" "$agent/books-ingest"
 install -d -o immich -g immich -m 0700 "$data/photos"
 
 move() {
@@ -24,10 +25,10 @@ move() {
 
 move "$media/Music" "$data/music"
 move "$media/Calibre" "$data/books"
-move "$media/Calibre-Ingest" "$data/books-ingest"
+move "$media/Calibre-Ingest" "$agent/books-ingest"
 move "$media/Photos" "$data/photos"
 
-chown -R smores:users "$data/music" "$data/books" "$data/books-ingest"
+chown -R smores:users "$data/music" "$data/books" "$agent/books-ingest"
 chown -R immich:immich "$data/photos"
 
 echo

@@ -14,3 +14,4 @@ secrets/hosts/
 # Admin sops identity and its retired plaintext form; never commit either.
 keys.age
 keys.txt
+tofu/.terraform/
