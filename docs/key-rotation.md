@@ -23,9 +23,12 @@ For each key:
    the PIV 9a public key + certificate, sudo public key, and signing public key
    to `modules/lib/yubikey-keys.nix`. That file is the single source for sshd,
    pam_p11, allowed_signers, and the bundle's integrity check.
-2. Run `home-manager switch` on `smorespro` and `smortress`; the next
-   signature prompts for the new PIN once (`yk-login` is the terminal
-   fallback when no dialog can be shown).
+2. Run `home-manager switch` on `smorespro` and `smortress`, then drop the
+   cached PIN (`rm -f "$XDG_RUNTIME_DIR/fido2/pin" "$XDG_RUNTIME_DIR/fido2/pin-state"`).
+   Changing a PIN leaves the retry counter at its maximum, so a stale cache
+   still looks fresh and would cost one rejected signature. The next signature
+   prompts once (`yk-login` is the terminal fallback when no dialog can be
+   shown).
 3. Test `ssh smortress true`, `ssh -t smortress sudo true` (one touch, no PIN),
    and a signed commit on both hosts.
 4. Enroll the key in Proton account 2FA and keep the recovery codes offline.
@@ -119,9 +122,10 @@ ykman fido info    # FIDO2 PIN tries remaining
 ```
 
 `fido2-ensure-pin` (the helper behind the askpass, `yk-ensure`, and
-`yk-login --tty`) refuses to send the PIN below four FIDO2 retries, and a wrong
-cached PIN is never replayed: it verifies the PIN before writing the cache and
-re-prompts once the card's retry counter moves.
+`yk-login`) refuses to send the PIN below four FIDO2 retries and verifies the
+PIN before writing the cache. It re-prompts when the token's serial or retry
+counter moves. A PIN change or reset keeps both, so drop the cache by hand as
+step 2 says.
 
 ## smoreswork (work Mac)
 

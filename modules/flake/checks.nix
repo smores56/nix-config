@@ -407,6 +407,7 @@ in
             && ensure (unit.Unit.PartOf == [ "fido2-sign-agent.service" ]) "must be restarted with the agent"
             && ensure (unit.Service.Type == "oneshot") "must be a oneshot"
             && ensure (unit.Service.RemainAfterExit == true) "must remain after exit"
+            && ensure (unit.Install.WantedBy == [ "default.target" ]) "must start with the session"
             && ensure (lib.hasInfix "fido2-sign-load" unit.Service.ExecStart) "must run the sign loader"
             && "ok"
           )

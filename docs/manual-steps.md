@@ -525,9 +525,9 @@ ClientAliveCountMax 2
   (0600, outside Maki's sandbox, never committed). It is useless from any other
   source address.
 - the three YubiKey PIV 9a public keys from `modules/lib/yubikey-keys.nix`, for
-  the laptops. Linux loads the fido2 agent at login and prompts for the PIV
-  PIN once, in a dialog, on first use; macOS prompts for the PIV PIN through
-  OpenSC:
+  the laptops. macOS prompts for the PIV PIN through OpenSC. On Linux the PIV
+  provider is loaded on first use by `yk-ensure` (the `smortress` ProxyCommand);
+  a direct LAN connection runs no proxy, so run `yk-login` once first:
 
 ```sh
 # Linux laptop
@@ -2040,10 +2040,11 @@ writing. Run it by hand with `sudo systemctl start lobechat-memory-ingest`.
 `cloudflared access ssh`. `ssh` must keep Access enabled; evaluation fails
 otherwise.
 
-`smortress` logs in with the PIV keys in slot 9a, loaded into `fido2-agent` at
-login by `fido2-agent-load`. If `ssh smortress` starts failing after another PIV
-client ran (`pam_p11` at the greeter, `ykman piv`), the card session was reset;
-run `yk-login` again. If that happens daily, fall back to slot 9c with PIN
+`smortress` logs in with the PIV keys in slot 9a, which `yk-ensure` loads into
+`fido2-agent` on first use (or `yk-login` in a terminal). `fido2-agent-load`
+loads only the touch-only sudo handles at login. If `ssh smortress` starts
+failing after another PIV client ran (`pam_p11` at the greeter, `ykman piv`),
+the card session was reset; run `yk-login` again. If that happens daily, fall back to slot 9c with PIN
 policy ALWAYS plus the askpass cache (the pre-T1 layout).
 
 ## Flake apps

@@ -19,6 +19,7 @@ cat >"$stub/ykman" <<'STUB'
 case "${1:-} ${2:-}" in
   "fido info") printf 'PIN: 8 attempt(s) remaining\n' ;;
   "fido access") exit 0 ;;
+  "list --serials") printf '1234567\n' ;;
   *) exit 1 ;;
 esac
 STUB
@@ -33,7 +34,7 @@ unset WAYLAND_DISPLAY DISPLAY
 
 printf '12345678' >"$work/fido2/pin"
 chmod 600 "$work/fido2/pin"
-printf '8' >"$work/fido2/pin-state"
+printf '1234567:8' >"$work/fido2/pin-state"
 
 fail() {
   echo "FAIL $*" >&2
@@ -79,10 +80,10 @@ socket.socket(socket.AF_UNIX).bind(sys.argv[1])
 SOCK
 expect_pin "Enter PIN for 'x': "
 [ "$(cat "$work/fido2/pin")" = 12345678 ] || fail "lazy prompt did not cache the PIN"
-[ "$(cat "$work/fido2/pin-state")" = 8 ] || fail "lazy prompt wrote no snapshot"
+[ "$(cat "$work/fido2/pin-state")" = "1234567:8" ] || fail "lazy prompt wrote no snapshot"
 
 # A failing helper must never let a stale cache through as the PIN.
-printf '7' >"$work/fido2/pin-state"
+printf '1234567:7' >"$work/fido2/pin-state"
 export FUZZEL_FAIL=1
 if out=$("$askpass" "Enter PIN for 'x': " 2>/dev/null); then
   fail "a stale cache with a failing prompt still answered"

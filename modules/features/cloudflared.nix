@@ -141,6 +141,7 @@ let
       pkgs.opensc
       pkgs.openssh
       pkgs.systemd
+      pkgs.util-linux
     ];
     text = ''
       runtime="''${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR is not set}"
@@ -157,9 +158,12 @@ let
       # same ones the signing askpass uses, and the helper holds one lock, so
       # parallel ssh calls cannot open two dialogs.
       ${lib.getExe ensurePin} || exit 1
-      # A caller queued behind the prompt must not load the provider twice:
-      # ssh-add -s on a warm provider fails, and the retry branch restarts the
-      # agent, dropping the identity the first caller is about to use.
+
+      # Serialise the provider load on the same lock: the helper releases it on
+      # exit, and two callers that both see no PIV would otherwise load it (or
+      # restart the agent) twice, dropping the identity the other is using.
+      exec 8>"$runtime/fido2-ensure.lock"
+      flock -w 60 8 || exit 1
       if has_piv; then exit 0; fi
 
       load_provider() {

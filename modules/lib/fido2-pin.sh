@@ -52,15 +52,15 @@ die() {
 }
 
 device_retries() {
-  "$ykman_bin" fido info 2>/dev/null |
+  timeout 10 "$ykman_bin" fido info 2>/dev/null |
     sed -n 's/^PIN:[[:space:]]*\([0-9][0-9]*\) attempt(s) remaining.*/\1/p'
 }
 
 # Enumeration, not the applet: cheap, and stable across a reset of the FIDO2
-# application. Several plugged tokens compare as a set, so a changed set is a
-# changed device.
+# application. Sort and dedupe because a token can enumerate twice when pcscd
+# sees it over PC/SC as well, and the set must not reorder between calls.
 device_serial() {
-  "$ykman_bin" list --serials 2>/dev/null | paste -sd, -
+  timeout 10 "$ykman_bin" list --serials 2>/dev/null | sort -u | paste -sd, -
 }
 
 # "<serial>:<retries>" is the whole freshness key for the cache.
@@ -119,7 +119,7 @@ wayland_socket() {
         ;;
     esac
   fi
-  newest=""
+  local newest=""
   for s in "$runtime"/wayland-[0-9]*; do
     [ -S "$s" ] || continue
     if [ -z "$newest" ] || [ "$s" -nt "$newest" ]; then
@@ -132,7 +132,9 @@ wayland_socket() {
 
 # Exactly one dialog per call: a cancelled prompt is a failure, not a reason to
 # try another display. The trailing space keeps the masked input off the prompt
-# text, matching fuzzel's own "> " default.
+# text, matching fuzzel's own "> " default. The dialog is bounded because the
+# sign agent has no way to see an unattended prompt and would otherwise block
+# every client until someone dismisses it.
 prompt_pin() {
   if [ "$mode" = tty ]; then
     [ -t 0 ] || return 1
@@ -142,8 +144,9 @@ prompt_pin() {
     printf '%s' "$pin"
     return 0
   fi
+  local wl
   wl=$(wayland_socket) || return 1
-  WAYLAND_DISPLAY=$wl "$fuzzel_bin" --dmenu --prompt-only="YubiKey PIN " \
+  WAYLAND_DISPLAY=$wl timeout 120 "$fuzzel_bin" --dmenu --prompt-only="YubiKey PIN " \
     --password='*' --namespace=pin --cache=/dev/null 2>/dev/null
 }
 
@@ -160,8 +163,10 @@ exec 9>"$runtime/fido2-ensure.lock"
 flock -w 60 9 || die "another PIN prompt is still open"
 
 # Parallel signers queue here; the first prompt fills the cache for the rest.
+# Only a verified cache may exit here: a probe that fails after the lock is a
+# cache whose freshness is unknown, and replaying it could spend a retry.
 case "$(cache_state)" in
-  fresh | unknown) exit 0 ;;
+  fresh) exit 0 ;;
 esac
 
 info=$("$ykman_bin" fido info 2>/dev/null) ||

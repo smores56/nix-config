@@ -101,6 +101,9 @@ let
       # survive; restarting their agent would only orphan the socket every
       # running sandbox bound to it.
       systemctl --user restart fido2-agent.service
+      # The signing agent is never restarted (a running sandbox holds its
+      # socket), but start it if the session never brought it up.
+      systemctl --user start fido2-sign-agent.service || true
       for _ in $(seq 1 50); do
         [ -S "$runtime/fido2-agent" ] && [ -S "$runtime/fido2-sign-agent" ] && break
         sleep 0.1
