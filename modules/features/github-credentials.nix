@@ -51,40 +51,75 @@ let
     '';
   };
 
-  # `gh` reads GH_TOKEN, so infer the owner from origin and exec the real gh.
-  # Named separately on purpose: overriding `gh` globally would change the
-  # normal SSH-agent flow; the sandbox aliases this to `gh`.
+  # `gh` reads GH_TOKEN. The PAT is selected from the repository owner so the
+  # work and personal tokens never mix. This is installed as the real `gh` so
+  # humans and agents do not need an env-var ritual or AGENTS.md instructions.
   ghWithPat = pkgs.writeShellApplication {
     name = "gh-pat";
-    runtimeInputs = [ pkgs.gh ];
+    runtimeInputs = [
+      pkgs.gh
+      pkgs.coreutils
+      pkgs.git
+      pkgs.gnused
+    ];
     text = ''
+      # An explicit GH_TOKEN always wins (CI, a one-off work org command).
+      if [ -n "''${GH_TOKEN:-}" ]; then
+        exec ${pkgs.gh}/bin/gh "$@"
+      fi
+
       owner=""
       if url=$(git remote get-url origin 2>/dev/null); then
         owner=$(printf '%s' "$url" | sed -E 's#^.*[:/]([^/]+)/[^/]+(\.git)?$#\1#')
       fi
 
-      token_file=/run/secrets/github-personal-pat
-      case "''${owner,,}" in
-        ${workGlob}) token_file=/run/secrets/github-work-pat ;;
-      esac
-      if [ ! -r "$token_file" ]; then
-        echo "gh-pat: no token for owner ' ''${owner:-<none>}' (or the sops file is missing)" >&2
+      token=""
+      if [ "$(uname -s)" = Darwin ]; then
+        # macOS has no /run/secrets: the same PAT is a Keychain item. Prefer
+        # the owner-specific item, then the agent's generic work item.
+        item=maki-github-personal-pat
+        case "''${owner,,}" in
+          ${workGlob}) item=maki-github-work-pat ;;
+        esac
+        token=$(/usr/bin/security find-generic-password -s "$item" -w 2>/dev/null) || token=
+        if [ -z "$token" ]; then
+          token=$(/usr/bin/security find-generic-password -s maki-github-pat -w 2>/dev/null) || token=
+        fi
+      else
+        token_file=/run/secrets/github-personal-pat
+        case "''${owner,,}" in
+          ${workGlob}) token_file=/run/secrets/github-work-pat ;;
+        esac
+        if [ -r "$token_file" ]; then
+          token=$(tr -d '[:space:]' <"$token_file")
+        fi
+      fi
+
+      if [ -z "$token" ]; then
+        echo "gh: no token for owner ' ''${owner:-<none>}'" >&2
         exit 1
       fi
 
-      export GH_TOKEN
-      GH_TOKEN=$(tr -d '[:space:]' <"$token_file")
-      exec gh "$@"
+      export GH_TOKEN="$token"
+      exec ${pkgs.gh}/bin/gh "$@"
     '';
   };
+
+  # Install the PAT-aware wrapper as `gh`, while keeping `gh-pat` for the
+  # sandbox shim. The wrapper execs the real gh by absolute path, so the
+  # symlink cannot recurse.
+  ghAlias = pkgs.runCommand "gh" { } ''
+    mkdir -p $out/bin
+    ln -s ${ghWithPat}/bin/gh-pat $out/bin/gh
+  '';
+
 in
 {
-  # /run/secrets only exists on NixOS hosts; the macOS work host keeps its own
-  # credential story.
-  config = lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
+  config = {
     home.packages = [
-      credentialHelper
       ghWithPat
-    ];
+    ]
+    ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ credentialHelper ];
+    programs.gh.package = ghAlias;
   };
 }
