@@ -176,8 +176,12 @@ let
         exit 0
       fi
       systemctl --user stop calibre-server.service || true
-      mkdir -p "$(dirname "$new")"
-      mv "$old" "$new"
+      mkdir -p "$new"
+      shopt -s dotglob nullglob
+      # The tmpfiles rule creates the target, so move the contents rather than
+      # nesting the old directory inside it.
+      mv "$old"/* "$new"/
+      rmdir "$old"
       systemctl --user start calibre-server.service || true
       echo "calibre-migrate: moved $old -> $new" >&2
     '';
