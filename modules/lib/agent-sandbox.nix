@@ -224,7 +224,11 @@ let
 
     [core]
         sshCommand = ssh -F ~/.local/state/agent/config/ssh_config
-    ${lib.optionalString isDarwin "[commit]\n        gpgsign = false\n"}
+    # Sign every commit made inside the boundary: the sandbox holds the
+    # no-touch signing credential, and the host's global gpgsign is replaced by
+    # this file (GIT_CONFIG_SYSTEM=/dev/null). On Darwin there is no signing
+    # agent to forward, so it stays off there.
+    ${lib.optionalString (!isDarwin) "[commit]\n        gpgsign = true\n"}
   '';
 
   sshConfig = pkgs.writeText "agent-sandbox-ssh-config" ''

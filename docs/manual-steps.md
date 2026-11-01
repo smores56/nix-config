@@ -42,27 +42,34 @@ encrypted to, and `install` then refuses to proceed.
 generates `hardware.nix`, and delivers the pre-generated host key. Commit the
 generated hardware config, then run `nix run .#bootstrap`.
 
-- **Backup disk**: `/dev/disk/by-label/backup` (`backup.device`). Format and
-  label a second disk once (`mkfs.ext4 -L backup /dev/sdX`). The module only
-  mounts it, with `nofail`; the backup units declare `RequiresMountsFor` and
-  fail loudly when it is absent.
+- **Backup disk**: a 4.5T HDD, LUKS2, mounted at `/var/backup` from
+  `/dev/mapper/backup` (see [Encrypted backup disk](#encrypted-backup-disk) for
+  the format and keyfile procedure). The module only mounts it, with `nofail`;
+  the backup units declare `RequiresMountsFor` and fail loudly when it is
+  absent.
 - **Host key**: `/etc/ssh/ssh_host_ed25519_key` is the age recipient that
   decrypts the host's sops file. Losing it means restoring the key or re-keying
   (see Recovery in `README.md`).
 - **Out-of-band access**: the physical console. There is no inbound SSH port;
   SSH is tunnel-only.
-- **Maki sandbox**: `m` runs Maki through `agent-sandbox` (bubblewrap). It
-  binds only the current repo/worktree, `~/.config/maki`, `~/.cache/maki`,
-  `~/.local/{share,state}/maki`, the two PATs, and (on laptops) the
-  `fido2-sign-agent` socket. `~/.ssh`, `/srv/proton`, `/run/secrets` beyond
-  the PATs, and the other agent sockets are absent.
-- **Maki signing key**: the first activation generates
-  `~/.config/maki/signing_ed25519` (0600, host-local, never committed) and
-  prints its public half in the activation log. Add that key to
-  `~/.ssh/allowed_signers` for the Maki principal (T1) and register it on
-  GitHub as a **signing** key only. The sandbox mounts it read-only; nothing
-  outside the sandbox uses it. Rotate by deleting the key pair, switching, and
-  replacing the old public key in `allowed_signers` and on GitHub.
+- **Maki sandbox**: `m` runs Maki through `agent-sandbox` (bubblewrap). The
+  authoritative bind list is `homeRw`/`homeRo`/`configAllow`/`secretBind` in
+  `modules/lib/agent-sandbox.nix`; it is wider than the identity dirs —
+  `~/code`, `~/dev`, `~/Documents`, `~/Downloads`, `~/.cache`, the
+  cargo/npm/bun caches, nine config dirs, and `/var/lib/media` read-write — and
+  the secret allowlist is four credentials (two PATs, Neuralwatt, TinyFish) plus
+  the Immich key once it exists. `~/.ssh`, `~/.config/{ssh-sk,sops}`,
+  `/srv/proton`, the PIV/sudo agent, and every other secret are absent; only
+  the no-touch signing agent is forwarded in, and `/var/lib/media/Photos` stays
+  untouched by convention, not by the mount mode.
+- **Maki signing**: there is no software signing key. Commits made inside the
+  sandbox sign through the forwarded FIDO2 signing agent (`gpg.ssh.defaultKeyCommand`,
+  `gpg.format=ssh`), and the sandbox git config sets `commit.gpgsign = true`, so
+  a commit cannot be unsigned there. The default key is chosen from `ssh-add -L`
+  and must appear in `~/.config/ssh/allowed_signers`; add a hardware key for the
+  `sam@sammohr.dev` principal (the same entry that signs outside) and register it
+  on GitHub as a **signing** key only. A retired `~/.config/maki/signing_ed25519`
+  is removed by `agent-sandbox-cleanup`; nothing reads it.
 
 #### Encrypted root and Secure Boot (T2)
 
@@ -1352,9 +1359,10 @@ permission that makes a live history unreadable without root; not storing it is
 the only reliable hardening.
 
 Photos: create a scoped Immich API key with asset upload/read and album
-create/read only, add it as `immich-agent-api-key` in `secrets/common.yaml`
-(and the `secret/immich-agent-api-key` anchor), deploy, and the sandbox binds
-it at `/run/agent/immich-key` as `IMMICH_API_KEY`. The agent never writes
+create/read only, add it as `immich-agent-api-key` in `secrets/common.yaml`,
+deploy, and the sandbox binds it at `/run/agent/immich-key` as `IMMICH_API_KEY`
+(add the `secret/immich-agent-api-key` anchor in the same change; the sync
+check only accepts anchors for keys that exist). The agent never writes
 `/var/lib/media/Photos` directly.
 
 Work Mac: create Keychain items `maki-openai-api-key` and `maki-github-pat`.

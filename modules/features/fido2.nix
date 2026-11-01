@@ -219,10 +219,11 @@ in
     # no-PC/SC libfido2 so a running pcscd does not duplicate the YubiKey.
     home.sessionVariables.SSH_SK_HELPER = lib.getExe skHelper;
 
-    # The greeter's pam_p11 reads this through root, so a store symlink is fine.
-    # A locked PIV PIN makes pam_p11 report AUTHINFO_UNAVAIL, which the stack
-    # treats as "step aside": the password still unlocks without removing the
-    # key (see modules/hosts/smorespro/greeter.nix).
+    # pam_p11 0.6.1 hardcodes ~/.eid/authorized_certificates (no path option),
+    # so this trust file has to live in the home and is writable by the user.
+    # Accepted: it only affects that user's own unlock, a same-uid attacker
+    # already owns the account, and a different token still needs physical
+    # access. Revisit when pam_p11 grows a system certificate path.
     home.file.".eid/authorized_certificates".text = lib.concatStringsSep "\n" pivCerts;
 
     # A dedicated agent rather than `services.ssh-agent`: the Proton Pass agent

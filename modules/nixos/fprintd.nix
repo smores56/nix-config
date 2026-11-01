@@ -123,6 +123,14 @@ in
     # polkit drives pkexec and every desktop admin prompt. fprintd's default
     # would let one finger authorize root, the same CVE-2024-37408 surface.
     security.pam.services.polkit-1.fprintAuth = false;
+    # Credential changes must not accept a fingerprint as the "current"
+    # password: the rendered stacks reach pam_fprintd before pam_unix with no
+    # pam_rootok in front. `other` is the catch-all, so a future service cannot
+    # silently inherit fingerprint auth either.
+    security.pam.services.passwd.fprintAuth = false;
+    security.pam.services.chsh.fprintAuth = false;
+    security.pam.services.chfn.fprintAuth = false;
+    security.pam.services.other.fprintAuth = false;
 
     systemd.services.fprintd-reader-cache = {
       description = "Cache the fingerprint reader's USB host controller";
