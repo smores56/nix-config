@@ -1388,6 +1388,13 @@ affect a later unsandboxed build; `~/.local/state/*` entries that are not
 explicitly masked remain readable read-only; and the signing credential is a
 signing oracle by design, so review and the PR gate stay the control.
 
+The config allowlist is read-only, but `CONFIG_WRITABLE` in
+`modules/lib/agent-sandbox.nix` lists files a tool must lock or rewrite. Each
+gets a writable copy under the agent state bound over the read-only file —
+currently only `maki/pack-lock.json.lock`, so maki's package lock works while
+the plugin config stays immutable. The host sidecar is created empty if absent
+(maki creates the same file itself).
+
 Clipboard history is deliberately not persisted: the cliphist database is
 removed and the sandbox masks `~/.cache/cliphist`. There is no same-UID
 permission that makes a live history unreadable without root; not storing it is

@@ -317,6 +317,23 @@ for name in "${CONFIG_ALLOW[@]}"; do
   fi
 done
 
+# Writable exceptions inside a read-only config entry. The destination must
+# exist before the read-only dir is mounted, so create the host's sidecar if
+# it is missing (maki creates the same empty lock file itself); the writable
+# copy lives in the agent state and is bound over it.
+for rel in "${CONFIG_WRITABLE[@]}"; do
+  hostfile="$home/.config/$rel"
+  if [ ! -e "$hostfile" ]; then
+    [ -d "$(dirname "$hostfile")" ] || continue
+    : >"$hostfile" 2>/dev/null || continue
+  fi
+  src="$home/.local/state/agent/config-rw/$rel"
+  dest="$agent_config/$rel"
+  mkdir -p "$(dirname "$src")"
+  [ -e "$src" ] || : >"$src"
+  args+=(--bind "$src" "$dest")
+done
+
 for d in "${HOME_MASK_DIRS[@]}"; do
   # A missing path has nothing to expose; creating a mountpoint under the
   # read-only home would fail.

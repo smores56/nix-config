@@ -83,6 +83,9 @@ in
               : > "$HOME/.local/logs/maki/.agent-sandbox-probe"
               rm "$HOME/.local/logs/maki/.agent-sandbox-probe"
             fi
+            if [ -e "$XDG_CONFIG_HOME/maki/pack-lock.json.lock" ]; then
+              test -w "$XDG_CONFIG_HOME/maki/pack-lock.json.lock"
+            fi
             ! touch "$HOME/.agent-sandbox-probe" 2>/dev/null
             if [ -d "$HOME/code" ]; then
               touch "$HOME/code/.agent-sandbox-probe"

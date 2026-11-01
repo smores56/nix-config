@@ -114,6 +114,12 @@ let
     "television"
   ];
 
+  # Files inside a read-only config allowlist entry that a tool must be able to
+  # lock or rewrite. Each gets a writable copy in the agent state, bound over
+  # the read-only one; the rest of the config stays immutable. maki locks its
+  # package lockfile at startup even when no package is installed.
+  configWritable = [ "maki/pack-lock.json.lock" ];
+
   secretBind = [
     "/run/secrets/github-personal-pat|/run/secrets/github-personal-pat"
     "/run/secrets/github-work-pat|/run/secrets/github-work-pat"
@@ -147,6 +153,9 @@ let
     )
     CONFIG_ALLOW=(
     ${lib.concatMapStrings (p: "  \"${p}\"\n") configAllow}
+    )
+    CONFIG_WRITABLE=(
+    ${lib.concatMapStrings (p: "  \"${p}\"\n") configWritable}
     )
     SECRET_BIND=(
     ${lib.concatMapStrings (p: "  \"${p}\"\n") secretBind}
