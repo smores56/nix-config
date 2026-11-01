@@ -251,9 +251,10 @@ let
 
   # default.nix is data, not a module. `profiles` names the shared profiles
   # (they drive machine.graphical/wayland/workHost and the server-profile
-  # assertion); `nixos` lists modules that exist on that host alone, such as a
-  # disk layout's LUKS options or its greeter. Host-local modules are not
-  # profiles: their names never reach machine.profiles.
+  # assertion); `home` and `nixos` list modules that exist on that host alone,
+  # such as a disk layout's LUKS options, a greeter, or a Darwin host's sops
+  # keys. Host-local modules are not profiles: their names never reach
+  # machine.profiles.
   hostDefault =
     name:
     let
@@ -265,6 +266,7 @@ let
           throw "modules/hosts/${name}/ has no default.nix (see AGENTS.md)";
       allowed = [
         "profiles"
+        "home"
         "nixos"
       ];
       unknown = builtins.filter (key: !(builtins.elem key allowed)) (builtins.attrNames m);
@@ -285,6 +287,7 @@ let
     name: kind: lib.concatMap (profile: (import profile.p).${kind} or [ ]) (hostProfiles name);
 
   hostModules = name: (hostDefault name).nixos or [ ];
+  hostHomeModules = name: (hostDefault name).home or [ ];
 
   hostModule = args: profileNames: {
     machine = (args.machine or { }) // {
@@ -319,6 +322,7 @@ let
       modules =
         homeModules
         ++ profileModules args.hostname "home"
+        ++ hostHomeModules args.hostname
         ++ [
           (hostModule args profileNames // (args.homeOptions or { }))
           {

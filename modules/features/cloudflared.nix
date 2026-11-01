@@ -1,8 +1,8 @@
 # Reach smortress's loopback-only services (sshd, llama.cpp) from a
 # client over the Cloudflare Tunnel. `cloudflared access` authenticates with a
-# Cloudflare Access service token pulled from Proton Pass, so nothing lands on
-# disk and no browser login is ever needed. The server reaches its own
-# services on loopback, so it gets no forwards.
+# per-host Cloudflare Access service token: a sops secret when the host deploys
+# one, otherwise Proton Pass. The server reaches its own services on loopback,
+# so it gets no forwards.
 {
   config,
   lib,
@@ -29,6 +29,15 @@ let
     {{ ${token}/username }}
     {{ ${token}/password }}
   '';
+
+  # A host that deploys its own service token through sops overrides both the
+  # cache and Proton Pass. A NixOS host's sops-nix path is probed at runtime
+  # (/run/secrets); home-manager sops knows its path at build time.
+  sopsTokenFile =
+    if config.sops.secrets ? cloudflare-access-ssh-token then
+      config.sops.secrets.cloudflare-access-ssh-token.path
+    else
+      "";
 
   # Each `pass-cli inject` is a Proton API round trip (~1s), and a ProxyCommand
   # runs once per SSH connection, so resolve the long-lived service token once
@@ -72,6 +81,11 @@ let
         cache="$runtime/${tokenCache}/token"
       fi
 
+      # A host that deploys its own service token supplies it through sops:
+      # home-manager sops writes the HM path, NixOS sops-nix /run/secrets.
+      # Either wins over the login-time cache and Proton Pass.
+      deployed="${sopsTokenFile}"
+
       # Two lines (id, secret); IFS= keeps any surrounding whitespace.
       read_token() {
         IFS= read -r token_id || true
@@ -79,10 +93,19 @@ let
         [ -n "$token_id" ] && [ -n "$token_secret" ]
       }
 
-      if [ -z "$cache" ] || ! read_token < "$cache" 2>/dev/null; then
-        if ! read_token < <(pass-cli inject -f -i ${tokenTemplate}); then
-          echo "cloudflared-access: could not resolve the Cloudflare Access service token (is pass-cli logged in?)" >&2
-          exit 1
+      sourced=""
+      for f in "$deployed" /run/secrets/cloudflare-access-ssh-token; do
+        if [ -n "$f" ] && [ -r "$f" ] && read_token < "$f" 2>/dev/null; then
+          sourced=1
+          break
+        fi
+      done
+      if [ -z "$sourced" ]; then
+        if [ -z "$cache" ] || ! read_token < "$cache" 2>/dev/null; then
+          if ! read_token < <(pass-cli inject -f -i ${tokenTemplate}); then
+            echo "cloudflared-access: could not resolve the Cloudflare Access service token (deploy it with sops, cache it at login, or log in to pass-cli)" >&2
+            exit 1
+          fi
         fi
       fi
 

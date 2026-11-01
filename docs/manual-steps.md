@@ -759,6 +759,22 @@ credentials JSON's `AccountTag`; the app exits rather than send an empty value,
 which otherwise surfaces as `missing required account_id parameter` midway
 through an apply.
 
+### cloudflare-access-ssh-token
+
+<!-- manual-step: secret/cloudflare-access-ssh-token -->
+
+Per-host Cloudflare Access service token for `cloudflared access ssh`, exported
+as `TUNNEL_SERVICE_TOKEN_ID` and `TUNNEL_SERVICE_TOKEN_SECRET`. The value is two
+lines: the client ID, then the client secret. `cloudflared-access`
+(`modules/features/cloudflared.nix`) reads the host's sops secret when the host
+deploys one and falls back to Proton Pass otherwise.
+
+Mint one token per client machine under Zero Trust → Access → Service Auth, then
+paste both lines as `cloudflare-access-ssh-token` in that host's file
+(`secrets/smorespro.yaml`, `secrets/smoreswork.yaml`). The `service_auth` policy
+accepts any valid service token, so no `cloudflare-apply` is needed; the
+`expiring_service_token_alert` notification covers expiry.
+
 ### github-repo-pat
 
 <!-- manual-step: secret/github-repo-pat -->

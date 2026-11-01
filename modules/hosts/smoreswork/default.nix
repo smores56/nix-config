@@ -6,4 +6,5 @@
     ../../profiles/ai-tools.nix
     ../../profiles/darwin-work.nix
   ];
+  home = [ ./sops.nix ];
 }
