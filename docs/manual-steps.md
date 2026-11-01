@@ -739,6 +739,11 @@ A missing or wrong key does not fail `darwin-rebuild switch`: sops-nix runs from
 a LaunchAgent there. After switching, check `ls ~/.config/sops-nix/secrets` and
 `~/Library/Logs/SopsNix/stderr`.
 
+A new recipient in a creation rule does not re-wrap an existing file. After
+adding `&smoreswork` to the common rule, run
+`sops updatekeys secrets/common.yaml` (one admin prompt) and commit the result,
+or the Mac cannot decrypt that file.
+
 ### cloudflare-api-token
 
 <!-- manual-step: secret/cloudflare-api-token -->
