@@ -752,6 +752,7 @@ One root-only token shared by OpenTofu and the email alert sender. Mint it at
 <https://dash.cloudflare.com> → My Profile → API Tokens with:
 
 - Zone:DNS:Edit for `sammohr.dev`;
+- Zone:Rulesets:Edit for `sammohr.dev` (the `dav` rate-limit ruleset);
 - Access: Apps and Policies:Edit;
 - Notifications:Edit;
 - Email Sending:Edit.

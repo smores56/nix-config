@@ -227,3 +227,29 @@ resource "cloudflare_notification_policy" "service_token_expiry" {
     prevent_destroy = true
   }
 }
+
+# CalDAV/CardDAV clients authenticate with a password (Radicale has no
+# brute-force protection of its own), so rate limit the DAV hostname per client
+# IP. Access cannot sit in front of these clients, which is why this exists.
+resource "cloudflare_ruleset" "dav_rate_limit" {
+  zone_id = data.cloudflare_zone.this.zone_id
+  name    = "dav rate limit"
+  kind    = "zone"
+  phase   = "http_ratelimit"
+
+  rules = [{
+    action      = "block"
+    description = "Rate limit CalDAV/CardDAV clients per IP"
+    expression  = "(http.host eq \"dav.${var.domain}\")"
+    ratelimit = {
+      characteristics     = ["ip.src", "cf.colo.id"]
+      period              = 60
+      requests_per_period = 120
+      mitigation_timeout  = 60
+    }
+  }]
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
