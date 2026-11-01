@@ -11,7 +11,6 @@
     # Audio (PipeWire) and the GNOME keyring for desktop credentials.
     environment.systemPackages = [
       pkgs.playerctl
-      pkgs.proton-vpn
       pkgs.networkmanagerapplet
     ];
 
