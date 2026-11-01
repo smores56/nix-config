@@ -1374,17 +1374,30 @@ removed and the sandbox masks `~/.cache/cliphist`. There is no same-UID
 permission that makes a live history unreadable without root; not storing it is
 the only reliable hardening.
 
-Photos: create a scoped Immich API key with asset upload/read and album
-create/read only, add it as `immich-agent-api-key` in `secrets/common.yaml`,
-deploy, and the sandbox binds it at `/run/agent/immich-key` as `IMMICH_API_KEY`
-(add the `secret/immich-agent-api-key` anchor in the same change; the sync
-check only accepts anchors for keys that exist). The agent never writes
-`/var/lib/media/Photos` directly.
+Photos: the agent talks to Immich over its API rather than touching
+`/var/lib/media/Photos`, using `secret/immich-agent-api-key` (below).
 
 Work Mac: create Keychain items `maki-openai-api-key` and `maki-github-pat`.
 The host-side launcher reads them before entering the sandbox because
 `securityd` is denied inside; `maki-github-pat` should be a scoped token and
 is injected as `GH_TOKEN` for `gh` and HTTPS git.
+
+### immich-agent-api-key
+
+<!-- manual-step: secret/immich-agent-api-key -->
+
+Scoped Immich API key for the agent, user-readable in `secrets/common.yaml`.
+Create it in Immich under Account Settings → API Keys with **asset.read,
+asset.upload, album.read, album.create** only — no asset delete, no user or
+admin scope. The sandbox binds it into the boundary at `/run/agent/immich-key`
+and exports `IMMICH_API_KEY` (`read_secret` in `modules/lib/agent-sandbox.sh`);
+nothing outside the sandbox reads it. The agent never writes
+`/var/lib/media/Photos` directly, and that tree is read-only inside the
+boundary.
+
+To rotate: create the new key in Immich, update the common file, rebuild both
+hosts so sops rewrites `/run/secrets/…`, then delete the old key in Immich.
+
 
 ### LobeChat
 
