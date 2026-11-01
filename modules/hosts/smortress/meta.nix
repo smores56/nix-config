@@ -24,7 +24,7 @@ in
       passwordFile = "/run/secrets/calibre-password";
       # The library lives on the media dataset so it is backed up and the
       # agent's ingest queue can write it without a home exception.
-      library = "/var/lib/media/Calibre";
+      library = "/var/lib/data/books";
     };
   };
 
@@ -32,11 +32,10 @@ in
     # Media is agent-writable except Immich's managed Photos library. The
     # backup driver runs as root and can read smores-owned sources.
     systemd.tmpfiles.rules = [
-      "d /var/lib/media 0775 smores users -"
-      "Z /var/lib/media/Music 0775 smores users -"
-      "Z /var/lib/media/Videos 0775 smores users -"
-      "d /var/lib/media/Calibre 0775 smores users -"
-      "d /var/lib/media/Calibre-Ingest 0775 smores users -"
+      "d /var/lib/data 0750 smores users -"
+      "d /var/lib/data/music 0775 smores users -"
+      "d /var/lib/data/books 0775 smores users -"
+      "d /var/lib/data/books-ingest 0775 smores users -"
     ];
     exposeSsh.enable = true;
     nvidia.enable = true;
@@ -110,7 +109,7 @@ in
       enable = true;
       # Relocated off /var/lib/immich so every media dataset lives under one
       # root (backup source and read-only server mounts both use it).
-      mediaLocation = "/var/lib/media/Photos";
+      mediaLocation = "/var/lib/data/photos";
       # The phone uploads over the LAN at home via Immich's local-network URL;
       # 10.0.0.0/24 is the LAN subnet. WAN access stays tunnel-only.
       lanSources = [ "10.0.0.0/24" ];
@@ -134,22 +133,16 @@ in
     # Full checks through the mount compare sizes only (a checksum read-back
     # would stream the whole archive through FUSE into the cache), so a weekly
     # full check costs one Proton walk rather than a full re-download.
-    backup.datasets.Videos = {
-      schedule = "*-*-* 01:00:00";
-      fullCheckSchedule = "Sun *-*-* 07:00:00";
-      # Incrementals run in minutes; 2h is a wall-clock backstop so a
-      # deadlock trips fast (stallTimeout catches a stalled transfer sooner).
-      timeout = "2h";
-      onChange.enable = true;
-    };
+    # Videos live in the Cryptomator vault now; the vault backup covers them.
     backup.datasets.Calibre = {
-      source = "/var/lib/media/Calibre";
+      source = "/var/lib/data/books";
       schedule = "*-*-* 02:30:00";
       fullCheckSchedule = "Sun *-*-* 09:00:00";
       timeout = "2h";
       onChange.enable = true;
     };
     backup.datasets.Photos = {
+      source = "/var/lib/data/photos";
       schedule = "*-*-* 03:00:00";
       fullCheckSchedule = "Sun *-*-* 06:00:00";
       timeout = "2h";
@@ -237,6 +230,7 @@ in
       ];
     };
     backup.datasets.Music = {
+      source = "/var/lib/data/music";
       schedule = "*-*-* 05:00:00";
       fullCheckSchedule = "Sun *-*-* 08:00:00";
       timeout = "2h";

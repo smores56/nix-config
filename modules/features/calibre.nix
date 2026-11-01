@@ -205,11 +205,11 @@ in
         library = lib.mkOption {
           type = lib.types.str;
           default = "${config.home.homeDirectory}/Calibre Library";
-          description = "Calibre library directory. smortress points this at /var/lib/media/Calibre so it is backed up and writable by the agent queue.";
+          description = "Calibre library directory. smortress points this at /var/lib/data/books so it is backed up and writable by the agent queue.";
         };
         ingestDir = lib.mkOption {
           type = lib.types.str;
-          default = "/var/lib/media/Calibre-Ingest";
+          default = "/var/lib/data/books-ingest";
           description = "Queue the agent writes books and manifest.json to; a user timer runs calibredb with the server stopped.";
         };
       };
