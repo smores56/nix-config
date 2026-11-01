@@ -1,8 +1,8 @@
 # Reach smortress's loopback-only services (sshd, llama.cpp) from a
 # client over the Cloudflare Tunnel. `cloudflared access` authenticates with a
-# per-host Cloudflare Access service token: a sops secret when the host deploys
-# one, otherwise Proton Pass. The server reaches its own services on loopback,
-# so it gets no forwards.
+# per-host Cloudflare Access service token delivered by sops; there is no
+# fallback. The server reaches its own services on loopback, so it gets no
+# forwards.
 {
   config,
   lib,
@@ -21,95 +21,29 @@ let
   inherit (aiProviders) smortress;
   inherit (pkgs.stdenv.hostPlatform) isLinux;
 
-  # Vault path of the Access service token (login item: username = Client ID,
-  # password = Client Secret). Not a secret in itself, so it is safe in the
-  # store; `pass-cli inject` resolves the `pass://` refs into cloudflared's env.
-  token = "pass://Hosting/Cloudflare Access service token";
-
-  # One template for the login-time cache and the per-connection fallback.
-  tokenTemplate = pkgs.writeText "cloudflare-access-token.template" ''
-    {{ ${token}/username }}
-    {{ ${token}/password }}
-  '';
-
-  # A host that deploys its own service token through sops overrides both the
-  # cache and Proton Pass. Only a home-manager declaration is visible here; a
-  # NixOS-side one is probed at runtime (/run/secrets) and only works when it
-  # hands the user access.
+  # The Access service token is deployed per host through sops: home-manager
+  # sops on Darwin, sops-nix (/run/secrets) on NixOS. Two lines: Client ID and
+  # Client Secret. There is no fallback; a host without the secret fails closed.
   sopsTokenFile =
     if config.sops.secrets ? cloudflare-access-ssh-token then
       config.sops.secrets.cloudflare-access-ssh-token.path
     else
-      "";
-
-  # Each `pass-cli inject` is a Proton API round trip (~1s), and a ProxyCommand
-  # runs once per SSH connection, so resolve the long-lived service token once
-  # per login into per-user tmpfs. 0600 in a 0700 directory, never on disk.
-  tokenCache = "cloudflared-access";
-  tokenCacheScript = pkgs.writeShellApplication {
-    name = "cloudflared-access-cache";
-    runtimeInputs = [ pkgs.proton-pass-cli ];
-    text = ''
-      tmp="$RUNTIME_DIRECTORY/token.$$"
-      trap 'rm -f "$tmp"' EXIT
-      umask 077
-      pass-cli inject -f -i ${tokenTemplate} -o "$tmp"
-      # Replace atomically: a ProxyCommand may read this while it is written.
-      mv -f "$tmp" "$RUNTIME_DIRECTORY/token"
-    '';
-  };
+      "/run/secrets/cloudflare-access-ssh-token";
   cloudflared-access = pkgs.writeShellApplication {
     name = "cloudflared-access";
-    runtimeInputs = [
-      pkgs.cloudflared
-      pkgs.proton-pass-cli
-    ];
-    # `pass-cli run` pipes the child's stdio through its secret masker: it
-    # buffers, and it drops the hidden `password` field outright, so the token
-    # never reaches cloudflared and an SSH stream stalls just after the banner.
-    # `inject` emits values verbatim, so resolve the token here and hand
-    # cloudflared raw inherited stdio.
+    runtimeInputs = [ pkgs.cloudflared ];
     text = ''
-      export PROTON_PASS_KEY_PROVIDER="''${PROTON_PASS_KEY_PROVIDER:-fs}"
-
-      # macOS has no XDG_RUNTIME_DIR and no tmpfs user runtime, so only probe
-      # the cache when a runtime dir exists; Linux keeps its /run/user/<uid>
-      # fallback for sessions that never got the variable (cron, sudo -u).
-      runtime="''${XDG_RUNTIME_DIR:-}"
-      if [ -z "$runtime" ]; then
-        runtime=${if isLinux then "/run/user/$(id -u)" else "\"\""}
-      fi
-      cache=""
-      if [ -n "$runtime" ] && [ -d "$runtime" ]; then
-        cache="$runtime/${tokenCache}/token"
-      fi
-
-      # A host that deploys its own service token supplies it through sops:
-      # home-manager sops writes the HM path, NixOS sops-nix /run/secrets.
-      # Either wins over the login-time cache and Proton Pass.
-      deployed="${sopsTokenFile}"
+      token_file="${sopsTokenFile}"
 
       # Two lines (id, secret); IFS= keeps any surrounding whitespace.
-      read_token() {
+      {
         IFS= read -r token_id || true
         IFS= read -r token_secret || true
-        [ -n "$token_id" ] && [ -n "$token_secret" ]
-      }
+      } < "$token_file" 2>/dev/null || true
 
-      sourced=""
-      for f in "$deployed" /run/secrets/cloudflare-access-ssh-token; do
-        if [ -n "$f" ] && [ -r "$f" ] && read_token < "$f" 2>/dev/null; then
-          sourced=1
-          break
-        fi
-      done
-      if [ -z "$sourced" ]; then
-        if [ -z "$cache" ] || ! read_token < "$cache" 2>/dev/null; then
-          if ! read_token < <(pass-cli inject -f -i ${tokenTemplate}); then
-            echo "cloudflared-access: could not resolve the Cloudflare Access service token (deploy it with sops, cache it at login, or log in to pass-cli)" >&2
-            exit 1
-          fi
-        fi
+      if [ -z "''${token_id:-}" ] || [ -z "''${token_secret:-}" ]; then
+        echo "cloudflared-access: missing Cloudflare Access service token at $token_file" >&2
+        exit 1
       fi
 
       export TUNNEL_SERVICE_TOKEN_ID="$token_id"
@@ -330,31 +264,6 @@ in
       # ~/.config/maki/mcp.toml carries no secret. On smortress itself the shim
       # dials the same loopback port directly.
       cloudflared-memory = forward "memory" ports.memoryMcp;
-    })
-
-    # macOS has no tmpfs user runtime to put this in; the wrapper's
-    # pass-cli fallback covers it. Same retry policy as proton-pass-agent:
-    # at login the user manager runs before DNS, so don't rate-limit away.
-    (lib.mkIf (isLinux && !isServer) {
-      cloudflared-access-token = {
-        Unit = {
-          Description = "Cache the Cloudflare Access service token in tmpfs";
-          After = [ "network-online.target" ];
-          Wants = [ "network-online.target" ];
-          StartLimitIntervalSec = 0;
-        };
-        Service = {
-          Type = "oneshot";
-          RemainAfterExit = true;
-          Environment = [ "PROTON_PASS_KEY_PROVIDER=fs" ];
-          RuntimeDirectory = tokenCache;
-          RuntimeDirectoryMode = "0700";
-          ExecStart = "${tokenCacheScript}/bin/cloudflared-access-cache";
-          Restart = "on-failure";
-          RestartSec = 5;
-        };
-        Install.WantedBy = [ "default.target" ];
-      };
     })
   ];
 

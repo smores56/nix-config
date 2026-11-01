@@ -9,8 +9,8 @@ let
 in
 {
   # The client lives with its config rather than in the shared package list.
-  # The identities themselves come from Proton Pass over SSH_AUTH_SOCK
-  # (modules/features/proton-pass.nix), so no private key is read from ~/.ssh.
+  # The identities come from the FIDO2 sign agent and the PIV smartcard
+  # (modules/features/fido2.nix), so no private key is read from ~/.ssh.
   home.packages = [ pkgs.openssh ];
 
   programs.ssh = {
@@ -37,11 +37,11 @@ in
       }
       // lib.optionalAttrs isLinux {
         # Reuse one transport per destination: a fresh cloudflared ProxyCommand
-        # also re-resolves the Access token via pass-cli, ~1.7s per invocation.
-        # The socket lives in the per-user runtime dir, not ~/.ssh (the design
-        # forbids private-key-adjacent state there). darwin shares nothing: it
-        # has no XDG_RUNTIME_DIR (an unset ${VAR} is a fatal config error), and
-        # its TMPDIR is too long for a socket path.
+        # costs a tunnel handshake per invocation. The socket lives in the
+        # per-user runtime dir, not ~/.ssh (the design forbids private-key-adjacent
+        # state there). darwin shares nothing: it has no XDG_RUNTIME_DIR (an unset
+        # ${VAR} is a fatal config error), and its TMPDIR is too long for a
+        # socket path.
         ControlMaster = "auto";
         ControlPath = "\${XDG_RUNTIME_DIR}/ssh-%C";
         ControlPersist = "10m";
