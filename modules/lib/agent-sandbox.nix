@@ -46,7 +46,10 @@ let
   # The whole media tree is writable so new media dirs need no allowlist. The
   # masks are applied after every bind, so the Photos tmpfs still hides the
   # Immich library (writes path-resolve into the tmpfs, never the host dir).
-  ++ lib.optionals (!isDarwin) [ "/var/lib/media" ];
+  ++ lib.optionals (!isDarwin) [
+    "/var/lib/data/music"
+    "/var/lib/data/books"
+  ];
 
   # Read-only exceptions carved out of a writable parent (the user PATH must
   # not become an agent-writable executable directory).
@@ -87,7 +90,7 @@ let
     "$HOME/.local/share/Steam"
     "$HOME/Library"
   ]
-  ++ lib.optionals (!isDarwin) [ "/var/lib/media/Photos" ];
+  ++ lib.optionals (!isDarwin) [ "/var/lib/data/photos" ];
 
   homeMaskFiles = [
     "$HOME/.bash_history"

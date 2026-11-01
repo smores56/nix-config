@@ -91,19 +91,19 @@ in
               touch "$HOME/code/.agent-sandbox-probe"
               rm "$HOME/code/.agent-sandbox-probe"
             fi
-            if [ -d /var/lib/media ]; then
-              touch /var/lib/media/.agent-sandbox-probe
-              rm /var/lib/media/.agent-sandbox-probe
-              mkdir /var/lib/media/.agent-sandbox-probe-dir
-              rmdir /var/lib/media/.agent-sandbox-probe-dir
+            if [ -d /var/lib/data/music ]; then
+              touch /var/lib/data/music/.agent-sandbox-probe
+              rm /var/lib/data/music/.agent-sandbox-probe
+              mkdir /var/lib/data/music/.agent-sandbox-probe-dir
+              rmdir /var/lib/data/music/.agent-sandbox-probe-dir
             fi
-            if [ -d /var/lib/media/Photos ]; then
-              test -z "$(ls -A /var/lib/media/Photos)"
-              ! touch /var/lib/media/Photos/.agent-sandbox-probe 2>/dev/null
+            if [ -d /var/lib/data/photos ]; then
+              test -z "$(ls -A /var/lib/data/photos)"
+              ! touch /var/lib/data/photos/.agent-sandbox-probe 2>/dev/null
             fi
-            if [ -d /var/lib/media/Calibre-Ingest ]; then
-              touch /var/lib/media/Calibre-Ingest/.agent-sandbox-probe
-              rm /var/lib/media/Calibre-Ingest/.agent-sandbox-probe
+            if [ -d /var/lib/data/books-ingest ]; then
+              touch /var/lib/data/books-ingest/.agent-sandbox-probe
+              rm /var/lib/data/books-ingest/.agent-sandbox-probe
             fi
             repo_list="$XDG_STATE_HOME/agent-sandbox-repos"
             find "$HOME/code" "$HOME/dev" -maxdepth 8 -name .git -type d -prune -print >"$repo_list" 2>/dev/null || true
