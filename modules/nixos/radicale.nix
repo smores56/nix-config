@@ -28,6 +28,10 @@ in
     };
   };
 
+  # The durable tree is 0750 smores:users; radicale needs traverse only, so it
+  # joins users and its own collection dir stays 0750 radicale:radicale.
+  users.users.radicale.extraGroups = [ "users" ];
+
   systemd.tmpfiles.rules = [
     "d /var/lib/data/radicale 0750 radicale radicale -"
   ];
