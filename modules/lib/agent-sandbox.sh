@@ -151,12 +151,6 @@ build_env_args() {
   if [ -n "$signing_sock" ]; then
     ENV_ARGS+=("SSH_AUTH_SOCK=/run/agent/sign")
   fi
-  # The mount above leaves the daemon socket reachable but the state dir
-  # read-only, so name the daemon explicitly rather than letting `auto` try a
-  # LocalStore. macOS has no daemon and a user-owned store.
-  if [ "$(uname -s)" = Linux ] && [ -S /nix/var/nix/daemon-socket/socket ]; then
-    ENV_ARGS+=("NIX_REMOTE=daemon")
-  fi
 }
 
 if [ "$(uname -s)" = Darwin ]; then
@@ -249,16 +243,20 @@ args=(
   --dir /run/agent
   --dir /run/agent/runtime
   --ro-bind /nix/store /nix/store
-  # Nix's `store = auto` picks a LocalStore whenever the state dir is writable;
-  # that client takes lock files inside the read-only store and writes the
-  # host's db.sqlite/gcroots instead of going through the daemon.
-  --ro-bind-try /nix/var/nix /nix/var/nix
   --ro-bind /etc /etc
   --ro-bind /bin /bin
   --ro-bind-try /usr /usr
-  --ro-bind-try /nix/var/nix/daemon-socket/socket /nix/var/nix/daemon-socket/socket
   --ro-bind "$home" "$home"
 )
+
+# `store = auto` picks a LocalStore when it can write the state dir, and bwrap
+# creates that dir writable in its tmpfs, so every store-touching eval would
+# take lock files inside the read-only store and fail. Bind the host dir (which
+# carries the daemon socket) read-only so the client resolves to the daemon. A
+# host without a daemon keeps the ephemeral local store instead.
+if [ -S /nix/var/nix/daemon-socket/socket ]; then
+  args+=(--ro-bind /nix/var/nix /nix/var/nix)
+fi
 
 for d in "${HOME_RW[@]}"; do
   args+=(--bind-try "$d" "$d")

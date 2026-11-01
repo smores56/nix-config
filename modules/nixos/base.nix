@@ -90,6 +90,11 @@ in
     "flakes"
   ];
 
+  # Unprivileged builds. The agent sandbox routes its `nix` through the daemon
+  # (it binds the state dir read-only), and with an empty build group the daemon
+  # would run those builders as root.
+  nix.settings.build-users-group = "nixbld";
+
   # The setuid fusermount3 wrapper in /run/wrappers/bin, which unprivileged FUSE
   # mounts (rclone, sshfs) need. Enabling it here keeps the helper independent of
   # gvfs happening to pull fuse in; proton-drive.nix adds user_allow_other.

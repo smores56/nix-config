@@ -1448,12 +1448,14 @@ affect a later unsandboxed build; `~/.local/state/*` entries that are not
 explicitly masked remain readable read-only; and the signing credential is a
 signing oracle by design, so review and the PR gate stay the control.
 
-Nix: `/nix/store` and `/nix/var/nix` are bound read-only, so `nix` runs through
-the daemon (`NIX_REMOTE=daemon`). A local store client would take its lock files
-inside the read-only store and write the host's `db.sqlite` and `gcroots`. The
-daemon socket is the one nix channel the agent keeps: it can build arbitrary
-derivations and add store paths, so keep `build-users-group = nixbld` — with it
-empty the daemon builds as root.
+Nix: `/nix/store` is read-only, and so is `/nix/var/nix` whenever a daemon
+socket exists, so `nix` resolves to the daemon instead of a local store. A local
+store would take its lock files inside the read-only store and fail; the state
+dir bwrap creates is writable, which is exactly what makes `store = auto` choose
+it. The socket was always reachable, so this only makes the daemon the default:
+agent builds run in the daemon's sandbox as `nixbld`
+(`nix.settings.build-users-group` in `modules/nixos/base.nix`) and the paths
+they add persist in the host store.
 
 The config allowlist is read-only, but `CONFIG_WRITABLE` in
 `modules/lib/agent-sandbox.nix` lists files a tool must lock or rewrite. Each
