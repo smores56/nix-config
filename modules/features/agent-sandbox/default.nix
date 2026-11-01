@@ -121,6 +121,10 @@ in
             test ! -e /run/user
             command -v maki >/dev/null && maki --version >/dev/null
             nix store ping >/dev/null 2>&1
+            ! test -w /nix/var/nix
+            if [ -S /nix/var/nix/daemon-socket/socket ]; then
+              test "$(nix config show store)" = daemon
+            fi
           '
           echo "agent-sandbox-check: ok"
         '';
