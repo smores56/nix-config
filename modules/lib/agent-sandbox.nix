@@ -40,6 +40,9 @@ let
     "$HOME/.local/share/agent"
     "$HOME/.cache/agent"
   ]
+  # macOS has no mount namespaces, so logs stay in the human's rotated log
+  # directory; Linux masks it with a private tmpfs below instead.
+  ++ lib.optionals isDarwin [ "$HOME/.local/logs" ]
   # The whole media tree is writable so new media dirs need no allowlist. The
   # masks are applied after every bind, so the Photos tmpfs still hides the
   # Immich library (writes path-resolve into the tmpfs, never the host dir).
@@ -64,6 +67,10 @@ let
     "$HOME/.local/share/memory"
     "$HOME/.local/share/proton-pass-cli"
     "$HOME/.local/share/maki"
+    # maki has no log-path setting (MAKI_LOG is the level), so mask the log
+    # directory with a writable tmpfs: the agent gets working logs and the
+    # human's log is neither read nor extended.
+    "$HOME/.local/logs"
     "$HOME/.claude"
     "$HOME/.codex"
     # ~/.agents/skills is Nix-managed and shared with maki; leave it readable.

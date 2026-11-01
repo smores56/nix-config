@@ -115,7 +115,10 @@ build_env_args() {
     "PATH=$agent_config/bin:$home/.local/bin:$home/.nix-profile/bin:$home/.cargo/bin:$home/.bun/bin:$home/.deno/bin:$home/.wasmer/bin:$AGENT_SANDBOX_PATH"
     "TMPDIR=/tmp"
     "SHELL=/bin/sh"
-    "XDG_STATE_HOME=$home/.local/state/agent"
+    # maki derives its log dir from the parent of the state dir (logs_dir =
+    # parent(XDG_STATE_HOME)/logs/maki), so keep the state one level down:
+    # state and logs both land under the writable agent state.
+    "XDG_STATE_HOME=$home/.local/state/agent/state"
     "XDG_CACHE_HOME=$home/.cache/agent"
     "XDG_DATA_HOME=$home/.local/share/agent"
     "XDG_CONFIG_HOME=$agent_config"
@@ -123,7 +126,6 @@ build_env_args() {
     "GH_CONFIG_DIR=$home/.cache/agent/gh"
     "GIT_CONFIG_GLOBAL=$agent_config/gitconfig"
     "GIT_CONFIG_SYSTEM=/dev/null"
-    "MAKI_LOG=/tmp/maki.log"
     # Keep pre-commit hook environments out of the shared ~/.cache: a hook it
     # writes there would run for the human outside the sandbox.
     "PRE_COMMIT_HOME=$home/.cache/agent/pre-commit"
