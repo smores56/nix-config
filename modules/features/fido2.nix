@@ -15,6 +15,9 @@ let
   # 0600, per login: XDG_RUNTIME_DIR is a tmpfs owned by the user and cleared at
   # logout. No keyring: a fingerprint/password login cannot unlock a
   # password-derived keyring, and niri never starts one.
+  fido2Pin = import ../lib/fido2-pin.nix { inherit pkgs; };
+  inherit (fido2Pin) ensurePin;
+
   pinDir = "$XDG_RUNTIME_DIR/fido2";
   pinFile = "${pinDir}/pin";
 
@@ -41,7 +44,9 @@ let
 
   # ssh invokes this through SSH_ASKPASS_REQUIRE=force. It answers only the
   # two real PIN prompts and never prompts on a tty: the agent has no tty, and
-  # a presence request must be visible rather than silently answered.
+  # a presence request must be visible rather than silently answered. A cache
+  # miss opens the graphical prompt; when that is impossible the failure stays
+  # loud and names the terminal fallback.
   askpass = pkgs.writeShellApplication {
     name = "ssh-pin-askpass";
     runtimeInputs = [
@@ -59,78 +64,43 @@ let
         *) exit 1 ;;
       esac
 
-      if [ -r "${pinFile}" ]; then
-        cat "${pinFile}"
-        exit 0
-      fi
-
-      echo "ssh-pin-askpass: no cached PIN; run yk-login" >&2
-      exit 1
+      ${lib.getExe ensurePin} || exit 1
+      cat "${pinFile}"
     '';
   };
 
-  # yk-login is the only place the PIN is read. It verifies the PIN against
-  # the FIDO2 applet before caching it (so a typo cannot be replayed), refuses
-  # below four retries, then loads the PIV provider and the three sudo/signing
-  # handles into their agents. The PIV PIN lives in ssh-pkcs11-helper memory;
-  # the cache file remains only for the FIDO2 signing credential.
+  # yk-login is the recovery path: it prompts on the terminal through the
+  # shared helper, restarts the agents so a reset OpenSC session cannot poison
+  # them, and reloads the PIV provider and the three sudo/signing handles. The
+  # PIV PIN lives in ssh-pkcs11-helper memory; the cache file remains only for
+  # the FIDO2 signing credential.
   ykLogin = pkgs.writeShellApplication {
     name = "yk-login";
     runtimeInputs = [
-      pkgs.yubikey-manager
       pkgs.openssh
       pkgs.opensc
       pkgs.coreutils
       pkgs.gnugrep
-      pkgs.gnused
       pkgs.systemd
     ];
     text = ''
       runtime="''${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR is not set}"
-      pin_dir="$runtime/fido2"
-      pin_file="$pin_dir/pin"
 
       if [ ! -t 0 ]; then
         echo "yk-login: run this in a terminal (needs a tty to hide input)" >&2
         exit 1
       fi
 
-      read -rsp 'YubiKey PIN: ' pin
-      echo
-      [[ $pin =~ ^[0-9]{8}$ ]] || {
-        echo "yk-login: PIN must be exactly 8 digits" >&2
-        exit 1
-      }
-
-      info=$(ykman fido info 2>&1) || {
-        echo "yk-login: could not read FIDO2 info" >&2
-        exit 1
-      }
-      attempts=$(printf '%s\n' "$info" | sed -n 's/^PIN:[[:space:]]*\([0-9][0-9]*\) attempt(s) remaining.*/\1/p')
-      if [ -z "$attempts" ]; then
-        echo "yk-login: FIDO2 PIN is not set (or retries are unavailable)" >&2
-        exit 1
-      fi
-      if [ "$attempts" -lt 4 ]; then
-        echo "yk-login: only $attempts FIDO2 retries remain; refusing to send the PIN" >&2
-        exit 1
-      fi
-
-      if ! ykman fido access verify-pin --pin "$pin" >/dev/null 2>&1; then
-        echo "yk-login: PIN rejected; $(ykman fido info 2>/dev/null | sed -n 's/^PIN:[[:space:]]*/PIN: /p')" >&2
-        exit 1
-      fi
-
-      umask 077
-      mkdir -p "$pin_dir"
-      printf '%s' "$pin" >"$pin_file"
-      chmod 600 "$pin_file"
-      unset pin
+      # Prompt, verify, and cache in the shared helper: the retry guard and the
+      # cache format are the same ones the agent askpass and yk-ensure rely on.
+      ${lib.getExe ensurePin} --tty
 
       # Another PIV client (pam_p11, ykman, the old 9c fallback) resets OpenSC's
-      # verified state. Start fresh agents so a stale provider cannot fail with
-      # "agent refused operation"; the cache above is already verified.
-      systemctl --user restart fido2-agent.service fido2-sign-agent.service
+      # verified state. Restart only the PIV agent so a stale provider cannot
+      # fail with "agent refused operation". The signing handles are FIDO2 and
+      # survive; restarting their agent would only orphan the socket every
+      # running sandbox bound to it.
+      systemctl --user restart fido2-agent.service
       for _ in $(seq 1 50); do
         [ -S "$runtime/fido2-agent" ] && [ -S "$runtime/fido2-sign-agent" ] && break
         sleep 0.1
@@ -210,6 +180,7 @@ in
     home.packages = [
       ykLogin
       askpass
+      ensurePin
       pkgs.opensc
     ];
 
@@ -260,6 +231,28 @@ in
         # Type=simple: ssh-agent may not have created the socket yet.
         ExecStartPre = "${lib.getExe pkgs.bashNonInteractive} -c 'for ((i = 0; i < 300; i++)); do [ -S %t/fido2-agent ] && exit 0; sleep 0.1; done; exit 1'";
         ExecStart = "${lib.getExe (loader "fido2-agent-load" "fido2-agent" loginKeys)}";
+      };
+      Install.WantedBy = [ "default.target" ];
+    };
+
+    # The sandbox and git sign through fido2-sign-agent, so its handles are
+    # loaded at login like the sudo handles: a first signature then costs only
+    # the lazy PIN prompt. Loading needs no PIN (a handle is useless without
+    # the token).
+    systemd.user.services.fido2-sign-load = lib.mkIf (!isServer) {
+      Unit = {
+        Description = "Load the no-touch signing handles into fido2-sign-agent";
+        After = [ "fido2-sign-agent.service" ];
+        Wants = [ "fido2-sign-agent.service" ];
+        # A restart of the agent clears it; re-run the load with it.
+        PartOf = [ "fido2-sign-agent.service" ];
+      };
+      Service = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        # Type=simple: ssh-agent may not have created the socket yet.
+        ExecStartPre = "${lib.getExe pkgs.bashNonInteractive} -c 'for ((i = 0; i < 300; i++)); do [ -S %t/fido2-sign-agent ] && exit 0; sleep 0.1; done; exit 1'";
+        ExecStart = "${lib.getExe (loader "fido2-sign-load" "fido2-sign-agent" signingKeys)}";
       };
       Install.WantedBy = [ "default.target" ];
     };

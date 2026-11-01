@@ -405,7 +405,7 @@
 
           if [ "$handles" -eq 0 ] && [ "$host_key_state" = no ]; then
             echo "key-backup: no FIDO2 handles under $HOME/.config/ssh-sk" >&2
-            echo "key-backup: run this on a laptop where the keys are enrolled and yk-login works" >&2
+            echo "key-backup: run this on a laptop where the keys are enrolled and signing works" >&2
             exit 1
           fi
           if [ "$handles" -eq 0 ]; then
@@ -787,7 +787,7 @@
 
           # Refuse before writing anything if a handle already exists or does
           # not match the committed public half. A partial restore would leave
-          # the machine in a state yk-login cannot explain.
+          # handles the committed map cannot explain.
           while IFS=$'\t' read -r key _; do
             [ -n "$key" ] || continue
             src="$stage/home/.config/ssh-sk/$key"
@@ -865,8 +865,8 @@
 
           Next:
             home-manager switch        # if bootstrap has not already written the .pub files
-            yk-login                   # loads the handles, caches the PIN
-            ssh smortress true         # no prompt
+            yk-login                   # optional: terminal PIN prompt, reloads the handles
+            ssh smortress true         # one graphical PIN prompt on first use
             ssh -t smortress sudo true # one touch
 
           The admin age key stays on the laptops.

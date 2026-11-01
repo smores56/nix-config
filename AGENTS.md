@@ -181,7 +181,12 @@ generated home, as the `<name>` flake check (`scriptChecks` in
 `modules/flake/checks.nix`): `git-work-routing` (work vs personal identity by
 remote URL), `ssh-allowed-signers`
 (signature verification), `ssh-pin-askpass` (only the two PIN prompt shapes
-are answered; host-key and presence prompts fail closed), `wallpapers` (aspect
+are answered; host-key and presence prompts fail closed; a cache miss prompts
+through `fido2-ensure-pin` when a compositor is reachable), `fido2-ensure-pin`
+(the PIN is prompted, verified, and cached once per session, refuses below four
+retries, re-prompts when the card's serial:retries snapshot changed, and fails
+closed with no dialog without a compositor, a card, or prompting enabled),
+`wallpapers` (aspect
 buckets by measured pixels, NUL-delimited queue rotation without same-aspect
 collisions, control-character names skipped) and `wallpapers-askpass` (only
 the PIV prompt is answered; host-key, presence, and a failing Keychain read

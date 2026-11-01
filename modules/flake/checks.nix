@@ -196,8 +196,17 @@ in
               tools = [
                 pkgs.coreutils
                 pkgs.gnugrep
+                pkgs.python3
               ];
               args = [ (homeExe "ssh-pin-askpass") ];
+            };
+            fido2-ensure-pin = {
+              tools = [
+                pkgs.coreutils
+                pkgs.gnugrep
+                pkgs.python3
+              ];
+              args = [ (homeExe "fido2-ensure-pin") ];
             };
             ssh-pub-keys = {
               tools = [ pkgs.openssh ];
@@ -384,6 +393,25 @@ in
           )
         );
 
+        # The signing handles must load at login like the sudo handles; without
+        # this unit the sandbox and git sign nothing until yk-login runs.
+        fido2-sign-load = evalCheck "fido2-sign-load" (
+          toString (
+            let
+              unit =
+                config.flake.homeConfigurations."smores@smorespro".config.systemd.user.services.fido2-sign-load;
+              ensure = cond: msg: lib.assertMsg cond "fido2-sign-load: ${msg}";
+            in
+            ensure (unit.Unit.After == [ "fido2-sign-agent.service" ]) "must start after the sign agent"
+            && ensure (unit.Unit.Wants == [ "fido2-sign-agent.service" ]) "must want the sign agent"
+            && ensure (unit.Unit.PartOf == [ "fido2-sign-agent.service" ]) "must be restarted with the agent"
+            && ensure (unit.Service.Type == "oneshot") "must be a oneshot"
+            && ensure (unit.Service.RemainAfterExit == true) "must remain after exit"
+            && ensure (lib.hasInfix "fido2-sign-load" unit.Service.ExecStart) "must run the sign loader"
+            && "ok"
+          )
+        );
+
         # The two rendered planes must stay in step with the design: a Linux
         # timer that runs after the session is up, a launchd agent that can
         # answer the PIV PIN unattended, and Noctalia no longer rotating.
@@ -561,6 +589,10 @@ in
             ''
               bash -n ${src}/bootstrap.sh
               shellcheck ${src}/bootstrap.sh
+              bash -n ${src}/modules/lib/fido2-pin.sh
+              shellcheck ${src}/modules/lib/fido2-pin.sh
+              bash -n ${src}/tests/fido2_ensure_pin.sh
+              shellcheck ${src}/tests/fido2_ensure_pin.sh
               bash -n ${src}/modules/features/backup/drills/restore-drill.sh
               shellcheck ${src}/modules/features/backup/drills/restore-drill.sh
               bash -n ${src}/modules/features/backup/github-mirror.sh

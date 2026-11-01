@@ -158,7 +158,7 @@ export PATH="${HM_BIN}:${PATH}"
 #
 # The public halves are committed (modules/lib/yubikey-keys.nix) and written by
 # `ssh-pub-keys`, the same command every switch runs. The private halves stay on
-# the YubiKeys and are loaded by the fido2 agents after `yk-login`, so nothing
+# the YubiKeys and are loaded by the fido2 agents at login, so nothing
 # is generated here.
 
 # A headless host logs in with the vault's PAT (sops-delivered, non-interactive);

@@ -232,8 +232,7 @@ sudo systemd-cryptenroll --recovery-key /dev/disk/by-partlabel/root
 nix run github:smores56/nix-config#bootstrap
 cd ~/code/github.com/smores56/nix-config
 nix run .#key-restore -- ~/Downloads/smorespro-restore-<time>.tar.gz
-yk-login
-ssh smortress true
+ssh smortress true   # one graphical YubiKey PIN prompt on first use
 ```
 
 Secure Boot comes next, because the TPM step binds PCR 7, which measures the
@@ -526,11 +525,12 @@ ClientAliveCountMax 2
   (0600, outside Maki's sandbox, never committed). It is useless from any other
   source address.
 - the three YubiKey PIV 9a public keys from `modules/lib/yubikey-keys.nix`, for
-  the laptops. Linux needs the fido2 agent from `yk-login`; macOS prompts for
-  the PIV PIN through OpenSC:
+  the laptops. Linux loads the fido2 agent at login and prompts for the PIV
+  PIN once, in a dialog, on first use; macOS prompts for the PIV PIN through
+  OpenSC:
 
 ```sh
-# Linux laptop, after yk-login
+# Linux laptop
 SSH_AUTH_SOCK="$XDG_RUNTIME_DIR/fido2-agent" ssh -o IdentitiesOnly=yes \
   -i ~/.config/ssh-sk/piv-k1.pub -i ~/.config/ssh-sk/piv-k2.pub \
   -i ~/.config/ssh-sk/piv-k3.pub smores@10.0.0.193
@@ -1077,7 +1077,9 @@ cached set; the unit status or agent log records the failure. Rotation state is
 
 On smorespro the first run happens when `graphical-session.target` starts
 (login) and every 3 h after that. Nothing to provision: the forwarded PIV agent
-from `yk-login` authenticates the rsync.
+authenticates the rsync while the session's PIN cache is warm, and the timer
+never opens a dialog (`YK_ENSURE_NO_PROMPT`), so a cold cache fails that run
+instead of prompting.
 
 smoreswork runs it from a LaunchAgent, which has no tty, so three operator
 steps are needed once. `wallpapers` exports `SSH_ASKPASS` and
@@ -2038,11 +2040,11 @@ writing. Run it by hand with `sudo systemctl start lobechat-memory-ingest`.
 `cloudflared access ssh`. `ssh` must keep Access enabled; evaluation fails
 otherwise.
 
-`smortress` logs in with the PIV keys in slot 9a, loaded into `fido2-agent` by
-`yk-login`. If `ssh smortress` starts failing after another PIV client ran
-(`pam_p11` at the greeter, `ykman piv`), the card session was reset; run
-`yk-login` again. If that happens daily, fall back to slot 9c with PIN policy
-ALWAYS plus the askpass cache (the pre-T1 layout).
+`smortress` logs in with the PIV keys in slot 9a, loaded into `fido2-agent` at
+login by `fido2-agent-load`. If `ssh smortress` starts failing after another PIV
+client ran (`pam_p11` at the greeter, `ykman piv`), the card session was reset;
+run `yk-login` again. If that happens daily, fall back to slot 9c with PIN
+policy ALWAYS plus the askpass cache (the pre-T1 layout).
 
 ## Flake apps
 
@@ -2161,8 +2163,9 @@ rewrite the Pass item can rewrite the `.sha256` too. The `&<host>` anchor in
 it. It does not inspect the touch/PIN flags, which live in the private
 file; a flagged credential is still bound to the same token. `--no-verify` skips only the outer checksum; it cannot skip the
 committed-key check. Then run `home-manager switch` if bootstrap did not
-already write the public keys, `yk-login`, and verify with
-`ssh smortress true` and `ssh -t smortress sudo true`.
+already write the public keys, and verify with `ssh smortress true` and
+`ssh -t smortress sudo true`. The first signature prompts for the PIN once;
+`yk-login` remains the terminal fallback when no dialog can be shown.
 
 ### cloudflare-plan
 
