@@ -11,5 +11,6 @@
   nixos = [
     ./boot.nix
     ./greeter.nix
+    ../../nixos/secrets-smorespro.nix
   ];
 }

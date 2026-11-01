@@ -68,8 +68,7 @@ let
     "$HOME/.local/share/keyrings"
     "$HOME/.local/share/fish"
     "$HOME/.local/share/memory"
-    "$HOME/.local/share/proton-pass-cli"
-    "$HOME/.local/share/maki"
+    "$HOME/.local/state/maki"
     # maki has no log-path setting (MAKI_LOG is the level), so mask the log
     # directory with a writable tmpfs: the agent gets working logs and the
     # human's log is neither read nor extended.
