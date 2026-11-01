@@ -32,7 +32,10 @@ in
     # Media is agent-writable except Immich's managed Photos library. The
     # backup driver runs as root and can read smores-owned sources.
     systemd.tmpfiles.rules = [
-      "d /var/lib/data 0750 smores users -"
+      # 0751: services with PrivateUsers (Immich) map smores:users to
+      # nobody:nogroup, so they need others-traverse; subdirs keep their own
+      # 0700/0770 modes, so only traversal is granted, never listing.
+      "d /var/lib/data 0751 smores users -"
       "d /var/lib/data/music 0775 smores users -"
       "d /var/lib/data/books 0775 smores users -"
       "d /var/lib/agent 0775 smores users -"
