@@ -217,7 +217,9 @@ let
 
     [gpg "ssh"]
         allowedSignersFile = ~/.local/state/agent/config/allowed_signers
-        defaultKeyCommand = ~/.local/state/agent/config/bin/gpg-ssh-default-key
+        # A command value is exec'd as-is: git does not expand "~" here, so use
+        # the store path (the staged copy under bin/ is a convenience only).
+        defaultKeyCommand = ${signingKeyCommand}/bin/gpg-ssh-default-key
         program = ${pkgs.openssh}/bin/ssh-keygen
 
     [core]
