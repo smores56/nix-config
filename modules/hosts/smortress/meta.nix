@@ -65,6 +65,7 @@ in
       services = {
         calibre.port = ports.calibre;
         immich.port = ports.immich;
+        dav.port = ports.radicale;
         # sshd (key-only, loopback; see modules/nixos/ssh.nix) is reachable
         # only through the tunnel. The Service Auth policy lets `cloudflared
         # access ssh` run unattended; the email policy keeps a browser

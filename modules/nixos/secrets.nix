@@ -26,6 +26,12 @@
         mode = "0400";
       };
 
+      # bcrypt htpasswd for Radicale; the service runs as the radicale user.
+      radicale-htpasswd = {
+        owner = "radicale";
+        mode = "0400";
+      };
+
       # Brave Search API key for LobeChat's web search. Only the container's
       # root-run preStart renders it into the env file, and Page Assist keeps
       # its own copy in the browser; sops-nix's root 0400 default is enough.

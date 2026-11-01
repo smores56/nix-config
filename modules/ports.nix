@@ -11,6 +11,8 @@
   # Listener and tunnel ingress read this.
   calibre = 8181;
   immich = 2283;
+  # Radicale CalDAV/CardDAV listener and its tunnel ingress.
+  radicale = 5232;
   ssh = 22;
   # The wrapper's listener, its tunnel ingress, and the generated Maki
   # `mcp.toml` environment read this; the shim and CLI keep a matching
