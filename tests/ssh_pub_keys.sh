@@ -28,16 +28,23 @@ printf 'ssh-ed25519 AAAAstale stale\n' >"$(dest "$WORK_KEY")"
 HOME="$work" "$script" || fail "script exited non-zero"
 
 file=$(dest "$WORK_KEY")
-[ -s "$file" ] || fail "missing $file"
-ssh-keygen -l -f "$file" >/dev/null 2>&1 || fail "unparsable $file"
-grep -q "$WORK_EMAIL namespaces=\"git\" ssh-ed25519 " "$work/.config/ssh/allowed_signers" ||
-  fail "allowed_signers lacks the $WORK_EMAIL principal"
+if [ "${WORK_HOST:-0}" = 1 ]; then
+  [ -s "$file" ] || fail "missing $file"
+  ssh-keygen -l -f "$file" >/dev/null 2>&1 || fail "unparsable $file"
+  grep -q "$WORK_EMAIL namespaces=\"git\" ssh-ed25519 " "$work/.config/ssh/allowed_signers" ||
+    fail "allowed_signers lacks the $WORK_EMAIL principal"
+else
+  # Non-work hosts have no work private key; do not stage or trust it.
+  [ ! -e "$file" ] || fail "work public key written on a non-work host"
+  ! grep -q "$WORK_EMAIL namespaces=\"git\" ssh-ed25519 " "$work/.config/ssh/allowed_signers" ||
+    fail "allowed_signers trusts the work software key on a non-work host"
+fi
 [ ! -e "$work/.config/ssh/id_personal.pub" ] || fail "the retired personal key was written"
 
 # Idempotent: a second run produces identical files.
-before=$(sha256sum "$file" "$work/.config/ssh/allowed_signers")
+before=$(sha256sum "$work/.config/ssh/allowed_signers"; if [ -f "$file" ]; then sha256sum "$file"; fi)
 HOME="$work" "$script" >/dev/null 2>&1 || fail "second run exited non-zero"
-after=$(sha256sum "$file" "$work/.config/ssh/allowed_signers")
+after=$(sha256sum "$work/.config/ssh/allowed_signers"; if [ -f "$file" ]; then sha256sum "$file"; fi)
 [ "$before" = "$after" ] || fail "second run changed the files"
 
 if (($failures)); then

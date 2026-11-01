@@ -108,7 +108,7 @@ let
   # Install the PAT-aware wrapper as `gh`, while keeping `gh-pat` for the
   # sandbox shim. The wrapper execs the real gh by absolute path, so the
   # symlink cannot recurse.
-  ghAlias = pkgs.runCommand "gh" { } ''
+  ghAlias = pkgs.runCommand "gh" { meta.mainProgram = "gh"; } ''
     mkdir -p $out/bin
     ln -s ${ghWithPat}/bin/gh-pat $out/bin/gh
   '';

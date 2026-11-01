@@ -58,20 +58,32 @@ let
     branchTemplateUnticketed = toString naming.unticketed;
   };
 
-  workIncludes = ownerIncludes work.githubOwnerGlob {
-    user = {
-      inherit (work) email;
+  workIncludes = ownerIncludes work.githubOwnerGlob (
+    {
+      user = {
+        inherit (work) email;
+      }
+      // lib.optionalAttrs (!isLinux) {
+        # The work Mac keeps its employer software-key signing path (T4).
+        signingkey = "${work.sshKey}.pub";
+      };
+      smores = {
+        inherit (work) flow;
+      }
+      // branchSettings work.branchNaming;
     }
-    // lib.optionalAttrs (!isLinux) {
-      # The work Mac keeps its existing software-key signing path (T4).
-      signingkey = "${work.sshKey}.pub";
-    };
-    core.sshCommand = "ssh -F ${work.sshConfig}";
-    smores = {
-      inherit (work) flow;
+    // lib.optionalAttrs config.machine.workHost {
+      core.sshCommand = "ssh -F ${work.sshConfig}";
     }
-    // branchSettings work.branchNaming;
-  };
+    // lib.optionalAttrs (!config.machine.workHost) {
+      # Other hosts have no work private key; use HTTPS + the work PAT. The
+      # owner-selecting credential helper supplies the token.
+      url."https://github.com/".insteadOf = [
+        "git@github.com:"
+        "ssh://git@github.com/"
+      ];
+    }
+  );
   # Only repos the personal account owns get the local flow; third-party
   # checkouts get no flow at all.
   personalIncludes = ownerIncludes cfg.githubUser { smores.flow = "local"; };

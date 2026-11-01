@@ -103,6 +103,7 @@ in
             WORK_EMAIL = d.work.email;
             WORK_KEY = d.work.sshKey;
             WORK_SSH_CONFIG = d.work.sshConfig;
+            WORK_HOST = if hc.machine.workHost then "1" else "0";
             WORK_BRANCH_TEMPLATE = d.work.branchNaming.template;
             WORK_BRANCH_UNTICKETED = toString d.work.branchNaming.unticketed;
             WORK_OWNER = lib.replaceStrings [ "*" ] [ "routing-test" ] d.work.githubOwnerGlob;

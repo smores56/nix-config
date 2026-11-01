@@ -46,7 +46,19 @@ expect_signing() {
 expect_work() {
   expect "$1" user.email "$WORK_EMAIL"
   expect_signing "$1" "$WORK_KEY.pub"
-  expect "$1" core.sshCommand "ssh -F $WORK_SSH_CONFIG"
+  if [ "$WORK_HOST" = 1 ]; then
+    expect "$1" core.sshCommand "ssh -F $WORK_SSH_CONFIG"
+  else
+    expect "$1" core.sshCommand ""
+    got=$(git -C "$1" config --get-all 'url.https://github.com/.insteadOf' || true)
+    case "$got" in
+      *"git@github.com:"*) ;;
+      *)
+        echo "FAIL $1 missing work HTTPS rewrite"
+        failures=$((failures + 1))
+        ;;
+    esac
+  fi
   expect "$1" smores.branchTemplate "$WORK_BRANCH_TEMPLATE"
   expect "$1" smores.branchTemplateUnticketed "$WORK_BRANCH_UNTICKETED"
   expect "$1" smores.flow pr

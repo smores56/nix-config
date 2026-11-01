@@ -29,18 +29,25 @@ verifies() {
 }
 
 "$writer"
-verifies id_work "$WORK_EMAIL" || fail "work key does not verify as $WORK_EMAIL"
+if [ "${WORK_HOST:-0}" = 1 ]; then
+  verifies id_work "$WORK_EMAIL" || fail "work key does not verify as $WORK_EMAIL"
+  verifies id_work "sam@sammohr.dev" && fail "work key verifies as the personal principal"
+else
+  # Non-work hosts have no work private key, so they must not trust it.
+  verifies id_work "$WORK_EMAIL" && fail "work key verifies on a non-work host"
+fi
 verifies id_personal "$WORK_EMAIL" && fail "retired personal key still verifies as $WORK_EMAIL"
-verifies id_work "sam@sammohr.dev" && fail "work key verifies as the personal principal"
 verifies id_personal "sam@sammohr.dev" && fail "retired personal key still verifies"
 
-# A hand-pasted .pub often lacks the trailing newline.
-printf '%s' "$(cat "$HOME/.config/ssh/id_work.pub")" >"$HOME/.config/ssh/id_work.pub.tmp"
-mv "$HOME/.config/ssh/id_work.pub.tmp" "$HOME/.config/ssh/id_work.pub"
-"$writer" || fail "writer failed on a .pub without a trailing newline"
-verifies id_work "$WORK_EMAIL" || fail "work key without trailing newline does not verify"
+if [ "${WORK_HOST:-0}" = 1 ]; then
+  # A hand-pasted .pub often lacks the trailing newline.
+  printf '%s' "$(cat "$HOME/.config/ssh/id_work.pub")" >"$HOME/.config/ssh/id_work.pub.tmp"
+  mv "$HOME/.config/ssh/id_work.pub.tmp" "$HOME/.config/ssh/id_work.pub"
+  "$writer" || fail "writer failed on a .pub without a trailing newline"
+  verifies id_work "$WORK_EMAIL" || fail "work key without trailing newline does not verify"
+fi
 
-rm "$HOME/.config/ssh/id_work.pub"
+rm -f "$HOME/.config/ssh/id_work.pub"
 "$writer"
 verifies id_work "$WORK_EMAIL" && fail "work key still verifies without its .pub"
 [[ $(grep -c . "$signers" || true) == 0 ]] || fail "expected no software entries without the work key"

@@ -16,7 +16,7 @@ let
   # the employer agent/keychain and whose public half the work Mac's git config
   # references (T4). The personal software key was retired with the Pass agent;
   # keeping its public half here would leave dead trust in allowed_signers.
-  softwareIdentities = [
+  softwareIdentities = lib.optionals config.machine.workHost [
     {
       key = cfg.work.sshKey;
       inherit (cfg.work) email;
@@ -109,6 +109,7 @@ let
       # that still has its public half should not keep offering it. The work
       # public half moved out of ~/.ssh with the rest of the key material.
       rm -f "$HOME/.ssh/id_personal.pub" "$HOME/.ssh/id_work.pub"
+      ${lib.optionalString (!config.machine.workHost) ''rm -f "$HOME/.config/ssh/id_work.pub"''}
 
       exit "$failed"
     '';

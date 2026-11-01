@@ -301,11 +301,14 @@ Work is split across independent switches:
 
 - **Per repo, on every host:** repos with a remote under the GitHub owner
   glob in `user.work` (`modules/options.nix`) get the work email,
-  signing key, ssh route (`~/.config/ssh/config.work`, work key only), branch
+  signing key, ssh route, branch
   naming and PR flow, via git `includeIf hasconfig:remote.*.url`
   (`modules/features/git.nix`). Any matching remote counts, so a fork with a
   work `upstream` is a work repo. Tooling reads the result from
-  `git config smores.branchTemplate` / `smores.flow`.
+  `git config smores.branchTemplate` / `smores.flow`. On the work Mac the
+  employer software key in Keychain signs and uses
+  `~/.config/ssh/config.work`; other hosts have no work private key and use
+  HTTPS with the owner-selected work PAT.
 - **Per host:** `aiProfile` (below) decides which model providers agents
   may use. A work clone on a personal host still gets the work git
   identity, but maki there runs on the personal providers.
