@@ -89,21 +89,48 @@ let
   p11Control = "[success=done authinfo_unavail=ignore default=die]";
 
   # pam_p11 0.6.1 reads $HOME/.eid/authorized_certificates and has no option to
-  # point elsewhere, while root (greetd, login) trusts that file. Publish the
-  # certificates from the store at /etc/eid and make the home path a symlink to
-  # that root-owned tree, so a same-uid agent cannot swap in its own token's
-  # certificate and own the next unlock.
+  # point elsewhere, while root (greetd, login) trusts that file. A symlink is
+  # not enough: the path sits in a user-writable home, so a same-uid agent could
+  # unlink it and recreate the directory. Bind-mount the root-owned tree over it
+  # instead — an unprivileged process cannot remove a mountpoint — read-only, so
+  # the certificates stay exactly what the store says.
   pamP11Certificates = lib.concatStringsSep "\n" (
     map (key: key.cert) (import ../../lib/yubikey-keys.nix).piv
   );
+  eidPath = "/home/${config.machine.username}/.eid";
 in
 {
   imports = [ inputs.noctalia-greeter.nixosModules.default ];
 
   environment.etc."eid/authorized_certificates".text = pamP11Certificates + "\n";
-  systemd.tmpfiles.rules = [
-    "L+ /home/${config.machine.username}/.eid - - - - /etc/eid"
-  ];
+
+  # Fail-safe by construction: if the source is not ready the unit fails,
+  # pam_p11 finds no certificate, returns AUTHINFO_UNAVAIL, and the password
+  # still opens the session — the same path a missing key takes.
+  systemd.services.pam-p11-trust = {
+    description = "Bind the managed pam_p11 trust file over ~/.eid";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "nixos-activation.service" ];
+    before = [
+      "greetd.service"
+      "systemd-user-sessions.service"
+    ];
+    path = [ pkgs.util-linux ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      # A previous activation may have left a symlink here; the bind needs a
+      # real, empty mountpoint. Both steps are best-effort so a reboot after a
+      # switch (still mounted) does not fail the unit.
+      ExecStartPre = [
+        "-${pkgs.util-linux}/bin/umount ${lib.escapeShellArg eidPath}"
+        "-${pkgs.coreutils}/bin/rm -f ${lib.escapeShellArg eidPath}"
+        "${pkgs.coreutils}/bin/mkdir -p -m 0755 ${lib.escapeShellArg eidPath}"
+      ];
+      ExecStart = "${pkgs.util-linux}/bin/mount --bind /etc/eid ${lib.escapeShellArg eidPath}";
+      ExecStartPost = "${pkgs.util-linux}/bin/mount -o remount,bind,ro ${lib.escapeShellArg eidPath}";
+    };
+  };
 
   services.displayManager.noctalia-greeter = {
     enable = true;
