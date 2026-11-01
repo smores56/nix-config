@@ -32,6 +32,13 @@ in
   # joins users and its own collection dir stays 0750 radicale:radicale.
   users.users.radicale.extraGroups = [ "users" ];
 
+  # PrivateUsers maps smores:users to nobody:nogroup inside the unit, so the
+  # durable tree would be unreachable; keep host IDs and grant users explicitly.
+  systemd.services.radicale.serviceConfig = {
+    PrivateUsers = lib.mkForce false;
+    SupplementaryGroups = [ "users" ];
+  };
+
   systemd.tmpfiles.rules = [
     "d /var/lib/data/radicale 0750 radicale radicale -"
   ];
