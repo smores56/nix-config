@@ -16,6 +16,8 @@ let
   isServer = builtins.elem "server" config.machine.profiles;
   ports = import ../ports.nix;
   yubikeyKeys = import ../lib/yubikey-keys.nix;
+  fido2Pin = import ../lib/fido2-pin.nix { inherit pkgs; };
+  inherit (fido2Pin) ensurePin;
   inherit (aiProviders) smortress;
   inherit (pkgs.stdenv.hostPlatform) isLinux;
 
@@ -149,9 +151,9 @@ let
 
   # Lazy PIV PIN collection for the Linux client. The smortress ProxyCommand
   # runs this before the tunnel: no-op once the agent holds the PIV key,
-  # otherwise one graphical prompt, verified before caching. A non-interactive
-  # caller (the wallpaper timer) sets YK_ENSURE_NO_PROMPT and fails instead of
-  # opening an unannounced dialog.
+  # otherwise the shared helper prompts once and caches a verified PIN. A
+  # non-interactive caller (the wallpaper timer) sets YK_ENSURE_NO_PROMPT and
+  # fails instead of opening an unannounced dialog.
   ykPinAskpass = pkgs.writeShellScriptBin "yk-ensure-askpass" ''
     exec ${pkgs.coreutils}/bin/cat "''${XDG_RUNTIME_DIR:?}/fido2/pin"
   '';
@@ -160,20 +162,14 @@ let
     runtimeInputs = [
       pkgs.coreutils
       pkgs.gnugrep
-      pkgs.gnused
       pkgs.opensc
       pkgs.openssh
       pkgs.systemd
       pkgs.util-linux
-      pkgs.yubikey-manager
-      pkgs.fuzzel
-      pkgs.libnotify
     ];
     text = ''
       runtime="''${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR is not set}"
       agent="$runtime/fido2-agent"
-      pin_dir="$runtime/fido2"
-      pin_file="$pin_dir/pin"
 
       has_piv() {
         [ -S "$agent" ] && SSH_AUTH_SOCK="$agent" ssh-add -l 2>/dev/null |
@@ -181,41 +177,18 @@ let
       }
 
       if has_piv; then exit 0; fi
-      if [ "''${YK_ENSURE_NO_PROMPT:-0}" = 1 ] ||
-        { [ -z "''${WAYLAND_DISPLAY:-}" ] && [ -z "''${DISPLAY:-}" ]; }; then
-        exit 1
-      fi
 
-      # Two parallel ssh calls must not race into two prompts or two verifies.
-      exec 9>"$runtime/fido2-ensure.lock"
-      flock 9
+      # Prompting, verification, the retry guard, and the cache format are the
+      # same ones the signing askpass uses, and the helper holds one lock, so
+      # parallel ssh calls cannot open two dialogs.
+      ${lib.getExe ensurePin} || exit 1
+
+      # Serialise the provider load on the same lock: the helper releases it on
+      # exit, and two callers that both see no PIV would otherwise load it (or
+      # restart the agent) twice, dropping the identity the other is using.
+      exec 8>"$runtime/fido2-ensure.lock"
+      flock -w 60 8 || exit 1
       if has_piv; then exit 0; fi
-
-      if [ ! -s "$pin_file" ]; then
-        # fuzzel --prompt-only is a free-text masked prompt: no stdin, no list.
-        # The namespace keeps the window out of screencasts.
-        pin=$(fuzzel --dmenu --prompt-only="YubiKey PIN" --password='*' \
-          --namespace=pin --cache=/dev/null 2>/dev/null) || exit 1
-        if [[ ! $pin =~ ^[0-9]{8}$ ]]; then
-          notify-send -a yk-ensure "YubiKey" "Enter the 8-digit YubiKey PIN." 2>/dev/null || true
-          exit 1
-        fi
-        attempts=$(ykman fido info 2>/dev/null |
-          sed -n 's/^PIN:[[:space:]]*\([0-9][0-9]*\) attempt(s) remaining.*/\1/p')
-        if [ -z "$attempts" ] || [ "$attempts" -lt 4 ]; then
-          notify-send -a yk-ensure "YubiKey" "Fewer than 4 retries remain; refusing to send the PIN." 2>/dev/null || true
-          exit 1
-        fi
-        if ! ykman fido access verify-pin --pin "$pin" >/dev/null 2>&1; then
-          notify-send -a yk-ensure "YubiKey" "The YubiKey rejected that PIN." 2>/dev/null || true
-          exit 1
-        fi
-        umask 077
-        mkdir -p "$pin_dir"
-        printf '%s' "$pin" >"$pin_file"
-        chmod 600 "$pin_file"
-        unset pin
-      fi
 
       load_provider() {
         SSH_AUTH_SOCK="$agent" \
