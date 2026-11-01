@@ -1450,6 +1450,15 @@ affect a later unsandboxed build; `~/.local/state/*` entries that are not
 explicitly masked remain readable read-only; and the signing credential is a
 signing oracle by design, so review and the PR gate stay the control.
 
+Nix: `/nix/store` is read-only, and so is `/nix/var/nix` whenever a daemon
+socket exists, so `nix` resolves to the daemon instead of a local store. A local
+store would take its lock files inside the read-only store and fail; the state
+dir bwrap creates is writable, which is exactly what makes `store = auto` choose
+it. The socket was always reachable, so this only makes the daemon the default:
+agent builds run in the daemon's sandbox as `nixbld`
+(`nix.settings.build-users-group` in `modules/nixos/base.nix`) and the paths
+they add persist in the host store.
+
 The config allowlist is read-only, but `CONFIG_WRITABLE` in
 `modules/lib/agent-sandbox.nix` lists files a tool must lock or rewrite. Each
 gets a writable copy under the agent state bound over the read-only file —

@@ -121,6 +121,12 @@ in
             test ! -e /run/user
             command -v maki >/dev/null && maki --version >/dev/null
             nix store ping >/dev/null 2>&1
+            if [ -S /nix/var/nix/daemon-socket/socket ]; then
+              # The resolved store URL, not the raw setting: the read-only state
+              # dir is what makes `store = auto` fall through to the daemon.
+              nix store info --json | grep -q '"url":"daemon"'
+              ! test -w /nix/var/nix
+            fi
           '
           echo "agent-sandbox-check: ok"
         '';

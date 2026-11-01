@@ -246,9 +246,17 @@ args=(
   --ro-bind /etc /etc
   --ro-bind /bin /bin
   --ro-bind-try /usr /usr
-  --ro-bind-try /nix/var/nix/daemon-socket/socket /nix/var/nix/daemon-socket/socket
   --ro-bind "$home" "$home"
 )
+
+# `store = auto` picks a LocalStore when it can write the state dir, and bwrap
+# creates that dir writable in its tmpfs, so every store-touching eval would
+# take lock files inside the read-only store and fail. Bind the host dir (which
+# carries the daemon socket) read-only so the client resolves to the daemon. A
+# host without a daemon keeps the ephemeral local store instead.
+if [ -S /nix/var/nix/daemon-socket/socket ]; then
+  args+=(--ro-bind /nix/var/nix /nix/var/nix)
+fi
 
 for d in "${HOME_RW[@]}"; do
   args+=(--bind-try "$d" "$d")
