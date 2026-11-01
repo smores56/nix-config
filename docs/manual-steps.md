@@ -798,13 +798,13 @@ through an apply.
 Per-host Cloudflare Access service token for `cloudflared access ssh`, exported
 as `TUNNEL_SERVICE_TOKEN_ID` and `TUNNEL_SERVICE_TOKEN_SECRET`. The value is two
 lines: the client ID, then the client secret. `cloudflared-access`
-(`modules/features/cloudflared.nix`) reads the token from the host's sops
-deployment when a module declares it, and otherwise from the login-time cache
-or Proton Pass.
+(`modules/features/cloudflared.nix`) reads it only from the host's sops
+deployment: `/run/secrets/cloudflare-access-ssh-token` from sops-nix on NixOS,
+and the sops-nix user path on Darwin. A missing, unreadable or malformed file is
+a hard failure; there is no cache or Proton Pass fallback.
 
-A NixOS declaration must hand the user access (`owner`/`mode`, as
-`modules/nixos/secrets-common.nix` does), because the proxy runs as the user;
-without that the 0400 root file is unreadable and the fallback wins.
+A NixOS declaration must hand the user access (`owner`/`mode`), because the
+proxy runs as the user; `modules/nixos/secrets-smorespro.nix` is the example.
 
 Mint one token per client machine under Zero Trust → Access → Service Auth, then
 paste both lines as `cloudflare-access-ssh-token` in that host's file

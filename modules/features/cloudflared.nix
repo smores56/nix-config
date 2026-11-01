@@ -39,10 +39,10 @@ let
       {
         IFS= read -r token_id || true
         IFS= read -r token_secret || true
-      } < "$token_file" 2>/dev/null || true
+      } 2>/dev/null < "$token_file" || true
 
       if [ -z "''${token_id:-}" ] || [ -z "''${token_secret:-}" ]; then
-        echo "cloudflared-access: missing Cloudflare Access service token at $token_file" >&2
+        echo "cloudflared-access: missing or malformed Cloudflare Access token (two lines: Client ID, Client Secret) at $token_file" >&2
         exit 1
       fi
 

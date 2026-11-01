@@ -196,10 +196,10 @@ in
     # no-PC/SC libfido2 so a running pcscd does not duplicate the YubiKey.
     home.sessionVariables.SSH_SK_HELPER = lib.getExe skHelper;
 
-    # A dedicated agent rather than `services.ssh-agent`: the Proton Pass agent
-    # still owns the global SSH_AUTH_SOCK (git/GitHub until that moves to HTTPS),
-    # and sshAuthSock allows only one provider. `Host smortress` selects this
-    # socket with IdentityAgent and forwards it for pam_rssh.
+    # A dedicated agent rather than `services.ssh-agent`: the systemd user
+    # session's sshAuthSock allows only one provider. `Host smortress` selects
+    # this socket with IdentityAgent and forwards it for pam_rssh; git signing
+    # uses the signing-only agent (modules/features/git.nix).
     systemd.user.services.fido2-agent = {
       Unit = {
         Description = "ssh-agent for the YubiKey login and sudo credentials";

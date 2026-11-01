@@ -157,15 +157,12 @@ smortress is reached only through the Cloudflare Tunnel — there is no inbound
 port — so the physical console is the out-of-band path. Everything below
 assumes console access or a working client.
 
-**No SSH from a client.** The client needs two things from Proton Pass: the
-Access service token (resolved by the `cloudflared-access` wrapper) and an SSH
-identity from the agent. If `pass-cli` has logged out:
-
-```sh
-PROTON_PASS_KEY_PROVIDER=fs pass-cli login --interactive
-ssh-add -L                                    # should list the identity
-systemctl --user restart proton-pass-agent    # macOS: launchctl kickstart -k gui/$(id -u)/org.nix-community.home.proton-pass-agent
-```
+**No SSH from a client.** The client needs two things: the Access service
+token and an SSH identity. The token is delivered per host by sops
+(`/run/secrets/cloudflare-access-ssh-token` on NixOS, the sops-nix user path on
+Darwin); a missing or malformed file makes `cloudflared-access` fail closed
+with the path in the error. The identity comes from the FIDO2/PIV agents
+(`modules/features/fido2.nix`); if `ssh-add -L` is empty, run `yk-login` once.
 
 Then run `ssh-pub-keys` to write the committed `~/.ssh/*.pub` and refresh
 `~/.ssh/allowed_signers` (every `home-manager switch` and bootstrap also run
@@ -175,11 +172,9 @@ The work Mac permits the Google Cloud CLI's `~/.ssh/google_compute_engine`
 private key as an exception to the local private-key check; this software key
 remains on disk. Other private keys and symlinked keys are still rejected.
 
-The Access token is cached per login in
-`$XDG_RUNTIME_DIR/cloudflared-access/token` (0600, tmpfs) by
-`cloudflared-access-token.service`; after rotating it,
-`systemctl --user restart cloudflared-access-token`. A missing cache falls back
-to `pass-cli inject` (~1s slower) rather than failing.
+Rotating the token is a sops edit plus a redeploy: update that host's file
+(`sops secrets/<host>.yaml`), switch, and reconnect. There is no cache to
+restart; the wrapper reads the file on each connection.
 
 **smortress unreachable (tunnel down, network, power).** At the console
 `<tunnelName>` is `webProxy.tunnelName`:

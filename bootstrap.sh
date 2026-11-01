@@ -161,23 +161,8 @@ export PATH="${HM_BIN}:${PATH}"
 # the YubiKeys: the sudo and signing handles load at login, and the PIV 9a key
 # loads on first use when the PIN dialog runs, so nothing is generated here.
 
-# A headless host logs in with the vault's PAT (sops-delivered, non-interactive);
-# elsewhere the session is established interactively in a browser. Always the
-# fs key provider (modules/features/proton-pass.nix): ssh-pub-keys and the agent
-# force it, and a session made with another provider would be logged out.
-PROTON_PASS_PAT_FILE="${PROTON_PASS_PAT_FILE:-/run/secrets/proton-pass-pat}"
-if [ -s "$PROTON_PASS_PAT_FILE" ]; then
-  info "Logging in to Proton Pass with the vault PAT..."
-  if PROTON_PASS_PERSONAL_ACCESS_TOKEN="$(cat "$PROTON_PASS_PAT_FILE")" \
-    PROTON_PASS_KEY_PROVIDER=fs \
-    pass-cli login; then
-    ok "Logged in to Proton Pass"
-  else
-    warn "Proton Pass PAT login failed; log in interactively later."
-  fi
-fi
-
-# The Phase 3 switch already ran ssh-pub-keys, before pass-cli was logged in.
+# Identities come from the FIDO2/PIV agents (modules/features/fido2.nix); there
+# is no vault login step.
 if ssh-pub-keys; then
   ok "SSH public keys present and trusted in ~/.ssh/allowed_signers"
 else
@@ -265,16 +250,8 @@ fi
 
 # ── Phase 6: Switch remote to SSH ─────────────────────────────────
 
-# A shell that predates the home-manager switch (this one) has no SSH_AUTH_SOCK
-# yet; derive the agent's default socket, matching the home-manager module.
-if [ -z "${SSH_AUTH_SOCK:-}" ]; then
-  if [ "$(uname -s)" = "Darwin" ]; then
-    SSH_AUTH_SOCK="$(getconf DARWIN_USER_TEMP_DIR)/proton-pass-agent"
-  else
-    SSH_AUTH_SOCK="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/proton-pass-agent"
-  fi
-  export SSH_AUTH_SOCK
-fi
+# A fresh bootstrap has no FIDO2 agent yet, so only switch the remote when an
+# agent already offers an identity.
 
 CURRENT_REMOTE="$(git -C "$REPO_DIR" remote get-url origin 2>/dev/null || true)"
 if ! ssh-add -L >/dev/null 2>&1; then
