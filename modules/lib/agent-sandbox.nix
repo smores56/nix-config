@@ -39,21 +39,15 @@ let
     "$HOME/.local/state/agent"
     "$HOME/.local/share/agent"
     "$HOME/.cache/agent"
-  ];
-
-  # Read-only exceptions carved out of a writable parent (the user PATH must
-  # not become an agent-writable executable directory). The media tree is
-  # read-only except the Calibre ingest queue: the agent reads artwork and
-  # metadata but never writes the Immich library (uploads go through the API
-  # with a scoped key).
-  homeRo = [
-    "$HOME/.cache/.bun/bin"
   ]
+  # The whole media tree is writable so new media dirs need no allowlist. The
+  # masks are applied after every bind, so the Photos tmpfs still hides the
+  # Immich library (writes path-resolve into the tmpfs, never the host dir).
   ++ lib.optionals (!isDarwin) [ "/var/lib/media" ];
 
-  # The Calibre ingest queue is the one writable media path: the rest of the
-  # tree (including Immich Photos) stays read-only.
-  homeRwAfterRo = lib.optionals (!isDarwin) [ "/var/lib/media/Calibre-Ingest" ];
+  # Read-only exceptions carved out of a writable parent (the user PATH must
+  # not become an agent-writable executable directory).
+  homeRo = [ "$HOME/.cache/.bun/bin" ];
 
   homeMaskDirs = [
     "$HOME/.ssh"
@@ -134,9 +128,6 @@ let
     HOME_RO=(
     ${lib.concatMapStrings (p: "  \"${p}\"\n") homeRo}
     )
-    HOME_RW_AFTER_RO=(
-    ${lib.concatMapStrings (p: "  \"${p}\"\n") homeRwAfterRo}
-    )
     HOME_MASK_DIRS=(
     ${lib.concatMapStrings (p: "  \"${p}\"\n") homeMaskDirs}
     )
@@ -153,6 +144,7 @@ let
     ${lib.concatMapStrings (p: "  \"${p}\"\n") signingSockets}
     )
     CLOUDFLARED_TOKEN="''${XDG_RUNTIME_DIR:-/run/user/$UID}/cloudflared-access/token"
+    EMPTY_DIR="${pkgs.emptyDirectory}"
     ${lib.optionalString isDarwin ''
       OPENAI_KEYCHAIN_ITEM="maki-openai-api-key"
       GH_TOKEN_KEYCHAIN_ITEM="maki-github-pat"''}

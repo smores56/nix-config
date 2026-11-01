@@ -56,14 +56,15 @@ generated hardware config, then run `nix run .#bootstrap`.
   authoritative bind list is `homeRw`/`homeRo`/`configAllow`/`secretBind` in
   `modules/lib/agent-sandbox.nix`; it is wider than the identity dirs —
   `~/code`, `~/dev`, `~/Documents`, `~/Downloads`, `~/.cache`, the
-  cargo/npm/bun caches and nine config dirs (all read-write), while
-  `/var/lib/media` (except `Calibre-Ingest`) and `~/.cache/.bun/bin` are
-  read-only — and
-  the secret allowlist is four credentials (two PATs, Neuralwatt, TinyFish) plus
-  the Immich key once it exists. `~/.ssh`, `~/.config/{ssh-sk,sops}`,
+  cargo/npm/bun caches and `/var/lib/media` are read-write, the nine
+  allowlisted config dirs are read-only copies, and `~/.cache/.bun/bin` is
+  read-only inside its writable parent — and
+  the secret allowlist is five credentials (two PATs, Neuralwatt, TinyFish, and
+  the Immich key). `~/.ssh`, `~/.config/{ssh-sk,sops}`,
   `/srv/proton`, the PIV/sudo agent, and every other secret are absent; only
-  the no-touch signing agent is forwarded in, and `/var/lib/media/Photos` stays
-  untouched by convention, not by the mount mode.
+  the no-touch signing agent is forwarded in. `/var/lib/media/Photos` is masked
+  by a tmpfs applied after every bind, so it reads empty and is not writable
+  even though the media tree as a whole is.
 - **Maki signing**: there is no software signing key. Commits made inside the
   sandbox sign through the forwarded FIDO2 signing agent (`gpg.ssh.defaultKeyCommand`,
   `gpg.format=ssh`), and the sandbox git config sets `commit.gpgsign = true`, so
@@ -1369,6 +1370,13 @@ key (tang-pi is console-only), the `~/.config/gh/hosts.yml` OAuth token, the
 cliphist database, and the fish history. Remove the retired Maki signing key
 from GitHub's signing keys afterwards.
 
+Existing repos keep `.git/hooks` and `.git/config` read-only inside the
+boundary, so the agent cannot install hooks or set `core.hooksPath`; the hooks
+already in the repo still run for the agent. Repos it creates inside the
+sandbox are writable and are reviewed like any other code. Renaming a repo's
+`.git` still moves the read-only mounts with it, so this is a raised bar, not a
+kernel boundary.
+
 Clipboard history is deliberately not persisted: the cliphist database is
 removed and the sandbox masks `~/.cache/cliphist`. There is no same-UID
 permission that makes a live history unreadable without root; not storing it is
@@ -1391,9 +1399,9 @@ Create it in Immich under Account Settings → API Keys with **asset.read,
 asset.upload, album.read, album.create** only — no asset delete, no user or
 admin scope. The sandbox binds it into the boundary at `/run/agent/immich-key`
 and exports `IMMICH_API_KEY` (`read_secret` in `modules/lib/agent-sandbox.sh`);
-nothing outside the sandbox reads it. The agent never writes
-`/var/lib/media/Photos` directly, and that tree is read-only inside the
-boundary.
+nothing outside the sandbox reads it. `/var/lib/media/Photos` is masked by a
+tmpfs inside the boundary, so the agent uploads through the API only and never
+sees the managed library.
 
 To rotate: create the new key in Immich, update the common file, rebuild both
 hosts so sops rewrites `/run/secrets/…`, then delete the old key in Immich.

@@ -614,6 +614,9 @@ in
               grep -F -- 'no-user-rc' ${../nixos/ssh.nix}
               grep -F -- 'agent-ssh' ${../nixos/ssh.nix}
               grep -F -- 'Photos' ${../lib/agent-sandbox.nix}
+              grep -F -- 'gitdir/hooks' ${../lib/agent-sandbox.sh}
+              grep -F -- 'gitdir/config' ${../lib/agent-sandbox.sh}
+              grep -F -- '\.git/(hooks' ${../lib/agent-sandbox.sh}
               ! grep -F -- '(allow default)' ${../lib/agent-sandbox.sh}
               touch $out
             '';

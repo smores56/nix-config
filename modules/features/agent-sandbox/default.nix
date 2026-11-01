@@ -62,6 +62,7 @@ in
         name = "agent-sandbox-check";
         runtimeInputs = [
           pkgs.coreutils
+          pkgs.findutils
           pkgs.gnugrep
         ];
         text = ''
@@ -82,12 +83,24 @@ in
               touch "$HOME/code/.agent-sandbox-probe"
               rm "$HOME/code/.agent-sandbox-probe"
             fi
+            if [ -d /var/lib/media ]; then
+              touch /var/lib/media/.agent-sandbox-probe
+              rm /var/lib/media/.agent-sandbox-probe
+              mkdir /var/lib/media/.agent-sandbox-probe-dir
+              rmdir /var/lib/media/.agent-sandbox-probe-dir
+            fi
+            if [ -d /var/lib/media/Photos ]; then
+              test -z "$(ls -A /var/lib/media/Photos)"
+              ! touch /var/lib/media/Photos/.agent-sandbox-probe 2>/dev/null
+            fi
             if [ -d /var/lib/media/Calibre-Ingest ]; then
               touch /var/lib/media/Calibre-Ingest/.agent-sandbox-probe
               rm /var/lib/media/Calibre-Ingest/.agent-sandbox-probe
             fi
-            if [ -d /var/lib/media/Calibre ]; then
-              ! touch /var/lib/media/Calibre/.agent-sandbox-probe 2>/dev/null
+            repo=$(find "$HOME/code" "$HOME/dev" -maxdepth 8 -name .git -type d -prune -print 2>/dev/null | head -n 1)
+            if [ -n "$repo" ]; then
+              ! touch "$repo/config" 2>/dev/null
+              ! touch "$repo/hooks/.agent-sandbox-probe" 2>/dev/null
             fi
             command -v maki >/dev/null && maki --version >/dev/null
             nix store ping >/dev/null 2>&1

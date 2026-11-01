@@ -202,6 +202,10 @@ if [ "$(uname -s)" = Darwin ]; then
     echo '(deny lsopen)'
     echo '(deny job-creation)'
     echo '(deny file-write-mount file-write-unmount)'
+    # Repo metadata that can execute or redirect commands outside the sandbox:
+    # hooks, config/hooksPath, and a worktree's .git file.
+    echo '(deny file-write* (regex #"/\.git/(hooks(/.*)?|config(\.worktree)?)$"))'
+    echo '(deny file-write* (regex #"/\.git$"))'
     echo '(deny mach-lookup (global-name "com.apple.securityd.xpc") (global-name "com.apple.SecurityServer") (global-name "com.apple.launchd") (global-name-prefix "com.apple.xpc.launchd") (global-name "com.apple.coreservices.appleevents") (global-name "com.apple.CoreServices.coreservicesd") (global-name "com.apple.tccd"))'
   } >"$profile"
 
@@ -238,11 +242,58 @@ args=(
 for d in "${HOME_RW[@]}"; do
   args+=(--bind-try "$d" "$d")
 done
+
+# Existing repos keep their auto-execution surfaces read-only: .git/hooks and
+# .git/config cannot be written, and a worktree's .git file (which names
+# gitdir) cannot be repointed. Repos created inside the sandbox are not in the
+# scan, so their metadata stays writable; that is the accepted "agent-created
+# repos are reviewed" case. Renaming an existing .git still moves the ro
+# mountpoints with it, so this raises the bar rather than closing the same-UID
+# boundary.
+protect_repos() {
+  local -a roots=()
+  local root entry gitdir common
+  for root in "${HOME_RW[@]}"; do
+    case "$root" in
+      "$home/code" | "$home/dev" | "$home/Documents" | "$home/Downloads") roots+=("$root") ;;
+    esac
+  done
+  [ "${#roots[@]}" -gt 0 ] || return 0
+  while IFS= read -r -d '' entry; do
+    if [ -d "$entry" ]; then
+      gitdir=$entry
+    else
+      gitdir=$(sed -n 's/^gitdir: //p' "$entry")
+      [ -n "$gitdir" ] || continue
+      args+=(--ro-bind "$entry" "$entry")
+      common=$(git -C "${entry%/.git}" rev-parse --git-common-dir 2>/dev/null) || common=$gitdir
+      case "$common" in
+        /*) ;;
+        *) common="${entry%/.git}/$common" ;;
+      esac
+      gitdir=$common
+    fi
+    if [ -d "$gitdir/hooks" ]; then
+      args+=(--ro-bind "$gitdir/hooks" "$gitdir/hooks")
+    else
+      args+=(--ro-bind "$EMPTY_DIR" "$gitdir/hooks")
+    fi
+    if [ -f "$gitdir/config" ]; then
+      args+=(--ro-bind "$gitdir/config" "$gitdir/config")
+    fi
+    if [ -f "$gitdir/config.worktree" ]; then
+      args+=(--ro-bind "$gitdir/config.worktree" "$gitdir/config.worktree")
+    fi
+  done < <(
+    find "${roots[@]}" -maxdepth 8 \
+      \( -name node_modules -o -name target -o -name .direnv -o -name dist -o -name .venv \) -prune -o \
+      -name .git -prune -print0 2>/dev/null
+  )
+}
+protect_repos
+
 for d in "${HOME_RO[@]}"; do
   args+=(--ro-bind-try "$d" "$d")
-done
-for d in "${HOME_RW_AFTER_RO[@]}"; do
-  args+=(--bind-try "$d" "$d")
 done
 
 # Config allowlist: read-only copies inside the agent config dir. Bind before
