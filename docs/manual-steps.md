@@ -57,7 +57,8 @@ generated hardware config, then run `nix run .#bootstrap`.
   `modules/lib/agent-sandbox.nix`; it is wider than the identity dirs —
   `~/code`, `~/dev`, `~/Documents`, `~/Downloads`, `~/.cache`, the
   cargo/npm/bun caches and nine config dirs (all read-write), while
-  `/var/lib/media` and `~/.cache/.bun/bin` are read-only — and
+  `/var/lib/media` (except `Calibre-Ingest`) and `~/.cache/.bun/bin` are
+  read-only — and
   the secret allowlist is four credentials (two PATs, Neuralwatt, TinyFish) plus
   the Immich key once it exists. `~/.ssh`, `~/.config/{ssh-sk,sops}`,
   `/srv/proton`, the PIV/sudo agent, and every other secret are absent; only
@@ -799,22 +800,24 @@ console proves the password before auto-login is removed.
 <!-- manual-step: secret/github-personal-pat -->
 
 Fine-grained, **owner-wide** PAT for `smores56`, user-readable in
-`secrets/common.yaml`. Consumed by `github-credential-helper` and `gh-pat`
-(`modules/features/github-credentials.nix`) for HTTPS git and `gh` where the SSH
-agent is not available (Maki's sandbox). Permissions: Contents RW, Pull requests
-RW, Issues RW, Metadata R — no SSH-key or signing-key permissions. Expires in 90
-days; mint a replacement, update the common file, rebuild both hosts, revoke the
-old token.
+`secrets/common.yaml`. Consumed by `github-credential-helper` and the
+PAT-aware `gh` wrapper (`modules/features/github-credentials.nix`) for HTTPS git
+and `gh`; the wrapper selects personal/work by the origin owner and an explicit
+`GH_TOKEN` overrides it. On macOS the same token is a Keychain item
+`maki-github-personal-pat` (or generic `maki-github-pat`). Permissions: Contents
+RW, Pull requests RW, Issues RW, Metadata R — no SSH-key or signing-key
+permissions. Expires in 90 days; mint a replacement, update the common file,
+rebuild both hosts, revoke the old token.
 
 ### github-work-pat
 
 <!-- manual-step: secret/github-work-pat -->
 
 The same shape for the work org matching `user.work.githubOwnerGlob`
-(`blitzy-*`). The credential helper selects it from the repository owner in
-git's request (`path=owner/repo`), so work and personal tokens never mix. The org
-may require fine-grained-token approval and SSO authorization; rotate on the same
-90-day cadence.
+(`blitzy-*`). The credential helper and `gh` wrapper select it from the
+repository owner, so work and personal tokens never mix; macOS uses the
+`maki-github-work-pat` Keychain item. The org may require fine-grained-token
+approval and SSO authorization; rotate on the same 90-day cadence.
 
 ### neuralwatt-api-key
 

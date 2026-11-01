@@ -241,6 +241,9 @@ done
 for d in "${HOME_RO[@]}"; do
   args+=(--ro-bind-try "$d" "$d")
 done
+for d in "${HOME_RW_AFTER_RO[@]}"; do
+  args+=(--bind-try "$d" "$d")
+done
 
 # Config allowlist: read-only copies inside the agent config dir. Bind before
 # the ~/.config mask so bwrap resolves the source from the host tree.

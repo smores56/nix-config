@@ -82,6 +82,13 @@ in
               touch "$HOME/code/.agent-sandbox-probe"
               rm "$HOME/code/.agent-sandbox-probe"
             fi
+            if [ -d /var/lib/media/Calibre-Ingest ]; then
+              touch /var/lib/media/Calibre-Ingest/.agent-sandbox-probe
+              rm /var/lib/media/Calibre-Ingest/.agent-sandbox-probe
+            fi
+            if [ -d /var/lib/media/Calibre ]; then
+              ! touch /var/lib/media/Calibre/.agent-sandbox-probe 2>/dev/null
+            fi
             command -v maki >/dev/null && maki --version >/dev/null
             nix store ping >/dev/null 2>&1
           '
