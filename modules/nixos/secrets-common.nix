@@ -51,6 +51,16 @@
       mode = "0400";
     };
 
+    # Scoped Immich API key for the sandboxed agent (asset read/upload, album
+    # read/create). The sandbox launcher reads it as the user and binds it inside
+    # the boundary at /run/agent/immich-key; declaring it here is what makes
+    # sops-nix materialise /run/secrets/immich-agent-api-key at all.
+    immich-agent-api-key = {
+      sopsFile = ../../secrets/common.yaml;
+      owner = config.machine.username;
+      mode = "0400";
+    };
+
     smores-password-hash = {
       sopsFile = ../../secrets/common.yaml;
       neededForUsers = true;
