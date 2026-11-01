@@ -9,9 +9,6 @@
   ...
 }:
 let
-  # The operator commits this file (see "smoreswork sops key" in
-  # docs/manual-steps.md). Flakes only see tracked files, and until it exists
-  # the flake must still evaluate, so the whole module is gated on it.
   hostSecrets = ../../../secrets/smoreswork.yaml;
   commonSecretsFile = ../../../secrets/common.yaml;
 
@@ -28,7 +25,7 @@ let
     "tinyfish-api-key"
   ];
 in
-lib.mkIf (builtins.pathExists hostSecrets) {
+{
   sops = {
     defaultSopsFile = hostSecrets;
     age.keyFile = "${config.home.homeDirectory}/.config/sops/smoreswork.key";
