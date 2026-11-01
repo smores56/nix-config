@@ -1382,6 +1382,12 @@ sandbox are writable and are reviewed like any other code. Renaming a repo's
 `.git` still moves the read-only mounts with it, so this is a raised bar, not a
 kernel boundary.
 
+Residuals of the same-UID model: `~/.cargo/registry`, `~/.cargo/git`, `~/.npm`,
+and the Bun cache stay writable for build speed, so a modified cache entry can
+affect a later unsandboxed build; `~/.local/state/*` entries that are not
+explicitly masked remain readable read-only; and the signing credential is a
+signing oracle by design, so review and the PR gate stay the control.
+
 Clipboard history is deliberately not persisted: the cliphist database is
 removed and the sandbox masks `~/.cache/cliphist`. There is no same-UID
 permission that makes a live history unreadable without root; not storing it is
