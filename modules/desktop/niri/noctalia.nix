@@ -120,10 +120,14 @@ in
   # first start then dies with "failed to connect to Wayland display", and the
   # default start limit stops the retries, so the shell stays missing until a
   # `home-manager switch` restarts it. Retry until the compositor is reachable.
+  #
+  # No Wants=niri.service: niri.service's BindsTo=graphical-session.target is
+  # what starts the target, so the dependency is redundant while the compositor
+  # is up, and any independent start of the target would launch a second niri
+  # outside niri-session, whose first check reports "already running".
   systemd.user.services.noctalia = {
     Unit = {
       After = lib.mkAfter [ "niri.service" ];
-      Wants = [ "niri.service" ];
       StartLimitIntervalSec = 0;
     };
     Service = {

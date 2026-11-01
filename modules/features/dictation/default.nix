@@ -87,13 +87,20 @@ in
       };
     };
 
+    # The upstream unit is PartOf/WantedBy=default.target. Linger keeps the
+    # user manager running from boot (modules/nixos/base.nix), so that would
+    # start the graphical session at the greeter; starting voxtype then pulls
+    # graphical-session.target and, through noctalia, niri.service. Bind the
+    # daemon to the session instead.
     systemd.user.services.voxtype = {
       Unit = {
+        PartOf = lib.mkForce [ "graphical-session.target" ];
         After = [ "graphical-session.target" ];
         Wants = [ "graphical-session.target" ];
       };
 
       Service.ExecStart = lib.mkForce voxtypeDaemon;
+      Install.WantedBy = lib.mkForce [ "graphical-session.target" ];
     };
 
     programs.niri.settings.binds."Mod+Shift+D".action.spawn = [

@@ -407,6 +407,32 @@ in
             touch $out
           '';
 
+        # Linger keeps the user manager running from boot (modules/nixos/base.nix),
+        # so a default.target unit that wants graphical-session.target drags the
+        # desktop up at the greeter; niri.service then starts outside
+        # niri-session, whose first check reports "already running". Noctalia
+        # must not want niri.service for the same reason: only niri-session may
+        # launch the compositor.
+        desktop-session-units =
+          let
+            pro = config.flake.homeConfigurations."smores@smorespro".config;
+            services = pro.systemd.user.services;
+            bootGraphical = lib.filter (
+              name:
+              lib.elem "default.target" (services.${name}.Install.WantedBy or [ ])
+              && lib.elem "graphical-session.target" (services.${name}.Unit.Wants or [ ])
+            ) (lib.attrNames services);
+          in
+          pkgs.runCommand "desktop-session-units" { } ''
+            test "${lib.concatStringsSep " " bootGraphical}" = ""
+            test "${lib.concatStringsSep " " services.voxtype.Unit.PartOf}" = "graphical-session.target"
+            test "${lib.concatStringsSep " " services.voxtype.Unit.Wants}" = "graphical-session.target"
+            test "${lib.concatStringsSep " " services.voxtype.Install.WantedBy}" = "graphical-session.target"
+            test "${lib.boolToString (lib.elem "niri.service" (services.noctalia.Unit.Wants or [ ]))}" = "false"
+            test "${lib.boolToString (lib.elem "niri.service" services.noctalia.Unit.After)}" = "true"
+            touch $out
+          '';
+
         yubikey-lists =
           let
             keys = import ../lib/yubikey-keys.nix;
