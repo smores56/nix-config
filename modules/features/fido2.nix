@@ -193,14 +193,17 @@ let
   ];
 
   # pam_p11 authorizes the PIV key by matching the token's certificate against
-  # PEM certs in ~/.eid/authorized_certificates. Certificates are public, so
-  # they live in yubikey-keys.nix rather than a vault. Rotating a PIV key means
-  # replacing its entry; an entry for a key that is not plugged in is harmless.
+  # PEM certs in $HOME/.eid/authorized_certificates (it hardcodes that path).
+  # Certificates are public, so they live in yubikey-keys.nix rather than a
+  # vault. Rotating a PIV key means replacing its entry; an entry for a key that
+  # is not plugged in is harmless. The NixOS side publishes the list at /etc/eid
+  # and symlinks the home path at it, so the file root trusts at the greeter and
+  # login cannot be swapped by a same-uid agent; see
+  # modules/hosts/smorespro/greeter.nix.
   # Sudo handles are loaded at login only where a local agent is consumed; on
   # a server pam_rssh uses the forwarded one.
   isServer = builtins.elem "server" config.machine.profiles;
   yubikeyKeys = import ../lib/yubikey-keys.nix;
-  pivCerts = map (k: k.cert) yubikeyKeys.piv;
 in
 {
   config = lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
@@ -218,13 +221,6 @@ in
     # ssh/ssh-add/ssh-keygen launch ssh-sk-helper for HID operations; use the
     # no-PC/SC libfido2 so a running pcscd does not duplicate the YubiKey.
     home.sessionVariables.SSH_SK_HELPER = lib.getExe skHelper;
-
-    # pam_p11 0.6.1 hardcodes ~/.eid/authorized_certificates (no path option),
-    # so this trust file has to live in the home and is writable by the user.
-    # Accepted: it only affects that user's own unlock, a same-uid attacker
-    # already owns the account, and a different token still needs physical
-    # access. Revisit when pam_p11 grows a system certificate path.
-    home.file.".eid/authorized_certificates".text = lib.concatStringsSep "\n" pivCerts;
 
     # A dedicated agent rather than `services.ssh-agent`: the Proton Pass agent
     # still owns the global SSH_AUTH_SOCK (git/GitHub until that moves to HTTPS),

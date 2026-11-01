@@ -39,14 +39,16 @@ let
     "$HOME/.local/state/agent"
     "$HOME/.local/share/agent"
     "$HOME/.cache/agent"
-  ]
-  ++ lib.optionals (!isDarwin) [ "/var/lib/media" ];
+  ];
 
   # Read-only exceptions carved out of a writable parent (the user PATH must
-  # not become an agent-writable executable directory).
+  # not become an agent-writable executable directory). The media tree is
+  # read-only: the agent reads artwork and metadata but never writes the
+  # Immich library (uploads go through the API with a scoped key).
   homeRo = [
     "$HOME/.cache/.bun/bin"
-  ];
+  ]
+  ++ lib.optionals (!isDarwin) [ "/var/lib/media" ];
 
   homeMaskDirs = [
     "$HOME/.ssh"

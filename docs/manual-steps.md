@@ -56,7 +56,8 @@ generated hardware config, then run `nix run .#bootstrap`.
   authoritative bind list is `homeRw`/`homeRo`/`configAllow`/`secretBind` in
   `modules/lib/agent-sandbox.nix`; it is wider than the identity dirs —
   `~/code`, `~/dev`, `~/Documents`, `~/Downloads`, `~/.cache`, the
-  cargo/npm/bun caches, nine config dirs, and `/var/lib/media` read-write — and
+  cargo/npm/bun caches and nine config dirs (all read-write), while
+  `/var/lib/media` and `~/.cache/.bun/bin` are read-only — and
   the secret allowlist is four credentials (two PATs, Neuralwatt, TinyFish) plus
   the Immich key once it exists. `~/.ssh`, `~/.config/{ssh-sk,sops}`,
   `/srv/proton`, the PIV/sudo agent, and every other secret are absent; only
@@ -1007,6 +1008,18 @@ start limit (5 starts in an hour); clear the counter before starting it:
 ```sh
 sudo systemctl reset-failed proton-mount
 ```
+
+After **any reboot**, confirm the mount came up on its own:
+
+```sh
+systemctl is-active proton-mount && findmnt /srv/proton
+```
+
+Proton sometimes wants a fresh 2FA code for the new session (`this account
+requires a 2FA code` in `journalctl -u proton-mount`). Then re-auth with
+`sudo nix run .#proton-auth`, then `sudo systemctl reset-failed proton-mount`
+and start it. Every backup unit `Requires=` the mount, so until it is up the
+nightly runs fail even though the disks are fine.
 
 Revoke the superseded login at account.proton.me → Settings → All settings →
 Security and privacy → Session management (verified page; whether rclone

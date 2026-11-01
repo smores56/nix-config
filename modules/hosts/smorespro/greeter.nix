@@ -87,9 +87,23 @@ let
   #     here, so a typed password never reaches the card and never burns a PIV
   #     retry.
   p11Control = "[success=done authinfo_unavail=ignore default=die]";
+
+  # pam_p11 0.6.1 reads $HOME/.eid/authorized_certificates and has no option to
+  # point elsewhere, while root (greetd, login) trusts that file. Publish the
+  # certificates from the store at /etc/eid and make the home path a symlink to
+  # that root-owned tree, so a same-uid agent cannot swap in its own token's
+  # certificate and own the next unlock.
+  pamP11Certificates = lib.concatStringsSep "\n" (
+    map (key: key.cert) (import ../../lib/yubikey-keys.nix).piv
+  );
 in
 {
   imports = [ inputs.noctalia-greeter.nixosModules.default ];
+
+  environment.etc."eid/authorized_certificates".text = pamP11Certificates + "\n";
+  systemd.tmpfiles.rules = [
+    "L+ /home/${config.machine.username}/.eid - - - - /etc/eid"
+  ];
 
   services.displayManager.noctalia-greeter = {
     enable = true;
