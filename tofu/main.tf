@@ -243,8 +243,9 @@ resource "cloudflare_ruleset" "dav_rate_limit" {
     expression  = "(http.host eq \"dav.${var.domain}\")"
     ratelimit = {
       characteristics     = ["ip.src", "cf.colo.id"]
-      period              = 60
-      requests_per_period = 120
+      # Free-plan rate limiting only permits a 10-second period.
+      period              = 10
+      requests_per_period = 20
       mitigation_timeout  = 60
     }
   }]
