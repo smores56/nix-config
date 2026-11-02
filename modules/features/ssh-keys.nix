@@ -18,7 +18,7 @@ let
   yubikeyIdentities = map (k: {
     key = "~/.config/ssh-sk/${k.key}";
     inherit (k) pubkey;
-  }) (yubikeyKeys.piv ++ yubikeyKeys.signing);
+  }) yubikeyKeys.piv;
 
   pubkeys = yubikeyIdentities;
 
@@ -37,8 +37,8 @@ let
   ];
   allowedSigners = "~/.config/ssh/allowed_signers";
 
-  # Signatures only verify against keys listed here; rebuilt from whichever
-  # keys exist, so a host without the work key still trusts the personal one.
+  # Signatures only verify against keys listed here: the two account keys, each
+  # for its own principal, and nothing retired.
   allowedSignersWriter = pkgs.writeShellApplication {
     name = "ssh-allowed-signers";
     runtimeInputs = [ pkgs.coreutils ];
@@ -48,23 +48,10 @@ let
       mkdir -p "$(dirname "$out")" 2>/dev/null || exit 0
       chmod 700 "$(dirname "$out")" 2>/dev/null || true
       tmp=$(mktemp "$out.XXXXXX")
-      entry() {
-        # principal, git-only namespace, then key type and body (no comment)
-        if [ -s "$2" ]; then
-          # read fails at EOF without a trailing newline but still fills
-          # the fields, which hand-pasted .pub files often lack
-          read -r type body _ <"$2" || [ -n "''${type:-}" ]
-          printf '%s namespaces="git" %s %s\n' "$1" "$type" "$body"
-        fi
-      }
       {
         ${lib.concatMapStrings (i: ''
           printf '%s namespaces="git" %s\n' ${lib.escapeShellArg i.email} ${lib.escapeShellArg i.pubkey}
         '') signingPrincipals}
-        ${lib.concatMapStrings (i: ''
-          entry ${lib.escapeShellArg cfg.email} "${expandHome i.key}.pub"
-          entry ${lib.escapeShellArg cfg.work.email} "${expandHome i.key}.pub"
-        '') yubikeyIdentities}
       } >"$tmp"
       mv "$tmp" "$out"
     '';
@@ -107,9 +94,11 @@ let
         }
       '') pubkeys}
       ${lib.getExe allowedSignersWriter}
-      # The personal and employer software identities are retired: no host may
-      # keep offering or trusting a stale public half of either.
-      rm -f "$HOME/.ssh/id_personal.pub" "$HOME/.ssh/id_work.pub" "$HOME/.config/ssh/id_work.pub"
+      # Retired identities: the personal and employer software keys, and the
+      # FIDO2 signing credentials (commits sign with the sops keys). No host may
+      # keep offering or trusting a stale public half of any of them.
+      rm -f "$HOME/.ssh/id_personal.pub" "$HOME/.ssh/id_work.pub" "$HOME/.config/ssh/id_work.pub" \
+        "$HOME"/.config/ssh-sk/k*/signing.pub
 
       exit "$failed"
     '';

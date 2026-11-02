@@ -141,16 +141,6 @@ let
     "/run/secrets/memory-mcp-token|/run/secrets/memory-mcp-token"
   ];
 
-  signingSockets = lib.optionals (!isDarwin) (
-    if isServer then
-      [
-        "\${XDG_RUNTIME_DIR:-/run/user/$UID}/agent-sign"
-        "\${XDG_RUNTIME_DIR:-/run/user/$UID}/fido2-sign-agent"
-      ]
-    else
-      [ "\${XDG_RUNTIME_DIR:-/run/user/$UID}/fido2-sign-agent" ]
-  );
-
   # Secrets promoted into the sandbox environment (VAR|host path), read by the
   # launcher before bwrap starts. The minimal profiles declare none: their
   # descendants live on the untrusted side of the boundary.
@@ -179,7 +169,6 @@ let
     ${renderList "CONFIG_WRITABLE" configWritable}
     ${renderList "SECRET_BIND" secretBind}
     ${renderList "SECRET_READ" secretRead}
-    ${renderList "SIGNING_SOCKETS" signingSockets}
     ${renderList "ENV_EXTRA" (
       # The sandbox starts from an empty environment, which drops the CA bundle
       # path Nix's git/curl need on macOS; pin the store copy (readable there).
@@ -220,28 +209,6 @@ let
     )
   '';
 
-  signingKeyCommand = pkgs.writeShellApplication {
-    name = "gpg-ssh-default-key";
-    runtimeInputs = [
-      pkgs.openssh
-      pkgs.coreutils
-      pkgs.gnugrep
-    ];
-    text = ''
-      allowed="$HOME/.local/state/agent/config/allowed_signers"
-      [ -r "$allowed" ] || exit 1
-      keys=$(ssh-add -L 2>/dev/null) || exit 1
-      while read -r type body _; do
-        [ -n "''${type:-}" ] || continue
-        if grep -qF -- "$type $body" "$allowed"; then
-          printf 'key::%s %s\n' "$type" "$body"
-          exit 0
-        fi
-      done <<<"$keys"
-      exit 1
-    '';
-  };
-
   gitConfig = pkgs.writeText "agent-sandbox-gitconfig" ''
     # The included host config already rewrites GitHub remotes to HTTPS and
     # scopes the owner-selecting credential helper to https://github.com.
@@ -250,10 +217,6 @@ let
 
     [gpg "ssh"]
         allowedSignersFile = ~/.local/state/agent/config/allowed_signers
-        # A command value is exec'd as-is: git does not expand "~" here, so use
-        # the store path (the staged copy under bin/ is a convenience only).
-        defaultKeyCommand = ${signingKeyCommand}/bin/gpg-ssh-default-key
-        program = ${pkgs.openssh}/bin/ssh-keygen
 
     [core]
         sshCommand = ssh -F ~/.local/state/agent/config/ssh_config
@@ -274,15 +237,11 @@ let
         IdentitiesOnly yes
         ControlMaster no
         ForwardAgent no
-        ${lib.optionalString (!isDarwin) ''
-          IdentityAgent /run/agent/sign
-          IdentityFile /run/secrets/github-personal-signing-key
-        ''}
+        ${lib.optionalString (!isDarwin) "IdentityFile /run/secrets/github-personal-signing-key"}
     ''}
     Host *
       UserKnownHostsFile ~/.local/state/agent/config/known_hosts
       IdentitiesOnly yes
-      ${lib.optionalString (!isDarwin) "IdentityAgent /run/agent/sign"}
   '';
 
   sshShim = pkgs.writeShellScriptBin "ssh" ''
@@ -309,7 +268,6 @@ let
       export AGENT_SSH_CONFIG=${sshConfig}
       export AGENT_SSH_SHIM=${sshShim}/bin/ssh
       export AGENT_GH_SHIM=${ghShim}/bin/gh
-      export AGENT_SIGNING_KEY_COMMAND=${signingKeyCommand}/bin/gpg-ssh-default-key
       export AGENT_GIT_CONFIG=${gitConfig}
       export AGENT_SANDBOX_BWRAP=${if isDarwin then "/bin/true" else lib.getExe bwrap}
       exec ${pkgs.bash}/bin/bash ${./agent-sandbox.sh} "$@"
@@ -367,7 +325,6 @@ let
     ${renderList "CONFIG_WRITABLE" [ ]}
     ${renderList "SECRET_BIND" [ ]}
     ${renderList "SECRET_READ" [ ]}
-    ${renderList "SIGNING_SOCKETS" [ ]}
     ${renderList "ENV_EXTRA" jupyterEnvExtra}
     ${renderList "ENV_PASSTHROUGH" [ "JUPYTER_TOKEN" ]}
     EMPTY_DIR="${pkgs.emptyDirectory}"

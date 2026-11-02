@@ -224,12 +224,12 @@
       };
 
       # Packages the FIDO2 credential handles (the files that make a YubiKey
-      # usable for sudo/signing) so a wiped machine can be rebuilt without
+      # usable for sudo) so a wiped machine can be rebuilt without
       # re-enrolling the keys. PIV private keys are generated on the token and
       # cannot be exported, so they are not part of any backup.
       yubikeyKeys = import ../lib/yubikey-keys.nix;
       yubikeyPubkeys = pkgs.writeText "yubikey-pubkeys" (
-        pkgs.lib.concatMapStrings (k: "${k.key}\t${k.pubkey}\n") (yubikeyKeys.signing ++ yubikeyKeys.sudo)
+        pkgs.lib.concatMapStrings (k: "${k.key}\t${k.pubkey}\n") yubikeyKeys.sudo
       );
 
       key-backup = pkgs.writeShellApplication {
@@ -349,7 +349,7 @@
             handles=$((handles + 1))
           done <"$pubkeys"
 
-          for src in "$HOME"/.config/ssh-sk/*/sudo "$HOME"/.config/ssh-sk/*/signing; do
+          for src in "$HOME"/.config/ssh-sk/*/sudo; do
             [ -f "$src" ] || continue
             key="''${src#"$HOME/.config/ssh-sk/"}"
             if ! awk -F '\t' -v k="$key" '$1 == k { found=1 } END { exit !found }' "$pubkeys"; then
@@ -405,7 +405,7 @@
 
           if [ "$handles" -eq 0 ] && [ "$host_key_state" = no ]; then
             echo "key-backup: no FIDO2 handles under $HOME/.config/ssh-sk" >&2
-            echo "key-backup: run this on a laptop where the keys are enrolled and signing works" >&2
+            echo "key-backup: run this on a laptop where the keys are enrolled and sudo works" >&2
             exit 1
           fi
           if [ "$handles" -eq 0 ]; then
@@ -503,8 +503,8 @@
                  $remove "$archive" "$archive.sha256"
 
           Proton Pass encrypts attachments end-to-end; the archive itself is not
-          separately encrypted. Restoring needs the physical YubiKey plus the PIN
-          for signing or a touch for sudo.
+          separately encrypted. Using a restored handle needs the physical YubiKey
+          and a touch for sudo.
           EOF
 
           if [ "$host_key_state" = yes ]; then
