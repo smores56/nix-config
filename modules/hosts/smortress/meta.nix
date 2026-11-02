@@ -94,7 +94,7 @@ in
           protocol = "tcp";
           access = serviceAuth;
         };
-        # LobeChat is the human-facing PWA; Access plus its own email/password
+        # Open WebUI is the human-facing PWA; Access plus its own email/password
         # login are the two layers. No service token: only the phone's browser
         # reaches it.
         chat = {

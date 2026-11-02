@@ -17,17 +17,17 @@ let
   memoryPackage = import ../features/ai/memory/package.nix { inherit pkgs; };
 
   # Loopback ports and the data root. The wrapper's port, the embedder's port,
-  # and the gateway's port are shared (tunnel ingress and LobeChat's knowledge
-  # base) and live in ports.nix; Graphiti and the local services are private to
-  # this module.
+  # and the gateway's port are shared (tunnel ingress and Open WebUI's tool
+  # connections) and live in ports.nix; Graphiti and the local services are
+  # private to this module.
   dbPort = 6379;
   graphitiPort = 8184;
   embeddingPort = ports.memoryEmbed;
   # Graphiti reaches Neuralwatt through this gateway on loopback. It owns the
   # account key and adds `reasoning_effort: "none"` to chat completions, because
   # extraction that reasons spends its whole budget and returns empty content.
-  # LobeChat's knowledge base reads it too when `memory.embedder` is
-  # `neuralwatt`; it is never tunneled.
+  # The embedder's knowledge-base client reads it too when
+  # `memory.embedder` is `neuralwatt`; it is never tunneled.
   llmProxyPort = ports.memoryLlmProxy;
   # StateDirectory creates /var/lib/<name> for the wrapper; tmpfiles owns the
   # memory-owned FalkorDB subdirectory, so the two never disagree.
