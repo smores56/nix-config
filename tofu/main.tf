@@ -246,7 +246,8 @@ resource "cloudflare_ruleset" "dav_rate_limit" {
       # Free-plan rate limiting only permits a 10-second period.
       period              = 10
       requests_per_period = 20
-      mitigation_timeout  = 60
+      # Free-plan rate limiting caps both the period and the mitigation at 10s.
+      mitigation_timeout  = 10
     }
   }]
 
