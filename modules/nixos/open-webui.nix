@@ -2,9 +2,20 @@
 # authenticated web UI that talks OpenAI-compatible HTTP and takes web search
 # from the loopback shim in `tinyfish-shim.nix` (the bundled search engines are
 # unmaintained API scrapers). Loopback-only; reachability is the tunnel's call.
-{ config, lib, ... }:
+{
+  config,
+  lib,
+  aiProviders,
+  ...
+}:
 let
   ports = import ../ports.nix;
+
+  # Two OpenAI-compatible backends: local llama.cpp (qwen3.8, the offline
+  # fallback) and Neuralwatt (deepseek-v4.1-flash, the default). Index order is
+  # the contract between OPENAI_API_BASE_URLS and OPENAI_API_KEYS.
+  localUrl = aiProviders.smortress.baseUrl;
+  neuralwatt = aiProviders.neuralwatt;
 
   # Tool connections are `ConfigVar`s and `ENABLE_PERSISTENT_CONFIG` is off, so
   # the environment is authoritative and both servers are declared here instead
@@ -44,6 +55,7 @@ in
   # world-readable unit environment.
   sops.templates."open-webui.env".content = ''
     CODE_INTERPRETER_JUPYTER_AUTH_TOKEN=${config.sops.placeholder.jupyter-token}
+    OPENAI_API_KEYS=none;${config.sops.placeholder.neuralwatt-api-key}
     TOOL_SERVER_CONNECTIONS=${builtins.toJSON toolServers}
   '';
 
@@ -64,10 +76,11 @@ in
       CODE_INTERPRETER_ENGINE = "jupyter";
       CODE_INTERPRETER_JUPYTER_URL = "http://127.0.0.1:8888/";
       CODE_INTERPRETER_JUPYTER_AUTH = "token";
-      # llama.cpp is the only model backend: one OpenAI-compatible endpoint, no
-      # key needed but Open WebUI rejects an empty one.
-      OPENAI_API_BASE_URLS = "http://127.0.0.1:${toString ports.llm}/v1";
-      OPENAI_API_KEYS = "none";
+      # llama.cpp is keyless but Open WebUI rejects an empty key, hence `none`.
+      OPENAI_API_BASE_URLS = "${localUrl};${neuralwatt.baseUrl}";
+      # Deepseek flash is the default; qwen3.8 stays selectable as the fallback.
+      # Open WebUI has no automatic failover, so "backup" is a manual pick.
+      DEFAULT_MODELS = neuralwatt.models.deepseekFlash.id;
       # Env is authoritative; the DB must not pin an older config.
       ENABLE_PERSISTENT_CONFIG = "False";
     };
