@@ -66,33 +66,23 @@ let
     branchTemplateUnticketed = toString naming.unticketed;
   };
 
-  workIncludes = ownerIncludes work.githubOwnerGlob (
-    {
-      user = {
-        inherit (work) email;
-      }
-      # The work key is deployed only where the work account's bundle lives;
-      # elsewhere a work commit falls back to the personal key.
-      // lib.optionalAttrs (sopsSecrets ? github-work-signing-key) {
-        signingkey = signingKeyPath "github-work-signing-key";
-      };
-      smores = {
-        inherit (work) flow;
-      }
-      // branchSettings work.branchNaming;
+  workSettings = {
+    user = {
+      inherit (work) email;
     }
-    // lib.optionalAttrs config.machine.workHost {
-      core.sshCommand = "ssh -F ${work.sshConfig}";
+    # The work key is deployed only where the work account's bundle lives;
+    # elsewhere a work commit falls back to the personal key.
+    // lib.optionalAttrs (sopsSecrets ? github-work-signing-key) {
+      signingkey = signingKeyPath "github-work-signing-key";
+    };
+    smores = {
+      inherit (work) flow;
     }
-    // lib.optionalAttrs (!config.machine.workHost) {
-      # Other hosts have no work private key; use HTTPS + the work PAT. The
-      # owner-selecting credential helper supplies the token.
-      url."https://github.com/".insteadOf = [
-        "git@github.com:"
-        "ssh://git@github.com/"
-      ];
-    }
-  );
+    // branchSettings work.branchNaming;
+  };
+  # One include per listed owner, never a pattern: an org anyone can register
+  # must not pick up the work identity, token or signing key.
+  workIncludes = lib.concatMap (owner: ownerIncludes owner workSettings) work.githubOwners;
   # Only repos the personal account owns get the local flow; third-party
   # checkouts get no flow at all.
   personalIncludes = ownerIncludes cfg.githubUser { smores.flow = "local"; };
@@ -118,7 +108,8 @@ in
           pv = "pr view";
         };
         editor = "hx";
-        git_protocol = "ssh";
+        # Both accounts reach GitHub only through their PAT.
+        git_protocol = "https";
       };
     };
 

@@ -157,9 +157,8 @@ let
     # modules/nixos/memory.nix and modules/nixos/secrets.nix.
     MEMORY_MCP_TOKEN_FILE = "/run/secrets/memory-mcp-token";
     MEMORY_WORK_EMAIL = config.user.work.email;
-    MEMORY_WORK_OWNER_GLOB = config.user.work.githubOwnerGlob;
+    MEMORY_WORK_OWNER_GLOB = lib.concatStringsSep "," config.user.work.githubOwners;
     MEMORY_WORK_FLOW = config.user.work.flow;
-    MEMORY_WORK_SSH_MARKER = baseNameOf config.user.work.sshConfig;
   };
   mcpEnvironmentToml =
     "{ "

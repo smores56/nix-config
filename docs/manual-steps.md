@@ -817,7 +817,7 @@ console proves the password before auto-login is removed.
 Fine-grained, **owner-wide** PAT for `smores56`, user-readable in
 `secrets/common.yaml`. Consumed by `github-credential-helper` and the
 PAT-aware `gh` wrapper (`modules/features/github-credentials.nix`) for HTTPS git
-and `gh`; the wrapper selects personal/work by the origin owner and an explicit
+and `gh`; the wrapper selects personal/work by the target repo's owner (rule in `modules/features/github-credentials.nix`) and an explicit
 `GH_TOKEN` overrides it. NixOS reads it from `/run/secrets`; the work Mac reads
 the same common-file secret through home-manager sops
 (`modules/hosts/smoreswork/sops.nix`). Permissions: Contents RW, Pull requests
@@ -833,7 +833,7 @@ The personal account's ed25519 commit-signing key, user-readable 0400 in
 `secrets/common.yaml`, so every host (and the agent sandbox) signs as
 `sam@sammohr.dev` with no agent or PIN. git names it as `user.signingkey`
 (`modules/features/git.nix`): `/run/secrets/github-personal-signing-key` on
-NixOS, `~/.local/share/git-signing/github-personal-signing-key` on the work
+NixOS, `~/.local/share/github/github-personal-signing-key` on the work
 Mac. The public half is `personal` in `modules/lib/signing-keys.nix`; it is
 registered on `smores56` as a **signing** key only, and smortress also accepts
 it as the laptop sandbox's forced-command login (`modules/nixos/ssh.nix`).
@@ -863,20 +863,32 @@ decrypt agent with
 
 <!-- manual-step: secret/github-work-pat -->
 
-The same shape for the work org matching `user.work.githubOwnerGlob`
-(`blitzy-*`), in `secrets/smoreswork.yaml`: the work account's bundle exists
-only on the work Mac. The credential helper and `gh` wrapper select it from the
-repository owner, so work and personal tokens never mix; on a personal host a
-work repo has no token (the helper answers nothing and `gh` refuses with the
-owner named), and the personal token is never substituted. The org may require fine-grained-token
-approval and SSO authorization; rotate on the same 90-day cadence.
+The work account's token, in `secrets/smoreswork.yaml`: the work bundle exists
+only on the work Mac. It is a **classic** PAT, because a fine-grained token
+reaches one owner and work spans every owner in `user.work.githubOwners`.
+Create it signed in as the work account: Settings → Developer settings →
+Personal access tokens → Tokens (classic), scopes `repo`, `read:org` and
+`workflow`, 90-day expiry; if the token list then shows **Configure SSO** for
+it, authorize every work org. Store it with
+
+```sh
+read -rs T && printf '%s' "$T" | jq -Rs . | sops set --value-stdin secrets/smoreswork.yaml '["github-work-pat"]'; unset T
+```
+
+and verify from any directory that both orgs answer, for example
+`git ls-remote https://github.com/<owner>/<repo>.git` once per work owner.
+The credential helper and `gh` wrapper select it from the repository owner, so
+work and personal tokens never mix; on a personal host a work repo has no token
+(the helper answers nothing and `gh` refuses with the owner named), and the
+personal token is never substituted. Rotate on the same 90-day cadence, then
+revoke the old token.
 
 ### github-work-signing-key
 
 <!-- manual-step: secret/github-work-signing-key -->
 
 The work account's ed25519 commit-signing key, in `secrets/smoreswork.yaml`
-only, linked at `~/.local/share/git-signing/github-work-signing-key` on the
+only, linked at `~/.local/share/github/github-work-signing-key` on the
 work Mac. The work owner include selects it there; personal hosts have no work
 key, so a work commit there signs with the personal key and shows Unverified.
 The public half is `work` in `modules/lib/signing-keys.nix`, registered on the
@@ -1374,10 +1386,15 @@ the only reliable hardening.
 Photos: the agent talks to Immich over its API rather than touching
 `/var/lib/media/Photos`, using `secret/immich-agent-api-key` (below).
 
-Work Mac: create Keychain items `maki-openai-api-key` and `maki-github-pat`.
-The host-side launcher reads them before entering the sandbox because
-`securityd` is denied inside; `maki-github-pat` should be a scoped token and
-is injected as `GH_TOKEN` for `gh` and HTTPS git.
+Work Mac: create the Keychain item `maki-openai-api-key`; the host-side
+launcher reads it before entering the sandbox because `securityd` is denied
+inside. GitHub needs no Keychain item: the sandbox reads each account's sops
+PAT and signing key through `~/.local/share/github`, selected by the target
+repository's owner, so delete any old `maki-github-pat` item with
+`security delete-generic-password -s maki-github-pat`. The Seatbelt profile allows those files'
+resolved paths as they are at launch, so relaunch a long-running sandbox after
+sops-nix re-decrypts (a `home-manager switch` that changes secrets, or the
+`launchctl kickstart` below).
 
 ### immich-agent-api-key
 

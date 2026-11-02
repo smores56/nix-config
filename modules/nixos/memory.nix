@@ -52,7 +52,6 @@ let
   # Work markers come from the shared identity so the wrapper and the shim
   # cannot disagree about what a work repo looks like.
   work = config.user.work;
-  workSshMarker = baseNameOf work.sshConfig;
 
   # One value for the two timings that must agree. The reconcile grace is how
   # long a queued episode may wait for an upstream slot before it counts as
@@ -543,9 +542,8 @@ in
           "MEMORY_PENDING_STALE_SECONDS=${toString reconcileGraceSeconds}"
           "MEMORY_RECONCILE_BACKOFF=60"
           "MEMORY_WORK_EMAIL=${work.email}"
-          "MEMORY_WORK_OWNER_GLOB=${work.githubOwnerGlob}"
+          "MEMORY_WORK_OWNER_GLOB=${lib.concatStringsSep "," work.githubOwners}"
           "MEMORY_WORK_FLOW=${work.flow}"
-          "MEMORY_WORK_SSH_MARKER=${workSshMarker}"
           # Open WebUI's native MCP client cannot send the X-Memory-* headers,
           # so the chat surface is pinned to the shared group and marked as its
           # own provenance. Clients that do send headers keep the strict

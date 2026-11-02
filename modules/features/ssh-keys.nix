@@ -12,18 +12,6 @@ let
   cfg = config.user;
   expandHome = lib.replaceStrings [ "~" ] [ "$HOME" ];
 
-  # The only software identity left is the work one, whose private half stays in
-  # the employer agent/keychain and whose public half the work Mac's git config
-  # references (T4). The personal software key was retired with the Pass agent;
-  # keeping its public half here would leave dead trust in allowed_signers.
-  softwareIdentities = lib.optionals config.machine.workHost [
-    {
-      key = cfg.work.sshKey;
-      inherit (cfg.work) email;
-      pubkey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ8f4okBI4niVjsR+lkgvfhRtVt1c/hRZ8POoBaQySog smohr@blitzy.com";
-    }
-  ];
-
   # One entry per YubiKey and credential. The public halves are committed, so
   # a fresh host writes the files ssh/git need without the key inserted.
   yubikeyKeys = import ../lib/yubikey-keys.nix;
@@ -32,7 +20,7 @@ let
     inherit (k) pubkey;
   }) (yubikeyKeys.piv ++ yubikeyKeys.signing);
 
-  pubkeys = softwareIdentities ++ yubikeyIdentities;
+  pubkeys = yubikeyIdentities;
 
   # Commit-signing keys from sops, trusted on every host for their own
   # account only; their public halves are committed, so no file is needed.
@@ -73,9 +61,6 @@ let
         ${lib.concatMapStrings (i: ''
           printf '%s namespaces="git" %s\n' ${lib.escapeShellArg i.email} ${lib.escapeShellArg i.pubkey}
         '') signingPrincipals}
-        ${lib.concatMapStrings (i: ''
-          entry ${lib.escapeShellArg i.email} "${expandHome i.key}.pub"
-        '') softwareIdentities}
         ${lib.concatMapStrings (i: ''
           entry ${lib.escapeShellArg cfg.email} "${expandHome i.key}.pub"
           entry ${lib.escapeShellArg cfg.work.email} "${expandHome i.key}.pub"
@@ -122,11 +107,9 @@ let
         }
       '') pubkeys}
       ${lib.getExe allowedSignersWriter}
-      # The personal software identity was retired with the Pass agent; a host
-      # that still has its public half should not keep offering it. The work
-      # public half moved out of ~/.ssh with the rest of the key material.
-      rm -f "$HOME/.ssh/id_personal.pub" "$HOME/.ssh/id_work.pub"
-      ${lib.optionalString (!config.machine.workHost) ''rm -f "$HOME/.config/ssh/id_work.pub"''}
+      # The personal and employer software identities are retired: no host may
+      # keep offering or trusting a stale public half of either.
+      rm -f "$HOME/.ssh/id_personal.pub" "$HOME/.ssh/id_work.pub" "$HOME/.config/ssh/id_work.pub"
 
       exit "$failed"
     '';

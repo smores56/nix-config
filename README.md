@@ -58,8 +58,9 @@ nix run github:smores56/nix-config#bootstrap
 
 The served copy at `bootstrap.sammohr.dev` is not provisioned by this repo;
 use the flake app above. It clones the repo via `ghq`, runs
-`home-manager switch`, writes the committed SSH public keys,
-authenticates GitHub, and (on NixOS) applies the system configuration.
+`home-manager switch`, writes the committed SSH public keys, and (on NixOS)
+applies the system configuration. GitHub needs no login step: git and `gh`
+use each account's sops PAT once the home is active.
 
 ### Manual
 
@@ -284,17 +285,23 @@ disabled so the two never fight.
 
 Work is split across independent switches:
 
-- **Per repo, on every host:** repos with a remote under the GitHub owner
-  glob in `user.work` (`modules/options.nix`) get the work email,
-  signing key, ssh route, branch
-  naming and PR flow, via git `includeIf hasconfig:remote.*.url`
-  (`modules/features/git.nix`). Any matching remote counts, so a fork with a
-  work `upstream` is a work repo. Tooling reads the result from
-  `git config smores.branchTemplate` / `smores.flow`. On the work Mac work
-  repos use the employer key for GitHub SSH (`~/.config/ssh/config.work`).
-  The work account's PAT and signing key exist only there
-  (`secrets/smoreswork.yaml`), so on other hosts a work repo has no token and
-  its commits sign with the personal key.
+- **Per repo, on every host:** repos with a remote under one of the exact
+  GitHub owners in `user.work.githubOwners` (`modules/options.nix`) get the
+  work email, signing key, branch naming and PR flow, via git
+  `includeIf hasconfig:remote.*.url` (`modules/features/git.nix`). It is a
+  list, not a pattern, so a look-alike org never matches. Any matching remote
+  counts, so a fork with a work `upstream` is a work repo. Tooling reads the
+  result from `git config smores.branchTemplate` / `smores.flow`.
+- **Each account is one PAT plus one signing key:** every GitHub remote uses
+  HTTPS (SSH remote URLs are rewritten), and git's credential helper picks the
+  owner's PAT from the request URL (`modules/features/github-credentials.nix`);
+  no SSH key is registered with GitHub for git. `gh` picks by `-R`/`--repo`
+  or `GH_REPO`, else the `gh api` endpoint, else the checkout's default
+  remote, else the personal account; to target the other account's repo from
+  elsewhere, pass `-R` or set `GH_REPO`. The work account's PAT and
+  signing key exist only on the work Mac (`secrets/smoreswork.yaml`), so on
+  other hosts a work repo has no token and its commits sign with the personal
+  key.
 - **Commit signing, per account:** every commit signs with a software key from
   sops, `github-personal-signing-key` everywhere and `github-work-signing-key`
   on the work Mac, named by `user.signingkey` (`modules/features/git.nix`;
@@ -467,10 +474,11 @@ path/privilege boundary: bwrap on Linux and `sandbox-exec` on macOS. `m` is a
 shell abbreviation for `agent-sandbox maki`; plain `maki` is installed manually
 in `~/.local/bin` and runs unsandboxed. The sandbox gives the agent a
 read-only home plus a short write allowlist, masks credentials and the whole
-`~/.config`, and exposes the signing keys (the personal one bound at its
-`/run/secrets` path on Linux; on macOS only the resolved files behind
-`~/.local/share/git-signing`, which on the work Mac includes the work key), so
-sandboxed commits sign on every host. smortress authorizes that key with a forced `agent-ssh` command,
+`~/.config`, and exposes each account's PAT and signing key (the personal
+ones bound at their `/run/secrets` paths on Linux; on macOS only the resolved
+files behind `~/.local/share/github`, which on the work Mac include the work
+bundle), so sandboxed git and `gh` pick the owner's token and commits sign on
+every host. smortress authorizes that key with a forced `agent-ssh` command,
 so remote sessions re-enter the same sandbox and `sudo` is not invocable.
 The lists and backend live in `modules/lib/agent-sandbox.nix`; operator steps
 are in `docs/manual-steps.md`.
@@ -484,7 +492,7 @@ profile) applies
 appears outside those option values.
 
 - **Flat folder:** employer tooling and `repos get` share `flatRepos.dir` for
-  GitHub owners matching `user.work.githubOwnerGlob`. `repos list` discovers those
+  the GitHub owners in `user.work.githubOwners`. `repos list` discovers those
   checkouts directly as well as ordinary repos under `codeRoot`;
   `flatRepos.envVar` is exported for the tooling. No org links are created.
 - **zsh is the shell** (`user.shell` follows `workHost`; fish isn't

@@ -13,7 +13,6 @@ let
   ports = import ../ports.nix;
   memoryPackage = import ../features/ai/memory/package.nix { inherit pkgs; };
   work = config.user.work;
-  workSshMarker = baseNameOf work.sshConfig;
 in
 {
   options.filesearch = {
@@ -66,9 +65,8 @@ in
           # Same refusal inputs as memory; a work checkout is refused even when
           # it sits inside an allowed root.
           "MEMORY_WORK_EMAIL=${work.email}"
-          "MEMORY_WORK_OWNER_GLOB=${work.githubOwnerGlob}"
+          "MEMORY_WORK_OWNER_GLOB=${lib.concatStringsSep "," work.githubOwners}"
           "MEMORY_WORK_FLOW=${work.flow}"
-          "MEMORY_WORK_SSH_MARKER=${workSshMarker}"
         ];
         Restart = "always";
         RestartSec = "5s";

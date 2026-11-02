@@ -54,14 +54,23 @@ export GIT_CONFIG_GLOBAL="$PWD/gitconfig"
 git init -q --bare "$PWD/remote-foo"
 git init -q --bare "$PWD/remote-bar"
 git init -q --bare "$PWD/remote-other-host"
+git init -q --bare "$PWD/remote-second-org"
+git init -q --bare "$PWD/remote-lookalike"
 git config --global --add url."$PWD/remote-foo".insteadOf "git@github.com:$WORK_OWNER/foo.git"
 git config --global --add url."$PWD/remote-bar".insteadOf "git@github.com:someone/bar.git"
 git config --global --add url."$PWD/remote-other-host".insteadOf "git@gitlab.example:$WORK_OWNER/other.git"
+git config --global --add url."$PWD/remote-second-org".insteadOf "git@github.com:$WORK_OWNER_2/svc.git"
+git config --global --add url."$PWD/remote-lookalike".insteadOf "git@github.com:$LOOKALIKE_WORK_OWNER/app.git"
 root2=$PWD/code2
 flat2=$PWD/flat2
 mkdir -p "$root2/github.com" "$flat2"
 REPOS_CODE_ROOT=$root2 REPOS_WORK_FLAT=$flat2 "$repos" get "$WORK_OWNER/foo" >/dev/null
 [[ -d "$flat2/foo/.git" && ! -e "$root2/github.com/$WORK_OWNER" ]]
+# Every listed work owner routes to the flat folder; a look-alike org does not.
+REPOS_CODE_ROOT=$root2 REPOS_WORK_FLAT=$flat2 "$repos" get "$WORK_OWNER_2/svc" >/dev/null
+[[ -d "$flat2/svc/.git" && ! -e "$root2/github.com/$WORK_OWNER_2" ]]
+REPOS_CODE_ROOT=$root2 REPOS_WORK_FLAT=$flat2 "$repos" get "$LOOKALIKE_WORK_OWNER/app" >/dev/null
+[[ -d "$root2/github.com/$LOOKALIKE_WORK_OWNER/app/.git" && ! -e "$flat2/app" ]]
 REPOS_CODE_ROOT=$root2 REPOS_WORK_FLAT=$flat2 "$repos" get someone/bar >/dev/null
 [[ -d "$root2/github.com/someone/bar/.git" ]]
 REPOS_CODE_ROOT=$root2 REPOS_WORK_FLAT=$flat2 "$repos" get "gitlab.example/$WORK_OWNER/other" >/dev/null

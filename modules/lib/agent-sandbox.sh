@@ -100,7 +100,6 @@ prepare_darwin_config() {
   cp "$AGENT_SSH_SHIM" "$agent_config/bin/ssh"
   cp "$AGENT_GH_SHIM" "$agent_config/bin/gh"
   cp "$AGENT_SIGNING_KEY_COMMAND" "$agent_config/bin/gpg-ssh-default-key"
-  cp "$AGENT_CREDENTIAL_HELPER" "$agent_config/bin/agent-sandbox-git-credential"
   chmod 755 "$agent_config/bin/"*
 }
 
@@ -155,12 +154,9 @@ build_env_args() {
   for name in "${ENV_PASSTHROUGH[@]}"; do
     add_env "$name"
   done
-  # GH_TOKEN is inherited only on macOS, where the launcher injects the PAT
-  # from Keychain. On Linux the gh shim/credential helper select a PAT by
-  # repository owner; passing the caller's token would defeat that split.
-  if [ "$(uname -s)" = Darwin ]; then
-    add_env GH_TOKEN
-  fi
+  # GH_TOKEN is never inherited: the gh wrapper and git helper inside select a
+  # PAT by the target repository's owner, and a caller's token would defeat
+  # that split.
   if [ -n "$signing_sock" ]; then
     ENV_ARGS+=("SSH_AUTH_SOCK=/run/agent/sign")
   fi
@@ -176,10 +172,6 @@ if [ "$(uname -s)" = Darwin ]; then
   if [ -z "${OPENAI_API_KEY:-}" ] && [ -n "${OPENAI_KEYCHAIN_ITEM:-}" ]; then
     OPENAI_API_KEY=$(/usr/bin/security find-generic-password -s "$OPENAI_KEYCHAIN_ITEM" -w 2>/dev/null) || OPENAI_API_KEY=
     export OPENAI_API_KEY
-  fi
-  if [ -z "${GH_TOKEN:-}" ] && [ -n "${GH_TOKEN_KEYCHAIN_ITEM:-}" ]; then
-    GH_TOKEN=$(/usr/bin/security find-generic-password -s "$GH_TOKEN_KEYCHAIN_ITEM" -w 2>/dev/null) || GH_TOKEN=
-    export GH_TOKEN
   fi
   prepare_darwin_config
   build_env_args
@@ -413,7 +405,6 @@ if [ -n "${AGENT_CONFIG_DIR:-}" ]; then
     --ro-bind "$AGENT_GIT_CONFIG" "$agent_config/gitconfig"
     --ro-bind "$AGENT_SSH_CONFIG" "$agent_config/ssh_config"
     --ro-bind "$AGENT_SIGNING_KEY_COMMAND" "$agent_config/bin/gpg-ssh-default-key"
-    --ro-bind "$AGENT_CREDENTIAL_HELPER" "$agent_config/bin/agent-sandbox-git-credential"
     --ro-bind "$AGENT_SSH_SHIM" "$agent_config/bin/ssh"
     --ro-bind "$AGENT_GH_SHIM" "$agent_config/bin/gh"
   )
