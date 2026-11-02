@@ -313,9 +313,7 @@ in
           );
           alerts = sortedUnique (
             lib.concatMap (
-              n:
-              lib.optional (n.config.systemd.services ? backup-freshness) "backup-freshness"
-              ++ lib.optional (n.config.systemd.services ? "cloudflare-email@") "unit-failure"
+              n: lib.optional (n.config.systemd.services ? "cloudflare-email@") "unit-failure"
             ) nixos
           );
         }
