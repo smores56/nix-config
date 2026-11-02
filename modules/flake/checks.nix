@@ -108,12 +108,12 @@ in
           # Expected values come from the options, not the test scripts.
           env = {
             WORK_EMAIL = d.work.email;
-            WORK_KEY = d.work.sshKey;
-            WORK_SSH_CONFIG = d.work.sshConfig;
-            WORK_HOST = if hc.machine.workHost then "1" else "0";
             WORK_BRANCH_TEMPLATE = d.work.branchNaming.template;
             WORK_BRANCH_UNTICKETED = toString d.work.branchNaming.unticketed;
-            WORK_OWNER = lib.replaceStrings [ "*" ] [ "routing-test" ] d.work.githubOwnerGlob;
+            WORK_OWNER = lib.head d.work.githubOwners;
+            WORK_OWNER_2 = lib.last d.work.githubOwners;
+            # Shares a listed owner's prefix, as an org anyone could register.
+            LOOKALIKE_WORK_OWNER = "${lib.head d.work.githubOwners}-lookalike";
             PERSONAL_EMAIL = d.email;
             PERSONAL_BRANCH_TEMPLATE = d.branchNaming.template;
             PERSONAL_BRANCH_UNTICKETED = toString d.branchNaming.unticketed;
@@ -134,7 +134,6 @@ in
             let
               w = d.work;
               domain = lib.last (lib.splitString "@" w.email);
-              ownerStem = lib.removeSuffix "-" (lib.replaceStrings [ "*" ] [ "" ] w.githubOwnerGlob);
               flat = lib.optionals (w.flatRepos != null) (
                 [ (baseNameOf w.flatRepos.dir) ] ++ lib.optional (w.flatRepos.envVar != null) w.flatRepos.envVar
               );
@@ -144,8 +143,8 @@ in
                 [
                   domain
                   (lib.head (lib.splitString "." domain))
-                  ownerStem
                 ]
+                ++ w.githubOwners
                 ++ flat
               )
             );

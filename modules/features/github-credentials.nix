@@ -1,8 +1,8 @@
-# Owner-selecting GitHub credentials for tooling that cannot use the SSH agent
-# (Maki inside its sandbox, HTTPS remotes). The PATs live in sops as
-# user-readable files; the helper picks one by the repository owner git passes
-# in the credential request, so work repos and personal repos never share a
-# token.
+# Owner-selecting GitHub credentials: each account's PAT is the one credential
+# for HTTPS git and gh, for humans and for Maki. The PATs live in sops as
+# user-readable files; git's helper picks one by the repository owner in the
+# credential request URL, and gh by the current repo's origin, so work and
+# personal repos never share a token.
 {
   config,
   lib,
@@ -10,7 +10,8 @@
   ...
 }:
 let
-  workGlob = config.user.work.githubOwnerGlob;
+  # Exact owners, lowercased to match the case-folded owner below.
+  workOwners = lib.concatMapStringsSep "|" lib.toLower config.user.work.githubOwners;
 
   # sops-nix puts the PATs in /run/secrets on NixOS; a home-only Darwin host
   # declares them in home-manager sops, which owns their path.
@@ -20,7 +21,7 @@ let
   selectTokenFile = ''
     token_file=${lib.escapeShellArg (patFile "github-personal-pat")}
     case "''${owner,,}" in
-      ${workGlob}) token_file=${lib.escapeShellArg (patFile "github-work-pat")} ;;
+      ${workOwners}) token_file=${lib.escapeShellArg (patFile "github-work-pat")} ;;
     esac
   '';
 
@@ -114,6 +115,20 @@ in
       ghWithPat
       credentialHelper
     ];
-    programs.gh.package = ghAlias;
+    programs.gh = {
+      package = ghAlias;
+      # gh's own helper picks a token from the directory git runs in, so a
+      # work URL fetched from a personal checkout got the personal token.
+      gitCredentialHelper.enable = false;
+    };
+    # The helper reads the owner from the request path, so the token follows
+    # the URL; the empty entry drops inherited helpers (osxkeychain) for GitHub.
+    programs.git.settings.credential."https://github.com" = {
+      helper = [
+        ""
+        (lib.getExe credentialHelper)
+      ];
+      useHttpPath = true;
+    };
   };
 }

@@ -172,9 +172,10 @@ Run them after touching `modules/features/ai/sdlc/`, `modules/features/ai/memory
 Script checks run each `tests/<name>.sh` against tools and files from a
 generated home, as the `<name>` flake check (`scriptChecks` in
 `modules/flake/checks.nix`): `git-work-routing` (work vs personal identity by
-remote URL, including the per-account sops signing key), `ssh-allowed-signers`
-(signature verification; each sops signing key is trusted only for its own
-account), `ssh-pin-askpass` (only the two PIN prompt shapes
+remote URL for the exact work owners only, the per-account sops signing key,
+HTTPS for every GitHub remote, and the URL-based credential helper),
+`ssh-allowed-signers` (each sops signing key is trusted only for its own
+account, and nothing else is), `ssh-pin-askpass` (only the two PIN prompt shapes
 are answered; host-key and presence prompts fail closed; a cache miss prompts
 through `fido2-ensure-pin` when a compositor is reachable), `fido2-ensure-pin`
 (the PIN is prompted, verified, and cached once per session, refuses below four
@@ -185,15 +186,15 @@ buckets by measured pixels, NUL-delimited queue rotation without same-aspect
 collisions, control-character names skipped) and `wallpapers-askpass` (only
 the PIV prompt is answered; host-key, presence, and a failing Keychain read
 fail closed with no PIN on stdout), `ssh-pub-keys`
-(committed `.pub` keys
-written and trusted, stale files replaced, a malformed key writes nothing and
-exits non-zero), `ssh-no-private-keys` (a private key, including a symlink,
+(committed `.pub` keys written and trusted, retired keys removed and
+untrusted, a rerun is idempotent), `ssh-no-private-keys` (a private key, including a symlink,
 anywhere in `~/.ssh` fails, except the work-host gcloud key; public-only and
 missing directories pass),
 `worktrees-branch-template` (branch naming from
 per-repo templates), `github-pat-routing` (the `gh` wrapper and git credential
 helper read the owner's PAT from the home's sops files or `/run/secrets`, never
-Keychain, and fail closed without one), `repos-routing` (flat work repo discovery and routing), `zsh-config`
+Keychain, and fail closed without one), `repos-routing` (flat work repo discovery and routing for every listed work
+owner, never a look-alike), `zsh-config`
 (generated zsh startup files parse; only on a system with a zsh home) and
 `github-mirror-probe` (the GitHub mirror rejects a stale private-repo probe and
 scrubs a token-bearing origin), `github-metadata` (pgb flags and token-by-file,

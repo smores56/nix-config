@@ -62,7 +62,7 @@ let
       WORK_FLAT=''${REPOS_WORK_FLAT-$WORK_FLAT}
       LEGACY_FLAT=${lib.escapeShellArg legacyFlatDir}
       LEGACY_FLAT=''${REPOS_LEGACY_FLAT-$LEGACY_FLAT}
-      WORK_OWNER_GLOB=${lib.escapeShellArg cfg.work.githubOwnerGlob}
+      WORK_OWNERS=(${lib.escapeShellArgs cfg.work.githubOwners})
 
       # The flat work folder is a separate root. Ignore old owner links to it
       # while they exist, rather than scanning every checkout through each link.
@@ -205,10 +205,14 @@ let
           dest="$ROOT/$host/$owner/$repo"
           if [ -n "$WORK_FLAT" ]; then
             shopt -s nocasematch
-            # shellcheck disable=SC2053
-            if [[ $host == github.com && $owner == $WORK_OWNER_GLOB ]]; then
-              dest="$WORK_FLAT/$repo"
-              check_work_destination
+            if [[ $host == github.com ]]; then
+              for work_owner in "''${WORK_OWNERS[@]}"; do
+                if [[ $owner == "$work_owner" ]]; then
+                  dest="$WORK_FLAT/$repo"
+                  check_work_destination
+                  break
+                fi
+              done
             fi
             shopt -u nocasematch
           fi

@@ -89,21 +89,13 @@ in
             type = lib.types.str;
             description = "Commit email in work repos.";
           };
-          githubOwnerGlob = lib.mkOption {
-            type = lib.types.str;
-            description = "GitHub owner pattern (git wildmatch, matched case-insensitively) whose repos use the work identity.";
+          githubOwners = lib.mkOption {
+            type = lib.types.nonEmptyListOf (lib.types.strMatching "[A-Za-z0-9][A-Za-z0-9-]*");
+            description = "Exact GitHub owners (matched case-insensitively) whose repos use the work identity, token and signing key. A list, not a pattern, so an org anyone can register never matches.";
           };
           branchNaming = lib.mkOption {
             type = branchNamingType;
             description = "Branch naming in work repos.";
-          };
-          sshKey = lib.mkOption {
-            type = lib.types.str;
-            description = "Work SSH key path without extension; its committed `.pub` lives under ~/.config/ssh and is offered via the employer agent, which holds the private half.";
-          };
-          sshConfig = lib.mkOption {
-            type = lib.types.str;
-            description = "Standalone ssh config that work-repo git uses instead of ~/.ssh/config.";
           };
           flow = lib.mkOption {
             type = lib.types.enum [
@@ -198,7 +190,10 @@ in
       branchNaming.template = "smores/{slug}";
       work = {
         email = "smohr@blitzy.com";
-        githubOwnerGlob = "blitzy-*";
+        githubOwners = [
+          "blitzy-ai"
+          "blitzy-platform"
+        ];
         # Team convention: ticket first, else the change type.
         branchNaming = {
           template = "{ticket}-{slug}";
@@ -208,8 +203,6 @@ in
           dir = "${homeDirectory}/Blitzy";
           envVar = "BLITZY_REPOS_DIR";
         };
-        sshKey = "~/.config/ssh/id_work";
-        sshConfig = "~/.config/ssh/config.work";
         flow = "pr";
       };
       githubUser = "smores56";

@@ -38,19 +38,8 @@ expect_work() {
   # The work key exists only where its sops secret is deployed; elsewhere a
   # work commit falls back to the personal key.
   expect "$1" user.signingkey "$WORK_SIGNING_KEY"
-  if [ "$WORK_HOST" = 1 ]; then
-    expect "$1" core.sshCommand "ssh -F $WORK_SSH_CONFIG"
-  else
-    expect "$1" core.sshCommand ""
-    got=$(git -C "$1" config --get-all 'url.https://github.com/.insteadOf' || true)
-    case "$got" in
-      *"git@github.com:"*) ;;
-      *)
-        echo "FAIL $1 missing work HTTPS rewrite"
-        failures=$((failures + 1))
-        ;;
-    esac
-  fi
+  # Work mirrors personal: no SSH route, HTTPS plus the owner's token.
+  expect "$1" core.sshCommand ""
   expect "$1" smores.branchTemplate "$WORK_BRANCH_TEMPLATE"
   expect "$1" smores.branchTemplateUnticketed "$WORK_BRANCH_UNTICKETED"
   expect "$1" smores.flow pr
@@ -78,18 +67,41 @@ repo https-user "https://someone@github.com/$w/app.git"
 repo upper "git@github.com:$W/app.git"
 repo mixed "git@github.com:$PERSONAL_OWNER/fork.git" "git@github.com:$w/app.git"
 repo own "git@github.com:$PERSONAL_OWNER/notes.git"
+repo second-org "https://github.com/$WORK_OWNER_2/svc.git"
+repo glob-lookalike "git@github.com:$LOOKALIKE_WORK_OWNER/app.git"
 repo third-party "git@github.com:NixOS/nixpkgs.git"
 repo repo-named-like-work "git@github.com:$PERSONAL_OWNER/$w.git"
 repo lookalike-owner "git@github.com:not$w/app.git"
 repo lookalike-host "git@evilgithub.com:$w/app.git"
 mkdir outside
 
-for dir in scp scp-slash scp-nouser ssh ssh-port ssh-nouser https https-user upper mixed; do
+for dir in scp scp-slash scp-nouser ssh ssh-port ssh-nouser https https-user upper mixed second-org; do
   expect_work "$dir"
 done
 for dir in own repo-named-like-work; do expect_personal "$dir" local; done
-for dir in third-party lookalike-owner lookalike-host outside; do expect_personal "$dir" ""; done
+# Only the listed work owners are work: a look-alike org anyone can register
+# must never select the work email, token, or signing key.
+for dir in third-party lookalike-owner lookalike-host glob-lookalike outside; do expect_personal "$dir" ""; done
 
+# Every GitHub remote, of either account or a third party, uses HTTPS, and
+# git asks the URL-based helper so the token follows the URL's owner rather
+# than the directory git runs in.
+got=$(git -C outside config --get-all 'url.https://github.com/.insteadOf' || true)
+for want in "git@github.com:" "ssh://git@github.com/"; do
+  case "$got" in
+    *"$want"*) ;;
+    *) echo "FAIL missing HTTPS rewrite for $want"; failures=$((failures + 1)) ;;
+  esac
+done
+helpers=$(git -C outside config --get-all 'credential.https://github.com.helper' || true)
+case "$helpers" in
+  *github-credential-helper*) ;;
+  *) echo "FAIL github.com credential helper is not github-credential-helper: $helpers"; failures=$((failures + 1)) ;;
+esac
+case "$helpers" in
+  *"gh auth git-credential"*) echo "FAIL gh auth git-credential still answers github.com"; failures=$((failures + 1)) ;;
+esac
+expect outside 'credential.https://github.com.useHttpPath' true
 expect outside gpg.format ssh
 expect outside commit.gpgsign true
 # A plain key file signs without an agent: no wrapper may come back to demand

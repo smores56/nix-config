@@ -49,19 +49,6 @@ in
     };
   };
 
-  # Work-org git remotes use this instead of ~/.ssh/config (via the git work
-  # include's core.sshCommand) on the work Mac, where the employer key lives in
-  # Keychain. Other hosts use HTTPS + the work PAT instead.
-  home.file = lib.mkIf config.machine.workHost {
-    ${lib.removePrefix "~/" config.user.work.sshConfig}.text = ''
-      Host github.com
-        HostName github.com
-        User git
-        IdentityFile ${config.user.work.sshKey}.pub
-        IdentitiesOnly yes
-    '';
-  };
-
   # $XDG_RUNTIME_DIR is normally set by pam_systemd at login, but a session that
   # does not go through PAM leaves it unset — and the agent module expands
   # $XDG_RUNTIME_DIR when setting SSH_AUTH_SOCK. Set a fallback before that init

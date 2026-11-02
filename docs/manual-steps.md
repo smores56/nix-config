@@ -863,13 +863,25 @@ decrypt agent with
 
 <!-- manual-step: secret/github-work-pat -->
 
-The same shape for the work org matching `user.work.githubOwnerGlob`
-(`blitzy-*`), in `secrets/smoreswork.yaml`: the work account's bundle exists
-only on the work Mac. The credential helper and `gh` wrapper select it from the
-repository owner, so work and personal tokens never mix; on a personal host a
-work repo has no token (the helper answers nothing and `gh` refuses with the
-owner named), and the personal token is never substituted. The org may require fine-grained-token
-approval and SSO authorization; rotate on the same 90-day cadence.
+The work account's token, in `secrets/smoreswork.yaml`: the work bundle exists
+only on the work Mac. It is a **classic** PAT, because a fine-grained token
+reaches one owner and work spans every owner in `user.work.githubOwners`.
+Create it signed in as the work account: Settings → Developer settings →
+Personal access tokens → Tokens (classic), scopes `repo`, `read:org` and
+`workflow`, 90-day expiry; if the token list then shows **Configure SSO** for
+it, authorize every work org. Store it with
+
+```sh
+read -rs T && printf '%s' "$T" | jq -Rs . | sops set --value-stdin secrets/smoreswork.yaml '["github-work-pat"]'; unset T
+```
+
+and verify from any directory that both orgs answer, for example
+`git ls-remote https://github.com/<owner>/<repo>.git` once per work owner.
+The credential helper and `gh` wrapper select it from the repository owner, so
+work and personal tokens never mix; on a personal host a work repo has no token
+(the helper answers nothing and `gh` refuses with the owner named), and the
+personal token is never substituted. Rotate on the same 90-day cadence, then
+revoke the old token.
 
 ### github-work-signing-key
 
