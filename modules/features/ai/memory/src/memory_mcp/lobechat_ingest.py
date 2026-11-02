@@ -22,6 +22,8 @@ import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
+from .mcp_auth import TokenMissingError, authorization
+
 STATE_FILE = "state.json"
 MAX_TRANSCRIPT_CHARS = 30_000
 LLM_TIMEOUT = 180
@@ -164,6 +166,11 @@ async def _write(content: str) -> None:
         "X-Memory-Cwd": os.environ.get("LOBE_INGEST_CWD", "/phone"),
         "X-Memory-Actor": "lobechat",
     }
+    try:
+        name, value = authorization()
+    except TokenMissingError as exc:
+        raise SystemExit(f"lobe ingest: {exc}")
+    headers[name] = value
     async with streamablehttp_client(url, headers=headers) as (read, write, _):
         async with ClientSession(read, write) as session:
             await asyncio.wait_for(session.initialize(), MCP_TIMEOUT)

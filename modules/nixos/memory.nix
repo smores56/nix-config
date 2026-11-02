@@ -167,6 +167,21 @@ in
 {
   options.memory.enable = lib.mkEnableOption "the cross-machine memory stack (Graphiti MCP + FalkorDB + embedder)";
 
+  # The bearer token the MCP listener requires on every request. The sops secret
+  # `memory-mcp-token` declares its file at this path (root:memory 0440), so the
+  # service, the user's shim, the CLI, and any container client read one copy.
+  # Overridable only to keep the module honest if the secret's path ever moves.
+  options.memory.mcpTokenFile = lib.mkOption {
+    type = lib.types.str;
+    default = "/run/secrets/memory-mcp-token";
+    description = ''
+      File holding the bearer token every client of the loopback MCP listener
+      must present. Declared as the `memory-mcp-token` sops secret in
+      `modules/nixos/secrets.nix`; the file must be readable by the `memory`
+      group so the per-user shim and CLI can authenticate too.
+    '';
+  };
+
   # Extraction is hosted (Neuralwatt through the gateway), so memory never
   # depends on the local chat model. Embeddings stay switchable: bge-m3 on
   # llama.cpp by default, qwen3-embedding-8b through the same gateway when
@@ -470,9 +485,15 @@ in
     # the group header the shim sends, refuses work groups, and records writes
     # as pending in the typed registry. A background reconciler proves each
     # write against FalkorDB and resolves it to active or failed. Raw Graphiti
-    # stays on the internal graphitiPort and is never tunneled. Because the
-    # tunnel delivers every request as loopback, the /internal ingest routes
-    # also require a per-start bearer token written into the state dir.
+    # stays on the internal graphitiPort and is never tunneled.
+    #
+    # A raw TCP tunnel delivers every client as loopback, so the peer address is
+    # not an authority. Every request to this listener therefore needs
+    # `Authorization: Bearer <token>` against the `memory-mcp-token` sops secret
+    # (`memory.mcpTokenFile`); /health stays exempt because it answers a static
+    # status, and the /internal ingest routes keep their own per-start token
+    # from the state dir. A missing secret fails closed with 503 and a startup
+    # log line.
     systemd.services.memory-mcp = {
       description = "memory MCP wrapper (project groups, typed registry, reconciler)";
       wantedBy = [ "multi-user.target" ];
@@ -501,6 +522,9 @@ in
         Environment = [
           "MEMORY_MCP_HOST=127.0.0.1"
           "MEMORY_MCP_PORT=${toString ports.memoryMcp}"
+          # The listener's bearer token: sops renders it root:memory 0440, so
+          # this service reads it through its group membership.
+          "MEMORY_MCP_TOKEN_FILE=${config.memory.mcpTokenFile}"
           "MEMORY_GRAPHITI_URL=http://127.0.0.1:${toString graphitiPort}/mcp"
           "MEMORY_REDIS_URL=redis://127.0.0.1:${toString dbPort}"
           # Readiness probes the gateway so search and retries can pause when the

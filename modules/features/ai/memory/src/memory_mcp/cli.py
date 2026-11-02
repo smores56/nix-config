@@ -25,6 +25,7 @@ from .export import (
 )
 from .export import dispatch as export_dispatch
 from .groups import GroupRefused, derive_group, validate_group
+from .mcp_auth import TokenMissingError, authorization
 
 DEFAULT_URL = "http://127.0.0.1:8182/mcp"
 DEFAULT_TIMEOUT = 75.0
@@ -282,6 +283,7 @@ async def _invoke(args: argparse.Namespace, group: str, cwd: str) -> tuple[str, 
             ("X-Memory-Group", group),
             ("X-Memory-Cwd", cwd),
             ("X-Memory-Actor", "cli"),
+            authorization(),
         ),
         timeout=float(os.environ.get("MEMORY_TIMEOUT", str(DEFAULT_TIMEOUT))),
     )
@@ -334,6 +336,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         tool, result = asyncio.run(_invoke(args, group, cwd))
+    except TokenMissingError as exc:
+        print(f"memory: {exc}", file=sys.stderr)
+        return 1
     except UpstreamError as exc:
         print(f"memory: server unreachable at {args.url}: {exc}", file=sys.stderr)
         return 1

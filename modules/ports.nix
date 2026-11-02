@@ -28,8 +28,6 @@
   memoryLlmProxy = 8082;
   # Read-only file-search MCP: listener and LobeChat's connector.
   filesMcp = 8185;
-  # LobeChat listener and its tunnel ingress.
-  lobechat = 3210;
-  # RustFS S3 API listener and its tunnel ingress.
-  rustfs = 9000;
+  # Open WebUI listener and its tunnel ingress.
+  openWebui = 3210;
 }

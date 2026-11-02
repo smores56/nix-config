@@ -1018,6 +1018,7 @@ class ReconcilerLifespanTests(unittest.TestCase):
         self.graph.present = EpisodeRef(uuid="graph-1", created_at="2026-10-22T10:05:00Z")
         runtime = build_server(
             WrapperConfig(state_dir=self.tmp.name, graphiti_url="http://127.0.0.1:1/mcp"),
+            mcp_token="test-token",
             registry=self.registry,
             probes=FakeProbes(),
             graph=self.graph,
@@ -1032,6 +1033,7 @@ class ReconcilerLifespanTests(unittest.TestCase):
     def test_the_mcp_app_rejects_a_declared_oversized_body(self):
         runtime = build_server(
             WrapperConfig(state_dir=self.tmp.name, graphiti_url="http://127.0.0.1:1/mcp"),
+            mcp_token="test-token",
             registry=self.registry,
             probes=FakeProbes(),
             graph=self.graph,
@@ -1041,7 +1043,10 @@ class ReconcilerLifespanTests(unittest.TestCase):
             response = client.post(
                 "/mcp",
                 content=b"x" * (MAX_MCP_BODY_BYTES + 1),
-                headers={"content-type": "application/json"},
+                headers={
+                    "content-type": "application/json",
+                    "authorization": "Bearer test-token",
+                },
             )
         self.assertEqual(response.status_code, 413)
         self.assertIn(b"over", response.content)

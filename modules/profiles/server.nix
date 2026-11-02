@@ -10,7 +10,9 @@
     ../nixos/immich.nix
     ../nixos/radicale.nix
     ../nixos/navidrome.nix
-    ../nixos/lobechat.nix
+    ../nixos/jupyter.nix
+    ../nixos/open-webui.nix
+    ../nixos/tinyfish-shim.nix
     ../nixos/llm.nix
     ../nixos/memory.nix
     ../nixos/filesearch.nix

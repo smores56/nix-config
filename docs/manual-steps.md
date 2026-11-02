@@ -1376,7 +1376,6 @@ Restore both the database dump and the library; the procedure (including
 
 ### Videos
 
-<!-- manual-step: dataset/Videos -->
 
 `/var/lib/media/Videos`, daily 01:00, full check Sundays 07:00, offsite and
 change-triggered.
@@ -1483,7 +1482,6 @@ hosts so sops rewrites `/run/secrets/…`, then delete the old key in Immich.
 
 ### LobeChat
 
-<!-- manual-step: dataset/LobeChat -->
 
 `/var/lib/lobechat`, daily 02:00, full check Sundays 10:00. The pre-unit dumps
 PostgreSQL as `postgres`; the driver copies it to `current/db/lobechat.dump` and
@@ -1495,7 +1493,6 @@ the full drill).
 
 ### RustFS
 
-<!-- manual-step: dataset/RustFS -->
 
 `/var/lib/rustfs` (the LobeChat S3 bucket), daily 04:00, full check Sundays
 11:00, change-triggered. Restore by stopping `podman-rustfs` and copying
@@ -2038,7 +2035,6 @@ wins; on a fresh deployment, create the account first and then run
 
 ### smortress/s3
 
-<!-- manual-step: service/smortress/s3 -->
 
 `s3.sammohr.dev` → the loopback RustFS container (`ports.rustfs`) behind
 Access. LobeChat signs presigned URLs with this public endpoint and uses
@@ -2313,3 +2309,59 @@ confirm the policy in the dashboard after `cloudflare-apply`.
 OpenTofu `cloudflare_notification_policy.service_token_expiry` warns before an
 Access service token expires. Renew the token in the dashboard, update the
 clients that embed it (Proton Pass), and re-run `cloudflare-plan`.
+
+### restic repository password
+
+<!-- manual-step: secret/restic-password -->
+
+Random 32 bytes (`openssl rand -base64 32`), stored in `secrets/smortress.yaml`
+(root 0400), in Bitwarden, and on the offline paper. Losing all three copies
+loses the backups. Rotation: update the value and rebuild.
+
+### R2 access key id and secret
+
+<!-- manual-step: secret/r2-access-key-id -->
+<!-- manual-step: secret/r2-secret-access-key -->
+
+Create a Cloudflare R2 API token scoped to the `restic-backup` bucket with
+Object Read & Write. Put the id and secret in `secrets/smortress.yaml`; the
+restic unit reads them through the sops template `restic-r2.env`.
+
+### Radicale htpasswd
+
+<!-- manual-step: secret/radicale-htpasswd -->
+
+One bcrypt line from `htpasswd -nB smores`, owner `radicale`, 0400. Rotation:
+regenerate, update `secrets/smortress.yaml`, rebuild, and re-add the account in
+DAVx5/khal.
+
+### Jupyter token
+
+<!-- manual-step: secret/jupyter-token -->
+
+Random 32 bytes, root-owned 0400, read by the sandboxed Jupyter server and
+injected into Open WebUI's environment file. Rotation invalidates running
+kernels.
+
+### Memory MCP token
+
+<!-- manual-step: secret/memory-mcp-token -->
+
+Random 32 bytes in `secrets/common.yaml`, user-readable 0400. Presented as
+`Authorization: Bearer` by Maki, the memory CLI/shim, and Open WebUI. Rotation
+requires restarting `memory-mcp`, Maki, and Open WebUI.
+
+### dav.sammohr.dev
+
+<!-- manual-step: service/smortress/dav -->
+
+Radicale over the tunnel at `https://dav.sammohr.dev/`, public with its own
+bcrypt auth; CalDAV clients cannot complete an Access login. The
+`dav_rate_limit` WAF ruleset is managed by `nix run .#cloudflare-apply`.
+
+### music.sammohr.dev
+
+<!-- manual-step: service/smortress/navidrome -->
+
+Navidrome at `https://music.sammohr.dev/`, public with its own auth. Create the
+first account in the web UI; it becomes the admin.

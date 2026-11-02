@@ -18,16 +18,20 @@ fi
 
 home=$HOME
 agent_config="$home/.local/state/agent/config"
-if [ -L "$agent_config" ]; then
-  echo "agent-sandbox: refusing a symlinked agent config dir: $agent_config" >&2
-  exit 1
+# Only the agent profile keeps git/ssh plumbing in this private config dir; the
+# minimal profiles (the Jupyter kernel) have none to create or protect.
+if [ -n "${AGENT_CONFIG_DIR:-}" ]; then
+  if [ -L "$agent_config" ]; then
+    echo "agent-sandbox: refusing a symlinked agent config dir: $agent_config" >&2
+    exit 1
+  fi
+  mkdir -p \
+    "$agent_config" \
+    "$agent_config/bin" \
+    "$home/.cache/agent" \
+    "$home/.local/share/agent" \
+    "$home/.local/state/agent"
 fi
-mkdir -p \
-  "$agent_config" \
-  "$agent_config/bin" \
-  "$home/.cache/agent" \
-  "$home/.local/share/agent" \
-  "$home/.local/state/agent"
 
 # Start in the caller's directory when it is inside a writable allowlist
 # entry; otherwise start at HOME. A coding agent works from HOME fine.
@@ -60,10 +64,11 @@ for sock in "${SIGNING_SOCKETS[@]}"; do
   fi
 done
 
-read_secret NEURALWATT_API_KEY /run/secrets/neuralwatt-api-key
-read_secret TINYFISH_API_KEY /run/secrets/tinyfish-api-key
-read_secret IMMICH_API_KEY /run/secrets/immich-agent-api-key
-read_secret OPENAI_API_KEY "${OPENAI_KEYCHAIN_ITEM:-/nonexistent}"
+# Secrets promoted into the sandbox environment, each read from a host file the
+# descendant cannot see itself. The minimal profiles declare none.
+for pair in "${SECRET_READ[@]}"; do
+  read_secret "${pair%%|*}" "${pair#*|}"
+done
 
 # Darwin has no mount namespace and no private /tmp. Copy the selected
 # configs into the agent-only config dir; the profile denies the real
@@ -130,6 +135,9 @@ build_env_args() {
     # writes there would run for the human outside the sandbox.
     "PRE_COMMIT_HOME=$home/.cache/agent/pre-commit"
   )
+  # Profile overrides go last: `env -i` and bwrap --setenv both let a later
+  # assignment win, so a profile can retarget PATH and the XDG dirs.
+  ENV_ARGS+=("${ENV_EXTRA[@]}")
   add_env TERM
   add_env COLORTERM
   add_env LANG
@@ -142,6 +150,11 @@ build_env_args() {
   add_env TINYFISH_API_KEY
   add_env IMMICH_API_KEY
   add_env OPENAI_API_KEY
+  # Profile-declared names to carry across the boundary as-is; the minimal
+  # Jupyter profile uses it for the token its launcher reads from the sops file.
+  for name in "${ENV_PASSTHROUGH[@]}"; do
+    add_env "$name"
+  done
   # GH_TOKEN is inherited only on macOS, where the launcher injects the PAT
   # from Keychain. On Linux the gh shim/credential helper select a PAT by
   # repository owner; passing the caller's token would defeat that split.
@@ -368,19 +381,21 @@ if [ -r "${CLOUDFLARED_TOKEN:-/nonexistent}" ]; then
   args+=(--dir /run/agent/runtime/cloudflared-access --ro-bind "$CLOUDFLARED_TOKEN" /run/agent/runtime/cloudflared-access/token)
 fi
 
-args+=(
-  --ro-bind "$AGENT_GIT_CONFIG" "$agent_config/gitconfig"
-  --ro-bind "$AGENT_SSH_CONFIG" "$agent_config/ssh_config"
-  --ro-bind "$AGENT_SIGNING_KEY_COMMAND" "$agent_config/bin/gpg-ssh-default-key"
-  --ro-bind "$AGENT_CREDENTIAL_HELPER" "$agent_config/bin/agent-sandbox-git-credential"
-  --ro-bind "$AGENT_SSH_SHIM" "$agent_config/bin/ssh"
-  --ro-bind "$AGENT_GH_SHIM" "$agent_config/bin/gh"
-)
-if [ -r "$home/.config/ssh/allowed_signers" ]; then
-  args+=(--ro-bind "$home/.config/ssh/allowed_signers" "$agent_config/allowed_signers")
-fi
-if [ -r "$home/.config/ssh/known_hosts" ]; then
-  args+=(--ro-bind "$home/.config/ssh/known_hosts" "$agent_config/known_hosts")
+if [ -n "${AGENT_CONFIG_DIR:-}" ]; then
+  args+=(
+    --ro-bind "$AGENT_GIT_CONFIG" "$agent_config/gitconfig"
+    --ro-bind "$AGENT_SSH_CONFIG" "$agent_config/ssh_config"
+    --ro-bind "$AGENT_SIGNING_KEY_COMMAND" "$agent_config/bin/gpg-ssh-default-key"
+    --ro-bind "$AGENT_CREDENTIAL_HELPER" "$agent_config/bin/agent-sandbox-git-credential"
+    --ro-bind "$AGENT_SSH_SHIM" "$agent_config/bin/ssh"
+    --ro-bind "$AGENT_GH_SHIM" "$agent_config/bin/gh"
+  )
+  if [ -r "$home/.config/ssh/allowed_signers" ]; then
+    args+=(--ro-bind "$home/.config/ssh/allowed_signers" "$agent_config/allowed_signers")
+  fi
+  if [ -r "$home/.config/ssh/known_hosts" ]; then
+    args+=(--ro-bind "$home/.config/ssh/known_hosts" "$agent_config/known_hosts")
+  fi
 fi
 
 for e in "${ENV_ARGS[@]}"; do

@@ -44,6 +44,7 @@ from .groups import (
     validate_group,
 )
 from .internal_auth import bearer_ok, write_token
+from .mcp_auth import BearerAuthMiddleware, TokenMissingError, read_token
 from .normalize import (
     MAX_TAG_LENGTH,
     content_hash,
@@ -343,6 +344,7 @@ def build_server(
     start_reconciler: bool = True,
     headers_provider: HeadersProvider = headers_from_context,
     internal_token: str | None = None,
+    mcp_token: str | None = None,
 ) -> MemoryServer:
     backend = backend or GraphitiBackend(config.graphiti_url, timeout=config.upstream_timeout)
     registry = registry or Registry(config.state_dir)
@@ -1335,7 +1337,7 @@ def build_server(
     async def health(_request: Request) -> JSONResponse:  # pragma: no cover - HTTP wiring
         return JSONResponse({"status": "ok", "service": "memory-mcp"})
 
-    return MemoryServer(mcp, reconciler, start_reconciler=start_reconciler)
+    return MemoryServer(mcp, reconciler, start_reconciler=start_reconciler, mcp_token=mcp_token)
 
 
 async def _reject_body(send: Any, detail: str) -> None:
@@ -1413,6 +1415,9 @@ class MemoryServer:
     mcp: FastMCP
     reconciler: Reconciler
     start_reconciler: bool = True
+    # An explicit bearer token for tests; production leaves it None so the
+    # middleware re-reads the sops secret on every request.
+    mcp_token: str | None = None
 
     def streamable_http_app(self) -> Starlette:
         app = self.mcp.streamable_http_app()
@@ -1435,7 +1440,9 @@ class MemoryServer:
                         print(f"memory reconciler crashed: {exc}", file=sys.stderr)
 
         app.router.lifespan_context = lifespan
-        return BodyLimitMiddleware(app)
+        # The token gate is outermost: an unauthenticated caller is refused
+        # before its body is read or buffered.
+        return BearerAuthMiddleware(BodyLimitMiddleware(app), token=self.mcp_token)
 
 
 def main() -> int:
@@ -1445,6 +1452,13 @@ def main() -> int:
     except Exception as exc:
         print(f"memory-mcp: failed to initialize: {exc}", file=sys.stderr)
         return 1
+    # Fail closed, but keep listening: a missing secret must be a clear log
+    # line and a 503 on every request, not a service that never starts and
+    # hides the reason behind a restart loop.
+    try:
+        read_token()
+    except TokenMissingError as exc:
+        print(f"memory-mcp: {exc}; rejecting every request except /health", file=sys.stderr)
     uvicorn.run(
         server.streamable_http_app(),
         host=config.host,
