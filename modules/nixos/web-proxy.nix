@@ -17,7 +17,6 @@ let
     "llm"
     "memory"
     "chat"
-    "s3"
   ];
 in
 {

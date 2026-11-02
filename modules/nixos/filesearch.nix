@@ -1,5 +1,5 @@
 # Read-only file search over allowlisted home directories, served as MCP to
-# LobeChat. The server is loopback-only; path confinement, secret filtering,
+# Open WebUI. The server is loopback-only; path confinement, secret filtering,
 # and the employer check live in `memory_mcp.files`, which reuses memory's work
 # markers so a work checkout can never be searched from the phone.
 {
@@ -17,7 +17,7 @@ let
 in
 {
   options.filesearch = {
-    enable = lib.mkEnableOption "the read-only file-search MCP for LobeChat";
+    enable = lib.mkEnableOption "the read-only file-search MCP for Open WebUI";
 
     roots = lib.mkOption {
       type = lib.types.listOf lib.types.str;
