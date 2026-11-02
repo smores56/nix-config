@@ -122,6 +122,10 @@ in
       enable = true;
       device = "/dev/disk/by-id/ata-ST5000LM000-2AN170_WCJ42WX0";
     };
+    # Proton Drive is no longer a backup target, but the mount stays until T1's
+    # checksum verification passes: the account is the rollback and the only
+    # other copy of the repatriated data. Removing it is T1's own step.
+    protonDrive.enable = true;
     alerting = {
       enable = true;
       accountId = "385f7d47e2e8438fbda5d6f76d760434";
