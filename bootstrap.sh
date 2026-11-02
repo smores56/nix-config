@@ -19,7 +19,6 @@ REPO_NAME="nix-config"
 REPO_URL_HTTPS="https://github.com/${REPO_OWNER}/${REPO_NAME}.git"
 REPO_URL_SSH="git@github.com:${REPO_OWNER}/${REPO_NAME}.git"
 GITHUB_HOST="github.com"
-GITHUB_USER="${BOOTSTRAP_GITHUB_USER:-${REPO_OWNER}}"
 CODE_ROOT="${BOOTSTRAP_CODE_ROOT:-${HOME}/code}"
 REPO_DIR="${CODE_ROOT}/${GITHUB_HOST}/${REPO_OWNER}/${REPO_NAME}"
 
@@ -140,41 +139,7 @@ else
   warn "Some SSH public keys are missing (see above); fix that and re-run this script."
 fi
 
-# ── Phase 5: GitHub authentication ────────────────────────────────
-
-# gh only needs a login here: git and gh themselves use the sops PATs
-# (modules/features/github-credentials.nix), and no SSH key is registered with
-# GitHub, so there are no key scopes to request.
-# A headless host authenticates with the vault's GitHub PAT (sops-delivered,
-# non-interactive); elsewhere use the device code flow in a browser.
-GITHUB_PAT_FILE="${GITHUB_PAT_FILE:-/run/secrets/github-key-pat}"
-if gh auth token --hostname "$GITHUB_HOST" --user "$GITHUB_USER" >/dev/null 2>&1; then
-  skip "Already authenticated with GitHub as ${GITHUB_USER}"
-elif [ -s "$GITHUB_PAT_FILE" ]; then
-  info "Authenticating with GitHub as ${GITHUB_USER} with the vault PAT..."
-  gh auth login --hostname "$GITHUB_HOST" --git-protocol https --with-token <"$GITHUB_PAT_FILE"
-  gh auth token --hostname "$GITHUB_HOST" --user "$GITHUB_USER" >/dev/null 2>&1 \
-    || err "GitHub PAT authentication did not create credentials for ${GITHUB_USER}."
-  ok "GitHub authentication complete"
-else
-  info "Authenticating with GitHub as ${GITHUB_USER} (device code flow)..."
-  info "A code will appear below. Visit https://github.com/login/device from any browser to enter it."
-  gh auth login --hostname "$GITHUB_HOST" --git-protocol https --web
-  gh auth token --hostname "$GITHUB_HOST" --user "$GITHUB_USER" >/dev/null 2>&1 \
-    || err "GitHub authentication did not create credentials for ${GITHUB_USER}. Re-run and choose ${GITHUB_USER} in the browser."
-  ok "GitHub authentication complete"
-fi
-
-info "Selecting GitHub account ${GITHUB_USER}..."
-gh auth switch --hostname "$GITHUB_HOST" --user "$GITHUB_USER" >/dev/null \
-  || err "Unable to select GitHub account ${GITHUB_USER}. Run: gh auth switch --hostname ${GITHUB_HOST} --user ${GITHUB_USER}"
-ok "Using GitHub account ${GITHUB_USER}"
-
-ACTIVE_GITHUB_USER="$(gh api user --jq .login 2>/dev/null || true)"
-[ "$ACTIVE_GITHUB_USER" = "$GITHUB_USER" ] \
-  || err "gh is authenticated as '${ACTIVE_GITHUB_USER:-unknown}', expected '${GITHUB_USER}'. Unset GH_TOKEN/GITHUB_TOKEN or authenticate as ${GITHUB_USER}."
-
-# ── Phase 6: NixOS setup ──────────────────────────────────────────
+# ── Phase 5: NixOS setup ──────────────────────────────────────────
 
 if is_nixos && has_nixos_config; then
   info "NixOS detected with config for ${HOSTNAME}"
@@ -200,7 +165,7 @@ elif is_nixos; then
   warn "Add modules/hosts/${HOSTNAME}/meta.nix (with nixos = true) and re-run."
 fi
 
-# ── Phase 7: Proton mount credentials ────────────────────────────
+# ── Phase 6: Proton mount credentials ────────────────────────────
 
 # Only the host with protonDrive enabled installs this unit. rclone cannot
 # provision Proton unattended (password + a TOTP code are required, and

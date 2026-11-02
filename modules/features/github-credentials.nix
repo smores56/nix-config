@@ -56,7 +56,9 @@ let
         esac
       done
 
-      [ "$protocol" = https ] && [ "''${host,,}" = github.com ] || exit 0
+      host=''${host,,}
+      host=''${host%:443}
+      [ "$protocol" = https ] && [ "$host" = github.com ] || exit 0
 
       stop() {
         printf 'github-credential-helper: %s\n' "$1" >&2
@@ -77,9 +79,13 @@ let
   };
 
   # `gh` reads GH_TOKEN, and gh's own git calls (repo clone, pr checkout) use
-  # it too, so the token must match the repository the command targets. Take
-  # the owner from what the command names, in gh's own order of precedence,
-  # and only fall back to the current checkout's origin.
+  # it too, so the token must match the repository the command targets. The
+  # owner comes from what gh itself would target, in gh's order: -R/--repo,
+  # GH_REPO, the command's own argument (`repo <verb> owner/name`,
+  # `pr|issue <verb> <URL>`, the `api` endpoint), then the checkout's default
+  # remote; with nothing to go on, the personal account. Free-text values
+  # (--body, -f query=...) never count. GH_PAT_RESOLVE_ONLY=1 prints the
+  # resolved owner and exits, for tests.
   ghWithPat = pkgs.writeShellApplication {
     name = "gh-pat";
     runtimeInputs = [
@@ -92,72 +98,137 @@ let
       if [ -n "''${GH_TOKEN:-}" ]; then
         exec ${pkgs.gh}/bin/gh "$@"
       fi
+      # Another GitHub host is not either account's; leave gh to its own login.
+      if [ -n "''${GH_HOST:-}" ] && [ "''${GH_HOST,,}" != github.com ]; then
+        exec ${pkgs.gh}/bin/gh "$@"
+      fi
 
-      # "owner/name", "HOST/owner/name" or a URL -> owner.
+      # "owner/name", "github.com/owner/name" or a github.com URL -> owner;
+      # prints nothing for anything else.
       owner_of() {
-        local ref=''${1#*://}
-        case "$ref" in
-          github.com/* | www.github.com/*) ref=''${ref#*/} ;;
+        local ref=$1
+        case "''${ref,,}" in
+          https://github.com/* | http://github.com/* | https://www.github.com/* | github.com/*)
+            ref=''${ref#*://}
+            ref=''${ref#*/}
+            ;;
+          https://api.github.com/*)
+            ref=''${ref#*://*/}
+            ;;
+          *://*) return 0 ;;
         esac
         printf '%s' "''${ref%%/*}"
       }
 
-      owner="" args=("$@")
+      # The endpoint of `gh api`: its first operand, skipping flags and the
+      # values of the flags that take one.
+      api_owner() {
+        local endpoint="" skip=0
+        for arg in "$@"; do
+          if [ "$skip" = 1 ]; then
+            skip=0
+            continue
+          fi
+          case "$arg" in
+            -X | --method | -H | --header | -f | --raw-field | -F | --field | \
+              -q | --jq | -t | --template | --input | --hostname | --cache | -p | --preview)
+              skip=1
+              ;;
+            -*) ;;
+            *)
+              endpoint=$arg
+              break
+              ;;
+          esac
+        done
+        case "''${endpoint,,}" in
+          https://api.github.com/*) endpoint=''${endpoint#*://*/} ;;
+          *://*) return 0 ;;
+        esac
+        endpoint=''${endpoint#/}
+        case "$endpoint" in
+          repos/*/* | orgs/*)
+            endpoint=''${endpoint#*/}
+            endpoint=''${endpoint%%/*}
+            # {owner} / :owner placeholders are gh's own: fall back to the
+            # checkout it would expand them from.
+            case "$endpoint" in
+              \{* | :*) ;;
+              *) printf '%s' "$endpoint" ;;
+            esac
+            ;;
+        esac
+      }
+
+      # gh's default remote: an explicit `gh repo set-default`, else upstream,
+      # github, origin.
+      checkout_owner() {
+        local remote url
+        remote=$(git config --get-regexp '^remote\..*\.gh-resolved$' 2>/dev/null |
+          while read -r key value; do
+            [ "$value" = base ] && { key=''${key#remote.}; printf '%s' "''${key%.gh-resolved}"; break; }
+          done) || true
+        for candidate in "$remote" upstream github origin; do
+          [ -n "$candidate" ] || continue
+          if url=$(git remote get-url "$candidate" 2>/dev/null); then
+            url=''${url%.git}
+            url=''${url%/*}
+            printf '%s' "''${url##*[:/]}"
+            return 0
+          fi
+        done
+      }
+
+      owner="" explicit=0 args=("$@")
       for ((i = 0; i < ''${#args[@]}; i++)); do
         case "''${args[i]}" in
-          -R | --repo) owner=$(owner_of "''${args[i + 1]:-}") && break ;;
-          --repo=*) owner=$(owner_of "''${args[i]#--repo=}") && break ;;
-          -R?*) owner=$(owner_of "''${args[i]#-R}") && break ;;
+          --) break ;;
+          -R | --repo) owner=$(owner_of "''${args[i + 1]:-}") explicit=1 && break ;;
+          --repo=*) owner=$(owner_of "''${args[i]#--repo=}") explicit=1 && break ;;
+          -R?*) owner=$(owner_of "''${args[i]#-R}") explicit=1 && break ;;
         esac
       done
-      if [ -z "$owner" ] && [ -n "''${GH_REPO:-}" ]; then
-        owner=$(owner_of "$GH_REPO")
+      if [ "$explicit" = 0 ] && [ -n "''${GH_REPO:-}" ]; then
+        owner=$(owner_of "$GH_REPO") explicit=1
       fi
-      if [ -z "$owner" ]; then
-        for arg in "$@"; do
-          case "$arg" in
-            https://github.com/* | http://github.com/* | github.com/*)
-              owner=$(owner_of "$arg")
-              break
-              ;;
-          esac
-        done
+      if [ "$explicit" = 0 ]; then
+        target=''${3:-}
+        case "''${1:-}" in
+          repo)
+            case "$target" in
+              -* | "") ;;
+              */*) owner=$(owner_of "$target") explicit=1 ;;
+            esac
+            ;;
+          pr | issue)
+            case "''${target,,}" in
+              https://* | http://* | github.com/*) owner=$(owner_of "$target") explicit=1 ;;
+            esac
+            ;;
+          api)
+            owner=$(api_owner "''${@:2}")
+            [ -n "$owner" ] && explicit=1
+            ;;
+        esac
       fi
-      if [ -z "$owner" ] && [ "''${1:-}" = repo ]; then
-        for arg in "''${@:3}"; do
-          case "$arg" in
-            -*) ;;
-            */*) owner=$(owner_of "$arg") && break ;;
-          esac
-        done
+      if [ "$explicit" = 0 ]; then
+        owner=$(checkout_owner)
+        [ -n "$owner" ] || owner=${lib.escapeShellArg config.user.githubUser}
       fi
-      if [ -z "$owner" ] && [ "''${1:-}" = api ]; then
-        for arg in "''${@:2}"; do
-          case "$arg" in
-            repos/*/* | /repos/*/*)
-              arg=''${arg#/}
-              arg=''${arg#repos/}
-              owner=''${arg%%/*}
-              break
-              ;;
-          esac
-        done
+
+      if ! file=$(${lib.getExe tokenFile} "$owner"); then
+        owner=""
+        file=""
       fi
-      if [ -z "$owner" ] && url=$(git remote get-url origin 2>/dev/null); then
-        url=''${url%.git}
-        url=''${url%/*}
-        owner=''${url##*[:/]}
+      if [ -n "''${GH_PAT_RESOLVE_ONLY:-}" ]; then
+        printf '%s\n' "''${owner:-<none>}"
+        exit 0
       fi
 
       token=""
-      if file=$(${lib.getExe tokenFile} "$owner"); then
-        if [ -r "$file" ]; then
-          token=$(tr -d '[:space:]' <"$file")
-        fi
-      else
-        owner=""
+      if [ -n "$file" ] && [ -r "$file" ]; then
+        token=$(tr -d '[:space:]' <"$file")
       fi
-
       if [ -z "$token" ]; then
         printf "gh: no token for owner '%s'\n" "''${owner:-<none>}" >&2
         exit 1
@@ -195,6 +266,8 @@ in
       # is registered for git), so every SSH spelling of a GitHub remote is
       # rewritten, matching the remote forms the owner includes recognise.
       url."https://github.com/".insteadOf = [
+        # Longest match wins, so the slash-led scp form loses its extra slash.
+        "git@github.com:/"
         "git@github.com:"
         "github.com:"
         "ssh://git@github.com/"

@@ -58,8 +58,9 @@ nix run github:smores56/nix-config#bootstrap
 
 The served copy at `bootstrap.sammohr.dev` is not provisioned by this repo;
 use the flake app above. It clones the repo via `ghq`, runs
-`home-manager switch`, writes the committed SSH public keys,
-authenticates GitHub, and (on NixOS) applies the system configuration.
+`home-manager switch`, writes the committed SSH public keys, and (on NixOS)
+applies the system configuration. GitHub needs no login step: git and `gh`
+use each account's sops PAT once the home is active.
 
 ### Manual
 

@@ -1391,7 +1391,10 @@ launcher reads it before entering the sandbox because `securityd` is denied
 inside. GitHub needs no Keychain item: the sandbox reads each account's sops
 PAT and signing key through `~/.local/share/github`, selected by the target
 repository's owner, so delete any old `maki-github-pat` item with
-`security delete-generic-password -s maki-github-pat`.
+`security delete-generic-password -s maki-github-pat`. The Seatbelt profile allows those files'
+resolved paths as they are at launch, so relaunch a long-running sandbox after
+sops-nix re-decrypts (a `home-manager switch` that changes secrets, or the
+`launchctl kickstart` below).
 
 ### immich-agent-api-key
 
