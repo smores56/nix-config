@@ -259,40 +259,12 @@ in
                 "${src}/modules/features/backup/github-verify.sh"
               ];
             };
-            backup-watch = {
-              tools = [
-                pkgs.inotify-tools
-                pkgs.coreutils
-                pkgs.findutils
-              ];
-              args = [ "${src}/modules/features/backup/backup_watch.sh" ];
-            };
-            restore-drill = {
-              tools = [
-                pkgs.util-linux
-                pkgs.coreutils
-              ];
-              args = [ "${src}/modules/features/backup/drills/restore-drill.sh" ];
-            };
             # Exercises `memory export`/`restore` against temp dirs: a live WAL
             # registry, checksums, retention, the schema guard, and the graph
             # mismatch path. No root, no FalkorDB, no network.
             memory-export-restore = {
               tools = [ pkgs.python3 ];
               args = [ "${src}/modules/features/ai/memory/src" ];
-            };
-            backup-plain = {
-              tools = [
-                # The same rclone generation the NixOS module overlays in
-                # (nixpkgs-unstable, 1.75.1); the pinned nixpkgs rclone 1.74.4
-                # predates --files-from0, which the scoped check needs.
-                inputs.nixpkgs-unstable.legacyPackages.${system}.rclone
-                pkgs.jq
-                pkgs.coreutils
-                pkgs.util-linux
-                pkgs.findutils
-              ];
-              args = [ "${src}/modules/features/backup/backup.sh" ];
             };
             manual-steps-sync = {
               tools = [ pkgs.jq ];
@@ -327,9 +299,6 @@ in
           sortedUnique = xs: lib.sort builtins.lessThan (lib.unique xs);
         in
         builtins.toJSON {
-          datasets = sortedUnique (
-            lib.concatMap (n: lib.attrNames n.config.backup.datasets) (lib.filter (n: n.options ? backup) nixos)
-          );
           services = sortedUnique (
             lib.concatMap (
               n:
@@ -344,9 +313,7 @@ in
           );
           alerts = sortedUnique (
             lib.concatMap (
-              n:
-              lib.optional (n.config.systemd.services ? backup-freshness) "backup-freshness"
-              ++ lib.optional (n.config.systemd.services ? "cloudflare-email@") "unit-failure"
+              n: lib.optional (n.config.systemd.services ? "cloudflare-email@") "unit-failure"
             ) nixos
           );
         }
@@ -594,24 +561,12 @@ in
               shellcheck ${src}/modules/lib/fido2-pin.sh
               bash -n ${src}/tests/fido2_ensure_pin.sh
               shellcheck ${src}/tests/fido2_ensure_pin.sh
-              bash -n ${src}/modules/features/backup/drills/restore-drill.sh
-              shellcheck ${src}/modules/features/backup/drills/restore-drill.sh
               bash -n ${src}/modules/features/backup/github-mirror.sh
               shellcheck ${src}/modules/features/backup/github-mirror.sh
               bash -n ${src}/modules/features/backup/github-metadata.sh
               shellcheck ${src}/modules/features/backup/github-metadata.sh
               bash -n ${src}/modules/features/backup/github-verify.sh
               shellcheck ${src}/modules/features/backup/github-verify.sh
-              bash -n ${src}/modules/features/backup/backup_watch.sh
-              shellcheck ${src}/modules/features/backup/backup_watch.sh
-              bash -n ${src}/modules/features/backup/backup.sh
-              shellcheck ${src}/modules/features/backup/backup.sh
-              bash -n ${src}/tests/backup_watch.sh
-              shellcheck ${src}/tests/backup_watch.sh
-              bash -n ${src}/tests/backup_plain.sh
-              shellcheck ${src}/tests/backup_plain.sh
-              bash -n ${src}/tests/restore_drill.sh
-              shellcheck ${src}/tests/restore_drill.sh
               bash -n ${src}/tests/memory_export_restore.sh
               shellcheck ${src}/tests/memory_export_restore.sh
               bash -n ${src}/tests/manual_steps_sync.sh

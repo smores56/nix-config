@@ -116,22 +116,18 @@ memory-rebuild:
     sudo rm -f /var/lib/memory/registry.sqlite* /var/lib/memory/index.sqlite* /var/lib/memory/audit.jsonl /var/lib/memory/internal.token /var/lib/memory/.restore-in-progress
     sudo systemctl start memory-falkordb memory-llm-proxy memory-graphiti-mcp memory-mcp
 
-# Show backup timers and failed backup units.
+# Show the restic timers and any failed backup units.
 backup-status:
-    systemctl list-timers 'backup-*'
-    systemctl --failed 'backup-*'
+    systemctl list-timers 'restic-*'
+    systemctl --failed 'restic-*'
 
-# Start one backup run (dataset name, lowercase).
-backup-run name:
-    sudo systemctl start backup-{{name}}.service
+# Start one restic run (repo name: r2 or local).
+backup-run repo:
+    sudo systemctl start restic-backups-{{repo}}.service
 
-# Follow a backup unit's journal.
-backup-logs name:
-    journalctl -u backup-{{name}}.service -f
-
-# Prove the local and offsite mirrors against the live source.
-restore-drill dataset:
-    sudo bash modules/features/backup/drills/restore-drill.sh {{dataset}}
+# Follow a restic unit's journal.
+backup-logs repo:
+    journalctl -u restic-backups-{{repo}}.service -f
 
 # Update every flake input.
 update:

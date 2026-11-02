@@ -2,15 +2,12 @@
 # the metadata GitHub keeps outside git (issues, PRs, discussions, releases)
 # with python-github-backup.
 #
-# GitHub already holds the offsite copy of everything, but the mirror is also
-# copied to Proton: the first seed is large, then only new/changed packs move.
-# The driver's scoped offsite check marks the mirror verified.
-# ghorg refreshes the bare mirrors in the dataset's preBackup step (it clones on
-# the first run and `git remote update`s thereafter), then pgb refreshes
-# /var/lib/data/github-mirrors/meta incrementally and a verification step writes
-# manifests/<date>/. The driver then rclone-copies /var/lib/data/github-mirrors
-# into <mount>/GitHub/current, metadata and manifests included, so that leg needs
-# no driver change.
+# GitHub already holds the offsite copy of everything; the mirror lives inside
+# the durable tree (/var/lib/data), so restic carries it with everything else.
+# ghorg refreshes the bare mirrors nightly (it clones on the first run and
+# `git remote update`s thereafter), then pgb refreshes
+# /var/lib/data/github-mirrors/meta incrementally and a verification step
+# writes manifests/<date>/.
 {
   config,
   lib,
@@ -68,9 +65,9 @@ let
     lib.mapAttrsToList (name: value: "${name}=${lib.escapeShellArg value}") mirrorEnv
   );
 
-  # Daily chain, in the preBackup: ghorg refreshes the bare mirrors, then pgb
-  # runs incrementally (-i) and the verifier fails the run on a repo-set,
-  # count, checkpoint, or fsck mismatch.
+  # The nightly chain: ghorg refreshes the bare mirrors, then pgb runs
+  # incrementally (-i) and the verifier fails the run on a repo-set, count,
+  # checkpoint, or fsck mismatch.
   mirror = pkgs.writeShellScript "github-mirror-env" ''
     cd /
     exec ${pkgs.coreutils}/bin/env -i ${envArgs} \
@@ -89,6 +86,32 @@ let
         ${../features/backup/github-metadata.sh} ${lib.escapeShellArg config.user.githubUser} \
         ${../features/backup/github-verify.sh}
   '';
+
+  # Both units run as root inside the same sandbox: they write only the mirror
+  # tree, and /run/lock is the shared host lock the metadata swap takes.
+  hardening = {
+    User = "root";
+    UMask = "0077";
+    NoNewPrivileges = true;
+    PrivateTmp = true;
+    ProtectHome = true;
+    ProtectSystem = "strict";
+    ReadWritePaths = [
+      mirrorRoot
+      "/run/lock"
+    ];
+    ProtectClock = true;
+    ProtectHostname = true;
+    ProtectKernelLogs = true;
+    ProtectKernelModules = true;
+    ProtectKernelTunables = true;
+    RestrictAddressFamilies = [
+      "AF_INET"
+      "AF_INET6"
+      "AF_UNIX"
+    ];
+    RestrictNamespaces = true;
+  };
 in
 {
   options.githubBackup = lib.mkOption {
@@ -110,17 +133,12 @@ in
         schedule = lib.mkOption {
           type = lib.types.str;
           default = "*-*-* 00:30:00";
-          description = "systemd OnCalendar for the mirror timer. The ghorg refresh runs before the shared Proton lock is taken, so it neither waits on nor starves the media datasets.";
+          description = "systemd OnCalendar for the nightly mirror timer.";
         };
         timeout = lib.mkOption {
           type = lib.types.str;
           default = "6h";
           description = "systemd TimeSpan cap on a run; generous for a cold clone and the first (non-incremental) metadata fetch of every repo.";
-        };
-        fullCheckSchedule = lib.mkOption {
-          type = lib.types.nullOr lib.types.str;
-          default = "Sun *-*-* 10:00:00";
-          description = "systemd OnCalendar for a periodic whole-tree verification (null disables). The nightly check only walks the files copied that run, so unchanged packs would otherwise never be re-read.";
         };
         fullMetadataSchedule = lib.mkOption {
           type = lib.types.str;
@@ -149,56 +167,36 @@ in
       "d ${mirrorRoot} 0700 root root -"
     ];
 
-    backup.datasets.GitHub = {
-      # ghorg writes <target>/<owner>_backup/<repo>/; pgb writes
-      # <target>/meta/repositories/<repo>/; the verifier writes
-      # <target>/manifests/<date>/. The dataset source is the parent, so the
-      # whole tree is mirrored without a driver change.
-      source = mirrorRoot;
-      offsite = true;
-      inherit (cfg) fullCheckSchedule schedule timeout;
-      preBackup = "${mirror}";
-      # meta.new/meta.old are the full pass's staging and old tree. They are
-      # transient and must not be copied mid-swap; the live meta is.
-      excludes = [
-        "/.cache/**"
-        "**/.cache/**"
-        "/rclone.conf"
-        "/meta.new/**"
-        "/meta.old/**"
-      ];
+    # Only smortress enables githubBackup, so these units exist only there.
+    systemd.services.github-mirror = {
+      description = "Refresh the GitHub mirrors (git via ghorg, metadata and verify)";
+      after = [ "network-online.target" ];
+      wants = [ "network-online.target" ];
+      onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
+      serviceConfig = hardening // {
+        Type = "oneshot";
+        ExecStart = "${mirror}";
+        TimeoutStartSec = cfg.timeout;
+      };
     };
 
-    # Only smortress enables githubBackup, so this unit exists only there.
+    systemd.timers.github-mirror = {
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnCalendar = cfg.schedule;
+        Persistent = true;
+      };
+    };
+
     systemd.services.github-metadata-full = {
       description = "Full non-incremental GitHub metadata backup with verify and swap";
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
-      serviceConfig = {
+      onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
+      serviceConfig = hardening // {
         Type = "oneshot";
         ExecStart = "${metadataFull}";
-        User = "root";
-        UMask = "0077";
         TimeoutStartSec = "12h";
-        NoNewPrivileges = true;
-        PrivateTmp = true;
-        ProtectHome = true;
-        ProtectSystem = "strict";
-        ReadWritePaths = [
-          mirrorRoot
-          "/run/lock"
-        ];
-        ProtectClock = true;
-        ProtectHostname = true;
-        ProtectKernelLogs = true;
-        ProtectKernelModules = true;
-        ProtectKernelTunables = true;
-        RestrictAddressFamilies = [
-          "AF_INET"
-          "AF_INET6"
-          "AF_UNIX"
-        ];
-        RestrictNamespaces = true;
       };
     };
 

@@ -220,35 +220,25 @@ could read must still be rotated. Runbook: *Admin age key (keys.age)* in
 ### Service failure alerts
 
 `alerting.enable` (implemented by `modules/nixos/alerting.nix`) sends unit
-failures and stale-backup warnings through Cloudflare Email Service. Every
-backup unit's `OnFailure` points at the `cloudflare-email@` template, and a
-five-minute freshness timer emails once per stale period. The token and
-non-secret account/from/to values are read from
-`/run/secrets/cloudflare-api-token` and the `alerting` options; no topic or
-listener runs on the host.
+failures through Cloudflare Email Service. Every backup unit's `OnFailure`
+points at the `cloudflare-email@` template. The token and non-secret
+account/from/to values are read from `/run/secrets/cloudflare-api-token` and
+the `alerting` options; no topic or listener runs on the host.
 
 ### Backups
 
-`backup` (the backup disk; `modules/nixos/backup.nix`) plus one
-`backup.datasets.<Name>` entry per dataset drives the backup pipeline: a
-versioned local mirror on the disk plus an append-only Proton mirror, kept as
-plain rclone directory trees (no repository or encryption layer). The driver is
-[`modules/features/backup/backup.sh`](modules/features/backup/backup.sh), one
-shell script run once per dataset; the Proton tree stays browsable in the Proton
-Drive app, which is the phone access path. Every
-dataset has a per-dataset timer, failure marker, and Cloudflare email alert.
-Media datasets can additionally set `onChange` to queue a run after
-a debounced batch of source changes, with the timer as the fallback. smortress
-backs up `Photos`/`Videos`/`Music` offsite (and change-triggered) and mirrors the
-`smores56` GitHub repos (git plus issue/PR metadata) both locally and offsite
-(`githubBackup`). The offsite target is a path, not an rclone remote: a single
-`rclone mount` at `/srv/proton` (`modules/nixos/proton-drive.nix`) owns the only
-Proton token, and the backups write through it as plain files; a Linux client's
-`pm` is an sshfs mount of the same tree. Setting `backup.remote` to a bare
-remote name (plus `backup.rcloneConfig`) still works for a host without that
-mount. The operator's guide
-— guarantees, trigger semantics, layout, restore and one-time prune procedures —
-is [`modules/features/backup/README.md`](modules/features/backup/README.md).
+restic is the driver (`modules/nixos/restic-backup.nix`): two encrypted repos —
+offsite in Cloudflare R2 and on the local encrypted backup disk
+(`modules/nixos/backup.nix`, LUKS) — hold the same snapshots of `/var/lib/data`,
+the whole durable tree, nightly, with 14 daily / 8 weekly / 12 monthly
+retention and a `restic check` after every run. The password is the
+`restic-password` sops secret; every run alerts on failure. `githubBackup`
+mirrors the `smores56` GitHub repos (git plus issue/PR metadata) into
+`/var/lib/data/github-mirrors` with its own nightly unit, so restic carries the
+mirror with everything else. Proton Drive remains the browsable file tree for
+the phone (`pm`), but no backup writes through it. The operator's guide — repos,
+restore drill, mirror units — is
+[`modules/features/backup/README.md`](modules/features/backup/README.md).
 
 ### Fingerprint enrollment
 
