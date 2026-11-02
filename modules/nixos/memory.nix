@@ -44,8 +44,10 @@ let
   # ever added, switch this to autoSubUidGidRange or move the range.
   memorySubidStart = 200000;
   # Nightly exports land here: root-owned (the exporter runs as root and reads
-  # the memory-owned graph volume), never written by the wrapper.
-  exportDir = "${dataDir}/export";
+  # the memory-owned graph volume), never written by the wrapper. The path sits
+  # inside the durable tree so restic covers one source, and it is a real
+  # directory because restic does not follow symlinks.
+  exportDir = "/var/lib/data/memory-export";
 
   # Work markers come from the shared identity so the wrapper and the shim
   # cannot disagree about what a work repo looks like.

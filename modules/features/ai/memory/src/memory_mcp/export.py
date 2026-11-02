@@ -47,7 +47,7 @@ EPISODES_FILE = "episodes.jsonl"
 MANIFEST_FILE = "manifest.json"
 GRAPH_FILE = "graph-{snapshot}.rdb"
 
-DEFAULT_ROOT = "/var/lib/memory/export"
+DEFAULT_ROOT = "/var/lib/data/memory-export"
 DEFAULT_STATE_DIR = "/var/lib/memory"
 DEFAULT_GRAPH_DIR = "/var/lib/memory/falkordb"
 DEFAULT_GRAPH_URL = "redis://127.0.0.1:6379"

@@ -1306,7 +1306,7 @@ Losing state is recoverable by importing the existing objects
 
 <!-- manual-step: dataset/GitHub -->
 
-Git bare mirrors plus issue/PR metadata under `/var/lib/github-mirrors`,
+Git bare mirrors plus issue/PR metadata under `/var/lib/data/github-mirrors`,
 nightly 00:30, local and offsite (`/srv/proton/GitHub`). Seeded on 2026-10-19; later
 runs transfer deltas only. The pre-unit refreshes every repo with ghorg, then
 runs `python-github-backup` incrementally into `meta/`, and fails unless the
@@ -1321,7 +1321,7 @@ the host lock. Check the last result with:
 
 ```sh
 systemctl status github-metadata-full.service
-jq . /var/lib/github-mirrors/manifests/$(date -u +%F)/counts.json
+jq . /var/lib/data/github-mirrors/manifests/$(date -u +%F)/counts.json
 ```
 
 Restore a repository from `/var/backup/GitHub/current/smores56_backup/<repo>`
@@ -1338,7 +1338,7 @@ account reaches, but these units only read.
 
 <!-- manual-step: dataset/MemoryExport -->
 
-Copy of `/var/lib/memory/export` taken at 05:30 (the export itself runs nightly
+Copy of `/var/lib/data/memory-export` taken at 05:30 (the export itself runs nightly
 from `memory-export.timer`, from midnight with up to an hour of delay), mirrored
 locally to `/var/backup/MemoryExport/current` and offsite to
 `/srv/proton/MemoryExport` like the other datasets. Each directory holds one registry
@@ -1681,7 +1681,7 @@ the corpus into a wiped store (`just memory-rebuild`).
 `memory-export.timer` runs `memory-export.service` daily (00:00 plus up to an
 hour of randomized delay, `Persistent=true`, as root so it can stop/start the
 services and read the graph directory) and writes one timestamped directory under
-`/var/lib/memory/export` (mode 0700, root):
+`/var/lib/data/memory-export` (mode 0700, root):
 
 - `registry.sqlite` — a consistent copy taken with SQLite's online backup API,
   so the wrapper keeps writing under WAL while it is copied;
@@ -1774,7 +1774,7 @@ restarts it, a failed ownership step leaves the previous registry in place, and
 an export refuses to run while the restore lock exists. It needs no root, no
 FalkorDB, and no network.
 
-**Offsite.** `backup.datasets.MemoryExport` mirrors `/var/lib/memory/export`
+**Offsite.** `backup.datasets.MemoryExport` mirrors `/var/lib/data/memory-export`
 (the plain-tree, versioned driver) to the backup disk and Proton, so the
 registry and its graph snapshot survive losing smortress. Recovery order is:
 restore the export, then `memory reindex --all` when the graph snapshot is

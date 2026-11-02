@@ -216,7 +216,7 @@ in
     # registry is small (one SQLite file plus one RDB per night). Root-owned,
     # and the driver runs as root, so nothing else needs access.
     backup.datasets.MemoryExport = {
-      source = "/var/lib/memory/export";
+      source = "/var/lib/data/memory-export";
       schedule = "*-*-* 05:30:00";
       timeout = "2h";
       onChange.enable = true;

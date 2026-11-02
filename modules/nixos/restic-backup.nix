@@ -8,9 +8,10 @@ let
 
   common = {
     paths = [
+      # The whole durable tree: vault ciphertext, wallpapers, media, the memory
+      # export, the GitHub mirrors, Radicale, Open WebUI and DB dumps. Nothing
+      # else needs a second source path.
       "/var/lib/data"
-      "/var/lib/memory/export"
-      "/var/lib/github-mirrors"
     ];
     passwordFile = config.sops.secrets.restic-password.path;
     initialize = true;

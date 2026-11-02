@@ -83,7 +83,7 @@ the code in [`backup.sh`](./backup.sh). This file is the operator's view.
 | `/srv/proton` | the single Proton `rclone mount` (`modules/nixos/proton-drive.nix`), owned by the `proton` user; offsite copies land under it. Mounted, dirs are 0770 and files 0660 `proton:proton` (group `proton` only); unmounted, the path is a root-owned `0770 root:proton` directory |
 | `/var/lib/proton/rc.sock` | the mount's own rclone RC socket, inside the 0700 state dir: the driver drains the upload queue and forgets cached listings through it, and the health check queries the backend |
 | `/var/lib/proton/rclone.conf` | the only Proton token, mode 0600 `proton:proton`, **runtime only — never in the Nix store or sops**; only the mount process reads it |
-| `/var/lib/github-mirrors/<owner>_backup/<repo>` | ghorg bare git mirrors, refreshed in place (Disk 1) |
+| `/var/lib/data/github-mirrors/<owner>_backup/<repo>` | ghorg bare git mirrors, refreshed in place (Disk 1) |
 | `/var/backup/GitHub/current` | local mirror of the GitHub mirrors (Disk 2) |
 | `/run/lock/media-backup.lock` | driver-owned lock, mode 0600, serializing the datasets that write through the one offsite target; local-only datasets take `/run/lock/media-backup-<name>.lock` instead |
 | `/run/backup-watch/<name>/` | request queue for a dataset with `onChange` enabled: the watcher creates a file per debounced batch, and the backup unit drains it |
@@ -102,7 +102,7 @@ backup run needs no rclone config; `backup.remote` still accepts a remote name
 | `Photos` | `/var/lib/media/Photos` | 03:00 | `onChange` (15m) | Sun 06:00 | yes | `pg_dump -Fc` of `immich` into `current/db/immich.dump` |
 | `Videos` | `/var/lib/media/Videos` | 01:00 | `onChange` (15m) | Sun 07:00 | yes | — |
 | `Music` | `/var/lib/media/Music` | 05:00 | `onChange` (15m) | Sun 08:00 | yes | — |
-| `GitHub` | `/var/lib/github-mirrors` | 00:30 | timer only | Sun 10:00 | yes | `ghorg` refresh, then incremental `python-github-backup` metadata + verification (see below) |
+| `GitHub` | `/var/lib/data/github-mirrors` | 00:30 | timer only | Sun 10:00 | yes | `ghorg` refresh, then incremental `python-github-backup` metadata + verification (see below) |
 | `CloudflareTofu` | `/var/lib/cloudflare-tofu` | 00:15 | timer only | — | yes | — |
 
 Every dataset excludes `/.cache/**`, `**/.cache/**` and `/rclone.conf` by
@@ -131,7 +131,7 @@ objects) to 45–52 files (2.2–2.6 MiB) when fetches bring objects. No periodi
 `git repack` runs, so packs are not rewritten and the copy-based mirror does
 not re-upload unchanged data.
 
-Layout under `/var/lib/github-mirrors` (the dataset source):
+Layout under `/var/lib/data/github-mirrors` (the dataset source):
 
 | Path | Contents |
 | --- | --- |
