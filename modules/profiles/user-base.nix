@@ -10,6 +10,7 @@
     ../features/proton-drive.nix
     ../features/sops.nix
     ../features/cloudflared.nix
+    ../features/syncthing.nix
     ../features/theme.nix
   ];
   nixos = [ ];

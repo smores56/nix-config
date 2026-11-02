@@ -16,6 +16,15 @@ in
   home = true;
 
   homeOptions = {
+    # The vault ciphertext is shared by Syncthing; the server only relays it and
+    # never unlocks. Version history lives outside `/var/lib/data` so restic's
+    # one source path does not carry it.
+    syncthing = {
+      enable = true;
+      device = "smortress";
+      vaultPath = "/var/lib/data/vault";
+      versioningPath = "/var/lib/syncthing-versions/vault";
+    };
     calibre = {
       enable = true;
       # OPDS password comes from sops (owner smores, 0400) instead of the
@@ -40,7 +49,16 @@ in
       "d /var/lib/data/books 0775 smores users -"
       "d /var/lib/agent 0775 smores users -"
       "d /var/lib/agent/books-ingest 0775 smores users -"
+      # Syncthing's staggered versions for the vault: outside the durable tree,
+      # so restic's snapshots never carry them.
+      "d /var/lib/syncthing-versions 0700 smores users -"
     ];
+    # The vault is shared by a home-manager user unit; lingering starts it at
+    # boot without a login.
+    users.users.smores.linger = true;
+    # Cryptomator's flattened layout is roughly two directories per cleartext
+    # folder, so the watcher needs more watches than the default allows.
+    boot.kernel.sysctl."fs.inotify.max_user_watches" = 204800;
     exposeSsh.enable = true;
     nvidia.enable = true;
     llm.enable = true;

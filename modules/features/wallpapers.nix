@@ -11,9 +11,9 @@
 let
   inherit (pkgs.stdenv.hostPlatform) isLinux;
 
-  # The client's existing option owns where the Proton tree lives on smortress.
-  serverPath = (config.protonDrive or { }).serverPath or "/srv/proton";
-  source = "smortress:${serverPath}/Wallpapers/";
+  # Wallpapers are pulled from the durable tree on smortress, not from the Proton
+  # mount: the mount is retired with #295.
+  source = "smortress:/var/lib/data/wallpapers/";
   cacheDir = "${config.home.homeDirectory}/.cache/wallpapers";
   intervalHours = 3;
 
