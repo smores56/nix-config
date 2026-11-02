@@ -102,6 +102,10 @@ git -C "$work/resolved" config remote.mine.gh-resolved base
 mkrepo "$work/sole" mirror "https://github.com/$WORK_OWNER/svc/"
 mkrepo "$work/resolved-name" origin "https://github.com/$PERSONAL_OWNER/svc.git"
 git -C "$work/resolved-name" config remote.origin.gh-resolved "$WORK_OWNER_2/svc"
+mkrepo "$work/ranked" github "https://github.com/$PERSONAL_OWNER/svc.git" upstream "ssh://git@github.com:22/$WORK_OWNER/svc.git"
+mkrepo "$work/unknown" one "https://github.com/$WORK_OWNER/a.git" two "https://github.com/$WORK_OWNER/b.git"
+mkrepo "$work/bare"
+mkrepo "$work/ghe" origin "https://acme.ghe.com/$WORK_OWNER/svc.git"
 mkdir -p "$work/outside"
 
 check_gh() {
@@ -117,6 +121,16 @@ check_gh fork "$WORK_OWNER_2" "$gh_pat" pr create
 check_gh resolved "$PERSONAL_OWNER" "$gh_pat" pr list
 check_gh resolved-name "$WORK_OWNER_2" "$gh_pat" pr list
 check_gh sole "$WORK_OWNER" "$gh_pat" pr list
+check_gh ranked "$WORK_OWNER" "$gh_pat" pr list
+check_gh unknown "$PERSONAL_OWNER" "$gh_pat" pr list
+check_gh bare "$PERSONAL_OWNER" "$gh_pat" pr list
+# Another host never gets either account's token.
+check_gh ghe "<other-host>" "$gh_pat" pr list
+check_gh personal "<other-host>" env GH_HOST=acme.ghe.com "$gh_pat" pr list
+check_gh personal "<other-host>" "$gh_pat" api --hostname acme.ghe.com user
+check_gh personal "<other-host>" "$gh_pat" api https://acme.ghe.com/api/v3/user
+check_gh personal "$PERSONAL_OWNER" "$gh_pat" api --hostname github.com user
+check_gh personal "$PERSONAL_OWNER" "$gh_pat" pr comment 3 --body https://evil.example/x
 # Nothing targeted and no checkout: the personal account, not a failure.
 check_gh outside "$PERSONAL_OWNER" "$gh_pat" auth status
 check_gh outside "$PERSONAL_OWNER" "$gh_pat" api user
@@ -125,6 +139,8 @@ check_gh personal "$WORK_OWNER" "$gh_pat" -R "$WORK_OWNER/svc" pr list
 check_gh personal "$WORK_OWNER_2" "$gh_pat" pr list --repo "$WORK_OWNER_2/svc"
 check_gh personal "$WORK_OWNER_2" "$gh_pat" issue list --repo="$WORK_OWNER_2/svc"
 check_gh personal "$WORK_OWNER" env "GH_REPO=$WORK_OWNER/svc" "$gh_pat" pr list
+check_gh personal "$WORK_OWNER" "$gh_pat" pr list "-R$WORK_OWNER/svc"
+check_gh personal "$WORK_OWNER_2" env "GH_REPO=$WORK_OWNER/svc" "$gh_pat" -R "$WORK_OWNER_2/svc" pr list
 check_gh outside "$WORK_OWNER_2" env "GH_REPO=github.com/$WORK_OWNER_2/svc" "$gh_pat" repo view
 check_gh personal "$WORK_OWNER" "$gh_pat" api -X POST "repos/$WORK_OWNER/svc/pulls"
 check_gh personal "$WORK_OWNER" "$gh_pat" api "https://api.github.com/orgs/$WORK_OWNER/repos" --jq .name

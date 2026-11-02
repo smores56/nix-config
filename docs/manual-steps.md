@@ -817,7 +817,7 @@ console proves the password before auto-login is removed.
 Fine-grained, **owner-wide** PAT for `smores56`, user-readable in
 `secrets/common.yaml`. Consumed by `github-credential-helper` and the
 PAT-aware `gh` wrapper (`modules/features/github-credentials.nix`) for HTTPS git
-and `gh`; the wrapper selects personal/work by the origin owner and an explicit
+and `gh`; the wrapper selects personal/work by the target repo's owner (rule in `modules/features/github-credentials.nix`) and an explicit
 `GH_TOKEN` overrides it. NixOS reads it from `/run/secrets`; the work Mac reads
 the same common-file secret through home-manager sops
 (`modules/hosts/smoreswork/sops.nix`). Permissions: Contents RW, Pull requests

@@ -85,7 +85,9 @@ let
   # else the checkout's default remote as gh picks it, else the personal
   # account. Positional repo arguments are not guessed at: name the other
   # account's repo with -R or GH_REPO. A miss only means the other account's
-  # token reaches GitHub and the call is refused; nothing leaves GitHub.
+  # token reaches github.com and the call is refused. Any other host (GH_HOST,
+  # --hostname, an api URL, or a checkout's remote) gets no token at all, since
+  # gh would also send GH_TOKEN to *.ghe.com.
   # GH_PAT_RESOLVE_ONLY=1 prints the resolved owner and exits, for tests.
   ghWithPat = pkgs.writeShellApplication {
     name = "gh-pat";
@@ -100,10 +102,32 @@ let
       if [ -n "''${GH_TOKEN:-}" ]; then
         exec ${pkgs.gh}/bin/gh "$@"
       fi
-      # Another GitHub host is not either account's; leave gh to its own login.
+      # Another GitHub host (Enterprise, *.ghe.com) is not either account's, and
+      # gh would send GH_TOKEN there too: leave gh to its own login.
+      other_host() {
+        if [ -n "''${GH_PAT_RESOLVE_ONLY:-}" ]; then
+          printf '<other-host>\n'
+          exit 0
+        fi
+        exec env -u GH_TOKEN ${pkgs.gh}/bin/gh "$@"
+      }
       if [ -n "''${GH_HOST:-}" ] && [ "''${GH_HOST,,}" != github.com ]; then
-        exec ${pkgs.gh}/bin/gh "$@"
+        other_host "$@"
       fi
+      prev=""
+      for arg in "$@"; do
+        case "$prev|''${arg,,}" in
+          --hostname\|github.com | *\|--hostname=github.com) ;;
+          --hostname\|* | *\|--hostname=*) other_host "$@" ;;
+          *\|https://* | *\|http://*)
+            case "''${arg,,}" in
+              https://github.com/* | https://api.github.com/* | https://www.github.com/* | http://github.com/*) ;;
+              *) [ "''${1:-}" = api ] && other_host "$@" ;;
+            esac
+            ;;
+        esac
+        prev=$arg
+      done
 
       # "owner/name", "github.com/owner/name" or a github.com URL -> owner;
       # prints nothing for anything else.
@@ -183,6 +207,10 @@ let
         for candidate in "$remote" upstream github origin; do
           [ -n "$candidate" ] || continue
           if url=$(git remote get-url "$candidate" 2>/dev/null); then
+            case "''${url,,}" in
+              *github.com[:/]*) ;;
+              *) printf '%s' "@other-host" && return 0 ;;
+            esac
             url=''${url%/}
             url=''${url%.git}
             url=''${url%/*}
@@ -210,6 +238,7 @@ let
       fi
       if [ "$explicit" = 0 ]; then
         owner=$(checkout_owner)
+        [ "$owner" = "@other-host" ] && other_host "$@"
         [ -n "$owner" ] || owner=${lib.escapeShellArg config.user.githubUser}
       fi
 
