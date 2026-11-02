@@ -26,11 +26,17 @@ Two repos, same snapshots, one source path:
   tree.
 - **Password:** `sops.secrets.restic-password` (`/run/secrets/restic-password`),
   the same key for both repos. Losing it means losing both repos.
-- **Schedule:** nightly at 03:30 with up to 15 minutes of random delay;
-  `initialize = true`, so a fresh repo is created on the first run.
+- **Schedule:** nightly at 03:30 with up to 15 minutes of random delay
+  (`Persistent`, so a host that was off catches up); `initialize = true`, so a
+  fresh repo is created on the first run.
 - **Retention:** `forget --prune` with `--keep-daily 14 --keep-weekly 8
   --keep-monthly 12`.
 - **Integrity:** `runCheck = true` runs `restic check` after every backup.
+- **Database dump:** `restic-db-dump` runs as `postgres` and writes
+  `/var/lib/data/db/immich.dump` (`pg_dump -Fc --no-owner`, written to a temp
+  file and renamed). The Immich database is the library's source of truth, so
+  the dump has to exist inside the tree. Both repos `wants` it rather than
+  `requires`, so a stopped database delays no backup but still alerts.
 - **Failure alerting:** both generated units (`restic-backups-r2`,
   `restic-backups-local`) carry `onFailure = cloudflare-email@%n.service` when
   `alerting.enable` is on, so a failed nightly run mails its own journal. There

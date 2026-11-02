@@ -1205,6 +1205,12 @@ every run. Both units start `cloudflare-email@%n.service` on failure. The
 password is the `restic-password` secret (same for both repos); the R2
 credentials come from the sops-rendered `restic-r2.env`.
 
+Before each run, `restic-db-dump` writes `/var/lib/data/db/immich.dump` as
+`postgres` (`pg_dump -Fc --no-owner`, temp file then rename). The Immich database
+is the photo library's source of truth, so the dump has to be inside the tree;
+both repo units `wants` it, so a database that is down delays no backup and the
+dump unit mails its own failure.
+
 The NixOS module installs one wrapper per repo with the repository, password
 file and credentials already set:
 
@@ -1246,6 +1252,16 @@ rm -rf /var/tmp/restore-r2 /var/tmp/restore-local
 
 Both repos passed this drill on 2026-11-02 (267 GiB snapshots, 386 files; 2.34
 GiB of wallpapers restored, hashes identical).
+
+Restoring the Immich database from the same snapshot:
+
+```sh
+sudo restic-r2 restore latest --target /var/tmp/db-restore \
+  --include /var/lib/data/db/immich.dump
+sudo -u postgres createdb immich_restore
+sudo -u postgres pg_restore --no-owner -d immich_restore \
+  /var/tmp/db-restore/var/lib/data/db/immich.dump
+```
 
 ### Encrypted backup disk
 
