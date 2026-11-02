@@ -7,10 +7,10 @@
 # The driver's scoped offsite check marks the mirror verified.
 # ghorg refreshes the bare mirrors in the dataset's preBackup step (it clones on
 # the first run and `git remote update`s thereafter), then pgb refreshes
-# /var/lib/github-mirrors/meta incrementally and a verification step writes
-# manifests/<date>/. The driver then rclone-copies /var/lib/github-mirrors into
-# <mount>/GitHub/current, metadata and manifests included, so that leg needs no
-# driver change.
+# /var/lib/data/github-mirrors/meta incrementally and a verification step writes
+# manifests/<date>/. The driver then rclone-copies /var/lib/data/github-mirrors
+# into <mount>/GitHub/current, metadata and manifests included, so that leg needs
+# no driver change.
 {
   config,
   lib,
@@ -19,7 +19,9 @@
 }:
 let
   cfg = config.githubBackup;
-  mirrorRoot = "/var/lib/github-mirrors";
+  # Inside the durable tree, so restic has one source path and the mirrors are
+  # backed up with everything else.
+  mirrorRoot = "/var/lib/data/github-mirrors";
 
   # ghorg reads its config from $XDG_CONFIG_HOME/ghorg/conf.yaml; pin it at an
   # empty store dir so a stray root conf can never redirect a backup run.

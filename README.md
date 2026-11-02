@@ -424,7 +424,7 @@ model providers Maki may use.
 
   **Backup and restore.** The registry is the system of record, so its snapshot
   is the backup. `memory-export.timer` runs `memory-export.service` nightly as
-  root and writes `/var/lib/memory/export/<timestamp>/`: `registry.sqlite` from
+  root and writes `/var/lib/data/memory-export/<timestamp>/`: `registry.sqlite` from
   SQLite's online backup API (the wrapper keeps writing under WAL),
   `episodes.jsonl` with every episode's content and typed provenance,
   `manifest.json` with the schema version, per-status counts, and file
