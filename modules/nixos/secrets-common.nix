@@ -19,9 +19,12 @@
       sopsFile = ../../secrets/common.yaml;
       owner = config.machine.username;
       mode = "0400";
-      # Only smortress runs the memory gateway, and it reads the credential once
-      # at start; naming a unit other hosts lack would fail their activation.
-      restartUnits = lib.optional (config.systemd.services ? memory-llm-proxy) "memory-llm-proxy.service";
+      # Only smortress runs the memory gateway and Open WebUI, and both read the
+      # credential at start; naming a unit other hosts lack would fail their
+      # activation.
+      restartUnits =
+        lib.optional (config.systemd.services ? memory-llm-proxy) "memory-llm-proxy.service"
+        ++ lib.optional (config.systemd.services ? open-webui) "open-webui.service";
     };
 
     # Maki's web search key. The fish init exports it as TINYFISH_API_KEY on
