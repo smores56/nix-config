@@ -94,7 +94,12 @@ in
           d = hc.user;
           configFile = name: hc.xdg.configFile.${name}.source;
           signingKeys = import ../lib/signing-keys.nix;
-          signingKeyPath = name: hc.sops.secrets.${name}.path or "/run/secrets/${name}";
+          signingKeyFile =
+            name:
+            if pkgs.stdenv.hostPlatform.isDarwin then
+              "${hc.home.homeDirectory}/.local/share/git-signing/${name}"
+            else
+              "/run/secrets/${name}";
           homeExe =
             name:
             lib.getExe (
@@ -113,14 +118,13 @@ in
             PERSONAL_BRANCH_TEMPLATE = d.branchNaming.template;
             PERSONAL_BRANCH_UNTICKETED = toString d.branchNaming.unticketed;
             PERSONAL_OWNER = d.githubUser;
-            # Each account signs with its sops key; the work key exists only
-            # on a home that declares it, so other homes fall back to personal.
-            PERSONAL_SIGNING_KEY = signingKeyPath "github-personal-signing-key";
-            WORK_SIGNING_KEY =
-              if hc.sops.secrets ? github-work-signing-key then
-                signingKeyPath "github-work-signing-key"
-              else
-                signingKeyPath "github-personal-signing-key";
+            # Spelled out from the host facts, not the module's own lookup: the
+            # Darwin home links keys under git-signing, NixOS reads /run/secrets,
+            # and only the work host carries the work key.
+            PERSONAL_SIGNING_KEY = signingKeyFile "github-personal-signing-key";
+            WORK_SIGNING_KEY = signingKeyFile (
+              if hc.machine.workHost then "github-work-signing-key" else "github-personal-signing-key"
+            );
             PERSONAL_SIGNING_PUB = signingKeys.personal;
             WORK_SIGNING_PUB = signingKeys.work;
           };
@@ -486,8 +490,10 @@ in
               cmd=$(grep -o '/nix/store/[^"]*agent-ssh' "$shell/bin/agent-login-shell" | head -1)
               test -n "$cmd"
               grep -F "command=\"$cmd\"" authorized_keys
-              # The sops signing key authenticates only into the forced sandbox.
+              # The sops signing key authenticates only into the forced sandbox:
+              # present on a forced line, absent from every unforced one.
               grep -F 'command="'"$cmd"'"' authorized_keys | grep -qF ${lib.escapeShellArg (import ../lib/signing-keys.nix).personal}
+              ! grep -v 'command="' authorized_keys | grep -qF ${lib.escapeShellArg (import ../lib/signing-keys.nix).personal}
               test ${
                 toString (
                   builtins.length (

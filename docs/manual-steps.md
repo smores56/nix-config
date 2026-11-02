@@ -850,7 +850,9 @@ cat "$d/key.pub"
 Put the new public half in `modules/lib/signing-keys.nix`, register it on the
 account (Settings → SSH and GPG keys → New SSH key, type **Signing Key**),
 rebuild every host, then delete the old signing key on GitHub. Commits GitHub
-already verified stay Verified.
+already verified stay Verified. A leaked copy of this key also opens smortress's
+forced sandbox login from anywhere the Access token works, so rebuild smortress
+first when rotating after a suspected leak.
 
 If a commit on the work Mac fails with `Couldn't load public key` or
 `No such file`, macOS purged the decrypted secrets under `$TMPDIR`; re-run the
@@ -865,7 +867,8 @@ The same shape for the work org matching `user.work.githubOwnerGlob`
 (`blitzy-*`), in `secrets/smoreswork.yaml`: the work account's bundle exists
 only on the work Mac. The credential helper and `gh` wrapper select it from the
 repository owner, so work and personal tokens never mix; on a personal host a
-work repo has no token and fails closed. The org may require fine-grained-token
+work repo has no token (the helper answers nothing and `gh` refuses with the
+owner named), and the personal token is never substituted. The org may require fine-grained-token
 approval and SSO authorization; rotate on the same 90-day cadence.
 
 ### github-work-signing-key

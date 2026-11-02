@@ -95,61 +95,7 @@ let
   );
   # Only repos the personal account owns get the local flow; third-party
   # checkouts get no flow at all.
-  personalIncludes = ownerIncludes cfg.githubUser {
-    smores.flow = "local";
-    user.signingkey = personalSigningKey;
-  };
-
-  inherit (pkgs.stdenv.hostPlatform) isLinux;
-  isServer = builtins.elem "server" config.machine.profiles;
-
-  # Git asks this for the key to sign with. On laptops the signing-only agent
-  # holds the no-touch FIDO2 credentials; on smortress the forwarded login
-  # agent holds the PIV keys. Pick the first key the agent offers that appears
-  # in allowed_signers, so whichever key is inserted is used.
-  signingKeyCommand = pkgs.writeShellApplication {
-    name = "gpg-ssh-default-key";
-    runtimeInputs = [
-      pkgs.openssh
-      pkgs.coreutils
-      pkgs.gnugrep
-    ];
-    text = ''
-      ${lib.optionalString (!isServer) ''
-        export SSH_AUTH_SOCK="''${XDG_RUNTIME_DIR:?}/fido2-sign-agent"
-      ''}
-      ${lib.optionalString isServer ''
-        [ -n "''${SSH_AUTH_SOCK:-}" ] || {
-          echo "gpg-ssh-default-key: SSH_AUTH_SOCK is not set; reconnect or run the login hook" >&2
-          exit 1
-        }
-      ''}
-      allowed="$HOME/.config/ssh/allowed_signers"
-      [ -r "$allowed" ] || exit 1
-      keys=$(ssh-add -L 2>/dev/null) || exit 1
-      while read -r type body _; do
-        [ -n "''${type:-}" ] || continue
-        if grep -qF -- "$type $body" "$allowed"; then
-          printf 'key::%s %s\n' "$type" "$body"
-          exit 0
-        fi
-      done <<<"$keys"
-      exit 1
-    '';
-  };
-
-  # gpg.ssh.program: on laptops, sign through the signing-only agent; on
-  # smortress leave SSH_AUTH_SOCK alone so the forwarded PIV agent is used.
-  sshKeygen = pkgs.writeShellApplication {
-    name = "ssh-keygen-fido2";
-    runtimeInputs = [ pkgs.openssh ];
-    text = ''
-      ${lib.optionalString (!isServer) ''
-        export SSH_AUTH_SOCK="''${XDG_RUNTIME_DIR:?}/fido2-sign-agent"
-      ''}
-      exec ${pkgs.openssh}/bin/ssh-keygen "$@"
-    '';
-  };
+  personalIncludes = ownerIncludes cfg.githubUser { smores.flow = "local"; };
 
 in
 {
@@ -207,15 +153,7 @@ in
           interactive.diffFilter = "delta --color-only";
           safe.directory = "*";
           commit.gpgsign = true;
-          gpg = {
-            format = "ssh";
-          }
-          // lib.optionalAttrs isLinux {
-            ssh = {
-              program = lib.getExe sshKeygen;
-              defaultKeyCommand = lib.getExe signingKeyCommand;
-            };
-          };
+          gpg.format = "ssh";
           fetch.prune = true;
           # Repo tooling reads smores.* instead of re-deriving the identity
           # from the remote.

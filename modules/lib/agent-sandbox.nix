@@ -91,15 +91,12 @@ let
   ]
   ++ lib.optionals (!isDarwin) [ "/var/lib/data/photos" ];
 
-  # Darwin only: the commit-signing key links live outside ~/.config, but they
-  # resolve through ~/.config/sops-nix/secrets into $TMPDIR (already readable),
-  # so the links themselves are re-allowed after the ~/.config mask. Linux binds
-  # the key at its /run/secrets path instead (secretBind).
-  darwinReadAllow = lib.optionals isDarwin [
-    "$HOME/.config/sops-nix/secrets"
-    "$HOME/.config/sops-nix/secrets/github-personal-signing-key"
-    "$HOME/.config/sops-nix/secrets/github-work-signing-key"
-  ];
+  # Darwin only: directories of links to decrypted sops files the sandbox may
+  # read. Seatbelt matches the resolved path (/private/var/folders/.../secrets.d/
+  # <generation>/<name>), so the launcher resolves each link at start and allows
+  # exactly that file; every other sops secret stays denied. Linux binds the key
+  # at its /run/secrets path instead (secretBind).
+  darwinSecretLinkDirs = lib.optionals isDarwin [ "$HOME/.local/share/git-signing" ];
 
   homeMaskFiles = [
     "$HOME/.bash_history"
@@ -177,7 +174,7 @@ let
     ${renderList "HOME_RO" homeRo}
     ${renderList "HOME_MASK_DIRS" homeMaskDirs}
     ${renderList "HOME_MASK_FILES" homeMaskFiles}
-    ${renderList "DARWIN_READ_ALLOW" darwinReadAllow}
+    ${renderList "DARWIN_SECRET_LINK_DIRS" darwinSecretLinkDirs}
     ${renderList "CONFIG_ALLOW" configAllow}
     ${renderList "CONFIG_WRITABLE" configWritable}
     ${renderList "SECRET_BIND" secretBind}
@@ -375,7 +372,7 @@ let
     ${renderList "HOME_RO" [ ]}
     ${renderList "HOME_MASK_DIRS" jupyterMaskDirs}
     ${renderList "HOME_MASK_FILES" homeMaskFiles}
-    ${renderList "DARWIN_READ_ALLOW" [ ]}
+    ${renderList "DARWIN_SECRET_LINK_DIRS" [ ]}
     ${renderList "CONFIG_ALLOW" [ ]}
     ${renderList "CONFIG_WRITABLE" [ ]}
     ${renderList "SECRET_BIND" [ ]}

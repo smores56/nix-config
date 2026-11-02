@@ -92,6 +92,10 @@ for dir in third-party lookalike-owner lookalike-host outside; do expect_persona
 
 expect outside gpg.format ssh
 expect outside commit.gpgsign true
+# A plain key file signs without an agent: no wrapper may come back to demand
+# one (it broke commits wherever XDG_RUNTIME_DIR was unset).
+expect outside gpg.ssh.program ""
+expect outside gpg.ssh.defaultKeyCommand ""
 
 git -C scp -c user.name=t -c commit.gpgsign=false commit -q --allow-empty -m init
 git -C scp worktree add -q ../scp-wt

@@ -31,10 +31,11 @@ verifies() {
   ssh-keygen -q -Y verify -f "$signers" -I "$principal" -n git -s msg.sig <msg >/dev/null 2>&1
 }
 
-"$writer"
 has_entry() {
   grep -qxF "$1 namespaces=\"git\" $2" "$signers"
 }
+
+"$writer"
 has_entry "$PERSONAL_EMAIL" "$PERSONAL_SIGNING_PUB" || fail "personal signing key not trusted as $PERSONAL_EMAIL"
 has_entry "$WORK_EMAIL" "$WORK_SIGNING_PUB" || fail "work signing key not trusted as $WORK_EMAIL"
 has_entry "$WORK_EMAIL" "$PERSONAL_SIGNING_PUB" && fail "personal signing key trusted as $WORK_EMAIL"

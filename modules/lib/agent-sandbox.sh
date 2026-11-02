@@ -202,12 +202,30 @@ if [ "$(uname -s)" = Darwin ]; then
     for f in "${HOME_MASK_FILES[@]}"; do
       echo "(deny file-read* (literal \"$f\"))"
     done
-    # Later rules win: re-allow only the listed links inside a masked dir.
-    for f in "${DARWIN_READ_ALLOW[@]}"; do
-      echo "(allow file-read* (literal \"$f\"))"
-    done
     echo '(allow file-read* (subpath "/System") (subpath "/Library") (subpath "/usr") (subpath "/bin") (subpath "/private/etc") (subpath "/private/var/db") (subpath "/dev") (literal "/tmp") (subpath "/tmp") (subpath "/private/tmp") (subpath "'"${TMPDIR:-/tmp}"'"))'
     echo "(allow file-write* (literal \"/dev/null\") (literal \"/dev/tty\") (subpath \"/tmp\") (subpath \"/private/tmp\") (subpath \"${TMPDIR:-/tmp}\"))"
+    # The TMPDIR rules above name /var/folders, which Seatbelt never matches (it
+    # sees the resolved /private/var/folders), and sops-nix decrypts into that
+    # same directory. Deny its secrets explicitly so widening those rules can
+    # never expose them, then allow only the listed links' resolved files plus
+    # the symlink nodes their chain crosses (sops-nix links through the masked
+    # ~/.config/sops-nix/secrets); later rules win. Listing stays denied because
+    # the directory resolves into the denied secrets.d.
+    echo '(deny file-read* file-write* (regex #"^/private/var/folders/.+/secrets\.d/"))'
+    for d in "${DARWIN_SECRET_LINK_DIRS[@]}"; do
+      for link in "$d"/*; do
+        [ -L "$link" ] || continue
+        target=$(realpath "$link" 2>/dev/null) || continue
+        echo "(allow file-read* (literal \"$target\"))"
+        hop=$(readlink "$link")
+        while [ -n "$hop" ] && [ "$hop" != / ]; do
+          if [ -L "$hop" ]; then
+            echo "(allow file-read* (literal \"$hop\"))"
+          fi
+          hop=$(dirname "$hop")
+        done
+      done
+    done
     for d in "${HOME_RW[@]}"; do
       echo "(allow file-write* (subpath \"$d\"))"
     done
