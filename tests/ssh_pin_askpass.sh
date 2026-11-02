@@ -48,7 +48,7 @@ expect_pin() {
   [ "$out" = "12345678" ] || fail "wrong answer for: $prompt"
 }
 
-# The PKCS#11 prompt and the agent prompt both return the cached PIN.
+# The PIV (PKCS#11) prompt returns the cached PIN.
 expect_pin "Enter PIN for 'Yubico YubiKey': "
 # A FIDO2 PIN prompt means a verify-required credential nobody enrolled any
 # more; it must not receive the PIV PIN.

@@ -217,6 +217,9 @@ let
 
     [gpg "ssh"]
         allowedSignersFile = ~/.local/state/agent/config/allowed_signers
+        # Pinned so signing never depends on the sandbox PATH order (macOS's
+        # /usr/bin/ssh-keygen may come first).
+        program = ${pkgs.openssh}/bin/ssh-keygen
 
     [core]
         sshCommand = ssh -F ~/.local/state/agent/config/ssh_config
