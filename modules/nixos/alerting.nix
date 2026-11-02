@@ -1,8 +1,8 @@
-# Cloudflare Email Service alerts: unit failures and stale backup markers.
+# Cloudflare Email Service alerts for unit failures.
 #
 # Disabled by default so a host can switch before the Email Service domain,
 # API token, and sops secret exist. When enabled, every backup unit's OnFailure
-# points at the template, and a 5-minute timer emails once per stale period.
+# points at the template, so a failed nightly run emails its journal.
 {
   config,
   lib,
@@ -11,7 +11,6 @@
 }:
 let
   cfg = config.alerting;
-  datasets = config.backup.datasets;
 
   # JSON secret shape:
   #   {"token":"...","account_id":"...","from":"alerts@send.sammohr.dev","to":"sam@sammohr.dev"}
@@ -90,83 +89,6 @@ let
     '';
   };
 
-  freshness = pkgs.writeShellApplication {
-    name = "backup-freshness";
-    runtimeInputs = [
-      pkgs.coreutils
-      pkgs.bash
-      pkgs.systemd
-    ];
-    text = ''
-      set -euo pipefail
-      now=$(date +%s)
-      check() {
-        name=$1
-        max=$2
-        unit=$3
-        dir="${config.backup.mountPoint}/$name"
-        # Skip a dataset that has never produced a mirror; there is nothing to
-        # be stale yet.
-        [ -d "$dir/current" ] || return 0
-        file="$dir/BACKUP-LAST-SUCCESS"
-        failed="$dir/BACKUP-FAILED"
-        deferred="$dir/BACKUP-DEFERRED"
-        flag="/run/backup-freshness/$name.alerted"
-        if [ -e "$file" ]; then
-          mtime=$(stat -c %Y "$file" 2>/dev/null || echo 0)
-        elif [ -e "$deferred" ]; then
-          # A deferral copied nothing, so there is no successful run to borrow a
-          # timestamp from: the dataset is stale by definition, however green the
-          # unit looks (a deferral exits 75, which the unit treats as success).
-          mtime=0
-        else
-          # No marker yet (first run since the marker landed). Fall back to the
-          # unit's last successful run so epoch 0 does not look ~56 years stale.
-          # An empty timestamp means the unit never ran; treat that as no
-          # successful backup rather than as fresh.
-          result=$(systemctl show "$unit" -p Result --value 2>/dev/null || true)
-          last=$(systemctl show "$unit" -p ExecMainExitTimestamp --value 2>/dev/null || true)
-          if [ "$result" = "success" ] && [ -n "$last" ]; then
-            mtime=$(date -d "$last" +%s 2>/dev/null || echo 0)
-          else
-            mtime=0
-          fi
-        fi
-        age=$((now - mtime))
-        # A failure marker newer than the last success is a live failure the age
-        # cannot see: the mirror is unverified even if a recent run finished.
-        unverified=0
-        if [ -e "$failed" ] && { [ ! -e "$file" ] || [ "$failed" -nt "$file" ]; }; then
-          unverified=1
-        fi
-        if [ "$age" -gt "$max" ] || [ "$unverified" -eq 1 ]; then
-          if [ ! -e "$flag" ]; then
-            if [ "$unverified" -eq 1 ]; then
-              body="The last $name backup failed: $(head -c 300 "$failed" 2>/dev/null || true)"
-            elif [ -e "$file" ]; then
-              body="No successful $name backup for $((age / 3600))h (limit $((max / 3600))h). Check: systemctl status $unit; journalctl -u $unit"
-            else
-              body="No successful $name backup recorded (no BACKUP-LAST-SUCCESS marker). Check: systemctl status $unit; journalctl -u $unit"
-            fi
-            if ${cloudflareEmail}/bin/cloudflare-email "backup stale: $name" "$body"; then
-              touch "$flag"
-            fi
-          fi
-        else
-          rm -f "$flag"
-        fi
-      }
-      ${datasetChecks}
-    '';
-  };
-
-  datasetChecks = lib.concatMapStringsSep "\n" (
-    name:
-    "check ${lib.escapeShellArg name} ${
-      toString datasets.${name}.freshnessSeconds
-    } ${lib.escapeShellArg "backup-${lib.toLower name}"}"
-  ) (lib.attrNames datasets);
-
   sandbox = {
     NoNewPrivileges = true;
     PrivateTmp = true;
@@ -191,7 +113,7 @@ in
   options.alerting = lib.mkOption {
     type = lib.types.submodule {
       options = {
-        enable = lib.mkEnableOption "Cloudflare email alerts for unit failures and stale backups";
+        enable = lib.mkEnableOption "Cloudflare email alerts for unit failures";
         accountId = lib.mkOption {
           type = lib.types.str;
           description = "Cloudflare account ID that owns the Email Service domain.";
@@ -214,7 +136,7 @@ in
       };
     };
     default = { };
-    description = "Send unit-failure and stale-backup email through Cloudflare Email Service. Enable only after the secret and the sending domain exist.";
+    description = "Send unit-failure email through Cloudflare Email Service. Enable only after the secret and the sending domain exist.";
   };
 
   config = lib.mkIf cfg.enable {
@@ -226,30 +148,6 @@ in
         ExecStart = "${onFailure}/bin/cloudflare-email-onfailure %i";
         Environment = [ "CLOUDFLARE_API_TOKEN_FILE=${cfg.secretFile}" ];
         TimeoutStartSec = "2m";
-      };
-    };
-
-    systemd.services.backup-freshness = {
-      description = "Email if a backup dataset's last success is stale";
-      serviceConfig = sandbox // {
-        Type = "oneshot";
-        User = "root";
-        ExecStart = "${freshness}/bin/backup-freshness";
-        Environment = [ "CLOUDFLARE_API_TOKEN_FILE=${cfg.secretFile}" ];
-        RuntimeDirectory = "backup-freshness";
-        RuntimeDirectoryMode = "0700";
-        # The alerted flag must survive between 5-minute runs; without this the
-        # directory is removed when the oneshot exits and every run re-emails.
-        RuntimeDirectoryPreserve = "yes";
-        TimeoutStartSec = "5m";
-      };
-    };
-
-    systemd.timers.backup-freshness = {
-      wantedBy = [ "timers.target" ];
-      timerConfig = {
-        OnBootSec = "10m";
-        OnUnitActiveSec = "5m";
       };
     };
   };

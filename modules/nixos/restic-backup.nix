@@ -9,8 +9,8 @@ let
   common = {
     paths = [
       # The whole durable tree: vault ciphertext, wallpapers, media, the memory
-      # export, the GitHub mirrors, Radicale, Open WebUI and DB dumps. Nothing
-      # else needs a second source path.
+      # export, the GitHub mirrors, Radicale and Open WebUI state. Nothing else
+      # needs a second source path.
       "/var/lib/data"
     ];
     passwordFile = config.sops.secrets.restic-password.path;
@@ -42,5 +42,18 @@ in
     local = common // {
       repository = "/var/backup/restic";
     };
+  };
+
+  # The restic module generates one unit per repo but exposes no `onFailure`
+  # option, so the alert is attached to the generated units by name. %n expands
+  # to the failing unit, so each repo's failure mails its own journal.
+  # The local repo lives on the backup disk: wait for that mount, or a missing
+  # disk would quietly fill the root filesystem instead of failing.
+  systemd.services."restic-backups-r2".onFailure =
+    lib.optional config.alerting.enable "cloudflare-email@%n.service";
+
+  systemd.services."restic-backups-local" = {
+    onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
+    unitConfig.RequiresMountsFor = [ config.backup.mountPoint ];
   };
 }

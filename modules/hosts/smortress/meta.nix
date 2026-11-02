@@ -29,8 +29,8 @@ in
   };
 
   nixosOptions = {
-    # Media is agent-writable except Immich's managed Photos library. The
-    # backup driver runs as root and can read smores-owned sources.
+    # Media is agent-writable except Immich's managed Photos library. restic
+    # runs as root and can read smores-owned sources.
     systemd.tmpfiles.rules = [
       # 0751: services with PrivateUsers (Immich) map smores:users to
       # nobody:nogroup, so they need others-traverse; subdirs keep their own
@@ -105,130 +105,31 @@ in
     };
     immich = {
       enable = true;
-      # Relocated off /var/lib/immich so every media dataset lives under one
-      # root (backup source and read-only server mounts both use it).
+      # Relocated off /var/lib/immich so every media tree lives under one
+      # root that restic backs up as a single path.
       mediaLocation = "/var/lib/data/photos";
       # The phone uploads over the LAN at home via Immich's local-network URL;
       # 10.0.0.0/24 is the LAN subnet. WAN access stays tunnel-only.
       lanSources = [ "10.0.0.0/24" ];
     };
-    # These generic datasets replaced the old Immich-specific backup
-    # pipeline, which has been removed.
     backup.enable = true;
-    # Offsite is this host's Proton Drive mount, not an rclone remote: the mount
-    # owns the only token and the backups write through it as plain files.
-    backup.remote = "/srv/proton";
     # The HDD is LUKS-encrypted: /var/backup lives inside a mapping opened at
-    # boot from /etc/crypttab by a keyfile on the encrypted root. Both settings
-    # belong together — the filesystem exists only inside the mapping. The format
-    # and re-key procedure is in docs/manual-steps.md ("Encrypted backup disk").
+    # boot from /etc/crypttab by a keyfile on the encrypted root, and restic
+    # writes the local repo to /var/backup/restic. The format and re-key
+    # procedure is in docs/manual-steps.md ("Encrypted backup disk").
     backup.device = "/dev/mapper/backup";
     backup.luks = {
       enable = true;
       device = "/dev/disk/by-id/ata-ST5000LM000-2AN170_WCJ42WX0";
     };
-    protonDrive.enable = true;
-    # Full checks through the mount compare sizes only (a checksum read-back
-    # would stream the whole archive through FUSE into the cache), so a weekly
-    # full check costs one Proton walk rather than a full re-download.
-    # Videos live in the Cryptomator vault now; the vault backup covers them.
-    backup.datasets.Calibre = {
-      source = "/var/lib/data/books";
-      schedule = "*-*-* 02:30:00";
-      fullCheckSchedule = "Sun *-*-* 09:00:00";
-      timeout = "2h";
-      onChange.enable = true;
-    };
-    backup.datasets.Photos = {
-      source = "/var/lib/data/photos";
-      schedule = "*-*-* 03:00:00";
-      fullCheckSchedule = "Sun *-*-* 06:00:00";
-      timeout = "2h";
-      # A generated pre-unit dumps Postgres as the postgres user (NNP on, no
-      # runuser); this snippet copies that dump into the mirror and fails if the
-      # dump is missing or stale. `excludes` REPLACES the option default, so
-      # the cache/credential patterns are repeated here alongside the two
-      # regenerable Immich derived trees (thumbs, encoded-video) that Immich
-      # rebuilds from the originals and that need not occupy a mirror.
-      excludes = [
-        "/.cache/**"
-        "**/.cache/**"
-        "/rclone.conf"
-        "/thumbs/**"
-        "/encoded-video/**"
-      ];
-      postgres = true;
-      onChange = {
-        enable = true;
-        # Regenerable Immich trees excluded from the mirror must not trigger a
-        # run either; the storage-template originals under library/ still do.
-        ignore = [
-          "thumbs"
-          "encoded-video"
-        ];
-      };
-      preBackup = ''
-        dump=/var/lib/postgresql/backups/photos.dump
-        test -s "$dump" || { echo "missing PostgreSQL dump: $dump"; exit 1; }
-        # postgres owns the dump directory; refuse a symlink so a compromised
-        # database cannot make root copy an arbitrary file into the mirror.
-        [ ! -L "$dump" ] || { echo "refusing symlinked PostgreSQL dump: $dump"; exit 1; }
-        now=$(date +%s)
-        mtime=$(stat -c %Y "$dump")
-        [ $((now - mtime)) -le 3600 ] || { echo "stale PostgreSQL dump: $dump"; exit 1; }
-        mkdir -p "$BACKUP_CURRENT/db"
-        # One stable name: copy never deletes, so dated names would accumulate
-        # a full dump per run locally and offsite forever. This keeps only the
-        # latest dump (Proton holds the same one); a bad dump therefore replaces
-        # the previous recovery point. Stage then rename so a concurrent read
-        # never sees a partial dump.
-        cp "$dump" "$BACKUP_CURRENT/db/immich.dump.tmp"
-        mv "$BACKUP_CURRENT/db/immich.dump.tmp" "$BACKUP_CURRENT/db/immich.dump"
-      '';
-    };
-    backup.datasets.Music = {
-      source = "/var/lib/data/music";
-      schedule = "*-*-* 05:00:00";
-      fullCheckSchedule = "Sun *-*-* 08:00:00";
-      timeout = "2h";
-      onChange.enable = true;
-    };
-    # OpenTofu state is the only copy of the edge object IDs; losing it means
-    # `tofu import`, not data loss. Skip the provider cache and the transient
-    # lock file.
-    backup.datasets.CloudflareTofu = {
-      source = "/var/lib/cloudflare-tofu";
-      schedule = "*-*-* 00:15:00";
-      # A queue wait longer than this must defer rather than be killed, so the
-      # cap only needs room for the tiny copy after the wait; keeping it short
-      # also bounds how long a wedged run can hold the shared offsite lock.
-      timeout = "30m";
-      onChange.enable = true;
-      excludes = [
-        "/.cache/**"
-        "**/.cache/**"
-        "/rclone.conf"
-        "/.terraform/**"
-        "/terraform.tfstate.lock.info"
-      ];
-    };
-    # The memory export is the recovery copy: the graph is derived and the
-    # registry is small (one SQLite file plus one RDB per night). Root-owned,
-    # and the driver runs as root, so nothing else needs access.
-    backup.datasets.MemoryExport = {
-      source = "/var/lib/data/memory-export";
-      schedule = "*-*-* 05:30:00";
-      timeout = "2h";
-      onChange.enable = true;
-    };
     alerting = {
       enable = true;
       accountId = "385f7d47e2e8438fbda5d6f76d760434";
     };
-    # Mirror this host's GitHub repos onto the backup disk and Proton. The
-    # probe requires this known-private repo to be refreshed every run, catching
-    # a token that lost `repo` scope (which would otherwise silently stop
-    # updating every private mirror).
+    # Mirror this host's GitHub repos into the durable tree, which restic
+    # carries. The probe requires this known-private repo to be refreshed every
+    # run, catching a token that lost `repo` scope (which would otherwise
+    # silently stop updating every private mirror).
     githubBackup.enable = true;
     githubBackup.probeRepo = "sdlc";
   };
