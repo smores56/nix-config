@@ -202,6 +202,10 @@ if [ "$(uname -s)" = Darwin ]; then
     for f in "${HOME_MASK_FILES[@]}"; do
       echo "(deny file-read* (literal \"$f\"))"
     done
+    # Later rules win: re-allow only the listed links inside a masked dir.
+    for f in "${DARWIN_READ_ALLOW[@]}"; do
+      echo "(allow file-read* (literal \"$f\"))"
+    done
     echo '(allow file-read* (subpath "/System") (subpath "/Library") (subpath "/usr") (subpath "/bin") (subpath "/private/etc") (subpath "/private/var/db") (subpath "/dev") (literal "/tmp") (subpath "/tmp") (subpath "/private/tmp") (subpath "'"${TMPDIR:-/tmp}"'"))'
     echo "(allow file-write* (literal \"/dev/null\") (literal \"/dev/tty\") (subpath \"/tmp\") (subpath \"/private/tmp\") (subpath \"${TMPDIR:-/tmp}\"))"
     for d in "${HOME_RW[@]}"; do

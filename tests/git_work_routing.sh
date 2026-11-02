@@ -2,7 +2,8 @@
 # Exercises the generated git config against scratch repos: work-owner
 # remotes (every URL form and casing, worktrees, mixed remotes) pick up the
 # work identity and ssh route, the personal owner gets the local flow, and
-# everything else keeps only the personal defaults.
+# everything else keeps only the personal defaults. Every repo signs with
+# the sops key of its owner's account.
 #
 # Usage: git_work_routing.sh <gitconfig>, with the expected values in the
 # env scriptChecks sets (modules/flake/checks.nix).
@@ -32,20 +33,11 @@ repo() {
   done
 }
 
-expect_signing() {
-  local dir=$1 want=$2
-  if [ "$SIGNING_KEY_MODE" = agent ]; then
-    expect "$dir" user.signingkey ""
-    [ -n "$(git -C "$dir" config --get gpg.ssh.defaultKeyCommand || true)" ] ||
-      { echo "FAIL $dir gpg.ssh.defaultKeyCommand is empty"; failures=$((failures + 1)); }
-  else
-    expect "$dir" user.signingkey "$want"
-  fi
-}
-
 expect_work() {
   expect "$1" user.email "$WORK_EMAIL"
-  expect_signing "$1" "$WORK_KEY.pub"
+  # The work key exists only where its sops secret is deployed; elsewhere a
+  # work commit falls back to the personal key.
+  expect "$1" user.signingkey "$WORK_SIGNING_KEY"
   if [ "$WORK_HOST" = 1 ]; then
     expect "$1" core.sshCommand "ssh -F $WORK_SSH_CONFIG"
   else
@@ -66,8 +58,7 @@ expect_work() {
 
 expect_personal() {
   expect "$1" user.email "$PERSONAL_EMAIL"
-  # No personal software identity is trusted or configured any more.
-  expect_signing "$1" ""
+  expect "$1" user.signingkey "$PERSONAL_SIGNING_KEY"
   expect "$1" core.sshCommand ""
   expect "$1" smores.branchTemplate "$PERSONAL_BRANCH_TEMPLATE"
   expect "$1" smores.branchTemplateUnticketed "$PERSONAL_BRANCH_UNTICKETED"
@@ -98,6 +89,9 @@ for dir in scp scp-slash scp-nouser ssh ssh-port ssh-nouser https https-user upp
 done
 for dir in own repo-named-like-work; do expect_personal "$dir" local; done
 for dir in third-party lookalike-owner lookalike-host outside; do expect_personal "$dir" ""; done
+
+expect outside gpg.format ssh
+expect outside commit.gpgsign true
 
 git -C scp -c user.name=t -c commit.gpgsign=false commit -q --allow-empty -m init
 git -C scp worktree add -q ../scp-wt

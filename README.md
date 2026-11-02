@@ -290,10 +290,16 @@ Work is split across independent switches:
   naming and PR flow, via git `includeIf hasconfig:remote.*.url`
   (`modules/features/git.nix`). Any matching remote counts, so a fork with a
   work `upstream` is a work repo. Tooling reads the result from
-  `git config smores.branchTemplate` / `smores.flow`. On the work Mac the
-  employer software key in Keychain signs and uses
-  `~/.config/ssh/config.work`; other hosts have no work private key and use
-  HTTPS with the owner-selected work PAT.
+  `git config smores.branchTemplate` / `smores.flow`. On the work Mac work
+  repos use the employer key for GitHub SSH (`~/.config/ssh/config.work`).
+  The work account's PAT and signing key exist only there
+  (`secrets/smoreswork.yaml`), so on other hosts a work repo has no token and
+  its commits sign with the personal key.
+- **Commit signing, per account:** every commit signs with a software key from
+  sops, `github-personal-signing-key` everywhere and `github-work-signing-key`
+  on the work Mac, named by `user.signingkey` (`modules/features/git.nix`;
+  public halves in `modules/lib/signing-keys.nix`). Anything running as you on
+  a host can sign; the YubiKey guards SSH login and `sudo`, not signatures.
 - **Per host:** `aiProfile` (below) decides which model providers agents
   may use. A work clone on a personal host still gets the work git
   identity, but maki there runs on the personal providers.
@@ -461,10 +467,10 @@ path/privilege boundary: bwrap on Linux and `sandbox-exec` on macOS. `m` is a
 shell abbreviation for `agent-sandbox maki`; plain `maki` is installed manually
 in `~/.local/bin` and runs unsandboxed. The sandbox gives the agent a
 read-only home plus a short write allowlist, masks credentials and the whole
-`~/.config`, and exposes only the no-touch signing agent. Every personal host
-authorizes that signing key with a forced `agent-ssh` command, so remote
-sessions re-enter the same sandbox and `sudo` is not invocable. On macOS there
-is no signing agent to forward yet, so sandboxed commits there are unsigned.
+`~/.config`, and exposes the personal signing key (bound at its `/run/secrets`
+path on Linux, linked outside `~/.config` on macOS), so sandboxed commits sign
+on every host. smortress authorizes that key with a forced `agent-ssh` command,
+so remote sessions re-enter the same sandbox and `sudo` is not invocable.
 The lists and backend live in `modules/lib/agent-sandbox.nix`; operator steps
 are in `docs/manual-steps.md`.
 

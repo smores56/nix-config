@@ -33,6 +33,20 @@ let
   }) (yubikeyKeys.piv ++ yubikeyKeys.signing);
 
   pubkeys = softwareIdentities ++ yubikeyIdentities;
+
+  # Commit-signing keys from sops, trusted on every host for their own
+  # account only; their public halves are committed, so no file is needed.
+  signingKeys = import ../lib/signing-keys.nix;
+  signingPrincipals = [
+    {
+      inherit (cfg) email;
+      pubkey = signingKeys.personal;
+    }
+    {
+      inherit (cfg.work) email;
+      pubkey = signingKeys.work;
+    }
+  ];
   allowedSigners = "~/.config/ssh/allowed_signers";
 
   # Signatures only verify against keys listed here; rebuilt from whichever
@@ -56,6 +70,9 @@ let
         fi
       }
       {
+        ${lib.concatMapStrings (i: ''
+          printf '%s namespaces="git" %s\n' ${lib.escapeShellArg i.email} ${lib.escapeShellArg i.pubkey}
+        '') signingPrincipals}
         ${lib.concatMapStrings (i: ''
           entry ${lib.escapeShellArg i.email} "${expandHome i.key}.pub"
         '') softwareIdentities}

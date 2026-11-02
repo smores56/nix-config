@@ -825,15 +825,61 @@ RW, Issues RW, Metadata R — no SSH-key or signing-key permissions. Expires in
 90 days; mint a replacement, update the common file, rebuild every host,
 revoke the old token.
 
+### github-personal-signing-key
+
+<!-- manual-step: secret/github-personal-signing-key -->
+
+The personal account's ed25519 commit-signing key, user-readable 0400 in
+`secrets/common.yaml`, so every host (and the agent sandbox) signs as
+`sam@sammohr.dev` with no agent or PIN. git names it as `user.signingkey`
+(`modules/features/git.nix`): `/run/secrets/github-personal-signing-key` on
+NixOS, `~/.local/share/git-signing/github-personal-signing-key` on the work
+Mac. The public half is `personal` in `modules/lib/signing-keys.nix`; it is
+registered on `smores56` as a **signing** key only, and smortress also accepts
+it as the laptop sandbox's forced-command login (`modules/nixos/ssh.nix`).
+
+Rotate after losing any host:
+
+```sh
+d=$(mktemp -d) && trap 'rm -rf "$d"' EXIT
+ssh-keygen -q -t ed25519 -N '' -C 'sam@sammohr.dev github-personal-signing-key' -f "$d/key"
+jq -Rs . <"$d/key" | sops set --value-stdin secrets/common.yaml '["github-personal-signing-key"]'
+cat "$d/key.pub"
+```
+
+Put the new public half in `modules/lib/signing-keys.nix`, register it on the
+account (Settings → SSH and GPG keys → New SSH key, type **Signing Key**),
+rebuild every host, then delete the old signing key on GitHub. Commits GitHub
+already verified stay Verified.
+
+If a commit on the work Mac fails with `Couldn't load public key` or
+`No such file`, macOS purged the decrypted secrets under `$TMPDIR`; re-run the
+decrypt agent with
+`launchctl kickstart -k gui/$(id -u)/org.nix-community.home.sops-nix`.
+
 ### github-work-pat
 
 <!-- manual-step: secret/github-work-pat -->
 
 The same shape for the work org matching `user.work.githubOwnerGlob`
-(`blitzy-*`). The credential helper and `gh` wrapper select it from the
-repository owner, so work and personal tokens never mix, from the same sops
-paths as the personal token. The org may require fine-grained-token
+(`blitzy-*`), in `secrets/smoreswork.yaml`: the work account's bundle exists
+only on the work Mac. The credential helper and `gh` wrapper select it from the
+repository owner, so work and personal tokens never mix; on a personal host a
+work repo has no token and fails closed. The org may require fine-grained-token
 approval and SSO authorization; rotate on the same 90-day cadence.
+
+### github-work-signing-key
+
+<!-- manual-step: secret/github-work-signing-key -->
+
+The work account's ed25519 commit-signing key, in `secrets/smoreswork.yaml`
+only, linked at `~/.local/share/git-signing/github-work-signing-key` on the
+work Mac. The work owner include selects it there; personal hosts have no work
+key, so a work commit there signs with the personal key and shows Unverified.
+The public half is `work` in `modules/lib/signing-keys.nix`, registered on the
+work account as a **signing** key only. Rotate as for
+`github-personal-signing-key`, writing to `secrets/smoreswork.yaml` and
+rebuilding only the work Mac.
 
 ### neuralwatt-api-key
 

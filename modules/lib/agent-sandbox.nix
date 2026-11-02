@@ -91,6 +91,16 @@ let
   ]
   ++ lib.optionals (!isDarwin) [ "/var/lib/data/photos" ];
 
+  # Darwin only: the commit-signing key links live outside ~/.config, but they
+  # resolve through ~/.config/sops-nix/secrets into $TMPDIR (already readable),
+  # so the links themselves are re-allowed after the ~/.config mask. Linux binds
+  # the key at its /run/secrets path instead (secretBind).
+  darwinReadAllow = lib.optionals isDarwin [
+    "$HOME/.config/sops-nix/secrets"
+    "$HOME/.config/sops-nix/secrets/github-personal-signing-key"
+    "$HOME/.config/sops-nix/secrets/github-work-signing-key"
+  ];
+
   homeMaskFiles = [
     "$HOME/.bash_history"
     "$HOME/.netrc"
@@ -124,7 +134,10 @@ let
 
   secretBind = [
     "/run/secrets/github-personal-pat|/run/secrets/github-personal-pat"
-    "/run/secrets/github-work-pat|/run/secrets/github-work-pat"
+    # The personal commit-signing key, at the path the host git config names,
+    # so the included config signs unchanged inside the boundary. It is also
+    # the laptop sandbox's forced-command login to smortress (Host smortress).
+    "/run/secrets/github-personal-signing-key|/run/secrets/github-personal-signing-key"
     "/run/secrets/neuralwatt-api-key|/run/secrets/neuralwatt-api-key"
     "/run/secrets/tinyfish-api-key|/run/secrets/tinyfish-api-key"
     "/run/secrets/immich-agent-api-key|/run/agent/immich-key"
@@ -164,6 +177,7 @@ let
     ${renderList "HOME_RO" homeRo}
     ${renderList "HOME_MASK_DIRS" homeMaskDirs}
     ${renderList "HOME_MASK_FILES" homeMaskFiles}
+    ${renderList "DARWIN_READ_ALLOW" darwinReadAllow}
     ${renderList "CONFIG_ALLOW" configAllow}
     ${renderList "CONFIG_WRITABLE" configWritable}
     ${renderList "SECRET_BIND" secretBind}
@@ -255,11 +269,12 @@ let
 
     [core]
         sshCommand = ssh -F ~/.local/state/agent/config/ssh_config
-    # Sign every commit made inside the boundary: the sandbox holds the
-    # no-touch signing credential, and the host's global gpgsign is replaced by
-    # this file (GIT_CONFIG_SYSTEM=/dev/null). On Darwin there is no signing
-    # agent to forward, so it stays off there.
-    ${lib.optionalString (!isDarwin) "[commit]\n        gpgsign = true\n"}
+    # Sign every commit made inside the boundary with the owner's sops key that
+    # the included host config names (bound at /run/secrets on Linux, linked
+    # outside the masked ~/.config on Darwin). The host's global gpgsign is
+    # replaced by this file (GIT_CONFIG_SYSTEM=/dev/null).
+    [commit]
+        gpgsign = true
   '';
 
   sshConfig = pkgs.writeText "agent-sandbox-ssh-config" ''
@@ -271,7 +286,10 @@ let
         IdentitiesOnly yes
         ControlMaster no
         ForwardAgent no
-        ${lib.optionalString (!isDarwin) "IdentityAgent /run/agent/sign"}
+        ${lib.optionalString (!isDarwin) ''
+          IdentityAgent /run/agent/sign
+          IdentityFile /run/secrets/github-personal-signing-key
+        ''}
     ''}
     Host *
       UserKnownHostsFile ~/.local/state/agent/config/known_hosts
@@ -357,6 +375,7 @@ let
     ${renderList "HOME_RO" [ ]}
     ${renderList "HOME_MASK_DIRS" jupyterMaskDirs}
     ${renderList "HOME_MASK_FILES" homeMaskFiles}
+    ${renderList "DARWIN_READ_ALLOW" [ ]}
     ${renderList "CONFIG_ALLOW" [ ]}
     ${renderList "CONFIG_WRITABLE" [ ]}
     ${renderList "SECRET_BIND" [ ]}

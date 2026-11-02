@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Runs the generated allowed_signers writer against scratch keys: the work
 # software identity verifies for its own principal only, the retired personal
-# key verifies for nobody, and a missing work key leaves no software entries.
+# key verifies for nobody, and a missing work key leaves no work-key entry. The
+# committed sops signing keys are trusted on every host, each only for its own
+# account's principal.
 #
-# Usage: ssh_allowed_signers.sh <writer>, with WORK_EMAIL.
+# Usage: ssh_allowed_signers.sh <writer>, with WORK_EMAIL, PERSONAL_EMAIL,
+# PERSONAL_SIGNING_PUB and WORK_SIGNING_PUB.
 set -euo pipefail
 
 writer=$1
@@ -29,6 +32,14 @@ verifies() {
 }
 
 "$writer"
+has_entry() {
+  grep -qxF "$1 namespaces=\"git\" $2" "$signers"
+}
+has_entry "$PERSONAL_EMAIL" "$PERSONAL_SIGNING_PUB" || fail "personal signing key not trusted as $PERSONAL_EMAIL"
+has_entry "$WORK_EMAIL" "$WORK_SIGNING_PUB" || fail "work signing key not trusted as $WORK_EMAIL"
+has_entry "$WORK_EMAIL" "$PERSONAL_SIGNING_PUB" && fail "personal signing key trusted as $WORK_EMAIL"
+has_entry "$PERSONAL_EMAIL" "$WORK_SIGNING_PUB" && fail "work signing key trusted as $PERSONAL_EMAIL"
+
 if [ "${WORK_HOST:-0}" = 1 ]; then
   verifies id_work "$WORK_EMAIL" || fail "work key does not verify as $WORK_EMAIL"
   verifies id_work "sam@sammohr.dev" && fail "work key verifies as the personal principal"
@@ -47,10 +58,11 @@ if [ "${WORK_HOST:-0}" = 1 ]; then
   verifies id_work "$WORK_EMAIL" || fail "work key without trailing newline does not verify"
 fi
 
+work_pub=$(cut -d' ' -f2 "$HOME/.config/ssh/id_work.pub")
 rm -f "$HOME/.config/ssh/id_work.pub"
 "$writer"
 verifies id_work "$WORK_EMAIL" && fail "work key still verifies without its .pub"
-[[ $(grep -c . "$signers" || true) == 0 ]] || fail "expected no software entries without the work key"
+grep -qF -- "$work_pub" "$signers" && fail "work key still listed without its .pub"
 
 if ((failures)); then
   echo "$failures allowed_signers expectation(s) failed"

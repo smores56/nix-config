@@ -21,7 +21,12 @@ let
   forcedKey =
     k:
     ''command="${agentSandbox.agentSsh}/bin/agent-ssh",no-touch-required,no-user-rc,no-port-forwarding,no-agent-forwarding,no-X11-forwarding ${k.pubkey}'';
-  authorizedKeys = map (k: k.pubkey) yubikeyKeys.piv ++ map forcedKey yubikeyKeys.signing;
+  # The personal sops signing key is also the laptop sandbox's login: forced
+  # into the sandbox like the FIDO2 signing handles, never an interactive shell.
+  signingKeys = import ../lib/signing-keys.nix;
+  authorizedKeys =
+    map (k: k.pubkey) yubikeyKeys.piv
+    ++ map forcedKey (yubikeyKeys.signing ++ [ { pubkey = signingKeys.personal; } ]);
 in
 {
   options.exposeSsh.enable = lib.mkEnableOption "sshd bound to loopback for Cloudflare Tunnel access";

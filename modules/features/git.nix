@@ -9,6 +9,14 @@ let
 
   inherit (cfg) work;
 
+  # Each GitHub account signs with its own sops key (modules/lib/signing-keys.nix):
+  # /run/secrets on NixOS, the home's sops path on Darwin. Plain files, so git
+  # needs no agent, wrapper or PIN, and a host signs whether or not anyone is
+  # connected.
+  sopsSecrets = config.sops.secrets or { };
+  signingKeyPath = name: sopsSecrets.${name}.path or "/run/secrets/${name}";
+  personalSigningKey = signingKeyPath "github-personal-signing-key";
+
   # GitHub owners are case-insensitive but hasconfig's wildmatch is not, so
   # spell every letter as a [xX] class.
   caseless =
@@ -63,9 +71,10 @@ let
       user = {
         inherit (work) email;
       }
-      // lib.optionalAttrs (!isLinux) {
-        # The work Mac keeps its employer software-key signing path (T4).
-        signingkey = "${work.sshKey}.pub";
+      # The work key is deployed only where the work account's bundle lives;
+      # elsewhere a work commit falls back to the personal key.
+      // lib.optionalAttrs (sopsSecrets ? github-work-signing-key) {
+        signingkey = signingKeyPath "github-work-signing-key";
       };
       smores = {
         inherit (work) flow;
@@ -86,7 +95,10 @@ let
   );
   # Only repos the personal account owns get the local flow; third-party
   # checkouts get no flow at all.
-  personalIncludes = ownerIncludes cfg.githubUser { smores.flow = "local"; };
+  personalIncludes = ownerIncludes cfg.githubUser {
+    smores.flow = "local";
+    user.signingkey = personalSigningKey;
+  };
 
   inherit (pkgs.stdenv.hostPlatform) isLinux;
   isServer = builtins.elem "server" config.machine.profiles;
@@ -172,6 +184,7 @@ in
           user = {
             name = "Sam Mohr";
             inherit (cfg) email;
+            signingkey = personalSigningKey;
           };
           core = {
             excludesFile = "~/.gitignore";

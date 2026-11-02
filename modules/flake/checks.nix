@@ -93,6 +93,8 @@ in
           hc = scriptHome.config;
           d = hc.user;
           configFile = name: hc.xdg.configFile.${name}.source;
+          signingKeys = import ../lib/signing-keys.nix;
+          signingKeyPath = name: hc.sops.secrets.${name}.path or "/run/secrets/${name}";
           homeExe =
             name:
             lib.getExe (
@@ -111,9 +113,16 @@ in
             PERSONAL_BRANCH_TEMPLATE = d.branchNaming.template;
             PERSONAL_BRANCH_UNTICKETED = toString d.branchNaming.unticketed;
             PERSONAL_OWNER = d.githubUser;
-            # Linux selects the key from the agent; Darwin keeps the software
-            # key path for the work Mac.
-            SIGNING_KEY_MODE = if hc.programs.git.settings.gpg.ssh ? defaultKeyCommand then "agent" else "file";
+            # Each account signs with its sops key; the work key exists only
+            # on a home that declares it, so other homes fall back to personal.
+            PERSONAL_SIGNING_KEY = signingKeyPath "github-personal-signing-key";
+            WORK_SIGNING_KEY =
+              if hc.sops.secrets ? github-work-signing-key then
+                signingKeyPath "github-work-signing-key"
+              else
+                signingKeyPath "github-personal-signing-key";
+            PERSONAL_SIGNING_PUB = signingKeys.personal;
+            WORK_SIGNING_PUB = signingKeys.work;
           };
           # Every spelling of the employer the work options reveal; the brain
           # files must stay generic, so none may appear in them.
@@ -467,16 +476,18 @@ in
               test "${names keys.piv}" = "piv-k1 piv-k2 piv-k3"
               test "${names keys.signing}" = "k1/signing k2/signing k3/signing"
               test "${names keys.sudo}" = "k1/sudo k2/sudo k3/sudo"
-              test ${toString (builtins.length config.flake.nixosConfigurations.smortress.config.users.users.smores.openssh.authorizedKeys.keys)} -eq 6
+              test ${toString (builtins.length config.flake.nixosConfigurations.smortress.config.users.users.smores.openssh.authorizedKeys.keys)} -eq 7
               printf '%s\n' ${lib.escapeShellArgs config.flake.nixosConfigurations.smortress.config.users.users.smores.openssh.authorizedKeys.keys} >authorized_keys
-              test "$(grep -c 'command="' authorized_keys)" -eq 3
-              test "$(grep -c 'no-user-rc' authorized_keys)" -eq 3
-              test "$(grep -c 'no-touch-required' authorized_keys)" -eq 3
-              test "$(grep -c 'no-agent-forwarding' authorized_keys)" -eq 3
+              test "$(grep -c 'command="' authorized_keys)" -eq 4
+              test "$(grep -c 'no-user-rc' authorized_keys)" -eq 4
+              test "$(grep -c 'no-touch-required' authorized_keys)" -eq 4
+              test "$(grep -c 'no-agent-forwarding' authorized_keys)" -eq 4
               shell=${config.flake.nixosConfigurations.smortress.config.users.users.smores.shell}
               cmd=$(grep -o '/nix/store/[^"]*agent-ssh' "$shell/bin/agent-login-shell" | head -1)
               test -n "$cmd"
               grep -F "command=\"$cmd\"" authorized_keys
+              # The sops signing key authenticates only into the forced sandbox.
+              grep -F 'command="'"$cmd"'"' authorized_keys | grep -qF ${lib.escapeShellArg (import ../lib/signing-keys.nix).personal}
               test ${
                 toString (
                   builtins.length (

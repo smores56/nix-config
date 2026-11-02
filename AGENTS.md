@@ -172,8 +172,9 @@ Run them after touching `modules/features/ai/sdlc/`, `modules/features/ai/memory
 Script checks run each `tests/<name>.sh` against tools and files from a
 generated home, as the `<name>` flake check (`scriptChecks` in
 `modules/flake/checks.nix`): `git-work-routing` (work vs personal identity by
-remote URL), `ssh-allowed-signers`
-(signature verification), `ssh-pin-askpass` (only the two PIN prompt shapes
+remote URL, including the per-account sops signing key), `ssh-allowed-signers`
+(signature verification; each sops signing key is trusted only for its own
+account), `ssh-pin-askpass` (only the two PIN prompt shapes
 are answered; host-key and presence prompts fail closed; a cache miss prompts
 through `fido2-ensure-pin` when a compositor is reachable), `fido2-ensure-pin`
 (the PIN is prompted, verified, and cached once per session, refuses below four
