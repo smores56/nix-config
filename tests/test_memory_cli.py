@@ -46,6 +46,14 @@ class CliContextTests(unittest.TestCase):
 
 
 class CliOutputTests(unittest.TestCase):
+    def setUp(self):
+        self.token = tempfile.NamedTemporaryFile("w", delete=False)
+        self.token.write("test-token")
+        self.token.close()
+        os.environ["MEMORY_MCP_TOKEN_FILE"] = self.token.name
+        self.addCleanup(os.unlink, self.token.name)
+        self.addCleanup(os.environ.pop, "MEMORY_MCP_TOKEN_FILE", None)
+
     def run_cli(self, argv, result):
         async def fake_call(_config, _tool, _arguments):
             return result

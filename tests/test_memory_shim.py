@@ -117,6 +117,11 @@ class ShimMainTests(unittest.TestCase):
             "GIT_CONFIG_GLOBAL": os.devnull,
             "GIT_CONFIG_SYSTEM": os.devnull,
         }
+        self.token = self.root / "token"
+        self.token.write_text("test-token")
+        self.env["MEMORY_MCP_TOKEN_FILE"] = str(self.token)
+        os.environ["MEMORY_MCP_TOKEN_FILE"] = str(self.token)
+        self.addCleanup(os.environ.pop, "MEMORY_MCP_TOKEN_FILE", None)
 
     def tearDown(self):
         self.tmp.cleanup()
