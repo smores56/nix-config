@@ -10,9 +10,8 @@ let
   # each PIV key lives in its YubiKey's slot 9a.
   yubikeyKeys = import ../lib/yubikey-keys.nix;
   user = config.machine.username;
-  # The agent gets the no-touch signing credential only, and every host
-  # forces its sessions into the sandbox. The PIV login keys keep normal
-  # interactive shells.
+  # The agent's key is forced into the sandbox on every host; the PIV login
+  # keys keep normal interactive shells.
   agentSandbox = import ../lib/agent-sandbox.nix {
     inherit pkgs lib;
     isServer = builtins.elem "server" config.machine.profiles;
@@ -20,13 +19,13 @@ let
   };
   forcedKey =
     k:
-    ''command="${agentSandbox.agentSsh}/bin/agent-ssh",no-touch-required,no-user-rc,no-port-forwarding,no-agent-forwarding,no-X11-forwarding ${k.pubkey}'';
+    ''command="${agentSandbox.agentSsh}/bin/agent-ssh",no-user-rc,no-port-forwarding,no-agent-forwarding,no-X11-forwarding ${k.pubkey}'';
   # The personal sops signing key is also the laptop sandbox's login: forced
-  # into the sandbox like the FIDO2 signing handles, never an interactive shell.
+  # into the sandbox, never an interactive shell.
   signingKeys = import ../lib/signing-keys.nix;
-  authorizedKeys =
-    map (k: k.pubkey) yubikeyKeys.piv
-    ++ map forcedKey (yubikeyKeys.signing ++ [ { pubkey = signingKeys.personal; } ]);
+  authorizedKeys = map (k: k.pubkey) yubikeyKeys.piv ++ [
+    (forcedKey { pubkey = signingKeys.personal; })
+  ];
 in
 {
   options.exposeSsh.enable = lib.mkEnableOption "sshd bound to loopback for Cloudflare Tunnel access";
@@ -54,42 +53,26 @@ in
           KbdInteractiveAuthentication = false;
           PermitRootLogin = "no";
           PubkeyAuthentication = true;
-          # One factor. FIDO2 keys must assert user verification (the PIN); the
-          # option has no effect on non-FIDO2 keys, so the legacy identity keeps
-          # working until it is retired.
+          # One factor. A FIDO2 login key would have to assert user
+          # verification (the PIN); none is authorized now, and the option has
+          # no effect on the PIV and software keys.
           AuthenticationMethods = "publickey";
           PubkeyAuthOptions = "verify-required";
           AllowUsers = [ user ];
-          # sshfs (pm) uses the SFTP subsystem, not TCP forwarding; the agent is
-          # forwarded for pam_rssh and signing.
-          #
-          # `remote` rather than `no` only to unlock streamlocal forwarding:
-          # sshd gates remote Unix-socket forwards on this same flag, so `no`
-          # also refuses the client's `RemoteForward …/agent-sign`
-          # (mindrot bug 3686, still open). No server-side TCP listener or
-          # egress can be set up: every remote TCP listen is denied below, and
-          # local forwarding stays off.
-          AllowTcpForwarding = "remote";
-          # Denies every TCP -R listen, which is what "no" was really for. Not
-          # consulted for Unix-socket forwarding (`remote_open_match` returns
-          # early when a listen path is set), so it cannot block agent-sign.
-          PermitListen = "none";
-          # Remote only: the sandbox receives the laptop's signing agent through
-          # a socket the client's RemoteForward creates. Local streamlocal
-          # forwarding (into the server) is not needed and stays denied.
-          AllowStreamLocalForwarding = "remote";
-          # sshd leaves a remote-forwarded socket behind when the session ends,
-          # and /run/user/1000 persists (linger), so without this every second
-          # connection fails to bind and silently loses the signing agent.
-          # The client's own StreamLocalBindUnlink only covers -L listeners.
-          StreamLocalBindUnlink = "yes";
+          # sshfs (pm) uses the SFTP subsystem, not TCP forwarding. Only the
+          # agent is forwarded, for pam_rssh; commits sign with the host's sops
+          # key, so no socket or port is forwarded onto the server.
+          AllowTcpForwarding = "no";
+          AllowStreamLocalForwarding = "no";
           AllowAgentForwarding = "yes";
           # A per-key command= does NOT suppress ~/.ssh/rc; no-user-rc on the
-          # signing keys and this global setting both close it.
+          # forced key and this global setting both close it.
           PermitUserRC = false;
           # Every credential the agent offers is tried until one matches, and a
-          # rejected offer counts against this limit; with 3 keys x 2 identities
-          # the default 6 is too small.
+          # rejected offer counts against this limit. Clients offer the three
+          # PIV keys (IdentitiesOnly) or the one forced sandbox key; the extra
+          # headroom keeps a client that also offers agent keys from tripping
+          # the default 6.
           MaxAuthTries = 10;
           LoginGraceTime = 20;
           # Accept COLORTERM and TERM from client for truecolor support over SSH

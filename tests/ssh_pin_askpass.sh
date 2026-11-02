@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# askpass must answer only the two PIN prompt shapes and never leak the PIN to
-# a host-key or presence prompt. Usage: ssh_pin_askpass.sh <ssh-pin-askpass>
+# askpass must answer only the PIV PIN prompt and never leak the PIN to a
+# host-key, presence, or FIDO2 PIN prompt (no FIDO2 credential in use asks for
+# one). Usage: ssh_pin_askpass.sh <ssh-pin-askpass>
 set -euo pipefail
 
 askpass=$1
@@ -47,9 +48,14 @@ expect_pin() {
   [ "$out" = "12345678" ] || fail "wrong answer for: $prompt"
 }
 
-# The PKCS#11 prompt and the agent prompt both return the cached PIN.
+# The PIV (PKCS#11) prompt returns the cached PIN.
 expect_pin "Enter PIN for 'Yubico YubiKey': "
-expect_pin "Enter PIN and confirm user presence for ED25519-SK key SHA256:abc: "
+# A FIDO2 PIN prompt means a verify-required credential nobody enrolled any
+# more; it must not receive the PIV PIN.
+if out=$("$askpass" "Enter PIN and confirm user presence for ED25519-SK key SHA256:abc: " 2>/dev/null); then
+  fail "FIDO2 PIN prompt was answered with: $out"
+fi
+[ -z "${out:-}" ] || fail "FIDO2 PIN prompt produced output"
 
 # The host-key confirmation prompt must not receive the PIN.
 if out=$("$askpass" 'Are you sure you want to continue connecting (yes/no/[fingerprint])? ' 2>/dev/null); then

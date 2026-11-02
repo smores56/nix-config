@@ -1,17 +1,17 @@
 # Public YubiKey material, one entry per credential and key.
 #
 # This is the single source for sshd's authorized_keys, the sudo authorized
-# keys, git's allowed_signers, pam_p11's certificate file, and the handle
-# integrity check in `key-backup`/`key-restore`. Private halves never leave
-# the token, so nothing here is secret.
+# keys, pam_p11's certificate file, and the handle integrity check in
+# `key-backup`/`key-restore`. Private halves never leave the token, so nothing
+# here is secret. Commit signing does not use the YubiKeys (the sops keys in
+# modules/lib/signing-keys.nix sign), so none of these is trusted for git.
 #
-# `piv` entries are slot 9a (PIN ONCE, touch NEVER, SSH login and git signing
-# on smortress). `signing` entries are no-touch-required + verify-required and
-# are loaded only into fido2-sign-agent. `sudo` entries are touch-required with
-# no verify-required and are loaded only into fido2-agent for pam_rssh.
+# `piv` entries are slot 9a (PIN ONCE, touch NEVER, SSH login). `sudo` entries
+# are touch-required with no verify-required and are loaded only into
+# fido2-agent for pam_rssh.
 #
-# `key` is the relative path under ~/.config/ssh-sk (piv-k1 vs k1/signing);
-# `piv` entries also carry the pam_p11 certificate.
+# `key` is the relative path under ~/.config/ssh-sk (piv-k1 vs k1/sudo); `piv`
+# entries also carry the pam_p11 certificate.
 {
   piv = [
     {
@@ -58,21 +58,6 @@
         VFG+aCbn3QjouLjIkay42iAK/g==
         -----END CERTIFICATE-----
       '';
-    }
-  ];
-
-  signing = [
-    {
-      key = "k1/signing";
-      pubkey = "sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIONu9lg+sGskfOnluRJc+K4QpIKmrPG9AZdkQGUnOwAPAAAAC3NzaDpzaWduLWsx smores sign k1";
-    }
-    {
-      key = "k2/signing";
-      pubkey = "sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIL3jMFzM8BHpOKzCdd9rFMDYcKGgYELD3/Be3HDSN/UUAAAAC3NzaDpzaWduLWsy smores sign k2";
-    }
-    {
-      key = "k3/signing";
-      pubkey = "sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIJb8e2eGxTw6x8gDgrT0ZhyBr1tT48mZRKtQcCSDwqlCAAAAC3NzaDpzaWduLWsz smores sign k3";
     }
   ];
 

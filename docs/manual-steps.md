@@ -62,22 +62,19 @@ generated hardware config, then run `nix run .#bootstrap`.
   the secret allowlist is six credentials (two PATs, Neuralwatt, TinyFish, the
   Immich key, and the Cloudflare Access token when present). `~/.ssh`,
   `~/.config/{ssh-sk,sops}`, `/srv/proton`, the PIV/sudo agent, and every other
-    secret are absent; only
-  the no-touch signing agent is forwarded in (Linux; the work Mac has no
-  signing agent yet, so its sandboxed commits are unsigned). `/var/lib/media/Photos`
+    secret are absent; no agent socket is forwarded in. `/var/lib/media/Photos`
  is masked
   by a tmpfs applied after every bind, so it reads empty and is not writable
   even though the media tree as a whole is.
-- **Maki signing**: there is no software signing key. Commits made inside the
-  sandbox sign through the forwarded FIDO2 signing agent (`gpg.ssh.defaultKeyCommand`,
-  `gpg.format=ssh`), and the sandbox git config sets `commit.gpgsign = true`, so
-  signing is the default. `commit.gpgsign` is config, not enforcement: a
-  deliberate `git commit --no-gpg-sign` still produces an unsigned commit, which
-  the review or PR checks catch. The default key is chosen from `ssh-add -L`
-  and must appear in `~/.config/ssh/allowed_signers`; add a hardware key for the
-  `sam@sammohr.dev` principal (the same entry that signs outside) and register it
-  on GitHub as a **signing** key only. A retired `~/.config/maki/signing_ed25519`
-  is removed by `agent-sandbox-cleanup`; nothing reads it.
+- **Maki signing**: commits made inside the sandbox sign with the same sops key
+  the host uses for that repo's owner (`user.signingkey`, `gpg.format=ssh`):
+  the personal key is bound at its `/run/secrets` path on Linux, and on the work
+  Mac the sandbox reads the resolved files behind `~/.local/share/github`. The
+  sandbox git config sets `commit.gpgsign = true`, so signing is the default.
+  `commit.gpgsign` is config, not enforcement: a deliberate
+  `git commit --no-gpg-sign` still produces an unsigned commit, which the review
+  or PR checks catch. A retired `~/.config/maki/signing_ed25519` is removed by
+  `agent-sandbox-cleanup`; nothing reads it.
 
 #### Encrypted root and Secure Boot (T2)
 
@@ -1339,9 +1336,9 @@ The sandbox binds an explicit config allowlist and masks the whole `~/.config`;
 if a tool needs its config, add the directory to `CONFIG_ALLOW` in
 `modules/lib/agent-sandbox.nix`. `~/.ssh` contains no keys: `allowed_signers`
 and `known_hosts` live in `~/.config/ssh`, and the home-manager activation
-moves them there. The agent's SSH credential is the no-touch signing key, and
-every host authorizes it with a forced `agent-ssh` command that re-enters the
-sandbox.
+moves them there. The agent's SSH credential is the personal sops signing key,
+and smortress authorizes it only with a forced `agent-ssh` command that
+re-enters the sandbox.
 
 One-time cleanup (already run for the personal hosts): `agent-sandbox-cleanup
 --yes` deletes the retired Maki software signing key, the `~/.config/pi` SSH
@@ -1359,8 +1356,8 @@ kernel boundary.
 Residuals of the same-UID model: `~/.cargo/registry`, `~/.cargo/git`, `~/.npm`,
 and the Bun cache stay writable for build speed, so a modified cache entry can
 affect a later unsandboxed build; `~/.local/state/*` entries that are not
-explicitly masked remain readable read-only; and the signing credential is a
-signing oracle by design, so review and the PR gate stay the control.
+explicitly masked remain readable read-only; and the sandbox holds the signing
+keys by design, so review and the PR gate stay the control.
 
 Nix: `/nix/store` is read-only, and so is `/nix/var/nix` whenever a daemon
 socket exists, so `nix` resolves to the daemon instead of a local store. A local
@@ -2011,8 +2008,8 @@ Generates the pre-generated host SSH key under the gitignored
 <!-- manual-step: app/key-backup -->
 
 Run `nix run .#key-backup` on a machine **before** wiping or reinstalling it.
-It archives `~/.config/ssh-sk/k{1,2,3}/{sudo,signing}` — the FIDO2 credential
-*handles* that make the YubiKeys usable for sudo and git signing — the host SSH
+It archives `~/.config/ssh-sk/k{1,2,3}/sudo` — the FIDO2 credential *handles*
+that make the YubiKeys usable for sudo — the host SSH
 key, and the untracked `~/dev/setup-yubikey.sh` if present. A machine wipe
 destroys the handles; without them OpenSSH cannot use the credential even with
 the right key inserted. The setup script is restored as **data** (0600), not

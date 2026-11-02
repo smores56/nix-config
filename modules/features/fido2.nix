@@ -1,10 +1,11 @@
-# FIDO2 session plumbing: an ssh-agent that holds the YubiKey credentials and
-# an askpass that feeds it the PIN from a per-session cache.
+# YubiKey session plumbing: one ssh-agent that holds the PIV login key and the
+# touch-only sudo handles, and an askpass that feeds the PIV PIN from a
+# per-session cache.
 #
-# The goal is "free" SSH after login: with a no-touch-required + verify-required
-# credential, the agent needs only the PIN, and the PIN is cached once per
-# session in $XDG_RUNTIME_DIR (tmpfs, 0600) instead of a keyring. Sudo uses a
-# separate touch-required credential, so it costs one touch and no PIN.
+# The goal is "free" SSH after login: the PIV key needs only its PIN, cached
+# once per session in $XDG_RUNTIME_DIR (tmpfs, 0600) instead of a keyring. Sudo
+# uses a separate touch-required FIDO2 credential, so it costs one touch and no
+# PIN. Commit signing does not touch the YubiKeys (sops keys, git.nix).
 {
   config,
   lib,
@@ -42,11 +43,12 @@ let
     exec ${pkgs.coreutils}/bin/cat "''${XDG_RUNTIME_DIR:?}/fido2/pin"
   '';
 
-  # ssh invokes this through SSH_ASKPASS_REQUIRE=force. It answers only the
-  # two real PIN prompts and never prompts on a tty: the agent has no tty, and
-  # a presence request must be visible rather than silently answered. A cache
-  # miss opens the graphical prompt; when that is impossible the failure stays
-  # loud and names the terminal fallback.
+  # ssh invokes this through SSH_ASKPASS_REQUIRE=force. It answers only the PIV
+  # PIN prompt and never prompts on a tty: the agent has no tty, and a presence
+  # request must be visible rather than silently answered. No FIDO2 credential
+  # in use asks for a PIN (the sudo handles are touch-only), so a FIDO2 PIN
+  # prompt fails closed. A cache miss opens the graphical prompt; when that is
+  # impossible the failure stays loud and names the terminal fallback.
   askpass = pkgs.writeShellApplication {
     name = "ssh-pin-askpass";
     runtimeInputs = [
@@ -56,7 +58,6 @@ let
     text = ''
       case "''${1:-}" in
         "Enter PIN for '"*) ;;
-        "Enter PIN"*" key "*) ;;
         "Confirm user presence for key"*)
           notify-send -u critical "YubiKey touch requested" "$1" || true
           exit 1
@@ -70,10 +71,10 @@ let
   };
 
   # yk-login is the recovery path: it prompts on the terminal through the
-  # shared helper, restarts the agents so a reset OpenSC session cannot poison
-  # them, and reloads the PIV provider and the three sudo/signing handles. The
-  # PIV PIN lives in ssh-pkcs11-helper memory; the cache file remains only for
-  # the FIDO2 signing credential.
+  # shared helper, restarts the agent so a reset OpenSC session cannot poison
+  # it, and reloads the PIV provider and the three sudo handles. The PIV PIN
+  # lives in ssh-pkcs11-helper memory once loaded; the cache file lets yk-ensure
+  # reload it without a prompt.
   ykLogin = pkgs.writeShellApplication {
     name = "yk-login";
     runtimeInputs = [
@@ -96,20 +97,15 @@ let
       ${lib.getExe ensurePin} --tty
 
       # Another PIV client (pam_p11, ykman, the old 9c fallback) resets OpenSC's
-      # verified state. Restart only the PIV agent so a stale provider cannot
-      # fail with "agent refused operation". The signing handles are FIDO2 and
-      # survive; restarting their agent would only orphan the socket every
-      # running sandbox bound to it.
+      # verified state. Restart the agent so a stale provider cannot fail with
+      # "agent refused operation".
       systemctl --user restart fido2-agent.service
-      # The signing agent is never restarted (a running sandbox holds its
-      # socket), but start it if the session never brought it up.
-      systemctl --user start fido2-sign-agent.service || true
       for _ in $(seq 1 50); do
-        [ -S "$runtime/fido2-agent" ] && [ -S "$runtime/fido2-sign-agent" ] && break
+        [ -S "$runtime/fido2-agent" ] && break
         sleep 0.1
       done
-      [ -S "$runtime/fido2-agent" ] && [ -S "$runtime/fido2-sign-agent" ] || {
-        echo "yk-login: the fido2 agents did not start" >&2
+      [ -S "$runtime/fido2-agent" ] || {
+        echo "yk-login: the fido2 agent did not start" >&2
         exit 1
       }
 
@@ -122,17 +118,14 @@ let
       fi
 
       ${lib.getExe (loader "fido2-agent-load" "fido2-agent" loginKeys)}
-      ${lib.getExe (loader "fido2-sign-load" "fido2-sign-agent" signingKeys)}
 
-      for sock in fido2-agent fido2-sign-agent; do
-        echo "==> $sock"
-        SSH_AUTH_SOCK="$runtime/$sock" ssh-add -l || true
-      done
+      echo "==> fido2-agent"
+      SSH_AUTH_SOCK="$agent" ssh-add -l || true
     '';
   };
 
-  # Loading a handle needs no PIN (it is useless without the physical key); the
-  # PIN is requested per signature and answered by the askpass cache.
+  # Loading a handle needs no PIN (it is useless without the physical key); a
+  # sudo signature then costs one touch.
   loader =
     name: sockSuffix: keys:
     pkgs.writeShellApplication {
@@ -157,7 +150,6 @@ let
 
   # All three keys are interchangeable; load every handle that exists.
   loginKeys = map (k: ".config/ssh-sk/${k.key}") yubikeyKeys.sudo;
-  signingKeys = map (k: ".config/ssh-sk/${k.key}") yubikeyKeys.signing;
 
   agentEnv = [
     "SSH_ASKPASS=${lib.getExe askpass}"
@@ -198,8 +190,7 @@ in
 
     # A dedicated agent rather than `services.ssh-agent`: the systemd user
     # session's sshAuthSock allows only one provider. `Host smortress` selects
-    # this socket with IdentityAgent and forwards it for pam_rssh; git signing
-    # uses the signing-only agent (modules/features/git.nix).
+    # this socket with IdentityAgent and forwards it for pam_rssh.
     systemd.user.services.fido2-agent = {
       Unit = {
         Description = "ssh-agent for the YubiKey login and sudo credentials";
@@ -234,44 +225,6 @@ in
         # Type=simple: ssh-agent may not have created the socket yet.
         ExecStartPre = "${lib.getExe pkgs.bashNonInteractive} -c 'for ((i = 0; i < 300; i++)); do [ -S %t/fido2-agent ] && exit 0; sleep 0.1; done; exit 1'";
         ExecStart = "${lib.getExe (loader "fido2-agent-load" "fido2-agent" loginKeys)}";
-      };
-      Install.WantedBy = [ "default.target" ];
-    };
-
-    # The sandbox and git sign through fido2-sign-agent, so its handles are
-    # loaded at login like the sudo handles: a first signature then costs only
-    # the lazy PIN prompt. Loading needs no PIN (a handle is useless without
-    # the token).
-    systemd.user.services.fido2-sign-load = lib.mkIf (!isServer) {
-      Unit = {
-        Description = "Load the no-touch signing handles into fido2-sign-agent";
-        After = [ "fido2-sign-agent.service" ];
-        Wants = [ "fido2-sign-agent.service" ];
-        # A restart of the agent clears it; re-run the load with it.
-        PartOf = [ "fido2-sign-agent.service" ];
-      };
-      Service = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-        # Type=simple: ssh-agent may not have created the socket yet.
-        ExecStartPre = "${lib.getExe pkgs.bashNonInteractive} -c 'for ((i = 0; i < 300; i++)); do [ -S %t/fido2-sign-agent ] && exit 0; sleep 0.1; done; exit 1'";
-        ExecStart = "${lib.getExe (loader "fido2-sign-load" "fido2-sign-agent" signingKeys)}";
-      };
-      Install.WantedBy = [ "default.target" ];
-    };
-
-    # Signing-only agent: the Maki sandbox will see this socket and nothing else.
-    systemd.user.services.fido2-sign-agent = {
-      Unit = {
-        Description = "ssh-agent holding only the no-touch signing credential";
-        StartLimitIntervalSec = 0;
-      };
-      Service = {
-        Type = "simple";
-        ExecStart = "${pkgs.openssh}/bin/ssh-agent -D -a %t/fido2-sign-agent";
-        Environment = agentEnv;
-        Restart = "on-failure";
-        RestartSec = 2;
       };
       Install.WantedBy = [ "default.target" ];
     };

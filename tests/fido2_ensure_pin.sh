@@ -113,7 +113,7 @@ export TEST_PIN=12345678
 [ "$(wc -l <"$work/prompts")" -eq 1 ] || fail "expected exactly one prompt"
 [ "$(cat "$work/prompts")" = wayland-0 ] || fail "prompt did not use the discovered socket"
 
-# A warm cache costs no prompt, and stays warm on later signatures.
+# A warm cache costs no prompt, and stays warm on later logins.
 : >"$work/prompts"
 "$ensure" || fail "warm cache should succeed"
 "$ensure" || fail "warm cache should keep succeeding"
@@ -225,7 +225,7 @@ export TEST_PIN=12345678
 [ "$(wc -l <"$work/prompts")" -eq 1 ] || fail "serial-less cache prompted again"
 
 # A card that cannot be probed right now (busy, or briefly unplugged) must
-# not turn a verified cache into a failed signature.
+# not turn a verified cache into a failed login.
 reset
 mkwayland 0
 export TEST_PIN=12345678
@@ -281,7 +281,7 @@ export TEST_PIN=12345678
 if "$ensure"; then fail "should fail without a card"; fi
 [ -e "$work/prompts" ] && fail "prompted without a card"
 
-# Two signers racing must not produce two dialogs.
+# Two callers racing must not produce two dialogs.
 reset
 mkwayland 0
 export TEST_PIN=12345678 TEST_DELAY=0.5
