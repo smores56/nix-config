@@ -485,7 +485,7 @@ in
               test "$(grep -c 'command="' authorized_keys)" -eq 1
               test "$(grep -c 'no-user-rc' authorized_keys)" -eq 1
               test "$(grep -c 'no-agent-forwarding' authorized_keys)" -eq 1
-              ! grep -q 'sk-ssh-ed25519' authorized_keys
+              if grep -q 'sk-ssh-ed25519' authorized_keys; then exit 1; fi
               shell=${config.flake.nixosConfigurations.smortress.config.users.users.smores.shell}
               cmd=$(grep -o '/nix/store/[^"]*agent-ssh' "$shell/bin/agent-login-shell" | head -1)
               test -n "$cmd"
@@ -493,7 +493,7 @@ in
               # The sops signing key authenticates only into the forced sandbox:
               # present on a forced line, absent from every unforced one.
               grep -F 'command="'"$cmd"'"' authorized_keys | grep -qF ${lib.escapeShellArg (import ../lib/signing-keys.nix).personal}
-              ! grep -v 'command="' authorized_keys | grep -qF ${lib.escapeShellArg (import ../lib/signing-keys.nix).personal}
+              if grep -v 'command="' authorized_keys | grep -qF ${lib.escapeShellArg (import ../lib/signing-keys.nix).personal}; then exit 1; fi
               test ${
                 toString (
                   builtins.length (
@@ -619,13 +619,13 @@ in
               grep -F -- '--unshare-user' ${../lib/agent-sandbox.sh}
               grep -F -- '--tmpfs /run' ${../lib/agent-sandbox.sh}
               grep -F -- 'no-user-rc' ${../nixos/ssh.nix}
-              ! grep -F -- 'no-touch-required' ${../nixos/ssh.nix}
+              if grep -F -- 'no-touch-required' ${../nixos/ssh.nix}; then exit 1; fi
               grep -F -- 'agent-ssh' ${../nixos/ssh.nix}
               grep -F -- 'Photos' ${../lib/agent-sandbox.nix}
               grep -F -- 'gitdir/hooks' ${../lib/agent-sandbox.sh}
               grep -F -- 'gitdir/config' ${../lib/agent-sandbox.sh}
               grep -F -- '\.git/(hooks' ${../lib/agent-sandbox.sh}
-              ! grep -F -- '(allow default)' ${../lib/agent-sandbox.sh}
+              if grep -F -- '(allow default)' ${../lib/agent-sandbox.sh}; then exit 1; fi
               touch $out
             '';
         sshd-settings =
@@ -660,7 +660,7 @@ in
               grep -Fx 'PermitUserRC no' settings
               grep -Fx 'MaxAuthTries 10' settings
               grep -Fx 'LoginGraceTime 20' settings
-              ! grep -q '^AuthorizedKeysFile .*\.ssh/authorized_keys' settings
+              if grep -q '^AuthorizedKeysFile .*\.ssh/authorized_keys' settings; then exit 1; fi
               grep -q '^listenaddress 127\.0\.0\.1:' settings
               touch $out
             '';

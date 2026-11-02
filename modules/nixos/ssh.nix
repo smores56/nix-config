@@ -69,8 +69,10 @@ in
           # forced key and this global setting both close it.
           PermitUserRC = false;
           # Every credential the agent offers is tried until one matches, and a
-          # rejected offer counts against this limit; the forwarded agent offers
-          # three PIV keys and three sudo handles, so the default 6 is too small.
+          # rejected offer counts against this limit. Clients offer the three
+          # PIV keys (IdentitiesOnly) or the one forced sandbox key; the extra
+          # headroom keeps a client that also offers agent keys from tripping
+          # the default 6.
           MaxAuthTries = 10;
           LoginGraceTime = 20;
           # Accept COLORTERM and TERM from client for truecolor support over SSH

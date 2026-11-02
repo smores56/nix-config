@@ -24,7 +24,8 @@ For each key:
    `modules/lib/yubikey-keys.nix`. That file is the single source for sshd,
    pam_p11, the sudo authorized keys, and the bundle's integrity check. The
    YubiKeys do not sign commits (the sops keys in
-   `modules/lib/signing-keys.nix` do), so no signing credential is enrolled.
+   `modules/lib/signing-keys.nix` do): if the script also creates an
+   `ssh:sign-kN` credential, nothing uses it; delete it as below.
 2. Run `home-manager switch` on `smorespro` and `smortress`, then drop the
    cached PIN (`rm -f "$XDG_RUNTIME_DIR/fido2/pin" "$XDG_RUNTIME_DIR/fido2/pin-state"`).
    Changing a PIN leaves the retry counter at its maximum, so a stale cache
@@ -104,6 +105,30 @@ That restores the PIN without touching the PIV keys. If the PUK is exhausted,
 the PIV application must be reset and every PIV credential re-enrolled; the
 9a certificate and public key change.
 
+## Retiring the FIDO2 signing credentials (one-time)
+
+Commits sign with the sops keys, so the old `ssh:sign-kN` credentials are
+unused. Retire them once:
+
+1. Rebuild in this order: every laptop's home first (`home-manager switch`),
+   then smortress (`sudo nixos-rebuild switch --flake .#smortress`). The old
+   laptop config forwarded a signing socket with `ExitOnForwardFailure`, which
+   the new sshd refuses, so a laptop still on its old home would drop every
+   connection to an already-rebuilt smortress (`ssh -o ClearAllForwardings=yes
+   smortress` gets in meanwhile).
+2. On each Linux host, delete the leftover handles (trusted nowhere, but they
+   can still produce untouched signatures with a key inserted):
+   ```sh
+   rm -f ~/.config/ssh-sk/k{1,2,3}/signing ~/.config/ssh-sk/k{1,2,3}/signing.pub
+   ```
+3. With each key inserted, delete its credential (needs the FIDO2 PIN):
+   ```sh
+   ykman fido credentials list
+   ykman fido credentials delete ssh:sign-k1   # k2, k3 on the other keys
+   ```
+4. Delete the FIDO2 and PIV entries from the personal account's GitHub
+   signing keys; GitHub keeps commits it already verified.
+
 ## Locked FIDO2 PIN
 
 ```sh
@@ -124,7 +149,9 @@ ykman fido info    # FIDO2 PIN tries remaining
 
 `fido2-ensure-pin` (the helper behind the askpass, `yk-ensure`, and
 `yk-login`) refuses to send the PIN below four FIDO2 retries and verifies the
-PIN before writing the cache. It re-prompts when the token's serial or retry
+PIN before writing the cache. The cached PIN unlocks PIV 9a, but the guard and
+the verification use the FIDO2 applet, so the PIV and FIDO2 PINs must stay
+identical: always change them together. It re-prompts when the token's serial or retry
 counter moves. A PIN change or reset keeps both, so drop the cache by hand as
 step 2 says.
 

@@ -128,7 +128,7 @@ export PATH="${HM_BIN}:${PATH}"
 #
 # The public halves are committed (modules/lib/yubikey-keys.nix) and written by
 # `ssh-pub-keys`, the same command every switch runs. The private halves stay on
-# the YubiKeys: the sudo and signing handles load at login, and the PIV 9a key
+# the YubiKeys: the sudo handles load at login, and the PIV 9a key
 # loads on first use when the PIN dialog runs, so nothing is generated here.
 
 # Identities come from the FIDO2/PIV agents (modules/features/fido2.nix); there

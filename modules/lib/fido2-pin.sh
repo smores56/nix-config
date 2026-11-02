@@ -4,12 +4,17 @@
 # so ssh-pin-askpass (agent-driven, no tty), yk-ensure (PIV provider), and
 # yk-login --tty (recovery) cannot drift apart.
 #
+# The cached PIN now unlocks only PIV 9a (no FIDO2 credential in use needs a
+# PIN), but the retry guard and the verify step use the FIDO2 applet. That is
+# sound only because the PIV and FIDO2 PINs are set identical; change both
+# together (docs/key-rotation.md).
+#
 # The cache is paired with the card it was verified against and that card's
 # retry counter at that moment. A different serial later means another token is
 # plugged in; a different counter means an attempt was spent since then or the
 # card was reset/re-enrolled. Either way the PIN may no longer be valid, so the
 # cache is discarded instead of replayed: ssh-agent asks at most once per
-# signature, so a replay would burn a retry silently. Serial-less tokens record
+# login, so a replay would burn a retry silently. Serial-less tokens record
 # "-" and keep only the counter guard.
 #
 # Test seams: FIDO2_YKMAN, FIDO2_FUZZEL, FIDO2_NOTIFY override the binaries,
@@ -42,7 +47,7 @@ note() {
   [ "$quiet" = 1 ] && return 0
   [ -n "$notify_bin" ] || return 0
   # Bounded and silent on stdout: this runs under the lock, and a wedged
-  # session bus must not block the next signature.
+  # session bus must not block the next login.
   timeout 5 "$notify_bin" -a fido2 "YubiKey" "$*" >/dev/null 2>&1 || true
 }
 
@@ -75,7 +80,7 @@ device_state() {
 
 # fresh: verified, and the same card's counter has not moved since.
 # unknown: the card cannot be interrogated right now (busy or unplugged). A
-#   verified cache is still the best answer, and a signature that cannot reach
+#   verified cache is still the best answer, and a login that cannot reach
 #   the card fails on its own without spending a retry, so this is not an error.
 # stale: missing, malformed, or a counter that moved.
 cache_state() {
@@ -133,7 +138,7 @@ wayland_socket() {
 # Exactly one dialog per call: a cancelled prompt is a failure, not a reason to
 # try another display. The trailing space keeps the masked input off the prompt
 # text, matching fuzzel's own "> " default. The dialog is bounded because the
-# sign agent has no way to see an unattended prompt and would otherwise block
+# agent has no way to see an unattended prompt and would otherwise block
 # every client until someone dismisses it.
 prompt_pin() {
   if [ "$mode" = tty ]; then
@@ -159,10 +164,10 @@ if [ "${YK_ENSURE_NO_PROMPT:-0}" = 1 ]; then
 fi
 
 exec 9>"$runtime/fido2-ensure.lock"
-# Bounded: an abandoned dialog must not block every later signature forever.
+# Bounded: an abandoned dialog must not block every later login forever.
 flock -w 60 9 || die "another PIN prompt is still open"
 
-# Parallel signers queue here; the first prompt fills the cache for the rest.
+# Parallel callers queue here; the first prompt fills the cache for the rest.
 # Only a verified cache may exit here: a probe that fails after the lock is a
 # cache whose freshness is unknown, and replaying it could spend a retry.
 case "$(cache_state)" in
