@@ -62,7 +62,7 @@
   {
     "query": "When was a phone-first chat client over the memory graph designed?",
     "group": "smores56--nix-config",
-    "gold": "Phone-first LobeChat over Graphiti memory",
+    "gold": "Phone-first chat over Graphiti memory",
     "category": "temporal"
   },
   {

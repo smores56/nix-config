@@ -1,6 +1,6 @@
 """Read-only file search MCP over allowlisted personal directories.
 
-Loopback only: LobeChat reaches it through the SSRF-allowed local address.
+Loopback only: Open WebUI reaches it over the tunneled loopback address.
 Every path is resolved inside a configured root, a symlink may not escape one,
 and a git checkout carrying an employer marker is refused using the same
 detection as memory. Returned text is quoted data, never instructions.
