@@ -85,6 +85,13 @@ DEFAULT_TOOL_TIMEOUT = 60.0
 # already queued; older rows are resubmitted.
 DEFAULT_PENDING_STALE = 600.0
 
+# The scope a header-less MCP client is pinned to (group, cwd, actor). Only
+# clients that cannot send the X-Memory-* convention use it — Open WebUI's
+# native MCP connection has no custom-header support.
+DEFAULT_GROUP_ENV = "MEMORY_MCP_DEFAULT_GROUP"
+DEFAULT_CWD_ENV = "MEMORY_MCP_DEFAULT_CWD"
+DEFAULT_ACTOR_ENV = "MEMORY_MCP_DEFAULT_ACTOR"
+
 # Extracted episodes are session summaries or note sections, not source dumps.
 # A cap keeps a hostile or runaway client from parking megabytes in the graph
 # and blowing up extraction prompts.
@@ -223,24 +230,44 @@ def headers_from_context(ctx: Context) -> Mapping[str, str]:
 def _call_context(ctx: Context, headers_provider: HeadersProvider) -> CallContext:
     headers = headers_provider(ctx)
     raw_group = str(headers.get("x-memory-group", "")).strip()
-    if not raw_group:
-        raise ToolError(
-            "missing X-Memory-Group header; reach memory through memory-mcp-shim or the `memory` CLI"
-        )
+
+    if raw_group:
+        cwd = sanitize_cwd(headers.get("x-memory-cwd"))
+        if not cwd.startswith("/"):
+            raise ToolError("missing or relative X-Memory-Cwd header; the shim sends the real cwd")
+        actor = sanitize_actor(headers.get("x-memory-actor"))
+    else:
+        # A client that speaks none of the convention gets one pinned scope
+        # instead of a refusal: Open WebUI's native MCP client cannot send
+        # custom headers. The bearer token stays the only authority, and a
+        # client that sends any X-Memory-* header is held to the strict
+        # contract, so a partial set can never inherit a default.
+        scope = _pinned_scope()
+        if scope is None:
+            raise ToolError(
+                "missing X-Memory-Group header; reach memory through memory-mcp-shim or the `memory` CLI"
+            )
+        raw_group, cwd, actor = scope
+
     try:
         group = validate_group(raw_group)
     except GroupRefused as exc:
         raise ToolError(str(exc)) from exc
 
-    cwd = sanitize_cwd(headers.get("x-memory-cwd"))
-    if not cwd.startswith("/"):
-        raise ToolError("missing or relative X-Memory-Cwd header; the shim sends the real cwd")
-
     return CallContext(
         group=group,
         cwd=cwd[:MAX_CWD_CHARS],
-        actor=sanitize_actor(headers.get("x-memory-actor")),
+        actor=actor,
     )
+
+
+def _pinned_scope() -> tuple[str, str, str] | None:
+    """The deployment's header-less scope, or `None` when it is not configured."""
+    group = os.environ.get(DEFAULT_GROUP_ENV, "").strip()
+    cwd = sanitize_cwd(os.environ.get(DEFAULT_CWD_ENV))
+    if not group or not cwd.startswith("/"):
+        return None
+    return group, cwd, sanitize_actor(os.environ.get(DEFAULT_ACTOR_ENV))
 
 
 class BodyTooLarge(Exception):

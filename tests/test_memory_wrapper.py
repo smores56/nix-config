@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import re
 import sys
 import tempfile
@@ -341,6 +342,38 @@ class WrapperTests(unittest.IsolatedAsyncioTestCase):
         result = await self.call("memory_write", {"content": "x"})
         self.assertTrue(result.isError)
         self.assertIn("X-Memory-Cwd", result.content[0].text)
+
+    async def test_headerless_client_uses_the_pinned_default_scope(self):
+        self.header_values = {}
+        with mock.patch.dict(
+            os.environ,
+            {
+                "MEMORY_MCP_DEFAULT_GROUP": "global",
+                "MEMORY_MCP_DEFAULT_CWD": "/chat",
+                "MEMORY_MCP_DEFAULT_ACTOR": "open-webui",
+            },
+        ):
+            result = await self.call("memory_write", {"content": "from open webui"})
+        self.assertFalse(result.isError)
+        self.assertEqual(len(self.backend.added), 1)
+        row = self.audit()[-1]
+        self.assertEqual(row["group_id"], "global")
+        self.assertEqual(row["actor"], "open-webui")
+
+    async def test_a_partial_header_set_never_falls_back_to_the_defaults(self):
+        self.header_values = headers(**{"x-memory-cwd": "relative/path"})
+        with mock.patch.dict(
+            os.environ,
+            {
+                "MEMORY_MCP_DEFAULT_GROUP": "global",
+                "MEMORY_MCP_DEFAULT_CWD": "/chat",
+                "MEMORY_MCP_DEFAULT_ACTOR": "open-webui",
+            },
+        ):
+            result = await self.call("memory_write", {"content": "x"})
+        self.assertTrue(result.isError)
+        self.assertIn("X-Memory-Cwd", result.content[0].text)
+        self.assertEqual(self.backend.added, [])
 
     async def test_write_refuses_work_groups_without_calling_graph(self):
         self.header_values = headers(**{"x-memory-group": "blitzy-org--service"})
