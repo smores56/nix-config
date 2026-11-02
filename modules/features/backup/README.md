@@ -90,7 +90,7 @@ the code in [`backup.sh`](./backup.sh). This file is the operator's view.
 
 Offsite paths are the dataset name under the target: `/srv/proton/<Name>` — on
 smortress, `/srv/proton/Photos`, `/srv/proton/Videos`, `/srv/proton/Music`,
-`/srv/proton/LobeChat`, `/srv/proton/RustFS`, `/srv/proton/GitHub`, and
+`/srv/proton/GitHub`, and
 `/srv/proton/CloudflareTofu`. Only the mount authenticates to Proton, so a
 backup run needs no rclone config; `backup.remote` still accepts a remote name
 (`proton`, plus `backup.rcloneConfig`) for a host without the mount.
@@ -102,18 +102,8 @@ backup run needs no rclone config; `backup.remote` still accepts a remote name
 | `Photos` | `/var/lib/media/Photos` | 03:00 | `onChange` (15m) | Sun 06:00 | yes | `pg_dump -Fc` of `immich` into `current/db/immich.dump` |
 | `Videos` | `/var/lib/media/Videos` | 01:00 | `onChange` (15m) | Sun 07:00 | yes | — |
 | `Music` | `/var/lib/media/Music` | 05:00 | `onChange` (15m) | Sun 08:00 | yes | — |
-| `LobeChat` | `/var/lib/lobechat` | 02:00 | timer only | Sun 10:00 | yes | `pg_dump -Fc` of `lobechat` into `current/db/lobechat.dump` |
-| `RustFS` | `/var/lib/rustfs` | 04:00 | timer only | Sun 11:00 | yes | — |
 | `GitHub` | `/var/lib/github-mirrors` | 00:30 | timer only | Sun 10:00 | yes | `ghorg` refresh, then incremental `python-github-backup` metadata + verification (see below) |
 | `CloudflareTofu` | `/var/lib/cloudflare-tofu` | 00:15 | timer only | — | yes | — |
-
-`RustFS` also excludes its derived caches and temporary tree
-(`/.rustfs.sys/tmp/**`, `/.rustfs.sys/buckets/.usage*`,
-`/.rustfs.sys/buckets/.bloomcycle.bin`,
-`/.rustfs.sys/buckets/.scanner-pause-backlog.json`): RustFS rewrites them
-continuously and rebuilds them on start, so a live mirror can never be
-point-in-time for them, and sampling one in the restore drill is flaky by
-construction.
 
 Every dataset excludes `/.cache/**`, `**/.cache/**` and `/rclone.conf` by
 default (the `excludes` option default). That keeps regenerable caches (at the
