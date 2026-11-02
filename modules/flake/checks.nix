@@ -386,23 +386,26 @@ in
           )
         );
 
-        # The signing handles must load at login like the sudo handles; without
-        # this unit the sandbox and git sign nothing until yk-login runs.
-        fido2-sign-load = evalCheck "fido2-sign-load" (
+        # Commit signing uses the sops keys, so no Linux home may bring back the
+        # FIDO2 signing agent; the sudo agent and its loader stay exactly as they
+        # are, because pam_rssh needs the touch-only handles at login.
+        fido2-agents = evalCheck "fido2-agents" (
           toString (
             let
-              unit =
-                config.flake.homeConfigurations."smores@smorespro".config.systemd.user.services.fido2-sign-load;
-              ensure = cond: msg: lib.assertMsg cond "fido2-sign-load: ${msg}";
+              ensure = cond: msg: lib.assertMsg cond "fido2-agents: ${msg}";
+              units = name: config.flake.homeConfigurations.${name}.config.systemd.user.services;
+              laptop = units "smores@smorespro";
+              server = units "smores@smortress";
+              load = laptop.fido2-agent-load;
             in
-            ensure (unit.Unit.After == [ "fido2-sign-agent.service" ]) "must start after the sign agent"
-            && ensure (unit.Unit.Wants == [ "fido2-sign-agent.service" ]) "must want the sign agent"
-            && ensure (unit.Unit.PartOf == [ "fido2-sign-agent.service" ]) "must be restarted with the agent"
-            && ensure (unit.Service.Type == "oneshot") "must be a oneshot"
-            && ensure (unit.Service.RemainAfterExit == true) "must remain after exit"
-            && ensure (unit.Install.WantedBy == [ "default.target" ]) "must start with the session"
-            && ensure (lib.hasInfix "fido2-sign-load" unit.Service.ExecStart) "must run the sign loader"
-            && "ok"
+            assert
+              ensure (!(laptop ? fido2-sign-agent || server ? fido2-sign-agent)) "the signing agent is gone"
+              && ensure (!(laptop ? fido2-sign-load || server ? fido2-sign-load)) "the signing loader is gone"
+              && ensure (laptop ? fido2-agent && server ? fido2-agent) "the login/sudo agent remains"
+              && ensure (load.Unit.After == [ "fido2-agent.service" ]) "the sudo loader starts after its agent"
+              && ensure (load.Unit.PartOf == [ "fido2-agent.service" ]) "the sudo loader restarts with its agent"
+              && ensure (lib.hasInfix "fido2-agent-load" (toString load.Service.ExecStart)) "the sudo loader runs";
+            "ok"
           )
         );
 
@@ -472,17 +475,17 @@ in
             }
             ''
               test ${toString (builtins.length keys.piv)} -eq 3
-              test ${toString (builtins.length keys.signing)} -eq 3
+              test ${toString (builtins.length (keys.signing or [ ]))} -eq 0
               test ${toString (builtins.length keys.sudo)} -eq 3
               test "${names keys.piv}" = "piv-k1 piv-k2 piv-k3"
-              test "${names keys.signing}" = "k1/signing k2/signing k3/signing"
               test "${names keys.sudo}" = "k1/sudo k2/sudo k3/sudo"
-              test ${toString (builtins.length config.flake.nixosConfigurations.smortress.config.users.users.smores.openssh.authorizedKeys.keys)} -eq 7
+              # Three PIV logins plus the sops key forced into the sandbox.
+              test ${toString (builtins.length config.flake.nixosConfigurations.smortress.config.users.users.smores.openssh.authorizedKeys.keys)} -eq 4
               printf '%s\n' ${lib.escapeShellArgs config.flake.nixosConfigurations.smortress.config.users.users.smores.openssh.authorizedKeys.keys} >authorized_keys
-              test "$(grep -c 'command="' authorized_keys)" -eq 4
-              test "$(grep -c 'no-user-rc' authorized_keys)" -eq 4
-              test "$(grep -c 'no-touch-required' authorized_keys)" -eq 4
-              test "$(grep -c 'no-agent-forwarding' authorized_keys)" -eq 4
+              test "$(grep -c 'command="' authorized_keys)" -eq 1
+              test "$(grep -c 'no-user-rc' authorized_keys)" -eq 1
+              test "$(grep -c 'no-agent-forwarding' authorized_keys)" -eq 1
+              ! grep -q 'sk-ssh-ed25519' authorized_keys
               shell=${config.flake.nixosConfigurations.smortress.config.users.users.smores.shell}
               cmd=$(grep -o '/nix/store/[^"]*agent-ssh' "$shell/bin/agent-login-shell" | head -1)
               test -n "$cmd"
@@ -504,7 +507,7 @@ in
 
               ${lib.concatMapStrings (k: ''
                 ssh-keygen -l -f ${file "pub" k k.pubkey} >/dev/null
-              '') (keys.piv ++ keys.signing ++ keys.sudo)}
+              '') (keys.piv ++ keys.sudo)}
               ${lib.concatMapStrings (k: ''
                 openssl x509 -in ${file "crt" k k.cert} -noout -subject >/dev/null
               '') keys.piv}
@@ -616,7 +619,7 @@ in
               grep -F -- '--unshare-user' ${../lib/agent-sandbox.sh}
               grep -F -- '--tmpfs /run' ${../lib/agent-sandbox.sh}
               grep -F -- 'no-user-rc' ${../nixos/ssh.nix}
-              grep -F -- 'no-touch-required' ${../nixos/ssh.nix}
+              ! grep -F -- 'no-touch-required' ${../nixos/ssh.nix}
               grep -F -- 'agent-ssh' ${../nixos/ssh.nix}
               grep -F -- 'Photos' ${../lib/agent-sandbox.nix}
               grep -F -- 'gitdir/hooks' ${../lib/agent-sandbox.sh}
@@ -647,10 +650,11 @@ in
               grep -Fx 'KbdInteractiveAuthentication no' settings
               grep -Fx 'PermitRootLogin no' settings
               grep -Fx 'PermitEmptyPasswords no' settings
-              grep -Fx 'AllowTcpForwarding remote' settings
-              grep -Fx 'permitlisten none' settings
-              grep -Fx 'AllowStreamLocalForwarding remote' settings
-              grep -Fxi 'streamlocalbindunlink yes' settings
+              # Only the agent is forwarded (pam_rssh); nothing opens a socket or
+              # a port on the server.
+              grep -Fx 'AllowTcpForwarding no' settings
+              grep -Fx 'AllowStreamLocalForwarding no' settings
+              grep -Fxi 'streamlocalbindunlink no' settings
               grep -Fx 'AllowAgentForwarding yes' settings
               grep -Fx 'AllowUsers smores' settings
               grep -Fx 'PermitUserRC no' settings

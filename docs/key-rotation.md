@@ -8,7 +8,7 @@ authorized list carries all three. The operator setup script is
 included in the Proton Pass restore bundle (below) as data until it moves into
 the repo; the report directory is not copied.
 
-The FIDO2 credential *handles* under `~/.config/ssh-sk/kN/{sudo,signing}` are
+The FIDO2 credential *handles* under `~/.config/ssh-sk/kN/sudo` are
 per-machine files: the private half is on the token, but OpenSSH needs the
 handle to use it. A machine wipe loses them, so run `nix run .#key-backup`
 before reinstalling and restore with `nix run .#key-restore` afterwards (see
@@ -20,21 +20,23 @@ by a wipe.
 For each key:
 
 1. Run `setup-yubikey.sh N` (or `--replace` when re-enrolling), then commit
-   the PIV 9a public key + certificate, sudo public key, and signing public key
-   to `modules/lib/yubikey-keys.nix`. That file is the single source for sshd,
-   pam_p11, allowed_signers, and the bundle's integrity check.
+   the PIV 9a public key + certificate and the sudo public key to
+   `modules/lib/yubikey-keys.nix`. That file is the single source for sshd,
+   pam_p11, the sudo authorized keys, and the bundle's integrity check. The
+   YubiKeys do not sign commits (the sops keys in
+   `modules/lib/signing-keys.nix` do), so no signing credential is enrolled.
 2. Run `home-manager switch` on `smorespro` and `smortress`, then drop the
    cached PIN (`rm -f "$XDG_RUNTIME_DIR/fido2/pin" "$XDG_RUNTIME_DIR/fido2/pin-state"`).
    Changing a PIN leaves the retry counter at its maximum, so a stale cache
-   still looks fresh and would cost one rejected signature. The next signature
-   prompts once (`yk-login` is the terminal fallback when no dialog can be
-   shown).
-3. Test `ssh smortress true`, `ssh -t smortress sudo true` (one touch, no PIN),
-   and a signed commit on both hosts.
+   still looks fresh and would cost one rejected PIV login. The next SSH to
+   smortress prompts once (`yk-login` is the terminal fallback when no dialog
+   can be shown).
+3. Test `ssh smortress true` and `ssh -t smortress sudo true` (one touch, no
+   PIN) on both hosts.
 4. Enroll the key in Proton account 2FA and keep the recovery codes offline.
 5. Store the PUK in phone Proton Pass and off-site; the PIN is memorized only.
-6. Register the PIV and signing keys on GitHub as **signing** keys only.
-   Never register either as an authentication key.
+6. Register nothing on GitHub: git uses each account's PAT and sops signing
+   key, never a YubiKey.
 7. For `smoreswork`, see the smart-card section below.
 8. On the machine holding the handles, run `nix run .#key-backup` and upload the
    archive and checksum to the Proton Pass restore item (see
@@ -44,7 +46,7 @@ For each key:
 
 A wipe does not touch the YubiKeys: PIV private keys are generated on-device and
 cannot be exported, and the FIDO2 private half never leaves the token. The only
-YubiKey material a wipe destroys is `~/.config/ssh-sk/kN/{sudo,signing}`, the
+YubiKey material a wipe destroys is `~/.config/ssh-sk/kN/sudo`, the
 credential handles OpenSSH must present to the token.
 
 `key-backup` archives the live `/etc/ssh/ssh_host_ed25519_key` — the host's sops
@@ -79,9 +81,9 @@ it and `chmod +x` before running it.
 ## Lost or stolen key
 
 1. Remove the key's entries from `modules/lib/yubikey-keys.nix` (its PIV 9a
-   public key and certificate, sudo public key, and signing public key). That
-   file feeds sshd's `authorized_keys`, `/etc/ssh/sudo_authorized_keys`,
-   pam_p11's certificate list, and `allowed_signers`.
+   public key and certificate, and its sudo public key). That file feeds
+   sshd's `authorized_keys`, `/etc/ssh/sudo_authorized_keys`, and pam_p11's
+   certificate list.
 2. Run `home-manager switch` on `smorespro` and `smortress`. If the key was
    with a laptop, also revoke that machine's Cloudflare Access service token,
    rotate the Maki PATs, and sign out Proton sessions (see below).
@@ -110,9 +112,8 @@ ykman fido reset
 ```
 
 `fido reset` destroys **all** FIDO2 credentials on that key, including the
-sudo/signing handles and the Proton WebAuthn registration. Re-run
-`setup-yubikey.sh N --replace`, re-enroll the key in Proton 2FA, and update
-GitHub. The PIV applet and 9a key are independent and are not reset.
+sudo handles and the Proton WebAuthn registration. Re-run
+`setup-yubikey.sh N --replace` and re-enroll the key in Proton 2FA. The PIV applet and 9a key are independent and are not reset.
 
 ## Retry checks
 
@@ -132,8 +133,8 @@ step 2 says.
 The Mac does not use the Linux `fido2-agent` or the PIN cache for login. Its
 SSH host block uses OpenSC's PC/SC provider, so the PIN is typed on the tty
 per connection. A launchd agent (`smortress-sudo-agent`) holds only the three
-sudo handles and is forwarded to smortress for `pam_rssh`; signing on work
-repos stays on the work software key.
+sudo handles and is forwarded to smortress for `pam_rssh`. Commits sign with
+the sops keys, not a YubiKey.
 
 1. Insert a key and list identities:
    ```sh

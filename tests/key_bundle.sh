@@ -123,7 +123,7 @@ fi
 # A partial set fails unless explicitly allowed.
 partialkeys="$root/partialkeys"
 cp "$pubkeys" "$partialkeys"
-printf 'k1/signing\t%s\n' "$(awk '{print $1" "$2}' "$src/.config/ssh-sk/k1/sudo.pub")" >>"$partialkeys"
+printf 'k9/sudo\t%s\n' "$(awk '{print $1" "$2}' "$src/.config/ssh-sk/k1/sudo.pub")" >>"$partialkeys"
 if ( cd "$checkout" && env -u XDG_STATE_HOME HOME="$src" "$backup" --pubkeys "$partialkeys" --no-host-key ) >/dev/null 2>&1; then
   fail "archived a partial set without --allow-incomplete"
 fi

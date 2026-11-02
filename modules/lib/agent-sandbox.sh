@@ -54,16 +54,6 @@ read_secret() {
   fi
 }
 
-# The signing agent is the only credential the sandbox gets. Pick the first
-# socket that exists; with none, SSH/signing fail closed.
-signing_sock=
-for sock in "${SIGNING_SOCKETS[@]}"; do
-  if [ -S "$sock" ]; then
-    signing_sock=$sock
-    break
-  fi
-done
-
 # Secrets promoted into the sandbox environment, each read from a host file the
 # descendant cannot see itself. The minimal profiles declare none.
 for pair in "${SECRET_READ[@]}"; do
@@ -96,10 +86,11 @@ prepare_darwin_config() {
     exit 1
   fi
   mkdir -p "$agent_config/bin"
+  # gpg-ssh-default-key and agent-sandbox-git-credential are retired helpers;
+  # remove copies an older launcher left in the agent's config.
   rm -f "$agent_config/bin/ssh" "$agent_config/bin/gh" "$agent_config/bin/gpg-ssh-default-key" "$agent_config/bin/agent-sandbox-git-credential"
   cp "$AGENT_SSH_SHIM" "$agent_config/bin/ssh"
   cp "$AGENT_GH_SHIM" "$agent_config/bin/gh"
-  cp "$AGENT_SIGNING_KEY_COMMAND" "$agent_config/bin/gpg-ssh-default-key"
   chmod 755 "$agent_config/bin/"*
 }
 
@@ -157,9 +148,6 @@ build_env_args() {
   # GH_TOKEN is never inherited: the gh wrapper and git helper inside select a
   # PAT by the target repository's owner, and a caller's token would defeat
   # that split.
-  if [ -n "$signing_sock" ]; then
-    ENV_ARGS+=("SSH_AUTH_SOCK=/run/agent/sign")
-  fi
 }
 
 if [ "$(uname -s)" = Darwin ]; then
@@ -393,9 +381,6 @@ for pair in "${SECRET_BIND[@]}"; do
   fi
 done
 
-if [ -n "$signing_sock" ]; then
-  args+=(--ro-bind "$signing_sock" /run/agent/sign)
-fi
 if [ -r "${CLOUDFLARED_TOKEN:-/nonexistent}" ]; then
   args+=(--dir /run/agent/runtime/cloudflared-access --ro-bind "$CLOUDFLARED_TOKEN" /run/agent/runtime/cloudflared-access/token)
 fi
@@ -404,7 +389,6 @@ if [ -n "${AGENT_CONFIG_DIR:-}" ]; then
   args+=(
     --ro-bind "$AGENT_GIT_CONFIG" "$agent_config/gitconfig"
     --ro-bind "$AGENT_SSH_CONFIG" "$agent_config/ssh_config"
-    --ro-bind "$AGENT_SIGNING_KEY_COMMAND" "$agent_config/bin/gpg-ssh-default-key"
     --ro-bind "$AGENT_SSH_SHIM" "$agent_config/bin/ssh"
     --ro-bind "$AGENT_GH_SHIM" "$agent_config/bin/gh"
   )
