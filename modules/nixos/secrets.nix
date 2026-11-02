@@ -37,12 +37,6 @@
       r2-access-key-id = { };
       r2-secret-access-key = { };
 
-      # Brave Search API key for LobeChat's web search. Only the container's
-      # root-run preStart renders it into the env file, and Page Assist keeps
-      # its own copy in the browser; sops-nix's root 0400 default is enough.
-      # Maki's websearch uses tinyfish-api-key instead.
-      brave-api-key = { };
-
       # A `repo`-scoped PAT, read only by the root GitHub-backup service
       # (modules/nixos/github-backup.nix). Root-owned, so the user's shell cannot
       # read it.

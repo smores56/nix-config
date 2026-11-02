@@ -575,7 +575,7 @@ recovery path.
 Secrets are split by scope:
 
 - `secrets/smortress.yaml` — host-only material for smortress (Cloudflare token,
-  tunnel JSON, calibre password, the mirror's repo PAT, brave), encrypted to the
+  tunnel JSON, calibre password, the mirror's repo PAT), encrypted to the
   admin identity plus the smortress host key.
 - `secrets/smorespro.yaml` — host-only material for smorespro. Its age identity
   is the SSH host key smorespro keeps solely for sops, since it runs no sshd.
@@ -904,15 +904,6 @@ exported by the fish init as `TINYFISH_API_KEY` for maki's `websearch` tool.
 Rotate at [agent.tinyfish.ai](https://agent.tinyfish.ai/api-keys), update the
 common file, rebuild each host, and open a new shell.
 
-### brave-api-key
-
-<!-- manual-step: secret/brave-api-key -->
-
-Brave Search API key for LobeChat's web search on smortress. LobeChat's env
-script reads the sops path, and Page Assist keeps its own copy in the browser.
-Maki no longer reads it. Rotate in the Brave dashboard, update this key,
-rebuild, and restart the LobeChat container.
-
 ### Rotation checklist
 
 The retired admin key could read every value here, so re-encryption alone is
@@ -989,13 +980,6 @@ sudo nixos-rebuild switch        # on smortress and smorespro
 
 Open a new shell for `TINYFISH_API_KEY` (the fish init exports it at shell
 start), and restart any agent session that cached the old key.
-
-#### brave-api-key
-
-Regenerate the key in the Brave dashboard (web). Replace the secret, rebuild,
-and restart `podman-lobechat.service` so its env file is regenerated; update
-Page Assist's own copy in the extension settings — it does not read the sops
-file.
 
 #### cloudflared-credentials
 
@@ -2018,8 +2002,8 @@ the response is 1024-d, because LobeChat sends `dimensions: 1024` on every call
 and its pgvector column is fixed at that width. Switching the embedder keeps
 the schema but requires re-indexing the knowledge base: vectors from different
 models are not comparable. Chat uses Neuralwatt `deepseek-v4.1-flash`; local
-`qwen3.8-27b` (the `vllm` slot) is the fallback. Brave search is enabled with
-the existing `brave-api-key`.
+`qwen3.8-27b` (the `vllm` slot) is the fallback. No web-search provider is
+configured, so LobeChat offers no web search.
 
 The model lists spell abilities explicitly (`<context:fc:vision>`). An
 env-listed model without `fc` is treated as unable to call tools, which hides

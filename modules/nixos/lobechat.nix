@@ -128,7 +128,6 @@ let
         "$(cat ${secretsDir}/db-password)"
       printf 'S3_ACCESS_KEY_ID=%s\n' "$(cat ${secretsDir}/s3-access-key)"
       printf 'S3_SECRET_ACCESS_KEY=%s\n' "$(cat ${secretsDir}/s3-secret-key)"
-      printf 'BRAVE_API_KEY=%s\n' "$(cat ${config.sops.secrets.brave-api-key.path})"
       printf 'OPENAI_API_KEY=%s\n' "$(cat ${config.sops.secrets.neuralwatt-api-key.path})"
     } > ${runtimeDir}/env
     chmod 0600 ${runtimeDir}/env
@@ -305,8 +304,8 @@ in
         message = "lobechat requires memory.enable: it reuses memory's Graphiti MCP wrapper and embedder.";
       }
       {
-        assertion = config.sops.secrets ? brave-api-key && config.sops.secrets ? neuralwatt-api-key;
-        message = "lobechat requires the brave-api-key and neuralwatt-api-key sops secrets.";
+        assertion = config.sops.secrets ? neuralwatt-api-key;
+        message = "lobechat requires the neuralwatt-api-key sops secret.";
       }
     ];
 
@@ -547,7 +546,6 @@ in
           S3_ENABLE_PATH_STYLE = "1";
           S3_SET_ACL = "0";
           S3_REGION = "us-east-1";
-          SEARCH_PROVIDERS = "brave";
           # Knowledge-base embeddings: an OpenAI-compatible server that is not
           # the chat provider, so it rides the NewAPI slot. LobeChat sends
           # `dimensions: 1024` on every call, matching its schema's column.
