@@ -128,6 +128,7 @@ let
     "/run/secrets/neuralwatt-api-key|/run/secrets/neuralwatt-api-key"
     "/run/secrets/tinyfish-api-key|/run/secrets/tinyfish-api-key"
     "/run/secrets/immich-agent-api-key|/run/agent/immich-key"
+    "/run/secrets/memory-mcp-token|/run/secrets/memory-mcp-token"
   ];
 
   signingSockets = lib.optionals (!isDarwin) (
@@ -140,31 +141,37 @@ let
       [ "\${XDG_RUNTIME_DIR:-/run/user/$UID}/fido2-sign-agent" ]
   );
 
+  # Secrets promoted into the sandbox environment (VAR|host path), read by the
+  # launcher before bwrap starts. The minimal profiles declare none: their
+  # descendants live on the untrusted side of the boundary.
+  secretRead = [
+    "NEURALWATT_API_KEY|/run/secrets/neuralwatt-api-key"
+    "TINYFISH_API_KEY|/run/secrets/tinyfish-api-key"
+    "IMMICH_API_KEY|/run/secrets/immich-agent-api-key"
+    "OPENAI_API_KEY|\${OPENAI_KEYCHAIN_ITEM:-/nonexistent}"
+  ];
+
+  # One array per list: both generated configs share the shell contract in
+  # agent-sandbox.sh, only the contents differ.
+  renderList = name: values: ''
+    ${name}=(
+    ${lib.concatMapStrings (p: "  \"${p}\"\n") values}
+    )
+  '';
+
   configFile = pkgs.writeText "agent-sandbox.conf" ''
-    HOME_RW=(
-    ${lib.concatMapStrings (p: "  \"${p}\"\n") homeRw}
-    )
-    HOME_RO=(
-    ${lib.concatMapStrings (p: "  \"${p}\"\n") homeRo}
-    )
-    HOME_MASK_DIRS=(
-    ${lib.concatMapStrings (p: "  \"${p}\"\n") homeMaskDirs}
-    )
-    HOME_MASK_FILES=(
-    ${lib.concatMapStrings (p: "  \"${p}\"\n") homeMaskFiles}
-    )
-    CONFIG_ALLOW=(
-    ${lib.concatMapStrings (p: "  \"${p}\"\n") configAllow}
-    )
-    CONFIG_WRITABLE=(
-    ${lib.concatMapStrings (p: "  \"${p}\"\n") configWritable}
-    )
-    SECRET_BIND=(
-    ${lib.concatMapStrings (p: "  \"${p}\"\n") secretBind}
-    )
-    SIGNING_SOCKETS=(
-    ${lib.concatMapStrings (p: "  \"${p}\"\n") signingSockets}
-    )
+    ${renderList "HOME_RW" homeRw}
+    ${renderList "HOME_RO" homeRo}
+    ${renderList "HOME_MASK_DIRS" homeMaskDirs}
+    ${renderList "HOME_MASK_FILES" homeMaskFiles}
+    ${renderList "CONFIG_ALLOW" configAllow}
+    ${renderList "CONFIG_WRITABLE" configWritable}
+    ${renderList "SECRET_BIND" secretBind}
+    ${renderList "SECRET_READ" secretRead}
+    ${renderList "SIGNING_SOCKETS" signingSockets}
+    ${renderList "ENV_EXTRA" [ ]}
+    ${renderList "ENV_PASSTHROUGH" [ ]}
+    AGENT_CONFIG_DIR=1
     CLOUDFLARED_TOKEN="''${XDG_RUNTIME_DIR:-/run/user/$UID}/cloudflared-access/token"
     EMPTY_DIR="${pkgs.emptyDirectory}"
     ${lib.optionalString isDarwin ''
@@ -304,6 +311,85 @@ let
     '';
   };
 
+  # Minimal profile for the Open WebUI code interpreter. A kernel is untrusted
+  # code driven by a chat, so it gets one writable workspace and nothing else
+  # from the host: no agent config dir, no git/ssh shims, no promoted secrets,
+  # no repo protection (there are no repos to protect). It keeps the secret and
+  # data masks, the same-UID boundary, and the host network namespace (Open WebUI
+  # reaches it on loopback).
+  jupyterWorkspace = "/var/lib/agent/jupyter";
+
+  jupyterPath = lib.makeBinPath [
+    pkgs.coreutils
+    pkgs.bash
+    pkgs.findutils
+    pkgs.gnugrep
+    pkgs.gnused
+    pkgs.jq
+  ];
+
+  # Everything the runtime writes stays in the workspace: HOME is bound
+  # read-only here and has no writable exception, so a tool that insists on a
+  # home path fails instead of reaching the host's tree.
+  jupyterEnvExtra = [
+    "PATH=${jupyterPath}"
+    "JUPYTER_CONFIG_DIR=${jupyterWorkspace}/.jupyter/config"
+    "JUPYTER_DATA_DIR=${jupyterWorkspace}/.jupyter/data"
+    "JUPYTER_RUNTIME_DIR=${jupyterWorkspace}/.jupyter/runtime"
+    "IPYTHONDIR=${jupyterWorkspace}/.ipython"
+    "XDG_CACHE_HOME=${jupyterWorkspace}/.cache"
+    "XDG_CONFIG_HOME=${jupyterWorkspace}/.config"
+    "XDG_DATA_HOME=${jupyterWorkspace}/.local/share"
+    "XDG_STATE_HOME=${jupyterWorkspace}/.local/state"
+    "MPLCONFIGDIR=${jupyterWorkspace}/.cache/matplotlib"
+  ];
+
+  # The shared home masks already hide ~/.ssh, ~/.config, and the photos tree;
+  # ~/Sync and the vault are added for the kernel, which has no business in
+  # either. /run/secrets is masked by bwrap's private /run.
+  jupyterMaskDirs = homeMaskDirs ++ [
+    "$HOME/Sync"
+    "/var/lib/data/vault"
+  ];
+
+  jupyterConfigFile = pkgs.writeText "jupyter-sandbox.conf" ''
+    ${renderList "HOME_RW" [ jupyterWorkspace ]}
+    ${renderList "HOME_RO" [ ]}
+    ${renderList "HOME_MASK_DIRS" jupyterMaskDirs}
+    ${renderList "HOME_MASK_FILES" homeMaskFiles}
+    ${renderList "CONFIG_ALLOW" [ ]}
+    ${renderList "CONFIG_WRITABLE" [ ]}
+    ${renderList "SECRET_BIND" [ ]}
+    ${renderList "SECRET_READ" [ ]}
+    ${renderList "SIGNING_SOCKETS" [ ]}
+    ${renderList "ENV_EXTRA" jupyterEnvExtra}
+    ${renderList "ENV_PASSTHROUGH" [ "JUPYTER_TOKEN" ]}
+    EMPTY_DIR="${pkgs.emptyDirectory}"
+    # Linux only: the Darwin branch of the shell wants EXEC_DENY, MACH_ALLOW,
+    # and the git shims, which this profile deliberately does not carry.
+  '';
+
+  # The token is a sops secret the launcher reads host-side (the service user
+  # owns it): it reaches the sandbox only as JUPYTER_TOKEN, which jupyter_server
+  # honours, so no token is baked into the store or the unit.
+  jupyterSandbox = pkgs.writeShellApplication {
+    name = "jupyter-sandbox";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.bash
+    ]
+    ++ lib.optionals (!isDarwin) [ pkgs.bubblewrap ];
+    text = ''
+      : "''${JUPYTER_TOKEN_FILE:?JUPYTER_TOKEN_FILE is not set}"
+      JUPYTER_TOKEN=$(<"$JUPYTER_TOKEN_FILE")
+      export JUPYTER_TOKEN
+      export AGENT_SANDBOX_CONFIG=${jupyterConfigFile}
+      export AGENT_SANDBOX_PATH=${jupyterPath}
+      export AGENT_SANDBOX_BWRAP=${if isDarwin then "/bin/true" else lib.getExe bwrap}
+      exec ${pkgs.bash}/bin/bash ${./agent-sandbox.sh} "$@"
+    '';
+  };
+
   agentSsh = pkgs.writeShellApplication {
     name = "agent-ssh";
     runtimeInputs = [
@@ -343,5 +429,7 @@ in
     agentSandbox
     agentSsh
     agentLoginShell
+    jupyterSandbox
+    jupyterWorkspace
     ;
 }

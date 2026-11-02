@@ -150,6 +150,12 @@ let
   # tool deadline and under Cloudflare's ~100s origin timeout.
   mcpEnvironment = {
     MEMORY_MCP_URL = "http://127.0.0.1:${toString ports.memoryMcp}/mcp";
+    # The listener rejects loopback clients that do not present the bearer
+    # token: the tunnel makes a remote client look local too. The shim reads
+    # the file itself; the path is named here so it stays visible next to the
+    # URL it authenticates to. Same default as the shim, declared in
+    # modules/nixos/memory.nix and modules/nixos/secrets.nix.
+    MEMORY_MCP_TOKEN_FILE = "/run/secrets/memory-mcp-token";
     MEMORY_WORK_EMAIL = config.user.work.email;
     MEMORY_WORK_OWNER_GLOB = config.user.work.githubOwnerGlob;
     MEMORY_WORK_FLOW = config.user.work.flow;

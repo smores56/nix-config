@@ -32,6 +32,15 @@
       mode = "0400";
     };
 
+    # Bearer token for the memory MCP listener. Every personal host runs the
+    # shim/CLI that presents it, so it lives in common.yaml and the user owns
+    # the 0400 file.
+    memory-mcp-token = {
+      sopsFile = ../../secrets/common.yaml;
+      owner = config.machine.username;
+      mode = "0400";
+    };
+
     # SHA-512 crypt hash of the account password. `neededForUsers` decrypts it
     # into /run/secrets-for-users before the users activation, which is the only
     # stage that can read hashedPasswordFile. Root-owned by assertion in

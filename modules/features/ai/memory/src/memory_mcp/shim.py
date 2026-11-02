@@ -22,6 +22,7 @@ from mcp.types import CallToolResult, Prompt, TextContent, Tool
 from . import client
 from .client import ClientConfig, ToolResult, UpstreamError
 from .groups import GroupRefused, derive_group
+from .mcp_auth import TokenMissingError, read_token
 from .schema import FALLBACK_TOOLS
 
 DEFAULT_URL = "http://127.0.0.1:8182/mcp"
@@ -39,15 +40,21 @@ class ShimConfig:
     url: str = DEFAULT_URL
     actor: str = "maki"
     timeout: float = DEFAULT_TIMEOUT
+    # The MCP listener refuses loopback clients without this, because the
+    # tunnel makes every remote client look local too.
+    token: str | None = None
 
     def client_config(self) -> ClientConfig:
+        headers = (
+            ("X-Memory-Group", self.group),
+            ("X-Memory-Cwd", self.cwd),
+            ("X-Memory-Actor", self.actor),
+        )
+        if self.token:
+            headers = headers + (("Authorization", f"Bearer {self.token}"),)
         return ClientConfig(
             url=self.url,
-            headers=(
-                ("X-Memory-Group", self.group),
-                ("X-Memory-Cwd", self.cwd),
-                ("X-Memory-Actor", self.actor),
-            ),
+            headers=headers,
             timeout=self.timeout,
         )
 
@@ -124,11 +131,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"memory-mcp-shim: {exc}", file=sys.stderr)
         return 2
 
+    try:
+        token = read_token()
+    except TokenMissingError as exc:
+        print(f"memory-mcp-shim: {exc}", file=sys.stderr)
+        return 2
+
     config = ShimConfig(
         group=context.group,
         cwd=context.cwd,
         url=os.environ.get("MEMORY_MCP_URL", DEFAULT_URL),
         timeout=float(os.environ.get("MEMORY_TIMEOUT", str(DEFAULT_TIMEOUT))),
+        token=token,
     )
     server = build_server(config)
     anyio.run(_serve, server)

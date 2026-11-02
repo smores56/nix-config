@@ -55,6 +55,7 @@ pkgs.python3Packages.buildPythonApplication {
     "memory_mcp.registry"
     "memory_mcp.reconciler"
     "memory_mcp.llm_proxy"
+    "memory_mcp.mcp_auth"
     "memory_mcp.files"
     "memory_mcp.connector_seed"
     "memory_mcp.lobechat_ingest"
