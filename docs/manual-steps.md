@@ -1284,7 +1284,7 @@ After the reboot:
 
 ```sh
 sudo systemctl start backup-cloudflaretofu.service backup-github.service \
-  backup-memoryexport.service backup-lobechat.service backup-rustfs.service
+  backup-memoryexport.service
 sudo systemctl start backup-photos.service   # 144G source -> local, ~20 min
 sudo systemctl start backup-videos.service backup-music.service
 ```
@@ -1480,29 +1480,10 @@ To rotate: create the new key in Immich, update the common file, rebuild both
 hosts so sops rewrites `/run/secrets/…`, then delete the old key in Immich.
 
 
-### LobeChat
-
-
-`/var/lib/lobechat`, daily 02:00, full check Sundays 10:00. The pre-unit dumps
-PostgreSQL as `postgres`; the driver copies it to `current/db/lobechat.dump` and
-fails the run if the dump is missing or stale. The source tree includes the
-generated secrets under `secrets/`, so a restore keeps sessions and S3
-credentials valid. Restore the dump into a scratch database with
-`runuser -u postgres -- pg_restore --no-owner -d <db>` (the backup README shows
-the full drill).
-
-### RustFS
-
-
-`/var/lib/rustfs` (the LobeChat S3 bucket), daily 04:00, full check Sundays
-11:00, change-triggered. Restore by stopping `podman-rustfs` and copying
-`current/` back, or by uploading the objects with `mc`. The bucket itself is
-recreated by `lobechat-s3-bucket.service`; objects are not.
-
 ## Public services
 
 Services come from `webProxy.services` on each NixOS host. Each becomes
-`<name>.<domain>` through the tunnel. `ssh`, `llm`, `memory`, `chat`, and `s3`
+`<name>.<domain>` through the tunnel. `ssh`, `llm`, `memory`, and `chat`
 have Cloudflare Access applications (hand-written in `tofu/`); `access.enable`
 on any other service fails evaluation. Calibre and Immich are public and rely
 on their own app auth.
@@ -1981,86 +1962,53 @@ which is the system of record.
 
 <!-- manual-step: service/smortress/chat -->
 
-`chat.sammohr.dev` → the loopback LobeChat container (`ports.lobechat`), HTTP
-behind Access. LobeChat is the phone PWA; its own email/password login is the
-second layer. `AUTH_ALLOWED_EMAILS` admits only `config.user.email`, so no other
-account can be created.
+`chat.sammohr.dev` → the loopback Open WebUI server (`ports.openWebui`), HTTP
+behind Access plus Open WebUI's own email/password login. It is the phone PWA
+and the desktop web app; SQLite, uploads and the workspace live under
+`/var/lib/data/open-webui`, so restic covers them with the durable tree.
 
-First start generates `/var/lib/lobechat/secrets` (root-owned) and copies the
-DB password to `/run/lobechat/db-password` (readable by `postgres`). It runs
-the full schema migration before answering; `lobechat-wait` gives it 600s. The
-image is pinned by digest, and `FTS_SEARCH_PROVIDER=pg_like` is required because
-the host Postgres has no ParadeDB `pg_search`.
+Two OpenAI-compatible backends are declared in `modules/nixos/open-webui.nix`,
+index-aligned with their keys: local llama.cpp (`qwen3.8-27b`, keyless, works
+with no network) and Neuralwatt (`deepseek-v4.1-flash`, the default through
+`DEFAULT_MODELS`). The Neuralwatt key reaches the unit only through the rendered
+sops environment file, never the Nix store. Open WebUI has no automatic
+failover, so the local model is a manual pick, not a fallback chain.
+`ENABLE_PERSISTENT_CONFIG` is off: every connection, tool server and engine
+below comes from the environment, and edits made in the admin UI do not survive
+a restart. Model ids are bare unless a connection sets `prefix_id`, so
+`DEFAULT_MODELS` must match what the picker lists.
 
-Knowledge-base embeddings follow `memory.embedder` through LobeChat's
-OpenAI-compatible `newapi` slot: qwen3-embedding-8b through the loopback memory
-gateway (`ports.memoryLlmProxy`), or bge-m3 on `ports.memoryEmbed`. Either way
-the response is 1024-d, because LobeChat sends `dimensions: 1024` on every call
-and its pgvector column is fixed at that width. Switching the embedder keeps
-the schema but requires re-indexing the knowledge base: vectors from different
-models are not comparable. Chat uses Neuralwatt `deepseek-v4.1-flash`; local
-`qwen3.8-27b` (the `vllm` slot) is the fallback. No web-search provider is
-configured, so LobeChat offers no web search.
+**Tool servers** are `ConfigVar`s in `TOOL_SERVER_CONNECTIONS`, type
+`MCP (Streamable HTTP)`. The memory wrapper is registered with its sops bearer
+token at `http://127.0.0.1:8182/mcp`. Open WebUI cannot send the `X-Memory-*`
+headers, so the deployment pins one scope for clients that send none
+(`MEMORY_MCP_DEFAULT_GROUP=global`, `MEMORY_MCP_DEFAULT_CWD=/chat`,
+`MEMORY_MCP_DEFAULT_ACTOR=open-webui`); that keeps chat writes in the shared
+group and records their own provenance, while Maki and the CLI keep the strict
+header contract. `files-mcp` (`http://127.0.0.1:8185/mcp`) needs no token. A
+malformed value is silently dropped by Open WebUI, so an empty External Tool
+Servers list means the JSON is broken.
 
-The model lists spell abilities explicitly (`<context:fc:vision>`). An
-env-listed model without `fc` is treated as unable to call tools, which hides
-agent mode, web search, and MCP entirely; that is the only place LobeChat
-learns those abilities for a custom model.
+**Code interpreter** is Jupyter in the `jupyter` agent-sandbox profile
+(loopback `8888`, token from the `jupyter-token` secret), so generated code runs
+with the vault, `~/Sync` and the host secrets masked. **Web search** goes to the
+TinyFish shim on loopback `8899` because the bundled engines are unmaintained
+scrapers; the shim holds `tinyfish-api-key` and returns the bare array the
+`external` engine expects.
 
-**Graphiti MCP.** `lobechat-connectors.service` seeds the connector as a
-`user_connectors` row, so every client logged into the account already lists it;
-the app syncs the tool list on the first agent run. For reference, the row is:
+Unattended clients (Maki, scripts) use an API key created under Settings →
+Account → API Keys on the dedicated `agent` account, so revoking one key leaves
+the phone session alone.
 
-- URL: `http://127.0.0.1:8182/mcp`, transport `http` (streamable HTTP).
-- Headers: `X-Memory-Group: global`, `X-Memory-Cwd: /phone`,
-  `X-Memory-Actor: lobechat`.
-
-The wrapper refuses a tool call without `X-Memory-Group` and an absolute
-`X-Memory-Cwd`; both are client headers, never model output. `global` is the
-shared personal group, so phone writes are searchable from every project. The
-write records `actor=lobechat` and `cwd=/phone` as provenance; the pinned
-wrapper has no source/source-id header, so that pair is the phone marker. The
-wrapper has no auth of its own; loopback and the Access boundary are the
-controls.
-
-For the first deployment, apply the new Access applications before rebuilding:
-`sudo nix run .#cloudflare-apply`, then `just switch smortress`. The wildcard
-CNAME already exists, so the rebuild only adds the ingress.
-
-It refuses work groups. LobeChat's built-in Memory has no deployment-wide off
-switch: after the first login open Settings → Memory and disable it, so Graphiti
-is the only memory system. The seed only inserts missing rows, so a UI edit
-wins; on a fresh deployment, create the account first and then run
-`sudo systemctl restart lobechat-connectors`.
-
-### smortress/s3
-
-
-`s3.sammohr.dev` → the loopback RustFS container (`ports.rustfs`) behind
-Access. LobeChat signs presigned URLs with this public endpoint and uses
-`http://127.0.0.1:9000` for server-side reads and writes. The bucket (`lobe`)
-is created by `lobechat-s3-bucket.service`; RustFS root credentials are
-generated on first start and shared with LobeChat through `/run/lobechat`.
-RustFS is configured to allow CORS from `https://chat.<domain>`.
-
-Browser uploads and downloads are cross-origin fetches to a presigned URL, and
-such fetches do not send the Access cookie, so the `s3` application cannot cover
-them. The object path (`/lobe`) therefore has its own Access application with a
-**Bypass** policy: RustFS's SigV4 check is the gate, unsigned requests get
-`403`, and the bucket is never listable. The rest of the host stays behind the
-email policy. If that bypass is ever removed, uploads fail with
-`CORS Missing Allow Origin` because the PUT is redirected to the login page.
-
-Access puts an interactive login in front of the presigned URL host. The
-cookie is host-scoped, so a `chat` session does not cover `s3`; the bypass
-application is what makes the object path usable.
+For the first deployment, apply the Access application before rebuilding:
+`sudo nix run .#cloudflare-apply`, then `just switch smortress`.
 
 ### Phone file search
 
 `files-mcp` is a read-only file-search MCP on loopback `ports.filesMcp` over
-`/home/smores/{code,Documents,Downloads,dev}`. The connector seed adds it as a
-second `user_connectors` row (`http://127.0.0.1:8185/mcp`, HTTP, no headers), so
-clients get it without setup; the app syncs its tools on the first agent run.
+`/home/smores/{code,Documents,Downloads,dev}`. Open WebUI registers it as a
+second tool connection (`http://127.0.0.1:8185/mcp`, no auth) in
+`TOOL_SERVER_CONNECTIONS`, so chats get its tools with no setup.
 
 Tools: `file_search` (file names and contents), `file_read` (one file, with
 line numbers), and `file_list`. Paths outside the roots, secret-like files
@@ -2069,18 +2017,6 @@ employer check reuses memory's markers, so `smores.flow=pr` or a `blitzy-*`
 remote is enough. `.git`-ignored trees are skipped, which includes unmerged
 `.worktrees` checkouts; a file that exists only on an unmerged branch is not
 searchable until it is on the checked-out tree.
-
-### Phone memory ingestion
-
-`lobechat-memory-ingest` runs nightly at 04:30 (persistent timer). It reads
-messages newer than a per-topic cursor from the `lobechat` database, asks
-`deepseek-v4.1-flash` through `ports.memoryLlmProxy` for 1-5 durable bullets,
-and writes one episode per topic through the memory wrapper as
-`actor=lobechat`, `cwd=/phone` in the shared `global` group. The first run
-bootstraps the last two days; later runs only see new messages. State is
-`/var/lib/lobechat-ingest/state.json`, and a failed topic keeps its cursor so
-the next night retries it. A topic with nothing durable advances without
-writing. Run it by hand with `sudo systemctl start lobechat-memory-ingest`.
 
 ### smortress/ssh
 

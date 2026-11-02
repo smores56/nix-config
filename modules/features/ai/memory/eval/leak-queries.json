@@ -155,7 +155,7 @@
     "foreign_group": "smores56--nix-config"
   },
   {
-    "query": "Which ticket covers the phone-first LobeChat UI?",
+    "query": "Which ticket covers the phone-first chat UI?",
     "group": "local--smores",
     "foreign_group": "smores56--nix-config"
   },
