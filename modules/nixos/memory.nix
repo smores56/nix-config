@@ -544,6 +544,13 @@ in
           "MEMORY_WORK_OWNER_GLOB=${work.githubOwnerGlob}"
           "MEMORY_WORK_FLOW=${work.flow}"
           "MEMORY_WORK_SSH_MARKER=${workSshMarker}"
+          # Open WebUI's native MCP client cannot send the X-Memory-* headers,
+          # so the chat surface is pinned to the shared group and marked as its
+          # own provenance. Clients that do send headers keep the strict
+          # contract, including the refusal of a partial set.
+          "MEMORY_MCP_DEFAULT_GROUP=global"
+          "MEMORY_MCP_DEFAULT_CWD=/chat"
+          "MEMORY_MCP_DEFAULT_ACTOR=open-webui"
         ]
         # A remote embedder has no /health behind the gateway; naming its model
         # makes readiness send a one-word embedding instead.
