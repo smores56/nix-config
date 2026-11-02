@@ -1,7 +1,8 @@
 # Owner-selecting GitHub credentials for tooling that cannot use the SSH agent
-# (Maki inside its sandbox). The PATs live in sops as user-readable files; the
-# helper picks one by the repository owner git passes in the credential
-# request, so work repos and personal repos never share a token.
+# (Maki inside its sandbox, HTTPS remotes). The PATs live in sops as
+# user-readable files; the helper picks one by the repository owner git passes
+# in the credential request, so work repos and personal repos never share a
+# token.
 {
   config,
   lib,
@@ -11,10 +12,22 @@
 let
   workGlob = config.user.work.githubOwnerGlob;
 
+  # sops-nix puts the PATs in /run/secrets on NixOS; a home-only Darwin host
+  # declares them in home-manager sops, which owns their path.
+  patFile = name: config.sops.secrets.${name}.path or "/run/secrets/${name}";
+  # Shell that sets token_file from $owner, shared so git and gh can never
+  # disagree about which token an owner gets.
+  selectTokenFile = ''
+    token_file=${lib.escapeShellArg (patFile "github-personal-pat")}
+    case "''${owner,,}" in
+      ${workGlob}) token_file=${lib.escapeShellArg (patFile "github-work-pat")} ;;
+    esac
+  '';
+
   # git credential protocol: `git credential <helper> get` with key=value lines
   # on stdin (notably `host` and `path=owner/repo.git`) and key=value on stdout.
-  # The token is read from a root-installed, user-readable sops file and never
-  # appears in argv or the environment.
+  # The token is read from a user-readable sops file and never appears in argv
+  # or the environment.
   credentialHelper = pkgs.writeShellApplication {
     name = "github-credential-helper";
     runtimeInputs = [
@@ -41,10 +54,7 @@ let
       owner="''${owner%%/*}"
       owner="''${owner%.git}"
 
-      token_file=/run/secrets/github-personal-pat
-      case "''${owner,,}" in
-        ${workGlob}) token_file=/run/secrets/github-work-pat ;;
-      esac
+      ${selectTokenFile}
       [ -r "$token_file" ] || exit 0
 
       printf 'username=x-access-token\npassword=%s\n' "$(tr -d '[:space:]' <"$token_file")"
@@ -74,29 +84,13 @@ let
       fi
 
       token=""
-      if [ "$(uname -s)" = Darwin ]; then
-        # macOS has no /run/secrets: the same PAT is a Keychain item. Prefer
-        # the owner-specific item, then the agent's generic work item.
-        item=maki-github-personal-pat
-        case "''${owner,,}" in
-          ${workGlob}) item=maki-github-work-pat ;;
-        esac
-        token=$(/usr/bin/security find-generic-password -s "$item" -w 2>/dev/null) || token=
-        if [ -z "$token" ]; then
-          token=$(/usr/bin/security find-generic-password -s maki-github-pat -w 2>/dev/null) || token=
-        fi
-      else
-        token_file=/run/secrets/github-personal-pat
-        case "''${owner,,}" in
-          ${workGlob}) token_file=/run/secrets/github-work-pat ;;
-        esac
-        if [ -r "$token_file" ]; then
-          token=$(tr -d '[:space:]' <"$token_file")
-        fi
+      ${selectTokenFile}
+      if [ -r "$token_file" ]; then
+        token=$(tr -d '[:space:]' <"$token_file")
       fi
 
       if [ -z "$token" ]; then
-        echo "gh: no token for owner ' ''${owner:-<none>}'" >&2
+        printf "gh: no token for owner '%s'\n" "''${owner:-<none>}" >&2
         exit 1
       fi
 
@@ -118,8 +112,8 @@ in
   config = {
     home.packages = [
       ghWithPat
-    ]
-    ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ credentialHelper ];
+      credentialHelper
+    ];
     programs.gh.package = ghAlias;
   };
 }

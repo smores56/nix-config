@@ -190,7 +190,9 @@ exits non-zero), `ssh-no-private-keys` (a private key, including a symlink,
 anywhere in `~/.ssh` fails, except the work-host gcloud key; public-only and
 missing directories pass),
 `worktrees-branch-template` (branch naming from
-per-repo templates), `repos-routing` (flat work repo discovery and routing), `zsh-config`
+per-repo templates), `github-pat-routing` (the `gh` wrapper and git credential
+helper read the owner's PAT from the home's sops files or `/run/secrets`, never
+Keychain, and fail closed without one), `repos-routing` (flat work repo discovery and routing), `zsh-config`
 (generated zsh startup files parse; only on a system with a zsh home) and
 `github-mirror-probe` (the GitHub mirror rejects a stale private-repo probe and
 scrubs a token-bearing origin), `github-metadata` (pgb flags and token-by-file,
@@ -208,7 +210,7 @@ polkit, and both probes as executable store paths). Run them after touching
 shell, git, ssh, PAM or backup settings, or `modules/lib/repo-workflow.nix`:
 
 ```sh
-nix build .#checks.aarch64-darwin.{git-work-routing,ssh-allowed-signers,ssh-pub-keys,worktrees-branch-template,repos-routing,zsh-config,github-mirror-probe}
+nix build .#checks.aarch64-darwin.{git-work-routing,github-pat-routing,ssh-allowed-signers,ssh-pub-keys,worktrees-branch-template,repos-routing,zsh-config,github-mirror-probe}
 nix build .#checks.x86_64-linux.{github-metadata,key-bundle,manual-steps-sync,pam-auth-gates,sshd-settings}
 ```
 

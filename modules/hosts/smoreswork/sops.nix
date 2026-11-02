@@ -12,10 +12,12 @@ let
   hostSecrets = ../../../secrets/smoreswork.yaml;
   commonSecretsFile = ../../../secrets/common.yaml;
 
-  # Deployed at the operator's request. Nothing on Darwin reads them yet: the
-  # PATs come from Keychain, maki's work profile is OpenAI-only, and the
-  # password hash and immich key are NixOS/sandbox-only. They exist as 0400
-  # files under ${xdg.configHome}/sops-nix/secrets until a consumer is wired.
+  # Deployed at the operator's request. The PATs back the owner-selecting `gh`
+  # wrapper and git credential helper (modules/features/github-credentials.nix).
+  # Nothing on Darwin reads the rest yet: maki's work profile is OpenAI-only,
+  # and the password hash and immich key are NixOS/sandbox-only. They exist as
+  # 0400 files under ${xdg.configHome}/sops-nix/secrets until a consumer is
+  # wired.
   commonSecrets = [
     "github-personal-pat"
     "github-work-pat"
@@ -29,12 +31,13 @@ in
   sops = {
     defaultSopsFile = hostSecrets;
     age.keyFile = "${config.home.homeDirectory}/.config/sops/smoreswork.key";
-    secrets =
-      {
-        # Read by cloudflared-access as TUNNEL_SERVICE_TOKEN_ID/_SECRET, two
-        # lines in that order.
-        cloudflare-access-ssh-token = { };
-      }
-      // lib.genAttrs commonSecrets (_: { sopsFile = commonSecretsFile; });
+    secrets = {
+      # Read by cloudflared-access as TUNNEL_SERVICE_TOKEN_ID/_SECRET, two
+      # lines in that order.
+      cloudflare-access-ssh-token = { };
+    }
+    // lib.genAttrs commonSecrets (_: {
+      sopsFile = commonSecretsFile;
+    });
   };
 }

@@ -227,6 +227,22 @@ in
               tools = [ ];
               args = [ hc.home.sessionVariables.SOPS_AGE_KEY_CMD ];
             };
+            github-pat-routing = {
+              tools = [
+                pkgs.coreutils
+                pkgs.git
+                pkgs.gnugrep
+              ];
+              args = [
+                (homeExe "gh-pat")
+                (homeExe "github-credential-helper")
+              ]
+              # The files the home's sops declares, else the NixOS sops-nix paths.
+              ++ map (name: hc.sops.secrets.${name}.path or "/run/secrets/${name}") [
+                "github-personal-pat"
+                "github-work-pat"
+              ];
+            };
             worktrees-branch-template.args = [ (homeExe "worktrees") ];
             repos-routing.args = [ (homeExe "repos") ];
             brain-leak-guard = {

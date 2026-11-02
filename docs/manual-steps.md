@@ -818,11 +818,12 @@ Fine-grained, **owner-wide** PAT for `smores56`, user-readable in
 `secrets/common.yaml`. Consumed by `github-credential-helper` and the
 PAT-aware `gh` wrapper (`modules/features/github-credentials.nix`) for HTTPS git
 and `gh`; the wrapper selects personal/work by the origin owner and an explicit
-`GH_TOKEN` overrides it. On macOS the same token is a Keychain item
-`maki-github-personal-pat` (or generic `maki-github-pat`). Permissions: Contents
-RW, Pull requests RW, Issues RW, Metadata R — no SSH-key or signing-key
-permissions. Expires in 90 days; mint a replacement, update the common file,
-rebuild both hosts, revoke the old token.
+`GH_TOKEN` overrides it. NixOS reads it from `/run/secrets`; the work Mac reads
+the same common-file secret through home-manager sops
+(`modules/hosts/smoreswork/sops.nix`). Permissions: Contents RW, Pull requests
+RW, Issues RW, Metadata R — no SSH-key or signing-key permissions. Expires in
+90 days; mint a replacement, update the common file, rebuild every host,
+revoke the old token.
 
 ### github-work-pat
 
@@ -830,8 +831,8 @@ rebuild both hosts, revoke the old token.
 
 The same shape for the work org matching `user.work.githubOwnerGlob`
 (`blitzy-*`). The credential helper and `gh` wrapper select it from the
-repository owner, so work and personal tokens never mix; macOS uses the
-`maki-github-work-pat` Keychain item. The org may require fine-grained-token
+repository owner, so work and personal tokens never mix, from the same sops
+paths as the personal token. The org may require fine-grained-token
 approval and SSO authorization; rotate on the same 90-day cadence.
 
 ### neuralwatt-api-key
