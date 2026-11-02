@@ -1996,9 +1996,10 @@ TinyFish shim on loopback `8899` because the bundled engines are unmaintained
 scrapers; the shim holds `tinyfish-api-key` and returns the bare array the
 `external` engine expects.
 
-Unattended clients (Maki, scripts) use an API key created under Settings →
-Account → API Keys on the dedicated `agent` account, so revoking one key leaves
-the phone session alone.
+**Chat is browser-only.** The Access application admits the email allow-list
+and no service token, and nothing in the stack calls Open WebUI's
+OpenAI-compatible API: Maki reaches llama.cpp and Neuralwatt through its own
+provider config, so no API key is issued.
 
 For the first deployment, apply the Access application before rebuilding:
 `sudo nix run .#cloudflare-apply`, then `just switch smortress`.
