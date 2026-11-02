@@ -13,6 +13,8 @@
   immich = 2283;
   # Radicale CalDAV/CardDAV listener and its tunnel ingress.
   radicale = 5232;
+  # Navidrome Subsonic listener and its tunnel ingress.
+  navidrome = 4533;
   ssh = 22;
   # The wrapper's listener, its tunnel ingress, and the generated Maki
   # `mcp.toml` environment read this; the shim and CLI keep a matching

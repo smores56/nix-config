@@ -9,6 +9,7 @@
     ../nixos/web-proxy.nix
     ../nixos/immich.nix
     ../nixos/radicale.nix
+    ../nixos/navidrome.nix
     ../nixos/lobechat.nix
     ../nixos/llm.nix
     ../nixos/memory.nix
