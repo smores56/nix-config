@@ -202,7 +202,12 @@ if [ "$(uname -s)" = Darwin ]; then
     for f in "${HOME_MASK_FILES[@]}"; do
       echo "(deny file-read* (literal \"$f\"))"
     done
-    echo '(allow file-read* (subpath "/System") (subpath "/Library") (subpath "/usr") (subpath "/bin") (subpath "/private/etc") (subpath "/private/var/db") (subpath "/dev") (literal "/tmp") (subpath "/tmp") (subpath "/private/tmp") (subpath "'"${TMPDIR:-/tmp}"'"))'
+    # macOS 27 aborts every process (SIGABRT, no logged denial) unless the root
+    # directory itself is readable; the literal grants nothing beneath it. Nix
+    # binaries load their dylibs from the store, so it must be readable too
+    # (store paths are world-readable build outputs, never secrets). /var is the
+    # root symlink to /private/var that sops-nix's link chain crosses.
+    echo '(allow file-read* (literal "/") (literal "/var") (subpath "/nix/store") (subpath "/System") (subpath "/Library") (subpath "/usr") (subpath "/bin") (subpath "/private/etc") (subpath "/private/var/db") (subpath "/dev") (literal "/tmp") (subpath "/tmp") (subpath "/private/tmp") (subpath "'"${TMPDIR:-/tmp}"'"))'
     echo "(allow file-write* (literal \"/dev/null\") (literal \"/dev/tty\") (subpath \"/tmp\") (subpath \"/private/tmp\") (subpath \"${TMPDIR:-/tmp}\"))"
     # The TMPDIR rules above name /var/folders, which Seatbelt never matches (it
     # sees the resolved /private/var/folders), and sops-nix decrypts into that

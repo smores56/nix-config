@@ -210,6 +210,8 @@ let
       com.apple.bsd.dirhelper
       com.apple.pboard
       com.apple.opendirectoryd
+      # getpwuid(3): ssh and ssh-keygen refuse to run without the user record.
+      com.apple.system.opendirectoryd.libinfo
     )
   '';
 
