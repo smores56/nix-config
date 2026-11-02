@@ -295,7 +295,10 @@ Work is split across independent switches:
 - **Each account is one PAT plus one signing key:** every GitHub remote uses
   HTTPS (SSH remote URLs are rewritten), and git's credential helper picks the
   owner's PAT from the request URL (`modules/features/github-credentials.nix`);
-  no SSH key is registered with GitHub for git. The work account's PAT and
+  no SSH key is registered with GitHub for git. `gh` picks by `-R`/`--repo`
+  or `GH_REPO`, else the `gh api` endpoint, else the checkout's default
+  remote, else the personal account; to target the other account's repo from
+  elsewhere, pass `-R` or set `GH_REPO`. The work account's PAT and
   signing key exist only on the work Mac (`secrets/smoreswork.yaml`), so on
   other hosts a work repo has no token and its commits sign with the personal
   key.

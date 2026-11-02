@@ -8,10 +8,11 @@
 # - the git credential helper answers only https://github.com, takes the owner
 #   from the request path, refuses dot segments, and stops git with quit=1
 #   instead of a password prompt when there is no token;
-# - the gh wrapper takes the owner from -R/--repo, GH_REPO, the command's own
-#   target (`repo <verb> owner/name`, `pr|issue <verb> <URL>`, the `api`
-#   endpoint), then the remote gh itself would use, then the personal account;
-#   an explicit target that is no account name gets no token.
+# - the gh wrapper follows a small, predictable rule: -R/--repo or GH_REPO,
+#   else the `api` endpoint, else the remote gh itself would use, else the
+#   personal account; positional arguments are never guessed at (name another
+#   account's repo with -R or GH_REPO), and an explicit target that is no
+#   account name gets no token.
 #
 # Usage: github_pat_routing.sh <github-token-file> <gh-pat>
 #          <github-credential-helper> <personal-pat-file> <work-pat-file>,
@@ -98,6 +99,9 @@ mkrepo "$work/work" origin "git@github.com:$WORK_OWNER/svc.git"
 mkrepo "$work/fork" origin "https://github.com/$PERSONAL_OWNER/svc.git" upstream "https://github.com/$WORK_OWNER_2/svc.git"
 mkrepo "$work/resolved" origin "https://github.com/$WORK_OWNER/svc.git" mine "https://github.com/$PERSONAL_OWNER/svc.git"
 git -C "$work/resolved" config remote.mine.gh-resolved base
+mkrepo "$work/sole" mirror "https://github.com/$WORK_OWNER/svc/"
+mkrepo "$work/resolved-name" origin "https://github.com/$PERSONAL_OWNER/svc.git"
+git -C "$work/resolved-name" config remote.origin.gh-resolved "$WORK_OWNER_2/svc"
 mkdir -p "$work/outside"
 
 check_gh() {
@@ -111,6 +115,8 @@ check_gh personal "$PERSONAL_OWNER" "$gh_pat" pr list
 check_gh work "$WORK_OWNER" "$gh_pat" pr list
 check_gh fork "$WORK_OWNER_2" "$gh_pat" pr create
 check_gh resolved "$PERSONAL_OWNER" "$gh_pat" pr list
+check_gh resolved-name "$WORK_OWNER_2" "$gh_pat" pr list
+check_gh sole "$WORK_OWNER" "$gh_pat" pr list
 # Nothing targeted and no checkout: the personal account, not a failure.
 check_gh outside "$PERSONAL_OWNER" "$gh_pat" auth status
 check_gh outside "$PERSONAL_OWNER" "$gh_pat" api user
@@ -119,12 +125,14 @@ check_gh personal "$WORK_OWNER" "$gh_pat" -R "$WORK_OWNER/svc" pr list
 check_gh personal "$WORK_OWNER_2" "$gh_pat" pr list --repo "$WORK_OWNER_2/svc"
 check_gh personal "$WORK_OWNER_2" "$gh_pat" issue list --repo="$WORK_OWNER_2/svc"
 check_gh personal "$WORK_OWNER" env "GH_REPO=$WORK_OWNER/svc" "$gh_pat" pr list
-check_gh outside "$WORK_OWNER" "$gh_pat" repo clone "$WORK_OWNER/svc" -- --depth 1
-check_gh outside "$WORK_OWNER_2" "$gh_pat" repo view "https://GitHub.com/$WORK_OWNER_2/svc"
-check_gh personal "$WORK_OWNER" "$gh_pat" pr view "https://github.com/$WORK_OWNER/svc/pull/7"
+check_gh outside "$WORK_OWNER_2" env "GH_REPO=github.com/$WORK_OWNER_2/svc" "$gh_pat" repo view
 check_gh personal "$WORK_OWNER" "$gh_pat" api -X POST "repos/$WORK_OWNER/svc/pulls"
 check_gh personal "$WORK_OWNER" "$gh_pat" api "https://api.github.com/orgs/$WORK_OWNER/repos" --jq .name
-# Placeholders and URLs that are not the target leave the checkout in charge.
+check_gh personal "$WORK_OWNER" "$gh_pat" api "orgs/$WORK_OWNER?per_page=1"
+# Positional arguments are never guessed at, and placeholders or URLs that are
+# not the target leave the checkout in charge.
+check_gh personal "$PERSONAL_OWNER" "$gh_pat" repo view "$WORK_OWNER/svc"
+check_gh outside "$PERSONAL_OWNER" "$gh_pat" pr view "https://github.com/$WORK_OWNER/svc/pull/7"
 check_gh work "$WORK_OWNER" "$gh_pat" api "repos/{owner}/{repo}/pulls"
 check_gh personal "$PERSONAL_OWNER" "$gh_pat" pr comment 3 --body "https://github.com/$WORK_OWNER/svc/pull/1"
 check_gh personal "$PERSONAL_OWNER" "$gh_pat" api graphql -f "query=https://github.com/$WORK_OWNER"

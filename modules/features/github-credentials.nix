@@ -79,19 +79,21 @@ let
   };
 
   # `gh` reads GH_TOKEN, and gh's own git calls (repo clone, pr checkout) use
-  # it too, so the token must match the repository the command targets. The
-  # owner comes from what gh itself would target, in gh's order: -R/--repo,
-  # GH_REPO, the command's own argument (`repo <verb> owner/name`,
-  # `pr|issue <verb> <URL>`, the `api` endpoint), then the checkout's default
-  # remote; with nothing to go on, the personal account. Free-text values
-  # (--body, -f query=...) never count. GH_PAT_RESOLVE_ONLY=1 prints the
-  # resolved owner and exits, for tests.
+  # it too, so the token should match the repository the command targets. The
+  # rule is deliberately small and predictable rather than a reimplementation
+  # of gh's per-command flags: -R/--repo or GH_REPO, else the `api` endpoint,
+  # else the checkout's default remote as gh picks it, else the personal
+  # account. Positional repo arguments are not guessed at: name the other
+  # account's repo with -R or GH_REPO. A miss only means the other account's
+  # token reaches GitHub and the call is refused; nothing leaves GitHub.
+  # GH_PAT_RESOLVE_ONLY=1 prints the resolved owner and exits, for tests.
   ghWithPat = pkgs.writeShellApplication {
     name = "gh-pat";
     runtimeInputs = [
       pkgs.gh
       pkgs.coreutils
       pkgs.git
+      pkgs.gnugrep
     ];
     text = ''
       # An explicit GH_TOKEN always wins (CI, a one-off work org command).
@@ -146,6 +148,7 @@ let
           *://*) return 0 ;;
         esac
         endpoint=''${endpoint#/}
+        endpoint=''${endpoint%%\?*}
         case "$endpoint" in
           repos/*/* | orgs/*)
             endpoint=''${endpoint#*/}
@@ -160,17 +163,27 @@ let
         esac
       }
 
-      # gh's default remote: an explicit `gh repo set-default`, else upstream,
-      # github, origin.
+      # gh's default remote: an explicit `gh repo set-default` (either the
+      # remote marked `base` or the owner/repo it records), else upstream,
+      # github, origin, else a checkout's only remote.
       checkout_owner() {
-        local remote url
-        remote=$(git config --get-regexp '^remote\..*\.gh-resolved$' 2>/dev/null |
-          while read -r key value; do
-            [ "$value" = base ] && { key=''${key#remote.}; printf '%s' "''${key%.gh-resolved}"; break; }
-          done) || true
+        local resolved="" remote="" url remotes
+        while read -r key value; do
+          case "$value" in
+            base) key=''${key#remote.} && remote=''${key%.gh-resolved} ;;
+            */*) resolved=$value ;;
+          esac
+        done < <(git config --get-regexp '^remote\..*\.gh-resolved$' 2>/dev/null || true)
+        if [ -n "$resolved" ]; then
+          owner_of "$resolved"
+          return 0
+        fi
+        remotes=$(git remote 2>/dev/null) || return 0
+        [ "$(printf '%s\n' "$remotes" | grep -c .)" = 1 ] && [ -z "$remote" ] && remote=$remotes
         for candidate in "$remote" upstream github origin; do
           [ -n "$candidate" ] || continue
           if url=$(git remote get-url "$candidate" 2>/dev/null); then
+            url=''${url%/}
             url=''${url%.git}
             url=''${url%/*}
             printf '%s' "''${url##*[:/]}"
@@ -191,25 +204,9 @@ let
       if [ "$explicit" = 0 ] && [ -n "''${GH_REPO:-}" ]; then
         owner=$(owner_of "$GH_REPO") explicit=1
       fi
-      if [ "$explicit" = 0 ]; then
-        target=''${3:-}
-        case "''${1:-}" in
-          repo)
-            case "$target" in
-              -* | "") ;;
-              */*) owner=$(owner_of "$target") explicit=1 ;;
-            esac
-            ;;
-          pr | issue)
-            case "''${target,,}" in
-              https://* | http://* | github.com/*) owner=$(owner_of "$target") explicit=1 ;;
-            esac
-            ;;
-          api)
-            owner=$(api_owner "''${@:2}")
-            [ -n "$owner" ] && explicit=1
-            ;;
-        esac
+      if [ "$explicit" = 0 ] && [ "''${1:-}" = api ]; then
+        owner=$(api_owner "''${@:2}")
+        [ -n "$owner" ] && explicit=1
       fi
       if [ "$explicit" = 0 ]; then
         owner=$(checkout_owner)
