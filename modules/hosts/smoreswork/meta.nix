@@ -10,4 +10,13 @@
     brain.dir = "brain";
     shellAbbrs.m = "claude";
   };
+
+  homeOptions = {
+    # The work laptop holds a ciphertext copy of the vault under ~/Sync, outside
+    # the TCC-protected folders, and unlocks it with the Cryptomator app only.
+    syncthing = {
+      enable = true;
+      device = "smoreswork";
+    };
+  };
 }
