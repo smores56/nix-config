@@ -325,6 +325,11 @@ in
     };
 
     systemd.tmpfiles.rules = [
+      # The container's shared runtime dir. Created here, not by the container
+      # unit's RuntimeDirectory: systemd deletes that on every restart, and
+      # lobechat-secrets writes db-password there only once at boot, which left
+      # lobechat-db-init and lobechat-connectors without it after a switch.
+      "d ${runtimeDir} 0750 root postgres -"
       # RustFS runs as uid/gid 10001 in the image.
       "d ${rustfsData} 0700 10001 10001 -"
     ];
@@ -615,6 +620,10 @@ in
         StartLimitBurst = 10;
       };
       serviceConfig = {
+        # nixpkgs gives every podman container a RuntimeDirectory named after
+        # the unit; keep the dir across restarts (tmpfiles owns it above) so the
+        # secrets written into it survive a `switch`.
+        RuntimeDirectory = lib.mkForce [ ];
         # A first start runs the whole schema migration before Next answers.
         TimeoutStartSec = lib.mkForce "30m";
         ExecStartPost = "${readinessScript}";
