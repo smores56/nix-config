@@ -19,8 +19,8 @@ every rename. Link to source files (e.g.
 `modules/flake/configurations.nix`) as the source of truth for volatile
 details.
 
-Operator-only steps (host provisioning, sops keys, Cloudflare objects, backup
-datasets, public services, flake apps, alert paths) live in
+Operator-only steps (host provisioning, sops keys, Cloudflare objects, public
+services, flake apps, alert paths) live in
 `docs/manual-steps.md`. The `manual-steps-sync` check derives that inventory
 from the configuration: add an anchor (`<!-- manual-step: <kind>/<id> -->`) with
 real instructions for every new item, remove anchors for deleted items, and keep
@@ -56,7 +56,7 @@ adds its greeter as a host-local module.
 | `modules/features/ai/` | AI tooling: assistant context, brain, maki, providers, sdlc, skills |
 | `modules/features/tv/` | Television repository and worktree cables |
 | `tofu/` | minimal Cloudflare DNS/Access/notification objects; run via the `cloudflare-*` flake apps |
-| `modules/features/backup/` | Shell rclone driver (`backup.sh`), shell watcher, operator README, GitHub-mirror helpers and restore drill |
+| `modules/features/backup/` | Operator README, GitHub-mirror helpers and the metadata verifier |
 | `modules/desktop/aerospace/` | AeroSpace config + `aerospace-layout` |
 | `tests/` | Python/Node unit tests and shell/module checks for the repo's tools (all run via flake checks) |
 
@@ -201,11 +201,8 @@ per-repo templates), `repos-routing` (flat work repo discovery and routing), `zs
 (generated zsh startup files parse; only on a system with a zsh home) and
 `github-mirror-probe` (the GitHub mirror rejects a stale private-repo probe and
 scrubs a token-bearing origin), `github-metadata` (pgb flags and token-by-file,
-manifest counts, stale/scope/count failures, and the full-pass swap),
-`backup-watch` (watcher debounce/ignore/queue semantics), `backup-plain`
-(copy-never-sync, versions, scoped check, markers, the stall watchdog, and the
-bounded offsite-lock wait that defers instead of failing, against local rclone
-remotes), and `key-bundle` (FIDO2 handle round-trip: 0600 modes,
+manifest counts, stale/scope/count failures, and the full-pass swap), and
+`key-bundle` (FIDO2 handle round-trip: 0600 modes,
 outer and inner checksums, moved bundle, --force, public-half mismatch, host-key
 restore and its `.sops.yaml` recipient check), and
 `sshd-settings` (rendered `sshd -T`: key-only auth, verify-required, no
@@ -219,11 +216,11 @@ shell, git, ssh, PAM or backup settings, or `modules/lib/repo-workflow.nix`:
 
 ```sh
 nix build .#checks.aarch64-darwin.{git-work-routing,ssh-allowed-signers,ssh-pub-keys,worktrees-branch-template,repos-routing,zsh-config,github-mirror-probe}
-nix build .#checks.x86_64-linux.{backup-watch,backup-plain,github-metadata,key-bundle,manual-steps-sync,pam-auth-gates,sshd-settings}
+nix build .#checks.x86_64-linux.{github-metadata,key-bundle,manual-steps-sync,pam-auth-gates,sshd-settings}
 ```
 
-Run `manual-steps-sync` after touching hosts, sops keys, `tofu/`, backup
-datasets, `webProxy` services, flake apps, or alert paths:
+Run `manual-steps-sync` after touching hosts, sops keys, `tofu/`, `webProxy`
+services, flake apps, or alert paths:
 
 ```sh
 nix build .#checks.x86_64-linux.manual-steps-sync

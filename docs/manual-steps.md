@@ -12,10 +12,10 @@ An anchor is an HTML comment on its own line:
 <!-- manual-step: <kind>/<id> -->
 ```
 
-Kinds: `host`, `secret`, `provider`, `dataset`, `service`, `app`, `alert`.
-Adding a host directory, sops key, Tofu provider or notification, backup
-dataset, public service, flake app, or alert path means adding its anchor with
-real instructions.
+Kinds: `host`, `secret`, `provider`, `service`, `app`, `alert`.
+Adding a host directory, sops key, Tofu provider or notification, public
+service, flake app, or alert path means adding its anchor with real
+instructions.
 
 ## Hosts
 
@@ -45,8 +45,8 @@ generated hardware config, then run `nix run .#bootstrap`.
 - **Backup disk**: a 4.5T HDD, LUKS2, mounted at `/var/backup` from
   `/dev/mapper/backup` (see [Encrypted backup disk](#encrypted-backup-disk) for
   the format and keyfile procedure). The module only mounts it, with `nofail`;
-  the backup units declare `RequiresMountsFor` and fail loudly when it is
-  absent.
+  the local restic unit declares `RequiresMountsFor` and fails (and alerts)
+  when it is absent.
 - **Host key**: `/etc/ssh/ssh_host_ed25519_key` is the age recipient that
   decrypts the host's sops file. Losing it means restoring the key or re-keying
   (see Recovery in `README.md`).
@@ -177,8 +177,7 @@ not this install's: Immich's user was `987:983` on the old root and is
 equivalent for each service) or the service gets `EACCES` on its own files.
 
 The fresh install also lost the rclone session under `/var/lib/proton/`; run
-`sudo nix run .#proton-auth` before trusting the offsite copies, and confirm
-`proton-mount` is active.
+`sudo nix run .#proton-auth` and confirm `proton-mount` is active.
 
 ### smorespro
 
@@ -757,9 +756,9 @@ One root-only token shared by OpenTofu and the email alert sender. Mint it at
 - Notifications:Edit;
 - Email Sending:Edit.
 
-Readers: `nix run .#cloudflare-*` and the `cloudflare-email` /
-`backup-freshness` units. Rotate in the dashboard, update this key, rebuild, and
-prove it with `sudo nix run .#cloudflare-plan`.
+Readers: `nix run .#cloudflare-*` and the `cloudflare-email` unit. Rotate in the
+dashboard, update this key, rebuild, and prove it with
+`sudo nix run .#cloudflare-plan`.
 
 ### cloudflared-credentials
 
@@ -923,8 +922,8 @@ sudo nixos-rebuild switch            # redeploys /run/secrets/cloudflare-api-tok
 sudo nix run .#cloudflare-plan       # proves the new token
 ```
 
-Delete the old token row. `cloudflare-email@` and `backup-freshness` read the
-file at run time, so no unit restart is needed.
+Delete the old token row. `cloudflare-email@` reads the file at run time, so no
+unit restart is needed.
 
 #### github-repo-pat
 
@@ -932,12 +931,12 @@ Mint a new classic `repo` token (web). Then replace the secret, rebuild, and
 prove it with a mirror run — a valid token that lost `repo` fails the run:
 
 ```sh
-sudo systemctl start backup-github.service
-journalctl -u backup-github.service -n 50
+sudo systemctl start github-mirror.service
+journalctl -u github-mirror.service -n 50
 ```
 
-Revoke the old token. The mirror keeps the old value until the next
-`preBackup`, so the run above is the proof.
+Revoke the old token. The mirror keeps the old value until the next run, so the
+run above is the proof.
 
 #### calibre-password
 
@@ -1012,7 +1011,7 @@ One `rclone mount` of the Proton account at `/srv/proton`, run by the dedicated
 that authenticates to Proton: the refresh token lives in
 `/var/lib/proton/rclone.conf` (0600 `proton:proton`) and nowhere else — not in
 sops and not in the Nix store, because Proton rewrites the token in place when
-it refreshes. The backup units write through the mount (`/srv/proton/<Name>`),
+it refreshes. No backup unit writes through it (restic owns the offsite copy),
 and `pm` on a Linux client is an sshfs mount of `smortress:/srv/proton`, so
 neither holds a credential.
 
@@ -1072,13 +1071,13 @@ systemctl is-active proton-mount && findmnt /srv/proton
 Proton sometimes wants a fresh 2FA code for the new session (`this account
 requires a 2FA code` in `journalctl -u proton-mount`). Then re-auth with
 `sudo nix run .#proton-auth`, then `sudo systemctl reset-failed proton-mount`
-and start it. Every backup unit `Requires=` the mount, so until it is up the
-nightly runs fail even though the disks are fine.
+and start it. A down mount no longer delays a backup: the offsite copy is the
+restic `r2` repo, not the Proton mirror.
 
 Revoke the superseded login at account.proton.me → Settings → All settings →
 Security and privacy → Session management (verified page; whether rclone
-appears as its own session there is unverified). Then run a backup to prove the
-write path: `sudo systemctl start backup-photos.service`.
+appears as its own session there is unverified). Then prove the mount:
+`mountpoint /srv/proton && ls /srv/proton`.
 
 Failure modes: a missing or unreadable config fails `proton-mount.service`'s
 `ExecStartPre` with an actionable message (it never silently serves an empty
@@ -1087,17 +1086,10 @@ still exits 0 (it answers from the VFS cache), so
 `proton-mount-health.timer` (hourly at :17, `Persistent`) lists the backend
 through the mount's own RC (`operations/list` on `/var/lib/proton/rc.sock`,
 which only `proton` and root can reach) and alerts through `cloudflare-email`
-when that call fails or times out. The backup units require
-`proton-mount.service`, preflight `mountpoint -q /srv/proton` before copying —
-without that, an unmounted path would fill the root filesystem — then wait for
-the mount's VFS upload queue to drain through the same socket and drop the
-dataset's cached listing before the size-only check, so a recorded success means
-Proton holds the files; a missing socket or a queue that never drains fails the
-run. `pm` reports "nothing mounted at /srv/proton" instead of mounting an empty
-directory.
+when that call fails or times out. `pm` reports "nothing mounted at /srv/proton"
+instead of mounting an empty directory.
 
-Restarting the mount stops every backup unit that requires it
-(`Requires=proton-mount.service`), so do it outside their schedule. `ExecStop`
+A restart never stops a backup unit (nothing requires the mount). `ExecStop`
 unmounts lazily (`fusermount3 -uz`) with `TimeoutStopSec=30s`, so a wedged
 Proton read cannot hold the stop; the kernel finishes detaching afterwards.
 
@@ -1105,7 +1097,6 @@ Delete the superseded configs once the mount works — nothing reads them now:
 
 ```sh
 rm ~/.config/rclone/rclone.conf
-sudo rm -f /var/lib/backup/rclone.conf
 ```
 
 ## Wallpapers (smorespro, smoreswork)
@@ -1196,40 +1187,65 @@ Every change: `sudo nix run .#cloudflare-plan`, review the plan, then
 guards the applications and policies; remove it deliberately if you mean to
 delete them.
 
-## Backup datasets
+## Backup (restic)
 
-Datasets come from `backup.datasets` on every NixOS host. Each one is driven by
-the shell driver [`backup.sh`](../modules/features/backup/backup.sh), packaged
-as `backup`; a manual run passes the same flags the unit uses (`--name`,
-`--source`, `--backup-root`, `--remote`, `--offsite`, `--exclude`,
-`--full-check`). `--remote` is either an rclone remote name (then also pass
-`--rclone-config`) or a filesystem path — smortress uses `/srv/proton`, the
-Proton mount, which needs no config but does need
-`--offsite-rc-socket /var/lib/proton/rc.sock` so the driver can drain the
-mount's upload queue and forget its cached listing before checking.
+restic is the driver: [`modules/nixos/restic-backup.nix`](../modules/nixos/restic-backup.nix)
+defines two repos that hold the same snapshots from one source path,
+`/var/lib/data`. The operator guide is
+[`modules/features/backup/README.md`](../modules/features/backup/README.md).
 
-Each dataset runs `backup-<name>.service` on its timer and writes
-`/var/backup/<Name>/BACKUP-LAST-SUCCESS` after a run that verified the mirror or
-found nothing to verify. A run with a prior failure marker does not refresh it.
-Inspect runs with:
+| Repo | Target |
+| --- | --- |
+| `r2` | `s3:https://<account>.r2.cloudflarestorage.com/restic-backup` |
+| `local` | `/var/backup/restic`, on the encrypted backup disk |
+
+Nightly at 03:30 with up to 15 minutes of delay, `initialize = true`,
+`--keep-daily 14 --keep-weekly 8 --keep-monthly 12`, and `restic check` after
+every run. Both units start `cloudflare-email@%n.service` on failure. The
+password is the `restic-password` secret (same for both repos); the R2
+credentials come from the sops-rendered `restic-r2.env`.
+
+The NixOS module installs one wrapper per repo with the repository, password
+file and credentials already set:
 
 ```sh
-systemctl list-timers 'backup-*'
-systemctl status backup-photos.service
-journalctl -u backup-photos.service -n 100
+sudo restic-r2 snapshots        # or restic-local
+sudo restic-r2 stats latest
+sudo journalctl -u restic-backups-r2 -n 100
+systemctl list-timers 'restic-*'
+sudo systemctl start restic-backups-local.service   # a manual run
 ```
 
-A failed run leaves `BACKUP-FAILED`. A run that never started because another
-dataset held the shared offsite lock past its `lockWait` leaves
-`BACKUP-DEFERRED` instead, and re-queues a watched dataset so the change is not
-lost until the next timer. The freshness timer emails when `BACKUP-LAST-SUCCESS`
-is older than the dataset's limit (default 26h; weekly datasets get 8d), when a
-deferral is the last thing that happened, and when a failure marker is newer
-than the last success. The operator guide — guarantees, trigger semantics,
-restore, and prune procedures — is
-[`modules/features/backup/README.md`](../modules/features/backup/README.md).
-Run [`drills/restore-drill.sh`](../modules/features/backup/drills/restore-drill.sh)
-when changing the driver.
+### Restore drill
+
+Run this against both repos after changing the backup path and after seeding a
+new repo. It proves a snapshot is readable and its data intact without
+restoring everything.
+
+```sh
+# 1. Pick a file in the live tree and note its hash.
+file=/var/lib/data/wallpapers/<file>
+sha256sum "$file"
+
+# 2. Restore the wallpapers subtree from the latest snapshot of each repo.
+sudo restic-r2 restore latest --target /var/tmp/restore-r2 \
+  --include /var/lib/data/wallpapers
+sudo restic-local restore latest --target /var/tmp/restore-local \
+  --include /var/lib/data/wallpapers
+
+# 3. Each restored copy must hash identically to the live file.
+sha256sum /var/tmp/restore-r2/var/lib/data/wallpapers/<file>
+sha256sum /var/tmp/restore-local/var/lib/data/wallpapers/<file>
+
+# 4. Read a 2% sample of every pack: the bit-rot check.
+sudo restic-r2 check --read-data-subset=2%
+sudo restic-local check --read-data-subset=2%
+
+rm -rf /var/tmp/restore-r2 /var/tmp/restore-local
+```
+
+Both repos passed this drill on 2026-11-02 (267 GiB snapshots, 386 files; 2.34
+GiB of wallpapers restored, hashes identical).
 
 ### Encrypted backup disk
 
@@ -1241,19 +1257,18 @@ slot as the recovery path if the root is ever lost. The option is
 smortress turns it on in `modules/hosts/smortress/meta.nix` together with
 `backup.device = "/dev/mapper/backup"`.
 
-Formatting destroys everything on the disk. The offsite mirrors under
-`/srv/proton/<Name>` are the safety net (they are why this is safe at all), but
-the recovery path is a re-seed from the live sources, not a Proton download.
-Do it in this order:
+Formatting destroys everything on the disk. The R2 repo is the safety net, and
+the local repo is derived: every byte in it comes from `/var/lib/data`, so the
+recovery path is a fresh seed from the live sources or a restore from R2, never
+a copy of the old disk. Do it in this order:
 
 ```sh
-# 1. Prove the offsite copies first: every dataset must have a fresh success
-#    and no verification error.
-systemctl list-timers 'backup-*'
-sudo ls -l /var/backup/*/BACKUP-LAST-SUCCESS
+# 1. Prove the offsite repo first: snapshots exist and a sample reads clean.
+sudo restic-r2 snapshots | head
+sudo restic-r2 check --read-data-subset=2%
 
-# 2. Stop the timers and the watchers, then unmount the plain ext4 disk.
-sudo systemctl stop 'backup-*.timer' 'backup-*.path'
+# 2. Stop the timers, then unmount the plain ext4 disk.
+sudo systemctl stop restic-backups-r2.timer restic-backups-local.timer
 sudo umount /var/backup
 
 # 3. Keyfile (kept on the encrypted root) + a passphrase slot for recovery.
@@ -1271,135 +1286,21 @@ sudo mount /dev/mapper/backup /var/backup
 Then enable `backup.luks` and `backup.device = "/dev/mapper/backup"` in
 `modules/hosts/smortress/meta.nix`, rebuild, and reboot: `/etc/crypttab` opens
 the disk from the keyfile before the mount, `nofail` keeps a missing keyfile
-from blocking boot, and the units (which declare `RequiresMountsFor`) fail
-loudly instead of writing to the root filesystem.
+from blocking boot, and the local unit (which declares `RequiresMountsFor`)
+fails loudly instead of writing to the root filesystem.
 
-**Re-seed from the sources, do not restore from Proton.** The local mirror is
-copy #2 and is derived: every byte in it comes from the live source. A Proton
-restore is the slow path — measured reads through the mount are ~3.4 MB/s, so
-281G is most of a day — while re-seeding reads the same disk the source lives
-on. The `versions/` history is local-only by design and is *not* on Proton, so it
-is lost either way; nothing unique to the old disk is recoverable from offsite.
-After the reboot:
+The local repo is created on the next run (`initialize = true`), so nothing has
+to be restored into it. After the reboot, seed it and start the timers:
 
 ```sh
-sudo systemctl start backup-cloudflaretofu.service backup-github.service \
-  backup-memoryexport.service
-sudo systemctl start backup-photos.service   # 144G source -> local, ~20 min
-sudo systemctl start backup-videos.service backup-music.service
+sudo systemctl start restic-backups-local.service
+sudo restic-local snapshots
 ```
 
-Each run copies source → new local mirror and finds nothing new to upload, so
-the offsite leg costs the drain walk only. Then confirm the markers and start
-the timers. Rotate the Cloudflare API token and tunnel credentials in the same
-session (see the rotation checklist above), since they sat on the plaintext disk.
+Rotate the Cloudflare API token and tunnel credentials in the same session (see
+the rotation checklist above), since they sat on the plaintext disk.
 
-### CloudflareTofu
-
-<!-- manual-step: dataset/CloudflareTofu -->
-
-OpenTofu state for the edge objects: `/var/lib/cloudflare-tofu`, daily 00:15.
-Losing state is recoverable by importing the existing objects
-(`sudo nix run .#cloudflare-tofu -- import <address> <id>`), not data loss.
-
-### GitHub
-
-<!-- manual-step: dataset/GitHub -->
-
-Git bare mirrors plus issue/PR metadata under `/var/lib/data/github-mirrors`,
-nightly 00:30, local and offsite (`/srv/proton/GitHub`). Seeded on 2026-10-19; later
-runs transfer deltas only. The pre-unit refreshes every repo with ghorg, then
-runs `python-github-backup` incrementally into `meta/`, and fails unless the
-probe repo (`sdlc`) was refreshed. It also fails on a repo-set mismatch against
-`gh api user/repos`, an issue/PR count drift beyond the documented slack, a
-stale pgb `last_update`, or a failed `git fsck` sample; evidence is written to
-`manifests/<date>/`.
-
-A monthly full metadata pass (`github-metadata-full.timer`, first Sunday 09:00)
-rebuilds `meta` without `-i` into `meta.new`, verifies it, and swaps it in under
-the host lock. Check the last result with:
-
-```sh
-systemctl status github-metadata-full.service
-jq . /var/lib/data/github-mirrors/manifests/$(date -u +%F)/counts.json
-```
-
-Restore a repository from `/var/backup/GitHub/current/smores56_backup/<repo>`
-(or `/srv/proton/GitHub`). It is a bare mirror: clone from it directly, or push it
-back with `git push --mirror`. Issues, PRs, discussions, releases, and
-attachments are archived JSON under `.../current/meta/repositories/<repo>/`,
-not restorable state: GitHub has no issue-import that preserves numbers and
-cross-references, so recreating a lost issue is a manual copy from the JSON.
-The mirror token is the classic `repo`-scoped `github-repo-pat` (root-only,
-0400), shared by ghorg, pgb, and the verifier; it can write to every repo the
-account reaches, but these units only read.
-
-### MemoryExport
-
-<!-- manual-step: dataset/MemoryExport -->
-
-Copy of `/var/lib/data/memory-export` taken at 05:30 (the export itself runs nightly
-from `memory-export.timer`, from midnight with up to an hour of delay), mirrored
-locally to `/var/backup/MemoryExport/current` and offsite to
-`/srv/proton/MemoryExport` like the other datasets. Each directory holds one registry
-snapshot, the `episodes.jsonl` dump, the manifest, and a best-effort FalkorDB
-RDB of the same timestamp. The export directory keeps seven snapshots and the
-driver versions what it replaces, so the mirror grows until the versions are
-pruned by hand. Restore with `just memory-restore <dir>` from
-`/var/backup/MemoryExport/current`; when the graph snapshot is missing or older
-than the registry, replay it with `just memory-reindex --all` afterwards.
-
-### Music
-
-<!-- manual-step: dataset/Music -->
-
-`/var/lib/media/Music`, daily 05:00, offsite and change-triggered. Restore with
-the drill, or:
-
-```sh
-sudo flock /run/lock/media-backup.lock \
-  rclone copy /srv/proton/Music /restore/Music
-```
-
-### Photos
-
-<!-- manual-step: dataset/Photos -->
-
-`/var/lib/media/Photos` (the Immich library), daily 03:00, full check Sundays
-06:00, change-triggered. A generated pre-unit dumps PostgreSQL as `postgres`;
-the driver copies it to `current/db/immich.dump` and fails the run if the
-dump is missing or stale. `thumbs` and `encoded-video` are excluded because
-Immich rebuilds them from the originals.
-
-Restore both the database dump and the library; the procedure (including
-`runuser -u postgres`) is in the backup README.
-
-### Videos
-
-
-`/var/lib/media/Videos`, daily 01:00, full check Sundays 07:00, offsite and
-change-triggered.
-
-### Calibre
-
-<!-- manual-step: dataset/Calibre -->
-
-`/var/lib/media/Calibre`, daily 02:30, full check Sundays 09:00, offsite and
-change-triggered. The library moved out of `~/Calibre Library` so it is on the
-media dataset and writable by the agent ingest queue.
-
-1. Deploy the new home and NixOS configs (the tmpfiles rule makes
-   `/var/lib/media`, `Music`, `Videos`, `Calibre`, and `Calibre-Ingest`
-   `smores:users` 0775; `Photos` stays `immich:immich`).
-2. Run `calibre-migrate` once. It stops `calibre-server`, moves the old
-   library, and starts the server again.
-3. The agent writes books and `manifest.json` to
-   `/var/lib/media/Calibre-Ingest`; the `calibre-ingest` user timer applies
-   them every minute. It stops the OPDS server while `calibredb` holds the
-   library and restarts it afterwards. Processed and failed files move to the
-   queue's `processed/` and `failed/` subdirectories.
-
-### Agent sandbox
+## Agent sandbox
 
 `agent-sandbox <harness>` is the explicit same-UID boundary; `m` is a fish/zsh
 abbreviation for `agent-sandbox maki`. Install `maki` manually in
@@ -1774,11 +1675,11 @@ restarts it, a failed ownership step leaves the previous registry in place, and
 an export refuses to run while the restore lock exists. It needs no root, no
 FalkorDB, and no network.
 
-**Offsite.** `backup.datasets.MemoryExport` mirrors `/var/lib/data/memory-export`
-(the plain-tree, versioned driver) to the backup disk and Proton, so the
-registry and its graph snapshot survive losing smortress. Recovery order is:
-restore the export, then `memory reindex --all` when the graph snapshot is
-missing or older, then confirm with a search.
+**Offsite.** `/var/lib/data/memory-export` is inside the restic source tree, so
+it lands in both repos (R2 and the local encrypted disk) with the rest of the
+durable tree; the registry and its graph snapshot survive losing smortress.
+Recovery order is: restore the export, then `memory reindex --all` when the
+graph snapshot is missing or older, then confirm with a search.
 
 **Evaluation.** `just memory-eval` runs `modules/features/ai/memory/eval/` against
 the live store: 50 labelled queries (semantic, entity, temporal, exact) scored by
@@ -2195,25 +2096,9 @@ another run of this app rather than an in-place reconnect.
 ## Alert paths
 
 Alert paths come from `tofu/main.tf` (notification policies) and from the
-`alerting` module (`backup-freshness`, `cloudflare-email@`). All of them email
-`sam@sammohr.dev` through Cloudflare Email Service; no listener runs on the
-host. A Cloudflare outage silences email and the tunnel together — the console
-is the fallback.
-
-### backup-freshness
-
-<!-- manual-step: alert/backup-freshness -->
-
-`backup-freshness.timer` runs every five minutes and emails once per stale
-period. Test it without waiting for a real lapse:
-
-```sh
-sudo touch -d '2 days ago' /var/backup/Music/BACKUP-LAST-SUCCESS
-sudo systemctl start backup-freshness
-sudo systemctl start backup-music   # refresh the marker
-```
-
-Delete `/run/backup-freshness/Music.alerted` to reset the once-only flag.
+`alerting` module (`cloudflare-email@`). All of them email `sam@sammohr.dev`
+through Cloudflare Email Service; no listener runs on the host. A Cloudflare
+outage silences email and the tunnel together — the console is the fallback.
 
 ### unit-failure
 
@@ -2224,7 +2109,7 @@ emails the unit's status and last 50 journal lines. Test the path without
 breaking a backup:
 
 ```sh
-sudo systemctl start cloudflare-email@backup-github.service
+sudo systemctl start cloudflare-email@restic-backups-r2.service
 ```
 
 That sends one email about the (successful) unit; a real failure sends one per
