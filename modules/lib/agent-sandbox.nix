@@ -96,7 +96,7 @@ let
   # <generation>/<name>), so the launcher resolves each link at start and allows
   # exactly that file; every other sops secret stays denied. Linux binds the key
   # at its /run/secrets path instead (secretBind).
-  darwinSecretLinkDirs = lib.optionals isDarwin [ "$HOME/.local/share/git-signing" ];
+  darwinSecretLinkDirs = lib.optionals isDarwin [ "$HOME/.local/share/github" ];
 
   homeMaskFiles = [
     "$HOME/.bash_history"
@@ -180,14 +180,19 @@ let
     ${renderList "SECRET_BIND" secretBind}
     ${renderList "SECRET_READ" secretRead}
     ${renderList "SIGNING_SOCKETS" signingSockets}
-    ${renderList "ENV_EXTRA" [ ]}
+    ${renderList "ENV_EXTRA" (
+      # The sandbox starts from an empty environment, which drops the CA bundle
+      # path Nix's git/curl need on macOS; pin the store copy (readable there).
+      lib.optionals isDarwin [
+        "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+        "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+      ]
+    )}
     ${renderList "ENV_PASSTHROUGH" [ ]}
     AGENT_CONFIG_DIR=1
     CLOUDFLARED_TOKEN="''${XDG_RUNTIME_DIR:-/run/user/$UID}/cloudflared-access/token"
     EMPTY_DIR="${pkgs.emptyDirectory}"
-    ${lib.optionalString isDarwin ''
-      OPENAI_KEYCHAIN_ITEM="maki-openai-api-key"
-      GH_TOKEN_KEYCHAIN_ITEM="maki-github-pat"''}
+    ${lib.optionalString isDarwin ''OPENAI_KEYCHAIN_ITEM="maki-openai-api-key"''}
     EXEC_DENY=(
       sudo
       su
@@ -237,27 +242,11 @@ let
     '';
   };
 
-  # On macOS there is no /run/secrets; the host-side launcher may inject
-  # GH_TOKEN from Keychain. This helper is the fallback after the owner-
-  # selecting login helper declined a request.
-  gitCredential = pkgs.writeShellScriptBin "agent-sandbox-git-credential" ''
-    if [ -n "''${GH_TOKEN:-}" ]; then
-      printf 'username=x-access-token\npassword=%s\n' "$GH_TOKEN"
-    fi
-  '';
-
   gitConfig = pkgs.writeText "agent-sandbox-gitconfig" ''
+    # The included host config already rewrites GitHub remotes to HTTPS and
+    # scopes the owner-selecting credential helper to https://github.com.
     [include]
         path = ~/.local/state/agent/config/git/config
-
-    [url "https://github.com/"]
-        insteadOf = git@github.com:
-        insteadOf = ssh://git@github.com/
-
-    [credential]
-        helper = !github-credential-helper
-        helper = !agent-sandbox-git-credential
-        useHttpPath = true
 
     [gpg "ssh"]
         allowedSignersFile = ~/.local/state/agent/config/allowed_signers
@@ -320,7 +309,6 @@ let
       export AGENT_SSH_CONFIG=${sshConfig}
       export AGENT_SSH_SHIM=${sshShim}/bin/ssh
       export AGENT_GH_SHIM=${ghShim}/bin/gh
-      export AGENT_CREDENTIAL_HELPER=${gitCredential}/bin/agent-sandbox-git-credential
       export AGENT_SIGNING_KEY_COMMAND=${signingKeyCommand}/bin/gpg-ssh-default-key
       export AGENT_GIT_CONFIG=${gitConfig}
       export AGENT_SANDBOX_BWRAP=${if isDarwin then "/bin/true" else lib.getExe bwrap}

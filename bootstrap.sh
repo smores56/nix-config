@@ -43,35 +43,6 @@ is_nonempty_dir() {
   [ -d "$1" ] && [ -n "$(find "$1" -mindepth 1 -maxdepth 1 -print -quit)" ]
 }
 
-# GitHub advertises a token's OAuth scopes in the `x-oauth-scopes` response
-# header, but only for classic tokens. A fine-grained PAT omits the header and
-# is scoped by its configured permissions instead (needs "Git SSH keys: write"
-# and "SSH signing keys: write"), so an absent header means "cannot tell", not
-# "missing". Returns 0 when the scopes are present and sufficient, 1 when they
-# are present but insufficient, and 2 when the header is absent.
-scope_status() {
-  local needed="$1"
-  local current
-  current="$(gh api -i user 2>/dev/null | awk '
-    tolower($0) ~ /^x-oauth-scopes:/ {
-      sub(/^[Xx]-[Oo]auth-[Ss]copes:[[:space:]]*/, "")
-      gsub(/[[:space:]]/, "")
-      print
-      exit
-    }
-  ')"
-  [ -n "$current" ] || return 2
-
-  local scope
-  local IFS=','
-  for scope in $needed; do
-    case ",${current}," in
-      *",${scope},"*) ;;
-      *) return 1 ;;
-    esac
-  done
-}
-
 contains_line() {
   local needle="$1"
   local lines="$2"
@@ -171,27 +142,24 @@ fi
 
 # ── Phase 5: GitHub authentication ────────────────────────────────
 
-GH_KEY_SCOPES="write:public_key,write:ssh_signing_key"
-# user.sshKey in modules/options.nix; bash cannot read the option.
-SSH_KEY="${HOME}/.ssh/id_personal"
-
+# gh only needs a login here: git and gh themselves use the sops PATs
+# (modules/features/github-credentials.nix), and no SSH key is registered with
+# GitHub, so there are no key scopes to request.
 # A headless host authenticates with the vault's GitHub PAT (sops-delivered,
 # non-interactive); elsewhere use the device code flow in a browser.
 GITHUB_PAT_FILE="${GITHUB_PAT_FILE:-/run/secrets/github-key-pat}"
-GH_USED_PAT=0
 if gh auth token --hostname "$GITHUB_HOST" --user "$GITHUB_USER" >/dev/null 2>&1; then
   skip "Already authenticated with GitHub as ${GITHUB_USER}"
 elif [ -s "$GITHUB_PAT_FILE" ]; then
-  GH_USED_PAT=1
   info "Authenticating with GitHub as ${GITHUB_USER} with the vault PAT..."
-  gh auth login --hostname "$GITHUB_HOST" --git-protocol ssh --with-token <"$GITHUB_PAT_FILE"
+  gh auth login --hostname "$GITHUB_HOST" --git-protocol https --with-token <"$GITHUB_PAT_FILE"
   gh auth token --hostname "$GITHUB_HOST" --user "$GITHUB_USER" >/dev/null 2>&1 \
     || err "GitHub PAT authentication did not create credentials for ${GITHUB_USER}."
   ok "GitHub authentication complete"
 else
   info "Authenticating with GitHub as ${GITHUB_USER} (device code flow)..."
   info "A code will appear below. Visit https://github.com/login/device from any browser to enter it."
-  gh auth login --hostname "$GITHUB_HOST" --git-protocol ssh --web --skip-ssh-key --scopes "$GH_KEY_SCOPES"
+  gh auth login --hostname "$GITHUB_HOST" --git-protocol https --web
   gh auth token --hostname "$GITHUB_HOST" --user "$GITHUB_USER" >/dev/null 2>&1 \
     || err "GitHub authentication did not create credentials for ${GITHUB_USER}. Re-run and choose ${GITHUB_USER} in the browser."
   ok "GitHub authentication complete"
@@ -206,65 +174,7 @@ ACTIVE_GITHUB_USER="$(gh api user --jq .login 2>/dev/null || true)"
 [ "$ACTIVE_GITHUB_USER" = "$GITHUB_USER" ] \
   || err "gh is authenticated as '${ACTIVE_GITHUB_USER:-unknown}', expected '${GITHUB_USER}'. Unset GH_TOKEN/GITHUB_TOKEN or authenticate as ${GITHUB_USER}."
 
-if scope_status "$GH_KEY_SCOPES"; then
-  skip "GitHub auth already has required scopes (${GH_KEY_SCOPES})"
-else
-  scope_code=$?
-  if [ "$scope_code" = "2" ]; then
-    warn "GitHub token advertises no OAuth scopes (fine-grained PAT); relying on its configured permissions (needs 'Git SSH keys: write' and 'SSH signing keys: write')."
-  elif [ "$GH_USED_PAT" = "1" ]; then
-    err "The GitHub PAT is missing required scopes (${GH_KEY_SCOPES}). Grant them to the token and re-run (a PAT session cannot refresh scopes non-interactively)."
-  else
-    info "Adding missing GitHub auth scopes (${GH_KEY_SCOPES})..."
-    gh auth refresh --hostname "$GITHUB_HOST" --scopes "$GH_KEY_SCOPES"
-    ok "GitHub auth scopes ready"
-  fi
-fi
-
-if [ ! -s "${SSH_KEY}.pub" ]; then
-  warn "Skipping GitHub SSH key registration: ${SSH_KEY}.pub is missing."
-  warn "Log in to Proton Pass (see Phase 4) and re-run this script."
-else
-  SSH_KEY_BLOB="$(awk '{print $2}' "${SSH_KEY}.pub")"
-  # --paginate: the key lists are paged (30/page); without it a key beyond the
-  # first page looks unregistered and is re-added, failing on the duplicate. The
-  # here-string also avoids a `gh | grep -q` SIGPIPE/pipefail false negative.
-  existing_auth_keys="$(gh api user/keys --paginate --jq '.[].key')"
-  if grep -qF "$SSH_KEY_BLOB" <<<"$existing_auth_keys"; then
-    skip "SSH authentication key already registered with GitHub"
-  else
-    info "Adding SSH authentication key to GitHub..."
-    gh ssh-key add "${SSH_KEY}.pub" --type authentication --title "${CONFIG_NAME}"
-    ok "SSH authentication key added to GitHub"
-  fi
-
-  existing_signing_keys="$(gh api user/ssh_signing_keys --paginate --jq '.[].key')"
-  if grep -qF "$SSH_KEY_BLOB" <<<"$existing_signing_keys"; then
-    skip "SSH signing key already registered with GitHub"
-  else
-    info "Adding SSH signing key to GitHub..."
-    gh ssh-key add "${SSH_KEY}.pub" --type signing --title "${CONFIG_NAME} signing"
-    ok "SSH signing key added to GitHub"
-  fi
-fi
-
-# ── Phase 6: Switch remote to SSH ─────────────────────────────────
-
-# A fresh bootstrap has no FIDO2 agent yet, so only switch the remote when an
-# agent already offers an identity.
-
-CURRENT_REMOTE="$(git -C "$REPO_DIR" remote get-url origin 2>/dev/null || true)"
-if ! ssh-add -L >/dev/null 2>&1; then
-  warn "No SSH identity from the Proton Pass agent; leaving the HTTPS remote in place."
-elif [ "$CURRENT_REMOTE" = "$REPO_URL_SSH" ]; then
-  skip "Remote already using SSH"
-else
-  info "Switching remote from HTTPS to SSH..."
-  git -C "$REPO_DIR" remote set-url origin "$REPO_URL_SSH"
-  ok "Remote switched to SSH"
-fi
-
-# ── Phase 7: NixOS setup ──────────────────────────────────────────
+# ── Phase 6: NixOS setup ──────────────────────────────────────────
 
 if is_nixos && has_nixos_config; then
   info "NixOS detected with config for ${HOSTNAME}"
@@ -290,7 +200,7 @@ elif is_nixos; then
   warn "Add modules/hosts/${HOSTNAME}/meta.nix (with nixos = true) and re-run."
 fi
 
-# ── Phase 8: Proton mount credentials ────────────────────────────
+# ── Phase 7: Proton mount credentials ────────────────────────────
 
 # Only the host with protonDrive enabled installs this unit. rclone cannot
 # provision Proton unattended (password + a TOTP code are required, and

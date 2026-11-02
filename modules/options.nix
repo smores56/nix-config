@@ -91,7 +91,7 @@ in
           };
           githubOwners = lib.mkOption {
             type = lib.types.nonEmptyListOf (lib.types.strMatching "[A-Za-z0-9][A-Za-z0-9-]*");
-            description = "Exact GitHub owners (matched case-insensitively) whose repos use the work identity, token and signing key. A list, not a pattern, so an org anyone can register never matches.";
+            description = "Exact GitHub owners (matched case-insensitively) whose repos use the work identity, token and signing key. A list, not a pattern, so an org anyone can register never matches. The memory and file-search services receive them comma-joined in MEMORY_WORK_OWNER_GLOB and add their own broader employer globs, because over-classifying a repo as work is their safe direction.";
           };
           branchNaming = lib.mkOption {
             type = branchNamingType;

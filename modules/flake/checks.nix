@@ -97,7 +97,7 @@ in
           signingKeyFile =
             name:
             if pkgs.stdenv.hostPlatform.isDarwin then
-              "${hc.home.homeDirectory}/.local/share/git-signing/${name}"
+              "${hc.home.homeDirectory}/.local/share/github/${name}"
             else
               "/run/secrets/${name}";
           homeExe =
@@ -119,7 +119,7 @@ in
             PERSONAL_BRANCH_UNTICKETED = toString d.branchNaming.unticketed;
             PERSONAL_OWNER = d.githubUser;
             # Spelled out from the host facts, not the module's own lookup: the
-            # Darwin home links keys under git-signing, NixOS reads /run/secrets,
+            # Darwin home links keys under ~/.local/share/github, NixOS reads /run/secrets,
             # and only the work host carries the work key.
             PERSONAL_SIGNING_KEY = signingKeyFile "github-personal-signing-key";
             WORK_SIGNING_KEY = signingKeyFile (
@@ -244,8 +244,10 @@ in
                 pkgs.coreutils
                 pkgs.git
                 pkgs.gnugrep
+                pkgs.gnused
               ];
               args = [
+                (homeExe "github-token-file")
                 (homeExe "gh-pat")
                 (homeExe "github-credential-helper")
               ]
@@ -260,10 +262,6 @@ in
             brain-leak-guard = {
               tools = [ ];
               args = [ "${src}" ] ++ employerIdentifiers;
-            };
-            bootstrap-scopes = {
-              tools = [ pkgs.gawk ];
-              args = [ "${src}" ];
             };
             github-mirror-probe = {
               tools = [ pkgs.git ];

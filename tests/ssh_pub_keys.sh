@@ -3,7 +3,7 @@
 # any more, a retired key's stale file is removed, a rerun is idempotent, and
 # the retired personal software key is never written.
 #
-# Usage: ssh_pub_keys.sh <ssh-pub-keys>.
+# Usage: ssh_pub_keys.sh <ssh-pub-keys>, with WORK_EMAIL and WORK_SIGNING_PUB.
 set -euo pipefail
 
 script=$1
@@ -25,7 +25,9 @@ printf 'ssh-ed25519 AAAAstale stale\n' >"$file"
 HOME="$work" "$script" || fail "script exited non-zero"
 
 [ ! -e "$file" ] || fail "retired work public key still present"
-grep -q 'valid-before' "$work/.config/ssh/allowed_signers" && fail "allowed_signers keeps a retired key"
+# The work email's only software (plain ed25519) key is the sops work key.
+work_soft=$(grep -F "$WORK_EMAIL namespaces=\"git\" ssh-ed25519 " "$work/.config/ssh/allowed_signers" | cut -d' ' -f3,4 || true)
+[ "$work_soft" = "$WORK_SIGNING_PUB" ] || fail "work email trusts software keys other than the sops work key: $work_soft"
 [ ! -e "$work/.config/ssh/id_personal.pub" ] || fail "the retired personal key was written"
 
 # Idempotent: a second run produces identical files.

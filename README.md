@@ -470,10 +470,11 @@ path/privilege boundary: bwrap on Linux and `sandbox-exec` on macOS. `m` is a
 shell abbreviation for `agent-sandbox maki`; plain `maki` is installed manually
 in `~/.local/bin` and runs unsandboxed. The sandbox gives the agent a
 read-only home plus a short write allowlist, masks credentials and the whole
-`~/.config`, and exposes the signing keys (the personal one bound at its
-`/run/secrets` path on Linux; on macOS only the resolved files behind
-`~/.local/share/git-signing`, which on the work Mac includes the work key), so
-sandboxed commits sign on every host. smortress authorizes that key with a forced `agent-ssh` command,
+`~/.config`, and exposes each account's PAT and signing key (the personal
+ones bound at their `/run/secrets` paths on Linux; on macOS only the resolved
+files behind `~/.local/share/github`, which on the work Mac include the work
+bundle), so sandboxed git and `gh` pick the owner's token and commits sign on
+every host. smortress authorizes that key with a forced `agent-ssh` command,
 so remote sessions re-enter the same sandbox and `sudo` is not invocable.
 The lists and backend live in `modules/lib/agent-sandbox.nix`; operator steps
 are in `docs/manual-steps.md`.

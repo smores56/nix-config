@@ -130,12 +130,6 @@ in
           push.default = "simple";
           pull.rebase = "true";
           init.defaultBranch = "main";
-          # GitHub is HTTPS plus the owner's PAT for both accounts (no SSH
-          # identity is registered for git), so pasted SSH remotes still work.
-          url."https://github.com/".insteadOf = [
-            "git@github.com:"
-            "ssh://git@github.com/"
-          ];
           diff.colorMoved = "default";
           delta = {
             navigate = true;

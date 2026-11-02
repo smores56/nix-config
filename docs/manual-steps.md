@@ -833,7 +833,7 @@ The personal account's ed25519 commit-signing key, user-readable 0400 in
 `secrets/common.yaml`, so every host (and the agent sandbox) signs as
 `sam@sammohr.dev` with no agent or PIN. git names it as `user.signingkey`
 (`modules/features/git.nix`): `/run/secrets/github-personal-signing-key` on
-NixOS, `~/.local/share/git-signing/github-personal-signing-key` on the work
+NixOS, `~/.local/share/github/github-personal-signing-key` on the work
 Mac. The public half is `personal` in `modules/lib/signing-keys.nix`; it is
 registered on `smores56` as a **signing** key only, and smortress also accepts
 it as the laptop sandbox's forced-command login (`modules/nixos/ssh.nix`).
@@ -888,7 +888,7 @@ revoke the old token.
 <!-- manual-step: secret/github-work-signing-key -->
 
 The work account's ed25519 commit-signing key, in `secrets/smoreswork.yaml`
-only, linked at `~/.local/share/git-signing/github-work-signing-key` on the
+only, linked at `~/.local/share/github/github-work-signing-key` on the
 work Mac. The work owner include selects it there; personal hosts have no work
 key, so a work commit there signs with the personal key and shows Unverified.
 The public half is `work` in `modules/lib/signing-keys.nix`, registered on the
@@ -1386,10 +1386,12 @@ the only reliable hardening.
 Photos: the agent talks to Immich over its API rather than touching
 `/var/lib/media/Photos`, using `secret/immich-agent-api-key` (below).
 
-Work Mac: create Keychain items `maki-openai-api-key` and `maki-github-pat`.
-The host-side launcher reads them before entering the sandbox because
-`securityd` is denied inside; `maki-github-pat` should be a scoped token and
-is injected as `GH_TOKEN` for `gh` and HTTPS git.
+Work Mac: create the Keychain item `maki-openai-api-key`; the host-side
+launcher reads it before entering the sandbox because `securityd` is denied
+inside. GitHub needs no Keychain item: the sandbox reads each account's sops
+PAT and signing key through `~/.local/share/github`, selected by the target
+repository's owner, so delete any old `maki-github-pat` item with
+`security delete-generic-password -s maki-github-pat`.
 
 ### immich-agent-api-key
 
