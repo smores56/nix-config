@@ -15,7 +15,8 @@
 #   account name gets no token.
 #
 # Usage: github_pat_routing.sh <github-token-file> <gh-pat>
-#          <github-credential-helper> <personal-pat-file> <work-pat-file>,
+#          <github-credential-helper> <personal-pat-file> <work-pat-file>
+#          <absent-pat-file>,
 #        with PERSONAL_OWNER, WORK_OWNER, WORK_OWNER_2 and LOOKALIKE_WORK_OWNER.
 set -euo pipefail
 
@@ -24,6 +25,7 @@ gh_pat=$2
 helper=$3
 personal_pat=$4
 work_pat=$5
+absent_pat=$6
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 failures=0
@@ -52,36 +54,56 @@ for bad in "" .. . "-lead" "a/b" "a b" "$WORK_OWNER*"; do
 done
 
 ask() {
-  printf '%s\n' "$@" "" | "$helper" get 2>"$work/helper.err"
+  local h=$1
+  shift
+  printf '%s\n' "$@" "" | "$h" get 2>"$work/helper.err"
 }
 
 # Requests the helper must decline outright: they are not GitHub over HTTPS.
-out=$(ask protocol=http host=github.com "path=$PERSONAL_OWNER/x.git") || fail "helper exited non-zero for http"
+out=$(ask "$helper" protocol=http host=github.com "path=$PERSONAL_OWNER/x.git") || fail "helper exited non-zero for http"
 [ -z "$out" ] || fail "helper answered a plain-http request"
-out=$(ask protocol=https host=example.com "path=$PERSONAL_OWNER/x.git") || fail "helper exited non-zero for a non-GitHub host"
+out=$(ask "$helper" protocol=https host=example.com "path=$PERSONAL_OWNER/x.git") || fail "helper exited non-zero for a non-GitHub host"
 [ -z "$out" ] || fail "helper answered a non-GitHub host"
+
+# `www.github.com` (a spelling insteadOf rewrites, modules/features/github-credentials.nix)
+# is the same service, so an untrusted path there stops git cold like the bare
+# host. Plain `http` is declined above, before any rewrite matters.
+out=$(ask "$helper" protocol=https host=www.github.com "path=/$WORK_OWNER/x.git")
+[ "$out" = quit=1 ] || fail "helper answered suspicious path on www.github.com: $out"
 
 # Requests aimed at GitHub whose owner cannot be trusted stop git cold,
 # before any token file is read.
 for path in "/$WORK_OWNER/x.git" "$WORK_OWNER/../$PERSONAL_OWNER/x.git" "$WORK_OWNER/./x" ""; do
-  out=$(ask protocol=https host=github.com "path=$path")
+  out=$(ask "$helper" protocol=https host=github.com "path=$path")
   [ "$out" = quit=1 ] || fail "helper answered suspicious path '$path': $out"
 done
 
 # Without a token the helper names the owner and stops git instead of letting
-# it prompt; only checkable where the real token files are unreadable (a
-# sandboxed Linux build).
-if [ -r "$personal_pat" ] || [ -r "$work_pat" ]; then
-  echo "token files readable here; skipping the missing-token helper cases"
-else
-  for host in github.com GitHub.com github.com:443; do
-    for owner in "$PERSONAL_OWNER" "$WORK_OWNER"; do
-      out=$(ask protocol=https "host=$host" "path=$owner/routing.git") || fail "helper exited non-zero for $owner@$host"
-      [ "$out" = quit=1 ] || fail "helper without a token for $owner@$host said: $out"
-      grep -qF "'$owner'" "$work/helper.err" || fail "helper did not name owner $owner"
-    done
-  done
+# it prompt. The real PATs are readable on the work Mac, so a copy of the
+# helper resolves every owner to a deliberately absent path: the matrix runs
+# everywhere, not only in a sandboxed Linux build.
+if [ -r "$absent_pat" ]; then
+  fail "the absent PAT path '$absent_pat' is readable"
 fi
+mkdir -p "$work/absent/bin"
+# The stub answers every owner with the absent path. It runs under the shell the
+# check itself runs in: a build sandbox has no /usr/bin/env to shebang through.
+cat >"$work/absent/bin/github-token-file" <<EOF
+#!$BASH
+printf '%s\n' "$absent_pat"
+EOF
+chmod +x "$work/absent/bin/github-token-file"
+missing_helper=$work/helper-missing-token
+sed "s|$token_file|$work/absent/bin/github-token-file|g" "$helper" >"$missing_helper"
+chmod +x "$missing_helper"
+grep -qF "$work/absent/bin/github-token-file" "$missing_helper" || fail "could not point the helper at an absent token"
+for host in github.com GitHub.com github.com:443; do
+  for owner in "$PERSONAL_OWNER" "$WORK_OWNER"; do
+    out=$(ask "$missing_helper" protocol=https "host=$host" "path=$owner/routing.git") || fail "helper exited non-zero for $owner@$host"
+    [ "$out" = quit=1 ] || fail "helper without a token for $owner@$host said: $out"
+    grep -qF "'$owner'" "$work/helper.err" || fail "helper did not name owner $owner"
+  done
+done
 
 # gh: which owner does the wrapper resolve? GH_PAT_RESOLVE_ONLY prints the
 # owner (never a token) and exits, so these run everywhere.
