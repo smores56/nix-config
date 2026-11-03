@@ -197,14 +197,16 @@ reason as DAV, and under the same per-IP rate limit. The database is
 outside the tree. The first account created in the web UI is the admin
 ([`docs/manual-steps.md`](docs/manual-steps.md#musicsammohrdev)).
 
-### Mail (Aster)
+### Mail (Tuta)
 
-`sam@sammohr.dev` is an Aster mailbox: the `sammohr97@` and `telhaturz@` aliases
-plus a catch-all, receive-only. Aster has no server-side IMAP/SMTP, so the host
-sends its alerts through Cloudflare Email Sending and never reads mail here.
-One apex `_dmarc` record carries the policy; a second one from Aster's wizard
-disables it. The record and the outbound path are in
-[`docs/manual-steps.md`](docs/manual-steps.md#mail-aster).
+`sam@sammohr.dev` is a Tuta mailbox on a custom domain: one alias per forwarded
+Gmail account plus a catch-all, worked through the Tuta desktop client or app —
+there is no IMAP and no server-side SMTP submission, so nothing on smortress
+sends or reads mail here. Host alerts go out through Cloudflare Email Sending
+and only arrive. MX, SPF, the catch-all and exactly one apex `_dmarc` TXT live in
+DNS beside the tunnel records; DKIM is configured from Tuta's custom-domain
+settings. Forwarding confirmations, inbox rules and the DKIM selector are in
+[`docs/manual-steps.md`](docs/manual-steps.md#mail-tuta).
 
 ### Syncthing and the vault
 

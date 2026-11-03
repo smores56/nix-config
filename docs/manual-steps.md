@@ -2166,21 +2166,40 @@ OpenTofu `cloudflare_notification_policy.service_token_expiry` warns before an
 Access service token expires. Renew the token in the dashboard, update the
 clients that embed it (Bitwarden, per host), and re-run `cloudflare-plan`.
 
-## Mail (Aster)
+## Mail (Tuta)
 
-`sam@sammohr.dev` is the primary address; `sammohr97@` and `telhaturz@` are
-aliases and everything else on the domain is a catch-all, all served by Aster.
+`sam@sammohr.dev` is the primary address on a Tuta custom domain; `sammohr97@`
+and `telhaturz@` are aliases (unlimited addresses on the custom domain) and a
+catch-all is available. Tuta has no IMAP and no server-side SMTP submission: the
+desktop client is the only way to import, search and send, and the phone uses the
+Tuta app.
 
-Exactly **one** apex `_dmarc` TXT record: `v=DMARC1; p=reject; rua=...` with
-relaxed alignment. A second DMARC record on the apex is the failure mode: two
-records make the policy invalid, so `p=reject` silently stops applying. Aster's
-wizard offers to add its own record; decline it.
+DNS as of 2026-11-03: `MX 10 mail.tutanota.de`, `v=spf1 include:spf.tutanota.de
+-all`, and the `t-verify=` TXT. Exactly **one** apex `_dmarc` TXT
+(`v=DMARC1; p=quarantine; adkim=s`); a second record makes the policy invalid.
+DKIM is managed by Tuta — Settings → Global Settings → Custom email domains — and
+the selector it shows must exist as a TXT at `<selector>._domainkey.sammohr.dev`.
+None exists today, so outbound mail currently authenticates by SPF alignment
+only.
+
+Forwarding in (two Gmail accounts, and Proton):
+
+1. The destination must exist: Settings → Email → Email addresses → Show → +,
+   choosing the custom domain. Set `sam@` as the primary address.
+2. Confirm the forward at the receiving end. Gmail mails a "Forwarding
+   Confirmation" from `forwarding-noreply@google.com` with a link, and Proton does
+   the same. Open it in Tuta; if it does not appear, check Spam, then resend from
+   the source account. An unconfirmed forward silently forwards nothing.
+3. Sort it: Settings → Email → Show inbox rules → +, field **To recipient**,
+   value the alias, target folder. One rule per forwarded account; values accept
+   regex. Do not key on the sender — Gmail forwarding keeps the original `From`.
+4. Auto-forwarding breaks the sender's DMARC: the envelope becomes the
+   forwarder's while `From` stays the original domain, so mail from a sender
+   publishing `p=reject` without DKIM can be dropped or quarantined on arrival.
+   That is inherent to forwarding; watch Spam.
 
 The host sends alerts through Cloudflare Email Sending only, from
-`alerts@send.sammohr.dev` to `sam@sammohr.dev`; the `send` subdomain carries its
-own SPF/DKIM records (`provider/cloudflare`). Aster is **receive-only** for this
-host: it has no server-side SMTP or IMAP submission, and the Aster Bridge is a
-desktop proxy that has to run somewhere, so nothing on smortress sends through
-it.
-
-The Tuta mailbox stays the mail rollback until that account is closed.
+`alerts@send.sammohr.dev` to `sam@sammohr.dev`; the sending subdomain carries its
+own SPF (`cf-bounce.send.sammohr.dev`). Tuta is receive-only for this host, and
+Proton stays a fallback mailbox only until #295 closes — forwarding from it dies
+with the account.
