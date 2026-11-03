@@ -26,6 +26,10 @@ from the configuration: add an anchor (`<!-- manual-step: <kind>/<id> -->`) with
 real instructions for every new item, remove anchors for deleted items, and keep
 the file free of `TODO`/`TBD`.
 
+Credential rotation lives in `docs/key-rotation.md`: the YubiKey and machine
+lifecycle, and per-secret procedures for the sops signing keys, restic, R2, the
+memory/Jupyter/Radicale tokens and the cloudflared tunnel.
+
 The `justfile` is the command index. Point users at `just --list` instead of
 duplicating commands in prose; add a recipe there when an operation becomes a
 routine.
@@ -48,8 +52,12 @@ adds its greeter as a host-local module.
 | `modules/hosts/` | per-host `meta.nix` (facts + option values), `default.nix` (explicit profile list plus optional `home`/`nixos` host-local modules), optional `hardware.nix`, `disko.nix`, and those host-only modules |
 | `modules/home.nix` | home-manager base (fonts, nix.conf, darwin helpers) |
 | `modules/features/` | cross-platform home-manager modules (shell, editor, git, packages, theme, ai) |
+| `modules/features/syncthing.nix`, `modules/syncthing-devices.nix` | Syncthing folder carrying the Cryptomator vault as ciphertext; the device table is a plain attrset of public device IDs |
+| `modules/features/vault.nix` (`vault.sh`) | `vault <cmd>`: unlock the Cryptomator vault for exactly one command |
 | `modules/desktop/` | desktop-environment modules (niri, aerospace) |
 | `modules/nixos/` | NixOS system modules (base, desktop, networking, ssh, etc.) |
+| `modules/nixos/radicale.nix`, `open-webui.nix`, `navidrome.nix` | public tunnel apps with their own auth: CalDAV/CardDAV, chat, music |
+| `modules/nixos/restic-backup.nix` | restic repos, schedule, retention and the Immich db dump |
 | `modules/flake/` | flake-parts modules (configurations, checks, formatter) |
 | `modules/lib/` | helper libraries |
 | `modules/features/agent-sandbox/` | the same-UID agent boundary; lists/backends in `modules/lib/agent-sandbox.{nix,sh}` |

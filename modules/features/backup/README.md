@@ -1,7 +1,7 @@
 # Backup — restic plus the GitHub mirror
 
-restic is the backup driver. It replaces the old rclone dataset driver: one job
-covers the whole durable tree, and every repo is encrypted client-side.
+restic is the backup driver: one job covers the whole durable tree, and every
+repo is encrypted client-side.
 
 | Piece | Where |
 | --- | --- |
@@ -40,8 +40,7 @@ Two repos, same snapshots, one source path:
 - **Failure alerting:** both generated units (`restic-backups-r2`,
   `restic-backups-local`) carry `onFailure = cloudflare-email@%n.service` when
   `alerting.enable` is on, so a failed nightly run mails its own journal. There
-  is no independent freshness timer: the dataset driver's
-  `backup-freshness` check is gone, and a silent host or a stopped timer is not
+  is no independent freshness timer, so a silent host or a stopped timer is not
   alerted on.
 
 The backup disk must be mounted before a run: `backup.mountPoint`
@@ -86,7 +85,7 @@ sudo restic-r2 check --read-data-subset=2%
 
 A restore that reads a subset and a `check` over a sample of packs proves both
 that the snapshot is complete and that its data is readable. Do it for `r2` and
-for `local`; both were drilled before the rclone driver was retired.
+for `local`.
 
 ## GitHub mirror and metadata
 

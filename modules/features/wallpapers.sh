@@ -180,8 +180,8 @@ sync_cache() {
   # timeout; --contimeout would be a daemon-only flag that rsync rejects on the
   # ssh transport, so the connect bound lives in ssh's ConnectTimeout.
   #
-  # An unmounted Proton tree is an empty directory on smortress, and --delete
-  # would then erase the only cached set, so the listing is checked first.
+  # An unmounted or empty source tree on smortress would let --delete erase the
+  # only cached set, so the listing is checked first.
   # A failed listing or transfer still reports failure so the timer does not
   # look green, but dispatch applies from the cache regardless: rotation has to
   # survive an outage. The probe's stderr is kept because ssh failures are

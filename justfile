@@ -45,11 +45,11 @@ install host target:
 host-key host:
     nix run .#host-key -- {{host}}
 
-# Archive the FIDO2 handles for Proton Pass before wiping a machine.
+# Archive the FIDO2 handles to Bitwarden before wiping a machine.
 key-backup *args:
     nix run .#key-backup -- {{args}}
 
-# Restore the FIDO2 handles from a Proton Pass bundle.
+# Restore the FIDO2 handles from a Bitwarden bundle.
 key-restore bundle *args:
     nix run .#key-restore -- "{{bundle}}" {{args}}
 

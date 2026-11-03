@@ -171,28 +171,50 @@ resource "cloudflare_notification_policy" "service_token_expiry" {
   }
 }
 
-# CalDAV/CardDAV clients authenticate with a password (Radicale has no
-# brute-force protection of its own), so rate limit the DAV hostname per client
-# IP. Access cannot sit in front of these clients, which is why this exists.
+# Rate limiting for the public hosts whose clients cannot complete an Access
+# login. CalDAV/CardDAV clients (Radicale has no brute-force protection of its
+# own) and the media apps (Navidrome, Immich, Calibre are reached by mobile apps
+# that authenticate with a password) therefore have no identity layer in front
+# of them, and a per-IP WAF rule is the only brute-force control left.
+#
+# Cloudflare's free plan caps a zone at one rate-limiting rule, so a downgraded
+# zone rejects the second rule below at plan time; `nix run .#cloudflare-plan`
+# is how the operator finds out.
 resource "cloudflare_ruleset" "dav_rate_limit" {
   zone_id = data.cloudflare_zone.this.zone_id
   name    = "dav rate limit"
   kind    = "zone"
   phase   = "http_ratelimit"
 
-  rules = [{
-    action      = "block"
-    description = "Rate limit CalDAV/CardDAV clients per IP"
-    expression  = "(http.host eq \"dav.${var.domain}\")"
-    ratelimit = {
-      characteristics = ["ip.src", "cf.colo.id"]
-      # Free-plan rate limiting only permits a 10-second period.
-      period              = 10
-      requests_per_period = 20
-      # Free-plan rate limiting caps both the period and the mitigation at 10s.
-      mitigation_timeout = 10
-    }
-  }]
+  rules = [
+    {
+      action      = "block"
+      description = "Rate limit CalDAV/CardDAV clients per IP"
+      expression  = "(http.host eq \"dav.${var.domain}\")"
+      ratelimit = {
+        characteristics = ["ip.src", "cf.colo.id"]
+        # Free-plan rate limiting only permits a 10-second period.
+        period              = 10
+        requests_per_period = 20
+        # Free-plan rate limiting caps both the period and the mitigation at 10s.
+        mitigation_timeout = 10
+      }
+    },
+    {
+      action      = "block"
+      description = "Rate limit the public media app hosts per IP"
+      expression  = "(http.host eq \"music.${var.domain}\" or http.host eq \"immich.${var.domain}\" or http.host eq \"calibre.${var.domain}\")"
+      ratelimit = {
+        characteristics = ["ip.src", "cf.colo.id"]
+        # 100 requests per 10s is deliberately lenient: the Immich mobile client
+        # bursts thumbnail requests while scrolling, and the target is
+        # credential stuffing, not normal use.
+        period              = 10
+        requests_per_period = 100
+        mitigation_timeout  = 10
+      }
+    },
+  ]
 
   lifecycle {
     prevent_destroy = true

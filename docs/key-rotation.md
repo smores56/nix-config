@@ -5,7 +5,7 @@ does. The three YubiKeys (`k1`, `k2`, `k3`) are interchangeable and every
 authorized list carries all three. The operator setup script is
 `~/dev/setup-yubikey.sh` on `smorespro` (it is not tracked yet); it produces
 `~/yubikey-setup/kN/` with the public material and a report. The script is
-included in the Proton Pass restore bundle (below) as data until it moves into
+included in the Bitwarden restore bundle (below) as data until it moves into
 the repo; the report directory is not copied.
 
 The FIDO2 credential *handles* under `~/.config/ssh-sk/kN/sudo` are
@@ -34,13 +34,14 @@ For each key:
    can be shown).
 3. Test `ssh smortress true` and `ssh -t smortress sudo true` (one touch, no
    PIN) on both hosts.
-4. Enroll the key in Proton account 2FA and keep the recovery codes offline.
-5. Store the PUK in phone Proton Pass and off-site; the PIN is memorized only.
+4. Enroll the key as WebAuthn 2FA on the Bitwarden account and keep the recovery
+   code offline.
+5. Store the PUK in Bitwarden and off-site; the PIN is memorized only.
 6. Register nothing on GitHub: git uses each account's PAT and sops signing
    key, never a YubiKey.
 7. For `smoreswork`, see the smart-card section below.
 8. On the machine holding the handles, run `nix run .#key-backup` and upload the
-   archive and checksum to the Proton Pass restore item (see
+   archive and checksum to the Bitwarden restore item (see
    `docs/manual-steps.md`). Repeat after any re-enrollment changes a handle.
 
 ## Reinstalling a machine
@@ -60,12 +61,12 @@ lost, mint a replacement with `nix run .#host-key -- <host>` and re-key
 
 1. Before wiping, on that machine: `nix run .#key-backup` (add `--no-host-key`
    on a machine with no host identity of its own, such as `smoreswork`), then
-   attach the printed `.tar.gz` and `.sha256` to the Pass restore item and
+   attach the printed `.tar.gz` and `.sha256` to the Bitwarden restore item and
    remove the local copies (`shred -u` or `rm -P`). The handle count must match
    the inventory in `modules/lib/yubikey-keys.nix` (six today); a missing handle
    is a lost leg. `key-backup` fails on a partial set unless
    `--allow-incomplete` is given.
-2. Download the two files from Pass and, in the operator checkout, run
+2. Download the two files from Bitwarden and, in the operator checkout, run
    `nix run .#key-restore -- <bundle>.tar.gz --host-key` to write
    `secrets/hosts/<host>/` before installing.
 3. Install and `nix run .#bootstrap`; then restore the handles with
@@ -87,14 +88,14 @@ it and `chmod +x` before running it.
    certificate list.
 2. Run `home-manager switch` on `smorespro` and `smortress`. If the key was
    with a laptop, also revoke that machine's Cloudflare Access service token,
-   rotate the Maki PATs, and sign out Proton sessions (see below).
-3. Remove the key from Proton account 2FA and enroll the replacement.
+   rotate the Maki PATs, and sign out Bitwarden sessions (see below).
+3. Remove the key from Bitwarden's 2FA and enroll the replacement.
 4. If the key is recovered, do not re-add it until the PIV and FIDO2 apps have
    been reset and re-enrolled; treat the old credentials as burned.
 
 ## Locked PIV PIN
 
-With the PUK from phone Pass:
+With the PUK from Bitwarden:
 
 ```sh
 ykman piv access unblock-pin
@@ -137,8 +138,8 @@ ykman fido reset
 ```
 
 `fido reset` destroys **all** FIDO2 credentials on that key, including the
-sudo handles and the Proton WebAuthn registration. Re-run
-`setup-yubikey.sh N --replace` and re-enroll the key in Proton 2FA. The PIV applet and 9a key are independent and are not reset.
+sudo handles and the Bitwarden WebAuthn registration. Re-run
+`setup-yubikey.sh N --replace` and re-enroll the key in Bitwarden's 2FA. The PIV applet and 9a key are independent and are not reset.
 
 ## Retry checks
 
@@ -199,7 +200,7 @@ the sops keys, not a YubiKey.
 4. `sudo` on smortress from the Mac uses the launchd
    `smortress-sudo-agent` (`~/.ssh/sudo-agent.sock`), which loads the three
    `~/.config/ssh-sk/k*/sudo` handles and is forwarded by `Host smortress`.
-   The handles must be on the Mac: restore the Pass bundle
+   The handles must be on the Mac: restore the Bitwarden bundle
    (`nix run .#key-restore -- <bundle>.tar.gz`) or copy them, then restart the
    agent so it re-reads them:
    ```sh
@@ -217,19 +218,121 @@ the sops keys, not a YubiKey.
    fdesetup status
    sudo fdesetup list
    ```
-6. Proton/1Password isolation: create a dedicated Proton browser profile,
-   remove the 1Password extension there, enable Proton Pass with its extra
-   password and biometrics, and delete any Proton login item from 1Password.
-7. Phone: 8+ digit passcode, biometrics, OS app lock and biometrics for Proton
-   Pass, 1-minute auto-lock, extra password, no 6-digit app PIN, remote wipe
-   verified.
+6. Bitwarden/1Password isolation: keep Bitwarden in its own browser profile with
+   no 1Password extension, keep its vault timeout short with biometrics on, and
+   delete any work login item from Bitwarden.
+7. Phone: 8+ digit passcode, biometrics, OS app lock and biometrics for
+   Bitwarden, short vault timeout, no 6-digit app PIN, remote wipe verified.
+
+## Secret rotation
+
+Every value below is a sops secret. Mint the replacement upstream, replace it in
+the right file, commit, deploy, prove the new value, then revoke the old one.
+The per-secret instructions are in `docs/manual-steps.md` ("Rotation
+checklist"); what follows is custody and the parts a rebuild does not do for
+you. Bitwarden holds the operator's copies; no host keeps one.
+
+### GitHub signing keys
+
+One key per GitHub account: `github-personal-signing-key` in
+`secrets/common.yaml` (every host) and `github-work-signing-key` in
+`secrets/smoreswork.yaml` (the work Mac only). The public halves are committed
+in `modules/lib/signing-keys.nix`, which is what writes
+`~/.config/ssh/allowed_signers`, names the private half in `user.signingkey`,
+and lets smortress trust it for the forced `agent-ssh` login. Per account:
+
+1. Mint a new pair: `ssh-keygen -t ed25519 -N '' -C
+   github-personal-signing-key -f /tmp/signing`.
+2. `sops secrets/common.yaml` (or `secrets/smoreswork.yaml`), replace the value
+   with the private half, commit, then `sops updatekeys` that file so every
+   recipient still wraps the data key.
+3. Replace the account's entry in `modules/lib/signing-keys.nix` with the new
+   `.pub` line, commit, and `home-manager switch` on each host (`ssh-pub-keys`
+   rewrites `allowed_signers` without a full switch).
+4. Register the public half as a **signing** key on the right account (Settings
+   → SSH and GPG keys → New SSH key); the work key never goes on the personal
+   account.
+5. Prove it: `git commit --allow-empty -m test`, then `git log -1
+   --format='%G?'` must print `G`.
+6. Delete the old key on GitHub and shred `/tmp/signing`.
+
+No `allowed_signers` entry carries a `valid-before` field, so removing the old
+public half un-trusts the old key for every signature it ever made, earlier
+commits included; GitHub keeps the verification it recorded at push time, and
+there is nothing else to prune. No YubiKey is involved: these keys are files.
+
+### restic repository password
+
+One password opens both repos (`secrets/smortress.yaml`, `restic-password`), so
+a bare sops edit locks restic out of its own history. Rotate through restic's key
+management instead:
+
+```sh
+sudo restic-r2 key list              # note the current key id
+sudo restic-r2 key add               # prompts for the new password twice
+sops secrets/smortress.yaml          # replace restic-password
+sudo nixos-rebuild switch            # redeploys /run/secrets/restic-password
+sudo restic-r2 snapshots             # proves the new password
+sudo restic-r2 key remove <old-id>   # only after the proof
+```
+
+Repeat for `restic-local`, or skip the key work there and re-seed: the local
+repo is derived, so stopping its timer, emptying `/var/backup/restic` and letting
+`initialize = true` recreate it produces the same result. Update the Bitwarden
+item and the offline paper copy in the same session; losing all three copies
+loses the backups.
+
+### R2 access key pair
+
+Cloudflare → R2 → Manage R2 API Tokens: create a token scoped to the
+`restic-backup` bucket with Object Read & Write. Replace `r2-access-key-id` and
+`r2-secret-access-key` in `secrets/smortress.yaml`, rebuild, and prove the swap
+with `sudo restic-r2 snapshots`; the restic unit reads them through the
+sops-rendered `restic-r2.env`. Delete the old token only after that run. R2
+cannot rotate a token in place, so there are always two live credentials during
+the swap — both write the same bucket, which is harmless for one restic client.
+
+### Memory MCP token
+
+`memory-mcp-token` in `secrets/common.yaml`, user-readable, presented as
+`Authorization: Bearer` by Maki's shim, the `memory` CLI, and Open WebUI. Mint
+`openssl rand -base64 32`, replace the value, then rebuild smortress (the
+secret's `restartUnits` restarts `memory-mcp`) and every laptop. Open WebUI
+embeds the token in its tool-server configuration and is not in `restartUnits`,
+so restart it by hand; Maki caches it per session, so it needs a restart too.
+
+### Jupyter token
+
+A random 32-byte value in `secrets/smortress.yaml` (`jupyter-token`), 0400, read
+by the Jupyter unit through `JUPYTER_TOKEN_FILE` and injected into Open WebUI's
+environment file. Replace it, rebuild, and restart `jupyter` and `open-webui`;
+running kernels do not survive, which is the point of rotating it.
+
+### Radicale htpasswd
+
+One bcrypt line from `htpasswd -nB smores` in `secrets/smortress.yaml`
+(`radicale-htpasswd`), owner `radicale` 0400. Replace it and rebuild. Radicale
+has no session layer, so every client keeps failing with 401 until it is
+re-added in DAVx5 and anywhere the htpasswd is stored in a config file (khal,
+vdirsyncer) or a keychain entry.
+
+### cloudflared credentials
+
+The tunnel JSON (`AccountTag`, `TunnelID`, `TunnelSecret`) in
+`secrets/smortress.yaml` (`cloudflared-credentials`). cloudflared has no
+secret-rotation subcommand, so this is a tunnel replacement, run from the
+console because the tunnel is the only path to the host: create the tunnel, paste
+the JSON, re-point DNS with `cloudflare-plan`/`cloudflare-apply` (`TunnelID`
+changed), restart `cloudflared-tunnel-smortress`, confirm SSH and the public
+hostnames, then delete the old tunnel. The step-by-step is under "Rotation
+checklist → cloudflared-credentials" in `docs/manual-steps.md`.
 
 ## Stolen laptop or phone
 
 1. Revoke the machine's Cloudflare Access service token and rebuild its
    `cloudflared` credentials.
 2. If a YubiKey was with the device, remove its three public entries as in
-   “Lost or stolen key” and remove it from Proton 2FA.
+   “Lost or stolen key” and remove it from Bitwarden's 2FA.
 3. `smoreswork` only: unpair the smart card (`sc_auth unpair -u sam -h <hash>`
    for each hash in `sc_auth list -u sam`), remove the machine's
    `smortress-sudo-agent` socket, and have the employer rotate the FileVault
@@ -237,7 +340,7 @@ the sops keys, not a YubiKey.
    either.
 4. Rotate the Maki personal/work PATs, revoke the old tokens, and re-run
    `sops` deployment.
-5. Sign out Proton web sessions and rotate the Proton password if the device
-   could read the session.
+5. Sign out every Bitwarden session and change the Bitwarden master password if
+   the device could read the vault.
 6. On the phone, use the account console to remote-wipe and remove the device
-   from Proton/Cloudflare sessions.
+   from Bitwarden and Cloudflare sessions.

@@ -56,16 +56,19 @@ generated hardware config, then run `nix run .#bootstrap`.
   authoritative bind list is `homeRw`/`homeRo`/`configAllow`/`secretBind` in
   `modules/lib/agent-sandbox.nix`; it is wider than the identity dirs —
   `~/code`, `~/dev`, `~/Documents`, `~/Downloads`, `~/.cache`, the
-  cargo/npm/bun caches and `/var/lib/media` are read-write, the nine
-  allowlisted config dirs are read-only copies, and `~/.cache/.bun/bin` is
-  read-only inside its writable parent — and
-  the secret allowlist is six credentials (two PATs, Neuralwatt, TinyFish, the
-  Immich key, and the Cloudflare Access token when present). `~/.ssh`,
+  cargo/npm/bun caches and the `/var/lib/data` trees `music` and `books` are
+  read-write, the nine allowlisted config dirs are read-only copies, and
+  `~/.cache/.bun/bin` is read-only inside its writable parent — and
+  the secret allowlist is the personal bundle plus the shared service keys: the
+  personal PAT and signing key, Neuralwatt, TinyFish, the Immich key and the
+  memory MCP token, plus the Cloudflare Access service token where the host has
+  one. The work account has no `secretBind` entry at all: its PAT and signing
+  key exist only on the work Mac and reach that boundary as the resolved files
+  under `~/.local/share/github`. `~/.ssh`,
   `~/.config/{ssh-sk,sops}`, the PIV/sudo agent, and every other
-    secret are absent; no agent socket is forwarded in. `/var/lib/media/Photos`
- is masked
-  by a tmpfs applied after every bind, so it reads empty and is not writable
-  even though the media tree as a whole is.
+  secret are absent; no agent socket is forwarded in. `/var/lib/data/photos` is
+  masked by a tmpfs applied after every bind, so it reads empty and is not
+  writable even though the media trees as a whole are.
 - **Maki signing**: commits made inside the sandbox sign with the same sops key
   the host uses for that repo's owner (`user.signingkey`, `gpg.format=ssh`):
   the personal key is bound at its `/run/secrets` path on Linux, and on the work
@@ -170,7 +173,7 @@ rolling back after a re-bind prompts for the passphrase until it is rebuilt.
 
 After the migration's `rsync --numeric-ids`, ownership is the source system's,
 not this install's: Immich's user was `987:983` on the old root and is
-`999:999` now. `chown -R immich:immich /var/lib/media/Photos` (and the
+`999:999` now. `chown -R immich:immich /var/lib/data/photos` (and the
 equivalent for each service) or the service gets `EACCES` on its own files.
 
 
@@ -189,7 +192,7 @@ Prerequisites, all of them:
    `github:smores56/nix-config` and rebuilds from it; booting the new machine
    from `main`'s pre-LUKS layout leaves it unable to mount its root.
 2. `nix run .#key-backup` already ran on the old install and the bundle (which
-   carries the host key) is in Proton Pass.
+   carries the host key) is in Bitwarden.
 3. Run everything below from the **operator checkout on another machine**
    (smortress), never on the target: `nixos-anywhere` kexecs the target and the
    run dies with it.
@@ -218,7 +221,7 @@ new machine:
 # 3. Prove the passphrase slot survived the format before trusting it.
 sudo cryptsetup luksDump /dev/disk/by-partlabel/root   # exactly one keyslot
 
-# 4. Recovery key: print it, store it off-site and in phone Pass. Do this
+# 4. Recovery key: print it, store it off-site and in Bitwarden. Do this
 #    before enrolling the TPM.
 sudo systemd-cryptenroll --recovery-key /dev/disk/by-partlabel/root
 
@@ -602,7 +605,7 @@ env -u SOPS_AGE_KEY_CMD sops -d secrets/smortress.yaml >/dev/null   # must fail
 The wrapper refuses to run while a plaintext `~/.config/sops/age/keys.txt`
 exists, because sops would load that default even with `SOPS_AGE_KEY_CMD` set.
 
-**Passphrase custody.** Proton Pass plus an off-site copy on offline media (not
+**Passphrase custody.** Bitwarden plus an off-site copy on offline media (not
 another machine). Keep the two apart; either alone is worthless. Losing both
 means losing the identity — nothing can unwrap `keys.age`. The secrets
 themselves survive (smortress's host key still decrypts them), so recovery is
@@ -745,7 +748,7 @@ lines: the client ID, then the client secret. `cloudflared-access`
 (`modules/features/cloudflared.nix`) reads it only from the host's sops
 deployment: `/run/secrets/cloudflare-access-ssh-token` from sops-nix on NixOS,
 and the sops-nix user path on Darwin. A missing, unreadable or malformed file is
-a hard failure; there is no cache or Proton Pass fallback.
+a hard failure; there is no cache or password-manager fallback.
 
 A NixOS declaration must hand the user access (`owner`/`mode`), because the
 proxy runs as the user; `modules/nixos/secrets-smorespro.nix` is the example.
@@ -909,13 +912,54 @@ exported by the fish init as `TINYFISH_API_KEY` for maki's `websearch` tool.
 Rotate at [agent.tinyfish.ai](https://agent.tinyfish.ai/api-keys), update the
 common file, rebuild each host, and open a new shell.
 
+### restic repository password
+
+<!-- manual-step: secret/restic-password -->
+
+Random 32 bytes (`openssl rand -base64 32`), stored in `secrets/smortress.yaml`
+(root 0400), in Bitwarden, and on the offline paper. Losing all three copies
+loses the backups. Rotation: update the value and rebuild.
+
+### R2 access key id and secret
+
+<!-- manual-step: secret/r2-access-key-id -->
+<!-- manual-step: secret/r2-secret-access-key -->
+
+Create a Cloudflare R2 API token scoped to the `restic-backup` bucket with
+Object Read & Write. Put the id and secret in `secrets/smortress.yaml`; the
+restic unit reads them through the sops template `restic-r2.env`.
+
+### Radicale htpasswd
+
+<!-- manual-step: secret/radicale-htpasswd -->
+
+One bcrypt line from `htpasswd -nB smores`, owner `radicale`, 0400. Rotation:
+regenerate, update `secrets/smortress.yaml`, rebuild, and re-add the account in
+DAVx5/khal.
+
+### Jupyter token
+
+<!-- manual-step: secret/jupyter-token -->
+
+Random 32 bytes, root-owned 0400, read by the sandboxed Jupyter server and
+injected into Open WebUI's environment file. Rotation invalidates running
+kernels.
+
+### Memory MCP token
+
+<!-- manual-step: secret/memory-mcp-token -->
+
+Random 32 bytes in `secrets/common.yaml`, user-readable 0400. Presented as
+`Authorization: Bearer` by Maki, the memory CLI/shim, and Open WebUI. Rotation
+requires restarting `memory-mcp`, Maki, and Open WebUI.
+
 ### Rotation checklist
 
 The retired admin key could read every value here, so re-encryption alone is
 not enough — rotate the upstream credential too. Per item: mint the new
 credential, `sops secrets/smortress.yaml`, commit, `sudo nixos-rebuild switch`
-on smortress, prove it, then revoke the old one. The tunnel credentials and the
-rclone session are the two that are not a plain token swap.
+on smortress, prove it, then revoke the old one. The tunnel credentials are the
+one item that is not a plain token swap.
 
 #### cloudflare-api-token
 
@@ -1227,6 +1271,48 @@ sudo restic-local snapshots
 Rotate the Cloudflare API token and tunnel credentials in the same session (see
 the rotation checklist above), since they sat on the plaintext disk.
 
+## Syncthing and the vault
+
+Personal files live in a Cryptomator vault that Syncthing replicates as
+ciphertext. The device table is
+[`modules/syncthing-devices.nix`](../modules/syncthing-devices.nix): device IDs
+are public keys, so they are committed, and each device's `key.pem` is the only
+secret. A host opts in through `syncthing.enable` in its `meta.nix`, with
+`syncthing.device` naming its row in that table.
+
+Pairing a device:
+
+1. Install Syncthing. Android: the `researchxxl/syncthing-android` fork from
+   F-Droid/Obtainium, and grant the battery-optimisation exemption — without it
+   the folder stops syncing once the screen is off. macOS: home-manager's launchd
+   agent; never the menu-bar app alongside it, because two instances share one
+   config directory.
+2. Read the device ID: `syncthing device-id` on a Linux/macOS host, the app's
+   settings screen on Android.
+3. Add it to the table, set `syncthing.device` on the new host, and rebuild.
+   `overrideDevices`/`overrideFolders` are on, so the table and the folder are
+   the whole truth and a click in the UI does not survive the next activation.
+
+The vault is `~/Sync/vault` on laptops and `/var/lib/data/vault` on smortress.
+It is ciphertext everywhere; plaintext exists only inside an unlocked client. On
+Linux, `vault <cmd>` prompts, mounts the vault into a temp dir, runs the
+command, and unmounts on exit, so nothing stays mounted between uses.
+
+**One device at a time.** Unlock on one device and leave the others read-only.
+Two devices that create the same directory at once write two `dir.c9r` values,
+and the loser becomes an orphaned content directory that only Cryptomator's
+vault health check can recover, into `LOST+FOUND`. Password changes obey the same
+rule: change it on one device, let Syncthing converge, then unlock the next,
+because the old `masterkey.cryptomator.*.bkup` copies in the folder keep the old
+password valid forever.
+
+**Version history** is Syncthing staggered versioning at
+`/var/lib/syncthing-versions/vault` on smortress — outside `/var/lib/data`, so
+restic never carries it. Restore by copying the versioned file back into the
+vault and letting it converge. A `*.sync-conflict-*` file appearing in the
+decrypted view is the expected outcome of a two-device edit: Syncthing keeps
+both copies, and the conflict copy is resolved by hand.
+
 ## Agent sandbox
 
 `agent-sandbox <harness>` is the explicit same-UID boundary; `m` is a fish/zsh
@@ -1284,7 +1370,7 @@ permission that makes a live history unreadable without root; not storing it is
 the only reliable hardening.
 
 Photos: the agent talks to Immich over its API rather than touching
-`/var/lib/media/Photos`, using `secret/immich-agent-api-key` (below).
+`/var/lib/data/photos`, using `secret/immich-agent-api-key` (below).
 
 Work Mac: create the Keychain item `maki-openai-api-key`; the host-side
 launcher reads it before entering the sandbox because `securityd` is denied
@@ -1305,7 +1391,7 @@ Create it in Immich under Account Settings → API Keys with **asset.read,
 asset.upload, album.read, album.create** only — no asset delete, no user or
 admin scope. The sandbox binds it into the boundary at `/run/agent/immich-key`
 and exports `IMMICH_API_KEY` (`read_secret` in `modules/lib/agent-sandbox.sh`);
-nothing outside the sandbox reads it. `/var/lib/media/Photos` is masked by a
+nothing outside the sandbox reads it. `/var/lib/data/photos` is masked by a
 tmpfs inside the boundary, so the agent uploads through the API only and never
 sees the managed library.
 
@@ -1867,6 +1953,23 @@ failing after another PIV client ran (`pam_p11` at the greeter, `ykman piv`),
 the card session was reset; run `yk-login` again. If that happens daily, fall back to slot 9c with PIN
 policy ALWAYS plus the askpass cache (the pre-T1 layout).
 
+### dav.sammohr.dev
+
+<!-- manual-step: service/smortress/dav -->
+
+Radicale over the tunnel at `https://dav.sammohr.dev/`, public with its own
+bcrypt auth; CalDAV clients cannot complete an Access login. The zone's
+rate-limit ruleset (`dav_rate_limit` in `tofu/main.tf`) is managed by
+`nix run .#cloudflare-apply`.
+
+### music.sammohr.dev
+
+<!-- manual-step: service/smortress/navidrome -->
+
+Navidrome at `https://music.sammohr.dev/`, public with its own auth and under
+the same per-IP rate limit as `dav`. Create the first account in the web UI; it
+becomes the admin.
+
 ## Flake apps
 
 Apps come from `modules/flake/apps.nix`. Run them as `nix run .#<name>`; from
@@ -1938,10 +2041,10 @@ YubiKey and cannot be exported. No admin age key (`~/.config/sops/keys.age`),
 PIN, or PUK is in the bundle; the enrollment script is bundled as data, so
 review it.
 
-Upload the printed `.tar.gz` and `.sha256` to a Proton Pass **Note** item named
-`nix-config restore bundle — <host>` (Pass encrypts attachments end-to-end),
-then remove the local copies (`shred -u` on Linux, `rm -P` on macOS). Keep the
-archive and its checksum together, with the `.sha256` named `<archive>.sha256`;
+Upload the printed `.tar.gz` and `.sha256` to a Bitwarden **note** item named
+`nix-config restore bundle — <host>`, then remove the local copies (`shred -u`
+on Linux, `rm -P` on macOS). Keep the archive and its checksum together, with
+the `.sha256` named `<archive>.sha256`;
 the file holds a bare hash, so renaming both together still works. The restore
 refuses to proceed without it. An incomplete backup fails and names the missing
 handles; `--allow-incomplete` archives a deliberate partial set. Do not wipe
@@ -1949,7 +2052,7 @@ until the handle count matches the inventory in `modules/lib/yubikey-keys.nix`
 (six today).
 
 None of that protects the host key the bundle now carries: it is a plaintext
-private SSH key. Reading the Pass item is enough to impersonate `<host>` and to
+private SSH key. Reading the Bitwarden item is enough to impersonate `<host>` and to
 decrypt every secret that host is a recipient of — no YubiKey, PIN, or touch
 involved. The admin age key stays out of the bundle; the host identity does not.
 
@@ -1957,7 +2060,7 @@ involved. The admin age key stays out of the bundle; the host identity does not.
 
 <!-- manual-step: app/key-restore -->
 
-Download the two files from the Proton Pass item. Two modes, in this order:
+Download the two files from the Bitwarden item. Two modes, in this order:
 
 ```sh
 # In the operator checkout, BEFORE install: put the host key where install reads it
@@ -1979,7 +2082,7 @@ It verifies the outer checksum, refuses to overwrite existing handles or the
 script without `--force`, and checks every handle's public half and application
 against the committed keys in `modules/lib/yubikey-keys.nix` before writing
 anything. The checksums detect corruption, not tampering: an attacker who can
-rewrite the Pass item can rewrite the `.sha256` too. The `&<host>` anchor in
+rewrite the Bitwarden item can rewrite the `.sha256` too. The `&<host>` anchor in
 `.sops.yaml` is the only authenticity control, and only `--host-key` enforces
 it. It does not inspect the touch/PIN flags, which live in the private
 file; a flagged credential is still bound to the same token. `--no-verify` skips only the outer checksum; it cannot skip the
@@ -2048,60 +2151,23 @@ confirm the policy in the dashboard after `cloudflare-apply`.
 
 OpenTofu `cloudflare_notification_policy.service_token_expiry` warns before an
 Access service token expires. Renew the token in the dashboard, update the
-clients that embed it (Proton Pass), and re-run `cloudflare-plan`.
+clients that embed it (Bitwarden, per host), and re-run `cloudflare-plan`.
 
-### restic repository password
+## Mail (Aster)
 
-<!-- manual-step: secret/restic-password -->
+`sam@sammohr.dev` is the primary address; `sammohr97@` and `telhaturz@` are
+aliases and everything else on the domain is a catch-all, all served by Aster.
 
-Random 32 bytes (`openssl rand -base64 32`), stored in `secrets/smortress.yaml`
-(root 0400), in Bitwarden, and on the offline paper. Losing all three copies
-loses the backups. Rotation: update the value and rebuild.
+Exactly **one** apex `_dmarc` TXT record: `v=DMARC1; p=reject; rua=...` with
+relaxed alignment. A second DMARC record on the apex is the failure mode: two
+records make the policy invalid, so `p=reject` silently stops applying. Aster's
+wizard offers to add its own record; decline it.
 
-### R2 access key id and secret
+The host sends alerts through Cloudflare Email Sending only, from
+`alerts@send.sammohr.dev` to `sam@sammohr.dev`; the `send` subdomain carries its
+own SPF/DKIM records (`provider/cloudflare`). Aster is **receive-only** for this
+host: it has no server-side SMTP or IMAP submission, and the Aster Bridge is a
+desktop proxy that has to run somewhere, so nothing on smortress sends through
+it.
 
-<!-- manual-step: secret/r2-access-key-id -->
-<!-- manual-step: secret/r2-secret-access-key -->
-
-Create a Cloudflare R2 API token scoped to the `restic-backup` bucket with
-Object Read & Write. Put the id and secret in `secrets/smortress.yaml`; the
-restic unit reads them through the sops template `restic-r2.env`.
-
-### Radicale htpasswd
-
-<!-- manual-step: secret/radicale-htpasswd -->
-
-One bcrypt line from `htpasswd -nB smores`, owner `radicale`, 0400. Rotation:
-regenerate, update `secrets/smortress.yaml`, rebuild, and re-add the account in
-DAVx5/khal.
-
-### Jupyter token
-
-<!-- manual-step: secret/jupyter-token -->
-
-Random 32 bytes, root-owned 0400, read by the sandboxed Jupyter server and
-injected into Open WebUI's environment file. Rotation invalidates running
-kernels.
-
-### Memory MCP token
-
-<!-- manual-step: secret/memory-mcp-token -->
-
-Random 32 bytes in `secrets/common.yaml`, user-readable 0400. Presented as
-`Authorization: Bearer` by Maki, the memory CLI/shim, and Open WebUI. Rotation
-requires restarting `memory-mcp`, Maki, and Open WebUI.
-
-### dav.sammohr.dev
-
-<!-- manual-step: service/smortress/dav -->
-
-Radicale over the tunnel at `https://dav.sammohr.dev/`, public with its own
-bcrypt auth; CalDAV clients cannot complete an Access login. The
-`dav_rate_limit` WAF ruleset is managed by `nix run .#cloudflare-apply`.
-
-### music.sammohr.dev
-
-<!-- manual-step: service/smortress/navidrome -->
-
-Navidrome at `https://music.sammohr.dev/`, public with its own auth. Create the
-first account in the web UI; it becomes the admin.
+The Tuta mailbox stays the mail rollback until that account is closed.
