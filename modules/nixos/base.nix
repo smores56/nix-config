@@ -83,7 +83,7 @@ in
 
   # Flake support must be system-wide, not just in the user's
   # ~/.config/nix/nix.conf: root runs the flake apps (`sudo nix run
-  # .#proton-auth`, `.#cloudflare-apply`, `nixos-rebuild --flake`) and would
+  # .#cloudflare-apply`, `nixos-rebuild --flake`) and would
   # otherwise need --extra-experimental-features on every invocation.
   nix.settings.experimental-features = [
     "nix-command"
@@ -96,8 +96,8 @@ in
   nix.settings.build-users-group = "nixbld";
 
   # The setuid fusermount3 wrapper in /run/wrappers/bin, which unprivileged FUSE
-  # mounts (rclone, sshfs) need. Enabling it here keeps the helper independent of
-  # gvfs happening to pull fuse in; proton-drive.nix adds user_allow_other.
+  # mounts (cryptomator-cli on the laptops) need. Enabling it here keeps the
+  # helper independent of gvfs happening to pull fuse in.
   programs.fuse.enable = true;
 
   # Run dynamically-linked binaries that aren't patched for Nix.

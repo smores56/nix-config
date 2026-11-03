@@ -370,7 +370,6 @@ in
               inputs.self.packages.${system}.install
               inputs.self.packages.${system}.key-backup
               inputs.self.packages.${system}.key-restore
-              inputs.self.packages.${system}.proton-auth
             ]
         );
 

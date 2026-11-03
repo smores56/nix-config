@@ -61,7 +61,7 @@ generated hardware config, then run `nix run .#bootstrap`.
   read-only inside its writable parent — and
   the secret allowlist is six credentials (two PATs, Neuralwatt, TinyFish, the
   Immich key, and the Cloudflare Access token when present). `~/.ssh`,
-  `~/.config/{ssh-sk,sops}`, `/srv/proton`, the PIV/sudo agent, and every other
+  `~/.config/{ssh-sk,sops}`, the PIV/sudo agent, and every other
     secret are absent; no agent socket is forwarded in. `/var/lib/media/Photos`
  is masked
   by a tmpfs applied after every bind, so it reads empty and is not writable
@@ -173,8 +173,6 @@ not this install's: Immich's user was `987:983` on the old root and is
 `999:999` now. `chown -R immich:immich /var/lib/media/Photos` (and the
 equivalent for each service) or the service gets `EACCES` on its own files.
 
-The fresh install also lost the rclone session under `/var/lib/proton/`; run
-`sudo nix run .#proton-auth` and confirm `proton-mount` is active.
 
 ### smorespro
 
@@ -1012,104 +1010,9 @@ and `TunnelSecret` change:
    the LLM/OPDS hostnames still answer.
 5. Delete the old tunnel and its DNS records.
 
-## Proton mount (smortress)
-
-One `rclone mount` of the Proton account at `/srv/proton`, run by the dedicated
-`proton` system user (`modules/nixos/proton-drive.nix`). It is the only process
-that authenticates to Proton: the refresh token lives in
-`/var/lib/proton/rclone.conf` (0600 `proton:proton`) and nowhere else — not in
-sops and not in the Nix store, because Proton rewrites the token in place when
-it refreshes. No backup unit writes through it (restic owns the offsite copy),
-and `pm` on a Linux client is an sshfs mount of `smortress:/srv/proton`, so
-neither holds a credential.
-
-Access is group-only. The mount serves dirs `0770` and files `0660` owned by
-`proton:proton` (`--umask 007` with `--allow-other --default-permissions`, so the
-kernel enforces those modes), which means `proton`, root and members of group
-`proton`; no other local user can read or write through it. While the mount is
-down the path itself is a root-owned `0770 root:proton` directory: not
-world-writable, so a crashed mount cannot be used to fill the root filesystem.
-
-Create the config with the flake app. It runs the login as the `proton` user,
-writes only a 0600 `proton:proton` file, proves the login, and starts the mount:
-
-```sh
-sudo nix run .#proton-auth
-```
-
-It prompts for the Proton email, the password (not echoed; handed to rclone
-through stdin, never argv), an optional mailbox password, and a TOTP code.
-rclone cannot use a security-key factor, so keep TOTP enabled on the account
-even with keys enrolled. `bootstrap` runs this automatically when the unit is
-installed and the config is missing.
-
-Verify:
-
-```sh
-mountpoint /srv/proton && ls /srv/proton
-systemctl status proton-mount-health.service
-```
-
-Re-auth when the token expires (the health timer emails, or a backend query
-through the mount's RC fails while the mount stays up). `protondrive` has no
-`config reconnect` (`backend doesn't support reconnect or authorize`), so the
-same app logs in again and replaces the config under a stopped mount:
-
-```sh
-sudo nix run .#proton-auth
-```
-
-The superseded session stays valid until you revoke it; the app prints that
-reminder. Never edit this config while the mount runs: rclone rewrites it in
-place on refresh.
-
-If a start fails with "start request repeated too quickly", the unit hit its
-start limit (5 starts in an hour); clear the counter before starting it:
-
-```sh
-sudo systemctl reset-failed proton-mount
-```
-
-After **any reboot**, confirm the mount came up on its own:
-
-```sh
-systemctl is-active proton-mount && findmnt /srv/proton
-```
-
-Proton sometimes wants a fresh 2FA code for the new session (`this account
-requires a 2FA code` in `journalctl -u proton-mount`). Then re-auth with
-`sudo nix run .#proton-auth`, then `sudo systemctl reset-failed proton-mount`
-and start it. A down mount no longer delays a backup: the offsite copy is the
-restic `r2` repo, not the Proton mirror.
-
-Revoke the superseded login at account.proton.me → Settings → All settings →
-Security and privacy → Session management (verified page; whether rclone
-appears as its own session there is unverified). Then prove the mount:
-`mountpoint /srv/proton && ls /srv/proton`.
-
-Failure modes: a missing or unreadable config fails `proton-mount.service`'s
-`ExecStartPre` with an actionable message (it never silently serves an empty
-directory). An expired token does **not** stop rclone, and `ls` on the mount
-still exits 0 (it answers from the VFS cache), so
-`proton-mount-health.timer` (hourly at :17, `Persistent`) lists the backend
-through the mount's own RC (`operations/list` on `/var/lib/proton/rc.sock`,
-which only `proton` and root can reach) and alerts through `cloudflare-email`
-when that call fails or times out. `pm` reports "nothing mounted at /srv/proton"
-instead of mounting an empty directory.
-
-A restart never stops a backup unit (nothing requires the mount). `ExecStop`
-unmounts lazily (`fusermount3 -uz`) with `TimeoutStopSec=30s`, so a wedged
-Proton read cannot hold the stop; the kernel finishes detaching afterwards.
-
-Delete the superseded configs once the mount works — nothing reads them now:
-
-```sh
-rm ~/.config/rclone/rclone.conf
-```
-
 ## Wallpapers (smorespro, smoreswork)
 
-`modules/features/wallpapers.nix` rsyncs `<mount>/Wallpapers` from smortress
+`modules/features/wallpapers.nix` rsyncs `/var/lib/data/wallpapers` from smortress
 into `~/.cache/wallpapers`, buckets every image by measured pixels (2:1 or
 wider is ultrawide), and sets one image per display, picked at random from that
 aspect's queue: nothing repeats until the aspect's set is exhausted, then a
@@ -2107,20 +2010,6 @@ duplicates.
 
 `sudo nix run .#cloudflare-tofu -- <args>` runs raw `tofu` in the state
 directory, for `import`, `state list`, `state rm`, and recovery.
-
-### proton-auth
-
-<!-- manual-step: app/proton-auth -->
-
-`sudo nix run .#proton-auth` performs the single interactive Proton login a
-machine with `protonDrive` enabled needs (and the re-auth after the token
-expires). It prompts for the email, password (not echoed, passed to rclone via
-stdin), optional mailbox password, and a TOTP code; writes
-`/var/lib/proton/rclone.conf` as `proton` 0600; proves the login with `lsd`;
-then swaps the file in under a stopped `proton-mount` and starts it. `bootstrap`
-calls it when the unit exists and the config is missing. rclone has no
-security-key 2FA, and `protondrive` has no `config reconnect`, so re-auth is
-another run of this app rather than an in-place reconnect.
 
 ## Alert paths
 

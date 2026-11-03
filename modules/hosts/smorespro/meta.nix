@@ -17,9 +17,6 @@
   };
 
   homeOptions = {
-    # `pm` is an sshfs mount of smortress:/srv/proton, so the client holds no
-    # Proton credential; smortress itself uses /srv/proton directly.
-    protonDrive.enable = true;
     # Ciphertext copy of the vault under ~/Sync; only Cryptomator unlocks it.
     syncthing = {
       enable = true;
