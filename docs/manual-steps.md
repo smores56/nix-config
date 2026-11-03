@@ -1991,9 +1991,11 @@ another machine use `github:smores56/nix-config#<name>`.
 <!-- manual-step: app/bootstrap -->
 
 Fresh machine (requires only Nix): clones the repo via ghq, switches
-home-manager, writes the committed SSH public keys, logs in GitHub, and on
-NixOS applies the system configuration. `bootstrap.sammohr.dev` is not
-provisioned by this repo; use the flake app.
+home-manager, writes the committed SSH public keys, and on NixOS applies the
+system configuration. It never logs in: it prints `gh auth status` at the end
+and leaves the interactive login to the operator, after which git and `gh` use
+each account's sops PAT. `bootstrap.sammohr.dev` is not provisioned by this
+repo; use the flake app.
 
 ### install
 
