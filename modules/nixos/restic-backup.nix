@@ -33,7 +33,6 @@ let
       "/var/lib/data"
     ];
     passwordFile = config.sops.secrets.restic-password.path;
-    initialize = true;
     pruneOpts = [
       "--keep-daily 14"
       "--keep-weekly 8"
@@ -59,6 +58,13 @@ in
     r2 = common // {
       repository = "s3:https://${accountId}.r2.cloudflarestorage.com/restic-backup";
       environmentFile = config.sops.templates."restic-r2.env".path;
+      # Only R2 initialises on its own: a fresh bucket is expected, so the first
+      # run creates the repo. The local repo must NOT: an empty-but-mounted
+      # /var/backup (fresh ext4, wrong disk) would otherwise initialise a new
+      # repo and report success, hiding the missing backup disk. Leaving it
+      # unset makes the first run fail and the onFailure alert fire; the
+      # operator creates it once by hand (modules/features/backup/README.md).
+      initialize = true;
     };
     local = common // {
       repository = "/var/backup/restic";

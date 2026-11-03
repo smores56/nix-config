@@ -45,8 +45,14 @@ in
       # nobody:nogroup, so they need others-traverse; subdirs keep their own
       # 0700/0770 modes, so only traversal is granted, never listing.
       "d /var/lib/data 0751 smores users -"
+      # Navidrome's database: its own user owns it, and nothing else creates it
+      # (the parent is 0751, so navidrome cannot).
+      "d /var/lib/data/navidrome 0700 navidrome navidrome -"
       "d /var/lib/data/music 0775 smores users -"
       "d /var/lib/data/books 0775 smores users -"
+      # The wallpaper feature's rsync source; smores populates it, the clients
+      # pull from it.
+      "d /var/lib/data/wallpapers 0775 smores users -"
       "d /var/lib/agent 0775 smores users -"
       "d /var/lib/agent/books-ingest 0775 smores users -"
       # Syncthing's staggered versions for the vault: outside the durable tree,

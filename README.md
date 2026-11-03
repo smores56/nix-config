@@ -41,7 +41,7 @@ Feature options live in the module that owns them (`webProxy`, `backup`,
 `immich`, `calibre`, `alerting`, …).
 
 Operator-only steps — tokens, the admin sops key, Cloudflare objects, host
-provisioning, backup datasets, public services, flake apps, and alerts — live in
+provisioning, the backup disk, public services, flake apps, and alerts — live in
 [`docs/manual-steps.md`](docs/manual-steps.md). `checks.manual-steps-sync`
 fails when the configuration gains an item without a matching anchor, or when
 the document drifts ahead of the configuration.
@@ -121,9 +121,13 @@ sudo nix run .#cloudflare-plan
 sudo nix run .#cloudflare-apply
 ```
 
-State lives in `/var/lib/cloudflare-tofu/` (0700, backed up as the
-`CloudflareTofu` dataset). On a host with existing objects, import them before
-the first apply (`sudo nix run .#cloudflare-tofu -- import <address> <id>`);
+State lives in `/var/lib/cloudflare-tofu/` (0700, root-only) and is **not**
+backed up: it sits outside restic's single source path (`/var/lib/data`), and
+the dataset driver that once mirrored it is retired. Losing it costs the import
+work, not the objects — a fresh state can be rebuilt by importing the live
+account (`sudo nix run .#cloudflare-tofu -- import <address> <id>`), but nothing
+regenerates it from the repo, so an apply against an empty state would create
+duplicates. Import on a host with existing objects before the first apply;
 `prevent_destroy` is set on the apps and policies. Stale records/apps from the
 retired reconciler are removed manually first.
 
@@ -507,8 +511,8 @@ model providers Maki may use.
   operator-only, safe to repeat, a bounded slice per call, and a group that
   looks almost entirely missing while its graph is not empty needs `--force`.
   `memory-ingest` cannot do this because it skips rows that already succeeded.
-  The export directory is mirrored offsite by the `MemoryExport` backup
-  dataset. `just memory-export` / `just memory-restore <dir>` are the operator
+  The export directory is inside restic's single source path, so both repos
+  carry it. `just memory-export` / `just memory-restore <dir>` are the operator
   shortcuts, and the drill is in `docs/manual-steps.md`.
 
 - `work`: maki is OpenAI-only and gets no personal providers, search, or

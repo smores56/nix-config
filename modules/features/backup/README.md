@@ -27,8 +27,9 @@ Two repos, same snapshots, one source path:
 - **Password:** `sops.secrets.restic-password` (`/run/secrets/restic-password`),
   the same key for both repos. Losing it means losing both repos.
 - **Schedule:** nightly at 03:30 with up to 15 minutes of random delay
-  (`Persistent`, so a host that was off catches up); `initialize = true`, so a
-  fresh repo is created on the first run.
+  (`Persistent`, so a host that was off catches up). Only `r2` sets
+  `initialize = true`, because a fresh bucket is expected; the `local` repo is
+  created once by hand (below).
 - **Retention:** `forget --prune` with `--keep-daily 14 --keep-weekly 8
   --keep-monthly 12`.
 - **Integrity:** `runCheck = true` runs `restic check` after every backup.
@@ -68,6 +69,23 @@ sudo systemctl start restic-backups-local.service
 `restic-r2`/`restic-local` write nothing beyond the repo they name; they are the
 supported way to inspect and restore, because they cannot forget the credential
 file or the repository URL.
+
+### First run on a new backup disk
+
+The `local` repo is deliberately **not** initialised by the module. With
+`initialize = true`, an empty-but-mounted `/var/backup` (a freshly formatted
+filesystem, or the wrong disk) would quietly become a new repo and the run would
+report success, hiding a lost backup disk. Instead the first run fails, which
+fires the `onFailure` alert; create the repo once, on a disk you have just
+verified is the right one:
+
+```sh
+lsblk -f /var/backup          # the encrypted disk's filesystem, mounted, empty
+sudo restic-local init
+sudo systemctl start restic-backups-local.service
+```
+
+`r2` still initialises itself: an empty bucket is the expected state there.
 
 ### Restore drill
 

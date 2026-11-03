@@ -1139,9 +1139,12 @@ Manual, one-time (dashboard):
 
 Every change: `sudo nix run .#cloudflare-plan`, review the plan, then
 `sudo nix run .#cloudflare-apply`. State is root-only in
-`/var/lib/cloudflare-tofu` and backed up as `CloudflareTofu`. `prevent_destroy`
-guards the applications and policies; remove it deliberately if you mean to
-delete them.
+`/var/lib/cloudflare-tofu` and is **not** backed up: it is outside restic's one
+source path (`/var/lib/data`) and the dataset driver that used to mirror it is
+retired. Losing it costs the import work, not the objects — a fresh state can be
+rebuilt by importing the live account (see above), and nothing regenerates it
+from the repo. `prevent_destroy` guards the applications and policies; remove it
+deliberately if you mean to delete them.
 
 ## Backup (restic)
 
@@ -1155,9 +1158,12 @@ defines two repos that hold the same snapshots from one source path,
 | `r2` | `s3:https://<account>.r2.cloudflarestorage.com/restic-backup` |
 | `local` | `/var/backup/restic`, on the encrypted backup disk |
 
-Nightly at 03:30 with up to 15 minutes of delay, `initialize = true`,
+Nightly at 03:30 with up to 15 minutes of delay,
 `--keep-daily 14 --keep-weekly 8 --keep-monthly 12`, and `restic check` after
-every run. Both units start `cloudflare-email@%n.service` on failure. The
+every run. Only the `r2` repo passes `initialize = true` (a fresh bucket is
+expected); the `local` repo is created once by hand, so an empty-but-mounted
+`/var/backup` fails the first run and mails instead of quietly starting a new
+repo. Both units start `cloudflare-email@%n.service` on failure. The
 password is the `restic-password` secret (same for both repos); the R2
 credentials come from the sops-rendered `restic-r2.env`.
 
@@ -1206,8 +1212,10 @@ sudo restic-local check --read-data-subset=2%
 rm -rf /var/tmp/restore-r2 /var/tmp/restore-local
 ```
 
-Both repos passed this drill on 2026-11-02 (267 GiB snapshots, 386 files; 2.34
-GiB of wallpapers restored, hashes identical).
+Both repos passed this drill on 2026-11-02: the `--include /var/lib/data/wallpapers`
+restore held 363 files (2.4 GiB) and every sampled hash was identical to the
+live tree. That is the wallpapers include, not the whole snapshot; the 2%
+`--read-data-subset` check over each repo is what covers the rest of the packs.
 
 Restoring the Immich database from the same snapshot:
 
@@ -1420,6 +1428,8 @@ OPDS clients authenticate as `smores56` with `calibre-password`.
 <!-- manual-step: service/smortress/immich -->
 
 `immich.sammohr.dev`, public (no Access) and protected by Immich's own login.
+The first user to register becomes the admin, so register it immediately after
+the first start — anyone who reaches the instance first takes the account.
 Phones also use the LAN URL
 `http://<lan-ip>:2283` (`immich.lanSources`) because Cloudflare caps a single
 upload at 100 MB and Immich neither chunks nor resumes. Configure both URLs in
