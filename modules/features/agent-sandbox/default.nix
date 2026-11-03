@@ -200,7 +200,7 @@ in
               try_deny "sudo not invocable" '/usr/bin/sudo -n true'
               try_deny "su not invocable" '/usr/bin/su root -c true'
               try_deny "security (Keychain binary) cannot exec" '/usr/bin/security find-generic-password -s maki-openai-api-key -w'
-              try_deny "launchctl denied" '/usr/bin/launchctl print gui/$UID'
+              try_deny "launchctl denied" '/bin/launchctl print gui/$UID'
               try_deny "osascript denied" '/usr/bin/osascript -e "return 1"'
 
               # Masks.
@@ -224,7 +224,15 @@ in
               try_deny ".local/bin not writable" 'touch "$HOME/.local/bin/.probe"'
               try_deny "existing repo hooks not writable" '${repoSnippet}; touch "$r/.git/hooks/.agent-sandbox-probe"'
               try_deny "existing repo config not writable" '${repoSnippet}; touch "$r/.git/config"'
-              try_deny "launchd scratch denied" 'find /private/tmp -maxdepth 1 -name "com.apple.launchd*" -print'
+              # launchd's per-user scratch dirs are `com.apple.launchd.<id>` in
+              # the per-user temp dir; the profile denies them by regex. Report
+              # a skip when there is nothing to observe rather than a failure.
+              scratch=$(bash -c 'd=$(/usr/bin/getconf DARWIN_USER_TEMP_DIR); find "$d" -maxdepth 1 -name "com.apple.launchd*" -print' 2>&1) || true
+              case $scratch in
+                *"Operation not permitted"*) ok "launchd scratch denied" ;;
+                "") skip "launchd scratch denied (no entry to observe)" ;;
+                *) no "launchd scratch denied (was allowed)" "$scratch" ;;
+              esac
 
               # Allows.
               try_allow "code writable" 'touch "$HOME/code/.agent-sandbox-probe" && rm -f "$HOME/code/.agent-sandbox-probe"'
