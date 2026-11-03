@@ -65,82 +65,87 @@ in
           pkgs.findutils
           pkgs.gnugrep
         ];
-        text = ''
-          sb=${sandbox.agentSandbox}/bin/agent-sandbox
-          # shellcheck disable=SC2016 # the inner script is evaluated by /bin/sh
-          "$sb" /bin/sh -c '
-            set -eu
-            if [ -r /proc/self/status ]; then
-              grep -q "^NoNewPrivs:[[:space:]]*1" /proc/self/status
-            fi
-            test -z "$(command -v sudo || true)"
-            test ! -e /run/wrappers/bin/sudo
-            test ! -e /run/current-system/sw/bin/sudo
-            test -z "$(ls -A "$HOME/.ssh")"
-            test -z "$(ls -A "$HOME/.config")"
-            if [ -d "$HOME/.local/logs" ]; then
-              mkdir -p "$HOME/.local/logs/maki"
-              : > "$HOME/.local/logs/maki/.agent-sandbox-probe"
-              rm "$HOME/.local/logs/maki/.agent-sandbox-probe"
-            fi
-            if [ -e "$XDG_CONFIG_HOME/maki/pack-lock.json.lock" ]; then
-              test -w "$XDG_CONFIG_HOME/maki/pack-lock.json.lock"
-            fi
-            ! touch "$HOME/.agent-sandbox-probe" 2>/dev/null
-            if [ -d "$HOME/code" ]; then
-              touch "$HOME/code/.agent-sandbox-probe"
-              rm "$HOME/code/.agent-sandbox-probe"
-            fi
-            if [ -d /var/lib/data/music ]; then
-              touch /var/lib/data/music/.agent-sandbox-probe
-              rm /var/lib/data/music/.agent-sandbox-probe
-              mkdir /var/lib/data/music/.agent-sandbox-probe-dir
-              rmdir /var/lib/data/music/.agent-sandbox-probe-dir
-            fi
-            # A mask is a tmpfs, so anything written inside it is scratch in the
-            # private namespace and says nothing about the host. Emptiness is the
-            # assertion: the real directory's contents must not be visible.
-            if [ -d /var/lib/data/photos ]; then
-              test -z "$(ls -A /var/lib/data/photos)"
-            fi
-            # A mask is an empty tmpfs, and a tmpfs is writable: emptiness is
-            # the assertion (the host ciphertext is unreachable), not refusal of
-            # a write, which lands in the namespace and vanishes.
-            if [ -d /var/lib/data/vault ]; then
-              test -z "$(ls -A /var/lib/data/vault)"
-            fi
-            if [ -d "$HOME/Sync" ]; then
-              test -z "$(ls -A "$HOME/Sync")"
-            fi
-            if [ -d /var/lib/agent/books-ingest ]; then
-              touch /var/lib/agent/books-ingest/.agent-sandbox-probe
-              rm /var/lib/agent/books-ingest/.agent-sandbox-probe
-            fi
-            repo_list="$XDG_STATE_HOME/agent-sandbox-repos"
-            find "$HOME/code" "$HOME/dev" -maxdepth 8 -name .git -type d -prune -print >"$repo_list" 2>/dev/null || true
-            repo_count=0
-            while IFS= read -r repo; do
-              [ -n "$repo" ] || continue
-              repo_count=$((repo_count + 1))
-              ! touch "$repo/config" 2>/dev/null
-              ! touch "$repo/hooks/.agent-sandbox-probe" 2>/dev/null
-              if [ "$repo_count" -ge 5 ]; then
-                break
+        text =
+          let
+            # One escaped argument: this runs under /bin/sh, and its own quotes
+            # are part of the script, not of the outer shell parse. Passing it
+            # as a literal here broke that (a single quote inside a JSON grep
+            # silently stripped the quotes and the assertion could never pass).
+            check = ''
+              set -eu
+              if [ -r /proc/self/status ]; then
+                grep -q "^NoNewPrivs:[[:space:]]*1" /proc/self/status
               fi
-            done <"$repo_list"
-            rm -f "$repo_list"
-            test ! -e /run/user
-            command -v maki >/dev/null && maki --version >/dev/null
-            nix store ping >/dev/null 2>&1
-            if [ -S /nix/var/nix/daemon-socket/socket ]; then
-              # The resolved store URL, not the raw setting: the read-only state
-              # dir is what makes `store = auto` fall through to the daemon.
-              nix store info --json | grep -q '"url":"daemon"'
-              ! test -w /nix/var/nix
-            fi
-          '
-          echo "agent-sandbox-check: ok"
-        '';
+              test -z "$(command -v sudo || true)"
+              test ! -e /run/wrappers/bin/sudo
+              test ! -e /run/current-system/sw/bin/sudo
+              test -z "$(ls -A "$HOME/.ssh")"
+              test -z "$(ls -A "$HOME/.config")"
+              if [ -d "$HOME/.local/logs" ]; then
+                mkdir -p "$HOME/.local/logs/maki"
+                : > "$HOME/.local/logs/maki/.agent-sandbox-probe"
+                rm "$HOME/.local/logs/maki/.agent-sandbox-probe"
+              fi
+              if [ -e "$XDG_CONFIG_HOME/maki/pack-lock.json.lock" ]; then
+                test -w "$XDG_CONFIG_HOME/maki/pack-lock.json.lock"
+              fi
+              ! touch "$HOME/.agent-sandbox-probe" 2>/dev/null
+              if [ -d "$HOME/code" ]; then
+                touch "$HOME/code/.agent-sandbox-probe"
+                rm "$HOME/code/.agent-sandbox-probe"
+              fi
+              if [ -d /var/lib/data/music ]; then
+                touch /var/lib/data/music/.agent-sandbox-probe
+                rm /var/lib/data/music/.agent-sandbox-probe
+                mkdir /var/lib/data/music/.agent-sandbox-probe-dir
+                rmdir /var/lib/data/music/.agent-sandbox-probe-dir
+              fi
+              # A mask is a tmpfs, and a tmpfs is writable: emptiness is the
+              # assertion (the host contents are unreachable), not refusal of a
+              # write, which lands in the namespace and vanishes.
+              if [ -d /var/lib/data/photos ]; then
+                test -z "$(ls -A /var/lib/data/photos)"
+              fi
+              if [ -d /var/lib/data/vault ]; then
+                test -z "$(ls -A /var/lib/data/vault)"
+              fi
+              if [ -d "$HOME/Sync" ]; then
+                test -z "$(ls -A "$HOME/Sync")"
+              fi
+              if [ -d /var/lib/agent/books-ingest ]; then
+                touch /var/lib/agent/books-ingest/.agent-sandbox-probe
+                rm /var/lib/agent/books-ingest/.agent-sandbox-probe
+              fi
+              repo_list="$XDG_STATE_HOME/agent-sandbox-repos"
+              find "$HOME/code" "$HOME/dev" -maxdepth 8 -name .git -type d -prune -print >"$repo_list" 2>/dev/null || true
+              repo_count=0
+              while IFS= read -r repo; do
+                [ -n "$repo" ] || continue
+                repo_count=$((repo_count + 1))
+                ! touch "$repo/config" 2>/dev/null
+                ! touch "$repo/hooks/.agent-sandbox-probe" 2>/dev/null
+                if [ "$repo_count" -ge 5 ]; then
+                  break
+                fi
+              done <"$repo_list"
+              rm -f "$repo_list"
+              test ! -e /run/user
+              command -v maki >/dev/null && maki --version >/dev/null
+              nix store ping >/dev/null 2>&1
+              if [ -S /nix/var/nix/daemon-socket/socket ]; then
+                # The resolved store URL, not the raw setting: the read-only state
+                # dir is what makes `store = auto` fall through to the daemon.
+                nix store info --json | grep -q '"url":"daemon"'
+                ! test -w /nix/var/nix
+              fi
+            '';
+          in
+          ''
+            sb=${sandbox.agentSandbox}/bin/agent-sandbox
+            # shellcheck disable=SC2016 # the inner script is expanded by /bin/sh
+            "$sb" /bin/sh -c ${lib.escapeShellArg check}
+            echo "agent-sandbox-check: ok"
+          '';
       })
     ];
   };
