@@ -15,9 +15,10 @@ let
   # Syncthing rejects in a folder's device list.
   peers = lib.remove cfg.device (lib.attrNames devices);
 
-  # Staggered versioning thins hourly→daily→weekly up to 30 days. The server
-  # keeps the history outside the durable tree: `/var/lib/data` is restic's one
-  # source path, and versions inside it would multiply every snapshot.
+  # Staggered versioning thins hourly→daily→weekly up to 30 days. Both hosts
+  # keep the history outside the synced folder: on the server `/var/lib/data` is
+  # restic's one source path, and on laptops anything inside the folder would be
+  # synced to every peer, multiplying snapshots and contradicting the runbook.
   versioning = {
     type = "staggered";
     params = {
@@ -41,8 +42,8 @@ in
     };
     versioningPath = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
-      default = null;
-      description = "Where Syncthing keeps file versions. Set only on the server, outside the durable tree, so restic never carries the version history.";
+      default = "${config.home.homeDirectory}/.local/state/syncthing-versions/vault";
+      description = "Where Syncthing keeps file versions. Defaults outside the synced folder, so the version history is neither synced to every peer nor inside restic's source path; the server overrides it with its own path outside `/var/lib/data`.";
     };
   };
 
