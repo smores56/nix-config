@@ -1318,9 +1318,14 @@ password valid forever.
 **Version history** is Syncthing staggered versioning at
 `/var/lib/syncthing-versions/vault` on smortress — outside `/var/lib/data`, so
 restic never carries it. Restore by copying the versioned file back into the
-vault and letting it converge. A `*.sync-conflict-*` file appearing in the
-decrypted view is the expected outcome of a two-device edit: Syncthing keeps
-both copies, and the conflict copy is resolved by hand.
+vault and letting it converge. The version file is ciphertext under its own
+`~YYYYMMDD-HHMMSS` suffix; strip the suffix when copying it back, never decrypt
+it. A `*.sync-conflict-*` file appearing in the decrypted view is the expected
+outcome of a two-device edit: Syncthing keeps both copies, the conflict copy
+decrypts to a normal readable name (`name.sync-conflict-<date>-<device>.<ext>`),
+and it is resolved by hand. One copy per version that cannot be merged, so if a
+device was paused across several remote changes (a restore plus more than one
+save) expect more than one conflict file; keep the newest and delete the rest.
 
 ## Agent sandbox
 
