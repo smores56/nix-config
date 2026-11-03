@@ -30,6 +30,7 @@ echo
 
 mountpoint=$(mktemp -d "${TMPDIR:-/tmp}/vault.XXXXXX")
 cli=
+# shellcheck disable=SC2329 # invoked by the trap on the next line
 cleanup() {
   fusermount3 -u "$mountpoint" 2>/dev/null || true
   if [ -n "$cli" ]; then
