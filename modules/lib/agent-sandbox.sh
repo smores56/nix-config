@@ -225,8 +225,15 @@ if [ "$(uname -s)" = Darwin ]; then
     echo '(allow pseudo-tty)'
     echo '(allow process-fork)'
     echo '(allow network*)'
-    echo '(deny file-read* file-write* (subpath "/private/tmp/com.apple.launchd"))'
-    echo "(deny file-read* file-write* (subpath \"${TMPDIR:-/tmp}/com.apple.launchd\"))"
+    # launchd's per-user listener directories are named `com.apple.launchd.<id>`,
+    # so a `subpath` rule for `.../com.apple.launchd` matches neither of them
+    # (subpath is a path-component prefix, not a string prefix). Use a regex,
+    # and resolve TMPDIR first: Seatbelt sees /private/var/folders, never the
+    # /var/folders spelling the caller's environment carries.
+    tmpdir_resolved=${TMPDIR:-/tmp}
+    [ -d "$tmpdir_resolved" ] && tmpdir_resolved=$(realpath "$tmpdir_resolved" 2>/dev/null || printf '%s' "$tmpdir_resolved")
+    echo '(deny file-read* file-write* (regex #"^/private/tmp/com\.apple\.launchd"))'
+    echo "(deny file-read* file-write* (regex #\"^${tmpdir_resolved//./\\.}/com\\.apple\\.launchd\"))"
     for svc in "${MACH_ALLOW[@]}"; do
       echo "(allow mach-lookup (global-name \"$svc\"))"
     done
