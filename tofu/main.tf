@@ -173,21 +173,25 @@ resource "cloudflare_notification_policy" "service_token_expiry" {
 
 # Rate limiting for the public hosts whose clients cannot complete an Access
 # login. CalDAV/CardDAV clients (Radicale has no brute-force protection of its
-# own) and the media apps (Navidrome, Immich, Calibre are reached by mobile apps
-# that authenticate with a password) therefore have no identity layer in front
-# of them, and a per-IP WAF rule is the only brute-force control left.
+# own) and the media apps (Navidrome, Immich and Calibre are reached by mobile
+# apps that authenticate with a password) therefore have no identity layer in
+# front of them, and a per-IP WAF rule is the only brute-force control left.
 #
-# The thresholds are set to stop credential stuffing, not to shape ordinary
-# traffic: a first DAVx5/khal/vdirsyncer sync walks a whole collection, and an
-# Immich timeline scroll fetches one thumbnail per tile, so both routinely
-# exceed a few hundred requests per ten seconds. The counter is therefore high
-# enough for a normal client to fit under, and the ten-second block is the
-# brute-force control: an address over the ceiling gets no answers for ten
-# seconds, which makes guessing slow and noisy without touching normal use.
+# This zone's plan allows exactly ONE rule in the http_ratelimit phase — a second
+# rule fails the apply with "2 out of 1" — so the four hosts share one rule and
+# one threshold. The threshold is set by the burstiest legitimate client: an
+# Immich timeline scroll fetches a thumbnail per tile plus video ranges, and a
+# first DAVx5/khal/vdirsyncer sync walks a whole collection, so both routinely
+# exceed a few hundred requests in ten seconds. 1000/10s shapes no normal
+# traffic; the ten-second block is the brute-force control, and the strong
+# passwords behind all four services are the real defence — the rule only makes
+# guessing slow and noisy.
 #
-# Cloudflare's free plan caps a zone at one rate-limiting rule, so a downgraded
-# zone rejects the second rule below at plan time; `nix run .#cloudflare-plan`
-# is how the operator finds out.
+# If the zone moves to a plan with more rule slots, split DAV back out at a much
+# lower threshold: 1000 is chosen for media, not for DAV.
+#
+# The resource and ruleset names are historical; renaming them risks a
+# replacement, which the lifecycle block below forbids.
 resource "cloudflare_ruleset" "dav_rate_limit" {
   zone_id = data.cloudflare_zone.this.zone_id
   name    = "dav rate limit"
@@ -197,29 +201,12 @@ resource "cloudflare_ruleset" "dav_rate_limit" {
   rules = [
     {
       action      = "block"
-      description = "Rate limit CalDAV/CardDAV clients per IP"
-      expression  = "(http.host eq \"dav.${var.domain}\")"
+      description = "Rate limit the public app hosts per IP"
+      expression  = "(http.host eq \"dav.${var.domain}\" or http.host eq \"music.${var.domain}\" or http.host eq \"immich.${var.domain}\" or http.host eq \"calibre.${var.domain}\")"
       ratelimit = {
         characteristics = ["ip.src", "cf.colo.id"]
-        # Free-plan rate limiting only permits a 10-second period. 600/10s is a
-        # credential-stuffing ceiling, not a traffic shaper: a first full sync
-        # of one collection by a normal client must fit under it.
-        period              = 10
-        requests_per_period = 600
-        # Free-plan rate limiting caps both the period and the mitigation at 10s.
-        mitigation_timeout = 10
-      }
-    },
-    {
-      action      = "block"
-      description = "Rate limit the public media app hosts per IP"
-      expression  = "(http.host eq \"music.${var.domain}\" or http.host eq \"immich.${var.domain}\" or http.host eq \"calibre.${var.domain}\")"
-      ratelimit = {
-        characteristics = ["ip.src", "cf.colo.id"]
-        # 1000 requests per 10s is deliberately lenient: the Immich mobile
-        # client fetches a thumbnail per timeline tile plus the videos, and the
-        # target is credential stuffing, not normal use. The 10s block is what
-        # makes guessing impractical.
+        # Free-plan rate limiting allows only a 10-second period, and caps the
+        # mitigation window at the same 10 seconds.
         period              = 10
         requests_per_period = 1000
         mitigation_timeout  = 10
