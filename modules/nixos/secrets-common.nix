@@ -41,12 +41,15 @@
     };
 
     # Bearer token for the memory MCP listener. Every personal host runs the
-    # shim/CLI that presents it, so it lives in common.yaml and the user owns
-    # the 0400 file.
+    # shim/CLI that presents it, so it lives in common.yaml and the user owns the
+    # file. Where the listener runs, the `memory` group needs read access too:
+    # the service rejects every call with 503 when it cannot read the token.
     memory-mcp-token = {
       sopsFile = ../../secrets/common.yaml;
       owner = config.machine.username;
-      mode = "0400";
+      group = if config.systemd.services ? memory-mcp then "memory" else "users";
+      mode = "0440";
+      restartUnits = lib.optional (config.systemd.services ? memory-mcp) "memory-mcp.service";
     };
 
     # maki's hosted-inference key. The fish init exports it from this path, so
