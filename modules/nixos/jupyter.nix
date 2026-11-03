@@ -39,6 +39,11 @@ in
   sops.secrets.jupyter-token = {
     owner = lib.mkDefault username;
     mode = lib.mkDefault "0400";
+    # Open WebUI bakes the token into its rendered env file; rotating without
+    # restarting it leaves the code interpreter 401ing.
+    restartUnits =
+      lib.optional (config.systemd.services ? jupyter) "jupyter.service"
+      ++ lib.optional (config.systemd.services ? open-webui) "open-webui.service";
   };
 
   systemd.tmpfiles.rules = [

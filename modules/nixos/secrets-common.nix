@@ -49,7 +49,12 @@
       owner = config.machine.username;
       group = if config.systemd.services ? memory-mcp then "memory" else "users";
       mode = "0440";
-      restartUnits = lib.optional (config.systemd.services ? memory-mcp) "memory-mcp.service";
+      # Open WebUI embeds the token in its tool-server config, so it has to
+      # restart with the listener or every memory call 401s until someone
+      # notices.
+      restartUnits =
+        lib.optional (config.systemd.services ? memory-mcp) "memory-mcp.service"
+        ++ lib.optional (config.systemd.services ? open-webui) "open-webui.service";
     };
 
     # maki's hosted-inference key. The fish init exports it from this path, so

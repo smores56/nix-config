@@ -4,6 +4,7 @@
 # unmaintained API scrapers). Loopback-only; reachability is the tunnel's call.
 {
   config,
+  pkgs,
   lib,
   aiProviders,
   ...
@@ -85,9 +86,39 @@ in
       ENABLE_PERSISTENT_CONFIG = "False";
     };
   };
+  # The upstream module runs the unit as a DynamicUser. DynamicUser state lives
+  # under /var/lib/private with a symlink in /var/lib, and restic archives a
+  # symlink without following it, so the chat database would end up in no
+  # snapshot at all. A static user makes the state a real directory inside the
+  # one backed-up tree.
+  users.groups.open-webui = { };
+  users.users.open-webui = {
+    isSystemUser = true;
+    group = "open-webui";
+  };
 
-  # The upstream module runs the unit in `stateDir` but only declares
-  # StateDirectory=open-webui, which DynamicUser chowns under /var/lib; point it
-  # at the same path or the unit starts in a directory nothing creates.
-  systemd.services.open-webui.serviceConfig.StateDirectory = lib.mkForce "data/open-webui";
+  systemd.services.open-webui = {
+    serviceConfig = {
+      DynamicUser = lib.mkForce false;
+      User = "open-webui";
+      Group = "open-webui";
+      StateDirectory = lib.mkForce "data/open-webui";
+      StateDirectoryMode = lib.mkForce "0700";
+      # One-shot migration: the first start after the static user was introduced
+      # replaces the DynamicUser symlink with the real directory. Runs as root
+      # because the old files belong to the retired dynamic UID.
+      ExecStartPre = "+${pkgs.writeShellScript "open-webui-state-migrate" ''
+        set -eu
+        dir=/var/lib/data/open-webui
+        if [ -L "$dir" ]; then
+          target=$(readlink -f "$dir")
+          rm "$dir"
+          mv "$target" "$dir"
+          chown -R open-webui:open-webui "$dir"
+          chmod 0700 "$dir"
+          rmdir "$(dirname "$target")" 2>/dev/null || true
+        fi
+      ''}";
+    };
+  };
 }
