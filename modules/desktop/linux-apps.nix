@@ -19,7 +19,6 @@ in
       discord
       krita
       steam
-      tutanota-desktop
       bitwarden-menu
       bitwarden-desktop
     ];
