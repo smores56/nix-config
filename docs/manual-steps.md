@@ -1333,7 +1333,13 @@ save) expect more than one conflict file; keep the newest and delete the rest.
 abbreviation for `agent-sandbox maki`. Install `maki` manually in
 `~/.local/bin` (there is no wrapper), and run plain `maki` only when you mean
 to work unsandboxed. `agent-sandbox-check` runs the real boundary and asserts
-the core properties.
+the core properties on Linux and on macOS. The macOS run prints one
+`PASS`/`FAIL`/`SKIP` line per property and only counts a denial when the command
+failed with `Operation not permitted`, so a missing path cannot pass a deny test
+for the wrong reason; `SKIP` means a precondition (a personal checkout, `maki`, a
+PAT) was absent. It cannot observe the mach-lookup, `appleevent-send`, `lsopen`
+or `job-creation` rules, which fail with service or AppleEvent errors rather than
+EPERM.
 
 The sandbox binds an explicit config allowlist and masks the whole `~/.config`;
 if a tool needs its config, add the directory to `CONFIG_ALLOW` in
@@ -1351,10 +1357,27 @@ from GitHub's signing keys afterwards.
 
 Existing repos keep `.git/hooks` and `.git/config` read-only inside the
 boundary, so the agent cannot install hooks or set `core.hooksPath`; the hooks
-already in the repo still run for the agent. Repos it creates inside the
-sandbox are writable and are reviewed like any other code. Renaming a repo's
-`.git` still moves the read-only mounts with it, so this is a raised bar, not a
-kernel boundary.
+already in the repo still run for the agent. Renaming a repo's `.git` still
+moves the read-only mounts with it, so this is a raised bar, not a kernel
+boundary.
+
+How new repos work differs by backend, because only Linux has mount
+namespaces. Bubblewrap scans the repos that exist at start, so a repo the agent
+creates inside the boundary is writable and is reviewed like any other code.
+The Seatbelt profile cannot tell an existing repo from one the agent is about to
+create, so it denies writing any `/.git`, `.git/config`, `.git/config.worktree`
+or `.git/hooks`. On macOS the agent can therefore commit in existing repos but
+cannot `git init`, `git clone`, `git worktree add`, or `worktrees new`; do those
+outside the sandbox. The signing assertion in `agent-sandbox-check` follows from
+this and uses `git commit-tree` in an existing personal checkout rather than a
+throwaway repo (it leaves a dangling object, which `git gc` collects).
+
+The agent config tree is writable on macOS, not read-only: there is no mount
+namespace, so the launcher copies the allowlisted `~/.config` entries into
+`~/.local/state/agent/config` and the sandbox writes there. On Linux those same
+entries are bound read-only from the host. Either way the human's `~/.config` is
+out of reach, and `CONFIG_WRITABLE` remains the Linux-only mechanism for a tool
+that has to lock a file in place.
 
 Residuals of the same-UID model: `~/.cargo/registry`, `~/.cargo/git`, `~/.npm`,
 and the Bun cache stay writable for build speed, so a modified cache entry can
@@ -1371,12 +1394,13 @@ agent builds run in the daemon's sandbox as `nixbld`
 (`nix.settings.build-users-group` in `modules/nixos/base.nix`) and the paths
 they add persist in the host store.
 
-The config allowlist is read-only, but `CONFIG_WRITABLE` in
+On Linux the config allowlist is read-only, but `CONFIG_WRITABLE` in
 `modules/lib/agent-sandbox.nix` lists files a tool must lock or rewrite. Each
 gets a writable copy under the agent state bound over the read-only file —
 currently only `maki/pack-lock.json.lock`, so maki's package lock works while
 the plugin config stays immutable. The host sidecar is created empty if absent
-(maki creates the same file itself).
+(maki creates the same file itself). macOS has no mount namespace and copies the
+allowlist into a writable agent config dir instead, so it needs neither.
 
 Clipboard history is deliberately not persisted: the cliphist database is
 removed and the sandbox masks `~/.cache/cliphist`. There is no same-UID
