@@ -1,6 +1,6 @@
-# Wallpapers from the single Proton mount: rsync one curated collection into a
-# local cache, bucket each image by its measured aspect, and set one per
-# display. The client owns the cache, so a dropped mount cannot blank the
+# Wallpapers from the durable tree on smortress: rsync one curated collection
+# into a local cache, bucket each image by its measured aspect, and set one per
+# display. The client owns the cache, so an unreachable source cannot blank the
 # current wallpaper.
 {
   config,
@@ -11,8 +11,8 @@
 let
   inherit (pkgs.stdenv.hostPlatform) isLinux;
 
-  # Wallpapers are pulled from the durable tree on smortress, not from the Proton
-  # mount: the mount is retired with #295.
+  # The durable tree on smortress is the only source; the sync is one-way and
+  # never writes back.
   source = "smortress:/var/lib/data/wallpapers/";
   cacheDir = "${config.home.homeDirectory}/.cache/wallpapers";
   intervalHours = 3;
@@ -83,7 +83,7 @@ in
   # which is how niri and noctalia find their sockets from this unit.
   systemd.user.services.wallpapers = lib.mkIf isLinux {
     Unit = {
-      Description = "Rotate wallpapers from the Proton mount";
+      Description = "Rotate wallpapers from the durable tree";
       After = [ "graphical-session.target" ];
       # The login start races the compositor/agent; retry a bounded number of
       # times rather than losing the run until the three-hour timer.
@@ -105,7 +105,7 @@ in
   };
 
   systemd.user.timers.wallpapers = lib.mkIf isLinux {
-    Unit.Description = "Rotate wallpapers from the Proton mount";
+    Unit.Description = "Rotate wallpapers from the durable tree";
     Timer = {
       # Paces the repeats only; it cannot express "at login" (that is the
       # service's WantedBy above), and OnStartupSec would fire from the

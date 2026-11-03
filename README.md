@@ -22,6 +22,8 @@ Key directories under `modules/`:
 | `home.nix` | home-manager base (fonts, nix.conf, darwin helpers) |
 | `flake/` | flake-parts modules (configurations, checks, formatter) |
 | `features/` | cross-platform home-manager modules (shell, editor, git, packages, theme, ai) |
+| `syncthing-devices.nix` | the Syncthing device table; `features/syncthing.nix` shares the Cryptomator vault with every device in it, as ciphertext |
+| `features/vault.nix` | `vault <cmd>`: mount the vault for one command, then unmount |
 | `desktop/` | desktop-environment modules (niri, aerospace) |
 | `nixos/` | NixOS system modules (base, desktop, networking, ssh, etc.) |
 | `lib/` | helper libraries |
@@ -46,7 +48,7 @@ the document drifts ahead of the configuration.
 
 The command index is the [`justfile`](justfile): run `just --list` (or bare
 `just`) for checks, formatting, switches, install/bootstrap, Cloudflare
-plan/apply, backup status, and the restore drill.
+plan/apply, memory maintenance, and backup status/runs/logs.
 
 ## Installation
 
@@ -59,8 +61,9 @@ nix run github:smores56/nix-config#bootstrap
 The served copy at `bootstrap.sammohr.dev` is not provisioned by this repo;
 use the flake app above. It clones the repo via `ghq`, runs
 `home-manager switch`, writes the committed SSH public keys, and (on NixOS)
-applies the system configuration. GitHub needs no login step: git and `gh`
-use each account's sops PAT once the home is active.
+applies the system configuration. It never logs in: it prints `gh auth status`
+at the end and leaves an interactive login to the operator, while git and `gh`
+take each account's sops PAT once the home is active.
 
 ### Manual
 
@@ -85,15 +88,17 @@ for non-HTTP services), optionally with Cloudflare Access in front.
 webProxy.services.immich = { port = 2283; };
 ```
 
-Calibre and Immich are public with their own app auth; `ssh`, `llm`, and
-`memory` require Access. `access.enable` is implemented only for the services
-in `webProxy.protected` (applications are hand-written in `tofu/`), and
-enabling it elsewhere fails evaluation.
+`ssh`, `llm`, `memory` and `chat` require Cloudflare Access; `calibre`,
+`immich`, `navidrome` and `dav` are public with their own auth, because their
+clients cannot complete an Access login (DAV and the media hosts are
+additionally WAF rate-limited). `access.enable` is implemented only for the
+services in `webProxy.protected` (applications are hand-written in `tofu/`),
+and enabling it elsewhere fails evaluation.
 
 DNS and Access are managed by the minimal OpenTofu config in `tofu/`:
 
 - wildcard proxied CNAME `*.sammohr.dev` → `<tunnel>.cfargotunnel.com`;
-- `ssh`, `llm`, and `memory` Access applications;
+- `ssh`, `llm`, `memory`, and `chat` Access applications;
 - email allow-list and service-auth policies;
 - tunnel-health and expiring-service-token notifications.
 
@@ -121,6 +126,14 @@ State lives in `/var/lib/cloudflare-tofu/` (0700, backed up as the
 the first apply (`sudo nix run .#cloudflare-tofu -- import <address> <id>`);
 `prevent_destroy` is set on the apps and policies. Stale records/apps from the
 retired reconciler are removed manually first.
+
+#### CDN terms risk
+
+Cloudflare's terms restrict using its CDN to serve disproportionate amounts of
+non-HTML content, and music streaming, original photos and book downloads are
+large binary traffic over the free CDN. Accepted: one user, a self-hosted
+origin, low volume. If Cloudflare objects, the mitigation is R2 (serve the
+binaries from a bucket instead of the tunnel) or a paid plan.
 
 ### Personal site and keyboard redirect
 
@@ -151,6 +164,53 @@ the home LAN. smortress opens Immich's port only to its LAN subnet
 Cloudflare caps a single upload at 100 MB and Immich neither chunks nor resumes,
 so uploads over the tunnel fail with a 413 above that limit; the LAN URL avoids
 the cap at home. Configure both URLs in the app's server settings.
+
+### Chat (Open WebUI)
+
+`chat.sammohr.dev` is Open WebUI behind Access and its own email/password login;
+it is the phone PWA and the desktop web app. Two OpenAI-compatible backends are
+declared in `modules/nixos/open-webui.nix` — local llama.cpp (keyless) and
+Neuralwatt — and its state lives under `/var/lib/data/open-webui`, so restic
+carries it with the durable tree. Chat is browser-only: no API key is issued.
+Tool servers, the code interpreter, and the first-deployment order are in
+[`docs/manual-steps.md`](docs/manual-steps.md#smortresschat).
+
+### Calendar and contacts (Radicale)
+
+`dav.sammohr.dev` is Radicale over the tunnel and the system of record for
+VEVENT, VTODO and VCARD (`/var/lib/data/radicale`, owner-only rights). It is
+public with a bcrypt htpasswd because CalDAV clients (DAVx5, khal, vdirsyncer,
+macOS Calendar) cannot complete an Access login; the zone's WAF rate limit is
+the brute-force control. The htpasswd and its rotation are in
+[`docs/manual-steps.md`](docs/manual-steps.md#radicale-htpasswd).
+
+### Music (Navidrome)
+
+`music.sammohr.dev` streams `/var/lib/data/music` through the Subsonic API to
+Symfonium, Feishin and Substreamer, public with Navidrome's own auth for the same
+reason as DAV, and under the same per-IP rate limit. The database is
+`/var/lib/data/navidrome` (backed up); the cache is regenerable and lives
+outside the tree. The first account created in the web UI is the admin
+([`docs/manual-steps.md`](docs/manual-steps.md#musicsammohrdev)).
+
+### Mail (Aster)
+
+`sam@sammohr.dev` is an Aster mailbox: the `sammohr97@` and `telhaturz@` aliases
+plus a catch-all, receive-only. Aster has no server-side IMAP/SMTP, so the host
+sends its alerts through Cloudflare Email Sending and never reads mail here.
+One apex `_dmarc` record carries the policy; a second one from Aster's wizard
+disables it. The record and the outbound path are in
+[`docs/manual-steps.md`](docs/manual-steps.md#mail-aster).
+
+### Syncthing and the vault
+
+Personal files live in a Cryptomator vault: Syncthing replicates the ciphertext
+(`~/Sync/vault` on laptops, `/var/lib/data/vault` on smortress) and plaintext
+exists only inside an unlocked client. The device table is
+`modules/syncthing-devices.nix`; one device may unlock at a time, and
+`vault <cmd>` holds an unlock for the length of one command. Pairing a device,
+the one-device rule, and version history are in
+[`docs/manual-steps.md`](docs/manual-steps.md#syncthing-and-the-vault).
 
 ### Recovery
 
@@ -196,7 +256,7 @@ the dashboard, update `cloudflare-api-token` in `secrets/smortress.yaml`
 redeploy. Check with `sudo nix run .#cloudflare-plan`.
 
 **Access misconfiguration.** A typo that clears `access.enable` on
-`ssh`/`llm`/`memory` fails evaluation (`modules/nixos/web-proxy.nix`), and
+`ssh`/`llm`/`memory`/`chat` fails evaluation (`modules/nixos/web-proxy.nix`), and
 OpenTofu has `prevent_destroy` on those apps and policies. An Access *policy* mistake (wrong
 email) still locks out the browser — fix it in OpenTofu and apply, or in the
 dashboard as a break-glass step.
@@ -236,9 +296,10 @@ retention and a `restic check` after every run. The password is the
 `restic-password` sops secret; every run alerts on failure. `githubBackup`
 mirrors the `smores56` GitHub repos (git plus issue/PR metadata) into
 `/var/lib/data/github-mirrors` with its own nightly unit, so restic carries the
-mirror with everything else. Proton Drive remains the browsable file tree for
-the phone (`pm`), but no backup writes through it. The operator's guide — repos,
-restore drill, mirror units — is
+mirror with everything else. Personal files live in the Cryptomator vault:
+ciphertext synced by Syncthing to every device, plaintext only inside a client
+(see *Syncthing and the vault*). The operator's guide — repos, restore drill,
+mirror units — is
 [`modules/features/backup/README.md`](modules/features/backup/README.md).
 
 ### Fingerprint enrollment
@@ -275,8 +336,9 @@ its default palette.
 Noctalia's `~/.local/state/noctalia/settings.toml` is left in place: it is a
 sparse overlay holding only settings that deviate from the Nix base, so GUI
 tweaks persist while Nix stays the base layer. The wallpaper is owned by the
-`wallpapers` feature: it rsyncs the curated Proton collection into
-`~/.cache/wallpapers`, buckets each image by its measured aspect, and sets one
+`wallpapers` feature: it rsyncs the curated collection from
+`smortress:/var/lib/data/wallpapers/` into `~/.cache/wallpapers`, buckets each
+image by its measured aspect, and sets one
 per display (Noctalia IPC on Niri, System Events on macOS), picking at random
 without repeats until that aspect's set runs out. Noctalia's own rotation is
 disabled so the two never fight.
@@ -568,22 +630,23 @@ on first boot. When that directory exists, `install` delivers it into the new
 root (`/etc/ssh/...`) via `--extra-files`.
 
 **Before reinstalling an existing machine**, run `nix run .#key-backup` and
-upload the printed archive and checksum to a Proton Pass Note item. It carries
+upload the printed archive and checksum to a Bitwarden note item. It carries
 the FIDO2 credential handles in `~/.config/ssh-sk` (destroyed by the wipe), the
 untracked enrollment script, and the host SSH key read from
 `/etc/ssh/ssh_host_ed25519_key` (one `sudo` prompt; add `--no-host-key` on a
 machine with no host identity of its own). The bundle therefore carries a
-plaintext private SSH key: whoever can read the Pass item can impersonate the
+plaintext private SSH key: whoever can read the Bitwarden item can impersonate the
 host and decrypt its sops secrets. In the operator checkout,
 `nix run .#key-restore -- <bundle> --host-key` writes `secrets/hosts/<host>/`
 before `install`; after `bootstrap` on the new system,
 `nix run .#key-restore -- <bundle>` puts the handles back. See
 [`docs/manual-steps.md`](docs/manual-steps.md#key-backup).
 
-### Headless login and token rotation
+### Token rotation
 
-`bootstrap` logs in non-interactively when the host's sops secrets hold the
-tokens. The token inventory, scopes, minting, the rotation checklist, and
+`bootstrap` never logs in: it ends by printing `gh auth status`, so any
+interactive login is the operator's. The token inventory, scopes, minting, the
+rotation checklist, and
 per-provider failure behavior are documented once in
 [`docs/manual-steps.md`](docs/manual-steps.md#secrets); that file also carries
 the admin-key runbook. `modules/nixos/secrets.nix`
