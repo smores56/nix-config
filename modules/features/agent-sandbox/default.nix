@@ -71,7 +71,7 @@ in
             # are part of the script, not of the outer shell parse. Passing it
             # as a literal here broke that (a single quote inside a JSON grep
             # silently stripped the quotes and the assertion could never pass).
-            check = ''
+            linuxCheck = ''
               set -eu
               if [ -r /proc/self/status ]; then
                 grep -q "^NoNewPrivs:[[:space:]]*1" /proc/self/status
@@ -139,13 +139,130 @@ in
                 ! test -w /nix/var/nix
               fi
             '';
+
+            repoSnippet = ''r=""; for g in $(find "$HOME/code" -maxdepth 5 -name .git -type d 2>/dev/null); do p=''${g%/.git}; u=$(git -C "$p" remote get-url origin 2>/dev/null) || continue; case $u in *smores56*) r=$p; break;; esac; done; [ -n "$r" ] || exit 3'';
+
+            # macOS. Each assertion prints its own PASS/FAIL/SKIP, and a denial
+            # only counts when the command failed with "Operation not permitted":
+            # a bare non-zero exit is not evidence, since a missing path would
+            # pass a deny test for the wrong reason. The inner script runs under
+            # the store bash because `/bin/sh` inside the sandbox prints
+            # "Error opening /private/var/select/sh: Operation not permitted" on
+            # every run, which a loose grep would match by itself.
+            #
+            # What this cannot observe: mach-lookup, `appleevent-send`,
+            # `lsopen` and `job-creation` denials surface as unknown-service or
+            # AppleEvent errors, never EPERM, so those rules stay untested here.
+            #
+            # Repos: macOS has no mount namespace, so the profile denies writing
+            # any `/.git` and a new repo cannot be created inside the boundary
+            # (docs/manual-steps.md). The signing assertion therefore uses
+            # `git commit-tree` in an existing personal checkout; it leaves a
+            # dangling object, which `git gc` collects.
+            darwinCheck = ''
+              set -u
+              pass=0 fail=0
+              ok(){ pass=$((pass+1)); printf 'PASS %s\n' "$1"; }
+              skip(){ printf 'SKIP %s\n' "$1"; }
+              no(){ fail=$((fail+1)); printf 'FAIL %s\n' "$1"; [ -z "''${2:-}" ] || printf '     | %s\n' "$2"; }
+              # Exit 3 means a precondition was absent (no repo, no maki, no
+              # PAT); that is a skip, not a boundary failure.
+              try_allow(){
+                local o rc
+                o=$(bash -c "$2" 2>&1); rc=$?
+                if [ "$rc" -eq 0 ]; then ok "$1"
+                elif [ "$rc" -eq 3 ]; then skip "$1"
+                else no "$1" "$o"; fi
+              }
+              try_deny(){
+                local o rc
+                o=$(bash -c "$2" 2>&1); rc=$?
+                if [ "$rc" -eq 0 ]; then no "$1 (was allowed)" "$o"
+                elif [ "$rc" -eq 3 ]; then skip "$1"
+                elif [[ $o == *"Operation not permitted"* ]]; then ok "$1"
+                else no "$1 (failed for another reason)" "$o"; fi
+              }
+              # A masked path that does not exist yet is a skip: ENOENT is not
+              # evidence of the boundary.
+              deny_path(){
+                local o
+                o=$(bash -c "ls \"$2\"" 2>&1)
+                case $o in
+                  *"Operation not permitted"*) ok "$1" ;;
+                  *"No such file or directory"*) skip "$1 (absent)" ;;
+                  *) no "$1 (was allowed)" "$o" ;;
+                esac
+              }
+
+              # Exec denials. EXEC_DENY is one mechanism, so these prove the
+              # mechanism rather than one rule each; `su`, `open`, `crontab` and
+              # `shortcuts` are in the same list.
+              try_deny "sudo not invocable" '/usr/bin/sudo -n true'
+              try_deny "su not invocable" '/usr/bin/su root -c true'
+              try_deny "security (Keychain binary) cannot exec" '/usr/bin/security find-generic-password -s maki-openai-api-key -w'
+              try_deny "launchctl denied" '/usr/bin/launchctl print gui/$UID'
+              try_deny "osascript denied" '/usr/bin/osascript -e "return 1"'
+
+              # Masks.
+              deny_path ".ssh unreadable" "$HOME/.ssh"
+              deny_path ".config unreadable" "$HOME/.config"
+              deny_path "Library unreadable" "$HOME/Library"
+              deny_path "keyrings unreadable" "$HOME/.local/share/keyrings"
+              deny_path ".gnupg unreadable" "$HOME/.gnupg"
+              deny_path ".aws unreadable" "$HOME/.aws"
+              deny_path ".kube unreadable" "$HOME/.kube"
+              deny_path ".docker unreadable" "$HOME/.docker"
+              deny_path ".cloudflared unreadable" "$HOME/.cloudflared"
+              deny_path "vault ciphertext (Sync) unreadable" "$HOME/Sync"
+              deny_path "memory state unreadable" "$HOME/.local/state/memory"
+              deny_path "agent transcripts (.claude) unreadable" "$HOME/.claude"
+              deny_path "agent transcripts (.codex) unreadable" "$HOME/.codex"
+
+              # Writes.
+              try_deny "HOME not writable" 'touch "$HOME/.agent-sandbox-probe"'
+              try_deny "LaunchAgents not writable" 'mkdir -p "$HOME/Library/LaunchAgents"'
+              try_deny ".local/bin not writable" 'touch "$HOME/.local/bin/.probe"'
+              try_deny "existing repo hooks not writable" '${repoSnippet}; touch "$r/.git/hooks/.agent-sandbox-probe"'
+              try_deny "existing repo config not writable" '${repoSnippet}; touch "$r/.git/config"'
+              try_deny "launchd scratch denied" 'find /private/tmp -maxdepth 1 -name "com.apple.launchd*" -print'
+
+              # Allows.
+              try_allow "code writable" 'touch "$HOME/code/.agent-sandbox-probe" && rm -f "$HOME/code/.agent-sandbox-probe"'
+              try_allow "/tmp writable" 'd=$(mktemp -d) && rm -rf "$d"'
+              try_allow "agent state writable" 'touch "$HOME/.local/state/agent/.probe" && rm -f "$HOME/.local/state/agent/.probe"'
+              try_allow "sandbox gitconfig enforces signing" 'test "$(git config --get commit.gpgsign)" = true'
+              try_allow "sops signing key readable" 'head -c1 "$HOME/.local/share/github/github-personal-signing-key" >/dev/null'
+              try_allow "commit signed by the agent key verifies" '${repoSnippet}; s=$(git -C "$r" commit-tree -S -m sign-probe "HEAD^{tree}") || exit 1; test "$(git -C "$r" log -1 --format=%G? "$s")" = G'
+              try_allow "maki runs" 'command -v maki >/dev/null || exit 3; maki --version >/dev/null'
+              try_allow "gh via PAT" '${repoSnippet}; cd "$r" || exit 3; gh api /user --jq .login | grep -qx smores56'
+
+              # Informational: report what happens when the agent tries to
+              # create a repo, so the docs stay honest if the profile changes.
+              if bash -c 'd=$(mktemp -d)/repo; mkdir -p "$d" && cd "$d" && git init -q' >/dev/null 2>&1; then
+                printf 'NOTE git init inside the boundary: allowed\n'
+              else
+                printf 'NOTE git init inside the boundary: denied (expected)\n'
+              fi
+
+              printf '\n%d passed, %d failed\n' "$pass" "$fail"
+              test "$fail" -eq 0
+            '';
           in
-          ''
-            sb=${sandbox.agentSandbox}/bin/agent-sandbox
-            # shellcheck disable=SC2016 # the inner script is expanded by /bin/sh
-            "$sb" /bin/sh -c ${lib.escapeShellArg check}
-            echo "agent-sandbox-check: ok"
-          '';
+          if isDarwin then
+            ''
+              sb=${sandbox.agentSandbox}/bin/agent-sandbox
+              printf 'host: macOS %s %s\n' "$(/usr/bin/sw_vers -productVersion)" "$(/usr/bin/uname -m)"
+              # shellcheck disable=SC2016 # the inner script is expanded by bash
+              "$sb" bash -c ${lib.escapeShellArg darwinCheck}
+              echo "agent-sandbox-check: ok"
+            ''
+          else
+            ''
+              sb=${sandbox.agentSandbox}/bin/agent-sandbox
+              # shellcheck disable=SC2016 # the inner script is expanded by /bin/sh
+              "$sb" /bin/sh -c ${lib.escapeShellArg linuxCheck}
+              echo "agent-sandbox-check: ok"
+            '';
       })
     ];
   };
