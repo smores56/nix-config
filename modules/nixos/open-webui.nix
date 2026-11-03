@@ -82,6 +82,28 @@ in
       # Deepseek flash is the default; qwen3.8 stays selectable as the fallback.
       # Open WebUI has no automatic failover, so "backup" is a manual pick.
       DEFAULT_MODELS = neuralwatt.models.deepseekFlash.id;
+      # Defaults inherited by every model, so a new chat opens with the four
+      # tools on instead of every toggle off. `utils/models.py` merges this into
+      # each model's `info.meta` when the model list is built: `capabilities`
+      # merges (per-model values win), every other key is fill-only. The chat UI
+      # (`Chat.svelte` `setDefaults`) then reads `meta.toolIds`,
+      # `meta.defaultFeatureIds` and `meta.capabilities`. MCP tool ids are
+      # `server:mcp:<info.id>` (`routers/tools.py`), which is why the ids match
+      # the `info.id` values above.
+      DEFAULT_MODEL_METADATA = builtins.toJSON {
+        capabilities = {
+          web_search = true;
+          code_interpreter = true;
+        };
+        defaultFeatureIds = [
+          "web_search"
+          "code_interpreter"
+        ];
+        toolIds = [
+          "server:mcp:memory"
+          "server:mcp:files"
+        ];
+      };
       # Env is authoritative; the DB must not pin an older config.
       ENABLE_PERSISTENT_CONFIG = "False";
     };
