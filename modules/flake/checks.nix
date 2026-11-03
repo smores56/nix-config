@@ -314,6 +314,21 @@ in
               args = [ askpassExe ];
             };
           }
+          // {
+            # `vault <cmd>` fails closed: usage, a non-vault directory, a
+            # cryptomator-cli failure, and never the password on argv.
+            vault = {
+              tools = [
+                pkgs.bash
+                pkgs.coreutils
+                pkgs.fuse3
+                pkgs.gnugrep
+                pkgs.gnused
+                pkgs.util-linux
+              ];
+              args = [ "${src}/modules/features/vault.sh" ];
+            };
+          }
         );
 
       # Inventory for manual-steps-sync. File-derived items (hosts, sops keys,

@@ -8,6 +8,7 @@
     ../desktop/linux-apps.nix
     ../features/dictation/default.nix
     ../features/wallpapers.nix
+    ../features/vault.nix
   ];
   nixos = [
     ../nixos/desktop.nix
