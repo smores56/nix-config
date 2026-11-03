@@ -8,7 +8,7 @@
   {
     "query": "How do I keep an off-site cold copy of the photo library?",
     "group": "smores56--nix-config",
-    "gold": "Proton Drive",
+    "gold": "restic",
     "category": "semantic"
   },
   {

@@ -103,6 +103,15 @@ in
             if [ -d /var/lib/data/photos ]; then
               test -z "$(ls -A /var/lib/data/photos)"
             fi
+            # A mask is an empty tmpfs, and a tmpfs is writable: emptiness is
+            # the assertion (the host ciphertext is unreachable), not refusal of
+            # a write, which lands in the namespace and vanishes.
+            if [ -d /var/lib/data/vault ]; then
+              test -z "$(ls -A /var/lib/data/vault)"
+            fi
+            if [ -d "$HOME/Sync" ]; then
+              test -z "$(ls -A "$HOME/Sync")"
+            fi
             if [ -d /var/lib/agent/books-ingest ]; then
               touch /var/lib/agent/books-ingest/.agent-sandbox-probe
               rm /var/lib/agent/books-ingest/.agent-sandbox-probe

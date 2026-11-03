@@ -78,7 +78,6 @@ let
     # ~/.agents/skills is Nix-managed and shared with maki; leave it readable.
     "$HOME/.local/state/key-backup"
     "$HOME/.local/state/memory"
-    "$HOME/.local/state/maki"
     "$HOME/.cache/cliphist"
     "$HOME/.cache/maki"
     "$HOME/.cache/mozilla"
@@ -87,9 +86,19 @@ let
     "$HOME/.mozilla"
     "$HOME/.var/app"
     "$HOME/.local/share/Steam"
+    # Syncthing carries the Cryptomator vault ciphertext here (vault.nix); the
+    # `vault <cmd>` helper promises the agent never sees the vault, and that
+    # promise only holds if every profile, not just jupyter, masks the tree.
+    "$HOME/Sync"
     "$HOME/Library"
   ]
-  ++ lib.optionals (!isDarwin) [ "/var/lib/data/photos" ];
+  # Durable data on the server. Neither belongs in an agent namespace even if
+  # /var is bound in later: photos is the Immich library, the vault is the
+  # ciphertext Syncthing syncs.
+  ++ lib.optionals (!isDarwin) [
+    "/var/lib/data/photos"
+    "/var/lib/data/vault"
+  ];
 
   # Darwin only: directories of links to decrypted sops files the sandbox may
   # read. Seatbelt matches the resolved path (/private/var/folders/.../secrets.d/
@@ -310,18 +319,10 @@ let
     "MPLCONFIGDIR=${jupyterWorkspace}/.cache/matplotlib"
   ];
 
-  # The shared home masks already hide ~/.ssh, ~/.config, and the photos tree;
-  # ~/Sync and the vault are added for the kernel, which has no business in
-  # either. /run/secrets is masked by bwrap's private /run.
-  jupyterMaskDirs = homeMaskDirs ++ [
-    "$HOME/Sync"
-    "/var/lib/data/vault"
-  ];
-
   jupyterConfigFile = pkgs.writeText "jupyter-sandbox.conf" ''
     ${renderList "HOME_RW" [ jupyterWorkspace ]}
     ${renderList "HOME_RO" [ ]}
-    ${renderList "HOME_MASK_DIRS" jupyterMaskDirs}
+    ${renderList "HOME_MASK_DIRS" homeMaskDirs}
     ${renderList "HOME_MASK_FILES" homeMaskFiles}
     ${renderList "DARWIN_SECRET_LINK_DIRS" [ ]}
     ${renderList "CONFIG_ALLOW" [ ]}
