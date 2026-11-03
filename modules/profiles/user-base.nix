@@ -7,7 +7,6 @@
     ../features/git.nix
     ../features/ssh.nix
     ../features/ssh-keys.nix
-    ../features/proton-drive.nix
     ../features/sops.nix
     ../features/cloudflared.nix
     ../features/syncthing.nix

@@ -19,7 +19,6 @@
     ../nixos/nvidia.nix
     ../nixos/backup.nix
     ../nixos/restic-backup.nix
-    ../nixos/proton-drive.nix
     ../nixos/github-backup.nix
     ../nixos/alerting.nix
     ../nixos/no-sleep.nix

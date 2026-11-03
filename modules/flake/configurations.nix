@@ -62,10 +62,6 @@ let
       # traversal). The pinned nixpkgs ships 0.11.2.
       bubblewrap = inputs.nixpkgs-unstable.legacyPackages.${system}.bubblewrap;
 
-      # See the nixpkgs-unstable input: rclone needs the protondrive fixes it
-      # carries (1.75.1) for a trustworthy Proton mirror.
-      rclone = inputs.nixpkgs-unstable.legacyPackages.${system}.rclone;
-
       # The pinned nixpkgs ships bitwarden-desktop 2026.6.1 on electron_39,
       # which the security policy marks EOL (anything below 41). Unstable
       # carries 2026.9.0 on electron_43.
