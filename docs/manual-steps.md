@@ -2250,3 +2250,11 @@ The host sends alerts through Cloudflare Email Sending only, from
 own SPF (`cf-bounce.send.sammohr.dev`). Tuta is receive-only for this host, and
 Proton stays a fallback mailbox only until #295 closes — forwarding from it dies
 with the account.
+
+**Signing check** (after any change to the sops signing keys or the git config):
+`home-manager switch --flake .#smores@smorespro`, then in any personal checkout
+`git log -1 --format=%G?` must print `G`. SDLC #311 closed without this host's
+evidence: smortress, both Mac accounts and the work account covered the same
+sops-key path, but this host's home generation was never re-switched and
+verified. If signing fails here, check `/run/secrets/github-personal-signing-key`
+(mode `0400`, owned by the user) and `~/.config/ssh/allowed_signers` first.
