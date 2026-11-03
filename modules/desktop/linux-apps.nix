@@ -21,6 +21,7 @@ in
       steam
       bitwarden-menu
       bitwarden-desktop
+      tutanota-desktop
     ];
   };
 }
