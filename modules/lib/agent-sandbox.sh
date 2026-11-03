@@ -164,7 +164,13 @@ if [ "$(uname -s)" = Darwin ]; then
   prepare_darwin_config
   build_env_args
 
-  profile=$(mktemp "${TMPDIR:-/tmp}/agent-sandbox.XXXXXX.sbpl")
+  # The caller's TMPDIR, without the trailing slash macOS puts on it: a
+  # `(subpath ".../T/")` rule does not match `.../T/com.apple.launchd.<id>`.
+  tmpdir_host=${TMPDIR:-/tmp}
+  tmpdir_host=${tmpdir_host%/}
+  parent=$(dirname "$home")
+
+  profile=$(mktemp "$tmpdir_host/agent-sandbox.XXXXXX.sbpl")
   trap 'rm -f "$profile"' EXIT
   {
     echo '(version 1)'
@@ -186,9 +192,14 @@ if [ "$(uname -s)" = Darwin ]; then
     # directory itself is readable; the literal grants nothing beneath it. Nix
     # binaries load their dylibs from the store, so it must be readable too
     # (store paths are world-readable build outputs, never secrets). /var is the
-    # root symlink to /private/var that sops-nix's link chain crosses.
-    echo '(allow file-read* (literal "/") (literal "/var") (subpath "/nix/store") (subpath "/System") (subpath "/Library") (subpath "/usr") (subpath "/bin") (subpath "/private/etc") (subpath "/private/var/db") (subpath "/dev") (literal "/tmp") (subpath "/tmp") (subpath "/private/tmp") (subpath "'"${TMPDIR:-/tmp}"'"))'
-    echo "(allow file-write* (literal \"/dev/null\") (literal \"/dev/tty\") (subpath \"/tmp\") (subpath \"/private/tmp\") (subpath \"${TMPDIR:-/tmp}\"))"
+    # root symlink to /private/var that sops-nix's link chain crosses, and the
+    # home's parent is needed because realpath(3) stats every component: git
+    # reports "Invalid path '/Users': Operation not permitted" without it.
+    echo "(allow file-read* (literal \"/\") (literal \"/var\") (subpath \"/nix/store\") (subpath \"/System\") (subpath \"/Library\") (subpath \"/usr\") (subpath \"/bin\") (subpath \"/private/etc\") (subpath \"/private/var/db\") (subpath \"/dev\") (literal \"/tmp\") (subpath \"/tmp\") (subpath \"/private/tmp\") (subpath \"$tmpdir_host\"))"
+    echo "(allow file-write* (literal \"/dev/null\") (literal \"/dev/tty\") (subpath \"/tmp\") (subpath \"/private/tmp\") (subpath \"${tmpdir_host}\"))"
+    # realpath(3) lstats every path component, so the home's parent needs
+    # metadata (not data): without it git fails with "Invalid path '/Users'".
+    echo "(allow file-read-metadata (literal \"$parent\"))"
     # The TMPDIR rules above name /var/folders, which Seatbelt never matches (it
     # sees the resolved /private/var/folders), and sops-nix decrypts into that
     # same directory. Deny its secrets explicitly so widening those rules can
@@ -230,7 +241,7 @@ if [ "$(uname -s)" = Darwin ]; then
     # (subpath is a path-component prefix, not a string prefix). Use a regex,
     # and resolve TMPDIR first: Seatbelt sees /private/var/folders, never the
     # /var/folders spelling the caller's environment carries.
-    tmpdir_resolved=${TMPDIR:-/tmp}
+    tmpdir_resolved=$tmpdir_host
     [ -d "$tmpdir_resolved" ] && tmpdir_resolved=$(realpath "$tmpdir_resolved" 2>/dev/null || printf '%s' "$tmpdir_resolved")
     echo '(deny file-read* file-write* (regex #"^/private/tmp/com\.apple\.launchd"))'
     echo "(deny file-read* file-write* (regex #\"^${tmpdir_resolved//./\\.}/com\\.apple\\.launchd\"))"
