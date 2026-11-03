@@ -941,7 +941,8 @@ DAVx5/khal.
 
 <!-- manual-step: secret/jupyter-token -->
 
-Random 32 bytes, root-owned 0400, read by the sandboxed Jupyter server and
+Random 32 bytes in `secrets/smortress.yaml`, 0400 owned by `smores` (the
+sandboxed Jupyter unit runs as that user), read by the Jupyter server and
 injected into Open WebUI's environment file. Rotation invalidates running
 kernels.
 

@@ -15,7 +15,7 @@ let
   # JSON secret shape:
   #   {"token":"...","account_id":"...","from":"alerts@send.sammohr.dev","to":"sam@sammohr.dev"}
   # Use a sending subdomain (send.<domain>) so its DMARC/SPF/DKIM records do not
-  # interact with the Proton apex records; the from address must match whichever
+  # interact with the apex mail records; the from address must match whichever
   # domain/subdomain was onboarded.
   # The token is the SMTP/REST credential with Email Sending: Edit. The from
   # address must belong to an onboarded Email Service domain; the to address

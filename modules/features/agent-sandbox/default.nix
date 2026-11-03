@@ -97,9 +97,11 @@ in
               mkdir /var/lib/data/music/.agent-sandbox-probe-dir
               rmdir /var/lib/data/music/.agent-sandbox-probe-dir
             fi
+            # A mask is a tmpfs, so anything written inside it is scratch in the
+            # private namespace and says nothing about the host. Emptiness is the
+            # assertion: the real directory's contents must not be visible.
             if [ -d /var/lib/data/photos ]; then
               test -z "$(ls -A /var/lib/data/photos)"
-              ! touch /var/lib/data/photos/.agent-sandbox-probe 2>/dev/null
             fi
             if [ -d /var/lib/agent/books-ingest ]; then
               touch /var/lib/agent/books-ingest/.agent-sandbox-probe

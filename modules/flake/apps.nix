@@ -495,14 +495,14 @@
 
           cat <<EOF
 
-          Upload both files to Proton Pass:
+          Upload both files to Bitwarden:
             1. Create a Note item named "nix-config restore bundle — $host"
                in the vault that holds recovery material.
             2. Attach the .tar.gz and the .sha256, then save.
             3. Once Pass shows them, remove the local copies:
                  $remove "$archive" "$archive.sha256"
 
-          Proton Pass encrypts attachments end-to-end; the archive itself is not
+          Bitwarden encrypts attachments end-to-end; the archive itself is not
           separately encrypted. Using a restored handle needs the physical YubiKey
           and a touch for sudo.
           EOF
@@ -552,7 +552,7 @@
           Usage: nix run .#key-restore -- <bundle.tar.gz> [--force] [--no-verify]
                  nix run .#key-restore -- <bundle.tar.gz> --host-key [--force]
 
-          Restores the FIDO2 credential handles from a Proton Pass backup made
+          Restores the FIDO2 credential handles from a Bitwarden backup made
           by `nix run .#key-backup`. Run it after `nix run .#bootstrap`.
 
           With --host-key it restores only the host SSH key (the host's sops
@@ -954,7 +954,7 @@
       packages.bootstrap = bootstrap;
       packages.install = install;
       packages.host-key = host-key;
-      # `nix run .#key-backup` — archive the FIDO2 handles for Proton Pass.
+      # `nix run .#key-backup` — archive the FIDO2 handles for Bitwarden.
       packages.key-backup = key-backup;
       # `nix run .#key-restore -- <bundle>` — restore them on a fresh machine.
       packages.key-restore = key-restore;
@@ -976,7 +976,7 @@
         program = "${host-key}/bin/host-key";
       };
       # `nix run .#key-backup` / `..#key-restore -- <bundle>` — move the FIDO2
-      # handles between a machine and Proton Pass.
+      # handles between a machine and Bitwarden.
       apps.key-backup = {
         type = "app";
         program = "${key-backup}/bin/key-backup";
