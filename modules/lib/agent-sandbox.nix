@@ -101,11 +101,19 @@ let
   ];
 
   # Darwin only: directories of links to decrypted sops files the sandbox may
-  # read. Seatbelt matches the resolved path (/private/var/folders/.../secrets.d/
-  # <generation>/<name>), so the launcher resolves each link at start and allows
-  # exactly that file; every other sops secret stays denied. Linux binds the key
-  # at its /run/secrets path instead (secretBind).
+  # read, and the link names allowed inside them. Seatbelt matches the resolved
+  # path (/private/var/folders/.../secrets.d/<generation>/<name>), so the
+  # launcher resolves each link at start and allows exactly that file; every
+  # other sops secret stays denied. The names are explicit because a glob would
+  # hand any future secret parked in that directory to the sandbox without a
+  # review. Linux binds the key at its /run/secrets path instead (secretBind).
   darwinSecretLinkDirs = lib.optionals isDarwin [ "$HOME/.local/share/github" ];
+  darwinSecretLinkNames = [
+    "github-personal-pat"
+    "github-personal-signing-key"
+    "github-work-pat"
+    "github-work-signing-key"
+  ];
 
   homeMaskFiles = [
     "$HOME/.bash_history"
@@ -174,6 +182,7 @@ let
     ${renderList "HOME_MASK_DIRS" homeMaskDirs}
     ${renderList "HOME_MASK_FILES" homeMaskFiles}
     ${renderList "DARWIN_SECRET_LINK_DIRS" darwinSecretLinkDirs}
+    ${renderList "DARWIN_SECRET_LINK_NAMES" darwinSecretLinkNames}
     ${renderList "CONFIG_ALLOW" configAllow}
     ${renderList "CONFIG_WRITABLE" configWritable}
     ${renderList "SECRET_BIND" secretBind}

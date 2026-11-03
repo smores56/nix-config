@@ -198,7 +198,8 @@ if [ "$(uname -s)" = Darwin ]; then
     # the directory resolves into the denied secrets.d.
     echo '(deny file-read* file-write* (regex #"^/private/var/folders/.+/secrets\.d/"))'
     for d in "${DARWIN_SECRET_LINK_DIRS[@]}"; do
-      for link in "$d"/*; do
+      for name in "${DARWIN_SECRET_LINK_NAMES[@]}"; do
+        link="$d/$name"
         [ -L "$link" ] || continue
         target=$(realpath "$link" 2>/dev/null) || continue
         echo "(allow file-read* (literal \"$target\"))"
