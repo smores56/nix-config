@@ -1,7 +1,7 @@
 # Music streaming. Navidrome serves the library read-only over the Subsonic
 # API; it is public with its own auth (Symfonium/Feishin/Substreamer), because
 # mobile Subsonic clients cannot complete a Cloudflare Access login.
-{ ... }:
+_:
 let
   ports = import ../ports.nix;
 in

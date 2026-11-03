@@ -15,7 +15,7 @@ let
   # fallback) and Neuralwatt (deepseek-v4.1-flash, the default). Index order is
   # the contract between OPENAI_API_BASE_URLS and OPENAI_API_KEYS.
   localUrl = aiProviders.smortress.baseUrl;
-  neuralwatt = aiProviders.neuralwatt;
+  inherit (aiProviders) neuralwatt;
 
   # Tool connections are `ConfigVar`s and `ENABLE_PERSISTENT_CONFIG` is off, so
   # the environment is authoritative and both servers are declared here instead
