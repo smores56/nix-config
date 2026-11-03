@@ -1919,6 +1919,15 @@ header contract. `files-mcp` (`http://127.0.0.1:8185/mcp`) needs no token. A
 malformed value is silently dropped by Open WebUI, so an empty External Tool
 Servers list means the JSON is broken.
 
+**New chats start with every tool on.** `DEFAULT_MODEL_METADATA` gives each
+model `capabilities.{web_search,code_interpreter}`, `defaultFeatureIds` for both
+features and `toolIds = [server:mcp:memory, server:mcp:files]`. The backend
+merges it into every model's `info.meta` when the list is built (`capabilities`
+merge, per-model values winning; other keys are fill-only), and the chat UI seeds
+a fresh chat from exactly those fields. Tool ids are `server:mcp:<info.id>`, so
+renaming a server's `info.id` breaks the default silently. Existing chats keep
+their own toggles; only new ones pick this up.
+
 **Code interpreter** is Jupyter in the `jupyter` agent-sandbox profile
 (loopback `8888`, token from the `jupyter-token` secret), so generated code runs
 with the vault, `~/Sync` and the host secrets masked. **Web search** goes to the
