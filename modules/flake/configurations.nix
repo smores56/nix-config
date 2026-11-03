@@ -67,6 +67,37 @@ let
       # carries 2026.9.0 on electron_43.
       bitwarden-desktop = inputs.nixpkgs-unstable.legacyPackages.${system}.bitwarden-desktop;
 
+      # The pinned nixpkgs ships tutanota-desktop 355.260710.0 and the Tuta
+      # server answers it with "Update needed"; 362.261023.2 is the current
+      # release. Pinned here rather than following nixpkgs-unstable, which is
+      # on 359 and whose bump would also move bubblewrap, bitwarden-desktop
+      # and niri.
+      tutanota-desktop =
+        let
+          pname = "tutanota-desktop";
+          version = "362.261023.2";
+          src = prev.fetchurl {
+            url = "https://github.com/tutao/tutanota/releases/download/tutanota-desktop-release-${version}/${pname}-linux.AppImage";
+            hash = "sha256-Slvei8P3bB+bDc0qzC5G468qtFQGlDV7WhoFVi85ZJ8=";
+          };
+          appimageContents = prev.appimageTools.extract { inherit pname version src; };
+        in
+        prev.appimageTools.wrapType2 {
+          inherit pname version src;
+          nativeBuildInputs = [ prev.makeWrapper ];
+
+          extraInstallCommands = ''
+            install -Dm 444 ${appimageContents}/tutanota-desktop.desktop -t $out/share/applications
+            cp -r ${appimageContents}/usr/share/icons/. $out/share/icons
+
+            substituteInPlace $out/share/applications/tutanota-desktop.desktop \
+              --replace 'Exec=AppRun' 'Exec=${pname}'
+
+            wrapProgram $out/bin/tutanota-desktop \
+              --add-flags "\''${NIXOS_OZONE_WL:+\''${WAYLAND_DISPLAY:+--ozone-platform-hint=auto --enable-features=WaylandWindowDecorations --enable-wayland-ime=true}}"
+          '';
+        };
+
       # YubiKey FIDO2 note: OpenSSH's libfido2 lists the same token twice
       # (USB HID + PC/SC). Do not override libfido2/openssh here: changing
       # either hash cascades through qtwebengine, KDE, and PySide and forces
