@@ -2174,13 +2174,22 @@ catch-all is available. Tuta has no IMAP and no server-side SMTP submission: the
 desktop client is the only way to import, search and send, and the phone uses the
 Tuta app.
 
-DNS as of 2026-11-03: `MX 10 mail.tutanota.de`, `v=spf1 include:spf.tutanota.de
--all`, and the `t-verify=` TXT. Exactly **one** apex `_dmarc` TXT
-(`v=DMARC1; p=quarantine; adkim=s`); a second record makes the policy invalid.
-DKIM is managed by Tuta — Settings → Global Settings → Custom email domains — and
-the selector it shows must exist as a TXT at `<selector>._domainkey.sammohr.dev`.
-None exists today, so outbound mail currently authenticates by SPF alignment
-only.
+DNS, all verified on 2026-11-03:
+
+- `MX 10 mail.tutanota.de`
+- `TXT @ v=spf1 include:spf.tutanota.de -all` and `TXT @ t-verify=…`
+- `CNAME s1._domainkey → s1.domainkey.tutanota.de`, same for `s2`
+- `CNAME _mta-sts → mta-sts.tutanota.de`, same for `mta-sts`
+- exactly **one** apex `_dmarc` TXT (`v=DMARC1; p=quarantine; adkim=s`); a second
+  record makes the policy invalid.
+
+Tuta shows the records it wants under Settings → Global Settings → Custom email
+domains. Every one of those CNAMEs must be **DNS only** in Cloudflare: a proxied
+CNAME is answered as Cloudflare A/AAAA addresses, so the provider's checker says
+"add value", DKIM fails, and the MTA-STS policy fetch lands on our tunnel instead
+of Tuta's host. With the proxy off, `_mta-sts` chains to `v=STSv1; id=…` and
+`https://mta-sts.sammohr.dev/.well-known/mta-sts.txt` returns Tuta's
+`mode: enforce` policy for `mx: mail.tutanota.de`.
 
 Forwarding in (two Gmail accounts, and Proton):
 
