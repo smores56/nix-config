@@ -87,7 +87,7 @@ for dir in third-party lookalike-owner lookalike-host glob-lookalike outside; do
 # git asks the URL-based helper so the token follows the URL's owner rather
 # than the directory git runs in.
 got=$(git -C outside config --get-all 'url.https://github.com/.insteadOf' || true)
-for want in "git@github.com:" "ssh://git@github.com/"; do
+for want in "git@github.com:" "ssh://git@github.com/" "https://www.github.com/" "http://github.com/" "http://www.github.com/"; do
   case "$got" in
     *"$want"*) ;;
     *) echo "FAIL missing HTTPS rewrite for $want"; failures=$((failures + 1)) ;;

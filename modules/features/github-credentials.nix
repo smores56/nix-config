@@ -58,6 +58,10 @@ let
 
       host=''${host,,}
       host=''${host%:443}
+      # `www` is the same service, never a lookalike label of its own; a direct
+      # credential fill for it must fail closed the same way a rewritten remote
+      # does. Anything else after the strip still fails the equality test.
+      host=''${host#www.}
       [ "$protocol" = https ] && [ "$host" = github.com ] || exit 0
 
       stop() {
@@ -290,7 +294,10 @@ in
     programs.git.settings = {
       # GitHub is HTTPS plus the owner's PAT for both accounts (no SSH identity
       # is registered for git), so every SSH spelling of a GitHub remote is
-      # rewritten, matching the remote forms the owner includes recognise.
+      # rewritten, matching the remote forms the owner includes recognise. The
+      # `www` and plain-`http` spellings are rewritten too: git picks the
+      # longest prefix, so both land on the bare https host the helper answers
+      # for and fail closed instead of prompting for a password.
       url."https://github.com/".insteadOf = [
         # Longest match wins, so the slash-led scp form loses its extra slash.
         "git@github.com:/"
@@ -299,6 +306,9 @@ in
         "ssh://git@github.com/"
         "ssh://git@github.com:22/"
         "ssh://github.com/"
+        "https://www.github.com/"
+        "http://github.com/"
+        "http://www.github.com/"
       ];
       # The empty entry drops inherited helpers (osxkeychain) for GitHub, so
       # only the owner-selecting helper ever answers.

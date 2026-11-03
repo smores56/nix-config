@@ -84,8 +84,12 @@ let
   # must not pick up the work identity, token or signing key.
   workIncludes = lib.concatMap (owner: ownerIncludes owner workSettings) work.githubOwners;
   # Only repos the personal account owns get the local flow; third-party
-  # checkouts get no flow at all.
-  personalIncludes = ownerIncludes cfg.githubUser { smores.flow = "local"; };
+  # checkouts get no flow at all. The signing key rides along so the include is
+  # self-contained, matching the global default it replaces.
+  personalIncludes = ownerIncludes cfg.githubUser {
+    smores.flow = "local";
+    user.signingkey = personalSigningKey;
+  };
 
 in
 {

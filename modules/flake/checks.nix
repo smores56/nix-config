@@ -94,12 +94,10 @@ in
           d = hc.user;
           configFile = name: hc.xdg.configFile.${name}.source;
           signingKeys = import ../lib/signing-keys.nix;
-          signingKeyFile =
-            name:
-            if pkgs.stdenv.hostPlatform.isDarwin then
-              "${hc.home.homeDirectory}/.local/share/github/${name}"
-            else
-              "/run/secrets/${name}";
+          # The module's own lookup (modules/features/git.nix), so the expected
+          # path tracks the declaration instead of a hardcoded layout.
+          sopsSecrets = hc.sops.secrets or { };
+          signingKeyFile = name: sopsSecrets.${name}.path or "/run/secrets/${name}";
           homeExe =
             name:
             lib.getExe (
@@ -118,9 +116,8 @@ in
             PERSONAL_BRANCH_TEMPLATE = d.branchNaming.template;
             PERSONAL_BRANCH_UNTICKETED = toString d.branchNaming.unticketed;
             PERSONAL_OWNER = d.githubUser;
-            # Spelled out from the host facts, not the module's own lookup: the
-            # Darwin home links keys under ~/.local/share/github, NixOS reads /run/secrets,
-            # and only the work host carries the work key.
+            # Only the work host carries the work key; everywhere else a work
+            # commit signs with the personal key.
             PERSONAL_SIGNING_KEY = signingKeyFile "github-personal-signing-key";
             WORK_SIGNING_KEY = signingKeyFile (
               if hc.machine.workHost then "github-work-signing-key" else "github-personal-signing-key"
@@ -251,11 +248,15 @@ in
                 (homeExe "gh-pat")
                 (homeExe "github-credential-helper")
               ]
-              # The files the home's sops declares, else the NixOS sops-nix paths.
-              ++ map (name: hc.sops.secrets.${name}.path or "/run/secrets/${name}") [
+              # The files the home's sops declares, else the NixOS sops-nix paths,
+              # plus a path that is deliberately absent: the fail-closed matrix
+              # runs against it everywhere, including where the real PATs are
+              # readable (the work Mac).
+              ++ map (name: sopsSecrets.${name}.path or "/run/secrets/${name}") [
                 "github-personal-pat"
                 "github-work-pat"
-              ];
+              ]
+              ++ [ "/nonexistent/github-pat-routing/absent-pat" ];
             };
             worktrees-branch-template.args = [ (homeExe "worktrees") ];
             repos-routing.args = [ (homeExe "repos") ];
@@ -423,6 +424,30 @@ in
           )
         );
 
+        # The work account's bundle lives only on the work Mac
+        # (modules/hosts/smoreswork/sops.nix); secrets-common.nix may never
+        # regain the work PAT or the work signing key, and the Mac must carry
+        # both.
+        secrets-scope = evalCheck "secrets-scope" (
+          let
+            ensure = cond: msg: lib.assertMsg cond "secrets-scope: ${msg}";
+            nixosSecrets = lib.concatMap (n: lib.attrNames (n.config.sops.secrets or { })) (
+              lib.attrValues config.flake.nixosConfigurations
+            );
+            work = config.flake.homeConfigurations."sam@smoreswork".config.sops.secrets;
+          in
+          toString (
+            assert
+              ensure (!(lib.elem "github-work-pat" nixosSecrets)) "a NixOS host declares the work PAT"
+              && ensure (
+                !(lib.elem "github-work-signing-key" nixosSecrets)
+              ) "a NixOS host declares the work signing key"
+              && ensure (work ? github-work-pat) "the work Mac lacks the work PAT"
+              && ensure (work ? github-work-signing-key) "the work Mac lacks the work signing key";
+            "ok"
+          )
+        );
+
         # The two rendered planes must stay in step with the design: a Linux
         # timer that runs after the session is up, a launchd agent that can
         # answer the PIV PIN unattended, and Noctalia no longer rotating.
@@ -485,11 +510,17 @@ in
               nativeBuildInputs = [
                 pkgs.openssh
                 pkgs.openssl
+                pkgs.gnugrep
               ];
             }
             ''
               test ${toString (builtins.length keys.piv)} -eq 3
-              test ${toString (builtins.length (keys.signing or [ ]))} -eq 0
+              # The pubkey derivation writes exactly keys.piv
+              # (modules/features/ssh-keys.nix), so this is the input that would
+              # have to change for a FIDO2 signing.pub to appear on disk.
+              if printf '%s\n' ${
+                lib.escapeShellArgs (map (k: k.key) keys.piv)
+              } | grep -qxE 'k[0-9]+/signing'; then exit 1; fi
               test ${toString (builtins.length keys.sudo)} -eq 3
               test "${names keys.piv}" = "piv-k1 piv-k2 piv-k3"
               test "${names keys.sudo}" = "k1/sudo k2/sudo k3/sudo"

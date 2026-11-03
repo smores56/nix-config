@@ -27,9 +27,10 @@ HOME="$work" "$script" || fail "script exited non-zero"
 [ ! -e "$file" ] || fail "retired work public key still present"
 # PIV public halves are still written (ssh's IdentityFile names them), but no
 # YubiKey key is trusted for git: allowed_signers is exactly the two account
-# keys, and no FIDO2 signing handle's public half is written.
+# keys. Nothing can create a FIDO2 signing.pub, so asserting its absence here
+# could only fail on a hand-edit; `yubikey-lists` asserts the derivation's input
+# list (keys.piv) instead.
 [ -s "$work/.config/ssh-sk/piv-k1.pub" ] || fail "PIV public key not written"
-[ ! -e "$work/.config/ssh-sk/k1/signing.pub" ] || fail "a FIDO2 signing public key was written"
 [ "$(grep -c . "$work/.config/ssh/allowed_signers")" = 2 ] || fail "allowed_signers trusts more than the two account keys"
 
 # The work email's only software (plain ed25519) key is the sops work key.

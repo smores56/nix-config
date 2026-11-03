@@ -9,8 +9,8 @@ let
 in
 {
   # The client lives with its config rather than in the shared package list.
-  # The identities come from the FIDO2 sign agent and the PIV smartcard
-  # (modules/features/fido2.nix), so no private key is read from ~/.ssh.
+  # Logins use the PIV 9a keys on the YubiKeys (modules/features/fido2.nix), so
+  # no private key is read from ~/.ssh.
   home.packages = [ pkgs.openssh ];
 
   programs.ssh = {
@@ -20,9 +20,10 @@ in
     # Host pattern). Directive names use upstream OpenSSH casing (HostName,
     # IdentityFile, …); booleans render as yes/no automatically.
     settings = {
-      # GitHub is HTTPS + a fine-grained PAT (modules/features/git.nix); no SSH
-      # identity is offered, because the hardware keys are registered as
-      # signing keys only and the personal software key is retired.
+      # GitHub is HTTPS + a fine-grained PAT (modules/features/git.nix), so no
+      # SSH identity is offered. Commits sign with the sops ed25519 keys
+      # (github-personal-signing-key / github-work-signing-key); the hardware
+      # keys only authenticate and authorize sudo, they never sign.
       "github.com" = {
         HostName = "github.com";
         User = "git";
