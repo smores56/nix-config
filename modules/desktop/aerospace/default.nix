@@ -73,19 +73,19 @@ let
         name = workspaces.work;
         layout = "h_tiles";
         children = [
-          apps.chrome
           apps.kitty
+          apps.chrome
         ];
       }
       {
         name = workspaces.comms;
         layout = "h_tiles";
         children = [
-          apps.slack
           [
             apps.mail
             apps.calendar
           ]
+          apps.slack
         ];
       }
     ];
