@@ -68,7 +68,7 @@ class PureTests(unittest.TestCase):
         self.assertEqual(self.br.work_day(at("2026-10-14T04:00:00")), date(2026, 10, 14))
 
     def test_days_start_at_the_earliest_source_cursor(self):
-        cursors = self.cursors("2026-10-14T17:30:00-04:00", mail="2026-10-12T17:30:00-04:00")
+        cursors = self.cursors("2026-10-14T17:30:00-04:00", calendar="2026-10-12T17:30:00-04:00")
         days, capped = self.br.plan_days(cursors, self.all, date(2026, 10, 1), date(2026, 10, 15))
         self.assertEqual(days, [date(2026, 10, d) for d in (12, 13, 14, 15)])
         self.assertIsNone(capped)
@@ -80,12 +80,12 @@ class PureTests(unittest.TestCase):
         self.assertEqual(days[0], date(2026, 10, 14))
 
     def test_sources_the_run_does_not_track_are_ignored(self):
-        cursors = self.cursors("2026-10-14T17:30:00-04:00", mail="2026-10-01T17:30:00-04:00")
+        cursors = self.cursors("2026-10-14T17:30:00-04:00", calendar="2026-10-01T17:30:00-04:00")
         days, _ = self.br.plan_days(cursors, ("sessions", "git"), date(2026, 10, 1), date(2026, 10, 14))
         self.assertEqual(days, [date(2026, 10, 14)])
 
     def test_a_source_without_a_cursor_starts_at_the_default_day(self):
-        cursors = {s: "2026-10-14T17:30:00-04:00" for s in self.all if s != "chat"}
+        cursors = {s: "2026-10-14T17:30:00-04:00" for s in self.all if s != "tracker"}
         days, _ = self.br.plan_days(cursors, self.all, date(2026, 10, 13), date(2026, 10, 14))
         self.assertEqual(days[0], date(2026, 10, 13))
 
@@ -105,29 +105,29 @@ class PureTests(unittest.TestCase):
         self.assertEqual(days, [date(2026, 10, 14)])
 
     def test_parked_sources_do_not_hold_the_window(self):
-        cursors = self.cursors("2026-10-14T17:30:00-04:00", mail="2026-10-01T17:30:00-04:00")
+        cursors = self.cursors("2026-10-14T17:30:00-04:00", calendar="2026-10-01T17:30:00-04:00")
         days, capped = self.br.plan_days(
-            cursors, self.all, date(2026, 10, 1), date(2026, 10, 15), parked=("mail",)
+            cursors, self.all, date(2026, 10, 1), date(2026, 10, 15), parked=("calendar",)
         )
         self.assertEqual((days, capped), ([date(2026, 10, 14), date(2026, 10, 15)], None))
 
     def test_parked_sources_follow_the_failure_count(self):
-        self.assertEqual(self.br.parked_sources({"mail": 3, "chat": 2, "git": 0}), ("mail",))
+        self.assertEqual(self.br.parked_sources({"calendar": 3, "tracker": 2, "git": 0}), ("calendar",))
 
     def test_failure_counts_reset_on_completion_and_grow_otherwise(self):
-        got = self.br.count_failures({"mail": 2, "chat": 1}, ("chat", "mail", "git"), ["chat", "git"])
-        self.assertEqual(got, {"mail": 3, "chat": 0, "git": 0})
+        got = self.br.count_failures({"calendar": 2, "tracker": 1}, ("tracker", "calendar", "git"), ["tracker", "git"])
+        self.assertEqual(got, {"calendar": 3, "tracker": 0, "git": 0})
 
     def test_advance_moves_only_completed_sources(self):
-        read = {"chat": "2026-10-13T17:00:00-04:00", "mail": "2026-10-13T17:00:00-04:00"}
-        got = self.br.advance(read, read, ["chat"], "2026-10-14T17:00:00-04:00")
-        self.assertEqual(got, {**read, "chat": "2026-10-14T17:00:00-04:00"})
+        read = {"tracker": "2026-10-13T17:00:00-04:00", "calendar": "2026-10-13T17:00:00-04:00"}
+        got = self.br.advance(read, read, ["tracker"], "2026-10-14T17:00:00-04:00")
+        self.assertEqual(got, {**read, "tracker": "2026-10-14T17:00:00-04:00"})
 
     def test_advance_never_overwrites_a_cursor_moved_by_another_run(self):
         got = self.br.advance(
-            {"chat": "2026-10-14T18:00:00-04:00"}, {"chat": "2026-10-13T17:00:00-04:00"}, ["chat"], "2026-10-14T17:00:00-04:00"
+            {"tracker": "2026-10-14T18:00:00-04:00"}, {"tracker": "2026-10-13T17:00:00-04:00"}, ["tracker"], "2026-10-14T17:00:00-04:00"
         )
-        self.assertEqual(got, {"chat": "2026-10-14T18:00:00-04:00"})
+        self.assertEqual(got, {"tracker": "2026-10-14T18:00:00-04:00"})
 
     def test_advance_never_moves_a_cursor_backward(self):
         # A capped run's target can be older than a healthy source's cursor.
@@ -155,8 +155,12 @@ class PureTests(unittest.TestCase):
         self.assertEqual(self.br.ticket_prefixes("# Vault\n"), ())
 
     def test_configured_sources_follow_the_vault_sources_section(self):
-        config = "## Sources\n\n### Code host\nx\n\n### Chat\ny\n\n### Directory\nz\n\n## Link hosts\n### Mail\n"
-        self.assertEqual(self.br.configured_sources(config), ("sessions", "git", "github", "chat"))
+        config = "## Sources\n\n### Code host\nx\n\n### Issue tracker\ny\n\n### Directory\nz\n\n## Link hosts\n### Calendar\n"
+        self.assertEqual(self.br.configured_sources(config), ("sessions", "git", "github", "tracker"))
+
+    def test_retired_chat_and_mail_sections_are_never_tracked(self):
+        config = "## Sources\n\n### Chat\ny\n\n### Mail\nz\n"
+        self.assertEqual(self.br.configured_sources(config), ("sessions", "git"))
 
     def test_a_vault_without_a_sources_section_tracks_everything(self):
         self.assertEqual(self.br.configured_sources("# Vault\n"), self.br.SOURCES)
@@ -279,18 +283,18 @@ class RunLifecycleTests(unittest.TestCase):
         self.assertEqual(run.days, ("2026-10-12", "2026-10-13", "2026-10-14"))
 
     def test_run_tracks_only_the_sources_the_vault_configures(self):
-        self.commit_note("CLAUDE.md", "## Sources\n\n### Chat\nx\n")
+        self.commit_note("CLAUDE.md", "## Sources\n\n### Issue tracker\nx\n")
         run = self.begin("2026-10-14T17:30:00")
-        self.assertEqual(run.sources, ("sessions", "git", "chat"))
-        with self.assertRaisesRegex(self.br.Refused, "mail"):
-            self.finish(run, ["mail"])
+        self.assertEqual(run.sources, ("sessions", "git", "tracker"))
+        with self.assertRaisesRegex(self.br.Refused, "calendar"):
+            self.finish(run, ["calendar"])
 
     def test_successful_run_advances_completed_sources_to_its_start(self):
         run = self.begin("2026-10-14T17:30:00")
         self.commit_note()
-        got = self.finish(run, ["sessions", "chat"])
-        self.assertEqual(got["advanced"], ["sessions", "chat"])
-        self.assertEqual(self.cursors(), {"sessions": run.started, "chat": run.started})
+        got = self.finish(run, ["sessions", "tracker"])
+        self.assertEqual(got["advanced"], ["sessions", "tracker"])
+        self.assertEqual(self.cursors(), {"sessions": run.started, "tracker": run.started})
 
     def test_a_run_that_committed_nothing_advances_nothing(self):
         run = self.begin("2026-10-14T17:30:00")
@@ -302,31 +306,31 @@ class RunLifecycleTests(unittest.TestCase):
         run = self.begin("2026-10-14T17:30:00")
         self.write_note("daily/2026-10-14.md")
         with self.assertRaises(self.br.Refused):
-            self.finish(run, ["chat"])
+            self.finish(run, ["tracker"])
         self.assertFalse((self.state / "cursors.json").exists())
         self.assertFalse((self.state / "active.json").exists())
 
     def test_finish_rejects_a_forged_or_spent_nonce(self):
         run = self.begin("2026-10-14T17:30:00")
         with self.assertRaises(self.br.Refused):
-            self.br.finish(self.config, "forged", ["chat"])
+            self.br.finish(self.config, "forged", ["tracker"])
         self.finish(run, [])
         with self.assertRaises(self.br.Refused):
-            self.finish(run, ["chat"])
+            self.finish(run, ["tracker"])
 
     def test_a_tampered_run_record_cannot_push_cursors_past_now(self):
         run = self.begin("2026-10-14T17:30:00")
         record = json.loads((self.state / "active.json").read_text())
         (self.state / "active.json").write_text(json.dumps({**record, "advance_to": "2099-01-01T00:00:00-05:00"}))
         self.commit_note()
-        self.finish(run, ["chat"], when="2026-10-14T18:00:00")
-        self.assertEqual(self.cursors()["chat"], at("2026-10-14T18:00:00").isoformat())
+        self.finish(run, ["tracker"], when="2026-10-14T18:00:00")
+        self.assertEqual(self.cursors()["tracker"], at("2026-10-14T18:00:00").isoformat())
 
     def test_rewritten_history_advances_nothing(self):
         run = self.begin("2026-10-14T17:30:00")
         git(self.vault, "commit", "-q", "--amend", "-m", "rewritten")
         with self.assertRaisesRegex(self.br.Refused, "history"):
-            self.finish(run, ["chat"])
+            self.finish(run, ["tracker"])
         self.assertFalse((self.state / "cursors.json").exists())
 
     def test_capped_backlog_resumes_after_the_chunk(self):
@@ -347,19 +351,19 @@ class RunLifecycleTests(unittest.TestCase):
     def test_a_source_failing_three_runs_is_parked_and_stops_holding_the_window(self):
         self.run_day("2026-10-12")
         for day in ("2026-10-13", "2026-10-14", "2026-10-15"):
-            self.run_day(day, complete_all_but=("mail",))
+            self.run_day(day, complete_all_but=("calendar",))
         nxt = self.begin("2026-10-16T17:30:00")
-        self.assertEqual(nxt.parked, ("mail",))
+        self.assertEqual(nxt.parked, ("calendar",))
         self.assertEqual(nxt.days, ("2026-10-15", "2026-10-16"))
 
     def test_a_recovered_parked_source_keeps_its_cursor_and_catches_up(self):
         self.run_day("2026-10-12")
-        last_good = self.cursors()["mail"]
+        last_good = self.cursors()["calendar"]
         for day in ("2026-10-13", "2026-10-14", "2026-10-15"):
-            self.run_day(day, complete_all_but=("mail",))
+            self.run_day(day, complete_all_but=("calendar",))
         self.run_day("2026-10-16")
         # Its missed days were never read, so recovering must not skip them.
-        self.assertEqual(self.cursors()["mail"], last_good)
+        self.assertEqual(self.cursors()["calendar"], last_good)
         nxt = self.begin("2026-10-17T17:30:00")
         self.assertEqual(nxt.parked, ())
         self.assertEqual(nxt.days[0], "2026-10-12")
@@ -377,7 +381,7 @@ class RunLifecycleTests(unittest.TestCase):
         self.finish(first, list(first.sources), when="2026-10-13T18:00:00")
         second = self.begin("2026-10-14T17:30:00")
         self.commit_note("daily/2026-10-14.md")
-        self.finish(second, [s for s in second.sources if s != "mail"], when="2026-10-14T18:00:00")
+        self.finish(second, [s for s in second.sources if s != "calendar"], when="2026-10-14T18:00:00")
         third = self.begin("2026-10-15T17:30:00")
         self.assertEqual(third.days, ("2026-10-13", "2026-10-14", "2026-10-15"))
 
@@ -521,8 +525,8 @@ class CliTests(unittest.TestCase):
         (self.vault / "daily" / "2026-10-14.md").write_text("x\n")
         git(self.vault, "add", "-A")
         git(self.vault, "commit", "-qm", "harvest")
-        code, out, _ = self.cli("finish", "--run", nonce, "--complete", "chat,git", when="2026-10-14T18:00:00")
-        self.assertEqual((code, sorted(json.loads(out)["advanced"])), (0, ["chat", "git"]))
+        code, out, _ = self.cli("finish", "--run", nonce, "--complete", "tracker,git", when="2026-10-14T18:00:00")
+        self.assertEqual((code, sorted(json.loads(out)["advanced"])), (0, ["git", "tracker"]))
 
     def test_collect_explicit_days_needs_no_claim(self):
         code, out, _ = self.cli("collect", "--day", "2026-10-14", "--source", "git", when="2026-10-15T12:00:00")
@@ -571,17 +575,22 @@ class HeadlessPureTests(unittest.TestCase):
         for verb in ("send", "post", "reply", "create", "update", "delete", "trash", "forward", "draft", "label", "schedule"):
             self.assertFalse([r for r in mcp if verb in r.lower()], verb)
 
-    def test_drive_is_reachable_only_to_find_and_read_notes_docs(self):
+    def test_chat_mail_and_drive_are_never_harvested(self):
         settings = self.settings()
-        drive = "mcp__claude_ai_Google_Drive"
-        self.assertEqual(
-            sorted(r for r in settings["allow"] if r.startswith(drive)),
-            [f"{drive}__get_file_metadata", f"{drive}__read_file_content", f"{drive}__search_files"],
-        )
-        self.assertNotIn(drive, settings["deny"])
-        for verb in ("create_file", "update_file", "copy_file", "share_file", "trash_file",
-                     "download_file_content", "list_recent_files", "get_file_permissions"):
-            self.assertIn(f"{drive}__{verb}", settings["deny"])
+        for server in ("mcp__claude_ai_Slack", "mcp__claude_ai_Gmail", "mcp__claude_ai_Google_Drive"):
+            self.assertIn(server, settings["deny"])
+            self.assertFalse([r for r in settings["allow"] if r.startswith(server)], server)
+
+    def test_meetings_are_reachable_only_as_metadata(self):
+        settings = self.settings()
+        granola = "mcp__claude_ai_Granola"
+        self.assertEqual(sorted(r for r in settings["allow"] if r.startswith(granola)), [f"{granola}__search_meetings"])
+        for verb in ("get_meetings", "get_meeting_transcript", "search_transcripts", "query_granola_meetings"):
+            self.assertIn(f"{granola}__{verb}", settings["deny"])
+
+    def test_headless_run_uses_a_mid_tier_model(self):
+        args = self.br.claude_args(Path("/tmp/settings.json"))
+        self.assertEqual(args[args.index("--model") + 1], "sonnet")
 
     def test_a_vault_outside_home_uses_absolute_rules(self):
         allow = self.br.headless_settings(Path("/srv/brain"), Path("/Users/u"))["permissions"]["allow"]
@@ -591,11 +600,10 @@ class HeadlessPureTests(unittest.TestCase):
         deny = self.settings()["deny"]
         self.assertIn("Write(~/brain/**/CLAUDE.md)", deny)
         self.assertIn("Write(~/brain/**/AGENTS.md)", deny)
-        for tool in ("mcp__claude_ai_Slack__slack_send_message", "mcp__claude_ai_Gmail__send_message",
-                     "mcp__claude_ai_Google_Calendar__create_event", "mcp__claude_ai_Atlassian_Rovo__createJiraIssue"):
+        for tool in ("mcp__claude_ai_Google_Calendar__create_event", "mcp__claude_ai_Atlassian_Rovo__createJiraIssue"):
             self.assertIn(tool, deny)
 
-    def run_record(self, sources=("sessions", "git", "github", "chat", "mail")):
+    def run_record(self, sources=("sessions", "git", "github", "tracker", "calendar")):
         return self.br.Run(
             nonce="n", started="2026-10-14T17:30:00-04:00", head0="h", cursors_read={}, sources=sources,
             days=("2026-10-13", "2026-10-14"), advance_to="x", truncated=False, parked=(),
@@ -650,9 +658,9 @@ class HeadlessPureTests(unittest.TestCase):
 
     def test_completed_sources_need_local_success_and_no_model_failure(self):
         run = self.run_record()
-        statuses = {"chat": "complete", "mail": "failed", "git": "complete", "sessions": "failed"}
+        statuses = {"tracker": "complete", "calendar": "failed", "git": "complete", "sessions": "failed"}
         got = self.br.completed_sources(run, local_failures={"github": "x"}, statuses=statuses)
-        self.assertEqual(got, ["git", "chat"])
+        self.assertEqual(got, ["git", "tracker"])
 
     def test_a_connector_source_the_model_never_reported_is_not_complete(self):
         got = self.br.completed_sources(self.run_record(), local_failures={}, statuses={})
@@ -660,17 +668,17 @@ class HeadlessPureTests(unittest.TestCase):
 
     def test_parse_result_reads_structured_status_and_cost(self):
         out = json.dumps({"subtype": "success", "is_error": False, "total_cost_usd": 1.5, "structured_output": {
-            "sources": [{"source": "chat", "status": "complete", "detail": ""},
-                        {"source": "mail", "status": "failed", "detail": "connector unavailable"}]}})
+            "sources": [{"source": "tracker", "status": "complete", "detail": ""},
+                        {"source": "calendar", "status": "failed", "detail": "connector unavailable"}]}})
         self.assertEqual(
             self.br.parse_result(out),
-            ({"chat": "complete", "mail": "failed"}, {"chat": "", "mail": "connector unavailable"}, None, 1.5),
+            ({"tracker": "complete", "calendar": "failed"}, {"tracker": "", "calendar": "connector unavailable"}, None, 1.5),
         )
 
     def test_parse_result_survives_odd_output(self):
         self.assertEqual(self.br.parse_result("null")[2], "claude output was not a result object")
         out = json.dumps({"subtype": "success", "total_cost_usd": "lots",
-                          "structured_output": {"sources": [{"source": "chat"}, {"source": ["x"], "status": "complete"}, 3]}})
+                          "structured_output": {"sources": [{"source": "tracker"}, {"source": ["x"], "status": "complete"}, 3]}})
         self.assertEqual(self.br.parse_result(out), ({}, {}, None, 0.0))
 
     def test_parse_result_reports_errors_and_missing_status(self):
@@ -692,7 +700,7 @@ class HeadlessRunTests(unittest.TestCase):
         self.vault.mkdir()
         git(self.vault, "init", "-q")
         (self.vault / "CLAUDE.md").write_text(
-            "## Sources\n\n### Code host\ngh\n\n### Chat\nx\n\n## Link hosts\nexample.com\n"
+            "## Sources\n\n### Code host\ngh\n\n### Issue tracker\nx\n\n## Link hosts\nexample.com\n"
         )
         git(self.vault, "add", "-A")
         git(self.vault, "commit", "-qm", "init")
@@ -730,14 +738,14 @@ class HeadlessRunTests(unittest.TestCase):
         return git(self.vault, "log", "--format=%s").splitlines()
 
     def test_a_good_run_commits_advances_and_notifies(self):
-        code = self.headless(self.fake_claude({"chat": "complete"}))
+        code = self.headless(self.fake_claude({"tracker": "complete"}))
         self.assertEqual(code, 0)
         self.assertEqual(self.log_subjects()[0], "harvest: 2026-10-14; standup: 2026-10-15")
-        self.assertEqual(sorted(self.cursors()), ["chat", "git", "github", "sessions"])
+        self.assertEqual(sorted(self.cursors()), ["git", "github", "sessions", "tracker"])
         self.assertIn("2026-10-15", self.notes[-1])
 
     def test_claude_runs_locked_from_the_run_dir_with_the_prompt_on_stdin(self):
-        self.headless(self.fake_claude({"chat": "complete"}))
+        self.headless(self.fake_claude({"tracker": "complete"}))
         (call,) = self.calls
         args = call["args"]
         for flag in ("-p", "--no-session-persistence", "--permission-mode", "dontAsk", "--json-schema", "--max-turns"):
@@ -750,17 +758,17 @@ class HeadlessRunTests(unittest.TestCase):
         self.assertIn("skill", call["prompt"])
 
     def test_a_failed_connector_is_held_and_named(self):
-        self.headless(self.fake_claude({"chat": "failed"}))
-        self.assertNotIn("chat", self.cursors())
-        self.assertIn("chat", self.notes[-1])
+        self.headless(self.fake_claude({"tracker": "failed"}))
+        self.assertNotIn("tracker", self.cursors())
+        self.assertIn("tracker", self.notes[-1])
 
     def test_a_gh_failure_holds_github_but_the_run_goes_on(self):
         def broken_gh(args):
             raise subprocess.CalledProcessError(1, ["gh"], stderr="auth")
 
-        self.headless(self.fake_claude({"chat": "complete"}), gh=broken_gh)
+        self.headless(self.fake_claude({"tracker": "complete"}), gh=broken_gh)
         self.assertNotIn("github", self.cursors())
-        self.assertIn("chat", self.cursors())
+        self.assertIn("tracker", self.cursors())
 
     def quarantined(self):
         return sorted(str(p.relative_to(self.config.state_dir / "quarantine")) for p in
@@ -777,8 +785,8 @@ class HeadlessRunTests(unittest.TestCase):
         self.assertTrue(any(q.endswith("daily/2026-10-14.md") for q in self.quarantined()))
 
     def test_a_refused_commit_quarantines_so_the_next_run_can_start(self):
-        self.assertEqual(self.headless(self.fake_claude({"chat": "complete"}, writes=("daily/2026-10-14.md", "x.sh"))), 1)
-        self.assertEqual(self.headless(self.fake_claude({"chat": "complete"})), 0)
+        self.assertEqual(self.headless(self.fake_claude({"tracker": "complete"}, writes=("daily/2026-10-14.md", "x.sh"))), 1)
+        self.assertEqual(self.headless(self.fake_claude({"tracker": "complete"})), 0)
         self.assertEqual(self.log_subjects()[0], "harvest: 2026-10-14; standup: 2026-10-15")
 
     def test_a_timeout_releases_the_claim_and_says_how_to_recover(self):
@@ -805,7 +813,7 @@ class HeadlessRunTests(unittest.TestCase):
         self.assertIn("wiki/draft.md", self.notes[-1])
 
     def test_a_run_with_no_note_changes_advances_nothing_and_says_so(self):
-        code = self.headless(self.fake_claude({"chat": "complete"}, writes=()))
+        code = self.headless(self.fake_claude({"tracker": "complete"}, writes=()))
         self.assertEqual(code, 0)
         self.assertIn("no note changes", self.notes[-1])
         self.assertFalse((self.config.state_dir / "active.json").exists())
@@ -824,7 +832,7 @@ class HeadlessRunTests(unittest.TestCase):
         now = datetime.now().astimezone()
         day = self.br.work_day(now).isoformat()
         target = self.br.standup_target(now).isoformat()
-        claude = self.fake_claude({"chat": "complete"}, writes=(f"daily/{day}.md", f"standups/{target}.md"))
+        claude = self.fake_claude({"tracker": "complete"}, writes=(f"daily/{day}.md", f"standups/{target}.md"))
         code = self.br.headless(self.config, now, claude=claude, notify=self.notes.append, online=lambda: True, gh=lambda a: "[]")
         self.assertEqual(code, 0, self.notes[-1])
         self.assertTrue(self.log_subjects()[0].startswith("harvest: "))
@@ -865,7 +873,7 @@ class HeadlessRunTests(unittest.TestCase):
         (self.vault / "daily").mkdir()
         (self.vault / "daily" / "2026-10-14.md").write_text("![x](https://evil.test/p)\n")
         with self.assertRaisesRegex(self.br.Refused, "quarantine"):
-            self.br.finish(self.config, run.nonce, ["chat"], clock=lambda: at("2026-10-14T18:00:00"))
+            self.br.finish(self.config, run.nonce, ["tracker"], clock=lambda: at("2026-10-14T18:00:00"))
         self.assertEqual(git(self.vault, "status", "--porcelain"), "")
 
     def test_model_failure_details_reach_the_notification(self):
@@ -874,15 +882,15 @@ class HeadlessRunTests(unittest.TestCase):
                 (self.vault / rel).parent.mkdir(parents=True, exist_ok=True)
                 (self.vault / rel).write_text("note\n")
             return json.dumps({"subtype": "success", "total_cost_usd": 0.1, "structured_output": {
-                "sources": [{"source": "chat", "status": "failed", "detail": "connector unavailable"}]}})
+                "sources": [{"source": "tracker", "status": "failed", "detail": "connector unavailable"}]}})
 
         self.headless(claude)
-        self.assertIn("chat (connector unavailable)", self.notes[-1])
+        self.assertIn("tracker (connector unavailable)", self.notes[-1])
 
     def test_no_note_changes_still_names_held_sources(self):
-        self.headless(self.fake_claude({"chat": "failed"}, writes=()))
+        self.headless(self.fake_claude({"tracker": "failed"}, writes=()))
         self.assertIn("no note changes", self.notes[-1])
-        self.assertIn("chat", self.notes[-1])
+        self.assertIn("tracker", self.notes[-1])
 
     def test_old_quarantines_are_pruned(self):
         old = self.config.state_dir / "quarantine" / "old"
@@ -890,19 +898,19 @@ class HeadlessRunTests(unittest.TestCase):
         (old / "x.md").write_text("x")
         stamp = at("2026-09-01T00:00:00").timestamp()
         os.utime(old, (stamp, stamp))
-        self.headless(self.fake_claude({"chat": "complete"}))
+        self.headless(self.fake_claude({"tracker": "complete"}))
         self.assertFalse(old.exists())
 
     def test_a_missing_standup_is_reported(self):
-        self.headless(self.fake_claude({"chat": "complete"}, writes=("daily/2026-10-14.md",)))
+        self.headless(self.fake_claude({"tracker": "complete"}, writes=("daily/2026-10-14.md",)))
         self.assertIn("standup 2026-10-15 not written", self.notes[-1])
 
     def test_the_commit_passes_its_claim(self):
-        self.headless(self.fake_claude({"chat": "complete"}))
+        self.headless(self.fake_claude({"tracker": "complete"}))
         self.assertEqual(self.log_subjects()[0], "harvest: 2026-10-14; standup: 2026-10-15")
 
     def test_a_vault_without_link_hosts_is_refused_before_paying(self):
-        (self.vault / "CLAUDE.md").write_text("## Sources\n\n### Chat\nx\n")
+        (self.vault / "CLAUDE.md").write_text("## Sources\n\n### Issue tracker\nx\n")
         git(self.vault, "commit", "-qam", "drop hosts")
         self.assertEqual(self.headless(self.fake_claude({})), 1)
         self.assertEqual(self.calls, [])
@@ -947,7 +955,7 @@ class HeadlessRunTests(unittest.TestCase):
         (self.vault / "wiki" / "svc.md").write_text("old\n")
         git(self.vault, "add", "-A")
         git(self.vault, "commit", "-qm", "seed")
-        self.headless(self.fake_claude({"chat": "complete"}, writes=("daily/2026-10-14.md", "wiki/svc.md", "wiki/new.md")))
+        self.headless(self.fake_claude({"tracker": "complete"}, writes=("daily/2026-10-14.md", "wiki/svc.md", "wiki/new.md")))
         self.assertIn("wiki/svc.md", self.notes[-1])
         self.assertIn("wiki/new.md", self.notes[-1])
 
@@ -956,15 +964,15 @@ class HeadlessRunTests(unittest.TestCase):
         (self.vault / "daily" / "2026-10-01.md").write_text("x\n")
         git(self.vault, "add", "-A")
         git(self.vault, "commit", "-qm", "old")
-        self.headless(self.fake_claude({"chat": "failed"}))
-        self.assertIn("held by chat", self.notes[-1])
+        self.headless(self.fake_claude({"tracker": "failed"}))
+        self.assertIn("held by tracker", self.notes[-1])
 
     def test_a_parked_source_is_named_with_how_to_drop_it(self):
         self.config.state_dir.mkdir(parents=True)
-        (self.config.state_dir / "failures.json").write_text(json.dumps({"chat": 3}))
-        self.headless(self.fake_claude({"chat": "failed"}))
-        self.assertIn("Parked: chat", self.notes[-1])
-        self.assertIn("### Chat", self.notes[-1])
+        (self.config.state_dir / "failures.json").write_text(json.dumps({"tracker": 3}))
+        self.headless(self.fake_claude({"tracker": "failed"}))
+        self.assertIn("Parked: tracker", self.notes[-1])
+        self.assertIn("### Issue tracker", self.notes[-1])
 
     def test_healthy_sources_ahead_of_a_capped_chunk_are_not_blamed(self):
         (self.vault / "daily").mkdir()
@@ -974,14 +982,14 @@ class HeadlessRunTests(unittest.TestCase):
         self.config.state_dir.mkdir(parents=True)
         ahead = {s: "2026-10-13T17:30:00-04:00" for s in ("sessions", "git", "github")}
         (self.config.state_dir / "cursors.json").write_text(json.dumps(ahead))
-        self.headless(self.fake_claude({"chat": "failed"}))
+        self.headless(self.fake_claude({"tracker": "failed"}))
         note = self.notes[-1]
-        self.assertIn("Held: chat", note)
+        self.assertIn("Held: tracker", note)
         for healthy in ("sessions", "git (", "github"):
             self.assertNotIn(healthy, note.split("Harvested")[0])
 
     def test_writes_outside_note_paths_are_refused_by_the_commit(self):
-        self.headless(self.fake_claude({"chat": "complete"}, writes=("daily/2026-10-14.md", "evil.sh")))
+        self.headless(self.fake_claude({"tracker": "complete"}, writes=("daily/2026-10-14.md", "evil.sh")))
         self.assertEqual(self.log_subjects(), ["init"])
         self.assertFalse((self.config.state_dir / "cursors.json").exists())
         self.assertIn("evil.sh", self.notes[-1])
