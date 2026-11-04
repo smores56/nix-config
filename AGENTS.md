@@ -49,7 +49,7 @@ adds its greeter as a host-local module.
 |---|---|
 | `modules/options.nix` | `machine.*` host facts, `user.*` identity/preferences, and the server-profile assertion |
 | `modules/profiles/` | six opt-in profiles: `cli`, `user-base`, `ai-tools`, `linux-desktop`, `darwin-work`, `server` |
-| `modules/hosts/` | per-host `default.nix` (facts, option values, explicit profile list, optional `homeModules`/`nixosModules` host-local modules), optional `hardware.nix`, `disko.nix`, and those host-only modules |
+| `modules/hosts/` | per-host `default.nix` (facts, option values, explicit profile list, optional `homeModules`/`nixosModules` host-local modules), optional `hardware.nix`, `disko.nix`, `secrets.nix`, and those host-only modules |
 | `modules/home.nix` | home-manager base (fonts, nix.conf, darwin helpers) |
 | `modules/features/` | cross-platform home-manager modules (shell, editor, git, packages, theme, ai) |
 | `modules/features/syncthing.nix`, `modules/syncthing-devices.nix` | Syncthing folder carrying the Cryptomator vault as ciphertext; the device table is a plain attrset of public device IDs |
@@ -58,11 +58,12 @@ adds its greeter as a host-local module.
 | `modules/nixos/` | NixOS system modules (base, desktop, networking, ssh, etc.) |
 | `modules/nixos/radicale.nix`, `open-webui.nix`, `navidrome.nix` | public tunnel apps with their own auth: CalDAV/CardDAV, chat, music |
 | `modules/nixos/restic-backup.nix` | restic repos, schedule, retention and the Immich db dump |
-| `modules/flake/` | flake-parts modules (configurations, checks, formatter) |
-| `modules/lib/` | helper libraries |
+| `modules/flake/` | flake-parts modules: configurations, checks, apps (`apps.nix`, `apps/`), formatter, nixpkgs |
+| `modules/lib/` | helpers: sandbox lists, key tables, `secret-path.nix`, `hardening.nix` |
+| `modules/ports.nix` | loopback port table shared by services and the tunnel |
 | `pkgs/overlays.nix` | nixpkgs overlays: pins and local package derivations |
 | `modules/features/agent-sandbox/` | the same-UID agent boundary; lists/backends in `modules/lib/agent-sandbox.{nix,sh}` |
-| `modules/features/ai/` | AI tooling: assistant context, brain, maki, providers, sdlc, skills |
+| `modules/features/ai/` | AI tooling: assistant context, brain, maki, memory, providers, sdlc, skills |
 | `modules/features/tv/`, `modules/features/repos/` | Television repository and worktree cables; the `repos`/`worktrees` CLIs they call |
 | `tofu/` | minimal Cloudflare DNS/Access/notification objects; run via the `cloudflare-*` flake apps |
 | `modules/features/backup/` | Operator README, GitHub-mirror helpers and the metadata verifier |
@@ -168,48 +169,18 @@ just verify-nixos smortress         # also smorespro
 `modules/features/ai/` or maki session search; `just check-build` builds every
 check for the current system.
 
-Script checks run each `tests/<name>.sh` against tools and files from a
-generated home, as the `<name>` flake check (`scriptChecks` in
-`modules/flake/checks.nix`): `git-work-routing` (work vs personal identity by
-remote URL for the exact work owners only, the per-account sops signing key,
-HTTPS for every GitHub remote, and the URL-based credential helper),
-`ssh-allowed-signers` (each sops signing key is trusted only for its own
-account, and nothing else is), `piv-ensure` (the PIV PIN is asked once per
-login session, replayed only for the same card with a full counter, never
-retried, and no-prompt callers fail closed), `ssh-askpass` (every prompt fails
-closed; presence requests are announced), `wallpapers` (aspect
-buckets by measured pixels, NUL-delimited queue rotation without same-aspect
-collisions, control-character names skipped), `ssh-pub-keys`
-(committed `.pub` keys written and trusted, retired keys removed and
-untrusted, a rerun is idempotent), `ssh-no-private-keys` (a private key, including a symlink,
-anywhere in `~/.ssh` fails, except the work-host gcloud key; public-only and
-missing directories pass),
-`worktrees-branch-template` (branch naming from
-per-repo templates), `github-pat-routing` (the `gh` wrapper and git credential
-helper read the owner's PAT from the home's sops files or `/run/secrets`, never
-Keychain, and fail closed without one), `repos-routing` (flat work repo discovery and routing for every listed work
-owner, never a look-alike), `zsh-config`
-(generated zsh startup files parse; only on a system with a zsh home) and
-`github-mirror-probe` (the GitHub mirror rejects a stale private-repo probe and
-scrubs a token-bearing origin), `github-metadata` (pgb flags and token-by-file,
-manifest counts, stale/scope/count failures, and the full-pass swap), and
-`key-bundle` (FIDO2 handle round-trip: 0600 modes,
-outer and inner checksums, moved bundle, --force, public-half mismatch, host-key
-restore and its `.sops.yaml` recipient check), and
-`sshd-settings` (rendered `sshd -T`: key-only auth, verify-required, no
-root/password/kbd-interactive, no TCP or socket forwarding (only the agent),
-loopback listen, no home authorized_keys), and
-`pam-auth-gates` (rendered PAM for smorespro: the full control and argument list
-of `greetd` and `login`, with the lid gate before `pam_fprintd` and the card gate
-before `pam_p11`, `pam_p11` falling through only on `AUTHINFO_UNAVAIL`, no
-`pam_fprintd` on the lock screen, no `p11`/`fprintd`/`exec` on sudo, su or
-polkit, and both probes as executable store paths). Run them after touching
-shell, git, ssh, PAM or backup settings, or `modules/features/repos/`:
+Checks are organised in `modules/flake/checks.nix`: `scriptChecks` runs each
+`tests/<name>.sh` against tools and files from a generated home as the `<name>`
+check, alongside the `eval-*` and unit-test checks. List them with:
 
 ```sh
-nix build .#checks.aarch64-darwin.{git-work-routing,github-pat-routing,ssh-allowed-signers,ssh-pub-keys,worktrees-branch-template,repos-routing,zsh-config,github-mirror-probe}
-nix build .#checks.x86_64-linux.{github-metadata,key-bundle,manual-steps-sync,pam-auth-gates,sshd-settings}
+nix eval --json .#checks.x86_64-linux --apply builtins.attrNames
 ```
+
+Some checks are Linux-only (`manual-steps-sync`, `pam-auth-gates`,
+`sshd-settings`, `github-metadata`, `memory-export-restore`, `ssh-askpass`,
+`agent-sandbox-static`, `eval-nixos-*`); build the one that matches
+what you touched, e.g. `nix build .#checks.aarch64-darwin.git-work-routing`.
 
 Run `manual-steps-sync` after touching hosts, sops keys, `tofu/`, `webProxy`
 services, flake apps, or alert paths:
