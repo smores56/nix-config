@@ -858,6 +858,15 @@ exported by the fish init as `TINYFISH_API_KEY` for maki's `websearch` tool.
 Rotate at [agent.tinyfish.ai](https://agent.tinyfish.ai/api-keys), update the
 common file, rebuild each host, and open a new shell.
 
+### openai-api-key
+
+<!-- manual-step: secret/openai-api-key -->
+
+The employer's OpenAI key in `secrets/smoreswork.yaml` only, for the work Mac's
+memory embeddings. Rotate it in the employer's OpenAI console, then
+`sops secrets/smoreswork.yaml`, commit, and `home-manager switch`. The Claude
+policy keeps it unreadable to agents; never print or decrypt it in a session.
+
 ### restic repository password
 
 <!-- manual-step: secret/restic-password -->
