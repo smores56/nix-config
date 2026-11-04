@@ -1,16 +1,11 @@
-# Canonical provider specs for maki's providers.toml. Injected as a single
-# `aiProviders` attrset so consumers never import individual providers.
-#
-# Models are authored via mkModel into maki's providers.toml model shape (see
-# modules/features/ai/maki/default.nix).
+# Provider specs for maki's providers.toml, injected as `aiProviders`.
 { lib, ... }:
 let
   ports = import ../../ports.nix;
-  # The retired provider scripts borrowed maki's llama-cpp adapter, which
-  # spells thinking as `thinking_budget_tokens`: 0 off, -1 adaptive, and for
-  # an effort level its percent of half the output window (floor 1024). A
-  # custom openai-protocol entry only thinks through declared thinking_fields,
-  # so declare every level with the budget the adapter would have sent.
+  # maki's llama-cpp adapter spells thinking as `thinking_budget_tokens`: 0 off,
+  # -1 adaptive, an effort level is its percent of half the output window
+  # (floor 1024). A custom openai entry only thinks through declared
+  # thinking_fields, so declare every level.
   minThinkingBudget = 1024;
   effortPercents = {
     minimal = 10;
@@ -60,9 +55,7 @@ let
     }
     // lib.optionalAttrs reasoning { thinking_fields = budgetThinking output; };
 
-  # ── Neuralwatt ────────────────────────────────────────────────────────────
-  # No per-model effort pinning: maki's always_thinking="max" (init.lua)
-  # picks the level, and mkModel's thinking_fields spell its budget.
+  # No per-model effort pinning: maki's always_thinking="max" picks the level.
   deepseekFlashModel = mkModel {
     id = "deepseek-v4.1-flash";
     context = 1048576;
@@ -77,12 +70,10 @@ let
     providerId = "neuralwatt";
     baseUrl = "https://api.neuralwatt.com/v1";
     keyEnv = "NEURALWATT_API_KEY";
-    # memory extraction reads models.deepseekFlash so Graphiti and maki cannot
-    # disagree about the model id.
+    # Memory extraction reads this so Graphiti and maki agree on the model id.
     models.deepseekFlash = deepseekFlashModel;
-    # Windows are the upstream caps: deepseek serves its full 1M context, qwen
-    # its 262K. Both report vision in the /v1/models capabilities, and maki only
-    # learns that from this flag.
+    # Windows are the upstream caps. Both models report vision upstream; maki
+    # only learns that from the flag.
     makiModels = [
       deepseekFlashModel
       (mkModel {
@@ -97,8 +88,6 @@ let
     ];
   };
 
-  # ── Smortress ─────────────────────────────────────────────────────────────
-  # Reached on loopback through the Cloudflare Tunnel; no auth needed.
   # models.qwen38 feeds the default model in nixos/llm.nix.
   qwen38Model = mkModel {
     id = "qwen3.8-27b";
@@ -108,19 +97,14 @@ let
     completion = 0.0;
   };
 
-  # llama.cpp's loopback port: the single source the NixOS listener
-  # (modules/nixos/llm.nix) and the tunnel ingress (modules/nixos/web-proxy.nix,
-  # from the host's webProxy.services) both read, alongside the client
-  # base URL built from it below.
+  # Single source for the NixOS listener, the tunnel ingress and the client URL.
   llmPort = ports.llm;
 
   smortress = {
     providerId = "smortress";
     models.qwen38 = qwen38Model;
-    # Always loopback: on the server llama.cpp is local; on clients a
-    # `cloudflared access tcp` forward (modules/features/cloudflared.nix) binds
-    # the same port. No DNS to fall through to, so nothing can leak to a
-    # look-alike host.
+    # Always loopback (local on the server, a cloudflared forward on clients):
+    # no DNS to fall through to a look-alike host.
     port = llmPort;
     baseUrl = "http://127.0.0.1:${toString llmPort}/v1";
     makiModels = [ qwen38Model ];

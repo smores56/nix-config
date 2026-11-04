@@ -43,9 +43,7 @@ def write_token(state_dir: str | os.PathLike[str], token: str | None = None) -> 
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             handle.write(value + "\n")
-        # A permissive umask on the caller's side can only clear bits, never add
-        # them, so the explicit chmod is only about a narrower umask case and
-        # about the temp file's identity before the rename.
+        # Explicit chmod guards against a narrower caller umask and fixes the temp file's mode before the rename.
         os.chmod(temporary, TOKEN_MODE)
         temporary.replace(path)
     except Exception:

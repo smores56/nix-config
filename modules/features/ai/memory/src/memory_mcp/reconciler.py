@@ -40,8 +40,7 @@ DEFAULT_INTERVAL = 10.0
 DEFAULT_GRACE = 600.0
 DEFAULT_BACKOFF = 60.0
 DEFAULT_MAX_RETRIES = 2
-# A pass is a burst of blocking Redis round-trips off the event loop; keep it
-# short so one pass cannot starve the HTTP server or hold rows for minutes.
+# A pass is blocking Redis round-trips off the event loop; keep it short so it cannot starve HTTP or hold rows.
 MAX_BATCH = 100
 DEFAULT_BATCH = MAX_BATCH
 
@@ -109,12 +108,10 @@ class Reconciler:
         self._now = now or _now
         self._sleep = sleep
         self._last_attempt: dict[tuple[str, str], float] = {}
-        # A pass that cannot read the graph changes nothing and says nothing;
-        # keep the reason so the loop can report it instead of stalling quietly.
+        # An unreadable graph changes nothing; keep the reason so the loop can report it.
         self.last_error: str | None = None
         self._reported_error: str | None = None
-        # Where the last pending pass stopped, so the next one pages instead of
-        # scanning the same rows again.
+        # Where the last pending pass stopped, so the next one pages on.
         self._pending_cursor: tuple[str, str, str] | None = None
 
     async def reconcile_once(self) -> dict[str, int]:
@@ -137,9 +134,8 @@ class Reconciler:
             self._pending_cursor = None
             rows = self.registry.pending(limit=batch)
         if rows:
-            # Page, do not restart: rows stuck in `waiting` at the front would
-            # otherwise hide a backlog larger than one batch forever. A short
-            # page wraps to the front on the next pass.
+            # Page, do not restart: `waiting` rows at the front would hide a larger backlog forever.
+            # A short page wraps to the front.
             last = rows[-1]
             self._pending_cursor = (
                 (last.queued_at or last.created_at, last.content_hash, last.group)
@@ -155,12 +151,9 @@ class Reconciler:
                 for name in ("active", "failed", "retried", "retry_failed", "swept", "changed")
             )
             if self.last_error is not None or not progressed:
-                # An aborted page was not fully inspected, and a page where
-                # nothing was due says nothing about the rows before it: go
-                # back to the front instead of silently walking past them.
+                # An aborted or nothing-due page proves nothing about earlier rows: go back to the front.
                 self._pending_cursor = None
-        # The sweep runs after the pending pass and is skipped once the graph
-        # proved unreachable: absence is then unknowable for it too.
+        # Skipped once the graph proved unreachable: absence is then unknowable.
         if self.last_error is None:
             await self._sweep_tombstoned(counts, now)
         return counts
@@ -173,14 +166,12 @@ class Reconciler:
         for row in rows:
             key = (row.group, row.content_hash)
             try:
-                # Bound to this row's own write: a tombstoned episode with the
-                # same content is kept on purpose and is not this extraction.
+                # Bound to this row's own write: a tombstoned episode with the same content is kept on purpose.
                 found = await asyncio.to_thread(
                     self.graph.episode_for, row.group, row.content, since=row.queued_at
                 )
             except GraphUnavailable as exc:
-                # Once the graph is unreachable, absence cannot be proven for
-                # any later row either: end the pass instead of hammering it.
+                # Unreachable graph: absence cannot be proven for later rows either; end the pass.
                 self.last_error = str(exc) or type(exc).__name__
                 counts["unavailable"] += 1
                 return
@@ -251,8 +242,7 @@ class Reconciler:
                 continue
 
             try:
-                # A slow but successful submission must not be duplicated: prove
-                # absence again immediately before resubmitting.
+                # A slow submission must not be duplicated: re-prove absence right before resubmitting.
                 found = await asyncio.to_thread(
                     self.graph.episode_for, row.group, row.content, since=row.queued_at
                 )
@@ -373,8 +363,7 @@ class Reconciler:
             ),
         )
         if stored is None:
-            # The row left `pending` under us (a tombstone, or a duplicate
-            # write): drop the result instead of resurrecting it.
+            # The row left `pending` under us (tombstone, duplicate write): drop the result.
             return False, error
         return True, error
 

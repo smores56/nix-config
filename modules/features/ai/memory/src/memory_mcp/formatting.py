@@ -14,9 +14,7 @@ from .registry import RegistryEpisode
 MAX_OUTPUT_CHARS = 6000
 MAX_WARNING_CHARS = 300
 
-# A filename is path-like only when its extension is a source or doc type we
-# know. Matching any `.`-followed token would catch version numbers ("16.2")
-# and abbreviations ("e.g.").
+# Path-like only for known source/doc extensions; any `.` token would catch "16.2" and "e.g.".
 _SOURCE_EXTENSIONS = frozenset(
     {
         "c",
@@ -259,9 +257,7 @@ def format_search(
     cut = text[:limit_chars]
     cut = cut[: cut.rfind("\n")] if "\n" in cut else cut
     kept = cut.splitlines()
-    # A cut between a head line and its body would leave a numbered entry with
-    # nothing under it, which still occupies a rank for anything parsing the
-    # block.
+    # A cut between a head line and its body would leave an empty numbered entry that still occupies a rank.
     while kept and _HEAD.match(kept[-1]):
         kept.pop()
     return "\n".join(kept) + "\n… (truncated; narrow the query or lower the limit)\n"

@@ -85,7 +85,6 @@ def one_line(value):
     return clean(value).replace("\t", " ").replace("\r", " ").replace("\n", " ")
 
 
-# --- gh plumbing ------------------------------------------------------------
 
 
 def gh(*args, input=None):
@@ -183,7 +182,6 @@ def repo_names(issue):
     return ",".join(names)
 
 
-# --- design hash ------------------------------------------------------------
 
 DESIGN_HEADER_RE = re.compile(r"(?ms)^## Design[ \t]*\n(.*?)(?=^## |\Z)")
 ANNOTATION_PREFIX = "> Sam:"
@@ -219,9 +217,8 @@ def design_hash(body):
 
 
 def approval_comment(issue):
-    # Only a comment that is exactly the approval line counts. Review text can
-    # quote an approval (or an agent can paste one), so a substring match would
-    # let an unrelated comment re-point the approved hash.
+    # Exact match only: review text can quote an approval, and a substring match
+    # would let it re-point the approved hash.
     for comment in reversed(issue.get("comments") or []):
         body = (comment.get("body") or "").strip()
         match = HASH_RE.fullmatch(body)
@@ -260,7 +257,6 @@ def comment_date(comment):
     return comment.get("createdAt") or "-"
 
 
-# --- features and tasks -----------------------------------------------------
 
 
 def feature_issues(repo, all_states=False):
@@ -338,7 +334,6 @@ def task_counts(tasks):
     return open_count, ready, blocked
 
 
-# --- picker -----------------------------------------------------------------
 
 
 def pick(candidates, header="sdlc features"):
@@ -538,7 +533,6 @@ def write_picker_cable(tmp, features):
     )
 
 
-# --- review roundtrip -------------------------------------------------------
 
 
 def parse_revdiff_annotations(text):
@@ -588,9 +582,7 @@ def review_quote(note, body_lines, limit=20):
 
 
 def review_marker(feature_number, note, body_lines=None):
-    # The temp body path changes every run. Hashing the quoted text keeps a
-    # note stable across line shifts but re-posts it when the reviewed text
-    # changes, which is exactly when the agent needs the new signal.
+    # Hash the quoted text, not the temp path: stable across line shifts, re-posted when the text changes.
     quote = review_quote(note, body_lines) if body_lines is not None else None
     digest = hashlib.sha256(
         ("%s\n%s" % (note.text.strip(), quote or "")).encode("utf-8")
@@ -633,7 +625,6 @@ def render_review(feature_number, title, body, notes, markers=()):
     return "\n\n".join([header] + blocks) + "\n"
 
 
-# --- pickers ----------------------------------------------------------------
 
 
 def cwd_repo_name(cwd=None):
@@ -717,7 +708,6 @@ def confirm(prompt):
     return sys.stdin.readline().strip().lower() in ("y", "yes")
 
 
-# --- commands ---------------------------------------------------------------
 
 
 def cmd_list(args):
@@ -1152,7 +1142,6 @@ def cmd_ui(args):
         raise CliError("unknown action %r" % action)
 
 
-# --- CLI --------------------------------------------------------------------
 
 
 def feature_arg(parser, required=True, help_text="issue number or title substring"):

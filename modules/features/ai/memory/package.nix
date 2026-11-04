@@ -1,6 +1,4 @@
-# The memory wrapper, Maki's stdio shim, the `memory` CLI, and Graphiti's
-# thinkless LLM proxy. One derivation so the server, clients, and proxy can
-# never drift apart.
+# Wrapper, stdio shim, `memory` CLI and LLM proxy in one derivation so they cannot drift apart.
 {
   pkgs,
   lib ? pkgs.lib,
@@ -28,9 +26,8 @@ pkgs.python3Packages.buildPythonApplication {
     uvicorn
   ];
 
-  # Group derivation shells out to git; the file-search server shells out to
-  # ripgrep. The wrappers prepend both so the systemd unit and the home package
-  # behave the same without relying on the caller's PATH.
+  # Group derivation needs git, file search needs ripgrep; prepend both so
+  # the systemd unit and the home package do not depend on the caller's PATH.
   nativeBuildInputs = [ pkgs.makeWrapper ];
   makeWrapperArgs = [
     "--prefix"
