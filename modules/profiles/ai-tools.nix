@@ -8,7 +8,6 @@
     ../features/ai/sdlc/default.nix
     ../features/ai/skills/default.nix
     ../features/github-credentials.nix
-    ../features/fido2.nix
   ];
   nixos = [ ];
 }

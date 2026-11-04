@@ -78,15 +78,13 @@ in
       wallpapersHome = lib.findFirst (
         home: builtins.any (p: lib.getName p == "wallpapers") home.config.home.packages
       ) null homesHere;
+      askpassHome = lib.findFirst (
+        home: builtins.any (p: lib.getName p == "ssh-askpass") home.config.home.packages
+      ) null homesHere;
       wallpapersExe = lib.getExe (
         lib.findFirst (
           p: lib.getName p == "wallpapers"
         ) (throw "wallpapers not in home.packages") wallpapersHome.config.home.packages
-      );
-      askpassExe = lib.getExe (
-        lib.findFirst (
-          p: lib.getName p == "wallpapers-askpass"
-        ) (throw "wallpapers-askpass not in home.packages") wallpapersHome.config.home.packages
       );
       scriptChecks =
         let
@@ -159,6 +157,19 @@ in
         in
         lib.mapAttrs mkScriptCheck (
           {
+            piv-ensure = {
+              tools = [
+                pkgs.coreutils
+                pkgs.flock
+                pkgs.gnugrep
+                pkgs.gnused
+                pkgs.python3
+              ];
+              args = [
+                "${src}/modules/features/piv-ensure.sh"
+                "${src}/modules/features/piv-dialog.sh"
+              ];
+            };
             key-bundle = {
               tools = [
                 pkgs.coreutils
@@ -200,22 +211,6 @@ in
             ssh-allowed-signers = {
               tools = [ pkgs.openssh ];
               args = [ (homeExe "ssh-allowed-signers") ];
-            };
-            ssh-pin-askpass = {
-              tools = [
-                pkgs.coreutils
-                pkgs.gnugrep
-                pkgs.python3
-              ];
-              args = [ (homeExe "ssh-pin-askpass") ];
-            };
-            fido2-ensure-pin = {
-              tools = [
-                pkgs.coreutils
-                pkgs.gnugrep
-                pkgs.python3
-              ];
-              args = [ (homeExe "fido2-ensure-pin") ];
             };
             ssh-pub-keys = {
               tools = [ pkgs.openssh ];
@@ -301,6 +296,19 @@ in
               ];
             };
           }
+          // lib.optionalAttrs (askpassHome != null) {
+            ssh-askpass = {
+              tools = [
+                pkgs.coreutils
+                pkgs.gnugrep
+              ];
+              args = [
+                (lib.getExe (
+                  lib.findFirst (p: lib.getName p == "ssh-askpass") null askpassHome.config.home.packages
+                ))
+              ];
+            };
+          }
           // lib.optionalAttrs (wallpapersHome != null) {
             wallpapers = {
               tools = [
@@ -309,22 +317,6 @@ in
                 pkgs.gnugrep
               ];
               args = [ wallpapersExe ];
-            };
-            wallpapers-askpass = {
-              tools = [ pkgs.coreutils ];
-              args = [ askpassExe ];
-            };
-            piv-ensure = {
-              tools = [
-                pkgs.coreutils
-                pkgs.flock
-                pkgs.gnugrep
-                pkgs.gnused
-              ];
-              args = [
-                "${src}/modules/features/piv-ensure.sh"
-                "${src}/modules/features/piv-askpass.sh"
-              ];
             };
           }
           // {
@@ -413,25 +405,78 @@ in
           )
         );
 
-        # Commit signing uses the sops keys, so no Linux home may bring back the
-        # FIDO2 signing agent; the sudo agent and its loader stay exactly as they
-        # are, because pam_rssh needs the touch-only handles at login.
-        fido2-agents = evalCheck "fido2-agents" (
+        # Each laptop runs two agents: the PIV agent (login key, never
+        # forwarded) and the sudo agent (touch-only handles, the only one
+        # smortress sees). pam_rssh on smorespro keeps dialing fido2-agent.
+        ssh-agents = evalCheck "ssh-agents" (
           toString (
             let
-              ensure = cond: msg: lib.assertMsg cond "fido2-agents: ${msg}";
-              units = name: config.flake.homeConfigurations.${name}.config.systemd.user.services;
-              laptop = units "smores@smorespro";
-              server = units "smores@smortress";
-              load = laptop.fido2-agent-load;
+              ensure = cond: msg: lib.assertMsg cond "ssh-agents: ${msg}";
+              home = name: config.flake.homeConfigurations.${name}.config;
+              pro = home "smores@smorespro";
+              work = home "sam@smoreswork";
+              server = home "smores@smortress";
+              units = pro.systemd.user.services;
+              # ssh settings are DAG entries; the block lives under .data.
+              hosts = h: lib.mapAttrs (_: e: e.data or e) h.programs.ssh.settings;
+              names = h: map lib.getName h.home.packages;
+              opensc = s: lib.hasInfix "opensc-pkcs11" (toString s);
+              tangPi = h: (hosts h)."tang-pi 10.0.0.193";
             in
             assert
-              ensure (!(laptop ? fido2-sign-agent || server ? fido2-sign-agent)) "the signing agent is gone"
-              && ensure (!(laptop ? fido2-sign-load || server ? fido2-sign-load)) "the signing loader is gone"
-              && ensure (laptop ? fido2-agent && server ? fido2-agent) "the login/sudo agent remains"
-              && ensure (load.Unit.After == [ "fido2-agent.service" ]) "the sudo loader starts after its agent"
-              && ensure (load.Unit.PartOf == [ "fido2-agent.service" ]) "the sudo loader restarts with its agent"
-              && ensure (lib.hasInfix "fido2-agent-load" (toString load.Service.ExecStart)) "the sudo loader runs";
+              ensure (units ? piv-agent && opensc units.piv-agent.Service.ExecStart) "smorespro has a PIV agent"
+              && ensure (
+                units ? fido2-agent && !opensc units.fido2-agent.Service.ExecStart
+              ) "the sudo agent cannot load OpenSC"
+              && ensure (
+                units.fido2-agent-load.Unit.PartOf == [ "fido2-agent.service" ]
+              ) "sudo handles reload with their agent"
+              && ensure (!(server.systemd.user.services ? fido2-agent)) "smortress runs no local agent"
+              && ensure (!(server.systemd.user.services ? piv-agent)) "smortress runs no PIV agent"
+              && ensure (lib.hasSuffix "/fido2-agent" (hosts pro).smortress.ForwardAgent) "smorespro forwards only the sudo agent"
+              && ensure (lib.hasSuffix "/piv-agent" (hosts pro).smortress.IdentityAgent) "smorespro logs in through the PIV agent"
+              && ensure (lib.hasSuffix "/sudo-agent.sock" (hosts work).smortress.ForwardAgent) "the Mac forwards only the sudo agent"
+              && ensure (lib.all (h: !((tangPi h) ? PKCS11Provider)) [
+                pro
+                work
+              ]) "tang-pi never opens its own card session"
+              && ensure (lib.all (h: (tangPi h) ? IdentityAgent) [
+                pro
+                work
+              ]) "tang-pi signs through the PIV agent"
+              && ensure (lib.all (h: !(lib.elem "yk-login" (names h))) [
+                pro
+                work
+                server
+              ]) "no manual recovery command"
+              && ensure (!(lib.elem "wallpapers-askpass" (names work))) "no Keychain PIN askpass"
+              && ensure (
+                !((work.launchd.agents.wallpapers.config.EnvironmentVariables or { }) ? SSH_ASKPASS)
+              ) "the Mac wallpaper job brings no askpass"
+              && ensure (
+                (work.launchd.agents.wallpapers.config.EnvironmentVariables or { }).YK_ENSURE_NO_PROMPT or null
+                == "1"
+              ) "the Mac wallpaper job never prompts"
+              && ensure (lib.all (h: !(((hosts h)."*" or { }) ? ForwardAgent)) [
+                pro
+                work
+              ]) "no catch-all agent forwarding"
+              && ensure (lib.all (h: lib.hasInfix "piv-ensure-proxy" (hosts h).smortress.ProxyCommand) [
+                pro
+                work
+              ]) "laptops warm the PIV agent before the tunnel"
+              && ensure (
+                !lib.hasInfix "piv-ensure" (hosts server).smortress.ProxyCommand
+              ) "the server only tunnels"
+              && ensure (lib.all (h: (hosts h).smortress.IdentitiesOnly == "yes") [
+                pro
+                work
+              ]) "smortress offers only the PIV keys"
+              && ensure (lib.elem "YK_ENSURE_NO_PROMPT=1" (
+                lib.toList (pro.systemd.user.services.wallpapers.Service.Environment or [ ])
+              )) "the Linux wallpaper timer never prompts"
+              && ensure (lib.hasInfix "DARWIN_USER_TEMP_DIR)piv" (lib.concatStringsSep " " work.launchd.agents.piv-pin-wipe.config.ProgramArguments)) "the login wipe targets the PIN cache dir"
+              && ensure (work.launchd.agents ? piv-pin-wipe) "the Mac clears the PIN cache at login";
             "ok"
           )
         );
@@ -460,9 +505,33 @@ in
           )
         );
 
+        # The generated piv-ensure-proxy must pass piv-ensure.sh its arguments in
+        # order and use the cache dir the login wipe and the Seatbelt deny name.
+        piv-wiring =
+          let
+            laptop = lib.findFirst (h: !(builtins.elem "server" h.config.machine.profiles)) null homesHere;
+            proxy = lib.head (
+              lib.splitString " " laptop.config.programs.ssh.settings.smortress.data.ProxyCommand
+            );
+            cache =
+              if pkgs.stdenv.hostPlatform.isLinux then
+                "\${XDG_RUNTIME_DIR:?}/piv"
+              else
+                "$(/usr/bin/getconf DARWIN_USER_TEMP_DIR)piv";
+          in
+          pkgs.runCommand "piv-wiring" { nativeBuildInputs = [ pkgs.gnugrep ]; } ''
+            tr -d '\\\n' <${proxy} | grep -F 'piv-ensure.sh "' | grep -F 'opensc-pkcs11.so" "${cache}"' |
+              grep -E 'piv-dialog +/nix/store/[^ ]+-piv-cache-askpass +/nix/store/[^ ]+-piv-k1.pub'
+            ${lib.optionalString (!pkgs.stdenv.hostPlatform.isLinux) ''
+              grep -F 'getconf DARWIN_USER_TEMP_DIR' ${src}/modules/lib/agent-sandbox.sh
+              grep -F '$pin_cache/piv' ${src}/modules/lib/agent-sandbox.sh
+            ''}
+            touch $out
+          '';
+
         # The two rendered planes must stay in step with the design: a Linux
-        # timer that runs after the session is up, a launchd agent that can
-        # answer the PIV PIN unattended, and Noctalia no longer rotating.
+        # timer that runs after the session is up, a launchd agent on the same
+        # interval, and Noctalia no longer rotating.
         wallpapers-units =
           let
             pro = config.flake.homeConfigurations."smores@smorespro".config;
@@ -478,8 +547,6 @@ in
             test "${lib.concatStringsSep " " pro.systemd.user.timers.wallpapers.Install.WantedBy}" = "timers.target"
             test "${lib.boolToString pro.programs.noctalia.settings.wallpaper.automation.enabled}" = "false"
             test "${toString work.launchd.agents.wallpapers.config.StartInterval}" = "10800"
-            test "${work.launchd.agents.wallpapers.config.EnvironmentVariables.SSH_ASKPASS_REQUIRE}" = "force"
-            test "${lib.boolToString (lib.hasInfix "wallpapers-askpass" work.launchd.agents.wallpapers.config.EnvironmentVariables.SSH_ASKPASS)}" = "true"
             touch $out
           '';
 
@@ -678,10 +745,10 @@ in
             ''
               bash -n ${src}/bootstrap.sh
               shellcheck ${src}/bootstrap.sh
-              bash -n ${src}/modules/lib/fido2-pin.sh
-              shellcheck ${src}/modules/lib/fido2-pin.sh
-              bash -n ${src}/tests/fido2_ensure_pin.sh
-              shellcheck ${src}/tests/fido2_ensure_pin.sh
+              bash -n ${src}/modules/features/piv-ensure.sh
+              shellcheck ${src}/modules/features/piv-ensure.sh
+              bash -n ${src}/modules/features/piv-dialog.sh
+              shellcheck ${src}/modules/features/piv-dialog.sh
               bash -n ${src}/modules/features/backup/github-mirror.sh
               shellcheck ${src}/modules/features/backup/github-mirror.sh
               bash -n ${src}/modules/features/backup/github-metadata.sh

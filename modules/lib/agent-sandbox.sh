@@ -248,6 +248,13 @@ if [ "$(uname -s)" = Darwin ]; then
     [ -d "$tmpdir_resolved" ] && tmpdir_resolved=$(realpath "$tmpdir_resolved" 2>/dev/null || printf '%s' "$tmpdir_resolved")
     echo '(deny file-read* file-write* (regex #"^/private/tmp/com\.apple\.launchd"))'
     echo "(deny file-read* file-write* (regex #\"^${tmpdir_resolved//./\\.}/com\\.apple\\.launchd\"))"
+    # piv-ensure caches the PIV PIN for the login session in the per-user temp
+    # dir, which the TMPDIR rules above would otherwise expose.
+    pin_cache=$(realpath "$(/usr/bin/getconf DARWIN_USER_TEMP_DIR)") || {
+      echo "agent-sandbox: cannot resolve the per-user temp dir" >&2
+      exit 1
+    }
+    echo "(deny file-read* file-write* (subpath \"$pin_cache/piv\") (subpath \"$tmpdir_resolved/piv\"))"
     for svc in "${MACH_ALLOW[@]}"; do
       echo "(allow mach-lookup (global-name \"$svc\"))"
     done
@@ -402,10 +409,6 @@ for pair in "${SECRET_BIND[@]}"; do
     args+=(--dir "$(dirname "$dest")" --ro-bind "$src" "$dest")
   fi
 done
-
-if [ -r "${CLOUDFLARED_TOKEN:-/nonexistent}" ]; then
-  args+=(--dir /run/agent/runtime/cloudflared-access --ro-bind "$CLOUDFLARED_TOKEN" /run/agent/runtime/cloudflared-access/token)
-fi
 
 if [ -n "${AGENT_CONFIG_DIR:-}" ]; then
   args+=(

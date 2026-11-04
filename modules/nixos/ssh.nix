@@ -118,8 +118,8 @@ in
           auth_key_file = "/etc/ssh/sudo_authorized_keys";
         }
         // lib.optionalAttrs config.sudoKey.enable {
-          # A laptop forwards no agent and its SSH_AUTH_SOCK belongs to the
-          # Pass agent, so pam_rssh dials the local fido2-agent directly.
+          # A laptop has no forwarded agent, so pam_rssh dials its local sudo
+          # agent directly.
           ssh_agent_addr = "/run/user/${toString config.users.users.${user}.uid}/fido2-agent";
           # pam_rssh signs with each authorized handle in turn; without a cue
           # the touch wait looks like a hung sudo.

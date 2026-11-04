@@ -21,35 +21,13 @@ let
   # wrapper supplies errexit/nounset/pipefail and a pinned PATH.
   script =
     builtins.replaceStrings
-      [ "@PLATFORM@" "@SOURCE@" "@CACHE@" "@ASKPASS@" ]
+      [ "@PLATFORM@" "@SOURCE@" "@CACHE@" ]
       [
         (if isLinux then "linux" else "darwin")
         (lib.escapeShellArg source)
         (lib.escapeShellArg cacheDir)
-        (lib.escapeShellArg (lib.getExe askpass))
       ]
       (builtins.readFile ./wallpapers.sh);
-
-  # macOS login auth is PIV-only and a LaunchAgent has no tty, so the PIV PIN
-  # comes from the login Keychain. OpenSSH routes the PKCS#11 prompt through
-  # this helper when SSH_ASKPASS_REQUIRE=force. It answers only the PIV prompt:
-  # host-key and presence prompts fail closed, so a changed host key can never
-  # be auto-accepted. The timeout keeps an unapproved Keychain ACL from
-  # wedging the agent forever.
-  askpass = pkgs.writeShellApplication {
-    name = "wallpapers-askpass";
-    runtimeInputs = [ pkgs.coreutils ];
-    text = ''
-      case "''${1:-}" in
-        # ssh's own PKCS#11 prompt, and ssh-add's when piv-ensure warms the
-        # PIV agent from this job.
-        "Enter PIN for '"* | "Enter passphrase for PKCS#11: ")
-          timeout 15 "''${WALLPAPERS_SECURITY:-/usr/bin/security}" find-generic-password -s smortress-piv-pin -w
-          ;;
-        *) exit 1 ;;
-      esac
-    '';
-  };
 
   wallpapers = pkgs.writeShellApplication {
     name = "wallpapers";
@@ -74,12 +52,7 @@ let
   };
 in
 {
-  # The askpass is inert off Darwin but ships everywhere so its prompt matcher
-  # is covered by a Linux script check.
-  home.packages = [
-    wallpapers
-    askpass
-  ];
+  home.packages = [ wallpapers ];
 
   # niri-session imports WAYLAND_DISPLAY and NIRI_SOCKET into the user manager,
   # which is how niri and noctalia find their sockets from this unit.
@@ -94,7 +67,7 @@ in
     };
     Service = {
       Type = "oneshot";
-      # A wedged rsync or Keychain prompt must not pin the timer forever.
+      # A wedged rsync must not pin the timer forever.
       TimeoutStartSec = "20min";
       Restart = "on-failure";
       RestartSec = 30;
@@ -129,8 +102,8 @@ in
       EnvironmentVariables = {
         HOME = config.home.homeDirectory;
         PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
-        SSH_ASKPASS = lib.getExe askpass;
-        SSH_ASKPASS_REQUIRE = "force";
+        # A cold PIV agent with no cached PIN fails the run, never prompts.
+        YK_ENSURE_NO_PROMPT = "1";
       };
       RunAtLoad = true;
       StartInterval = intervalHours * 60 * 60;

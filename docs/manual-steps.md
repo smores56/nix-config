@@ -293,7 +293,7 @@ fprintd-list "$USER"
 ```
 
 YubiKey sudo has no sshd and no PIN: `pam_rssh` on the `sudo` stack dials the
-lock-screen agent at `/run/user/1000/fido2-agent`, which `fido2-agent-load`
+sudo agent at `/run/user/1000/fido2-agent`, which `fido2-agent-load`
 fills with the three touch-only handles at login. Verify with the key inserted:
 `sudo -v` shows `Please touch the device`, one touch succeeds, and a second
 `sudo -v` inside five minutes does nothing. With the handles gone
@@ -471,24 +471,11 @@ ClientAliveCountMax 2
   (0600, outside Maki's sandbox, never committed). It is useless from any other
   source address.
 - the three YubiKey PIV 9a public keys from `modules/lib/yubikey-keys.nix`, for
-  the laptops. Over the tunnel both platforms load the PIV provider into an
-  agent on first use from the `smortress` ProxyCommand (`yk-ensure` on Linux,
-  `piv-ensure` with a masked dialog on macOS). A direct LAN connection runs no
-  proxy: on Linux run `yk-login` once first; macOS prompts on the tty through
-  OpenSC:
-
-```sh
-# Linux laptop
-SSH_AUTH_SOCK="$XDG_RUNTIME_DIR/fido2-agent" ssh -o IdentitiesOnly=yes \
-  -i ~/.config/ssh-sk/piv-k1.pub -i ~/.config/ssh-sk/piv-k2.pub \
-  -i ~/.config/ssh-sk/piv-k3.pub smores@10.0.0.193
-```
-
-`modules/features/cloudflared.nix` defines `Host tang-pi 10.0.0.193` for Linux
-and macOS, so after a home-manager switch plain `ssh tang-pi` picks the PIV
-identity (agent on Linux, PKCS#11 on macOS). Pin the host key once per laptop;
-`SSH_ASKPASS_REQUIRE=force` correctly sends the `yes/no` prompt to the PIN
-helper, which refuses it, so the first connection fails until this is done:
+  the laptops. `modules/features/piv.nix` defines `Host tang-pi 10.0.0.193` on
+  both laptops: `piv-ensure` warms the PIV agent first (one PIN per login
+  session), then `nc` connects. Pin the host key once per laptop;
+`SSH_ASKPASS_REQUIRE=force` sends the `yes/no` prompt to the session askpass,
+which fails closed, so the first connection fails until this is done:
 
 ```sh
 echo '10.0.0.193 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAQcI4/G5fQWGgkF1s7zkhWrXz/64LWeUJYh3SB231B2' \
@@ -1070,43 +1057,30 @@ cached set; the unit status or agent log records the failure. Rotation state is
 `~/.cache/wallpapers/state/queue-<Bucket>`; deleting it just starts a new cycle.
 
 On smorespro the first run happens when `graphical-session.target` starts
-(login) and every 3 h after that. Nothing to provision: the forwarded PIV agent
-authenticates the rsync while the session's PIN cache is warm, and the timer
+(login) and every 3 h after that. Nothing to provision: the local PIV agent, warmed
+from the login session's PIN cache, authenticates the rsync, and the timer
 never opens a dialog (`YK_ENSURE_NO_PROMPT`), so a cold cache fails that run
 instead of prompting.
 
-smoreswork runs it from a LaunchAgent, which has no tty, so three operator
-steps are needed once. `wallpapers` exports `SSH_ASKPASS` and
-`SSH_ASKPASS_REQUIRE=force` on macOS, so a manual `wallpapers sync` uses the
-same Keychain PIN and never sits at a terminal prompt; without the item it
-fails closed instead of hanging.
+smoreswork runs it from a LaunchAgent with `YK_ENSURE_NO_PROMPT`, the same as
+Linux: it reuses the login session's PIN cache and fails closed while the cache
+is cold. Two operator steps are needed once.
 
-1. Put the PIV login PIN in the login Keychain. `-A` lets the unattended agent
-   read it without a dialog; anything else running as you can read it too, but
-   the PIN alone cannot sign without the YubiKey.
-
-   ```sh
-   read -rs PIN && security add-generic-password -a "$USER" -s smortress-piv-pin -w "$PIN" -A && unset PIN
-   ```
-
-2. Approve the Automation prompt ("… wants to control System Events") the
+1. Approve the Automation prompt ("… wants to control System Events") the
    first time the agent sets a wallpaper. Until then the run fails and leaves
    the current wallpaper; it retries on the next interval.
 
-3. Make sure `ssh smortress true` has succeeded once, so the host key is in
+2. Make sure `ssh smortress true` has succeeded once, so the host key is in
    `~/.ssh/known_hosts`: the job sets `StrictHostKeyChecking=yes`.
 
-Verify from a terminal (prompts for the PIN) or kick the agent:
+Verify from a terminal (prompts for the PIN if this session has none cached) or
+kick the agent:
 
 ```sh
 wallpapers sync
 launchctl kickstart -k gui/$(id -u)/org.nix-community.home.wallpapers
 tail -n 20 ~/Library/Logs/wallpapers.log
 ```
-
-When the PIV PIN changes, replace the Keychain item in the same step. A stale
-PIN is sent to the card once per run, and the PIV retry counter locks after
-three; update the item before that happens.
 
 ## Providers
 
@@ -1997,12 +1971,10 @@ searchable until it is on the checked-out tree.
 `cloudflared access ssh`. `ssh` must keep Access enabled; evaluation fails
 otherwise.
 
-`smortress` logs in with the PIV keys in slot 9a, which `yk-ensure` loads into
-`fido2-agent` on first use (or `yk-login` in a terminal). `fido2-agent-load`
-loads only the touch-only sudo handles at login. If `ssh smortress` starts
-failing after another PIV client ran (`pam_p11` at the greeter, `ykman piv`),
-the card session was reset; run `yk-login` again. If that happens daily, fall back to slot 9c with PIN
-policy ALWAYS plus the askpass cache (the pre-T1 layout).
+`smortress` logs in with the PIV keys in slot 9a through the laptop's PIV agent,
+which `piv-ensure` (the ProxyCommand) loads on first use and reloads from the
+login-session PIN cache after another PIV client reset the card session. The
+forwarded agent holds only the touch-only sudo handles.
 
 ### dav.sammohr.dev
 
@@ -2141,8 +2113,8 @@ it. It does not inspect the touch/PIN flags, which live in the private
 file; a flagged credential is still bound to the same token. `--no-verify` skips only the outer checksum; it cannot skip the
 committed-key check. Then run `home-manager switch` if bootstrap did not
 already write the public keys, and verify with `ssh smortress true` and
-`ssh -t smortress sudo true`. The first signature prompts for the PIN once;
-`yk-login` remains the terminal fallback when no dialog can be shown.
+`ssh -t smortress sudo true`. The first signature prompts for the PIN once
+(a dialog, or the terminal when no compositor runs).
 
 ### cloudflare-plan
 

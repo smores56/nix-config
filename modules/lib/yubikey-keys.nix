@@ -7,8 +7,8 @@
 # modules/lib/signing-keys.nix sign), so none of these is trusted for git.
 #
 # `piv` entries are slot 9a (PIN ONCE, touch NEVER, SSH login). `sudo` entries
-# are touch-required with no verify-required and are loaded only into
-# fido2-agent for pam_rssh.
+# are touch-required with no verify-required and are loaded only into the sudo
+# agent (fido2-agent on Linux, sudo-agent on macOS) for pam_rssh.
 #
 # `key` is the relative path under ~/.config/ssh-sk (piv-k1 vs k1/sudo); `piv`
 # entries also carry the pam_p11 certificate.

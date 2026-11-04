@@ -853,7 +853,7 @@
 
           Next:
             home-manager switch
-            launchctl kickstart -k gui/$(id -u)/org.nix-community.home.smortress-sudo-agent
+            launchctl kickstart -k gui/$(id -u)/org.nix-community.home.sudo-agent
             ssh smortress true
             ssh -t smortress sudo true
 
@@ -865,7 +865,6 @@
 
           Next:
             home-manager switch        # if bootstrap has not already written the .pub files
-            yk-login                   # optional: terminal PIN prompt, reloads the handles
             ssh smortress true         # one graphical PIN prompt on first use
             ssh -t smortress sudo true # one touch
 

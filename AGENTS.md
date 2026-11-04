@@ -183,17 +183,12 @@ generated home, as the `<name>` flake check (`scriptChecks` in
 remote URL for the exact work owners only, the per-account sops signing key,
 HTTPS for every GitHub remote, and the URL-based credential helper),
 `ssh-allowed-signers` (each sops signing key is trusted only for its own
-account, and nothing else is), `ssh-pin-askpass` (only the PIV PIN prompt is
-answered; host-key, presence, and FIDO2 PIN prompts fail closed; a cache miss
-prompts through `fido2-ensure-pin` when a compositor is reachable), `fido2-ensure-pin`
-(the PIN is prompted, verified, and cached once per session, refuses below four
-retries, re-prompts when the card's serial:retries snapshot changed, and fails
-closed with no dialog without a compositor, a card, or prompting enabled),
-`wallpapers` (aspect
+account, and nothing else is), `piv-ensure` (the PIV PIN is asked once per
+login session, replayed only for the same card with a full counter, never
+retried, and no-prompt callers fail closed), `ssh-askpass` (every prompt fails
+closed; presence requests are announced), `wallpapers` (aspect
 buckets by measured pixels, NUL-delimited queue rotation without same-aspect
-collisions, control-character names skipped) and `wallpapers-askpass` (only
-the PIV prompt is answered; host-key, presence, and a failing Keychain read
-fail closed with no PIN on stdout), `ssh-pub-keys`
+collisions, control-character names skipped), `ssh-pub-keys`
 (committed `.pub` keys written and trusted, retired keys removed and
 untrusted, a rerun is idempotent), `ssh-no-private-keys` (a private key, including a symlink,
 anywhere in `~/.ssh` fails, except the work-host gcloud key; public-only and

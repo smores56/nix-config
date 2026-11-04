@@ -26,12 +26,10 @@ For each key:
    YubiKeys do not sign commits (the sops keys in
    `modules/lib/signing-keys.nix` do): if the script also creates an
    `ssh:sign-kN` credential, nothing uses it; delete it as below.
-2. Run `home-manager switch` on `smorespro` and `smortress`, then drop the
-   cached PIN (`rm -f "$XDG_RUNTIME_DIR/fido2/pin" "$XDG_RUNTIME_DIR/fido2/pin-state"`).
-   Changing a PIN leaves the retry counter at its maximum, so a stale cache
-   still looks fresh and would cost one rejected PIV login. The next SSH to
-   smortress prompts once (`yk-login` is the terminal fallback when no dialog
-   can be shown).
+2. Run `home-manager switch` on both laptops, then log out of each (that clears
+   the PIN cache). Changing a PIN leaves the retry counter at its maximum, so a
+   stale cache still looks fresh and would cost one rejected PIV login. The
+   next SSH to smortress prompts once.
 3. Test `ssh smortress true` and `ssh -t smortress sudo true` (one touch, no
    PIN) on both hosts.
 4. Enroll the key as WebAuthn 2FA on the Bitwarden account and keep the recovery
@@ -148,23 +146,19 @@ ykman piv info     # PIN/PUK tries remaining
 ykman fido info    # FIDO2 PIN tries remaining
 ```
 
-`fido2-ensure-pin` (the helper behind the askpass, `yk-ensure`, and
-`yk-login`) refuses to send the PIN below four FIDO2 retries and verifies the
-PIN before writing the cache. The cached PIN unlocks PIV 9a, but the guard and
-the verification use the FIDO2 applet, so the PIV and FIDO2 PINs must stay
-identical: always change them together. It re-prompts when the token's serial or retry
-counter moves. A PIN change or reset keeps both, so drop the cache by hand as
-step 2 says.
+`piv-ensure` refuses to send the PIN below two PIV retries and caches it only
+after the card accepted it. It replays the cache only while the card's serial
+matches and its counter is full, so a spent try or a swapped key re-prompts; a
+PIN change keeps both, so log out as step 2 says.
 
 ## smoreswork (work Mac)
 
-The Mac does not use the Linux `fido2-agent` or the PIN cache file. The
-launchd `smortress-piv-agent` (`~/.ssh/piv-agent.sock`, never forwarded) holds
-the OpenSC provider; the `smortress` ProxyCommand (`piv-ensure`) loads it on
-first use through a masked dialog, so the PIN is asked once per card session
-(again after unplug, sleep or a key swap). Another launchd agent (`smortress-sudo-agent`) holds only the three
-sudo handles and is forwarded to smortress for `pam_rssh`. Commits sign with
-the sops keys, not a YubiKey.
+Same design as Linux: the launchd `piv-agent` (`~/.ssh/piv-agent.sock`, never
+forwarded) holds the OpenSC provider, `piv-ensure` loads it with one masked
+dialog per login session, and `sudo-agent` holds only the three sudo handles
+and is forwarded to smortress for `pam_rssh`. The PIN cache lives in the
+per-user temp dir, which `piv-pin-wipe` empties at login. Commits sign with the
+sops keys, not a YubiKey.
 
 1. Insert a key and list identities:
    ```sh
@@ -200,13 +194,13 @@ the sops keys, not a YubiKey.
    repeat connections do not. Swapping keys re-prompts. All three keys should
    work.
 4. `sudo` on smortress from the Mac uses the launchd
-   `smortress-sudo-agent` (`~/.ssh/sudo-agent.sock`), which loads the three
+   `sudo-agent` (`~/.ssh/sudo-agent.sock`), which loads the three
    `~/.config/ssh-sk/k*/sudo` handles and is forwarded by `Host smortress`.
    The handles must be on the Mac: restore the Bitwarden bundle
    (`nix run .#key-restore -- <bundle>.tar.gz`) or copy them, then restart the
    agent so it re-reads them:
    ```sh
-   launchctl kickstart -k gui/$(id -u)/org.nix-community.home.smortress-sudo-agent
+   launchctl kickstart -k gui/$(id -u)/org.nix-community.home.sudo-agent
    ```
    Test `ssh -t smortress sudo true`: one touch, no PIN. If the agent has no
    handles, sudo falls back to the password. Any local process can ask the
@@ -337,7 +331,7 @@ checklist → cloudflared-credentials" in `docs/manual-steps.md`.
    “Lost or stolen key” and remove it from Bitwarden's 2FA.
 3. `smoreswork` only: unpair the smart card (`sc_auth unpair -u sam -h <hash>`
    for each hash in `sc_auth list -u sam`), remove the machine's
-   `smortress-sudo-agent` socket, and have the employer rotate the FileVault
+   `sudo-agent` socket, and have the employer rotate the FileVault
    recovery key and institutional recovery material — the repo does not own
    either.
 4. Rotate the Maki personal/work PATs, revoke the old tokens, and re-run

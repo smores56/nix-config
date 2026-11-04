@@ -228,8 +228,9 @@ assumes console access or a working client.
 token and an SSH identity. The token is delivered per host by sops
 (`/run/secrets/cloudflare-access-ssh-token` on NixOS, the sops-nix user path on
 Darwin); a missing or malformed file makes `cloudflared-access` fail closed
-with the path in the error. The identity comes from the FIDO2/PIV agents
-(`modules/features/fido2.nix`); if `ssh-add -L` is empty, run `yk-login` once.
+with the path in the error. The identity is the YubiKey PIV key in the PIV agent
+(`modules/features/piv.nix`); the first connection of a login session asks the
+PIN once.
 
 Then run `ssh-pub-keys` to write the committed `~/.ssh/*.pub` and refresh
 `~/.ssh/allowed_signers` (every `home-manager switch` and bootstrap also run

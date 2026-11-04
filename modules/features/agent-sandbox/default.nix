@@ -209,6 +209,8 @@ in
                 try_deny "$s unreachable" 'o=$(SSH_AUTH_SOCK="$HOME/.ssh/'"$s"'" ssh-add -l 2>&1); rc=$?; case $o in *"No such file"*) exit 3 ;; esac; printf "%s\n" "$o"; exit $rc'
               done
 
+              deny_path "PIV PIN cache unreadable" "$(/usr/bin/getconf DARWIN_USER_TEMP_DIR)piv"
+
               # Masks.
               deny_path ".ssh unreadable" "$HOME/.ssh"
               deny_path ".config unreadable" "$HOME/.config"

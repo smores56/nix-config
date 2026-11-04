@@ -156,6 +156,10 @@ let
     "/run/secrets/tinyfish-api-key|/run/secrets/tinyfish-api-key"
     "/run/secrets/immich-agent-api-key|/run/agent/immich-key"
     "/run/secrets/memory-mcp-token|/run/secrets/memory-mcp-token"
+    # cloudflared-access reads it for the Host smortress ProxyCommand. Access
+    # also admits it to llm and memory, which the sandbox already reaches
+    # through the host's loopback forwards, so only the ssh endpoint is new.
+    "/run/secrets/cloudflare-access-ssh-token|/run/secrets/cloudflare-access-ssh-token"
   ];
 
   # Secrets promoted into the sandbox environment (VAR|host path), read by the
@@ -197,7 +201,6 @@ let
     )}
     ${renderList "ENV_PASSTHROUGH" [ ]}
     AGENT_CONFIG_DIR=1
-    CLOUDFLARED_TOKEN="''${XDG_RUNTIME_DIR:-/run/user/$UID}/cloudflared-access/token"
     EMPTY_DIR="${pkgs.emptyDirectory}"
     ${lib.optionalString isDarwin ''OPENAI_KEYCHAIN_ITEM="maki-openai-api-key"''}
     EXEC_DENY=(
