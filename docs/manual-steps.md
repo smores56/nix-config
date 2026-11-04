@@ -1190,9 +1190,12 @@ sudo mount /dev/mapper/backup /var/backup
 Rebuild and reboot: `/etc/crypttab` opens the disk before the mount, `nofail`
 keeps a missing keyfile from blocking boot, and the local unit
 (`RequiresMountsFor`) fails loudly instead of writing to the root filesystem.
-Seed the local repo (created on its next run) and check it:
+Create the local repo by hand (the module never initialises it, so a wrong or
+empty disk fails and alerts instead of becoming a new repo), then seed it:
 
 ```sh
+lsblk -f /var/backup          # the encrypted disk, mounted, empty
+sudo restic-local init
 sudo systemctl start restic-backups-local.service
 sudo restic-local snapshots
 ```

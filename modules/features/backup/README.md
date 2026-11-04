@@ -48,25 +48,7 @@ alerts) if it is missing.
 
 ## Operating restic
 
-The NixOS module installs one wrapper per repo with the repository, password
-file and R2 credentials already in the environment:
-
-```sh
-sudo restic-r2 snapshots          # or restic-local
-sudo restic-r2 stats latest
-sudo journalctl -u restic-backups-r2 -n 100
-systemctl list-timers 'restic-*'
-```
-
-A manual run is the same unit the timer starts:
-
-```sh
-sudo systemctl start restic-backups-local.service
-```
-
-`restic-r2`/`restic-local` write nothing beyond the repo they name; they are the
-supported way to inspect and restore, because they cannot forget the credential
-file or the repository URL.
+Commands, the restore drill and the disk format are in [`docs/manual-steps.md`](../../../docs/manual-steps.md) ("Backup (restic)").
 
 ### First run on a new backup disk
 
@@ -83,25 +65,7 @@ sudo restic-local init
 sudo systemctl start restic-backups-local.service
 ```
 
-`r2` still initialises itself: an empty bucket is the expected state there.
-
-### Restore drill
-
-The procedure, with the exact commands and the assertion to make, is in
-[`docs/manual-steps.md`](../../../docs/manual-steps.md) ("Restore drill"). In
-short, per repo:
-
-```sh
-sudo restic-r2 restore latest --target /var/tmp/restore \
-  --include /var/lib/data/wallpapers
-sha256sum /var/tmp/restore/var/lib/data/wallpapers/<file> \
-  /var/lib/data/wallpapers/<file>
-sudo restic-r2 check --read-data-subset=2%
-```
-
-A restore that reads a subset and a `check` over a sample of packs proves both
-that the snapshot is complete and that its data is readable. Do it for `r2` and
-for `local`.
+`r2` initialises itself: an empty bucket is expected there.
 
 ## GitHub mirror and metadata
 
@@ -179,22 +143,3 @@ git clone /var/lib/data/github-mirrors/<owner>_backup/<repo> /restore/<repo>
 
 Metadata is plain JSON under `meta/repositories/<repo>/`; `manifests/<date>/`
 records what the verified run covered.
-
-## Files here
-
-| File | Role |
-| --- | --- |
-| `github-mirror.sh` | ghorg refresh with the probe and environment guards |
-| `github-metadata.sh` | python-github-backup driver (incremental, full, swap) |
-| `github-verify.sh` | repo set, count drift, checkpoint and fsck verification |
-| `gitconfig` | the `GIT_CONFIG_GLOBAL` that pins packing and disables auto-maintenance |
-
-## Checks
-
-- `github-metadata` — pgb flags and token-by-file, manifest counts,
-  stale/scope/count failures, and the full-pass swap.
-- `github-mirror-probe` — a stale private-repo probe is rejected and a
-  token-bearing origin is scrubbed.
-
-restic itself has no shell surface to unit-test; the restore drill in
-`docs/manual-steps.md` is the acceptance test, run against both repos.
