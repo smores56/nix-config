@@ -7,9 +7,8 @@
   isDarwin,
 }:
 let
-  # 0.12.0 fixes the setup-time symlink traversal (CVE-2026-87766) that matters
-  # when mask destinations live in an agent-writable home. The flake overlays
-  # bubblewrap from nixpkgs-unstable on Linux.
+  # 0.12.0 fixes the setup-time symlink traversal (CVE-2026-87766) that matters when mask
+  # destinations are in an agent-writable home; the flake overlays it from unstable on Linux.
   bwrap = if isDarwin then null else pkgs.bubblewrap;
 
   path = lib.makeBinPath [
@@ -40,19 +39,15 @@ let
     "$HOME/.local/share/agent"
     "$HOME/.cache/agent"
   ]
-  # macOS has no mount namespaces, so logs stay in the human's rotated log
-  # directory; Linux masks it with a private tmpfs below instead.
+  # macOS has no mount namespaces; Linux masks the log dir with a private tmpfs below.
   ++ lib.optionals isDarwin [ "$HOME/.local/logs" ]
-  # The whole media tree is writable so new media dirs need no allowlist. The
-  # masks are applied after every bind, so the Photos tmpfs still hides the
-  # Immich library (writes path-resolve into the tmpfs, never the host dir).
+  # Masks apply after every bind, so the Photos tmpfs hides the Immich library under the writable media tree.
   ++ lib.optionals (!isDarwin) [
     "/var/lib/data/music"
     "/var/lib/data/books"
   ];
 
-  # Read-only exceptions carved out of a writable parent (the user PATH must
-  # not become an agent-writable executable directory).
+  # Read-only exceptions under a writable parent (the user PATH must not become agent-writable).
   homeRo = [ "$HOME/.cache/.bun/bin" ];
 
   homeMaskDirs = [
@@ -69,13 +64,10 @@ let
     "$HOME/.local/share/fish"
     "$HOME/.local/share/memory"
     "$HOME/.local/state/maki"
-    # maki has no log-path setting (MAKI_LOG is the level), so mask the log
-    # directory with a writable tmpfs: the agent gets working logs and the
-    # human's log is neither read nor extended.
+    # maki has no log-path setting: mask the log dir with a writable tmpfs so the human's log is neither read nor extended.
     "$HOME/.local/logs"
     "$HOME/.claude"
     "$HOME/.codex"
-    # ~/.agents/skills is Nix-managed and shared with maki; leave it readable.
     "$HOME/.local/state/key-backup"
     "$HOME/.local/state/memory"
     "$HOME/.cache/cliphist"
@@ -86,27 +78,20 @@ let
     "$HOME/.mozilla"
     "$HOME/.var/app"
     "$HOME/.local/share/Steam"
-    # Syncthing carries the Cryptomator vault ciphertext here (vault.nix); the
-    # `vault <cmd>` helper promises the agent never sees the vault, and that
-    # promise only holds if every profile, not just jupyter, masks the tree.
+    # `vault <cmd>` promises the agent never sees the vault ciphertext, so every profile masks the tree.
     "$HOME/Sync"
     "$HOME/Library"
   ]
-  # Durable data on the server. Neither belongs in an agent namespace even if
-  # /var is bound in later: photos is the Immich library, the vault is the
-  # ciphertext Syncthing syncs.
+  # Durable server data: neither belongs in an agent namespace even if /var is bound later.
   ++ lib.optionals (!isDarwin) [
     "/var/lib/data/photos"
     "/var/lib/data/vault"
   ];
 
-  # Darwin only: directories of links to decrypted sops files the sandbox may
-  # read, and the link names allowed inside them. Seatbelt matches the resolved
-  # path (/private/var/folders/.../secrets.d/<generation>/<name>), so the
-  # launcher resolves each link at start and allows exactly that file; every
-  # other sops secret stays denied. The names are explicit because a glob would
-  # hand any future secret parked in that directory to the sandbox without a
-  # review. Linux binds the key at its /run/secrets path instead (secretBind).
+  # Darwin only: dirs of links to decrypted sops files, and the link names allowed inside them.
+  # Seatbelt matches the resolved path, so the launcher resolves each link and allows exactly that
+  # file; names are explicit so a future secret in the directory is not handed over unreviewed.
+  # Linux binds the key at its /run/secrets path (secretBind).
   darwinSecretLinkDirs = lib.optionals isDarwin [ "$HOME/.local/share/github" ];
   darwinSecretLinkNames = [
     "github-personal-pat"
@@ -140,31 +125,26 @@ let
     "television"
   ];
 
-  # Files inside a read-only config allowlist entry that a tool must be able to
-  # lock or rewrite. Each gets a writable copy in the agent state, bound over
-  # the read-only one; the rest of the config stays immutable. maki locks its
-  # package lockfile at startup even when no package is installed.
+  # Files in a read-only config entry that a tool must lock or rewrite; each gets a writable copy
+  # in agent state bound over it (maki locks its package lockfile at startup).
   configWritable = [ "maki/pack-lock.json.lock" ];
 
   secretBind = [
     "/run/secrets/github-personal-pat|/run/secrets/github-personal-pat"
-    # The personal commit-signing key, at the path the host git config names,
-    # so the included config signs unchanged inside the boundary. It is also
-    # the laptop sandbox's forced-command login to smortress (Host smortress).
+    # The personal commit-signing key at the path the host git config names; also the laptop
+    # sandbox's forced-command login to smortress.
     "/run/secrets/github-personal-signing-key|/run/secrets/github-personal-signing-key"
     "/run/secrets/neuralwatt-api-key|/run/secrets/neuralwatt-api-key"
     "/run/secrets/tinyfish-api-key|/run/secrets/tinyfish-api-key"
     "/run/secrets/immich-agent-api-key|/run/agent/immich-key"
     "/run/secrets/memory-mcp-token|/run/secrets/memory-mcp-token"
-    # cloudflared-access reads it for the Host smortress ProxyCommand. Access
-    # also admits it to llm and memory, which the sandbox already reaches
-    # through the host's loopback forwards, so only the ssh endpoint is new.
+    # cloudflared-access reads it for the Host smortress ProxyCommand. Access also admits it to
+    # llm and memory (already reachable via loopback forwards), so only the ssh endpoint is new.
     "/run/secrets/cloudflare-access-ssh-token|/run/secrets/cloudflare-access-ssh-token"
   ];
 
-  # Secrets promoted into the sandbox environment (VAR|host path), read by the
-  # launcher before bwrap starts. The minimal profiles declare none: their
-  # descendants live on the untrusted side of the boundary.
+  # Secrets promoted into the sandbox environment (VAR|host path), read before bwrap starts.
+  # Minimal profiles declare none.
   secretRead = [
     "NEURALWATT_API_KEY|/run/secrets/neuralwatt-api-key"
     "TINYFISH_API_KEY|/run/secrets/tinyfish-api-key"
@@ -172,8 +152,6 @@ let
     "OPENAI_API_KEY|\${OPENAI_KEYCHAIN_ITEM:-/nonexistent}"
   ];
 
-  # One array per list: both generated configs share the shell contract in
-  # agent-sandbox.sh, only the contents differ.
   renderList = name: values: ''
     ${name}=(
     ${lib.concatMapStrings (p: "  \"${p}\"\n") values}
@@ -192,8 +170,7 @@ let
     ${renderList "SECRET_BIND" secretBind}
     ${renderList "SECRET_READ" secretRead}
     ${renderList "ENV_EXTRA" (
-      # The sandbox starts from an empty environment, which drops the CA bundle
-      # path Nix's git/curl need on macOS; pin the store copy (readable there).
+      # The empty environment drops the CA bundle path Nix's git/curl need on macOS; pin the store copy.
       lib.optionals isDarwin [
         "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
         "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
@@ -231,23 +208,19 @@ let
   '';
 
   gitConfig = pkgs.writeText "agent-sandbox-gitconfig" ''
-    # The included host config already rewrites GitHub remotes to HTTPS and
-    # scopes the owner-selecting credential helper to https://github.com.
+    # The host config already rewrites GitHub remotes to HTTPS and scopes the credential helper to github.com.
     [include]
         path = ~/.local/state/agent/config/git/config
 
     [gpg "ssh"]
         allowedSignersFile = ~/.local/state/agent/config/allowed_signers
-        # Pinned so signing never depends on the sandbox PATH order (macOS's
-        # /usr/bin/ssh-keygen may come first).
+        # Pinned so signing does not depend on PATH order (macOS /usr/bin/ssh-keygen may come first).
         program = ${pkgs.openssh}/bin/ssh-keygen
 
     [core]
         sshCommand = ssh -F ~/.local/state/agent/config/ssh_config
-    # Sign every commit made inside the boundary with the owner's sops key that
-    # the included host config names (bound at /run/secrets on Linux, linked
-    # outside the masked ~/.config on Darwin). The host's global gpgsign is
-    # replaced by this file (GIT_CONFIG_SYSTEM=/dev/null).
+    # Sign commits with the owner's sops key the host config names (/run/secrets on Linux, outside
+    # the masked ~/.config on Darwin); this file replaces the host's gpgsign (GIT_CONFIG_SYSTEM=/dev/null).
     [commit]
         gpgsign = true
   '';
@@ -298,12 +271,9 @@ let
     '';
   };
 
-  # Minimal profile for the Open WebUI code interpreter. A kernel is untrusted
-  # code driven by a chat, so it gets one writable workspace and nothing else
-  # from the host: no agent config dir, no git/ssh shims, no promoted secrets,
-  # no repo protection (there are no repos to protect). It keeps the secret and
-  # data masks, the same-UID boundary, and the host network namespace (Open WebUI
-  # reaches it on loopback).
+  # Minimal profile for the Open WebUI code interpreter: untrusted code gets one writable workspace,
+  # no agent config, git/ssh shims, promoted secrets or repo protection. It keeps the masks, the
+  # same-UID boundary and the host network namespace (Open WebUI reaches it on loopback).
   jupyterWorkspace = "/var/lib/agent/jupyter";
 
   jupyterPath = lib.makeBinPath [
@@ -315,9 +285,7 @@ let
     pkgs.jq
   ];
 
-  # Everything the runtime writes stays in the workspace: HOME is bound
-  # read-only here and has no writable exception, so a tool that insists on a
-  # home path fails instead of reaching the host's tree.
+  # HOME is read-only with no writable exception, so a tool needing a home path fails instead of reaching the host.
   jupyterEnvExtra = [
     "PATH=${jupyterPath}"
     "JUPYTER_CONFIG_DIR=${jupyterWorkspace}/.jupyter/config"
@@ -344,13 +312,10 @@ let
     ${renderList "ENV_EXTRA" jupyterEnvExtra}
     ${renderList "ENV_PASSTHROUGH" [ "JUPYTER_TOKEN" ]}
     EMPTY_DIR="${pkgs.emptyDirectory}"
-    # Linux only: the Darwin branch of the shell wants EXEC_DENY, MACH_ALLOW,
-    # and the git shims, which this profile deliberately does not carry.
+    # Linux only: the Darwin branch wants EXEC_DENY, MACH_ALLOW and git shims this profile omits.
   '';
 
-  # The token is a sops secret the launcher reads host-side (the service user
-  # owns it): it reaches the sandbox only as JUPYTER_TOKEN, which jupyter_server
-  # honours, so no token is baked into the store or the unit.
+  # A sops secret the launcher reads host-side; it reaches the sandbox only as JUPYTER_TOKEN, so no token is in the store or unit.
   jupyterSandbox = pkgs.writeShellApplication {
     name = "jupyter-sandbox";
     runtimeInputs = [
@@ -383,10 +348,8 @@ let
     '';
   };
 
-  # sshd execs the login shell with -c <forced command>. Detect exactly that
-  # and skip fish's user config; everything else (interactive and ordinary
-  # commands) gets the normal fish shell. The per-key command= does not
-  # suppress ~/.ssh/rc, so PermitUserRC no is also required.
+  # sshd execs the login shell with -c <forced command>; detect that and skip fish's user config.
+  # The per-key command= does not suppress ~/.ssh/rc, so PermitUserRC no is also required.
   agentLoginShell =
     (pkgs.writeShellApplication {
       name = "agent-login-shell";

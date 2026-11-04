@@ -1,5 +1,4 @@
-# Build-time branch naming, for git configs this repo doesn't manage;
-# modules/features/git.nix writes smores.branchTemplate* everywhere else.
+# Build-time branch naming for git configs this repo doesn't manage (git.nix writes smores.branchTemplate* elsewhere).
 DEFAULT_BRANCH_TEMPLATE=@BRANCH_TEMPLATE@
 DEFAULT_BRANCH_UNTICKETED=@BRANCH_UNTICKETED@
 
@@ -44,7 +43,6 @@ worktree_branch() {
   git -C "$1" symbolic-ref --quiet --short HEAD 2>/dev/null || true
 }
 
-# render_branch <template> <ticket> <type> <slug>
 render_branch() {
   local out=$1
   out=${out//\{ticket\}/$2}
@@ -82,8 +80,7 @@ create_new() {
 
   origin_parts >/dev/null || { printf 'worktrees new: could not parse origin remote\n' >&2; exit 1; }
 
-  # See branchSettings in modules/features/git.nix; an empty
-  # unticketed template means a ticket is required.
+  # See branchSettings in git.nix; an empty unticketed template means a ticket is required.
   if template=$(git config --get smores.branchTemplate); then
     unticketed=$(git config --get smores.branchTemplateUnticketed || true)
   else
@@ -103,8 +100,6 @@ create_new() {
       fi
       ;;
     *)
-      # Agents pass --ticket whenever work has one; repos that don't
-      # name branches by ticket just don't use it.
       [ -z "$ticket" ] || printf 'worktrees new: branch template %s has no {ticket}; ignoring --ticket %s\n' "$template" "$ticket" >&2
       ticket=""
       ;;
@@ -115,7 +110,6 @@ create_new() {
   fi
 
   slug=$(slugify "$slug")
-  # Don't repeat a ticket the slug already starts with.
   if [ -n "$ticket" ]; then
     lowered=$(slugify "$ticket")
     [ "$slug" != "$lowered" ] || slug=""
@@ -125,7 +119,6 @@ create_new() {
 
   branch=$(render_branch "$template" "$ticket" "$type" "$slug") || exit 2
   git check-ref-format --branch "$branch" >/dev/null 2>&1 || { printf 'worktrees new: invalid branch name: %s\n' "$branch" >&2; exit 2; }
-  # One directory per branch, so fix/x and feat/x never collide.
   name=${branch//\//-}
 
   root=$(main_worktree)
@@ -278,7 +271,6 @@ prune_worktrees() {
     fi
   done
 
-  # Orphan branches: local branches with no worktree, not the default.
   local orphan_branches_with_worktree orphan_branch
   orphan_branches_with_worktree=$(list_worktrees | while IFS= read -r wt_path; do
     worktree_branch "$wt_path"

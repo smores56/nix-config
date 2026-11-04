@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-# Pre-connect step for the PIV agent on both laptops. The PIN is typed once per
-# login session: it is cached only after the card accepted it, and replayed
-# only for the same card with an unspent counter, so a replay cannot burn a try.
-# Any ykman call resets OpenSC's verified state, so the card is read only
-# before a load, never after.
+# Pre-connect step for the PIV agent. The PIN is cached only after the card accepted it and
+# replayed only for the same card with an unspent counter, so a replay cannot burn a try. Any
+# ykman call resets OpenSC's verified state: read the card only before a load.
 # Usage: piv-ensure <agent-socket> <pkcs11-provider> <cache-dir> <dialog> <cache-askpass> <pub>...
 set -euo pipefail
 
@@ -19,8 +17,7 @@ die() {
   exit 1
 }
 
-# A listed key is not proof: after unplug or sleep the agent still lists it
-# but cannot sign. -T signs and verifies.
+# A listed key is no proof after unplug or sleep; -T signs and verifies.
 healthy() {
   local pub
   for pub in "$@"; do
@@ -39,7 +36,6 @@ chmod 700 "$cache"
 pin_file=$cache/pin
 card_file=$cache/card
 
-# One unlock at a time; a parallel caller waits and finds the agent warm.
 exec 9>"$cache/lock"
 flock -w 120 9 || die "another unlock is still running"
 healthy "$@" && exit 0
@@ -52,8 +48,7 @@ read -r tries max < <(timeout 10 ykman piv info </dev/null 2>/dev/null |
 serial=$(timeout 10 ykman list --serials </dev/null 2>/dev/null | sort -u | paste -sd, -) || serial=
 serial=${serial:--}
 
-# ssh-add reads the PIN through the askpass from the cache file; stdin is a
-# ProxyCommand's transport, so it must never be read as the PIN.
+# ssh-add reads the PIN via the askpass from the cache file; stdin is a ProxyCommand's transport, never the PIN.
 load() {
   SSH_AUTH_SOCK=$sock timeout 15 ssh-add -e "$provider" </dev/null >/dev/null 2>&1 || true
   SSH_AUTH_SOCK=$sock PIV_PIN_FILE=$pin_file SSH_ASKPASS=$askpass SSH_ASKPASS_REQUIRE=force \

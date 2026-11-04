@@ -13,8 +13,6 @@ let
     else
       "/home/${machine.username}";
 
-  # How `worktrees new` names branches; rendered into git config so the
-  # owner's include picks the scheme per repo.
   branchNamingType = lib.types.submodule {
     options = {
       template = lib.mkOption {
@@ -108,7 +106,6 @@ in
             type = lib.types.submodule {
               options = {
                 dir = lib.mkOption {
-                  # Absolute, no trailing slash.
                   type = lib.types.strMatching "/.*[^/]";
                   description = "Absolute directory holding every work checkout flat as <dir>/<repo>, the layout the employer's tooling expects.";
                 };
@@ -165,7 +162,6 @@ in
       description = "Abbreviations for whichever shell the host uses, each one string both fish and zsh accept. `pick <tv-channel> <command…>` runs a picker, then the command with the selection appended (or in place of {name}, its basename).";
     };
     brain.dir = lib.mkOption {
-      # Relative, no leading or trailing slash: joined onto the home directory.
       type = lib.types.nullOr (lib.types.strMatching "[^/].*[^/]|[^/]");
       default = null;
       example = "brain";
@@ -190,7 +186,6 @@ in
           "blitzy-ai"
           "blitzy-platform"
         ];
-        # Team convention: ticket first, else the change type.
         branchNaming = {
           template = "{ticket}-{slug}";
           unticketed = "{type}/{slug}";

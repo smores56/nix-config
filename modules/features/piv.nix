@@ -1,7 +1,6 @@
-# YubiKey SSH on the laptops: the PIV agent (slot 9a login key, never
-# forwarded), the forwarded sudo agent (fido2.nix on Linux, launchd here on
-# macOS), and the hosts that log in with PIV. piv-ensure warms the PIV agent
-# before each connection, so the PIN is typed once per login session.
+# YubiKey SSH on the laptops: the PIV agent (slot 9a login key, never forwarded), the forwarded
+# sudo agent (fido2.nix on Linux, launchd on macOS), and PIV login hosts. piv-ensure warms the
+# PIV agent so the PIN is typed once per login session.
 {
   config,
   lib,
@@ -35,7 +34,6 @@ let
     '';
   };
 
-  # Loading a handle needs no PIN; launchd restarts the agent and this reloads.
   macSudoAgent = pkgs.writeShellApplication {
     name = "sudo-agent";
     runtimeInputs = [
@@ -78,7 +76,6 @@ lib.mkIf (!isServer) {
     smortress = identity // {
       ForwardAgent = sudoSock;
     };
-    # LAN-only, no tunnel; the same 9a identity as smortress.
     "tang-pi" = identity // {
       HostName = "10.0.0.193";
       User = "smores";
@@ -93,7 +90,6 @@ lib.mkIf (!isServer) {
     };
     Service = {
       Type = "simple";
-      # OpenSSH refuses ssh-add -s providers outside the allow-list.
       ExecStart = "${pkgs.openssh}/bin/ssh-agent -D -P ${piv.opensc} -a %t/piv-agent";
       Restart = "on-failure";
       RestartSec = 2;

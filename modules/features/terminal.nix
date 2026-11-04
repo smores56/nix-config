@@ -34,15 +34,11 @@ in
     };
   };
 
-  # nix's kitty.app has a broken ad-hoc signature; launchd rejects GUI spawns
-  # (err 162) while shell exec still works. copyApps reinstalls the broken
-  # bundle every switch, so re-sign it after.
-  #
-  # Its MacOS/kitty is also a nix wrapper that execs the store bundle's
-  # .kitty-wrapped; leaving the copied bundle that way makes LaunchServices
-  # drop the app's pid (NSRunningApplication reports -1), so AeroSpace can't
-  # see its windows. Promote the copy's real binary over the wrapper first;
-  # the GUI only loses the wrapper's PATH suffix, which the shell sets anyway.
+  # nix's kitty.app has a broken ad-hoc signature (launchd rejects GUI spawns, err 162) and
+  # copyApps reinstalls it every switch, so re-sign after. Its MacOS/kitty is also a nix wrapper
+  # that execs the store bundle's .kitty-wrapped, which makes LaunchServices drop the pid and
+  # AeroSpace lose its windows: promote the copy's real binary over the wrapper first (the GUI only
+  # loses the wrapper's PATH suffix, which the shell sets anyway).
   home.activation.signKittyApp = lib.mkIf pkgs.stdenv.hostPlatform.isDarwin (
     lib.hm.dag.entryAfter [ "copyApps" ] ''
       if [ -d "${kittyApp}" ]; then

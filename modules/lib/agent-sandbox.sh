@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
-# agent-sandbox: same-UID, unprivileged path/privilege boundary for an agent
-# harness. Linux uses bwrap; macOS uses sandbox-exec. The config is sourced
-# from AGENT_SANDBOX_CONFIG; see modules/lib/agent-sandbox.nix.
-#
-# This is a path boundary, not a kernel boundary. The agent keeps the user's
-# UID; the boundary is enforced by a mount namespace (Linux) or Seatbelt
-# (macOS), plus PR_SET_NO_NEW_PRIVS, and it applies to every descendant.
+# agent-sandbox: same-UID path/privilege boundary for an agent harness (bwrap on Linux,
+# sandbox-exec on macOS), configured via AGENT_SANDBOX_CONFIG (modules/lib/agent-sandbox.nix).
+# Not a kernel boundary: the agent keeps the user's UID; the mount namespace/Seatbelt plus
+# PR_SET_NO_NEW_PRIVS applies to every descendant.
 
 set -euo pipefail
 # shellcheck source=/dev/null
@@ -18,8 +15,7 @@ fi
 
 home=$HOME
 agent_config="$home/.local/state/agent/config"
-# Only the agent profile keeps git/ssh plumbing in this private config dir; the
-# minimal profiles (the Jupyter kernel) have none to create or protect.
+# Only the agent profile keeps git/ssh plumbing here; minimal profiles have none.
 if [ -n "${AGENT_CONFIG_DIR:-}" ]; then
   if [ -L "$agent_config" ]; then
     echo "agent-sandbox: refusing a symlinked agent config dir: $agent_config" >&2
@@ -33,8 +29,7 @@ if [ -n "${AGENT_CONFIG_DIR:-}" ]; then
     "$home/.local/state/agent"
 fi
 
-# Start in the caller's directory when it is inside a writable allowlist
-# entry; otherwise start at HOME. A coding agent works from HOME fine.
+# Start in the caller's directory when inside a writable allowlist entry, else HOME.
 start=$home
 for d in "${HOME_RW[@]}"; do
   case "$PWD" in
@@ -54,15 +49,13 @@ read_secret() {
   fi
 }
 
-# Secrets promoted into the sandbox environment, each read from a host file the
-# descendant cannot see itself. The minimal profiles declare none.
+# Secrets promoted from host files the descendant cannot read itself.
 for pair in "${SECRET_READ[@]}"; do
   read_secret "${pair%%|*}" "${pair#*|}"
 done
 
-# Darwin has no mount namespace and no private /tmp. Copy the selected
-# configs into the agent-only config dir; the profile denies the real
-# ~/.config. Linux binds them read-only instead.
+# Darwin has no mount namespace: copy configs into the agent-only dir (the profile denies the
+# real ~/.config); Linux binds them read-only.
 prepare_darwin_config() {
   local name src dest
   for name in "${CONFIG_ALLOW[@]}"; do
@@ -108,9 +101,7 @@ build_env_args() {
     "PATH=$agent_config/bin:$home/.local/bin:$home/.nix-profile/bin:$home/.cargo/bin:$home/.bun/bin:$home/.deno/bin:$home/.wasmer/bin:$AGENT_SANDBOX_PATH"
     "TMPDIR=/tmp"
     "SHELL=/bin/sh"
-    # maki derives its log dir from the parent of the state dir (logs_dir =
-    # parent(XDG_STATE_HOME)/logs/maki), so keep the state one level down:
-    # state and logs both land under the writable agent state.
+    # maki's log dir is parent(XDG_STATE_HOME)/logs/maki, so state sits one level down.
     "XDG_STATE_HOME=$home/.local/state/agent/state"
     "XDG_CACHE_HOME=$home/.cache/agent"
     "XDG_DATA_HOME=$home/.local/share/agent"
@@ -123,8 +114,7 @@ build_env_args() {
     # writes there would run for the human outside the sandbox.
     "PRE_COMMIT_HOME=$home/.cache/agent/pre-commit"
   )
-  # Profile overrides go last: `env -i` and bwrap --setenv both let a later
-  # assignment win, so a profile can retarget PATH and the XDG dirs.
+  # Profile overrides go last so they can retarget PATH and the XDG dirs (later assignment wins).
   ENV_ARGS+=("${ENV_EXTRA[@]}")
   add_env TERM
   add_env COLORTERM
@@ -138,14 +128,12 @@ build_env_args() {
   add_env TINYFISH_API_KEY
   add_env IMMICH_API_KEY
   add_env OPENAI_API_KEY
-  # Profile-declared names to carry across the boundary as-is; the minimal
-  # Jupyter profile uses it for the token its launcher reads from the sops file.
+  # Profile-declared names carried across as-is (the Jupyter profile's token).
   for name in "${ENV_PASSTHROUGH[@]}"; do
     add_env "$name"
   done
-  # GH_TOKEN is never inherited: the gh wrapper and git helper inside select a
-  # PAT by the target repository's owner, and a caller's token would defeat
-  # that split.
+  # GH_TOKEN is never inherited: the gh wrapper and git helper select a PAT by repo owner,
+  # which a caller's token would defeat.
 }
 
 if [ "$(uname -s)" = Darwin ]; then
@@ -153,8 +141,7 @@ if [ "$(uname -s)" = Darwin ]; then
     echo "agent-sandbox: /usr/bin/sandbox-exec is missing" >&2
     exit 1
   }
-  # The OpenAI key is a Keychain item on the work Mac. Read it here, outside
-  # the sandbox; SecurityAgent/securityd are denied inside.
+  # A Keychain item on the work Mac: read outside the sandbox (SecurityAgent/securityd are denied inside).
   if [ -z "${OPENAI_API_KEY:-}" ] && [ -n "${OPENAI_KEYCHAIN_ITEM:-}" ]; then
     OPENAI_API_KEY=$(/usr/bin/security find-generic-password -s "$OPENAI_KEYCHAIN_ITEM" -w 2>/dev/null) || OPENAI_API_KEY=
     export OPENAI_API_KEY
@@ -186,25 +173,17 @@ if [ "$(uname -s)" = Darwin ]; then
     for f in "${HOME_MASK_FILES[@]}"; do
       echo "(deny file-read* (literal \"$f\"))"
     done
-    # macOS 27 aborts every process (SIGABRT, no logged denial) unless the root
-    # directory itself is readable; the literal grants nothing beneath it. Nix
-    # binaries load their dylibs from the store, so it must be readable too
-    # (store paths are world-readable build outputs, never secrets). /var is the
-    # root symlink to /private/var that sops-nix's link chain crosses, and the
-    # home's parent is needed because realpath(3) stats every component: git
-    # reports "Invalid path '/Users': Operation not permitted" without it.
+    # macOS 27 SIGABRTs every process unless the root dir is readable (the literal grants nothing
+    # beneath it); nix dylibs load from the store (world-readable outputs). /var is the symlink
+    # sops-nix's chain crosses; the home's parent needs it because realpath(3) stats every component
+    # (git: "Invalid path '/Users': Operation not permitted").
     echo "(allow file-read* (literal \"/\") (literal \"/var\") (subpath \"/nix/store\") (subpath \"/System\") (subpath \"/Library\") (subpath \"/usr\") (subpath \"/bin\") (subpath \"/private/etc\") (subpath \"/private/var/db\") (subpath \"/dev\") (literal \"/tmp\") (subpath \"/tmp\") (subpath \"/private/tmp\") (subpath \"$tmpdir_host\"))"
     echo "(allow file-write* (literal \"/dev/null\") (literal \"/dev/tty\") (subpath \"/tmp\") (subpath \"/private/tmp\") (subpath \"${tmpdir_host}\"))"
-    # realpath(3) lstats every path component, so the home's parent needs
-    # metadata (not data): without it git fails with "Invalid path '/Users'".
     echo "(allow file-read-metadata (literal \"$parent\"))"
-    # The TMPDIR rules above name /var/folders, which Seatbelt never matches (it
-    # sees the resolved /private/var/folders), and sops-nix decrypts into that
-    # same directory. Deny its secrets explicitly so widening those rules can
-    # never expose them, then allow only the listed links' resolved files plus
-    # the symlink nodes their chain crosses (sops-nix links through the masked
-    # ~/.config/sops-nix/secrets); later rules win. Listing stays denied because
-    # the directory resolves into the denied secrets.d.
+    # Seatbelt sees /private/var/folders, never the /var spelling the TMPDIR rules name, and sops-nix
+    # decrypts there. Deny its secrets so widening those rules cannot expose them, then allow only the
+    # listed links' resolved files and the symlink nodes their chain crosses; later rules win.
+    # Listing stays denied (the directory resolves into the denied secrets.d).
     echo '(deny file-read* file-write* (regex #"^/private/var/folders/.+/secrets\.d/"))'
     for d in "${DARWIN_SECRET_LINK_DIRS[@]}"; do
       for name in "${DARWIN_SECRET_LINK_NAMES[@]}"; do
@@ -237,11 +216,8 @@ if [ "$(uname -s)" = Darwin ]; then
     # connect() to a unix socket is network-outbound, so the ~/.ssh mask alone
     # leaves the host's agents reachable; the PIV agent signs with no touch.
     echo "(deny network-outbound (subpath \"$home/.ssh\"))"
-    # launchd's per-user listener directories are named `com.apple.launchd.<id>`,
-    # so a `subpath` rule for `.../com.apple.launchd` matches neither of them
-    # (subpath is a path-component prefix, not a string prefix). Use a regex,
-    # and resolve TMPDIR first: Seatbelt sees /private/var/folders, never the
-    # /var/folders spelling the caller's environment carries.
+    # launchd's listener dirs are `com.apple.launchd.<id>`, which a `subpath` rule misses (subpath is
+    # a path-component prefix): use a regex on the resolved TMPDIR (Seatbelt never sees /var/folders).
     tmpdir_resolved=$tmpdir_host
     [ -d "$tmpdir_resolved" ] && tmpdir_resolved=$(realpath "$tmpdir_resolved" 2>/dev/null || printf '%s' "$tmpdir_resolved")
     echo '(deny file-read* file-write* (regex #"^/private/tmp/com\.apple\.launchd"))'
@@ -270,7 +246,6 @@ if [ "$(uname -s)" = Darwin ]; then
   exec /usr/bin/sandbox-exec -f "$profile" /usr/bin/env -i "${ENV_ARGS[@]}" "$@"
 fi
 
-# Linux
 build_env_args
 args=(
   --die-with-parent
@@ -296,11 +271,9 @@ args=(
   --ro-bind "$home" "$home"
 )
 
-# `store = auto` picks a LocalStore when it can write the state dir, and bwrap
-# creates that dir writable in its tmpfs, so every store-touching eval would
-# take lock files inside the read-only store and fail. Bind the host dir (which
-# carries the daemon socket) read-only so the client resolves to the daemon. A
-# host without a daemon keeps the ephemeral local store instead.
+# `store = auto` picks a LocalStore when it can write the state dir; bwrap makes that dir writable
+# in its tmpfs, so evals would lock files inside the read-only store. Bind the host dir (daemon
+# socket) read-only so the client uses the daemon; a daemonless host keeps the ephemeral store.
 if [ -S /nix/var/nix/daemon-socket/socket ]; then
   args+=(--ro-bind /nix/var/nix /nix/var/nix)
 fi
@@ -309,13 +282,9 @@ for d in "${HOME_RW[@]}"; do
   args+=(--bind-try "$d" "$d")
 done
 
-# Existing repos keep their auto-execution surfaces read-only: .git/hooks and
-# .git/config cannot be written, and a worktree's .git file (which names
-# gitdir) cannot be repointed. Repos created inside the sandbox are not in the
-# scan, so their metadata stays writable; that is the accepted "agent-created
-# repos are reviewed" case. Renaming an existing .git still moves the ro
-# mountpoints with it, so this raises the bar rather than closing the same-UID
-# boundary.
+# Existing repos keep .git/hooks, .git/config and a worktree's .git file read-only. Repos created
+# inside the sandbox are not scanned (accepted: agent-created repos are reviewed). Renaming an
+# existing .git moves the ro mountpoints, so this raises the bar rather than closing the boundary.
 protect_repos() {
   local -a roots=()
   local root entry gitdir common
@@ -362,8 +331,7 @@ for d in "${HOME_RO[@]}"; do
   args+=(--ro-bind-try "$d" "$d")
 done
 
-# Config allowlist: read-only copies inside the agent config dir. Bind before
-# the ~/.config mask so bwrap resolves the source from the host tree.
+# Config allowlist: read-only copies in the agent config dir, bound before the ~/.config mask.
 for name in "${CONFIG_ALLOW[@]}"; do
   src="$home/.config/$name"
   dest="$agent_config/$name"
@@ -372,10 +340,8 @@ for name in "${CONFIG_ALLOW[@]}"; do
   fi
 done
 
-# Writable exceptions inside a read-only config entry. The destination must
-# exist before the read-only dir is mounted, so create the host's sidecar if
-# it is missing (maki creates the same empty lock file itself); the writable
-# copy lives in the agent state and is bound over it.
+# Writable exceptions inside a read-only config entry: the destination must exist before the ro dir
+# is mounted, so create the host sidecar if missing; the writable agent-state copy is bound over it.
 for rel in "${CONFIG_WRITABLE[@]}"; do
   hostfile="$home/.config/$rel"
   if [ ! -e "$hostfile" ]; then

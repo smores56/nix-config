@@ -1,8 +1,6 @@
-# Reach smortress's loopback-only services (sshd, llama.cpp) from a
-# client over the Cloudflare Tunnel. `cloudflared access` authenticates with a
-# per-host Cloudflare Access service token delivered by sops; there is no
-# fallback. The server reaches its own services on loopback, so it gets no
-# forwards.
+# Reach smortress's loopback-only services (sshd, llama.cpp) from a client over the Cloudflare
+# Tunnel, authenticated by a per-host Access service token from sops (no fallback). The server
+# uses loopback, so it gets no forwards.
 {
   config,
   lib,
@@ -18,9 +16,8 @@ let
   piv = import ../lib/piv.nix { inherit config lib pkgs; };
   inherit (aiProviders) smortress;
 
-  # The Access service token is deployed per host through sops: home-manager
-  # sops on Darwin, sops-nix (/run/secrets) on NixOS. Two lines: Client ID and
-  # Client Secret. There is no fallback; a host without the secret fails closed.
+  # Deployed per host via sops (home-manager sops on Darwin, sops-nix on NixOS): Client ID and
+  # Client Secret on two lines. A host without it fails closed.
   sopsTokenFile = import ../lib/secret-path.nix config "cloudflare-access-ssh-token";
   cloudflared-access = pkgs.writeShellApplication {
     name = "cloudflared-access";
@@ -28,7 +25,6 @@ let
     text = ''
       token_file="${sopsTokenFile}"
 
-      # Two lines (id, secret); IFS= keeps any surrounding whitespace.
       {
         IFS= read -r token_id || true
         IFS= read -r token_secret || true
@@ -46,11 +42,9 @@ let
     '';
   };
 
-  # A laptop warms its PIV agent before the tunnel; the server only tunnels.
   tunnel = "${cloudflared-access}/bin/cloudflared-access ssh --hostname %h";
   smortressProxy = if isServer then tunnel else "${lib.getExe piv.ensureProxy} ${tunnel}";
 
-  # A loopback forward for one tunnel service; maki points at 127.0.0.1:<port>.
   forward = sub: port: {
     Unit = {
       Description = "Forward ${sub}.${domain} to 127.0.0.1:${toString port} through Cloudflare Access";
@@ -71,10 +65,9 @@ in
     cloudflared-access
   ];
 
-  # smortress is reached only through the tunnel to its loopback sshd
-  # (modules/nixos/ssh.nix); its account is always `smores`, whatever the
-  # client's username. Each connection re-runs the Access check, so it never
-  # shares a master. Identity and forwarding: modules/features/piv.nix.
+  # smortress is reached only through the tunnel to its loopback sshd (modules/nixos/ssh.nix); its
+  # account is always `smores`. Each connection re-runs the Access check, so no shared master.
+  # Identity and forwarding: modules/features/piv.nix.
   programs.ssh.settings.smortress = {
     HostName = "ssh.${domain}";
     User = "smores";
@@ -82,16 +75,12 @@ in
     ProxyCommand = smortressProxy;
   };
 
-  # A personal client reaches the server's llm over the tunnel; a work
-  # profile reaches its own, and smortress itself uses loopback, so neither
-  # needs these forwards.
+  # Personal clients reach the server's llm over the tunnel; work profiles reach their own; smortress uses loopback.
   systemd.user.services = lib.mkMerge [
     (lib.mkIf (aiProfile == "personal" && !isServer) {
       cloudflared-llm = forward "llm" smortress.port;
-      # The memory wrapper is an HTTP MCP server behind Access; the shim adds
-      # the group headers and the forward injects the service token, so
-      # ~/.config/maki/mcp.toml carries no secret. On smortress itself the shim
-      # dials the same loopback port directly.
+      # The memory wrapper is an HTTP MCP server behind Access; the shim adds group headers and the
+      # forward injects the service token, so mcp.toml carries no secret. On smortress the shim dials loopback.
       cloudflared-memory = forward "memory" ports.memoryMcp;
     })
   ];

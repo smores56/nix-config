@@ -5,8 +5,7 @@ host_key_src="/etc/ssh/ssh_host_ed25519_key"
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --allow-incomplete) allow_incomplete=1; shift ;;
-    # The live key is authoritative; the checkout copy is only what
-    # `install` reads. Tests and odd layouts can point elsewhere.
+    # The live key is authoritative; the checkout copy is what `install` reads.
     --host-key-path)
       if [ "$#" -lt 2 ] || [ -z "$2" ]; then
         echo "key-backup: --host-key-path needs a path" >&2
@@ -17,7 +16,6 @@ while [ "$#" -gt 0 ]; do
       continue
       ;;
     --no-host-key) host_key_src=""; shift ;;
-    # Test hook: the build embeds the committed map.
     --pubkeys)
       if [ "${KEY_BUNDLE_TEST:-0}" != 1 ]; then
         echo "key-backup: --pubkeys is a test hook" >&2
@@ -52,9 +50,7 @@ fi
 host="$(uname -n)"
 host="${host%%.*}"
 
-# The host key can only be validated against the committed anchors.
-# Without this file the check would vanish silently, leaving a bundle
-# that looks complete but carries the wrong sops identity.
+# The host key can only be validated against the committed anchors; without this file the check would vanish silently.
 if [ -n "$host_key_src" ] && [ ! -f .sops.yaml ]; then
   echo "key-backup: run this from the nix-config checkout: .sops.yaml is needed to prove the live host key is the identity this host's secrets are encrypted to" >&2
   exit 1
@@ -107,11 +103,9 @@ for src in "$HOME"/.config/ssh-sk/*/sudo; do
   fi
 done
 
-# The host SSH key is the host's sops identity and `install` delivers
-# it from secrets/hosts/<host>/. Read the live key, never the checkout
-# copy: /etc/ssh is 0600 root, so one sudo read is expected. A missing
-# host key is a hard failure — a wipe destroys the only copy, and the
-# handle path below is recoverable where this one is not.
+# The host SSH key is the host's sops identity and `install` delivers it from secrets/hosts/<host>/.
+# Read the live key (/etc/ssh is 0600 root: one sudo read). A missing key is a hard failure: a
+# wipe destroys the only copy, unlike the recoverable handle path below.
 host_key_state=no
 host_key_recipient=""
 if [ -n "$host_key_src" ]; then
@@ -169,10 +163,8 @@ if [ "$handles" -gt 0 ] && [ "$handles" -lt "$map_count" ] && [ "$allow_incomple
   exit 1
 fi
 
-# The enrollment script is untracked today, so this bundle is its only
-# copy besides the machine being wiped. Keep it non-executable and
-# review it before running after a restore; it may carry operator
-# choices the repo should own.
+# The enrollment script is untracked, so this bundle is its only copy besides the wiped machine.
+# Keep it non-executable and review it after a restore.
 
 script_state=no
 if [ -f "$HOME/dev/setup-yubikey.sh" ]; then

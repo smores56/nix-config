@@ -25,16 +25,12 @@ in
     let
       pkgs = mkPkgs system { };
 
-      # Lint tools come from one nixpkgs on every platform so the format check
-      # agrees with `nix fmt` wherever it runs.
+      # One nixpkgs for lint tools so the format check agrees with `nix fmt`.
       lintPkgs = import inputs.nixpkgs { inherit system; };
 
       src = inputs.self;
 
-      # The memory package's modules and tests import mcp, httpx, anyio,
-      # starlette, and redis (the exact FalkorDB presence check); mcp brings the
-      # rest transitively. One env for the whole suite keeps the pinned nixpkgs
-      # and its versions in one place.
+      # One env for the memory suite's imports (mcp brings the rest transitively).
       unitTestsPython = pkgs.python3.withPackages (ps: [
         ps.mcp
         ps.redis
@@ -63,18 +59,14 @@ in
         )
       );
 
-      # Script checks run a tests/*.sh script against tools and files from a
-      # generated home. What they exercise (git/ssh identity, repo tooling)
-      # is the same on every host, so any home built for this system can
-      # stand in.
+      # Any home built for this system serves: these exercise host-independent tooling.
       homesHere = lib.filter (home: home.activationPackage.system == system) (
         lib.attrValues config.flake.homeConfigurations
       );
       scriptHome = lib.findFirst (_: true) null homesHere;
-      # zsh only renders on work hosts, so its check needs a home that has it.
+      # zsh only renders on work hosts.
       zshHome = lib.findFirst (home: home.config.programs.zsh.enable) null homesHere;
-      # wallpapers also only renders on graphical hosts; pick by its package so
-      # the check does not depend on attribute ordering.
+      # wallpapers only renders on graphical hosts; pick by package, not attribute order.
       wallpapersHome = lib.findFirst (
         home: builtins.any (p: lib.getName p == "wallpapers") home.config.home.packages
       ) null homesHere;
@@ -92,15 +84,12 @@ in
           d = hc.user;
           configFile = name: hc.xdg.configFile.${name}.source;
           signingKeys = import ../lib/signing-keys.nix;
-          # The module's own lookup (modules/features/git.nix), so the expected
-          # path tracks the declaration instead of a hardcoded layout.
           secretPath = import ../lib/secret-path.nix hc;
           homeExe =
             name:
             lib.getExe (
               lib.findFirst (p: lib.getName p == name) (throw "${name} not in home.packages") hc.home.packages
             );
-          # Expected values come from the options, not the test scripts.
           env = {
             WORK_EMAIL = d.work.email;
             WORK_BRANCH_TEMPLATE = d.work.branchNaming.template;
@@ -113,8 +102,7 @@ in
             PERSONAL_BRANCH_TEMPLATE = d.branchNaming.template;
             PERSONAL_BRANCH_UNTICKETED = toString d.branchNaming.unticketed;
             PERSONAL_OWNER = d.githubUser;
-            # Only the work host carries the work key; everywhere else a work
-            # commit signs with the personal key.
+            # Only the work host carries the work key; elsewhere work commits sign with the personal key.
             PERSONAL_SIGNING_KEY = secretPath "github-personal-signing-key";
             WORK_SIGNING_KEY = secretPath (
               if hc.machine.workHost then "github-work-signing-key" else "github-personal-signing-key"
@@ -225,8 +213,7 @@ in
               ];
               args = [ (homeExe "ssh-no-private-keys") ];
             };
-            # The admin-key wrapper must fail closed: no identity file, and no
-            # leftover plaintext key that sops would load behind its back.
+            # The admin-key wrapper must fail closed: no identity file, and no leftover plaintext key.
             sops-age-key = {
               tools = [ ];
               args = [ hc.home.sessionVariables.SOPS_AGE_KEY_CMD ];
@@ -243,10 +230,8 @@ in
                 (homeExe "gh-pat")
                 (homeExe "github-credential-helper")
               ]
-              # The files the home's sops declares, else the NixOS sops-nix paths,
-              # plus a path that is deliberately absent: the fail-closed matrix
-              # runs against it everywhere, including where the real PATs are
-              # readable (the work Mac).
+              # The home's sops files, else the NixOS sops-nix paths, plus a deliberately absent
+              # path so the fail-closed matrix also runs where real PATs are readable.
               ++ map secretPath [
                 "github-personal-pat"
                 "github-work-pat"
@@ -265,8 +250,7 @@ in
             };
           }
           // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
-            # These checks need Linux-only tools (inotify-tools, util-linux
-            # flock), so they must not be evaluated or built on Darwin.
+            # Linux-only tools (inotify-tools, flock): must not build on Darwin.
             github-metadata = {
               tools = [
                 pkgs.git
@@ -281,9 +265,6 @@ in
                 "${src}/modules/features/backup/github-verify.sh"
               ];
             };
-            # Exercises `memory export`/`restore` against temp dirs: a live WAL
-            # registry, checksums, retention, the schema guard, and the graph
-            # mismatch path. No root, no FalkorDB, no network.
             memory-export-restore = {
               tools = [ pkgs.python3 ];
               args = [ "${src}/modules/features/ai/memory/src" ];
@@ -320,8 +301,6 @@ in
             };
           }
           // {
-            # `vault <cmd>` fails closed: usage, a non-vault directory, a
-            # cryptomator-cli failure, and never the password on argv.
             vault = {
               tools = [
                 pkgs.bash
@@ -336,9 +315,7 @@ in
           }
         );
 
-      # Inventory for manual-steps-sync. File-derived items (hosts, sops keys,
-      # Tofu providers/notifications) are parsed by the script; these are the
-      # values that only exist after module evaluation.
+      # Values that only exist after module evaluation.
       manualStepInventory = pkgs.writeText "manual-steps-inventory.json" (
         let
           nixos = lib.attrValues config.flake.nixosConfigurations;
@@ -375,9 +352,7 @@ in
     in
     {
       checks = {
-        # Build every operator app. writeShellApplication runs shellcheck at
-        # build time; without this, a lint error in an app only shows up when
-        # someone runs it (which is how a broken `install` reached main).
+        # writeShellApplication shellcheck-lints at build time; build every operator app so a lint error fails here.
         apps = pkgs.linkFarm "apps-check" (
           map
             (p: {
@@ -405,9 +380,7 @@ in
           )
         );
 
-        # Each laptop runs two agents: the PIV agent (login key, never
-        # forwarded) and the sudo agent (touch-only handles, the only one
-        # smortress sees). pam_rssh on smorespro keeps dialing fido2-agent.
+        # Two agents per laptop: PIV (login key, never forwarded) and sudo (touch-only, the only one smortress sees).
         ssh-agents = evalCheck "ssh-agents" (
           toString (
             let
@@ -481,10 +454,7 @@ in
           )
         );
 
-        # The work account's bundle lives only on the work Mac
-        # (modules/hosts/smoreswork/sops.nix); secrets-common.nix may never
-        # regain the work PAT or the work signing key, and the Mac must carry
-        # both.
+        # The work bundle lives only on the work Mac; secrets-common.nix must never carry the work PAT or signing key.
         secrets-scope = evalCheck "secrets-scope" (
           let
             ensure = cond: msg: lib.assertMsg cond "secrets-scope: ${msg}";
@@ -505,8 +475,7 @@ in
           )
         );
 
-        # The generated piv-ensure-proxy must pass piv-ensure.sh its arguments in
-        # order and use the cache dir the login wipe and the Seatbelt deny name.
+        # piv-ensure-proxy must pass arguments in order and use the cache dir the login wipe and Seatbelt deny name.
         piv-wiring =
           let
             laptop = lib.findFirst (h: !(builtins.elem "server" h.config.machine.profiles)) null homesHere;
@@ -529,9 +498,6 @@ in
             touch $out
           '';
 
-        # The two rendered planes must stay in step with the design: a Linux
-        # timer that runs after the session is up, a launchd agent on the same
-        # interval, and Noctalia no longer rotating.
         wallpapers-units =
           let
             pro = config.flake.homeConfigurations."smores@smorespro".config;
@@ -550,10 +516,8 @@ in
             touch $out
           '';
 
-        # The smortress alias hook: an outer interactive SSH login publishes
-        # its forwarded socket (OpenSSH >= 10.1 puts it under ~/.ssh/agent,
-        # older ones under /tmp); a pty-less connection or a pane that already
-        # holds the alias must leave the published socket alone.
+        # An outer interactive SSH login publishes its forwarded socket (OpenSSH >= 10.1: ~/.ssh/agent, older: /tmp);
+        # a pty-less connection or a pane already holding the alias must leave it alone.
         ssh-auth-sock-hook =
           pkgs.runCommand "ssh-auth-sock-hook"
             {
@@ -596,12 +560,9 @@ in
               touch $out
             '';
 
-        # Linger keeps the user manager running from boot (modules/nixos/base.nix),
-        # so a default.target unit that wants graphical-session.target drags the
-        # desktop up at the greeter; niri.service then starts outside
-        # niri-session, whose first check reports "already running". Noctalia
-        # must not want niri.service for the same reason: only niri-session may
-        # launch the compositor.
+        # Linger starts the user manager at boot, so a default.target unit wanting graphical-session.target
+        # raises the desktop at the greeter and niri.service starts outside niri-session. Noctalia must
+        # not want niri.service: only niri-session may launch the compositor.
         desktop-session-units =
           let
             pro = config.flake.homeConfigurations."smores@smorespro".config;
@@ -640,16 +601,13 @@ in
             }
             ''
               test ${toString (builtins.length keys.piv)} -eq 3
-              # The pubkey derivation writes exactly keys.piv
-              # (modules/features/ssh-keys.nix), so this is the input that would
-              # have to change for a FIDO2 signing.pub to appear on disk.
+              # The pubkey derivation writes exactly keys.piv; this input would have to change for a FIDO2 signing.pub.
               if printf '%s\n' ${
                 lib.escapeShellArgs (map (k: k.key) keys.piv)
               } | grep -qxE 'k[0-9]+/signing'; then exit 1; fi
               test ${toString (builtins.length keys.sudo)} -eq 3
               test "${names keys.piv}" = "piv-k1 piv-k2 piv-k3"
               test "${names keys.sudo}" = "k1/sudo k2/sudo k3/sudo"
-              # Three PIV logins plus the sops key forced into the sandbox.
               test ${toString (builtins.length config.flake.nixosConfigurations.smortress.config.users.users.smores.openssh.authorizedKeys.keys)} -eq 4
               printf '%s\n' ${lib.escapeShellArgs config.flake.nixosConfigurations.smortress.config.users.users.smores.openssh.authorizedKeys.keys} >authorized_keys
               test "$(grep -c 'command="' authorized_keys)" -eq 1
@@ -723,8 +681,7 @@ in
                 unitTestsPython
                 pkgs.git
               ];
-              # The brain-run tests pin TZ=America/New_York and call tzset();
-              # without zoneinfo the sandbox falls back to UTC and they fail.
+              # brain-run tests pin TZ=America/New_York; without zoneinfo the sandbox falls back to UTC.
               TZDIR = "${pkgs.tzdata}/share/zoneinfo";
             }
             ''
@@ -820,8 +777,6 @@ in
               grep -Fx 'KbdInteractiveAuthentication no' settings
               grep -Fx 'PermitRootLogin no' settings
               grep -Fx 'PermitEmptyPasswords no' settings
-              # Only the agent is forwarded (pam_rssh); nothing opens a socket or
-              # a port on the server.
               grep -Fx 'AllowTcpForwarding no' settings
               grep -Fx 'AllowStreamLocalForwarding no' settings
               grep -Fxi 'streamlocalbindunlink no' settings
@@ -835,12 +790,9 @@ in
               touch $out
             '';
 
-        # The auth stack is the security property: a jump that skips the wrong
-        # line, a control that falls through, or a probe in the wrong slot
-        # silently changes which credential is accepted. A pam_exec probe that
-        # cannot run returns SYSTEM_ERR; under default=ignore the gate is
-        # skipped, pam_p11 then runs, and only its authinfo_unavail=ignore keeps
-        # that from locking the password out.
+        # A wrongly skipped jump, falling-through control or misplaced probe silently changes the accepted
+        # credential. A failing pam_exec probe returns SYSTEM_ERR; under default=ignore the gate is skipped,
+        # and only pam_p11's authinfo_unavail=ignore keeps that from locking the password out.
         pam-auth-gates =
           let
             cfg = config.flake.nixosConfigurations.smorespro.config;
@@ -848,11 +800,8 @@ in
               service: pkgs.writeText "pam-${service}.rendered" cfg.security.pam.services.${service}.text;
             expected =
               name: lines: pkgs.writeText "pam-${name}.expected" (lib.concatStringsSep "\n" lines + "\n");
-            # One line per auth rule: control, module basename, then the args
-            # with every store path reduced to its basename. That pins the
-            # order, the controls, the arguments and which probe sits where
-            # without depending on store hashes. Rules carrying no store path
-            # (a bare pam_deny) pass through unchanged.
+            # One line per auth rule: control, module basename, args with store paths reduced to basenames
+            # (pins order and probe placement independent of store hashes).
             normalize = ''
               ${pkgs.gawk}/bin/awk '
                 $1 == "auth" {
@@ -895,7 +844,6 @@ in
                 ${probes}
               }
 
-              # greeter: lid gate -> fprintd -> card gate -> p11 -> unix.
               normalize ${rendered "greetd"} > greetd.stack
               diff -u ${
                 expected "greetd" [
@@ -908,8 +856,6 @@ in
                 ]
               } greetd.stack
 
-              # lock screen: card gate -> p11 -> unix, and no pam_fprintd
-              # (Noctalia drives the sensor over D-Bus).
               normalize ${rendered "login"} > login.stack
               diff -u ${
                 expected "login" [
@@ -920,19 +866,14 @@ in
                 ]
               } login.stack
 
-              # Both probes must be executable store paths: a relative or
-              # missing probe is a SYSTEM_ERR, and for the card gate that means
-              # pam_p11 runs unguarded on every attempt.
+              # A relative or missing probe is SYSTEM_ERR; for the card gate pam_p11 would then run unguarded.
               probes ${rendered "greetd"} > greetd.probes
               probes ${rendered "login"} > login.probes
               test "$(wc -l < greetd.probes)" -eq 2
               test "$(wc -l < login.probes)" -eq 1
               for p in $(cat greetd.probes login.probes); do test -x "$p"; done
 
-              # The gates belong to smorespro's two services alone. A stray
-              # global p11/fprintd option would put a PIN-or-nothing module in
-              # front of sudo and every admin prompt, and this check would
-              # otherwise stay green.
+              # A stray global p11/fprintd option would put a PIN-or-nothing module in front of sudo and every admin prompt.
               ${lib.concatStringsSep "\n" (
                 map (svc: "! grep -qE 'pam_(p11|fprintd|exec)\\.so' ${rendered svc}") [
                   "sudo"

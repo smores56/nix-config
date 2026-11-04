@@ -8,8 +8,6 @@ let
   graphical = config.machine.graphical;
   colors = config.lib.stylix.colors;
   scheme = config.stylix.base16Scheme;
-  # Common Stylix schemes share their slug with a Chroma style. A scheme
-  # without a matching Chroma style needs a local override.
   schemeName =
     if builtins.isAttrs scheme then
       scheme.slug or scheme.name or "base16"
@@ -54,7 +52,6 @@ in
     '';
 
     home = {
-      # stylix only sets home.pointerCursor on Linux.
       pointerCursor.enable = lib.mkIf (graphical && pkgs.stdenv.hostPlatform.isLinux) true;
     };
 

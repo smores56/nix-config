@@ -1,10 +1,6 @@
-# The agent sandbox is the explicit entry point for any agent harness:
-#
-#   agent-sandbox maki
-#
-# `m` is a shell abbreviation for that command, not a wrapper binary. Plain
-# `maki` is the manually installed binary and runs unsandboxed. The lists and
-# backend live in modules/lib/agent-sandbox.nix and agent-sandbox.sh.
+# `agent-sandbox maki` is the explicit entry point for any agent harness; `m` is a shell
+# abbreviation, and plain `maki` is the manually installed binary and runs unsandboxed.
+# Lists and backend: modules/lib/agent-sandbox.nix and agent-sandbox.sh.
 {
   config,
   lib,
@@ -28,8 +24,7 @@ in
     home.packages = [
       sandbox.agentSandbox
 
-      # Operator check: runs the real sandbox and asserts the boundary. It
-      # needs the user's home, so it is not a nix-build check.
+      # Operator check: runs the real sandbox against the user's home, so not a nix-build check.
       (pkgs.writeShellApplication {
         name = "agent-sandbox-check";
         runtimeInputs = [
@@ -39,10 +34,7 @@ in
         ];
         text =
           let
-            # One escaped argument: this runs under /bin/sh, and its own quotes
-            # are part of the script, not of the outer shell parse. Passing it
-            # as a literal here broke that (a single quote inside a JSON grep
-            # silently stripped the quotes and the assertion could never pass).
+            # One escaped argument: this runs under /bin/sh, and the script's own quotes must survive the outer parse.
             linuxCheck = ''
               set -eu
               if [ -r /proc/self/status ]; then
@@ -72,9 +64,7 @@ in
                 mkdir /var/lib/data/music/.agent-sandbox-probe-dir
                 rmdir /var/lib/data/music/.agent-sandbox-probe-dir
               fi
-              # A mask is a tmpfs, and a tmpfs is writable: emptiness is the
-              # assertion (the host contents are unreachable), not refusal of a
-              # write, which lands in the namespace and vanishes.
+              # A mask is a writable tmpfs: emptiness is the assertion, not a refused write.
               if [ -d /var/lib/data/photos ]; then
                 test -z "$(ls -A /var/lib/data/photos)"
               fi
@@ -105,8 +95,7 @@ in
               command -v maki >/dev/null && maki --version >/dev/null
               nix store ping >/dev/null 2>&1
               if [ -S /nix/var/nix/daemon-socket/socket ]; then
-                # The resolved store URL, not the raw setting: the read-only state
-                # dir is what makes `store = auto` fall through to the daemon.
+                # The resolved store URL: the read-only state dir is what makes `store = auto` fall through to the daemon.
                 nix store info --json | grep -q '"url":"daemon"'
                 ! test -w /nix/var/nix
               fi
@@ -114,31 +103,22 @@ in
 
             repoSnippet = ''r=""; for g in $(find "$HOME/code" -maxdepth 5 -name .git -type d 2>/dev/null); do p=''${g%/.git}; u=$(git -C "$p" remote get-url origin 2>/dev/null) || continue; case $u in *smores56*) r=$p; break;; esac; done; [ -n "$r" ] || exit 3'';
 
-            # macOS. Each assertion prints its own PASS/FAIL/SKIP, and a denial
-            # only counts when the command failed with "Operation not permitted":
-            # a bare non-zero exit is not evidence, since a missing path would
-            # pass a deny test for the wrong reason. The inner script runs under
-            # the store bash because `/bin/sh` inside the sandbox prints
-            # "Error opening /private/var/select/sh: Operation not permitted" on
-            # every run, which a loose grep would match by itself.
-            #
-            # What this cannot observe: mach-lookup, `appleevent-send`,
-            # `lsopen` and `job-creation` denials surface as unknown-service or
-            # AppleEvent errors, never EPERM, so those rules stay untested here.
-            #
-            # Repos: macOS has no mount namespace, so the profile denies writing
-            # any `/.git` and a new repo cannot be created inside the boundary
-            # (docs/manual-steps.md). The signing assertion therefore uses
-            # `git commit-tree` in an existing personal checkout; it leaves a
-            # dangling object, which `git gc` collects.
+            # Each assertion prints its own PASS/FAIL/SKIP; a denial counts only when the command failed with
+            # "Operation not permitted" (a bare non-zero exit could be a missing path). The inner script runs
+            # under the store bash because `/bin/sh` in the sandbox prints "Error opening
+            # /private/var/select/sh: Operation not permitted" every run, which a loose grep would match.
+            # Untested: mach-lookup, `appleevent-send`, `lsopen` and `job-creation` denials surface as
+            # unknown-service or AppleEvent errors, never EPERM.
+            # macOS has no mount namespace, so the profile denies writing any `/.git` and a new repo cannot
+            # be created inside the boundary (docs/manual-steps.md); the signing assertion uses
+            # `git commit-tree` in an existing personal checkout (leaves a dangling object `git gc` collects).
             darwinCheck = ''
               set -u
               pass=0 fail=0
               ok(){ pass=$((pass+1)); printf 'PASS %s\n' "$1"; }
               skip(){ printf 'SKIP %s\n' "$1"; }
               no(){ fail=$((fail+1)); printf 'FAIL %s\n' "$1"; [ -z "''${2:-}" ] || printf '     | %s\n' "$2"; }
-              # Exit 3 means a precondition was absent (no repo, no maki, no
-              # PAT); that is a skip, not a boundary failure.
+              # Exit 3: a precondition was absent (no repo, maki or PAT): a skip, not a failure.
               try_allow(){
                 local o rc
                 o=$(bash -c "$2" 2>&1); rc=$?
@@ -154,8 +134,7 @@ in
                 elif [[ $o == *"Operation not permitted"* ]]; then ok "$1"
                 else no "$1 (failed for another reason)" "$o"; fi
               }
-              # A masked path that does not exist yet is a skip: ENOENT is not
-              # evidence of the boundary.
+              # A masked path that does not exist yet is a skip: ENOENT is not evidence.
               deny_path(){
                 local o
                 o=$(bash -c "ls \"$2\"" 2>&1)
@@ -166,24 +145,20 @@ in
                 esac
               }
 
-              # Exec denials. EXEC_DENY is one mechanism, so these prove the
-              # mechanism rather than one rule each; `su`, `open`, `crontab` and
-              # `shortcuts` are in the same list.
+              # EXEC_DENY is one mechanism, so these prove it rather than one rule each.
               try_deny "sudo not invocable" '/usr/bin/sudo -n true'
               try_deny "su not invocable" '/usr/bin/su root -c true'
               try_deny "security (Keychain binary) cannot exec" '/usr/bin/security find-generic-password -s maki-openai-api-key -w'
               try_deny "launchctl denied" '/bin/launchctl print gui/$UID'
               try_deny "osascript denied" '/usr/bin/osascript -e "return 1"'
-              # Masking ~/.ssh hides the files, but connect() to a unix socket is
-              # a network operation: the cached PIV agent would sign a login
-              # with no touch. An absent socket has nothing to prove.
+              # connect() to a unix socket is a network operation: the cached PIV agent would sign a login
+              # with no touch even though ~/.ssh is masked. An absent socket proves nothing.
               for s in sudo-agent.sock piv-agent.sock; do
                 try_deny "$s unreachable" 'o=$(SSH_AUTH_SOCK="$HOME/.ssh/'"$s"'" ssh-add -l 2>&1); rc=$?; case $o in *"No such file"*) exit 3 ;; esac; printf "%s\n" "$o"; exit $rc'
               done
 
               deny_path "PIV PIN cache unreadable" "$(/usr/bin/getconf DARWIN_USER_TEMP_DIR)piv"
 
-              # Masks.
               deny_path ".ssh unreadable" "$HOME/.ssh"
               deny_path ".config unreadable" "$HOME/.config"
               deny_path "Library unreadable" "$HOME/Library"
@@ -198,15 +173,12 @@ in
               deny_path "agent transcripts (.claude) unreadable" "$HOME/.claude"
               deny_path "agent transcripts (.codex) unreadable" "$HOME/.codex"
 
-              # Writes.
               try_deny "HOME not writable" 'touch "$HOME/.agent-sandbox-probe"'
               try_deny "LaunchAgents not writable" 'mkdir -p "$HOME/Library/LaunchAgents"'
               try_deny ".local/bin not writable" 'touch "$HOME/.local/bin/.probe"'
               try_deny "existing repo hooks not writable" '${repoSnippet}; touch "$r/.git/hooks/.agent-sandbox-probe"'
               try_deny "existing repo config not writable" '${repoSnippet}; touch "$r/.git/config"'
-              # launchd's per-user scratch dirs are `com.apple.launchd.<id>` in
-              # the per-user temp dir; the profile denies them by regex. Report
-              # a skip when there is nothing to observe rather than a failure.
+              # launchd's per-user scratch dirs are denied by regex; skip when there is nothing to observe.
               scratch=$(bash -c 'd=$(/usr/bin/getconf DARWIN_USER_TEMP_DIR); find "$d" -maxdepth 1 -name "com.apple.launchd*" -print' 2>&1) || true
               case $scratch in
                 *"Operation not permitted"*) ok "launchd scratch denied" ;;
@@ -214,7 +186,6 @@ in
                 *) no "launchd scratch denied (was allowed)" "$scratch" ;;
               esac
 
-              # Allows.
               try_allow "code writable" 'touch "$HOME/code/.agent-sandbox-probe" && rm -f "$HOME/code/.agent-sandbox-probe"'
               try_allow "/tmp writable" 'd=$(mktemp -d) && rm -rf "$d"'
               try_allow "agent state writable" 'touch "$HOME/.local/state/agent/.probe" && rm -f "$HOME/.local/state/agent/.probe"'
@@ -224,8 +195,7 @@ in
               try_allow "maki runs" 'command -v maki >/dev/null || exit 3; maki --version >/dev/null'
               try_allow "gh via PAT" '${repoSnippet}; cd "$r" || exit 3; gh api /user --jq .login | grep -qx smores56'
 
-              # Informational: report what happens when the agent tries to
-              # create a repo, so the docs stay honest if the profile changes.
+              # Informational: reports what happens when the agent creates a repo, so docs stay honest.
               if bash -c 'd=$(mktemp -d)/repo; mkdir -p "$d" && cd "$d" && git init -q' >/dev/null 2>&1; then
                 printf 'NOTE git init inside the boundary: allowed\n'
               else

@@ -5,8 +5,7 @@
     let
       pkgs = import inputs.nixpkgs { inherit system; };
 
-      # Runs the checked-in script with the tools it needs on PATH; the script
-      # is idempotent and clones the repo to $HOME/code itself.
+      # The script is idempotent and clones the repo to $HOME/code itself.
       bootstrap = pkgs.writeShellApplication {
         name = "bootstrap";
         runtimeInputs = with pkgs; [
@@ -24,9 +23,7 @@
         '';
       };
 
-      # Installs NixOS on a blank machine over SSH (disko + nixos-anywhere),
-      # writing the generated hardware config back into the checkout. Run from
-      # the checkout; the host needs modules/hosts/<host>/{default.nix,disko.nix}.
+      # Writes the generated hardware config back into the checkout; needs modules/hosts/<host>/{default.nix,disko.nix}.
       install = pkgs.writeShellApplication {
         name = "install";
         runtimeInputs = [
@@ -85,8 +82,7 @@
             git ls-files --error-unmatch "$host_dir/$f" >/dev/null 2>&1 \
               || { echo "error: $host_dir/$f is not tracked by git — commit it (flakes only see tracked files)" >&2; exit 1; }
           done
-          # Host-local modules (`nixosModules = [ ./boot.nix ]`) are read by the flake
-          # too; untracked ones pass the checks above and fail late in the eval.
+          # Host-local modules are read by the flake too; untracked ones pass the checks above and fail late in the eval.
           untracked="$(git ls-files --others --exclude-standard "$host_dir")"
           if [ -n "$untracked" ]; then
             echo "error: $host_dir has untracked files — commit them (flakes only see tracked files):" >&2
@@ -96,10 +92,8 @@
 
           hardware="$host_dir/hardware.nix"
 
-          # A pre-generated host key (secrets/hosts/<host>/, gitignored) is
-          # delivered before first boot so sops-nix can decrypt that host's
-          # secrets. It must be the identity .sops.yaml binds to &<host>:
-          # delivering anything else installs a machine that cannot boot.
+          # The pre-generated host key (gitignored) is delivered before first boot so sops-nix can decrypt;
+          # it must be the identity .sops.yaml binds to &<host> or the machine cannot boot.
           extra_files=()
           key_dir="secrets/hosts/$host"
           if [ -d "$key_dir" ]; then
@@ -128,9 +122,8 @@
               exit 1
             fi
             echo "Host key recipient ''${recipient} matches &$host in .sops.yaml"
-            # Prove the delivered key actually decrypts this host's secrets. A
-            # recipient can appear in .sops.yaml without being bound to a rule,
-            # and a regenerated key encrypts to a recipient the host cannot use.
+            # A recipient can appear in .sops.yaml without being bound to a rule, and a regenerated key
+            # encrypts to a recipient the host cannot use: prove the key decrypts.
             preflight=""
             if [ -f "secrets/$host.yaml" ]; then
               preflight="secrets/$host.yaml"
@@ -138,9 +131,7 @@
               preflight="secrets/common.yaml"
             fi
             if [ -n "$preflight" ]; then
-              # Drop the admin-key command: sops runs it eagerly even though this
-              # preflight supplies the host key; an empty value makes it try to
-              # execute "" and crash, so unset it instead.
+              # sops runs the admin-key command eagerly; an empty value makes it execute "" and crash, so unset it.
               if env -u SOPS_AGE_KEY_CMD \
                 SOPS_AGE_KEY="$(ssh-to-age -private-key -i "$key_priv")" \
                 sops --decrypt "$preflight" >/dev/null 2>&1; then
@@ -173,9 +164,7 @@
         '';
       };
 
-      # Generates the pre-generated SSH host key a blank machine boots with
-      # (`install` delivers it via --extra-files) and prints its sops age
-      # recipient. The key lives under the gitignored secrets/hosts/<host>/.
+      # `install` delivers it via --extra-files; prints its sops age recipient.
       host-key = pkgs.writeShellApplication {
         name = "host-key";
         runtimeInputs = with pkgs; [
@@ -223,10 +212,7 @@
         '';
       };
 
-      # Packages the FIDO2 credential handles (the files that make a YubiKey
-      # usable for sudo) so a wiped machine can be rebuilt without
-      # re-enrolling the keys. PIV private keys are generated on the token and
-      # cannot be exported, so they are not part of any backup.
+      # PIV private keys are generated on the token and cannot be exported, so they are not backed up.
       yubikeyKeys = import ../lib/yubikey-keys.nix;
       yubikeyPubkeys = pkgs.writeText "yubikey-pubkeys" (
         pkgs.lib.concatMapStrings (k: "${k.key}\t${k.pubkey}\n") yubikeyKeys.sudo
@@ -267,9 +253,7 @@
         text = keyScript ./apps/key-restore.sh;
       };
 
-      # Runs the minimal Cloudflare OpenTofu config from a root-owned state
-      # directory. The API token and tunnel UUID stay in sops-decrypted files;
-      # account/email inputs are non-secret.
+      # Runs from a root-owned state directory; the API token and tunnel UUID stay in sops-decrypted files.
       cloudflareTofu =
         name: action:
         pkgs.writeShellApplication {
@@ -302,10 +286,8 @@
 
             export CLOUDFLARE_API_TOKEN
             CLOUDFLARE_API_TOKEN=$(tr -d '[:space:]' < "$token_file")
-            # An empty account id is not a plan-time error: OpenTofu sends it to
-            # the API, which rejects account-scoped resources mid-apply after
-            # others have already changed. The tunnel credentials carry the same
-            # account tag, so they cover a missing or dangling /etc entry.
+            # An empty account id is not a plan-time error: the API rejects account-scoped resources mid-apply
+            # after others changed. The tunnel credentials carry the same account tag, so they cover it.
             account_id="''${CLOUDFLARE_ACCOUNT_ID:-}"
             if [ -z "$account_id" ] && [ -r /etc/cloudflare-tofu/account-id ]; then
               account_id=$(cat /etc/cloudflare-tofu/account-id)
@@ -324,8 +306,7 @@
             TF_VAR_tunnel_id=$(jq -er '.TunnelID' "$creds")
 
             cd "$state"
-            # Always init: a provider/lockfile change needs `init` to pick up
-            # the new lock, and a warm .terraform makes it a cheap no-op.
+            # Always init: a lockfile change needs it, and a warm .terraform makes it a no-op.
             tofu init -input=false
             exec tofu ${action} "$@"
           '';
@@ -340,29 +321,20 @@
       packages.bootstrap = bootstrap;
       packages.install = install;
       packages.host-key = host-key;
-      # `nix run .#key-backup` — archive the FIDO2 handles for Bitwarden.
       packages.key-backup = key-backup;
-      # `nix run .#key-restore -- <bundle>` — restore them on a fresh machine.
       packages.key-restore = key-restore;
-      # `nix run github:smores56/nix-config#bootstrap` — the fresh-machine entry
-      # point.
       apps.bootstrap = {
         type = "app";
         program = "${bootstrap}/bin/bootstrap";
       };
-      # `nix run .#install -- <host> <target-host>` — blank-machine install.
       apps.install = {
         type = "app";
         program = "${install}/bin/install";
       };
-      # `nix run .#host-key -- <host>` — generate a host key + print its age
-      # recipient.
       apps.host-key = {
         type = "app";
         program = "${host-key}/bin/host-key";
       };
-      # `nix run .#key-backup` / `..#key-restore -- <bundle>` — move the FIDO2
-      # handles between a machine and Bitwarden.
       apps.key-backup = {
         type = "app";
         program = "${key-backup}/bin/key-backup";
@@ -371,7 +343,6 @@
         type = "app";
         program = "${key-restore}/bin/key-restore";
       };
-      # `sudo nix run .#cloudflare-plan` / `..#cloudflare-apply`.
       apps.cloudflare-plan = {
         type = "app";
         program = "${cloudflarePlan}/bin/cloudflare-plan";
@@ -380,7 +351,6 @@
         type = "app";
         program = "${cloudflareApply}/bin/cloudflare-apply";
       };
-      # `sudo nix run .#cloudflare-tofu -- import <address> <id>` / `state list`.
       apps.cloudflare-tofu = {
         type = "app";
         program = "${cloudflareCommand}/bin/cloudflare-tofu";

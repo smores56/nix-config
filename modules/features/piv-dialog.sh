@@ -10,8 +10,7 @@ case ${PIV_PLATFORM:-$(uname -s)} in
     ;;
 esac
 
-# The caller's WAYLAND_DISPLAY may predate the current compositor, so trust a
-# live socket and otherwise take the newest one in the runtime dir.
+# The caller's WAYLAND_DISPLAY may predate the compositor: trust a live socket, else the newest in the runtime dir.
 wayland_socket() {
   local runtime=${XDG_RUNTIME_DIR:-} name=${WAYLAND_DISPLAY:-} s newest=""
   [ -n "$runtime" ] || return 1

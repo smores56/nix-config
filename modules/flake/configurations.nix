@@ -27,31 +27,23 @@ let
     sops-nix.homeManagerModules.sops
   ];
 
-  # providers.nix injects `_module.args.aiProviders` for maki and cloudflared.
-  # Pure data — safe to import into NixOS evaluations too.
+  # providers.nix injects `_module.args.aiProviders` (maki, cloudflared); pure data, safe for NixOS evals.
   nixosModules = [
     ../options.nix
     ../features/ai/providers.nix
     sops-nix.nixosModules.sops
-    # Declarative disk layouts: a host with modules/hosts/<name>/disko.nix
-    # derives its fileSystems from disko.devices (see AGENTS.md).
+    # A host with modules/hosts/<name>/disko.nix derives its fileSystems from disko.devices (see AGENTS.md).
     disko.nixosModules.disko
   ];
 
-  # Hosts are discovered from modules/hosts/<name>/; adding a host means adding
-  # a directory (default.nix + disko.nix + hardware.nix), never editing this
-  # file. default.nix is data, not a module: `profiles` names the shared
-  # profiles (they drive machine.graphical/wayland/workHost and the
-  # server-profile assertion); `homeModules` and `nixosModules` list modules
-  # that exist on that host alone, such as a LUKS chain, a greeter, or a Darwin
-  # host's sops keys. Host-local modules are not profiles: their names never
-  # reach machine.profiles.
+  # Hosts are discovered from modules/hosts/<name>/; adding one never edits this file. default.nix
+  # is data, not a module: `profiles` names shared profiles (driving machine.graphical/wayland/
+  # workHost and the server-profile assertion); `homeModules`/`nixosModules` list host-only modules,
+  # which never reach machine.profiles.
   hostsDir = ../hosts;
   hostNames = builtins.attrNames (
     lib.filterAttrs (_: type: type == "directory") (builtins.readDir hostsDir)
   );
-  # Catches typos in the top-level keys: a misspelled flag or options section
-  # would otherwise be silently ignored.
   allowedKeys = [
     "system"
     "username"
@@ -146,10 +138,8 @@ let
       ++ profileModules args.hostname "nixos"
       ++ hostModules args.hostname
       ++ lib.optionals (builtins.elem "linux-desktop" profileNames) [ niri.nixosModules.niri ]
-      # hardware.nix is optional so a host can be authored (default.nix +
-      # disko.nix) before nixos-anywhere generates it during the install; the
-      # guard keeps the flake evaluable in that window (see AGENTS.md). Warn
-      # loudly because a missing file means no kernel modules / microcode.
+      # hardware.nix is optional so a host can be authored before nixos-anywhere generates it during
+      # install (see AGENTS.md); warn loudly since missing means no kernel modules / microcode.
       ++ (
         if builtins.pathExists (hostsDir + "/${args.hostname}/hardware.nix") then
           [ (hostsDir + "/${args.hostname}/hardware.nix") ]
@@ -169,9 +159,6 @@ let
 in
 {
   flake = {
-    # Every host directory under modules/hosts/ contributes its configs; the
-    # default.nix `nixos`/`home` flags say which. Hosts are discovered, so adding
-    # one never touches this file.
     homeConfigurations = lib.listToAttrs (
       map (
         name:

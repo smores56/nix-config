@@ -1,8 +1,6 @@
-# Owner-selecting GitHub credentials: each account's PAT is the one credential
-# for HTTPS git and gh, for humans and for Maki. The PATs live in sops as
-# user-readable files. Every consumer asks github-token-file which PAT the
-# target repository's owner gets, so git, gh and the sandbox can never disagree
-# and work and personal repos never share a token.
+# Owner-selecting GitHub credentials: one sops-held PAT per account for HTTPS git and gh (humans
+# and Maki). Every consumer asks github-token-file which PAT a repository's owner gets, so they
+# cannot disagree and work and personal repos never share a token.
 {
   config,
   lib,
@@ -33,19 +31,14 @@ let
     '';
   };
 
-  # git credential protocol: `git credential <helper> get` with key=value lines
-  # on stdin and key=value on stdout. Only GitHub over HTTPS is answered; the
-  # owner comes from the request path (useHttpPath), so the token follows the
-  # URL rather than the directory git runs in. Without a usable token it sends
-  # quit=1, so git fails naming the owner instead of prompting for a password.
-  # The token is read from the sops file and never appears in argv or the
-  # environment.
+  # git credential helper: answers only GitHub over HTTPS, owner from the request path (useHttpPath)
+  # so the token follows the URL, not the cwd. Without a token it sends quit=1 so git fails naming
+  # the owner instead of prompting. The token never appears in argv or the environment.
   credentialHelper = pkgs.writeShellApplication {
     name = "github-credential-helper";
     runtimeInputs = [ pkgs.coreutils ];
     text = ''
       operation="''${1:-get}"
-      # Nothing to store or erase: sops owns the token files.
       [ "$operation" = get ] || exit 0
 
       protocol="" host="" path=""
@@ -60,9 +53,7 @@ let
 
       host=''${host,,}
       host=''${host%:443}
-      # `www` is the same service, never a lookalike label of its own; a direct
-      # credential fill for it must fail closed the same way a rewritten remote
-      # does. Anything else after the strip still fails the equality test.
+      # `www` is the same service, never a lookalike label; a direct fill for it must fail closed like a rewritten remote.
       host=''${host#www.}
       [ "$protocol" = https ] && [ "$host" = github.com ] || exit 0
 
@@ -84,17 +75,11 @@ let
     '';
   };
 
-  # `gh` reads GH_TOKEN, and gh's own git calls (repo clone, pr checkout) use
-  # it too, so the token should match the repository the command targets. The
-  # rule is deliberately small and predictable rather than a reimplementation
-  # of gh's per-command flags: -R/--repo or GH_REPO, else the `api` endpoint,
-  # else the checkout's default remote as gh picks it, else the personal
-  # account. Positional repo arguments are not guessed at: name the other
-  # account's repo with -R or GH_REPO. A miss only means the other account's
-  # token reaches github.com and the call is refused. Any other host (GH_HOST,
-  # --hostname, an api URL, or a checkout's remote) gets no token at all, since
-  # gh would also send GH_TOKEN to *.ghe.com.
-  # GH_PAT_RESOLVE_ONLY=1 prints the resolved owner and exits, for tests.
+  # gh also uses GH_TOKEN for its git calls, so it must match the targeted repository. Small,
+  # predictable rule, not a reimplementation of gh's flags: -R/--repo or GH_REPO, else the `api`
+  # endpoint, else the checkout's default remote, else personal. Positional repo arguments are not
+  # guessed (use -R); a miss only gets the other account's token refused. Other hosts get no token
+  # (gh would send GH_TOKEN to *.ghe.com).
   ghWithPat = pkgs.writeShellApplication {
     name = "gh-pat";
     runtimeInputs = [
@@ -135,8 +120,6 @@ let
         prev=$arg
       done
 
-      # "owner/name", "github.com/owner/name" or a github.com URL -> owner;
-      # prints nothing for anything else.
       owner_of() {
         local ref=$1
         case "''${ref,,}" in
@@ -152,8 +135,6 @@ let
         printf '%s' "''${ref%%/*}"
       }
 
-      # The endpoint of `gh api`: its first operand, skipping flags and the
-      # values of the flags that take one.
       api_owner() {
         local endpoint="" skip=0
         for arg in "$@"; do
@@ -271,9 +252,7 @@ let
     '';
   };
 
-  # Install the PAT-aware wrapper as `gh`, while keeping `gh-pat` for the
-  # sandbox shim. The wrapper execs the real gh by absolute path, so the
-  # symlink cannot recurse.
+  # The PAT-aware wrapper is `gh`; `gh-pat` stays for the sandbox shim. It execs the real gh by absolute path, so no recursion.
   ghAlias = pkgs.runCommand "gh" { meta.mainProgram = "gh"; } ''
     mkdir -p $out/bin
     ln -s ${ghWithPat}/bin/gh-pat $out/bin/gh
@@ -294,12 +273,9 @@ in
       gitCredentialHelper.enable = false;
     };
     programs.git.settings = {
-      # GitHub is HTTPS plus the owner's PAT for both accounts (no SSH identity
-      # is registered for git), so every SSH spelling of a GitHub remote is
-      # rewritten, matching the remote forms the owner includes recognise. The
-      # `www` and plain-`http` spellings are rewritten too: git picks the
-      # longest prefix, so both land on the bare https host the helper answers
-      # for and fail closed instead of prompting for a password.
+      # GitHub is HTTPS plus the owner's PAT for both accounts (no SSH identity for git), so every SSH
+      # spelling is rewritten, including `www` and plain `http`: git picks the longest prefix, so all
+      # land on the bare https host the helper answers and fail closed instead of prompting.
       url."https://github.com/".insteadOf = [
         # Longest match wins, so the slash-led scp form loses its extra slash.
         "git@github.com:/"

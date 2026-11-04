@@ -24,7 +24,6 @@ while [ "$#" -gt 0 ]; do
     --force) force=1 ;;
     --no-verify) verify=0 ;;
     --host-key) host_key_mode=1 ;;
-    # Test hooks: default to the checkout locations.
     --target-dir)
       if [ "${KEY_BUNDLE_TEST:-0}" != 1 ]; then
         echo "key-restore: --target-dir is a test hook" >&2
@@ -51,7 +50,6 @@ while [ "$#" -gt 0 ]; do
       shift 2
       continue
       ;;
-    # Test hook: the build embeds the committed map.
     --pubkeys)
       if [ "${KEY_BUNDLE_TEST:-0}" != 1 ]; then
         echo "key-restore: --pubkeys is a test hook" >&2
@@ -229,9 +227,7 @@ expected_pubkey() {
   awk -F '\t' -v k="$1" '$1 == k { print $2; exit }' "$pubkeys"
 }
 
-# Refuse before writing anything if a handle already exists or does
-# not match the committed public half. A partial restore would leave
-# handles the committed map cannot explain.
+# Refuse before writing if a handle exists or differs from the committed public half; a partial restore is unexplainable.
 while IFS=$'\t' read -r key _; do
   [ -n "$key" ] || continue
   src="$stage/home/.config/ssh-sk/$key"
@@ -257,8 +253,7 @@ while IFS=$'\t' read -r key _; do
   fi
 done <"$pubkeys"
 
-# Reject a handle the repo does not know about; the map is the
-# authoritative credential inventory.
+# Reject a handle outside the committed map (the authoritative credential inventory).
 for src in "$stage"/home/.config/ssh-sk/*/*; do
   [ -f "$src" ] || continue
   key="${src#"$stage/home/.config/ssh-sk/"}"

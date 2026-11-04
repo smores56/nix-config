@@ -1,6 +1,5 @@
-# The `repos` and `worktrees` CLIs (television cables in ../tv call them). Not a
-# module: tv imports this for the two packages. Per-host values are substituted
-# into the `@NAME@` placeholders of the .sh files.
+# The `repos` and `worktrees` CLIs (../tv cables call them); not a module, tv imports the two
+# packages. Per-host values fill the `@NAME@` placeholders of the .sh files.
 {
   config,
   lib,
@@ -11,7 +10,6 @@ let
 
   workFlatDir = if config.machine.workHost then cfg.work.flatRepos.dir else "";
 
-  # Shared by both tools: host, owner, repo of the cwd's origin.
   originParts = builtins.readFile ./origin-parts.sh;
 
   script =

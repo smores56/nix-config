@@ -10,23 +10,19 @@ let
   isZsh = shell == "zsh";
   isServer = builtins.elem "server" config.machine.profiles;
 
-  # Keep the command in the scrollback before the YubiKey touch. Put it on the
-  # session PATH (not in home.packages) so Maki's sandbox PATH, which binds
-  # ~/.nix-profile/bin, does not see a sudo command at all.
+  # Keeps the command in scrollback before the YubiKey touch. On the session PATH, not
+  # home.packages, so Maki's sandbox PATH never sees it.
   sudoWrapper = pkgs.writeShellScriptBin "sudo" ''
     printf 'sudo: %s\n' "$*" >&2
     exec /run/wrappers/bin/sudo "$@"
   '';
 
-  # After a reconnect the old forwarded agent path is dead. Point panes at a
-  # stable symlink so zellij shells keep working; the next login repoints it.
+  # A reconnect kills the forwarded agent path; panes use a stable symlink the next login repoints.
   sshAuthSockHookFish = builtins.readFile ./ssh-auth-sock.fish;
   sshAuthSockHookZsh = builtins.readFile ./ssh-auth-sock.zsh;
 
-  # Renames the tab holding this shell's pane, not the focused one, which
-  # differs once you switch tabs while a command runs. Shells compute the
-  # name themselves and run this in the background, since each zellij client
-  # call costs ~16ms.
+  # Renames the tab holding this shell's pane, not the focused one; backgrounded since each
+  # zellij client call costs ~16ms.
   zellijTabRename = pkgs.writeShellApplication {
     name = "zellij-tab-rename";
     runtimeInputs = [
@@ -43,15 +39,13 @@ let
   };
   tabRename = lib.getExe zellijTabRename;
 
-  # Init scripts that only depend on the tool's version and flags, generated
-  # at build time so shells source a file instead of spawning the tool.
+  # Generated at build time so shells source a file instead of spawning the tool.
   initScript = name: cmd: pkgs.runCommand name { } "${cmd} > $out";
   zoxide = "${lib.getExe config.programs.zoxide.package} init";
   zoxideFlags = lib.escapeShellArgs config.programs.zoxide.options;
   zoxideZsh = initScript "zoxide-init.zsh" "${zoxide} zsh ${zoxideFlags}";
   zoxideFish = initScript "zoxide-init.fish" "${zoxide} fish ${zoxideFlags}";
 
-  # Fish-style abbreviations: expand the command word on space or enter.
   zshAbbrs = lib.concatStringsSep " " (
     lib.mapAttrsToList (k: v: "${lib.escapeShellArg k} ${lib.escapeShellArg v}") config.user.shellAbbrs
   );
@@ -62,8 +56,7 @@ let
       . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
     fi
     . "${config.home.sessionVariablesPackage}/etc/profile.d/hm-session-vars.sh"
-    # Non-login shells (zellij panes) never run path_helper, and the employer's
-    # ~/.zshrc needs brew; append it so Nix's copies still win.
+    # Non-login shells (zellij panes) skip path_helper and the employer's ~/.zshrc needs brew; append it so Nix still wins.
     typeset -U path
     [[ -d /opt/homebrew/bin ]] && path+=(/opt/homebrew/bin /opt/homebrew/sbin)
   '';
@@ -96,8 +89,7 @@ in
 
   manual.manpages.enable = false;
 
-  # One string per abbreviation for both shells; pickers go through `pick`,
-  # defined by each renderer below, since capturing output differs.
+  # One string per abbreviation for both shells; pickers go through each renderer's `pick`.
   user.shellAbbrs = lib.mkMerge [
     {
       e = "hx";
@@ -153,8 +145,6 @@ in
               source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.fish
           end
         '')
-        # sops-nix provisions these 0400 user-owned secrets on NixOS hosts;
-        # hosts without them skip the block.
         (lib.mkIf config.machine.nixos ''
           if test -r /run/secrets/neuralwatt-api-key
               set -gx NEURALWATT_API_KEY (cat /run/secrets/neuralwatt-api-key)
@@ -180,9 +170,8 @@ in
       ];
 
       functions = {
-        # pick <tv-channel> <command…>: runs the picker, then the command
-        # (in this shell, so `c` can cd) with the selection appended or in
-        # place of {name} (its basename). Cancelling runs nothing.
+        # pick <channel> <command…>: runs the picker, then the command in this shell (so `c` can cd)
+        # with the selection appended or substituted for {name}. Cancelling runs nothing.
         pick.body = ''
           if test (count $argv) -lt 2
               echo 'usage: pick <tv-channel> <command…>' >&2
@@ -200,10 +189,6 @@ in
           $cmd
         '';
 
-        # Auto-name Zellij tabs after the repo (or dir) on every prompt
-        # (covers `cd`/zoxide `c`/manual navigations), plus the command
-        # before each one runs. Renames go out in the background and only
-        # when the name changes.
         _zellij_tab_title.body = ''
           set -l dir $PWD
           while test "$dir" != /; and not test -e $dir/.git
@@ -232,14 +217,12 @@ in
         _zellij_tab_name = {
           body = ''
             set -q ZELLIJ; or return
-            # A fast command's preexec rename may still be in flight and
-            # land after this one; kill it so the newest name wins. Only
-            # for short commands, so the pid can't have been reused.
+            # A fast command's preexec rename may land after this one; kill it so the newest wins
+            # (short commands only, so the pid cannot be reused).
             if set -q _ztn_pid; and test "$CMD_DURATION" -lt 2000
                 kill $_ztn_pid 2>/dev/null
             end
             _zellij_tab_rename (_zellij_tab_title)
-            # Only preexec renames are tracked for killing.
             set -e _ztn_pid
           '';
           onEvent = [ "fish_prompt" ];
@@ -267,20 +250,15 @@ in
           ];
     };
 
-    # Fish emulation: pure prompt, real abbreviations, autosuggestions,
-    # highlighting, prefix history search, `done`-style notifications.
     zsh = lib.mkIf isZsh {
       enable = true;
-      # HM owns $ZDOTDIR; ~/.zshrc stays a plain file for tools that write
-      # their own blocks into it (an employer setup tool, installers).
+      # HM owns $ZDOTDIR; ~/.zshrc stays a plain file for tools that append their own blocks.
       dotDir = "${config.xdg.configHome}/zsh";
       autosuggestion.enable = true;
       syntaxHighlighting.enable = true;
       historySubstringSearch.enable = true;
 
-      # compaudit (most of compinit's ~27ms) only matters when fpath changes,
-      # and fpath comes from the HM generation and the Nix profile, so key the
-      # dump on both: a switch rebuilds it once, other starts skip the audit.
+      # compaudit only matters when fpath changes; key the dump on the HM generation and Nix profile so a switch rebuilds it once.
       completionInit = ''
         autoload -U compinit
         () {
@@ -304,10 +282,8 @@ in
         ignoreAllDups = true;
       };
 
-      # The installer's /etc/zshenv only loads Nix for ssh logins, and login
-      # shells then run /etc/zprofile's path_helper, which moves the system
-      # dirs ahead of Nix and HM. Both files rebuild the same order as fish:
-      # HM's sessionPath, then the Nix profile, then the system.
+      # The installer's /etc/zshenv loads Nix only for ssh logins, then /etc/zprofile's path_helper puts
+      # system dirs ahead of Nix and HM. Both files rebuild fish's order: HM sessionPath, Nix profile, system.
       envExtra = lib.mkMerge [
         (lib.mkIf (!config.machine.nixos) zshPathInit)
         (lib.mkIf isServer (lib.mkAfter sshAuthSockHookZsh))
@@ -315,29 +291,25 @@ in
       profileExtra = lib.mkIf (!config.machine.nixos) zshPathInit;
 
       initContent = lib.mkMerge [
-        # Before compinit: fish-like menu completion, case-insensitive.
         (lib.mkOrder 550 ''
           zstyle ':completion:*' menu select
           zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}' 'r:|[._-]=* r:|=*'
         '')
 
-        # The tool-owned rc, after compinit (its completion blocks need it)
-        # and before the interactive layer, so its PATH entries win.
+        # After compinit (its completion blocks need it), before the interactive layer so its PATH entries win.
         (lib.mkOrder 600 ''
           if [[ -f ~/.zshrc ]]; then
             source "$HOME/.zshrc"
           fi
         '')
 
-        # Where HM put the zoxide integration.
         (lib.mkOrder 851 "source ${zoxideZsh}")
 
         (lib.mkOrder 1000 ''
           fpath+=(${pkgs.pure-prompt}/share/zsh/site-functions)
 
           typeset -gA _abbrs=(${zshAbbrs})
-          # Only the whole command word expands, as in fish; Ctrl-Space types
-          # a plain space. Replacing accept-line covers every key bound to it.
+          # Only the whole command word expands, as in fish; Ctrl-Space types a plain space.
           _abbr_expand() {
             [[ $LBUFFER =~ '^ *([^ ]+)$' && $RBUFFER != [^\ ]* ]] && (( $+_abbrs[$match[1]] )) &&
               LBUFFER=''${LBUFFER%$match[1]}$_abbrs[$match[1]]
@@ -369,9 +341,6 @@ in
           autoload -Uz add-zsh-hook
           zmodload zsh/datetime
 
-          # Auto-name Zellij tabs after the repo (or dir) on every prompt,
-          # plus the command before each one runs. Renames go out in the
-          # background and only when the name changes.
           _zellij_tab_title() {
             local dir=$PWD name=''${PWD:t}
             while [[ $dir != / && ! -e $dir/.git ]]; do dir=''${dir:h}; done
@@ -396,9 +365,8 @@ in
           }
           _zellij_tab_name() {
             [[ -n ''${ZELLIJ-} ]] || return 0
-            # A fast command's preexec rename may still be in flight and
-            # land after this one; kill it so the newest name wins. Only
-            # within 2s, so the pid can't have been reused.
+            # A fast command's preexec rename may land after this one; kill it so the newest wins
+            # (within 2s, so the pid cannot be reused).
             [[ -n ''${_ztn_pid-} ]] && (( EPOCHREALTIME - _ztn_at < 2 )) &&
               kill $_ztn_pid 2>/dev/null
             unset _ztn_pid
@@ -415,9 +383,8 @@ in
           add-zsh-hook precmd _zellij_tab_name
           add-zsh-hook preexec _zellij_tab_name_preexec
 
-          # Like fish's `done`: notify when a command ran 10s or more while
-          # the terminal wasn't the focused app (never over ssh, where the
-          # notification would land on the other machine's screen).
+          # Like fish's `done`: notify after 10s+ commands while the terminal is unfocused (not over ssh,
+          # where it would land on the other machine).
           _done_preexec() { _done_start=$EPOCHREALTIME; _done_cmd=$1 }
           _done_precmd() {
             local rc=$? elapsed

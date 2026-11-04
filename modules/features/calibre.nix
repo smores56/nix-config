@@ -1,12 +1,10 @@
-# calibre + FanFicFare CLI workflow (headless story downloads), plus an
-# ingest queue so an agent can add books and edit metadata without holding the
-# OPDS password or stopping the server itself:
-#   1. install the FanFicFare plugin zip once:
-#      calibre-debug -c "from calibre.customize.ui import add_plugin; add_plugin('/tmp/FanFicFarePlugin.zip')"
-#   2. download: calibre-debug --run-plugin FanFicFare -- --with-library "$HOME/Calibre Library" <story-url>
-#      (writes the epub to CWD; does not add it to the library)
-#   3. calibredb add refuses while calibre-server holds the library: the ingest
-#      service below stops this unit, runs calibredb, and starts it again.
+# calibre + FanFicFare CLI (headless story downloads), plus an ingest queue so an agent can add
+# books and edit metadata without the OPDS password or stopping the server itself.
+# Install the FanFicFare plugin zip once:
+#   calibre-debug -c "from calibre.customize.ui import add_plugin; add_plugin('/tmp/FanFicFarePlugin.zip')"
+# Download (writes the epub to CWD, does not add it):
+#   calibre-debug --run-plugin FanFicFare -- --with-library "$HOME/Calibre Library" <story-url>
+# calibredb add refuses while calibre-server holds the library, hence the ingest service below.
 # Upstream: https://github.com/JimmXinu/FanFicFare
 {
   config,
@@ -21,15 +19,11 @@ let
 
   userdb = "${config.home.homeDirectory}/.config/calibre-server/users.sqlite";
 
-  # Loopback port for calibre-server.
   port = ports.calibre;
-  # Queue the agent writes books and manifest.json to; a user timer runs
-  # calibredb with the server stopped.
+  # Queue the agent writes books and manifest.json to.
   ingestDir = "/var/lib/agent/books-ingest";
 
-  # Single OPDS account, provisioned from the password file (trailing newlines
-  # stripped). Restarting the unit re-applies the file, so rotating the password
-  # is just editing the secret and rebuilding.
+  # Single OPDS account from the password file; restarting the unit re-applies it.
   opdsUser = "smores56";
 
   provisionUser = pkgs.writeShellScript "calibre-provision-user" ''
@@ -48,10 +42,8 @@ let
     fi
   '';
 
-  # The agent writes books and a manifest.json to the queue. The service owns
-  # the calibre lock: stop the OPDS server, apply the manifest and add books,
-  # restart. Processed/failed move out of the queue so a failed file is not
-  # retried forever.
+  # The service owns the calibre lock: stop the OPDS server, apply the manifest, restart.
+  # Processed/failed move out of the queue so a failed file is not retried forever.
   ingest = pkgs.writeShellApplication {
     name = "calibre-ingest";
     runtimeInputs = [
@@ -67,10 +59,8 @@ let
       library=${lib.escapeShellArg cfg.library}
       canonical=${lib.escapeShellArg ingestDir}
 
-      # The queue lives in an agent-writable tree. Refuse a symlinked queue or
-      # processed/failed directories, and confine every manifest path to the
-      # queue; otherwise this timer is an unsandboxed arbitrary-file reader
-      # (and mover) for the agent.
+      # The queue is agent-writable: refuse symlinked queue/processed/failed dirs and confine manifest
+      # paths to the queue, or this timer is an unsandboxed arbitrary-file reader and mover.
       [ -d "$inbox" ] && [ ! -L "$inbox" ] || exit 0
       [ "$(realpath -e "$inbox")" = "$canonical" ] || {
         echo "calibre-ingest: queue is a symlink or relocated: $inbox" >&2
@@ -204,9 +194,7 @@ in
       Service = hardening // {
         Type = "oneshot";
         ExecStart = lib.getExe ingest;
-        # The ingest parses agent-authored EPUBs with calibredb. Confine writes
-        # to the library and the queue so a hostile book (or manifest) cannot
-        # use the parser to modify the rest of the system.
+        # Confine writes to the library and queue so a hostile EPUB or manifest cannot use the parser to modify the system.
         ProtectHome = "read-only";
         ReadWritePaths = [
           cfg.library
@@ -214,7 +202,6 @@ in
         ];
         RestrictAddressFamilies = [ "AF_UNIX" ];
         LockPersonality = true;
-        # The service itself stops/starts calibre-server; no After= ordering.
       };
     };
 

@@ -9,10 +9,8 @@ let
   ];
 in
 {
-  # NixOS defaults EDITOR to nano (environment.variables in nixpkgs), which
-  # leaks into login shells and, via the systemd user session, into
-  # GUI-spawned processes. home.sessionVariables covers shells; the systemd
-  # set is what environment.d needs to override the PAM-inherited value.
+  # NixOS defaults EDITOR to nano, leaking into login shells and the systemd user session;
+  # environment.d needs the systemd set to override the PAM-inherited value.
   home.sessionVariables = {
     EDITOR = "hx";
     VISUAL = "hx";
@@ -142,8 +140,7 @@ in
             "-"
           ];
         };
-        # oxide first: helix takes each feature from the first server offering it,
-        # and oxide's backlinks, tags, and daily notes beat marksman's plain links.
+        # oxide first: helix takes each feature from the first server offering it, and oxide's backlinks/tags/daily notes beat marksman.
         language-servers = [
           "markdown-oxide"
           "marksman"

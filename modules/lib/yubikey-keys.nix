@@ -1,17 +1,10 @@
-# Public YubiKey material, one entry per credential and key.
-#
-# This is the single source for sshd's authorized_keys, the sudo authorized
-# keys, pam_p11's certificate file, and the handle integrity check in
-# `key-backup`/`key-restore`. Private halves never leave the token, so nothing
-# here is secret. Commit signing does not use the YubiKeys (the sops keys in
-# modules/lib/signing-keys.nix sign), so none of these is trusted for git.
-#
-# `piv` entries are slot 9a (PIN ONCE, touch NEVER, SSH login). `sudo` entries
-# are touch-required with no verify-required and are loaded only into the sudo
-# agent (fido2-agent on Linux, sudo-agent on macOS) for pam_rssh.
-#
-# `key` is the relative path under ~/.config/ssh-sk (piv-k1 vs k1/sudo); `piv`
-# entries also carry the pam_p11 certificate.
+# Public YubiKey material, one entry per credential and key: the single source for sshd's
+# authorized_keys, sudo authorized keys, pam_p11's certificate file and the handle integrity
+# check in `key-backup`/`key-restore`. Nothing here is secret, and none is trusted for git
+# (the sops keys in modules/lib/signing-keys.nix sign).
+# `piv` entries are slot 9a (PIN ONCE, touch NEVER, SSH login); `sudo` entries are
+# touch-required, loaded only into the sudo agent (fido2-agent on Linux, sudo-agent on macOS).
+# `key` is the path under ~/.config/ssh-sk (piv-k1 vs k1/sudo); `piv` entries also carry the pam_p11 certificate.
 {
   piv = [
     {

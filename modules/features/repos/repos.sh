@@ -1,14 +1,11 @@
 unset CDPATH
 CODE_ROOT=@CODE_ROOT@
-# REPOS_CODE_ROOT redirects both listing and `get`, for tests.
 ROOT=${REPOS_CODE_ROOT:-$CODE_ROOT}
 WORK_FLAT=@WORK_FLAT@
-# REPOS_WORK_FLAT overrides the flat folder, including disabling it in tests.
 WORK_FLAT=${REPOS_WORK_FLAT-$WORK_FLAT}
 WORK_OWNERS=(@WORK_OWNERS@)
 
-# The flat work folder is a separate root. Skip owner links to it rather
-# than scanning every checkout through each link.
+# The flat work folder is a separate root: skip owner links to it instead of scanning every checkout twice.
 list_repos() {
   local list_owner path flat_root=$WORK_FLAT flat_real="" owner_real real origin_owner owner_name
   local -A chosen=() matched=()
@@ -54,8 +51,7 @@ list_repos() {
   } | sort -u
 }
 
-# GitHub names are case-insensitive even when the local filesystem isn't.
-# Refuse both flat-name collisions and checkouts still in old org dirs.
+# GitHub names are case-insensitive even when the filesystem isn't: refuse flat-name collisions and checkouts in old org dirs.
 check_work_destination() {
   local host_dir owner_dir candidate flat_real="" owner_real name
   shopt -s nullglob dotglob

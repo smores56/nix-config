@@ -11,8 +11,7 @@ let
   opensc = "${pkgs.opensc}/lib/opensc-pkcs11.so";
   macSock = "${config.home.homeDirectory}/.ssh/piv-agent.sock";
 
-  # Spelled for ssh_config and for the shell; launchd cannot know the
-  # per-session TMPDIR, so the Mac socket lives in ~/.ssh (0600, not a key).
+  # launchd cannot know the per-session TMPDIR, so the Mac socket lives in ~/.ssh (0600, not a key).
   sock =
     if isLinux then
       {
@@ -25,8 +24,7 @@ let
         sh = macSock;
       };
 
-  # Lives as long as the login session: tmpfs on Linux; on macOS the per-user
-  # temp dir, emptied at each login by the piv-pin-wipe agent.
+  # Lives for the login session: tmpfs on Linux; on macOS the per-user temp dir, wiped each login by piv-pin-wipe.
   cacheDir =
     if isLinux then "\${XDG_RUNTIME_DIR:?}/piv" else "$(/usr/bin/getconf DARWIN_USER_TEMP_DIR)piv";
 
