@@ -63,7 +63,7 @@ adds its greeter as a host-local module.
 | `pkgs/overlays.nix` | nixpkgs overlays: pins and local package derivations |
 | `modules/features/agent-sandbox/` | the same-UID agent boundary; lists/backends in `modules/lib/agent-sandbox.{nix,sh}` |
 | `modules/features/ai/` | AI tooling: assistant context, brain, maki, providers, sdlc, skills |
-| `modules/features/tv/` | Television repository and worktree cables |
+| `modules/features/tv/`, `modules/features/repos/` | Television repository and worktree cables; the `repos`/`worktrees` CLIs they call |
 | `tofu/` | minimal Cloudflare DNS/Access/notification objects; run via the `cloudflare-*` flake apps |
 | `modules/features/backup/` | Operator README, GitHub-mirror helpers and the metadata verifier |
 | `modules/desktop/aerospace/` | AeroSpace config + `aerospace-layout` |
@@ -214,7 +214,7 @@ of `greetd` and `login`, with the lid gate before `pam_fprintd` and the card gat
 before `pam_p11`, `pam_p11` falling through only on `AUTHINFO_UNAVAIL`, no
 `pam_fprintd` on the lock screen, no `p11`/`fprintd`/`exec` on sudo, su or
 polkit, and both probes as executable store paths). Run them after touching
-shell, git, ssh, PAM or backup settings, or `modules/lib/repo-workflow.nix`:
+shell, git, ssh, PAM or backup settings, or `modules/features/repos/`:
 
 ```sh
 nix build .#checks.aarch64-darwin.{git-work-routing,github-pat-routing,ssh-allowed-signers,ssh-pub-keys,worktrees-branch-template,repos-routing,zsh-config,github-mirror-probe}
