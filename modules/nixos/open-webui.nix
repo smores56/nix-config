@@ -1,7 +1,5 @@
-# Open WebUI is the chat front end for the local llama.cpp server: a personal,
-# authenticated web UI that talks OpenAI-compatible HTTP and takes web search
-# from the loopback shim in `tinyfish-shim.nix` (the bundled search engines are
-# unmaintained API scrapers). Loopback-only; reachability is the tunnel's call.
+# Chat front end for local llama.cpp; web search comes from the loopback shim in
+# tinyfish-shim.nix. Loopback-only; reachability is the tunnel's call.
 {
   config,
   pkgs,
@@ -12,16 +10,14 @@
 let
   ports = import ../ports.nix;
 
-  # Two OpenAI-compatible backends: local llama.cpp (qwen3.8, the offline
-  # fallback) and Neuralwatt (deepseek-v4.1-flash, the default). Index order is
-  # the contract between OPENAI_API_BASE_URLS and OPENAI_API_KEYS.
+  # Backends: local llama.cpp (offline fallback) and Neuralwatt (default). Index order
+  # is the contract between OPENAI_API_BASE_URLS and OPENAI_API_KEYS.
   localUrl = aiProviders.smortress.baseUrl;
   inherit (aiProviders) neuralwatt;
 
-  # Tool connections are `ConfigVar`s and `ENABLE_PERSISTENT_CONFIG` is off, so
-  # the environment is authoritative and both servers are declared here instead
-  # of clicked into the admin UI. The memory listener rejects every request
-  # without its sops bearer token; the file server is loopback-only.
+  # `ENABLE_PERSISTENT_CONFIG` is off, so the environment is authoritative and tool
+  # servers are declared here, not in the admin UI. The memory listener needs its
+  # sops bearer token; the file server is loopback-only.
   toolServers = [
     {
       type = "mcp";
@@ -79,17 +75,12 @@ in
       CODE_INTERPRETER_JUPYTER_AUTH = "token";
       # llama.cpp is keyless but Open WebUI rejects an empty key, hence `none`.
       OPENAI_API_BASE_URLS = "${localUrl};${neuralwatt.baseUrl}";
-      # Deepseek flash is the default; qwen3.8 stays selectable as the fallback.
-      # Open WebUI has no automatic failover, so "backup" is a manual pick.
+      # Deepseek flash is the default; qwen3.8 is a manual pick (no automatic failover).
       DEFAULT_MODELS = neuralwatt.models.deepseekFlash.id;
-      # Defaults inherited by every model, so a new chat opens with the four
-      # tools on instead of every toggle off. `utils/models.py` merges this into
-      # each model's `info.meta` when the model list is built: `capabilities`
-      # merges (per-model values win), every other key is fill-only. The chat UI
-      # (`Chat.svelte` `setDefaults`) then reads `meta.toolIds`,
-      # `meta.defaultFeatureIds` and `meta.capabilities`. MCP tool ids are
-      # `server:mcp:<info.id>` (`routers/tools.py`), which is why the ids match
-      # the `info.id` values above.
+      # Defaults inherited by every model so new chats open with the tools on.
+      # `utils/models.py` merges this into each model's `info.meta`: `capabilities` merges
+      # (per-model wins), other keys are fill-only. MCP tool ids are `server:mcp:<info.id>`,
+      # so they match the `info.id` values above.
       DEFAULT_MODEL_METADATA = builtins.toJSON {
         capabilities = {
           web_search = true;
@@ -108,11 +99,9 @@ in
       ENABLE_PERSISTENT_CONFIG = "False";
     };
   };
-  # The upstream module runs the unit as a DynamicUser. DynamicUser state lives
-  # under /var/lib/private with a symlink in /var/lib, and restic archives a
-  # symlink without following it, so the chat database would end up in no
-  # snapshot at all. A static user makes the state a real directory inside the
-  # one backed-up tree.
+  # The upstream DynamicUser keeps state under /var/lib/private behind a symlink, which
+  # restic archives without following, leaving the chat database out of every snapshot.
+  # A static user makes it a real directory in the backed-up tree.
   users.groups.open-webui = { };
   users.users.open-webui = {
     isSystemUser = true;

@@ -1,8 +1,5 @@
-# Immich is the organising brain for the photo archive: a managed library
-# (the database is the source of truth) filed by capture date, backed by a
-# local Postgres + Redis. CPU-only ML
-# is the nixpkgs default and is deliberate: smortress's GPU is committed to
-# llama.cpp, so indexing must not contend for VRAM.
+# Managed library (the database is the source of truth) filed by capture date, on
+# local Postgres + Redis. CPU-only ML is deliberate: the GPU is committed to llama.cpp.
 { config, lib, ... }:
 let
   cfg = config.immich;
@@ -40,9 +37,8 @@ in
       host = "0.0.0.0";
       openFirewall = false;
 
-      # Declarative config (settings non-null disables web-UI settings): one
-      # folder per capture day, original filename preserved; Immich
-      # disambiguates same-day filename collisions itself.
+      # Declarative config (non-null settings disable web-UI settings): one folder per
+      # capture day, original filename kept.
       settings = {
         storageTemplate = {
           enabled = true;
@@ -51,10 +47,8 @@ in
       };
     };
 
-    # The mobile app uploads over the LAN at home (fast, and bypasses the
-    # Cloudflare upload cap) via its local-network URL. Open the port only to
-    # the listed source CIDRs (IPv4) — matching by source, not interface, so a
-    # global-IPv6 uplink cannot reach it. Empty keeps Immich tunnel-only.
+    # LAN upload (fast, bypasses the Cloudflare upload cap). Matches by source CIDR, not
+    # interface, so a global-IPv6 uplink cannot reach it. Empty keeps Immich tunnel-only.
     networking.firewall.extraCommands = lib.concatMapStrings (src: ''
       iptables -A nixos-fw -p tcp --dport ${toString config.services.immich.port} -s ${src} -j nixos-fw-accept
     '') cfg.lanSources;

@@ -1,6 +1,5 @@
-# State directory and non-secret inputs for the minimal Cloudflare OpenTofu
-# config (see tofu/). OpenTofu itself runs manually via the cloudflare-plan /
-# cloudflare-apply flake apps; nothing here applies automatically.
+# State directory and non-secret inputs for the Cloudflare OpenTofu config (tofu/).
+# Applied manually via the cloudflare-plan / cloudflare-apply flake apps.
 {
   config,
   lib,
@@ -14,8 +13,7 @@
       ];
     })
 
-    # Account ID is not a secret; the API token stays in sops and is read by
-    # the flake app at run time.
+    # Not a secret; the API token stays in sops.
     (lib.mkIf (builtins.elem "server" config.machine.profiles) {
       environment.etc."cloudflare-tofu/account-id".text = config.alerting.accountId;
     })

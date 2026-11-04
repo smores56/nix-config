@@ -1,13 +1,7 @@
-# Mirror this host's GitHub repos onto the backup disk with ghorg, and back up
-# the metadata GitHub keeps outside git (issues, PRs, discussions, releases)
-# with python-github-backup.
-#
-# GitHub already holds the offsite copy of everything; the mirror lives inside
-# the durable tree (/var/lib/data), so restic carries it with everything else.
-# ghorg refreshes the bare mirrors nightly (it clones on the first run and
-# `git remote update`s thereafter), then pgb refreshes
-# /var/lib/data/github-mirrors/meta incrementally and a verification step
-# writes manifests/<date>/.
+# Mirror GitHub repos into the durable tree with ghorg, plus metadata outside git
+# (issues, PRs, discussions, releases) with python-github-backup; restic carries it.
+# Nightly: ghorg refresh, incremental pgb into meta, then verification writes
+# manifests/<date>/.
 {
   config,
   lib,
@@ -16,36 +10,26 @@
 }:
 let
   cfg = config.githubBackup;
-  # Runtime file holding a GitHub token that can read every mirrored repo, read
-  # by ghorg, gh, and python-github-backup. A path in a derivation would be
-  # copied into the Nix store and publish the token, so it stays a string. A
-  # classic `repo` token also grants write access to every repo the account can
-  # reach, so keep it root-only.
+  # Runtime path to a token that can read every mirrored repo. A path in a derivation
+  # would copy the token into the store, so it stays a string. A classic `repo` token
+  # also grants write access: keep it root-only.
   tokenFile = "/run/secrets/github-repo-pat";
   # systemd OnCalendar for the nightly mirror timer.
   schedule = "*-*-* 00:30:00";
-  # systemd TimeSpan cap on a run; generous for a cold clone and the first
-  # (non-incremental) metadata fetch of every repo.
+  # Generous for a cold clone and the first full metadata fetch.
   timeout = "6h";
-  # systemd OnCalendar for the monthly non-incremental metadata pass (first
-  # Sunday at 09:00). Runs pgb without -i into meta.new, verifies counts, then
-  # swaps meta atomically under the shared host lock; the live meta is kept on
-  # failure.
+  # Monthly full metadata pass (no -i) into meta.new; verified, then swapped under the
+  # shared host lock. The live meta is kept on failure.
   fullMetadataSchedule = "Sun *-*-1..7 09:00:00";
-  # Inside the durable tree, so restic has one source path and the mirrors are
-  # backed up with everything else.
   mirrorRoot = "/var/lib/data/github-mirrors";
 
   # ghorg reads its config from $XDG_CONFIG_HOME/ghorg/conf.yaml; pin it at an
   # empty store dir so a stray root conf can never redirect a backup run.
   emptyConfig = pkgs.runCommand "ghorg-empty-config" { } "mkdir -p $out";
 
-  # The driver's preBackup hook and the full-pass unit run as root with only
-  # this PATH. `env -i` scrubs inherited GHORG_* (GHORG_CONFIG, GHORG_DEBUG,
-  # GHORG_PRUNE, GHORG_TOKEN_CMD, ...) and `cd /` avoids ghorg's ./ghorg.yaml
-  # lookup, so a privileged manual run cannot be redirected by its environment
-  # or cwd. The token is passed as a file path, never inlined — these scripts
-  # are world-readable in the Nix store.
+  # Root-run with only this PATH. `env -i` scrubs inherited GHORG_* and `cd /` avoids
+  # ghorg's ./ghorg.yaml lookup, so the environment or cwd cannot redirect a run. The
+  # token is a file path: these scripts are world-readable in the store.
   mirrorEnv = {
     PATH = lib.makeBinPath [
       pkgs.ghorg
@@ -81,9 +65,6 @@ let
     lib.mapAttrsToList (name: value: "${name}=${lib.escapeShellArg value}") mirrorEnv
   );
 
-  # The nightly chain: ghorg refreshes the bare mirrors, then pgb runs
-  # incrementally (-i) and the verifier fails the run on a repo-set, count,
-  # checkpoint, or fsck mismatch.
   mirror = pkgs.writeShellScript "github-mirror-env" ''
     cd /
     exec ${pkgs.coreutils}/bin/env -i ${envArgs} \
@@ -92,8 +73,6 @@ let
         ${../features/backup/github-metadata.sh} ${../features/backup/github-verify.sh}
   '';
 
-  # Monthly full pass: no -i, into meta.new, verified, then swapped under the
-  # shared host lock. The live meta is only replaced after verification.
   metadataFull = pkgs.writeShellScript "github-metadata-full-env" ''
     cd /
     exec ${pkgs.coreutils}/bin/env -i ${envArgs} \

@@ -1,11 +1,7 @@
-# The local backup disk: the encrypted target for the local restic repo
-# (modules/nixos/restic-backup.nix writes /var/backup/restic). This module owns
-# only the mount.
-# Mounted with `nofail` so a missing/failed disk never blocks boot — the local
-# restic unit declares `RequiresMountsFor`, so it fails loudly instead.
-# With `luks.enable` the filesystem sits on /dev/mapper/<name>, opened at boot
-# from /etc/crypttab by a keyfile on the encrypted root (passphrase slot as the
-# recovery path), so the disk is never readable off the machine.
+# Mount for the encrypted local restic disk; restic-backup.nix writes
+# /var/backup/restic. `nofail` keeps a missing disk from blocking boot; the restic
+# unit's RequiresMountsFor then fails loudly. With luks.enable, crypttab opens it
+# with a keyfile on the encrypted root.
 {
   config,
   lib,
@@ -15,13 +11,11 @@
 let
   cfg = config.backup;
 
-  # The local restic repo lives at <mountPoint>/restic (restic-backup.nix).
   mountPoint = "/var/backup";
   # mapper name; the filesystem lives on /dev/mapper/<name>.
   luksName = "backup";
-  # Root-only keyfile created by the operator (mode 0400). It lives on the
-  # encrypted root, so the disk still opens unattended; the LUKS passphrase slot
-  # is the recovery path if the root is lost.
+  # Root-only (0400). On the encrypted root, so the disk opens unattended; the LUKS
+  # passphrase slot is the recovery path.
   luksKeyFile = "/etc/luks/backup.key";
 in
 {
@@ -49,13 +43,8 @@ in
   };
 
   config = {
-    # The encrypted disk is opened by systemd-cryptsetup from /etc/crypttab (a
-    # keyfile on the encrypted root, so boot stays unattended). `nofail` keeps a
-    # missing disk or keyfile from blocking boot: the units declare
-    # RequiresMountsFor, so they fail loudly instead.
-    # The entry must not exist at all unless LUKS is on: declaring
-    # `environment.etc.crypttab.text` under a false condition still creates the
-    # file entry, which then has neither `text` nor `source` and fails the build.
+    # The entry must not exist unless LUKS is on: `environment.etc.crypttab.text` under a
+    # false condition still creates a file entry with neither `text` nor `source`.
     environment.etc = lib.mkIf (cfg.luks.enable && cfg.luks.device != null) {
       crypttab.text = "${luksName} ${cfg.luks.device} ${luksKeyFile} luks,nofail\n";
     };

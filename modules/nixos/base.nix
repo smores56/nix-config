@@ -13,9 +13,7 @@ in
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
 
-  # The server has no swap and the Immich/llama peaks caused three OOM kills in
-  # 30 days. zram gives the kernel compressed headroom without a disk-backed
-  # swap file; 25% leaves most RAM for the workloads.
+  # No swap, and Immich/llama peaks caused OOM kills; zram gives compressed headroom.
   zramSwap = {
     enable = true;
     memoryPercent = 25;
@@ -52,7 +50,6 @@ in
     linger = true;
   };
 
-  # Removable-media helpers and FUSE.
   services = {
     devmon.enable = true;
     gvfs.enable = true;
@@ -84,10 +81,8 @@ in
     SUBSYSTEM=="usb", ATTR{idVendor}=="1050", GROUP="pcscd", MODE="0660"
   '';
 
-  # Flake support must be system-wide, not just in the user's
-  # ~/.config/nix/nix.conf: root runs the flake apps (`sudo nix run
-  # .#cloudflare-apply`, `nixos-rebuild --flake`) and would
-  # otherwise need --extra-experimental-features on every invocation.
+  # System-wide: root runs the flake apps (`sudo nix run .#cloudflare-apply`,
+  # `nixos-rebuild --flake`).
   nix.settings.experimental-features = [
     "nix-command"
     "flakes"
@@ -98,12 +93,10 @@ in
   # would run those builders as root.
   nix.settings.build-users-group = "nixbld";
 
-  # The setuid fusermount3 wrapper in /run/wrappers/bin, which unprivileged FUSE
-  # mounts (cryptomator-cli on the laptops) need. Enabling it here keeps the
-  # helper independent of gvfs happening to pull fuse in.
+  # Setuid fusermount3 for unprivileged FUSE mounts (cryptomator-cli on laptops),
+  # independent of gvfs pulling fuse in.
   programs.fuse.enable = true;
 
-  # Run dynamically-linked binaries that aren't patched for Nix.
   programs.nix-ld.enable = true;
   programs.nix-ld.libraries = with pkgs; [
     libz

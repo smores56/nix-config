@@ -28,9 +28,7 @@ let
 
   common = {
     paths = [
-      # The whole durable tree: vault ciphertext, wallpapers, media, the memory
-      # export, the GitHub mirrors, Radicale and Open WebUI state. Nothing else
-      # needs a second source path.
+      # The whole durable tree; no second source path is needed.
       "/var/lib/data"
     ];
     passwordFile = config.sops.secrets.restic-password.path;
@@ -59,12 +57,10 @@ in
     r2 = common // {
       repository = "s3:https://${accountId}.r2.cloudflarestorage.com/restic-backup";
       environmentFile = config.sops.templates."restic-r2.env".path;
-      # Only R2 initialises on its own: a fresh bucket is expected, so the first
-      # run creates the repo. The local repo must NOT: an empty-but-mounted
-      # /var/backup (fresh ext4, wrong disk) would otherwise initialise a new
-      # repo and report success, hiding the missing backup disk. Leaving it
-      # unset makes the first run fail and the onFailure alert fire; the
-      # operator creates it once by hand (modules/features/backup/README.md).
+      # Only R2 initialises itself (a fresh bucket is expected). The local repo must not:
+      # an empty-but-mounted /var/backup (wrong disk) would initialise a new repo and
+      # report success. Unset, the first run fails and the alert fires; the operator
+      # creates it by hand (modules/features/backup/README.md).
       initialize = true;
     };
     local = common // {
@@ -72,11 +68,9 @@ in
     };
   };
 
-  # The restic module generates one unit per repo but exposes no `onFailure`
-  # option, so the alert is attached to the generated units by name. %n expands
-  # to the failing unit, so each repo's failure mails its own journal.
-  # Both units want a fresh database dump first: `wants` rather than `requires`,
-  # so a database that is down delays nothing and the tree is still backed up.
+  # The restic module exposes no `onFailure`, so the alert is attached to the generated
+  # units by name; %n mails each repo's own journal. `wants` not `requires`: a down
+  # database still lets the tree back up.
   systemd.tmpfiles.rules = [ "d ${dbDir} 0700 postgres postgres -" ];
 
   systemd.services.restic-db-dump = {

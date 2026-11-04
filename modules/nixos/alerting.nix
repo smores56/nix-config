@@ -1,7 +1,4 @@
-# Cloudflare Email Service alerts for unit failures.
-#
-# Every backup unit's OnFailure points at the template, so a failed nightly run
-# emails its journal.
+# Failure alerts via Cloudflare Email Service; every backup unit's OnFailure targets the template.
 {
   config,
   lib,
@@ -19,12 +16,9 @@ let
 
   # JSON secret shape:
   #   {"token":"...","account_id":"...","from":"alerts@send.sammohr.dev","to":"sam@sammohr.dev"}
-  # Use a sending subdomain (send.<domain>) so its DMARC/SPF/DKIM records do not
-  # interact with the apex mail records; the from address must match whichever
-  # domain/subdomain was onboarded.
-  # The token is the SMTP/REST credential with Email Sending: Edit. The from
-  # address must belong to an onboarded Email Service domain; the to address
-  # must be verified (sends to verified destinations are free).
+  # Use a sending subdomain (send.<domain>) so its DMARC/SPF/DKIM do not interact
+  # with apex mail records. The token needs Email Sending: Edit; `from` must be on an
+  # onboarded domain and `to` verified.
   cloudflareEmail = pkgs.writeShellApplication {
     name = "cloudflare-email";
     runtimeInputs = [

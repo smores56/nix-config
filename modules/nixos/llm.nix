@@ -48,18 +48,15 @@ let
     '';
   };
 
-  # Qwen3.8-27B RVN Heretic — 0bserverx's double-refined abliteration, IQ4_XS
-  # multilingual. KL 0.0085 vs base keeps DFlash2 drafter acceptance near-full.
-  # KV cache exists only on the 16 gated attention layers, so long context is
-  # cheap; IQ4_XS keeps weights light enough for the drafter's full-context KV
-  # at 200K on the 3090.
+  # Qwen3.8-27B RVN Heretic IQ4_XS. KV exists only on the 16 gated attention layers,
+  # so long context is cheap; IQ4_XS leaves room for the drafter's full-context KV at
+  # 200K on the 3090.
   mainModel = pkgs.fetchurl {
     url = "https://huggingface.co/0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF/resolve/main/RVN-IQ4_XS-multilingual.gguf";
     hash = "sha256-thWFa6SmINs74AT/XlxGs6bFw6F9JHvvLPbL4coyWqQ=";
   };
 
-  # DFlash2 block-diffusion drafter (z-lab, llama.cpp PR #27342). Q2_K is
-  # analogalok's 24 GB-card tuning (~705 MB; ~400 MB lighter than Q4_K_M).
+  # DFlash2 block-diffusion drafter (z-lab); Q2_K suits a 24 GB card.
   draftModel = pkgs.fetchurl {
     url = "https://huggingface.co/analogalok/Qwen3.8-27B-DFlash2-Q2_K-GGUF/resolve/main/Qwen3.8-27B-DFlash2-Q2_K.gguf";
     hash = "sha256-u7zVtmtXH0OP8gGBhGSONyEaHYLEktMoNK8toscZN1U=";
@@ -70,8 +67,6 @@ let
   #   DFlash2 drafter (Q2_K):         672 MiB
   #   Runtime/CUDA overhead:         1,200 MiB
   #   KV (target q4_0 + drafter, 200K ctx): ~7,500 MiB
-  #     (measured on 24 GB cards: 23.9 GB total at 170K with Q4_K_XL weights;
-  #     the drafter tracks the full context, so it dominates the KV budget)
   #   Total: ~23.2 GiB — 200K is the ceiling; larger ctx needs lighter weights
 in
 {
@@ -91,8 +86,6 @@ in
         # Loopback only: the Cloudflare Tunnel proxies llm.<domain> to it, and
         # the tunnel's Access app is the only way in.
         host = "127.0.0.1";
-        # Single source shared with the tunnel ingress and the clients' forwards
-        # (modules/ports.nix).
         port = ports.llm;
         alias = aiProviders.smortress.models.qwen38.id;
         model = mainModel;

@@ -1,12 +1,10 @@
-# TinyFish search behind Open WebUI's `external` web-search provider. The
-# provider speaks a fixed contract the API does not: it wants a bare JSON array
-# of {link,title,snippet} (not an object), it authenticates with a static value
-# only, and it must never see a 5xx (a failed search should cost results, not
-# the chat turn). So this shim owns the API key, reads it once at start, and
-# maps each response. Loopback-only: its one client is Open WebUI on this host.
+# TinyFish search behind Open WebUI's `external` web-search provider. The provider
+# wants a bare JSON array of {link,title,snippet}, authenticates with a static value
+# only, and must never see a 5xx. So the shim owns the API key and maps each
+# response. Loopback-only.
 #
-# The key is the sops secret `tinyfish-api-key` (owner smores, 0400), which is
-# also why the unit runs as that user rather than a DynamicUser.
+# The key is sops secret `tinyfish-api-key` (owner smores, 0400), hence the unit runs
+# as that user, not a DynamicUser.
 { pkgs, ... }:
 let
   hardening = import ../lib/hardening.nix;
