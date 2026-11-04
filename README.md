@@ -18,7 +18,7 @@ Key directories under `modules/`:
 |---|---|
 | `options.nix` | `machine.*` host facts, `user.*` identity/preferences, server-profile assertion |
 | `profiles/` | six opt-in profiles: `cli`, `user-base`, `ai-tools`, `linux-desktop`, `darwin-work`, `server` |
-| `hosts/` | per-host `meta.nix` (facts + option values), `default.nix` (explicit profiles plus optional `nixos` host-local modules), optional `hardware.nix`, `disko.nix`, and those host-only modules |
+| `hosts/` | per-host `default.nix` (facts, option values, explicit profiles, optional host-local modules), optional `hardware.nix`, `disko.nix`, and those host-only modules |
 | `home.nix` | home-manager base (fonts, nix.conf, darwin helpers) |
 | `flake/` | flake-parts modules (configurations, checks, formatter) |
 | `features/` | cross-platform home-manager modules (shell, editor, git, packages, theme, ai) |
@@ -584,20 +584,19 @@ must be inspected before cloning it into the flat folder.
 Hosts live in `modules/hosts/<hostname>/` and are discovered automatically;
 adding one never edits `modules/flake/configurations.nix`.
 
-1. `meta.nix` — a plain attrset (data, no arguments) declaring `system`,
+1. `default.nix` — a plain attrset (data, no arguments) declaring `system`,
    `username`, `nixos = true` and/or `home = true`, optional `user`
-   overrides, and option values under `homeOptions`/`nixosOptions`
-   (e.g. `sudoKey.enable = true`).
-2. `default.nix` — the explicit profile list this host composes
+   overrides, option values under `homeOptions`/`nixosOptions`
+   (e.g. `sudoKey.enable = true`), and the explicit `profiles` list
    (`../../profiles/cli.nix`, …). Profiles contribute modules to the home and
-   NixOS planes. The same file may list host-local modules under `nixos` for
-   one machine's concern that needs a real module (e.g. smorespro's `boot.nix`,
-   `greeter.nix` and `fprintd.nix`). `linux-desktop` ships no display manager; a graphical
-   host adds its greeter here.
-3. For a NixOS host, `disko.nix` — the declarative disk layout. disko owns
+   NixOS planes. The same file may list host-local modules under `nixosModules`
+   for one machine's concern that needs a real module (e.g. smorespro's
+   `boot.nix`, `greeter.nix` and `fprintd.nix`). `linux-desktop` ships no
+   display manager; a graphical host adds its greeter there.
+2. For a NixOS host, `disko.nix` — the declarative disk layout. disko owns
    `fileSystems` for `/` and `/boot`, so `hardware.nix` omits them; pin each
    partition's `label` for stable `/dev/disk/by-partlabel` devices.
-4. `hardware.nix` (kernel modules, CPU microcode) comes from
+3. `hardware.nix` (kernel modules, CPU microcode) comes from
    `nixos-generate-config`. It is optional and is generated during a
    `nixos-anywhere` install. Generate it with `--no-filesystems` — disko owns
    `fileSystems`, and `nixos-anywhere` passes the flag for you.
@@ -608,7 +607,7 @@ configs, so identity and host facts are written once. The available configuratio
 
 ### Installing a blank machine
 
-Commit the host's `meta.nix` + `disko.nix` (flakes only see tracked files),
+Commit the host's `default.nix` + `disko.nix` (flakes only see tracked files),
 then from the checkout:
 
 ```sh

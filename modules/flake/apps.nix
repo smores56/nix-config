@@ -26,7 +26,7 @@
 
       # Installs NixOS on a blank machine over SSH (disko + nixos-anywhere),
       # writing the generated hardware config back into the checkout. Run from
-      # the checkout; the host needs modules/hosts/<host>/{meta.nix,disko.nix}.
+      # the checkout; the host needs modules/hosts/<host>/{default.nix,disko.nix}.
       install = pkgs.writeShellApplication {
         name = "install";
         runtimeInputs = [
@@ -50,7 +50,7 @@
             <host>         host directory name, e.g. smortress
             <target-host>  the blank machine, e.g. root@192.168.1.50
 
-          The host must already have modules/hosts/<host>/{meta.nix,disko.nix}
+          The host must already have modules/hosts/<host>/{default.nix,disko.nix}
           committed. See AGENTS.md.
           EOF
           }
@@ -77,7 +77,7 @@
           fi
 
           host_dir="modules/hosts/$host"
-          for f in meta.nix disko.nix; do
+          for f in default.nix disko.nix; do
             if [ ! -f "$host_dir/$f" ]; then
               echo "error: $host_dir/$f is missing — create modules/hosts/$host/ first (see AGENTS.md)" >&2
               exit 1
@@ -85,7 +85,7 @@
             git ls-files --error-unmatch "$host_dir/$f" >/dev/null 2>&1 \
               || { echo "error: $host_dir/$f is not tracked by git — commit it (flakes only see tracked files)" >&2; exit 1; }
           done
-          # Host-local modules (`nixos = [ ./boot.nix ]`) are read by the flake
+          # Host-local modules (`nixosModules = [ ./boot.nix ]`) are read by the flake
           # too; untracked ones pass the checks above and fail late in the eval.
           untracked="$(git ls-files --others --exclude-standard "$host_dir")"
           if [ -n "$untracked" ]; then

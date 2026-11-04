@@ -162,7 +162,7 @@ if is_nixos && has_nixos_config; then
   ok "NixOS rebuild complete"
 elif is_nixos; then
   warn "NixOS detected but no nixosConfiguration for '${HOSTNAME}'."
-  warn "Add modules/hosts/${HOSTNAME}/meta.nix (with nixos = true) and re-run."
+  warn "Add modules/hosts/${HOSTNAME}/default.nix (with nixos = true) and re-run."
 fi
 
 # ── Done ────────────────────────────────────────────────────────

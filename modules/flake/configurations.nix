@@ -243,77 +243,54 @@ let
   ];
 
   # Hosts are discovered from modules/hosts/<name>/; adding a host means adding
-  # a directory (meta.nix + default.nix + hardware.nix), never editing this file.
+  # a directory (default.nix + disko.nix + hardware.nix), never editing this
+  # file. default.nix is data, not a module: `profiles` names the shared
+  # profiles (they drive machine.graphical/wayland/workHost and the
+  # server-profile assertion); `homeModules` and `nixosModules` list modules
+  # that exist on that host alone, such as a LUKS chain, a greeter, or a Darwin
+  # host's sops keys. Host-local modules are not profiles: their names never
+  # reach machine.profiles.
   hostsDir = ../hosts;
   hostNames = builtins.attrNames (
     lib.filterAttrs (_: type: type == "directory") (builtins.readDir hostsDir)
   );
+  # Catches typos in the top-level keys: a misspelled flag or options section
+  # would otherwise be silently ignored.
+  allowedKeys = [
+    "system"
+    "username"
+    "nixos"
+    "home"
+    "user"
+    "profiles"
+    "homeModules"
+    "nixosModules"
+    "homeOptions"
+    "nixosOptions"
+  ];
   hostMeta =
     name:
     let
-      metaPath = hostsDir + "/${name}/meta.nix";
-      meta =
-        if builtins.pathExists metaPath then
-          import metaPath
-        else
-          throw "modules/hosts/${name}/ has no meta.nix (see AGENTS.md)";
-      # Catch typos in the top-level keys: a misspelled `home`/`nixos` flag or
-      # options section would otherwise be silently ignored.
-      allowed = [
-        "system"
-        "username"
-        "nixos"
-        "home"
-        "user"
-        "homeOptions"
-        "nixosOptions"
-      ];
-      unknown = builtins.filter (key: !(builtins.elem key allowed)) (builtins.attrNames meta);
-    in
-    if unknown != [ ] then
-      throw "modules/hosts/${name}/meta.nix has unknown keys: ${lib.concatStringsSep ", " unknown}"
-    else
-      meta;
-
-  # default.nix is data, not a module. `profiles` names the shared profiles
-  # (they drive machine.graphical/wayland/workHost and the server-profile
-  # assertion); `home` and `nixos` list modules that exist on that host alone,
-  # such as a disk layout's LUKS options, a greeter, or a Darwin host's sops
-  # keys. Host-local modules are not profiles: their names never reach
-  # machine.profiles.
-  hostDefault =
-    name:
-    let
       path = hostsDir + "/${name}/default.nix";
-      m =
+      meta =
         if builtins.pathExists path then
           import path
         else
           throw "modules/hosts/${name}/ has no default.nix (see AGENTS.md)";
-      allowed = [
-        "profiles"
-        "home"
-        "nixos"
-      ];
-      unknown = builtins.filter (key: !(builtins.elem key allowed)) (builtins.attrNames m);
+      unknown = builtins.filter (key: !(builtins.elem key allowedKeys)) (builtins.attrNames meta);
     in
     if unknown != [ ] then
       throw "modules/hosts/${name}/default.nix has unknown keys: ${lib.concatStringsSep ", " unknown}"
     else
-      m;
+      meta;
 
-  hostProfiles =
-    name:
-    map (p: {
-      name = lib.removeSuffix ".nix" (baseNameOf (toString p));
-      inherit p;
-    }) (hostDefault name).profiles;
+  profileNamesOf =
+    name: map (p: lib.removeSuffix ".nix" (baseNameOf (toString p))) (hostMeta name).profiles;
 
-  profileModules =
-    name: kind: lib.concatMap (profile: (import profile.p).${kind} or [ ]) (hostProfiles name);
+  profileModules = name: kind: lib.concatMap (p: (import p).${kind} or [ ]) (hostMeta name).profiles;
 
-  hostModules = name: (hostDefault name).nixos or [ ];
-  hostHomeModules = name: (hostDefault name).home or [ ];
+  hostModules = name: (hostMeta name).nixosModules or [ ];
+  hostHomeModules = name: (hostMeta name).homeModules or [ ];
 
   hostModule = args: profileNames: {
     machine = {
@@ -336,8 +313,7 @@ let
     args:
     let
       inherit (args) system username;
-      profiles = hostProfiles args.hostname;
-      profileNames = map (p: p.name) profiles;
+      profileNames = profileNamesOf args.hostname;
     in
     home-manager.lib.homeManagerConfiguration {
       pkgs = pkgsForSystem system;
@@ -362,8 +338,7 @@ let
     args:
     let
       inherit (args) system;
-      profiles = hostProfiles args.hostname;
-      profileNames = map (p: p.name) profiles;
+      profileNames = profileNamesOf args.hostname;
     in
     inputs.nixpkgs.lib.nixosSystem {
       inherit system;
@@ -375,7 +350,7 @@ let
       ++ profileModules args.hostname "nixos"
       ++ hostModules args.hostname
       ++ lib.optionals (builtins.elem "linux-desktop" profileNames) [ niri.nixosModules.niri ]
-      # hardware.nix is optional so a host can be authored (meta.nix +
+      # hardware.nix is optional so a host can be authored (default.nix +
       # disko.nix) before nixos-anywhere generates it during the install; the
       # guard keeps the flake evaluable in that window (see AGENTS.md). Warn
       # loudly because a missing file means no kernel modules / microcode.
@@ -399,7 +374,7 @@ in
 {
   flake = {
     # Every host directory under modules/hosts/ contributes its configs; the
-    # meta.nix `nixos`/`home` flags say which. Hosts are discovered, so adding
+    # default.nix `nixos`/`home` flags say which. Hosts are discovered, so adding
     # one never touches this file.
     homeConfigurations = lib.listToAttrs (
       map (

@@ -1196,7 +1196,7 @@ It is LUKS-encrypted: opened at boot from `/etc/crypttab` with a root-only
 keyfile on the encrypted root (so boot stays unattended), with a LUKS passphrase
 slot as the recovery path if the root is ever lost. The option is
 `backup.luks` in [`modules/nixos/backup.nix`](../modules/nixos/backup.nix);
-smortress turns it on in `modules/hosts/smortress/meta.nix` together with
+smortress turns it on in `modules/hosts/smortress/default.nix` together with
 `backup.device = "/dev/mapper/backup"`.
 
 Formatting destroys everything on the disk. The R2 repo is the safety net, and
@@ -1226,7 +1226,7 @@ sudo mount /dev/mapper/backup /var/backup
 ```
 
 Then enable `backup.luks` and `backup.device = "/dev/mapper/backup"` in
-`modules/hosts/smortress/meta.nix`, rebuild, and reboot: `/etc/crypttab` opens
+`modules/hosts/smortress/default.nix`, rebuild, and reboot: `/etc/crypttab` opens
 the disk from the keyfile before the mount, `nofail` keeps a missing keyfile
 from blocking boot, and the local unit (which declares `RequiresMountsFor`)
 fails loudly instead of writing to the root filesystem.
@@ -1248,7 +1248,7 @@ Personal files live in a Cryptomator vault that Syncthing replicates as
 ciphertext. The device table is
 [`modules/syncthing-devices.nix`](../modules/syncthing-devices.nix): device IDs
 are public keys, so they are committed, and each device's `key.pem` is the only
-secret. Every host sets `syncthing.device` in its `meta.nix`, naming its row in that
+secret. Every host sets `syncthing.device` in its `default.nix`, naming its row in that
 table.
 
 Pairing a device:

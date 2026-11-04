@@ -39,7 +39,7 @@ routine.
 Modules are composed by profiles, not auto-imported. `modules/flake/configurations.nix`
 reads each host's `default.nix`, which lists profile files explicitly; each
 profile contributes paths to the home plane, the NixOS plane, or both. The same
-file may list host-local modules under `home` and `nixos` for a concern that only one
+file may list host-local modules under `homeModules` and `nixosModules` for a concern that only one
 machine has (smorespro's LUKS/Secure Boot chain and greeter); those names never
 reach `machine.profiles`. Place files by concern, not by host. The
 `linux-desktop` profile deliberately ships no display manager: a graphical host
@@ -49,7 +49,7 @@ adds its greeter as a host-local module.
 |---|---|
 | `modules/options.nix` | `machine.*` host facts, `user.*` identity/preferences, and the server-profile assertion |
 | `modules/profiles/` | six opt-in profiles: `cli`, `user-base`, `ai-tools`, `linux-desktop`, `darwin-work`, `server` |
-| `modules/hosts/` | per-host `meta.nix` (facts + option values), `default.nix` (explicit profile list plus optional `home`/`nixos` host-local modules), optional `hardware.nix`, `disko.nix`, and those host-only modules |
+| `modules/hosts/` | per-host `default.nix` (facts, option values, explicit profile list, optional `homeModules`/`nixosModules` host-local modules), optional `hardware.nix`, `disko.nix`, and those host-only modules |
 | `modules/home.nix` | home-manager base (fonts, nix.conf, darwin helpers) |
 | `modules/features/` | cross-platform home-manager modules (shell, editor, git, packages, theme, ai) |
 | `modules/features/syncthing.nix`, `modules/syncthing-devices.nix` | Syncthing folder carrying the Cryptomator vault as ciphertext; the device table is a plain attrset of public device IDs |
@@ -84,22 +84,21 @@ never evaluates.
 Hosts are discovered from `modules/hosts/*/`; adding one never edits
 `configurations.nix`.
 
-1. `modules/hosts/<hostname>/meta.nix` — a plain attrset (data, **not** a
+1. `modules/hosts/<hostname>/default.nix` — a plain attrset (data, **not** a
    module: no arguments) declaring `system`, `username`, `nixos = true` and/or
-   `home = true`, optional `user` overrides, and option values under
-   `homeOptions`/`nixosOptions` (e.g. `sudoKey.enable = true`).
-2. `modules/hosts/<hostname>/default.nix` — the explicit profile list
-   (`../../profiles/cli.nix`, …) composed into this host, plus optional
-   host-local modules (`nixos = [ ./boot.nix ]`, `home = [ … ]`) that only this
-   machine evaluates. Use this for host-scoped configuration that needs a real
-   module (`lib.mkForce`, `imports` of a flake input's module), which
-   `meta.nix` cannot express because it is data.
-3. `modules/hosts/<hostname>/disko.nix` — the declarative disk layout for a
+   `home = true`, optional `user` overrides, option values under
+   `homeOptions`/`nixosOptions` (e.g. `sudoKey.enable = true`), the explicit
+   `profiles` list (`../../profiles/cli.nix`, …) composed into this host, and
+   optional host-local modules (`nixosModules = [ ./boot.nix ]`,
+   `homeModules = [ … ]`) that only this machine evaluates. Use those for
+   host-scoped configuration that needs a real module (`lib.mkForce`, `imports`
+   of a flake input's module), which the option sets cannot express.
+2. `modules/hosts/<hostname>/disko.nix` — the declarative disk layout for a
    NixOS host. disko owns `fileSystems` for `/` and `/boot` (and `boot` when it
    manages an EF02 partition), so `hardware.nix` omits them. Pin each
    partition's `label` so the derived `/dev/disk/by-partlabel/*` devices are
    stable across reinstalls.
-4. `modules/hosts/<hostname>/hardware.nix` — hardware config from
+3. `modules/hosts/<hostname>/hardware.nix` — hardware config from
    `nixos-generate-config` (kernel modules, CPU microcode). **Optional**:
    `nixos-anywhere` generates it during the install, so a host can be authored
    without it. Always generate with `--no-filesystems` (disko owns
@@ -111,7 +110,7 @@ shared by both planes, so identity and host facts are written once.
 
 ### Provisioning a blank NixOS machine
 
-`git add` the host's whole directory (`meta.nix`, `disko.nix`, any host-local
+`git add` the host's whole directory (`default.nix`, `disko.nix`, any host-local
 modules) first — flakes only see tracked files, and `install` rejects untracked
 files there. Then from the checkout:
 
