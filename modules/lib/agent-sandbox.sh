@@ -236,6 +236,9 @@ if [ "$(uname -s)" = Darwin ]; then
     echo '(allow pseudo-tty)'
     echo '(allow process-fork)'
     echo '(allow network*)'
+    # connect() to a unix socket is network-outbound, so the ~/.ssh mask alone
+    # leaves the host's agents reachable; the PIV agent signs with no touch.
+    echo "(deny network-outbound (subpath \"$home/.ssh\"))"
     # launchd's per-user listener directories are named `com.apple.launchd.<id>`,
     # so a `subpath` rule for `.../com.apple.launchd` matches neither of them
     # (subpath is a path-component prefix, not a string prefix). Use a regex,
