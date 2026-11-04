@@ -60,6 +60,7 @@ adds its greeter as a host-local module.
 | `modules/nixos/restic-backup.nix` | restic repos, schedule, retention and the Immich db dump |
 | `modules/flake/` | flake-parts modules (configurations, checks, formatter) |
 | `modules/lib/` | helper libraries |
+| `pkgs/overlays.nix` | nixpkgs overlays: pins and local package derivations |
 | `modules/features/agent-sandbox/` | the same-UID agent boundary; lists/backends in `modules/lib/agent-sandbox.{nix,sh}` |
 | `modules/features/ai/` | AI tooling: assistant context, brain, maki, providers, sdlc, skills |
 | `modules/features/tv/` | Television repository and worktree cables |
