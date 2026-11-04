@@ -309,7 +309,7 @@ def transport(*, chat=200, embedder=200, record=None):
 class ReadinessTests(unittest.IsolatedAsyncioTestCase):
     async def test_probes_the_models_list_and_sends_a_tiny_embedding_request(self):
         seen = []
-        probes = HealthProbes(llm_url="http://gateway/", transport=transport(record=seen))
+        probes = HealthProbes(llm_url="http://gateway/", embed_model="qwen3-embedding-8b", transport=transport(record=seen))
 
         self.assertEqual(await probes.failures(), [])
         self.assertEqual(
@@ -322,7 +322,7 @@ class ReadinessTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_a_failing_embedder_blocks_search(self):
-        probes = HealthProbes(llm_url="http://gateway", transport=transport(embedder=503))
+        probes = HealthProbes(llm_url="http://gateway", embed_model="m", transport=transport(embedder=503))
 
         with self.assertRaises(ReadinessError) as raised:
             await probes.require_search()
@@ -332,7 +332,7 @@ class ReadinessTests(unittest.IsolatedAsyncioTestCase):
         def handler(request: httpx.Request) -> httpx.Response:
             raise httpx.ConnectError("refused", request=request)
 
-        probes = HealthProbes(llm_url="http://gateway", transport=httpx.MockTransport(handler))
+        probes = HealthProbes(llm_url="http://gateway", embed_model="m", transport=httpx.MockTransport(handler))
 
         self.assertEqual(len(await probes.failures()), 2)
 

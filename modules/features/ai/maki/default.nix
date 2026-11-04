@@ -279,11 +279,6 @@ in
       };
     };
 
-    # The ingest CLI derives repo paths and gh targets from this.
-    home.sessionVariables = lib.optionalAttrs profile.memoryMcp {
-      MEMORY_PERSONAL_OWNER = config.user.githubUser;
-    };
-
     home.packages = [
       pkgs.rtk
       makiSessionSearchBin

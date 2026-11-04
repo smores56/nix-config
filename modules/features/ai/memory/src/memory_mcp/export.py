@@ -35,9 +35,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Sequence
 
-from .registry import SCHEMA_VERSION, STATUSES
+from .registry import REGISTRY_FILE, SCHEMA_VERSION, STATUSES
 
-REGISTRY_FILE = "registry.sqlite"
 EPISODES_FILE = "episodes.jsonl"
 GRAPH_FILE = "graph.rdb"
 

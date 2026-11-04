@@ -29,7 +29,7 @@ let
       info = {
         id = "memory";
         name = "memory";
-        description = "Agent memory: search, ingest and revisit episodes.";
+        description = "Agent memory: search, write and revisit episodes.";
       };
     }
     {

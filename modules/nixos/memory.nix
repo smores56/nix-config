@@ -45,11 +45,11 @@ let
   # Changing the model re-embeds the corpus at a new width. Embeddings go through the
   # gateway like extraction; there is no /health behind it, so readiness probes with a
   # real one-word embedding.
-  embedder = {
+  embedder = rec {
     model = "qwen3-embedding-8b";
     dimensions = 4096;
     url = "http://127.0.0.1:${toString llmProxyPort}";
-    readyProbe = "${pkgs.curl}/bin/curl -sf -X POST http://127.0.0.1:${toString llmProxyPort}/v1/embeddings -H 'content-type: application/json' -d '{\"model\":\"qwen3-embedding-8b\",\"input\":\"ready\"}'";
+    readyProbe = "${pkgs.curl}/bin/curl -sf -X POST http://127.0.0.1:${toString llmProxyPort}/v1/embeddings -H 'content-type: application/json' -d '{\"model\":\"${model}\",\"input\":\"ready\"}'";
   };
 
   # Separate LLM and embedder URLs; the shipped configs share one.
@@ -350,6 +350,7 @@ in
           "MEMORY_REDIS_URL=redis://127.0.0.1:${toString dbPort}"
           # Search and retries pause when the model endpoint is down; writes are never gated.
           "MEMORY_LLM_URL=http://127.0.0.1:${toString llmProxyPort}"
+          "MEMORY_EMBED_MODEL=${embedder.model}"
           "MEMORY_STATE_DIR=${dataDir}"
           "MEMORY_RECONCILE_INTERVAL=10"
           # Derived from reconcileGraceSeconds so the two cannot drift.

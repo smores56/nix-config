@@ -21,6 +21,7 @@ from memory_mcp import groups as groups_module  # noqa: E402
 from memory_mcp.groups import WorkSettings  # noqa: E402
 from memory_mcp.graph import EpisodeRef, GraphUnavailable, TombstoneResult  # noqa: E402
 from memory_mcp.graphiti import BackendError  # noqa: E402
+from memory_mcp.mcp_auth import BearerAuthMiddleware  # noqa: E402
 from memory_mcp.normalize import content_hash, episode_uuid, normalize_content  # noqa: E402
 from memory_mcp.registry import Registry, RegistryEpisode, utcnow  # noqa: E402
 from memory_mcp.reconciler import InFlight, Reconciler, ReconcilerConfig  # noqa: E402
@@ -764,6 +765,43 @@ class WrapperTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("truncated", text)
 
 
+class BearerAuthTests(unittest.TestCase):
+    def client(self, token_file: str, **kwargs) -> TestClient:
+        async def ok(_request):
+            return PlainTextResponse("ok")
+
+        app = Starlette(routes=[Route("/mcp", ok, methods=["GET", "POST"]), Route("/health", ok)])
+        return TestClient(BearerAuthMiddleware(app, token_file=token_file, **kwargs))
+
+    def token_file(self, text: str) -> str:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / "token"
+        path.write_text(text, encoding="utf-8")
+        return str(path)
+
+    def test_a_missing_or_wrong_token_is_a_401(self):
+        client = self.client(self.token_file("secret\n"))
+        self.assertEqual(client.get("/mcp").status_code, 401)
+        self.assertEqual(client.get("/mcp", headers={"Authorization": "Bearer wrong"}).status_code, 401)
+        self.assertEqual(client.get("/mcp", headers={"Authorization": "secret"}).status_code, 401)
+        self.assertIn("Bearer", client.get("/mcp").headers["www-authenticate"])
+
+    def test_the_right_token_passes(self):
+        client = self.client(self.token_file("secret\n"))
+        self.assertEqual(client.get("/mcp", headers={"Authorization": "Bearer secret"}).status_code, 200)
+
+    def test_an_empty_or_missing_token_file_fails_closed_with_503(self):
+        for path in (self.token_file("\n"), "/nonexistent/token"):
+            with self.subTest(path=path):
+                client = self.client(path)
+                self.assertEqual(client.get("/mcp", headers={"Authorization": "Bearer anything"}).status_code, 503)
+
+    def test_health_is_exempt_even_without_a_token_file(self):
+        client = self.client("/nonexistent/token")
+        self.assertEqual(client.get("/health").status_code, 200)
+
+
 class ReconcilerLifespanTests(unittest.TestCase):
     """The reconciler must run under the transport production actually uses.
 
@@ -1154,6 +1192,25 @@ class ReindexTests(WrapperTests):
         self.assertTrue(result.isError)
         self.assertIn("nothing was requeued", result.content[0].text)
         self.assertEqual(self.registry.stats("owner--repo")["active"], REINDEX_GUARD_MIN_ROWS)
+
+    async def test_a_multi_pass_reindex_is_not_stopped_by_its_own_progress(self):
+        """Each pass requeues a slice; once that slice lands the graph is no longer empty."""
+        self.operator()
+        total, cap = 200, 20
+        for index in range(total):
+            self.seed_entry(f"lost-{index:03d}", created_at=f"2026-10-01T00:00:{index % 60:02d}Z")
+        landed: dict[str, tuple[str, ...]] = {}
+        self.graph.contents_map = {"owner--repo": landed}
+        for _ in range(total // cap):
+            result = await self.call("memory_reindex", {"limit": cap})
+            self.assertFalse(result.isError, result.content[0].text)
+            self.assertIn(f"requeued and resubmitted {cap}", result.content[0].text)
+            for row in self.registry.pending():
+                landed[row.content] = ("2999-01-01T00:00:00Z",)
+                self.registry.mark_active(row.group, row.content_hash, f"graph-{row.content_hash[:12]}")
+        result = await self.call("memory_reindex", {"limit": cap})
+        self.assertIn("requeued and resubmitted 0", result.content[0].text)
+        self.assertEqual(self.registry.stats("owner--repo")["active"], total)
 
     async def test_dry_run_reports_a_suspicious_group_instead_of_refusing(self):
         self.operator()

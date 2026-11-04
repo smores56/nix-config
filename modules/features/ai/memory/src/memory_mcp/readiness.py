@@ -17,10 +17,6 @@ from dataclasses import dataclass
 import httpx
 
 
-# The embedder Graphiti is configured with (modules/nixos/memory.nix); 4096 dimensions.
-EMBED_MODEL = "qwen3-embedding-8b"
-
-
 class ReadinessError(RuntimeError):
     """One or more model endpoints are unavailable."""
 
@@ -28,6 +24,8 @@ class ReadinessError(RuntimeError):
 @dataclass(frozen=True)
 class HealthProbes:
     llm_url: str
+    # Graphiti's embedding model (`MEMORY_EMBED_MODEL`, set once in modules/nixos/memory.nix).
+    embed_model: str
     # The chat probe is a WAN round trip to Neuralwatt, not a loopback hop, so
     # the budget covers connect + response rather than one local socket write.
     timeout: float = 10.0
@@ -48,7 +46,7 @@ class HealthProbes:
         try:
             response = await client.post(
                 f"{self.llm_url.rstrip('/')}/v1/embeddings",
-                json={"input": "ready", "model": EMBED_MODEL},
+                json={"input": "ready", "model": self.embed_model},
             )
         except httpx.HTTPError:
             return False

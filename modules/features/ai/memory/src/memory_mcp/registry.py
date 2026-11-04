@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, Mapping, Sequence
 
-DB_NAME = "registry.sqlite"
+REGISTRY_FILE = "registry.sqlite"
 # A database at any other version is refused; there is no in-place migration.
 SCHEMA_VERSION = 2
 LOOKUP_CHUNK = 500
@@ -184,29 +184,13 @@ def _ensure_schema(conn: sqlite3.Connection, db_path: Path) -> None:
     )
 
 
-def migrate_registry(path: Path) -> None:
-    """Migrate one registry file in place (a restore stages the export's copy)."""
-    conn = sqlite3.connect(path, timeout=10)
-    try:
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=10000")
-        _ensure_schema(conn, path)
-        conn.commit()
-    finally:
-        conn.close()
-
-
 class Registry:
     def __init__(self, state_dir: str) -> None:
         self.state_dir = Path(state_dir)
-        self.db_path = self.state_dir / "registry.sqlite"
+        self.db_path = self.state_dir / REGISTRY_FILE
         self.state_dir.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
-            self._ensure_schema(conn)
-
-    def _ensure_schema(self, conn: sqlite3.Connection) -> None:
-        _ensure_schema(conn, self.db_path)
+            _ensure_schema(conn, self.db_path)
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -544,6 +528,17 @@ class Registry:
                 applied += 1
         return applied
 
+    def requeued_rows(self, group: str) -> list[RegistryEpisode]:
+        """Rows of `group` that a reindex requeued at some point, whatever their status now."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM episodes WHERE group_id = ? AND content_hash IN ("
+                "SELECT content_hash FROM audit WHERE group_id = ? "
+                "AND tool = 'memory_reindex' AND status = 'requeued')",
+                (group, group),
+            ).fetchall()
+        return [entry for entry in map(self._row, rows) if entry is not None]
+
     def active_page(
         self,
         *,
@@ -577,7 +572,7 @@ class Registry:
     def pending(
         self,
         *,
-        limit: int = 500,
+        limit: int = LOOKUP_CHUNK,
         after: tuple[str, str, str] | None = None,
     ) -> list[RegistryEpisode]:
         """One page of pending rows in queue order.
@@ -603,7 +598,7 @@ class Registry:
             ).fetchall()
         return [entry for row in rows if (entry := self._row(row)) is not None]
 
-    def tombstoned_unverified(self, *, limit: int = 500) -> list[RegistryEpisode]:
+    def tombstoned_unverified(self, *, limit: int = LOOKUP_CHUNK) -> list[RegistryEpisode]:
         """Tombstoned rows with no graph episode recorded yet.
 
         `graphiti_uuid IS NULL` marks a tombstone that landed before extraction
@@ -715,8 +710,8 @@ class Registry:
             return {}
         found: dict[str, RegistryEpisode] = {}
         with self._connect() as conn:
-            for offset in range(0, len(wanted), 500):
-                chunk = wanted[offset : offset + 500]
+            for offset in range(0, len(wanted), LOOKUP_CHUNK):
+                chunk = wanted[offset : offset + LOOKUP_CHUNK]
                 placeholders = ",".join("?" for _ in chunk)
                 rows = conn.execute(
                     f"SELECT * FROM episodes WHERE graphiti_uuid IN ({placeholders})",

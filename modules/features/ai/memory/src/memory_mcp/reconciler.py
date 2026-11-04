@@ -407,6 +407,7 @@ def build_default(
     graphiti_url: str,
     redis_url: str,
     llm_url: str,
+    embed_model: str,
     upstream_timeout: float,
     in_flight: InFlight | None = None,
 ) -> Reconciler:
@@ -414,7 +415,7 @@ def build_default(
         registry,
         GraphStore(redis_url),
         GraphitiBackend(graphiti_url, timeout=upstream_timeout),
-        HealthProbes(llm_url=llm_url),
+        HealthProbes(llm_url=llm_url, embed_model=embed_model),
         config=ReconcilerConfig.from_env(),
         in_flight=in_flight,
     )

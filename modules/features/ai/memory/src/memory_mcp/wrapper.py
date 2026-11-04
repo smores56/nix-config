@@ -58,6 +58,7 @@ from .registry import (
     ORIGINS,
     AmbiguousRef,
     Audit,
+    LOOKUP_CHUNK,
     Registry,
     RegistryEpisode,
     age_seconds,
@@ -96,7 +97,7 @@ MAX_DETAIL_CHARS = 300
 # JSON-RPC only; the largest legitimate call is a write at MAX_CONTENT_CHARS (the unit caps at 512M).
 MAX_MCP_BODY_BYTES = 1_000_000
 # A reindex pages the registry; each requeued row costs a full extraction, so one call requeues a bounded slice.
-REINDEX_PAGE = 500
+REINDEX_PAGE = LOOKUP_CHUNK
 REINDEX_DEFAULT = 200
 # Each requeued row is also submitted serially; 2000 would not fit the 60 s tool deadline.
 REINDEX_MAX = 500
@@ -125,6 +126,7 @@ class WrapperConfig:
     state_dir: str = DEFAULT_STATE_DIR
     graphiti_url: str = DEFAULT_GRAPHITI_URL
     llm_url: str = DEFAULT_LLM_URL
+    embed_model: str = ""
     redis_url: str = DEFAULT_REDIS_URL
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
@@ -138,6 +140,7 @@ class WrapperConfig:
             state_dir=os.environ.get("MEMORY_STATE_DIR", DEFAULT_STATE_DIR),
             graphiti_url=os.environ.get("MEMORY_GRAPHITI_URL", DEFAULT_GRAPHITI_URL),
             llm_url=os.environ.get("MEMORY_LLM_URL", DEFAULT_LLM_URL),
+            embed_model=os.environ["MEMORY_EMBED_MODEL"],
             redis_url=os.environ.get("MEMORY_REDIS_URL", DEFAULT_REDIS_URL),
             host=os.environ.get("MEMORY_MCP_HOST", DEFAULT_HOST),
             port=int(os.environ.get("MEMORY_MCP_PORT", str(DEFAULT_PORT))),
@@ -294,7 +297,7 @@ def build_server(
 ) -> MemoryServer:
     backend = backend or GraphitiBackend(config.graphiti_url, timeout=config.upstream_timeout)
     registry = registry or Registry(config.state_dir)
-    probes = probes or HealthProbes(llm_url=config.llm_url)
+    probes = probes or HealthProbes(llm_url=config.llm_url, embed_model=config.embed_model)
     graph = graph or GraphStore(config.redis_url)
     in_flight = reconciler.in_flight if reconciler is not None else InFlight()
     if reconciler is None:
@@ -303,6 +306,7 @@ def build_server(
             graphiti_url=config.graphiti_url,
             redis_url=config.redis_url,
             llm_url=config.llm_url,
+            embed_model=config.embed_model,
             upstream_timeout=config.upstream_timeout,
             in_flight=in_flight,
         )
@@ -935,11 +939,21 @@ def build_server(
                         )
                     ]
                     # Mostly-missing episodes suggest a wrong graph name or another host's registry; stop rather than requeue thousands.
+                    # A graph that already holds a row this tool requeued is proof of the right graph: a
+                    # multi-pass reindex lands its slices there, so later passes are not suspicious.
                     suspicious = bool(episodes) and (
                         (len(absent) >= REINDEX_GUARD_MIN_ROWS
                          and len(absent) * 10 >= len(group_rows) * 9)
                         or len(absent) == len(group_rows)
                     )
+                    if suspicious:
+                        suspicious = not any(
+                            any(
+                                not_older(stamp, moment(row.queued_at))
+                                for stamp in episodes.get(row.content, ())
+                            )
+                            for row in await asyncio.to_thread(registry.requeued_rows, group_id)
+                        )
                     if suspicious and not force:
                         if not dry_run:
                             raise ToolError(

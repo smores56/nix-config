@@ -15,7 +15,7 @@ memory-mcp-shim = "memory_mcp.shim:main"
 memory = "memory_mcp.cli:main"
 # Nightly export entry point: stdlib only, so it runs without the MCP deps.
 memory-export = "memory_mcp.export:main"
-# Neuralwatt gateway: carries the account key and keeps extraction thinking off.
+# Neuralwatt gateway: injects the account key and turns extraction thinking off.
 memory-llm-proxy = "memory_mcp.llm_proxy:main"
 # Read-only file search over allowlisted personal directories.
 memory-file-mcp = "memory_mcp.files:main"

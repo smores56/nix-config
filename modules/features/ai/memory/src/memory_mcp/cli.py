@@ -2,9 +2,7 @@
 
 Uses the same headers as the shim, so it works on a client through the loopback
 forward and on smortress directly. `--group` is an explicit override and is
-validated with the same work refusal as the header path. `ingest` plans as the
-user and submits through the wrapper's loopback routes, so the registry stays
-the single ledger and single writer.
+validated with the same work refusal as the header path.
 """
 
 from __future__ import annotations

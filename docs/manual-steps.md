@@ -1414,8 +1414,11 @@ not backed up. Check with `ss -ltnp 'sport = :6379'` (must be 127.0.0.1) and
 `127.0.0.1:8082`, the single egress to Neuralwatt. It reads `neuralwatt-api-key`
 through a systemd credential, adds the bearer header and
 `reasoning_effort: "none"` (a reasoning model otherwise spends its token budget
-thinking and returns empty content), holds a concurrency permit per upstream
-request, and retries 429/503 up to `MEMORY_UPSTREAM_RETRIES`, honouring a
+thinking and returns empty content), always replaces the caller's
+`Authorization`, forwards only `POST /v1/chat/completions`, `POST /v1/embeddings`
+and `GET /v1/models` (bodies over 10 MB get 413), holds a concurrency permit per
+extraction request (embeddings and the model list run in their own lane), and
+retries 429/503 up to `MEMORY_UPSTREAM_RETRIES`, honouring a
 numeric `Retry-After`. Rotating the key is a sops
 edit plus rebuild; the secret's `restartUnits` restarts the gateway.
 
@@ -1505,6 +1508,18 @@ sudo nix run .#cloudflare-apply
 just switch smortress
 ```
 
+**One-time cleanup after the memory trim.** A switch leaves this state behind;
+delete it by hand once the new export has run and restic holds a snapshot of it:
+
+- the old timestamped export directories under `/var/lib/data/memory-export/`
+  (`<timestamp>/`, root only); the new export writes `registry.sqlite`,
+  `episodes.jsonl` and `graph.rdb` directly into that directory;
+- `/var/lib/memory/index.sqlite` and `/var/lib/memory/internal.token`;
+- `/var/lib/private/llama-cpp-embed` and `/var/cache/private/llama-cpp-embed`
+  (the removed `llama-cpp-embed` unit's state);
+- `~/.local/state/memory/ingest-*.json`, `ingest.log`, `ingest-state.json*` and
+  `ingest-all-sessions.json` for the user that ran the ingest.
+
 ### Rebuilding the graph
 
 Required after changing the embedding model, and the answer to a lost or
@@ -1516,6 +1531,11 @@ just switch smortress     # applies the model change
 just memory-rebuild       # stop, wipe falkordb data, start (sudo)
 just memory-reindex --all # repeat until it reports nothing left
 ```
+
+A pass that finds the graph already holding rows an earlier pass requeued is
+recognised as the same reindex and is not stopped by the mostly-missing guard;
+only a first pass against a graph that matches none of the registry still needs
+`--force`.
 
 Do not run it while anything else writes memory.
 
