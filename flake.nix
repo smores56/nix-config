@@ -9,7 +9,7 @@
     # pin predates the libffi trampoline fix (nixpkgs#541367, fixed in
     # 3f92b6968d74), so every nix Python aborts on macOS 27 at its first
     # ctypes callback. Separate from nixpkgs-unstable so unstable bumps don't
-    # move the Macs; fold back into `nixpkgs` once its pin contains the fix.
+    # move the Mac; fold back into `nixpkgs` once its pin contains the fix.
     nixpkgs-darwin.url = "github:NixOS/nixpkgs/c9fe7d12cd78d1adcd12dd15e24432dde5b155a0";
     home-manager = {
       url = "github:nix-community/home-manager/041a999e8c1c5b731913855909e68d30ca69b8e0";

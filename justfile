@@ -17,9 +17,17 @@ check-build:
 agent-sandbox-check:
     agent-sandbox-check
 
-# Run the Python unit suite.
+# Run the Python unit suite with its dependencies.
 test:
-    nix run nixpkgs#python3 -- -m unittest discover -s tests
+    nix build --no-link .#checks.$(nix eval --impure --raw --expr builtins.currentSystem).unit-tests
+
+# Evaluate one home-manager configuration (e.g. smores smortress).
+verify-home user host:
+    nix eval --raw .#homeConfigurations.'"{{user}}@{{host}}"'.activationPackage.drvPath
+
+# Evaluate one NixOS configuration.
+verify-nixos host:
+    nix eval --raw .#nixosConfigurations.{{host}}.config.system.build.toplevel.drvPath
 
 # Format the tree.
 fmt:

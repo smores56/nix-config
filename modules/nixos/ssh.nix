@@ -108,7 +108,7 @@ in
 
       # The sudo credential is a separate FIDO2 key (touch only, no PIN), never
       # used for login. It is forwarded to the server through the client's
-      # fido2-agent. All three keys are enrolled.
+      # sudo agent. All three keys are enrolled.
       environment.etc."ssh/sudo_authorized_keys".text = lib.concatMapStrings (
         k: "${k.pubkey}\n"
       ) yubikeyKeys.sudo;

@@ -98,31 +98,35 @@ in
 
   # One string per abbreviation for both shells; pickers go through `pick`,
   # defined by each renderer below, since capturing output differs.
-  user.shellAbbrs = {
-    e = "hx";
-    ef = "pick files hx";
-    et = "pick text hx";
-    l = "eza --icons -lh";
-    t = "zellij a -c main";
-    a = "mkdir -p";
-    f = "yazi";
-    b = "bat";
-    g = "lazygit";
-    gp = "gh pr create";
-    copy = "osc copy";
-    paste = "osc paste";
+  user.shellAbbrs = lib.mkMerge [
+    {
+      e = "hx";
+      ef = "pick files hx";
+      et = "pick text hx";
+      l = "eza --icons -lh";
+      t = "zellij a -c main";
+      a = "mkdir -p";
+      f = "yazi";
+      b = "bat";
+      g = "lazygit";
+      gp = "gh pr create";
+      copy = "osc copy";
+      paste = "osc paste";
 
-    cn = "c ~/code/github.com/smores56/nix-config";
-    hm = "home-manager";
-    hs = "home-manager switch --no-write-lock-file";
+      cn = "c ~/code/github.com/smores56/nix-config";
+      hm = "home-manager";
+      hs = "home-manager switch --no-write-lock-file";
 
-    ns = "sudo nixos-rebuild --flake ~/.config/home-manager switch --upgrade";
-    ng = "nix-collect-garbage --delete-old";
+      ng = "nix-collect-garbage --delete-old";
 
-    sm = "ssh smores@smortress -t fish";
+      sm = "ssh smores@smortress -t fish";
 
-    m = lib.mkDefault "maki";
-  };
+      m = lib.mkDefault "maki";
+    }
+    (lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
+      ns = "sudo nixos-rebuild --flake ~/.config/home-manager switch --upgrade";
+    })
+  ];
 
   programs = {
     zoxide = {

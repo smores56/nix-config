@@ -355,7 +355,7 @@ manages the user environment.
 ## Tang Pi
 
 smortress's root disk gets a Clevis `sss` policy (Tang share + TPM2 share bound
-to PCR 7, T2 in #250). The Pi is not a NixOS host in this flake: it runs
+to PCR 7). The Pi is not a NixOS host in this flake: it runs
 Raspberry Pi OS (Debian trixie, aarch64) and only `tang`.
 
 Threat model: Tang keys are plaintext on the Pi. A stolen disk alone, a live USB
@@ -452,16 +452,11 @@ ClientAliveInterval 300
 ClientAliveCountMax 2
 ```
 
-`~smores/.ssh/authorized_keys` holds exactly two kinds of key:
-
-- the smortress software key, `from="10.0.0.125,10.0.0.135"` (both smortress
-  interfaces). The private half is `~/.config/pi/ssh/id_ed25519` on smortress
-  (0600, outside Maki's sandbox, never committed). It is useless from any other
-  source address.
-- the three YubiKey PIV 9a public keys from `modules/lib/yubikey-keys.nix`, for
-  the laptops. `modules/features/piv.nix` defines `Host tang-pi` (HostName 10.0.0.193) on
-  both laptops: `piv-ensure` warms the PIV agent first (one PIN per login
-  session), then `nc` connects. Pin the host key once per laptop;
+`~smores/.ssh/authorized_keys` holds only the three YubiKey PIV 9a public keys
+from `modules/lib/yubikey-keys.nix`. `modules/features/piv.nix` defines
+`Host tang-pi` (HostName 10.0.0.193) on both laptops: `piv-ensure` warms the PIV
+agent first (one PIN per login session), then `nc` connects. Pin the host key
+once per laptop;
 `SSH_ASKPASS_REQUIRE=force` sends the `yes/no` prompt to the session askpass,
 which fails closed, so the first connection fails until this is done:
 
@@ -489,7 +484,7 @@ tang-show-keys 7654 output:
 
 The package generated the two keys (`ES512` verify, `ECMR` derive) under
 `/var/lib/tang` at first start. If the Pi is rebuilt its keys change: re-run the
-Clevis bind (T2 step 6) with the LUKS passphrase. Do not back the Tang keys up as
+Clevis bind with the LUKS passphrase. Do not back the Tang keys up as
 a way to avoid that; the passphrase slot plus the offline recovery key are the
 recovery path.
 

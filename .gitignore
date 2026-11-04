@@ -1,7 +1,4 @@
 __pycache__/
-bun.lock
-node_modules/
-package.json
 result
 result-*
 

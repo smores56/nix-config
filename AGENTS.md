@@ -67,7 +67,7 @@ adds its greeter as a host-local module.
 | `tofu/` | minimal Cloudflare DNS/Access/notification objects; run via the `cloudflare-*` flake apps |
 | `modules/features/backup/` | Operator README, GitHub-mirror helpers and the metadata verifier |
 | `modules/desktop/aerospace/` | AeroSpace config + `aerospace-layout` |
-| `tests/` | Python/Node unit tests and shell/module checks for the repo's tools (all run via flake checks) |
+| `tests/` | Python unit tests and shell/module checks for the repo's tools (all run via flake checks) |
 
 Feature options live in the module that owns them (`webProxy` in
 `modules/nixos/web-proxy.nix`, `backup` in `modules/nixos/backup.nix`,
@@ -156,27 +156,17 @@ before `install`.
 
 ## Verification
 
-`just --list` is the command index; the checks below are what its recipes wrap.
-
-After any change, verify at minimum:
-
-```sh
-nix eval .#checks.x86_64-linux.eval-home-smores-smortress --apply 'x: true'
-```
-
-For changes touching NixOS modules or home-manager base:
+`just --list` is the command index. After any change, evaluate every host it
+can affect:
 
 ```sh
-nix eval .#checks.x86_64-linux.eval-nixos-smortress --apply 'x: true'
-nix eval .#checks.x86_64-linux.eval-nixos-smorespro --apply 'x: true'
+just verify-home smores smortress   # also smores smorespro, sam smoreswork
+just verify-nixos smortress         # also smorespro
 ```
 
-The Python tools under `modules/features/ai/` have unit tests in `tests/`,
-run by the `checks` flake module. Locally: `nix run nixpkgs#python3 -- -m
-unittest discover -s tests`.
-Run them after touching `modules/features/ai/sdlc/`, `modules/features/ai/memory/`
-(wrapper, shim, CLI, ingest, LLM proxy), maki session search, or
-`modules/features/ai/brain/`.
+`just test` runs the Python unit suite (the `unit-tests` check) after touching
+`modules/features/ai/` or maki session search; `just check-build` builds every
+check for the current system.
 
 Script checks run each `tests/<name>.sh` against tools and files from a
 generated home, as the `<name>` flake check (`scriptChecks` in
