@@ -9,6 +9,7 @@
   ...
 }:
 let
+  hardening = import ../lib/hardening.nix;
   cfg = config.filesearch;
   ports = import ../ports.nix;
   memoryPackage = import ../features/ai/memory/package.nix { inherit pkgs; };
@@ -51,7 +52,7 @@ in
         StartLimitBurst = 10;
       };
       onFailure = [ "cloudflare-email@%n.service" ];
-      serviceConfig = {
+      serviceConfig = hardening // {
         ExecStart = "${memoryPackage}/bin/memory-file-mcp";
         # The roots live under the human's 0700 home, so the service runs as
         # that user rather than as a DynamicUser.
@@ -68,12 +69,9 @@ in
         ];
         Restart = "always";
         RestartSec = "5s";
-        ProtectSystem = "strict";
         # Read-only: the server never writes, but it must see the roots.
         ProtectHome = "read-only";
-        PrivateTmp = true;
         PrivateDevices = true;
-        NoNewPrivileges = true;
         ProtectKernelTunables = true;
         ProtectKernelModules = true;
         ProtectControlGroups = true;

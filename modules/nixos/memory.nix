@@ -12,6 +12,7 @@
   ...
 }:
 let
+  hardening = import ../lib/hardening.nix;
   ports = import ../ports.nix;
   inherit (aiProviders) neuralwatt;
   memoryPackage = import ../features/ai/memory/package.nix { inherit pkgs; };
@@ -426,7 +427,7 @@ in
         StartLimitBurst = 10;
       };
       onFailure = [ "cloudflare-email@%n.service" ];
-      serviceConfig = {
+      serviceConfig = hardening // {
         DynamicUser = true;
         ExecStart = "${memoryPackage}/bin/memory-llm-proxy";
         Environment = [
@@ -451,10 +452,6 @@ in
         RestartSec = "5s";
         # A streaming relay: buffers are per-connection, requests are tiny.
         MemoryMax = "256M";
-        ProtectSystem = "strict";
-        ProtectHome = true;
-        PrivateTmp = true;
-        NoNewPrivileges = true;
         PrivateDevices = true;
         RestrictAddressFamilies = [
           "AF_INET"
@@ -497,7 +494,7 @@ in
         StartLimitBurst = 10;
       };
       onFailure = [ "cloudflare-email@%n.service" ];
-      serviceConfig = {
+      serviceConfig = hardening // {
         User = "memory";
         Group = "memory";
         ExecStart = "${memoryPackage}/bin/memory-mcp";
@@ -545,10 +542,6 @@ in
         Restart = "always";
         RestartSec = "5s";
         MemoryMax = "512M";
-        ProtectSystem = "strict";
-        ProtectHome = true;
-        PrivateTmp = true;
-        NoNewPrivileges = true;
         PrivateDevices = true;
         RestrictAddressFamilies = [
           "AF_INET"

@@ -8,6 +8,7 @@
   ...
 }:
 let
+  hardening = import ../lib/hardening.nix;
   # Non-secret Cloudflare account id; the bucket is `restic-backup`.
   accountId = "385f7d47e2e8438fbda5d6f76d760434";
 
@@ -84,16 +85,12 @@ in
     requires = [ "postgresql.service" ];
     path = [ pkgs.coreutils ];
     onFailure = [ "cloudflare-email@%n.service" ];
-    serviceConfig = {
+    serviceConfig = hardening // {
       Type = "oneshot";
       User = "postgres";
       Group = "postgres";
       ExecStart = dbDump;
       TimeoutStartSec = "1h";
-      NoNewPrivileges = true;
-      PrivateTmp = true;
-      ProtectHome = true;
-      ProtectSystem = "strict";
       ReadWritePaths = [ dbDir ];
       ProtectKernelTunables = true;
       ProtectKernelModules = true;

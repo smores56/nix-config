@@ -9,6 +9,7 @@
   ...
 }:
 let
+  hardening = import ../lib/hardening.nix;
   cfg = config.alerting;
   # Plain-text Cloudflare API token, root-only.
   secretFile = "/run/secrets/cloudflare-api-token";
@@ -93,11 +94,7 @@ let
     '';
   };
 
-  sandbox = {
-    NoNewPrivileges = true;
-    PrivateTmp = true;
-    ProtectHome = true;
-    ProtectSystem = "strict";
+  sandbox = hardening // {
     ProtectKernelTunables = true;
     ProtectKernelModules = true;
     ProtectControlGroups = true;

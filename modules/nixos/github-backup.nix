@@ -105,13 +105,9 @@ let
 
   # Both units run as root inside the same sandbox: they write only the mirror
   # tree, and /run/lock is the shared host lock the metadata swap takes.
-  hardening = {
+  hardening = (import ../lib/hardening.nix) // {
     User = "root";
     UMask = "0077";
-    NoNewPrivileges = true;
-    PrivateTmp = true;
-    ProtectHome = true;
-    ProtectSystem = "strict";
     ReadWritePaths = [
       mirrorRoot
       "/run/lock"

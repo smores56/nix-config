@@ -15,6 +15,7 @@
   ...
 }:
 let
+  hardening = import ../lib/hardening.nix;
   ports = import ../ports.nix;
   cfg = config.calibre;
 
@@ -200,15 +201,12 @@ in
       Unit = {
         Description = "Add queued books and metadata to the calibre library";
       };
-      Service = {
+      Service = hardening // {
         Type = "oneshot";
         ExecStart = lib.getExe ingest;
         # The ingest parses agent-authored EPUBs with calibredb. Confine writes
         # to the library and the queue so a hostile book (or manifest) cannot
         # use the parser to modify the rest of the system.
-        NoNewPrivileges = true;
-        PrivateTmp = true;
-        ProtectSystem = "strict";
         ProtectHome = "read-only";
         ReadWritePaths = [
           cfg.library

@@ -9,6 +9,7 @@
 # also why the unit runs as that user rather than a DynamicUser.
 { pkgs, ... }:
 let
+  hardening = import ../lib/hardening.nix;
   keyPath = "/run/secrets/tinyfish-api-key";
 
   shim = pkgs.writeText "tinyfish-shim.py" ''
@@ -121,15 +122,11 @@ in
       "sops-nix.service"
     ];
     wants = [ "network-online.target" ];
-    serviceConfig = {
+    serviceConfig = hardening // {
       ExecStart = "${pkgs.python3.interpreter} ${shim}";
       User = "smores";
       Restart = "on-failure";
       RestartSec = 5;
-      NoNewPrivileges = true;
-      PrivateTmp = true;
-      ProtectSystem = "strict";
-      ProtectHome = true;
       PrivateDevices = true;
       ProtectKernelTunables = true;
       ProtectKernelModules = true;
