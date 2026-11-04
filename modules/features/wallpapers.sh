@@ -174,7 +174,9 @@ lock() {
 }
 
 sync_cache() {
-  rsync_ssh=(-e 'ssh -o StrictHostKeyChecking=yes -o ConnectTimeout=20')
+  # The sync needs no agent on smortress; forwarding one would only hand a
+  # short-lived socket to the server's shell hooks.
+  rsync_ssh=(-e 'ssh -o StrictHostKeyChecking=yes -o ConnectTimeout=20 -o ForwardAgent=no')
   # Bounds a stalled stream so it cannot wedge the launchd agent: launchd will
   # not start a second instance while this one runs. --timeout is the I/O
   # timeout; --contimeout would be a daemon-only flag that rsync rejects on the

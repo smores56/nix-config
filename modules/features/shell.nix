@@ -20,23 +20,8 @@ let
 
   # After a reconnect the old forwarded agent path is dead. Point panes at a
   # stable symlink so zellij shells keep working; the next login repoints it.
-  sshAuthSockHookFish = ''
-    if set -q SSH_AUTH_SOCK; and string match -q '/tmp/ssh-*/agent.*' $SSH_AUTH_SOCK
-      if not set -q XDG_RUNTIME_DIR
-        set -gx XDG_RUNTIME_DIR /run/user/(id -u)
-      end
-      ln -sfn $SSH_AUTH_SOCK $XDG_RUNTIME_DIR/ssh-agent.sock
-      set -gx SSH_AUTH_SOCK $XDG_RUNTIME_DIR/ssh-agent.sock
-    end
-  '';
-  sshAuthSockHookZsh = ''
-    if [ -n "''${SSH_AUTH_SOCK:-}" ] && [[ $SSH_AUTH_SOCK == /tmp/ssh-*/agent.* ]]; then
-      : "''${XDG_RUNTIME_DIR:=/run/user/$(id -u)}"
-      export XDG_RUNTIME_DIR
-      ln -sfn "$SSH_AUTH_SOCK" "$XDG_RUNTIME_DIR/ssh-agent.sock"
-      export SSH_AUTH_SOCK="$XDG_RUNTIME_DIR/ssh-agent.sock"
-    fi
-  '';
+  sshAuthSockHookFish = builtins.readFile ./ssh-auth-sock.fish;
+  sshAuthSockHookZsh = builtins.readFile ./ssh-auth-sock.zsh;
 
   # Renames the tab holding this shell's pane, not the focused one, which
   # differs once you switch tabs while a command runs. Shells compute the
