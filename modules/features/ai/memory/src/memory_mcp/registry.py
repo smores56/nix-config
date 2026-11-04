@@ -19,8 +19,7 @@ from pathlib import Path
 from typing import Iterator, Mapping
 
 DB_NAME = "registry.sqlite"
-# Bumped on every schema change. One or more versions behind migrates in place on open (`_MIGRATIONS`);
-# older, newer or unversioned is refused.
+# A database at any other version is refused; there is no in-place migration.
 SCHEMA_VERSION = 2
 LOOKUP_CHUNK = 500
 
@@ -85,25 +84,6 @@ CREATE TABLE IF NOT EXISTS audit (
 );
 CREATE INDEX IF NOT EXISTS audit_created ON audit (finished_at);
 """
-
-
-def _migrate_1_to_2(conn: sqlite3.Connection) -> None:
-    """Split the queue clock from the write time.
-
-    `queued_at` is when a row entered the pending queue (the reconciler's grace,
-    the pending order and the stale-write window read it); `created_at` stays
-    the write time. Guarded by `table_info` so a re-entry after an interrupted
-    run is a no-op.
-    """
-    columns = {row[1] for row in conn.execute("PRAGMA table_info(episodes)")}
-    if "queued_at" not in columns:
-        conn.execute("ALTER TABLE episodes ADD COLUMN queued_at TEXT NOT NULL DEFAULT ''")
-    conn.execute("UPDATE episodes SET queued_at = created_at WHERE queued_at = ''")
-    conn.execute("CREATE INDEX IF NOT EXISTS episodes_queue ON episodes (status, queued_at)")
-
-
-# One entry per version a database may be at; each migrates exactly one hop.
-_MIGRATIONS = {1: _migrate_1_to_2}
 
 
 class SchemaVersionError(RuntimeError):
@@ -196,13 +176,6 @@ def _ensure_schema(conn: sqlite3.Connection, db_path: Path) -> None:
         conn.executescript(
             "BEGIN IMMEDIATE;\n" + _SCHEMA + f"\nPRAGMA user_version = {SCHEMA_VERSION};\nCOMMIT;"
         )
-        return
-    if has_tables is not None and 0 < version < SCHEMA_VERSION:
-        conn.execute("BEGIN IMMEDIATE")
-        while version < SCHEMA_VERSION:
-            _MIGRATIONS[version](conn)
-            version += 1
-            conn.execute(f"PRAGMA user_version = {version}")
         return
     found = "unversioned" if version == 0 else str(version)
     raise SchemaVersionError(

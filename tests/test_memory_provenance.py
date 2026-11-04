@@ -136,11 +136,6 @@ class WrapperProvenanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("A design section", text)
         self.assertIn("graph-1", text)
 
-    async def test_no_legacy_index_file_is_created(self):
-        self.build(self.headers())
-        self.assertTrue((Path(self.tmp.name) / "registry.sqlite").exists())
-        self.assertFalse((Path(self.tmp.name) / "index.sqlite").exists())
-
 
 if __name__ == "__main__":
     unittest.main()

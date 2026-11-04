@@ -445,10 +445,10 @@ in
       '';
     };
 
-    # The registry snapshot is the backup; the graph is a derived index, so its BGSAVE
-    # is best-effort but a missing graph exits non-zero to trigger the alert. Root
-    # reads the memory-owned graph dir. Refuses to run during a restore
-    # (.restore-in-progress).
+    # Overwrites registry.sqlite, episodes.jsonl and graph.rdb in exportDir; restic keeps the
+    # history. The graph is a derived index, so its BGSAVE is best-effort but a missing graph
+    # exits non-zero to trigger the alert. Root reads the memory-owned graph dir. Refuses to
+    # run during a restore (.restore-in-progress).
     systemd.services.memory-export = {
       description = "Export the memory registry and snapshot the graph";
       # No dependency on the wrapper: exporting while services are down is the point.
@@ -468,8 +468,6 @@ in
           exportDir
           "--state-dir"
           dataDir
-          "--keep"
-          "7"
           "--graph-url"
           "redis://127.0.0.1:${toString dbPort}"
           "--graph-dir"
