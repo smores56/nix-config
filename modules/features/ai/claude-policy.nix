@@ -54,6 +54,11 @@ let
     sandbox = {
       enabled = true;
       allowUnsandboxedCommands = false;
+      # The sandbox always write-protects .git/config, which every worktree operation writes.
+      excludedCommands = [
+        "worktrees new *"
+        "worktrees prune"
+      ];
       # Go TLS (gh, gcloud) needs trustd.
       enableWeakerNetworkIsolation = true;
       filesystem = {
