@@ -33,10 +33,9 @@ let
 
   policy = {
     permissions.deny =
-      map (p: "Read(${p}/**)") [
-        "~/.config/sops"
-        "~/.config/sops-nix"
-      ]
+      # Read rules also become sandbox read-denies; the decrypted files are denied at their
+      # resolved path below, so the ~/.config/sops-nix links git reads stay usable.
+      [ "Read(~/.config/sops/**)" ]
       # Edit and Write run in-process, outside the sandbox: keep them off files an unsandboxed
       # shell or launchd would later execute.
       ++ map (p: "Edit(${p})") [
