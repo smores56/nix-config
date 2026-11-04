@@ -2,20 +2,28 @@
 
 Two request rewrites, everything else is relayed:
 
-- the account key: the gateway sends `Authorization: Bearer <key>` when the
-  caller sent none or Graphiti's placeholder `Bearer none`; a real client
-  credential is never overridden. A missing or empty key fails startup, so the
-  unit fails visibly instead of serving unauthenticated calls.
+- the account key: the gateway always sends `Authorization: Bearer <key>`;
+  Graphiti's placeholder `Bearer none` and any other caller credential are
+  replaced. A missing or empty key fails startup, so the unit fails visibly
+  instead of serving unauthenticated calls.
 - `reasoning_effort: "none"` on chat completions: a reasoning model spends the
   whole max_tokens budget on extraction and returns empty content that Graphiti
   drops, and graphiti-core cannot set the field per request.
 
 Two behaviours Graphiti's requests depend on, kept on purpose: the account's tier
-allows three concurrent upstream slots, so a permit is held for the whole
-upstream request (`MEMORY_UPSTREAM_CONCURRENCY`; Graphiti's own semaphore bounds
-only one fan-out, not the process), and a 429 or 503, which never ran, is retried
-up to `MEMORY_UPSTREAM_RETRIES` attempts, honouring a numeric `Retry-After`,
-because one rejected extraction call otherwise drops the whole episode.
+allows three concurrent upstream slots, so extraction (chat completions) holds
+one of `MEMORY_UPSTREAM_CONCURRENCY` permits for the whole upstream call
+(Graphiti's own semaphore bounds only one fan-out, not the process), and a 429 or
+503, which never ran, is retried up to `MEMORY_UPSTREAM_RETRIES` attempts,
+honouring a numeric `Retry-After`, because one rejected extraction call otherwise
+drops the whole episode. Embeddings and the model list run in their own lane so
+search and readiness stay answerable while the extraction queue drains.
+
+Only the routes Graphiti and the readiness probe use are forwarded
+(`POST /v1/chat/completions`, `POST /v1/embeddings`, `GET /v1/models`), request
+bodies are capped at `MAX_REQUEST_BYTES`, and upstream replies are buffered
+(Graphiti never streams), so no caller-chosen request can pin a connection. The
+caller's `Authorization` is always replaced with the account key.
 
 `/health` is a local liveness answer; check upstream access through `/v1/models`.
 """
@@ -34,7 +42,7 @@ from typing import Any, AsyncIterator
 import httpx
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response, StreamingResponse
+from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
 logger = logging.getLogger("memory-mcp.llm-proxy")
@@ -46,16 +54,21 @@ DEFAULT_TIMEOUT = 600.0
 # systemd LoadCredential drops the sops secret here; MEMORY_NEURALWATT_KEY_FILE points at it.
 DEFAULT_KEY_FILE = "/run/secrets/neuralwatt-api-key"
 KEY_FILE_ENV = "MEMORY_NEURALWATT_KEY_FILE"
-# A stalled upstream (even mid-stream) must not hold a connection forever.
+# A stalled upstream must not hold a connection forever.
 DEFAULT_READ_TIMEOUT = 300.0
 DEFAULT_CONNECT_TIMEOUT = 10.0
-CHAT_COMPLETION_PATHS = frozenset({"/v1/chat/completions", "/chat/completions"})
+# Bounds a caller's memory use; Graphiti's largest prompt is far below it.
+MAX_REQUEST_BYTES = 10 * 1024 * 1024
+CHAT_PATH = "/v1/chat/completions"
+EMBEDDINGS_PATH = "/v1/embeddings"
+MODELS_PATH = "/v1/models"
+ALLOWED_ROUTES = {CHAT_PATH: "POST", EMBEDDINGS_PATH: "POST", MODELS_PATH: "GET"}
 REASONING_EFFORT = "none"
-# Graphiti requires a non-empty `api_key`, so it sends the placeholder "none"; the gateway replaces it.
-PLACEHOLDER_BEARERS = frozenset({"", "none"})
 # The PAYG tier has three slots and maki's chat shares the key; two leaves one for interactive use.
 # Graphiti's SEMAPHORE_LIMIT only bounds its own queue.
 DEFAULT_UPSTREAM_CONCURRENCY = 2
+# Embeddings and the model list are short and run beside extraction, one at a time.
+LIGHT_LANE_CONCURRENCY = 1
 UPSTREAM_CONCURRENCY_ENV = "MEMORY_UPSTREAM_CONCURRENCY"
 # Attempts, not retries: covers a burst of 429s without outliving the caller's read deadline.
 DEFAULT_UPSTREAM_RETRIES = 6
@@ -68,7 +81,7 @@ RETRY_BACKOFF_BASE = 1.0
 RETRY_BACKOFF_CAP = 30.0
 
 # Connection-scoped headers terminate at each hop. Request content-length is stale once a
-# chat body is rewritten; upstream length is left to the server when streaming.
+# chat body is rewritten, and httpx decodes the reply, so its encoding and length are stale too.
 HOP_BY_HOP = frozenset(
     {
         "connection",
@@ -82,8 +95,8 @@ HOP_BY_HOP = frozenset(
         "upgrade",
     }
 )
-REQUEST_STRIP = HOP_BY_HOP | {"host", "content-length"}
-RESPONSE_STRIP = HOP_BY_HOP | {"content-length"}
+REQUEST_STRIP = HOP_BY_HOP | {"host", "content-length", "authorization"}
+RESPONSE_STRIP = HOP_BY_HOP | {"content-length", "content-encoding"}
 
 
 def inject_thinking_off(body: bytes) -> bytes:
@@ -117,17 +130,9 @@ def load_api_key(*, api_key: str | None = None, key_file: str | None = None) -> 
     return key
 
 
-def _is_placeholder_authorization(value: str) -> bool:
-    scheme, _, token = value.partition(" ")
-    return scheme.lower() == "bearer" and token.strip().lower() in PLACEHOLDER_BEARERS
-
-
 def _request_headers(request: Request, api_key: str) -> dict[str, str]:
     headers = {key: value for key, value in request.headers.items() if key.lower() not in REQUEST_STRIP}
-    # A caller's own credential wins; silently swapping it would be surprising.
-    authorization = next((value for key, value in headers.items() if key.lower() == "authorization"), None)
-    if authorization is None or _is_placeholder_authorization(authorization):
-        headers["authorization"] = f"Bearer {api_key}"
+    headers["authorization"] = f"Bearer {api_key}"
     return headers
 
 
@@ -137,26 +142,6 @@ def _response_headers(response: httpx.Response) -> dict[str, str]:
 
 class MissingKeyError(RuntimeError):
     """No usable Neuralwatt API key is configured."""
-
-
-class _ReleasingStreamingResponse(StreamingResponse):
-    """A proxied reply that gives its upstream slot back exactly once.
-
-    The body iterator normally releases the slot in its `finally`, but a client
-    that disconnects before the first iteration never runs it, and a leaked
-    permit would silently shrink the tier for the life of the process. The
-    release is idempotent, so both paths are safe.
-    """
-
-    def __init__(self, content: AsyncIterator[bytes], *, release, **kwargs: Any) -> None:
-        super().__init__(content, **kwargs)
-        self._release = release
-
-    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
-        try:
-            await super().__call__(scope, receive, send)
-        finally:
-            self._release()
 
 
 def _env_int(name: str, default: int) -> int:
@@ -181,10 +166,6 @@ def _backoff_seconds(attempt: int, *, base: float = RETRY_BACKOFF_BASE, cap: flo
     return ceiling / 2 + random.uniform(0.0, ceiling / 2)
 
 
-async def _sleep(seconds: float) -> None:
-    await asyncio.sleep(seconds)
-
-
 def create_app(
     *,
     upstream: str | None = None,
@@ -200,7 +181,8 @@ def create_app(
     concurrency = upstream_concurrency or _env_int(UPSTREAM_CONCURRENCY_ENV, DEFAULT_UPSTREAM_CONCURRENCY)
     retries = upstream_retries or _env_int(UPSTREAM_RETRIES_ENV, DEFAULT_UPSTREAM_RETRIES)
     # Per app, so two apps in one process (tests) do not share permits.
-    upstream_slots = asyncio.Semaphore(concurrency)
+    extraction_lane = asyncio.Semaphore(concurrency)
+    light_lane = asyncio.Semaphore(LIGHT_LANE_CONCURRENCY)
     # Read once: a rotation restarts the unit.
     resolved_key = load_api_key(api_key=api_key, key_file=key_file)
     client = httpx.AsyncClient(
@@ -223,80 +205,76 @@ def create_app(
             {"status": "ok", "service": "memory-llm-proxy", "scope": "local"}
         )
 
-    async def proxy(request: Request) -> Response:
-        body = await request.body()
-        if request.method == "POST" and request.url.path in CHAT_COMPLETION_PATHS:
-            body = inject_thinking_off(body)
+    async def read_body(request: Request) -> bytes | None:
+        """Read at most `MAX_REQUEST_BYTES`, or None when the body is larger."""
+        declared = request.headers.get("content-length")
+        if declared and declared.isdigit() and int(declared) > MAX_REQUEST_BYTES:
+            return None
+        chunks: list[bytes] = []
+        total = 0
+        async for chunk in request.stream():
+            total += len(chunk)
+            if total > MAX_REQUEST_BYTES:
+                return None
+            chunks.append(chunk)
+        return b"".join(chunks)
 
-        upstream_request = client.build_request(
-            request.method,
-            request.url.path,
-            params=request.url.query,
-            headers=_request_headers(request, resolved_key),
-            content=body,
-        )
+    async def send(request: Request, body: bytes) -> httpx.Response:
+        """Forward one buffered request, retrying only a rejection.
 
-        # Released exactly once per response, by the body iterator or on early client disconnect.
-        slot_released = False
-
-        def release_slot() -> None:
-            nonlocal slot_released
-            if not slot_released:
-                slot_released = True
-                upstream_slots.release()
-
-        async def open_upstream(upstream_request: httpx.Request) -> httpx.Response:
-            """Send the request, retrying only a rejection, holding one slot.
-
-            The permit is taken before the send and handed to the response
-            body, so it covers the whole upstream request: a queued extraction
-            calls no model slot until it actually has one. On a retryable
-            status the response is closed and the permit released before
-            backing off, so sleeping never blocks the other slots.
-            """
-            for attempt in range(retries):
-                await upstream_slots.acquire()
-                try:
-                    upstream_response = await client.send(upstream_request, stream=True)
-                except BaseException:
-                    upstream_slots.release()
-                    raise
-                if upstream_response.status_code not in RETRY_STATUSES or attempt + 1 >= retries:
-                    return upstream_response
-                retry_after = upstream_response.headers.get("retry-after")
-                delay = _retry_after_seconds(retry_after)
-                if delay is None:
-                    delay = _backoff_seconds(attempt)
-                logger.warning(
-                    "upstream %s %s returned %d (attempt %d/%d); retrying in %.1fs",
-                    upstream_request.method,
-                    upstream_request.url.path,
-                    upstream_response.status_code,
-                    attempt + 1,
-                    retries,
-                    delay,
+        The permit covers one upstream call and is released before backing off, so
+        sleeping never blocks the other slots.
+        """
+        lane = extraction_lane if request.url.path == CHAT_PATH else light_lane
+        headers = _request_headers(request, resolved_key)
+        for attempt in range(retries):
+            async with lane:
+                upstream_response = await client.request(
+                    request.method,
+                    request.url.path,
+                    params=request.url.query,
+                    headers=headers,
+                    content=body,
                 )
-                # Nothing has reached the client yet, so a retry cannot follow a partial stream.
-                await upstream_response.aclose()
-                upstream_slots.release()
-                await _sleep(delay)
-            raise AssertionError("retry loop fell through")  # unreachable: last attempt returns
+            if upstream_response.status_code not in RETRY_STATUSES or attempt + 1 >= retries:
+                return upstream_response
+            delay = _retry_after_seconds(upstream_response.headers.get("retry-after"))
+            if delay is None:
+                delay = _backoff_seconds(attempt)
+            logger.warning(
+                "upstream %s %s returned %d (attempt %d/%d); retrying in %.1fs",
+                request.method,
+                request.url.path,
+                upstream_response.status_code,
+                attempt + 1,
+                retries,
+                delay,
+            )
+            await asyncio.sleep(delay)
+        raise AssertionError("retry loop fell through")  # unreachable: the last attempt returns
 
-        upstream_response = await open_upstream(upstream_request)
+    def error(status: int, kind: str, message: str) -> JSONResponse:
+        return JSONResponse({"error": {"message": message, "type": kind}}, status_code=status)
 
-        async def body_stream() -> AsyncIterator[bytes]:
-            try:
-                # Raw bytes: content-encoding is kept, so decoding here would corrupt the stream.
-                async for chunk in upstream_response.aiter_raw():
-                    yield chunk
-            finally:
-                await upstream_response.aclose()
-                # The slot frees when the upstream request ends, not when headers arrive: a stream still holds it.
-                release_slot()
-
-        return _ReleasingStreamingResponse(
-            body_stream(),
-            release=release_slot,
+    async def proxy(request: Request) -> Response:
+        expected = ALLOWED_ROUTES.get(request.url.path)
+        if expected is None:
+            return error(404, "not_found", f"{request.url.path} is not forwarded")
+        if request.method != expected:
+            return error(405, "method_not_allowed", f"{request.url.path} takes {expected}")
+        body = await read_body(request)
+        if body is None:
+            return error(413, "request_too_large", f"request body exceeds {MAX_REQUEST_BYTES} bytes")
+        if request.url.path == CHAT_PATH:
+            body = inject_thinking_off(body)
+        try:
+            upstream_response = await send(request, body)
+        except httpx.TimeoutException as exc:
+            return error(504, "upstream_timeout", f"upstream {base_url} timed out: {type(exc).__name__}")
+        except httpx.HTTPError as exc:
+            return error(502, "upstream_unavailable", f"upstream {base_url} unavailable: {type(exc).__name__}")
+        return Response(
+            upstream_response.content,
             status_code=upstream_response.status_code,
             headers=_response_headers(upstream_response),
         )

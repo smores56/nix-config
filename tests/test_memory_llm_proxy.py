@@ -89,11 +89,6 @@ class ProxyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.body(self.seen[0])["model"], "qwen")
         self.assertEqual(reply.json()["choices"][0]["message"]["content"], "{}")
 
-    async def test_bare_chat_completions_path_is_also_injected(self):
-        app = self.app(lambda request: response())
-        await self.call(app, "POST", "/chat/completions", json_body={"messages": []})
-        self.assertEqual(self.body(self.seen[0])["reasoning_effort"], "none")
-
     async def test_explicit_reasoning_effort_is_preserved(self):
         app = self.app(lambda request: response())
         await self.call(
@@ -125,22 +120,10 @@ class ProxyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.seen[0].url.path, "/v1/models")
         self.assertEqual(self.seen[0].url.query, b"limit=1")
 
-    async def test_streaming_passthrough_is_not_buffered_away(self):
-        chunks = [b'data: {"choices":[{"delta":{"content":"{"}}]}\n\n', b"data: [DONE]\n\n"]
-
-        app = self.app(lambda request: response(chunks=chunks, headers={"content-type": "text/event-stream"}))
-        reply = await self.call(app, "POST", "/v1/chat/completions", json_body={"stream": True, "messages": []})
-
-        self.assertEqual(reply.status_code, 200)
-        self.assertEqual(reply.content, b"".join(chunks))
-        self.assertEqual(reply.headers["content-type"], "text/event-stream")
-        self.assertTrue(self.body(self.seen[0])["stream"])
-        self.assertEqual(self.body(self.seen[0])["reasoning_effort"], "none")
-
     async def test_upstream_error_status_is_forwarded(self):
         # A 503 is retried first, so the final answer is the upstream's own.
         app = self.app(lambda request: response(status=503, payload={"error": {"message": "loading"}}))
-        with mock.patch.object(llm_proxy, "_sleep", new=mock.AsyncMock()):
+        with mock.patch.object(llm_proxy.asyncio, "sleep", new=mock.AsyncMock()):
             reply = await self.call(app, "POST", "/v1/chat/completions", json_body={"messages": []})
         self.assertEqual(reply.status_code, 503)
         self.assertEqual(reply.json()["error"]["message"], "loading")
@@ -191,30 +174,21 @@ class ProxyTests(unittest.IsolatedAsyncioTestCase):
         await self.call(app, "POST", "/v1/chat/completions", json_body={"messages": []})
         self.assertEqual(self.seen[0].headers["authorization"], "Bearer test-key")
 
-    async def test_a_client_supplied_authorization_is_never_overridden(self):
+    async def test_a_caller_credential_is_always_replaced_with_the_key(self):
+        # Graphiti sends the placeholder "Bearer none"; anything else a caller
+        # sends is replaced too, so the account key is the only credential upstream.
         app = self.app(lambda request: response())
-        await self.call(
-            app,
-            "POST",
-            "/v1/chat/completions",
-            json_body={"messages": []},
-            headers={"authorization": "Bearer caller"},
-        )
-        self.assertEqual(self.seen[0].headers["authorization"], "Bearer caller")
-
-    async def test_a_placeholder_authorization_is_replaced_with_the_key(self):
-        # Graphiti's YAML needs a non-empty `api_key`, so it sends "Bearer none"
-        # and the OpenAI SDK forwards it. That placeholder must not reach
-        # Neuralwatt, or every extraction would 401.
-        app = self.app(lambda request: response())
-        await self.call(
-            app,
-            "POST",
-            "/v1/chat/completions",
-            json_body={"messages": []},
-            headers={"authorization": "Bearer none"},
-        )
-        self.assertEqual(self.seen[0].headers["authorization"], "Bearer test-key")
+        for header in ("Bearer none", "Bearer caller", "Basic Zm9vOmJhcg=="):
+            with self.subTest(header=header):
+                await self.call(
+                    app,
+                    "POST",
+                    "/v1/chat/completions",
+                    json_body={"messages": []},
+                    headers={"authorization": header},
+                )
+                self.assertEqual(self.seen[-1].headers["authorization"], "Bearer test-key")
+                self.assertEqual(self.seen[-1].headers.get_list("authorization"), ["Bearer test-key"])
 
     async def test_the_key_is_read_from_the_configured_file_at_startup(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -241,6 +215,105 @@ class ProxyTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(self.seen[0].headers["authorization"], "Bearer test-key")
         self.assertEqual(self.body(self.seen[0]), payload)
+
+    async def test_only_the_three_graphiti_routes_are_forwarded(self):
+        app = self.app(lambda request: response())
+        for method, path in (
+            ("POST", "/v1/completions"),
+            ("POST", "/chat/completions"),
+            ("GET", "/v1/files"),
+            ("DELETE", "/v1/models"),
+        ):
+            with self.subTest(method=method, path=path):
+                reply = await self.call(app, method, path, json_body={} if method == "POST" else None)
+                self.assertIn(reply.status_code, (404, 405))
+        self.assertEqual(self.seen, [])
+        for method, path in (("POST", "/v1/chat/completions"), ("POST", "/v1/embeddings"), ("GET", "/v1/models")):
+            reply = await self.call(app, method, path, json_body={} if method == "POST" else None)
+            self.assertEqual(reply.status_code, 200)
+
+    async def test_an_oversize_body_is_rejected_by_declared_length_and_while_reading(self):
+        app = self.app(lambda request: response())
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://proxy"
+        ) as client:
+            declared = await client.post(
+                "/v1/chat/completions",
+                content=b"x" * (llm_proxy.MAX_REQUEST_BYTES + 1),
+                headers={"content-type": "application/json"},
+            )
+
+            async def chunks():
+                for _ in range(llm_proxy.MAX_REQUEST_BYTES // 1_000_000 + 2):
+                    yield b"x" * 1_000_000
+
+            streamed = await client.post(
+                "/v1/chat/completions",
+                content=chunks(),
+                headers={"content-type": "application/json", "transfer-encoding": "chunked"},
+            )
+            small = await client.post("/v1/chat/completions", json={"messages": []})
+        self.assertEqual(declared.status_code, 413)
+        self.assertEqual(streamed.status_code, 413)
+        self.assertEqual(small.status_code, 200)
+        self.assertEqual(len(self.seen), 1)
+
+    async def test_upstream_failures_map_to_502_and_504(self):
+        for exc, status in ((httpx.ConnectError, 502), (httpx.ReadTimeout, 504)):
+            with self.subTest(exc=exc.__name__):
+
+                def handler(request, exc=exc):
+                    raise exc("boom", request=request)
+
+                app = self.app(handler)
+                reply = await self.call(app, "POST", "/v1/chat/completions", json_body={"messages": []})
+                self.assertEqual(reply.status_code, status)
+                self.assertIn("error", reply.json())
+
+    async def test_extraction_permits_do_not_block_embeddings(self):
+        release = asyncio.Event()
+
+        async def handler(request):
+            if request.url.path == "/v1/chat/completions":
+                await release.wait()
+            return response(payload={"data": []})
+
+        app = self.app(handler, upstream_concurrency=2)
+        held = [
+            asyncio.create_task(
+                self.call(app, "POST", "/v1/chat/completions", json_body={"messages": []})
+            )
+            for _ in range(2)
+        ]
+        await asyncio.sleep(0.05)
+        try:
+            embed = await asyncio.wait_for(
+                self.call(app, "POST", "/v1/embeddings", json_body={"input": "x", "model": "m"}), 2
+            )
+            models = await asyncio.wait_for(self.call(app, "GET", "/v1/models"), 2)
+        finally:
+            release.set()
+        await asyncio.gather(*held)
+        self.assertEqual((embed.status_code, models.status_code), (200, 200))
+
+    async def test_a_gzipped_upstream_reply_is_relayed_decoded(self):
+        import gzip
+
+        payload = gzip.compress(b'{"ok": true}')
+        app = self.app(
+            lambda request: httpx.Response(
+                200, content=payload, headers={"content-encoding": "gzip", "content-type": "application/json"}
+            )
+        )
+        reply = await self.call(app, "GET", "/v1/models")
+        self.assertEqual(reply.json(), {"ok": True})
+
+    async def test_redirects_are_not_followed(self):
+        app = self.app(lambda request: httpx.Response(302, headers={"location": "http://elsewhere/"}))
+        reply = await self.call(app, "GET", "/v1/models")
+        self.assertEqual(reply.status_code, 302)
+        self.assertEqual(len(self.seen), 1)
+        self.assertFalse(app.state.client.follow_redirects)
 
     async def test_hop_by_hop_and_stale_content_length_are_dropped(self):
         app = self.app(lambda request: response())
@@ -302,7 +375,7 @@ class ProxyTests(unittest.IsolatedAsyncioTestCase):
             return outcomes.pop(0)
 
         app = self.app(handler, upstream_retries=3)
-        with mock.patch.object(llm_proxy, "_sleep", new=mock.AsyncMock()) as sleep:
+        with mock.patch.object(llm_proxy.asyncio, "sleep", new=mock.AsyncMock()) as sleep:
             reply = await self.call(app, "POST", "/v1/chat/completions", json_body={"messages": []})
 
         self.assertEqual(reply.status_code, 200)
@@ -315,7 +388,7 @@ class ProxyTests(unittest.IsolatedAsyncioTestCase):
             lambda request: response(status=429, payload={"error": {"message": "rate limited"}}),
             upstream_retries=3,
         )
-        with mock.patch.object(llm_proxy, "_sleep", new=mock.AsyncMock()) as sleep:
+        with mock.patch.object(llm_proxy.asyncio, "sleep", new=mock.AsyncMock()) as sleep:
             reply = await self.call(app, "POST", "/v1/chat/completions", json_body={"messages": []})
 
         self.assertEqual(reply.status_code, 429)
@@ -330,7 +403,7 @@ class ProxyTests(unittest.IsolatedAsyncioTestCase):
             response(payload={"object": "list"}),
         ]
         app = self.app(lambda request: outcomes.pop(0), upstream_retries=2)
-        with mock.patch.object(llm_proxy, "_sleep", new=mock.AsyncMock()):
+        with mock.patch.object(llm_proxy.asyncio, "sleep", new=mock.AsyncMock()):
             reply = await self.call(app, "GET", "/v1/models")
 
         self.assertEqual(reply.status_code, 200)
@@ -347,56 +420,6 @@ class ProxyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reply.status_code, 400)
         self.assertEqual(reply.json()["error"]["message"], "bad request")
         self.assertEqual(len(self.seen), 1)
-
-    async def test_a_streaming_response_is_never_retried_after_it_starts(self):
-        chunks = [b'data: {"choices":[{"delta":{"content":"{"}}]}\n\n', b"data: [DONE]\n\n"]
-
-        app = self.app(
-            lambda request: response(chunks=chunks, headers={"content-type": "text/event-stream"}),
-            upstream_retries=3,
-        )
-        reply = await self.call(app, "POST", "/v1/chat/completions", json_body={"stream": True, "messages": []})
-
-        self.assertEqual(reply.status_code, 200)
-        self.assertEqual(reply.content, b"".join(chunks))
-        self.assertEqual(len(self.seen), 1)
-
-    async def test_a_rejected_streaming_request_is_retried_before_any_body_is_sent(self):
-        chunk = b'data: {"choices":[{"delta":{"content":"{}"}}]}\n\n'
-        outcomes = [
-            response(status=429, chunks=[b"busy"], headers={"retry-after": "0"}),
-            response(chunks=[chunk], headers={"content-type": "text/event-stream"}),
-        ]
-        app = self.app(lambda request: outcomes.pop(0), upstream_retries=2)
-        with mock.patch.object(llm_proxy, "_sleep", new=mock.AsyncMock()):
-            reply = await self.call(app, "POST", "/v1/chat/completions", json_body={"stream": True, "messages": []})
-
-        self.assertEqual(reply.status_code, 200)
-        self.assertEqual(reply.content, chunk)
-        self.assertEqual(len(self.seen), 2)
-    async def test_a_stream_that_never_starts_still_releases_its_slot(self):
-        # A client that disconnects between the upstream send and the first
-        # chunk never runs the body iterator; the response itself must return
-        # the permit, or the limiter shrinks for the life of the process.
-        released = []
-
-        async def body():
-            yield b"x"
-
-        async def send(message):
-            raise RuntimeError("client disconnected")
-
-        async def receive():
-            return {"type": "http.disconnect"}
-
-        response = llm_proxy._ReleasingStreamingResponse(
-            body(), release=lambda: released.append(True), status_code=200, headers={}
-        )
-        try:
-            await response({"type": "http"}, receive, send)
-        except BaseException:  # noqa: BLE001 - the failure mode is not the point
-            pass
-        self.assertEqual(released, [True])
 
 
 if __name__ == "__main__":
