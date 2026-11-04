@@ -13,8 +13,6 @@ let
     else
       "/home/${machine.username}";
 
-  # How `worktrees new` names branches; rendered into git config so the
-  # owner's include picks the scheme per repo.
   branchNamingType = lib.types.submodule {
     options = {
       template = lib.mkOption {
@@ -105,24 +103,19 @@ in
             description = "How changes land: 'local' merges feature branches into main locally with no PR and commits quick fixes directly, 'pr' requires every change to land through a pull request.";
           };
           flatRepos = lib.mkOption {
-            type = lib.types.nullOr (
-              lib.types.submodule {
-                options = {
-                  dir = lib.mkOption {
-                    # Absolute, no trailing slash.
-                    type = lib.types.strMatching "/.*[^/]";
-                    description = "Absolute directory holding every work checkout flat as <dir>/<repo>, the layout the employer's tooling expects.";
-                  };
-                  envVar = lib.mkOption {
-                    type = lib.types.nullOr lib.types.str;
-                    default = null;
-                    description = "Environment variable the employer's tooling reads for `dir`; exported on work hosts.";
-                  };
+            type = lib.types.submodule {
+              options = {
+                dir = lib.mkOption {
+                  type = lib.types.strMatching "/.*[^/]";
+                  description = "Absolute directory holding every work checkout flat as <dir>/<repo>, the layout the employer's tooling expects.";
                 };
-              }
-            );
-            default = null;
-            description = "Flat checkout layout for work hosts; null keeps work repos under codeRoot like any other.";
+                envVar = lib.mkOption {
+                  type = lib.types.str;
+                  description = "Environment variable the employer's tooling reads for `dir`; exported on work hosts.";
+                };
+              };
+            };
+            description = "Flat checkout layout for work hosts.";
           };
         };
       };
@@ -169,7 +162,6 @@ in
       description = "Abbreviations for whichever shell the host uses, each one string both fish and zsh accept. `pick <tv-channel> <command…>` runs a picker, then the command with the selection appended (or in place of {name}, its basename).";
     };
     brain.dir = lib.mkOption {
-      # Relative, no leading or trailing slash: joined onto the home directory.
       type = lib.types.nullOr (lib.types.strMatching "[^/].*[^/]|[^/]");
       default = null;
       example = "brain";
@@ -194,7 +186,6 @@ in
           "blitzy-ai"
           "blitzy-platform"
         ];
-        # Team convention: ticket first, else the change type.
         branchNaming = {
           template = "{ticket}-{slug}";
           unticketed = "{type}/{slug}";

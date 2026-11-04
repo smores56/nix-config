@@ -1,8 +1,4 @@
-# Cloudflare Email Service alerts for unit failures.
-#
-# Disabled by default so a host can switch before the Email Service domain,
-# API token, and sops secret exist. When enabled, every backup unit's OnFailure
-# points at the template, so a failed nightly run emails its journal.
+# Failure alerts via Cloudflare Email Service; every backup unit's OnFailure targets the template.
 {
   config,
   lib,
@@ -10,16 +6,19 @@
   ...
 }:
 let
+  hardening = import ../lib/hardening.nix;
   cfg = config.alerting;
+  # Plain-text Cloudflare API token, root-only.
+  secretFile = "/run/secrets/cloudflare-api-token";
+  # On the onboarded Email Service sending domain; the recipient is verified.
+  from = "alerts@send.sammohr.dev";
+  to = "sam@sammohr.dev";
 
   # JSON secret shape:
   #   {"token":"...","account_id":"...","from":"alerts@send.sammohr.dev","to":"sam@sammohr.dev"}
-  # Use a sending subdomain (send.<domain>) so its DMARC/SPF/DKIM records do not
-  # interact with the apex mail records; the from address must match whichever
-  # domain/subdomain was onboarded.
-  # The token is the SMTP/REST credential with Email Sending: Edit. The from
-  # address must belong to an onboarded Email Service domain; the to address
-  # must be verified (sends to verified destinations are free).
+  # Use a sending subdomain (send.<domain>) so its DMARC/SPF/DKIM do not interact
+  # with apex mail records. The token needs Email Sending: Edit; `from` must be on an
+  # onboarded domain and `to` verified.
   cloudflareEmail = pkgs.writeShellApplication {
     name = "cloudflare-email";
     runtimeInputs = [
@@ -29,15 +28,15 @@ let
     ];
     text = ''
       set -euo pipefail
-      secret="''${CLOUDFLARE_API_TOKEN_FILE:-/run/secrets/cloudflare-api-token}"
+      secret="''${CLOUDFLARE_API_TOKEN_FILE:-${secretFile}}"
       if [ ! -r "$secret" ]; then
         echo "cloudflare-email: cannot read $secret" >&2
         exit 1
       fi
       token=$(tr -d '[:space:]' < "$secret")
       account=${lib.escapeShellArg cfg.accountId}
-      from=${lib.escapeShellArg cfg.from}
-      to=${lib.escapeShellArg cfg.to}
+      from=${lib.escapeShellArg from}
+      to=${lib.escapeShellArg to}
       subject="''${1:?subject required}"
       body="''${2:-}"
 
@@ -89,11 +88,7 @@ let
     '';
   };
 
-  sandbox = {
-    NoNewPrivileges = true;
-    PrivateTmp = true;
-    ProtectHome = true;
-    ProtectSystem = "strict";
+  sandbox = hardening // {
     ProtectKernelTunables = true;
     ProtectKernelModules = true;
     ProtectControlGroups = true;
@@ -113,40 +108,23 @@ in
   options.alerting = lib.mkOption {
     type = lib.types.submodule {
       options = {
-        enable = lib.mkEnableOption "Cloudflare email alerts for unit failures";
         accountId = lib.mkOption {
           type = lib.types.str;
           description = "Cloudflare account ID that owns the Email Service domain.";
         };
-        from = lib.mkOption {
-          type = lib.types.str;
-          default = "alerts@send.sammohr.dev";
-          description = "From address on the onboarded Email Service sending domain.";
-        };
-        to = lib.mkOption {
-          type = lib.types.str;
-          default = "sam@sammohr.dev";
-          description = "Verified recipient address.";
-        };
-        secretFile = lib.mkOption {
-          type = lib.types.str;
-          default = "/run/secrets/cloudflare-api-token";
-          description = "File holding the Cloudflare API token (plain text, root-only).";
-        };
       };
     };
-    default = { };
-    description = "Send unit-failure email through Cloudflare Email Service. Enable only after the secret and the sending domain exist.";
+    description = "Send unit-failure email through Cloudflare Email Service.";
   };
 
-  config = lib.mkIf cfg.enable {
+  config = {
     systemd.services."cloudflare-email@" = {
       description = "Email the failure of %i through Cloudflare";
       serviceConfig = sandbox // {
         Type = "oneshot";
         User = "root";
         ExecStart = "${onFailure}/bin/cloudflare-email-onfailure %i";
-        Environment = [ "CLOUDFLARE_API_TOKEN_FILE=${cfg.secretFile}" ];
+        Environment = [ "CLOUDFLARE_API_TOKEN_FILE=${secretFile}" ];
         TimeoutStartSec = "2m";
       };
     };

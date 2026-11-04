@@ -48,13 +48,10 @@ let
   # all three, work homes get none.
   memoryPackage = import ../memory/package.nix { inherit pkgs; };
 
-  # ports.nix stays the source for the loopback wrapper URL; the shim keeps a
-  # matching default so it also works standalone.
+  # The shim keeps a matching default so it also works standalone.
   ports = import ../../../ports.nix;
 
-  # always_yolo skips permission prompts (deny rules still apply);
-  # always_thinking forces the max reasoning level. bash is off by default in
-  # maki, so enable it for the coding-agent toolset.
+  # bash is off by default in maki; the coding-agent toolset needs it.
   initLua = ''
     -- Managed by home-manager (modules/features/ai/maki). Manual edits are clobbered.
     maki.setup({
@@ -90,8 +87,7 @@ let
     ${lib.optionalString profile.searchPlugin ''require("websearch_owned")''}
   '';
 
-  # Permissions manifest for the Lua plugins under ./lua. `run` is needed by
-  # plugin jobstart calls; `net` lets websearch_owned reach the TinyFish API.
+  # `run` is needed by plugin jobstart calls; `net` lets websearch_owned reach TinyFish.
   pluginToml = ''
     [permissions]
     fs_read = true
@@ -101,17 +97,11 @@ let
     net = ${lib.boolToString profile.searchPlugin}
   '';
 
-  # Custom providers for maki's providers.toml. Model catalogs and pricing
-  # live in providers.nix and are projected into maki's shape via each
-  # provider's makiModels attribute; display names and auth wiring live here.
-  #
-  # Not Lua provider plugins: a plugin's base_url must be https or loopback,
-  # which the loopback URL below satisfies.
+  # Catalogs and pricing live in providers.nix; display names and auth wiring here.
   providerEntries = {
     ${smortress.providerId} = {
       display_name = "Qwen3.8 uncensored (smortress)";
-      # Loopback: a disconnected tunnel refuses to connect rather than sending
-      # prompts to whatever a look-alike host resolves to.
+      # Loopback: a down tunnel refuses rather than leaking prompts to a look-alike host.
       base_url = smortress.baseUrl;
       # llama.cpp needs no key, but a custom provider refuses to start without one.
       api_key = "none";
@@ -137,24 +127,15 @@ let
     )
   );
 
-  # Maki's memory MCP. The stdio shim inherits Maki's cwd, derives the project
-  # group there, refuses work repos, and forwards to the loopback wrapper with
-  # the group and cwd as headers. Maki's HTTP client sends neither, so a URL
-  # entry cannot do this. Maki reads this file once at startup: restart it after
-  # a change, and after `cd`-ing to a different repo (`/cd` does not restart
-  # stdio children, so the group is fixed when Maki starts). The wrapper is
-  # loopback on every personal machine: on smortress it is the service itself,
-  # elsewhere cloudflared-memory forwards the same port and adds the Cloudflare
-  # Access service token. The name must not collide with a built-in tool
-  # (`memory` is one), so it stays `graphiti`. 90s stays above the wrapper's 60s
-  # tool deadline and under Cloudflare's ~100s origin timeout.
+  # A stdio shim rather than a URL entry: maki's HTTP client cannot send the
+  # group and cwd headers. The group is fixed at maki start (`/cd` does not
+  # restart stdio children). The name `graphiti` avoids the built-in `memory`
+  # tool. 90s stays above the wrapper's 60s tool deadline and under
+  # Cloudflare's ~100s origin timeout.
   mcpEnvironment = {
     MEMORY_MCP_URL = "http://127.0.0.1:${toString ports.memoryMcp}/mcp";
-    # The listener rejects loopback clients that do not present the bearer
-    # token: the tunnel makes a remote client look local too. The shim reads
-    # the file itself; the path is named here so it stays visible next to the
-    # URL it authenticates to. Same default as the shim, declared in
-    # modules/nixos/memory.nix and modules/nixos/secrets.nix.
+    # The listener demands the bearer token even on loopback: the tunnel makes
+    # remote clients look local. The shim reads the file itself.
     MEMORY_MCP_TOKEN_FILE = "/run/secrets/memory-mcp-token";
     MEMORY_WORK_EMAIL = config.user.work.email;
     MEMORY_WORK_OWNER_GLOB = lib.concatStringsSep "," config.user.work.githubOwners;
@@ -173,10 +154,8 @@ let
     environment = ${mcpEnvironmentToml}
   '';
 
-  # Deny rules apply even under always_yolo — deny is consulted before
-  # yolo (yolo only skips prompting). Catastrophic-pattern backstop against
-  # a compromised model or prompt injection; not a sandbox — obfuscated
-  # forms can slip through.
+  # Deny wins over always_yolo. A backstop against a compromised model or
+  # prompt injection, not a sandbox: obfuscated forms can slip through.
   permissionsToml = ''
     [bash]
     deny = [
@@ -206,9 +185,7 @@ let
 
   makiSessionSearch = "${pkgs.python3}/bin/python3 ${./maki-session-search.py}";
 
-  # maki-session-resume <id>: reopens a session in the directory it ran in.
-  # A script rather than a shell function so every shell shares it; maki
-  # (the PATH wrapper) is found the same way an interactive call would.
+  # A script rather than a shell function so every shell shares it.
   makiSessionResume = pkgs.writeShellScriptBin "maki-session-resume" ''
     session_id=''${1:?usage: maki-session-resume <session-id>}
     cwd=$(${makiSessionSearch} cwd "$session_id")
@@ -219,7 +196,7 @@ let
     cd "$cwd" || exit 1
     exec maki --session "$session_id"
   '';
-  # PATH bin so the maki Lua plugin can invoke it by name via maki.fn.jobstart.
+  # On PATH so the maki Lua plugin can jobstart it by name.
   makiSessionSearchBin = pkgs.writeShellScriptBin "maki-session-search" ''
     exec ${pkgs.python3}/bin/python3 ${./maki-session-search.py} "$@"
   '';
@@ -302,8 +279,7 @@ in
       };
     };
 
-    # The ingest CLI derives repo paths and gh targets from this; the option is
-    # the source of truth, so the Python default never drifts from the profile.
+    # The ingest CLI derives repo paths and gh targets from this.
     home.sessionVariables = lib.optionalAttrs profile.memoryMcp {
       MEMORY_PERSONAL_OWNER = config.user.githubUser;
     };
@@ -316,8 +292,7 @@ in
     ++ lib.optionals profile.memoryMcp [ memoryPackage ];
 
     user.shellAbbrs.ms = "pick maki-sessions maki-session-resume";
-    # `m` is an abbreviation for the generic sandbox, not a wrapper binary.
-    # Plain `maki` stays the unsandboxed manually installed binary.
+    # Plain `maki` stays the unsandboxed binary.
     user.shellAbbrs.m = lib.mkIf useSandbox "agent-sandbox maki";
   };
 }

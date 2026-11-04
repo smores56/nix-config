@@ -9,9 +9,8 @@ let
 
 in
 {
-  # Noctalia's sparse settings.toml wins over the Nix base, including its
-  # light/dark mode. Static Stylix dark has no light palette, so strip any
-  # persisted [theme] table once; later GUI tweaks keep working.
+  # Noctalia's sparse settings.toml wins over the Nix base, including light/dark mode. Stylix dark
+  # has no light palette, so strip any persisted [theme] table once; later GUI tweaks keep working.
   home.activation.resetNoctaliaTheme = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     state="$HOME/.local/state/noctalia/settings.toml"
     marker="$HOME/.local/state/noctalia/.stylix-static-dark"
@@ -25,9 +24,7 @@ in
     fi
   '';
 
-  # Noctalia's state file (~/.local/state/noctalia/settings.toml) is a sparse,
-  # self-pruning overlay holding only settings that deviate from this
-  # declarative base; the theme itself is static dark from Stylix.
+  # The state file (~/.local/state/noctalia/settings.toml) is a sparse overlay of settings that deviate from this base.
   programs.noctalia = {
     enable = true;
     systemd.enable = true;
@@ -72,8 +69,7 @@ in
       wallpaper = {
         enabled = true;
         fill_color = "#${config.lib.stylix.colors.base00}";
-        # The wallpapers module owns selection per output; Noctalia's own
-        # rotation would fight it, and its state file outranks this setting.
+        # The wallpapers module owns selection; Noctalia's rotation would fight it and its state file outranks this setting.
         automation.enabled = false;
       };
 
@@ -90,8 +86,7 @@ in
       lockscreen = {
         enabled = true;
         lock_before_suspend = true;
-        # v5 drives fprintd over D-Bus (strips pam_fprintd from the login
-        # stack itself); the desktop profile enables services.fprintd.
+        # v5 drives fprintd over D-Bus (strips pam_fprintd from the login stack itself); the desktop profile enables services.fprintd.
         fingerprint = true;
         blur_intensity = 0.4;
         tint_intensity = 0.4;
@@ -115,16 +110,11 @@ in
     };
   };
 
-  # The home-manager unit is WantedBy graphical-session.target, which niri
-  # pulls in before it has exported WAYLAND_DISPLAY to the user manager. The
-  # first start then dies with "failed to connect to Wayland display", and the
-  # default start limit stops the retries, so the shell stays missing until a
-  # `home-manager switch` restarts it. Retry until the compositor is reachable.
-  #
-  # No Wants=niri.service: niri.service's BindsTo=graphical-session.target is
-  # what starts the target, so the dependency is redundant while the compositor
-  # is up, and any independent start of the target would launch a second niri
-  # outside niri-session, whose first check reports "already running".
+  # WantedBy graphical-session.target, which niri pulls in before exporting WAYLAND_DISPLAY: the
+  # first start dies with "failed to connect to Wayland display" and the default start limit stops
+  # retries, so retry until the compositor is reachable.
+  # No Wants=niri.service: niri.service's BindsTo=graphical-session.target starts the target, and
+  # an independent target start would launch a second niri outside niri-session.
   systemd.user.services.noctalia = {
     Unit = {
       After = lib.mkAfter [ "niri.service" ];

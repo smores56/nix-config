@@ -65,44 +65,34 @@ DEFAULT_UPSTREAM = "https://api.neuralwatt.com"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8082
 DEFAULT_TIMEOUT = 600.0
-# systemd's LoadCredential drops the sops secret here; the unit points
-# MEMORY_NEURALWATT_KEY_FILE at $CREDENTIALS_DIRECTORY instead.
+# systemd LoadCredential drops the sops secret here; MEMORY_NEURALWATT_KEY_FILE points at it.
 DEFAULT_KEY_FILE = "/run/secrets/neuralwatt-api-key"
 KEY_FILE_ENV = "MEMORY_NEURALWATT_KEY_FILE"
-# A stalled upstream (no bytes, including during a stream) must not hold a
-# connection forever. Long extraction streams still emit tokens well inside it.
+# A stalled upstream (even mid-stream) must not hold a connection forever.
 DEFAULT_READ_TIMEOUT = 300.0
 DEFAULT_CONNECT_TIMEOUT = 10.0
-# Graphiti's largest extraction prompt is far below this; the cap bounds a
-# hostile client's memory instead of the legitimate case.
+# Bounds a hostile client's memory; Graphiti's largest prompt is far below it.
 MAX_REQUEST_BYTES = 10 * 1024 * 1024
 CHAT_COMPLETION_PATHS = frozenset({"/v1/chat/completions", "/chat/completions"})
 REASONING_EFFORT = "none"
-# Graphiti's config requires a non-empty `api_key`, so it ships "none" and the
-# OpenAI SDK forwards it as `Authorization: Bearer none`. That placeholder is no
-# credential: the gateway replaces it instead of leaking it upstream.
+# Graphiti requires a non-empty `api_key`, so it sends the placeholder "none"; the gateway replaces it.
 PLACEHOLDER_BEARERS = frozenset({"", "none"})
-# The PAYG tier has three concurrent slots and Maki's chat shares the key, so
-# two leaves one of them for interactive use. This is the ceiling on real
-# upstream slots; Graphiti's SEMAPHORE_LIMIT only bounds its own queue.
+# The PAYG tier has three slots and maki's chat shares the key; two leaves one for interactive use.
+# Graphiti's SEMAPHORE_LIMIT only bounds its own queue.
 DEFAULT_UPSTREAM_CONCURRENCY = 2
 UPSTREAM_CONCURRENCY_ENV = "MEMORY_UPSTREAM_CONCURRENCY"
-# Attempts, not retries: one try plus five retries covers a burst of 429s with
-# `Retry-After` without outliving the caller's own read deadline.
+# Attempts, not retries: covers a burst of 429s without outliving the caller's read deadline.
 DEFAULT_UPSTREAM_RETRIES = 6
 UPSTREAM_RETRIES_ENV = "MEMORY_UPSTREAM_RETRIES"
-# Rejections only. A 429 or 503 means the request never ran, so replaying it
-# cannot duplicate work; every other status is a real answer (or a client bug).
+# Rejections only: a 429 or 503 never ran, so replay cannot duplicate work.
 RETRY_STATUSES = frozenset({429, 503})
-# An upstream `Retry-After` of minutes would park the request past the read
-# deadline and hold a permit for nothing; one minute is already generous.
+# A minutes-long `Retry-After` would outlast the read deadline and hold a permit for nothing.
 MAX_RETRY_AFTER = 60.0
 RETRY_BACKOFF_BASE = 1.0
 RETRY_BACKOFF_CAP = 30.0
 
-# Connection-scoped headers are ours to terminate at each hop. The request
-# content-length is stale once a chat body is rewritten, and the upstream
-# length is left to the server when the response is streamed.
+# Connection-scoped headers terminate at each hop. Request content-length is stale once a
+# chat body is rewritten; upstream length is left to the server when streaming.
 HOP_BY_HOP = frozenset(
     {
         "connection",
@@ -165,8 +155,7 @@ def _is_placeholder_authorization(value: str) -> bool:
 
 def _request_headers(request: Request, api_key: str | None) -> dict[str, str]:
     headers = {key: value for key, value in request.headers.items() if key.lower() not in REQUEST_STRIP}
-    # A real caller credential wins: a direct client may hold a different
-    # Neuralwatt key, and silently swapping it would be surprising.
+    # A caller's own credential wins; silently swapping it would be surprising.
     authorization = next((value for key, value in headers.items() if key.lower() == "authorization"), None)
     if api_key and (authorization is None or _is_placeholder_authorization(authorization)):
         headers["authorization"] = f"Bearer {api_key}"
@@ -270,11 +259,9 @@ def create_app(
     base_url = (upstream or os.environ.get("MEMORY_LLM_UPSTREAM", DEFAULT_UPSTREAM)).rstrip("/")
     concurrency = upstream_concurrency or _env_int(UPSTREAM_CONCURRENCY_ENV, DEFAULT_UPSTREAM_CONCURRENCY)
     retries = upstream_retries or _env_int(UPSTREAM_RETRIES_ENV, DEFAULT_UPSTREAM_RETRIES)
-    # Per app, not module-level: two apps in one process (tests, an embedder
-    # sidecar) must not share or exhaust each other's permits.
+    # Per app, so two apps in one process (tests) do not share permits.
     upstream_slots = asyncio.Semaphore(concurrency)
-    # Read once at startup: a credential rotation restarts the unit, and a
-    # per-request read would turn a missing file into a partial outage.
+    # Read once: a rotation restarts the unit, and a per-request read would turn a missing file into a partial outage.
     resolved_key = load_api_key(api_key=api_key, key_file=key_file)
     client = httpx.AsyncClient(
         base_url=base_url,
@@ -291,9 +278,7 @@ def create_app(
             await client.aclose()
 
     async def health(_request: Request) -> JSONResponse:
-        # Local answer: a readiness probe should fail when this process is
-        # gone, not when the chat model is merely loading. It says nothing
-        # about the upstream; `/v1/models` does.
+        # Local answer: readiness fails when this process is gone, not while the chat model loads. `/v1/models` probes upstream.
         return JSONResponse(
             {"status": "ok", "service": "memory-llm-proxy", "scope": "local"}
         )
@@ -317,9 +302,7 @@ def create_app(
         return b"".join(chunks)
 
     async def proxy(request: Request) -> Response:
-        # Fail closed before reading a body we would only refuse: forwarding
-        # without the account key would bill nothing but return 401s from
-        # Neuralwatt, which is harder to diagnose than an explicit error.
+        # Fail closed before reading a body: forwarding without the account key only yields opaque 401s.
         if resolved_key is None:
             return JSONResponse(
                 {
@@ -358,9 +341,7 @@ def create_app(
             content=body,
         )
 
-        # Released by the body iterator, or by the response when a client
-        # disconnects before the first chunk. Either way, exactly once per
-        # returned response, so a permit can never leak.
+        # Released exactly once per response, by the body iterator or on early client disconnect.
         slot_released = False
 
         def release_slot() -> None:
@@ -400,8 +381,7 @@ def create_app(
                     retries,
                     delay,
                 )
-                # Nothing has reached the client yet: this response is drained
-                # here, so a retry cannot follow a partially streamed body.
+                # Nothing has reached the client yet, so a retry cannot follow a partial stream.
                 await upstream_response.aclose()
                 upstream_slots.release()
                 await _sleep(delay)
@@ -432,15 +412,12 @@ def create_app(
 
         async def body_stream() -> AsyncIterator[bytes]:
             try:
-                # Raw bytes: the upstream's content-encoding header is kept, so
-                # decoding here would corrupt the stream.
+                # Raw bytes: content-encoding is kept, so decoding here would corrupt the stream.
                 async for chunk in upstream_response.aiter_raw():
                     yield chunk
             finally:
                 await upstream_response.aclose()
-                # The slot is free only once the upstream request is done, not
-                # when its headers arrived: a streamed generation still holds
-                # one of the tier's three places.
+                # The slot frees when the upstream request ends, not when headers arrive: a stream still holds it.
                 release_slot()
 
         return _ReleasingStreamingResponse(
@@ -457,11 +434,9 @@ def create_app(
         ],
         lifespan=lifespan,
     )
-    # Tests close the client through the ASGI lifespan; the server closes it on
-    # shutdown. Exposing it keeps that explicit instead of implicit.
+    # Exposed so tests can close it; the server closes it on shutdown.
     app.state.client = client
-    # The effective limits are visible for tests and for an operator reading a
-    # live process, instead of being buried in the environment.
+    # Visible to tests and operators instead of buried in the environment.
     app.state.upstream_concurrency = concurrency
     app.state.upstream_retries = retries
     return app

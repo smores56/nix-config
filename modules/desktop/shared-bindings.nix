@@ -1,8 +1,7 @@
 { lib }:
 let
-  # The physical GUI+Control chord is the base on both systems. Keep the
-  # platform-specific command here alongside the key, rather than pretending
-  # the two window managers implement the same command vocabulary.
+  # GUI+Control is the base chord on both systems; the platform-specific command sits beside the key
+  # because the two window managers do not share a command vocabulary.
   bind = key: shift: niri: aerospace: {
     inherit
       key
@@ -59,7 +58,6 @@ let
   ]) (lib.range 1 9);
 in
 {
-  # Null marks Niri-only actions without a useful AeroSpace equivalent.
   bindings =
     focus
     ++ move
@@ -85,8 +83,7 @@ in
       (bind "Equal" true { set-window-height = "+10%"; } "resize height +30")
     ];
 
-  # ZMK PSCRN is the keyboard-page Print Screen usage. macOS mapped the actual
-  # board to F13 (virtual key code 105) during the trial.
+  # ZMK PSCRN is the keyboard-page Print Screen usage; macOS mapped the board to F13 (virtual key code 105).
   screenshots = {
     niri = {
       Print.action.screenshot = [ ];
@@ -94,7 +91,6 @@ in
       "Alt+Print".action.screenshot-window = [ ];
     };
     macos = {
-      # System Settings > Keyboard > Shortcuts > Screenshots: area to file.
       symbolicHotkey = "30";
       parameters = [
         65535

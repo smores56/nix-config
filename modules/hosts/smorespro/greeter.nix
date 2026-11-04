@@ -1,7 +1,5 @@
-# smorespro's greeter and lock-screen PAM: fingerprint, the YubiKey PIV PIN, and
-# the account password, each attempted only when it can actually be used.
-# Host-scoped because the recipe is tuned to this laptop's prompt order and its
-# lid switch.
+# smorespro greeter and lock-screen PAM: fingerprint, YubiKey PIV PIN, then password,
+# each tried only when usable.
 {
   config,
   inputs,
@@ -10,38 +8,24 @@
   ...
 }:
 let
-  # pam_exec gives its command only the PAM environment (PAM_USER, PAM_SERVICE,
-  # ...) and no PATH, so each probe owns its PATH (writeShellApplication) and no
-  # command is resolved from the caller. A probe that cannot run exits 127, the
-  # module returns SYSTEM_ERR, and the gate silently no-ops.
-  #
-  # Exit 0 means "lid closed": skip pam_fprintd. Any failure means "open", so a
-  # broken probe costs the fingerprint path, never the password.
+  # pam_exec has no PATH, so each probe carries its own. A probe that cannot run
+  # fails open: it costs the fingerprint path, never the password.
+  # Exit 0 = lid closed: skip pam_fprintd.
   lidClosed = pkgs.writeShellApplication {
     name = "pam-lid-closed";
     runtimeInputs = [
       config.systemd.package
-      pkgs.gnugrep
     ];
     text = ''
-      # logind is authoritative and readable before any session exists, so this
-      # works at the greeter (root, no seat) as well as inside the session. The
-      # timeout bounds a stalled logind, and a failure reads as "open". No
-      # pipeline: grep -q could SIGPIPE busctl and pipefail would report the
-      # lid as open in exactly the case this probe exists for.
+      # Single test, no pipeline: SIGPIPE under pipefail would report the lid as open.
       [ "$(busctl --system --timeout=1 get-property \
         org.freedesktop.login1 /org/freedesktop/login1 \
         org.freedesktop.login1.Manager LidClosed)" = "b true" ]
     '';
   };
 
-  # Exit 0 means "no CCID interface": skip pam_p11 so the password path is the
-  # only prompt. This detects a READER, not a card; the PIV applet is a USB CCID
-  # interface, and scanning sysfs costs ~9 ms where pcsc enumeration costs ~2 s
-  # with no token - that 2 s is most of the wait this gate exists to remove.
-  # Unreadable sysfs counts as absent. A reader without a matching certificate
-  # is not a lockout: pam_p11 returns AUTHINFO_UNAVAIL, which the control below
-  # falls through.
+  # Exit 0 = no CCID interface: skip pam_p11. Scanning sysfs (~9 ms) avoids pcsc
+  # enumeration (~2 s with no token). Detects a reader, not a card.
   ccidAbsent = pkgs.writeShellApplication {
     name = "pam-ccid-absent";
     runtimeInputs = [ pkgs.coreutils ];
@@ -58,11 +42,7 @@ let
     '';
   };
 
-  # [success=1 default=ignore] skips exactly the next line on exit 0 and is
-  # otherwise ignored, so the gate fails open. The order is anchored to the
-  # module it guards, and `enable` ties the rule's lifetime to that module's:
-  # success=1 skips whatever line follows, so a gate left behind when p11Auth or
-  # fprintAuth is disabled would skip pam_unix instead.
+  # success=1 skips the next line, so `enable` ties the gate to the module it guards.
   gate = enable: order: probe: {
     inherit enable;
     inherit order;
@@ -75,25 +55,14 @@ let
     ];
   };
 
-  # pam_p11 grants, denies, or steps aside, never a second prompt.
-  #   - success terminates: falling into pam_unix would ask again, which only
-  #     noctalia 5.1.0 tolerates; its passwordSent guard (v5.3.0, PR #4294)
-  #     turns a second prompt into a conversation error.
-  #   - authinfo_unavail falls through: no matching certificate, a locked PIV,
-  #     or pcscd down prompted for nothing, so the password stays reachable and
-  #     is still the only prompt. This is what keeps a foreign reader, a
-  #     rotated-out certificate, or an exhausted PIN from locking the machine.
-  #   - anything else denies: a wrong PIN, or text that is not a PIN, stops
-  #     here, so a typed password never reaches the card and never burns a PIV
-  #     retry.
+  # pam_p11 grants, denies, or steps aside, never a second prompt (noctalia 5.3.0
+  # turns one into an error). authinfo_unavail falls through so a foreign reader,
+  # rotated cert, or locked PIV cannot lock out the password; anything else denies,
+  # so a typed password never burns a PIV retry.
   p11Control = "[success=done authinfo_unavail=ignore default=die]";
 
-  # pam_p11 0.6.1 reads $HOME/.eid/authorized_certificates and has no option to
-  # point elsewhere, while root (greetd, login) trusts that file. A symlink is
-  # not enough: the path sits in a user-writable home, so a same-uid agent could
-  # unlink it and recreate the directory. Bind-mount the root-owned tree over it
-  # instead — an unprivileged process cannot remove a mountpoint — read-only, so
-  # the certificates stay exactly what the store says.
+  # pam_p11 reads $HOME/.eid/authorized_certificates with no override. A symlink
+  # could be unlinked by a same-uid agent; a read-only bind mount cannot.
   pamP11Certificates = lib.concatStringsSep "\n" (
     map (key: key.cert) (import ../../lib/yubikey-keys.nix).piv
   );
@@ -104,9 +73,7 @@ in
 
   environment.etc."eid/authorized_certificates".text = pamP11Certificates + "\n";
 
-  # Fail-safe by construction: if the source is not ready the unit fails,
-  # pam_p11 finds no certificate, returns AUTHINFO_UNAVAIL, and the password
-  # still opens the session — the same path a missing key takes.
+  # Fails safe: if unready, pam_p11 finds no cert and the password still works.
   systemd.services.pam-p11-trust = {
     description = "Bind the managed pam_p11 trust file over ~/.eid";
     wantedBy = [ "multi-user.target" ];
@@ -119,9 +86,7 @@ in
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
-      # A previous activation may have left a symlink here; the bind needs a
-      # real, empty mountpoint. Both steps are best-effort so a reboot after a
-      # switch (still mounted) does not fail the unit.
+      # Needs a real, empty mountpoint; best-effort so a reboot while mounted still starts.
       ExecStartPre = [
         "-${pkgs.util-linux}/bin/umount ${lib.escapeShellArg eidPath}"
         "-${pkgs.coreutils}/bin/rm -f ${lib.escapeShellArg eidPath}"
@@ -134,19 +99,13 @@ in
 
   services.displayManager.noctalia-greeter = {
     enable = true;
-    # The module grants a passwordless appearance sync to listed users only;
-    # every sync needs admin auth when the list is empty.
     passwordless-sync-users = [ ];
-    # An empty submit is what starts the PAM conversation (and so fprintd);
-    # without it the greeter refuses to submit until something is typed.
+    # An empty submit starts the PAM conversation (and fprintd).
     settings.auth.allow_empty_password = true;
   };
 
-  # Fingerprint first when the lid is open, so a touched sensor wins. The lid
-  # gate is what skips it when the sensor is behind a closed lid - that ~5 s
-  # wait is the whole reason for the gate. 5 s bounds an untouched sensor and
-  # pam_fprintd honours it (MIN_TIMEOUT is 1 in 1.94.5).
-  security.pam.services.greetd.fprintAuth = lib.mkForce config.fingerprint.enable;
+  # Fingerprint first; the lid gate skips the ~5 s wait when the sensor is behind a closed lid.
+  security.pam.services.greetd.fprintAuth = lib.mkForce true;
   security.pam.services.greetd.rules.auth.fprintd.args = lib.mkForce [
     "timeout=5"
     "max-tries=1"
@@ -159,10 +118,7 @@ in
       (config.security.pam.services.greetd.rules.auth.fprintd.order - 1)
       lidClosed;
 
-  # PIV + PIN at the greeter: pam_p11 matches ~/.eid/authorized_certificates and
-  # prompts only when a matching token is present. Without a key it returns
-  # AUTHINFO_UNAVAIL, but the card gate has already skipped it in ~9 ms instead
-  # of paying pcsc enumeration.
+  # PIV + PIN; the card gate skips pcsc enumeration when no reader is present.
   security.pam.services.greetd.p11Auth = true;
   security.pam.services.greetd.rules.auth.p11.args = lib.mkForce [
     "${pkgs.opensc}/lib/opensc-pkcs11.so"
@@ -174,25 +130,14 @@ in
       (config.security.pam.services.greetd.rules.auth.p11.order - 1)
       ccidAbsent;
 
-  # pam_p11 hands the PIN to PAM as the authtok, and greetd's default keyring
-  # hook would then create/unlock login.keyring with an 8-digit secret. The
-  # greeter is not the keyring's owner; keep it off.
+  # pam_p11 passes the PIN as authtok; keep it out of login.keyring.
   security.pam.services.greetd.enableGnomeKeyring = false;
 
-  # The lock screen authenticates against `login` (Noctalia hardcodes it until
-  # PR #4132 lands) and drives fprintd over D-Bus, so pam_fprintd stays off
-  # here. The card gate removes the ~2 s pcsc enumeration this stack pays on
-  # every password unlock, and the die keeps it to one prompt. Side effect: the
-  # text console gets the same PIN-or-password behavior, but no PIV-less
-  # lockout, because AUTHINFO_UNAVAIL falls through.
+  # The lock screen hardcodes `login` and drives fprintd over D-Bus, so no
+  # pam_fprintd here. The text console gets PIN-or-password too.
   security.pam.services.login.p11Auth = true;
-  # gnome-keyring splits `login` into a two-prompt stack (an optional
-  # pam_unix "unix-early", then a sufficient one with try_first_pass), so a
-  # wrong password is asked twice. That breaks the single-prompt invariant this
-  # stack depends on, and the lock screen's unprivileged helper cannot unlock a
-  # password-derived keyring anyway (it never calls pam_open_session). The
-  # greeter disables it for the same reason (pam_p11 hands it the PIN); the
-  # daemon stays enabled for D-Bus users.
+  # gnome-keyring splits `login` into two pam_unix prompts, breaking the
+  # single-prompt invariant.
   security.pam.services.login.enableGnomeKeyring = lib.mkForce false;
   security.pam.services.login.rules.auth.p11.args = lib.mkForce [
     "${pkgs.opensc}/lib/opensc-pkcs11.so"

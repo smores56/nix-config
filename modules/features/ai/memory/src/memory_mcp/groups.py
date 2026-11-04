@@ -25,9 +25,7 @@ def _env(name: str, default: str) -> str:
     return value or default
 
 
-# Deployed hosts override these from `config.user.work`; the defaults match the
-# personal profile so standalone installs behave the same. Read per call so a
-# test (or a supervisor that sets the environment late) sees the current values.
+# Deployed hosts override these from `config.user.work`. Read per call so late-set environments are seen.
 DEFAULT_WORK_FLOW = "pr"
 DEFAULT_WORK_EMAIL = "smohr@blitzy.com"
 DEFAULT_WORK_OWNER_GLOBS = "blitzy,blitzy-*"

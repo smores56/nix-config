@@ -1,15 +1,10 @@
 {
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/241313f4e8e508cb9b13278c2b0fa25b9ca27163";
-    # For the few packages the pinned nixpkgs is too old for: bubblewrap
-    # (CVE-2026-87766 fix) and bitwarden-desktop (its electron is EOL in the
-    # main pin). Bump with `nix flake update nixpkgs-unstable`.
+    # Newer bubblewrap and bitwarden-desktop than the main pin carries.
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    # Darwin homes and checks build from this instead of `nixpkgs`: the main
-    # pin predates the libffi trampoline fix (nixpkgs#541367, fixed in
-    # 3f92b6968d74), so every nix Python aborts on macOS 27 at its first
-    # ctypes callback. Separate from nixpkgs-unstable so unstable bumps don't
-    # move the Macs; fold back into `nixpkgs` once its pin contains the fix.
+    # Darwin builds from this: the main pin lacks the libffi trampoline fix, so nix Python aborts on
+    # macOS 27. Fold back into `nixpkgs` once its pin has the fix.
     nixpkgs-darwin.url = "github:NixOS/nixpkgs/c9fe7d12cd78d1adcd12dd15e24432dde5b155a0";
     home-manager = {
       url = "github:nix-community/home-manager/041a999e8c1c5b731913855909e68d30ca69b8e0";
@@ -23,18 +18,12 @@
       url = "github:noctalia-dev/noctalia";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    # Greeter for smorespro (see modules/hosts/smorespro/greeter.nix). Its own
-    # greetd client relays greetd's auth_message stream, so pam_p11's PIN
-    # prompt and the password prompt stay distinct; tuigreet could not run
-    # without also auto-starting a session. Pinned to the v1.7.0 rev.
+    # Its own greetd client keeps pam_p11's PIN prompt and the password prompt distinct; tuigreet can't.
     noctalia-greeter = {
       url = "github:noctalia-dev/noctalia-greeter/af0bf4b1e1c40738db917b04c9c0563b4f718953";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    # Secure Boot for smorespro (see modules/hosts/smorespro/boot.nix). Pinned to
-    # the v1.2.0 rev: a branch would change the signing and boot-entry layout at
-    # every lock update, which must be deliberate on an enforced machine
-    # (PCR 7 measures the firmware's Secure Boot policy, not lzbt itself).
+    # Pinned rev: a branch would change the signing and boot-entry layout on every lock update.
     lanzaboote = {
       url = "github:nix-community/lanzaboote/c1c5edd31802d181c8aa2c71588995d93425d650";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -44,8 +33,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     stylix = {
-      # Pinned to master HEAD tracking release 26.11 to match the HM 26.11
-      # pin below; stylix has no release-26.11 branch yet (HM is on master).
+      # HM 26.11 pin tracks master and stylix has no release-26.11 branch yet.
       url = "github:nix-community/stylix/66714e5ce44269ecc58c20d9196da8dbe1b27a31";
       inputs.nixpkgs.follows = "nixpkgs";
     };

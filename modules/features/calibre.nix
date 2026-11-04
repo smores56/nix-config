@@ -1,12 +1,10 @@
-# calibre + FanFicFare CLI workflow (headless story downloads), plus an
-# ingest queue so an agent can add books and edit metadata without holding the
-# OPDS password or stopping the server itself:
-#   1. install the FanFicFare plugin zip once:
-#      calibre-debug -c "from calibre.customize.ui import add_plugin; add_plugin('/tmp/FanFicFarePlugin.zip')"
-#   2. download: calibre-debug --run-plugin FanFicFare -- --with-library "$HOME/Calibre Library" <story-url>
-#      (writes the epub to CWD; does not add it to the library)
-#   3. calibredb add refuses while calibre-server holds the library: the ingest
-#      service below stops this unit, runs calibredb, and starts it again.
+# calibre + FanFicFare CLI (headless story downloads), plus an ingest queue so an agent can add
+# books and edit metadata without the OPDS password or stopping the server itself.
+# Install the FanFicFare plugin zip once:
+#   calibre-debug -c "from calibre.customize.ui import add_plugin; add_plugin('/tmp/FanFicFarePlugin.zip')"
+# Download (writes the epub to CWD, does not add it):
+#   calibre-debug --run-plugin FanFicFare -- --with-library "$HOME/Calibre Library" <story-url>
+# calibredb add refuses while calibre-server holds the library, hence the ingest service below.
 # Upstream: https://github.com/JimmXinu/FanFicFare
 {
   config,
@@ -15,29 +13,23 @@
   ...
 }:
 let
-  inherit (pkgs.stdenv.hostPlatform) isLinux;
+  hardening = import ../lib/hardening.nix;
   ports = import ../ports.nix;
   cfg = config.calibre;
 
   userdb = "${config.home.homeDirectory}/.config/calibre-server/users.sqlite";
 
-  # The host may point this at a sops-decrypted copy (smortress does); the
-  # plaintext XDG file is only the fallback for hosts without a secret.
-  passwordFile =
-    if cfg.passwordFile != "" then
-      cfg.passwordFile
-    else
-      "${config.home.homeDirectory}/.config/calibre-server/password";
+  port = ports.calibre;
+  # Queue the agent writes books and manifest.json to.
+  ingestDir = "/var/lib/agent/books-ingest";
 
-  # Single OPDS account, provisioned from the password file (trailing newlines
-  # stripped). Restarting the unit re-applies the file, so rotating the password
-  # is just editing the secret and rebuilding.
+  # Single OPDS account from the password file; restarting the unit re-applies it.
   opdsUser = "smores56";
 
   provisionUser = pkgs.writeShellScript "calibre-provision-user" ''
     set -euo pipefail
     server=${lib.getExe' pkgs.calibre "calibre-server"}
-    password_file=${lib.escapeShellArg passwordFile}
+    password_file=${lib.escapeShellArg cfg.passwordFile}
     if [[ ! -r "$password_file" || ! -s "$password_file" ]]; then
       echo "calibre-server: password file missing or empty: $password_file" >&2
       exit 1
@@ -50,10 +42,8 @@ let
     fi
   '';
 
-  # The agent writes books and a manifest.json to the queue. The service owns
-  # the calibre lock: stop the OPDS server, apply the manifest and add books,
-  # restart. Processed/failed move out of the queue so a failed file is not
-  # retried forever.
+  # The service owns the calibre lock: stop the OPDS server, apply the manifest, restart.
+  # Processed/failed move out of the queue so a failed file is not retried forever.
   ingest = pkgs.writeShellApplication {
     name = "calibre-ingest";
     runtimeInputs = [
@@ -65,14 +55,12 @@ let
     ];
     text = ''
       set -euo pipefail
-      inbox=${lib.escapeShellArg cfg.ingestDir}
+      inbox=${lib.escapeShellArg ingestDir}
       library=${lib.escapeShellArg cfg.library}
-      canonical=${lib.escapeShellArg cfg.ingestDir}
+      canonical=${lib.escapeShellArg ingestDir}
 
-      # The queue lives in an agent-writable tree. Refuse a symlinked queue or
-      # processed/failed directories, and confine every manifest path to the
-      # queue; otherwise this timer is an unsandboxed arbitrary-file reader
-      # (and mover) for the agent.
+      # The queue is agent-writable: refuse symlinked queue/processed/failed dirs and confine manifest
+      # paths to the queue, or this timer is an unsandboxed arbitrary-file reader and mover.
       [ -d "$inbox" ] && [ ! -L "$inbox" ] || exit 0
       [ "$(realpath -e "$inbox")" = "$canonical" ] || {
         echo "calibre-ingest: queue is a symlink or relocated: $inbox" >&2
@@ -155,62 +143,19 @@ let
     '';
   };
 
-  # One-shot data migration to the media dataset. It is deliberately not an
-  # activation step: moving the library is an operator decision.
-  migrate = pkgs.writeShellApplication {
-    name = "calibre-migrate";
-    runtimeInputs = [
-      pkgs.coreutils
-      pkgs.systemd
-    ];
-    text = ''
-      set -euo pipefail
-      old="$HOME/Calibre Library"
-      new=${lib.escapeShellArg cfg.library}
-      if [ -e "$new/metadata.db" ]; then
-        echo "calibre-migrate: $new already exists" >&2
-        exit 0
-      fi
-      if [ ! -d "$old" ]; then
-        echo "calibre-migrate: $old is missing; nothing to move" >&2
-        exit 0
-      fi
-      systemctl --user stop calibre-server.service || true
-      mkdir -p "$new"
-      shopt -s dotglob nullglob
-      # The tmpfiles rule creates the target, so move the contents rather than
-      # nesting the old directory inside it.
-      mv "$old"/* "$new"/
-      rmdir "$old"
-      systemctl --user start calibre-server.service || true
-      echo "calibre-migrate: moved $old -> $new" >&2
-    '';
-  };
 in
 {
   options.calibre = lib.mkOption {
     type = lib.types.submodule {
       options = {
-        enable = lib.mkEnableOption "calibre-server OPDS as a user systemd service";
-        port = lib.mkOption {
-          type = lib.types.port;
-          default = ports.calibre;
-          description = "Loopback port for calibre-server.";
-        };
         passwordFile = lib.mkOption {
           type = lib.types.str;
-          default = "";
-          description = "File holding the OPDS account password. Empty falls back to ~/.config/calibre-server/password; smortress points this at its sops-decrypted copy.";
+          description = "File holding the OPDS account password; smortress points this at its sops-decrypted copy.";
         };
         library = lib.mkOption {
           type = lib.types.str;
           default = "${config.home.homeDirectory}/Calibre Library";
           description = "Calibre library directory. smortress points this at /var/lib/data/books so it is backed up and writable by the agent queue.";
-        };
-        ingestDir = lib.mkOption {
-          type = lib.types.str;
-          default = "/var/lib/agent/books-ingest";
-          description = "Queue the agent writes books and manifest.json to; a user timer runs calibredb with the server stopped.";
         };
       };
     };
@@ -218,11 +163,10 @@ in
     description = "calibre OPDS content server exposed over the Cloudflare Tunnel.";
   };
 
-  config = lib.mkIf (isLinux && cfg.enable) {
+  config = {
     home.packages = [
       pkgs.calibre
       ingest
-      migrate
     ];
 
     systemd.user.services.calibre-server = {
@@ -233,7 +177,7 @@ in
 
       Service = {
         ExecStartPre = provisionUser;
-        ExecStart = "${lib.getExe' pkgs.calibre "calibre-server"} --port ${toString cfg.port} --listen-on 127.0.0.1 --enable-auth --auth-mode basic --userdb ${lib.escapeShellArg userdb} ${lib.escapeShellArg cfg.library}";
+        ExecStart = "${lib.getExe' pkgs.calibre "calibre-server"} --port ${toString port} --listen-on 127.0.0.1 --enable-auth --auth-mode basic --userdb ${lib.escapeShellArg userdb} ${lib.escapeShellArg cfg.library}";
         Restart = "on-failure";
         RestartSec = 5;
       };
@@ -247,23 +191,17 @@ in
       Unit = {
         Description = "Add queued books and metadata to the calibre library";
       };
-      Service = {
+      Service = hardening // {
         Type = "oneshot";
         ExecStart = lib.getExe ingest;
-        # The ingest parses agent-authored EPUBs with calibredb. Confine writes
-        # to the library and the queue so a hostile book (or manifest) cannot
-        # use the parser to modify the rest of the system.
-        NoNewPrivileges = true;
-        PrivateTmp = true;
-        ProtectSystem = "strict";
+        # Confine writes to the library and queue so a hostile EPUB or manifest cannot use the parser to modify the system.
         ProtectHome = "read-only";
         ReadWritePaths = [
           cfg.library
-          cfg.ingestDir
+          ingestDir
         ];
         RestrictAddressFamilies = [ "AF_UNIX" ];
         LockPersonality = true;
-        # The service itself stops/starts calibre-server; no After= ordering.
       };
     };
 

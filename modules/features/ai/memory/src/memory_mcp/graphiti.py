@@ -55,9 +55,7 @@ class GraphitiBackend:
         if result.is_error:
             raise BackendError(result.text.strip() or f"{name} failed")
         payload = _parse(result.text)
-        # Graphiti reports tool failures as a normal response with an `error`
-        # field, not as MCP isError. Treat that as a failure instead of an
-        # empty result or a successful queue.
+        # Graphiti reports tool failures as a normal response with an `error` field, not MCP isError.
         if isinstance(payload, dict) and payload.get("error"):
             raise BackendError(str(payload["error"]))
         return payload
@@ -72,10 +70,8 @@ class GraphitiBackend:
         source: str = "text",
         reference_time: str | None = None,
     ) -> dict[str, Any]:
-        # Deliberately no `uuid`: graphiti-core 0.31.2 treats a supplied uuid as
-        # an existing episode lookup, so a new uuid fails in the queue worker
-        # with "node <uuid> not found". The registry keeps the uuid5 identity
-        # and records the graph's own uuid after reconciliation.
+        # No `uuid`: graphiti-core 0.31.2 treats a supplied uuid as an existing-episode lookup and fails
+        # in the queue worker. The registry keeps its uuid5 identity and records the graph's uuid after reconciliation.
         arguments: dict[str, object] = {
             "name": name,
             "episode_body": episode_body,

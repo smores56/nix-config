@@ -119,12 +119,8 @@ def load_session(path):
     return _build_session(path, header, title, updated_at, messages)
 
 
-# Per-file cache for fast listing. Stores one entry per session file, keyed by
-# the file's absolute path. Each entry records mtime + size so only changed
-# files are re-parsed on subsequent runs: one cold build parses every file,
-# then steady state re-parses only the sessions that changed (typically just
-# the active one). Backs both `list` (Television) and `list --json` (picker);
-# `show`/`cwd` always read the full file.
+# Per-file cache keyed by absolute path with mtime + size, so only changed
+# sessions are re-parsed. Backs `list` and `list --json`; `show`/`cwd` read the full file.
 
 def _cache_path():
     home = Path.home()

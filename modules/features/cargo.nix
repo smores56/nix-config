@@ -7,20 +7,11 @@
 let
   inherit (pkgs.stdenv.hostPlatform) isDarwin;
   home = config.home.homeDirectory;
-  # rustup stable toolchain for the host triple.
-  #
-  # rustup's cargo shim resolves the toolchain per invocation, which mixes
-  # rustc versions within a single build — proc-macro crates compile with a
-  # different rustc than library crates, producing E0514 "crate compiled by an
-  # incompatible version of rustc". Pinning build.rustc to one rustup toolchain
-  # binary bypasses the shim so cargo uses a single rustc consistently.
-  #
-  # The final link also needs Apple clang as the linker driver so libc++ and
-  # libiconv resolve via the macOS SDK; Nix's GCC sysroot lacks them.
-  #
-  # hostPlatform.rust.rustcTarget is the rustc-style triple (aarch64-apple-darwin),
-  # not the Apple-style hostPlatform.config (arm64-apple-darwin) — both the
-  # rustup toolchain dir and cargo's [target] key use the rustc form.
+  # rustup's cargo shim resolves the toolchain per invocation, mixing rustc versions in one build
+  # (proc-macro crates vs library crates: E0514 "incompatible version of rustc"); pinning
+  # build.rustc to one toolchain binary bypasses it. The link needs Apple clang as driver for
+  # libc++/libiconv from the macOS SDK. rustcTarget is the rustc-style triple
+  # (aarch64-apple-darwin), which rustup's toolchain dir and cargo's [target] key use.
   triple = pkgs.stdenv.hostPlatform.rust.rustcTarget;
   rustupStable = "${home}/.rustup/toolchains/stable-${triple}";
 in
@@ -36,12 +27,8 @@ in
         [target.${triple}]
         rustflags = ["-C", "linker=/usr/bin/clang"]
 
-        # [env] is read by cargo from this file, independent of the shell
-        # environment — unlike packages.nix's sessionVariables, which a
-        # non-interactive process (e.g. an agent's bash tool) may not have
-        # sourced. force overrides any CC/CXX already in the environment so
-        # the `cc` crate always uses Apple clang (correct libc++ ABI, macOS
-        # framework headers).
+        # [env] is read from this file regardless of shell, unlike packages.nix's sessionVariables that
+        # non-interactive processes may lack. force makes the `cc` crate always use Apple clang.
         [env]
         CC = { value = "/usr/bin/clang", force = true }
         CXX = { value = "/usr/bin/clang++", force = true }

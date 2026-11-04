@@ -29,7 +29,6 @@ def ensure_shortcut(defaults, hotkey, parameters):
         ):
             return "already configured"
         return "existing area screenshot shortcut differs; left unchanged"
-    # dict-add changes only this entry, rather than replacing the dictionary.
     value = plistlib.dumps(desired, fmt=plistlib.FMT_XML).decode("utf-8")
     subprocess.run(
         [defaults, "write", DOMAIN, "AppleSymbolicHotKeys", "-dict-add", hotkey, value],

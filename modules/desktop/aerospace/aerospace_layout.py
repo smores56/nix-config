@@ -142,7 +142,6 @@ def workspace_commands(workspace, by_bundle, residents):
     commands = [["move-node-to-workspace", "--window-id", str(w), SCRATCH_WORKSPACE] for w in ordered]
     commands += [["move-node-to-workspace", "--window-id", str(w), name] for w in ordered]
     commands.append(["layout", "--workspace", name, "--root", workspace.layout])
-    # A group alone on its workspace would just be the root; leave it flat.
     if residents + len(ordered) > 2:
         along = "right" if workspace.layout.startswith("h_") else "down"
         commands += [["join-with", "--window-id", str(first), along] for first, _ in groups]
@@ -191,13 +190,11 @@ def arrange(layout, client, sleep=time.sleep, clock=time.monotonic):
         for workspace in layout.workspaces
         for command in workspace_commands(workspace, by_bundle, residents(workspace.name))
     ]
-    # The scratch round trip can leave the scratch workspace showing on a
-    # monitor; switching to each layout workspace puts it back on display.
+    # The scratch round trip can leave the scratch workspace on a monitor; visiting each layout workspace restores it.
     commands += [["workspace", workspace.name] for workspace in layout.workspaces]
     if focused_before in {w.id for w in windows}:
         commands.append(["focus", "--window-id", str(focused_before)])
     elif layout.workspaces:
-        # Nothing to restore; prefer work over leaving comms focused.
         commands.append(["workspace", layout.workspaces[0].name])
 
     for command in commands:
@@ -212,7 +209,7 @@ def arrange(layout, client, sleep=time.sleep, clock=time.monotonic):
 def single_instance(path):
     """Yields whether this process holds the lock; overlapping runs (startup
     plus a keypress) would interleave their scratch round trips."""
-    # O_NOFOLLOW and no truncation: the lock may sit in a shared /tmp.
+    # O_NOFOLLOW, no truncation: the lock may sit in a shared /tmp.
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, "w") as handle:
         try:
@@ -253,7 +250,6 @@ class AeroSpaceCli:
         return int(out) if out.isdigit() else None
 
     def launch(self, bundle):
-        # -g keeps the launched app from stealing focus mid-arrangement.
         result = subprocess.run(["/usr/bin/open", "-g", "-b", bundle], capture_output=True, text=True)
         if result.returncode != 0:
             raise CommandError(result.stderr.strip() or f"exit {result.returncode}")

@@ -2,11 +2,10 @@
 
 Public keys and certificates live in the repo; private key material never
 does. The three YubiKeys (`k1`, `k2`, `k3`) are interchangeable and every
-authorized list carries all three. The operator setup script is
-`~/dev/setup-yubikey.sh` on `smorespro` (it is not tracked yet); it produces
-`~/yubikey-setup/kN/` with the public material and a report. The script is
-included in the Bitwarden restore bundle (below) as data until it moves into
-the repo; the report directory is not copied.
+authorized list carries all three. The operator setup script is `~/dev/setup-yubikey.sh` on `smorespro`; it is
+untracked and lives only in `~/dev`. It produces `~/yubikey-setup/kN/` with the
+public material and a report. The Bitwarden restore bundle (below) carries the
+script as data; the report directory is not copied.
 
 The FIDO2 credential *handles* under `~/.config/ssh-sk/kN/sudo` are
 per-machine files: the private half is on the token, but OpenSSH needs the
@@ -104,30 +103,6 @@ That restores the PIN without touching the PIV keys. If the PUK is exhausted,
 the PIV application must be reset and every PIV credential re-enrolled; the
 9a certificate and public key change.
 
-## Retiring the FIDO2 signing credentials (one-time)
-
-Commits sign with the sops keys, so the old `ssh:sign-kN` credentials are
-unused. Retire them once:
-
-1. Rebuild in this order: every laptop's home first (`home-manager switch`),
-   then smortress (`sudo nixos-rebuild switch --flake .#smortress`). The old
-   laptop config forwarded a signing socket with `ExitOnForwardFailure`, which
-   the new sshd refuses, so a laptop still on its old home would drop every
-   connection to an already-rebuilt smortress (`ssh -o ClearAllForwardings=yes
-   smortress` gets in meanwhile).
-2. On each Linux host, delete the leftover handles (trusted nowhere, but they
-   can still produce untouched signatures with a key inserted):
-   ```sh
-   rm -f ~/.config/ssh-sk/k{1,2,3}/signing ~/.config/ssh-sk/k{1,2,3}/signing.pub
-   ```
-3. With each key inserted, delete its credential (needs the FIDO2 PIN):
-   ```sh
-   ykman fido credentials list
-   ykman fido credentials delete ssh:sign-k1   # k2, k3 on the other keys
-   ```
-4. Delete the FIDO2 and PIV entries from the personal account's GitHub
-   signing keys; GitHub keeps commits it already verified.
-
 ## Locked FIDO2 PIN
 
 ```sh
@@ -186,7 +161,7 @@ sops keys, not a YubiKey.
    macOS uses 9a for authentication and 9d for the keychain/volume. Do not
    enable FileVault smart-card unlock. Repeat until `sc_auth list -u sam`
    shows all three 9a hashes.
-3. After the T1 branch is deployed, test SSH with each key:
+3. Test SSH with each key:
    ```sh
    ssh smortress true
    ```

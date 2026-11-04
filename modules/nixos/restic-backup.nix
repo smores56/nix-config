@@ -1,6 +1,6 @@
 # restic is the backup driver: one encrypted repo offsite in R2 and one on the
-# local 4.6 TB backup disk. It replaces the rclone dataset driver, so a single
-# job covers the durable tree and every source is encrypted client-side.
+# local backup disk. A single job covers the durable tree and every
+# source is encrypted client-side.
 {
   config,
   lib,
@@ -8,8 +8,7 @@
   ...
 }:
 let
-  # Non-secret Cloudflare account id; the bucket is `restic-backup`.
-  accountId = "385f7d47e2e8438fbda5d6f76d760434";
+  hardening = import ../lib/hardening.nix;
 
   # The Immich database is the photo library's source of truth, so a dump has
   # to land inside the tree before restic walks it. The postgres user owns the
@@ -27,9 +26,7 @@ let
 
   common = {
     paths = [
-      # The whole durable tree: vault ciphertext, wallpapers, media, the memory
-      # export, the GitHub mirrors, Radicale and Open WebUI state. Nothing else
-      # needs a second source path.
+      # The whole durable tree; no second source path is needed.
       "/var/lib/data"
     ];
     passwordFile = config.sops.secrets.restic-password.path;
@@ -56,14 +53,12 @@ in
 
   services.restic.backups = {
     r2 = common // {
-      repository = "s3:https://${accountId}.r2.cloudflarestorage.com/restic-backup";
+      repository = "s3:https://${config.alerting.accountId}.r2.cloudflarestorage.com/restic-backup";
       environmentFile = config.sops.templates."restic-r2.env".path;
-      # Only R2 initialises on its own: a fresh bucket is expected, so the first
-      # run creates the repo. The local repo must NOT: an empty-but-mounted
-      # /var/backup (fresh ext4, wrong disk) would otherwise initialise a new
-      # repo and report success, hiding the missing backup disk. Leaving it
-      # unset makes the first run fail and the onFailure alert fire; the
-      # operator creates it once by hand (modules/features/backup/README.md).
+      # Only R2 initialises itself (a fresh bucket is expected). The local repo must not:
+      # an empty-but-mounted /var/backup (wrong disk) would initialise a new repo and
+      # report success. Unset, the first run fails and the alert fires; the operator
+      # creates it by hand (modules/features/backup/README.md).
       initialize = true;
     };
     local = common // {
@@ -71,11 +66,6 @@ in
     };
   };
 
-  # The restic module generates one unit per repo but exposes no `onFailure`
-  # option, so the alert is attached to the generated units by name. %n expands
-  # to the failing unit, so each repo's failure mails its own journal.
-  # Both units want a fresh database dump first: `wants` rather than `requires`,
-  # so a database that is down delays nothing and the tree is still backed up.
   systemd.tmpfiles.rules = [ "d ${dbDir} 0700 postgres postgres -" ];
 
   systemd.services.restic-db-dump = {
@@ -83,17 +73,13 @@ in
     after = [ "postgresql.service" ];
     requires = [ "postgresql.service" ];
     path = [ pkgs.coreutils ];
-    onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
-    serviceConfig = {
+    onFailure = [ "cloudflare-email@%n.service" ];
+    serviceConfig = hardening // {
       Type = "oneshot";
       User = "postgres";
       Group = "postgres";
       ExecStart = dbDump;
       TimeoutStartSec = "1h";
-      NoNewPrivileges = true;
-      PrivateTmp = true;
-      ProtectHome = true;
-      ProtectSystem = "strict";
       ReadWritePaths = [ dbDir ];
       ProtectKernelTunables = true;
       ProtectKernelModules = true;
@@ -108,8 +94,11 @@ in
     };
   };
 
+  # The restic module exposes no `onFailure`, so the alert is attached to the generated
+  # units by name; %n mails each repo's own journal. `wants` not `requires`: a down
+  # database still lets the tree back up.
   systemd.services."restic-backups-r2" = {
-    onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
+    onFailure = [ "cloudflare-email@%n.service" ];
     wants = [ "restic-db-dump.service" ];
     after = [ "restic-db-dump.service" ];
   };
@@ -117,8 +106,8 @@ in
   # The local repo lives on the backup disk: wait for that mount, or a missing
   # disk would quietly fill the root filesystem instead of failing.
   systemd.services."restic-backups-local" = {
-    onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
-    unitConfig.RequiresMountsFor = [ config.backup.mountPoint ];
+    onFailure = [ "cloudflare-email@%n.service" ];
+    unitConfig.RequiresMountsFor = [ "/var/backup" ];
     wants = [ "restic-db-dump.service" ];
     after = [ "restic-db-dump.service" ];
   };

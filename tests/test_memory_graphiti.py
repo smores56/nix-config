@@ -46,7 +46,7 @@ class GraphitiBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(arguments["group_id"], "owner--repo")
         self.assertEqual(arguments["source"], "json")
         self.assertEqual(arguments["reference_time"], "2026-10-03T00:00:00Z")
-        # graphiti-core 0.31.2 must not receive a caller uuid for a new episode.
+        # graphiti-core must not receive a caller uuid for a new episode.
         self.assertNotIn("uuid", arguments)
 
     async def test_reference_time_is_omitted_when_unknown(self):

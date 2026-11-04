@@ -45,7 +45,6 @@ class FakeAeroSpace:
         self.fail_on = set()  # command names that exit non-zero
         self.unlaunchable = set()  # bundles `open -b` cannot find
 
-    # -- setup helpers
     def tile(self, workspace, bundle, window_id=None):
         window_id = window_id or self._new_id()
         self.bundles[window_id] = bundle
@@ -78,7 +77,6 @@ class FakeAeroSpace:
 
         return render(self._root(workspace))
 
-    # -- client interface used by the module
     def windows(self):
         if "list-windows" in self.fail_on:
             raise self.mod.CommandError("list-windows failed")
@@ -119,7 +117,6 @@ class FakeAeroSpace:
             raise AssertionError(f"unexpected command {argv}")
         handler(args)
 
-    # -- command semantics (mirroring AeroSpace 0.21.3)
     def _cmd_move_node_to_workspace(self, args):
         window_id, workspace = self._opt(args, "--window-id"), args[-1]
         window_id = int(window_id)
@@ -167,7 +164,6 @@ class FakeAeroSpace:
         monitor = self.home_monitor.get(workspace, self.monitor_names[0])
         self.visible[monitor] = workspace
 
-    # -- internals
     def _new_id(self):
         self.next_id += 1
         return self.next_id

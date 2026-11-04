@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Runs the generated allowed_signers writer: each account's sops signing key is
-# trusted for its own principal only, and nothing else is (no retired key keeps
-# any trust).
+# Each account's sops signing key is trusted for its own principal only; no retired key keeps trust.
 #
 # Usage: ssh_allowed_signers.sh <writer>, with WORK_EMAIL, PERSONAL_EMAIL,
 # PERSONAL_SIGNING_PUB and WORK_SIGNING_PUB.
@@ -29,7 +27,6 @@ has_entry "$WORK_EMAIL" "$WORK_SIGNING_PUB" || fail "work signing key not truste
 has_entry "$WORK_EMAIL" "$PERSONAL_SIGNING_PUB" && fail "personal signing key trusted as $WORK_EMAIL"
 has_entry "$PERSONAL_EMAIL" "$WORK_SIGNING_PUB" && fail "work signing key trusted as $PERSONAL_EMAIL"
 
-# With no YubiKey public halves on disk, the two sops keys are the whole list.
 [ "$(grep -c . "$signers")" = 2 ] || fail "allowed_signers trusts more than the two account keys"
 
 # Every line parses: a broken quote or key would silently drop trust.

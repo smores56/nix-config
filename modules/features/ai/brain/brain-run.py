@@ -189,7 +189,7 @@ class Run:
     parked: tuple[str, ...] = ()  # sources that failed PARK_AFTER runs running; they don't set the days
 
 
-# Pure core (local time throughout: `astimezone()` follows the system zone, DST included)
+# Local time throughout: `astimezone()` follows the system zone, DST included.
 
 
 def local(moment):
@@ -272,7 +272,7 @@ def configured_sources(vault_config):
     if sources is None:
         return SOURCES
     headings = re.findall(r"^### (.+?)[ \t]*$", sources, re.MULTILINE)
-    # `### Code host (GitHub)` still names the code host.
+    # Headings may carry a suffix, e.g. `### Code host (GitHub)`.
     present = {key for key in CONFIGURED_SOURCES for h in headings if h == key or h.startswith(key + " ")}
     return ALWAYS_SOURCES + tuple(name for key, name in CONFIGURED_SOURCES.items() if key in present)
 
@@ -439,8 +439,6 @@ def commit_message(run, standup_day):
     days = ", ".join(first if first == last else f"{first}..{last}" for first, last in segments(run.days))
     return f"harvest: {days}; standup: {standup_day.isoformat()}"
 
-
-# Effects
 
 
 # Scanned checkouts are not all trusted: reads must never reach a network helper.
@@ -901,8 +899,6 @@ def headless(config, now, claude=run_claude, notify=notify_macos, online=network
     notify(message)
     return code
 
-
-# CLI
 
 
 def env_paths(name):

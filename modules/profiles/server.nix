@@ -4,7 +4,6 @@
     ../features/calibre.nix
   ];
   nixos = [
-    ../nixos/secrets.nix
     ../nixos/cloudflare-tofu.nix
     ../nixos/web-proxy.nix
     ../nixos/immich.nix
@@ -21,6 +20,5 @@
     ../nixos/restic-backup.nix
     ../nixos/github-backup.nix
     ../nixos/alerting.nix
-    ../nixos/no-sleep.nix
   ];
 }

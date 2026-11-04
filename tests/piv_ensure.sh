@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
-# piv-ensure, the pre-connect step on both OSes: a no-op on a warm agent; a
-# cold agent reloads from the login-session PIN cache without a dialog when the
-# card is the one the cache was verified against with an unspent counter;
-# otherwise one dialog, one load, and the PIN is cached only after the card
-# accepted it. A no-prompt caller never opens a dialog, a low or unreadable
-# retry budget never reaches the card, and a failed load is never retried.
+# piv-ensure: no-op on a warm agent; a cold agent reloads from the PIN cache only for the card it was
+# verified against. The PIN is cached only after the card accepts it, and a failed load is never retried.
 # Usage: piv_ensure.sh <piv-ensure.sh> <piv-dialog.sh>
 set -euo pipefail
 
@@ -23,8 +19,7 @@ log=$work/log
 state=$work/state
 cache=$work/cache
 
-# ssh-add fake: -T succeeds once `warm` exists. -s asks the PIN through
-# SSH_ASKPASS like the real one; a wrong PIN spends a try.
+# ssh-add fake: -T succeeds once `warm` exists; -s asks the PIN through SSH_ASKPASS; a wrong PIN spends a try.
 cat >"$work/bin/ssh-add" <<EOF
 #!$BASH
 case \$1 in
@@ -72,7 +67,6 @@ export PATH="$work/bin:$PATH"
 sock=$work/piv-agent.sock
 provider=/nix/store/x-opensc/lib/opensc-pkcs11.so
 
-# reset [flags...]: a cold agent, an empty cache, one card with 3 tries.
 reset() {
   rm -rf "$state" "$log" "$cache"
   mkdir "$state"
@@ -101,7 +95,6 @@ run || fail "warm agent failed"
 [ ! -s "$log" ] || fail "warm agent touched the card: $(cat "$log")"
 ! grep -q "sock=/ambient/agent" "$state/calls" || fail "health check used the caller's agent"
 
-# First use: one dialog, one forced load with empty stdin, then a 0600 cache.
 reset
 run || fail "cold agent did not load"
 [ "$(dialogs)" = 1 ] || fail "first use opened $(dialogs) dialogs"
@@ -116,19 +109,16 @@ grep -q "^-s $provider require=force sock=$sock piped=$" "$log" ||
 [ "$(stat -c %a "$cache/pin" 2>/dev/null || stat -f %Lp "$cache/pin")" = 600 ] || fail "cache is not 0600"
 [ "$(stat -c %a "$cache" 2>/dev/null || stat -f %Lp "$cache")" = 700 ] || fail "cache dir is not 0700"
 
-# Sleep, unplug, or a lock-screen PIV unlock: the agent goes cold, the card is
-# unchanged, so the cache reloads it with no dialog.
+# Sleep, unplug, or lock-screen unlock leaves the agent cold and the card unchanged: reload from cache.
 cold
 run || fail "cached PIN did not reload a cold agent"
 [ "$(dialogs)" = 0 ] || fail "cached reload opened a dialog"
 [ "$(loads)" = 1 ] || fail "cached reload loaded $(loads) times"
 
-# Unattended callers reload from the cache too.
 cold
 run YK_ENSURE_NO_PROMPT=1 || fail "no-prompt caller could not use the cache"
 [ "$(dialogs)" = 0 ] || fail "no-prompt caller opened a dialog"
 
-# A spent try since caching: the cached PIN is not replayed.
 cold
 echo 2 >"$state/tries"
 run || fail "stale cache did not fall back to a prompt"
@@ -138,13 +128,11 @@ cold
 run || fail "re-cached PIN did not reload"
 [ "$(dialogs)" = 0 ] || fail "PIN cached after a spent try re-prompts every time"
 
-# A different card: the cached PIN is not replayed.
 cold
 echo 222 >"$state/serial"
 run || fail "card swap did not fall back to a prompt"
 [ "$(dialogs)" = 1 ] || fail "card swap did not re-prompt"
 
-# A stale cache with no prompt allowed fails without touching the card.
 cold
 echo 333 >"$state/serial"
 if run YK_ENSURE_NO_PROMPT=1 2>/dev/null; then fail "no-prompt caller replayed a stale cache"; fi
@@ -161,7 +149,6 @@ reset
 run SSH_ASKPASS=/caller/askpass || fail "caller askpass broke the load"
 [ "$(dialogs)" = 1 ] || fail "caller askpass replaced the dialog"
 
-# A stopped agent is reported as such and keeps the cache.
 reset
 run >/dev/null || fail "setup load failed"
 cold
@@ -197,7 +184,6 @@ for answer in "" 12345 123456789 "1234 567"; do
   [ "$(loads)" = 0 ] || fail "malformed PIN '$answer' reached the card"
 done
 
-# A wrong PIN: one load, never retried, nothing cached.
 reset
 echo 87654321 >"$state/answer"
 if run 2>/dev/null; then fail "wrong PIN reported success"; fi
@@ -238,7 +224,6 @@ ln -s "$work/decoy-pin" "$cache/pin"
 run || fail "symlinked pin file broke the load"
 [ ! -s "$work/decoy-pin" ] || fail "PIN written through a symlink"
 
-# Accepted PIN shapes: 6 and 8 characters, letters allowed.
 for pin in 123456 abcd1234; do
   reset
   echo "$pin" >"$state/pin"

@@ -75,53 +75,39 @@ DEFAULT_REDIS_URL = "redis://127.0.0.1:6379"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8182
 
-# One constant for the per-upstream-call budget. A composed search makes three
-# calls, so it stays well under the 60s overall deadline below (and that
-# deadline stays under Maki's 90s and the CLI's client timeout).
+# Per-upstream-call budget. A composed search makes three calls, so it stays under the 60s
+# deadline, which stays under maki's 90s and the CLI's client timeout.
 DEFAULT_UPSTREAM_TIMEOUT = 20.0
-# One tool call must finish before the shim, CLI, Maki, or Cloudflare gives up.
+# One tool call must finish before the shim, CLI, maki or Cloudflare gives up.
 DEFAULT_TOOL_TIMEOUT = 60.0
-# A repeated write while a pending row is younger than this is treated as
-# already queued; older rows are resubmitted.
+# A repeat write while a pending row is younger than this counts as already queued.
 DEFAULT_PENDING_STALE = 600.0
 
-# The scope a header-less MCP client is pinned to (group, cwd, actor). Only
-# clients that cannot send the X-Memory-* convention use it — Open WebUI's
-# native MCP connection has no custom-header support.
+# Scope for header-less MCP clients (Open WebUI's native MCP cannot send custom headers).
 DEFAULT_GROUP_ENV = "MEMORY_MCP_DEFAULT_GROUP"
 DEFAULT_CWD_ENV = "MEMORY_MCP_DEFAULT_CWD"
 DEFAULT_ACTOR_ENV = "MEMORY_MCP_DEFAULT_ACTOR"
 
-# Extracted episodes are session summaries or note sections, not source dumps.
-# A cap keeps a hostile or runaway client from parking megabytes in the graph
-# and blowing up extraction prompts.
+# Episodes are summaries or note sections; the cap stops a runaway client bloating the graph and extraction prompts.
 MAX_CONTENT_CHARS = 100_000
-# One episode is a note or a summary section, and the search surface advertises
-# a 6k budget. Returning the full write cap here would put 12x that in the same
-# context, so the body is cut and the trailer names the real length.
+# One episode against a 6k search budget: returning the full write cap would put 12x that in context,
+# so the body is cut and the trailer names the real length.
 MAX_GET_CHARS = 16_000
 MAX_QUERY_CHARS = 4_000
 MAX_CWD_CHARS = 1024
 MAX_MESSAGE_CHARS = 500
 MAX_LOOKUP_HASHES = 10_000
 MAX_DETAIL_CHARS = 300
-# The internal routes take machine-built JSON only: a 10k-hash lookup is the
-# largest legitimate body, and episodes are capped at MAX_CONTENT_CHARS.
+# Machine-built JSON only: a 10k-hash lookup is the largest legitimate body.
 MAX_INTERNAL_BODY_BYTES = 1_000_000
-# The MCP surface takes JSON-RPC only: the largest legitimate call is a write
-# at MAX_CONTENT_CHARS, and an unbounded body would let one client park its
-# payload in memory (the unit caps at 512M).
+# JSON-RPC only; the largest legitimate call is a write at MAX_CONTENT_CHARS (the unit caps at 512M).
 MAX_MCP_BODY_BYTES = 1_000_000
-# A reindex sweeps the registry in pages because a full corpus is thousands of
-# rows and the tool call has a deadline. Each requeued row costs a full
-# extraction, so one call requeues a bounded slice and the operator repeats it.
+# A reindex pages the registry; each requeued row costs a full extraction, so one call requeues a bounded slice.
 REINDEX_PAGE = 500
 REINDEX_DEFAULT = 200
-# Each requeued row is also submitted, one at a time; 2000 submissions would not
-# fit the 60 s tool deadline.
+# Each requeued row is also submitted serially; 2000 would not fit the 60 s tool deadline.
 REINDEX_MAX = 500
-# Below this many rows a high miss rate is ordinary; above it, a group that is
-# almost entirely missing means the graph and the registry disagree.
+# Below this many rows a high miss rate is ordinary; above it, graph and registry disagree.
 REINDEX_GUARD_MIN_ROWS = 50
 
 _HASH = re.compile(r"^[0-9a-f]{64}$")
@@ -150,8 +136,7 @@ class WrapperConfig:
     llm_url: str = DEFAULT_LLM_URL
     embed_url: str = DEFAULT_EMBED_URL
     redis_url: str = DEFAULT_REDIS_URL
-    # Set for a remote embedder so readiness probes a real embedding rather
-    # than a /health endpoint the gateway does not serve for it.
+    # Remote embedder: probe a real embedding, since the gateway serves no /health for it.
     embed_model: str | None = None
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
@@ -237,11 +222,8 @@ def _call_context(ctx: Context, headers_provider: HeadersProvider) -> CallContex
             raise ToolError("missing or relative X-Memory-Cwd header; the shim sends the real cwd")
         actor = sanitize_actor(headers.get("x-memory-actor"))
     else:
-        # A client that speaks none of the convention gets one pinned scope
-        # instead of a refusal: Open WebUI's native MCP client cannot send
-        # custom headers. The bearer token stays the only authority, and a
-        # client that sends any X-Memory-* header is held to the strict
-        # contract, so a partial set can never inherit a default.
+        # Header-less clients get one pinned scope instead of a refusal. The bearer token stays the only
+        # authority, and any X-Memory-* header holds the client to the strict contract.
         scope = _pinned_scope()
         if scope is None:
             raise ToolError(
@@ -379,8 +361,7 @@ def build_server(
         llm_url=config.llm_url, embed_url=config.embed_url, embed_model=config.embed_model
     )
     graph = graph or GraphStore(config.redis_url)
-    # A fresh secret every start: the token file is the only thing that
-    # distinguishes a local ingest from a tunneled MCP client.
+    # Fresh secret every start: the token file is all that tells a local ingest from a tunneled client.
     token = internal_token or write_token(config.state_dir)
     in_flight = reconciler.in_flight if reconciler is not None else InFlight()
     if reconciler is None:
@@ -834,8 +815,7 @@ def build_server(
                 raise ToolError(
                     f"episode {entry.uuid} is {entry.status}; only failed episodes can be retried"
                 )
-            # The graph may already hold this content: an extraction that landed
-            # after the reconciler gave up must not be submitted a second time.
+            # The graph may already hold this content (extraction landed after the reconciler gave up).
             try:
                 found = await asyncio.to_thread(
                     graph.episode_for, entry.group, entry.content, since=entry.queued_at
@@ -892,9 +872,8 @@ def build_server(
         """Operator-only (the memory CLI): copy one episode to the global group; the source stays."""
 
         async def action(info: CallContext) -> str:
-            # Promotion publishes project content into `global`, which every
-            # project's search includes; a model-callable promote turns a
-            # prompt injection into a cross-project leak, so operators only.
+            # Promotion publishes into `global`, which every project searches; a model-callable promote
+            # would make prompt injection a cross-project leak, so operators only.
             if info.actor != "cli":
                 raise ToolError("promotion is operator-only; ask the human")
             try:
@@ -991,9 +970,7 @@ def build_server(
         """Operator-only (the memory CLI): requeue and resubmit rows the graph no longer holds."""
 
         async def action(info: CallContext) -> str:
-            # Requeuing a corpus spends model tokens at two upstream slots for
-            # hours: an operator decision, not something a prompt-injected
-            # agent may start.
+            # Requeuing a corpus spends model tokens for hours: an operator decision, not an agent's.
             if info.actor != "cli":
                 raise ToolError("reindex is operator-only; ask the human")
             cap = max(1, min(int(limit), REINDEX_MAX))
@@ -1026,10 +1003,7 @@ def build_server(
                             for stamp in episodes.get(row.content, ())
                         )
                     ]
-                    # A group whose episodes exist but almost none match can be
-                    # a wrong graph name or a registry from another host.
-                    # Requeueing thousands of rows on that signal costs hours
-                    # of extraction, so stop and let the operator look.
+                    # Mostly-missing episodes suggest a wrong graph name or another host's registry; stop rather than requeue thousands.
                     suspicious = bool(episodes) and (
                         (len(absent) >= REINDEX_GUARD_MIN_ROWS
                          and len(absent) * 10 >= len(group_rows) * 9)
@@ -1191,10 +1165,8 @@ def build_server(
                     details={"tombstoned_at": entry.tombstoned_at},
                 )
                 return f"Episode {entry.uuid} is already tombstoned ({entry.tombstoned_at})."
-            # A revived row re-extracts into a new episode, so every graph
-            # episode with this exact content is a tombstone target, not just
-            # the uuid recorded earlier. No graph match is fine: the row is
-            # still tombstoned and the status guard keeps it from coming back.
+            # A revived row re-extracts into a new episode, so every graph episode with this content is
+            # a tombstone target. No graph match is fine: the status guard keeps the row dead.
             now = utcnow()
             result = TombstoneResult()
             targets: list[str] = []
@@ -1417,9 +1389,7 @@ class BodyLimitMiddleware:
             if message["type"] == "http.request":
                 received += len(message.get("body") or b"")
                 if received > self.limit:
-                    # Starlette's ExceptionMiddleware sits inside this app and
-                    # renders this as the 413; raising a private exception
-                    # would be caught by its ServerErrorMiddleware as a 500.
+                    # ExceptionMiddleware renders this as the 413; a private exception would surface as a 500.
                     raise HTTPException(
                         status_code=413,
                         detail=f"request body is over {self.limit} bytes",
@@ -1442,8 +1412,7 @@ class MemoryServer:
     mcp: FastMCP
     reconciler: Reconciler
     start_reconciler: bool = True
-    # An explicit bearer token for tests; production leaves it None so the
-    # middleware re-reads the sops secret on every request.
+    # Tests pass a token; production leaves None so the middleware re-reads the sops secret per request.
     mcp_token: str | None = None
 
     def streamable_http_app(self) -> Starlette:
@@ -1467,8 +1436,7 @@ class MemoryServer:
                         print(f"memory reconciler crashed: {exc}", file=sys.stderr)
 
         app.router.lifespan_context = lifespan
-        # The token gate is outermost: an unauthenticated caller is refused
-        # before its body is read or buffered.
+        # Outermost: unauthenticated callers are refused before their body is read.
         return BearerAuthMiddleware(BodyLimitMiddleware(app), token=self.mcp_token)
 
 
@@ -1479,9 +1447,7 @@ def main() -> int:
     except Exception as exc:
         print(f"memory-mcp: failed to initialize: {exc}", file=sys.stderr)
         return 1
-    # Fail closed, but keep listening: a missing secret must be a clear log
-    # line and a 503 on every request, not a service that never starts and
-    # hides the reason behind a restart loop.
+    # Fail closed but keep listening: a missing secret is a clear log line and 503s, not a restart loop.
     try:
         read_token()
     except TokenMissingError as exc:

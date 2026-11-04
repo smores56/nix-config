@@ -1,14 +1,8 @@
 #!/usr/bin/env bash
-# Verify the ghorg bare mirrors and the python-github-backup metadata against
-# GitHub, then write manifests/<date>/{repos.txt,counts.json,run.log}.
-#
-# Runs as root from the GitHub preBackup (daily, incremental) and from the
-# monthly full metadata pass. The token comes from GHORG_GITHUB_TOKEN (the same
-# root-only 0400 file ghorg uses), is exported to gh as GH_TOKEN, and never
-# appears in argv or in the manifest.
-#
-# Exit status is nonzero if any check fails; the manifest is still written so a
-# failed run leaves evidence next to the data it describes.
+# Verify the ghorg mirrors and python-github-backup metadata against GitHub, then
+# write manifests/<date>/{repos.txt,counts.json,run.log}. The token never appears in
+# argv or the manifest. Exits nonzero on any failed check but still writes the
+# manifest, so a failed run leaves evidence.
 set -euo pipefail
 umask 0077
 
@@ -32,10 +26,8 @@ case "${5:-}" in
 esac
 
 token="${GHORG_GITHUB_TOKEN:?GHORG_GITHUB_TOKEN must point at the token file}"
-# pgb writes a checkpoint for a repo's updated_at/pushed_at; the API count can
-# move between the pgb listing and the GraphQL count, and a deleted issue stays
-# on disk (pgb never prunes), so allow a handful of entries per repo. Raise it
-# only with evidence; a large drift hides a real gap.
+# Counts can drift between listings and deleted issues stay on disk (pgb never
+# prunes), so allow a few per repo; a large drift hides a real gap.
 slack="${GITHUB_COUNT_DRIFT:-5}"
 fsck_sample="${GITHUB_FSCK_SAMPLE:-5}"
 mode="${GITHUB_METADATA_MODE:-daily}"
@@ -62,18 +54,13 @@ gh_config=$(mktemp -d)
 cleanup() { rm -rf "$work" "$gh_config"; }
 trap cleanup EXIT
 
-# gh reads GH_TOKEN from the environment; the header is built inside gh, so the
-# value never reaches a command line. GH_CONFIG_DIR keeps a stray root login
-# from changing the host selection.
+# GH_TOKEN stays out of command lines; GH_CONFIG_DIR keeps a stray root login out.
 export GH_TOKEN
 GH_TOKEN=$(cat "$token")
 export GH_CONFIG_DIR="$gh_config"
 
-# forks are out of scope for both ghorg (--skip-forks) and pgb (no -F);
-# archived repos are included by all three and must be in the mirror.
-# `affiliation=owner` matches ghorg's clone scope: without it /user/repos also
-# returns repos the token merely collaborates on or that live in an org, which
-# ghorg never mirrors and pgb cannot fully enumerate (the pull counts differ).
+# Forks are out of scope; archived repos are in. `affiliation=owner` matches ghorg's
+# clone scope: without it the API returns collaborator/org repos ghorg never mirrors.
 if ! gh api --paginate "user/repos?per_page=100&affiliation=owner" \
   --jq '.[] | select(.fork != true) | [.name, .full_name] | @tsv' >"$work/api.tsv"; then
   say "gh api user/repos failed"
@@ -88,10 +75,7 @@ if [ -d "$mirror" ]; then
   for dir in "$mirror"/*/; do
     [ -f "$dir/HEAD" ] || continue
     name=$(basename "$dir")
-    # ghorg --clone-wiki mirrors each wiki as a sibling bare repo named
-    # <repo>.wiki; it is not an API repo, so it belongs with its parent for
-    # the set check and is fscked separately. A real repo whose name ends in
-    # .wiki would collide with this convention (ghorg reserves the suffix).
+    # Wikis are sibling bare repos named <repo>.wiki (suffix reserved by ghorg).
     case "$name" in
       *.wiki)
         printf '%s\n' "${name%.wiki}" >>"$work/wiki.bases"
@@ -117,8 +101,7 @@ if [ ! -s "$work/api.names" ]; then
   bad "gh api returned no repositories for '$owner'"
 fi
 
-# Missing/extra on either side both mean the backup no longer describes the
-# account: a stale mirror (repo deleted/renamed) or a listing gap (scope loss).
+# Missing/extra on either side means the backup no longer describes the account.
 check_set() {
   local label="$1" expected="$2" actual="$3" key="$4"
   comm -23 "$expected" "$actual" >"$work/$key.missing"
@@ -130,8 +113,7 @@ check_set() {
 check_set "ghorg mirror vs gh api" "$work/api.names" "$work/mirror.names" mirror_vs_api
 check_set "pgb metadata vs ghorg mirror" "$work/mirror.names" "$work/meta.names" meta_vs_mirror
 
-# Every wiki mirror must belong to a repo the API still lists; ghorg leaves the
-# old wiki directory behind after its parent is deleted.
+# ghorg leaves a wiki directory behind after its parent repo is deleted.
 if [ -f "$work/wiki.bases" ]; then
   while IFS= read -r base; do
     [ -n "$base" ] || continue
@@ -156,9 +138,8 @@ fi
     done
 } >"$manifest/repos.txt"
 
-# pgb keeps every issue/PR it has ever seen as <number>.json, so the directory
-# count is the full set; compare it with GraphQL (which excludes PRs from
-# `issues` and includes merged ones as CLOSED in `pullRequests`).
+# pgb keeps every issue/PR as <number>.json; GraphQL excludes PRs from `issues` and
+# counts merged PRs as CLOSED.
 : >"$work/counts.tsv"
 while IFS= read -r name; do
   [ -n "$name" ] || continue
@@ -202,9 +183,8 @@ while IFS= read -r name; do
   printf '%s\t%s\t%s\t%s\t%s\n' "$name" "$pgb_issues" "$api_issues" "$pgb_pulls" "$api_pulls" >>"$work/counts.tsv"
 done <"$work/meta.names"
 
-# pgb writes one checkpoint per repo/resource on every incremental run, even
-# when nothing changed. A checkpoint older than this run's marker means pgb
-# skipped that repo (rate limit, crash, or a scope change).
+# pgb writes a checkpoint per repo/resource every incremental run; an older one means
+# it skipped that repo.
 if [ "$require_last" = 1 ]; then
   marker="${GITHUB_RUN_MARKER:-}"
   if [ -z "$marker" ] || [ ! -e "$marker" ]; then
@@ -224,8 +204,7 @@ if [ "$require_last" = 1 ]; then
   fi
 fi
 
-# A bare mirror is only useful if its object graph is intact. Sampling keeps a
-# cold run bounded; set GITHUB_FSCK_SAMPLE to the repo count to check all.
+# Sampling bounds a cold run; set GITHUB_FSCK_SAMPLE to the repo count to check all.
 : >"$work/fsck.tsv"
 mapfile -t mirror_repos < <(
   cat "$work/mirror.names" "$work/wiki.names" | sort -u

@@ -1,7 +1,6 @@
-# The key files on disk that ssh (`IdentityFile`), git signing and signature
-# verification read. The public halves are committed in
-# modules/lib/yubikey-keys.nix (public by definition), so a fresh machine needs
-# no vault round trip to get them; the private halves stay on the YubiKeys.
+# Key files on disk read by ssh (`IdentityFile`), git signing and signature verification. Public
+# halves are committed in modules/lib/yubikey-keys.nix so a fresh machine needs no vault round
+# trip; private halves stay on the YubiKeys.
 {
   config,
   lib,
@@ -12,8 +11,6 @@ let
   cfg = config.user;
   expandHome = lib.replaceStrings [ "~" ] [ "$HOME" ];
 
-  # One entry per YubiKey and credential. The public halves are committed, so
-  # a fresh host writes the files ssh/git need without the key inserted.
   yubikeyKeys = import ../lib/yubikey-keys.nix;
   yubikeyIdentities = map (k: {
     key = "~/.config/ssh-sk/${k.key}";
@@ -22,8 +19,7 @@ let
 
   pubkeys = yubikeyIdentities;
 
-  # Commit-signing keys from sops, trusted on every host for their own
-  # account only; their public halves are committed, so no file is needed.
+  # Commit-signing keys from sops, trusted on every host for their own account only.
   signingKeys = import ../lib/signing-keys.nix;
   signingPrincipals = [
     {
@@ -37,8 +33,7 @@ let
   ];
   allowedSigners = "~/.config/ssh/allowed_signers";
 
-  # Signatures only verify against keys listed here: the two account keys, each
-  # for its own principal, and nothing retired.
+  # Signatures verify only against the two account keys, each for its own principal.
   allowedSignersWriter = pkgs.writeShellApplication {
     name = "ssh-allowed-signers";
     runtimeInputs = [ pkgs.coreutils ];
@@ -57,10 +52,8 @@ let
     '';
   };
 
-  # Writes the committed public halves and refreshes allowed_signers. This is
-  # declarative: a changed key in Nix replaces the file at the next activation.
-  # Activation ignores failures (it may run before ~/.ssh is writable); bootstrap
-  # surfaces them.
+  # Declarative: a changed key in Nix replaces the file at the next activation. Failures are
+  # ignored (activation may precede a writable ~/.ssh); bootstrap surfaces them.
   sshPubKeys = pkgs.writeShellApplication {
     name = "ssh-pub-keys";
     runtimeInputs = [
@@ -68,8 +61,7 @@ let
       pkgs.openssh
     ];
     text = ''
-      # Matches "<type> <base64> [comment]" and parses with ssh-keygen, so a
-      # malformed literal never becomes a file ssh and git will trust.
+      # Matches "<type> <base64> [comment]" and parses with ssh-keygen so a malformed literal never becomes a trusted file.
       write_key() {
         local dest=$1 pubkey=$2 dir tmp
         dir=$(dirname "$dest")
@@ -94,17 +86,14 @@ let
         }
       '') pubkeys}
       ${lib.getExe allowedSignersWriter}
-      # Retired identities: the personal and employer software keys, and the
-      # FIDO2 signing credentials (commits sign with the sops keys). No host may
-      # keep offering or trusting a stale public half of any of them.
+      # Retired identities (personal/employer software keys, FIDO2 signing credentials): no host may keep offering or trusting a stale public half.
       rm -f "$HOME/.ssh/id_personal.pub" "$HOME/.ssh/id_work.pub" "$HOME/.config/ssh/id_work.pub" \
         "$HOME"/.config/ssh-sk/k*/signing.pub
 
       exit "$failed"
     '';
   };
-  # Identities normally come from the agent/security key. Work hosts may keep
-  # gcloud's one conventional key file, which is managed by the Google CLI.
+  # Work hosts may keep gcloud's one conventional key file, managed by the Google CLI.
   sshNoPrivateKeys = pkgs.writeShellApplication {
     name = "ssh-no-private-keys";
     runtimeInputs = [
@@ -150,9 +139,7 @@ in
     run ${lib.getExe sshPubKeys} || true
   '';
 
-  # Move the public material out of ~/.ssh (zero key/config storage there).
-  # The only files left are the generated public ssh config and the
-  # per-session forwarded-agent sockets.
+  # Public material lives outside ~/.ssh (no key/config storage there).
   home.activation.sshLayout = lib.hm.dag.entryAfter [ "sshPubKeys" ] ''
     ${pkgs.coreutils}/bin/mkdir -p "$HOME/.config/ssh"
     if [ -f "$HOME/.ssh/known_hosts" ] && [ ! -e "$HOME/.config/ssh/known_hosts" ]; then

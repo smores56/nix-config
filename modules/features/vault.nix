@@ -1,9 +1,6 @@
-# `vault <cmd>`: unlock the Cryptomator vault for exactly one command.
-#
-# Plaintext exists only inside that session. The helper mounts into a temporary
-# directory, runs the command there, and unmounts on exit, so nothing stays
-# mounted between uses; agent-sandbox masks ~/Sync (which contains the vault) for
-# the whole time, and the server itself never unlocks anything.
+# `vault <cmd>`: unlock the Cryptomator vault for exactly one command. Plaintext exists only in a
+# temporary mount that is unmounted on exit; agent-sandbox masks ~/Sync (which holds the vault),
+# and the server never unlocks anything.
 {
   config,
   lib,

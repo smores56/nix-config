@@ -19,9 +19,8 @@ from pathlib import Path
 from typing import Iterator, Mapping
 
 DB_NAME = "registry.sqlite"
-# Bumped whenever the schema below changes. A database one or more versions
-# behind is migrated in place on open (`_MIGRATIONS`); anything older, newer or
-# unversioned is refused rather than guessed at.
+# Bumped on every schema change. One or more versions behind migrates in place on open (`_MIGRATIONS`);
+# older, newer or unversioned is refused.
 SCHEMA_VERSION = 2
 LOOKUP_CHUNK = 500
 
@@ -192,10 +191,8 @@ def _ensure_schema(conn: sqlite3.Connection, db_path: Path) -> None:
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'episodes'"
     ).fetchone()
     if version == 0 and has_tables is None:
-        # DDL autocommits under sqlite3's legacy isolation, so the schema and
-        # its version have to ride in one explicit transaction: otherwise a
-        # kill before the PRAGMA leaves an unversioned database that this code
-        # then refuses forever.
+        # DDL autocommits under legacy isolation, so schema and version share one explicit transaction;
+        # a kill before the PRAGMA would otherwise leave an unversioned database refused forever.
         conn.executescript(
             "BEGIN IMMEDIATE;\n" + _SCHEMA + f"\nPRAGMA user_version = {SCHEMA_VERSION};\nCOMMIT;"
         )

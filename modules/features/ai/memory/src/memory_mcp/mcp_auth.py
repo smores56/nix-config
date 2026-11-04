@@ -4,7 +4,7 @@ The Cloudflare Tunnel forwards raw TCP to the wrapper's loopback port, so every
 tunneled client also reaches Starlette as `request.client.host == "127.0.0.1"`;
 being on loopback is not an authority. Every request to the MCP listener
 therefore has to carry `Authorization: Bearer <token>`, where the token is the
-`memory-mcp-token` sops secret (`modules/nixos/secrets.nix`), rendered at
+`memory-mcp-token` sops secret (`modules/nixos/secrets-common.nix`), rendered at
 `/run/secrets/memory-mcp-token` root-owned and group-readable by `memory`. The
 service, the user's shim, the CLI, and the ingest units all read that one file.
 

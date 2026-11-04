@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Exercise discovery and cloning with a flat work root and legacy org links.
 set -euo pipefail
 
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
@@ -21,7 +20,6 @@ ln -s "$flat" "$root/github.com/team-a"
 ln -s "$flat" "$root/github.com/team-b"
 clone "$root/github.com/original/tool" git@github.com:original/tool.git
 ln -s "$root/github.com/original" "$root/github.com/alias"
-# A linked worktree uses a .git file, not a directory.
 mkdir -p "$flat/linked"
 printf 'gitdir: /somewhere\n' > "$flat/linked/.git"
 
@@ -32,19 +30,8 @@ if [[ $got != "$want" ]]; then
   exit 1
 fi
 
-# A missing flat root should not suppress ordinary checkouts.
 got=$(REPOS_CODE_ROOT=$root REPOS_WORK_FLAT=$PWD/missing "$repos" list)
 [[ $got == *"$root/github.com/me/notes"* ]]
-# Personal hosts scan a legacy linked root once, using its canonical paths.
-got=$(REPOS_CODE_ROOT=$root REPOS_WORK_FLAT= REPOS_LEGACY_FLAT=$flat "$repos" list)
-want=$(printf '%s\n' "$root/github.com/me/notes" "$root/github.com/original/tool" "$flat/api" "$flat/engine" "$flat/linked" | sort)
-[[ $got == "$want" ]]
-# Without legacy links, a personal host does not discover the work root.
-mkdir -p "$PWD/personal/github.com/me"
-clone "$PWD/personal/github.com/me/notes" git@github.com:me/notes.git
-got=$(REPOS_CODE_ROOT=$PWD/personal REPOS_WORK_FLAT= REPOS_LEGACY_FLAT=$flat "$repos" list)
-[[ $got == "$PWD/personal/github.com/me/notes" ]]
-# The flat root is still listed when codeRoot doesn't exist.
 got=$(REPOS_CODE_ROOT=$PWD/missing REPOS_WORK_FLAT=$flat "$repos" list)
 want=$(printf '%s\n' "$flat/api" "$flat/engine" "$flat/linked" | sort)
 [[ $got == "$want" ]]

@@ -20,15 +20,13 @@ DEFAULT_REDIS_URL = "redis://127.0.0.1:6379"
 SOCKET_TIMEOUT = 5.0
 RELATES_TO = "RELATES_TO"
 
-# Every episode the same content produced, newest first. A revival re-extracts,
-# so the old tombstoned episode and the new one both exist: presence must bind
-# to the newest, and a tombstone must cover all of them.
+# Every episode this content produced, newest first: a revival leaves old tombstoned and new episodes,
+# so presence binds to the newest and a tombstone covers all.
 EPISODIC_MATCHES_QUERY = (
     "MATCH (e:Episodic) WHERE e.group_id=$g AND e.content=$c "
     "RETURN e.uuid, e.created_at ORDER BY e.created_at DESC"
 )
-# One query per group instead of one per row: a reindex compares the whole
-# active set, and thousands of round-trips do not fit a tool deadline.
+# One query per group: thousands of per-row round-trips do not fit a tool deadline.
 EPISODIC_CONTENTS_QUERY = (
     "MATCH (e:Episodic) WHERE e.group_id=$g RETURN e.content, e.created_at"
 )

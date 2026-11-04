@@ -32,9 +32,8 @@ let
 
   mkWorkspaceBindings = binding: actionFn: mkPrefixedBindings binding (lib.range 1 9) actionFn;
 
-  # Patterns are case-insensitive regexes over monitor names; the first
-  # connected one wins. Work prefers any external, so with one external plus
-  # the open laptop, work takes the external and comms the laptop.
+  # Case-insensitive regexes over monitor names; first connected wins. Work prefers any external,
+  # so with one external plus the open laptop, work takes the external and comms the laptop.
   monitors = {
     main = "^dell u3425we";
     side = "^27e6qca";
@@ -56,7 +55,7 @@ let
     ];
   };
 
-  # Pinned apps by bundle id; anything not listed is never moved by layouts.
+  # Pinned apps by bundle id; unlisted apps are never moved by layouts.
   apps = {
     chrome = "com.google.Chrome";
     kitty = "net.kovidgoyal.kitty";
@@ -64,9 +63,8 @@ let
     mail = "com.apple.mail";
     calendar = "com.apple.iCal";
   };
-  # Consumed by aerospace_layout.py; a nested two-app list becomes a split
-  # perpendicular to its workspace root. One layout serves docked and laptop:
-  # undocked, both workspaces fall back to the built-in display.
+  # Consumed by aerospace_layout.py; a nested two-app list becomes a split perpendicular to its
+  # workspace root. Undocked, both workspaces fall back to the built-in display.
   layoutSpec = {
     workspaces = [
       {
@@ -101,14 +99,12 @@ let
         ${pkgs.python3}/bin/python3 -I ${./aerospace_layout.py} check "$specPath"
         cp "$specPath" "$out"
       '';
-  # Store paths keep the tool independent of exec-and-forget's PATH.
   aerospaceLayout = pkgs.writeShellScriptBin "aerospace-layout" ''
     export AEROSPACE_LAYOUT_SPEC=${layoutSpecFile}
     export AEROSPACE_BIN=${config.programs.aerospace.package}/bin/aerospace
     exec ${pkgs.python3}/bin/python3 -I ${./aerospace_layout.py} "$@"
   '';
-  # exec-and-forget discards output, so surface problems as a notification;
-  # success stays silent.
+  # exec-and-forget discards output, so problems surface as a notification.
   applyLayout =
     let
       apply = pkgs.writeShellScript "aerospace-layout-apply" ''
@@ -128,12 +124,10 @@ in
 
     settings = {
       config-version = 2;
-      # Version 2 no longer infers persistent workspaces from the bindings;
-      # keep 1-9 so empty pinned workspaces stay on their monitors.
+      # Version 2 no longer infers persistent workspaces from bindings; keep 1-9 so empty pinned ones stay on their monitors.
       persistent-workspaces = map toString (lib.range 1 9);
       start-at-login = false;
-      # Replacing PATH drops AeroSpace's Homebrew default, so keep it; the nix
-      # profile lets bare tools in exec-and-forget resolve.
+      # Replacing PATH drops AeroSpace's Homebrew default, so keep it; the nix profile lets bare tools resolve.
       exec = {
         env-vars.PATH = "${config.home.profileDirectory}/bin:/opt/homebrew/bin:/opt/homebrew/sbin:\${PATH}";
       };
@@ -143,8 +137,7 @@ in
         "layout tiles"
         applyLayout
       ];
-      # Keyboard focus can now cross monitors; keep the pointer with it so
-      # scrolling targets the focused monitor. Lazy: no-op if already there.
+      # Keep the pointer with keyboard focus across monitors so scrolling targets the focused one.
       on-focused-monitor-changed = [ "move-mouse monitor-lazy-center" ];
 
       workspace-to-monitor-force-assignment = pinnedWorkspaces;
@@ -167,7 +160,6 @@ in
           cmd-ctrl-0 = "balance-sizes";
           cmd-ctrl-e = "layout tiles horizontal vertical";
           cmd-ctrl-a = "layout accordion horizontal vertical";
-          # r for restore; no macOS or app default claims cmd-ctrl-r.
           cmd-ctrl-r = applyLayout;
         }
         // sharedBindings

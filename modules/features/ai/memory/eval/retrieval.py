@@ -237,8 +237,7 @@ def fts_search(connection: sqlite3.Connection, query: str, limit: int) -> list[s
 
 
 def cli_command(group: str, query: str, limit: int) -> list[str]:
-    # `--group` is a global option: argparse only accepts it before the
-    # subcommand, unlike the `memory search --group` form in older docs.
+    # `--group` is a global option: argparse only accepts it before the subcommand.
     return ["memory", "--json", "--group", group, "search", "--limit", str(limit), query]
 
 

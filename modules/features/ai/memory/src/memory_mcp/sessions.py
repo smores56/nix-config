@@ -352,10 +352,8 @@ def bounded_transcript(messages: tuple[Message, ...] | list[Message]) -> tuple[s
             blocks.append("\n\n".join(tail_parts))
         return "\n\n".join(block for block in blocks if block)
 
-    # The first message states the task and the last states the outcome; those
-    # stay. Context between them is dropped in that order of value: extra head
-    # messages first (the tail is the recent state), then the oldest tail
-    # messages.
+    # Keep the first message (task) and last (outcome); drop extra head messages first,
+    # then the oldest tail messages.
     text = assemble()
     while len(text) > MAX_TRANSCRIPT_CHARS:
         if len(head_parts) > 1:
@@ -578,8 +576,7 @@ async def build_session_plan(
         if isinstance(outcome, _Record):
             records.append(outcome)
             continue
-        # One bad session must never abort the run; it becomes a skip with the
-        # exception type as its reason.
+        # One bad session becomes a skip with the exception type as reason, never an abort.
         records.append(
             _Record(
                 skip={
@@ -785,8 +782,7 @@ def session_observer(report: dict[str, object]) -> Callable[[Episode, str], None
             before = int(item["failed"])
             item["failed"] = before + 1
             if before == 0:
-                # `failed` in the report counts sessions with a failure, matching
-                # the plan-time total; the printed line derives it from items.
+                # `failed` counts sessions with a failure, matching the plan-time total.
                 report["failed"] = int(report.get("failed") or 0) + 1
             item["error"] = item["error"] or f"episode {outcome}"
 
@@ -811,8 +807,7 @@ def summary_line(report: dict[str, object]) -> str:
     parts = [f"sessions: {sampled} sampled", f"{int(report.get('summarized') or 0)} summarized"]
     if skipped:
         parts.append(f"{skipped} skipped")
-    # Derive failures from the items so a post-plan observation is included; the
-    # plan-time field can be stale.
+    # Derive from items: the plan-time field can be stale.
     items = report.get("items")
     if isinstance(items, list):
         failed = sum(
@@ -841,8 +836,7 @@ def summary_line(report: dict[str, object]) -> str:
         parts.append(f"${float(cost):.4f}")
     else:
         parts.append("cost unknown")
-    # Recompute from the items: a post-plan failure (a refused submission) can
-    # flip an item after the totals were computed.
+    # Recompute from items: a post-plan failure can flip an item.
     failed_cost: object
     if isinstance(items, list):
         known = [

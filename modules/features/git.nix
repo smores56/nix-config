@@ -6,16 +6,14 @@
 }:
 let
   cfg = config.user;
+  secretPath = import ../lib/secret-path.nix config;
 
   inherit (cfg) work;
 
-  # Each GitHub account signs with its own sops key (modules/lib/signing-keys.nix):
-  # /run/secrets on NixOS, the home's sops path on Darwin. Plain files, so git
-  # needs no agent, wrapper or PIN, and a host signs whether or not anyone is
-  # connected.
+  # Each GitHub account signs with its own sops key (modules/lib/signing-keys.nix): plain files,
+  # so no agent, wrapper or PIN, and a host signs whether or not anyone is connected.
   sopsSecrets = config.sops.secrets or { };
-  signingKeyPath = name: sopsSecrets.${name}.path or "/run/secrets/${name}";
-  personalSigningKey = signingKeyPath "github-personal-signing-key";
+  personalSigningKey = secretPath "github-personal-signing-key";
 
   # GitHub owners are case-insensitive but hasconfig's wildmatch is not, so
   # spell every letter as a [xX] class.
@@ -24,9 +22,7 @@ let
     lib.concatMapStrings (
       c: if lib.toLower c != lib.toUpper c then "[${lib.toLower c}${lib.toUpper c}]" else c
     ) (lib.stringToCharacters s);
-  # Every remote spelling of a github.com owner that git, gh and hand-pasted
-  # URLs produce. Prefixes are explicit: a `*github.com` wildcard would also
-  # match lookalike hosts.
+  # Every remote spelling of a github.com owner; prefixes are explicit since `*github.com` would match lookalike hosts.
   ownerRemotes =
     owner:
     let
@@ -42,10 +38,9 @@ let
       "https://github.com/${o}/**"
       "https://*@github.com/${o}/**"
     ];
-  # Keyed on the remote URL (not the checkout path) so clones, worktrees and
-  # checkouts anywhere get it; hasconfig is evaluated during `git clone` too.
-  # Any matching remote applies, so a fork with a work `upstream` is a work
-  # repo. An included file must not set remote URLs (git refuses that).
+  # Keyed on the remote URL, not the checkout path, so clones and worktrees anywhere match
+  # (hasconfig is evaluated during `git clone` too). Any matching remote applies: a fork with a
+  # work `upstream` is a work repo. An included file must not set remote URLs.
   ownerIncludes =
     owner: settings:
     let
@@ -58,9 +53,8 @@ let
       inherit path;
     }) (ownerRemotes owner);
 
-  # Read by `worktrees new`. Every key is always written (null unticketed as
-  # empty, meaning "ticket required") so an owner include fully replaces the
-  # global scheme instead of inheriting parts of it.
+  # Read by `worktrees new`. Every key is always written (unticketed as empty = "ticket required")
+  # so an owner include fully replaces the global scheme.
   branchSettings = naming: {
     branchTemplate = naming.template;
     branchTemplateUnticketed = toString naming.unticketed;
@@ -73,7 +67,7 @@ let
     # The work key is deployed only where the work account's bundle lives;
     # elsewhere a work commit falls back to the personal key.
     // lib.optionalAttrs (sopsSecrets ? github-work-signing-key) {
-      signingkey = signingKeyPath "github-work-signing-key";
+      signingkey = secretPath "github-work-signing-key";
     };
     smores = {
       inherit (work) flow;
@@ -83,9 +77,7 @@ let
   # One include per listed owner, never a pattern: an org anyone can register
   # must not pick up the work identity, token or signing key.
   workIncludes = lib.concatMap (owner: ownerIncludes owner workSettings) work.githubOwners;
-  # Only repos the personal account owns get the local flow; third-party
-  # checkouts get no flow at all. The signing key rides along so the include is
-  # self-contained, matching the global default it replaces.
+  # Only repos the personal account owns get the local flow; the signing key rides along so the include is self-contained.
   personalIncludes = ownerIncludes cfg.githubUser {
     smores.flow = "local";
     user.signingkey = personalSigningKey;
@@ -112,7 +104,6 @@ in
           pv = "pr view";
         };
         editor = "hx";
-        # Both accounts reach GitHub only through their PAT.
         git_protocol = "https";
       };
     };
@@ -150,8 +141,6 @@ in
           commit.gpgsign = true;
           gpg.format = "ssh";
           fetch.prune = true;
-          # Repo tooling reads smores.* instead of re-deriving the identity
-          # from the remote.
           smores = branchSettings cfg.branchNaming;
         }
       ];

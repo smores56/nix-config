@@ -1,7 +1,6 @@
-# Wallpapers from the durable tree on smortress: rsync one curated collection
-# into a local cache, bucket each image by its measured aspect, and set one per
-# display. The client owns the cache, so an unreachable source cannot blank the
-# current wallpaper.
+# Wallpapers from the durable tree on smortress: rsync one collection into a local cache, bucket
+# images by measured aspect, set one per display. The client owns the cache so an unreachable
+# source cannot blank the current wallpaper.
 {
   config,
   lib,
@@ -11,14 +10,11 @@
 let
   inherit (pkgs.stdenv.hostPlatform) isLinux;
 
-  # The durable tree on smortress is the only source; the sync is one-way and
-  # never writes back.
   source = "smortress:/var/lib/data/wallpapers/";
   cacheDir = "${config.home.homeDirectory}/.cache/wallpapers";
   intervalHours = 3;
 
-  # The body lives in a shell file so editors and diffs see it as shell; the
-  # wrapper supplies errexit/nounset/pipefail and a pinned PATH.
+  # Body in a shell file so editors see shell; the wrapper adds errexit/nounset/pipefail and a pinned PATH.
   script =
     builtins.replaceStrings
       [ "@PLATFORM@" "@SOURCE@" "@CACHE@" ]
@@ -42,8 +38,7 @@ let
     ++ lib.optionals isLinux [
       pkgs.imagemagick
       pkgs.util-linux
-      # The session's binaries, not whatever the user manager PATH happens to
-      # hold; niri also pins the IPC version the script speaks to.
+      # The session's binaries, not the user manager PATH; niri also pins the IPC version the script speaks.
       config.programs.niri.package
       config.programs.noctalia.package
     ]
@@ -54,20 +49,17 @@ in
 {
   home.packages = [ wallpapers ];
 
-  # niri-session imports WAYLAND_DISPLAY and NIRI_SOCKET into the user manager,
-  # which is how niri and noctalia find their sockets from this unit.
+  # niri-session imports WAYLAND_DISPLAY and NIRI_SOCKET into the user manager.
   systemd.user.services.wallpapers = lib.mkIf isLinux {
     Unit = {
       Description = "Rotate wallpapers from the durable tree";
       After = [ "graphical-session.target" ];
-      # The login start races the compositor/agent; retry a bounded number of
-      # times rather than losing the run until the three-hour timer.
+      # The login start races the compositor/agent: retry rather than lose the run until the three-hour timer.
       StartLimitIntervalSec = 600;
       StartLimitBurst = 10;
     };
     Service = {
       Type = "oneshot";
-      # A wedged rsync must not pin the timer forever.
       TimeoutStartSec = "20min";
       Restart = "on-failure";
       RestartSec = 30;
@@ -75,23 +67,19 @@ in
       Environment = [ "YK_ENSURE_NO_PROMPT=1" ];
       ExecStart = "${wallpapers}/bin/wallpapers sync";
     };
-    # The login run: graphical-session.target is started by the session manager.
     Install.WantedBy = [ "graphical-session.target" ];
   };
 
   systemd.user.timers.wallpapers = lib.mkIf isLinux {
     Unit.Description = "Rotate wallpapers from the durable tree";
     Timer = {
-      # Paces the repeats only; it cannot express "at login" (that is the
-      # service's WantedBy above), and OnStartupSec would fire from the
-      # lingering user manager at boot, before any compositor exists.
+      # Paces repeats only; OnStartupSec would fire from the lingering user manager at boot, before any compositor.
       OnUnitInactiveSec = "${toString intervalHours}h";
     };
     Install.WantedBy = [ "timers.target" ];
   };
 
-  # launchd has no timer unit; RunAtLoad plus StartInterval covers login and
-  # the schedule, and launchd runs one missed interval on wake.
+  # RunAtLoad plus StartInterval covers login and schedule; launchd runs one missed interval on wake.
   launchd.agents.wallpapers = lib.mkIf (!isLinux) {
     enable = true;
     config = {

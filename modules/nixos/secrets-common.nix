@@ -6,6 +6,14 @@
   lib,
   ...
 }:
+let
+  # Hosts set their own `sops.defaultSopsFile`, so common secrets name theirs.
+  userOwned = {
+    sopsFile = ../../secrets/common.yaml;
+    owner = config.machine.username;
+    mode = "0400";
+  };
+in
 {
   # A host's age identity is its SSH host key, delivered out of band (the
   # installer copies `secrets/hosts/<host>/` into `/etc/ssh`). smortress uses
@@ -13,45 +21,22 @@
   sops.age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
 
   sops.secrets = {
-    # The personal account's bundle: an owner-scoped fine-grained PAT for gh,
-    # HTTPS git and Maki, and the commit-signing key git uses for every
-    # non-work repo. Readable by the user because git and Maki run as that
-    # uid; the sandbox binds both. The work bundle lives only on the work Mac
-    # (modules/hosts/smoreswork/sops.nix), so NixOS hosts hold no work
-    # credential.
-    github-personal-pat = {
-      sopsFile = ../../secrets/common.yaml;
-      owner = config.machine.username;
-      mode = "0400";
-    };
-    github-personal-signing-key = {
-      sopsFile = ../../secrets/common.yaml;
-      owner = config.machine.username;
-      mode = "0400";
-    };
+    # Personal bundle: owner-scoped PAT for gh/HTTPS git/Maki and the commit-signing key
+    # for non-work repos. User-readable because git and Maki run as that uid. The work
+    # bundle lives only on the work Mac (modules/hosts/smoreswork/sops.nix).
+    github-personal-pat = userOwned;
+    github-personal-signing-key = userOwned;
 
-    # Scoped Immich API key for the sandboxed agent (asset read/upload, album
-    # read/create). The sandbox launcher reads it as the user and binds it inside
-    # the boundary at /run/agent/immich-key; declaring it here is what makes
-    # sops-nix materialise /run/secrets/immich-agent-api-key at all.
-    immich-agent-api-key = {
-      sopsFile = ../../secrets/common.yaml;
-      owner = config.machine.username;
-      mode = "0400";
-    };
+    # The sandbox launcher binds it at /run/agent/immich-key; declaring it here makes
+    # sops-nix materialise /run/secrets/immich-agent-api-key.
+    immich-agent-api-key = userOwned;
 
-    # Bearer token for the memory MCP listener. Every personal host runs the
-    # shim/CLI that presents it, so it lives in common.yaml and the user owns the
-    # file. Where the listener runs, the `memory` group needs read access too:
-    # the service rejects every call with 503 when it cannot read the token.
-    memory-mcp-token = {
-      sopsFile = ../../secrets/common.yaml;
-      owner = config.machine.username;
+    # Every personal host's shim/CLI presents it, so it lives in common.yaml. Where the
+    # listener runs, `memory` needs read access or every call returns 503.
+    memory-mcp-token = userOwned // {
       group = if config.systemd.services ? memory-mcp then "memory" else "users";
       mode = "0440";
-      # Open WebUI embeds the token in its tool-server config, so it has to
-      # restart with the listener or every memory call 401s until someone
-      # notices.
+      # Open WebUI embeds the token, so it must restart with the listener or calls 401.
       restartUnits =
         lib.optional (config.systemd.services ? memory-mcp) "memory-mcp.service"
         ++ lib.optional (config.systemd.services ? open-webui) "open-webui.service";
@@ -59,10 +44,7 @@
 
     # maki's hosted-inference key. The fish init exports it from this path, so
     # the user must be able to read it on every personal host.
-    neuralwatt-api-key = {
-      sopsFile = ../../secrets/common.yaml;
-      owner = config.machine.username;
-      mode = "0400";
+    neuralwatt-api-key = userOwned // {
       # Only smortress runs the memory gateway and Open WebUI, and both read the
       # credential at start; naming a unit other hosts lack would fail their
       # activation.
@@ -71,27 +53,20 @@
         ++ lib.optional (config.systemd.services ? open-webui) "open-webui.service";
     };
 
-    # SHA-512 crypt hash of the account password. `neededForUsers` decrypts it
-    # into /run/secrets-for-users before the users activation, which is the only
-    # stage that can read hashedPasswordFile. Root-owned by assertion in
-    # sops-nix; the plaintext password exists only off-site.
+    # `neededForUsers` decrypts into /run/secrets-for-users before users activation, the
+    # only stage that can read hashedPasswordFile; sops-nix requires it root-owned.
     smores-password-hash = {
-      sopsFile = ../../secrets/common.yaml;
+      inherit (userOwned) sopsFile;
       neededForUsers = true;
     };
 
     # Maki's web search key. The fish init exports it as TINYFISH_API_KEY on
     # every NixOS host, so the user must be able to read it.
-    tinyfish-api-key = {
-      sopsFile = ../../secrets/common.yaml;
-      owner = config.machine.username;
-      mode = "0400";
-    };
+    tinyfish-api-key = userOwned;
   };
 
-  # One account, declared rather than mutable: the sops hash is re-applied on
-  # every activation and any account not declared here is removed. This is what
-  # makes the password survive reinstalls instead of being a one-time `passwd`.
+  # Declared, not mutable: the hash is re-applied every activation and undeclared
+  # accounts are removed, so the password survives reinstalls.
   users.mutableUsers = false;
   users.users.${config.machine.username}.hashedPasswordFile =
     config.sops.secrets.smores-password-hash.path;

@@ -3,8 +3,7 @@
   ...
 }:
 let
-  # Only directories that are actually skills (contain SKILL.md) deploy —
-  # stray dirs (__pycache__, editor droppings) would ship as broken skills.
+  # Stray dirs (__pycache__, editor droppings) would ship as broken skills.
   sharedSkillNames =
     let
       entries = lib.filterAttrs (_: type: type == "directory") (builtins.readDir ./.);

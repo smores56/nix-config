@@ -1,16 +1,32 @@
-# Intel laptop: shared CLI/user tooling plus the Niri desktop.
+# smorespro: Intel laptop, niri desktop with a fingerprint reader.
 {
+  system = "x86_64-linux";
+  username = "smores";
+  nixos = true;
+  home = true;
+
   profiles = [
     ../../profiles/cli.nix
     ../../profiles/user-base.nix
     ../../profiles/ai-tools.nix
     ../../profiles/linux-desktop.nix
   ];
-  # Host-local modules (read by modules/flake/configurations.nix): the LUKS +
-  # Secure Boot chain and the greeter exist only on this machine.
-  nixos = [
+  nixosModules = [
     ./boot.nix
     ./greeter.nix
-    ../../nixos/secrets-smorespro.nix
+    ./fprintd.nix
+    ./secrets.nix
   ];
+
+  nixosOptions = {
+    # YubiKey sudo without an sshd: pam_rssh dials the local fido2-agent.
+    sudoKey.enable = true;
+  };
+
+  homeOptions = {
+    # Ciphertext copy of the vault under ~/Sync; only Cryptomator unlocks it.
+    syncthing = {
+      device = "smorespro";
+    };
+  };
 }

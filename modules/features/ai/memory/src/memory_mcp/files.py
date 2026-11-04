@@ -28,9 +28,8 @@ MAX_SNIPPET_CHARS = 240
 MAX_OUTPUT_CHARS = 12_000
 RG_TIMEOUT = 15
 
-# Directories that never hold personal knowledge, plus ripgrep's own
-# runaway cases. Hidden directories are skipped by default, so `.ssh` and
-# `.gnupg` never enter a search.
+# Directories that never hold personal knowledge, plus ripgrep runaway cases.
+# Hidden dirs are skipped by default, so `.ssh` and `.gnupg` never enter a search.
 IGNORE_GLOBS = (
     "!.git/**",
     "!**/.git/**",
@@ -146,8 +145,7 @@ def _argv(*extra: str) -> list[str]:
         "--threads",
         "2",
     ]
-    # Every glob needs its own `-g`; bare patterns would be read as the search
-    # pattern and paths.
+    # Each glob needs its own `-g`; bare patterns would be read as the pattern and paths.
     for glob in (*IGNORE_GLOBS, *SECRET_GLOBS):
         args += ["-g", glob]
     return [*args, *extra]

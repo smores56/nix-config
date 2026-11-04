@@ -39,7 +39,7 @@ routine.
 Modules are composed by profiles, not auto-imported. `modules/flake/configurations.nix`
 reads each host's `default.nix`, which lists profile files explicitly; each
 profile contributes paths to the home plane, the NixOS plane, or both. The same
-file may list host-local modules under `home` and `nixos` for a concern that only one
+file may list host-local modules under `homeModules` and `nixosModules` for a concern that only one
 machine has (smorespro's LUKS/Secure Boot chain and greeter); those names never
 reach `machine.profiles`. Place files by concern, not by host. The
 `linux-desktop` profile deliberately ships no display manager: a graphical host
@@ -49,7 +49,7 @@ adds its greeter as a host-local module.
 |---|---|
 | `modules/options.nix` | `machine.*` host facts, `user.*` identity/preferences, and the server-profile assertion |
 | `modules/profiles/` | six opt-in profiles: `cli`, `user-base`, `ai-tools`, `linux-desktop`, `darwin-work`, `server` |
-| `modules/hosts/` | per-host `meta.nix` (facts + option values), `default.nix` (explicit profile list plus optional `home`/`nixos` host-local modules), optional `hardware.nix`, `disko.nix`, and those host-only modules |
+| `modules/hosts/` | per-host `default.nix` (facts, option values, explicit profile list, optional `homeModules`/`nixosModules` host-local modules), optional `hardware.nix`, `disko.nix`, `secrets.nix`, and those host-only modules |
 | `modules/home.nix` | home-manager base (fonts, nix.conf, darwin helpers) |
 | `modules/features/` | cross-platform home-manager modules (shell, editor, git, packages, theme, ai) |
 | `modules/features/syncthing.nix`, `modules/syncthing-devices.nix` | Syncthing folder carrying the Cryptomator vault as ciphertext; the device table is a plain attrset of public device IDs |
@@ -58,19 +58,22 @@ adds its greeter as a host-local module.
 | `modules/nixos/` | NixOS system modules (base, desktop, networking, ssh, etc.) |
 | `modules/nixos/radicale.nix`, `open-webui.nix`, `navidrome.nix` | public tunnel apps with their own auth: CalDAV/CardDAV, chat, music |
 | `modules/nixos/restic-backup.nix` | restic repos, schedule, retention and the Immich db dump |
-| `modules/flake/` | flake-parts modules (configurations, checks, formatter) |
-| `modules/lib/` | helper libraries |
+| `modules/flake/` | flake-parts modules: configurations, checks, apps (`apps.nix`, `apps/`), formatter, nixpkgs |
+| `modules/lib/` | helpers: sandbox lists, key tables, `secret-path.nix`, `hardening.nix` |
+| `modules/ports.nix` | loopback port table shared by services and the tunnel |
+| `pkgs/overlays.nix` | nixpkgs overlays: pins and local package derivations |
 | `modules/features/agent-sandbox/` | the same-UID agent boundary; lists/backends in `modules/lib/agent-sandbox.{nix,sh}` |
-| `modules/features/ai/` | AI tooling: assistant context, brain, maki, providers, sdlc, skills |
-| `modules/features/tv/` | Television repository and worktree cables |
+| `modules/features/ai/` | AI tooling: assistant context, brain, maki, memory, providers, sdlc, skills |
+| `modules/features/tv/`, `modules/features/repos/` | Television repository and worktree cables; the `repos`/`worktrees` CLIs they call |
 | `tofu/` | minimal Cloudflare DNS/Access/notification objects; run via the `cloudflare-*` flake apps |
 | `modules/features/backup/` | Operator README, GitHub-mirror helpers and the metadata verifier |
 | `modules/desktop/aerospace/` | AeroSpace config + `aerospace-layout` |
-| `tests/` | Python/Node unit tests and shell/module checks for the repo's tools (all run via flake checks) |
+| `tests/` | Python unit tests and shell/module checks for the repo's tools (all run via flake checks) |
 
 Feature options live in the module that owns them (`webProxy` in
 `modules/nixos/web-proxy.nix`, `backup` in `modules/nixos/backup.nix`,
-`dictation` in `modules/features/dictation/`, …).
+`dictation` in `modules/features/dictation/`, …). A module's presence in a
+profile is its on switch.
 
 ### Adding a new feature
 
@@ -83,34 +86,33 @@ never evaluates.
 Hosts are discovered from `modules/hosts/*/`; adding one never edits
 `configurations.nix`.
 
-1. `modules/hosts/<hostname>/meta.nix` — a plain attrset (data, **not** a
+1. `modules/hosts/<hostname>/default.nix` — a plain attrset (data, **not** a
    module: no arguments) declaring `system`, `username`, `nixos = true` and/or
-   `home = true`, optional `user` overrides (machine name/system are fixed from\n`meta.nix`), and option values under
-   `homeOptions`/`nixosOptions` (e.g. `fingerprint.enable = true`).
-2. `modules/hosts/<hostname>/default.nix` — the explicit profile list
-   (`../../profiles/cli.nix`, …) composed into this host, plus optional
-   host-local modules (`nixos = [ ./boot.nix ]`, `home = [ … ]`) that only this
-   machine evaluates. Use this for host-scoped configuration that needs a real
-   module (`lib.mkForce`, `imports` of a flake input's module), which
-   `meta.nix` cannot express because it is data.
-3. `modules/hosts/<hostname>/disko.nix` — the declarative disk layout for a
+   `home = true`, optional `user` overrides, option values under
+   `homeOptions`/`nixosOptions` (e.g. `sudoKey.enable = true`), the explicit
+   `profiles` list (`../../profiles/cli.nix`, …) composed into this host, and
+   optional host-local modules (`nixosModules = [ ./boot.nix ]`,
+   `homeModules = [ … ]`) that only this machine evaluates. Use those for
+   host-scoped configuration that needs a real module (`lib.mkForce`, `imports`
+   of a flake input's module), which the option sets cannot express.
+2. `modules/hosts/<hostname>/disko.nix` — the declarative disk layout for a
    NixOS host. disko owns `fileSystems` for `/` and `/boot` (and `boot` when it
    manages an EF02 partition), so `hardware.nix` omits them. Pin each
    partition's `label` so the derived `/dev/disk/by-partlabel/*` devices are
    stable across reinstalls.
-4. `modules/hosts/<hostname>/hardware.nix` — hardware config from
+3. `modules/hosts/<hostname>/hardware.nix` — hardware config from
    `nixos-generate-config` (kernel modules, CPU microcode). **Optional**:
    `nixos-anywhere` generates it during the install, so a host can be authored
    without it. Always generate with `--no-filesystems` (disko owns
    `fileSystems`); `nixos-anywhere` passes the flag for you.
 
 `nixos = true` builds `nixosConfigurations.<hostname>`; `home = true` builds
-`homeConfigurations.<username>@<hostname>`. `machine`/`user` are shared by both
-planes, so identity and host facts are written once.
+`homeConfigurations.<username>@<hostname>`. `system`/`username` and `user` are
+shared by both planes, so identity and host facts are written once.
 
 ### Provisioning a blank NixOS machine
 
-`git add` the host's whole directory (`meta.nix`, `disko.nix`, any host-local
+`git add` the host's whole directory (`default.nix`, `disko.nix`, any host-local
 modules) first — flakes only see tracked files, and `install` rejects untracked
 files there. Then from the checkout:
 
@@ -140,10 +142,10 @@ before `install`.
 
 - **Nix style**: `nix fmt` before committing.
 - **Imports are explicit.** Only modules listed by a host's profiles or its
-  `nixos` list are evaluated; gate behavior on `machine.*`/`user.*` and on the feature's own
-  options (`webProxy.enable`, `backup.enable`, …). `mkEnableOption` is for
-  optional subfeatures that default to off; do not add a top-level `enable`
-  for a whole module.
+  `nixos` list are evaluated; gate behavior on `machine.*`/`user.*` and on the
+  feature's own options (`exposeSsh.enable`, `backup.luks.enable`, …).
+  `mkEnableOption` is for optional subfeatures that default to off; do not add
+  a top-level `enable` for a whole module.
 - **Cross-cutting values** flow through `config.machine.*` and `config.user.*`
   declared in `modules/options.nix`, not through `specialArgs`.
 - **Delete dead code** — no leftover aliases, re-exports, or stale TODOs.
@@ -155,70 +157,30 @@ before `install`.
 
 ## Verification
 
-`just --list` is the command index; the checks below are what its recipes wrap.
-
-After any change, verify at minimum:
-
-```sh
-nix eval .#checks.x86_64-linux.eval-home-smores-smortress --apply 'x: true'
-```
-
-For changes touching NixOS modules or home-manager base:
+`just --list` is the command index. After any change, evaluate every host it
+can affect:
 
 ```sh
-nix eval .#checks.x86_64-linux.eval-nixos-smortress --apply 'x: true'
-nix eval .#checks.x86_64-linux.eval-nixos-smorespro --apply 'x: true'
+just verify-home smores smortress   # also smores smorespro, sam smoreswork
+just verify-nixos smortress         # also smorespro
 ```
 
-The Python tools under `modules/features/ai/` have unit tests in `tests/`,
-run by the `checks` flake module. Locally: `nix run nixpkgs#python3 -- -m
-unittest discover -s tests`.
-Run them after touching `modules/features/ai/sdlc/`, `modules/features/ai/memory/`
-(wrapper, shim, CLI, ingest, LLM proxy), maki session search, or
-`modules/features/ai/brain/`.
+`just test` runs the Python unit suite (the `unit-tests` check) after touching
+`modules/features/ai/` or maki session search; `just check-build` builds every
+check for the current system.
 
-Script checks run each `tests/<name>.sh` against tools and files from a
-generated home, as the `<name>` flake check (`scriptChecks` in
-`modules/flake/checks.nix`): `git-work-routing` (work vs personal identity by
-remote URL for the exact work owners only, the per-account sops signing key,
-HTTPS for every GitHub remote, and the URL-based credential helper),
-`ssh-allowed-signers` (each sops signing key is trusted only for its own
-account, and nothing else is), `piv-ensure` (the PIV PIN is asked once per
-login session, replayed only for the same card with a full counter, never
-retried, and no-prompt callers fail closed), `ssh-askpass` (every prompt fails
-closed; presence requests are announced), `wallpapers` (aspect
-buckets by measured pixels, NUL-delimited queue rotation without same-aspect
-collisions, control-character names skipped), `ssh-pub-keys`
-(committed `.pub` keys written and trusted, retired keys removed and
-untrusted, a rerun is idempotent), `ssh-no-private-keys` (a private key, including a symlink,
-anywhere in `~/.ssh` fails, except the work-host gcloud key; public-only and
-missing directories pass),
-`worktrees-branch-template` (branch naming from
-per-repo templates), `github-pat-routing` (the `gh` wrapper and git credential
-helper read the owner's PAT from the home's sops files or `/run/secrets`, never
-Keychain, and fail closed without one), `repos-routing` (flat work repo discovery and routing for every listed work
-owner, never a look-alike), `zsh-config`
-(generated zsh startup files parse; only on a system with a zsh home) and
-`github-mirror-probe` (the GitHub mirror rejects a stale private-repo probe and
-scrubs a token-bearing origin), `github-metadata` (pgb flags and token-by-file,
-manifest counts, stale/scope/count failures, and the full-pass swap), and
-`key-bundle` (FIDO2 handle round-trip: 0600 modes,
-outer and inner checksums, moved bundle, --force, public-half mismatch, host-key
-restore and its `.sops.yaml` recipient check), and
-`sshd-settings` (rendered `sshd -T`: key-only auth, verify-required, no
-root/password/kbd-interactive, no TCP or socket forwarding (only the agent),
-loopback listen, no home authorized_keys), and
-`pam-auth-gates` (rendered PAM for smorespro: the full control and argument list
-of `greetd` and `login`, with the lid gate before `pam_fprintd` and the card gate
-before `pam_p11`, `pam_p11` falling through only on `AUTHINFO_UNAVAIL`, no
-`pam_fprintd` on the lock screen, no `p11`/`fprintd`/`exec` on sudo, su or
-polkit, and both probes as executable store paths). Run them after touching
-shell, git, ssh, PAM or backup settings, or `modules/lib/repo-workflow.nix`:
+Checks are organised in `modules/flake/checks.nix`: `scriptChecks` runs each
+`tests/<name>.sh` against tools and files from a generated home as the `<name>`
+check, alongside the `eval-*` and unit-test checks. List them with:
 
 ```sh
-nix build .#checks.aarch64-darwin.{git-work-routing,github-pat-routing,ssh-allowed-signers,ssh-pub-keys,worktrees-branch-template,repos-routing,zsh-config,github-mirror-probe}
-nix build .#checks.x86_64-linux.{github-metadata,key-bundle,manual-steps-sync,pam-auth-gates,sshd-settings}
+nix eval --json .#checks.x86_64-linux --apply builtins.attrNames
 ```
+
+Some checks are Linux-only (`manual-steps-sync`, `pam-auth-gates`,
+`sshd-settings`, `github-metadata`, `memory-export-restore`, `ssh-askpass`,
+`agent-sandbox-static`, `eval-nixos-*`); build the one that matches
+what you touched, e.g. `nix build .#checks.aarch64-darwin.git-work-routing`.
 
 Run `manual-steps-sync` after touching hosts, sops keys, `tofu/`, `webProxy`
 services, flake apps, or alert paths:

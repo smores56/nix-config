@@ -3,8 +3,7 @@
   perSystem =
     { system, ... }:
     let
-      # Pure formatting needs no darwin fix; one nixpkgs keeps nixfmt the same
-      # version on every platform.
+      # One nixpkgs keeps nixfmt the same version on every platform.
       pkgs = import inputs.nixpkgs { inherit system; };
     in
     {

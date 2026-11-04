@@ -40,8 +40,7 @@ DEFAULT_INPUT_PRICE = 0.15
 DEFAULT_OUTPUT_PRICE = 0.60
 DEFAULT_TIMEOUT = 300.0
 RETRIES = 1
-# A transcript is already bounded by the session budget; this is only defence
-# against a caller passing raw text.
+# Defence against a caller passing raw text; transcripts are already bounded.
 MAX_PROMPT_CHARS = 120_000
 MAX_SUMMARY_CHARS = 4_000
 MAX_ITEMS_PER_CATEGORY = 8
@@ -352,8 +351,7 @@ class SummaryClient:
         prompt_tokens = 0
         completion_tokens = 0
         usage_known = False
-        # Any 200 is billable even when its answer is unusable; a run that only
-        # saw errors never spent anything, so its cost is a known zero.
+        # Any 200 is billable even when unusable; error-only runs cost a known zero.
         paid = False
         last_error = "no attempt was made"
         while attempts <= self.retries:
@@ -375,15 +373,13 @@ class SummaryClient:
                         usage_known=usage_known or not paid,
                     )
                 continue
-            # A 200 is billable whether or not its body parses.
             paid = True
             try:
                 payload = response.json()
             except ValueError:
                 last_error = "gateway returned invalid JSON"
                 continue
-            # A 200 is a paid attempt even when its answer is unusable, so
-            # accumulate its usage before parsing.
+            # Accumulate usage before parsing: an unusable 200 is still paid.
             usage = payload.get("usage") if isinstance(payload, dict) else None
             reported = _usage_tokens(usage)
             if reported is not None:

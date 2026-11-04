@@ -1,24 +1,8 @@
 #!/usr/bin/env bash
-# Restore-drill guard for `memory export` and `memory restore`.
+# Restore-drill guard for `memory export` and `memory restore`; runs against temp dirs with a fake
+# `systemctl` that records what restore asks systemd to do.
 #
 # Usage: bash tests/memory_export_restore.sh <memory-package-src>
-#
-# Runs entirely against temp directories: no root, no FalkorDB, no network. A
-# fake `systemctl` on PATH records what restore asks systemd to do. It proves
-# the properties the nightly export and the restore procedure rely on:
-#
-#   - a live WAL registry exports consistently (a concurrent, uncommitted write
-#     is not half-copied into the snapshot, and the export does not need the
-#     writer to stop);
-#   - the manifest checksums verify, and a tampered file is refused;
-#   - retention prunes only its own complete directories;
-#   - a snapshot from a newer schema is refused;
-#   - a graph snapshot from another run is rejected in favour of the
-#     wipe-both-stores path, while a matching one is restored;
-#   - a graph restore stops FalkorDB with the rest of the stack and restarts it;
-#   - the live registry and its sidecars are parked before the swap, and a
-#     failed ownership step leaves the previous registry in place;
-#   - an export refuses to run while a restore holds its lock.
 set -euo pipefail
 
 SRC=${1:?usage: memory_export_restore.sh <memory-package-src>}
@@ -39,8 +23,7 @@ fail() {
 
 memory() { python3 -m memory_mcp.export "$@"; }
 
-# `systemctl` is never real here: restore must ask for it, and the log is how
-# this drill sees the stop/start order.
+# systemctl is never real here: the log is how this drill sees the stop/start order.
 FAKE_BIN="$ROOT/bin"
 SYSTEMCTL_LOG="$ROOT/systemctl.log"
 mkdir -p "$FAKE_BIN"
@@ -53,8 +36,6 @@ export SYSTEMCTL_LOG
 export PATH="$FAKE_BIN:$PATH"
 : >"$SYSTEMCTL_LOG"
 
-# A copy of an export directory under a new timestamp dir, so tampering and
-# schema edits can be tested without destroying the original.
 copy_export() { # <source-export> <destination-root> -> prints the copy
   local name dest
   name=$(basename "$1")
@@ -82,7 +63,6 @@ manifest_path.write_text(json.dumps(manifest))
 PY
 }
 
-# A registry that is not this export's, so a restore can be caught replacing it.
 seed_registry() { # <state-dir> -> writes a marker registry plus stale sidecars
   mkdir -p "$1"
   python3 - "$1" <<'PY'
@@ -99,13 +79,10 @@ for suffix in ("-wal", "-shm"):
 PY
 }
 
-# ---------------------------------------------------------------- live export
 STATE="$ROOT/state"
 mkdir -p "$STATE"
 READY="$ROOT/ready"
 
-# The writer holds the database open in WAL mode with one committed episode and
-# one uncommitted insert, exactly like the wrapper mid-write.
 python3 - "$STATE" "$READY" <<'PY' &
 import pathlib, sqlite3, sys, time
 
@@ -155,7 +132,6 @@ EXPORT=$(find "$EXPORTS" -mindepth 1 -maxdepth 1 -type d -name '*-*-*T*-*-*Z' | 
 [ "$(basename "$EXPORT" | grep -cE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}Z$')" = 1 ] ||
   fail "export directory $(basename "$EXPORT") is not a timestamp"
 
-# The committed episode is there; the uncommitted one is not in the snapshot.
 [ "$(wc -l <"$EXPORT/episodes.jsonl")" -eq 1 ] ||
   fail "episodes.jsonl does not hold exactly the committed episode"
 grep -q '"origin_ref": "issue-1"' "$EXPORT/episodes.jsonl" || fail "typed provenance is missing"
@@ -163,7 +139,6 @@ grep -q '"content": "content 1"' "$EXPORT/episodes.jsonl" || fail "episode conte
 grep -q '"graphiti_uuid": "graph-1"' "$EXPORT/episodes.jsonl" || fail "graph identity is missing"
 grep -q '"graph": null' "$EXPORT/manifest.json" || fail "a graph-less export must say so in the manifest"
 
-# --------------------------------------------------------------- verification
 memory restore "$EXPORT" --state-dir "$ROOT/dry" --graph-dir "$ROOT/graph-dry" --dry-run \
   >"$ROOT/verify.log" 2>&1 || { cat "$ROOT/verify.log" >&2; fail "checksum verification failed"; }
 grep -q '^verified ' "$ROOT/verify.log" || fail "verify did not report success"
@@ -178,7 +153,6 @@ memory restore "$EXPORT" --state-dir "$ROOT/no-stop" --no-stop >"$ROOT/no-stop.l
 grep -q -- '--no-stop' "$ROOT/no-stop.log" || { cat "$ROOT/no-stop.log" >&2; fail "--no-stop refusal is unclear"; }
 [ ! -e "$ROOT/no-stop/registry.sqlite" ] || fail "--no-stop still wrote the registry"
 
-# ------------------------------------------------------------------ retention
 for _ in 1 2; do
   sleep 1.1
   memory export --root "$EXPORTS" --state-dir "$STATE" --keep 2 >/dev/null 2>&1 ||
@@ -195,7 +169,6 @@ NEWEST=$(find "$EXPORTS" -mindepth 1 -maxdepth 1 -type d -name '*-*-*T*-*-*Z' | 
 # snapshot; that is what "the service keeps running" means.
 [ -s "$NEWEST/registry.sqlite" ] || fail "the newest export has no registry snapshot"
 
-# ------------------------------------------------------------- tampered file
 TAMPERED=$(copy_export "$NEWEST" "$ROOT/tampered")
 echo '{"group": "injected"}' >>"$TAMPERED/episodes.jsonl"
 rc=0
@@ -205,7 +178,6 @@ memory restore "$TAMPERED" --state-dir "$ROOT/tampered-state" \
 grep -qi 'sha256' "$ROOT/tampered.log" || { cat "$ROOT/tampered.log" >&2; fail "tampering was not named"; }
 [ ! -e "$ROOT/tampered-state/registry.sqlite" ] || fail "a refused export still wrote the registry"
 
-# ------------------------------------------------------------- newer schema
 NEWER=$(copy_export "$NEWEST" "$ROOT/newer")
 python3 - "$NEWER/registry.sqlite" <<'PY'
 import sqlite3, sys
@@ -222,7 +194,6 @@ memory restore "$NEWER" --state-dir "$ROOT/newer-state" >"$ROOT/newer.log" 2>&1 
 grep -q 'newer schema' "$ROOT/newer.log" || { cat "$ROOT/newer.log" >&2; fail "the schema refusal is unclear"; }
 [ ! -e "$ROOT/newer-state/registry.sqlite" ] || fail "a refused schema still wrote the registry"
 
-# ------------------------------------------------------- graph: wipe both stores
 MISMATCH=$(copy_export "$NEWEST" "$ROOT/mismatch")
 STALE_NAME="graph-2026-01-01T00-00-00Z.rdb"
 printf 'RDBstale' >"$MISMATCH/$STALE_NAME"
@@ -257,7 +228,6 @@ fi
 [ ! -e "$ROOT/mismatch-graph/dump.rdb" ] || fail "a mismatched graph snapshot was restored anyway"
 [ -s "$ROOT/mismatch-state/registry.sqlite" ] || fail "the registry was not restored from a mismatched export"
 
-# ------------------------------------------------ matching: restore the graph
 MATCHING=$(copy_export "$NEWEST" "$ROOT/matching")
 SNAPSHOT=$(basename "$MATCHING")
 printf 'RDBmatch' >"$MATCHING/graph-$SNAPSHOT.rdb"
@@ -301,7 +271,6 @@ sed -n "${start_line}p" "$SYSTEMCTL_LOG" | grep -q 'memory-falkordb' ||
 [ ! -e "$ROOT/matching-state/.restore-in-progress" ] ||
   fail "a successful restore left the restore lock behind"
 
-# The restored registry opens with the same rows as the export.
 python3 - "$ROOT/matching-state/registry.sqlite" <<'PY'
 import sqlite3, sys
 
@@ -310,7 +279,6 @@ count = conn.execute("SELECT count(*) FROM episodes").fetchone()[0]
 assert count >= 1, "restored registry is empty"
 PY
 
-# ------------------------------------------------- parking the live registry
 PARK_STATE="$ROOT/park-state"
 seed_registry "$PARK_STATE"
 cp "$PARK_STATE/registry.sqlite" "$ROOT/seed-registry.sqlite"
@@ -327,7 +295,6 @@ cmp -s "$PARKED_REGISTRY" "$ROOT/seed-registry.sqlite" ||
 grep -q 'previous registry:' "$ROOT/park.log" ||
   { cat "$ROOT/park.log" >&2; fail "the restore did not report where the previous registry went"; }
 
-# --------------------------------------------------- failed ownership aborts
 OWNER_STATE="$ROOT/owner-state"
 seed_registry "$OWNER_STATE"
 cp "$OWNER_STATE/registry.sqlite" "$ROOT/owner-registry.sqlite"
@@ -344,7 +311,6 @@ cmp -s "$OWNER_STATE/registry.sqlite" "$ROOT/owner-registry.sqlite" ||
 [ -e "$OWNER_STATE/.restore-in-progress" ] ||
   fail "a failed restore removed the lock that marks it unreconciled"
 
-# ---------------------------------------------- export refuses during restore
 count_before=$(find "$EXPORTS" -mindepth 2 -maxdepth 2 -name manifest.json | wc -l)
 : >"$STATE/.restore-in-progress"
 rc=0
@@ -355,7 +321,6 @@ grep -q 'restore' "$ROOT/locked.log" || { cat "$ROOT/locked.log" >&2; fail "the 
 count_after=$(find "$EXPORTS" -mindepth 2 -maxdepth 2 -name manifest.json | wc -l)
 [ "$count_before" -eq "$count_after" ] || fail "a refused export still wrote a directory"
 
-# ------------------------------------------------- a failed graph fails the run
 FAIL_EXPORTS="$ROOT/exports-fail"
 GRAPH_FAIL="$ROOT/graph-fail"
 mkdir -p "$GRAPH_FAIL"

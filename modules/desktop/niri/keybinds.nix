@@ -4,8 +4,7 @@
   ...
 }:
 let
-  # Documented Noctalia IPC form. niri runs both `spawn` and `spawn-sh` through
-  # transient systemd units, so the shell adds no meaningful latency.
+  # Documented Noctalia IPC form; niri runs `spawn` and `spawn-sh` through transient systemd units anyway.
   noctalia = cmd: "noctalia msg ${cmd}";
 
   shared = import ../shared-bindings.nix { inherit lib; };

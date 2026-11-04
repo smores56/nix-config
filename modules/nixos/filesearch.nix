@@ -1,7 +1,7 @@
-# Read-only file search over allowlisted home directories, served as MCP to
-# Open WebUI. The server is loopback-only; path confinement, secret filtering,
-# and the employer check live in `memory_mcp.files`, which reuses memory's work
-# markers so a work checkout can never be searched from the phone.
+# Read-only file search over allowlisted home directories, served as MCP to Open
+# WebUI on loopback. Confinement, secret filtering, and the employer check live in
+# `memory_mcp.files`, reusing memory's work markers so a work checkout is never
+# searchable from the phone.
 {
   config,
   lib,
@@ -9,6 +9,7 @@
   ...
 }:
 let
+  hardening = import ../lib/hardening.nix;
   cfg = config.filesearch;
   ports = import ../ports.nix;
   memoryPackage = import ../features/ai/memory/package.nix { inherit pkgs; };
@@ -16,8 +17,6 @@ let
 in
 {
   options.filesearch = {
-    enable = lib.mkEnableOption "the read-only file-search MCP for Open WebUI";
-
     roots = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
@@ -28,7 +27,7 @@ in
     };
   };
 
-  config = lib.mkIf cfg.enable {
+  config = {
     assertions = [
       {
         assertion = cfg.roots != [ ];
@@ -52,8 +51,8 @@ in
         StartLimitIntervalSec = "1h";
         StartLimitBurst = 10;
       };
-      onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
-      serviceConfig = {
+      onFailure = [ "cloudflare-email@%n.service" ];
+      serviceConfig = hardening // {
         ExecStart = "${memoryPackage}/bin/memory-file-mcp";
         # The roots live under the human's 0700 home, so the service runs as
         # that user rather than as a DynamicUser.
@@ -70,12 +69,9 @@ in
         ];
         Restart = "always";
         RestartSec = "5s";
-        ProtectSystem = "strict";
         # Read-only: the server never writes, but it must see the roots.
         ProtectHome = "read-only";
-        PrivateTmp = true;
         PrivateDevices = true;
-        NoNewPrivileges = true;
         ProtectKernelTunables = true;
         ProtectKernelModules = true;
         ProtectControlGroups = true;

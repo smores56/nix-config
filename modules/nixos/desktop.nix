@@ -8,7 +8,6 @@
   config = lib.mkIf config.machine.graphical {
     hardware.bluetooth.enable = true;
 
-    # Audio (PipeWire) and the GNOME keyring for desktop credentials.
     environment.systemPackages = [
       pkgs.playerctl
       pkgs.networkmanagerapplet

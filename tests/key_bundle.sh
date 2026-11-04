@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
-# Round-trip a FIDO2 handle bundle. A normal ed25519 key stands in for the
-# hardware-backed handle: the bundle code only copies and fingerprints files,
-# so it exercises the same path without a YubiKey. --pubkeys supplies the
-# committed public-half map the real build embeds, and a generated ed25519 key
-# stands in for /etc/ssh so the host-key backup and `--host-key` restore run
-# without root.
+# Round-trip a FIDO2 handle bundle. A plain ed25519 key stands in for the hardware handle (the bundle
+# code only copies and fingerprints files); a generated key stands in for /etc/ssh so the host-key
+# backup and `--host-key` restore run without root.
 set -euo pipefail
 
 backup=${1:?usage: key_bundle.sh <key-backup> <key-restore>}
@@ -37,8 +34,7 @@ printf 'k1/sudo\t%s\n' "$(awk '{print $1" "$2}' "$src/.config/ssh-sk/k1/sudo.pub
 wrongkeys="$root/wrongkeys"
 printf 'k1/sudo\t%s\n' "$(awk '{print $1" "$2}' "$root/wrong.pub")" >"$wrongkeys"
 
-# key-backup now requires .sops.yaml in the working directory, so every backup
-# runs from a scratch checkout.
+# key-backup requires .sops.yaml in the cwd, so every backup runs from a scratch checkout.
 checkout="$root/checkout"
 mkdir -p "$checkout"
 : >"$checkout/flake.nix"
@@ -79,13 +75,11 @@ cmp "$src/.config/ssh-sk/k1/sudo" "$dst/.config/ssh-sk/k1/sudo" \
 [ "$(mode "$dst/.config/ssh-sk/k1/sudo")" = "-rw-------" ] || fail "handle is not 0600"
 [ "$(mode "$dst/dev/setup-yubikey.sh")" = "-rw-------" ] || fail "script is not 0600"
 
-# A second restore must refuse to clobber an existing handle.
 if run_restore "$dst" "$archive" >/dev/null 2>&1; then
   fail "overwrote a handle without --force"
 fi
 run_restore "$dst" "$archive" --force >/dev/null
 
-# A handle must match the committed public half.
 dst_wrong="$root/dst-wrong"
 mkdir -p "$dst_wrong"
 if env -u XDG_STATE_HOME HOME="$dst_wrong" "$restore" --pubkeys "$wrongkeys" "$archive" >/dev/null 2>&1; then
@@ -101,7 +95,6 @@ dst_moved="$root/dst-moved"
 mkdir -p "$dst_moved"
 run_restore "$dst_moved" "$moved/bundle.tar.gz" >/dev/null
 
-# Without the checksum restore refuses unless explicitly told not to verify.
 noverify="$root/noverify"
 mkdir -p "$noverify"
 cp "$archive" "$noverify/bundle.tar.gz"
@@ -112,7 +105,6 @@ if run_restore "$dst_noverify" "$noverify/bundle.tar.gz" >/dev/null 2>&1; then
 fi
 run_restore "$dst_noverify" "$noverify/bundle.tar.gz" --no-verify >/dev/null
 
-# A modified archive must fail the checksum before extraction.
 cp "$archive" "$root/bad.tar.gz"
 printf 'x' >>"$root/bad.tar.gz"
 sha256sum "$archive" | awk '{print $1}' >"$root/bad.tar.gz.sha256"
@@ -120,7 +112,6 @@ if run_restore "$root/dst-bad" "$root/bad.tar.gz" >/dev/null 2>&1; then
   fail "accepted a tampered archive"
 fi
 
-# A partial set fails unless explicitly allowed.
 partialkeys="$root/partialkeys"
 cp "$pubkeys" "$partialkeys"
 printf 'k9/sudo\t%s\n' "$(awk '{print $1" "$2}' "$src/.config/ssh-sk/k1/sudo.pub")" >>"$partialkeys"
@@ -211,7 +202,6 @@ if (
 fi
 [ ! -e "$nodir/secrets" ] || fail "--host-key wrote outside a checkout"
 
-# The recipient check fails closed: no anchor, or no .sops.yaml at all.
 noanchor="$root/no-anchor.yaml"
 printf 'keys:\n  - &other %s\n' "$hk_recipient" >"$noanchor"
 if run_hk_restore --sops-file "$noanchor" "$hk_archive" --host-key \
@@ -251,20 +241,17 @@ if run_hk_restore --sops-file "$evilsops" "$root/evil.tar.gz" --host-key \
   fail "restored a key for an escaping MANIFEST host name"
 fi
 
-# Without a host key in the archive the mode fails instead of writing nothing.
 if run_hk_restore --sops-file "$hk_sops" "$archive" --host-key \
   --target-dir "$root/hk-missing" >/dev/null 2>&1; then
   fail "--host-key accepted a bundle without a host key"
 fi
 
-# Backups made with --no-host-key stay valid and say so.
 no_hk_manifest="$(tar -xOzf "$archive" ./MANIFEST)"
 grep -qE '^host-key: no$' <<<"$no_hk_manifest" \
   || fail "--no-host-key backups do not record the missing host key"
 grep -qF "handles only" <<<"$no_hk_manifest" \
   || fail "a host-key-less MANIFEST still claims to hold the host key"
 
-# Backup-side recipient checks fail closed.
 if (
   cd "$root"
   env -u XDG_STATE_HOME HOME="$src" "$backup" --pubkeys "$pubkeys" \
@@ -312,7 +299,6 @@ if run_hk_backup --host-key-path "$root/does-not-exist" >/dev/null 2>&1; then
   fail "archived a bundle for a missing host key path"
 fi
 
-# A machine with no enrolled handles can still archive its host key.
 onlykeys="$root/only-keys"
 : >"$onlykeys"
 ( cd "$hk_checkout" && env XDG_STATE_HOME="$root/only-state" HOME="$src" "$backup" \

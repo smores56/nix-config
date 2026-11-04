@@ -1,6 +1,5 @@
-# Wallpaper sync/selection body; wallpapers.nix substitutes the platform, the
-# source URL and the cache path, then wraps this with
-# errexit/nounset/pipefail.
+# Sync/selection body; wallpapers.nix substitutes the platform, source URL and cache path
+# and adds errexit/nounset/pipefail.
 
 platform=@PLATFORM@
 source_url=@SOURCE@
@@ -20,8 +19,7 @@ bucket_of() {
   if [ "$1" -le 0 ] || [ "$2" -le 0 ]; then
     return 1
   fi
-  # 16:9 (1.78) is standard, 21:9 (2.33) and wider are ultrawide; 2.0 splits
-  # them without a tolerance.
+  # 16:9 (1.78) is standard, 21:9 (2.33)+ ultrawide; 2.0 splits them.
   if awk -v w="$1" -v h="$2" 'BEGIN { exit !(w / h >= 2.0) }'; then
     printf 'Ultrawide\n'
   else
@@ -40,11 +38,9 @@ classify() {
   fi
 }
 
-# Rotation is random without replacement: a bucket keeps a shuffled queue of the
-# images it has not shown yet, so a cycle repeats nothing until it runs dry.
-# Entries that left the bucket are dropped from the queue. <used> carries the
-# images already shown earlier in this run, so a queue drained mid-run cannot
-# hand a second display of the same aspect an image the first one already has.
+# Random without replacement: each bucket keeps a shuffled queue of unshown images (departed
+# entries dropped). <used> holds images shown earlier this run so a second display of the same
+# aspect cannot get a repeat.
 next_pick() {
   if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then
     log "usage: wallpapers pick <list> <queue> [<used>]"
@@ -87,8 +83,6 @@ next_pick() {
       [ -z "${shown[$file]:-}" ] || continue
       candidates+=("$file")
     done
-    # Every image of the aspect is already on screen this run; reuse is the
-    # only option left.
     if [ "${#candidates[@]}" -eq 0 ]; then
       candidates=("${all[@]}")
     fi
@@ -104,8 +98,7 @@ next_pick() {
     log "$queue is a directory"
     return 1
   fi
-  # A temp file plus rename keeps a torn write from losing the cycle, and
-  # printf with no arguments would still write one empty record.
+  # Temp file plus rename so a torn write cannot lose the cycle; printf with no args would write an empty record.
   if [ "${#rest[@]}" -gt 0 ]; then
     printf '%s\0' "${rest[@]}" >"$queue.new" || {
       log "cannot write $queue.new"
@@ -124,10 +117,8 @@ next_pick() {
   printf '%s\n' "$picked"
 }
 
-# A display that could not be set must not consume its image; put the pick back
-# at the head so the next run offers it again. Callers only unpick what they
-# have not recorded in <used>, so the second display of an aspect may still
-# take it.
+# A display that could not be set must not consume its image: put the pick back at the head.
+# Callers unpick only what is not in <used>, so the aspect's second display may still take it.
 unpick() {
   queue=$1
   file=$2
@@ -144,11 +135,9 @@ unpick() {
     return 1
   }
 }
-# The lock is taken at dispatch, before either the transfer or the scan, so on
-# Linux a manual run cannot --delete underneath a timer run's classify pass.
-# macOS has no flock here; launchd never double-starts the agent, and queue
-# updates are a temp file plus rename, so only a manual run overlapping the
-# agent can lose a pick.
+# The lock is taken at dispatch so a Linux manual run cannot --delete under a timer run's classify.
+# macOS has no flock; launchd never double-starts the agent and queue updates are rename-atomic,
+# so only a manual run overlapping the agent can lose a pick.
 lock() {
   if [ -L "$cache" ]; then
     log "$cache is a symlink; refusing to use it"
@@ -165,20 +154,15 @@ lock() {
 }
 
 sync_cache() {
-  # The sync needs no agent on smortress; forwarding one would only hand a
-  # short-lived socket to the server's shell hooks.
+  # No agent forwarding: it would only hand a short-lived socket to the server's shell hooks.
   rsync_ssh=(-e 'ssh -o StrictHostKeyChecking=yes -o ConnectTimeout=20 -o ForwardAgent=no')
-  # Bounds a stalled stream so it cannot wedge the launchd agent: launchd will
-  # not start a second instance while this one runs. --timeout is the I/O
-  # timeout; --contimeout would be a daemon-only flag that rsync rejects on the
-  # ssh transport, so the connect bound lives in ssh's ConnectTimeout.
-  #
-  # An unmounted or empty source tree on smortress would let --delete erase the
-  # only cached set, so the listing is checked first.
-  # A failed listing or transfer still reports failure so the timer does not
-  # look green, but dispatch applies from the cache regardless: rotation has to
-  # survive an outage. The probe's stderr is kept because ssh failures are
-  # otherwise silent. Both bounds plus apply fit TimeoutStartSec=20min.
+  # Bounds a stalled stream so it cannot wedge the launchd agent (no second instance while one runs).
+  # --timeout is the I/O bound; --contimeout is daemon-only and rsync rejects it over ssh, so the
+  # connect bound is ssh's ConnectTimeout.
+  # An unmounted or empty source would let --delete erase the only cache, so the listing is checked first.
+  # A failed listing or transfer still reports failure, but dispatch applies from the cache so
+  # rotation survives an outage. The probe's stderr is kept (ssh failures are otherwise silent).
+  # Both bounds plus apply fit TimeoutStartSec=20min.
   probe_start=$SECONDS
   probe_err="$cache/.probe.err"
   if listing=$(timeout 240 rsync --list-only "${rsync_ssh[@]}" "$source_url" 2>"$probe_err"); then
@@ -189,17 +173,15 @@ sync_cache() {
   else
     status=$?
     log "listing failed (status $status, $((SECONDS - probe_start))s): $(head -c 300 "$probe_err" | tr '\n' ' ')"
-    # A slow or flaky transport can starve the listing while a transfer still
-    # works. Without a listing the deletes stay off, so this can only add files;
-    # the run still reports the failure.
+    # A flaky transport can starve the listing while a transfer works; without a listing deletes
+    # stay off, so this only adds files.
     if ! timeout 720 rsync -rt --no-owner --no-group \
       "${rsync_ssh[@]}" --timeout=120 "$source_url" "$dest/"; then
       log "transfer without deletes failed too"
     fi
     return 1
   fi
-  # --delete-after so a transfer killed mid-flight leaves the old files in
-  # place instead of a half-emptied cache.
+  # --delete-after so a killed transfer leaves old files, not a half-emptied cache.
   if ! timeout 780 rsync -rt --delete-after --no-owner --no-group \
     "${rsync_ssh[@]}" --timeout=120 "$source_url" "$dest/"; then
     log "transfer failed after $((SECONDS - probe_start))s"
@@ -207,9 +189,7 @@ sync_cache() {
   fi
 }
 
-# Bucket the cached files by measured pixels, not by their folder: an image can
-# be misfiled, and the display's mode is what decides. Per file, so identify's
-# format escapes never matter.
+# Bucket by measured pixels, not folder (images get misfiled; the display's mode decides).
 classify_cache() {
   dir=$1
   out=$2
@@ -226,8 +206,7 @@ classify_cache() {
     esac
     case "$file" in
       *$'\n'* | *$'\t'*)
-        # A control character would forge a log or read-back line; wallpapers
-        # never legitimately have one.
+        # A control character would forge a log or read-back line.
         log "skipping $(printf '%q' "$file"): control character in name"
         continue
         ;;
@@ -248,7 +227,6 @@ classify_cache() {
   LC_ALL=C sort -z -o "$out/Ultrawide.list" "$out/Ultrawide.list"
 }
 
-# Sets one image per display, drawing each from that aspect's queue.
 apply_linux() {
   work=$1
   if ! outputs=$(niri msg --json outputs); then
@@ -288,8 +266,7 @@ apply_linux() {
       unpick "$state/queue-$bucket" "$picture"
       continue
     fi
-    # Recorded only now: a pick that failed to land may still be offered to the
-    # next display of this aspect.
+    # Recorded only now: a pick that failed to land may go to the next display of this aspect.
     printf '%s\0' "$picture" >>"$work/used-$bucket"
     set=$((set + 1))
   done <"$work/displays"
@@ -318,15 +295,13 @@ apply_macos() {
     return 1
   fi
   display_count=$(awk 'END { print NR }' "$work/displays")
-  # Every AppleEvent is bounded: an unanswered Automation (TCC) prompt or a
-  # wedged System Events otherwise blocks on Apple's 120s default timeout, per
-  # call, which reads as a hang in a launchd job nobody watches.
+  # Bound every AppleEvent: an unanswered Automation (TCC) prompt or wedged System Events would
+  # block on Apple's 120s default per call, a silent hang in a launchd job.
   if ! desktop_count=$(timeout 30 /usr/bin/osascript -e 'tell application "System Events" to count every desktop'); then
     log "could not ask System Events for the desktop count"
     return 1
   fi
-  # A display the profiler cannot describe would shift every later index and
-  # put one display's rotation history on another; refuse rather than guess.
+  # An undescribable display would shift later indexes and put one display's history on another; refuse.
   if [ "$display_count" != "$desktop_count" ]; then
     log "system_profiler reports $display_count displays, System Events $desktop_count desktops; refusing to guess"
     return 1
@@ -347,9 +322,8 @@ apply_macos() {
       continue
     fi
     log "display $ordinal ${width}x${height} -> $bucket $(basename "$picture")"
-    # NSWorkspace is broken on macOS 26+: setDesktopImageURL applies one image
-    # to every display or silently keeps the old one. System Events still lands
-    # per desktop; it needs Automation approval once.
+    # NSWorkspace setDesktopImageURL is broken on macOS 26+ (one image on every display, or none);
+    # System Events sets per desktop and needs Automation approval once.
     if ! timeout 30 /usr/bin/osascript - "$ordinal" "$picture" <<'APPLESCRIPT'
 on run argv
   set idx to (item 1 of argv) as integer
@@ -364,8 +338,7 @@ APPLESCRIPT
       continue
     fi
     printf '%s\n' "$picture" >>"$work/expected"
-    # Recorded only now: a pick that failed to land may still be offered to the
-    # next display of this aspect.
+    # Recorded only now: a pick that failed to land may go to the next display of this aspect.
     printf '%s\0' "$picture" >>"$work/used-$bucket"
     set=$((set + 1))
   done <"$work/displays"
@@ -373,8 +346,6 @@ APPLESCRIPT
     log "no display could be set"
     return 1
   fi
-  # Read back through the same System Events model used to set, one line per
-  # desktop, so it lines up with `expected`.
   if ! timeout 60 /usr/bin/osascript - "$desktop_count" <<'APPLESCRIPT' >"$work/applied"
 on run argv
   set n to (item 1 of argv) as integer
@@ -392,8 +363,6 @@ APPLESCRIPT
     log "could not read the wallpapers back"
     return 1
   fi
-  # Compare per desktop so a silent no-op names the desktop that kept its old
-  # image instead of only failing the whole run.
   paste -d '\t' "$work/expected" "$work/applied" >"$work/readback"
   mismatch=0
   while IFS=$'\t' read -r want got; do
@@ -405,8 +374,7 @@ APPLESCRIPT
     log "wallpaper read-back does not match what was set"
     return 1
   fi
-  # desktoppr reads through the NSWorkspace API macOS 26 broke; keep it as a
-  # logged cross-check only.
+  # desktoppr reads through the NSWorkspace API macOS 26 broke: logged cross-check only.
     timeout 20 desktoppr 2>/dev/null | while IFS= read -r line; do log "desktoppr: $line"; done || true
 }
 
@@ -424,8 +392,7 @@ apply() {
 case "${1:-sync}" in
   sync)
     lock
-    # Apply even when the sync failed: the cache is the client's source of
-    # truth, but the failure still has to reach the unit status.
+    # Apply even when the sync failed (the cache is the source of truth); the failure still reaches the unit status.
     status=0
     sync_cache || status=$?
     apply

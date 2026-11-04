@@ -53,9 +53,8 @@ in
           KbdInteractiveAuthentication = false;
           PermitRootLogin = "no";
           PubkeyAuthentication = true;
-          # One factor. A FIDO2 login key would have to assert user
-          # verification (the PIN); none is authorized now, and the option has
-          # no effect on the PIV and software keys.
+          # One factor. A FIDO2 login key would have to assert user verification (PIN); none
+          # is authorized, and this has no effect on PIV and software keys.
           AuthenticationMethods = "publickey";
           PubkeyAuthOptions = "verify-required";
           AllowUsers = [ user ];
@@ -68,14 +67,10 @@ in
           # A per-key command= does NOT suppress ~/.ssh/rc; no-user-rc on the
           # forced key and this global setting both close it.
           PermitUserRC = false;
-          # Every credential the agent offers is tried until one matches, and a
-          # rejected offer counts against this limit. Clients offer the three
-          # PIV keys (IdentitiesOnly) or the one forced sandbox key; the extra
-          # headroom keeps a client that also offers agent keys from tripping
-          # the default 6.
+          # A rejected offer counts against the limit. Clients offer the three PIV keys or the
+          # one forced sandbox key; headroom covers clients that also offer agent keys.
           MaxAuthTries = 10;
           LoginGraceTime = 20;
-          # Accept COLORTERM and TERM from client for truecolor support over SSH
           AcceptEnv = [
             "COLORTERM"
             "TERM"
@@ -106,9 +101,8 @@ in
         if config.exposeSsh.enable then "15" else "5"
       }";
 
-      # The sudo credential is a separate FIDO2 key (touch only, no PIN), never
-      # used for login. It is forwarded to the server through the client's
-      # fido2-agent. All three keys are enrolled.
+      # Separate FIDO2 key (touch only, no PIN), never used for login, forwarded via the
+      # client's sudo agent.
       environment.etc."ssh/sudo_authorized_keys".text = lib.concatMapStrings (
         k: "${k.pubkey}\n"
       ) yubikeyKeys.sudo;

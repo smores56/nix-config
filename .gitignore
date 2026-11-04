@@ -1,17 +1,13 @@
 __pycache__/
-bun.lock
-node_modules/
-package.json
 result
 result-*
 
-# Pre-generated host keys delivered to a blank machine via nixos-anywhere
-# --extra-files; plaintext, never committed (see `nix run .#host-key`).
+# Plaintext host keys for nixos-anywhere --extra-files (`nix run .#host-key`).
 secrets/hosts/
 *.tfstate
 *.tfstate.*
 
-# Admin sops identity and its retired plaintext form; never commit either.
+# Admin sops identity.
 keys.age
 keys.txt
 tofu/.terraform/

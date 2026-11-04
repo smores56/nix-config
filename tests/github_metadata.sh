@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
-# github-metadata.sh must run pgb with the documented flags, pass the token by
-# file (never argv), write the manifest, fail on verification drift, and swap a
-# verified full pass into place without touching the live meta on failure.
-#
-# Hermetic: fake github-backup and gh, real git for the bare mirrors and fsck.
+# github-metadata.sh passes the token by file (never argv) and swaps a verified full pass into place
+# without touching the live meta on failure.
 set -euo pipefail
 
 metadata="$1"
@@ -16,7 +13,6 @@ secret="SECRET-TOKEN-VALUE"
 printf '%s\n' "$secret" >"$work/token"
 printf 'github_pat_fine_%s\n' "$secret" >"$work/token-fine"
 
-# Two bare mirrors, so the mirror set exists independently of pgb.
 for repo in repo-a repo-b; do
   git init -q --bare "$work/root/owner_backup/$repo"
 done
@@ -24,8 +20,7 @@ done
 # API repo and must not fail the repo-set check.
 git init -q --bare "$work/root/owner_backup/repo-a.wiki"
 
-# Fake gh: already-filtered TSV for user/repos, and the --jq-rendered TSV for
-# the GraphQL count query. Knobs simulate a listing gap and a count mismatch.
+# Fake gh: knobs simulate a listing gap and a count mismatch.
 {
   printf '#!%s\n' "$BASH"
   cat <<'EOF'
@@ -65,8 +60,7 @@ esac
 EOF
 } >"$work/bin/gh"
 
-# Fake github-backup: records argv, refuses a token in argv, creates the pgb
-# layout with per-repo issue/pull JSON and (incremental only) checkpoints.
+# Fake github-backup: refuses a token in argv.
 {
   printf '#!%s\n' "$BASH"
   cat <<'EOF'
@@ -125,7 +119,6 @@ run() {
 
 manifest="$work/root/manifests/2026-10-20"
 
-# Daily success: flags, path, manifest, and counts.
 run
 [ -f "$manifest/repos.txt" ]
 [ -f "$manifest/counts.json" ]
@@ -164,7 +157,6 @@ jq -e '.fsck.failed == []' "$manifest/counts.json" >/dev/null
 jq -e '.fsck.checked | map(.repo) | index("repo-a.wiki") != null' "$manifest/counts.json" >/dev/null
 grep -q 'repo-a' "$manifest/repos.txt"
 
-# A fine-grained token uses -f (classic keeps -t, asserted above).
 TOKEN_FILE="$work/token-fine" run
 grep -qx -- '-f' "$work/pgb.args"
 if grep -qx -- '-t' "$work/pgb.args"; then
@@ -172,29 +164,25 @@ if grep -qx -- '-t' "$work/pgb.args"; then
   exit 1
 fi
 
-# A stale checkpoint fails the run.
 if run FAKE_PGB_STALE=1 2>"$work/err"; then
   echo "stale metadata passed" >&2
   exit 1
 fi
 grep -q "last_update is stale" "$work/err"
 
-# A repo-set gap fails the run.
 if run FAKE_GH_MISSING=1 2>"$work/err"; then
   echo "repo-set mismatch passed" >&2
   exit 1
 fi
 grep -q "set mismatch" "$work/err"
 
-# A count drift beyond the slack fails the run.
 if run FAKE_GH_ISSUES_A=9 2>"$work/err"; then
   echo "issue-count drift passed" >&2
   exit 1
 fi
 grep -q "count drift" "$work/err"
 
-# Full pass: no -i, staged under meta.new, then swapped; checkpoints carried
-# over so the next daily run stays incremental.
+# Full pass: staged under meta.new then swapped; checkpoints carry over so the next daily run stays incremental.
 run
 : >"$work/root/meta/live-marker"
 run GITHUB_METADATA_MODE=full
@@ -210,7 +198,6 @@ if grep -qx -- '-i' "$work/pgb.args"; then
 fi
 jq -e '.mode == "full"' "$manifest/counts.json" >/dev/null
 
-# A failed full pass keeps the live meta and removes the staging tree.
 : >"$work/root/meta/live-marker"
 if run GITHUB_METADATA_MODE=full FAKE_GH_ISSUES_A=9 2>"$work/err"; then
   echo "failed full pass swapped anyway" >&2

@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
 # Keep docs/manual-steps.md in sync with the configuration it documents.
-#
-# Expected inventory: hosts from modules/hosts, secret names from the encrypted
-# sops files, providers and notification policies from tofu/, and the
-# config-derived datasets/services/apps/alerts passed as JSON by checks.nix.
 set -euo pipefail
 
 src=${1:?usage: manual_steps_sync.sh <repo> <inventory.json>}
@@ -37,7 +33,6 @@ while IFS= read -r name; do
   add_expected "alert/${name//_/-}"
 done < <(sed -n 's/^resource "cloudflare_notification_policy" "\([^"]*\)".*/\1/p' "$src"/tofu/*.tf)
 
-while IFS= read -r item; do add_expected "dataset/$item"; done < <(jq -r '.datasets[]' "$inventory")
 while IFS= read -r item; do add_expected "service/$item"; done < <(jq -r '.services[]' "$inventory")
 while IFS= read -r item; do add_expected "app/$item"; done < <(jq -r '.apps[]' "$inventory")
 while IFS= read -r item; do add_expected "alert/$item"; done < <(jq -r '.alerts[]' "$inventory")

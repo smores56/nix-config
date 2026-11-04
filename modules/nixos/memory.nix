@@ -1,9 +1,5 @@
-# Cross-machine memory: Graphiti (episodes/entities/edges) over FalkorDB, with
-# Neuralwatt extraction behind a loopback gateway and a configurable embedder
-# (local bge-m3 by default). The MCP origin is private: loopback only, reached
-# off-host through the Cloudflare Access route. Everything here is
-# personal-only: the work machine runs its own Claude workflow and never
-# reaches this store.
+# Personal-only: the work machine never reaches this store. The MCP origin is
+# loopback; off-host access goes through the Cloudflare Access route.
 {
   config,
   lib,
@@ -12,105 +8,74 @@
   ...
 }:
 let
+  hardening = import ../lib/hardening.nix;
   ports = import ../ports.nix;
   inherit (aiProviders) neuralwatt;
   memoryPackage = import ../features/ai/memory/package.nix { inherit pkgs; };
 
-  # Loopback ports and the data root. The wrapper's port, the embedder's port,
-  # and the gateway's port are shared (tunnel ingress and Open WebUI's tool
-  # connections) and live in ports.nix; Graphiti and the local services are
-  # private to this module.
   dbPort = 6379;
   graphitiPort = 8184;
   embeddingPort = ports.memoryEmbed;
-  # Graphiti reaches Neuralwatt through this gateway on loopback. It owns the
-  # account key and adds `reasoning_effort: "none"` to chat completions, because
-  # extraction that reasons spends its whole budget and returns empty content.
-  # The embedder's knowledge-base client reads it too when
-  # `memory.embedder` is `neuralwatt`; it is never tunneled.
+  # Loopback gateway to Neuralwatt, never tunneled. Adds `reasoning_effort: "none"`
+  # because reasoning extraction returns empty content.
   llmProxyPort = ports.memoryLlmProxy;
-  # StateDirectory creates /var/lib/<name> for the wrapper; tmpfiles owns the
-  # memory-owned FalkorDB subdirectory, so the two never disagree.
+  # tmpfiles owns the falkordb subdirectory of the StateDirectory.
   stateDirectory = "memory";
   dataDir = "/var/lib/${stateDirectory}";
-  # Rootless podman needs a stable uid for its user-manager units and
-  # subordinate-id range. These values are the ones already assigned on
-  # smortress; pinning them keeps `RequiresMountsFor` and `user@` valid
-  # instead of interpolating a null uid during evaluation.
+  # Pinned so RequiresMountsFor and user@ never see a null uid; matches ids on smortress.
   memoryUid = 982;
   memoryGid = 977;
-  # Only `smores` is a normal user on this host; NixOS auto-allocates normal
-  # users' ranges on the 100000 + 65536k lattice. If another normal user is
-  # ever added, switch this to autoSubUidGidRange or move the range.
+  # `smores` is the only normal user; revisit if another is added.
   memorySubidStart = 200000;
-  # Nightly exports land here: root-owned (the exporter runs as root and reads
-  # the memory-owned graph volume), never written by the wrapper. The path sits
-  # inside the durable tree so restic covers one source, and it is a real
-  # directory because restic does not follow symlinks.
+  # Root-owned, inside the durable tree. A real directory: restic does not follow symlinks.
   exportDir = "/var/lib/data/memory-export";
 
-  # Work markers come from the shared identity so the wrapper and the shim
-  # cannot disagree about what a work repo looks like.
+  # Shared with the shim so both agree on what a work repo is.
   work = config.user.work;
 
-  # One value for the two timings that must agree. The reconcile grace is how
-  # long a queued episode may wait for an upstream slot before it counts as
-  # lost; the pending-stale window is when a repeat write re-queues it. A
-  # shorter stale window re-queued writes that were merely queued behind a
-  # large backfill, resetting created_at/attempts and paying for another
-  # extraction. A large backfill (1382 episodes at two slots) drains over
-  # hours, so twelve hours covers a day's queue.
+  # A shorter pending-stale window than the reconcile grace re-queues writes that
+  # are merely waiting behind a large backfill. 12h covers a day's queue.
   reconcileGraceSeconds = 43200;
 
-  # Tags alone are re-pushable upstream; the digests make the same commit pull
-  # the same bytes on a fresh host or after `podman rmi`.
-  # FalkorDB is SSPLv1 and not in nixpkgs, so a container is the only route.
+  # Digests pin the same bytes on a fresh host. FalkorDB is SSPLv1, not in nixpkgs.
   falkordbImage = "falkordb/falkordb-server:v4.22.2@sha256:103b70949bc9019dd025e62e077665349b73e96add5c45738e73ddf73eef6220";
-  # The graphiti-0.31.2 suffix is what the image was built against: below
-  # 0.31.0, graphiti-core's index DDL does not work on FalkorDB 6.x, and the
-  # image's build-arg default (0.29.1) is older than the tag suggests.
+  # Below graphiti-core 0.31.0 the index DDL fails on FalkorDB 6.x; the image's
+  # build-arg default is older than its tag suggests.
   graphitiImage = "zepai/knowledge-graph-mcp:1.1.3-graphiti-0.31.2-standalone@sha256:288b79e987adc71d1f55f9f44d9a62fb0422a80eb6870b0e32abb9ad85c12d69";
 
-  # Two embedding positions behind one switch. `local` is the shipped default:
-  # bge-m3 on llama.cpp, 1024-d, no egress. `neuralwatt` sends the same traffic
-  # to qwen3-embedding-8b through the gateway at 4096-d; that model is
-  # preview-only and this account currently gets a 404, so the switch is one
-  # line once access lands, but it re-embeds the whole corpus at a new width.
+  # `neuralwatt` re-embeds the corpus at a new width; its model is preview-only and
+  # 404s on this account.
   embedders = {
     local = {
       model = "bge-m3";
       dimensions = 1024;
       url = "http://127.0.0.1:${toString embeddingPort}";
-      # llama.cpp serves /health on the root, not under /v1.
+      # llama.cpp serves /health at the root, not under /v1.
       readyProbe = "${pkgs.curl}/bin/curl -sf http://127.0.0.1:${toString embeddingPort}/health";
     };
     neuralwatt = {
       model = "qwen3-embedding-8b";
       dimensions = 4096;
       url = "http://127.0.0.1:${toString llmProxyPort}";
-      # Nothing behind the gateway answers /health for the embedder, so the
-      # only honest probe is a real (one-word) embedding.
+      # No /health behind the gateway; probe with a real one-word embedding.
       readyProbe = "${pkgs.curl}/bin/curl -sf -X POST http://127.0.0.1:${toString llmProxyPort}/v1/embeddings -H 'content-type: application/json' -d '{\"model\":\"qwen3-embedding-8b\",\"input\":\"ready\"}'";
     };
   };
+  # Bearer token required on every MCP request; secrets-common.nix declares it
+  # (root:memory 0440).
+  mcpTokenFile = "/run/secrets/memory-mcp-token";
+
   embedder = embedders.${config.memory.embedder};
   localEmbedder = config.memory.embedder == "local";
 
-  # bge-m3 Q8_0: 1024-d, 8k context, no query/document prefixes, so the stock
-  # OpenAI embedder client works as-is. It backs the default embedder and stays
-  # deployed whatever memory.embedder selects, as the fallback if the preview
-  # model never becomes available. CPU-only on purpose: the 3090 is committed
-  # to the local chat model. Searches embed the query too, but a short bge-m3
-  # query is cheap; bulk ingest dominates the cost.
+  # Stays deployed whatever memory.embedder selects (fallback). CPU-only: the 3090
+  # is committed to chat. No query prefixes, so the stock OpenAI client works.
   embedModel = pkgs.fetchurl {
     url = "https://huggingface.co/gpustack/bge-m3-GGUF/resolve/main/bge-m3-Q8_0.gguf";
     hash = "sha256-lQ9Kjl4ZR3ptPCbS8WIjPCAALGAfdeSwAuMjmZeCEWc=";
   };
 
-  # Graphiti reads the LLM and embedder base URLs from one config file (the
-  # shipped Docker configs share OPENAI_API_URL for both). Keep them separate:
-  # extraction goes to Neuralwatt through the gateway, embeddings to whichever
-  # embedder memory.embedder selects.
+  # Separate LLM and embedder URLs; the shipped configs share one.
   graphitiConfig = pkgs.writeText "graphiti-mcp-config.yaml" ''
     server:
       transport: "http"
@@ -119,27 +84,18 @@ let
     llm:
       provider: "openai"
       model: "${neuralwatt.models.deepseekFlash.id}"
-      # Deterministic extraction: identical episodes must produce the same graph.
+      # Identical episodes must produce the same graph.
       temperature: 0.0
-      # Graphiti's extraction and dedup prompts ask for up to 16k tokens; the
-      # MCP default of 4096 truncates a large episode into invalid JSON. An
-      # 8000-char section near MAX_SECTION_CHARS still needs more than 8192
-      # (measured: generation stopped at 8192 tokens, char ~8320 of the JSON),
-      # so match the documented ceiling.
+      # Extraction prompts need up to 16k tokens; the MCP default truncates large
+      # episodes into invalid JSON.
       max_tokens: 16384
-      # Grammar-enforced JSON. json_object relies on the model to comply and
-      # occasionally yields prose/empty output; the gateway already disables
-      # thinking for extraction, and json_schema makes every response parseable.
+      # json_object occasionally yields prose; json_schema keeps responses parseable.
       structured_output_mode: "json_schema"
       providers:
         openai:
-          # graphiti-core requires a non-empty key, so "none" is the
-          # placeholder: the gateway replaces exactly that with the real
-          # Neuralwatt key. Nothing secret lives in this file or in Graphiti's
-          # environment.
+          # graphiti-core requires a non-empty key; the gateway swaps this placeholder.
           api_key: "none"
-          # The gateway, which owns the key and turns thinking off. Calling
-          # Neuralwatt directly would spend the extraction budget on reasoning.
+          # The gateway owns the key and disables thinking.
           api_url: "http://127.0.0.1:${toString llmProxyPort}/v1"
 
     embedder:
@@ -158,35 +114,12 @@ let
           uri: "redis://127.0.0.1:${toString dbPort}"
           database: "default_db"
 
-    # Deliberately generic entity types (graphiti-core defaults); the wrapper
-    # can supply curated ones later.
     graphiti:
       group_id: "global"
       user_id: "maki"
   '';
 in
 {
-  options.memory.enable = lib.mkEnableOption "the cross-machine memory stack (Graphiti MCP + FalkorDB + embedder)";
-
-  # The bearer token the MCP listener requires on every request. The sops secret
-  # `memory-mcp-token` declares its file at this path (root:memory 0440), so the
-  # service, the user's shim, the CLI, and any container client read one copy.
-  # Overridable only to keep the module honest if the secret's path ever moves.
-  options.memory.mcpTokenFile = lib.mkOption {
-    type = lib.types.str;
-    default = "/run/secrets/memory-mcp-token";
-    description = ''
-      File holding the bearer token every client of the loopback MCP listener
-      must present. Declared as the `memory-mcp-token` sops secret in
-      `modules/nixos/secrets.nix`; the file must be readable by the `memory`
-      group so the per-user shim and CLI can authenticate too.
-    '';
-  };
-
-  # Extraction is hosted (Neuralwatt through the gateway), so memory never
-  # depends on the local chat model. Embeddings stay switchable: bge-m3 on
-  # llama.cpp by default, qwen3-embedding-8b through the same gateway when
-  # access is granted.
   options.memory.embedder = lib.mkOption {
     type = lib.types.enum [
       "local"
@@ -204,7 +137,7 @@ in
     '';
   };
 
-  config = lib.mkIf config.memory.enable {
+  config = {
     assertions = [
       {
         assertion = ports.memoryMcp != graphitiPort;
@@ -225,11 +158,8 @@ in
       }
     ];
 
-    # The containers share the host network so the MCP server can reach llama.cpp
-    # and the embedder on 127.0.0.1 without binding either to a bridge. FalkorDB
-    # publishes only to loopback, so nothing here is reachable off-host. Both
-    # containers run rootless as `memory`; the user manager and subordinate ids
-    # are part of the service contract, not an operator preference.
+    # Host networking lets the MCP server reach llama.cpp on 127.0.0.1; FalkorDB
+    # publishes to loopback only. Both run rootless as `memory`.
     virtualisation.oci-containers.backend = "podman";
 
     users.groups.memory = {
@@ -257,26 +187,17 @@ in
         }
       ];
     };
-    # `memory ingest` runs as the human user and authenticates to the wrapper's
-    # /internal routes with the token the wrapper writes into the state dir
-    # (0640 memory:memory, reachable because the dir is 0750). The tunnel is a
-    # raw TCP forward, so the wrapper cannot tell a tunneled client from a local
-    # one by peer address; the group alone may read that token.
+    # `memory ingest` reads the wrapper's token via group; the raw-TCP tunnel hides
+    # peer addresses, so only the group may read it.
     users.users.${config.machine.username}.extraGroups = [ "memory" ];
 
     systemd.tmpfiles.rules = [
-      # `Z` migrates the existing rootful AOF/RDB files to the rootless service
-      # account while preserving file modes. Stop the old container first (the
-      # operator step in docs/manual-steps.md); otherwise it can write a new
-      # root-owned segment after this runs.
       "d ${dataDir}/falkordb 0700 memory memory -"
-      "Z ${dataDir}/falkordb - memory memory -"
       "d ${exportDir} 0700 root root -"
     ];
 
-    # The operator restores with `sudo memory restore <dir>`, and sudo resolves
-    # commands on root's secure_path, so the CLI has to be in the system
-    # profile. The home profile keeps its own copy for Maki and ingest.
+    # sudo resolves commands on root's secure_path, so `sudo memory restore` needs
+    # the system profile.
     environment.systemPackages = [ memoryPackage ];
 
     virtualisation.oci-containers.containers = {
@@ -287,8 +208,7 @@ in
         ports = [ "127.0.0.1:${toString dbPort}:6379" ];
         volumes = [ "${dataDir}/falkordb:/var/lib/falkordb/data" ];
         extraOptions = [
-          # redis-server needs no capabilities; the bind mount is owned by the
-          # rootless service account.
+          # redis-server needs no capabilities.
           "--cap-drop=ALL"
           "--security-opt=no-new-privileges"
           "--health-cmd=redis-cli ping"
@@ -299,10 +219,8 @@ in
           "--health-on-failure=kill"
         ];
         environment = {
-          # AOF is the only durability we need; disabling scheduled RDB saves
-          # keeps BGSAVE forks from spiking memory on a host with OOM history.
-          # The nightly `memory-export` unit still asks for one explicit BGSAVE
-          # per run, which is the only RDB this store ever writes.
+          # AOF suffices; no scheduled RDB saves avoids BGSAVE memory spikes. The nightly
+          # `memory-export` BGSAVE is the only RDB.
           REDIS_ARGS = "--appendonly yes --appendfsync everysec --save \"\"";
         };
       };
@@ -313,51 +231,32 @@ in
         podman.user = "memory";
         extraOptions = [
           "--network=host"
-          # This process ingests untrusted text and drives an LLM. It shares
-          # the host's loopback through host networking, so drop capabilities
-          # and block setuid escalation. Rootless podman maps container root to
-          # the `memory` user; the user namespace remains the boundary.
+          # Ingests untrusted text on the host's loopback: drop capabilities, block setuid.
           "--cap-drop=ALL"
           "--security-opt=no-new-privileges"
-          # The image's built-in healthcheck targets its default port 8000,
-          # while this instance listens on graphitiPort. Its transient systemd
-          # unit then fails during start and makes `nixos-rebuild switch` report
-          # a failed unit. The image's /health is static anyway; the wrapper's
-          # preStart is the real readiness gate.
+          # The image healthcheck targets port 8000 and fails the transient unit; the
+          # wrapper's preStart is the readiness gate.
           "--no-healthcheck"
         ];
         volumes = [ "${graphitiConfig}:/app/mcp/config/config.yaml:ro" ];
         environment = {
-          # The image sets 0.0.0.0; with host networking that would listen on
-          # every interface. Environment wins over the YAML config.
+          # The image's 0.0.0.0 would listen everywhere under host networking.
           SERVER__HOST = "127.0.0.1";
-          # Used for the zero vector on query-less searches; it must match the
-          # embedder width or FalkorDB rejects the vector. Same source as the
-          # YAML dimensions above.
+          # Zero vector for query-less searches; must match the embedder width.
           EMBEDDING_DIM = toString embedder.dimensions;
-          # The account's PAYG tier allows 3 concurrent upstream slots, and the
-          # gateway's MEMORY_UPSTREAM_CONCURRENCY=2 already holds the real
-          # ceiling on upstream requests (a permit covers the whole request,
-          # including the streamed body). Two here keeps Graphiti's own queue
-          # from outrunning the gateway and leaves one slot for Maki's chat on
-          # the same key. Oversubscribing does not add throughput: the gateway
-          # logged 944 429s out of 2270 requests at 4 while a 1382-episode
-          # backfill starved, so lower these before anything else if 429s return.
+          # The gateway's MEMORY_UPSTREAM_CONCURRENCY=2 holds the real ceiling; two here
+          # leaves one of the tier's three slots for Maki. Oversubscribing triggers 429s;
+          # lower these first if they return.
           SEMAPHORE_LIMIT = "2";
         };
       };
     };
 
-    # No dependsOn: that would make a FalkorDB restart stop the MCP and discard
-    # its in-memory episode queue. Start after it, and let the preStart probe
-    # below wait for readiness.
-    # A broken image tag, config, or volume should settle into `failed` and
-    # email, not flap forever; 10 starts in an hour is generous for a flaky
-    # pull. TimeoutStartSec bounds a hung image pull (the module default is 0).
+    # No dependsOn: a FalkorDB restart would stop the MCP and drop its episode queue.
+    # Ten starts per hour then `failed` + email; TimeoutStartSec bounds a hung pull.
     systemd.services.memory-falkordb = {
-      # `linger-users.service` only enables lingering; it does not order the
-      # container after the user manager. Start the runtime directory and user
-      # manager explicitly so rootless podman has cgroups and XDG_RUNTIME_DIR.
+      # linger-users only enables lingering; require the user manager for cgroups and
+      # XDG_RUNTIME_DIR.
       requires = [
         "user-runtime-dir@${toString memoryUid}.service"
         "user@${toString memoryUid}.service"
@@ -376,7 +275,7 @@ in
         Restart = lib.mkForce "always";
         RestartSec = "10s";
       };
-      onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
+      onFailure = [ "cloudflare-email@%n.service" ];
     };
 
     systemd.services.memory-graphiti-mcp = {
@@ -406,14 +305,9 @@ in
         Restart = lib.mkForce "always";
         RestartSec = "10s";
       };
-      onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
-      # A container start only waits for the unit to be up, not for FalkorDB to
-      # answer; Graphiti builds indices on startup and would exit otherwise.
-      # The embedder is probed too, because every search and ingest needs it.
-      # Extraction readiness is deliberately not a gate: reads and embedder
-      # traffic do not need it, and the MCP's in-memory write queue can drop an
-      # episode while Neuralwatt is unreachable, so the wrapper records the
-      # write as pending and its reconciler verifies it later.
+      onFailure = [ "cloudflare-email@%n.service" ];
+      # A container start does not wait for FalkorDB; Graphiti builds indices on startup.
+      # Extraction is not a gate: the wrapper records writes as pending and reconciles.
       preStart = ''
         for _ in $(seq 120); do
           ${pkgs.redis}/bin/redis-cli -h 127.0.0.1 -p ${toString dbPort} ping >/dev/null 2>&1 \
@@ -426,14 +320,9 @@ in
       '';
     };
 
-    # Graphiti's only route to Neuralwatt: this gateway owns the account key
-    # (injected from a systemd credential) and adds `reasoning_effort: "none"`
-    # to chat completions. graphiti-core cannot ask for that per request, and
-    # extraction that reasons returns empty content. Everything else (models,
-    # embeddings, health, streaming) is forwarded unchanged, with Graphiti's
-    # dummy `Bearer none` replaced by the real key. It is the single egress
-    # point, so no other memory process needs the key. Loopback listener, no
-    # state.
+    # Sole route to Neuralwatt: holds the key and adds `reasoning_effort: "none"`
+    # (graphiti-core cannot per request); forwards the rest, replacing the dummy
+    # `Bearer none`.
     systemd.services.memory-llm-proxy = {
       description = "Neuralwatt gateway for Graphiti extraction (key injection, thinking off)";
       wantedBy = [ "multi-user.target" ];
@@ -441,59 +330,40 @@ in
         StartLimitIntervalSec = "1h";
         StartLimitBurst = 10;
       };
-      onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
-      serviceConfig = {
+      onFailure = [ "cloudflare-email@%n.service" ];
+      serviceConfig = hardening // {
         DynamicUser = true;
         ExecStart = "${memoryPackage}/bin/memory-llm-proxy";
         Environment = [
           "MEMORY_LLM_UPSTREAM=https://api.neuralwatt.com"
           "MEMORY_LLM_PROXY_HOST=127.0.0.1"
           "MEMORY_LLM_PROXY_PORT=${toString llmProxyPort}"
-          # %d is systemd's credential directory. The key reaches the process
-          # only as a private file: never the environment, never the Nix store.
+          # %d is systemd's credential directory: the key never enters the environment or store.
           "MEMORY_NEURALWATT_KEY_FILE=%d/neuralwatt-api-key"
-          # Two upstream slots of the tier's three, and six attempts (one try
-          # plus five retries) for a 429/503 rejection. Together these are the
-          # whole rate-limit story: the limiter keeps the tier's slots free and
-          # the retries absorb a burst instead of failing an episode.
+          # Two of the tier's three slots; six attempts absorb 429/503 bursts.
           "MEMORY_UPSTREAM_CONCURRENCY=2"
           "MEMORY_UPSTREAM_RETRIES=6"
         ];
-        # systemd reads the sops secret as root and hands the service a copy.
-        # A missing key fails the unit instead of starting a gateway that would
-        # refuse every request.
+        # A missing key fails the unit instead of serving refusals.
         LoadCredential = "neuralwatt-api-key:/run/secrets/neuralwatt-api-key";
         Restart = "always";
         RestartSec = "5s";
-        # A streaming relay: buffers are per-connection, requests are tiny.
+        # Streaming relay with tiny requests.
         MemoryMax = "256M";
-        ProtectSystem = "strict";
-        ProtectHome = true;
-        PrivateTmp = true;
-        NoNewPrivileges = true;
         PrivateDevices = true;
         RestrictAddressFamilies = [
           "AF_INET"
           "AF_INET6"
           "AF_UNIX"
         ];
-        # A loopback listener with public egress: this unit is the memory
-        # stack's only off-host route, so no IP filters here.
+        # Sole off-host route of the memory stack, so no IP filters.
       };
     };
 
-    # The wrapper is the only memory service the tunnel reaches. It validates
-    # the group header the shim sends, refuses work groups, and records writes
-    # as pending in the typed registry. A background reconciler proves each
-    # write against FalkorDB and resolves it to active or failed. Raw Graphiti
-    # stays on the internal graphitiPort and is never tunneled.
-    #
-    # A raw TCP tunnel delivers every client as loopback, so the peer address is
-    # not an authority. Every request to this listener therefore needs
-    # `Authorization: Bearer <token>` against the `memory-mcp-token` sops secret
-    # (`memory.mcpTokenFile`); /health stays exempt because it answers a static
-    # status, and the /internal ingest routes keep their own per-start token
-    # from the state dir. A missing secret fails closed with 503 and a startup
+    # The only service the tunnel reaches. A raw TCP tunnel presents every client as
+    # loopback, so each request needs the bearer token (`mcpTokenFile`); /health is
+    # exempt and /internal keeps its own token. A missing secret fails closed (503).
+    # Raw Graphiti is never tunneled.
     # log line.
     systemd.services.memory-mcp = {
       description = "memory MCP wrapper (project groups, typed registry, reconciler)";
@@ -512,8 +382,8 @@ in
         StartLimitIntervalSec = "1h";
         StartLimitBurst = 10;
       };
-      onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
-      serviceConfig = {
+      onFailure = [ "cloudflare-email@%n.service" ];
+      serviceConfig = hardening // {
         User = "memory";
         Group = "memory";
         ExecStart = "${memoryPackage}/bin/memory-mcp";
@@ -523,57 +393,42 @@ in
         Environment = [
           "MEMORY_MCP_HOST=127.0.0.1"
           "MEMORY_MCP_PORT=${toString ports.memoryMcp}"
-          # The listener's bearer token: sops renders it root:memory 0440, so
-          # this service reads it through its group membership.
-          "MEMORY_MCP_TOKEN_FILE=${config.memory.mcpTokenFile}"
+          # sops renders the token root:memory 0440; read via group.
+          "MEMORY_MCP_TOKEN_FILE=${mcpTokenFile}"
           "MEMORY_GRAPHITI_URL=http://127.0.0.1:${toString graphitiPort}/mcp"
           "MEMORY_REDIS_URL=redis://127.0.0.1:${toString dbPort}"
-          # Readiness probes the gateway so search and retries can pause when the
-          # model endpoint is down; writes are never gated on it.
+          # Search and retries pause when the model endpoint is down; writes are never gated.
           "MEMORY_LLM_URL=http://127.0.0.1:${toString llmProxyPort}"
           "MEMORY_EMBED_URL=${embedder.url}"
           "MEMORY_STATE_DIR=${dataDir}"
-          # Reconciler cadence: poll pending rows, tolerate a slow extraction,
-          # and back off between bounded retries.
           "MEMORY_RECONCILE_INTERVAL=10"
-          # See reconcileGraceSeconds above; the pending-stale window derives
-          # from the same value so the two cannot drift apart.
+          # Derived from reconcileGraceSeconds so the two cannot drift.
           "MEMORY_RECONCILE_GRACE=${toString reconcileGraceSeconds}"
           "MEMORY_PENDING_STALE_SECONDS=${toString reconcileGraceSeconds}"
           "MEMORY_RECONCILE_BACKOFF=60"
           "MEMORY_WORK_EMAIL=${work.email}"
           "MEMORY_WORK_OWNER_GLOB=${lib.concatStringsSep "," work.githubOwners}"
           "MEMORY_WORK_FLOW=${work.flow}"
-          # Open WebUI's native MCP client cannot send the X-Memory-* headers,
-          # so the chat surface is pinned to the shared group and marked as its
-          # own provenance. Clients that do send headers keep the strict
-          # contract, including the refusal of a partial set.
+          # Open WebUI's MCP client cannot send X-Memory-* headers; pin it to the shared
+          # group. Header-sending clients keep the strict contract.
           "MEMORY_MCP_DEFAULT_GROUP=global"
           "MEMORY_MCP_DEFAULT_CWD=/chat"
           "MEMORY_MCP_DEFAULT_ACTOR=open-webui"
         ]
-        # A remote embedder has no /health behind the gateway; naming its model
-        # makes readiness send a one-word embedding instead.
+        # A remote embedder has no /health; a model name makes readiness embed one word.
         ++ lib.optional (!localEmbedder) "MEMORY_EMBED_MODEL=${embedder.model}";
-        # The pre-start probe bounds how long a stale graph or model endpoint
-        # can keep the unit in activation.
+        # Bounds how long the pre-start probe can hold activation.
         TimeoutStartSec = "2min";
         Restart = "always";
         RestartSec = "5s";
         MemoryMax = "512M";
-        ProtectSystem = "strict";
-        ProtectHome = true;
-        PrivateTmp = true;
-        NoNewPrivileges = true;
         PrivateDevices = true;
         RestrictAddressFamilies = [
           "AF_INET"
           "AF_INET6"
           "AF_UNIX"
         ];
-        # Loopback only: the wrapper talks to Graphiti and the two model
-        # endpoints and needs no other network identity. Rootless podman's
-        # port forward presents FalkorDB on loopback, not a podman subnet.
+        # Loopback only; rootless port forwarding presents FalkorDB there.
         IPAddressAllow = "localhost";
         IPAddressDeny = "any";
       };
@@ -590,28 +445,20 @@ in
       '';
     };
 
-    # Nightly export. The registry snapshot is the backup: it holds every
-    # episode's content and provenance, so losing it loses memory. The graph is
-    # a derived index, so its BGSAVE snapshot is best-effort: the files are
-    # written either way, but a missing graph exits non-zero so the timer's
-    # onFailure alert sees it. Root is required to stop/start services and read
-    # the memory-owned graph dir; the registry is only read, so the wrapper
-    # keeps writing under WAL.
-    # `Type=oneshot` makes overlap impossible, and the timer re-runs a missed
-    # run after downtime (`Persistent`). The export refuses to run while a
-    # restore holds /var/lib/memory/.restore-in-progress.
+    # The registry snapshot is the backup; the graph is a derived index, so its BGSAVE
+    # is best-effort but a missing graph exits non-zero to trigger the alert. Root
+    # reads the memory-owned graph dir. Refuses to run during a restore
+    # (.restore-in-progress).
     systemd.services.memory-export = {
       description = "Export the memory registry and snapshot the graph";
-      # No dependency on the wrapper: an export of the last good registry is
-      # exactly what to take while the memory services are down. Ordering only
-      # applies when both are in the same transaction (a boot catch-up run), so
-      # it never pulls the stack up for a maintenance stop.
+      # No dependency on the wrapper: exporting while services are down is the point.
+      # `after` only orders runs in one transaction.
       after = [ "memory-mcp.service" ];
       unitConfig = {
         StartLimitIntervalSec = "1h";
         StartLimitBurst = 3;
       };
-      onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
+      onFailure = [ "cloudflare-email@%n.service" ];
       serviceConfig = {
         Type = "oneshot";
         ExecStart = lib.escapeShellArgs [
@@ -634,12 +481,9 @@ in
         Nice = 19;
         CPUWeight = 20;
         IOSchedulingClass = "idle";
-        # Hard bounds: BGSAVE polling is bounded inside the command, and the
-        # unit itself cannot hold the timer slot past this.
         TimeoutStartSec = "30min";
         TimeoutStopSec = "30min";
-        # "full" leaves /var writable (the export and the graph live there)
-        # while the rest of the system stays read-only.
+        # Keeps /var writable (export and graph live there).
         ProtectSystem = "full";
         ProtectHome = true;
         PrivateTmp = true;
@@ -651,8 +495,7 @@ in
           "AF_INET"
           "AF_INET6"
         ];
-        # Only FalkorDB on loopback is reachable; rootless port forwarding
-        # presents it on localhost, not a podman subnet.
+        # Rootless port forwarding presents FalkorDB on localhost.
         IPAddressAllow = "localhost";
         IPAddressDeny = "any";
       };
@@ -664,17 +507,14 @@ in
       timerConfig = {
         OnCalendar = "daily";
         Persistent = true;
-        # Spread the BGSAVE and the copy away from midnight and from the
-        # backup timers.
+        # Spread away from midnight and the backup timers.
         RandomizedDelaySec = "1h";
         Unit = "memory-export.service";
       };
     };
 
-    # A second llama.cpp instance: services.llama-cpp is single-instance, and
-    # the chat instance's speculative decoding must not carry embedding flags.
-    # nixpkgs' CPU build keeps this independent of the pinned CUDA fork. It
-    # backs the default embedder and stays deployed as the fallback.
+    # services.llama-cpp is single-instance and chat's speculative decoding must not
+    # carry embedding flags; nixpkgs' CPU build avoids the pinned CUDA fork.
     systemd.services.llama-cpp-embed = {
       description = "llama.cpp embedding server (bge-m3) for the memory stack";
       wantedBy = [ "multi-user.target" ];
@@ -683,8 +523,8 @@ in
         StartLimitIntervalSec = "1h";
         StartLimitBurst = 10;
       };
-      onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
-      serviceConfig = {
+      onFailure = [ "cloudflare-email@%n.service" ];
+      serviceConfig = hardening // {
         DynamicUser = true;
         StateDirectory = "llama-cpp-embed";
         CacheDirectory = "llama-cpp-embed";
@@ -700,8 +540,7 @@ in
           "cls"
           "--ctx-size"
           "8192"
-          # A single input longer than the physical batch is rejected outright;
-          # match the context so long entity summaries do not fail an episode.
+          # An input longer than the physical batch is rejected; match the context.
           "--batch-size"
           "8192"
           "--ubatch-size"
@@ -717,10 +556,6 @@ in
         MemoryMax = "8G";
         Restart = "on-failure";
         RestartSec = 10;
-        ProtectSystem = "strict";
-        ProtectHome = true;
-        PrivateTmp = true;
-        NoNewPrivileges = true;
       };
     };
   };

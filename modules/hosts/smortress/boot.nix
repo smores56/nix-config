@@ -1,11 +1,7 @@
 # smortress's boot chain: systemd stage 1, lanzaboote, and the TPM plumbing the
-# Clevis `sss` policy needs. Host-scoped because the machine's own sbctl keys
-# and its Tang pin only exist here (see T2 in #250).
-#
-# Order matters: `sudo sbctl create-keys` must run before the first rebuild
-# with this module. `autoGenerateKeys` is deliberately off so a missing key
-# bundle fails the bootloader install instead of writing artifacts the
-# firmware will not trust.
+# Clevis `sss` policy needs. Run `sudo sbctl create-keys` before the first rebuild;
+# `autoGenerateKeys` is off so a missing key bundle fails the install instead of
+# writing artifacts the firmware will not trust.
 {
   inputs,
   lib,
@@ -15,67 +11,51 @@
 {
   imports = [ inputs.lanzaboote.nixosModules.lanzaboote ];
 
-  # Scripted stage 1 is deprecated (removed in 26.11) and cannot express the
-  # Clevis unit ordering. systemd stage 1 also gives the cryptsetup generator
-  # the passphrase fallback when the Tang/TPM share cannot be satisfied.
+  # Scripted stage 1 cannot express the Clevis unit ordering; systemd stage 1 also
+  # falls back to the passphrase when the Tang/TPM share fails.
   boot.initrd.systemd.enable = true;
 
-  # The fTPM must be on in the firmware. Clevis orders its decrypt unit after
-  # `tpm2.target`; without this the target never appears in the initrd and the
-  # TPM share cannot unseal.
+  # Clevis orders its decrypt unit after `tpm2.target`, which only exists with this; the
+  # fTPM must also be enabled in firmware, or unlock falls back to the passphrase.
   security.tpm2.enable = true;
   boot.initrd.systemd.tpm2.enable = true;
 
-  # Clevis sss: the Tang share and the TPM2 share (sealed to PCR 7) are both
-  # required. The JWE is committed: it is ciphertext, and the identical token
-  # already lives in the LUKS header. Stage 1 decrypts it to
-  # /clevis-root/decrypted before systemd-cryptsetup@root; if either share
-  # fails, systemd falls back to the passphrase slot.
+  # Tang and TPM2 (PCR 7) shares are both required. The JWE is ciphertext and already
+  # in the LUKS header, so it is committed; either share failing falls back to the passphrase.
   boot.initrd.clevis = {
     enable = true;
     useTang = true;
     devices.root.secretFile = ./root.jwe;
   };
 
-  # Tang must be reachable before the Clevis unit runs. Match by MAC because
-  # initrd link names are not guaranteed; the wired NIC is the only one with a
-  # static address. Cable down or Tang down means a passphrase prompt.
+  # Matched by MAC because initrd link names are not stable.
   boot.initrd.systemd.network = {
     enable = true;
-    # A dead link must not hide the passphrase prompt for two minutes.
+    # A dead link must not hide the passphrase prompt.
     wait-online.timeout = 10;
     networks."10-lan" = {
       matchConfig.MACAddress = "3c:7c:3f:82:69:61";
       address = [ "10.0.0.125/24" ];
-      # The initrd only needs the Tang route; drop the router advertisement so
-      # no DHCPv6 address is acquired and then torn down at switch-root.
+      # No DHCPv6 address acquired then torn down at switch-root.
       networkConfig.IPv6AcceptRA = false;
     };
   };
 
-  # Tang can accept the TCP connection and then stall; clevis's curl has no
-  # overall timeout. Cap the unit so a wedged Tang reaches the passphrase
-  # prompt instead of waiting out the initrd default.
+  # clevis's curl has no overall timeout; a wedged Tang must reach the passphrase prompt.
   boot.initrd.systemd.services.cryptsetup-clevis-root.serviceConfig.TimeoutStartSec = "30s";
-  # Defaults to false with systemd stage 1, which leaves the static address
-  # (and no default route) in place across switch-root. NetworkManager then
-  # sees the link as "connected (externally)" and never activates its DHCP
-  # profile, so the tunnel and DNS never come up. Flush it and let stage 2
-  # own the interface.
+  # Otherwise the initrd's static address survives switch-root and NetworkManager
+  # reports "connected (externally)" without running DHCP.
   boot.initrd.network.flushBeforeStage2 = true;
 
-  # Belt and braces for the handoff: even with flushBeforeStage2 the initrd's
-  # static address has survived switch-root, leaving NetworkManager with an
-  # "externally connected" device and no DHCP activation (no default route,
-  # no DNS). Define the wired profile declaratively and force it once NM and
-  # the profile writer are up.
+  # Belt and braces: the static address has survived switch-root even with
+  # flushBeforeStage2, so declare the wired profile and force it.
   networking.networkmanager.ensureProfiles.profiles.smortress-wired = {
     connection = {
       id = "smortress-wired";
       type = "ethernet";
       interface-name = "enp7s0";
       autoconnect = true;
-      # Win over the auto-created "Wired connection 1" on the same link.
+      # Beats the auto-created "Wired connection 1".
       autoconnect-priority = 10;
     };
     ipv4.method = "auto";
@@ -100,10 +80,8 @@
       RemainAfterExit = true;
       TimeoutStartSec = 60;
     };
-    # Only the initrd leaves the device "connected (externally)"; a normal
-    # boot is a no-op. In that state, drop the device so the flush cannot strip
-    # an active connection, then reconnect by profile so DHCP re-applies the
-    # default route and DNS. Retry: failing here boots the box unreachable.
+    # No-op unless the initrd left the device "connected (externally)". Retry: failing
+    # here boots the box unreachable.
     script = ''
       set -eu
       nmcli=${pkgs.networkmanager}/bin/nmcli
@@ -128,22 +106,17 @@
 
   boot.initrd.availableKernelModules = [ "igc" ];
 
-  # Lanzaboote replaces the systemd-boot module enabled by base.nix; the
-  # firmware must load the signed stub for PCR 7 to measure our Secure Boot
-  # policy rather than a bootloader we did not sign.
+  # Replaces systemd-boot (base.nix); PCR 7 needs the signed stub.
   boot.loader.systemd-boot.enable = lib.mkForce false;
   boot.lanzaboote = {
     enable = true;
-    # Lives in the LUKS root, never in the store or the repo. Back it up
-    # before any reinstall: the firmware has these keys in `db`.
+    # Lives in the LUKS root; back it up before any reinstall (the firmware has these keys in `db`).
     pkiBundle = "/var/lib/sbctl";
     autoGenerateKeys.enable = false;
     # 1 GiB ESP: lzbt keeps a kernel + initrd per generation.
     configurationLimit = 10;
   };
 
-  # sbctl signs and enrolls; clevis binds and inspects the LUKS token; the
-  # tpm2 tools verify the PCR 7 value before and after the bind.
   environment.systemPackages = [
     pkgs.sbctl
     pkgs.clevis

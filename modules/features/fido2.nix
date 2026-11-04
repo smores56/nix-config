@@ -11,11 +11,9 @@ let
   yubikeyKeys = import ../lib/yubikey-keys.nix;
   isServer = builtins.elem "server" config.machine.profiles;
 
-  # OpenSSH's only libfido2 consumer is libexec/ssh-sk-helper. The default
-  # libfido2 links PC/SC, so with pcscd running (PIV) it enumerates the same
-  # YubiKey twice (USB HID + PC/SC) and OpenSSH asks for a touch just to pick
-  # one. LD_LIBRARY_PATH swaps in a libfido2 without PC/SC, so no OpenSSH
-  # package hash changes and the binary cache still supplies it.
+  # OpenSSH's only libfido2 consumer is libexec/ssh-sk-helper. The default libfido2 links PC/SC, so
+  # with pcscd running it sees the YubiKey twice (USB HID + PC/SC) and asks for a touch to pick one.
+  # LD_LIBRARY_PATH swaps in a PC/SC-free libfido2 without changing OpenSSH's package hash.
   libfido2NoPcsc = pkgs.libfido2.override { withPcsclite = false; };
   skHelper = pkgs.writeShellApplication {
     name = "ssh-sk-helper-no-pcsc";
@@ -25,10 +23,8 @@ let
     '';
   };
 
-  # ssh uses this through SSH_ASKPASS_REQUIRE=force. Nothing it could be asked
-  # needs an answer (piv-ensure owns the PIV PIN; the sudo handles are
-  # touch-only), so a presence request is announced and every prompt fails
-  # closed; a changed host key can never be accepted unseen.
+  # Via SSH_ASKPASS_REQUIRE=force. Nothing it could be asked needs an answer (piv-ensure owns the
+  # PIV PIN; sudo handles are touch-only), so every prompt fails closed and a changed host key is never accepted unseen.
   askpass = pkgs.writeShellApplication {
     name = "ssh-askpass";
     runtimeInputs = [ pkgs.libnotify ];
@@ -42,7 +38,6 @@ let
     '';
   };
 
-  # Loading a handle needs no PIN (it is useless without the physical key).
   loadHandles = pkgs.writeShellApplication {
     name = "fido2-agent-load";
     runtimeInputs = [ pkgs.openssh ];

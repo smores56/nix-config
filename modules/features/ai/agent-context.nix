@@ -8,10 +8,8 @@ let
   inherit (cfg.work) flatRepos;
 
   # Generated from the options so no employer name lives here.
-  workHostLines = lib.optionals (config.machine.workHost && flatRepos != null) [
-    "- This is a work host: work checkouts live flat in `${flatRepos.dir}`${
-      lib.optionalString (flatRepos.envVar != null) " (`\$${flatRepos.envVar}`)"
-    }; `repos get` routes the GitHub owners ${
+  workHostLines = lib.optionals config.machine.workHost [
+    "- This is a work host: work checkouts live flat in `${flatRepos.dir}` (`\$${flatRepos.envVar}`); `repos get` routes the GitHub owners ${
       lib.concatMapStringsSep ", " (o: "`${o}`") cfg.work.githubOwners
     } there directly, and `repos list` includes both roots"
     "- The work tooling's shell functions and aliases come from `~/.zshrc`, which this host's interactive zsh loads; if your shell didn't (e.g. a non-interactive or other shell), run them as `zsh -ic '<function> && <command>'` so the env a function exports reaches the command"

@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
-# Exercises the generated git config against scratch repos: work-owner
-# remotes (every URL form and casing, worktrees, mixed remotes) pick up the
-# work identity and ssh route, the personal owner gets the local flow, and
-# everything else keeps only the personal defaults. Every repo signs with
-# the sops key of its owner's account.
-#
+# Exercises the generated git config against scratch repos: work-owner remotes (any URL form or casing,
+# worktrees, mixed remotes) get the work identity and ssh route; everything else keeps personal defaults.
 # Usage: git_work_routing.sh <gitconfig>, with the expected values in the
 # env scriptChecks sets (modules/flake/checks.nix).
 set -euo pipefail

@@ -53,18 +53,14 @@ DEFAULT_GRAPH_DIR = "/var/lib/memory/falkordb"
 DEFAULT_GRAPH_URL = "redis://127.0.0.1:6379"
 DEFAULT_KEEP = 7
 DEFAULT_GRAPH_TIMEOUT = 120.0
-# The services that write the registry or own the graph files. Restore stops
-# them all, writers first, so nothing holds the database open or writes into the
-# graph mid-restore; `memory-falkordb` must stop too, because its AOF rewrite
-# would otherwise recreate the data the restore is replacing.
+# Services that write the registry or own the graph files, stopped writers first. `memory-falkordb`
+# must stop too: its AOF rewrite would recreate the data being replaced.
 GRAPH_UNIT = "memory-falkordb"
 MEMORY_UNITS = ("memory-mcp", "memory-graphiti-mcp", "memory-llm-proxy", GRAPH_UNIT)
 DEFAULT_OWNER = "memory:memory"
-# Restore writes this into the state dir first; an export refuses to snapshot a
-# registry that is being swapped underneath it.
+# Written first by restore; an export refuses to snapshot a registry being swapped.
 RESTORE_LOCK = ".restore-in-progress"
-# FalkorDB runs with `appendonly yes`; Redis loads the AOF in preference to the
-# RDB, so a restored `dump.rdb` needs the old AOF out of the way to be loaded.
+# FalkorDB runs `appendonly yes` and Redis prefers the AOF, so a restored `dump.rdb` needs the old AOF moved away.
 AOF_NAMES = ("appendonlydir", "appendonly.aof")
 BGSAVE_POLL_INTERVAL = 0.5
 
@@ -72,8 +68,7 @@ TIMESTAMP_FORMAT = "%Y-%m-%dT%H-%M-%SZ"
 TIMESTAMP_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z$")
 GRAPH_NAME_PATTERN = re.compile(r"^graph-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z)\.rdb$")
 
-# Registry column -> episode JSON key. `group_id` is the registry's spelling;
-# the export speaks the same vocabulary as the MCP surface.
+# Registry column -> episode JSON key (`group_id` is the registry's spelling).
 EPISODE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("group_id", "group"),
     ("uuid", "uuid"),
@@ -312,7 +307,7 @@ def _start_bgsave(client: Any) -> None:
     try:
         client.execute_command("BGSAVE")
     except Exception as exc:
-        # A save already running is fine: we wait for it like one we started.
+        # A save already running is fine: wait for it.
         if "in progress" in str(exc).lower():
             return
         raise GraphSnapshotError(f"BGSAVE failed: {exc}") from exc
@@ -385,8 +380,7 @@ def snapshot_graph(
     filename = GRAPH_FILE.format(snapshot=snapshot)
     dump = source / "dump.rdb"
     handle = client if client is not None else _redis(url)
-    # The save timestamp, not the file mtime: only a save that completes after
-    # this point rewrote dump.rdb.
+    # The save timestamp, not mtime: only a save completing after this point rewrote dump.rdb.
     saved_before = _rdb_last_save(handle)
     _start_bgsave(handle)
     fields = _wait_for_bgsave(handle, timeout=timeout, poll=poll, sleep=sleep, clock=clock)
@@ -454,8 +448,7 @@ def prune_exports(
         key=lambda path: path.name,
         reverse=True,
     )
-    # The current export counts toward `keep`, but is never deleted: a clock
-    # step that leaves it outside the newest `keep` must not prune the run away.
+    # The current export counts toward `keep` but is never deleted, so a clock step cannot prune the run away.
     stale = [path for path in candidates[keep:] if path != just_written]
     for path in stale:
         shutil.rmtree(path)
@@ -701,8 +694,7 @@ class RestoreConfig:
     start_services: bool = False
     dry_run: bool = False
     schema_version: int = SCHEMA_VERSION
-    # `None` leaves the restored file owned by the caller; the CLI passes the
-    # service account on a real host, and its absence is a hard error.
+    # `None` leaves the file owned by the caller; the CLI passes the service account, and its absence is a hard error.
     owner: str | None = DEFAULT_OWNER
     run: Callable[[Sequence[str]], None] | None = None
 
@@ -799,8 +791,7 @@ def _park_registry(registry_path: Path, snapshot: str) -> tuple[Path, ...]:
         try:
             shutil.copy2(source, copy)
         except OSError:
-            # The registry copy is the safety net; a sidecar can be gone again
-            # by the time we get to it.
+            # The registry copy is the safety net; the sidecar may be gone again.
             continue
         parked.append(copy)
     return tuple(parked)
@@ -857,9 +848,7 @@ def restore(config: RestoreConfig) -> RestoreReport:
             f"the export's registry schema is {verified.schema_version}, "
             f"this code writes {config.schema_version}; refusing to restore a newer schema"
         )
-    # An older registry is installed as-is and migrated the next time the
-    # wrapper opens it (`Registry._ensure_schema`), so a restore is not tied to
-    # the release that took the export.
+    # An older registry is installed as-is and migrated on next open (`Registry._ensure_schema`).
     if verified.schema_version < 1:
         raise ExportInvalid(
             f"the export's registry schema is {verified.schema_version}; "
@@ -913,8 +902,7 @@ def restore(config: RestoreConfig) -> RestoreReport:
     parked: tuple[str, ...] = ()
     if verified.graph.accepted and verified.graph.path is not None:
         try:
-            # FalkorDB runs rootless as `memory`; a root-owned dump or graph
-            # directory would be unreadable after the restore.
+            # FalkorDB runs rootless as `memory`; root-owned data would be unreadable.
             if config.owner:
                 config.graph_dir.mkdir(parents=True, exist_ok=True)
                 _fix_owner(config.graph_dir, config.owner, mode=0o700)
@@ -1029,9 +1017,7 @@ def _report_lines(report: RestoreReport, *, dry_run: bool) -> Iterator[str]:
             " (kept; delete it once the restore checks out)"
         )
     if dry_run and report.graph.accepted and report.graph.path is not None:
-        # A dry run writes nothing, so `graph_restored` stays false; without
-        # this line a good export printed the "cannot be rebuilt" warning and
-        # looked unusable.
+        # A dry run leaves `graph_restored` false; without this a good export printed the "cannot be rebuilt" warning.
         yield f"graph: would restore {report.graph.path.name} (matching snapshot)"
         return
     yield graph_advice(report)
@@ -1153,8 +1139,7 @@ def export_command(args: argparse.Namespace) -> int:
     for path in result.pruned:
         print(f"pruned {path.name}")
     if graph_error:
-        # The registry export stands; the missing graph is still a failure the
-        # timer (and its onFailure alert) must see.
+        # The registry export stands; the missing graph still fails so the timer's onFailure alert fires.
         print(f"memory-export: the graph snapshot failed: {graph_error}", file=sys.stderr)
         return 1
     return 0
