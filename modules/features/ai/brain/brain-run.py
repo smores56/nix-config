@@ -33,10 +33,9 @@ from pathlib import Path
 
 ALWAYS_SOURCES = ("sessions", "git")
 # Vault CLAUDE.md `### <heading>` under `## Sources` → source name; unconfigured sources are never waited on.
+# Chat and mail are deliberately absent: they are queried on demand, never harvested.
 CONFIGURED_SOURCES = {
     "Code host": "github",
-    "Chat": "chat",
-    "Mail": "mail",
     "Calendar": "calendar",
     "Issue tracker": "tracker",
     "Meeting notes": "meetings",
@@ -70,15 +69,6 @@ TICKET_KEY_RE = re.compile(r"^[A-Z][A-Z0-9]{1,9}$")
 # The headless model reads connectors through these exact tools and nothing else: under
 # dontAsk an unlisted tool is refused, and rules can't express "every read verb" safely.
 CONNECTOR_TOOLS = (
-    "mcp__claude_ai_Slack__slack_search_public_and_private",
-    "mcp__claude_ai_Slack__slack_read_channel",
-    "mcp__claude_ai_Slack__slack_read_thread",
-    "mcp__claude_ai_Slack__slack_read_user_profile",
-    "mcp__claude_ai_Slack__slack_search_users",
-    "mcp__claude_ai_Slack__slack_search_channels",
-    "mcp__claude_ai_Gmail__search_threads",
-    "mcp__claude_ai_Gmail__get_thread",
-    "mcp__claude_ai_Gmail__get_message",
     "mcp__claude_ai_Google_Calendar__list_calendars",
     "mcp__claude_ai_Google_Calendar__list_events",
     "mcp__claude_ai_Google_Calendar__get_event",
@@ -88,31 +78,12 @@ CONNECTOR_TOOLS = (
     "mcp__claude_ai_Atlassian_Rovo__searchJiraIssuesUsingJql",
     "mcp__claude_ai_Atlassian_Rovo__getJiraIssue",
     "mcp__claude_ai_Atlassian_Rovo__lookupJiraAccountId",
-    # Meeting notes: Gemini docs found by calendar attachment or the day's title search, checked then read.
-    "mcp__claude_ai_Google_Drive__get_file_metadata",
-    "mcp__claude_ai_Google_Drive__read_file_content",
-    "mcp__claude_ai_Google_Drive__search_files",
+    # Meeting notes: titles and links only; summaries and transcripts stay in Granola.
+    "mcp__claude_ai_Granola__search_meetings",
 )
 # Writes and URL fetchers: already refused as unlisted, denied too so no managed-settings allow
 # can ever reach them.
 CONNECTOR_DENIED_TOOLS = (
-    "mcp__claude_ai_Slack__slack_send_message",
-    "mcp__claude_ai_Slack__slack_send_message_draft",
-    "mcp__claude_ai_Slack__slack_schedule_message",
-    "mcp__claude_ai_Slack__slack_add_reaction",
-    "mcp__claude_ai_Slack__slack_create_canvas",
-    "mcp__claude_ai_Slack__slack_update_canvas",
-    "mcp__claude_ai_Slack__slack_create_conversation",
-    "mcp__claude_ai_Gmail__send_message",
-    "mcp__claude_ai_Gmail__reply",
-    "mcp__claude_ai_Gmail__forward",
-    "mcp__claude_ai_Gmail__create_draft",
-    "mcp__claude_ai_Gmail__update_draft",
-    "mcp__claude_ai_Gmail__trash_message",
-    "mcp__claude_ai_Gmail__trash_thread",
-    "mcp__claude_ai_Gmail__label_message",
-    "mcp__claude_ai_Gmail__label_thread",
-    "mcp__claude_ai_Gmail__update_message_labels",
     "mcp__claude_ai_Google_Calendar__create_event",
     "mcp__claude_ai_Google_Calendar__update_event",
     "mcp__claude_ai_Google_Calendar__delete_event",
@@ -125,18 +96,26 @@ CONNECTOR_DENIED_TOOLS = (
     "mcp__claude_ai_Atlassian_Rovo__createConfluencePage",
     "mcp__claude_ai_Atlassian_Rovo__updateConfluencePage",
     "mcp__claude_ai_Atlassian_Rovo__fetch",
-    "mcp__claude_ai_Google_Drive__create_file",
-    "mcp__claude_ai_Google_Drive__update_file",
-    "mcp__claude_ai_Google_Drive__copy_file",
-    "mcp__claude_ai_Google_Drive__share_file",
-    "mcp__claude_ai_Google_Drive__trash_file",
-    # Drive reads the meeting-notes rules never need.
-    "mcp__claude_ai_Google_Drive__download_file_content",
-    "mcp__claude_ai_Google_Drive__list_recent_files",
-    "mcp__claude_ai_Google_Drive__get_file_permissions",
+    # Meeting content: on-demand only, never harvested.
+    "mcp__claude_ai_Granola__get_meetings",
+    "mcp__claude_ai_Granola__get_meeting_transcript",
+    "mcp__claude_ai_Granola__search_transcripts",
+    "mcp__claude_ai_Granola__query_granola_meetings",
+    "mcp__claude_ai_Granola__get_meeting_attachment",
+    "mcp__claude_ai_Granola__list_meetings",
+    "mcp__claude_ai_Granola__generate_summary",
+    "mcp__claude_ai_Granola__update_private_notes",
+    "mcp__claude_ai_Granola__add_note_to_folder",
+    "mcp__claude_ai_Granola__remove_note_from_folder",
+    "mcp__claude_ai_Granola__create_folder",
+    "mcp__claude_ai_Granola__update_folder",
 )
-# Whole servers the harvest never needs, hidden so their write tools aren't even listed.
-DENIED_SERVERS = ("mcp__claude_ai_Notion", "mcp__claude_ai_Claude_Docs")
+# Whole servers the harvest never touches. Chat and mail are queried on demand in sessions,
+# never pulled on a schedule.
+DENIED_SERVERS = (
+    "mcp__claude_ai_Notion", "mcp__claude_ai_Claude_Docs",
+    "mcp__claude_ai_Slack", "mcp__claude_ai_Gmail", "mcp__claude_ai_Google_Drive",
+)
 # "Task" is the subagent tool's older name.
 DENIED_TOOLS = ("Bash", "WebFetch", "WebSearch", "Agent", "Task", "NotebookEdit")
 STATUS_SCHEMA = {
@@ -794,6 +773,7 @@ def claude_args(settings):
     return [
         os.environ.get("BRAIN_CLAUDE", "claude"), "-p",
         "--no-session-persistence",
+        "--model", "sonnet",
         "--setting-sources", "",
         "--permission-mode", "dontAsk",
         "--settings", str(settings),

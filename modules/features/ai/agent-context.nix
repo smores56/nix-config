@@ -62,6 +62,11 @@ in
 
   config = {
     home.file = {
+      # Same name as the built-in, so it replaces it; broad searches don't need the main model.
+      ".claude/agents/Explore.md" = {
+        force = true;
+        source = ./claude-agents/Explore.md;
+      };
       ".claude/CLAUDE.md" = {
         force = true;
         text = aiHints;
