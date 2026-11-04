@@ -78,9 +78,9 @@ in
       fish_terminal_skip_dsr = "1";
     };
 
+    # No /opt/homebrew/bin or /usr/local/bin: path_helper already adds them
+    # after Nix, and listing them here would shadow Nix's gh wrapper.
     sessionPath = lib.optionals isServer [ "${sudoWrapper}/bin" ] ++ [
-      "/opt/homebrew/bin"
-      "/usr/local/bin"
       "${config.home.homeDirectory}/.local/bin"
       "${config.home.homeDirectory}/.deno/bin"
       "${config.home.homeDirectory}/.cargo/bin"
