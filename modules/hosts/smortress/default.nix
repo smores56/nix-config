@@ -70,12 +70,6 @@ in
       # so restic's snapshots never carry them.
       "d /var/lib/syncthing-versions 0700 smores users -"
     ];
-    # The vault is shared by a home-manager user unit; lingering starts it at
-    # boot without a login.
-    users.users.smores.linger = true;
-    # Cryptomator's flattened layout is roughly two directories per cleartext
-    # folder, so the watcher needs more watches than the default allows.
-    boot.kernel.sysctl."fs.inotify.max_user_watches" = 204800;
     exposeSsh.enable = true;
     # The committed embedder: qwen3-embedding-8b (4096-d) through the gateway.
     # Flip to "local" to fall back to bge-m3 at 1024-d; either way a wipe and

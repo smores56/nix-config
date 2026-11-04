@@ -47,6 +47,9 @@ in
       "dialout"
     ];
     shell = pkgs.${config.user.shell};
+    # The Syncthing vault runs as a home-manager user unit; lingering starts it
+    # at boot without a login.
+    linger = true;
   };
 
   # Removable-media helpers and FUSE.
@@ -116,8 +119,8 @@ in
   programs.${config.user.shell}.enable = true;
   nixpkgs.config.allowUnfree = true;
 
-  # Keep user services running across logout (needed for user systemd units).
-  system.activationScripts.linger = ''
-    $DRY_RUN_CMD ${config.systemd.package}/bin/loginctl enable-linger ${cfg.username}
-  '';
+  # The Syncthing vault watcher needs more inotify watches than the default
+  # allows for Cryptomator's flattened layout (about two directories per
+  # cleartext folder).
+  boot.kernel.sysctl."fs.inotify.max_user_watches" = 204800;
 }
