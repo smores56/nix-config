@@ -12,9 +12,7 @@
           bash
           coreutils
           findutils
-          gawk
           git
-          gnugrep
           openssh
           gh
         ];
@@ -29,7 +27,6 @@
         runtimeInputs = [
           pkgs.gawk
           pkgs.git
-          pkgs.gnugrep
           pkgs.nixos-anywhere
           pkgs.openssh
           pkgs.sops

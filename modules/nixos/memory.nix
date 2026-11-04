@@ -524,7 +524,7 @@ in
         StartLimitBurst = 10;
       };
       onFailure = [ "cloudflare-email@%n.service" ];
-      serviceConfig = {
+      serviceConfig = hardening // {
         DynamicUser = true;
         StateDirectory = "llama-cpp-embed";
         CacheDirectory = "llama-cpp-embed";
@@ -556,10 +556,6 @@ in
         MemoryMax = "8G";
         Restart = "on-failure";
         RestartSec = 10;
-        ProtectSystem = "strict";
-        ProtectHome = true;
-        PrivateTmp = true;
-        NoNewPrivileges = true;
       };
     };
   };

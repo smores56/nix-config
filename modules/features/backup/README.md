@@ -84,7 +84,7 @@ Layout under `/var/lib/data/github-mirrors`:
 
 Units the module owns:
 
-- **`github-mirror.service` + `.timer`** — nightly at `githubBackup.schedule`
+- **`github-mirror.service` + `.timer`** — nightly at `schedule` (`modules/nixos/github-backup.nix`)
   (00:30, `Persistent=true`), one oneshot. It runs the chain
   [`github-mirror.sh`](./github-mirror.sh) →
   [`github-metadata.sh`](./github-metadata.sh) →
@@ -123,7 +123,7 @@ users' reach.
   that run's marker, or a sample (`GITHUB_FSCK_SAMPLE`, default 5) of mirrors
   fails `git fsck --full`. Evidence lands in `manifests/<date>/` even on
   failure.
-- **Token.** Read at runtime from `githubBackup.tokenFile`
+- **Token.** Read at runtime from `tokenFile` (`modules/nixos/github-backup.nix`)
   (`/run/secrets/github-repo-pat`, a classic `repo`-scoped sops secret,
   root-owned). ghorg embeds it in the `git clone`/`remote set-url` URL, so it is
   visible in root argv during a run; pgb and gh receive it as a file path and an

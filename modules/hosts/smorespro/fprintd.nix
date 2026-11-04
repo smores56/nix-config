@@ -4,7 +4,7 @@
 }:
 let
   # The xHCI controller sometimes fails to re-enumerate the Goodix reader after
-  # resume (Framework issue #102); reset it only if the reader is missing.
+  # resume; reset it only if the reader is missing.
   resumeScript = pkgs.writeShellApplication {
     name = "framework-fprint-resume";
     runtimeInputs = with pkgs; [

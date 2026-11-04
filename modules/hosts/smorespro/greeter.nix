@@ -15,7 +15,6 @@ let
     name = "pam-lid-closed";
     runtimeInputs = [
       config.systemd.package
-      pkgs.gnugrep
     ];
     text = ''
       # Single test, no pipeline: SIGPIPE under pipefail would report the lid as open.
@@ -120,7 +119,6 @@ in
       lidClosed;
 
   # PIV + PIN; the card gate skips pcsc enumeration when no reader is present.
-  # of paying pcsc enumeration.
   security.pam.services.greetd.p11Auth = true;
   security.pam.services.greetd.rules.auth.p11.args = lib.mkForce [
     "${pkgs.opensc}/lib/opensc-pkcs11.so"

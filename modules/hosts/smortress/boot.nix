@@ -15,7 +15,8 @@
   # falls back to the passphrase when the Tang/TPM share fails.
   boot.initrd.systemd.enable = true;
 
-  # Clevis orders its decrypt unit after `tpm2.target`, which only exists with this.
+  # Clevis orders its decrypt unit after `tpm2.target`, which only exists with this; the
+  # fTPM must also be enabled in firmware, or unlock falls back to the passphrase.
   security.tpm2.enable = true;
   boot.initrd.systemd.tpm2.enable = true;
 

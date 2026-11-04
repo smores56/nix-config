@@ -712,7 +712,7 @@ accepts any valid service token, so no `cloudflare-apply` is needed; the
 <!-- manual-step: secret/github-repo-pat -->
 
 Classic `repo`-scoped token, root-only, read by the GitHub mirror and metadata
-units (`githubBackup.tokenFile`): ghorg, `python-github-backup`, and the
+units (`tokenFile` in `modules/nixos/github-backup.nix`): ghorg, `python-github-backup`, and the
 verifier (`gh`, via `GH_TOKEN` in its environment). ghorg embeds it in git's
 argv, so it is visible in `/proc/<pid>/cmdline` during a run; the backup guide
 records that accepted window. pgb receives it as a `file://` path, so it stays

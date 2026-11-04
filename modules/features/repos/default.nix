@@ -25,10 +25,7 @@ in
     name = "repos";
     runtimeInputs = [
       pkgs.coreutils
-      pkgs.findutils
       pkgs.git
-      pkgs.gnused
-      pkgs.television
     ];
     text = script ./repos.sh {
       "@CODE_ROOT@" = lib.escapeShellArg cfg.codeRoot;
@@ -41,12 +38,10 @@ in
     name = "worktrees";
     runtimeInputs = [
       pkgs.coreutils
-      pkgs.findutils
       pkgs.gawk
       pkgs.git
       pkgs.gnugrep
       pkgs.gnused
-      pkgs.television
     ];
     text = script ./worktrees.sh {
       "@BRANCH_TEMPLATE@" = lib.escapeShellArg cfg.branchNaming.template;
