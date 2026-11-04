@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
-# The brain skill and digest ship in this public repo while the vault they
-# serve holds employer data. This guard fails the build when the brain files
-# name the employer (identifiers derived from user.work), link a Slack or
-# Jira workspace, or carry a ticket key that isn't an obvious placeholder.
-# It first proves itself against planted fixtures, then scans the repo.
-#
+# The brain files ship in this public repo while the vault holds employer data: fail if they name the
+# employer, link a Slack/Jira workspace, or carry a ticket key that isn't an obvious placeholder.
 # Usage: brain_leak_guard.sh <repo-root> <employer-identifier>...
 set -euo pipefail
 
@@ -25,7 +21,6 @@ brain_files() {
   return 0
 }
 
-# Prints one line per leak and returns non-zero if any were found.
 scan() {
   local base=$1 leaks=0 files
   mapfile -t files < <(brain_files "$base")

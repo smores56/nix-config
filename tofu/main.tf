@@ -1,6 +1,5 @@
-# Eight static edge objects. Ingress remains in Nix
-# (modules/nixos/web-proxy.nix); the tunnel itself and its Access service token
-# stay operator-minted.
+# Ingress stays in Nix (modules/nixos/web-proxy.nix); the tunnel and its Access service token are
+# operator-minted.
 
 resource "cloudflare_dns_record" "wildcard" {
   zone_id = data.cloudflare_zone.this.zone_id
@@ -27,8 +26,7 @@ resource "cloudflare_zero_trust_access_policy" "email" {
   }
 }
 
-# Service tokens are non-identity principals; this policy lets unattended
-# `cloudflared access ssh/tcp` clients in without a browser login.
+# Lets unattended `cloudflared access ssh/tcp` clients in without a browser login.
 resource "cloudflare_zero_trust_access_policy" "service_auth" {
   account_id = var.account_id
   name       = "service auth"
@@ -112,8 +110,7 @@ resource "cloudflare_zero_trust_access_application" "memory" {
   }
 }
 
-# The phone reaches Open WebUI only through Access. The email allow-list is the
-# human policy; Open WebUI's own email/password login is the second layer.
+# Access email allow-list is the human policy; Open WebUI's own login is a second layer.
 resource "cloudflare_zero_trust_access_application" "chat" {
   account_id       = var.account_id
   name             = "chat"
@@ -171,27 +168,13 @@ resource "cloudflare_notification_policy" "service_token_expiry" {
   }
 }
 
-# Rate limiting for the public hosts whose clients cannot complete an Access
-# login. CalDAV/CardDAV clients (Radicale has no brute-force protection of its
-# own) and the media apps (Navidrome, Immich and Calibre are reached by mobile
-# apps that authenticate with a password) therefore have no identity layer in
-# front of them, and a per-IP WAF rule is the only brute-force control left.
-#
-# This zone's plan allows exactly ONE rule in the http_ratelimit phase — a second
-# rule fails the apply with "2 out of 1" — so the four hosts share one rule and
-# one threshold. The threshold is set by the burstiest legitimate client: an
-# Immich timeline scroll fetches a thumbnail per tile plus video ranges, and a
-# first DAVx5/khal/vdirsyncer sync walks a whole collection, so both routinely
-# exceed a few hundred requests in ten seconds. 1000/10s shapes no normal
-# traffic; the ten-second block is the brute-force control, and the strong
-# passwords behind all four services are the real defence — the rule only makes
-# guessing slow and noisy.
-#
-# If the zone moves to a plan with more rule slots, split DAV back out at a much
-# lower threshold: 1000 is chosen for media, not for DAV.
-#
-# The resource and ruleset names are historical; renaming them risks a
-# replacement, which the lifecycle block below forbids.
+# Public hosts whose clients cannot complete an Access login (CalDAV/CardDAV, mobile media apps), so a
+# per-IP WAF rule is the only brute-force control. The zone plan allows exactly ONE http_ratelimit
+# rule (a second fails the apply with "2 out of 1"), so the four hosts share one threshold, sized for
+# the burstiest client: an Immich timeline scroll or first DAVx5 sync exceeds a few hundred requests
+# per 10s. 1000 is chosen for media, not DAV; split DAV out lower if the plan gains rule slots.
+# Resource and ruleset names are historical; renaming forces a replacement, which the lifecycle
+# block forbids.
 resource "cloudflare_ruleset" "dav_rate_limit" {
   zone_id = data.cloudflare_zone.this.zone_id
   name    = "dav rate limit"
@@ -205,8 +188,7 @@ resource "cloudflare_ruleset" "dav_rate_limit" {
       expression  = "(http.host eq \"dav.${var.domain}\" or http.host eq \"music.${var.domain}\" or http.host eq \"immich.${var.domain}\" or http.host eq \"calibre.${var.domain}\")"
       ratelimit = {
         characteristics = ["ip.src", "cf.colo.id"]
-        # Free-plan rate limiting allows only a 10-second period, and caps the
-        # mitigation window at the same 10 seconds.
+        # Free plan allows only a 10-second period and mitigation window.
         period              = 10
         requests_per_period = 1000
         mitigation_timeout  = 10

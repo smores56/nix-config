@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# The vault helper must fail closed: usage without a command, refuse a directory
-# that is not a vault, surface a cryptomator-cli failure instead of hanging, and
-# never hand the password to a command line.
+# The vault helper must fail closed: refuse a non-vault directory, surface a cryptomator-cli failure
+# instead of hanging, and never hand the password to a command line.
 # Usage: vault.sh <modules/features/vault.sh>
 set -euo pipefail
 
@@ -22,7 +21,6 @@ render() {
   sed "s|@VAULT@|$(printf '%q' "$1")|; s|@MOUNTER@|test.mounter|" "$script_src" >"$work/vault"
 }
 
-# 1. No command is a usage error.
 render "$vault"
 set +e
 out=$(printf 'pw\n' | bash "$work/vault" 2>&1)
@@ -30,7 +28,6 @@ status=$?
 set -e
 [ "$status" -eq 2 ] || fail "usage exit status $status, want 2 (output: $out)"
 
-# 2. A directory that is not a vault is refused.
 plain="$work/not-a-vault"
 mkdir -p "$plain"
 render "$plain"
@@ -44,8 +41,7 @@ case $out in
   *) fail "expected the refusal to name the vault, got: $out" ;;
 esac
 
-# 3. A cryptomator-cli that cannot start must surface, not hang. No cryptomator-cli
-#    is on PATH here, so this exercises exactly the failure branch.
+# No cryptomator-cli on PATH, so this exercises the failure branch: it must surface, not hang.
 render "$vault"
 set +e
 out=$(printf 'pw\n' | timeout 60 bash "$work/vault" true 2>&1)
@@ -57,7 +53,6 @@ case $out in
   *) fail "expected the unlock failure to be reported, got: $out" ;;
 esac
 
-# 4. The password travels on stdin, never on a command line.
 grep -q -- '--password:stdin' "$script_src" || fail "password must be passed on stdin"
 grep -q -- '"$pass" | cryptomator-cli' "$script_src" || fail "the password must be piped into cryptomator-cli"
 if grep -q -- '--password ' "$script_src"; then

@@ -1,19 +1,5 @@
 #!/usr/bin/env bash
-# Each GitHub account's PAT is chosen by the owner of the repository a command
-# targets, never by the directory it runs in, and from the same sops files on
-# every platform:
-# - github-token-file maps an owner to its PAT file (work only for the exact
-#   work owners, case-insensitively) and refuses an owner that is not a GitHub
-#   name;
-# - the git credential helper answers only https://github.com, takes the owner
-#   from the request path, refuses dot segments, and stops git with quit=1
-#   instead of a password prompt when there is no token;
-# - the gh wrapper follows a small, predictable rule: -R/--repo or GH_REPO,
-#   else the `api` endpoint, else the remote gh itself would use, else the
-#   personal account; positional arguments are never guessed at (name another
-#   account's repo with -R or GH_REPO), and an explicit target that is no
-#   account name gets no token.
-#
+# A PAT is chosen by the owner of the repository a command targets, never by the directory it runs in.
 # Usage: github_pat_routing.sh <github-token-file> <gh-pat>
 #          <github-credential-helper> <personal-pat-file> <work-pat-file>
 #          <absent-pat-file>,
@@ -35,7 +21,6 @@ fail() {
   failures=$((failures + 1))
 }
 
-# Owner -> PAT file.
 want() {
   local owner=$1 expected=$2 got
   got=$("$token_file" "$owner") || { fail "github-token-file refused '$owner'"; return; }
@@ -59,29 +44,23 @@ ask() {
   printf '%s\n' "$@" "" | "$h" get 2>"$work/helper.err"
 }
 
-# Requests the helper must decline outright: they are not GitHub over HTTPS.
 out=$(ask "$helper" protocol=http host=github.com "path=$PERSONAL_OWNER/x.git") || fail "helper exited non-zero for http"
 [ -z "$out" ] || fail "helper answered a plain-http request"
 out=$(ask "$helper" protocol=https host=example.com "path=$PERSONAL_OWNER/x.git") || fail "helper exited non-zero for a non-GitHub host"
 [ -z "$out" ] || fail "helper answered a non-GitHub host"
 
-# `www.github.com` (a spelling insteadOf rewrites, modules/features/github-credentials.nix)
-# is the same service, so an untrusted path there stops git cold like the bare
-# host. Plain `http` is declined above, before any rewrite matters.
+# `www.github.com` (an insteadOf spelling, modules/features/github-credentials.nix) is the same
+# service, so an untrusted path there stops git cold like the bare host.
 out=$(ask "$helper" protocol=https host=www.github.com "path=/$WORK_OWNER/x.git")
 [ "$out" = quit=1 ] || fail "helper answered suspicious path on www.github.com: $out"
 
-# Requests aimed at GitHub whose owner cannot be trusted stop git cold,
-# before any token file is read.
 for path in "/$WORK_OWNER/x.git" "$WORK_OWNER/../$PERSONAL_OWNER/x.git" "$WORK_OWNER/./x" ""; do
   out=$(ask "$helper" protocol=https host=github.com "path=$path")
   [ "$out" = quit=1 ] || fail "helper answered suspicious path '$path': $out"
 done
 
-# Without a token the helper names the owner and stops git instead of letting
-# it prompt. The real PATs are readable on the work Mac, so a copy of the
-# helper resolves every owner to a deliberately absent path: the matrix runs
-# everywhere, not only in a sandboxed Linux build.
+# The real PATs are readable on the work Mac, so a copy of the helper resolves every owner to a
+# deliberately absent path: the no-token matrix then runs everywhere, not only in a Linux sandbox.
 if [ -r "$absent_pat" ]; then
   fail "the absent PAT path '$absent_pat' is readable"
 fi
@@ -105,8 +84,7 @@ for host in github.com GitHub.com github.com:443; do
   done
 done
 
-# gh: which owner does the wrapper resolve? GH_PAT_RESOLVE_ONLY prints the
-# owner (never a token) and exits, so these run everywhere.
+# gh: GH_PAT_RESOLVE_ONLY prints the resolved owner (never a token) and exits, so these run everywhere.
 mkrepo() {
   local dir=$1
   shift
@@ -136,7 +114,6 @@ check_gh() {
   got=$(cd "$work/$dir" && env -u GH_TOKEN -u GH_REPO -u GH_HOST GH_PAT_RESOLVE_ONLY=1 "$@" 2>&1) || true
   [ "$got" = "$expected" ] || fail "($dir) gh ${*:2}: resolved '$got', want '$expected'"
 }
-# The checkout's remote, as gh itself would choose it.
 check_gh personal "$PERSONAL_OWNER" "$gh_pat" pr list
 check_gh work "$WORK_OWNER" "$gh_pat" pr list
 check_gh fork "$WORK_OWNER_2" "$gh_pat" pr create
@@ -146,17 +123,14 @@ check_gh sole "$WORK_OWNER" "$gh_pat" pr list
 check_gh ranked "$WORK_OWNER" "$gh_pat" pr list
 check_gh unknown "$PERSONAL_OWNER" "$gh_pat" pr list
 check_gh bare "$PERSONAL_OWNER" "$gh_pat" pr list
-# Another host never gets either account's token.
 check_gh ghe "<other-host>" "$gh_pat" pr list
 check_gh personal "<other-host>" env GH_HOST=acme.ghe.com "$gh_pat" pr list
 check_gh personal "<other-host>" "$gh_pat" api --hostname acme.ghe.com user
 check_gh personal "<other-host>" "$gh_pat" api https://acme.ghe.com/api/v3/user
 check_gh personal "$PERSONAL_OWNER" "$gh_pat" api --hostname github.com user
 check_gh personal "$PERSONAL_OWNER" "$gh_pat" pr comment 3 --body https://evil.example/x
-# Nothing targeted and no checkout: the personal account, not a failure.
 check_gh outside "$PERSONAL_OWNER" "$gh_pat" auth status
 check_gh outside "$PERSONAL_OWNER" "$gh_pat" api user
-# Explicit targets win over the checkout.
 check_gh personal "$WORK_OWNER" "$gh_pat" -R "$WORK_OWNER/svc" pr list
 check_gh personal "$WORK_OWNER_2" "$gh_pat" pr list --repo "$WORK_OWNER_2/svc"
 check_gh personal "$WORK_OWNER_2" "$gh_pat" issue list --repo="$WORK_OWNER_2/svc"
@@ -167,14 +141,11 @@ check_gh outside "$WORK_OWNER_2" env "GH_REPO=github.com/$WORK_OWNER_2/svc" "$gh
 check_gh personal "$WORK_OWNER" "$gh_pat" api -X POST "repos/$WORK_OWNER/svc/pulls"
 check_gh personal "$WORK_OWNER" "$gh_pat" api "https://api.github.com/orgs/$WORK_OWNER/repos" --jq .name
 check_gh personal "$WORK_OWNER" "$gh_pat" api "orgs/$WORK_OWNER?per_page=1"
-# Positional arguments are never guessed at, and placeholders or URLs that are
-# not the target leave the checkout in charge.
 check_gh personal "$PERSONAL_OWNER" "$gh_pat" repo view "$WORK_OWNER/svc"
 check_gh outside "$PERSONAL_OWNER" "$gh_pat" pr view "https://github.com/$WORK_OWNER/svc/pull/7"
 check_gh work "$WORK_OWNER" "$gh_pat" api "repos/{owner}/{repo}/pulls"
 check_gh personal "$PERSONAL_OWNER" "$gh_pat" pr comment 3 --body "https://github.com/$WORK_OWNER/svc/pull/1"
 check_gh personal "$PERSONAL_OWNER" "$gh_pat" api graphql -f "query=https://github.com/$WORK_OWNER"
-# An explicit target that is not an account name gets no token at all.
 check_gh personal "<none>" "$gh_pat" -R "../$WORK_OWNER" pr list
 
 if ((failures)); then

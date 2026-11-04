@@ -1,18 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Idempotent bootstrap for a fresh machine with only Nix installed.
-#
-# Usage (flake app):
-#   nix run github:smores56/nix-config#bootstrap
-#
-# Or the served copy, from Bash, Zsh, or Fish:
-#   curl -fsSL bootstrap.sammohr.dev | bash
-#
-# Override auto-detected user/host or the checkout root (prefix the command;
-# these are read from the environment, not from arguments):
-#   BOOTSTRAP_USER=smores BOOTSTRAP_HOST=smorespro nix run github:smores56/nix-config#bootstrap
-#   BOOTSTRAP_CODE_ROOT="$HOME/code" nix run github:smores56/nix-config#bootstrap
+# Override auto-detected user/host and checkout root via BOOTSTRAP_USER, BOOTSTRAP_HOST, BOOTSTRAP_CODE_ROOT.
 
 REPO_OWNER="smores56"
 REPO_NAME="nix-config"
@@ -80,17 +69,12 @@ clone_repo() {
   GHQ_ROOT="$CODE_ROOT" nix-shell -p ghq --run "ghq get '${REPO_URL_HTTPS}'"
 }
 
-# ── Phase 0: Validate ─────────────────────────────────────────────
-
 command -v nix >/dev/null 2>&1 || err "Nix is not installed"
 
-# Enable flakes for all nix commands in this script (nix.conf doesn't exist yet
-# on a fresh machine — home-manager will create it once it runs)
+# nix.conf doesn't exist yet on a fresh machine.
 export NIX_CONFIG="experimental-features = nix-command flakes"
 
 info "Bootstrapping ${CONFIG_NAME}"
-
-# ── Phase 1: Clone repository via ghq ─────────────────────────────
 
 if is_git_checkout "$REPO_DIR"; then
   validate_origin "$REPO_DIR"
@@ -103,43 +87,27 @@ else
   ok "Repository cloned"
 fi
 
-# ── Phase 2: Validate flake configuration ─────────────────────────
-
 HOME_CONFIGS="$(flake_attr_names homeConfigurations)" || err "Unable to read homeConfigurations from ${REPO_DIR}"
 NIXOS_CONFIGS="$(flake_attr_names nixosConfigurations)" || err "Unable to read nixosConfigurations from ${REPO_DIR}"
 
 contains_line "$CONFIG_NAME" "$HOME_CONFIGS" \
   || err "No home-manager config for '${CONFIG_NAME}'. Known: $(format_names "$HOME_CONFIGS")"
 
-# ── Phase 3: home-manager switch ──────────────────────────────────
-
 info "Running home-manager switch (this may take a while on first run)..."
 nix-shell -p home-manager --run "home-manager switch --flake '${REPO_DIR}#${CONFIG_NAME}' --no-write-lock-file"
 ok "home-manager switch complete"
 
-# This shell predates the profile the switch created, so put the generation it
-# just built first on PATH; every later phase runs its tools. Same root
-# home-manager's activation writes.
+# This shell predates the switch's profile; put the new generation's tools on PATH.
 HM_BIN="${XDG_STATE_HOME:-${HOME}/.local/state}/home-manager/gcroots/current-home/home-path/bin"
 [ -d "$HM_BIN" ] || err "home-manager switch left no generation at ${HM_BIN}"
 export PATH="${HM_BIN}:${PATH}"
 
-# ── Phase 4: SSH identities ───────────────────────────────────────
-#
-# The public halves are committed (modules/lib/yubikey-keys.nix) and written by
-# `ssh-pub-keys`, the same command every switch runs. The private halves stay on
-# the YubiKeys: the sudo handles load at login, and the PIV 9a key
-# loads on first use when the PIN dialog runs, so nothing is generated here.
-
-# Identities come from the FIDO2/PIV agents (modules/features/fido2.nix); there
-# is no vault login step.
+# Private halves stay on the YubiKeys, so nothing is generated; public halves come from modules/lib/yubikey-keys.nix.
 if ssh-pub-keys; then
   ok "SSH public keys present and trusted in ~/.ssh/allowed_signers"
 else
   warn "Some SSH public keys are missing (see above); fix that and re-run this script."
 fi
-
-# ── Phase 5: NixOS setup ──────────────────────────────────────────
 
 if is_nixos && has_nixos_config; then
   info "NixOS detected with config for ${HOSTNAME}"
@@ -164,8 +132,6 @@ elif is_nixos; then
   warn "NixOS detected but no nixosConfiguration for '${HOSTNAME}'."
   warn "Add modules/hosts/${HOSTNAME}/default.nix (with nixos = true) and re-run."
 fi
-
-# ── Done ────────────────────────────────────────────────────────
 
 echo ""
 ok "Bootstrap complete for ${CONFIG_NAME}!"

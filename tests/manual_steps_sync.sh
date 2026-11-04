@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
 # Keep docs/manual-steps.md in sync with the configuration it documents.
-#
-# Expected inventory: hosts from modules/hosts, secret names from the encrypted
-# sops files, providers and notification policies from tofu/, and the
-# config-derived services/apps/alerts passed as JSON by checks.nix.
 set -euo pipefail
 
 src=${1:?usage: manual_steps_sync.sh <repo> <inventory.json>}

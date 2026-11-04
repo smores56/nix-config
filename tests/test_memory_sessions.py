@@ -24,7 +24,7 @@ from memory_mcp.ingest_runner import IngestRunner, RunnerConfig  # noqa: E402
 from memory_mcp.normalize import content_hash, normalize_content  # noqa: E402
 from memory_mcp.session_cache import SessionCache  # noqa: E402
 
-# A real directory, because a session whose cwd does not exist is now refused.
+# A real directory: a session whose cwd does not exist is refused.
 _TEST_ROOT = tempfile.mkdtemp(prefix="memory-sessions-")
 _SCRATCH = Path(_TEST_ROOT, "scratch")
 _SCRATCH.mkdir()

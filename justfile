@@ -1,6 +1,3 @@
-# Command index for this repo. `just --list` is the source of truth.
-# Nix remains the implementation; these recipes only assemble the commands.
-
 # Show this command index.
 default:
     @just --list
@@ -77,11 +74,11 @@ cloudflare-apply:
 cloudflare-tofu *args:
     sudo nix run .#cloudflare-tofu -- {{args}}
 
-# Ingest sdlc issues, personal notes, repo docs, and a Maki session sample into memory (on smortress).
+# Ingest sdlc issues, notes, repo docs, and a Maki session sample into memory.
 memory-ingest *args:
     memory ingest all {{args}}
 
-# Show the memory queue: counts per status and group, plus the last 10 minutes of extractions.
+# Show memory queue counts per status and group, plus recent extractions.
 memory-status:
     sg memory -c 'memory status'
     sg memory -c 'cp /var/lib/memory/registry.sqlite /tmp/memory-status.sqlite'
@@ -97,21 +94,16 @@ memory-export:
 memory-restore dir:
     sudo memory restore {{dir}}
 
-# Manually evaluate retrieval quality and project-boundary leaks on the live service.
-# Shells out to `memory`, so it needs the memory group; no sudo. Args go before the
-# subcommand, e.g. `just memory-eval --only exact`.
+# Evaluate retrieval quality and project-boundary leaks on the live service.
 memory-eval *args:
     sg memory -c 'nix run nixpkgs#python3 -- modules/features/ai/memory/eval/retrieval.py {{args}} search-metrics'
     sg memory -c 'nix run nixpkgs#python3 -- modules/features/ai/memory/eval/retrieval.py leak-check'
 
-# Requeue active rows the graph no longer holds (after a registry-only restore).
-# Repeat until it reports nothing left; each call requeues a bounded slice.
+# Requeue active rows the graph no longer holds; repeat until none are left.
 memory-reindex *args:
     sg memory -c 'memory reindex {{args}}'
 
-# Stop memory, wipe the derived graph and the registry, then start it again.
-# FalkorDB must stop before its directory is wiped: a running instance rewrites
-# its AOF and would recreate what this deletes.
+# Wipe the derived graph and registry, then restart memory (FalkorDB must stop first or it rewrites its AOF).
 memory-rebuild:
     sudo systemctl stop memory-mcp memory-graphiti-mcp memory-llm-proxy memory-falkordb
     sudo find /var/lib/memory/falkordb -mindepth 1 -delete

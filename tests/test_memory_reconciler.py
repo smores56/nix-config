@@ -310,10 +310,8 @@ class ReconcilerTests(unittest.IsolatedAsyncioTestCase):
         active = self.registry.lookup(entry.group, entry.content_hash)
         self.assertEqual(self.registry.requeue_many([active], actor="cli"), 1)
         requeued = self.registry.lookup(entry.group, entry.content_hash)
-        # The queue clock restarts, so the row is inside the grace window even
-        # though the memory is months old: it waits for its replay instead of
-        # being resubmitted three times and marked failed in minutes. The write
-        # time stays put.
+        # The queue clock restarts, so the row stays inside the grace window and waits for its replay
+        # instead of being resubmitted and marked failed in minutes; the write time stays put.
         self.assertEqual(requeued.created_at, "2026-01-01T00:00:00Z")
         self.assertGreater(requeued.queued_at, "2026-10-22T12:00:00Z")
         counts = await self.reconciler(FakeGraph()).reconcile_once()

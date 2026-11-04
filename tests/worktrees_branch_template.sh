@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
-# `worktrees new --dry-run` branch naming: templates come from the repo's
-# git config (smores.branchTemplate / smores.branchTemplateUnticketed),
-# with {slug} {ticket} {type} placeholders; tickets
-# only come from --ticket. Schemes are set per repo here, so the mechanics
-# are tested independently of any employer's values; the generated config's
-# values are covered by git_work_routing.sh.
+# `worktrees new --dry-run` branch naming: templates come from the repo's git config
+# (smores.branchTemplate / smores.branchTemplateUnticketed) with {slug} {ticket} {type} placeholders;
+# tickets only come from --ticket. Schemes are set per repo so the mechanics are tested independently
+# of any employer's values (the generated config's values are covered by git_work_routing.sh).
 #
 # Usage: worktrees_branch_template.sh <worktrees>, with
 # PERSONAL_BRANCH_TEMPLATE (the build-time fallback when the repo's git
@@ -69,7 +67,6 @@ check prefixed "$(run prefixed --slug 'Fix Auth' | field branch)" "me/fix-auth"
 check prefixed-dir "$(run prefixed --slug fix-auth | field path)" "$PWD/prefixed/.worktrees/me-fix-auth"
 check prefixed-task "$(run prefixed --task 'Fix the auth flow' | field branch)" "me/fix-the-auth-flow"
 check prefixed-slug-wins "$(run prefixed --slug fix-auth --task 'ABC-9: other words' | field branch)" "me/fix-auth"
-# Repos that don't name branches by ticket ignore it rather than failing.
 out=$(run prefixed --slug fix-auth --ticket ABC-1)
 check prefixed-ignores-ticket "$(field branch <<<"$out")" "me/fix-auth"
 check prefixed-ticket-null "$(field ticket <<<"$out")" ""
@@ -80,7 +77,6 @@ out=$(run team --slug fix-auth --ticket ABK-1234)
 check ticket "$(field branch <<<"$out")" "ABK-1234-fix-auth"
 check ticket-field "$(field ticket <<<"$out")" "ABK-1234"
 check ticket-not-repeated "$(run team --slug abk-1234-fix-auth --ticket ABK-1234 | field branch)" "ABK-1234-fix-auth"
-# Jira-looking words in free text are text, never tickets.
 check no-implicit-ticket "$(run team --task 'Handle UTF-8 in ABK-9' --type fix | field branch)" "fix/handle-utf-8-in-abk-9"
 check unticketed "$(run team --slug readiness-gate --type fix | field branch)" "fix/readiness-gate"
 check unticketed-dir "$(run team --slug readiness-gate --type feat | field path)" "$PWD/team/.worktrees/feat-readiness-gate"

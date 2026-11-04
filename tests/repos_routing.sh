@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Exercise discovery and cloning with a flat work root and org links.
 set -euo pipefail
 
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
@@ -21,7 +20,6 @@ ln -s "$flat" "$root/github.com/team-a"
 ln -s "$flat" "$root/github.com/team-b"
 clone "$root/github.com/original/tool" git@github.com:original/tool.git
 ln -s "$root/github.com/original" "$root/github.com/alias"
-# A linked worktree uses a .git file, not a directory.
 mkdir -p "$flat/linked"
 printf 'gitdir: /somewhere\n' > "$flat/linked/.git"
 
@@ -32,10 +30,8 @@ if [[ $got != "$want" ]]; then
   exit 1
 fi
 
-# A missing flat root should not suppress ordinary checkouts.
 got=$(REPOS_CODE_ROOT=$root REPOS_WORK_FLAT=$PWD/missing "$repos" list)
 [[ $got == *"$root/github.com/me/notes"* ]]
-# The flat root is still listed when codeRoot doesn't exist.
 got=$(REPOS_CODE_ROOT=$PWD/missing REPOS_WORK_FLAT=$flat "$repos" list)
 want=$(printf '%s\n' "$flat/api" "$flat/engine" "$flat/linked" | sort)
 [[ $got == "$want" ]]

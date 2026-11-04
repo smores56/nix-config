@@ -1,5 +1,3 @@
-# Package overlays applied to every host's nixpkgs: pins and local derivations
-# that the pinned nixpkgs lacks or ships too old.
 { inputs }:
 let
   inherit (inputs) niri concord;
@@ -52,20 +50,14 @@ system: [
 
     concord = concord.packages.${system}.default;
 
-    # Agent sandbox: 0.12.0 fixes CVE-2026-87766 (setup-time symlink
-    # traversal). The pinned nixpkgs ships 0.11.2.
+    # Fixes CVE-2026-87766 (setup-time symlink traversal).
     bubblewrap = inputs.nixpkgs-unstable.legacyPackages.${system}.bubblewrap;
 
-    # The pinned nixpkgs ships bitwarden-desktop 2026.6.1 on electron_39,
-    # which the security policy marks EOL (anything below 41). Unstable
-    # carries 2026.9.0 on electron_43.
+    # The pinned nixpkgs' electron_39 build is EOL under the security policy.
     bitwarden-desktop = inputs.nixpkgs-unstable.legacyPackages.${system}.bitwarden-desktop;
 
-    # The pinned nixpkgs ships tutanota-desktop 355.260710.0 and the Tuta
-    # server answers it with "Update needed"; 362.261023.2 is the current
-    # release. Pinned here rather than following nixpkgs-unstable, which is
-    # on 359 and whose bump would also move bubblewrap, bitwarden-desktop
-    # and niri.
+    # The Tuta server rejects the pinned nixpkgs version ("Update needed"). Not following
+    # nixpkgs-unstable: its bump would also move bubblewrap, bitwarden-desktop and niri.
     tutanota-desktop =
       let
         pname = "tutanota-desktop";
@@ -92,17 +84,12 @@ system: [
         '';
       };
 
-    # YubiKey FIDO2 note: OpenSSH's libfido2 lists the same token twice
-    # (USB HID + PC/SC). Do not override libfido2/openssh here: changing
-    # either hash cascades through qtwebengine, KDE, and PySide and forces
-    # hours of source builds that the binary cache cannot satisfy. The
-    # fido2 module wraps ssh-sk-helper with a no-PC/SC libfido2 instead.
+    # Do not override libfido2/openssh: the hash change cascades through qtwebengine, KDE, and PySide
+    # into uncached source builds. The fido2 module wraps ssh-sk-helper with a no-PC/SC libfido2
+    # instead (OpenSSH's libfido2 lists the same token twice: USB HID + PC/SC).
 
-    # doccstat/pam_rssh adds the user-presence flag check (upstream issue
-    # #38), so sudo rejects a touchless signature even from a compromised
-    # agent. The fork vendors its agent dependency, so no submodules. This is
-    # a full buildRustPackage definition because overrideAttrs cannot
-    # recompute cargoDeps after cargoHash changes.
+    # Adds the user-presence check so sudo rejects a touchless signature even from a compromised
+    # agent. Full buildRustPackage: overrideAttrs can't recompute cargoDeps after cargoHash changes.
     pam_rssh = prev.rustPlatform.buildRustPackage (finalAttrs: {
       pname = "pam_rssh";
       version = "unstable-2026-10-28";
@@ -170,8 +157,7 @@ system: [
       };
     });
 
-    # Upstream's flake recipe: dependencies are vendored and the main
-    # package lives in ./app, so rename the produced binary.
+    # Dependencies are vendored and the main package lives in ./app, so rename the binary.
     revdiff =
       let
         unstable = inputs.nixpkgs-unstable.legacyPackages.${system};
