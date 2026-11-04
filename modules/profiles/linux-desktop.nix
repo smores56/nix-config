@@ -13,6 +13,5 @@
   nixos = [
     ../nixos/desktop.nix
     ../nixos/niri.nix
-    ../nixos/fprintd.nix
   ];
 }

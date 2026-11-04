@@ -16,8 +16,6 @@ let
 in
 {
   options.filesearch = {
-    enable = lib.mkEnableOption "the read-only file-search MCP for Open WebUI";
-
     roots = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
@@ -28,7 +26,7 @@ in
     };
   };
 
-  config = lib.mkIf cfg.enable {
+  config = {
     assertions = [
       {
         assertion = cfg.roots != [ ];
@@ -52,7 +50,7 @@ in
         StartLimitIntervalSec = "1h";
         StartLimitBurst = 10;
       };
-      onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
+      onFailure = [ "cloudflare-email@%n.service" ];
       serviceConfig = {
         ExecStart = "${memoryPackage}/bin/memory-file-mcp";
         # The roots live under the human's 0700 home, so the service runs as

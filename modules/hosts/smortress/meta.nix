@@ -20,13 +20,11 @@ in
     # never unlocks. Version history lives outside `/var/lib/data` so restic's
     # one source path does not carry it.
     syncthing = {
-      enable = true;
       device = "smortress";
       vaultPath = "/var/lib/data/vault";
       versioningPath = "/var/lib/syncthing-versions/vault";
     };
     calibre = {
-      enable = true;
       # OPDS password comes from sops (owner smores, 0400).
       passwordFile = "/run/secrets/calibre-password";
       # The library lives on the media dataset so it is backed up and the
@@ -64,9 +62,6 @@ in
     # folder, so the watcher needs more watches than the default allows.
     boot.kernel.sysctl."fs.inotify.max_user_watches" = 204800;
     exposeSsh.enable = true;
-    nvidia.enable = true;
-    llm.enable = true;
-    memory.enable = true;
     # The committed embedder: qwen3-embedding-8b (4096-d) through the gateway.
     # Flip to "local" to fall back to bge-m3 at 1024-d; either way a wipe and
     # re-ingest follows, because the vector width changes.
@@ -74,7 +69,6 @@ in
     # Read-only search for the phone; work checkouts inside these roots are
     # refused by the server's employer check.
     filesearch = {
-      enable = true;
       roots = [
         "/home/smores/code"
         "/home/smores/Documents"
@@ -82,9 +76,7 @@ in
         "/home/smores/dev"
       ];
     };
-    noSleep.enable = true;
     webProxy = {
-      enable = true;
       tunnelName = "smortress";
       services = {
         calibre.port = ports.calibre;
@@ -126,7 +118,6 @@ in
       };
     };
     immich = {
-      enable = true;
       # Relocated off /var/lib/immich so every media tree lives under one
       # root that restic backs up as a single path.
       mediaLocation = "/var/lib/data/photos";
@@ -134,7 +125,6 @@ in
       # 10.0.0.0/24 is the LAN subnet. WAN access stays tunnel-only.
       lanSources = [ "10.0.0.0/24" ];
     };
-    backup.enable = true;
     # The HDD is LUKS-encrypted: /var/backup lives inside a mapping opened at
     # boot from /etc/crypttab by a keyfile on the encrypted root, and restic
     # writes the local repo to /var/backup/restic. The format and re-key
@@ -145,14 +135,12 @@ in
       device = "/dev/disk/by-id/ata-ST5000LM000-2AN170_WCJ42WX0";
     };
     alerting = {
-      enable = true;
       accountId = "385f7d47e2e8438fbda5d6f76d760434";
     };
     # Mirror this host's GitHub repos into the durable tree, which restic
     # carries. The probe requires this known-private repo to be refreshed every
     # run, catching a token that lost `repo` scope (which would otherwise
     # silently stop updating every private mirror).
-    githubBackup.enable = true;
     githubBackup.probeRepo = "sdlc";
   };
 }

@@ -19,7 +19,7 @@ let
   repoRoots = [
     cfg.codeRoot
   ]
-  ++ lib.optional (config.machine.workHost && cfg.work.flatRepos != null) cfg.work.flatRepos.dir;
+  ++ lib.optional config.machine.workHost cfg.work.flatRepos.dir;
   # launchd starts jobs with a bare PATH. claude is installed outside Nix, so it is
   # named by full path rather than letting ~/.local/bin shadow system tools.
   runPath = lib.concatStringsSep ":" [

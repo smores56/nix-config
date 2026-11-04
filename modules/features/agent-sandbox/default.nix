@@ -12,7 +12,6 @@
   ...
 }:
 let
-  cfg = config.agentSandbox;
   isServer = builtins.elem "server" config.machine.profiles;
   isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
   sandbox = import ../../lib/agent-sandbox.nix {
@@ -25,13 +24,7 @@ let
   };
 in
 {
-  options.agentSandbox.enable = lib.mkOption {
-    type = lib.types.bool;
-    default = true;
-    description = "the same-UID agent sandbox (bwrap/Seatbelt)";
-  };
-
-  config = lib.mkIf cfg.enable {
+  config = {
     home.packages = [
       sandbox.agentSandbox
 

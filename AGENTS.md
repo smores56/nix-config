@@ -70,7 +70,8 @@ adds its greeter as a host-local module.
 
 Feature options live in the module that owns them (`webProxy` in
 `modules/nixos/web-proxy.nix`, `backup` in `modules/nixos/backup.nix`,
-`dictation` in `modules/features/dictation/`, …).
+`dictation` in `modules/features/dictation/`, …). A module's presence in a
+profile is its on switch.
 
 ### Adding a new feature
 
@@ -85,8 +86,8 @@ Hosts are discovered from `modules/hosts/*/`; adding one never edits
 
 1. `modules/hosts/<hostname>/meta.nix` — a plain attrset (data, **not** a
    module: no arguments) declaring `system`, `username`, `nixos = true` and/or
-   `home = true`, optional `user` overrides (machine name/system are fixed from\n`meta.nix`), and option values under
-   `homeOptions`/`nixosOptions` (e.g. `fingerprint.enable = true`).
+   `home = true`, optional `user` overrides, and option values under
+   `homeOptions`/`nixosOptions` (e.g. `sudoKey.enable = true`).
 2. `modules/hosts/<hostname>/default.nix` — the explicit profile list
    (`../../profiles/cli.nix`, …) composed into this host, plus optional
    host-local modules (`nixos = [ ./boot.nix ]`, `home = [ … ]`) that only this
@@ -105,8 +106,8 @@ Hosts are discovered from `modules/hosts/*/`; adding one never edits
    `fileSystems`); `nixos-anywhere` passes the flag for you.
 
 `nixos = true` builds `nixosConfigurations.<hostname>`; `home = true` builds
-`homeConfigurations.<username>@<hostname>`. `machine`/`user` are shared by both
-planes, so identity and host facts are written once.
+`homeConfigurations.<username>@<hostname>`. `system`/`username` and `user` are
+shared by both planes, so identity and host facts are written once.
 
 ### Provisioning a blank NixOS machine
 
@@ -140,10 +141,10 @@ before `install`.
 
 - **Nix style**: `nix fmt` before committing.
 - **Imports are explicit.** Only modules listed by a host's profiles or its
-  `nixos` list are evaluated; gate behavior on `machine.*`/`user.*` and on the feature's own
-  options (`webProxy.enable`, `backup.enable`, …). `mkEnableOption` is for
-  optional subfeatures that default to off; do not add a top-level `enable`
-  for a whole module.
+  `nixos` list are evaluated; gate behavior on `machine.*`/`user.*` and on the
+  feature's own options (`exposeSsh.enable`, `backup.luks.enable`, …).
+  `mkEnableOption` is for optional subfeatures that default to off; do not add
+  a top-level `enable` for a whole module.
 - **Cross-cutting values** flow through `config.machine.*` and `config.user.*`
   declared in `modules/options.nix`, not through `specialArgs`.
 - **Delete dead code** — no leftover aliases, re-exports, or stale TODOs.

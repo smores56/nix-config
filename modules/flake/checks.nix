@@ -129,9 +129,10 @@ in
             let
               w = d.work;
               domain = lib.last (lib.splitString "@" w.email);
-              flat = lib.optionals (w.flatRepos != null) (
-                [ (baseNameOf w.flatRepos.dir) ] ++ lib.optional (w.flatRepos.envVar != null) w.flatRepos.envVar
-              );
+              flat = [
+                (baseNameOf w.flatRepos.dir)
+                w.flatRepos.envVar
+              ];
             in
             lib.unique (
               lib.filter (s: lib.stringLength s >= 3) (

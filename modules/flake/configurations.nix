@@ -264,7 +264,6 @@ let
         "username"
         "nixos"
         "home"
-        "machine"
         "user"
         "homeOptions"
         "nixosOptions"
@@ -317,7 +316,7 @@ let
   hostHomeModules = name: (hostDefault name).home or [ ];
 
   hostModule = args: profileNames: {
-    machine = (args.machine or { }) // {
+    machine = {
       inherit (args) username system;
       nixos = args.nixos or false;
       profiles = profileNames;
@@ -336,8 +335,7 @@ let
   mkHome =
     args:
     let
-      system = args.system or "x86_64-linux";
-      username = args.username or "smores";
+      inherit (args) system username;
       profiles = hostProfiles args.hostname;
       profileNames = map (p: p.name) profiles;
     in
@@ -355,8 +353,7 @@ let
           {
             home.username = username;
             home.homeDirectory =
-              args.homeDirectory
-                or (if lib.hasSuffix "-darwin" system then "/Users/${username}" else "/home/${username}");
+              if lib.hasSuffix "-darwin" system then "/Users/${username}" else "/home/${username}";
           }
         ];
     };
@@ -364,7 +361,7 @@ let
   mkNixos =
     args:
     let
-      system = args.system or "x86_64-linux";
+      inherit (args) system;
       profiles = hostProfiles args.hostname;
       profileNames = map (p: p.name) profiles;
     in
@@ -408,11 +405,9 @@ in
       map (
         name:
         let
-          m = hostMeta name;
+          m = normalize (hostMeta name);
         in
-        lib.nameValuePair "${m.username or "smores"}@${name}" (
-          mkHome ((normalize m) // { hostname = name; })
-        )
+        lib.nameValuePair "${m.username}@${name}" (mkHome (m // { hostname = name; }))
       ) (lib.filter (name: (hostMeta name).home or false) hostNames)
     );
     nixosConfigurations = lib.listToAttrs (

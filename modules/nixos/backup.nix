@@ -14,17 +14,20 @@
 }:
 let
   cfg = config.backup;
+
+  # The local restic repo lives at <mountPoint>/restic (restic-backup.nix).
+  mountPoint = "/var/backup";
+  # mapper name; the filesystem lives on /dev/mapper/<name>.
+  luksName = "backup";
+  # Root-only keyfile created by the operator (mode 0400). It lives on the
+  # encrypted root, so the disk still opens unattended; the LUKS passphrase slot
+  # is the recovery path if the root is lost.
+  luksKeyFile = "/etc/luks/backup.key";
 in
 {
   options.backup = lib.mkOption {
     type = lib.types.submodule {
       options = {
-        enable = lib.mkEnableOption "the local backup disk";
-        mountPoint = lib.mkOption {
-          type = lib.types.path;
-          default = "/var/backup";
-          description = "Where the backup disk is mounted; the local restic repo lives at <mountPoint>/restic.";
-        };
         device = lib.mkOption {
           type = lib.types.str;
           default = "/dev/disk/by-label/backup";
@@ -38,16 +41,6 @@ in
             example = "/dev/disk/by-id/ata-WDC_WD50EZRX-00MVLB1_WMC3H0D5XKSY";
             description = "The encrypted partition to open at boot: a stable by-id path, never a kernel name like /dev/sda1.";
           };
-          name = lib.mkOption {
-            type = lib.types.str;
-            default = "backup";
-            description = "mapper name; the filesystem lives on /dev/mapper/<name>, which `device` defaults to when this is enabled.";
-          };
-          keyFile = lib.mkOption {
-            type = lib.types.str;
-            default = "/etc/luks/backup.key";
-            description = "Root-only keyfile created by the operator (mode 0400). It lives on the encrypted root, so the disk still opens unattended; the LUKS passphrase slot is the recovery path if the root is lost.";
-          };
         };
       };
     };
@@ -55,7 +48,7 @@ in
     description = "The local encrypted backup disk; the local restic repo lives beneath it.";
   };
 
-  config = lib.mkIf cfg.enable {
+  config = {
     # The encrypted disk is opened by systemd-cryptsetup from /etc/crypttab (a
     # keyfile on the encrypted root, so boot stays unattended). `nofail` keeps a
     # missing disk or keyfile from blocking boot: the units declare
@@ -64,11 +57,11 @@ in
     # `environment.etc.crypttab.text` under a false condition still creates the
     # file entry, which then has neither `text` nor `source` and fails the build.
     environment.etc = lib.mkIf (cfg.luks.enable && cfg.luks.device != null) {
-      crypttab.text = "${cfg.luks.name} ${cfg.luks.device} ${cfg.luks.keyFile} luks,nofail\n";
+      crypttab.text = "${luksName} ${cfg.luks.device} ${luksKeyFile} luks,nofail\n";
     };
     environment.systemPackages = lib.optional cfg.luks.enable pkgs.cryptsetup;
 
-    fileSystems.${cfg.mountPoint} = {
+    fileSystems.${mountPoint} = {
       inherit (cfg) device;
       fsType = "ext4";
       options = [
@@ -84,12 +77,8 @@ in
         message = "backup.luks.enable needs backup.luks.device (the by-id path of the encrypted partition).";
       }
       {
-        assertion = !cfg.luks.enable || lib.hasPrefix "/dev/mapper/${cfg.luks.name}" cfg.device;
-        message = "backup.device must stay on /dev/mapper/${cfg.luks.name} while backup.luks is enabled; the filesystem lives inside the mapping.";
-      }
-      {
-        assertion = !cfg.luks.enable || lib.hasPrefix "/" cfg.luks.keyFile;
-        message = "backup.luks.keyFile must be an absolute path on the root filesystem.";
+        assertion = !cfg.luks.enable || lib.hasPrefix "/dev/mapper/${luksName}" cfg.device;
+        message = "backup.device must stay on /dev/mapper/${luksName} while backup.luks is enabled; the filesystem lives inside the mapping.";
       }
     ];
   };

@@ -1,6 +1,4 @@
 {
-  config,
-  lib,
   pkgs,
   ...
 }:
@@ -100,9 +98,7 @@ let
   };
 in
 {
-  options.fingerprint.enable = lib.mkEnableOption "fprintd and the Noctalia lock-screen fingerprint reader";
-
-  config = lib.mkIf config.fingerprint.enable {
+  config = {
     # Goodix 27c6:609c is handled by libfprint's native goodixmoc driver; no
     # proprietary TOD package is needed.
     services.fprintd.enable = true;

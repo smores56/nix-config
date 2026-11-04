@@ -4,13 +4,8 @@
   pkgs,
   ...
 }:
-let
-  cfg = config.nvidia;
-in
 {
-  options.nvidia.enable = lib.mkEnableOption "the proprietary NVIDIA GPU driver";
-
-  config = lib.mkIf cfg.enable {
+  config = {
     boot.kernelModules = [ "nvidia_uvm" ];
 
     hardware.nvidia = {

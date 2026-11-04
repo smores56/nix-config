@@ -6,8 +6,7 @@
 let
   cfg = config.user;
 
-  workFlatDir =
-    if config.machine.workHost && cfg.work.flatRepos != null then cfg.work.flatRepos.dir else "";
+  workFlatDir = if config.machine.workHost then cfg.work.flatRepos.dir else "";
 
   # Shared by `repos` and `worktrees`: host, owner, repo of the cwd's origin.
   originParts = ''

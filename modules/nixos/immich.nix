@@ -1,6 +1,6 @@
 # Immich is the organising brain for the photo archive: a managed library
 # (the database is the source of truth) filed by capture date, backed by a
-# local Postgres + Redis. Only an always-on host should enable it. CPU-only ML
+# local Postgres + Redis. CPU-only ML
 # is the nixpkgs default and is deliberate: smortress's GPU is committed to
 # llama.cpp, so indexing must not contend for VRAM.
 { config, lib, ... }:
@@ -12,7 +12,6 @@ in
   options.immich = lib.mkOption {
     type = lib.types.submodule {
       options = {
-        enable = lib.mkEnableOption "self-hosted Immich photo library (NixOS-only)";
         mediaLocation = lib.mkOption {
           type = lib.types.path;
           default = "/var/lib/immich";
@@ -30,7 +29,7 @@ in
     description = "Self-hosted Immich photo/video library and its Postgres/Redis backing services.";
   };
 
-  config = lib.mkIf cfg.enable {
+  config = {
     services.immich = {
       enable = true;
       inherit (cfg) mediaLocation;

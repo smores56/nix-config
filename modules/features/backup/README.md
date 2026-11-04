@@ -39,13 +39,11 @@ Two repos, same snapshots, one source path:
   the dump has to exist inside the tree. Both repos `wants` it rather than
   `requires`, so a stopped database delays no backup but still alerts.
 - **Failure alerting:** both generated units (`restic-backups-r2`,
-  `restic-backups-local`) carry `onFailure = cloudflare-email@%n.service` when
-  `alerting.enable` is on, so a failed nightly run mails its own journal. There
+  `restic-backups-local`) carry `onFailure = cloudflare-email@%n.service`, so a failed nightly run mails its own journal. There
   is no independent freshness timer, so a silent host or a stopped timer is not
   alerted on.
 
-The backup disk must be mounted before a run: `backup.mountPoint`
-(`/var/backup`) is mounted `nofail`, and restic's unit fails loudly (and
+The backup disk must be mounted before a run: `/var/backup` is mounted `nofail`, and restic's unit fails loudly (and
 alerts) if it is missing.
 
 ## Operating restic
@@ -107,7 +105,7 @@ for `local`.
 
 ## GitHub mirror and metadata
 
-`githubBackup` (enabled on smortress only) keeps a mirror of this host's GitHub
+`githubBackup` (smortress only) keeps a mirror of this host's GitHub
 repos and the metadata GitHub holds outside git. GitHub remains the
 authoritative copy; the mirror lives inside `/var/lib/data`, so restic carries
 it with everything else and there is no separate offsite leg.

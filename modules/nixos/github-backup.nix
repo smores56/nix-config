@@ -16,6 +16,22 @@
 }:
 let
   cfg = config.githubBackup;
+  # Runtime file holding a GitHub token that can read every mirrored repo, read
+  # by ghorg, gh, and python-github-backup. A path in a derivation would be
+  # copied into the Nix store and publish the token, so it stays a string. A
+  # classic `repo` token also grants write access to every repo the account can
+  # reach, so keep it root-only.
+  tokenFile = "/run/secrets/github-repo-pat";
+  # systemd OnCalendar for the nightly mirror timer.
+  schedule = "*-*-* 00:30:00";
+  # systemd TimeSpan cap on a run; generous for a cold clone and the first
+  # (non-incremental) metadata fetch of every repo.
+  timeout = "6h";
+  # systemd OnCalendar for the monthly non-incremental metadata pass (first
+  # Sunday at 09:00). Runs pgb without -i into meta.new, verifies counts, then
+  # swaps meta atomically under the shared host lock; the live meta is kept on
+  # failure.
+  fullMetadataSchedule = "Sun *-*-1..7 09:00:00";
   # Inside the durable tree, so restic has one source path and the mirrors are
   # backed up with everything else.
   mirrorRoot = "/var/lib/data/github-mirrors";
@@ -50,7 +66,7 @@ let
     # GIT_CONFIG_GLOBAL pins packing so the mirror does not grow loose objects
     # or get rewritten by auto-maintenance (see the checked-in gitconfig).
     GIT_CONFIG_GLOBAL = "${../features/backup/gitconfig}";
-    GHORG_GITHUB_TOKEN = cfg.tokenFile;
+    GHORG_GITHUB_TOKEN = tokenFile;
     GITHUB_MIRRORS_ROOT = mirrorRoot;
     # github-mirror.sh requires these; `env -i` means nothing else supplies
     # them. GHORG_FETCH_GIT_LFS makes ghorg pull LFS objects, and the probe
@@ -117,33 +133,10 @@ in
   options.githubBackup = lib.mkOption {
     type = lib.types.submodule {
       options = {
-        enable = lib.mkEnableOption "mirroring this host's GitHub repos onto the backup disk";
-        tokenFile = lib.mkOption {
-          # str, not path: a path interpolated into a derivation is copied into
-          # the Nix store, which would publish the token.
-          type = lib.types.str;
-          default = "/run/secrets/github-repo-pat";
-          description = "Runtime file holding a GitHub token that can read every mirrored repo, read by ghorg, gh, and python-github-backup; never placed in the Nix store. A classic `repo` token also grants write access to every repo the account can reach, so keep it root-only.";
-        };
         probeRepo = lib.mkOption {
           type = lib.types.str;
           default = "";
           description = "A known-private repo name (required). The run fails unless that repo was refreshed in the current run, catching a token that lost `repo` scope: ghorg then lists only public repos, leaves the old private mirrors in place, and still exits 0.";
-        };
-        schedule = lib.mkOption {
-          type = lib.types.str;
-          default = "*-*-* 00:30:00";
-          description = "systemd OnCalendar for the nightly mirror timer.";
-        };
-        timeout = lib.mkOption {
-          type = lib.types.str;
-          default = "6h";
-          description = "systemd TimeSpan cap on a run; generous for a cold clone and the first (non-incremental) metadata fetch of every repo.";
-        };
-        fullMetadataSchedule = lib.mkOption {
-          type = lib.types.str;
-          default = "Sun *-*-1..7 09:00:00";
-          description = "systemd OnCalendar for the monthly non-incremental metadata pass (first Sunday at 09:00). Runs pgb without -i into meta.new, verifies counts, then swaps meta atomically under the shared host lock; the live meta is kept on failure.";
         };
       };
     };
@@ -151,7 +144,7 @@ in
     description = "Mirror this host's GitHub repos (git via ghorg, issues/PRs via python-github-backup) onto the backup disk; GitHub remains the authoritative copy.";
   };
 
-  config = lib.mkIf cfg.enable {
+  config = {
     assertions = [
       {
         assertion = cfg.probeRepo != "";
@@ -167,23 +160,22 @@ in
       "d ${mirrorRoot} 0700 root root -"
     ];
 
-    # Only smortress enables githubBackup, so these units exist only there.
     systemd.services.github-mirror = {
       description = "Refresh the GitHub mirrors (git via ghorg, metadata and verify)";
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
-      onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
+      onFailure = [ "cloudflare-email@%n.service" ];
       serviceConfig = hardening // {
         Type = "oneshot";
         ExecStart = "${mirror}";
-        TimeoutStartSec = cfg.timeout;
+        TimeoutStartSec = timeout;
       };
     };
 
     systemd.timers.github-mirror = {
       wantedBy = [ "timers.target" ];
       timerConfig = {
-        OnCalendar = cfg.schedule;
+        OnCalendar = schedule;
         Persistent = true;
       };
     };
@@ -192,7 +184,7 @@ in
       description = "Full non-incremental GitHub metadata backup with verify and swap";
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
-      onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
+      onFailure = [ "cloudflare-email@%n.service" ];
       serviceConfig = hardening // {
         Type = "oneshot";
         ExecStart = "${metadataFull}";
@@ -203,7 +195,7 @@ in
     systemd.timers.github-metadata-full = {
       wantedBy = [ "timers.target" ];
       timerConfig = {
-        OnCalendar = cfg.fullMetadataSchedule;
+        OnCalendar = fullMetadataSchedule;
         Persistent = true;
         Unit = "github-metadata-full.service";
       };

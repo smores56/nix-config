@@ -93,6 +93,12 @@ let
       readyProbe = "${pkgs.curl}/bin/curl -sf -X POST http://127.0.0.1:${toString llmProxyPort}/v1/embeddings -H 'content-type: application/json' -d '{\"model\":\"qwen3-embedding-8b\",\"input\":\"ready\"}'";
     };
   };
+  # The bearer token the MCP listener requires on every request. The sops secret
+  # `memory-mcp-token` (modules/nixos/secrets-common.nix) declares its file at
+  # this path (root:memory 0440), so the service, the user's shim, the CLI, and
+  # any container client read one copy.
+  mcpTokenFile = "/run/secrets/memory-mcp-token";
+
   embedder = embedders.${config.memory.embedder};
   localEmbedder = config.memory.embedder == "local";
 
@@ -166,23 +172,6 @@ let
   '';
 in
 {
-  options.memory.enable = lib.mkEnableOption "the cross-machine memory stack (Graphiti MCP + FalkorDB + embedder)";
-
-  # The bearer token the MCP listener requires on every request. The sops secret
-  # `memory-mcp-token` declares its file at this path (root:memory 0440), so the
-  # service, the user's shim, the CLI, and any container client read one copy.
-  # Overridable only to keep the module honest if the secret's path ever moves.
-  options.memory.mcpTokenFile = lib.mkOption {
-    type = lib.types.str;
-    default = "/run/secrets/memory-mcp-token";
-    description = ''
-      File holding the bearer token every client of the loopback MCP listener
-      must present. Declared as the `memory-mcp-token` sops secret in
-      `modules/nixos/secrets.nix`; the file must be readable by the `memory`
-      group so the per-user shim and CLI can authenticate too.
-    '';
-  };
-
   # Extraction is hosted (Neuralwatt through the gateway), so memory never
   # depends on the local chat model. Embeddings stay switchable: bge-m3 on
   # llama.cpp by default, qwen3-embedding-8b through the same gateway when
@@ -204,7 +193,7 @@ in
     '';
   };
 
-  config = lib.mkIf config.memory.enable {
+  config = {
     assertions = [
       {
         assertion = ports.memoryMcp != graphitiPort;
@@ -371,7 +360,7 @@ in
         Restart = lib.mkForce "always";
         RestartSec = "10s";
       };
-      onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
+      onFailure = [ "cloudflare-email@%n.service" ];
     };
 
     systemd.services.memory-graphiti-mcp = {
@@ -401,7 +390,7 @@ in
         Restart = lib.mkForce "always";
         RestartSec = "10s";
       };
-      onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
+      onFailure = [ "cloudflare-email@%n.service" ];
       # A container start only waits for the unit to be up, not for FalkorDB to
       # answer; Graphiti builds indices on startup and would exit otherwise.
       # The embedder is probed too, because every search and ingest needs it.
@@ -436,7 +425,7 @@ in
         StartLimitIntervalSec = "1h";
         StartLimitBurst = 10;
       };
-      onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
+      onFailure = [ "cloudflare-email@%n.service" ];
       serviceConfig = {
         DynamicUser = true;
         ExecStart = "${memoryPackage}/bin/memory-llm-proxy";
@@ -486,7 +475,7 @@ in
     # A raw TCP tunnel delivers every client as loopback, so the peer address is
     # not an authority. Every request to this listener therefore needs
     # `Authorization: Bearer <token>` against the `memory-mcp-token` sops secret
-    # (`memory.mcpTokenFile`); /health stays exempt because it answers a static
+    # (`mcpTokenFile`); /health stays exempt because it answers a static
     # status, and the /internal ingest routes keep their own per-start token
     # from the state dir. A missing secret fails closed with 503 and a startup
     # log line.
@@ -507,7 +496,7 @@ in
         StartLimitIntervalSec = "1h";
         StartLimitBurst = 10;
       };
-      onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
+      onFailure = [ "cloudflare-email@%n.service" ];
       serviceConfig = {
         User = "memory";
         Group = "memory";
@@ -520,7 +509,7 @@ in
           "MEMORY_MCP_PORT=${toString ports.memoryMcp}"
           # The listener's bearer token: sops renders it root:memory 0440, so
           # this service reads it through its group membership.
-          "MEMORY_MCP_TOKEN_FILE=${config.memory.mcpTokenFile}"
+          "MEMORY_MCP_TOKEN_FILE=${mcpTokenFile}"
           "MEMORY_GRAPHITI_URL=http://127.0.0.1:${toString graphitiPort}/mcp"
           "MEMORY_REDIS_URL=redis://127.0.0.1:${toString dbPort}"
           # Readiness probes the gateway so search and retries can pause when the
@@ -606,7 +595,7 @@ in
         StartLimitIntervalSec = "1h";
         StartLimitBurst = 3;
       };
-      onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
+      onFailure = [ "cloudflare-email@%n.service" ];
       serviceConfig = {
         Type = "oneshot";
         ExecStart = lib.escapeShellArgs [
@@ -678,7 +667,7 @@ in
         StartLimitIntervalSec = "1h";
         StartLimitBurst = 10;
       };
-      onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
+      onFailure = [ "cloudflare-email@%n.service" ];
       serviceConfig = {
         DynamicUser = true;
         StateDirectory = "llama-cpp-embed";

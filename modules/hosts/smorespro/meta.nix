@@ -6,7 +6,6 @@
   home = true;
 
   nixosOptions = {
-    fingerprint.enable = true;
     # YubiKey sudo without an sshd: pam_rssh dials the local fido2-agent.
     sudoKey.enable = true;
     # The vault is shared by a home-manager user unit; lingering starts it at
@@ -19,7 +18,6 @@
   homeOptions = {
     # Ciphertext copy of the vault under ~/Sync; only Cryptomator unlocks it.
     syncthing = {
-      enable = true;
       device = "smorespro";
     };
   };

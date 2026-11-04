@@ -7,10 +7,12 @@
     ../../profiles/linux-desktop.nix
   ];
   # Host-local modules (read by modules/flake/configurations.nix): the LUKS +
-  # Secure Boot chain and the greeter exist only on this machine.
+  # Secure Boot chain, the greeter and the fingerprint reader exist only on
+  # this machine.
   nixos = [
     ./boot.nix
     ./greeter.nix
+    ./fprintd.nix
     ../../nixos/secrets-smorespro.nix
   ];
 }

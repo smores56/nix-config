@@ -83,7 +83,7 @@ in
     after = [ "postgresql.service" ];
     requires = [ "postgresql.service" ];
     path = [ pkgs.coreutils ];
-    onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
+    onFailure = [ "cloudflare-email@%n.service" ];
     serviceConfig = {
       Type = "oneshot";
       User = "postgres";
@@ -109,7 +109,7 @@ in
   };
 
   systemd.services."restic-backups-r2" = {
-    onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
+    onFailure = [ "cloudflare-email@%n.service" ];
     wants = [ "restic-db-dump.service" ];
     after = [ "restic-db-dump.service" ];
   };
@@ -117,8 +117,8 @@ in
   # The local repo lives on the backup disk: wait for that mount, or a missing
   # disk would quietly fill the root filesystem instead of failing.
   systemd.services."restic-backups-local" = {
-    onFailure = lib.optional config.alerting.enable "cloudflare-email@%n.service";
-    unitConfig.RequiresMountsFor = [ config.backup.mountPoint ];
+    onFailure = [ "cloudflare-email@%n.service" ];
+    unitConfig.RequiresMountsFor = [ "/var/backup" ];
     wants = [ "restic-db-dump.service" ];
     after = [ "restic-db-dump.service" ];
   };

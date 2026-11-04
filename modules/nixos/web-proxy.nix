@@ -9,6 +9,9 @@
 let
   cfg = config.webProxy;
 
+  # Apex domain whose subdomains are exposed (e.g. calibre.<domain>).
+  domain = "sammohr.dev";
+
   # A typo that clears `access.enable` would publish sshd, the LLM, or the
   # memory MCP to the internet. OpenTofu owns those apps and their policies;
   # this assertion stops the mistake before the tunnel ingress is applied.
@@ -23,12 +26,6 @@ in
   options.webProxy = lib.mkOption {
     type = lib.types.submodule {
       options = {
-        enable = lib.mkEnableOption "public exposure of smortress services via Cloudflare Tunnel (NixOS-only)";
-        domain = lib.mkOption {
-          type = lib.types.str;
-          default = "sammohr.dev";
-          description = "Apex domain whose subdomains are exposed (e.g. calibre.<domain>).";
-        };
         tunnelName = lib.mkOption {
           type = lib.types.str;
           default = "smortress";
@@ -74,11 +71,11 @@ in
     description = "Public exposure of smortress HTTP services over Cloudflare Tunnel. TLS terminates at the Cloudflare edge; cloudflared proxies each subdomain straight to its loopback service.";
   };
 
-  config = lib.mkIf cfg.enable {
+  config = {
     assertions =
       map (sub: {
         assertion = !(cfg.services ? ${sub}) || cfg.services.${sub}.access.enable;
-        message = "webProxy.services.${sub} must set access.enable = true: exposing ${sub}.${cfg.domain} over the tunnel without Cloudflare Access would publish it to anyone who learns the hostname.";
+        message = "webProxy.services.${sub} must set access.enable = true: exposing ${sub}.${domain} over the tunnel without Cloudflare Access would publish it to anyone who learns the hostname.";
       }) protected
       # A Service Auth policy only takes effect when Access is on; without this
       # the intent is silently dropped by the tunnel ingress.
@@ -100,7 +97,7 @@ in
         inherit (cfg) credentialsFile;
         default = "http_status:404";
         ingress = lib.mapAttrs' (
-          sub: s: lib.nameValuePair "${sub}.${cfg.domain}" "${s.protocol}://127.0.0.1:${toString s.port}"
+          sub: s: lib.nameValuePair "${sub}.${domain}" "${s.protocol}://127.0.0.1:${toString s.port}"
         ) cfg.services;
       };
     };

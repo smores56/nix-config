@@ -6,11 +6,8 @@
 let
   cfg = config.user;
   inherit (cfg.work) flatRepos;
-  hasFlat = config.machine.workHost && flatRepos != null;
 in
-lib.mkIf hasFlat {
+lib.mkIf config.machine.workHost {
   # Employer tooling and repo discovery share this flat checkout root.
-  home.sessionVariables = lib.optionalAttrs (flatRepos.envVar != null) {
-    ${flatRepos.envVar} = flatRepos.dir;
-  };
+  home.sessionVariables.${flatRepos.envVar} = flatRepos.dir;
 }

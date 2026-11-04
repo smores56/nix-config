@@ -105,24 +105,20 @@ in
             description = "How changes land: 'local' merges feature branches into main locally with no PR and commits quick fixes directly, 'pr' requires every change to land through a pull request.";
           };
           flatRepos = lib.mkOption {
-            type = lib.types.nullOr (
-              lib.types.submodule {
-                options = {
-                  dir = lib.mkOption {
-                    # Absolute, no trailing slash.
-                    type = lib.types.strMatching "/.*[^/]";
-                    description = "Absolute directory holding every work checkout flat as <dir>/<repo>, the layout the employer's tooling expects.";
-                  };
-                  envVar = lib.mkOption {
-                    type = lib.types.nullOr lib.types.str;
-                    default = null;
-                    description = "Environment variable the employer's tooling reads for `dir`; exported on work hosts.";
-                  };
+            type = lib.types.submodule {
+              options = {
+                dir = lib.mkOption {
+                  # Absolute, no trailing slash.
+                  type = lib.types.strMatching "/.*[^/]";
+                  description = "Absolute directory holding every work checkout flat as <dir>/<repo>, the layout the employer's tooling expects.";
                 };
-              }
-            );
-            default = null;
-            description = "Flat checkout layout for work hosts; null keeps work repos under codeRoot like any other.";
+                envVar = lib.mkOption {
+                  type = lib.types.str;
+                  description = "Environment variable the employer's tooling reads for `dir`; exported on work hosts.";
+                };
+              };
+            };
+            description = "Flat checkout layout for work hosts.";
           };
         };
       };

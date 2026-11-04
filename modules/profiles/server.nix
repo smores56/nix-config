@@ -21,6 +21,5 @@
     ../nixos/restic-backup.nix
     ../nixos/github-backup.nix
     ../nixos/alerting.nix
-    ../nixos/no-sleep.nix
   ];
 }

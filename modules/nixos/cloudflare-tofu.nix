@@ -15,8 +15,8 @@
     })
 
     # Account ID is not a secret; the API token stays in sops and is read by
-    # the flake app at run time. Only required when alerting supplies it.
-    (lib.mkIf (builtins.elem "server" config.machine.profiles && config.alerting.enable) {
+    # the flake app at run time.
+    (lib.mkIf (builtins.elem "server" config.machine.profiles) {
       environment.etc."cloudflare-tofu/account-id".text = config.alerting.accountId;
     })
   ];

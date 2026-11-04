@@ -30,7 +30,6 @@ let
 in
 {
   options.syncthing = {
-    enable = lib.mkEnableOption "Syncthing sharing the Cryptomator vault as ciphertext";
     device = lib.mkOption {
       type = lib.types.str;
       description = "This host's key in `modules/syncthing-devices.nix`; the folder is shared with every other device in that table.";
@@ -47,11 +46,11 @@ in
     };
   };
 
-  config = lib.mkIf cfg.enable {
+  config = {
     assertions = [
       {
         assertion = builtins.hasAttr cfg.device devices;
-        message = "syncthing.device (${cfg.device}) needs its ID in modules/syncthing-devices.nix before Syncthing is enabled here; the local device is part of the config Syncthing writes.";
+        message = "syncthing.device (${cfg.device}) needs its ID in modules/syncthing-devices.nix before Syncthing can run here; the local device is part of the config Syncthing writes.";
       }
     ];
 

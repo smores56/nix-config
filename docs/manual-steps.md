@@ -1248,8 +1248,8 @@ Personal files live in a Cryptomator vault that Syncthing replicates as
 ciphertext. The device table is
 [`modules/syncthing-devices.nix`](../modules/syncthing-devices.nix): device IDs
 are public keys, so they are committed, and each device's `key.pem` is the only
-secret. A host opts in through `syncthing.enable` in its `meta.nix`, with
-`syncthing.device` naming its row in that table.
+secret. Every host sets `syncthing.device` in its `meta.nix`, naming its row in that
+table.
 
 Pairing a device:
 
@@ -1448,7 +1448,7 @@ the wrapper mints a random token into `/var/lib/memory/internal.token`
 `Authorization: Bearer <token>` on both routes; the loopback check stays as
 defence in depth. `memory ingest` reads the same file, so the human user must
 be in the `memory` group — `modules/nixos/memory.nix` adds
-`users.users.<machine.username>.extraGroups` when `memory.enable` is set, and
+`users.users.<machine.username>.extraGroups` on any host that imports it, and
 the membership only applies after `just switch smortress` **and** a fresh login
 session (or `newgrp memory`). `MEMORY_INTERNAL_TOKEN_FILE` overrides the path,
 which matters only for a deliberate run from another host: the token is
@@ -1588,8 +1588,7 @@ services and read the graph directory) and writes one timestamped directory unde
   past the value it read before the save; it never touches the AOF. A missing
   or failed graph snapshot is recorded in the manifest (`graph: null` plus
   `graph_error`) and the registry export still stands, but the command exits
-  non-zero so the failed timer run is visible (and alerts, when
-  `alerting.enable` is on).
+  non-zero so the failed timer run is visible (and alerts).
 
 Seven directories are kept; retention only deletes names that are export
 timestamps *and* whose `manifest.json` reads, so a partial export (a crashed or
@@ -1652,7 +1651,7 @@ empty value skips it). A restore writes `<state>/.restore-in-progress` for its
 duration, and `memory export` refuses to run while it exists; a failed restore
 leaves it in place, so remove it once the state is reconciled. The subcommand is
 `memory restore` next to `memory export` — not `memory export restore` — and the
-CLI is in the system profile on any host with `memory.enable`, so sudo finds it.
+CLI is in the system profile on any host that runs the memory stack, so sudo finds it.
 `just memory-restore <dir>` wraps it.
 
 The drill the check suite runs (`tests/memory_export_restore.sh`) is the same

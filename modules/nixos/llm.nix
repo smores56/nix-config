@@ -1,12 +1,9 @@
 {
-  config,
-  lib,
   pkgs,
   aiProviders,
   ...
 }:
 let
-  cfg = config.llm;
   ports = import ../ports.nix;
 
   llama-cpp = pkgs.stdenv.mkDerivation {
@@ -78,15 +75,14 @@ let
   #   Total: ~23.2 GiB — 200K is the ceiling; larger ctx needs lighter weights
 in
 {
-  options.llm.enable = lib.mkEnableOption "the llama.cpp LLM service (also disables desktop/system sleep for availability)";
-
-  config = lib.mkIf cfg.enable {
-    assertions = [
-      {
-        assertion = config.nvidia.enable;
-        message = "llm requires nvidia.enable for CUDA support";
-      }
-    ];
+  config = {
+    # The host serves the model around the clock, so it must never suspend.
+    systemd.sleep.settings.Sleep = {
+      AllowSuspend = false;
+      AllowHibernation = false;
+      AllowHybridSleep = false;
+      AllowSuspendThenHibernate = false;
+    };
 
     services.llama-cpp = {
       enable = true;

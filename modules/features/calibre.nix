@@ -15,19 +15,16 @@
   ...
 }:
 let
-  inherit (pkgs.stdenv.hostPlatform) isLinux;
   ports = import ../ports.nix;
   cfg = config.calibre;
 
   userdb = "${config.home.homeDirectory}/.config/calibre-server/users.sqlite";
 
-  # The host may point this at a sops-decrypted copy (smortress does); the
-  # plaintext XDG file is only the fallback for hosts without a secret.
-  passwordFile =
-    if cfg.passwordFile != "" then
-      cfg.passwordFile
-    else
-      "${config.home.homeDirectory}/.config/calibre-server/password";
+  # Loopback port for calibre-server.
+  port = ports.calibre;
+  # Queue the agent writes books and manifest.json to; a user timer runs
+  # calibredb with the server stopped.
+  ingestDir = "/var/lib/agent/books-ingest";
 
   # Single OPDS account, provisioned from the password file (trailing newlines
   # stripped). Restarting the unit re-applies the file, so rotating the password
@@ -37,7 +34,7 @@ let
   provisionUser = pkgs.writeShellScript "calibre-provision-user" ''
     set -euo pipefail
     server=${lib.getExe' pkgs.calibre "calibre-server"}
-    password_file=${lib.escapeShellArg passwordFile}
+    password_file=${lib.escapeShellArg cfg.passwordFile}
     if [[ ! -r "$password_file" || ! -s "$password_file" ]]; then
       echo "calibre-server: password file missing or empty: $password_file" >&2
       exit 1
@@ -65,9 +62,9 @@ let
     ];
     text = ''
       set -euo pipefail
-      inbox=${lib.escapeShellArg cfg.ingestDir}
+      inbox=${lib.escapeShellArg ingestDir}
       library=${lib.escapeShellArg cfg.library}
-      canonical=${lib.escapeShellArg cfg.ingestDir}
+      canonical=${lib.escapeShellArg ingestDir}
 
       # The queue lives in an agent-writable tree. Refuse a symlinked queue or
       # processed/failed directories, and confine every manifest path to the
@@ -160,26 +157,14 @@ in
   options.calibre = lib.mkOption {
     type = lib.types.submodule {
       options = {
-        enable = lib.mkEnableOption "calibre-server OPDS as a user systemd service";
-        port = lib.mkOption {
-          type = lib.types.port;
-          default = ports.calibre;
-          description = "Loopback port for calibre-server.";
-        };
         passwordFile = lib.mkOption {
           type = lib.types.str;
-          default = "";
-          description = "File holding the OPDS account password. Empty falls back to ~/.config/calibre-server/password; smortress points this at its sops-decrypted copy.";
+          description = "File holding the OPDS account password; smortress points this at its sops-decrypted copy.";
         };
         library = lib.mkOption {
           type = lib.types.str;
           default = "${config.home.homeDirectory}/Calibre Library";
           description = "Calibre library directory. smortress points this at /var/lib/data/books so it is backed up and writable by the agent queue.";
-        };
-        ingestDir = lib.mkOption {
-          type = lib.types.str;
-          default = "/var/lib/agent/books-ingest";
-          description = "Queue the agent writes books and manifest.json to; a user timer runs calibredb with the server stopped.";
         };
       };
     };
@@ -187,7 +172,7 @@ in
     description = "calibre OPDS content server exposed over the Cloudflare Tunnel.";
   };
 
-  config = lib.mkIf (isLinux && cfg.enable) {
+  config = {
     home.packages = [
       pkgs.calibre
       ingest
@@ -201,7 +186,7 @@ in
 
       Service = {
         ExecStartPre = provisionUser;
-        ExecStart = "${lib.getExe' pkgs.calibre "calibre-server"} --port ${toString cfg.port} --listen-on 127.0.0.1 --enable-auth --auth-mode basic --userdb ${lib.escapeShellArg userdb} ${lib.escapeShellArg cfg.library}";
+        ExecStart = "${lib.getExe' pkgs.calibre "calibre-server"} --port ${toString port} --listen-on 127.0.0.1 --enable-auth --auth-mode basic --userdb ${lib.escapeShellArg userdb} ${lib.escapeShellArg cfg.library}";
         Restart = "on-failure";
         RestartSec = 5;
       };
@@ -227,7 +212,7 @@ in
         ProtectHome = "read-only";
         ReadWritePaths = [
           cfg.library
-          cfg.ingestDir
+          ingestDir
         ];
         RestrictAddressFamilies = [ "AF_UNIX" ];
         LockPersonality = true;

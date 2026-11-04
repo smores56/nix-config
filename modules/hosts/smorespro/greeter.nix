@@ -146,7 +146,7 @@ in
   # gate is what skips it when the sensor is behind a closed lid - that ~5 s
   # wait is the whole reason for the gate. 5 s bounds an untouched sensor and
   # pam_fprintd honours it (MIN_TIMEOUT is 1 in 1.94.5).
-  security.pam.services.greetd.fprintAuth = lib.mkForce config.fingerprint.enable;
+  security.pam.services.greetd.fprintAuth = lib.mkForce true;
   security.pam.services.greetd.rules.auth.fprintd.args = lib.mkForce [
     "timeout=5"
     "max-tries=1"

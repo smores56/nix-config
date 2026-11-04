@@ -285,7 +285,7 @@ could read must still be rotated. Runbook: *Admin age key (keys.age)* in
 
 ### Service failure alerts
 
-`alerting.enable` (implemented by `modules/nixos/alerting.nix`) sends unit
+`modules/nixos/alerting.nix` sends unit
 failures through Cloudflare Email Service. Every backup unit's `OnFailure`
 points at the `cloudflare-email@` template. The token and non-secret
 account/from/to values are read from `/run/secrets/cloudflare-api-token` and
@@ -309,8 +309,8 @@ mirror units — is
 
 ### Fingerprint enrollment
 
-Hosts with `fingerprint.enable = true` get `services.fprintd` and the
-Noctalia lock screen reader. Enroll a print once per machine after
+smorespro (`modules/hosts/smorespro/fprintd.nix`) runs `services.fprintd` for
+the Noctalia lock screen reader. Enroll a print once per machine after
 activating the config:
 
 ```sh
@@ -323,10 +323,10 @@ The lock screen talks to fprintd over D-Bus; its PAM stack is the shared
 `login` service, customized on smorespro in
 `modules/hosts/smorespro/greeter.nix` (lid-gated fingerprint, PIV, one prompt).
 Fingerprint auth is deliberately disabled for `sudo`/`su` (see
-`modules/nixos/fprintd.nix`).
+`modules/hosts/smorespro/fprintd.nix`).
 
 The reader can vanish after suspend/resume (Framework issue #102: its xHCI
-host controller fails to re-enumerate it). `modules/nixos/fprintd.nix`
+host controller fails to re-enumerate it). `modules/hosts/smorespro/fprintd.nix`
 caches the host controller at boot and resets it after wake only if the
 reader is missing; watch `journalctl -t fp-rebind`.
 
@@ -585,14 +585,14 @@ Hosts live in `modules/hosts/<hostname>/` and are discovered automatically;
 adding one never edits `modules/flake/configurations.nix`.
 
 1. `meta.nix` — a plain attrset (data, no arguments) declaring `system`,
-   `username`, `nixos = true` and/or `home = true`, optional `machine`/`user`
+   `username`, `nixos = true` and/or `home = true`, optional `user`
    overrides, and option values under `homeOptions`/`nixosOptions`
-   (e.g. `fingerprint.enable = true`).
+   (e.g. `sudoKey.enable = true`).
 2. `default.nix` — the explicit profile list this host composes
    (`../../profiles/cli.nix`, …). Profiles contribute modules to the home and
    NixOS planes. The same file may list host-local modules under `nixos` for
-   one machine's concern that needs a real module (e.g. smorespro's `boot.nix`
-   and `greeter.nix`). `linux-desktop` ships no display manager; a graphical
+   one machine's concern that needs a real module (e.g. smorespro's `boot.nix`,
+   `greeter.nix` and `fprintd.nix`). `linux-desktop` ships no display manager; a graphical
    host adds its greeter here.
 3. For a NixOS host, `disko.nix` — the declarative disk layout. disko owns
    `fileSystems` for `/` and `/boot`, so `hardware.nix` omits them; pin each
@@ -602,8 +602,8 @@ adding one never edits `modules/flake/configurations.nix`.
    `nixos-anywhere` install. Generate it with `--no-filesystems` — disko owns
    `fileSystems`, and `nixos-anywhere` passes the flag for you.
 
-`machine`/`user` are shared by the host's NixOS and home configs, so identity
-and host facts are written once. The available configurations are the
+`system`/`username` and `user` are shared by the host's NixOS and home
+configs, so identity and host facts are written once. The available configurations are the
 `nixosConfigurations` / `homeConfigurations` flake outputs.
 
 ### Installing a blank machine
