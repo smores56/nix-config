@@ -6,7 +6,7 @@
     ../features/work-host.nix
     ../features/ai/claude-policy.nix
     ../desktop/aerospace/default.nix
-    ../desktop/macos-screenshot.nix
+    ../desktop/macos-defaults.nix
     ../features/wallpapers.nix
   ];
   nixos = [ ];

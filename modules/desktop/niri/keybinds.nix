@@ -10,10 +10,12 @@ let
   shared = import ../shared-bindings.nix { inherit lib; };
   sharedBinds = builtins.listToAttrs (
     map (binding: {
-      name = "Mod+Ctrl+${lib.optionalString binding.shift "Shift+"}${binding.key}";
+      name = shared.niriKey binding;
       value.action = binding.niri;
-    }) shared.bindings
+    }) (lib.filter (binding: binding.niri != null) shared.bindings)
   );
+
+  step = toString shared.resize.percent;
 
   directionKeys = {
     Left = "left";
@@ -45,7 +47,7 @@ let
   workspaceBinds = builtins.listToAttrs (
     map (i: {
       name = "Mod+${toString i}";
-      value.action.focus-workspace = i;
+      value.action.focus-workspace = toString i;
     }) (lib.range 1 9)
   );
 in
@@ -54,7 +56,7 @@ in
     binds = {
       "Mod+T".action.spawn = [ "kitty" ];
       "Mod+B".action.spawn = [ "firefox" ];
-      "Mod+D".action.spawn-sh = noctalia "panel-toggle launcher";
+      "Mod+D".action.spawn-sh = shared.niriLauncher;
       "Super+Alt+C".action.spawn-sh = noctalia "panel-toggle control-center";
       "Super+Alt+L".action.spawn-sh = noctalia "session lock";
 
@@ -84,10 +86,10 @@ in
       "Mod+Shift+R".action.switch-preset-column-width-back = [ ];
       "Mod+Alt+Shift+R".action.switch-preset-window-height = [ ];
       "Mod+Alt+R".action.reset-window-height = [ ];
-      "Mod+Minus".action.set-column-width = "-10%";
-      "Mod+Equal".action.set-column-width = "+10%";
-      "Mod+Shift+Minus".action.set-window-height = "-10%";
-      "Mod+Shift+Equal".action.set-window-height = "+10%";
+      "Mod+Minus".action.set-column-width = "-${step}%";
+      "Mod+Equal".action.set-column-width = "+${step}%";
+      "Mod+Shift+Minus".action.set-window-height = "-${step}%";
+      "Mod+Shift+Equal".action.set-window-height = "+${step}%";
 
       "Mod+BracketLeft".action.consume-or-expel-window-left = [ ];
       "Mod+BracketRight".action.consume-or-expel-window-right = [ ];

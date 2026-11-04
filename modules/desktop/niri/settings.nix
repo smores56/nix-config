@@ -6,6 +6,15 @@
 }:
 let
   inherit (config.lib.stylix) colors;
+  shared = import ../shared-bindings.nix { inherit lib; };
+  # Connector names are per machine: the laptop panel is eDP-1, and an unmatched name makes niri
+  # open the workspace on the focused output, so a lone laptop still gets all nine.
+  outputs = {
+    builtIn = "eDP-1";
+    external = "DP-1";
+  };
+  commsWorkspace = 2;
+  workspaceOutput = i: if i == commsWorkspace then outputs.builtIn else outputs.external;
   defaultSpring = {
     damping-ratio = 0.8;
     stiffness = 800;
@@ -33,6 +42,7 @@ in
     prefer-no-csd = true;
     hotkey-overlay.skip-at-startup = true;
     layout = {
+      gaps = shared.gaps.compact;
       background-color = "#${colors.base00}";
       shadow = {
         enable = true;
@@ -71,18 +81,36 @@ in
 
     input = {
       keyboard = {
-        repeat-delay = 200;
-        repeat-rate = 35;
+        repeat-delay = shared.input.repeatDelayMs;
+        repeat-rate = shared.input.repeatRate;
       };
 
       touchpad = {
-        natural-scroll = false;
+        natural-scroll = shared.input.naturalScroll;
         tap = true;
-        scroll-factor = 0.5;
+        scroll-factor = shared.input.scrollFactor;
       };
+      mouse.natural-scroll = shared.input.naturalScroll;
     };
 
+    workspaces = lib.listToAttrs (
+      map (i: {
+        name = "w${toString i}";
+        value = {
+          name = toString i;
+          open-on-output = workspaceOutput i;
+        };
+      }) (lib.range 1 9)
+    );
+
     window-rules = [
+      {
+        matches = [
+          { app-id = "^kitty$"; }
+          { app-id = "^firefox$"; }
+        ];
+        open-on-workspace = "1";
+      }
       {
         draw-border-with-background = false;
         geometry-corner-radius = lib.genAttrs [

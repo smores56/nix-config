@@ -733,6 +733,14 @@ in
       // homeChecks
       // nixosChecks
       // scriptChecks
+      # Evaluating the home does not run `niri validate`; building the rendered config does.
+      //
+        lib.optionalAttrs
+          (config.flake.homeConfigurations."smores@smorespro".activationPackage.system == system)
+          {
+            niri-config =
+              config.flake.homeConfigurations."smores@smorespro".config.xdg.configFile.niri-config.source;
+          }
       // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
         agent-sandbox-static =
           pkgs.runCommand "agent-sandbox-static-check"

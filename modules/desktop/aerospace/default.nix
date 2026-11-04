@@ -10,15 +10,14 @@ let
   shared = import ../shared-bindings.nix { inherit lib; };
   sharedBindings = builtins.listToAttrs (
     map (binding: {
-      name = "cmd-ctrl-${lib.optionalString binding.shift "shift-"}${lib.toLower binding.key}";
+      name = shared.macKey binding;
       value = binding.aerospace;
     }) (lib.filter (binding: binding.aerospace != null) shared.bindings)
   );
-  gapAmount = 6;
   gapsConfig = [
-    { monitor.built-in = gapAmount; }
-    { monitor.main = gapAmount * 2; }
-    (gapAmount * 2)
+    { monitor.built-in = shared.gaps.compact; }
+    { monitor.main = shared.gaps.regular; }
+    shared.gaps.regular
   ];
 
   mkPrefixedBindings =
@@ -56,9 +55,7 @@ let
   };
 
   # Pinned apps by bundle id; unlisted apps are never moved by layouts.
-  apps = {
-    chrome = "com.google.Chrome";
-    kitty = "net.kovidgoyal.kitty";
+  apps = shared.apps // {
     slack = "com.tinyspeck.slackmacgap";
     mail = "com.apple.mail";
     calendar = "com.apple.iCal";
@@ -142,6 +139,18 @@ in
 
       workspace-to-monitor-force-assignment = pinnedWorkspaces;
 
+      # The layout pass would place these on workspace 1 anyway; this covers windows opened later.
+      on-window-detected =
+        map
+          (app: {
+            "if".app-id = app;
+            run = "move-node-to-workspace ${workspaces.work}";
+          })
+          [
+            apps.kitty
+            apps.chrome
+          ];
+
       gaps = {
         inner = {
           horizontal = gapsConfig;
@@ -159,8 +168,7 @@ in
         main.binding = {
           cmd-ctrl-0 = "balance-sizes";
           cmd-ctrl-e = "layout tiles horizontal vertical";
-          cmd-ctrl-a = "layout accordion horizontal vertical";
-          cmd-ctrl-r = applyLayout;
+          cmd-ctrl-l = applyLayout;
         }
         // sharedBindings
         // mkWorkspaceBindings "ctrl-alt" (i: "workspace ${toString i}")

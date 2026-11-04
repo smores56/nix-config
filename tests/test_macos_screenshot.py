@@ -23,7 +23,7 @@ class ScreenshotTest(unittest.TestCase):
 
     def test_missing_adds_only_area_shortcut(self):
         result, run = self.run_with({"28": {"enabled": False}})
-        self.assertEqual(result, "configured PSCRN area screenshot")
+        self.assertEqual(result, "configured shortcut 30")
         self.assertEqual(run.call_count, 2)
         args = run.call_args_list[1].args[0]
         self.assertEqual(args[:6], ["defaults", "write", screenshot.DOMAIN, "AppleSymbolicHotKeys", "-dict-add", "30"])
