@@ -8,44 +8,16 @@
 let
   inherit (aiProviders) neuralwatt smortress;
 
-  # Work uses the built-in OpenAI provider with a keychain API key, with no
-  # personal providers and no search plugin.
-  profile =
-    {
-      personal = {
-        # providers.toml entries and the allowed_models list both come from here.
-        providers = [
-          neuralwatt
-          smortress
-        ];
-        allowedModels = lib.concatMap (
-          p: map (m: "${p.providerId}/${m.id}") p.makiModels
-        ) profile.providers;
-        defaultModel = "neuralwatt/deepseek-v4.1-flash";
-        privateHosts = [ ];
-        searchPlugin = true;
-        memoryMcp = true;
-      };
-      work = {
-        providers = [ ];
-        allowedModels = [ "openai/*" ];
-        defaultModel = "openai/gpt-6.1-sol";
-        privateHosts = [ ];
-        searchPlugin = false;
-        memoryMcp = false;
-      };
-    }
-    .${config.user.aiProfile};
-
-  isServer = builtins.elem "server" config.machine.profiles;
-  # Maki's bwrap boundary is Linux-only; the work Mac keeps its own `m` (claude).
-  useSandbox = pkgs.stdenv.hostPlatform.isLinux && config.user.aiProfile == "personal";
-  homeDirectory = config.home.homeDirectory;
+  # providers.toml entries and the allowed_models list both come from here.
+  providers = [
+    neuralwatt
+    smortress
+  ];
+  allowedModels = lib.concatMap (p: map (m: "${p.providerId}/${m.id}") p.makiModels) providers;
 
   luaStrings = lib.concatMapStringsSep ", " builtins.toJSON;
 
-  # The wrapper, shim, and `memory` CLI are one derivation; personal homes get
-  # all three, work homes get none.
+  # The wrapper, shim, and `memory` CLI are one derivation.
   memoryPackage = import ../memory/package.nix { inherit pkgs; };
 
   # The shim keeps a matching default so it also works standalone.
@@ -57,26 +29,25 @@ let
     maki.setup({
       always_yolo = true,
       always_thinking = "max",
-      -- Personal: only the declared neuralwatt models (+ smortress qwen as
-      -- backup), excluding every other provider, including the built-in
-      -- deepseek that appears when the DEEPSEEK_API_KEY env var is present,
-      -- and the rest of neuralwatt's remote catalog. Work: OpenAI only.
+      -- Only the declared neuralwatt models (+ smortress qwen as backup),
+      -- excluding every other provider, including the built-in deepseek that
+      -- appears when the DEEPSEEK_API_KEY env var is present, and the rest of
+      -- neuralwatt's remote catalog.
       -- allowed_models wins for selectors, CLI/API model changes,
       -- delegation, and `maki models`.
       provider = {
-        default_model = "${profile.defaultModel}",
-        allowed_models = { ${luaStrings profile.allowedModels} },
+        default_model = "neuralwatt/deepseek-v4.1-flash",
+        allowed_models = { ${luaStrings allowedModels} },
       },
-      -- Personal search uses the TinyFish Search API over https; no private
-      -- host allowlist is needed. The smortress provider uses its own client.
+      -- Search uses the TinyFish Search API over https; no private host
+      -- allowlist is needed. The smortress provider uses its own client.
       net = {
-        allowed_private_hosts = { ${luaStrings profile.privateHosts} },
+        allowed_private_hosts = { },
       },
       plugins = {
         bash = { enabled = true },
-        -- The bundled websearch only speaks Exa/You.com; on personal hosts
-        -- the owned plugin below uses the TinyFish Search API instead, and
-        -- work has no search.
+        -- The bundled websearch only speaks Exa/You.com; the owned plugin
+        -- below uses the TinyFish Search API instead.
         websearch = { enabled = false },
         -- Bundled project-scoped memory: the `memory` tool, tag-based
         -- retrieval, plain markdown files under the maki state dir.
@@ -84,7 +55,7 @@ let
       },
     })
 
-    ${lib.optionalString profile.searchPlugin ''require("websearch_owned")''}
+    require("websearch_owned")
   '';
 
   # `run` is needed by plugin jobstart calls; `net` lets websearch_owned reach TinyFish.
@@ -94,7 +65,7 @@ let
     fs_write = true
     run = true
     env = true
-    net = ${lib.boolToString profile.searchPlugin}
+    net = true
   '';
 
   # Catalogs and pricing live in providers.nix; display names and auth wiring here.
@@ -123,7 +94,7 @@ let
             models = p.makiModels;
           }
         )
-      ) profile.providers
+      ) providers
     )
   );
 
@@ -259,20 +230,14 @@ in
       };
 
       ".config/television/cable/maki-sessions.toml".source = makiSessionCable;
-    }
-    // lib.optionalAttrs profile.searchPlugin {
       ".config/maki/lua/websearch_owned.lua" = {
         force = true;
         source = ./lua/websearch_owned.lua;
       };
-    }
-    // lib.optionalAttrs (profile.providers != [ ]) {
       ".config/maki/providers.toml" = {
         force = true;
         source = providersToml;
       };
-    }
-    // lib.optionalAttrs profile.memoryMcp {
       ".config/maki/mcp.toml" = {
         force = true;
         text = mcpToml;
@@ -280,7 +245,7 @@ in
     };
 
     # The ingest CLI derives repo paths and gh targets from this.
-    home.sessionVariables = lib.optionalAttrs profile.memoryMcp {
+    home.sessionVariables = {
       MEMORY_PERSONAL_OWNER = config.user.githubUser;
     };
 
@@ -288,11 +253,11 @@ in
       pkgs.rtk
       makiSessionSearchBin
       makiSessionResume
-    ]
-    ++ lib.optionals profile.memoryMcp [ memoryPackage ];
+      memoryPackage
+    ];
 
     user.shellAbbrs.ms = "pick maki-sessions maki-session-resume";
     # Plain `maki` stays the unsandboxed binary.
-    user.shellAbbrs.m = lib.mkIf useSandbox "agent-sandbox maki";
+    user.shellAbbrs.m = "agent-sandbox maki";
   };
 }

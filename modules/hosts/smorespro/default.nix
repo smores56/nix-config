@@ -9,6 +9,7 @@
     ../../profiles/cli.nix
     ../../profiles/user-base.nix
     ../../profiles/ai-tools.nix
+    ../../profiles/maki.nix
     ../../profiles/linux-desktop.nix
   ];
   nixosModules = [

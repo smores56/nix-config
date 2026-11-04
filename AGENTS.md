@@ -48,7 +48,7 @@ adds its greeter as a host-local module.
 | Location | What goes here |
 |---|---|
 | `modules/options.nix` | `machine.*` host facts, `user.*` identity/preferences, and the server-profile assertion |
-| `modules/profiles/` | six opt-in profiles: `cli`, `user-base`, `ai-tools`, `linux-desktop`, `darwin-work`, `server` |
+| `modules/profiles/` | seven opt-in profiles: `cli`, `user-base`, `ai-tools`, `maki`, `linux-desktop`, `darwin-work`, `server` |
 | `modules/hosts/` | per-host `default.nix` (facts, option values, explicit profile list, optional `homeModules`/`nixosModules` host-local modules), optional `hardware.nix`, `disko.nix`, `secrets.nix`, and those host-only modules |
 | `modules/home.nix` | home-manager base (fonts, nix.conf, darwin helpers) |
 | `modules/features/` | cross-platform home-manager modules (shell, editor, git, packages, theme, ai) |
@@ -63,7 +63,7 @@ adds its greeter as a host-local module.
 | `modules/ports.nix` | loopback port table shared by services and the tunnel |
 | `pkgs/overlays.nix` | nixpkgs overlays: pins and local package derivations |
 | `modules/features/agent-sandbox/` | the same-UID agent boundary; lists/backends in `modules/lib/agent-sandbox.{nix,sh}` |
-| `modules/features/ai/` | AI tooling: assistant context, brain, maki, memory, providers, sdlc, skills |
+| `modules/features/ai/` | AI tooling: assistant context, brain, Claude policy, maki, memory, providers, sdlc, skills |
 | `modules/features/tv/`, `modules/features/repos/` | Television repository and worktree cables; the `repos`/`worktrees` CLIs they call |
 | `tofu/` | minimal Cloudflare DNS/Access/notification objects; run via the `cloudflare-*` flake apps |
 | `modules/features/backup/` | Operator README, GitHub-mirror helpers and the metadata verifier |

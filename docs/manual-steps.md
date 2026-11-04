@@ -779,8 +779,7 @@ The personal account's ed25519 commit-signing key, user-readable 0400 in
 `secrets/common.yaml`, so every host (and the agent sandbox) signs as
 `sam@sammohr.dev` with no agent or PIN. git names it as `user.signingkey`
 (`modules/features/git.nix`): `/run/secrets/github-personal-signing-key` on
-NixOS, `~/.local/share/github/github-personal-signing-key` on the work
-Mac. The public half is `personal` in `modules/lib/signing-keys.nix`; it is
+NixOS, sops-nix's default user path on the work Mac. The public half is `personal` in `modules/lib/signing-keys.nix`; it is
 registered on `smores56` as a **signing** key only, and smortress also accepts
 it as the laptop sandbox's forced-command login (`modules/nixos/ssh.nix`).
 
@@ -834,8 +833,7 @@ revoke the old token.
 <!-- manual-step: secret/github-work-signing-key -->
 
 The work account's ed25519 commit-signing key, in `secrets/smoreswork.yaml`
-only, linked at `~/.local/share/github/github-work-signing-key` on the
-work Mac. The work owner include selects it there; personal hosts have no work
+only. The work owner include selects it there; personal hosts have no work
 key, so a work commit there signs with the personal key and shows Unverified.
 The public half is `work` in `modules/lib/signing-keys.nix`, registered on the
 work account as a **signing** key only. Rotate as for
@@ -1252,14 +1250,8 @@ save) expect more than one conflict file; keep the newest and delete the rest.
 `agent-sandbox <harness>` is the explicit same-UID boundary; `m` is a fish/zsh
 abbreviation for `agent-sandbox maki`. Install `maki` manually in
 `~/.local/bin` (there is no wrapper), and run plain `maki` only when you mean
-to work unsandboxed. `agent-sandbox-check` runs the real boundary and asserts
-the core properties on Linux and on macOS. The macOS run prints one
-`PASS`/`FAIL`/`SKIP` line per property and only counts a denial when the command
-failed with `Operation not permitted`, so a missing path cannot pass a deny test
-for the wrong reason; `SKIP` means a precondition (a personal checkout, `maki`, a
-PAT) was absent. It cannot observe the mach-lookup, `appleevent-send`, `lsopen`
-or `job-creation` rules, which fail with service or AppleEvent errors rather than
-EPERM.
+to work unsandboxed. It runs on the personal Linux hosts only.
+`agent-sandbox-check` runs the real boundary and asserts the core properties.
 
 The sandbox binds an explicit config allowlist and masks the whole `~/.config`;
 if a tool needs its config, add the directory to `CONFIG_ALLOW` in
@@ -1275,23 +1267,8 @@ already in the repo still run for the agent. Renaming a repo's `.git` still
 moves the read-only mounts with it, so this is a raised bar, not a kernel
 boundary.
 
-How new repos work differs by backend, because only Linux has mount
-namespaces. Bubblewrap scans the repos that exist at start, so a repo the agent
-creates inside the boundary is writable and is reviewed like any other code.
-The Seatbelt profile cannot tell an existing repo from one the agent is about to
-create, so it denies writing any `/.git`, `.git/config`, `.git/config.worktree`
-or `.git/hooks`. On macOS the agent can therefore commit in existing repos but
-cannot `git init`, `git clone`, `git worktree add`, or `worktrees new`; do those
-outside the sandbox. The signing assertion in `agent-sandbox-check` follows from
-this and uses `git commit-tree` in an existing personal checkout rather than a
-throwaway repo (it leaves a dangling object, which `git gc` collects).
-
-The agent config tree is writable on macOS, not read-only: there is no mount
-namespace, so the launcher copies the allowlisted `~/.config` entries into
-`~/.local/state/agent/config` and the sandbox writes there. On Linux those same
-entries are bound read-only from the host. Either way the human's `~/.config` is
-out of reach, and `CONFIG_WRITABLE` remains the Linux-only mechanism for a tool
-that has to lock a file in place.
+Bubblewrap scans the repos that exist at start, so a repo the agent creates
+inside the boundary is writable and is reviewed like any other code.
 
 Residuals of the same-UID model: `~/.cargo/registry`, `~/.cargo/git`, `~/.npm`,
 and the Bun cache stay writable for build speed, so a modified cache entry can
@@ -1323,22 +1300,12 @@ the only reliable hardening.
 Photos: the agent talks to Immich over its API rather than touching
 `/var/lib/data/photos`, using `secret/immich-agent-api-key` (below).
 
-Work Mac: maki is OpenAI-only there (`aiProfile = "work"`). Store the key once,
-then drop any OAuth login, which maki would prefer over the key:
-
-```sh
-security add-generic-password -U -a "$USER" -s maki-openai-api-key -w
-maki auth logout openai
-```
-
-The host-side launcher reads the item before entering the sandbox (`securityd`
-is denied inside) and injects `OPENAI_API_KEY`; plain `maki` outside the sandbox
-does not get it. GitHub needs no Keychain item: the sandbox reads each account's sops
-PAT and signing key through `~/.local/share/github`, selected by the target
-repository's owner, so no PAT item is needed. The Seatbelt profile allows those files'
-resolved paths as they are at launch, so relaunch a long-running sandbox after
-sops-nix re-decrypts (a `home-manager switch` that changes secrets, or the
-`launchctl kickstart` below).
+Work Mac: Claude Code, not maki. `claude-policy-install` (sudo) writes the
+root-owned `/Library/Application Support/ClaudeCode/managed-settings.json` from
+`modules/features/ai/claude-policy.nix`: every Claude session runs Bash in
+Claude's Seatbelt sandbox with no unsandboxed retry, so the sops identity and
+decrypted secrets other than the GitHub and Access ones stay unreadable. Rerun
+it whenever activation prints `claude-policy: … stale`.
 
 ### immich-agent-api-key
 

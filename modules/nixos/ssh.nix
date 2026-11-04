@@ -15,7 +15,6 @@ let
   agentSandbox = import ../lib/agent-sandbox.nix {
     inherit pkgs lib;
     isServer = builtins.elem "server" config.machine.profiles;
-    isDarwin = false;
   };
   forcedKey =
     k:
