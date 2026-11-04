@@ -41,6 +41,7 @@ EOF
 cat >"$work/bin/ykman" <<EOF
 #!/usr/bin/env bash
 echo ykman >>"$log"
+[ -e "$state/no-card" ] && { echo "ERROR: No YubiKey detected" >&2; exit 2; }
 printf 'PIV version:              5.7.1\nPIN tries remaining:      %s/3\n' "\$(cat "$state/tries")"
 EOF
 chmod +x "$work/bin/ssh-add" "$work/bin/ykman"
@@ -94,6 +95,11 @@ reset
 echo garbage >"$state/tries"
 if run 2>/dev/null; then fail "loaded with an unreadable retry count"; fi
 [ "$(loads)" = 0 ] || fail "unreadable retry count still reached ssh-add -s"
+
+reset no-card
+out=$(run 2>&1) && fail "loaded with no readable card"
+[[ $out == *"retry count"* ]] || fail "ykman failure lost its hint: '$out'"
+[ "$(loads)" = 0 ] || fail "ykman failure still reached ssh-add -s"
 
 reset load-fails
 if run 2>/dev/null; then fail "failed load reported success"; fi

@@ -1,6 +1,6 @@
 # Masked macOS dialog for piv-ensure. Answers only ssh-add's PKCS#11 prompt,
-# and only with a 6-8 character PIN: an empty or timed-out answer would still
-# be sent to the card and spend a retry.
+# and only with a 6-8 character PIN (PIV's length), so a typo of the wrong
+# length fails here instead of spending a card retry.
 set -euo pipefail
 
 [ "${1:-}" = "Enter passphrase for PKCS#11: " ] || exit 1

@@ -43,7 +43,7 @@ healthy "$@" && exit 0
 SSH_AUTH_SOCK=$sock ssh-add -e "$provider" </dev/null >/dev/null 2>&1 || true
 
 tries=$(timeout 10 ykman piv info 2>/dev/null |
-  sed -n 's/^PIN tries remaining:[[:space:]]*\([0-9][0-9]*\)\/.*/\1/p')
+  sed -n 's/^PIN tries remaining:[[:space:]]*\([0-9][0-9]*\)\/.*/\1/p') || tries=
 [ -n "$tries" ] || die "cannot read the PIV PIN retry count; is exactly one YubiKey inserted?"
 [ "$tries" -ge 2 ] || die "only $tries PIV PIN try left; recover the PIN before using SSH"
 
