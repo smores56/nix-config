@@ -150,13 +150,51 @@ let
     '';
   };
 
+  # macOS: a long-lived agent holds the PIV provider like Linux's fido2-agent,
+  # so the PIN is asked once per card session (masked dialog) instead of on
+  # the tty for every connection. Never forwarded; the sudo agent still is.
+  opensc = "${pkgs.opensc}/lib/opensc-pkcs11.so";
+  pivSock = "${config.home.homeDirectory}/.ssh/piv-agent.sock";
+  pivAgent = pkgs.writeShellApplication {
+    name = "smortress-piv-agent";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.openssh
+    ];
+    text = ''
+      install -d -m 700 "$(dirname "${pivSock}")"
+      rm -f "${pivSock}"
+      exec ssh-agent -D -P "${opensc}" -a "${pivSock}"
+    '';
+  };
+  pivAskpass = pkgs.writeShellScript "piv-askpass" (builtins.readFile ./piv-askpass.sh);
+  pivEnsureProxy = pkgs.writeShellApplication {
+    name = "piv-ensure-proxy";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.flock
+      pkgs.gnused
+      pkgs.openssh
+      pkgs.yubikey-manager
+    ];
+    text = ''
+      ${pkgs.bash}/bin/bash ${./piv-ensure.sh} "${pivSock}" "${opensc}" "${pivAskpass}" ${
+        lib.escapeShellArgs (map (k: pkgs.writeText "${k.key}.pub" k.pubkey) yubikeyKeys.piv)
+      }
+      exec "$@"
+    '';
+  };
+
   # The laptop's smortress path collects the PIV PIN on first use; the server
   # and the other hosts keep the plain tunnel.
+  tunnel = "${cloudflared-access}/bin/cloudflared-access ssh --hostname %h";
   smortressProxy =
-    if isLinux && !isServer then
-      "${lib.getExe ykEnsureProxy} ${cloudflared-access}/bin/cloudflared-access ssh --hostname %h"
+    if isServer then
+      tunnel
+    else if isLinux then
+      "${lib.getExe ykEnsureProxy} ${tunnel}"
     else
-      "${cloudflared-access}/bin/cloudflared-access ssh --hostname %h";
+      "${lib.getExe pivEnsureProxy} ${tunnel}";
 
   # A loopback forward for one tunnel service; maki points at 127.0.0.1:<port>.
   forward = sub: port: {
@@ -180,7 +218,8 @@ in
   ]
   # The ssh_config only names this path; without installing it here the
   # activation would not realise the wrapper and every ProxyCommand would fail.
-  ++ lib.optional isLinux ykEnsureProxy;
+  ++ lib.optional isLinux ykEnsureProxy
+  ++ lib.optional (!isLinux) pivEnsureProxy;
 
   # smortress is reached only through the tunnel: cloudflared proxies to its
   # loopback sshd (modules/nixos/ssh.nix). `%h` expands to HostName.
@@ -209,10 +248,9 @@ in
     IdentityFile = map (k: "~/.config/ssh-sk/${k.key}.pub") yubikeyKeys.piv;
   }
   // lib.optionalAttrs (!isLinux) {
-    # T4/macOS: CryptoTokenKit is not used; OpenSC prompts the PIN on the tty.
-    PKCS11Provider = "${pkgs.opensc}/lib/opensc-pkcs11.so";
-    # IdentitiesOnly also filters PKCS#11 keys; list the committed public
-    # halves so the PIV login identity is still offered.
+    # The PIV agent holds the card session; piv-ensure (the ProxyCommand)
+    # loads it on first use. No PKCS11Provider, which re-asks per connection.
+    IdentityAgent = pivSock;
     IdentityFile = map (k: "~/.config/ssh-sk/${k.key}.pub") yubikeyKeys.piv;
     IdentitiesOnly = "yes";
     # No fido2-agent on macOS: forward the launchd agent that holds only the
@@ -253,6 +291,17 @@ in
       cloudflared-memory = forward "memory" ports.memoryMcp;
     })
   ];
+
+  launchd.agents.smortress-piv-agent = lib.mkIf (!isLinux) {
+    enable = true;
+    config = {
+      ProgramArguments = [ (lib.getExe pivAgent) ];
+      ThrottleInterval = 5;
+      RunAtLoad = true;
+      KeepAlive = true;
+      StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/smortress-piv-agent.err";
+    };
+  };
 
   # Keep the macOS sudo agent alive and reload the handles after a crash.
   launchd.agents.smortress-sudo-agent = lib.mkIf (!isLinux) {

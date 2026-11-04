@@ -202,6 +202,12 @@ in
               try_deny "security (Keychain binary) cannot exec" '/usr/bin/security find-generic-password -s maki-openai-api-key -w'
               try_deny "launchctl denied" '/bin/launchctl print gui/$UID'
               try_deny "osascript denied" '/usr/bin/osascript -e "return 1"'
+              # Masking ~/.ssh hides the files, but connect() to a unix socket is
+              # a network operation: the cached PIV agent would sign a login
+              # with no touch. An absent socket has nothing to prove.
+              for s in sudo-agent.sock piv-agent.sock; do
+                try_deny "$s unreachable" 'o=$(SSH_AUTH_SOCK="$HOME/.ssh/'"$s"'" ssh-add -l 2>&1); rc=$?; case $o in *"No such file"*) exit 3 ;; esac; printf "%s\n" "$o"; exit $rc'
+              done
 
               # Masks.
               deny_path ".ssh unreadable" "$HOME/.ssh"

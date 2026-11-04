@@ -41,7 +41,9 @@ let
     runtimeInputs = [ pkgs.coreutils ];
     text = ''
       case "''${1:-}" in
-        "Enter PIN for '"*)
+        # ssh's own PKCS#11 prompt, and ssh-add's when piv-ensure warms the
+        # PIV agent from this job.
+        "Enter PIN for '"* | "Enter passphrase for PKCS#11: ")
           timeout 15 "''${WALLPAPERS_SECURITY:-/usr/bin/security}" find-generic-password -s smortress-piv-pin -w
           ;;
         *) exit 1 ;;

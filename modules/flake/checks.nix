@@ -314,6 +314,18 @@ in
               tools = [ pkgs.coreutils ];
               args = [ askpassExe ];
             };
+            piv-ensure = {
+              tools = [
+                pkgs.coreutils
+                pkgs.flock
+                pkgs.gnugrep
+                pkgs.gnused
+              ];
+              args = [
+                "${src}/modules/features/piv-ensure.sh"
+                "${src}/modules/features/piv-askpass.sh"
+              ];
+            };
           }
           // {
             # `vault <cmd>` fails closed: usage, a non-vault directory, a
@@ -470,6 +482,52 @@ in
             test "${lib.boolToString (lib.hasInfix "wallpapers-askpass" work.launchd.agents.wallpapers.config.EnvironmentVariables.SSH_ASKPASS)}" = "true"
             touch $out
           '';
+
+        # The smortress alias hook: an outer interactive SSH login publishes
+        # its forwarded socket (OpenSSH >= 10.1 puts it under ~/.ssh/agent,
+        # older ones under /tmp); a pty-less connection or a pane that already
+        # holds the alias must leave the published socket alone.
+        ssh-auth-sock-hook =
+          pkgs.runCommand "ssh-auth-sock-hook"
+            {
+              nativeBuildInputs = [
+                pkgs.fish
+                pkgs.zsh
+                pkgs.coreutils
+              ];
+            }
+            ''
+              export HOME=$TMPDIR/home XDG_RUNTIME_DIR=$TMPDIR/run
+              alias=$XDG_RUNTIME_DIR/ssh-agent.sock
+              mkdir -p $HOME $XDG_RUNTIME_DIR
+
+              # run <shell> <sock> <tty>: prints the resulting SSH_AUTH_SOCK
+              # and the alias target ("-" when absent).
+              run() {
+                rm -f $alias
+                if [ "$1" = fish ]; then
+                  out=$(SSH_AUTH_SOCK=$2 SSH_TTY=$3 fish --no-config -c \
+                    'if test -z "$SSH_TTY"; set -e SSH_TTY; end; source ${../features/ssh-auth-sock.fish}; echo $SSH_AUTH_SOCK')
+                else
+                  out=$(SSH_AUTH_SOCK=$2 SSH_TTY=$3 zsh -f -c \
+                    '[ -n "$SSH_TTY" ] || unset SSH_TTY; source ${../features/ssh-auth-sock.zsh}; echo $SSH_AUTH_SOCK')
+                fi
+                echo "$out $(readlink $alias || echo -)"
+              }
+              expect() {
+                [ "$1" = "$2" ] || { echo "ssh-auth-sock-hook: $3: got '$1', want '$2'" >&2; exit 1; }
+              }
+
+              for sh in fish zsh; do
+                modern=$HOME/.ssh/agent/s.abc.sshd.42
+                legacy=/tmp/ssh-XXXXabc/agent.42
+                expect "$(run $sh $modern /dev/pts/0)" "$alias $modern" "$sh modern login"
+                expect "$(run $sh $legacy /dev/pts/0)" "$alias $legacy" "$sh legacy login"
+                expect "$(run $sh $modern "")" "$modern -" "$sh pty-less connection"
+                expect "$(run $sh $alias /dev/pts/0)" "$alias -" "$sh pane holding the alias"
+              done
+              touch $out
+            '';
 
         # Linger keeps the user manager running from boot (modules/nixos/base.nix),
         # so a default.target unit that wants graphical-session.target drags the

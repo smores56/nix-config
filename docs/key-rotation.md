@@ -158,9 +158,11 @@ step 2 says.
 
 ## smoreswork (work Mac)
 
-The Mac does not use the Linux `fido2-agent` or the PIN cache for login. Its
-SSH host block uses OpenSC's PC/SC provider, so the PIN is typed on the tty
-per connection. A launchd agent (`smortress-sudo-agent`) holds only the three
+The Mac does not use the Linux `fido2-agent` or the PIN cache file. The
+launchd `smortress-piv-agent` (`~/.ssh/piv-agent.sock`, never forwarded) holds
+the OpenSC provider; the `smortress` ProxyCommand (`piv-ensure`) loads it on
+first use through a masked dialog, so the PIN is asked once per card session
+(again after unplug, sleep or a key swap). Another launchd agent (`smortress-sudo-agent`) holds only the three
 sudo handles and is forwarded to smortress for `pam_rssh`. Commits sign with
 the sops keys, not a YubiKey.
 
@@ -194,8 +196,8 @@ the sops keys, not a YubiKey.
    ```sh
    ssh smortress true
    ```
-   The Mac uses OpenSC's `PKCS11Provider` and prompts for the PIV PIN on the
-   tty; there is no login agent or PIN cache on macOS. All three keys should
+   The first connection after inserting a key opens the PIV PIN dialog;
+   repeat connections do not. Swapping keys re-prompts. All three keys should
    work.
 4. `sudo` on smortress from the Mac uses the launchd
    `smortress-sudo-agent` (`~/.ssh/sudo-agent.sock`), which loads the three
