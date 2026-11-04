@@ -492,8 +492,7 @@ in
             tr -d '\\\n' <${proxy} | grep -F 'piv-ensure.sh "' | grep -F 'opensc-pkcs11.so" "${cache}"' |
               grep -E 'piv-dialog +/nix/store/[^ ]+-piv-cache-askpass +/nix/store/[^ ]+-piv-k1.pub'
             ${lib.optionalString (!pkgs.stdenv.hostPlatform.isLinux) ''
-              grep -F 'getconf DARWIN_USER_TEMP_DIR' ${src}/modules/lib/agent-sandbox.sh
-              grep -F '$pin_cache/piv' ${src}/modules/lib/agent-sandbox.sh
+              grep -F '"@UT@/piv"' ${src}/modules/features/ai/claude-policy.nix
             ''}
             touch $out
           '';
@@ -751,8 +750,6 @@ in
               grep -F -- 'Photos' ${../lib/agent-sandbox.nix}
               grep -F -- 'gitdir/hooks' ${../lib/agent-sandbox.sh}
               grep -F -- 'gitdir/config' ${../lib/agent-sandbox.sh}
-              grep -F -- '\.git/(hooks' ${../lib/agent-sandbox.sh}
-              if grep -F -- '(allow default)' ${../lib/agent-sandbox.sh}; then exit 1; fi
               touch $out
             '';
         sshd-settings =

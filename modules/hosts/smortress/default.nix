@@ -18,6 +18,7 @@ in
     ../../profiles/cli.nix
     ../../profiles/user-base.nix
     ../../profiles/ai-tools.nix
+    ../../profiles/maki.nix
     ../../profiles/server.nix
   ];
   nixosModules = [

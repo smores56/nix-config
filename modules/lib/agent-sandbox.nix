@@ -4,12 +4,11 @@
   pkgs,
   lib,
   isServer,
-  isDarwin,
 }:
 let
   # 0.12.0 fixes the setup-time symlink traversal (CVE-2026-87766) that matters when mask
   # destinations are in an agent-writable home; the flake overlays it from unstable on Linux.
-  bwrap = if isDarwin then null else pkgs.bubblewrap;
+  bwrap = pkgs.bubblewrap;
 
   path = lib.makeBinPath [
     pkgs.coreutils
@@ -38,11 +37,7 @@ let
     "$HOME/.local/state/agent"
     "$HOME/.local/share/agent"
     "$HOME/.cache/agent"
-  ]
-  # macOS has no mount namespaces; Linux masks the log dir with a private tmpfs below.
-  ++ lib.optionals isDarwin [ "$HOME/.local/logs" ]
-  # Masks apply after every bind, so the Photos tmpfs hides the Immich library under the writable media tree.
-  ++ lib.optionals (!isDarwin) [
+    # Masks apply after every bind, so the Photos tmpfs hides the Immich library under the writable media tree.
     "/var/lib/data/music"
     "/var/lib/data/books"
   ];
@@ -80,24 +75,9 @@ let
     "$HOME/.local/share/Steam"
     # `vault <cmd>` promises the agent never sees the vault ciphertext, so every profile masks the tree.
     "$HOME/Sync"
-    "$HOME/Library"
-  ]
-  # Durable server data: neither belongs in an agent namespace even if /var is bound later.
-  ++ lib.optionals (!isDarwin) [
+    # Durable server data: neither belongs in an agent namespace even if /var is bound later.
     "/var/lib/data/photos"
     "/var/lib/data/vault"
-  ];
-
-  # Darwin only: dirs of links to decrypted sops files, and the link names allowed inside them.
-  # Seatbelt matches the resolved path, so the launcher resolves each link and allows exactly that
-  # file; names are explicit so a future secret in the directory is not handed over unreviewed.
-  # Linux binds the key at its /run/secrets path (secretBind).
-  darwinSecretLinkDirs = lib.optionals isDarwin [ "$HOME/.local/share/github" ];
-  darwinSecretLinkNames = [
-    "github-personal-pat"
-    "github-personal-signing-key"
-    "github-work-pat"
-    "github-work-signing-key"
   ];
 
   homeMaskFiles = [
@@ -149,7 +129,6 @@ let
     "NEURALWATT_API_KEY|/run/secrets/neuralwatt-api-key"
     "TINYFISH_API_KEY|/run/secrets/tinyfish-api-key"
     "IMMICH_API_KEY|/run/secrets/immich-agent-api-key"
-    "OPENAI_API_KEY|\${OPENAI_KEYCHAIN_ITEM:-/nonexistent}"
   ];
 
   renderList = name: values: ''
@@ -163,48 +142,14 @@ let
     ${renderList "HOME_RO" homeRo}
     ${renderList "HOME_MASK_DIRS" homeMaskDirs}
     ${renderList "HOME_MASK_FILES" homeMaskFiles}
-    ${renderList "DARWIN_SECRET_LINK_DIRS" darwinSecretLinkDirs}
-    ${renderList "DARWIN_SECRET_LINK_NAMES" darwinSecretLinkNames}
     ${renderList "CONFIG_ALLOW" configAllow}
     ${renderList "CONFIG_WRITABLE" configWritable}
     ${renderList "SECRET_BIND" secretBind}
     ${renderList "SECRET_READ" secretRead}
-    ${renderList "ENV_EXTRA" (
-      # The empty environment drops the CA bundle path Nix's git/curl need on macOS; pin the store copy.
-      lib.optionals isDarwin [
-        "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-        "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-      ]
-    )}
+    ${renderList "ENV_EXTRA" [ ]}
     ${renderList "ENV_PASSTHROUGH" [ ]}
     AGENT_CONFIG_DIR=1
     EMPTY_DIR="${pkgs.emptyDirectory}"
-    ${lib.optionalString isDarwin ''OPENAI_KEYCHAIN_ITEM="maki-openai-api-key"''}
-    EXEC_DENY=(
-      sudo
-      su
-      pkexec
-      osascript
-      open
-      launchctl
-      security
-      shortcuts
-      crontab
-      at
-    )
-    MACH_ALLOW=(
-      com.apple.logd
-      com.apple.system.logger
-      com.apple.trustd.agent
-      com.apple.mDNSResponder
-      com.apple.dnssd.service
-      com.apple.SystemConfiguration
-      com.apple.bsd.dirhelper
-      com.apple.pboard
-      com.apple.opendirectoryd
-      # getpwuid(3): ssh and ssh-keygen refuse to run without the user record.
-      com.apple.system.opendirectoryd.libinfo
-    )
   '';
 
   gitConfig = pkgs.writeText "agent-sandbox-gitconfig" ''
@@ -214,13 +159,13 @@ let
 
     [gpg "ssh"]
         allowedSignersFile = ~/.local/state/agent/config/allowed_signers
-        # Pinned so signing does not depend on PATH order (macOS /usr/bin/ssh-keygen may come first).
+        # Pinned so signing does not depend on PATH order.
         program = ${pkgs.openssh}/bin/ssh-keygen
 
     [core]
         sshCommand = ssh -F ~/.local/state/agent/config/ssh_config
-    # Sign commits with the owner's sops key the host config names (/run/secrets on Linux, outside
-    # the masked ~/.config on Darwin); this file replaces the host's gpgsign (GIT_CONFIG_SYSTEM=/dev/null).
+    # Sign commits with the owner's sops key at the /run/secrets path the host config names; this
+    # file replaces the host's gpgsign (GIT_CONFIG_SYSTEM=/dev/null).
     [commit]
         gpgsign = true
   '';
@@ -234,7 +179,7 @@ let
         IdentitiesOnly yes
         ControlMaster no
         ForwardAgent no
-        ${lib.optionalString (!isDarwin) "IdentityFile /run/secrets/github-personal-signing-key"}
+        IdentityFile /run/secrets/github-personal-signing-key
     ''}
     Host *
       UserKnownHostsFile ~/.local/state/agent/config/known_hosts
@@ -257,8 +202,8 @@ let
     runtimeInputs = [
       pkgs.coreutils
       pkgs.bash
-    ]
-    ++ lib.optionals (!isDarwin) [ pkgs.bubblewrap ];
+      pkgs.bubblewrap
+    ];
     text = ''
       export AGENT_SANDBOX_CONFIG=${configFile}
       export AGENT_SANDBOX_PATH=${path}
@@ -266,7 +211,7 @@ let
       export AGENT_SSH_SHIM=${sshShim}/bin/ssh
       export AGENT_GH_SHIM=${ghShim}/bin/gh
       export AGENT_GIT_CONFIG=${gitConfig}
-      export AGENT_SANDBOX_BWRAP=${if isDarwin then "/bin/true" else lib.getExe bwrap}
+      export AGENT_SANDBOX_BWRAP=${lib.getExe bwrap}
       exec ${pkgs.bash}/bin/bash ${./agent-sandbox.sh} "$@"
     '';
   };
@@ -304,7 +249,6 @@ let
     ${renderList "HOME_RO" [ ]}
     ${renderList "HOME_MASK_DIRS" homeMaskDirs}
     ${renderList "HOME_MASK_FILES" homeMaskFiles}
-    ${renderList "DARWIN_SECRET_LINK_DIRS" [ ]}
     ${renderList "CONFIG_ALLOW" [ ]}
     ${renderList "CONFIG_WRITABLE" [ ]}
     ${renderList "SECRET_BIND" [ ]}
@@ -312,7 +256,6 @@ let
     ${renderList "ENV_EXTRA" jupyterEnvExtra}
     ${renderList "ENV_PASSTHROUGH" [ "JUPYTER_TOKEN" ]}
     EMPTY_DIR="${pkgs.emptyDirectory}"
-    # Linux only: the Darwin branch wants EXEC_DENY, MACH_ALLOW and git shims this profile omits.
   '';
 
   # A sops secret the launcher reads host-side; it reaches the sandbox only as JUPYTER_TOKEN, so no token is in the store or unit.
@@ -321,15 +264,15 @@ let
     runtimeInputs = [
       pkgs.coreutils
       pkgs.bash
-    ]
-    ++ lib.optionals (!isDarwin) [ pkgs.bubblewrap ];
+      pkgs.bubblewrap
+    ];
     text = ''
       : "''${JUPYTER_TOKEN_FILE:?JUPYTER_TOKEN_FILE is not set}"
       JUPYTER_TOKEN=$(<"$JUPYTER_TOKEN_FILE")
       export JUPYTER_TOKEN
       export AGENT_SANDBOX_CONFIG=${jupyterConfigFile}
       export AGENT_SANDBOX_PATH=${jupyterPath}
-      export AGENT_SANDBOX_BWRAP=${if isDarwin then "/bin/true" else lib.getExe bwrap}
+      export AGENT_SANDBOX_BWRAP=${lib.getExe bwrap}
       exec ${pkgs.bash}/bin/bash ${./agent-sandbox.sh} "$@"
     '';
   };

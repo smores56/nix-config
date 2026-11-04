@@ -20,7 +20,7 @@ outputs; `import-tree` only assembles the flake-parts modules in
 | Path | Purpose |
 |---|---|
 | `modules/options.nix` | `machine.*` host facts and `user.*` identity/preferences |
-| `modules/profiles/` | opt-in profiles: `cli`, `user-base`, `ai-tools`, `linux-desktop`, `darwin-work`, `server` |
+| `modules/profiles/` | opt-in profiles: `cli`, `user-base`, `ai-tools`, `maki`, `linux-desktop`, `darwin-work`, `server` |
 | `modules/hosts/` | per-host `default.nix`, `disko.nix`, `hardware.nix`, `secrets.nix`, and host-only modules |
 | `modules/features/` | cross-platform home-manager modules (shell, git, ssh, ai, repos, sandbox, ...) |
 | `modules/nixos/` | NixOS system modules (web proxy, backup, memory, chat, ...) |
@@ -43,10 +43,10 @@ Cross-cutting values flow through `config.machine.*` and `config.user.*`, not
   sops signing key, chosen by repo owner; the work account exists only on
   smoreswork. `user.aiProfile` (`personal` or `work`) decides which model
   providers agents may use.
-- **Agent sandbox.** `agent-sandbox <harness>` runs an agent in a same-UID
-  bwrap (Linux) or `sandbox-exec` (macOS) boundary. `m` abbreviates
-  `agent-sandbox maki` on Linux personal hosts; smoreswork sets `m = "claude"`.
-  Lists and backends: `modules/lib/agent-sandbox.nix`.
+- **Agent sandbox.** On the Linux hosts `m` is `agent-sandbox maki`, a
+  same-UID bwrap boundary (`modules/lib/agent-sandbox.nix`). On smoreswork `m`
+  is `claude`, held by a root-owned managed policy that sandboxes every Bash
+  command (`modules/features/ai/claude-policy.nix`).
 - **Memory.** smortress runs a typed SQLite registry, FalkorDB and Graphiti,
   reached over the tunnel through `memory-mcp-shim`. Extraction and (on
   smortress, `memory.embedder = "neuralwatt"`) embeddings go through a loopback

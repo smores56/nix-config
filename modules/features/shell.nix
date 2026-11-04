@@ -112,8 +112,6 @@ in
       ng = "nix-collect-garbage --delete-old";
 
       sm = "ssh smores@smortress -t fish";
-
-      m = lib.mkDefault "maki";
     }
     (lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
       ns = "sudo nixos-rebuild --flake ~/.config/home-manager switch --upgrade";
