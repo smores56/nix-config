@@ -6,6 +6,7 @@
 }:
 let
   cfg = config.user;
+  secretPath = import ../lib/secret-path.nix config;
 
   inherit (cfg) work;
 
@@ -14,8 +15,7 @@ let
   # needs no agent, wrapper or PIN, and a host signs whether or not anyone is
   # connected.
   sopsSecrets = config.sops.secrets or { };
-  signingKeyPath = name: sopsSecrets.${name}.path or "/run/secrets/${name}";
-  personalSigningKey = signingKeyPath "github-personal-signing-key";
+  personalSigningKey = secretPath "github-personal-signing-key";
 
   # GitHub owners are case-insensitive but hasconfig's wildmatch is not, so
   # spell every letter as a [xX] class.
@@ -73,7 +73,7 @@ let
     # The work key is deployed only where the work account's bundle lives;
     # elsewhere a work commit falls back to the personal key.
     // lib.optionalAttrs (sopsSecrets ? github-work-signing-key) {
-      signingkey = signingKeyPath "github-work-signing-key";
+      signingkey = secretPath "github-work-signing-key";
     };
     smores = {
       inherit (work) flow;

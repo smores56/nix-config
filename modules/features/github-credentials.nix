@@ -10,12 +10,14 @@
   ...
 }:
 let
+  secretPath = import ../lib/secret-path.nix;
+
   # Exact owners, lowercased to match the case-folded owner below.
   workOwners = lib.concatMapStringsSep "|" lib.toLower config.user.work.githubOwners;
 
   # sops-nix puts the PATs in /run/secrets on NixOS; a home-only Darwin host
   # declares them in home-manager sops, which owns their path.
-  patFile = name: config.sops.secrets.${name}.path or "/run/secrets/${name}";
+  patFile = secretPath config;
 
   # owner -> PAT file path. Refuses anything that is not a GitHub account name,
   # so a crafted remote can never steer a token by its spelling.

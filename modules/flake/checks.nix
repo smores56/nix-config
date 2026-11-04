@@ -94,8 +94,7 @@ in
           signingKeys = import ../lib/signing-keys.nix;
           # The module's own lookup (modules/features/git.nix), so the expected
           # path tracks the declaration instead of a hardcoded layout.
-          sopsSecrets = hc.sops.secrets or { };
-          signingKeyFile = name: sopsSecrets.${name}.path or "/run/secrets/${name}";
+          secretPath = import ../lib/secret-path.nix hc;
           homeExe =
             name:
             lib.getExe (
@@ -116,8 +115,8 @@ in
             PERSONAL_OWNER = d.githubUser;
             # Only the work host carries the work key; everywhere else a work
             # commit signs with the personal key.
-            PERSONAL_SIGNING_KEY = signingKeyFile "github-personal-signing-key";
-            WORK_SIGNING_KEY = signingKeyFile (
+            PERSONAL_SIGNING_KEY = secretPath "github-personal-signing-key";
+            WORK_SIGNING_KEY = secretPath (
               if hc.machine.workHost then "github-work-signing-key" else "github-personal-signing-key"
             );
             PERSONAL_SIGNING_PUB = signingKeys.personal;
@@ -248,7 +247,7 @@ in
               # plus a path that is deliberately absent: the fail-closed matrix
               # runs against it everywhere, including where the real PATs are
               # readable (the work Mac).
-              ++ map (name: sopsSecrets.${name}.path or "/run/secrets/${name}") [
+              ++ map secretPath [
                 "github-personal-pat"
                 "github-work-pat"
               ]

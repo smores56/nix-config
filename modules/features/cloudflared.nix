@@ -21,11 +21,7 @@ let
   # The Access service token is deployed per host through sops: home-manager
   # sops on Darwin, sops-nix (/run/secrets) on NixOS. Two lines: Client ID and
   # Client Secret. There is no fallback; a host without the secret fails closed.
-  sopsTokenFile =
-    if config.sops.secrets ? cloudflare-access-ssh-token then
-      config.sops.secrets.cloudflare-access-ssh-token.path
-    else
-      "/run/secrets/cloudflare-access-ssh-token";
+  sopsTokenFile = import ../lib/secret-path.nix config "cloudflare-access-ssh-token";
   cloudflared-access = pkgs.writeShellApplication {
     name = "cloudflared-access";
     runtimeInputs = [ pkgs.cloudflared ];
