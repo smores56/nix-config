@@ -67,7 +67,6 @@ from .registry import (
 DEFAULT_STATE_DIR = "/var/lib/memory"
 DEFAULT_GRAPHITI_URL = "http://127.0.0.1:8184/mcp"
 DEFAULT_LLM_URL = "http://127.0.0.1:8082"
-DEFAULT_EMBED_URL = "http://127.0.0.1:8183"
 DEFAULT_REDIS_URL = "redis://127.0.0.1:6379"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8182
@@ -126,10 +125,7 @@ class WrapperConfig:
     state_dir: str = DEFAULT_STATE_DIR
     graphiti_url: str = DEFAULT_GRAPHITI_URL
     llm_url: str = DEFAULT_LLM_URL
-    embed_url: str = DEFAULT_EMBED_URL
     redis_url: str = DEFAULT_REDIS_URL
-    # Remote embedder: probe a real embedding, since the gateway serves no /health for it.
-    embed_model: str | None = None
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
     upstream_timeout: float = DEFAULT_UPSTREAM_TIMEOUT
@@ -142,9 +138,7 @@ class WrapperConfig:
             state_dir=os.environ.get("MEMORY_STATE_DIR", DEFAULT_STATE_DIR),
             graphiti_url=os.environ.get("MEMORY_GRAPHITI_URL", DEFAULT_GRAPHITI_URL),
             llm_url=os.environ.get("MEMORY_LLM_URL", DEFAULT_LLM_URL),
-            embed_url=os.environ.get("MEMORY_EMBED_URL", DEFAULT_EMBED_URL),
             redis_url=os.environ.get("MEMORY_REDIS_URL", DEFAULT_REDIS_URL),
-            embed_model=os.environ.get("MEMORY_EMBED_MODEL") or None,
             host=os.environ.get("MEMORY_MCP_HOST", DEFAULT_HOST),
             port=int(os.environ.get("MEMORY_MCP_PORT", str(DEFAULT_PORT))),
             upstream_timeout=float(os.environ.get("MEMORY_UPSTREAM_TIMEOUT", str(DEFAULT_UPSTREAM_TIMEOUT))),
@@ -300,9 +294,7 @@ def build_server(
 ) -> MemoryServer:
     backend = backend or GraphitiBackend(config.graphiti_url, timeout=config.upstream_timeout)
     registry = registry or Registry(config.state_dir)
-    probes = probes or HealthProbes(
-        llm_url=config.llm_url, embed_url=config.embed_url, embed_model=config.embed_model
-    )
+    probes = probes or HealthProbes(llm_url=config.llm_url)
     graph = graph or GraphStore(config.redis_url)
     in_flight = reconciler.in_flight if reconciler is not None else InFlight()
     if reconciler is None:
@@ -311,8 +303,6 @@ def build_server(
             graphiti_url=config.graphiti_url,
             redis_url=config.redis_url,
             llm_url=config.llm_url,
-            embed_url=config.embed_url,
-            embed_model=config.embed_model,
             upstream_timeout=config.upstream_timeout,
             in_flight=in_flight,
         )

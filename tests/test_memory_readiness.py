@@ -22,44 +22,22 @@ def transport(*, chat=200, embedder=200, record=None):
 
 
 class ReadinessTests(unittest.IsolatedAsyncioTestCase):
-    async def test_the_local_default_probes_llama_cpp_health(self):
+    async def test_probes_the_models_list_and_sends_a_tiny_embedding_request(self):
         seen = []
-        probes = HealthProbes(
-            llm_url="http://llm",
-            embed_url="http://embed/",
-            transport=transport(record=seen),
-        )
+        probes = HealthProbes(llm_url="http://gateway/", transport=transport(record=seen))
 
         self.assertEqual(await probes.failures(), [])
         self.assertEqual(
             [(request.method, request.url.path) for request in seen],
-            [("GET", "/v1/models"), ("GET", "/health")],
+            [("GET", "/v1/models"), ("POST", "/v1/embeddings")],
         )
-
-    async def test_a_remote_embedder_sends_a_tiny_embedding_request(self):
-        seen = []
-        probes = HealthProbes(
-            llm_url="http://gateway",
-            embed_url="http://gateway",
-            embed_model="qwen3-embedding-8b",
-            transport=transport(record=seen),
-        )
-
-        self.assertEqual(await probes.failures(), [])
-        embedding = seen[1]
-        self.assertEqual((embedding.method, embedding.url.path), ("POST", "/v1/embeddings"))
         self.assertEqual(
-            json.loads(embedding.content),
+            json.loads(seen[1].content),
             {"input": "ready", "model": "qwen3-embedding-8b"},
         )
 
-    async def test_a_failing_remote_embedder_blocks_search(self):
-        probes = HealthProbes(
-            llm_url="http://gateway",
-            embed_url="http://gateway",
-            embed_model="qwen3-embedding-8b",
-            transport=transport(embedder=503),
-        )
+    async def test_a_failing_embedder_blocks_search(self):
+        probes = HealthProbes(llm_url="http://gateway", transport=transport(embedder=503))
 
         with self.assertRaises(ReadinessError) as raised:
             await probes.require_search()
@@ -69,14 +47,9 @@ class ReadinessTests(unittest.IsolatedAsyncioTestCase):
         def handler(request: httpx.Request) -> httpx.Response:
             raise httpx.ConnectError("refused", request=request)
 
-        probes = HealthProbes(
-            llm_url="http://llm",
-            embed_url="http://embed",
-            transport=httpx.MockTransport(handler),
-        )
+        probes = HealthProbes(llm_url="http://gateway", transport=httpx.MockTransport(handler))
 
-        failed = await probes.failures()
-        self.assertEqual(len(failed), 2)
+        self.assertEqual(len(await probes.failures()), 2)
 
 
 if __name__ == "__main__":

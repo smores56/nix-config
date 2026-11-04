@@ -11,8 +11,7 @@
   ssh = 22;
   # Read by the wrapper's listener, its tunnel ingress and the generated Maki `mcp.toml`; the shim and CLI keep a matching default.
   memoryMcp = 8182;
-  memoryEmbed = 8183;
-  # The memory-LLM gateway: Graphiti's extraction route and the `neuralwatt` embedder.
+  # The memory-LLM gateway: Graphiti's extraction and embedding route.
   memoryLlmProxy = 8082;
   filesMcp = 8185;
   openWebui = 3210;

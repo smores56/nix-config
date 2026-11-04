@@ -5,10 +5,9 @@ filled in when the extraction endpoint returns. The reconciler uses `failures`
 to pause retries while either model endpoint is down, and search still needs
 the embedder.
 
-Both endpoints default to the local services: extraction through the Neuralwatt
-gateway on loopback and embeddings from llama.cpp. A remote embedder sets
-`embed_model`, because the gateway has no llama.cpp `/health` to answer for it
-and a real (tiny) embedding is the only honest probe.
+Extraction and embeddings both go through the Neuralwatt gateway on loopback,
+which has no `/health` of its own for the embedder, so a real (tiny) embedding
+is the only honest probe.
 """
 
 from __future__ import annotations
@@ -18,6 +17,10 @@ from dataclasses import dataclass
 import httpx
 
 
+# The embedder Graphiti is configured with (modules/nixos/memory.nix); 4096 dimensions.
+EMBED_MODEL = "qwen3-embedding-8b"
+
+
 class ReadinessError(RuntimeError):
     """One or more model endpoints are unavailable."""
 
@@ -25,12 +28,9 @@ class ReadinessError(RuntimeError):
 @dataclass(frozen=True)
 class HealthProbes:
     llm_url: str
-    embed_url: str
     # The chat probe is a WAN round trip to Neuralwatt, not a loopback hop, so
     # the budget covers connect + response rather than one local socket write.
     timeout: float = 10.0
-    # Set only for a remote embedder (model id sent with a one-word probe).
-    embed_model: str | None = None
     # Test seam; production talks to real endpoints.
     transport: httpx.AsyncBaseTransport | None = None
 
@@ -45,14 +45,10 @@ class HealthProbes:
         return response.status_code == 200
 
     async def _embedder_ready(self, client: httpx.AsyncClient) -> bool:
-        """A llama.cpp `/health`, or one tiny embedding for a remote embedder."""
-        url = self.embed_url.rstrip("/")
-        if self.embed_model is None:
-            return await self._probe(client, f"{url}/health")
         try:
             response = await client.post(
-                f"{url}/v1/embeddings",
-                json={"input": "ready", "model": self.embed_model},
+                f"{self.llm_url.rstrip('/')}/v1/embeddings",
+                json={"input": "ready", "model": EMBED_MODEL},
             )
         except httpx.HTTPError:
             return False
@@ -66,11 +62,11 @@ class HealthProbes:
         if not chat:
             failed.append(f"chat model unavailable at {self.llm_url}")
         if not embedder:
-            failed.append(f"embedder unavailable at {self.embed_url}")
+            failed.append(f"embedder unavailable at {self.llm_url}")
         return failed
 
     async def require_search(self) -> None:
         async with self._client() as client:
             embedder = await self._embedder_ready(client)
         if not embedder:
-            raise ReadinessError(f"embedder unavailable at {self.embed_url} (memory search not attempted)")
+            raise ReadinessError(f"embedder unavailable at {self.llm_url} (memory search not attempted)")

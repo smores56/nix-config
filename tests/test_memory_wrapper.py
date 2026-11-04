@@ -478,7 +478,7 @@ class WrapperTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.isError)
 
     async def test_search_requires_the_embedder(self):
-        self.probes.failures_list = ["embedder unavailable at http://127.0.0.1:8183"]
+        self.probes.failures_list = ["embedder unavailable at http://127.0.0.1:8082"]
         result = await self.call("memory_search", {"query": "anything"})
         self.assertTrue(result.isError)
         self.assertIn("embedder", result.content[0].text)

@@ -1400,19 +1400,10 @@ behind the same service-auth policy as `llm`. The wrapper validates the group
 header the Maki shim sends, refuses work groups, enforces a 60 s deadline per
 tool call, and is the only tunnel target. It owns the typed registry
 (`/var/lib/memory/registry.sqlite`, schema version in `PRAGMA user_version`;
-one version behind is migrated on open, unversioned or newer is refused),
-verifies queued writes against FalkorDB, and serves `/internal/episodes` and
-`/internal/lookup` for `memory ingest`. Raw Graphiti runs on an internal
-loopback port (`modules/nixos/memory.nix`) and is never tunneled.
-
-The two `/internal/*` routes require `Authorization: Bearer <token>` from
-`/var/lib/memory/internal.token` (0640, group `memory`), because tunneled
-requests also arrive from `127.0.0.1`. The wrapper regenerates the token at
-every start, so a copied file goes stale; `MEMORY_INTERNAL_TOKEN_FILE`
-overrides the path. The module adds the operator to the `memory` group, which
+any other version is refused) and verifies queued writes against FalkorDB. Raw
+Graphiti runs on an internal loopback port (`modules/nixos/memory.nix`) and is
+never tunneled. The module adds the operator to the `memory` group, which
 applies after `just switch smortress` and a fresh login (or `newgrp memory`).
-`/internal/lookup` takes at most 10,000 hashes; request bodies over 1 MB are
-rejected.
 
 FalkorDB and Graphiti run as rootless podman containers under the `memory` user
 (uid 982). The image store under `/var/lib/memory/.local/share/containers` is
@@ -1423,14 +1414,14 @@ not backed up. Check with `ss -ltnp 'sport = :6379'` (must be 127.0.0.1) and
 `127.0.0.1:8082`, the single egress to Neuralwatt. It reads `neuralwatt-api-key`
 through a systemd credential, adds the bearer header and
 `reasoning_effort: "none"` (a reasoning model otherwise spends its token budget
-thinking and returns empty content), and retries 429/503 up to
-`MEMORY_UPSTREAM_RETRIES`, honouring `Retry-After`. Rotating the key is a sops
+thinking and returns empty content), holds a concurrency permit per upstream
+request, and retries 429/503 up to `MEMORY_UPSTREAM_RETRIES`, honouring a
+numeric `Retry-After`. Rotating the key is a sops
 edit plus rebuild; the secret's `restartUnits` restarts the gateway.
 
-- A missing credential keeps the gateway from starting, which also fails the
-  wrapper's `preStart`; an empty one starts it but every proxied request returns
-  503 `configuration_error` while `/health` still answers. `/health` only proves
-  the process is alive: probe `/v1/models` for upstream access.
+- A missing or empty credential keeps the gateway from starting, which also
+  fails the wrapper's `preStart`. `/health` only proves the process is alive:
+  probe `/v1/models` for upstream access.
 - The listener is loopback-only and unauthenticated, so the host's user
   boundary is the billing boundary.
 - The tier allows three concurrent upstream slots: two for memory
@@ -1443,10 +1434,9 @@ edit plus rebuild; the secret's `restartUnits` restarts the gateway.
   resubmitted as duplicates); to test, set it to `300` in a drop-in under
   `/run/systemd/system/memory-mcp.service.d/`, `daemon-reload`, restart.
 
-**Embedder.** smortress sets `memory.embedder = "neuralwatt"`: `qwen3-embedding-8b`
-(4096-d) through the same gateway. `"local"` selects bge-m3 on `llama-cpp-embed`
-(`127.0.0.1:8183`, 1024-d), which stays deployed either way. Changing it changes
-the vector width, so wipe and re-ingest (see *Rebuilding the store*).
+**Embedder.** Graphiti embeds with `qwen3-embedding-8b` (4096-d) through the same
+gateway. Changing the model changes the vector width, so wipe the graph and
+replay it (see *Rebuilding the graph*).
 
 **Clients.** Personal hosts run `cloudflared-memory`, which forwards loopback
 `ports.memoryMcp` with the Access service token. Maki's `~/.config/maki/mcp.toml`
@@ -1457,29 +1447,28 @@ the `memory` CLI.
 
 **Backup.** The registry is the system of record and the graph a derived index.
 `memory-export.timer` runs `memory-export.service` daily (00:00 plus up to an
-hour of delay, as root) and writes `/var/lib/data/memory-export/<timestamp>/`
-(0700): `registry.sqlite` (SQLite online backup), `episodes.jsonl` (content and
-provenance), `manifest.json` (schema version, per-status counts, checksums) and,
-when `BGSAVE` finishes, `graph-<timestamp>.rdb`. A failed graph snapshot is
-recorded in the manifest and makes the run exit non-zero without invalidating
-the registry copy. Seven exports are kept; partial directories are never pruned
-or counted. The directory is inside restic's source tree, so both repos carry
-it. Run one now with `just memory-export`; inspect with
-`journalctl -u memory-export.service`.
+hour of delay, as root) and overwrites three files in
+`/var/lib/data/memory-export/` (0700): `registry.sqlite` (SQLite online
+backup), `episodes.jsonl` (content and provenance) and, when `BGSAVE`
+finishes, `graph.rdb`. A failed graph snapshot removes the previous
+`graph.rdb` (it would not match the new registry) and makes the run exit
+non-zero without invalidating the registry copy. The directory is inside
+restic's source tree, which owns history and integrity. Run one now with
+`just memory-export`; inspect with `journalctl -u memory-export.service`.
 
-**Restore.** `sudo memory restore <export-dir>` (or `just memory-restore <dir>`):
+**Restore.** `sudo memory restore <export-dir>` (or `just memory-restore <dir>`),
+where the directory holds a restic-restored or live export:
 
-1. verifies every manifest checksum, and refuses a schema the installed code
-   cannot open;
+1. checks that `registry.sqlite` opens and is at the schema the installed code
+   writes, refusing any other;
 2. stops `memory-mcp`, `memory-graphiti-mcp`, `memory-llm-proxy` and
    `memory-falkordb` (a running FalkorDB would rewrite its AOF);
 3. parks the live registry as `registry.sqlite.pre-restore-<timestamp>` and
    installs the export's with an atomic rename, fixing ownership first so a
    failed `chown` leaves the old registry in place;
-4. restores `graph-<timestamp>.rdb` only when its timestamp equals the
-   registry's: the old `appendonlydir` is renamed to
+4. restores `graph.rdb` when present: the old `appendonlydir` is renamed to
    `appendonlydir.pre-restore-<timestamp>` (Redis prefers the AOF) and FalkorDB
-   restarts. Otherwise the graph is refused and the registry restored alone.
+   restarts. Otherwise the registry is restored alone.
 
 Delete the `*.pre-restore-*` files once `GRAPH.LIST` and a search confirm the
 result. Flags: `--dry-run` verifies and prints the plan; `--no-stop` is accepted
@@ -1490,11 +1479,10 @@ exists; a failed restore leaves it, so remove it after reconciling.
 `tests/memory_export_restore.sh` runs the same procedure against temp
 directories.
 
-When the graph snapshot is missing or older, `just memory-reindex --all`
+When the graph snapshot is missing, `just memory-reindex --all`
 (`memory reindex`) is the replay path: it requeues active rows with no matching
 episode and resubmits a bounded slice immediately; repeat until it reports
-nothing left. `memory-ingest` cannot do this because it skips rows that already
-succeeded. A group that looks almost entirely missing while its graph is not
+nothing left. A group that looks almost entirely missing while its graph is not
 empty is refused without `--force`.
 
 **Deploy and verify.** After changing the wrapper, shim, package, gateway or
@@ -1517,52 +1505,16 @@ sudo nix run .#cloudflare-apply
 just switch smortress
 ```
 
-**Corpus ingest.** Run on smortress, where the corpus and the wrapper's
-loopback live: `memory ingest {sdlc,notes,docs,sessions,all}` (`just
-memory-ingest` runs `all`). It reads sdlc issues through `gh`, markdown under
-`~/Documents` (group `global`), personal clones under
-`~/code/github.com/<owner>` plus remote READMEs, and Maki sessions. Work-owned
-labels and work clones are refused before anything is sent. Plan first:
+### Rebuilding the graph
+
+Required after changing the embedding model, and the answer to a lost or
+mismatched graph. The registry is untouched; take an export first
+(`just memory-export`) anyway.
 
 ```sh
-memory ingest all --dry-run
-memory ingest all --limit 5          # small live sample, then the full run
-systemd-run --user --unit memory-ingest --collect \
-  --setenv=MEMORY_MCP_URL=http://127.0.0.1:8182/mcp -- memory ingest all
-```
-
-Extraction is one hosted call per episode, so a full corpus takes hours. The
-registry decides duplicates: `active` and `pending` hashes are skipped,
-`failed` ones are resubmitted, tombstoned ones stay untouched. To resume, run the
-same command again. A report lands in `~/.local/state/memory/ingest-<timestamp>.json`
-and is never read back. `--concurrency` (default 4) bounds submissions.
-
-Maki sessions come from `$MAKI_SESSIONS_DIR`, else `$XDG_STATE_HOME/maki/sessions`,
-`~/.local/share/maki/sessions`, `~/.maki/sessions`. The 50 most recent
-(`--session-limit`) are summarized by `deepseek-v4.1-flash`
-(`MEMORY_SUMMARY_MODEL`) through the gateway at `MEMORY_LLM_URL`; only summaries
-and extracted items are stored. A session whose cwd is a work checkout, or does
-not exist on this host, is refused. Summaries are cached by session id plus
-transcript hash in `$MEMORY_SESSIONS_CACHE` (default
-`~/.local/state/memory/sessions.json`; safe to delete). The report estimates cost
-from `MEMORY_SUMMARY_PRICE_IN`/`_OUT` (USD per million); a missing `usage` block
-reports `unknown`. `--session-concurrency` defaults to 3.
-
-**Evaluation.** `just memory-eval` runs `modules/features/ai/memory/eval/`
-against the live store: 50 labelled queries scored by recall@5 and MRR against
-an FTS5 baseline, plus 50 adversarial queries that must return nothing from a
-foreign project group.
-
-### Rebuilding the store
-
-The only destructive memory operation, and required after a `memory.embedder`
-change. Take an export first (`just memory-export`): the registry is the system
-of record and the wipe deletes it.
-
-```sh
-just switch smortress     # applies the embedder choice
-just memory-rebuild       # stop, wipe falkordb data, registry and token, start (sudo)
-just memory-ingest        # re-extract the corpus; hours, run in a user unit
+just switch smortress     # applies the model change
+just memory-rebuild       # stop, wipe falkordb data, start (sudo)
+just memory-reindex --all # repeat until it reports nothing left
 ```
 
 Do not run it while anything else writes memory.

@@ -74,10 +74,6 @@ cloudflare-apply:
 cloudflare-tofu *args:
     sudo nix run .#cloudflare-tofu -- {{args}}
 
-# Ingest sdlc issues, notes, repo docs, and a Maki session sample into memory.
-memory-ingest *args:
-    memory ingest all {{args}}
-
 # Show memory queue counts per status and group, plus recent extractions.
 memory-status:
     sg memory -c 'memory status'
@@ -94,20 +90,14 @@ memory-export:
 memory-restore dir:
     sudo memory restore {{dir}}
 
-# Evaluate retrieval quality and project-boundary leaks on the live service.
-memory-eval *args:
-    sg memory -c 'nix run nixpkgs#python3 -- modules/features/ai/memory/eval/retrieval.py {{args}} search-metrics'
-    sg memory -c 'nix run nixpkgs#python3 -- modules/features/ai/memory/eval/retrieval.py leak-check'
-
 # Requeue active rows the graph no longer holds; repeat until none are left.
 memory-reindex *args:
     sg memory -c 'memory reindex {{args}}'
 
-# Wipe the derived graph and registry, then restart memory (FalkorDB must stop first or it rewrites its AOF).
+# Wipe the derived graph (the registry stays), then restart memory; follow with `just memory-reindex --all` until it reports nothing left.
 memory-rebuild:
     sudo systemctl stop memory-mcp memory-graphiti-mcp memory-llm-proxy memory-falkordb
     sudo find /var/lib/memory/falkordb -mindepth 1 -delete
-    sudo rm -f /var/lib/memory/registry.sqlite* /var/lib/memory/internal.token /var/lib/memory/.restore-in-progress
     sudo systemctl start memory-falkordb memory-llm-proxy memory-graphiti-mcp memory-mcp
 
 # Show the restic timers and any failed backup units.
