@@ -126,21 +126,6 @@ in
       Group = "open-webui";
       StateDirectory = lib.mkForce "data/open-webui";
       StateDirectoryMode = lib.mkForce "0700";
-      # One-shot migration: the first start after the static user was introduced
-      # replaces the DynamicUser symlink with the real directory. Runs as root
-      # because the old files belong to the retired dynamic UID.
-      ExecStartPre = "+${pkgs.writeShellScript "open-webui-state-migrate" ''
-        set -eu
-        dir=/var/lib/data/open-webui
-        if [ -L "$dir" ]; then
-          target=$(readlink -f "$dir")
-          rm "$dir"
-          mv "$target" "$dir"
-          chown -R open-webui:open-webui "$dir"
-          chmod 0700 "$dir"
-          rmdir "$(dirname "$target")" 2>/dev/null || true
-        fi
-      ''}";
     };
   };
 }

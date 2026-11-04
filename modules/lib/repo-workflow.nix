@@ -8,7 +8,6 @@ let
 
   workFlatDir =
     if config.machine.workHost && cfg.work.flatRepos != null then cfg.work.flatRepos.dir else "";
-  legacyFlatDir = if cfg.work.flatRepos != null then cfg.work.flatRepos.dir else "";
 
   # Shared by `repos` and `worktrees`: host, owner, repo of the cwd's origin.
   originParts = ''
@@ -60,27 +59,14 @@ let
       WORK_FLAT=${lib.escapeShellArg workFlatDir}
       # REPOS_WORK_FLAT overrides the flat folder, including disabling it in tests.
       WORK_FLAT=''${REPOS_WORK_FLAT-$WORK_FLAT}
-      LEGACY_FLAT=${lib.escapeShellArg legacyFlatDir}
-      LEGACY_FLAT=''${REPOS_LEGACY_FLAT-$LEGACY_FLAT}
       WORK_OWNERS=(${lib.escapeShellArgs cfg.work.githubOwners})
 
-      # The flat work folder is a separate root. Ignore old owner links to it
-      # while they exist, rather than scanning every checkout through each link.
+      # The flat work folder is a separate root. Skip owner links to it rather
+      # than scanning every checkout through each link.
       list_repos() {
         local list_owner path flat_root=$WORK_FLAT flat_real="" owner_real real origin_owner owner_name
         local -A chosen=() matched=()
         shopt -s nullglob dotglob
-        if [ -z "$flat_root" ] && [ -n "$LEGACY_FLAT" ] && [ -d "$LEGACY_FLAT" ]; then
-          # Older versions could create these links on personal hosts too. Only
-          # expose that root there when such a link actually exists.
-          owner_real=$(cd -- "$LEGACY_FLAT" && pwd -P)
-          for list_owner in "$ROOT"/*/*; do
-            if [ -L "$list_owner" ] && [ -d "$list_owner" ] && [ "$(cd -- "$list_owner" && pwd -P)" = "$owner_real" ]; then
-              flat_root=$LEGACY_FLAT
-              break
-            fi
-          done
-        fi
         if [ -n "$flat_root" ] && [ -d "$flat_root" ]; then
           flat_real=$(cd -- "$flat_root" && pwd -P)
         fi

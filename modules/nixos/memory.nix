@@ -265,12 +265,7 @@ in
     users.users.${config.machine.username}.extraGroups = [ "memory" ];
 
     systemd.tmpfiles.rules = [
-      # `Z` migrates the existing rootful AOF/RDB files to the rootless service
-      # account while preserving file modes. Stop the old container first (the
-      # operator step in docs/manual-steps.md); otherwise it can write a new
-      # root-owned segment after this runs.
       "d ${dataDir}/falkordb 0700 memory memory -"
-      "Z ${dataDir}/falkordb - memory memory -"
       "d ${exportDir} 0700 root root -"
     ];
 

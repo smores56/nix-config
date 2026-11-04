@@ -421,7 +421,7 @@ in
               hosts = h: lib.mapAttrs (_: e: e.data or e) h.programs.ssh.settings;
               names = h: map lib.getName h.home.packages;
               opensc = s: lib.hasInfix "opensc-pkcs11" (toString s);
-              tangPi = h: (hosts h)."tang-pi 10.0.0.193";
+              tangPi = h: (hosts h)."tang-pi";
             in
             assert
               ensure (units ? piv-agent && opensc units.piv-agent.Service.ExecStart) "smorespro has a PIV agent"

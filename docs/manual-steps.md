@@ -76,8 +76,7 @@ generated hardware config, then run `nix run .#bootstrap`.
   sandbox git config sets `commit.gpgsign = true`, so signing is the default.
   `commit.gpgsign` is config, not enforcement: a deliberate
   `git commit --no-gpg-sign` still produces an unsigned commit, which the review
-  or PR checks catch. A retired `~/.config/maki/signing_ed25519` is removed by
-  `agent-sandbox-cleanup`; nothing reads it.
+  or PR checks catch.
 
 #### Encrypted root and Secure Boot (T2)
 
@@ -159,23 +158,12 @@ generation boots, mount root and ESP from an installer (use
 changes), delete the corrupt files, and run `nixos-rebuild boot` inside
 `nixos-enter`.
 
-The migration ran two installed disks at once, so the staging system on the 970
-used `EFI-tmp`/`root-tmp` labels: duplicate `EFI`/`root` PARTLABELs make
-`/dev/disk/by-partlabel/*` resolve to whichever device udev saw last. The 970
-keeps those labels as the rollback; the 980 owns `EFI`/`root`.
-
 After a `db`/firmware change, replace the Clevis slot and re-export the JWE:
 `sudo clevis luks unbind -d /dev/disk/by-partlabel/root -s <slot>`, re-run the
 bind above, and regenerate `root.jwe`. Then **rebuild** (`sudo nixos-rebuild
 boot`): lzbt embeds the JWE in the signed UKI, so without it the next boot
 still uses the old token. An older generation keeps its older JWE too, so
 rolling back after a re-bind prompts for the passphrase until it is rebuilt.
-
-After the migration's `rsync --numeric-ids`, ownership is the source system's,
-not this install's: Immich's user was `987:983` on the old root and is
-`999:999` now. `chown -R immich:immich /var/lib/data/photos` (and the
-equivalent for each service) or the service gets `EACCES` on its own files.
-
 
 ### smorespro
 
@@ -471,7 +459,7 @@ ClientAliveCountMax 2
   (0600, outside Maki's sandbox, never committed). It is useless from any other
   source address.
 - the three YubiKey PIV 9a public keys from `modules/lib/yubikey-keys.nix`, for
-  the laptops. `modules/features/piv.nix` defines `Host tang-pi 10.0.0.193` on
+  the laptops. `modules/features/piv.nix` defines `Host tang-pi` (HostName 10.0.0.193) on
   both laptops: `piv-ensure` warms the PIV agent first (one PIN per login
   session), then `nc` connects. Pin the host key once per laptop;
 `SSH_ASKPASS_REQUIRE=force` sends the `yes/no` prompt to the session askpass,
@@ -1107,8 +1095,7 @@ Manual, one-time (dashboard):
 - Onboard the Email Service sending subdomain (`send.sammohr.dev`) and add its
   SPF/DKIM/DMARC records. Verify the destination (`sam@sammohr.dev`). Leave the
   apex DMARC record alone (`p=reject`).
-- Delete stale DNS records, Access applications, and policies left by the
-  retired reconciler; it never deleted anything. Import any object you want to
+- Import any existing DNS record, Access application, or policy you want to
   keep before the first apply.
 - The personal-site Worker and the `keyboards.sammohr.dev` redirect are
   dashboard objects, not OpenTofu.
@@ -1116,8 +1103,7 @@ Manual, one-time (dashboard):
 Every change: `sudo nix run .#cloudflare-plan`, review the plan, then
 `sudo nix run .#cloudflare-apply`. State is root-only in
 `/var/lib/cloudflare-tofu` and is **not** backed up: it is outside restic's one
-source path (`/var/lib/data`) and the dataset driver that used to mirror it is
-retired. Losing it costs the import work, not the objects — a fresh state can be
+source path (`/var/lib/data`). Losing it costs the import work, not the objects — a fresh state can be
 rebuilt by importing the live account (see above), and nothing regenerates it
 from the repo. `prevent_destroy` guards the applications and policies; remove it
 deliberately if you mean to delete them.
@@ -1325,12 +1311,6 @@ moves them there. The agent's SSH credential is the personal sops signing key,
 and smortress authorizes it only with a forced `agent-ssh` command that
 re-enters the sandbox.
 
-One-time cleanup (already run for the personal hosts): `agent-sandbox-cleanup
---yes` deletes the retired Maki software signing key, the `~/.config/pi` SSH
-key (tang-pi is console-only), the `~/.config/gh/hosts.yml` OAuth token, the
-cliphist database, and the fish history. Remove the retired Maki signing key
-from GitHub's signing keys afterwards.
-
 Existing repos keep `.git/hooks` and `.git/config` read-only inside the
 boundary, so the agent cannot install hooks or set `core.hooksPath`; the hooks
 already in the repo still run for the agent. Renaming a repo's `.git` still
@@ -1477,37 +1457,12 @@ regenerated on every wrapper start, so a copied file goes stale.
 over 1 MB.
 
 The FalkorDB and Graphiti containers run rootless as the `memory` user (uid
-982, subuid/subgid range 200000-265535). The first switch from the old rootful
-layout must take a fresh export, stop all four units, and hand the graph to
-`memory` before activation:
-
-```sh
-sudo systemctl start memory-export.service       # known-good pre-migration copy
-sudo systemctl stop memory-mcp memory-graphiti-mcp memory-llm-proxy memory-falkordb
-sudo chown -R memory:memory /var/lib/memory/falkordb
-just switch smortress
-ss -ltnp 'sport = :6379'                         # must be 127.0.0.1
-sudo -u memory XDG_RUNTIME_DIR=/run/user/982 podman ps
-sudo podman ps -a                                # stale rootful containers?
-memory status                                    # graph: ok
-redis-cli -h 127.0.0.1 -p 6379 DBSIZE            # compare with the export
-sudo systemctl start memory-export.service       # exercise the rootless export path
-journalctl -u memory-export.service -n 20 --no-pager
-```
-
-If a stale container is still holding `127.0.0.1:6379`, remove it from the
-store that owns it: `sudo podman rm -f memory-falkordb memory-graphiti-mcp`
-or the same `podman rm` as the `memory` user. The rootless image store lives
-under `/var/lib/memory/.local/share/containers`; do not add it to backups. After
+982, subuid/subgid range 200000-265535). The rootless image store lives under
+`/var/lib/memory/.local/share/containers`; do not add it to backups. After
 `memory restore`, the graph directory and snapshot are owned by `memory`,
-matching the rootless container. The first switch also pulls both images into
-the rootless store; after verification, `sudo podman system prune -a` reclaims
-the old rootful copies.
-
-To roll back, stop the four units, switch to the pre-T5 generation (or a
-checkout before these commits), `sudo chown -R root:root
-/var/lib/memory/falkordb`, and start the units. The rootless store can remain;
-only the graph ownership has to return to root.
+matching the rootless container. Check the listener with
+`ss -ltnp 'sport = :6379'` (must be 127.0.0.1) and
+`sudo -u memory XDG_RUNTIME_DIR=/run/user/982 podman ps`.
 
 Graphiti extracts through `memory-llm-proxy` on `127.0.0.1:8082`, which is
 Memory's single egress point to Neuralwatt (`api.neuralwatt.com`). The gateway
@@ -1884,8 +1839,8 @@ just memory-rebuild       # stop, wipe, start (sudo)
 just memory-ingest        # re-extract the corpus; hours, run in a user unit
 ```
 
-`just memory-rebuild` removes `/var/lib/memory/falkordb/*`, `registry.sqlite*`,
-`index.sqlite*`, `audit.jsonl` and the internal token (regenerated at start).
+`just memory-rebuild` removes `/var/lib/memory/falkordb/*`, `registry.sqlite*`
+and the internal token (regenerated at start).
 The first `memory ingest all` then treats every planned hash as missing and
 re-embeds the corpus at the new width. Do not run it while anything else is
 writing memory. Since #223 there is an export to fall back on: take one with
@@ -2203,13 +2158,12 @@ of Tuta's host. With the proxy off, `_mta-sts` chains to `v=STSv1; id=…` and
 `https://mta-sts.sammohr.dev/.well-known/mta-sts.txt` returns Tuta's
 `mode: enforce` policy for `mx: mail.tutanota.de`.
 
-Forwarding in (two Gmail accounts, and Proton):
+Forwarding in (two Gmail accounts):
 
 1. The destination must exist: Settings → Email → Email addresses → Show → +,
    choosing the custom domain. Set `sam@` as the primary address.
 2. Confirm the forward at the receiving end. Gmail mails a "Forwarding
-   Confirmation" from `forwarding-noreply@google.com` with a link, and Proton does
-   the same. Open it in Tuta; if it does not appear, check Spam, then resend from
+   Confirmation" from `forwarding-noreply@google.com` with a link. Open it in Tuta; if it does not appear, check Spam, then resend from
    the source account. An unconfirmed forward silently forwards nothing.
 3. Sort it: Settings → Email → Show inbox rules → +, field **To recipient**,
    value the alias, target folder. One rule per forwarded account; values accept
@@ -2221,9 +2175,7 @@ Forwarding in (two Gmail accounts, and Proton):
 
 The host sends alerts through Cloudflare Email Sending only, from
 `alerts@send.sammohr.dev` to `sam@sammohr.dev`; the sending subdomain carries its
-own SPF (`cf-bounce.send.sammohr.dev`). Tuta is receive-only for this host, and
-Proton stays a fallback mailbox only until #295 closes — forwarding from it dies
-with the account.
+own SPF (`cf-bounce.send.sammohr.dev`). Tuta is receive-only for this host.
 
 **Signing check** (after any change to the sops signing keys or the git config):
 `home-manager switch --flake .#smores@smorespro`, then in any personal checkout

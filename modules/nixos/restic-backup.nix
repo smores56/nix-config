@@ -1,6 +1,6 @@
 # restic is the backup driver: one encrypted repo offsite in R2 and one on the
-# local 4.6 TB backup disk. It replaces the rclone dataset driver, so a single
-# job covers the durable tree and every source is encrypted client-side.
+# local 4.6 TB backup disk. A single job covers the durable tree and every
+# source is encrypted client-side.
 {
   config,
   lib,

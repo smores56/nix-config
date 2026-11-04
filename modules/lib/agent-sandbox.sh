@@ -86,9 +86,7 @@ prepare_darwin_config() {
     exit 1
   fi
   mkdir -p "$agent_config/bin"
-  # gpg-ssh-default-key and agent-sandbox-git-credential are retired helpers;
-  # remove copies an older launcher left in the agent's config.
-  rm -f "$agent_config/bin/ssh" "$agent_config/bin/gh" "$agent_config/bin/gpg-ssh-default-key" "$agent_config/bin/agent-sandbox-git-credential"
+  rm -f "$agent_config/bin/ssh" "$agent_config/bin/gh"
   cp "$AGENT_SSH_SHIM" "$agent_config/bin/ssh"
   cp "$AGENT_GH_SHIM" "$agent_config/bin/gh"
   chmod 755 "$agent_config/bin/"*

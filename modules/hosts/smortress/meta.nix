@@ -27,9 +27,7 @@ in
     };
     calibre = {
       enable = true;
-      # OPDS password comes from sops (owner smores, 0400) instead of the
-      # plaintext ~/.config/calibre-server/password, which is retired once
-      # this lands.
+      # OPDS password comes from sops (owner smores, 0400).
       passwordFile = "/run/secrets/calibre-password";
       # The library lives on the media dataset so it is backed up and the
       # agent's ingest queue can write it without a home exception.

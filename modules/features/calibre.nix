@@ -155,37 +155,6 @@ let
     '';
   };
 
-  # One-shot data migration to the media dataset. It is deliberately not an
-  # activation step: moving the library is an operator decision.
-  migrate = pkgs.writeShellApplication {
-    name = "calibre-migrate";
-    runtimeInputs = [
-      pkgs.coreutils
-      pkgs.systemd
-    ];
-    text = ''
-      set -euo pipefail
-      old="$HOME/Calibre Library"
-      new=${lib.escapeShellArg cfg.library}
-      if [ -e "$new/metadata.db" ]; then
-        echo "calibre-migrate: $new already exists" >&2
-        exit 0
-      fi
-      if [ ! -d "$old" ]; then
-        echo "calibre-migrate: $old is missing; nothing to move" >&2
-        exit 0
-      fi
-      systemctl --user stop calibre-server.service || true
-      mkdir -p "$new"
-      shopt -s dotglob nullglob
-      # The tmpfiles rule creates the target, so move the contents rather than
-      # nesting the old directory inside it.
-      mv "$old"/* "$new"/
-      rmdir "$old"
-      systemctl --user start calibre-server.service || true
-      echo "calibre-migrate: moved $old -> $new" >&2
-    '';
-  };
 in
 {
   options.calibre = lib.mkOption {
@@ -222,7 +191,6 @@ in
     home.packages = [
       pkgs.calibre
       ingest
-      migrate
     ];
 
     systemd.user.services.calibre-server = {

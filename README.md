@@ -122,14 +122,12 @@ sudo nix run .#cloudflare-apply
 ```
 
 State lives in `/var/lib/cloudflare-tofu/` (0700, root-only) and is **not**
-backed up: it sits outside restic's single source path (`/var/lib/data`), and
-the dataset driver that once mirrored it is retired. Losing it costs the import
+backed up: it sits outside restic's single source path (`/var/lib/data`). Losing it costs the import
 work, not the objects — a fresh state can be rebuilt by importing the live
 account (`sudo nix run .#cloudflare-tofu -- import <address> <id>`), but nothing
 regenerates it from the repo, so an apply against an empty state would create
 duplicates. Import on a host with existing objects before the first apply;
-`prevent_destroy` is set on the apps and policies. Stale records/apps from the
-retired reconciler are removed manually first.
+`prevent_destroy` is set on the apps and policies.
 
 #### CDN terms risk
 
@@ -579,9 +577,7 @@ appears outside those option values.
 Limits: the flat folder holds one checkout per name across work orgs. An
 existing checkout is never overwritten by `repos get`; same-name repos from
 different orgs must be handled separately. A checkout still in an org directory
-must be inspected before cloning it into the flat folder. Legacy org links to
-the flat folder are ignored by discovery and can be removed after checking their
-consumers.
+must be inspected before cloning it into the flat folder.
 
 ### Adding a new host
 

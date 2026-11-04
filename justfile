@@ -107,7 +107,7 @@ memory-reindex *args:
 memory-rebuild:
     sudo systemctl stop memory-mcp memory-graphiti-mcp memory-llm-proxy memory-falkordb
     sudo find /var/lib/memory/falkordb -mindepth 1 -delete
-    sudo rm -f /var/lib/memory/registry.sqlite* /var/lib/memory/index.sqlite* /var/lib/memory/audit.jsonl /var/lib/memory/internal.token /var/lib/memory/.restore-in-progress
+    sudo rm -f /var/lib/memory/registry.sqlite* /var/lib/memory/internal.token /var/lib/memory/.restore-in-progress
     sudo systemctl start memory-falkordb memory-llm-proxy memory-graphiti-mcp memory-mcp
 
 # Show the restic timers and any failed backup units.

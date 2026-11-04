@@ -35,27 +35,6 @@ in
     home.packages = [
       sandbox.agentSandbox
 
-      # A one-time operator cleanup, never automatic. It removes the retired
-      # private keys and the gh OAuth token, and clears the clipboard history.
-      (pkgs.writeShellApplication {
-        name = "agent-sandbox-cleanup";
-        runtimeInputs = [ pkgs.coreutils ];
-        text = ''
-          if [ "''${1:-}" != "--yes" ]; then
-            echo "usage: agent-sandbox-cleanup --yes" >&2
-            echo "removes ''${HOME}/.config/maki/signing_ed25519, ''${HOME}/.config/pi/ssh," >&2
-            echo "''${HOME}/.config/gh/hosts.yml, and the cliphist/fish history" >&2
-            exit 2
-          fi
-          rm -f "$HOME/.config/maki/signing_ed25519" "$HOME/.config/maki/signing_ed25519.pub"
-          rm -rf "$HOME/.config/pi/ssh"
-          rm -f "$HOME/.config/gh/hosts.yml"
-          rm -rf "$HOME/.cache/cliphist"
-          : > "$HOME/.local/share/fish/fish_history" 2>/dev/null || true
-          echo "agent-sandbox-cleanup: done" >&2
-        '';
-      })
-
       # Operator check: runs the real sandbox and asserts the boundary. It
       # needs the user's home, so it is not a nix-build check.
       (pkgs.writeShellApplication {

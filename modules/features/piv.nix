@@ -79,7 +79,7 @@ lib.mkIf (!isServer) {
       ForwardAgent = sudoSock;
     };
     # LAN-only, no tunnel; the same 9a identity as smortress.
-    "tang-pi 10.0.0.193" = identity // {
+    "tang-pi" = identity // {
       HostName = "10.0.0.193";
       User = "smores";
       ProxyCommand = "${lib.getExe piv.ensureProxy} ${pkgs.netcat}/bin/nc %h %p";
