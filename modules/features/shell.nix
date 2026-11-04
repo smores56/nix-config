@@ -62,6 +62,10 @@ let
       . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
     fi
     . "${config.home.sessionVariablesPackage}/etc/profile.d/hm-session-vars.sh"
+    # Non-login shells (zellij panes) never run path_helper, and the employer's
+    # ~/.zshrc needs brew; append it so Nix's copies still win.
+    typeset -U path
+    [[ -d /opt/homebrew/bin ]] && path+=(/opt/homebrew/bin /opt/homebrew/sbin)
   '';
 in
 {
