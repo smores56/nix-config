@@ -1,7 +1,6 @@
 import asyncio
 import json
 import os
-import re
 import sys
 import tempfile
 import time
@@ -31,13 +30,11 @@ from memory_mcp.wrapper import (  # noqa: E402
     REINDEX_GUARD_MIN_ROWS,
     DEFAULT_UPSTREAM_TIMEOUT,
     MAX_CONTENT_CHARS,
-    MAX_INTERNAL_BODY_BYTES,
     BodyLimitMiddleware,
     MAX_MCP_BODY_BYTES,
     MAX_QUERY_CHARS,
     WrapperConfig,
     build_server,
-    is_loopback,
 )
 
 
@@ -764,232 +761,6 @@ class WrapperTests(unittest.IsolatedAsyncioTestCase):
         text = result.content[0].text
         self.assertLessEqual(len(text), 6000)
         self.assertIn("truncated", text)
-
-
-class InternalRouteTests(unittest.TestCase):
-    TOKEN = "test-internal-token"
-
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.registry = Registry(self.tmp.name)
-        self.backend = FakeBackend()
-        server = build_server(
-            WrapperConfig(state_dir=self.tmp.name, graphiti_url="http://127.0.0.1:1/mcp"),
-            backend=self.backend,
-            registry=self.registry,
-            probes=FakeProbes(),
-            graph=FakeGraph(),
-            start_reconciler=False,
-            internal_token=self.TOKEN,
-        )
-        self.app = server.streamable_http_app()
-        # The tunnel forwards raw TCP to loopback, so Starlette sees 127.0.0.1
-        # for every tunneled request: the peer address proves nothing.
-        self.local = TestClient(self.app, client=("127.0.0.1", 40000))
-        self.remote = TestClient(self.app, client=("10.0.0.1", 40000))
-
-    def tearDown(self):
-        self.local.close()
-        self.remote.close()
-        self.tmp.cleanup()
-
-    @property
-    def auth(self):
-        return {"Authorization": f"Bearer {self.TOKEN}"}
-
-    def audit(self):
-        import sqlite3
-
-        with sqlite3.connect(self.registry.db_path) as conn:
-            return conn.execute("SELECT tool, status FROM audit").fetchall()
-
-    def test_loopback_detection(self):
-        self.assertTrue(is_loopback("127.0.0.1"))
-        self.assertTrue(is_loopback("::1"))
-        self.assertFalse(is_loopback("10.0.0.1"))
-        self.assertFalse(is_loopback(None))
-
-    def test_internal_routes_reject_non_loopback_peers(self):
-        response = self.remote.post(
-            "/internal/episodes", json={"group": "global", "content": "x"}, headers=self.auth
-        )
-        self.assertEqual(response.status_code, 403)
-        self.assertIn("loopback", response.json()["error"])
-        response = self.remote.post(
-            "/internal/lookup", json={"group": "global", "hashes": ["a" * 64]}, headers=self.auth
-        )
-        self.assertEqual(response.status_code, 403)
-        self.assertIn("loopback", response.json()["error"])
-
-    def test_a_tunneled_request_without_the_token_is_rejected(self):
-        for path, payload in (
-            ("/internal/episodes", {"group": "global", "content": "tunneled"}),
-            ("/internal/lookup", {"group": "global", "hashes": ["a" * 64]}),
-        ):
-            with self.subTest(path=path):
-                response = self.local.post(path, json=payload)
-                self.assertEqual(response.status_code, 403)
-                self.assertIn("internal token", response.json()["error"])
-        self.assertEqual(self.registry.stats("global")["total"], 0)
-        self.assertEqual(self.backend.added, [])
-        self.assertEqual(self.audit(), [])
-
-    def test_a_wrong_or_malformed_token_is_rejected(self):
-        for header in (
-            {"Authorization": "Bearer wrong"},
-            {"Authorization": self.TOKEN},
-            {"Authorization": ""},
-        ):
-            with self.subTest(header=header):
-                response = self.local.post(
-                    "/internal/episodes",
-                    json={"group": "global", "content": "nope"},
-                    headers=header,
-                )
-                self.assertEqual(response.status_code, 403)
-        self.assertEqual(self.registry.stats("global")["total"], 0)
-        self.assertEqual(self.backend.added, [])
-
-    def test_the_server_writes_a_group_readable_token_at_startup(self):
-        with tempfile.TemporaryDirectory() as state_dir:
-            build_server(
-                WrapperConfig(state_dir=state_dir, graphiti_url="http://127.0.0.1:1/mcp"),
-                backend=self.backend,
-                registry=Registry(state_dir),
-                probes=FakeProbes(),
-                graph=FakeGraph(),
-                start_reconciler=False,
-            )
-            path = Path(state_dir) / "internal.token"
-            self.assertTrue(path.exists())
-            self.assertEqual(path.stat().st_mode & 0o777, 0o640)
-            self.assertTrue(path.read_text(encoding="utf-8").strip())
-
-    def test_episodes_payload_validation(self):
-        cases = [
-            ({"content": "x"}, "group"),
-            ({"group": "global"}, "content"),
-            ({"group": "global", "content": "x", "kind": "binary"}, "kind"),
-            ({"group": "global", "content": "x", "origin": "web"}, "origin"),
-            ({"group": "global", "content": "x", "valid_at": "yesterday"}, "valid_at"),
-            ({"group": "global", "content": "x", "tags": "one"}, "tags"),
-            ({"group": "global", "content": "x\x00y"}, "NUL"),
-            ({"group": "blitzy-ai--repo", "content": "x"}, "employer"),
-        ]
-        for payload, needle in cases:
-            with self.subTest(payload=payload):
-                response = self.local.post("/internal/episodes", json=payload, headers=self.auth)
-                self.assertEqual(response.status_code, 400)
-                self.assertIn(needle, response.json()["error"])
-
-    def test_episodes_accepts_a_typed_payload(self):
-        payload = {
-            "group": "smores56--nix-config",
-            "content": '{"legacy": true}',
-            "kind": "json",
-            "origin": "sdlc",
-            "origin_ref": "issue-215#migration",
-            "valid_at": "2026-10-03T12:00:00Z",
-            "tags": ["sdlc"],
-            "actor": "ingest",
-        }
-        response = self.local.post("/internal/episodes", json=payload, headers=self.auth)
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["status"], "queued")
-        self.assertEqual(body["group"], "smores56--nix-config")
-        self.assertEqual(body["content_hash"], content_hash('{"legacy": true}'))
-        self.assertIn("Queued memory", body["text"])
-        stored = self.registry.lookup("smores56--nix-config", body["content_hash"])
-        self.assertEqual(stored.kind, "json")
-        self.assertEqual(stored.origin, "sdlc")
-        self.assertEqual(stored.origin_ref, "issue-215#migration")
-        self.assertEqual(stored.valid_at, "2026-10-03T12:00:00Z")
-        self.assertEqual(stored.actor, "ingest")
-        self.assertEqual(self.backend.added[-1]["source"], "json")
-        self.assertEqual(self.backend.added[-1]["reference_time"], "2026-10-03T12:00:00Z")
-
-    def test_an_oversized_body_is_rejected_before_it_is_parsed(self):
-        payload = {"group": "global", "content": "x" * (MAX_INTERNAL_BODY_BYTES + 1)}
-        response = self.local.post("/internal/episodes", json=payload, headers=self.auth)
-        self.assertEqual(response.status_code, 413)
-        self.assertEqual(self.registry.stats("global")["total"], 0)
-        self.assertEqual(self.backend.added, [])
-
-    def test_lookup_returns_typed_state_for_each_hash(self):
-        entry = RegistryEpisode(
-            group="global",
-            content_hash="a" * 64,
-            uuid=episode_uuid("global", "a" * 64),
-            name="n",
-            content="c",
-            kind="text",
-            origin="notes",
-            origin_ref="note:a.md#body",
-            actor="ingest",
-            cwd="",
-            tags=(),
-            valid_at="2026-01-01T00:00:00Z",
-            created_at="2026-01-01T00:00:00Z",
-            status="active",
-            graphiti_uuid="graph-1",
-        )
-        self.registry.queue(entry)
-        self.registry.mark_active("global", entry.content_hash, "graph-1")
-        response = self.local.post(
-            "/internal/lookup",
-            json={"group": "global", "hashes": ["a" * 64, "b" * 64]},
-            headers=self.auth,
-        )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["a" * 64]["status"], "active")
-        self.assertEqual(body["a" * 64]["graphiti_uuid"], "graph-1")
-        self.assertEqual(body["a" * 64]["uuid"], entry.uuid)
-        self.assertEqual(body["b" * 64]["status"], "missing")
-        self.assertIsNone(body["b" * 64]["graphiti_uuid"])
-
-    def test_lookup_answers_every_hash_in_one_request(self):
-        digests = [f"{index:064x}" for index in range(1, 4)]
-        for digest in digests[:2]:
-            self.registry.queue(
-                RegistryEpisode(
-                    group="global",
-                    content_hash=digest,
-                    uuid=episode_uuid("global", digest),
-                    name="n",
-                    content="c",
-                    kind="text",
-                    origin="notes",
-                    origin_ref="",
-                    actor="ingest",
-                    cwd="",
-                    tags=(),
-                    valid_at="2026-01-01T00:00:00Z",
-                    created_at="2026-01-01T00:00:00Z",
-                )
-            )
-        response = self.local.post(
-            "/internal/lookup", json={"group": "global", "hashes": digests}, headers=self.auth
-        )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(set(body), set(digests))
-        self.assertEqual(body[digests[0]]["status"], "pending")
-        self.assertEqual(body[digests[2]]["status"], "missing")
-
-    def test_lookup_validates_group_and_hashes(self):
-        bad_hash = self.local.post(
-            "/internal/lookup", json={"group": "global", "hashes": ["xyz"]}, headers=self.auth
-        )
-        self.assertEqual(bad_hash.status_code, 400)
-        bad_group = self.local.post(
-            "/internal/lookup",
-            json={"group": "blitzy-ai--repo", "hashes": ["a" * 64]},
-            headers=self.auth,
-        )
-        self.assertEqual(bad_group.status_code, 400)
-        self.assertIn("employer", bad_group.json()["error"])
 
 
 class ReconcilerLifespanTests(unittest.TestCase):

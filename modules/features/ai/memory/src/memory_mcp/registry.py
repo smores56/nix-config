@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterator, Mapping
+from typing import Iterator, Mapping, Sequence
 
 DB_NAME = "registry.sqlite"
 # A database at any other version is refused; there is no in-place migration.

@@ -16,7 +16,6 @@ import asyncio
 import hashlib
 import json
 import os
-import re
 import sys
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -43,10 +42,8 @@ from .groups import (
     sanitize_provenance,
     validate_group,
 )
-from .internal_auth import bearer_ok, write_token
 from .mcp_auth import BearerAuthMiddleware, TokenMissingError, read_token
 from .normalize import (
-    MAX_TAG_LENGTH,
     content_hash,
     describe_source,
     episode_name,
@@ -96,10 +93,7 @@ MAX_GET_CHARS = 16_000
 MAX_QUERY_CHARS = 4_000
 MAX_CWD_CHARS = 1024
 MAX_MESSAGE_CHARS = 500
-MAX_LOOKUP_HASHES = 10_000
 MAX_DETAIL_CHARS = 300
-# Machine-built JSON only: a 10k-hash lookup is the largest legitimate body.
-MAX_INTERNAL_BODY_BYTES = 1_000_000
 # JSON-RPC only; the largest legitimate call is a write at MAX_CONTENT_CHARS (the unit caps at 512M).
 MAX_MCP_BODY_BYTES = 1_000_000
 # A reindex pages the registry; each requeued row costs a full extraction, so one call requeues a bounded slice.
@@ -109,8 +103,6 @@ REINDEX_DEFAULT = 200
 REINDEX_MAX = 500
 # Below this many rows a high miss rate is ordinary; above it, graph and registry disagree.
 REINDEX_GUARD_MIN_ROWS = 50
-
-_HASH = re.compile(r"^[0-9a-f]{64}$")
 
 HeadersProvider = Callable[[Context], Mapping[str, str]]
 
@@ -201,10 +193,6 @@ class WriteOutcome:
         }
 
 
-def is_loopback(host: str | None) -> bool:
-    return host in {"127.0.0.1", "::1", "::ffff:127.0.0.1"}
-
-
 def headers_from_context(ctx: Context) -> Mapping[str, str]:
     request = ctx.request_context.request
     if not isinstance(request, Request):
@@ -252,42 +240,6 @@ def _pinned_scope() -> tuple[str, str, str] | None:
     return group, cwd, sanitize_actor(os.environ.get(DEFAULT_ACTOR_ENV))
 
 
-class BodyTooLarge(Exception):
-    """An internal request body exceeded MAX_INTERNAL_BODY_BYTES."""
-
-
-async def _bounded_body(request: Request, limit: int) -> bytes:
-    """Read the request body, aborting as soon as it passes `limit`."""
-    declared = request.headers.get("content-length")
-    if declared and declared.isdigit() and int(declared) > limit:
-        raise BodyTooLarge
-    chunks: list[bytes] = []
-    size = 0
-    async for chunk in request.stream():
-        size += len(chunk)
-        if size > limit:
-            raise BodyTooLarge
-        chunks.append(chunk)
-    return b"".join(chunks)
-
-
-async def _internal_payload(request: Request) -> tuple[dict[str, Any] | None, JSONResponse | None]:
-    """Parse a bounded JSON object body, or return the error response."""
-    try:
-        raw = await _bounded_body(request, MAX_INTERNAL_BODY_BYTES)
-    except BodyTooLarge:
-        return None, JSONResponse(
-            {"error": f"request body exceeds {MAX_INTERNAL_BODY_BYTES} bytes"}, status_code=413
-        )
-    try:
-        payload = json.loads(raw) if raw else None
-    except ValueError:
-        return None, JSONResponse({"error": "invalid JSON body"}, status_code=400)
-    if not isinstance(payload, dict):
-        return None, JSONResponse({"error": "payload must be an object"}, status_code=400)
-    return payload, None
-
-
 def _result_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -322,14 +274,6 @@ def _validate_valid_at(value: object, *, default: str) -> str:
     return normalized
 
 
-def _payload_tags(value: object) -> list[str]:
-    if value is None:
-        return []
-    if not isinstance(value, list) or any(not isinstance(tag, str) for tag in value):
-        raise ToolError("tags must be an array of strings")
-    return [tag[:MAX_TAG_LENGTH] for tag in value]
-
-
 def _active_rows(registry: Registry, group: str | None) -> list[RegistryEpisode]:
     """Every active row, optionally for one group, in queue order."""
     rows: list[RegistryEpisode] = []
@@ -352,7 +296,6 @@ def build_server(
     reconciler: Reconciler | None = None,
     start_reconciler: bool = True,
     headers_provider: HeadersProvider = headers_from_context,
-    internal_token: str | None = None,
     mcp_token: str | None = None,
 ) -> MemoryServer:
     backend = backend or GraphitiBackend(config.graphiti_url, timeout=config.upstream_timeout)
@@ -361,8 +304,6 @@ def build_server(
         llm_url=config.llm_url, embed_url=config.embed_url, embed_model=config.embed_model
     )
     graph = graph or GraphStore(config.redis_url)
-    # Fresh secret every start: the token file is all that tells a local ingest from a tunneled client.
-    token = internal_token or write_token(config.state_dir)
     in_flight = reconciler.in_flight if reconciler is not None else InFlight()
     if reconciler is None:
         reconciler = build_default(
@@ -1215,122 +1156,6 @@ def build_server(
             )
 
         return await guarded("memory_tombstone", ctx, action)
-
-    def authorize_internal(request: Request) -> JSONResponse | None:
-        """The loopback check plus the shared token; None when the call is allowed."""
-        peer = request.client.host if request.client else None
-        if not is_loopback(peer):
-            return JSONResponse({"error": "internal routes are loopback-only"}, status_code=403)
-        if not bearer_ok(request.headers.get("authorization"), token):
-            return JSONResponse(
-                {"error": "missing or invalid internal token"}, status_code=403
-            )
-        return None
-
-    async def _internal_episodes(request: Request) -> JSONResponse:
-        denied = authorize_internal(request)
-        if denied is not None:
-            return denied
-        payload, invalid = await _internal_payload(request)
-        if invalid is not None:
-            return invalid
-        if payload is None:  # unreachable: _internal_payload returns exactly one
-            return JSONResponse({"error": "payload must be an object"}, status_code=400)
-        try:
-            group = validate_group(str(payload.get("group") or ""))
-            content = payload.get("content")
-            if not isinstance(content, str):
-                raise ToolError("content must be a string")
-            actor = sanitize_actor(str(payload.get("actor") or "ingest"))
-            cwd = sanitize_cwd(str(payload.get("cwd") or ""))
-            kind = _validate_kind(payload.get("kind"))
-            origin = _validate_origin(payload.get("origin"), fallback="agent")
-            origin_ref = str(payload.get("origin_ref") or "")[:200]
-            valid_at = _validate_valid_at(payload.get("valid_at"), default=utcnow())
-            tags = _payload_tags(payload.get("tags"))
-            info = CallContext(group=group, cwd=cwd, actor=actor)
-            outcome = await perform_write(
-                info,
-                WritePayload(
-                    content=content,
-                    tags=tags,
-                    kind=kind,
-                    origin=origin,
-                    origin_ref=origin_ref,
-                    valid_at=valid_at,
-                    actor=actor,
-                    cwd=cwd,
-                ),
-                tool="internal_episodes",
-            )
-        except (ToolError, GroupRefused) as exc:
-            audit(
-                "internal_episodes",
-                "rejected",
-                actor="ingest",
-                group="?",
-                details={"error": clip(str(exc), MAX_DETAIL_CHARS)},
-            )
-            return JSONResponse({"error": str(exc)}, status_code=400)
-        return JSONResponse(outcome.as_dict())
-
-    async def _internal_lookup(request: Request) -> JSONResponse:
-        denied = authorize_internal(request)
-        if denied is not None:
-            return denied
-        payload, invalid = await _internal_payload(request)
-        if invalid is not None:
-            return invalid
-        if payload is None:  # unreachable: _internal_payload returns exactly one
-            return JSONResponse({"error": "payload must be an object"}, status_code=400)
-        try:
-            group = validate_group(str(payload.get("group") or ""))
-            hashes = payload.get("hashes")
-            if not isinstance(hashes, list) or any(not isinstance(item, str) for item in hashes):
-                raise ToolError("hashes must be an array of strings")
-            if len(hashes) > MAX_LOOKUP_HASHES:
-                raise ToolError(f"at most {MAX_LOOKUP_HASHES} hashes per lookup")
-            if any(not _HASH.fullmatch(item) for item in hashes):
-                raise ToolError("every hash must be a 64-character lowercase hex digest")
-        except (ToolError, GroupRefused) as exc:
-            audit(
-                "internal_lookup",
-                "rejected",
-                actor="ingest",
-                group="?",
-                details={"error": clip(str(exc), MAX_DETAIL_CHARS)},
-            )
-            return JSONResponse({"error": str(exc)}, status_code=400)
-
-        result: dict[str, dict[str, object]] = {}
-        found = registry.lookup_many(group, hashes)
-        for digest in hashes:
-            entry = found.get(digest)
-            if entry is None:
-                result[digest] = {
-                    "status": "missing",
-                    "uuid": episode_uuid(group, digest),
-                    "graphiti_uuid": None,
-                    "last_error": None,
-                }
-            else:
-                result[digest] = {
-                    "status": entry.status,
-                    "uuid": entry.uuid,
-                    "graphiti_uuid": entry.graphiti_uuid,
-                    "last_error": entry.last_error,
-                }
-        audit(
-            "internal_lookup",
-            "ok",
-            actor="ingest",
-            group=group,
-            details={"hashes": len(hashes)},
-        )
-        return JSONResponse(result)
-
-    mcp.custom_route("/internal/episodes", methods=["POST"])(_internal_episodes)
-    mcp.custom_route("/internal/lookup", methods=["POST"])(_internal_lookup)
 
     @mcp.custom_route("/health", methods=["GET"])
     async def health(_request: Request) -> JSONResponse:  # pragma: no cover - HTTP wiring
