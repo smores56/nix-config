@@ -651,6 +651,6 @@ interactive login is the operator's. The token inventory, scopes, minting, the
 rotation checklist, and
 per-provider failure behavior are documented once in
 [`docs/manual-steps.md`](docs/manual-steps.md#secrets); that file also carries
-the admin-key runbook. `modules/nixos/secrets.nix`
+the admin-key runbook. `modules/hosts/smortress/secrets.nix`
 declares the keys, so a missing key fails activation — provision the tokens
 before the next `nixos-rebuild switch`.

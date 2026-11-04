@@ -728,7 +728,7 @@ and the sops-nix user path on Darwin. A missing, unreadable or malformed file is
 a hard failure; there is no cache or password-manager fallback.
 
 A NixOS declaration must hand the user access (`owner`/`mode`), because the
-proxy runs as the user; `modules/nixos/secrets-smorespro.nix` is the example.
+proxy runs as the user; `modules/hosts/smorespro/secrets.nix` is the example.
 
 Mint one token per client machine under Zero Trust → Access → Service Auth, then
 paste both lines as `cloudflare-access-ssh-token` in that host's file

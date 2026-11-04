@@ -154,7 +154,7 @@ let
     # token: the tunnel makes a remote client look local too. The shim reads
     # the file itself; the path is named here so it stays visible next to the
     # URL it authenticates to. Same default as the shim, declared in
-    # modules/nixos/memory.nix and modules/nixos/secrets.nix.
+    # modules/nixos/memory.nix and modules/hosts/smortress/secrets.nix.
     MEMORY_MCP_TOKEN_FILE = "/run/secrets/memory-mcp-token";
     MEMORY_WORK_EMAIL = config.user.work.email;
     MEMORY_WORK_OWNER_GLOB = lib.concatStringsSep "," config.user.work.githubOwners;

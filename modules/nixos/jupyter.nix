@@ -33,7 +33,7 @@ let
   port = 8888;
 in
 {
-  # Declared here rather than in modules/nixos/secrets.nix because this module
+  # Declared here rather than in modules/hosts/smortress/secrets.nix because this module
   # is server-profile-only and owns the only consumer; the value must exist in
   # secrets/smortress.yaml. mkDefault lets that file reclaim the declaration.
   sops.secrets.jupyter-token = {

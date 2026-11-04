@@ -4,7 +4,6 @@
     ../features/calibre.nix
   ];
   nixos = [
-    ../nixos/secrets.nix
     ../nixos/cloudflare-tofu.nix
     ../nixos/web-proxy.nix
     ../nixos/immich.nix

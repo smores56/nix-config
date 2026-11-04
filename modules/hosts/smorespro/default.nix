@@ -19,7 +19,7 @@
     ./boot.nix
     ./greeter.nix
     ./fprintd.nix
-    ../../nixos/secrets-smorespro.nix
+    ./secrets.nix
   ];
 
   nixosOptions = {

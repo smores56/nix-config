@@ -25,7 +25,10 @@ in
   ];
   # Host-local modules: the Secure Boot + TPM boot chain exists only on this
   # machine.
-  nixosModules = [ ./boot.nix ];
+  nixosModules = [
+    ./boot.nix
+    ./secrets.nix
+  ];
 
   homeOptions = {
     # The vault ciphertext is shared by Syncthing; the server only relays it and
