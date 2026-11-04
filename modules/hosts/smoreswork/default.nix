@@ -5,8 +5,6 @@
   username = "sam";
   home = true;
 
-  # Shared profiles (they drive machine.graphical/wayland/workHost and the
-  # server-profile assertion), not host-local modules.
   profiles = [
     ../../profiles/cli.nix
     ../../profiles/user-base.nix
@@ -22,8 +20,7 @@
   };
 
   homeOptions = {
-    # The work laptop holds a ciphertext copy of the vault under ~/Sync, outside
-    # the TCC-protected folders, and unlocks it with the Cryptomator app only.
+    # Ciphertext vault copy under ~/Sync, outside TCC-protected folders; only Cryptomator unlocks it.
     syncthing = {
       device = "smoreswork";
     };

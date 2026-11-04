@@ -1,14 +1,7 @@
-# whisper-rs-sys forwards CMAKE_TOOLCHAIN_FILE to its cmake invocation, which is
-# the only reliable way to inject cache variables into the bundled whisper.cpp
-# build. Upstream's plain buildRustPackage compiles ggml unoptimised, so every
-# phrase decode is ~6x slower than native whisper.cpp (measured 12.5s vs 2.1s
-# for one 11.2s phrase).
-#
-# GGML_NATIVE is off so the SIMD set is explicit rather than host-detected:
-# native mode only appends -march=native and does not define GGML_AVX2/FMA/F16C,
-# so the hand-written kernels stay disabled and the build stays slow. Every
-# x86_64 host this config targets is AVX2-capable (Haswell, 2013+); a pre-AVX2
-# host would need these flags relaxed.
+# whisper-rs-sys forwards CMAKE_TOOLCHAIN_FILE to cmake, the only way to inject cache
+# variables into the bundled whisper.cpp; unoptimised ggml decodes ~6x slower.
+# GGML_NATIVE is off because it adds -march=native without defining GGML_AVX2/FMA/F16C,
+# leaving the fast kernels disabled. Assumes AVX2 (Haswell, 2013+).
 set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
 set(GGML_AVX ON CACHE BOOL "" FORCE)

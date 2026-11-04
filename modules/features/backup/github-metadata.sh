@@ -1,13 +1,8 @@
 #!/usr/bin/env bash
 # Run python-github-backup for the mirror owner, verify the result, and write a
-# manifest. Called by the GitHub preBackup after ghorg (daily, incremental) and
-# by the monthly full service (GITHUB_METADATA_MODE=full).
-#
-# Usage: github-metadata.sh <owner> <verify-script>
-#
-# The token is read from GHORG_GITHUB_TOKEN (a root-only 0400 file) and passed
-# to pgb as file://URI, so the value never appears in argv. This script is a
-# world-readable Nix store path: it must never contain the token.
+# manifest. Usage: github-metadata.sh <owner> <verify-script>
+# The token goes to pgb as file://URI, so it never appears in argv; this script is a
+# world-readable Nix store path and must never contain it.
 set -euo pipefail
 umask 0077
 
@@ -42,7 +37,7 @@ case "$mode" in
     ;;
 esac
 
-# pgb treats an unreadable path as the literal token and gets an opaque 401.
+# pgb treats an unreadable path as the literal token and fails with an opaque 401.
 if [ ! -r "$token" ] || [ ! -s "$token" ]; then
   echo "github-metadata: token file '$token' is missing, unreadable, or empty" >&2
   exit 1
@@ -55,8 +50,7 @@ log="$manifest/run.log"
 marker=$(mktemp)
 cleanup() {
   rm -f "$marker"
-  # Never touch the live meta on failure; remove only the staging tree. An
-  # interrupted swap leaves meta.old in place for manual recovery.
+  # Never touch the live meta on failure; an interrupted swap leaves meta.old for recovery.
   if [ "$mode" = full ]; then
     rm -rf -- "$staged_meta"
   fi
@@ -65,9 +59,8 @@ trap cleanup EXIT
 touch "$marker"
 sleep 1
 
-# pgb is single-writer: the monthly full pass must not race the daily run, and
-# the swap must not race the driver's copy. The metadata lock serializes pgb;
-# the shared host lock is taken only for the swap.
+# pgb is single-writer: the full pass must not race the daily run, and the swap
+# must not race the driver's copy (host lock taken only for the swap).
 install -d -m 0700 "$(dirname "$meta_lock")"
 exec 9>"$meta_lock"
 flock 9
@@ -77,9 +70,7 @@ if [ "$mode" = full ]; then
 fi
 install -d -m 0700 "$target"
 
-# --issue-timeline does not exist in python-github-backup 0.64.0 (the nixpkgs
-# pin); issue events and comments cover the same history. --pull-details is
-# required for review/commit metadata and is not implied by --pulls.
+# --issue-timeline is absent in pgb 0.64.0; --pull-details is not implied by --pulls.
 flags=(
   -P
   -o "$target"
@@ -103,9 +94,7 @@ if [ "$mode" = daily ]; then
   flags+=(-i)
 fi
 
-# -f/--token-fine rejects anything that does not start with github_pat_ in
-# 0.64.0; the documented token here is a classic `repo` PAT, so it goes through
-# -t. Detection keeps a future fine-grained token on its supported path.
+# 0.64.0's -f rejects anything but github_pat_ tokens; a classic `repo` PAT needs -t.
 if [ "$(head -c 11 "$token")" = "github_pat_" ]; then
   flags+=(-f "file://$token")
 else
@@ -127,9 +116,8 @@ else
 fi
 
 if [ "$mode" = full ]; then
-  # A non-incremental run writes no last_update checkpoints. Carry the live
-  # ones forward so the next daily run stays incremental instead of doing a
-  # full re-fetch; they are older than the staged data, so nothing is missed.
+  # A full run writes no last_update checkpoints; carry the live ones forward so the
+  # next daily run stays incremental.
   if [ -d "$live_meta/repositories" ] && [ -d "$target/repositories" ]; then
     for repo_dir in "$target"/repositories/*/; do
       [ -d "$repo_dir" ] || continue
@@ -145,9 +133,7 @@ if [ "$mode" = full ]; then
     done
   fi
 
-  # The live meta must never disappear and must never be half-swapped: take the
-  # driver's host lock, move the old tree aside, install the verified tree, and
-  # restore the old one if that fails.
+  # The live meta must never vanish or be half-swapped: restore the old tree on failure.
   (
     exec 8>"$media_lock"
     flock 8

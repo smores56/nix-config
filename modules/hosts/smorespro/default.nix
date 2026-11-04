@@ -5,16 +5,12 @@
   nixos = true;
   home = true;
 
-  # Shared profiles (they drive machine.graphical/wayland/workHost and the
-  # server-profile assertion), not host-local modules.
   profiles = [
     ../../profiles/cli.nix
     ../../profiles/user-base.nix
     ../../profiles/ai-tools.nix
     ../../profiles/linux-desktop.nix
   ];
-  # Host-local modules: the LUKS + Secure Boot chain, the greeter and the
-  # fingerprint reader exist only on this machine.
   nixosModules = [
     ./boot.nix
     ./greeter.nix

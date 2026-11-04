@@ -1,41 +1,28 @@
 # shellcheck shell=bash
-# `md-structure` — restructure a dictated ramble (stdin) into clean markdown
-# (stdout) via `maki -p` and the faithful-restructure system prompt.
-#
-# Runs as a Helix `:pipe` filter over an explicit selection. It exits non-zero
-# on any failure or on input too small to be prose, and `:pipe` leaves the
-# buffer untouched on a non-zero exit — so a stray keypress is a no-op and a
-# failed clean can never delete the ramble.
+# Restructure a dictated ramble (stdin) into markdown (stdout) via `maki -p`.
+# Any failure or too-small input exits non-zero, which Helix `:pipe` treats as a no-op.
 
 prompt_file="@PROMPT_FILE@"
 model="${MD_STRUCTURE_MODEL:-neuralwatt/deepseek-v4.1-flash}"
 
-# maki is user-installed (~/.local/bin), not a nix package, so fall back to
-# that path when it is not already on PATH.
+# maki is user-installed (~/.local/bin), not on PATH under nix.
 maki_bin="$(command -v maki 2>/dev/null || true)"
 [[ -n "$maki_bin" ]] || maki_bin="$HOME/.local/bin/maki"
 
-# maki's `--system-prompt` and `--append-system-prompt` are both silently
-# ignored on the `-p` text path — the model falls back to its coding-agent
-# prompt — so the instruction is prepended to the prompt instead. `-p` otherwise
-# runs the full coding agent with tools enabled and permissions auto-approved
-# (always_yolo), so deny every tool and skip user/project plugins and commands:
-# this is a plain text transform, not an agent with shell access.
+# `--system-prompt` is ignored on the `-p` text path, so the instruction is prepended.
+# `-p` otherwise runs a tool-enabled, auto-approved agent: deny every tool.
 tools='spawn_session,resume_session,memory_search,memory_write,index,webfetch,websearch,bash,batch,grep,glob,skill,question,todo_write,read,write,edit,multiedit,edit_lines,task,code_execution,view_image,list'
 
 input="$(cat)"
 trimmed="${input#"${input%%[![:space:]]*}"}"
 
-# A normal-mode `space m` with no selection pipes a single cell; refuse that
-# and anything else too small to be prose rather than spending an LLM call to
-# replace one character.
+# A no-selection `space m` pipes one cell; don't spend an LLM call on it.
 if [[ -z "$trimmed" || "$trimmed" != *[[:space:]]* || ${#trimmed} -lt 8 ]]; then
   printf 'md-structure: input is not prose; nothing to do\n' >&2
   exit 3
 fi
 
-# Buffer the output and only emit it on success, so a failed run cannot
-# replace the selection with a partial document.
+# Emit only on success so a failed run cannot replace the selection with a partial document.
 output="$(
   {
     cat "$prompt_file"

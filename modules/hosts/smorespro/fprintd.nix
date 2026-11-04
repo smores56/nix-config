@@ -3,10 +3,8 @@
   ...
 }:
 let
-  # The Goodix reader's xHCI host controller sometimes fails to re-enumerate it
-  # after suspend/resume (Framework issue #102), leaving the device off the bus
-  # until the controller is reset. Cache the host controller at boot, then after
-  # each wake reset it only if the reader is actually missing.
+  # The xHCI controller sometimes fails to re-enumerate the Goodix reader after
+  # resume (Framework issue #102); reset it only if the reader is missing.
   resumeScript = pkgs.writeShellApplication {
     name = "framework-fprint-resume";
     runtimeInputs = with pkgs; [
@@ -21,8 +19,6 @@ let
       TAG=fp-rebind
       log() { logger -t "$TAG" "$*"; }
 
-      # Echo the PCI function of the fingerprint reader's host controller, or
-      # nothing when the reader is not currently on the bus.
       find_controller() {
         local dev vendor product
         for dev in /sys/bus/usb/devices/*/; do
@@ -99,30 +95,21 @@ let
 in
 {
   config = {
-    # Goodix 27c6:609c is handled by libfprint's native goodixmoc driver; no
-    # proprietary TOD package is needed.
+    # Handled by libfprint's native goodixmoc driver.
     services.fprintd.enable = true;
 
-    # services.fprintd.enable defaults fprintAuth to true on every PAM service.
-    # Fingerprint has no user-attention guarantee (CVE-2024-37408), so keep it
-    # off sudo/su. The Noctalia lock screen drives fprintd over D-Bus and
-    # authenticates the typed password against the "login" stack; leaving
-    # pam_fprintd there makes it block for its 30s default timeout waiting for a
-    # finger before pam_unix ever sees the password.
+    # fprintAuth defaults to true everywhere; fingerprint has no user-attention
+    # guarantee (CVE-2024-37408), so keep it off sudo/su. The lock screen drives
+    # fprintd over D-Bus, and pam_fprintd on `login` would block 30s before pam_unix.
     security.pam.services.sudo.fprintAuth = false;
     security.pam.services.su.fprintAuth = false;
     security.pam.services.login.fprintAuth = false;
-    # greetd gets pam_fprintd from the default and would block ~30s waiting for
-    # a finger before PAM reaches the PIN or password. Keep it off here; a host
-    # may opt in with a short timeout and max-tries (smorespro's greeter does).
+    # Would block ~30s before PIN/password; smorespro's greeter opts back in with a short timeout.
     security.pam.services.greetd.fprintAuth = false;
-    # polkit drives pkexec and every desktop admin prompt. fprintd's default
-    # would let one finger authorize root, the same CVE-2024-37408 surface.
+    # One finger must not authorize root via pkexec.
     security.pam.services.polkit-1.fprintAuth = false;
-    # Credential changes must not accept a fingerprint as the "current"
-    # password: the rendered stacks reach pam_fprintd before pam_unix with no
-    # pam_rootok in front. `other` is the catch-all, so a future service cannot
-    # silently inherit fingerprint auth either.
+    # Credential changes must not accept a fingerprint as the current password;
+    # `other` stops future services inheriting it.
     security.pam.services.passwd.fprintAuth = false;
     security.pam.services.chsh.fprintAuth = false;
     security.pam.services.chfn.fprintAuth = false;

@@ -7,9 +7,7 @@
 let
   cfg = config.machine;
 
-  # whisper.cpp base.en weights for the local backend. Pinning them keeps the
-  # config pointing at an immutable store path instead of downloading into
-  # $HOME on first run.
+  # Pinned so the config points at an immutable store path, not a first-run download.
   whisperModel = pkgs.stdenvNoCC.mkDerivation {
     pname = "whisper-cpp-ggml-base-en";
     version = "2026-09-14";
@@ -34,9 +32,7 @@ let
     };
   });
 
-  # Niri uses libwayland's first free socket, so the name is not stable across
-  # boots. Discover it when the daemon starts; it is the process that later
-  # runs wtype/wl-copy.
+  # Niri's wayland socket name varies per boot; the daemon runs wtype/wl-copy.
   voxtypeDaemon = pkgs.writeShellScript "voxtype-daemon" ''
     set -eu
     for socket in "''${XDG_RUNTIME_DIR:?}"/wayland-*; do
@@ -64,8 +60,7 @@ in
       pkgs.wtype
     ];
 
-    # The compositor owns the keybinding; Voxtype's evdev hotkey stays off so
-    # no input-group membership or uinput access is needed.
+    # The compositor owns the keybinding, so no input-group or uinput access is needed.
     services.voxtype = {
       enable = true;
       package = voxtype;
@@ -87,11 +82,8 @@ in
       };
     };
 
-    # The upstream unit is PartOf/WantedBy=default.target. Linger keeps the
-    # user manager running from boot (modules/nixos/base.nix), so that would
-    # start the graphical session at the greeter; starting voxtype then pulls
-    # graphical-session.target and, through noctalia, niri.service. Bind the
-    # daemon to the session instead.
+    # Upstream's default.target binding would start the graphical session (and niri)
+    # at the greeter, since linger runs the user manager from boot.
     systemd.user.services.voxtype = {
       Unit = {
         PartOf = lib.mkForce [ "graphical-session.target" ];
@@ -109,8 +101,7 @@ in
       "toggle"
     ];
 
-    # Cleans the current selection in place; md-structure's non-zero exit on
-    # unselected/degenerate input leaves the buffer untouched.
+    # A non-zero exit leaves the buffer untouched.
     programs.helix.settings.keys.normal.space.m = ":pipe md-structure";
   };
 }
