@@ -14,6 +14,9 @@ from mcp.types import Tool  # noqa: E402
 from memory_mcp import shim  # noqa: E402
 from memory_mcp.client import ToolResult, UpstreamError  # noqa: E402
 from memory_mcp.schema import FALLBACK_TOOLS, FALLBACK_TOOL_NAMES  # noqa: E402
+from contextlib import asynccontextmanager
+from memory_mcp import client  # noqa: E402
+from memory_mcp.client import ClientConfig  # noqa: E402
 
 
 class ShimProxyTests(unittest.IsolatedAsyncioTestCase):
@@ -163,6 +166,35 @@ class ShimMainTests(unittest.TestCase):
             self.assertEqual(shim.main(["--cwd", str(repo)]), 0)
         self.assertEqual(captured["config"].group, "smores56--nix-config")
         self.assertEqual(captured["config"].cwd, os.path.abspath(repo))
+
+
+class OpenSessionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_redirects_are_disabled(self):
+        captured = {}
+
+        class FakeClient:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+        @asynccontextmanager
+        async def fake_stream(url, http_client=None):
+            raise RuntimeError("stop before MCP")
+            yield  # pragma: no cover
+
+        with (
+            mock.patch.object(client.httpx, "AsyncClient", FakeClient),
+            mock.patch.object(client, "streamable_http_client", fake_stream),
+            self.assertRaises(UpstreamError),
+        ):
+            async with client.open_session(ClientConfig(url="http://127.0.0.1:8182/mcp")):
+                pass
+        self.assertFalse(captured["follow_redirects"])
 
 
 if __name__ == "__main__":

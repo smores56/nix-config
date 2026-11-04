@@ -6,7 +6,7 @@ being on loopback is not an authority. Every request to the MCP listener
 therefore has to carry `Authorization: Bearer <token>`, where the token is the
 `memory-mcp-token` sops secret (`modules/nixos/secrets-common.nix`), rendered at
 `/run/secrets/memory-mcp-token` root-owned and group-readable by `memory`. The
-service, the user's shim, the CLI, and the ingest units all read that one file.
+service, the user's shim, and the CLI all read that one file.
 
 Fail closed: a missing, unreadable, or empty token file rejects every request
 with 503, and a missing or mismatched header is a 401. The token is re-read per
@@ -15,13 +15,11 @@ request, so re-deploying the secret takes effect without a rebuild.
 `/health` is exempt: it answers a static `{"status": "ok", "service":
 "memory-mcp"}` with no state, no data, and no token-derived information, which
 is what systemd and the readiness probes need from an unauthenticated caller.
-The `/internal/*` ingest routes are exempt too: they already require the
-per-start token in the state dir (`internal_auth`), which is the local caller's
-proof, and demanding a second token there would only duplicate that gate.
 """
 
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import sys
@@ -30,11 +28,10 @@ from typing import Any
 
 from starlette.datastructures import Headers
 
-from .internal_auth import bearer_ok
 
 DEFAULT_TOKEN_FILE = "/run/secrets/memory-mcp-token"
 TOKEN_FILE_ENV = "MEMORY_MCP_TOKEN_FILE"
-EXEMPT_PATHS = frozenset({"/health", "/internal/episodes", "/internal/lookup"})
+EXEMPT_PATHS = frozenset({"/health"})
 CHALLENGE = 'Bearer realm="memory-mcp"'
 
 
@@ -64,6 +61,17 @@ def read_token(path: str | os.PathLike[str] | None = None) -> str:
 def authorization(path: str | os.PathLike[str] | None = None) -> tuple[str, str]:
     """The header a client sends for the token at `path` (default: the secret)."""
     return ("Authorization", f"Bearer {read_token(path)}")
+
+
+def bearer_ok(header: str | None, token: str | None) -> bool:
+    """Constant-time check of an `Authorization: Bearer <token>` header."""
+    if not token:
+        return False
+    scheme, _, presented = (header or "").strip().partition(" ")
+    presented = presented.strip()
+    if scheme.lower() != "bearer" or not presented:
+        return False
+    return hmac.compare_digest(presented.encode("utf-8"), token.encode("utf-8"))
 
 
 async def _reject(send: Any, status: int, detail: str, *, challenge: bool = False) -> None:

@@ -16,11 +16,10 @@ from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterator, Mapping
+from typing import Iterator, Mapping, Sequence
 
-DB_NAME = "registry.sqlite"
-# Bumped on every schema change. One or more versions behind migrates in place on open (`_MIGRATIONS`);
-# older, newer or unversioned is refused.
+REGISTRY_FILE = "registry.sqlite"
+# A database at any other version is refused; there is no in-place migration.
 SCHEMA_VERSION = 2
 LOOKUP_CHUNK = 500
 
@@ -85,25 +84,6 @@ CREATE TABLE IF NOT EXISTS audit (
 );
 CREATE INDEX IF NOT EXISTS audit_created ON audit (finished_at);
 """
-
-
-def _migrate_1_to_2(conn: sqlite3.Connection) -> None:
-    """Split the queue clock from the write time.
-
-    `queued_at` is when a row entered the pending queue (the reconciler's grace,
-    the pending order and the stale-write window read it); `created_at` stays
-    the write time. Guarded by `table_info` so a re-entry after an interrupted
-    run is a no-op.
-    """
-    columns = {row[1] for row in conn.execute("PRAGMA table_info(episodes)")}
-    if "queued_at" not in columns:
-        conn.execute("ALTER TABLE episodes ADD COLUMN queued_at TEXT NOT NULL DEFAULT ''")
-    conn.execute("UPDATE episodes SET queued_at = created_at WHERE queued_at = ''")
-    conn.execute("CREATE INDEX IF NOT EXISTS episodes_queue ON episodes (status, queued_at)")
-
-
-# One entry per version a database may be at; each migrates exactly one hop.
-_MIGRATIONS = {1: _migrate_1_to_2}
 
 
 class SchemaVersionError(RuntimeError):
@@ -197,13 +177,6 @@ def _ensure_schema(conn: sqlite3.Connection, db_path: Path) -> None:
             "BEGIN IMMEDIATE;\n" + _SCHEMA + f"\nPRAGMA user_version = {SCHEMA_VERSION};\nCOMMIT;"
         )
         return
-    if has_tables is not None and 0 < version < SCHEMA_VERSION:
-        conn.execute("BEGIN IMMEDIATE")
-        while version < SCHEMA_VERSION:
-            _MIGRATIONS[version](conn)
-            version += 1
-            conn.execute(f"PRAGMA user_version = {version}")
-        return
     found = "unversioned" if version == 0 else str(version)
     raise SchemaVersionError(
         f"registry {db_path} has schema version {found}, expected {SCHEMA_VERSION}; "
@@ -211,29 +184,13 @@ def _ensure_schema(conn: sqlite3.Connection, db_path: Path) -> None:
     )
 
 
-def migrate_registry(path: Path) -> None:
-    """Migrate one registry file in place (a restore stages the export's copy)."""
-    conn = sqlite3.connect(path, timeout=10)
-    try:
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=10000")
-        _ensure_schema(conn, path)
-        conn.commit()
-    finally:
-        conn.close()
-
-
 class Registry:
     def __init__(self, state_dir: str) -> None:
         self.state_dir = Path(state_dir)
-        self.db_path = self.state_dir / "registry.sqlite"
+        self.db_path = self.state_dir / REGISTRY_FILE
         self.state_dir.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
-            self._ensure_schema(conn)
-
-    def _ensure_schema(self, conn: sqlite3.Connection) -> None:
-        _ensure_schema(conn, self.db_path)
+            _ensure_schema(conn, self.db_path)
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -571,6 +528,17 @@ class Registry:
                 applied += 1
         return applied
 
+    def requeued_rows(self, group: str) -> list[RegistryEpisode]:
+        """Rows of `group` that a reindex requeued at some point, whatever their status now."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM episodes WHERE group_id = ? AND content_hash IN ("
+                "SELECT content_hash FROM audit WHERE group_id = ? "
+                "AND tool = 'memory_reindex' AND status = 'requeued')",
+                (group, group),
+            ).fetchall()
+        return [entry for entry in map(self._row, rows) if entry is not None]
+
     def active_page(
         self,
         *,
@@ -604,7 +572,7 @@ class Registry:
     def pending(
         self,
         *,
-        limit: int = 500,
+        limit: int = LOOKUP_CHUNK,
         after: tuple[str, str, str] | None = None,
     ) -> list[RegistryEpisode]:
         """One page of pending rows in queue order.
@@ -630,7 +598,7 @@ class Registry:
             ).fetchall()
         return [entry for row in rows if (entry := self._row(row)) is not None]
 
-    def tombstoned_unverified(self, *, limit: int = 500) -> list[RegistryEpisode]:
+    def tombstoned_unverified(self, *, limit: int = LOOKUP_CHUNK) -> list[RegistryEpisode]:
         """Tombstoned rows with no graph episode recorded yet.
 
         `graphiti_uuid IS NULL` marks a tombstone that landed before extraction
@@ -742,8 +710,8 @@ class Registry:
             return {}
         found: dict[str, RegistryEpisode] = {}
         with self._connect() as conn:
-            for offset in range(0, len(wanted), 500):
-                chunk = wanted[offset : offset + 500]
+            for offset in range(0, len(wanted), LOOKUP_CHUNK):
+                chunk = wanted[offset : offset + LOOKUP_CHUNK]
                 placeholders = ",".join("?" for _ in chunk)
                 rows = conn.execute(
                     f"SELECT * FROM episodes WHERE graphiti_uuid IN ({placeholders})",

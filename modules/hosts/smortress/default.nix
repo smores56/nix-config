@@ -57,8 +57,6 @@ in
       "d /var/lib/syncthing-versions 0700 smores users -"
     ];
     exposeSsh.enable = true;
-    # Changing the embedder changes the vector width, so a wipe and re-ingest follows.
-    memory.embedder = "neuralwatt";
     # Work checkouts inside these roots are refused by the server's employer check.
     filesearch = {
       roots = [

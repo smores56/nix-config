@@ -14,6 +14,12 @@ from memory_mcp.graph import (  # noqa: E402
     GraphUnavailable,
     not_older,
 )
+from unittest import mock
+from memory_mcp import graphiti  # noqa: E402
+from memory_mcp.client import ToolResult, UpstreamError  # noqa: E402
+import json
+import httpx  # noqa: E402
+from memory_mcp.readiness import HealthProbes, ReadinessError  # noqa: E402
 
 
 class FakeRedis:
@@ -200,6 +206,135 @@ class TombstoneTests(unittest.TestCase):
 
     def test_the_edge_type_constant_is_relates_to(self):
         self.assertEqual(RELATES_TO, "RELATES_TO")
+
+
+class FakeCall:
+    def __init__(self, result=None, error=None):
+        self.result = result
+        self.error = error
+        self.calls = []
+
+    async def __call__(self, config, name, arguments):
+        self.calls.append((dict(config.headers), name, arguments))
+        if self.error:
+            raise self.error
+        return self.result
+
+
+class GraphitiBackendTests(unittest.IsolatedAsyncioTestCase):
+    def backend(self, result=None, error=None):
+        fake = FakeCall(result=result, error=error)
+        self.patch = mock.patch.object(graphiti, "call_tool", fake)
+        self.patch.start()
+        self.addCleanup(self.patch.stop)
+        return graphiti.GraphitiBackend("http://127.0.0.1:8184/mcp"), fake
+
+    async def test_add_episode_parses_success(self):
+        backend, fake = self.backend(ToolResult(text='{"message": "queued"}', is_error=False))
+        result = await backend.add_episode(
+            name="n",
+            episode_body="body",
+            group_id="owner--repo",
+            source_description="sdlc issue-1#body",
+            source="json",
+            reference_time="2026-10-03T00:00:00Z",
+        )
+        self.assertEqual(result["message"], "queued")
+        _headers, name, arguments = fake.calls[0]
+        self.assertEqual(name, "add_memory")
+        self.assertEqual(arguments["group_id"], "owner--repo")
+        self.assertEqual(arguments["source"], "json")
+        self.assertEqual(arguments["reference_time"], "2026-10-03T00:00:00Z")
+        # graphiti-core must not receive a caller uuid for a new episode.
+        self.assertNotIn("uuid", arguments)
+
+    async def test_reference_time_is_omitted_when_unknown(self):
+        backend, fake = self.backend(ToolResult(text='{"message": "queued"}', is_error=False))
+        await backend.add_episode(
+            name="n",
+            episode_body="body",
+            group_id="owner--repo",
+            source_description="agent",
+        )
+        self.assertNotIn("reference_time", fake.calls[0][2])
+        self.assertEqual(fake.calls[0][2]["source"], "text")
+
+    async def test_error_payload_is_a_backend_error(self):
+        backend, _fake = self.backend(ToolResult(text='{"error": "boom"}', is_error=False))
+        with self.assertRaises(graphiti.BackendError):
+            await backend.add_episode(
+                name="n",
+                episode_body="body",
+                group_id="owner--repo",
+                source_description="",
+            )
+
+    async def test_upstream_failure_is_a_backend_error(self):
+        backend, _fake = self.backend(error=UpstreamError("connection refused"))
+        with self.assertRaises(graphiti.BackendError):
+            await backend.get_status()
+
+    async def test_search_parses_nodes_facts_and_episodes(self):
+        backend, _fake = self.backend(
+            ToolResult(text='{"nodes": [{"uuid": "n1"}], "message": "ok"}', is_error=False)
+        )
+        self.assertEqual(await backend.search_nodes("q", ["g"], 5), [{"uuid": "n1"}])
+
+        backend, _fake = self.backend(
+            ToolResult(text='{"facts": [{"uuid": "e1"}], "message": "ok"}', is_error=False)
+        )
+        self.assertEqual(await backend.search_facts("q", ["g"], 5), [{"uuid": "e1"}])
+
+        backend, _fake = self.backend(
+            ToolResult(text='{"episodes": [{"uuid": "ep1"}], "message": "ok"}', is_error=False)
+        )
+        self.assertEqual(await backend.get_episodes(["g"], 3), [{"uuid": "ep1"}])
+
+    async def test_non_json_text_is_preserved_as_a_message(self):
+        backend, _fake = self.backend(ToolResult(text="plain text", is_error=False))
+        self.assertEqual(await backend.get_status(), {"message": "plain text"})
+
+
+def transport(*, chat=200, embedder=200, record=None):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if record is not None:
+            record.append(request)
+        path = request.url.path
+        status = chat if path == "/v1/models" else embedder
+        return httpx.Response(status, json={})
+
+    return httpx.MockTransport(handler)
+
+
+class ReadinessTests(unittest.IsolatedAsyncioTestCase):
+    async def test_probes_the_models_list_and_sends_a_tiny_embedding_request(self):
+        seen = []
+        probes = HealthProbes(llm_url="http://gateway/", embed_model="qwen3-embedding-8b", transport=transport(record=seen))
+
+        self.assertEqual(await probes.failures(), [])
+        self.assertEqual(
+            [(request.method, request.url.path) for request in seen],
+            [("GET", "/v1/models"), ("POST", "/v1/embeddings")],
+        )
+        self.assertEqual(
+            json.loads(seen[1].content),
+            {"input": "ready", "model": "qwen3-embedding-8b"},
+        )
+
+    async def test_a_failing_embedder_blocks_search(self):
+        probes = HealthProbes(llm_url="http://gateway", embed_model="m", transport=transport(embedder=503))
+
+        with self.assertRaises(ReadinessError) as raised:
+            await probes.require_search()
+        self.assertIn("embedder unavailable", str(raised.exception))
+
+    async def test_an_unreachable_endpoint_is_a_failure_not_an_exception(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("refused", request=request)
+
+        probes = HealthProbes(llm_url="http://gateway", embed_model="m", transport=httpx.MockTransport(handler))
+
+        self.assertEqual(len(await probes.failures()), 2)
 
 
 if __name__ == "__main__":

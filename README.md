@@ -48,10 +48,9 @@ Cross-cutting values flow through `config.machine.*` and `config.user.*`, not
   is `claude`, held by a root-owned managed policy that sandboxes every Bash
   command (`modules/features/ai/claude-policy.nix`).
 - **Memory.** smortress runs a typed SQLite registry, FalkorDB and Graphiti,
-  reached over the tunnel through `memory-mcp-shim`. Extraction and (on
-  smortress, `memory.embedder = "neuralwatt"`) embeddings go through a loopback
-  Neuralwatt gateway. The `memory` CLI: `write search get retry promote reindex
-  status tombstone ingest export restore`. Server: `modules/nixos/memory.nix`.
+  reached over the tunnel through `memory-mcp-shim`. Extraction and embeddings
+  go through a loopback Neuralwatt gateway. The `memory` CLI: `write search get
+  retry promote reindex status tombstone export restore`. Server: `modules/nixos/memory.nix`.
 - **Public services.** `webProxy.services` become `<name>.sammohr.dev` through
   the tunnel; `ssh`, `llm`, `memory` and `chat` sit behind Cloudflare Access.
 - **Backups.** restic snapshots `/var/lib/data` to R2 and a local encrypted

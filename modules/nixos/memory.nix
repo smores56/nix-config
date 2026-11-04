@@ -15,9 +15,8 @@ let
 
   dbPort = 6379;
   graphitiPort = 8184;
-  embeddingPort = ports.memoryEmbed;
-  # Loopback gateway to Neuralwatt, never tunneled. Adds `reasoning_effort: "none"`
-  # because reasoning extraction returns empty content.
+  # Loopback gateway to Neuralwatt, never tunneled. Injects the key and adds
+  # `reasoning_effort: "none"` because reasoning extraction returns empty content.
   llmProxyPort = ports.memoryLlmProxy;
   # tmpfiles owns the falkordb subdirectory of the StateDirectory.
   stateDirectory = "memory";
@@ -43,36 +42,14 @@ let
   # build-arg default is older than its tag suggests.
   graphitiImage = "zepai/knowledge-graph-mcp:1.1.3-graphiti-0.31.2-standalone@sha256:288b79e987adc71d1f55f9f44d9a62fb0422a80eb6870b0e32abb9ad85c12d69";
 
-  # `neuralwatt` re-embeds the corpus at a new width; its model is preview-only and
-  # 404s on this account.
-  embedders = {
-    local = {
-      model = "bge-m3";
-      dimensions = 1024;
-      url = "http://127.0.0.1:${toString embeddingPort}";
-      # llama.cpp serves /health at the root, not under /v1.
-      readyProbe = "${pkgs.curl}/bin/curl -sf http://127.0.0.1:${toString embeddingPort}/health";
-    };
-    neuralwatt = {
-      model = "qwen3-embedding-8b";
-      dimensions = 4096;
-      url = "http://127.0.0.1:${toString llmProxyPort}";
-      # No /health behind the gateway; probe with a real one-word embedding.
-      readyProbe = "${pkgs.curl}/bin/curl -sf -X POST http://127.0.0.1:${toString llmProxyPort}/v1/embeddings -H 'content-type: application/json' -d '{\"model\":\"qwen3-embedding-8b\",\"input\":\"ready\"}'";
-    };
-  };
-  # Bearer token required on every MCP request; secrets-common.nix declares it
-  # (root:memory 0440).
-  mcpTokenFile = "/run/secrets/memory-mcp-token";
-
-  embedder = embedders.${config.memory.embedder};
-  localEmbedder = config.memory.embedder == "local";
-
-  # Stays deployed whatever memory.embedder selects (fallback). CPU-only: the 3090
-  # is committed to chat. No query prefixes, so the stock OpenAI client works.
-  embedModel = pkgs.fetchurl {
-    url = "https://huggingface.co/gpustack/bge-m3-GGUF/resolve/main/bge-m3-Q8_0.gguf";
-    hash = "sha256-lQ9Kjl4ZR3ptPCbS8WIjPCAALGAfdeSwAuMjmZeCEWc=";
+  # Changing the model re-embeds the corpus at a new width. Embeddings go through the
+  # gateway like extraction; there is no /health behind it, so readiness probes with a
+  # real one-word embedding.
+  embedder = rec {
+    model = "qwen3-embedding-8b";
+    dimensions = 4096;
+    url = "http://127.0.0.1:${toString llmProxyPort}";
+    readyProbe = "${pkgs.curl}/bin/curl -sf -X POST http://127.0.0.1:${toString llmProxyPort}/v1/embeddings -H 'content-type: application/json' -d '{\"model\":\"${model}\",\"input\":\"ready\"}'";
   };
 
   # Separate LLM and embedder URLs; the shipped configs share one.
@@ -120,23 +97,6 @@ let
   '';
 in
 {
-  options.memory.embedder = lib.mkOption {
-    type = lib.types.enum [
-      "local"
-      "neuralwatt"
-    ];
-    default = "local";
-    description = ''
-      Where Graphiti embeds episodes and queries. `local` runs bge-m3 on
-      llama.cpp (1024 dimensions, no egress); `neuralwatt` uses
-      qwen3-embedding-8b through the memory-llm-proxy (4096 dimensions). The
-      local service stays deployed either way, and switching re-embeds the
-      corpus at a new width. qwen3-embedding-8b prefers an `Instruct: …` /
-      `Query:` prefix on queries that Graphiti's OpenAI embedder does not send,
-      so expect a small retrieval penalty.
-    '';
-  };
-
   config = {
     assertions = [
       {
@@ -149,16 +109,15 @@ in
             lib.unique [
               dbPort
               graphitiPort
-              embeddingPort
               llmProxyPort
               ports.memoryMcp
             ]
-          ) == 5;
-        message = "memory's loopback ports (FalkorDB, Graphiti, embedder, Neuralwatt gateway, ports.memoryMcp) must all differ.";
+          ) == 4;
+        message = "memory's loopback ports (FalkorDB, Graphiti, Neuralwatt gateway, ports.memoryMcp) must all differ.";
       }
     ];
 
-    # Host networking lets the MCP server reach llama.cpp on 127.0.0.1; FalkorDB
+    # Host networking lets the MCP server reach the gateway on 127.0.0.1; FalkorDB
     # publishes to loopback only. Both run rootless as `memory`.
     virtualisation.oci-containers.backend = "podman";
 
@@ -187,8 +146,7 @@ in
         }
       ];
     };
-    # `memory ingest` reads the wrapper's token via group; the raw-TCP tunnel hides
-    # peer addresses, so only the group may read it.
+    # The MCP token is root:memory 0440 (secrets-common.nix); the operator reads it via group.
     users.users.${config.machine.username}.extraGroups = [ "memory" ];
 
     systemd.tmpfiles.rules = [
@@ -287,15 +245,13 @@ in
       wants = [
         "memory-falkordb.service"
         "memory-llm-proxy.service"
-      ]
-      ++ lib.optional localEmbedder "llama-cpp-embed.service";
+      ];
       after = [
         "user-runtime-dir@${toString memoryUid}.service"
         "user@${toString memoryUid}.service"
         "memory-falkordb.service"
         "memory-llm-proxy.service"
-      ]
-      ++ lib.optional localEmbedder "llama-cpp-embed.service";
+      ];
       unitConfig = {
         StartLimitIntervalSec = "1h";
         StartLimitBurst = 10;
@@ -322,7 +278,7 @@ in
 
     # Sole route to Neuralwatt: holds the key and adds `reasoning_effort: "none"`
     # (graphiti-core cannot per request); forwards the rest, replacing the dummy
-    # `Bearer none`.
+    # `Bearer none`. Fails to start without the key.
     systemd.services.memory-llm-proxy = {
       description = "Neuralwatt gateway for Graphiti extraction (key injection, thinking off)";
       wantedBy = [ "multi-user.target" ];
@@ -344,7 +300,7 @@ in
           "MEMORY_UPSTREAM_CONCURRENCY=2"
           "MEMORY_UPSTREAM_RETRIES=6"
         ];
-        # A missing key fails the unit instead of serving refusals.
+        # A missing key fails the unit instead of serving unauthenticated calls.
         LoadCredential = "neuralwatt-api-key:/run/secrets/neuralwatt-api-key";
         Restart = "always";
         RestartSec = "5s";
@@ -361,23 +317,20 @@ in
     };
 
     # The only service the tunnel reaches. A raw TCP tunnel presents every client as
-    # loopback, so each request needs the bearer token (`mcpTokenFile`); /health is
-    # exempt and /internal keeps its own token. A missing secret fails closed (503).
+    # loopback, so each request needs the bearer token (/run/secrets/memory-mcp-token,
+    # the wrapper's default path); /health is exempt. A missing secret fails closed (503).
     # Raw Graphiti is never tunneled.
-    # log line.
     systemd.services.memory-mcp = {
       description = "memory MCP wrapper (project groups, typed registry, reconciler)";
       wantedBy = [ "multi-user.target" ];
       wants = [
         "memory-graphiti-mcp.service"
         "memory-llm-proxy.service"
-      ]
-      ++ lib.optional localEmbedder "llama-cpp-embed.service";
+      ];
       after = [
         "memory-graphiti-mcp.service"
         "memory-llm-proxy.service"
-      ]
-      ++ lib.optional localEmbedder "llama-cpp-embed.service";
+      ];
       unitConfig = {
         StartLimitIntervalSec = "1h";
         StartLimitBurst = 10;
@@ -393,13 +346,11 @@ in
         Environment = [
           "MEMORY_MCP_HOST=127.0.0.1"
           "MEMORY_MCP_PORT=${toString ports.memoryMcp}"
-          # sops renders the token root:memory 0440; read via group.
-          "MEMORY_MCP_TOKEN_FILE=${mcpTokenFile}"
           "MEMORY_GRAPHITI_URL=http://127.0.0.1:${toString graphitiPort}/mcp"
           "MEMORY_REDIS_URL=redis://127.0.0.1:${toString dbPort}"
           # Search and retries pause when the model endpoint is down; writes are never gated.
           "MEMORY_LLM_URL=http://127.0.0.1:${toString llmProxyPort}"
-          "MEMORY_EMBED_URL=${embedder.url}"
+          "MEMORY_EMBED_MODEL=${embedder.model}"
           "MEMORY_STATE_DIR=${dataDir}"
           "MEMORY_RECONCILE_INTERVAL=10"
           # Derived from reconcileGraceSeconds so the two cannot drift.
@@ -414,9 +365,7 @@ in
           "MEMORY_MCP_DEFAULT_GROUP=global"
           "MEMORY_MCP_DEFAULT_CWD=/chat"
           "MEMORY_MCP_DEFAULT_ACTOR=open-webui"
-        ]
-        # A remote embedder has no /health; a model name makes readiness embed one word.
-        ++ lib.optional (!localEmbedder) "MEMORY_EMBED_MODEL=${embedder.model}";
+        ];
         # Bounds how long the pre-start probe can hold activation.
         TimeoutStartSec = "2min";
         Restart = "always";
@@ -445,15 +394,20 @@ in
       '';
     };
 
-    # The registry snapshot is the backup; the graph is a derived index, so its BGSAVE
-    # is best-effort but a missing graph exits non-zero to trigger the alert. Root
-    # reads the memory-owned graph dir. Refuses to run during a restore
-    # (.restore-in-progress).
+    # Overwrites registry.sqlite, episodes.jsonl and graph.rdb in exportDir; restic keeps the
+    # history. The graph is a derived index, so its BGSAVE is best-effort but a missing graph
+    # exits non-zero to trigger the alert. Root reads the memory-owned graph dir. Refuses to
+    # run during a restore (.restore-in-progress).
     systemd.services.memory-export = {
       description = "Export the memory registry and snapshot the graph";
       # No dependency on the wrapper: exporting while services are down is the point.
       # `after` only orders runs in one transaction.
       after = [ "memory-mcp.service" ];
+      # A restic run that starts mid-export must wait, so a snapshot never captures a half-written set.
+      before = [
+        "restic-backups-r2.service"
+        "restic-backups-local.service"
+      ];
       unitConfig = {
         StartLimitIntervalSec = "1h";
         StartLimitBurst = 3;
@@ -468,8 +422,6 @@ in
           exportDir
           "--state-dir"
           dataDir
-          "--keep"
-          "7"
           "--graph-url"
           "redis://127.0.0.1:${toString dbPort}"
           "--graph-dir"
@@ -510,52 +462,6 @@ in
         # Spread away from midnight and the backup timers.
         RandomizedDelaySec = "1h";
         Unit = "memory-export.service";
-      };
-    };
-
-    # services.llama-cpp is single-instance and chat's speculative decoding must not
-    # carry embedding flags; nixpkgs' CPU build avoids the pinned CUDA fork.
-    systemd.services.llama-cpp-embed = {
-      description = "llama.cpp embedding server (bge-m3) for the memory stack";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "network.target" ];
-      unitConfig = {
-        StartLimitIntervalSec = "1h";
-        StartLimitBurst = 10;
-      };
-      onFailure = [ "cloudflare-email@%n.service" ];
-      serviceConfig = hardening // {
-        DynamicUser = true;
-        StateDirectory = "llama-cpp-embed";
-        CacheDirectory = "llama-cpp-embed";
-        Environment = "LLAMA_CACHE=/var/cache/llama-cpp-embed";
-        ExecStart = lib.escapeShellArgs [
-          "${pkgs.llama-cpp}/bin/llama-server"
-          "--model"
-          "${embedModel}"
-          "--alias"
-          "bge-m3"
-          "--embeddings"
-          "--pooling"
-          "cls"
-          "--ctx-size"
-          "8192"
-          # An input longer than the physical batch is rejected; match the context.
-          "--batch-size"
-          "8192"
-          "--ubatch-size"
-          "8192"
-          "--host"
-          "127.0.0.1"
-          "--port"
-          (toString embeddingPort)
-          "--no-webui"
-        ];
-        # Bulk ingest must not starve the chat model or trip the OOM killer.
-        CPUWeight = 50;
-        MemoryMax = "8G";
-        Restart = "on-failure";
-        RestartSec = 10;
       };
     };
   };

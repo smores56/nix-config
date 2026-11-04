@@ -1,22 +1,18 @@
 """Export the registry and a matching FalkorDB snapshot; verify and restore them.
 
-One export is one timestamped directory under the export root:
+One export is three files in the export root, each replaced atomically; restic
+owns history and integrity:
 
 - ``registry.sqlite``: a consistent copy of the registry, taken with SQLite's
   online backup API, so it works while the wrapper keeps writing under WAL;
-- ``episodes.jsonl``: every episode with its typed provenance *and* its content,
-  so memory is readable even without SQLite or this code;
-- ``manifest.json``: creation time, schema version, per-status counts, and the
-  sha256 of every file (plus the graph snapshot, when one was taken);
-- ``graph-<same timestamp>.rdb``: a FalkorDB snapshot, when ``BGSAVE`` finished.
+- ``episodes.jsonl``: every episode with its typed provenance and content, so
+  memory is readable without SQLite or this code;
+- ``graph.rdb``: a FalkorDB snapshot, when ``BGSAVE`` finished.
 
-The registry is the system of record and the graph is a derived index, so the
-graph step is best-effort: if FalkorDB does not answer, the files are still
-written and the manifest records why the graph is missing, but the command
-exits non-zero so the timer run is visibly failed. Restore prefers the
-registry, and accepts a graph snapshot only when it was taken at the same
-timestamp; otherwise it refuses the graph and tells the operator to restore a
-matching export, or to wipe both stores and re-ingest.
+The registry is the system of record and the graph a derived index, so the
+graph step is best-effort: if FalkorDB does not answer, the registry files are
+still written, any previous ``graph.rdb`` is gone (it would not match), and the
+command exits non-zero so the timer run is visibly failed.
 
 Only the optional ``redis`` client (imported lazily) is outside the standard
 library, so export and restore run on a machine without the MCP dependencies.
@@ -25,33 +21,29 @@ library, so export and restore run on a machine without the MCP dependencies.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import pwd
-import re
 import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Sequence
 
-from .registry import SCHEMA_VERSION, STATUSES, migrate_registry
+from .registry import REGISTRY_FILE, SCHEMA_VERSION, STATUSES
 
-REGISTRY_FILE = "registry.sqlite"
 EPISODES_FILE = "episodes.jsonl"
-MANIFEST_FILE = "manifest.json"
-GRAPH_FILE = "graph-{snapshot}.rdb"
+GRAPH_FILE = "graph.rdb"
 
 DEFAULT_ROOT = "/var/lib/data/memory-export"
 DEFAULT_STATE_DIR = "/var/lib/memory"
 DEFAULT_GRAPH_DIR = "/var/lib/memory/falkordb"
 DEFAULT_GRAPH_URL = "redis://127.0.0.1:6379"
-DEFAULT_KEEP = 7
 DEFAULT_GRAPH_TIMEOUT = 120.0
 # Services that write the registry or own the graph files, stopped writers first. `memory-falkordb`
 # must stop too: its AOF rewrite would recreate the data being replaced.
@@ -65,8 +57,6 @@ AOF_NAMES = ("appendonlydir", "appendonly.aof")
 BGSAVE_POLL_INTERVAL = 0.5
 
 TIMESTAMP_FORMAT = "%Y-%m-%dT%H-%M-%SZ"
-TIMESTAMP_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z$")
-GRAPH_NAME_PATTERN = re.compile(r"^graph-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z)\.rdb$")
 
 # Registry column -> episode JSON key (`group_id` is the registry's spelling).
 EPISODE_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -110,19 +100,6 @@ def timestamp(now: datetime | None = None) -> str:
     """A sortable, filename-safe UTC timestamp (``2026-10-22T03-00-00Z``)."""
     moment = now or datetime.now(timezone.utc)
     return moment.astimezone(timezone.utc).strftime(TIMESTAMP_FORMAT)
-
-
-def is_snapshot_name(name: str) -> bool:
-    """Only these names are export directories; retention never touches others."""
-    return TIMESTAMP_PATTERN.match(name) is not None
-
-
-def file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _adopt_sidecars(path: Path) -> None:
@@ -195,6 +172,15 @@ def schema_version(db: Path) -> int:
     conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     try:
         return int(conn.execute("PRAGMA user_version").fetchone()[0])
+    finally:
+        conn.close()
+
+
+def integrity_check(db: Path) -> str:
+    """`ok`, or the first problem SQLite reports."""
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    try:
+        return str(conn.execute("PRAGMA integrity_check").fetchone()[0])
     finally:
         conn.close()
 
@@ -342,43 +328,25 @@ def _wait_for_bgsave(
         sleep(poll)
 
 
-@dataclass(frozen=True)
-class GraphSnapshot:
-    file: str
-    snapshot: str
-    sha256: str
-    bytes: int
-
-    def as_manifest(self) -> dict[str, object]:
-        return {
-            "file": self.file,
-            "timestamp": self.snapshot,
-            "sha256": self.sha256,
-            "bytes": self.bytes,
-        }
+def _copy_atomic(source: Path, dest: Path) -> None:
+    staging = dest.with_name(dest.name + ".tmp")
+    shutil.copyfile(source, staging)
+    os.replace(staging, dest)
 
 
 def snapshot_graph(
     *,
     graph_dir: Path | str,
-    dest_dir: Path | str,
-    snapshot: str,
+    dest: Path | str,
     url: str = DEFAULT_GRAPH_URL,
     timeout: float = DEFAULT_GRAPH_TIMEOUT,
     client: object | None = None,
     poll: float = BGSAVE_POLL_INTERVAL,
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
-) -> GraphSnapshot:
-    """BGSAVE the graph, wait for it, and copy `dump.rdb` into the export.
-
-    The RDB lands next to the registry snapshot but under its own name, so a
-    graph from a different run can never be mistaken for this one's.
-    """
-    source = Path(graph_dir)
-    target_dir = Path(dest_dir)
-    filename = GRAPH_FILE.format(snapshot=snapshot)
-    dump = source / "dump.rdb"
+) -> None:
+    """BGSAVE the graph, wait for it, and copy `dump.rdb` to `dest`."""
+    dump = Path(graph_dir) / "dump.rdb"
     handle = client if client is not None else _redis(url)
     # The save timestamp, not mtime: only a save completing after this point rewrote dump.rdb.
     saved_before = _rdb_last_save(handle)
@@ -392,74 +360,16 @@ def snapshot_graph(
         dump.stat()
     except OSError as exc:
         raise GraphSnapshotError(f"{dump} is not readable: {exc}") from exc
-    target = target_dir / filename
     try:
-        shutil.copyfile(dump, target)
+        _copy_atomic(dump, Path(dest))
     except OSError as exc:
         raise GraphSnapshotError(f"copying {dump} failed: {exc}") from exc
-    return GraphSnapshot(
-        file=filename,
-        snapshot=snapshot,
-        sha256=file_sha256(target),
-        bytes=target.stat().st_size,
-    )
-
-
-def _restorable(path: Path) -> bool:
-    """A timestamped directory counts only when its manifest reads.
-
-    A half-written or crashed export has the name but nothing restorable inside;
-    retention leaves it for the operator instead of counting it as one of the
-    kept snapshots.
-    """
-    try:
-        manifest = json.loads((path / MANIFEST_FILE).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return False
-    return isinstance(manifest, dict)
-
-
-def prune_exports(
-    root: Path | str, keep: int, *, current: Path | None = None
-) -> tuple[Path, ...]:
-    """Keep the newest `keep` complete timestamped export directories.
-
-    Only directories whose names are export timestamps *and* whose manifest
-    reads are candidates: a stray file, a symlink, an operator's directory, or a
-    partial export under the root is never removed. `current` is the directory
-    this run just wrote; it is never pruned, so a clock step that leaves it
-    looking older than the others cannot delete the export it belongs to.
-    """
-    if keep < 1:
-        raise ValueError("keep must be at least 1")
-    base = Path(root)
-    if not base.is_dir():
-        return ()
-    just_written = Path(current) if current is not None else None
-    candidates = sorted(
-        (
-            path
-            for path in base.iterdir()
-            if is_snapshot_name(path.name)
-            and path.is_dir()
-            and not path.is_symlink()
-            and _restorable(path)
-        ),
-        key=lambda path: path.name,
-        reverse=True,
-    )
-    # The current export counts toward `keep` but is never deleted, so a clock step cannot prune the run away.
-    stale = [path for path in candidates[keep:] if path != just_written]
-    for path in stale:
-        shutil.rmtree(path)
-    return tuple(stale)
 
 
 @dataclass(frozen=True)
 class ExportConfig:
     root: Path = Path(DEFAULT_ROOT)
     state_dir: Path = Path(DEFAULT_STATE_DIR)
-    keep: int = DEFAULT_KEEP
     graph_dir: Path | None = None
     graph_url: str = DEFAULT_GRAPH_URL
     graph_timeout: float = DEFAULT_GRAPH_TIMEOUT
@@ -473,97 +383,59 @@ class ExportConfig:
 @dataclass(frozen=True)
 class ExportResult:
     directory: Path
-    manifest: Mapping[str, object]
-    pruned: tuple[Path, ...]
-
-
-def build_manifest(
-    *,
-    snapshot: str,
-    created_at: str,
-    schema: int,
-    counts: Mapping[str, int],
-    files: Mapping[str, Path],
-    graph: GraphSnapshot | None,
-    graph_error: str | None,
-) -> dict[str, object]:
-    manifest: dict[str, object] = {
-        "created_at": created_at,
-        "snapshot": snapshot,
-        "schema_version": schema,
-        "counts": dict(counts),
-        "files": {
-            name: {"sha256": file_sha256(path), "bytes": path.stat().st_size}
-            for name, path in files.items()
-        },
-        "graph": graph.as_manifest() if graph is not None else None,
-    }
-    if graph_error is not None:
-        manifest["graph_error"] = graph_error
-    return manifest
+    counts: Mapping[str, int]
+    graph: bool
+    graph_error: str | None = None
 
 
 def run_export(config: ExportConfig) -> ExportResult:
-    """Take one export. The files decide success; the graph is best-effort."""
-    if config.keep < 1:
-        raise ExportError("keep must be at least 1; retention never deletes the export it just took")
+    """Take one export. The registry decides success; the graph is best-effort."""
     lock = config.state_dir / RESTORE_LOCK
     if lock.exists():
         raise ExportError(
             f"{lock} exists: a restore is in progress or failed and left the lock; "
             "refusing to snapshot a registry that is being replaced"
         )
-    stamp = timestamp()
-    directory = config.root / stamp
-    if directory.exists():
-        raise ExportError(f"{directory} already exists; one export per second")
     config.root.mkdir(parents=True, exist_ok=True)
-    directory.mkdir()
-    try:
-        registry = directory / REGISTRY_FILE
-        snapshot_registry(config.registry_path, registry)
-        schema = schema_version(registry)
+    for stale in config.root.glob(".staging-*"):
+        shutil.rmtree(stale, ignore_errors=True)
+    # Staged beside the targets (same filesystem, so the renames are atomic); the directory
+    # also takes the SQLite sidecars the checks below leave behind.
+    with tempfile.TemporaryDirectory(dir=config.root, prefix=".staging-") as staging_dir:
+        staging = Path(staging_dir) / REGISTRY_FILE
+        snapshot_registry(config.registry_path, staging)
+        schema = schema_version(staging)
         if schema != SCHEMA_VERSION:
             found = "unversioned" if schema == 0 else str(schema)
             raise ExportError(
                 f"{config.registry_path} has schema version {found}, expected {SCHEMA_VERSION}; "
                 "refusing to export a registry this code cannot read"
             )
-        write_episodes(registry, directory / EPISODES_FILE)
-        graph: GraphSnapshot | None = None
-        graph_error: str | None = None
-        if config.graph_dir is not None:
-            try:
-                graph = snapshot_graph(
-                    graph_dir=config.graph_dir,
-                    dest_dir=directory,
-                    snapshot=stamp,
-                    url=config.graph_url,
-                    timeout=config.graph_timeout,
-                    client=config.graph_client,
-                )
-            except GraphSnapshotError as exc:
-                graph_error = str(exc)
-        manifest = build_manifest(
-            snapshot=stamp,
-            created_at=datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
-            schema=schema,
-            counts=status_counts(registry),
-            files={REGISTRY_FILE: registry, EPISODES_FILE: directory / EPISODES_FILE},
-            graph=graph,
-            graph_error=graph_error,
-        )
-        (directory / MANIFEST_FILE).write_text(
-            json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-        )
-    except Exception:
-        # A half-written directory must never look like a restorable export.
-        shutil.rmtree(directory, ignore_errors=True)
-        raise
+        episodes = Path(staging_dir) / EPISODES_FILE
+        write_episodes(staging, episodes)
+        counts = status_counts(staging)
+        os.replace(episodes, config.root / EPISODES_FILE)
+        # Dropped only now, so a failed registry snapshot leaves the previous pair intact and a
+        # failed graph snapshot never leaves a graph that predates the new registry.
+        (config.root / GRAPH_FILE).unlink(missing_ok=True)
+        os.replace(staging, config.root / REGISTRY_FILE)
+    graph_error: str | None = None
+    if config.graph_dir is not None:
+        try:
+            snapshot_graph(
+                graph_dir=config.graph_dir,
+                dest=config.root / GRAPH_FILE,
+                url=config.graph_url,
+                timeout=config.graph_timeout,
+                client=config.graph_client,
+            )
+        except GraphSnapshotError as exc:
+            graph_error = str(exc)
     return ExportResult(
-        directory=directory,
-        manifest=manifest,
-        pruned=prune_exports(config.root, config.keep, current=directory),
+        directory=config.root,
+        counts=counts,
+        graph=config.graph_dir is not None and graph_error is None,
+        graph_error=graph_error,
     )
 
 
@@ -582,106 +454,42 @@ class GraphDecision:
 @dataclass(frozen=True)
 class VerifiedExport:
     directory: Path
-    manifest: Mapping[str, Any]
-    snapshot: str
     schema_version: int
     counts: Mapping[str, int]
     graph: GraphDecision
 
 
-def _read_json(path: Path) -> Any:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ExportInvalid(f"{path} is unreadable: {exc}") from exc
-
-
-def _member(directory: Path, name: object) -> Path:
-    """Resolve a manifest file name inside the export, never outside it."""
-    text = str(name)
-    if not text or Path(text).name != text or text in (".", ".."):
-        raise ExportInvalid(f"manifest names an unsafe path: {text!r}")
-    return directory / text
-
-
 def verify_export(directory: Path | str) -> VerifiedExport:
-    """Check every checksum in the manifest and decide about the graph.
+    """Check that the registry is a readable database at this code's schema.
 
-    A registry or episode checksum mismatch invalidates the whole export. A
-    broken graph snapshot only drops the graph: the registry is what matters,
-    and the graph can be rebuilt.
+    A bad registry invalidates the whole export; a missing graph only drops the
+    graph, which can be replayed from the registry.
     """
     root = Path(directory)
-    if not root.is_dir():
-        raise ExportInvalid(f"{root} is not an export directory")
-    if not is_snapshot_name(root.name):
-        raise ExportInvalid(f"{root.name} is not an export timestamp")
-    manifest = _read_json(root / MANIFEST_FILE)
-    if not isinstance(manifest, dict):
-        raise ExportInvalid(f"{root / MANIFEST_FILE} is not a JSON object")
-    snapshot = str(manifest.get("snapshot") or root.name)
-    if snapshot != root.name:
-        raise ExportInvalid(f"manifest snapshot {snapshot} does not match the directory {root.name}")
-    files = manifest.get("files")
-    if not isinstance(files, dict) or not files:
-        raise ExportInvalid("manifest has no file checksums")
-    for name in (REGISTRY_FILE, EPISODES_FILE):
-        if name not in files:
-            raise ExportInvalid(f"manifest has no checksum for {name}")
-    for name, meta in files.items():
-        path = _member(root, name)
-        if not path.is_file():
-            raise ExportInvalid(f"{name} is missing from the export")
-        recorded = str((meta or {}).get("sha256") or "")
-        actual = file_sha256(path)
-        if recorded != actual:
-            raise ExportInvalid(f"{name} does not match its manifest sha256 (tampered or corrupt)")
-        size = (meta or {}).get("bytes")
-        if size is not None and int(size) != path.stat().st_size:
-            raise ExportInvalid(f"{name} does not match its recorded size")
+    registry = root / REGISTRY_FILE
+    if not registry.is_file():
+        raise ExportInvalid(f"{registry} is missing: not a memory export")
     try:
-        schema = schema_version(root / REGISTRY_FILE)
+        schema = schema_version(registry)
+        counts = status_counts(registry)
+        integrity = integrity_check(registry)
     except sqlite3.Error as exc:
-        raise ExportInvalid(f"{REGISTRY_FILE} is not a readable database: {exc}") from exc
-    counts = manifest.get("counts")
-    if not isinstance(counts, dict):
-        raise ExportInvalid("manifest has no status counts")
-    return VerifiedExport(
-        directory=root,
-        manifest=manifest,
-        snapshot=snapshot,
-        schema_version=schema,
-        counts={str(key): int(value) for key, value in counts.items()},
-        graph=_graph_decision(root, manifest, snapshot),
-    )
-
-
-def _graph_decision(root: Path, manifest: Mapping[str, Any], snapshot: str) -> GraphDecision:
-    """Accept the graph snapshot only when it belongs to this registry snapshot."""
-    entry = manifest.get("graph")
-    if entry is None:
-        error = manifest.get("graph_error")
-        reason = "the export holds no graph snapshot"
-        if error:
-            reason = f"{reason}: {error}"
-        return GraphDecision(reason=reason)
-    if not isinstance(entry, dict):
-        return GraphDecision(reason="the manifest's graph entry is malformed")
-    name = str(entry.get("file") or "")
-    match = GRAPH_NAME_PATTERN.match(name)
-    if match is None:
-        return GraphDecision(reason=f"graph file name {name!r} is not a graph snapshot name")
-    timestamp_in_name = match.group(1)
-    if timestamp_in_name != snapshot:
-        return GraphDecision(
-            reason=f"graph snapshot {timestamp_in_name} does not belong to registry snapshot {snapshot}"
+        raise ExportInvalid(f"{REGISTRY_FILE} is not a readable registry: {exc}") from exc
+    if integrity != "ok":
+        raise ExportInvalid(f"{REGISTRY_FILE} fails PRAGMA integrity_check: {integrity}")
+    if schema != SCHEMA_VERSION:
+        word = "newer" if schema > SCHEMA_VERSION else "older"
+        raise ExportInvalid(
+            f"the export's registry schema is {schema}, this code writes {SCHEMA_VERSION}; "
+            f"refusing to restore a {word} schema"
         )
-    path = _member(root, name)
-    if not path.is_file():
-        return GraphDecision(reason=f"{name} is missing from the export")
-    if str(entry.get("sha256") or "") != file_sha256(path):
-        return GraphDecision(reason=f"{name} does not match its manifest sha256")
-    return GraphDecision(path=path)
+    graph = root / GRAPH_FILE
+    decision = (
+        GraphDecision(path=graph)
+        if graph.is_file()
+        else GraphDecision(reason="the export holds no graph snapshot")
+    )
+    return VerifiedExport(directory=root, schema_version=schema, counts=counts, graph=decision)
 
 
 @dataclass(frozen=True)
@@ -693,7 +501,6 @@ class RestoreConfig:
     stop_services: bool = True
     start_services: bool = False
     dry_run: bool = False
-    schema_version: int = SCHEMA_VERSION
     # `None` leaves the file owned by the caller; the CLI passes the service account, and its absence is a hard error.
     owner: str | None = DEFAULT_OWNER
     run: Callable[[Sequence[str]], None] | None = None
@@ -797,19 +604,25 @@ def _park_registry(registry_path: Path, snapshot: str) -> tuple[Path, ...]:
     return tuple(parked)
 
 
-def _install(source: Path, target: Path, *, owner: str | None, upgrade: bool = False) -> None:
-    """Stage the copy, migrate it, hand it to its owner, then replace in one rename.
+def _stage_copy(source: Path, staging: Path) -> None:
+    """Copy into a fresh file, never through a symlink planted in the memory-owned directory.
 
-    `upgrade` migrates an older registry while the previous file is still
-    parked, so a failed migration aborts the restore instead of surfacing as a
-    crash loop days later.
+    Root runs this inside directories the `memory` user can write: the old name is
+    unlinked (a symlink is removed, not followed) and the new one is created
+    exclusively without following links.
     """
+    staging.unlink(missing_ok=True)
+    descriptor = os.open(staging, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "wb") as out, source.open("rb") as handle:
+        shutil.copyfileobj(handle, out)
+
+
+def _install(source: Path, target: Path, *, owner: str | None) -> None:
+    """Stage the copy, hand it to its owner, then replace in one rename."""
     target.parent.mkdir(parents=True, exist_ok=True)
     staging = target.with_name(target.name + ".restore-tmp")
-    shutil.copyfile(source, staging)
+    _stage_copy(source, staging)
     try:
-        if upgrade:
-            migrate_registry(staging)
         _fix_owner(staging, owner)
         os.replace(staging, target)
     except BaseException:
@@ -835,29 +648,17 @@ class RestoreReport:
 def restore(config: RestoreConfig) -> RestoreReport:
     """Verify an export and put the registry (and a matching graph) back.
 
-    Order matters: verification runs before anything is stopped, and the schema
-    is checked before the live registry is touched. A newer schema is refused
-    outright: this code cannot read it. An older one is migrated in place by
-    the wrapper on the next start.
+    Order matters: verification, including the schema check, runs before anything
+    is stopped or the live registry is touched.
     The live registry is parked first, replaced atomically, and only then are
     its WAL sidecars dropped: they belong to the database that was replaced.
     """
     verified = verify_export(config.export_dir)
-    if verified.schema_version > config.schema_version:
-        raise ExportInvalid(
-            f"the export's registry schema is {verified.schema_version}, "
-            f"this code writes {config.schema_version}; refusing to restore a newer schema"
-        )
-    # An older registry is installed as-is and migrated on next open (`Registry._ensure_schema`).
-    if verified.schema_version < 1:
-        raise ExportInvalid(
-            f"the export's registry schema is {verified.schema_version}; "
-            "there is no migration path from an unversioned registry"
-        )
+    snapshot = timestamp()
     registry_path = config.state_dir / REGISTRY_FILE
     report = RestoreReport(
         export_dir=verified.directory,
-        snapshot=verified.snapshot,
+        snapshot=snapshot,
         schema_version=verified.schema_version,
         counts=verified.counts,
         registry_path=registry_path,
@@ -867,16 +668,15 @@ def restore(config: RestoreConfig) -> RestoreReport:
     )
     if config.dry_run:
         return report
-    lock = _write_restore_lock(config.state_dir, verified.snapshot)
+    lock = _write_restore_lock(config.state_dir, snapshot)
     if config.stop_services and config.units:
         config.run(("systemctl", "stop", *config.units))
-    parked_registry = _park_registry(registry_path, verified.snapshot)
+    parked_registry = _park_registry(registry_path, snapshot)
     try:
         _install(
             verified.directory / REGISTRY_FILE,
             registry_path,
             owner=config.owner,
-            upgrade=verified.schema_version < config.schema_version,
         )
     except (ExportError, OSError) as exc:
         parked_note = (
@@ -910,12 +710,11 @@ def restore(config: RestoreConfig) -> RestoreReport:
         except (ExportError, OSError) as exc:
             raise ExportError(
                 f"the registry is restored but installing the graph snapshot failed: {exc}; "
-                f"{lock} stays in place; the graph is a derived index, so `just memory-rebuild` "
-                "and a re-ingest rebuild it, or restore the registry alone and replay it with "
-                "`memory reindex --all`"
+                f"{lock} stays in place; the graph is a derived index and "
+                "is replayed from the restored registry with `memory reindex --all`"
             ) from exc
         try:
-            parked = _park_aof(config.graph_dir, verified.snapshot)
+            parked = _park_aof(config.graph_dir, snapshot)
         except OSError as exc:
             raise ExportError(
                 f"the registry and graph snapshot are restored but the old AOF could not be "
@@ -963,7 +762,7 @@ def _restart_units(config: RestoreConfig, *, graph_restored: bool) -> tuple[str,
     its unit starts: that restart is part of the graph restore, not an optional
     courtesy, and `graph: restored` is only reported after it. `--start` also
     brings the writers back; without it they stay down so the restored registry
-    can be inspected before ingest and retrieval touch it.
+    can be inspected before retrieval touches it.
     """
     if not (config.stop_services and config.units):
         return ()
@@ -999,17 +798,14 @@ def graph_advice(report: RestoreReport) -> str:
     return (
         f"graph: not restored ({report.graph.reason}). The graph is a derived index and this "
         "registry can replay into it: `memory reindex --all` returns the active rows FalkorDB "
-        "no longer holds to pending, and the reconciler extracts them again (`memory-ingest` "
-        "cannot: it skips rows that are already active). Otherwise restore an export whose "
-        "graph snapshot matches this registry, or wipe both stores (`just memory-rebuild`) "
-        "and re-ingest the corpus."
+        "no longer holds to pending, and the reconciler extracts them again."
     )
 
 
 def _report_lines(report: RestoreReport, *, dry_run: bool) -> Iterator[str]:
     counts = " ".join(f"{key}={report.counts.get(key, 0)}" for key in (*STATUSES, "total"))
     verb = "verified" if dry_run else "restored"
-    yield f"{verb} {report.export_dir} (snapshot {report.snapshot}, schema {report.schema_version})"
+    yield f"{verb} {report.export_dir} (schema {report.schema_version})"
     yield f"registry: {report.registry_path} ({counts})"
     if report.parked_registry:
         yield (
@@ -1018,14 +814,14 @@ def _report_lines(report: RestoreReport, *, dry_run: bool) -> Iterator[str]:
         )
     if dry_run and report.graph.accepted and report.graph.path is not None:
         # A dry run leaves `graph_restored` false; without this a good export printed the "cannot be rebuilt" warning.
-        yield f"graph: would restore {report.graph.path.name} (matching snapshot)"
+        yield f"graph: would restore {report.graph.path.name}"
         return
     yield graph_advice(report)
 
 
 def add_export_parser(subparsers: Any) -> argparse.ArgumentParser:
     parser = subparsers.add_parser(
-        "export", help="Snapshot the registry (and the graph) into one timestamped directory"
+        "export", help="Snapshot the registry and the graph into the export root"
     )
     parser.add_argument(
         "--root",
@@ -1036,12 +832,6 @@ def add_export_parser(subparsers: Any) -> argparse.ArgumentParser:
         "--state-dir",
         default=os.environ.get("MEMORY_STATE_DIR", DEFAULT_STATE_DIR),
         help=f"Registry directory (default {DEFAULT_STATE_DIR})",
-    )
-    parser.add_argument(
-        "--keep",
-        type=int,
-        default=int(os.environ.get("MEMORY_EXPORT_KEEP", DEFAULT_KEEP)),
-        help=f"Export directories to keep (default {DEFAULT_KEEP})",
     )
     parser.add_argument(
         "--graph-dir",
@@ -1064,7 +854,7 @@ def add_export_parser(subparsers: Any) -> argparse.ArgumentParser:
 
 def add_restore_parser(subparsers: Any) -> argparse.ArgumentParser:
     parser = subparsers.add_parser(
-        "restore", help="Verify an export and restore the registry and a matching graph snapshot"
+        "restore", help="Verify an export and restore the registry and its graph snapshot"
     )
     parser.add_argument("directory", help="Export directory to restore")
     parser.add_argument(
@@ -1111,36 +901,17 @@ def export_command(args: argparse.Namespace) -> int:
         ExportConfig(
             root=Path(args.root),
             state_dir=Path(args.state_dir),
-            keep=args.keep,
             graph_dir=Path(args.graph_dir) if args.graph_dir else None,
             graph_url=args.graph_url,
             graph_timeout=args.graph_timeout,
         )
     )
-    graph_error = result.manifest.get("graph_error")
-    if getattr(args, "json", False):
-        print(json.dumps(result.manifest, indent=2, sort_keys=True))
-        if graph_error:
-            print(
-                f"memory-export: the graph snapshot failed: {graph_error}",
-                file=sys.stderr,
-            )
-            return 1
-        return 0
-    counts = " ".join(f"{key}={result.manifest['counts'].get(key, 0)}" for key in (*STATUSES, "total"))
-    graph = result.manifest.get("graph")
-    graph_note = (
-        f"graph: {graph['file']}" if isinstance(graph, dict) else "graph: none"
-    )
-    if graph_error:
-        graph_note = f"{graph_note} ({graph_error})"
+    counts = " ".join(f"{key}={result.counts.get(key, 0)}" for key in (*STATUSES, "total"))
     print(f"exported {result.directory} ({counts})")
-    print(graph_note)
-    for path in result.pruned:
-        print(f"pruned {path.name}")
-    if graph_error:
+    print(f"graph: {GRAPH_FILE}" if result.graph else "graph: none")
+    if result.graph_error:
         # The registry export stands; the missing graph still fails so the timer's onFailure alert fires.
-        print(f"memory-export: the graph snapshot failed: {graph_error}", file=sys.stderr)
+        print(f"memory-export: the graph snapshot failed: {result.graph_error}", file=sys.stderr)
         return 1
     return 0
 
@@ -1177,9 +948,8 @@ def dispatch(args: argparse.Namespace) -> int:
 
 def build_parser(prog: str = "memory-export") -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog=prog, description="Export, verify, and restore the memory registry"
+        prog=prog, description="Export and restore the memory registry"
     )
-    parser.add_argument("--json", action="store_true", help="Emit the manifest as JSON")
     subparsers = parser.add_subparsers(dest="command", required=True)
     add_export_parser(subparsers)
     add_restore_parser(subparsers)
