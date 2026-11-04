@@ -16,8 +16,8 @@ let
   dbPort = 6379;
   graphitiPort = 8184;
   embeddingPort = ports.memoryEmbed;
-  # Loopback gateway to Neuralwatt, never tunneled. Adds `reasoning_effort: "none"`
-  # because reasoning extraction returns empty content.
+  # Loopback gateway to Neuralwatt, never tunneled. Injects the key and adds
+  # `reasoning_effort: "none"` because reasoning extraction returns empty content.
   llmProxyPort = ports.memoryLlmProxy;
   # tmpfiles owns the falkordb subdirectory of the StateDirectory.
   stateDirectory = "memory";
@@ -322,7 +322,7 @@ in
 
     # Sole route to Neuralwatt: holds the key and adds `reasoning_effort: "none"`
     # (graphiti-core cannot per request); forwards the rest, replacing the dummy
-    # `Bearer none`.
+    # `Bearer none`. Fails to start without the key.
     systemd.services.memory-llm-proxy = {
       description = "Neuralwatt gateway for Graphiti extraction (key injection, thinking off)";
       wantedBy = [ "multi-user.target" ];
@@ -344,7 +344,7 @@ in
           "MEMORY_UPSTREAM_CONCURRENCY=2"
           "MEMORY_UPSTREAM_RETRIES=6"
         ];
-        # A missing key fails the unit instead of serving refusals.
+        # A missing key fails the unit instead of serving unauthenticated calls.
         LoadCredential = "neuralwatt-api-key:/run/secrets/neuralwatt-api-key";
         Restart = "always";
         RestartSec = "5s";

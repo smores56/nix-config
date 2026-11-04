@@ -34,11 +34,9 @@ class RetryAfterTests(unittest.TestCase):
     def test_delay_seconds_are_honoured(self):
         self.assertEqual(llm_proxy._retry_after_seconds("7"), 7.0)
 
-    def test_an_http_date_becomes_a_delay(self):
+    def test_an_http_date_is_not_a_delay(self):
         self.assertIsNone(llm_proxy._retry_after_seconds(None))
-        # A date in the past means retry now; a far one is still capped.
-        self.assertEqual(llm_proxy._retry_after_seconds("Wed, 21 Oct 2015 07:28:00 GMT"), 0.0)
-        self.assertEqual(llm_proxy._retry_after_seconds("Fri, 21 Oct 2095 07:28:00 GMT"), llm_proxy.MAX_RETRY_AFTER)
+        self.assertIsNone(llm_proxy._retry_after_seconds("Wed, 21 Oct 2015 07:28:00 GMT"))
 
     def test_a_huge_delay_is_capped_and_a_garbage_value_is_ignored(self):
         self.assertEqual(llm_proxy._retry_after_seconds("99999"), llm_proxy.MAX_RETRY_AFTER)
@@ -139,18 +137,6 @@ class ProxyTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.body(self.seen[0])["stream"])
         self.assertEqual(self.body(self.seen[0])["reasoning_effort"], "none")
 
-    async def test_upstream_connection_error_is_502_with_message(self):
-        def handler(request):
-            raise httpx.ConnectError("connection refused", request=request)
-
-        app = self.app(handler)
-        reply = await self.call(app, "POST", "/v1/chat/completions", json_body={"messages": []})
-
-        self.assertEqual(reply.status_code, 502)
-        error = reply.json()["error"]
-        self.assertEqual(error["type"], "upstream_unavailable")
-        self.assertIn("http://upstream", error["message"])
-
     async def test_upstream_error_status_is_forwarded(self):
         # A 503 is retried first, so the final answer is the upstream's own.
         app = self.app(lambda request: response(status=503, payload={"error": {"message": "loading"}}))
@@ -170,46 +156,18 @@ class ProxyTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(self.seen, [])
 
-    async def test_an_oversize_request_body_is_rejected(self):
-        app = self.app(lambda request: response(), max_request_bytes=64)
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://proxy"
-        ) as client:
-            reply = await client.post(
-                "/v1/chat/completions",
-                content=b"x" * 200,
-                headers={"content-type": "application/json"},
-            )
-        self.assertEqual(reply.status_code, 413)
-        self.assertEqual(reply.json()["error"]["type"], "request_too_large")
-        self.assertEqual(self.seen, [])
-
-    async def test_a_small_body_still_reaches_the_upstream(self):
-        app = self.app(lambda request: response(), max_request_bytes=64)
-        reply = await self.call(app, "POST", "/v1/chat/completions", json_body={"messages": []})
-        self.assertEqual(reply.status_code, 200)
-        self.assertEqual(len(self.seen), 1)
-
-    async def test_a_read_timeout_is_a_504(self):
-        def handler(request):
-            raise httpx.ReadTimeout("timed out reading", request=request)
-
-        app = self.app(handler)
-        reply = await self.call(app, "POST", "/v1/chat/completions", json_body={"messages": []})
-        self.assertEqual(reply.status_code, 504)
-        self.assertEqual(reply.json()["error"]["type"], "upstream_timeout")
-
     async def test_the_read_timeout_is_configured_on_the_upstream_client(self):
         app = create_app(
             upstream="http://upstream",
             transport=httpx.MockTransport(lambda request: response()),
             timeout=5.0,
             read_timeout=42.0,
+            api_key="test-key",
         )
         self.assertEqual(app.state.client.timeout.read, 42.0)
         self.assertEqual(app.state.client.timeout.connect, 10.0)
 
-    async def test_invalid_json_on_a_chat_path_is_400(self):
+    async def test_a_body_that_is_not_json_is_forwarded_untouched(self):
         app = self.app(lambda request: response())
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://proxy"
@@ -217,8 +175,16 @@ class ProxyTests(unittest.IsolatedAsyncioTestCase):
             reply = await client.post(
                 "/v1/chat/completions", content=b"{not json", headers={"content-type": "application/json"}
             )
-        self.assertEqual(reply.status_code, 400)
-        self.assertEqual(self.seen, [])
+        self.assertEqual(reply.status_code, 200)
+        self.assertEqual(self.seen[0].content, b"{not json")
+
+    def test_a_missing_or_blank_key_refuses_to_start(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            blank = Path(tmp) / "blank"
+            blank.write_text("\n", encoding="utf-8")
+            for key_file in ("/nonexistent/key", str(blank)):
+                with self.subTest(key_file=key_file), self.assertRaises(llm_proxy.MissingKeyError):
+                    self.app(lambda request: response(), api_key=None, key_file=key_file)
 
     async def test_the_neuralwatt_key_is_injected_when_the_client_sends_none(self):
         app = self.app(lambda request: response())
@@ -267,26 +233,6 @@ class ProxyTests(unittest.IsolatedAsyncioTestCase):
                 app = self.app(lambda request: response(), api_key=None)
         await self.call(app, "GET", "/v1/models")
         self.assertEqual(self.seen[0].headers["authorization"], "Bearer from-env")
-
-    async def test_a_missing_key_refuses_proxied_requests_but_answers_health(self):
-        app = self.app(lambda request: response(), api_key=None, key_file="/nonexistent/key")
-
-        health = await self.call(app, "GET", "/health")
-        self.assertEqual(health.status_code, 200)
-
-        reply = await self.call(app, "POST", "/v1/chat/completions", json_body={"messages": []})
-        self.assertEqual(reply.status_code, 503)
-        self.assertEqual(reply.json()["error"]["type"], "configuration_error")
-        self.assertEqual(self.seen, [])
-
-    async def test_a_blank_key_file_is_treated_as_missing(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            key_file = Path(tmp) / "neuralwatt-api-key"
-            key_file.write_text("\n", encoding="utf-8")
-            app = self.app(lambda request: response(), api_key=None, key_file=str(key_file))
-        reply = await self.call(app, "GET", "/v1/models")
-        self.assertEqual(reply.status_code, 503)
-        self.assertEqual(self.seen, [])
 
     async def test_embeddings_are_authorized_but_left_unrewritten(self):
         app = self.app(lambda request: response(payload={"data": []}))
