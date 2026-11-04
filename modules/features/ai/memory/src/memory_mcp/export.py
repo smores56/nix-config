@@ -177,6 +177,15 @@ def schema_version(db: Path) -> int:
         conn.close()
 
 
+def integrity_check(db: Path) -> str:
+    """`ok`, or the first problem SQLite reports."""
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    try:
+        return str(conn.execute("PRAGMA integrity_check").fetchone()[0])
+    finally:
+        conn.close()
+
+
 def status_counts(db: Path) -> dict[str, int]:
     conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     try:
@@ -389,8 +398,8 @@ def run_export(config: ExportConfig) -> ExportResult:
             "refusing to snapshot a registry that is being replaced"
         )
     config.root.mkdir(parents=True, exist_ok=True)
-    # Dropped first so a failed snapshot never leaves a graph that predates the new registry.
-    (config.root / GRAPH_FILE).unlink(missing_ok=True)
+    for stale in config.root.glob(".staging-*"):
+        shutil.rmtree(stale, ignore_errors=True)
     # Staged beside the targets (same filesystem, so the renames are atomic); the directory
     # also takes the SQLite sidecars the checks below leave behind.
     with tempfile.TemporaryDirectory(dir=config.root, prefix=".staging-") as staging_dir:
@@ -407,6 +416,9 @@ def run_export(config: ExportConfig) -> ExportResult:
         write_episodes(staging, episodes)
         counts = status_counts(staging)
         os.replace(episodes, config.root / EPISODES_FILE)
+        # Dropped only now, so a failed registry snapshot leaves the previous pair intact and a
+        # failed graph snapshot never leaves a graph that predates the new registry.
+        (config.root / GRAPH_FILE).unlink(missing_ok=True)
         os.replace(staging, config.root / REGISTRY_FILE)
     graph_error: str | None = None
     if config.graph_dir is not None:
@@ -461,8 +473,11 @@ def verify_export(directory: Path | str) -> VerifiedExport:
     try:
         schema = schema_version(registry)
         counts = status_counts(registry)
+        integrity = integrity_check(registry)
     except sqlite3.Error as exc:
         raise ExportInvalid(f"{REGISTRY_FILE} is not a readable registry: {exc}") from exc
+    if integrity != "ok":
+        raise ExportInvalid(f"{REGISTRY_FILE} fails PRAGMA integrity_check: {integrity}")
     if schema != SCHEMA_VERSION:
         word = "newer" if schema > SCHEMA_VERSION else "older"
         raise ExportInvalid(
@@ -590,11 +605,24 @@ def _park_registry(registry_path: Path, snapshot: str) -> tuple[Path, ...]:
     return tuple(parked)
 
 
+def _stage_copy(source: Path, staging: Path) -> None:
+    """Copy into a fresh file, never through a symlink planted in the memory-owned directory.
+
+    Root runs this inside directories the `memory` user can write: the old name is
+    unlinked (a symlink is removed, not followed) and the new one is created
+    exclusively without following links.
+    """
+    staging.unlink(missing_ok=True)
+    descriptor = os.open(staging, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "wb") as out, source.open("rb") as handle:
+        shutil.copyfileobj(handle, out)
+
+
 def _install(source: Path, target: Path, *, owner: str | None) -> None:
     """Stage the copy, hand it to its owner, then replace in one rename."""
     target.parent.mkdir(parents=True, exist_ok=True)
     staging = target.with_name(target.name + ".restore-tmp")
-    shutil.copyfile(source, staging)
+    _stage_copy(source, staging)
     try:
         _fix_owner(staging, owner)
         os.replace(staging, target)

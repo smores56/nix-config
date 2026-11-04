@@ -366,6 +366,28 @@ class ExportTests(unittest.TestCase):
             self.assertTrue(result.graph)
             self.assertEqual((result.directory / "graph.rdb").read_bytes(), b"RDBfake")
 
+    def test_a_failed_registry_snapshot_leaves_the_previous_pair_intact(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = export_with_graph(root, [make_entry(1)])
+            before = (first.directory / "registry.sqlite").read_bytes()
+            with sqlite3.connect(root / "state" / "registry.sqlite") as conn:
+                conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION + 1}")
+            with self.assertRaises(ExportError):
+                run_export(ExportConfig(root=first.directory, state_dir=root / "state"))
+            self.assertEqual((first.directory / "registry.sqlite").read_bytes(), before)
+            self.assertEqual((first.directory / "graph.rdb").read_bytes(), b"RDBfake")
+
+    def test_stale_staging_directories_are_removed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = state_with(root, [make_entry(1)])
+            stale = root / "exports" / ".staging-crashed"
+            stale.mkdir(parents=True)
+            (stale / "registry.sqlite").write_bytes(b"half")
+            run_export(ExportConfig(root=root / "exports", state_dir=state))
+            self.assertFalse(stale.exists())
+
     def test_unversioned_registry_is_refused_by_export(self):
         with tempfile.TemporaryDirectory() as directory:
             state = Path(directory) / "state"
@@ -458,6 +480,39 @@ class RestoreTests(unittest.TestCase):
             with self.assertRaises(ExportInvalid):
                 self.restore(result.directory, root)
             self.assertFalse((root / "restored").exists())
+
+    def test_a_registry_that_fails_the_integrity_check_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = self.export(root, [make_entry(1)])
+            db = result.directory / "registry.sqlite"
+            with sqlite3.connect(db) as conn:
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            # Dropping an index's schema row leaves its pages orphaned: queries still
+            # work, only the integrity check notices.
+            conn = sqlite3.connect(db)
+            conn.execute("PRAGMA writable_schema = ON")
+            conn.execute("DELETE FROM sqlite_master WHERE type = 'index' AND name = 'episodes_queue'")
+            conn.commit()
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            conn.close()
+            with self.assertRaises(ExportInvalid) as caught:
+                self.restore(result.directory, root)
+            self.assertIn("integrity", str(caught.exception))
+            self.assertFalse((root / "restored").exists())
+
+    def test_a_planted_symlink_is_not_followed_when_staging_the_graph(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = export_with_graph(root, [make_entry(1)])
+            victim = root / "victim"
+            victim.write_text("keep")
+            (root / "graph").mkdir()
+            (root / "graph" / "dump.rdb.restore-tmp").symlink_to(victim)
+            self.restore(result.directory, root)
+            self.assertEqual(victim.read_text(), "keep")
+            self.assertEqual((root / "graph" / "dump.rdb").read_bytes(), b"RDBfake")
+            self.assertFalse((root / "graph" / "dump.rdb").is_symlink())
 
     def test_other_schema_versions_are_refused(self):
         for version, word in ((SCHEMA_VERSION + 1, "newer"), (SCHEMA_VERSION - 1, "older")):

@@ -402,6 +402,11 @@ in
       # No dependency on the wrapper: exporting while services are down is the point.
       # `after` only orders runs in one transaction.
       after = [ "memory-mcp.service" ];
+      # A restic run that starts mid-export must wait, so a snapshot never captures a half-written set.
+      before = [
+        "restic-backups-r2.service"
+        "restic-backups-local.service"
+      ];
       unitConfig = {
         StartLimitIntervalSec = "1h";
         StartLimitBurst = 3;
