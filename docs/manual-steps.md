@@ -49,36 +49,20 @@ generated hardware config, then run `nix run .#bootstrap`.
   when it is absent.
 - **Host key**: `/etc/ssh/ssh_host_ed25519_key` is the age recipient that
   decrypts the host's sops file. Losing it means restoring the key or re-keying
-  (see Recovery in `README.md`).
+  (see [Recovery](#recovery)).
 - **Out-of-band access**: the physical console. There is no inbound SSH port;
   SSH is tunnel-only.
-- **Maki sandbox**: `m` runs Maki through `agent-sandbox` (bubblewrap). The
-  authoritative bind list is `homeRw`/`homeRo`/`configAllow`/`secretBind` in
-  `modules/lib/agent-sandbox.nix`; it is wider than the identity dirs —
-  `~/code`, `~/dev`, `~/Documents`, `~/Downloads`, `~/.cache`, the
-  cargo/npm/bun caches and the `/var/lib/data` trees `music` and `books` are
-  read-write, the nine allowlisted config dirs are read-only copies, and
-  `~/.cache/.bun/bin` is read-only inside its writable parent — and
-  the secret allowlist is the personal bundle plus the shared service keys: the
-  personal PAT and signing key, Neuralwatt, TinyFish, the Immich key and the
-  memory MCP token, plus the Cloudflare Access service token where the host has
-  one. The work account has no `secretBind` entry at all: its PAT and signing
-  key exist only on the work Mac and reach that boundary as the resolved files
-  under `~/.local/share/github`. `~/.ssh`,
-  `~/.config/{ssh-sk,sops}`, the PIV/sudo agent, and every other
-  secret are absent; no agent socket is forwarded in. `/var/lib/data/photos` is
-  masked by a tmpfs applied after every bind, so it reads empty and is not
-  writable even though the media trees as a whole are.
-- **Maki signing**: commits made inside the sandbox sign with the same sops key
-  the host uses for that repo's owner (`user.signingkey`, `gpg.format=ssh`):
-  the personal key is bound at its `/run/secrets` path on Linux, and on the work
-  Mac the sandbox reads the resolved files behind `~/.local/share/github`. The
-  sandbox git config sets `commit.gpgsign = true`, so signing is the default.
-  `commit.gpgsign` is config, not enforcement: a deliberate
-  `git commit --no-gpg-sign` still produces an unsigned commit, which the review
-  or PR checks catch.
+- **Maki sandbox**: `m` runs Maki through `agent-sandbox`; the bind and secret
+  lists are `homeRw`/`homeRo`/`configAllow`/`secretBind` in
+  `modules/lib/agent-sandbox.nix`. `~/.ssh`, `~/.config/{ssh-sk,sops}`, the
+  PIV/sudo agent and every secret not on the allowlist are absent, and
+  `/var/lib/data/photos` is masked by a tmpfs. See [Agent sandbox](#agent-sandbox).
+- **Maki signing**: commits inside the sandbox sign with the sops key for the
+  repo owner's account (`user.signingkey`, `gpg.format=ssh`) and
+  `commit.gpgsign = true`. That is config, not enforcement: `--no-gpg-sign`
+  still produces an unsigned commit, which review or PR checks catch.
 
-#### Encrypted root and Secure Boot (T2)
+#### Encrypted root and Secure Boot
 
 The 980 PRO is the final LUKS2 root. `/dev/disk/by-partlabel/root` is the
 header, `/dev/mapper/root` is ext4. The **passphrase slot stays** and is the
@@ -304,9 +288,6 @@ Login and unlock attempt a factor only when it can succeed:
   matching certificate, a locked PIV, or pcscd down) falls through to the
   password; a wrong PIN or non-PIN text denies, so a typed password never
   reaches the card and never burns a retry.
-- **Measured on smorespro (2026-10-30):** lid-closed login 65 ms; lid-open
-  5.39 s (the fingerprint wait); successful password 53 ms; failed attempt
-  1.7–2.7 s.
 
 The gates are `pam_exec` probes built with `pkgs.writeShellApplication` (store
 paths that own their `PATH`). `pam_exec` passes an **empty** environment, so a
@@ -314,11 +295,6 @@ bare command exits 127 and the gate silently no-ops. The card probe is a build
 input because a missing one runs `pam_p11` and its `default=die` would lock out
 the password entirely. `pam-auth-gates` pins both full stacks and asserts
 `sudo`/`su`/`polkit-1` carry no `p11`/`fprintd`/`exec`.
-
-Noctalia's `passwordSent` guard landed in **v5.3.0** (PR #4294), not 5.4.1. The
-strict stack never issues a second prompt, so the guard is unreachable and the
-shell is no longer pinned for auth reasons; a shell upgrade is a separate
-change.
 
 The greeter does not rate-limit PIV attempts: anyone at the unlocked-room
 greeter can burn the eight-try budget. A locked PIN now falls back to the
@@ -363,7 +339,7 @@ on the LAN, or a Secure-Boot-off boot cannot unseal the TPM share; a thief who
 takes the server and the Pi together decrypts. Keep the Pi patched, on the LAN
 only, and never forward the Tang port through Cloudflare or the router.
 
-Current server, recorded 2026-10-29:
+Current server:
 
 ```
 Address:     10.0.0.193/24 on wlan0 (DHCP reservation for b8:27:eb:29:b8:4d)
@@ -1005,12 +981,10 @@ start), and restart any agent session that cached the old key.
 
 #### cloudflared-credentials
 
-cloudflared 2026.7.2 has no `rotate-secret` subcommand (`cloudflared tunnel
---help` lists login/create/route/run/list/…/token), so do not script this. The
-dashboard's Refresh token rotates the token of a token-managed tunnel; whether
-it yields a new `TunnelSecret` for this locally-managed tunnel is unverified, so
-recreate the tunnel instead — from the console, since the tunnel is the only
-path to the host. `AccountTag` stays (it is the Cloudflare account); `TunnelID`
+cloudflared has no `rotate-secret` subcommand, and the dashboard's Refresh token
+is not known to reissue a `TunnelSecret` for this locally-managed tunnel, so
+recreate the tunnel — from the console, since the tunnel is the only path to
+the host. `AccountTag` stays (it is the Cloudflare account); `TunnelID`
 and `TunnelSecret` change:
 
 1. Create the tunnel in Zero Trust → Networks → Tunnels (dashboard: Networking
@@ -1169,11 +1143,6 @@ sudo restic-local check --read-data-subset=2%
 rm -rf /var/tmp/restore-r2 /var/tmp/restore-local
 ```
 
-Both repos passed this drill on 2026-11-02: the `--include /var/lib/data/wallpapers`
-restore held 363 files (2.4 GiB) and every sampled hash was identical to the
-live tree. That is the wallpapers include, not the whole snapshot; the 2%
-`--read-data-subset` check over each repo is what covers the rest of the packs.
-
 Restoring the Immich database from the same snapshot:
 
 ```sh
@@ -1186,25 +1155,23 @@ sudo -u postgres pg_restore --no-owner -d immich_restore \
 
 ### Encrypted backup disk
 
-`/var/backup` on smortress is the 4.5T HDD (`ata-ST5000LM000-2AN170_WCJ42WX0`).
-It is LUKS-encrypted: opened at boot from `/etc/crypttab` with a root-only
-keyfile on the encrypted root (so boot stays unattended), with a LUKS passphrase
-slot as the recovery path if the root is ever lost. The option is
-`backup.luks` in [`modules/nixos/backup.nix`](../modules/nixos/backup.nix);
-smortress turns it on in `modules/hosts/smortress/default.nix` together with
-`backup.device = "/dev/mapper/backup"`.
+`/var/backup` on smortress is the 4.5T HDD (`ata-ST5000LM000-2AN170_WCJ42WX0`),
+LUKS-encrypted: opened at boot from `/etc/crypttab` with a root-only keyfile on
+the encrypted root (so boot stays unattended), with a passphrase slot as the
+recovery path if the root is lost. The option is `backup.luks` in
+[`modules/nixos/backup.nix`](../modules/nixos/backup.nix); smortress enables it
+in `modules/hosts/smortress/default.nix` with `backup.device =
+"/dev/mapper/backup"`.
 
-Formatting destroys everything on the disk. The R2 repo is the safety net, and
-the local repo is derived: every byte in it comes from `/var/lib/data`, so the
-recovery path is a fresh seed from the live sources or a restore from R2, never
-a copy of the old disk. Do it in this order:
+The local repo is derived from `/var/lib/data`, so reformatting loses nothing
+the R2 repo and the live tree do not hold. Formatting destroys the disk:
 
 ```sh
 # 1. Prove the offsite repo first: snapshots exist and a sample reads clean.
 sudo restic-r2 snapshots | head
 sudo restic-r2 check --read-data-subset=2%
 
-# 2. Stop the timers, then unmount the plain ext4 disk.
+# 2. Stop the timers and unmount.
 sudo systemctl stop restic-backups-r2.timer restic-backups-local.timer
 sudo umount /var/backup
 
@@ -1220,22 +1187,15 @@ sudo mkfs.ext4 -L backup /dev/mapper/backup
 sudo mount /dev/mapper/backup /var/backup
 ```
 
-Then enable `backup.luks` and `backup.device = "/dev/mapper/backup"` in
-`modules/hosts/smortress/default.nix`, rebuild, and reboot: `/etc/crypttab` opens
-the disk from the keyfile before the mount, `nofail` keeps a missing keyfile
-from blocking boot, and the local unit (which declares `RequiresMountsFor`)
-fails loudly instead of writing to the root filesystem.
-
-The local repo is created on the next run (`initialize = true`), so nothing has
-to be restored into it. After the reboot, seed it and start the timers:
+Rebuild and reboot: `/etc/crypttab` opens the disk before the mount, `nofail`
+keeps a missing keyfile from blocking boot, and the local unit
+(`RequiresMountsFor`) fails loudly instead of writing to the root filesystem.
+Seed the local repo (created on its next run) and check it:
 
 ```sh
 sudo systemctl start restic-backups-local.service
 sudo restic-local snapshots
 ```
-
-Rotate the Cloudflare API token and tunnel credentials in the same session (see
-the rotation checklist above), since they sat on the plaintext disk.
 
 ## Syncthing and the vault
 
@@ -1340,8 +1300,7 @@ Nix: `/nix/store` is read-only, and so is `/nix/var/nix` whenever a daemon
 socket exists, so `nix` resolves to the daemon instead of a local store. A local
 store would take its lock files inside the read-only store and fail; the state
 dir bwrap creates is writable, which is exactly what makes `store = auto` choose
-it. The socket was always reachable, so this only makes the daemon the default:
-agent builds run in the daemon's sandbox as `nixbld`
+it. Agent builds run in the daemon's sandbox as `nixbld`
 (`nix.settings.build-users-group` in `modules/nixos/base.nix`) and the paths
 they add persist in the host store.
 
@@ -1361,12 +1320,19 @@ the only reliable hardening.
 Photos: the agent talks to Immich over its API rather than touching
 `/var/lib/data/photos`, using `secret/immich-agent-api-key` (below).
 
-Work Mac: create the Keychain item `maki-openai-api-key`; the host-side
-launcher reads it before entering the sandbox because `securityd` is denied
-inside. GitHub needs no Keychain item: the sandbox reads each account's sops
+Work Mac: maki is OpenAI-only there (`aiProfile = "work"`). Store the key once,
+then drop any OAuth login, which maki would prefer over the key:
+
+```sh
+security add-generic-password -U -a "$USER" -s maki-openai-api-key -w
+maki auth logout openai
+```
+
+The host-side launcher reads the item before entering the sandbox (`securityd`
+is denied inside) and injects `OPENAI_API_KEY`; plain `maki` outside the sandbox
+does not get it. GitHub needs no Keychain item: the sandbox reads each account's sops
 PAT and signing key through `~/.local/share/github`, selected by the target
-repository's owner, so delete any old `maki-github-pat` item with
-`security delete-generic-password -s maki-github-pat`. The Seatbelt profile allows those files'
+repository's owner, so no PAT item is needed. The Seatbelt profile allows those files'
 resolved paths as they are at launch, so relaunch a long-running sandbox after
 sops-nix re-decrypts (a `home-manager switch` that changes secrets, or the
 `launchctl kickstart` below).
@@ -1426,421 +1392,177 @@ call it unattended. `api_key = "none"`; the tunnel and Access are the boundary.
 
 <!-- manual-step: service/smortress/memory -->
 
-`memory.sammohr.dev` → the loopback memory wrapper (`ports.memoryMcp`), TCP to
-the server's loopback, with the same service-auth policy. The wrapper derives
-nothing itself: it validates the group header the Maki shim sends, refuses work
-groups, enforces a 60s deadline per tool call, and is the only tunnel target.
-MCP tool calls are authenticated by Access alone. Raw Graphiti runs on an
-internal loopback port in `modules/nixos/memory.nix` and is never tunneled. The
-wrapper owns the typed registry, verifies queued writes against FalkorDB, and
-exposes `/internal/episodes` and `/internal/lookup` for `memory ingest`.
+`memory.sammohr.dev` is TCP to the loopback memory wrapper (`ports.memoryMcp`),
+behind the same service-auth policy as `llm`. The wrapper validates the group
+header the Maki shim sends, refuses work groups, enforces a 60 s deadline per
+tool call, and is the only tunnel target. It owns the typed registry
+(`/var/lib/memory/registry.sqlite`, schema version in `PRAGMA user_version`;
+one version behind is migrated on open, unversioned or newer is refused),
+verifies queued writes against FalkorDB, and serves `/internal/episodes` and
+`/internal/lookup` for `memory ingest`. Raw Graphiti runs on an internal
+loopback port (`modules/nixos/memory.nix`) and is never tunneled.
 
-Those two ingest routes carry a second gate. The tunnel is a raw TCP forward,
-so the wrapper sees `127.0.0.1` as the peer for every tunneled request and the
-loopback check can never tell a tunneled client from a local one. At startup
-the wrapper mints a random token into `/var/lib/memory/internal.token`
-(mode 0640, owned by the `memory` service group) and requires
-`Authorization: Bearer <token>` on both routes; the loopback check stays as
-defence in depth. `memory ingest` reads the same file, so the human user must
-be in the `memory` group — `modules/nixos/memory.nix` adds
-`users.users.<machine.username>.extraGroups` on any host that imports it, and
-the membership only applies after `just switch smortress` **and** a fresh login
-session (or `newgrp memory`). `MEMORY_INTERNAL_TOKEN_FILE` overrides the path,
-which matters only for a deliberate run from another host: the token is
-regenerated on every wrapper start, so a copied file goes stale.
-`/internal/lookup` takes at most 10,000 hashes and both routes reject bodies
-over 1 MB.
+The two `/internal/*` routes require `Authorization: Bearer <token>` from
+`/var/lib/memory/internal.token` (0640, group `memory`), because tunneled
+requests also arrive from `127.0.0.1`. The wrapper regenerates the token at
+every start, so a copied file goes stale; `MEMORY_INTERNAL_TOKEN_FILE`
+overrides the path. The module adds the operator to the `memory` group, which
+applies after `just switch smortress` and a fresh login (or `newgrp memory`).
+`/internal/lookup` takes at most 10,000 hashes; request bodies over 1 MB are
+rejected.
 
-The FalkorDB and Graphiti containers run rootless as the `memory` user (uid
-982, subuid/subgid range 200000-265535). The rootless image store lives under
-`/var/lib/memory/.local/share/containers`; do not add it to backups. After
-`memory restore`, the graph directory and snapshot are owned by `memory`,
-matching the rootless container. Check the listener with
-`ss -ltnp 'sport = :6379'` (must be 127.0.0.1) and
+FalkorDB and Graphiti run as rootless podman containers under the `memory` user
+(uid 982). The image store under `/var/lib/memory/.local/share/containers` is
+not backed up. Check with `ss -ltnp 'sport = :6379'` (must be 127.0.0.1) and
 `sudo -u memory XDG_RUNTIME_DIR=/run/user/982 podman ps`.
 
-Graphiti extracts through `memory-llm-proxy` on `127.0.0.1:8082`, which is
-Memory's single egress point to Neuralwatt (`api.neuralwatt.com`). The gateway
-holds the account key — read from the `neuralwatt-api-key` sops secret through a
-systemd credential, never from the environment or the Nix store — injects
-`Authorization: Bearer …` to the upstream request (Graphiti's required
-`api_key: "none"` placeholder is replaced; a real client-supplied token is
-forwarded untouched), and adds
-`reasoning_effort: "none"` to chat completions. A reasoning model otherwise
-spends its whole token budget thinking and returns empty content, which
-Graphiti drops. Graphiti itself runs with `api_key: "none"`.
+**Extraction gateway.** Graphiti extracts through `memory-llm-proxy` on
+`127.0.0.1:8082`, the single egress to Neuralwatt. It reads `neuralwatt-api-key`
+through a systemd credential, adds the bearer header and
+`reasoning_effort: "none"` (a reasoning model otherwise spends its token budget
+thinking and returns empty content), and retries 429/503 up to
+`MEMORY_UPSTREAM_RETRIES`, honouring `Retry-After`. Rotating the key is a sops
+edit plus rebuild; the secret's `restartUnits` restarts the gateway.
 
-Episode text goes to Neuralwatt by design; the work-group refusal runs before
-any write, so employer content never reaches it. Rotating the key is: update the
-sops secret and rebuild — `sops.secrets.neuralwatt-api-key` restarts
-the gateway, which reads the credential once at start. A **missing** credential
-makes `LoadCredential` fail, so the gateway never starts and the wrapper's
-`preStart` (which waits on the gateway) fails with it: reads stop too. An
-**empty** credential lets the unit start; every proxied request then returns
-503 `configuration_error` while `/health` still answers. A real client-supplied
-token is forwarded untouched only when the gateway has a key — without one the
-503 is returned before headers are inspected.
+- A missing credential keeps the gateway from starting, which also fails the
+  wrapper's `preStart`; an empty one starts it but every proxied request returns
+  503 `configuration_error` while `/health` still answers. `/health` only proves
+  the process is alive: probe `/v1/models` for upstream access.
+- The listener is loopback-only and unauthenticated, so the host's user
+  boundary is the billing boundary.
+- The tier allows three concurrent upstream slots: two for memory
+  (`MEMORY_UPSTREAM_CONCURRENCY=2`, matching Graphiti's `SEMAPHORE_LIMIT=2`) and
+  one for Maki. If 429s reappear, lower both before anything else.
+- A gateway outage does not fail a write: Graphiti answers 200 and extracts from
+  an in-memory queue, so the registry row stays `pending` with no graph episode
+  (`journalctl -u memory-graphiti-mcp`). The reconciler replays it after
+  `MEMORY_RECONCILE_GRACE` (12 h, long enough that a draining backlog is not
+  resubmitted as duplicates); to test, set it to `300` in a drop-in under
+  `/run/systemd/system/memory-mcp.service.d/`, `daemon-reload`, restart.
 
-The listener is loopback-only and never tunneled, but it is **unauthenticated by
-design**: any local process that can reach `127.0.0.1:8082` can spend the
-Neuralwatt account through it. Treat the host's user boundary as the billing
-boundary. Its `/health` only proves the gateway process is alive; check upstream
-access through the proxied `/v1/models`. Request bodies over 10 MB are rejected,
-and an upstream read stall is a 504.
+**Embedder.** smortress sets `memory.embedder = "neuralwatt"`: `qwen3-embedding-8b`
+(4096-d) through the same gateway. `"local"` selects bge-m3 on `llama-cpp-embed`
+(`127.0.0.1:8183`, 1024-d), which stays deployed either way. Changing it changes
+the vector width, so wipe and re-ingest (see *Rebuilding the store*).
 
-The tier math is three concurrent upstream slots: two for memory
-(`MEMORY_UPSTREAM_CONCURRENCY=2`, mirrored by Graphiti's
-`SEMAPHORE_LIMIT=2`) and one left for Maki's own chat on the same key. The
-gateway's permit is held for the whole upstream request, streamed body
-included, so it — not Graphiti's semaphore — is the real ceiling, and
-oversubscribing only trades throughput for 429s: four in-flight episodes once
-earned 944 429s out of 2,270 requests in 20 minutes while a 1,382-episode
-backfill starved. A 429 or 503 is a rejection (the request never ran), so the
-gateway retries those two — `MEMORY_UPSTREAM_RETRIES=6` attempts, honouring
-`Retry-After` (seconds or HTTP-date, capped at 60 s) and otherwise backing off
-exponentially with jitter — and returns the upstream 429/503 unchanged once
-attempts run out. Nothing else is retried, and nothing is retried after a
-response body has started. Because a queue that large drains over hours, the
-wrapper's `MEMORY_RECONCILE_GRACE` is 12 hours: a shorter grace marked
-still-queued writes failed and resubmitted them as duplicates. If 429s appear
-again, lower `MEMORY_UPSTREAM_CONCURRENCY` (and `SEMAPHORE_LIMIT` with it)
-before anything else.
+**Clients.** Personal hosts run `cloudflared-memory`, which forwards loopback
+`ports.memoryMcp` with the Access service token. Maki's `~/.config/maki/mcp.toml`
+starts `memory-mcp-shim` (server `graphiti`), which derives the project group
+from Maki's cwd once at start: restart Maki after changing directories or
+`mcp.toml` (`/cd` does not restart stdio children). The same package installs
+the `memory` CLI.
 
-A gateway outage is not a submission error. Graphiti answers `add_memory` with
-200 and extracts from an in-memory queue, so a dead gateway leaves a `pending`
-row with no episode in the graph (`Failed to process episode … Connection
-error` in `journalctl -u memory-graphiti-mcp`) and the wrapper never prints its
-"submission was deferred" line; the registry row is the only copy. The grace
-above bounds when the reconciler replays it, so a drill needs a runtime
-override — `MEMORY_RECONCILE_GRACE=300` in
-`/run/systemd/system/memory-mcp.service.d/`, `daemon-reload`, restart — then the
-first pass past the grace resubmits the content and the row goes `active` once
-the episode is verified. Drilled 2026-10-23 with the gateway stopped: the write
-stayed `pending` with zero graph episodes, replayed into exactly one episode
-~20 s after the override restart, was searchable, and a repeat write of the same
-content reported the existing uuid instead of queueing a second extraction.
-
-Embeddings stay local by default: bge-m3 on `llama-cpp-embed` (`127.0.0.1:8183`,
-1024 dimensions). `memory.embedder = "neuralwatt"` sends them through the same
-gateway to `qwen3-embedding-8b` (4096 dimensions); the model is preview-only and
-this account currently gets a 404, so the local service stays deployed either
-way and flipping the switch means re-embedding the corpus at a new width.
-`qwen3-embedding-8b` prefers an `Instruct: …` / `Query:` prefix on queries;
-graphiti-core's OpenAI embedder sends the same text for queries and passages, so
-expect a small retrieval penalty.
-
-Personal machines run `cloudflared-memory`, which forwards loopback
-`ports.memoryMcp` and injects the Access service token. Maki's generated
-`~/.config/maki/mcp.toml` starts `memory-mcp-shim` (server `graphiti`) with
-`MEMORY_MCP_URL` and the work markers from `config.user.work` in its
-environment; the shim derives the project group from Maki's cwd and forwards to
-the wrapper. The same package installs the `memory` CLI, and the personal
-profile exports `MEMORY_PERSONAL_OWNER` from `config.user.githubUser` for its
-ingest defaults.
-
-Maki reads `mcp.toml` once at startup, and the shim derives the group once when
-Maki starts it. Restart Maki after changing `mcp.toml` and after moving to a
-different repository: `/cd` does not restart stdio children, so the group stays
-fixed until Maki restarts.
-
-The wrapper's typed registry (`registry.sqlite`, including the audit table)
-lives in `/var/lib/memory`, owned by the `memory` system user (the FalkorDB
-subdirectory is owned by `memory` as well, so rootless podman can write it).
-The database carries a `PRAGMA user_version`
-schema version. A database one version behind is migrated in place on open
-(`ALTER`/backfill statements in one transaction); an unversioned one, or one
-newer than the code, is refused rather than guessed at. Restoring an export
-taken before a schema bump is therefore fine: it is installed as-is and
-migrated the next time the wrapper starts.
-
-`created_at` is when the memory was written; `queued_at` is when it last
-entered the pending queue (a replay sets it again, a repeat write keeps the
-original `created_at`). The reconciler's grace window, the stale-write window,
-the presence bound and `pending()` order read `queued_at`, so a replay starts
-with a fresh grace instead of inheriting a months-old one.
-
-**Backup.** The registry is the system of record, so its snapshot *is* the
-memory backup: it holds every episode's normalized content and typed
-provenance. The graph is a derived index: it is rebuilt only by re-ingesting
-the corpus into a wiped store (`just memory-rebuild`).
+**Backup.** The registry is the system of record and the graph a derived index.
 `memory-export.timer` runs `memory-export.service` daily (00:00 plus up to an
-hour of randomized delay, `Persistent=true`, as root so it can stop/start the
-services and read the graph directory) and writes one timestamped directory under
-`/var/lib/data/memory-export` (mode 0700, root):
+hour of delay, as root) and writes `/var/lib/data/memory-export/<timestamp>/`
+(0700): `registry.sqlite` (SQLite online backup), `episodes.jsonl` (content and
+provenance), `manifest.json` (schema version, per-status counts, checksums) and,
+when `BGSAVE` finishes, `graph-<timestamp>.rdb`. A failed graph snapshot is
+recorded in the manifest and makes the run exit non-zero without invalidating
+the registry copy. Seven exports are kept; partial directories are never pruned
+or counted. The directory is inside restic's source tree, so both repos carry
+it. Run one now with `just memory-export`; inspect with
+`journalctl -u memory-export.service`.
 
-- `registry.sqlite` — a consistent copy taken with SQLite's online backup API,
-  so the wrapper keeps writing under WAL while it is copied;
-- `episodes.jsonl` — every episode with typed provenance (group, uuid,
-  content_hash, kind, origin, origin_ref, actor, cwd, tags, valid_at,
-  created_at, queued_at, status, graphiti_uuid, promotion and tombstone
-  fields) *and* its
-  content, so memory is readable even without SQLite;
-- `manifest.json` — creation time, `PRAGMA user_version`, per-status counts, and
-  the sha256 of each file;
-- `graph-<timestamp>.rdb` — the FalkorDB snapshot, when `BGSAVE` finished in
-  time. The exporter issues one `BGSAVE` per run and polls `INFO persistence`,
-  accepting `dump.rdb` only once the server's `rdb_last_save_time` has advanced
-  past the value it read before the save; it never touches the AOF. A missing
-  or failed graph snapshot is recorded in the manifest (`graph: null` plus
-  `graph_error`) and the registry export still stands, but the command exits
-  non-zero so the failed timer run is visible (and alerts).
+**Restore.** `sudo memory restore <export-dir>` (or `just memory-restore <dir>`):
 
-Seven directories are kept; retention only deletes names that are export
-timestamps *and* whose `manifest.json` reads, so a partial export (a crashed or
-still-running run) is left for the operator rather than counted as one of the
-kept snapshots, and the directory a run just wrote is never a prune candidate.
-Inspect a run with `journalctl -u memory-export.service`. Take one immediately
-with `just memory-export`. An export refuses to run while a restore holds the
-lock described below.
+1. verifies every manifest checksum, and refuses a schema the installed code
+   cannot open;
+2. stops `memory-mcp`, `memory-graphiti-mcp`, `memory-llm-proxy` and
+   `memory-falkordb` (a running FalkorDB would rewrite its AOF);
+3. parks the live registry as `registry.sqlite.pre-restore-<timestamp>` and
+   installs the export's with an atomic rename, fixing ownership first so a
+   failed `chown` leaves the old registry in place;
+4. restores `graph-<timestamp>.rdb` only when its timestamp equals the
+   registry's: the old `appendonlydir` is renamed to
+   `appendonlydir.pre-restore-<timestamp>` (Redis prefers the AOF) and FalkorDB
+   restarts. Otherwise the graph is refused and the registry restored alone.
 
-**Restore drill.** `sudo memory restore <export-dir>` verifies every manifest
-checksum *first*, refuses a registry schema other than the installed code's
-(a newer one this code cannot read; an older one the wrapper will not open),
-then stops `memory-mcp`, `memory-graphiti-mcp`, `memory-llm-proxy`, and
-`memory-falkordb`. The graph store stops too: a running FalkorDB rewrites its
-AOF, which would resurrect the data the restore is replacing. The live
-`registry.sqlite` and its `-wal`/`-shm` are copied to
-`registry.sqlite.pre-restore-<timestamp>`, the export's registry is installed
-with one atomic rename, and only then are the replaced database's sidecars
-dropped. Ownership (`memory:memory`) is settled on the staged copy *before* the
-rename, so a failed `chown` leaves the previous registry in place, exits
-non-zero, and names the parked copy. Delete the `*.pre-restore-*` registry files
-once the restore checks out.
+Delete the `*.pre-restore-*` files once `GRAPH.LIST` and a search confirm the
+result. Flags: `--dry-run` verifies and prints the plan; `--no-stop` is accepted
+only with `--dry-run`; `--start` starts the services afterwards; `--owner
+user:group` (default `memory:memory`, empty skips). A restore holds
+`<state>/.restore-in-progress` and `memory export` refuses to run while it
+exists; a failed restore leaves it, so remove it after reconciling.
+`tests/memory_export_restore.sh` runs the same procedure against temp
+directories.
 
-The graph is handled after the registry:
+When the graph snapshot is missing or older, `just memory-reindex --all`
+(`memory reindex`) is the replay path: it requeues active rows with no matching
+episode and resubmits a bounded slice immediately; repeat until it reports
+nothing left. `memory-ingest` cannot do this because it skips rows that already
+succeeded. A group that looks almost entirely missing while its graph is not
+empty is refused without `--force`.
 
-- the matching `graph-<timestamp>.rdb` is restored only when its timestamp
-  equals the registry snapshot's. FalkorDB runs with `appendonly yes` and Redis
-  loads the AOF in preference to the RDB, so the restore renames the existing
-  `appendonlydir` to `appendonlydir.pre-restore-<timestamp>` — the old AOF is
-  kept, never deleted, and otherwise the restored snapshot would be silently
-  ignored. It then restarts `memory-falkordb`, because the RDB is only read at
-  startup, and reports `graph: restored` only after that restart. Delete the
-  parked `appendonlydir.pre-restore-*` once `GRAPH.LIST` and a search confirm
-  the graph is the restored one;
-- otherwise it refuses the graph, restores the registry alone, and tells you to
-  restore an export whose graph snapshot matches, or to rebuild **both** stores.
-  A restored registry does not rebuild with `memory-ingest`: it skips rows that
-  already succeeded, so re-ingesting an `active` corpus into an empty graph
-  extracts nothing. `just memory-reindex --all` is the replay path
-  (`memory reindex`): it reads every episode content for a group in one query,
-  requeues the active rows with no matching episode, and resubmits that slice
-  immediately, so extraction starts now rather than after the reconcile grace.
-  It is operator-only, defaults to the caller's group (`--all` for every group),
-  handles a bounded slice per call and is safe to repeat — a row is only
-  requeued when its episode is absent, and requeueing restarts its queue clock
-  so the reconciler waits the grace window for the extraction instead of
-  retrying it into `failed`. A group that looks almost entirely missing while
-  its graph is not empty is refused unless `--force` is passed, because that
-  usually means a wrong graph or a registry from another host. `just memory-rebuild` wipes the FalkorDB data *and* the
-  registry, and only then does `just memory-ingest` rebuild anything
-  (re-extraction of `active` rows is tracked in #219).
-
-`--dry-run` verifies and prints the plan without stopping or writing anything;
-`--no-stop` is accepted only together with `--dry-run`, because a real restore
-always stops the services (swapping files under a running store is how a restore
-corrupts itself); `--start` also starts `memory-llm-proxy`,
-`memory-graphiti-mcp`, and `memory-mcp` after the graph restart; `--owner
-user:group` sets the restored registry's owner (default `memory:memory`, an
-empty value skips it). A restore writes `<state>/.restore-in-progress` for its
-duration, and `memory export` refuses to run while it exists; a failed restore
-leaves it in place, so remove it once the state is reconciled. The subcommand is
-`memory restore` next to `memory export` — not `memory export restore` — and the
-CLI is in the system profile on any host that runs the memory stack, so sudo finds it.
-`just memory-restore <dir>` wraps it.
-
-The drill the check suite runs (`tests/memory_export_restore.sh`) is the same
-procedure against temp directories: a live WAL registry exports consistently, a
-tampered file and a newer schema are refused, retention prunes only its own
-complete directories, a mismatched graph snapshot is rejected in favour of the
-rebuild path, the stop set reaches `memory-falkordb` and the graph restore
-restarts it, a failed ownership step leaves the previous registry in place, and
-an export refuses to run while the restore lock exists. It needs no root, no
-FalkorDB, and no network.
-
-**Offsite.** `/var/lib/data/memory-export` is inside the restic source tree, so
-it lands in both repos (R2 and the local encrypted disk) with the rest of the
-durable tree; the registry and its graph snapshot survive losing smortress.
-Recovery order is: restore the export, then `memory reindex --all` when the
-graph snapshot is missing or older, then confirm with a search.
-
-**Evaluation.** `just memory-eval` runs `modules/features/ai/memory/eval/` against
-the live store: 50 labelled queries (semantic, entity, temporal, exact) scored by
-recall@5 and MRR for the graph-backed `memory search` against an FTS5/bm25 index
-over the same registry rows, then 50 adversarial boundary queries that must
-return no entry from a foreign project group. First measured run (2026-10-23,
-1,385 episodes): recall@5 0.52 / MRR 0.40 against 0.86 / 0.60 for FTS5, mean
-search latency ~4.5 s against ~0.5 ms, and zero foreign-group hits. That run
-exposed a structural miss: the wrapper listed every node before any fact, so
-while the node list was full no fact could reach the top five. The block now
-alternates the two ranked lists; the same 50 queries on the drained corpus
-(1,357 rows) measure recall@5 0.66 / MRR 0.42 against 0.78 / 0.55 for FTS5 at
-mean 4.1 s against 0.7 ms — 40 of 50 answered somewhere in the block, 33 within
-the top five, still zero foreign-group hits. Read both comparisons with care:
-the baseline ranks whole episodes while the graph ranks extracted facts and
-entities against gold strings that are verbatim corpus text, and a gold token
-that merely appears inside an extracted fact sentence counts as a hit for it, so
-fact-heavy positions score generously. Community summaries stay off
-for now: the misses are single-fact lookups, not the multi-hop thematic questions
-summaries help with, and building them costs an extra pass over the corpus.
-
-Search cost on smortress over loopback (same 50 queries): p50 5.2 s, p95 7.9 s,
-max 13.1 s, against ~1 ms for FTS5; a returned block is about 1.2–1.4k tokens,
-inside the 2k budget the design targets. A Maki client adds tunnel latency on
-top of that.
-
-
-
-Activate after changing the wrapper, shim, package, LLM proxy, or export
-unit:
+**Deploy and verify.** After changing the wrapper, shim, package, gateway or
+export unit: `just switch smortress` and `just home-switch smores <host>`. Then
+on smortress:
 
 ```sh
-just switch smortress
-just home-switch smores <personal-host>
-```
-
-Verify on smortress:
-
-```sh
-systemctl status memory-mcp
+systemctl status memory-mcp memory-llm-proxy
 curl 127.0.0.1:8182/health
-systemctl status memory-llm-proxy
-curl 127.0.0.1:8082/v1/models   # proxied to Neuralwatt (needs the credential)
-curl 127.0.0.1:8082/health
-cd ~/code/<repo> && memory status   # group, registry counts, graph/model readiness
-systemctl list-timers 'memory-export*' && journalctl -u memory-export -n 20
+curl 127.0.0.1:8082/v1/models        # proxied to Neuralwatt
+cd ~/code/<repo> && memory status    # group, registry counts, readiness
+systemctl list-timers 'memory-export*'
 ```
 
-**Corpus ingest.** The graph already holds episodes from earlier runs, but the
-registry starts empty: the first ingest after this deploy sees an **empty
-registry against a populated graph** and re-extracts the whole corpus,
-duplicating episodes the graph already holds. That is expected and bounded
-(one hosted extraction call per episode; the new rows become `active` when
-their extraction lands). Reconciling the two stores means wiping both of them
-(`just memory-rebuild`) and re-ingesting; making `memory-ingest` re-extract
-already-`active` rows is tracked in #219. Deploy the gateway before ingesting: until
-`just switch smortress` runs, Graphiti still extracts through the old route and
-drops episodes. Then, on smortress:
-
-```sh
-systemctl status memory-llm-proxy
-curl 127.0.0.1:8082/v1/models        # Neuralwatt answers through the gateway
-redis-cli -p 6379 GRAPH.LIST         # group graphs (read-only peek)
-memory ingest all --dry-run          # plan only; writes nothing
-memory ingest all --limit 5 --dry-run
-memory ingest all --limit 5          # small live sample, then the full run
-```
-
-`memory ingest all` (or `just memory-ingest` for the full corpus) reads the sdlc
-issue list through `gh`, the markdown files under `~/Documents` (recursively),
-and the personal clones in `~/code/github.com/<owner>` plus remote READMEs. Run
-it on smortress, where the corpus lives and the wrapper's loopback is reachable;
-it never talks to Graphiti or FalkorDB directly. Every source runs independently
-under `all`; a source that cannot be read is reported in `source_errors` and in
-`failures` (with `source_id: "*"`) instead of aborting the others.
-
-Each run writes `~/.local/state/memory/ingest-<timestamp>.json` (build/lookup/
-submit counts, failures, and timings) and nothing else: the report is never read
-back. To resume, run the same command again. The client asks the wrapper's
-`/internal/lookup` which content hashes already exist:
-
-- `active` and `pending` rows are skipped. A source that moved to another group
-  looks missing there and is submitted to the new group.
-- `failed` rows are resubmitted, which resets their attempts. Tombstoned rows are
-  left alone until the content is deliberately written again, and the
-  reconciler invalidates any graph episode their extraction produced after the
-  tombstone.
-- Missing episodes are submitted through `/internal/episodes` with explicit
-  `kind` and `valid_at`; the wrapper records them as pending and its reconciler
-  resolves them. A retry is bounded and never overlaps an in-flight submission.
-
-**Maki sessions.** `memory ingest sessions` (and `memory ingest all`, which
-includes the session sample by default) reads Maki's JSONL transcripts from
-`$MAKI_SESSIONS_DIR`, else `$XDG_STATE_HOME/maki/sessions`, else
-`~/.local/share/maki/sessions` and `~/.maki/sessions`, and passes
-`--sessions-dir`/`--session-limit` to override either. The sample is the 50 most
-recently modified session files; each one is bounded to the first and last
-messages within a 24k-character transcript, so a 74 MB session cannot exhaust
-the token budget. Each session is summarized by `deepseek-v4.1-flash`
-(`MEMORY_SUMMARY_MODEL` overrides) at temperature 0 with a JSON-object response
-asking for a prose summary plus explicit decisions, constraints, errors, and
-user preferences; every one of those becomes its own episode, so all of a
-session's episodes share `origin=session` and `origin_ref=<session id>`.
-Session text is personal and leaves this machine for summarization through the
-loopback gateway; only the summary and the extracted items are stored, and a
-session whose cwd is a work checkout is refused before any request is made. A
-session whose cwd does not exist here is refused too, because its work markers
-cannot be checked: a cross-machine session must be ingested where its cwd
-exists. Only the cwd's path components are checked for employer markers; text
-inside a personal checkout is not scanned for employer content.
-
-An unchanged session is not re-summarized. A disposable cache at
-`$MEMORY_SESSIONS_CACHE` (default `~/.local/state/memory/sessions.json`) is
-keyed by session id plus the bounded transcript's SHA-256, so a repeated run
-reuses the earlier summary and cannot paraphrase the same session into a second
-episode; a changed transcript is summarized again. The cache is not a ledger:
-the registry still decides duplicates, and the file can be deleted at any time.
-`--limit` bounds episodes per source but not sessions; `--session-limit` bounds
-the sample, so `memory ingest all` spends about that many summary calls.
-
-The summary call runs from the operator's shell, not from a unit, so it reaches
-the gateway at `MEMORY_LLM_URL` (default `http://127.0.0.1:8082`) and needs no
-Neuralwatt key. Per-session wall time, prompt/completion `usage` tokens, and an
-estimated cost live under `sessions` in the run report; the prices are
-`MEMORY_SUMMARY_PRICE_IN`/`MEMORY_SUMMARY_PRICE_OUT` (USD per million, default
-0.15/0.60), and the summary line is printed on stderr. A missing `usage` block
-reports `cost unknown` rather than $0, and retries accumulate tokens because
-every paid attempt counts. `--session-concurrency`
-(default 3) bounds simultaneous summary calls, and `--dry-run` parses and
-estimates tokens without calling the model; a live run prints the sampled count
-and its token/cost estimate to stderr before the first call.
-
-Extraction is one hosted chat call per episode, so a full corpus takes hours.
-`--concurrency` (default 4) bounds simultaneous submissions; the wrapper's
-reconciler verifies them in the background. For a long run, start it in a
-transient user unit:
-
-```sh
-systemd-run --user --unit memory-ingest --collect --setenv=MEMORY_MCP_URL=http://127.0.0.1:8182/mcp \
-  -- memory ingest all
-systemctl --user status memory-ingest
-journalctl --user -u memory-ingest -f
-```
-
-The tunnel ingress and Access application are unchanged by this step. For a
-first deployment, apply the Memory Access application **before** rebuilding
-smortress:
+For a first deployment, apply the Access application before rebuilding so it is
+in place when the hostname starts routing:
 
 ```sh
 sudo nix run .#cloudflare-apply
 just switch smortress
 ```
 
-The wildcard CNAME already exists, so the rebuild adds the ingress; applying
-tofu first means Access is in place the moment the hostname starts routing.
-The email policy is inert for this TCP endpoint (service tokens only).
+**Corpus ingest.** Run on smortress, where the corpus and the wrapper's
+loopback live: `memory ingest {sdlc,notes,docs,sessions,all}` (`just
+memory-ingest` runs `all`). It reads sdlc issues through `gh`, markdown under
+`~/Documents` (group `global`), personal clones under
+`~/code/github.com/<owner>` plus remote READMEs, and Maki sessions. Work-owned
+labels and work clones are refused before anything is sent. Plan first:
+
+```sh
+memory ingest all --dry-run
+memory ingest all --limit 5          # small live sample, then the full run
+systemd-run --user --unit memory-ingest --collect \
+  --setenv=MEMORY_MCP_URL=http://127.0.0.1:8182/mcp -- memory ingest all
+```
+
+Extraction is one hosted call per episode, so a full corpus takes hours. The
+registry decides duplicates: `active` and `pending` hashes are skipped,
+`failed` ones are resubmitted, tombstoned ones stay untouched. To resume, run the
+same command again. A report lands in `~/.local/state/memory/ingest-<timestamp>.json`
+and is never read back. `--concurrency` (default 4) bounds submissions.
+
+Maki sessions come from `$MAKI_SESSIONS_DIR`, else `$XDG_STATE_HOME/maki/sessions`,
+`~/.local/share/maki/sessions`, `~/.maki/sessions`. The 50 most recent
+(`--session-limit`) are summarized by `deepseek-v4.1-flash`
+(`MEMORY_SUMMARY_MODEL`) through the gateway at `MEMORY_LLM_URL`; only summaries
+and extracted items are stored. A session whose cwd is a work checkout, or does
+not exist on this host, is refused. Summaries are cached by session id plus
+transcript hash in `$MEMORY_SESSIONS_CACHE` (default
+`~/.local/state/memory/sessions.json`; safe to delete). The report estimates cost
+from `MEMORY_SUMMARY_PRICE_IN`/`_OUT` (USD per million); a missing `usage` block
+reports `unknown`. `--session-concurrency` defaults to 3.
+
+**Evaluation.** `just memory-eval` runs `modules/features/ai/memory/eval/`
+against the live store: 50 labelled queries scored by recall@5 and MRR against
+an FTS5 baseline, plus 50 adversarial queries that must return nothing from a
+foreign project group.
 
 ### Rebuilding the store
 
-The registry is authoritative and the graph is derived, so a rebuild is: stop
-the memory services, delete the graph data and the registry, start them again,
-and re-ingest. It is the only destructive memory operation, and it also changes
-the vector width when `memory.embedder` changes.
+The only destructive memory operation, and required after a `memory.embedder`
+change. Take an export first (`just memory-export`): the registry is the system
+of record and the wipe deletes it.
 
 ```sh
-just switch smortress     # applies the embedder choice (qwen3, 4096-d)
-just memory-rebuild       # stop, wipe, start (sudo)
+just switch smortress     # applies the embedder choice
+just memory-rebuild       # stop, wipe falkordb data, registry and token, start (sudo)
 just memory-ingest        # re-extract the corpus; hours, run in a user unit
 ```
 
-`just memory-rebuild` removes `/var/lib/memory/falkordb/*`, `registry.sqlite*`
-and the internal token (regenerated at start).
-The first `memory ingest all` then treats every planned hash as missing and
-re-embeds the corpus at the new width. Do not run it while anything else is
-writing memory. Since #223 there is an export to fall back on: take one with
-`just memory-export` (or restore the newest with `just memory-restore <dir>`)
-before wiping, because a rebuild that goes wrong otherwise loses the registry,
-which is the system of record.
+Do not run it while anything else writes memory.
 
 ### smortress/chat
 
@@ -1941,6 +1663,51 @@ rate-limit ruleset (`dav_rate_limit` in `tofu/main.tf`) is managed by
 Navidrome at `https://music.sammohr.dev/`, public with its own auth and under
 the same per-IP rate limit as `dav`. Create the first account in the web UI; it
 becomes the admin.
+
+## Recovery
+
+smortress has no inbound port, so the physical console is the out-of-band path.
+
+**No SSH from a client.** A client needs the Access service token and an SSH
+identity. The token is delivered per host by sops
+(`/run/secrets/cloudflare-access-ssh-token` on NixOS, the sops-nix user path on
+Darwin); a missing or malformed file makes `cloudflared-access` fail closed with
+the path in the error. The identity is the YubiKey PIV key in the PIV agent
+(`modules/features/piv.nix`). Run `ssh-pub-keys` to write the committed
+`~/.ssh/*.pub` and refresh `~/.ssh/allowed_signers` (every `home-manager switch`
+and bootstrap also run it). Public keys are literals in
+`modules/lib/yubikey-keys.nix`, so a rotation happens there. The work Mac
+permits `~/.ssh/google_compute_engine` as the one exception to the
+private-key check. Rotating the token is a sops edit (`sops secrets/<host>.yaml`)
+plus a switch; the wrapper reads the file on each connection.
+
+**smortress unreachable.** At the console (`<tunnelName>` is
+`webProxy.tunnelName`):
+
+```sh
+systemctl status cloudflared-tunnel-<tunnelName>
+sudo systemctl restart cloudflared-tunnel-<tunnelName>
+```
+
+If the host will not boot, reinstall: `nix run .#install -- <hostname> root@<ip>`
+(see the `install` app), then run `bootstrap`.
+
+**Cloudflare token invalid or rotated.** The running tunnel keeps serving, but
+plan/apply fail. Rotate it (see `cloudflare-api-token`) and check with
+`sudo nix run .#cloudflare-plan`.
+
+**Access misconfiguration.** Clearing `access.enable` on `ssh`/`llm`/`memory`/
+`chat` fails evaluation, and OpenTofu has `prevent_destroy` on those apps and
+policies. A wrong *policy* (e.g. email) still locks out the browser: fix it in
+OpenTofu, or in the dashboard as break-glass.
+
+**sops cannot decrypt on smortress (host key lost).** Its age recipient derives
+from `/etc/ssh/ssh_host_ed25519_key`. From a laptop with the admin identity, add
+the replacement host recipient to `.sops.yaml` and run
+`sops updatekeys secrets/smortress.yaml`.
+
+**Admin key or its passphrase lost.** Recovery is a new identity, not a
+restore; see *Replace the admin identity* under *Admin age key (keys.age)*.
 
 ## Flake apps
 
@@ -2135,7 +1902,7 @@ catch-all is available. Tuta has no IMAP and no server-side SMTP submission: the
 desktop client is the only way to import, search and send, and the phone uses the
 Tuta app.
 
-DNS, all verified on 2026-11-03:
+DNS records:
 
 - `MX 10 mail.tutanota.de`
 - `TXT @ v=spf1 include:spf.tutanota.de -all` and `TXT @ t-verify=…`
@@ -2172,9 +1939,7 @@ The host sends alerts through Cloudflare Email Sending only, from
 own SPF (`cf-bounce.send.sammohr.dev`). Tuta is receive-only for this host.
 
 **Signing check** (after any change to the sops signing keys or the git config):
-`home-manager switch --flake .#smores@smorespro`, then in any personal checkout
-`git log -1 --format=%G?` must print `G`. SDLC #311 closed without this host's
-evidence: smortress, both Mac accounts and the work account covered the same
-sops-key path, but this host's home generation was never re-switched and
-verified. If signing fails here, check `/run/secrets/github-personal-signing-key`
-(mode `0400`, owned by the user) and `~/.config/ssh/allowed_signers` first.
+`home-manager switch --flake .#smores@<host>`, then in any personal checkout
+`git log -1 --format=%G?` must print `G`. If it does not, check
+`/run/secrets/github-personal-signing-key` (mode `0400`, owned by the user) and
+`~/.config/ssh/allowed_signers`.
