@@ -314,6 +314,18 @@ in
               tools = [ pkgs.coreutils ];
               args = [ askpassExe ];
             };
+            piv-ensure = {
+              tools = [
+                pkgs.coreutils
+                pkgs.flock
+                pkgs.gnugrep
+                pkgs.gnused
+              ];
+              args = [
+                "${src}/modules/features/piv-ensure.sh"
+                "${src}/modules/features/piv-askpass.sh"
+              ];
+            };
           }
           // {
             # `vault <cmd>` fails closed: usage, a non-vault directory, a

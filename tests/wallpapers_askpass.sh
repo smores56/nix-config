@@ -22,6 +22,8 @@ export WALLPAPERS_SECURITY=$work/security
 
 out=$("$askpass" "Enter PIN for 'smores k2 ssh': ")
 [ "$out" = "123456" ] || fail "PIN prompt got '$out'"
+out=$("$askpass" "Enter passphrase for PKCS#11: ")
+[ "$out" = "123456" ] || fail "ssh-add PKCS#11 prompt got '$out'"
 
 for prompt in \
   "Are you sure you want to continue connecting (yes/no/[fingerprint])? " \

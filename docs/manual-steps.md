@@ -471,9 +471,11 @@ ClientAliveCountMax 2
   (0600, outside Maki's sandbox, never committed). It is useless from any other
   source address.
 - the three YubiKey PIV 9a public keys from `modules/lib/yubikey-keys.nix`, for
-  the laptops. macOS prompts for the PIV PIN through OpenSC. On Linux the PIV
-  provider is loaded on first use by `yk-ensure` (the `smortress` ProxyCommand);
-  a direct LAN connection runs no proxy, so run `yk-login` once first:
+  the laptops. Over the tunnel both platforms load the PIV provider into an
+  agent on first use from the `smortress` ProxyCommand (`yk-ensure` on Linux,
+  `piv-ensure` with a masked dialog on macOS). A direct LAN connection runs no
+  proxy: on Linux run `yk-login` once first; macOS prompts on the tty through
+  OpenSC:
 
 ```sh
 # Linux laptop
