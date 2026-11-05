@@ -92,7 +92,21 @@ assert lib.all (k: !(niriBindings ? ${k})) [
   "Ctrl+Alt+Delete"
 ];
 
-assert shared.screenshots.niri.Print.action.screenshot == [ ];
+# Bare Print is the whole screen and Ctrl the area on both systems.
+assert shared.screenshots.niri.Print.action.screenshot-screen == [ ];
+assert shared.screenshots.niri."Ctrl+Print".action.screenshot == [ ];
+assert
+  map (s: s.symbolicHotkey) shared.screenshots.macos == [
+    "28"
+    "30"
+    "184"
+  ]
+  &&
+    map (s: lib.elemAt s.parameters 2) shared.screenshots.macos == [
+      8388608
+      8650752
+      8912896
+    ];
 assert
   lib.all (s: s.parameters != [ ]) shared.screenshots.macos
   && lib.length shared.screenshots.macos == 3;

@@ -41,11 +41,11 @@ workspace 1. The `desktop-bindings` check keeps both sides in step.
 ## Print Screen
 
 ZMK `PSCRN` is a keyboard-page Print Screen key, which macOS receives as F13
-on the tested board. Niri binds Print to its interactive screenshot tool,
-Control+Print to screen capture and Alt+Print to window capture; macOS gets F13
-for selected area, Control+F13 for screen and Option+F13 for the capture
-toolbar (macOS has no direct window shortcut). Home Manager adds each missing
-shortcut and leaves an already customized one alone, reporting it during
+on the tested board. The bare key captures the whole screen, Ctrl+ selects an
+area, and Alt/Option+ opens the capture toolbar on macOS (Niri has no capture
+menu, so it captures the focused window instead). Home Manager owns those three
+macOS shortcuts and the Mission Control, Spaces and Desktop 1–9 shortcuts that
+would claim Ctrl+arrows and Ctrl+digits, rewriting only those entries on each
 activation. Change a different keyboard's key in System Settings → Keyboard →
 Keyboard Shortcuts → Screenshots.
 

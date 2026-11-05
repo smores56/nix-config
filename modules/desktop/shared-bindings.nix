@@ -201,33 +201,35 @@ in
     ];
 
   # ZMK PSCRN is the keyboard-page Print Screen usage; macOS mapped the board to F13 (virtual key code 105).
-  # The macOS parameters are [ascii 65535, key code, modifier mask]; 8388608 marks a function key.
+  # The macOS parameters are [ascii 65535, key code, modifier mask]; 8388608 marks a function key,
+  # 262144 adds Control and 524288 Option. Bare is the whole screen, Ctrl an area, Alt/Option the
+  # menu: niri has no capture menu, so window capture stands in for it.
   screenshots = {
     niri = {
-      Print.action.screenshot = [ ];
-      "Ctrl+Print".action.screenshot-screen = [ ];
+      Print.action.screenshot-screen = [ ];
+      "Ctrl+Print".action.screenshot = [ ];
       "Alt+Print".action.screenshot-window = [ ];
     };
     macos = [
-      # area to file
-      {
-        symbolicHotkey = "30";
-        parameters = [
-          65535
-          105
-          8388608
-        ];
-      }
       # screen to file
       {
         symbolicHotkey = "28";
         parameters = [
           65535
           105
+          8388608
+        ];
+      }
+      # area to file
+      {
+        symbolicHotkey = "30";
+        parameters = [
+          65535
+          105
           (8388608 + 262144)
         ];
       }
-      # the capture toolbar, where window capture lives: macOS has no direct window-capture shortcut
+      # the capture toolbar
       {
         symbolicHotkey = "184";
         parameters = [
