@@ -51,6 +51,7 @@ class FakeBackend:
         self.fail_facts = False
         self.delay = 0.0
         self.calls = []
+        self.group_ids = []
         self.status = {"status": "ok", "message": "connected"}
 
     async def _maybe_sleep(self):
@@ -67,6 +68,7 @@ class FakeBackend:
 
     async def search_nodes(self, query, group_ids, max_nodes):
         self.calls.append("search_nodes")
+        self.group_ids.append(list(group_ids))
         await self._maybe_sleep()
         if self.fail or self.fail_nodes:
             raise BackendError("nodes unavailable")
@@ -81,6 +83,7 @@ class FakeBackend:
 
     async def get_episodes(self, group_ids, max_episodes):
         self.calls.append("get_episodes")
+        self.group_ids.append(list(group_ids))
         return self.episodes[:max_episodes]
 
     async def get_status(self):
@@ -154,6 +157,7 @@ def headers(**overrides):
         "x-memory-group": "owner--repo",
         "x-memory-cwd": "/home/smores/code/example",
         "x-memory-actor": "maki",
+        "x-memory-machine": "smorespro",
     }
     values.update(overrides)
     return values
@@ -209,6 +213,7 @@ class WrapperTests(unittest.IsolatedAsyncioTestCase):
             "origin_ref": "",
             "actor": "maki",
             "cwd": "/home/smores/code/example",
+            "machine": "smorespro",
             "tags": (),
             "valid_at": "2026-10-03T00:00:00Z",
             "created_at": "2026-10-03T00:00:00Z",
@@ -364,6 +369,7 @@ class WrapperTests(unittest.IsolatedAsyncioTestCase):
                 "MEMORY_MCP_DEFAULT_GROUP": "global",
                 "MEMORY_MCP_DEFAULT_CWD": "/chat",
                 "MEMORY_MCP_DEFAULT_ACTOR": "open-webui",
+                "MEMORY_MCP_DEFAULT_MACHINE": "smortress",
             },
         ):
             result = await self.call("memory_write", {"content": "from open webui"})
@@ -372,6 +378,8 @@ class WrapperTests(unittest.IsolatedAsyncioTestCase):
         row = self.audit()[-1]
         self.assertEqual(row["group_id"], "global")
         self.assertEqual(row["actor"], "open-webui")
+        digest = content_hash(normalize_content("from open webui"))
+        self.assertEqual(self.registry.lookup("global", digest).machine, "smortress")
 
     async def test_a_partial_header_set_never_falls_back_to_the_defaults(self):
         self.header_values = headers(**{"x-memory-cwd": "relative/path"})
@@ -504,6 +512,129 @@ class WrapperTests(unittest.IsolatedAsyncioTestCase):
         result = await self.call("memory_search", {"query": "modules/nixos/memory.nix"})
         self.assertIn("FTS", result.content[0].text)
         self.assertTrue(json.loads(self.audit()[-1]["details"])["path_like"])
+
+    async def test_search_covers_every_active_group(self):
+        self.seed_entry(content="owner decision")
+        self.seed_entry(
+            content="other project decision", group="other--project", actor="cli", machine="smortress"
+        )
+        digest = content_hash(normalize_content("other project decision"))
+        other = self.registry.lookup("other--project", digest)
+        self.backend.nodes = [
+            {
+                "uuid": "node-other",
+                "name": "Other project note",
+                "group_id": "other--project",
+                "created_at": "2026-02-01T12:00:00Z",
+            }
+        ]
+        self.backend.facts = [
+            {
+                "uuid": "fact-other",
+                "fact": "The other project decided something",
+                "group_id": "other--project",
+                "episodes": [other.graphiti_uuid],
+            }
+        ]
+        result = await self.call("memory_search", {"query": "decision"})
+        text = result.content[0].text
+        self.assertFalse(result.isError)
+        self.assertIn("group=other--project", text)
+        groups = self.backend.group_ids[0]
+        self.assertEqual(groups[0], "owner--repo")
+        self.assertIn("other--project", groups)
+        self.assertIn("global", groups)
+        self.assertIn("cli@smortress", text)
+
+    async def test_search_project_filter_narrows_the_graph_query(self):
+        self.seed_entry(content="other project decision", group="other--project")
+        result = await self.call(
+            "memory_search", {"query": "decision", "project": "other--project"}
+        )
+        self.assertFalse(result.isError)
+        self.assertEqual(self.backend.group_ids[0], ["other--project"])
+        self.assertIn("searched other--project", result.content[0].text)
+
+    async def test_search_refuses_a_work_project_filter(self):
+        result = await self.call(
+            "memory_search", {"query": "x", "project": "blitzy-org--service"}
+        )
+        self.assertTrue(result.isError)
+        self.assertIn("employer", result.content[0].text)
+        self.assertEqual(self.backend.group_ids, [])
+
+    async def test_get_resolves_an_episode_from_another_project(self):
+        entry = self.seed_entry(content="elsewhere", group="other--project")
+        result = await self.call("memory_get", {"ref": entry.uuid})
+        self.assertFalse(result.isError)
+        self.assertIn(f"Memory {entry.uuid} in group other--project", result.content[0].text)
+
+    async def test_write_and_get_expose_the_source_machine(self):
+        await self.call("memory_write", {"content": "machine aware"})
+        digest = content_hash(normalize_content("machine aware"))
+        stored = self.registry.lookup("owner--repo", digest)
+        self.assertEqual(stored.machine, "smorespro")
+        self.assertEqual(stored.actor, "maki")
+        result = await self.call("memory_get", {"ref": stored.uuid})
+        text = result.content[0].text
+        self.assertIn("machine: smorespro", text)
+        self.assertIn("actor: maki", text)
+
+    async def test_search_skips_a_work_group_stored_in_the_registry(self):
+        self.seed_entry(content="employer secret", group="blitzy-org--service")
+        result = await self.call("memory_search", {"query": "secret"})
+        self.assertFalse(result.isError)
+        self.assertNotIn("blitzy-org--service", self.backend.group_ids[0])
+        self.assertNotIn("employer secret", result.content[0].text)
+
+    async def test_a_global_caller_does_not_search_global_twice(self):
+        self.header_values = headers(**{"x-memory-group": "global"})
+        self.seed_entry(content="global note", group="global")
+        result = await self.call("memory_search", {"query": "note"})
+        self.assertFalse(result.isError)
+        self.assertEqual(self.backend.group_ids[0], ["global"])
+        self.assertIn("searched global)", result.content[0].text)
+
+    async def test_tombstone_uses_the_episodes_own_group(self):
+        entry = self.seed_entry(
+            content="foreign",
+            group="other--project",
+            status="active",
+            graphiti_uuid="graph-foreign",
+        )
+        result = await self.call("memory_tombstone", {"ref": entry.uuid})
+        self.assertFalse(result.isError)
+        self.assertEqual(self.graph.tombstoned[0][0], "other--project")
+        self.assertIn("in group other--project", result.content[0].text)
+
+    async def test_retry_resubmits_a_foreign_episode_to_its_own_group(self):
+        entry = self.seed_entry(
+            content="foreign retry", group="other--project", status="failed", last_error="absent"
+        )
+        result = await self.call("memory_retry", {"ref": entry.uuid})
+        self.assertFalse(result.isError)
+        self.assertEqual(self.backend.added[-1]["group_id"], "other--project")
+
+    async def test_get_refuses_a_work_group_row_stored_in_the_registry(self):
+        entry = self.seed_entry(content="employer", group="blitzy-org--service")
+        result = await self.call("memory_get", {"ref": entry.uuid})
+        self.assertTrue(result.isError)
+        self.assertIn("no stored episode", result.content[0].text)
+
+    async def test_promote_records_the_resolved_source_group(self):
+        self.header_values = headers(**{"x-memory-actor": "cli"})
+        entry = self.seed_entry(content="promote foreign", group="other--project", status="active")
+        result = await self.call("memory_promote", {"ref": entry.uuid})
+        self.assertFalse(result.isError)
+        self.assertIn("from other--project to global", result.content[0].text)
+        self.assertTrue(self.registry.is_promoted(entry.uuid, "global"))
+
+    async def test_promote_refuses_a_global_source_even_from_global_callers(self):
+        self.header_values = headers(**{"x-memory-actor": "cli", "x-memory-group": "global"})
+        entry = self.seed_entry(content="global decision", group="global")
+        result = await self.call("memory_promote", {"ref": entry.uuid})
+        self.assertTrue(result.isError)
+        self.assertIn("same", result.content[0].text)
 
     async def test_get_accepts_uuid_hash_prefix_and_origin_ref(self):
         entry = self.seed_entry(origin="sdlc", origin_ref="issue-215#design")

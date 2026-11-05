@@ -1389,11 +1389,14 @@ call it unattended. `api_key = "none"`; the tunnel and Access are the boundary.
 <!-- manual-step: service/smortress/memory -->
 
 `memory.sammohr.dev` is TCP to the loopback memory wrapper (`ports.memoryMcp`),
-behind the same service-auth policy as `llm`. The wrapper validates the group
-header the Maki shim sends, refuses work groups, enforces a 60 s deadline per
-tool call, and is the only tunnel target. It owns the typed registry
-(`/var/lib/memory/registry.sqlite`, schema version in `PRAGMA user_version`;
-any other version is refused) and verifies queued writes against FalkorDB. Raw
+behind the same service-auth policy as `llm`. The wrapper validates the scope
+headers the Maki shim sends (group, cwd, actor, machine), refuses work groups,
+enforces a 60 s deadline per tool call, and is the only tunnel target. Searches
+read every allowed project plus `global` and label each result with its group
+and `actor@machine`; writes stay in the cwd-derived group. It owns the typed
+registry (`/var/lib/memory/registry.sqlite`, schema version in `PRAGMA
+user_version`; v2 migrates to v3 in place, any other version is refused) and
+verifies queued writes against FalkorDB. Raw
 Graphiti runs on an internal loopback port (`modules/nixos/memory.nix`) and is
 never tunneled. The module adds the operator to the `memory` group, which
 applies after `just switch smortress` and a fresh login (or `newgrp memory`).
@@ -1438,8 +1441,8 @@ replay it (see *Rebuilding the graph*).
 **Clients.** Personal hosts run `cloudflared-memory`, which forwards loopback
 `ports.memoryMcp` with the Access service token. Maki's `~/.config/maki/mcp.toml`
 starts `memory-mcp-shim` (server `graphiti`; Maki's built-in memory plugin is
-off), which derives the project group
-from Maki's cwd once at start: restart Maki after changing directories or
+off), which derives the project group from Maki's cwd once at start and sends
+the hostname as `X-Memory-Machine`: restart Maki after changing directories or
 `mcp.toml` (`/cd` does not restart stdio children). The same package installs
 the `memory` CLI.
 
@@ -1457,8 +1460,8 @@ restic's source tree, which owns history and integrity. Run one now with
 **Restore.** `sudo memory restore <export-dir>` (or `just memory-restore <dir>`),
 where the directory holds a restic-restored or live export:
 
-1. checks that `registry.sqlite` opens and is at the schema the installed code
-   writes, refusing any other;
+1. checks that `registry.sqlite` opens and its schema is the current one or the
+   previous version (the staged copy migrates on install), refusing any other;
 2. stops `memory-mcp`, `memory-graphiti-mcp`, `memory-llm-proxy` and
    `memory-falkordb` (a running FalkorDB would rewrite its AOF);
 3. parks the live registry as `registry.sqlite.pre-restore-<timestamp>` and
@@ -1602,9 +1605,10 @@ a restart. Model ids are bare unless a connection sets `prefix_id`, so
 token at `http://127.0.0.1:8182/mcp`. Open WebUI cannot send the `X-Memory-*`
 headers, so the deployment pins one scope for clients that send none
 (`MEMORY_MCP_DEFAULT_GROUP=global`, `MEMORY_MCP_DEFAULT_CWD=/chat`,
-`MEMORY_MCP_DEFAULT_ACTOR=open-webui`); that keeps chat writes in the shared
-group and records their own provenance, while Maki and the CLI keep the strict
-header contract. `files-mcp` (`http://127.0.0.1:8185/mcp`) needs no token. A
+`MEMORY_MCP_DEFAULT_ACTOR=open-webui`, `MEMORY_MCP_DEFAULT_MACHINE=smortress`);
+that keeps chat writes in the shared group and labels them, while searches read
+every allowed group. Maki and the CLI keep the strict header contract.
+ `files-mcp` (`http://127.0.0.1:8185/mcp`) needs no token. A
 malformed value is silently dropped by Open WebUI, so an empty External Tool
 Servers list means the JSON is broken.
 

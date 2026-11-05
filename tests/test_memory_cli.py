@@ -91,6 +91,21 @@ class CliOutputTests(unittest.TestCase):
             [("memory_reindex", {"everywhere": True, "dry_run": True, "force": False, "limit": 7})],
         )
 
+    def test_search_passes_the_project_filter(self):
+        calls = []
+
+        async def fake_call(_config, tool, arguments):
+            calls.append((tool, arguments))
+            return ToolResult(text="results", is_error=False)
+
+        with mock.patch.object(cli, "call_tool", fake_call), redirect_stdout(io.StringIO()):
+            code = cli.main(["search", "falkordb", "--project", "owner--repo", "--limit", "3"])
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            calls,
+            [("memory_search", {"query": "falkordb", "limit": 3, "project": "owner--repo"})],
+        )
+
     def test_reindex_refuses_group_with_all(self):
         stderr = io.StringIO()
         with redirect_stderr(stderr):

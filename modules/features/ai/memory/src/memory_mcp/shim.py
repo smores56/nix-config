@@ -11,7 +11,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
 import anyio
@@ -21,7 +21,7 @@ from mcp.types import CallToolResult, Prompt, TextContent, Tool
 
 from . import client
 from .client import ClientConfig, ToolResult, UpstreamError
-from .groups import GroupRefused, derive_group
+from .groups import GroupRefused, derive_group, local_machine
 from .mcp_auth import TokenMissingError, read_token
 from .schema import FALLBACK_TOOLS
 
@@ -39,6 +39,7 @@ class ShimConfig:
     cwd: str
     url: str = DEFAULT_URL
     actor: str = "maki"
+    machine: str = field(default_factory=local_machine)
     timeout: float = DEFAULT_TIMEOUT
     # The MCP listener refuses loopback clients without this, because the
     # tunnel makes every remote client look local too.
@@ -49,6 +50,7 @@ class ShimConfig:
             ("X-Memory-Group", self.group),
             ("X-Memory-Cwd", self.cwd),
             ("X-Memory-Actor", self.actor),
+            ("X-Memory-Machine", self.machine),
         )
         if self.token:
             headers = headers + (("Authorization", f"Bearer {self.token}"),)

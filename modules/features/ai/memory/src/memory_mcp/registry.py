@@ -19,8 +19,10 @@ from pathlib import Path
 from typing import Iterator, Mapping, Sequence
 
 REGISTRY_FILE = "registry.sqlite"
-# A database at any other version is refused; there is no in-place migration.
-SCHEMA_VERSION = 2
+# Version 3 added `machine`; v2 databases migrate in place. Other versions are refused.
+SCHEMA_VERSION = 3
+# Older schemas an export or a restore may still hold; they migrate in place.
+MIGRATABLE_SCHEMAS = (2,)
 LOOKUP_CHUNK = 500
 
 KINDS = ("text", "json", "message")
@@ -39,6 +41,7 @@ CREATE TABLE IF NOT EXISTS episodes (
     origin_ref TEXT NOT NULL DEFAULT '',
     actor TEXT NOT NULL DEFAULT 'unknown',
     cwd TEXT NOT NULL DEFAULT '',
+    machine TEXT NOT NULL DEFAULT '',
     tags TEXT NOT NULL DEFAULT '[]',
     valid_at TEXT NOT NULL,
     created_at TEXT NOT NULL,
@@ -140,6 +143,7 @@ class RegistryEpisode:
     promoted_at: str | None = None
     tombstoned_at: str | None = None
     tombstone_reason: str | None = None
+    machine: str = ""
 
 
 @dataclass(frozen=True)
@@ -165,11 +169,33 @@ def _placeholders(values: tuple[str, ...] | list[str]) -> str:
 
 def _ensure_schema(conn: sqlite3.Connection, db_path: Path) -> None:
     version = int(conn.execute("PRAGMA user_version").fetchone()[0])
-    if version == SCHEMA_VERSION:
-        return
     has_tables = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'episodes'"
     ).fetchone()
+    if version == SCHEMA_VERSION and has_tables is not None:
+        # A hand-bumped or truncated copy can claim v3 without the column.
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(episodes)")}
+        if "machine" in columns:
+            return
+        conn.executescript(
+            "BEGIN IMMEDIATE;\n"
+            "ALTER TABLE episodes ADD COLUMN machine TEXT NOT NULL DEFAULT '';\n"
+            "COMMIT;"
+        )
+        return
+    if version in MIGRATABLE_SCHEMAS and has_tables is not None:
+        # v2 -> v3: machine attribution. The column is added only when missing so a
+        # database whose version was set back by hand is still repaired.
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(episodes)")}
+        statements = ["BEGIN IMMEDIATE;"]
+        if "machine" not in columns:
+            statements.append(
+                "ALTER TABLE episodes ADD COLUMN machine TEXT NOT NULL DEFAULT '';"
+            )
+        statements.append(f"PRAGMA user_version = {SCHEMA_VERSION};")
+        statements.append("COMMIT;")
+        conn.executescript("\n".join(statements))
+        return
     if version == 0 and has_tables is None:
         # DDL autocommits under legacy isolation, so schema and version share one explicit transaction;
         # a kill before the PRAGMA would otherwise leave an unversioned database refused forever.
@@ -182,6 +208,21 @@ def _ensure_schema(conn: sqlite3.Connection, db_path: Path) -> None:
         f"registry {db_path} has schema version {found}, expected {SCHEMA_VERSION}; "
         "refusing to use it. Delete the database to rebuild the registry from the graph."
     )
+
+
+def upgrade_registry(path: Path, *, label: Path | None = None) -> int:
+    """Migrate a registry file in place and return its resulting schema version.
+
+    Used for a staged export copy and a staged restore: the live database
+    migrates when the wrapper opens it, but a pre-upgrade export must not be
+    refused on the day it is needed.
+    """
+    conn = sqlite3.connect(path, timeout=10)
+    try:
+        _ensure_schema(conn, label or path)
+        return int(conn.execute("PRAGMA user_version").fetchone()[0])
+    finally:
+        conn.close()
 
 
 class Registry:
@@ -226,6 +267,7 @@ class Registry:
             origin_ref=row["origin_ref"],
             actor=row["actor"],
             cwd=row["cwd"],
+            machine=row["machine"],
             tags=tags,
             valid_at=row["valid_at"],
             created_at=row["created_at"],
@@ -274,16 +316,28 @@ class Registry:
             ).fetchone()
         return self._row(row)
 
+    def groups(self) -> list[str]:
+        """Every group with at least one active row, sorted.
+
+        Only active rows exist in the graph, so pending or failed groups would
+        add fan-out without results.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT group_id FROM episodes WHERE status = 'active' ORDER BY group_id"
+            ).fetchall()
+        return [row["group_id"] for row in rows]
+
     @staticmethod
     def _insert(conn: sqlite3.Connection, entry: RegistryEpisode) -> None:
         conn.execute(
             """
             INSERT INTO episodes
                 (group_id, content_hash, uuid, name, content, kind, origin, origin_ref,
-                 actor, cwd, tags, valid_at, created_at, queued_at, status, attempts,
+                 actor, cwd, machine, tags, valid_at, created_at, queued_at, status, attempts,
                  last_error, graphiti_uuid, promoted_from_group, promoted_by, promoted_at,
                  tombstoned_at, tombstone_reason)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 entry.group,
@@ -296,6 +350,7 @@ class Registry:
                 entry.origin_ref,
                 entry.actor,
                 entry.cwd,
+                entry.machine,
                 _json(list(entry.tags)),
                 entry.valid_at,
                 entry.created_at,
@@ -317,7 +372,7 @@ class Registry:
             """
             UPDATE episodes SET
                 uuid = ?, name = ?, content = ?, kind = ?, origin = ?, origin_ref = ?,
-                actor = ?, cwd = ?, tags = ?, valid_at = ?, queued_at = ?,
+                actor = ?, cwd = ?, machine = ?, tags = ?, valid_at = ?, queued_at = ?,
                 status = ?, attempts = ?, last_error = ?, graphiti_uuid = ?,
                 promoted_from_group = ?,
                 promoted_by = ?, promoted_at = ?, tombstoned_at = ?, tombstone_reason = ?
@@ -332,6 +387,7 @@ class Registry:
                 entry.origin_ref,
                 entry.actor,
                 entry.cwd,
+                entry.machine,
                 _json(list(entry.tags)),
                 entry.valid_at,
                 entry.queued_at or entry.created_at,
@@ -682,6 +738,49 @@ class Registry:
                 if len(rows) > 1:
                     raise AmbiguousRef(
                         f"{reference!r} matches more than one episode in group {group}; "
+                        "use a longer hash prefix or the registry uuid"
+                    )
+                if rows:
+                    return self._row(rows[0])
+        return None
+
+    def find_anywhere(self, ref: str) -> RegistryEpisode | None:
+        """Resolve a reference across every group, for results search returned.
+
+        `find_exact` is scoped to one group; search now returns rows from any
+        project, so get/retry/tombstone must be able to follow those ids home.
+        """
+        reference = (ref or "").strip().lower()
+        if not reference:
+            return None
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM episodes WHERE uuid = ? LIMIT 2", (reference,)
+            ).fetchall()
+            if len(rows) > 1:
+                raise AmbiguousRef(f"{reference!r} matches more than one episode; use the registry uuid")
+            if rows:
+                return self._row(rows[0])
+            if ":" in reference:
+                rows = conn.execute(
+                    "SELECT * FROM episodes WHERE lower(origin || ':' || origin_ref) = ? LIMIT 2",
+                    (reference,),
+                ).fetchall()
+                if len(rows) > 1:
+                    raise AmbiguousRef(
+                        f"{reference!r} matches more than one episode across groups; "
+                        "use the registry uuid"
+                    )
+                if rows:
+                    return self._row(rows[0])
+            if len(reference) >= 12 and all(char in "0123456789abcdef" for char in reference):
+                rows = conn.execute(
+                    "SELECT * FROM episodes WHERE content_hash LIKE ? LIMIT 2",
+                    (reference + "%",),
+                ).fetchall()
+                if len(rows) > 1:
+                    raise AmbiguousRef(
+                        f"{reference!r} matches more than one episode across groups; "
                         "use a longer hash prefix or the registry uuid"
                     )
                 if rows:
