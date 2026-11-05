@@ -41,3 +41,16 @@ Keyboard Shortcuts → Screenshots.
 
 Key repeat, scroll direction and scroll speed on macOS come from the same
 constants as Niri's input settings, in `modules/desktop/shared-bindings.nix`.
+
+## Laptop parity
+
+The `laptop-parity` check evaluates `sam@smoreswork` and `smores@smorespro`
+and compares shell abbreviations, aliases, session variables and path, ssh
+settings, git config keys, packages by name, user services (systemd units
+against launchd agents, by name) and home activation steps; bindings stay with
+`desktop-bindings`. Any difference must be listed in
+`tests/laptop-parity-sanctioned.nix` as `category.name = "<inherent|work-policy>: reason"`
+(`inherent` for platform, `work-policy` for employer or Sam's work choices), and an
+entry that no longer differs fails the check, so delete it when the sides converge.
+The failure names each item with both values; a new difference is either drift to
+fix or one line to add there.

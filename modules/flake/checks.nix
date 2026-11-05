@@ -405,6 +405,61 @@ in
           )
         );
 
+        # The laptops differ only where tests/laptop-parity-sanctioned.nix says so. Both homes evaluate
+        # from any system, so this runs everywhere. The mutations prove it still catches drift.
+        laptop-parity =
+          let
+            work = config.flake.homeConfigurations."sam@smoreswork".config;
+            pro = config.flake.homeConfigurations."smores@smorespro".config;
+            sanctioned = import ../../tests/laptop-parity-sanctioned.nix { inherit lib; };
+            parity = import ../../tests/laptop_parity.nix;
+            passes =
+              args:
+              (builtins.tryEval (
+                builtins.deepSeq (parity (
+                  {
+                    inherit
+                      lib
+                      work
+                      pro
+                      sanctioned
+                      ;
+                  }
+                  // args
+                )) true
+              )).success;
+          in
+          evalCheck "laptop-parity" (
+            toString (
+              assert
+                parity {
+                  inherit
+                    lib
+                    work
+                    pro
+                    sanctioned
+                    ;
+                } == "ok";
+              assert
+                !passes {
+                  pro = pro // {
+                    home = pro.home // {
+                      packages = pro.home.packages ++ [ pkgs.hello ];
+                    };
+                  };
+                };
+              assert
+                !passes {
+                  sanctioned = sanctioned // {
+                    packages = sanctioned.packages // {
+                      hello = "inherent: stale on purpose";
+                    };
+                  };
+                };
+              "ok"
+            )
+          );
+
         # Every home collects garbage on a timer; the Mac shares its SSH transports through a socket
         # path that fits macOS's 104-byte limit (ssh appends a 17-byte suffix while binding).
         home-maintenance = evalCheck "home-maintenance" (
