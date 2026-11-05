@@ -5,6 +5,15 @@
 }:
 let
   inherit (pkgs.stdenv.hostPlatform) isLinux;
+
+  # SteamVR's bundled Qt ships only the xcb platform plugin. The session-wide
+  # QT_QPA_PLATFORM=wayland (modules/desktop/niri/settings.nix) makes vrmonitor
+  # abort with "could not find or load the Qt platform plugin wayland".
+  steamWithXcb = pkgs.steam.override {
+    extraEnv = {
+      QT_QPA_PLATFORM = "xcb";
+    };
+  };
 in
 {
   config = lib.mkIf isLinux {
@@ -18,7 +27,7 @@ in
       transmission_4-gtk
       discord
       krita
-      steam
+      steamWithXcb
       bitwarden-menu
       bitwarden-desktop
       tutanota-desktop
