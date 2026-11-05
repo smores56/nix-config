@@ -3,6 +3,7 @@
   home = [
     ../features/ai/providers.nix
     ../features/packages.nix
+    ../features/secret-sweep.nix
     ../features/tv/default.nix
     ../features/file-manager.nix
   ];

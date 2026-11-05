@@ -622,6 +622,47 @@ in
           )
         );
 
+        # Scrubbed at source for #386: agents read whatever the human can, so no host ships a CLI
+        # whose local state is a credential store.
+        no-scrubbed-tools = evalCheck "no-scrubbed-tools" (
+          let
+            scrubbed = [ "bitwarden-cli" ];
+            offenders = lib.concatMap (
+              home:
+              map (p: "${home.config.home.username}: ${lib.getName p}") (
+                lib.filter (p: lib.elem (lib.getName p) scrubbed) home.config.home.packages
+              )
+            ) (lib.attrValues config.flake.homeConfigurations);
+          in
+          toString (
+            assert lib.assertMsg (offenders == [ ]) "no-scrubbed-tools: ${lib.concatStringsSep ", " offenders}";
+            "ok"
+          )
+        );
+
+        # The sweep must fail on a planted token and pass on a clean tree, without printing the value.
+        secret-sweep =
+          let
+            sweep = lib.findFirst (
+              p: lib.getName p == "secret-sweep"
+            ) (throw "secret-sweep not in home.packages") scriptHome.config.home.packages;
+          in
+          pkgs.runCommand "secret-sweep-check" { } ''
+            mkdir -p clean dirty
+            echo 'nothing to see' > clean/notes.txt
+            # Assembled at build time so this file never holds a token-shaped literal.
+            printf 'GITHUB_TOKEN=ghp_%s\n' "$(printf 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8' )" > dirty/.env
+            ${lib.getExe sweep} clean
+            if ${lib.getExe sweep} dirty > report.txt 2>&1; then
+              echo "secret-sweep passed a planted token" >&2; exit 1
+            fi
+            grep -q 'dirty/.env' report.txt
+            if grep -q 'A1b2C3d4E5f6' report.txt; then
+              echo "secret-sweep printed the secret" >&2; exit 1
+            fi
+            touch $out
+          '';
+
         # `claude-config` is built, not evaluated, so its script text is what is checked.
         claude-memory-off =
           pkgs.runCommand "claude-memory-off"

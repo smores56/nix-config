@@ -37,8 +37,6 @@
         uv
 
         cbonsai
-
-        bitwarden-cli
       ]
       ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
         libiconv
