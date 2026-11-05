@@ -1,32 +1,39 @@
 # Desktop controls
 
 Shared Niri and AeroSpace bindings live in `modules/desktop/shared-bindings.nix`.
-Use Super+Control on Linux and Command+Control on macOS; add Shift to move.
-Arrows focus or move, numbers 1–9 select a workspace, and Shift+number moves
-the current item to a workspace. AeroSpace follows the moved window; Niri
-moves the column.
+The window key is Super on Linux. On macOS it is Ctrl for arrows, digits and
+Page keys, and Command+Control for letters, because Ctrl+letter belongs to the
+shell, editors and text fields. No modifier is remapped, so each system keeps
+its own app key (Command on macOS, Ctrl on Linux).
 
-Both managers bind F for managed maximize/fullscreen, Shift+F for fullscreen,
-V for floating, and Minus/Equal for width adjustment (with Shift for height).
-These are approximations: AeroSpace Shift+F enters macOS native fullscreen,
-and its resize increments are points rather than Niri's percentages. AeroSpace
-uses tree tiling, not Niri's scrolling columns. Niri-only actions such as
-Overview and column operations have no AeroSpace equivalent here.
+Arrows focus and Shift+arrows move, crossing monitor edges, so there is no
+separate monitor layer. Numbers 1–9 select a workspace, Page Up/Down step
+through them, and Shift moves the window there and follows it.
 
-T opens kitty, B the browser (Brave Origin on Linux, Brave on macOS), D the launcher
-(Spotlight on macOS) and Q closes the window. Arrows cross monitor edges; add
-Option to focus a monitor and Option+Shift to move to one. W toggles tabbed
-columns on Niri and accordion on AeroSpace, and Comma joins the next window.
-Workspaces 1–9 are fixed, and kitty and the browser open on workspace 1.
-The one-sided keys are listed in `modules/desktop/shared-bindings.nix`, and the
-`desktop-bindings` check covers the rest on both.
+| Action | Linux | macOS |
+|---|---|---|
+| Launcher | Super+Space | Command+Space (Spotlight) |
+| Terminal, browser | Super+T, Super+B | Command+Control+T, B |
+| Close window | Super+Q | Command+Q (quits the app with its last window) |
+| Lock | Super+Esc | Command+Esc |
+| Window switcher | Super+Tab (niri default) | Command+Tab |
+| Managed / native fullscreen | Super+F / Super+Shift+F | Command+Control+F / +Shift |
+| Floating | Super+V | Command+Control+V |
+| Tabbed (accordion) / tiles | Super+W / Super+E | Command+Control+W / E |
+| Width, height (Shift) | Super+Minus/Equal | Command+Control+Minus/Equal |
 
-Command+Control+L restores the AeroSpace app layout; 0 balances sizes and E
-cycles tiles. The existing Control+Option workspace shortcuts remain available.
-On Linux the original Super-only Niri bindings remain; monitor moves use
-Super+Alt+Shift+arrows. Noctalia launcher, control-center, and lock shortcuts
-remain in `modules/desktop/niri/keybinds.nix`. Applications or macOS may claim
-some chords; Command+Control+arrows overlap Slack section navigation.
+Command+Q overrides the apps' own quit; Force Quit stays on Option+Command+Esc.
+Command+Esc sends macOS's Control+Command+Q lock shortcut, so the first press
+asks to let AeroSpace control System Events. Resize steps are points on
+AeroSpace and percentages on Niri, and AeroSpace uses tree tiling rather than
+Niri's scrolling columns.
+
+Command+Control+L restores the AeroSpace app layout (macOS only). Linux alone
+keeps Super+O for Overview, Super+Alt+C for the control center, Super+Shift+D
+for dictation, Super+Shift+Space for the keyboard layout and Super+Shift+Esc to
+release shortcuts an app has inhibited. Logout and power actions live in the
+Noctalia launcher. Workspaces 1–9 are fixed, and kitty and the browser open on
+workspace 1. The `desktop-bindings` check keeps both sides in step.
 
 ## Print Screen
 
