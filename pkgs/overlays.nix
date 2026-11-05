@@ -88,6 +88,49 @@ system: [
     # into uncached source builds. The fido2 module wraps ssh-sk-helper with a no-PC/SC libfido2
     # instead (OpenSSH's libfido2 lists the same token twice: USB HID + PC/SC).
 
+    # No nixpkgs package. The prebuilt tarball is the upstream-supported Linux path; keep the
+    # daemon and CLI on one release so their IPC does not skew.
+    nym-vpn-core = prev.stdenv.mkDerivation (finalAttrs: {
+      pname = "nym-vpn-core";
+      version = "2026.14.0";
+
+      src = prev.fetchurl {
+        url = "https://github.com/nymtech/nym-vpn-client/releases/download/nym-vpn-v${finalAttrs.version}/nym-vpn-core-v${finalAttrs.version}_linux_x86_64.tar.gz";
+        hash = "sha256-6ciyQda54CBjA9OBJytCKq4jK5NLhchv5ymFLTxAGKg=";
+      };
+
+      sourceRoot = "${finalAttrs.pname}-v${finalAttrs.version}_linux_x86_64";
+
+      nativeBuildInputs = [ prev.autoPatchelfHook ];
+
+      buildInputs = [
+        prev.stdenv.cc.cc.lib
+        prev.libmnl
+        prev.libnftnl
+        prev.dbus
+      ];
+
+      installPhase = ''
+        runHook preInstall
+        mkdir -p $out/bin
+        # nym-vpnd resolves nym-socks5-proxy as its sibling. Skip nym-exclude: it is
+        # setuid-root and only needed for Linux split tunneling.
+        grep -aFq '${finalAttrs.version}' nym-vpnd
+        grep -aFq '${finalAttrs.version}' nym-vpnc
+        test -f nym-socks5-proxy
+        install -m755 nym-vpnd nym-vpnc nym-socks5-proxy $out/bin/
+        runHook postInstall
+      '';
+
+      meta = {
+        description = "NymVPN daemon and CLI";
+        homepage = "https://nym.com";
+        license = prev.lib.licenses.gpl3Only;
+        platforms = [ "x86_64-linux" ];
+        mainProgram = "nym-vpnc";
+      };
+    });
+
     # Adds the user-presence check so sudo rejects a touchless signature even from a compromised
     # agent. Full buildRustPackage: overrideAttrs can't recompute cargoDeps after cargoHash changes.
     pam_rssh = prev.rustPlatform.buildRustPackage (finalAttrs: {

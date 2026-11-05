@@ -16,6 +16,7 @@
     ./boot.nix
     ./greeter.nix
     ./fprintd.nix
+    ./nymvpn.nix
     ./secrets.nix
   ];
 

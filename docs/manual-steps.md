@@ -310,6 +310,48 @@ Maki's personal profile on this host reads `NEURALWATT_API_KEY` and
 `TINYFISH_API_KEY` from `secrets/common.yaml`, which names smorespro as a
 recipient.
 
+#### NymVPN
+
+NymVPN is an outbound client on this host. It exposes nothing and does not
+replace the Cloudflare Tunnel. The root daemon is `nym-vpnd`; run `nym-vpnc`
+through `sudo` (one YubiKey touch). There is no passwordless group and no
+polkit policy, so a same-UID process cannot authorize a tunnel change.
+
+Create the account once at <https://nym.com/account/create> and store the
+24-word access code in Bitwarden plus an offline copy. The CLI accepts the
+phrase only as argv, so run that one command from a history-free shell
+(`env HISTFILE=/dev/null bash`) and clear the terminal. Do not put it in sops,
+Syncthing, or a backup of `/var/lib/nym-vpnd` (account and config).
+
+```sh
+# One-time device login; the daemon stores the account root-only.
+sudo nym-vpnc account set "<24 words>"
+sudo nym-vpnc account get
+
+# Daily use. Use two-hop Fast mode unless the session needs the mixnet.
+sudo nym-vpnc tunnel set --two-hop on
+sudo nym-vpnc connect --wait
+sudo nym-vpnc status
+sudo nym-vpnc dns get
+curl -s https://ifconfig.me
+
+# Syncthing and printers need the LAN at home; block it on untrusted Wi-Fi.
+sudo nym-vpnc lan set allow
+# sudo nym-vpnc lan set block
+
+# Captive portal: disconnect, sign in, then reconnect.
+sudo nym-vpnc disconnect
+```
+
+The unit removes stale `*.nym` resolvconf records on its next start or stop;
+no manual cleanup command is needed. Confirm DNS resolves before reconnecting.
+
+Phone (Galaxy S24 Ultra): install NymVPN from Google Play, sign in with the
+same 24-word code, then Settings → Kill switch → enable Android's Always-on VPN
+and Block connections without VPN. Set battery to Unrestricted, keep Private
+DNS on Automatic, and turn Samsung Secure Wi-Fi off. Split tunneling is Fast
+mode only.
+
 ### smoreswork
 
 <!-- manual-step: host/smoreswork -->
