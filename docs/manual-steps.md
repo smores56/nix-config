@@ -331,6 +331,12 @@ Desktop (set to start at login) and Claude Code installed at
 `~/.local/bin/claude` and signed in; see
 [smoreswork/memory](#smoreswork-memory-instance).
 
+The weekday `harvest` (launchd, 17:30) reads Jira through `acli` (Homebrew
+`atlassian/acli/acli`, logged in with `acli jira auth login`) and Calendar and
+Granola titles through the signed-in Claude Code. A source that is not logged in
+is reported in the run's notification and retried the next day; `harvest
+dry-run` previews what a run would write.
+
 The GUI apps come from Homebrew, not nix. `just brew-bundle` installs the casks
 in `modules/features/brew.nix` (kitty and AeroSpace among them) from the
 Brewfile home-manager writes to `~/.config/homebrew/Brewfile`. It only adds:

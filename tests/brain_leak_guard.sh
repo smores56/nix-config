@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The brain files ship in this public repo while the vault holds employer data: fail if they name the
+# The harvester and brain skill ship in this public repo while the memory they fill holds employer data: fail if they name the
 # employer, link a Slack/Jira workspace, or carry a ticket key that isn't an obvious placeholder.
 # Usage: brain_leak_guard.sh <repo-root> <employer-identifier>...
 set -euo pipefail
@@ -9,13 +9,12 @@ shift
 identifiers=("$@")
 failures=0
 
-# Placeholder ticket prefixes the tests use, plus standards that look like
-# keys (UTF-8, SHA-256, UTC-5) and `Z0-9` from the digest's own key regex.
+# Placeholder ticket prefixes the tests use, plus standards that look like keys (UTF-8, SHA-256, UTC-5) and `Z0-9` from the harvester's own key regex.
 synthetic_prefixes='^(FOO|BAR|ERR|SHA|UTC|UTF|Z0)-'
 
-brain_files() {
+harvest_files() {
   local base=$1
-  for path in modules/features/ai/brain modules/features/ai/skills/brain tests/test_brain_digest.py tests/test_brain_commit.py tests/test_brain_run.py; do
+  for path in modules/features/ai/harvest modules/features/ai/skills/brain tests/test_harvest.py; do
     [[ -e $base/$path ]] && find "$base/$path" -type f
   done
   return 0
@@ -23,7 +22,7 @@ brain_files() {
 
 scan() {
   local base=$1 leaks=0 files
-  mapfile -t files < <(brain_files "$base")
+  mapfile -t files < <(harvest_files "$base")
   ((${#files[@]})) || return 0
 
   for id in "${identifiers[@]}"; do
@@ -69,9 +68,9 @@ fixture "$work/ticket" 'Worked on QQX-4521 today.'
 expect ticket-key fail "$work/ticket"
 
 if ! scan "$root"; then
-  echo "FAIL brain files above leak employer-specific data; move it to the vault's CLAUDE.md"
+  echo "FAIL harvest files above leak employer-specific data; keep it out of the repo"
   failures=$((failures + 1))
 fi
 
 ((failures == 0)) || exit 1
-echo "brain leak guard: ok"
+echo "harvest leak guard: ok"

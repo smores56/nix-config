@@ -114,8 +114,8 @@ in
             PERSONAL_SIGNING_PUB = signingKeys.personal;
             WORK_SIGNING_PUB = signingKeys.work;
           };
-          # Every spelling of the employer the work options reveal; the brain
-          # files must stay generic, so none may appear in them.
+          # Every spelling of the employer the work options reveal; the harvester
+          # and brain skill must stay generic, so none may appear in them.
           employerIdentifiers =
             let
               w = d.work;
@@ -850,7 +850,7 @@ in
                 unitTestsPython
                 pkgs.git
               ];
-              # brain-run tests pin TZ=America/New_York; without zoneinfo the sandbox falls back to UTC.
+              # harvest tests pin TZ=America/New_York; without zoneinfo the sandbox falls back to UTC.
               TZDIR = "${pkgs.tzdata}/share/zoneinfo";
             }
             ''

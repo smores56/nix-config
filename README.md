@@ -55,6 +55,9 @@ Cross-cutting values flow through `config.machine.*` and `config.user.*`, not
   headless Claude and embeds through OpenAI, by `modules/features/ai/memory/darwin.nix`
   (launchd and Docker Desktop). It is the only agent memory: Maki's built-in memory
   and Claude Code's auto-memory are off (`modules/features/ai/claude.nix`).
+- **Harvest.** On smoreswork a weekday launchd job (`modules/features/ai/harvest/`)
+  writes git, GitHub, Jira, Calendar and Granola titles into the local memory
+  instance as idempotent episodes. Chat and mail are never harvested.
 - **Public services.** `webProxy.services` become `<name>.sammohr.dev` through
   the tunnel; `ssh`, `llm`, `memory` and `chat` sit behind Cloudflare Access.
 - **Backups.** restic snapshots `/var/lib/data` to R2 and a local encrypted

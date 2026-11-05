@@ -64,7 +64,7 @@ adds its greeter as a host-local module.
 | `modules/ports.nix` | loopback port table shared by services and the tunnel |
 | `pkgs/overlays.nix` | nixpkgs overlays: pins and local package derivations |
 | `modules/features/agent-sandbox/` | the same-UID agent boundary; lists/backends in `modules/lib/agent-sandbox.{nix,sh}` |
-| `modules/features/ai/` | AI tooling: assistant context, brain, Claude settings merge, maki, memory, providers, sdlc, skills. `memory/service.nix` is the one memory service description; `modules/nixos/memory.nix` and `memory/darwin.nix` render it |
+| `modules/features/ai/` | AI tooling: assistant context, harvest, Claude settings merge, maki, memory, providers, sdlc, skills. `memory/service.nix` is the one memory service description; `modules/nixos/memory.nix` and `memory/darwin.nix` render it |
 | `modules/features/tv/`, `modules/features/repos/` | Television repository and worktree cables; the `repos`/`worktrees` CLIs they call |
 | `tofu/` | minimal Cloudflare DNS/Access/notification objects; run via the `cloudflare-*` flake apps |
 | `modules/features/backup/` | Operator README, GitHub-mirror helpers and the metadata verifier |
@@ -151,10 +151,10 @@ before `install`.
   declared in `modules/options.nix`, not through `specialArgs`.
 - **Delete dead code** — no leftover aliases, re-exports, or stale TODOs.
   If a file is unused, delete it and remove it from its profile.
-- **Brain files stay employer-free**: the brain skill, digest, and its tests
-  are public while the vault they serve is not. Employer specifics belong in
-  the vault's `CLAUDE.md`; use placeholder ticket keys (`FOO-1`) in tests.
-  `checks.brain-leak-guard` enforces this.
+- **Harvest files stay employer-free**: the harvester, the brain skill, and
+  their tests are public while the memory they fill is not. Employer
+  specifics come from options and the user's own tools; use placeholder
+  ticket keys (`FOO-1`) in tests. `checks.brain-leak-guard` enforces this.
 
 ## Verification
 

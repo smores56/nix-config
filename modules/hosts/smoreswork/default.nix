@@ -18,7 +18,6 @@
 
   user = {
     aiProfile = "work";
-    brain.dir = "brain";
     shellAbbrs.m = "claude";
   };
 

@@ -11,7 +11,7 @@ let
   maki = "work-policy: Maki is not installed on the work host";
   memoryLocal = "work-policy: the Mac runs its own local memory instance; Linux uses smortress's";
   zsh = "inherent: the Mac's shell is zsh, Linux's is fish";
-  brain = "work-policy: the brain vault lives on the work host only";
+  harvest = "work-policy: the work-trail harvest into the Mac's memory runs on the work host only";
 in
 {
   shell = merge [
@@ -26,7 +26,6 @@ in
       "env.BLITZY_REPOS_DIR" = "work-policy: employer checkouts live only on the work host";
       "env.LOCALE_ARCHIVE_2_27" = "inherent: glibc locale archive";
     }
-    (group brain [ "env.BRAIN_DIR" ])
     (group linux [
       "env.SSH_ASKPASS"
       "env.SSH_ASKPASS_REQUIRE"
@@ -87,7 +86,7 @@ in
       "memory"
       "memory-mcp"
     ])
-    (group brain [ "brain-run" ])
+    (group harvest [ "harvest" ])
     (group "inherent: steam is a brew cask on the Mac" [ "steam" ])
     (group "work-policy: Chrome is the work browser" [ "firefox" ])
     (group "work-policy: personal desktop apps stay off the employer laptop" [
@@ -137,7 +136,7 @@ in
       "piv-pin-wipe"
       "sops-nix"
     ])
-    (group brain [ "brain-autopilot" ])
+    (group harvest [ "harvest" ])
     (group memoryLocal [
       "memory-export"
       "memory-falkordb"
