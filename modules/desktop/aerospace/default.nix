@@ -140,8 +140,6 @@ in
         "layout tiles"
         applyLayout
       ];
-      # Keep the pointer with keyboard focus across monitors so scrolling targets the focused one.
-      on-focused-monitor-changed = [ "move-mouse monitor-lazy-center" ];
 
       workspace-to-monitor-force-assignment = pinnedWorkspaces;
 
