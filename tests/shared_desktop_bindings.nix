@@ -25,7 +25,19 @@ assert lib.all (b: b.niri != null) shared.bindings;
 # reserved keys are not shared, so a key can never mean different things on the two machines.
 assert lib.sort lib.lessThan macKeys == lib.sort lib.lessThan (sharedMacKeys ++ macOnlyKeys);
 assert lib.all (k: !(lib.elem k sharedMacKeys)) macOnlyKeys;
-assert aerospaceBindings.cmd-ctrl-l != "";
+assert
+  lib.hasPrefix "exec-and-forget /nix/store/" aerospaceBindings.cmd-ctrl-l
+  && lib.hasSuffix "-aerospace-layout-apply" aerospaceBindings.cmd-ctrl-l;
+# keybinds.nix merges the shared chords with unionOfDisjoint, so forcing its binds proves no local
+# bind reuses one (the shared one would otherwise silently win).
+assert builtins.isAttrs
+  (import ../modules/desktop/niri/keybinds.nix {
+    inherit lib;
+    config = { };
+  }).programs.niri.settings.binds;
+assert lib.all (k: niriBindings ? ${k}) (
+  map shared.niriKey (lib.filter (b: b.niri != null) shared.bindings)
+);
 # Launchers, monitors and layout actions.
 assert (find "T" false).niri == { spawn = [ "kitty" ]; };
 assert (find "B" false).niri == { spawn = [ "firefox" ]; };

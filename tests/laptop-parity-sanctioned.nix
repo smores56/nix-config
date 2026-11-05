@@ -50,12 +50,15 @@ in
     ])
   ];
 
-  ssh = group "inherent: sockets live under ~/.ssh on macOS and $XDG_RUNTIME_DIR on Linux" [
-    "*.ControlPath"
-    "smortress.ForwardAgent"
-    "smortress.IdentityAgent"
-    "tang-pi.IdentityAgent"
-  ];
+  ssh =
+    group
+      "inherent: ControlPath is ~/.cache/ssh-%C on the Mac (short, for its 104-byte socket limit) and under $XDG_RUNTIME_DIR on Linux; the agent sockets live in ~/.ssh on the Mac and $XDG_RUNTIME_DIR on Linux"
+      [
+        "*.ControlPath"
+        "smortress.ForwardAgent"
+        "smortress.IdentityAgent"
+        "tang-pi.IdentityAgent"
+      ];
 
   packages = merge [
     (group mac [
@@ -85,33 +88,35 @@ in
       "memory-mcp"
     ])
     (group brain [ "brain-run" ])
+    (group "inherent: steam is a brew cask on the Mac" [ "steam" ])
+    (group "work-policy: Chrome is the work browser" [ "firefox" ])
+    (group "work-policy: personal desktop apps stay off the employer laptop" [
+      "bitwarden-desktop"
+      "discord"
+      "gimp"
+      "krita"
+      "transmission"
+      "tutanota-desktop"
+      "vlc"
+    ])
     (group linux [
       "bibata-cursors"
-      "bitwarden-desktop"
       "bitwarden-menu"
       "brightnessctl"
       "concord"
-      "discord"
       "dolphin"
       "dummy-xdg-mime-dirs1"
       "dummy-xdg-mime-dirs2"
       "evince"
       "feh"
-      "firefox"
-      "gimp"
       "grim"
       "index.theme"
-      "krita"
       "noctalia"
       "playerctl"
       "shared-mime-info"
       "slurp"
       "ssh-askpass"
-      "steam"
       "stylix-kde-theme"
-      "transmission"
-      "tutanota-desktop"
-      "vlc"
       "voxtype"
       "wl-clipboard"
       "wtype"
@@ -119,9 +124,6 @@ in
   ];
 
   services = merge [
-    (group "inherent: AeroSpace is a brew cask on the Mac; niri and its shell are Linux-only" [
-      "aerospace"
-    ])
     (group linux [
       "noctalia"
       "voxtype"
@@ -146,6 +148,13 @@ in
       "cloudflared-memory"
     ])
   ];
+
+  programs = {
+    aerospace = "inherent: the Mac's window manager (a brew cask); Linux runs niri";
+    inherit zsh;
+    fish = zsh;
+    noctalia = linux;
+  };
 
   activation = merge [
     (group mac [

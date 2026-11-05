@@ -456,11 +456,19 @@ in
                     sanctioned
                     ;
                 } == "ok";
+              assert lib.all (mutation: !passes { pro = lib.recursiveUpdate pro mutation; }) [
+                { home.packages = pro.home.packages ++ [ pkgs.hello ]; }
+                { user.shellAbbrs.drift = "true"; }
+                { programs.ssh.settings.drift.HostName = "example.org"; }
+                { systemd.user.services.drift = { }; }
+                { home.activation.drift = { }; }
+                { programs.drift.enable = true; }
+              ];
               assert
                 !passes {
-                  pro = pro // {
-                    home = pro.home // {
-                      packages = pro.home.packages ++ [ pkgs.hello ];
+                  sanctioned = sanctioned // {
+                    packages = sanctioned.packages // {
+                      hello = "inherent: stale on purpose";
                     };
                   };
                 };
@@ -468,7 +476,7 @@ in
                 !passes {
                   sanctioned = sanctioned // {
                     packages = sanctioned.packages // {
-                      hello = "inherent: stale on purpose";
+                      ${lib.head (lib.attrNames sanctioned.packages)} = "no tag";
                     };
                   };
                 };
@@ -640,7 +648,7 @@ in
           )
         );
 
-        # piv-ensure-proxy must pass arguments in order and use the cache dir the login wipe and Seatbelt deny name.
+        # piv-ensure-proxy must pass arguments in order and use the cache dir the login wipe names.
         piv-wiring =
           let
             laptop = lib.findFirst (h: !(builtins.elem "server" h.config.machine.profiles)) null homesHere;

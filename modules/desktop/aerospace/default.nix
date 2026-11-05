@@ -118,6 +118,21 @@ in
 {
   home.packages = [ aerospaceLayout ];
 
+  # home-manager forces start-at-login = false into the file and asserts against true unless it also
+  # runs the launchd agent, which needs a nix package. The brew AeroSpace registers its own login item,
+  # so write the file with it on.
+  home.file.".aerospace.toml".source = lib.mkForce (
+    (pkgs.formats.toml { }).generate "aerospace" (
+      lib.filterAttrsRecursive (_: v: v != null) (
+        config.programs.aerospace.settings
+        // {
+          start-at-login = true;
+          after-login-command = [ ];
+        }
+      )
+    )
+  );
+
   programs.aerospace = {
     enable = true;
     package = null;
@@ -126,7 +141,6 @@ in
       config-version = 2;
       # Version 2 no longer infers persistent workspaces from bindings; keep 1-9 so empty pinned ones stay on their monitors.
       persistent-workspaces = map toString (lib.range 1 9);
-      start-at-login = false;
       # Replacing PATH drops AeroSpace's Homebrew default, so keep it; the nix profile lets bare tools resolve.
       exec = {
         env-vars.PATH = "${config.home.profileDirectory}/bin:/opt/homebrew/bin:/opt/homebrew/sbin:\${PATH}";

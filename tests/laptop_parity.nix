@@ -51,7 +51,19 @@ let
       services = presence (
         lib.attrNames c.systemd.user.services
         ++ lib.attrNames c.systemd.user.timers
-        ++ lib.attrNames c.launchd.agents
+        ++ lib.attrNames (lib.filterAttrs (_: a: a.enable) c.launchd.agents)
+      );
+      # Removed modules throw on `enable`; they are not enabled.
+      programs = presence (
+        lib.attrNames (
+          lib.filterAttrs (
+            _: v:
+            let
+              on = builtins.tryEval (builtins.isAttrs v && (v.enable or false) == true);
+            in
+            on.success && on.value
+          ) c.programs
+        )
       );
     };
 
