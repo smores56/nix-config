@@ -46,7 +46,8 @@ area, and Alt/Option+ opens the capture toolbar on macOS (Niri has no capture
 menu, so it captures the focused window instead). Home Manager owns those three
 macOS shortcuts and the Mission Control, Spaces and Desktop 1–9 shortcuts that
 would claim Ctrl+arrows and Ctrl+digits, rewriting only those entries on each
-activation. Change a different keyboard's key in System Settings → Keyboard →
+activation, so Ctrl+Up/Down no longer open Mission Control or App Exposé. If a
+Ctrl+arrow still reaches Mission Control after a switch, log out once. Change a different keyboard's key in System Settings → Keyboard →
 Keyboard Shortcuts → Screenshots.
 
 Key repeat, scroll direction and scroll speed on macOS come from the same

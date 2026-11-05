@@ -55,6 +55,15 @@ class ApplyTest(unittest.TestCase):
         self.assertEqual(written, [])
         self.assertEqual(len(calls), 1)
 
+    def test_failed_reload_warns_instead_of_failing(self):
+        export = subprocess.CompletedProcess([], 0, plistlib.dumps({"AppleSymbolicHotKeys": {"28": ENABLED}}), b"")
+        refused = subprocess.CalledProcessError(1, ["activate", "-u"], stderr=b"nope")
+        with patch.object(hotkeys.subprocess, "run", side_effect=[export, export, refused]):
+            with patch("sys.stderr") as stderr:
+                written = hotkeys.apply("defaults", "activate", SPEC)
+        self.assertEqual(written, ["79"])
+        self.assertIn("log out", "".join(call.args[0] for call in stderr.write.call_args_list))
+
     def test_non_dictionary_export_is_rejected(self):
         export = subprocess.CompletedProcess([], 0, plistlib.dumps({"AppleSymbolicHotKeys": "bad"}), b"")
         with patch.object(hotkeys.subprocess, "run", return_value=export):

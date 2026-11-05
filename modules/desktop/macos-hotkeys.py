@@ -46,8 +46,17 @@ def apply(defaults, activate, spec):
             capture_output=True,
         )
     # The running session caches symbolic hotkeys; without this the change waits for the next login.
+    # A failed reload only warns: the writes already landed, so the next run would find nothing to
+    # change and never retry, and failing would abort the whole switch for a cosmetic delay.
     if pending:
-        subprocess.run([activate, "-u"], check=True, capture_output=True)
+        try:
+            subprocess.run([activate, "-u"], check=True, capture_output=True)
+        except (OSError, subprocess.CalledProcessError) as exc:
+            detail = getattr(exc, "stderr", None) or b""
+            print(
+                f"macos-hotkeys: reload failed ({exc}; {detail.decode(errors='replace').strip()}); log out to apply",
+                file=sys.stderr,
+            )
     return list(pending)
 
 
