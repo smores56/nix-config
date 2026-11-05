@@ -34,6 +34,11 @@ in
 
     services.gnome.gnome-keyring.enable = true;
 
+    # valve's udev rules (hidraw/uaccess for the Index and its controllers) and
+    # the uinput module they rely on. Without these SteamVR sees the HMD on USB
+    # but cannot open it.
+    hardware.steam-hardware.enable = true;
+
     systemd.services.steamvr-setcap = {
       description = "Grant CAP_SYS_NICE to SteamVR's vrcompositor-launcher";
       wantedBy = [ "multi-user.target" ];
