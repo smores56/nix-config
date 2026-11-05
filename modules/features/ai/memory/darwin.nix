@@ -171,15 +171,11 @@ in
 {
   home.packages = [ memoryCli ];
 
-  # Claude Code's stdio MCP entry for this instance. `claude --mcp-config` reads it today;
-  # registering it without touching Claude's own settings files is a separate step.
-  xdg.configFile."memory/claude-mcp.json".text = builtins.toJSON {
-    mcpServers.memory = {
-      type = "stdio";
-      command = "${memoryPackage}/bin/memory-mcp-shim";
-      args = [ ];
-      env = service.toAttrs clientEnvironment;
-    };
+  ai.claude.mcpServers.memory = {
+    type = "stdio";
+    command = "${memoryPackage}/bin/memory-mcp-shim";
+    args = [ ];
+    env = service.toAttrs clientEnvironment;
   };
 
   launchd.agents = {

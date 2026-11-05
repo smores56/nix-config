@@ -876,7 +876,7 @@ memory embeddings. Rotate it in the employer's OpenAI console, then
 `sops secrets/smoreswork.yaml`, commit, and `home-manager switch`; the memory
 LLM proxy reads the key once at start, so
 `launchctl kickstart -k gui/$(id -u)/org.nix-community.home.memory-llm-proxy`
-picks up a rotation. The Claude policy keeps it unreadable to agents; never
+picks up a rotation. Agents on the Mac are unsandboxed and could read it; never
 print or decrypt it in a session.
 
 ### restic repository password
@@ -1429,7 +1429,8 @@ replay it (see *Rebuilding the graph*).
 
 **Clients.** Personal hosts run `cloudflared-memory`, which forwards loopback
 `ports.memoryMcp` with the Access service token. Maki's `~/.config/maki/mcp.toml`
-starts `memory-mcp-shim` (server `graphiti`), which derives the project group
+starts `memory-mcp-shim` (server `graphiti`; Maki's built-in memory plugin is
+off), which derives the project group
 from Maki's cwd once at start: restart Maki after changing directories or
 `mcp.toml` (`/cd` does not restart stdio children). The same package installs
 the `memory` CLI.
@@ -1556,10 +1557,11 @@ calls, and work repos are accepted there (`MEMORY_WORK_POLICY=allow`, from
   There is no restic and no off-machine copy. `memory restore` drives systemd and
   does not apply here; restoring is stopping the agents and copying a dated
   export's `registry.sqlite` over `~/.local/share/memory/registry.sqlite`.
-- **Clients.** `memory` is on `PATH`. `~/.config/memory/claude-mcp.json` holds
-  the stdio entry for `memory-mcp-shim`; `claude --mcp-config
-  ~/.config/memory/claude-mcp.json` uses it. Claude's own settings files are not
-  touched.
+- **Clients.** `memory` is on `PATH`. Each `home-manager switch` merges the
+  `memory` stdio server (`memory-mcp-shim`) into `mcpServers` of `~/.claude.json`
+  and sets `autoMemoryEnabled: false` in `~/.claude/settings.json` (see
+  `modules/features/ai/claude.nix`); no other key is touched. Restart running
+  Claude sessions to load the server.
 
 ### smortress/chat
 

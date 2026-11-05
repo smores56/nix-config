@@ -74,6 +74,9 @@ in
       askpassHome = lib.findFirst (
         home: builtins.any (p: lib.getName p == "ssh-askpass") home.config.home.packages
       ) null homesHere;
+      claudeConfigHome = lib.findFirst (
+        home: builtins.any (p: lib.getName p == "claude-config") home.config.home.packages
+      ) null homesHere;
       wallpapersExe = lib.getExe (
         lib.findFirst (
           p: lib.getName p == "wallpapers"
@@ -297,6 +300,19 @@ in
               args = [
                 (lib.getExe (
                   lib.findFirst (p: lib.getName p == "ssh-askpass") null askpassHome.config.home.packages
+                ))
+              ];
+            };
+          }
+          // lib.optionalAttrs (claudeConfigHome != null) {
+            claude-config = {
+              tools = [
+                pkgs.coreutils
+                pkgs.jq
+              ];
+              args = [
+                (lib.getExe (
+                  lib.findFirst (p: lib.getName p == "claude-config") null claudeConfigHome.config.home.packages
                 ))
               ];
             };
@@ -863,6 +879,8 @@ in
               shellcheck ${src}/tests/manual_steps_sync.sh
               bash -n ${src}/tests/github_metadata.sh
               shellcheck ${src}/tests/github_metadata.sh
+              bash -n ${src}/tests/claude_config.sh
+              shellcheck ${src}/tests/claude_config.sh
               touch $out
             '';
 

@@ -3,6 +3,7 @@
   home = [
     ../features/ai/agent-context.nix
     ../features/ai/brain/default.nix
+    ../features/ai/claude.nix
     ../features/ai/sdlc/default.nix
     ../features/ai/skills/default.nix
     ../features/github-credentials.nix

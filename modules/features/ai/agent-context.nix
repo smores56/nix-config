@@ -44,6 +44,11 @@ let
     # Workflow
     ${lib.concatStringsSep "\n" workflowLines}
 
+    # Memory
+    - The memory MCP server (`memory_write`, `memory_search`) is the only agent memory; no built-in or file-based memory (`MEMORY.md`, `memory/` dirs)
+    - `memory_search` before work that earlier sessions may have touched; `memory_write` durable facts, preferences, and decisions the repo and its docs don't hold, one self-contained fact per write
+    - Never write secrets, tokens, or transient task state
+
     # Style
     - Prefer functional style: pure functions, immutability, composition over inheritance; single-purpose functions; structured types over untyped maps
     - Comments match surrounding density; explain WHY, never WHAT

@@ -49,9 +49,8 @@ let
         -- The bundled websearch only speaks Exa/You.com; the owned plugin
         -- below uses the TinyFish Search API instead.
         websearch = { enabled = false },
-        -- Bundled project-scoped memory: the `memory` tool, tag-based
-        -- retrieval, plain markdown files under the maki state dir.
-        memory = { enabled = true },
+        -- The Graphiti MCP server below is the only memory.
+        memory = { enabled = false },
       },
     })
 
@@ -100,8 +99,7 @@ let
 
   # A stdio shim rather than a URL entry: maki's HTTP client cannot send the
   # group and cwd headers. The group is fixed at maki start (`/cd` does not
-  # restart stdio children). The name `graphiti` avoids the built-in `memory`
-  # tool. 90s stays above the wrapper's 60s tool deadline and under
+  # restart stdio children). 90s stays above the wrapper's 60s tool deadline and under
   # Cloudflare's ~100s origin timeout.
   mcpEnvironment = {
     MEMORY_MCP_URL = "http://127.0.0.1:${toString ports.memoryMcp}/mcp";
