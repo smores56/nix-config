@@ -5,74 +5,112 @@
 }:
 let
   shared = import ../modules/desktop/shared-bindings.nix { inherit lib; };
-  id = b: "${lib.optionalString b.alt "alt-"}${lib.optionalString b.shift "shift-"}${b.key}";
-  keys = map id shared.bindings;
-  find =
-    key: shift: lib.findFirst (b: b.key == key && b.shift == shift && !b.alt) null shared.bindings;
-  findAlt =
-    key: shift: lib.findFirst (b: b.key == key && b.shift == shift && b.alt) null shared.bindings;
-  oneSided = b: lib.elem (id b) shared.oneSided;
-  macKeys = lib.filter (lib.hasPrefix "cmd-ctrl-") (lib.attrNames aerospaceBindings);
-  sharedMacKeys = map shared.macKey (lib.filter (b: b.aerospace != null) shared.bindings);
-  macOnlyKeys = map (k: "cmd-ctrl-${lib.toLower k}") shared.macOnly;
+  niriKeys = map shared.niriKey shared.bindings;
+  sharedMacKeys = map shared.macKey shared.bindings;
+  niriAction = chord: niriBindings.${chord}.action;
+  crossMonitor = "--boundaries all-monitors-outer-frame";
 in
-# Every shared action is bound on both managers unless it is listed as one-sided.
-assert lib.length keys == lib.length (lib.unique keys);
-assert lib.all (b: oneSided b || (b.niri != null && b.aerospace != null)) shared.bindings;
-assert lib.all (b: !(oneSided b) || b.aerospace == null) shared.bindings;
-assert lib.all (b: b.niri != null) shared.bindings;
-# AeroSpace's Cmd+Ctrl chords come only from the shared list plus the reserved Mac-only keys, and the
-# reserved keys are not shared, so a key can never mean different things on the two machines.
-assert lib.sort lib.lessThan macKeys == lib.sort lib.lessThan (sharedMacKeys ++ macOnlyKeys);
-assert lib.all (k: !(lib.elem k sharedMacKeys)) macOnlyKeys;
+# Every shared chord is defined once and bound on both managers.
+assert lib.length niriKeys == lib.length (lib.unique niriKeys);
+assert lib.all (b: b.niri != null && b.aerospace != null) shared.bindings;
+# AeroSpace binds exactly the shared chords plus the Mac-only ones, so no stale layer survives.
 assert
-  lib.hasPrefix "exec-and-forget /nix/store/" aerospaceBindings.cmd-ctrl-l
-  && lib.hasSuffix "-aerospace-layout-apply" aerospaceBindings.cmd-ctrl-l;
+  lib.sort lib.lessThan (lib.attrNames aerospaceBindings)
+  == lib.sort lib.lessThan (sharedMacKeys ++ shared.macOnly);
 # keybinds.nix merges the shared chords with unionOfDisjoint, so forcing its binds proves no local
 # bind reuses one (the shared one would otherwise silently win).
 assert builtins.isAttrs
   (import ../modules/desktop/niri/keybinds.nix {
     inherit lib;
-    config = { };
   }).programs.niri.settings.binds;
-assert lib.all (k: niriBindings ? ${k}) (
-  map shared.niriKey (lib.filter (b: b.niri != null) shared.bindings)
-);
-# Launchers, monitors and layout actions.
-assert (find "T" false).niri == { spawn = [ "kitty" ]; };
-assert (find "B" false).niri == { spawn = [ "brave-origin" ]; };
-assert lib.hasInfix shared.apps.brave (find "B" false).aerospace;
-assert lib.hasInfix shared.apps.kitty (find "T" false).aerospace;
-assert (find "Q" false).aerospace == "close";
-assert (find "D" false).niri == { spawn-sh = shared.niriLauncher; };
-assert (find "Left" false).niri == { focus-column-or-monitor-left = [ ]; };
-assert (find "Left" false).aerospace == "focus --boundaries all-monitors-outer-frame left";
-assert (find "Left" true).aerospace == "move --boundaries all-monitors-outer-frame left";
-assert (find "Down" true).niri == { move-window-down = [ ]; };
-assert (findAlt "Right" false).aerospace == "focus-monitor right";
-assert (findAlt "Right" true).aerospace == "move-node-to-monitor right";
-assert (findAlt "Right" true).niri == { move-column-to-monitor-right = [ ]; };
-assert (find "W" false).aerospace == "layout accordion horizontal vertical";
-assert (find "Comma" false).aerospace == "join-with right";
-assert (find "1" false).niri == { focus-workspace = "1"; };
+# Both managers read every shared binding back out of the built configurations.
+assert lib.all (b: niriAction (shared.niriKey b) == b.niri) shared.bindings;
+assert lib.all (b: aerospaceBindings.${shared.macKey b} == b.aerospace) shared.bindings;
+
+# Navigation: the window key alone, Shift to move.
+assert niriAction "Mod+Left" == { focus-column-or-monitor-left = [ ]; };
+assert niriAction "Mod+Shift+Left" == { move-column-left-or-to-monitor-left = [ ]; };
+assert niriAction "Mod+Shift+Down" == { move-window-down = [ ]; };
+assert aerospaceBindings.ctrl-left == "focus ${crossMonitor} left";
+assert aerospaceBindings.ctrl-shift-up == "move ${crossMonitor} up";
+assert niriAction "Mod+1" == { focus-workspace = "1"; };
+assert niriAction "Mod+Shift+9" == { move-column-to-workspace = "9"; };
+assert aerospaceBindings.ctrl-1 == "workspace 1";
 assert
-  (find "9" true).aerospace == [
+  aerospaceBindings.ctrl-shift-9 == [
     "move-node-to-workspace 9"
     "workspace 9"
   ];
-# Both managers read every shared binding back out of the built configurations.
-assert lib.all (b: niriBindings.${shared.niriKey b}.action == b.niri) shared.bindings;
-assert lib.all (b: aerospaceBindings.${shared.macKey b} == b.aerospace) (
-  lib.filter (b: b.aerospace != null) shared.bindings
-);
-assert aerospaceBindings.ctrl-alt-1 == "workspace 1";
-assert shared.screenshots.niri.Print.action.screenshot == [ ];
-assert shared.screenshots.niri."Ctrl+Print".action.screenshot-screen == [ ];
-assert shared.screenshots.niri."Alt+Print".action.screenshot-window == [ ];
+assert niriAction "Mod+Page_Up" == { focus-workspace-up = [ ]; };
+assert niriAction "Mod+Shift+Page_Down" == { move-column-to-workspace-down = [ ]; };
+assert aerospaceBindings.ctrl-pageUp == "workspace prev";
+assert
+  aerospaceBindings.ctrl-shift-pageDown == [
+    "move-node-to-workspace next"
+    "workspace next"
+  ];
+
+# Launching, closing and locking.
+assert niriAction "Mod+Space" == { spawn-sh = shared.niriLauncher; };
+assert niriAction "Mod+T" == { spawn = [ "kitty" ]; };
+assert niriAction "Mod+B" == { spawn = [ "brave-origin" ]; };
+assert lib.hasInfix shared.apps.kitty aerospaceBindings.cmd-ctrl-t;
+assert lib.hasInfix shared.apps.brave aerospaceBindings.cmd-ctrl-b;
+assert niriAction "Mod+Q" == { close-window = [ ]; };
+assert aerospaceBindings.cmd-q == "close --quit-if-last-window";
+assert niriAction "Mod+Escape" == { spawn-sh = shared.niriLock; };
+assert
+  lib.hasInfix "key code 12 using {control down, command down}" aerospaceBindings.cmd-esc
+  && lib.hasSuffix "|| /usr/bin/pmset displaysleepnow" aerospaceBindings.cmd-esc;
+
+# Window state and layout.
+assert niriAction "Mod+F" == { maximize-column = [ ]; };
+assert aerospaceBindings.cmd-ctrl-shift-f == "macos-native-fullscreen";
+assert niriAction "Mod+W" == { set-column-display = "tabbed"; };
+assert niriAction "Mod+E" == { set-column-display = "normal"; };
+assert aerospaceBindings.cmd-ctrl-w == "layout accordion horizontal vertical";
+assert aerospaceBindings.cmd-ctrl-e == "layout tiles horizontal vertical";
+assert
+  lib.hasPrefix "exec-and-forget /nix/store/" aerospaceBindings.cmd-ctrl-l
+  && lib.hasSuffix "-aerospace-layout-apply" aerospaceBindings.cmd-ctrl-l;
+
+# Linux-only chords that stay, and retired ones that must not come back.
+assert niriAction "Mod+O" == { toggle-overview = [ ]; };
+assert niriAction "Super+Alt+C" == { spawn-sh = "noctalia msg panel-toggle control-center"; };
+assert niriAction "Mod+Shift+Space" == { switch-layout = "prev"; };
+assert niriBindings ? "Mod+Shift+D";
+# Inhibiting clients must not swallow the chord that takes shortcuts back from them.
+assert
+  !niriBindings."Mod+Shift+Escape".allow-inhibiting
+  && niriAction "Mod+Shift+Escape" == { toggle-keyboard-shortcuts-inhibit = [ ]; };
+assert lib.all (k: !(niriBindings ? ${k})) [
+  "Mod+D"
+  "Mod+Ctrl+Left"
+  "Mod+Alt+Shift+Left"
+  "Mod+Comma"
+  "Mod+Shift+E"
+  "Ctrl+Alt+Delete"
+];
+
+# Bare Print is the whole screen and Ctrl the area on both systems.
+assert shared.screenshots.niri.Print.action.screenshot-screen == [ ];
+assert shared.screenshots.niri."Ctrl+Print".action.screenshot == [ ];
+assert
+  map (s: s.symbolicHotkey) shared.screenshots.macos == [
+    "28"
+    "30"
+    "184"
+  ]
+  &&
+    map (s: lib.elemAt s.parameters 2) shared.screenshots.macos == [
+      8388608
+      8650752
+      8912896
+    ];
 assert
   lib.all (s: s.parameters != [ ]) shared.screenshots.macos
   && lib.length shared.screenshots.macos == 3;
-assert niriBindings.Print.action == shared.screenshots.niri.Print.action;
-assert niriBindings."Ctrl+Print".action == shared.screenshots.niri."Ctrl+Print".action;
-assert niriBindings."Alt+Print".action == shared.screenshots.niri."Alt+Print".action;
+assert lib.all (k: niriBindings.${k}.action == shared.screenshots.niri.${k}.action) (
+  lib.attrNames shared.screenshots.niri
+);
 true

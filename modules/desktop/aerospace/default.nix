@@ -22,17 +22,6 @@ let
     shared.gaps.regular
   ];
 
-  mkPrefixedBindings =
-    prefix: items: actionFn:
-    lib.listToAttrs (
-      map (item: {
-        name = "${prefix}-${toString item}";
-        value = actionFn item;
-      }) items
-    );
-
-  mkWorkspaceBindings = binding: actionFn: mkPrefixedBindings binding (lib.range 1 9) actionFn;
-
   # Case-insensitive regexes over monitor names; first connected wins. Work prefers any external,
   # so with one external plus the open laptop, work takes the external and comms the laptop.
   monitors = {
@@ -151,8 +140,6 @@ in
         "layout tiles"
         applyLayout
       ];
-      # Keep the pointer with keyboard focus across monitors so scrolling targets the focused one.
-      on-focused-monitor-changed = [ "move-mouse monitor-lazy-center" ];
 
       workspace-to-monitor-force-assignment = pinnedWorkspaces;
 
@@ -183,16 +170,9 @@ in
 
       mode = {
         main.binding = {
-          cmd-ctrl-0 = "balance-sizes";
-          cmd-ctrl-e = "layout tiles horizontal vertical";
           cmd-ctrl-l = applyLayout;
         }
-        // sharedBindings
-        // mkWorkspaceBindings "ctrl-alt" (i: "workspace ${toString i}")
-        // mkWorkspaceBindings "ctrl-alt-shift" (i: [
-          "move-node-to-workspace ${toString i}"
-          "workspace ${toString i}"
-        ]);
+        // sharedBindings;
       };
     };
   };

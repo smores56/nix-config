@@ -165,7 +165,7 @@ in
   activation = merge [
     (group mac [
       "checkAppManagementPermission"
-      "configureScreenshotKeys"
+      "configureSystemHotkeys"
       "copyApps"
       "setDarwinDefaults"
       "setupLaunchAgents"

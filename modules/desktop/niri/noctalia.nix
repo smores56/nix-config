@@ -20,6 +20,8 @@ in
         time_format = "{:%-I:%M %p}";
         clipboard_enabled = true;
         clipboard_auto_paste = "auto";
+        # Logout, reboot and power off have no key; typing their name in the launcher finds them.
+        launcher.providers.session.global = true;
       };
 
       location.auto_locate = true;
@@ -43,6 +45,9 @@ in
           "control-center"
         ];
       };
+
+      # Workspaces 1-9 are declared in niri, so they always exist; show only the ones in use.
+      widget.workspaces.hide_when_empty = true;
 
       widget.clock = {
         format = clockFormat;

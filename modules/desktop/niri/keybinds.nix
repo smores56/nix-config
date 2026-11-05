@@ -1,5 +1,4 @@
 {
-  config,
   lib,
   ...
 }:
@@ -12,95 +11,26 @@ let
     map (binding: {
       name = shared.niriKey binding;
       value.action = binding.niri;
-    }) (lib.filter (binding: binding.niri != null) shared.bindings)
-  );
-
-  step = toString shared.resize.percent;
-
-  directionKeys = {
-    Left = "left";
-    Right = "right";
-    Up = "up";
-    Down = "down";
-  };
-
-  mkDirectionBinds =
-    prefix: actionFn:
-    lib.mapAttrs' (
-      key: dir: lib.nameValuePair "${prefix}+${key}" { action = actionFn dir; }
-    ) directionKeys;
-
-  mkColumnDirectionBinds =
-    prefix: horizontalAction: verticalAction:
-    lib.mapAttrs' (
-      key: dir:
-      let
-        action =
-          if dir == "left" || dir == "right" then
-            "${horizontalAction}-${dir}"
-          else
-            "${verticalAction}-${dir}";
-      in
-      lib.nameValuePair "${prefix}+${key}" { action.${action} = [ ]; }
-    ) directionKeys;
-
-  workspaceBinds = builtins.listToAttrs (
-    map (i: {
-      name = "Mod+${toString i}";
-      value.action.focus-workspace = toString i;
-    }) (lib.range 1 9)
+    }) shared.bindings
   );
 in
 {
+  # Super+Tab needs no bind here: niri's recent-windows switcher ships it by default, as long as no
+  # `recent-windows.binds` block replaces the defaults.
   programs.niri.settings = {
     # Disjoint: a plain merge would let a shared chord silently overwrite a local one.
     binds = lib.attrsets.unionOfDisjoint (
       {
-        "Mod+T".action.spawn = [ "kitty" ];
-        "Mod+B".action.spawn = [ "brave-origin" ];
-        "Mod+D".action.spawn-sh = shared.niriLauncher;
+        # Spotlight keeps Cmd+Space on macOS, so the launcher chord is niri's alone.
+        "Mod+Space".action.spawn-sh = shared.niriLauncher;
         "Super+Alt+C".action.spawn-sh = noctalia "panel-toggle control-center";
-        "Super+Alt+L".action.spawn-sh = noctalia "session lock";
-
-        "Mod+Q".action.close-window = [ ];
         "Mod+O".action.toggle-overview = [ ];
-        "Mod+F".action.maximize-column = [ ];
-        "Mod+Shift+F".action.fullscreen-window = [ ];
-        "Mod+M".action.maximize-window-to-edges = [ ];
-        "Mod+Alt+F".action.expand-column-to-available-width = [ ];
-        "Mod+V".action.toggle-window-floating = [ ];
-        "Mod+Shift+V".action.switch-focus-between-floating-and-tiling = [ ];
-        "Mod+W".action.toggle-column-tabbed-display = [ ];
-
-        "Mod+Page_Up".action.focus-workspace-up = [ ];
-        "Mod+Page_Down".action.focus-workspace-down = [ ];
-        "Mod+Shift+Page_Up".action.move-workspace-up = [ ];
-        "Mod+Shift+Page_Down".action.move-workspace-down = [ ];
-        "Mod+Ctrl+Page_Up".action.move-window-to-workspace-up = [ ];
-        "Mod+Ctrl+Page_Down".action.move-window-to-workspace-down = [ ];
-
-        "Mod+Home".action.focus-column-first = [ ];
-        "Mod+End".action.focus-column-last = [ ];
-        "Mod+Alt+Home".action.move-column-to-first = [ ];
-        "Mod+Alt+End".action.move-column-to-last = [ ];
-
-        "Mod+R".action.switch-preset-column-width = [ ];
-        "Mod+Shift+R".action.switch-preset-column-width-back = [ ];
-        "Mod+Alt+Shift+R".action.switch-preset-window-height = [ ];
-        "Mod+Alt+R".action.reset-window-height = [ ];
-        "Mod+Minus".action.set-column-width = "-${step}%";
-        "Mod+Equal".action.set-column-width = "+${step}%";
-        "Mod+Shift+Minus".action.set-window-height = "-${step}%";
-        "Mod+Shift+Equal".action.set-window-height = "+${step}%";
-
-        "Mod+BracketLeft".action.consume-or-expel-window-left = [ ];
-        "Mod+BracketRight".action.consume-or-expel-window-right = [ ];
-        "Mod+Comma".action.consume-window-into-column = [ ];
-        "Mod+Period".action.expel-window-from-column = [ ];
-        "Mod+C".action.center-column = [ ];
-        "Mod+Alt+Shift+C".action.center-visible-columns = [ ];
-
         "Mod+Shift+Space".action.switch-layout = "prev";
+        # The escape hatch when a VM or remote desktop has grabbed every key; Super+Esc is lock.
+        "Mod+Shift+Escape" = {
+          allow-inhibiting = false;
+          action.toggle-keyboard-shortcuts-inhibit = [ ];
+        };
 
         "XF86AudioRaiseVolume".action.spawn = [
           "wpctl"
@@ -159,12 +89,6 @@ in
           "next"
         ];
 
-        "Mod+Shift+E".action.quit = { };
-        "Ctrl+Alt+Delete".action.quit = { };
-        "Mod+Escape".action.toggle-keyboard-shortcuts-inhibit = [ ];
-        "Mod+Shift+Slash".action.show-hotkey-overlay = [ ];
-        "Mod+Shift+P".action.power-off-monitors = [ ];
-
         "Mod+WheelScrollDown" = {
           cooldown-ms = 150;
           action.focus-workspace-down = [ ];
@@ -181,14 +105,6 @@ in
         "Mod+Ctrl+Shift+WheelScrollDown".action.move-column-right = [ ];
         "Mod+Ctrl+Shift+WheelScrollUp".action.move-column-left = [ ];
       }
-      // mkColumnDirectionBinds "Mod" "focus-column" "focus-window"
-      // mkDirectionBinds "Mod+Shift" (dir: {
-        "focus-monitor-${dir}" = [ ];
-      })
-      // mkDirectionBinds "Mod+Alt+Shift" (dir: {
-        "move-column-to-monitor-${dir}" = [ ];
-      })
-      // workspaceBinds
       // shared.screenshots.niri
     ) sharedBinds;
   };
