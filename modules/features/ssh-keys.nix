@@ -86,10 +86,6 @@ let
         }
       '') pubkeys}
       ${lib.getExe allowedSignersWriter}
-      # Retired identities (personal/employer software keys, FIDO2 signing credentials): no host may keep a stale handle, or offer or trust a stale public half.
-      rm -f "$HOME/.ssh/id_personal.pub" "$HOME/.ssh/id_work.pub" "$HOME/.config/ssh/id_work.pub" \
-        "$HOME"/.config/ssh-sk/k*/signing "$HOME"/.config/ssh-sk/k*/signing.pub
-
       exit "$failed"
     '';
   };
@@ -137,21 +133,6 @@ in
 
   home.activation.sshPubKeys = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     run ${lib.getExe sshPubKeys} || true
-  '';
-
-  # Public material lives outside ~/.ssh (no key/config storage there).
-  home.activation.sshLayout = lib.hm.dag.entryAfter [ "sshPubKeys" ] ''
-    ${pkgs.coreutils}/bin/mkdir -p "$HOME/.config/ssh"
-    if [ -f "$HOME/.ssh/known_hosts" ] && [ ! -e "$HOME/.config/ssh/known_hosts" ]; then
-      ${pkgs.coreutils}/bin/cp "$HOME/.ssh/known_hosts" "$HOME/.config/ssh/known_hosts"
-    fi
-    ${pkgs.coreutils}/bin/rm -f \
-      "$HOME/.ssh/allowed_signers" \
-      "$HOME/.ssh/config.work" \
-      "$HOME/.ssh/id_work.pub" \
-      "$HOME/.ssh/id_personal.pub" \
-      "$HOME/.ssh/known_hosts" \
-      "$HOME/.ssh/known_hosts.old"
   '';
 
   home.activation.checkSshPrivateKeys = lib.hm.dag.entryAfter [ "writeBoundary" ] ''

@@ -15,15 +15,8 @@ fail() {
   failures=$((failures + 1))
 }
 
-# The employer SSH key is retired on every host: a stale public half is
-# removed, never rewritten, and allowed_signers no longer trusts it.
-mkdir -p "$work/.config/ssh"
-file="$work/.config/ssh/id_work.pub"
-printf 'ssh-ed25519 AAAAstale stale\n' >"$file"
-
 HOME="$work" "$script" || fail "script exited non-zero"
 
-[ ! -e "$file" ] || fail "retired work public key still present"
 # PIV public halves are written (ssh's IdentityFile names them) but no YubiKey key is trusted for git:
 # allowed_signers is exactly the two account keys. `yubikey-lists` asserts the input list instead.
 [ -s "$work/.config/ssh-sk/piv-k1.pub" ] || fail "PIV public key not written"
