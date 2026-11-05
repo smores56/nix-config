@@ -332,8 +332,9 @@ Desktop (set to start at login) and Claude Code installed at
 [smoreswork/memory](#smoreswork-memory-instance).
 
 The weekday `harvest` (launchd, 17:30) reads Jira through `acli` (Homebrew
-`atlassian/acli/acli`, logged in with `acli jira auth login`) and Calendar and
-Granola titles through the signed-in Claude Code. A source that is not logged in
+`atlassian/acli/acli`, logged in with `acli jira auth login`) and PRs through `gh`.
+Calendar and Granola titles are not harvested: the `brain` skill fetches them
+when you ask for a standup. A source that is not logged in
 is reported in the run's notification and retried the next day; `harvest
 dry-run` previews what a run would write.
 

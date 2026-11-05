@@ -1,5 +1,5 @@
-# The work Mac's scheduled harvest: git, GitHub, Jira, Calendar and Granola titles become
-# episodes in the local memory instance (see harvest.py). Chat and mail are never harvested.
+# The work Mac's scheduled harvest: commits in work-owner repos, GitHub PRs and Jira tickets
+# become episodes in the local memory instance (see harvest.py). Chat and mail are never harvested.
 {
   config,
   lib,
@@ -35,7 +35,7 @@ let
     export HARVEST_REPO_ROOTS=${lib.escapeShellArg (lib.concatStringsSep ":" repoRoots)}
     export HARVEST_USER=${lib.escapeShellArg config.machine.username}
     export HARVEST_MEMORY=${config.home.profileDirectory}/bin/memory
-    export HARVEST_CLAUDE=${home}/.local/bin/claude
+    export HARVEST_WORK_OWNERS=${lib.escapeShellArg (lib.concatStringsSep "," cfg.work.githubOwners)}
     exec ${pkgs.python3}/bin/python3 ${src}/harvest.py "$@"
   '';
 in

@@ -56,7 +56,7 @@ Cross-cutting values flow through `config.machine.*` and `config.user.*`, not
   (launchd and Docker Desktop). It is the only agent memory: Maki's built-in memory
   and Claude Code's auto-memory are off (`modules/features/ai/claude.nix`).
 - **Harvest.** On smoreswork a weekday launchd job (`modules/features/ai/harvest/`)
-  writes git, GitHub, Jira, Calendar and Granola titles into the local memory
+  writes work-repo commits, GitHub PRs and Jira tickets into the local memory
   instance as idempotent episodes. Chat and mail are never harvested.
 - **Public services.** `webProxy.services` become `<name>.sammohr.dev` through
   the tunnel; `ssh`, `llm`, `memory` and `chat` sit behind Cloudflare Access.
