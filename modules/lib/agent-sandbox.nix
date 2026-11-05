@@ -69,6 +69,7 @@ let
     "$HOME/.cache/maki"
     "$HOME/.cache/mozilla"
     "$HOME/.cache/chromium"
+    "$HOME/.cache/BraveSoftware"
     "$HOME/.cache/gh"
     "$HOME/.mozilla"
     "$HOME/.var/app"

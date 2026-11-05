@@ -9,6 +9,9 @@
     # nix app wrappers hide the real binary from LaunchServices.
     cask "kitty"
     cask "nikitabobko/tap/aerospace"
+    # Brave is the browser on both laptops; the cask keeps the LaunchServices
+    # registration that `open -b com.brave.Browser` depends on.
+    cask "brave-browser"
 
     # vault mounts through fuse-t.
     cask "macos-fuse-t/cask/fuse-t"

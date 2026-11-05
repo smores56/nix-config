@@ -57,7 +57,7 @@ in
     binds = lib.attrsets.unionOfDisjoint (
       {
         "Mod+T".action.spawn = [ "kitty" ];
-        "Mod+B".action.spawn = [ "firefox" ];
+        "Mod+B".action.spawn = [ "brave" ];
         "Mod+D".action.spawn-sh = shared.niriLauncher;
         "Super+Alt+C".action.spawn-sh = noctalia "panel-toggle control-center";
         "Super+Alt+L".action.spawn-sh = noctalia "session lock";
