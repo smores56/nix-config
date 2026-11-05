@@ -86,9 +86,9 @@ let
         }
       '') pubkeys}
       ${lib.getExe allowedSignersWriter}
-      # Retired identities (personal/employer software keys, FIDO2 signing credentials): no host may keep offering or trusting a stale public half.
+      # Retired identities (personal/employer software keys, FIDO2 signing credentials): no host may keep a stale handle, or offer or trust a stale public half.
       rm -f "$HOME/.ssh/id_personal.pub" "$HOME/.ssh/id_work.pub" "$HOME/.config/ssh/id_work.pub" \
-        "$HOME"/.config/ssh-sk/k*/signing.pub
+        "$HOME"/.config/ssh-sk/k*/signing "$HOME"/.config/ssh-sk/k*/signing.pub
 
       exit "$failed"
     '';
