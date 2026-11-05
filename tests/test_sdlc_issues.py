@@ -922,6 +922,8 @@ class ReviewCliTest(GhTest):
         self.run_cli("review", "1")
         args = self.revdiff_calls()[0]
         self.assertIn("--stdin", args)
+        self.assertIn("--no-tree", args)
+        self.assertIn("--wrap", args)
         self.assertEqual(args[args.index("--stdin-name") + 1], "issue-1.md")
         with open(os.path.join(self.state, "reviewed-body.md")) as fh:
             self.assertEqual(fh.read(), DESIGN)
