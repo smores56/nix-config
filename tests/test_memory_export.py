@@ -392,6 +392,27 @@ class ExportTests(unittest.TestCase):
             run_export(ExportConfig(root=root / "exports", state_dir=state))
             self.assertFalse(stale.exists())
 
+    def test_export_migrates_a_v2_registry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state_dir = root / "state"
+            db = build_state(state_dir, [make_entry(1)])
+            conn = sqlite3.connect(db)
+            try:
+                conn.execute("ALTER TABLE episodes DROP COLUMN machine")
+                conn.execute("PRAGMA user_version = 2")
+                conn.commit()
+            finally:
+                conn.close()
+            result = run_export(ExportConfig(root=root / "exports", state_dir=state_dir))
+            with sqlite3.connect(result.directory / "registry.sqlite") as conn:
+                version = conn.execute("PRAGMA user_version").fetchone()[0]
+            record = json.loads(
+                (result.directory / "episodes.jsonl").read_text(encoding="utf-8").strip()
+            )
+        self.assertEqual(version, SCHEMA_VERSION)
+        self.assertEqual(record["machine"], "")
+
     def test_unversioned_registry_is_refused_by_export(self):
         with tempfile.TemporaryDirectory() as directory:
             state = Path(directory) / "state"
@@ -666,7 +687,7 @@ class RestoreTests(unittest.TestCase):
                 conn.close()
             report = self.restore(result.directory, root)
             restored = Registry(str(root / "restored"))
-            self.assertEqual(report.schema_version, 2)
+            self.assertEqual(report.schema_version, SCHEMA_VERSION)
             self.assertEqual(restored.lookup("owner--repo", f"{1:064x}").machine, "")
             with sqlite3.connect(root / "restored/registry.sqlite") as conn:
                 version = conn.execute("PRAGMA user_version").fetchone()[0]

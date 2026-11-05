@@ -509,6 +509,20 @@ class RegistryTests(unittest.TestCase):
             columns = {row[1] for row in conn.execute("PRAGMA table_info(episodes)")}
         self.assertIn("machine", columns)
 
+    def test_a_v3_registry_missing_the_column_is_repaired(self):
+        db = self.registry.db_path
+        conn = sqlite3.connect(db)
+        try:
+            conn.execute("ALTER TABLE episodes DROP COLUMN machine")
+            conn.commit()
+        finally:
+            conn.close()
+        repaired = Registry(self.tmp.name)
+        with sqlite3.connect(db) as conn:
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(episodes)")}
+        self.assertIn("machine", columns)
+        self.assertEqual(repaired.stats("owner--repo")["total"], 0)
+
     def test_a_schema_older_than_v2_is_still_refused(self):
         with sqlite3.connect(self.registry.db_path) as conn:
             conn.execute("PRAGMA user_version = 1")

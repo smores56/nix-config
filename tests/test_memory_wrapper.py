@@ -545,6 +545,8 @@ class WrapperTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("other--project", groups)
         self.assertIn("global", groups)
         self.assertIn("cli@smortress", text)
+        self.assertIn("Sources:", text)
+        self.assertNotIn("owner--repo [", text)
 
     async def test_search_project_filter_narrows_the_graph_query(self):
         self.seed_entry(content="other project decision", group="other--project")

@@ -1608,7 +1608,7 @@ headers, so the deployment pins one scope for clients that send none
 `MEMORY_MCP_DEFAULT_ACTOR=open-webui`, `MEMORY_MCP_DEFAULT_MACHINE=smortress`);
 that keeps chat writes in the shared group and labels them, while searches read
 every allowed group. Maki and the CLI keep the strict header contract.
- `files-mcp` (`http://127.0.0.1:8185/mcp`) needs no token. A
+`files-mcp` (`http://127.0.0.1:8185/mcp`) needs no token. A
 malformed value is silently dropped by Open WebUI, so an empty External Tool
 Servers list means the JSON is broken.
 

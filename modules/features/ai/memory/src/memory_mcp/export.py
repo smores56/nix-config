@@ -41,6 +41,7 @@ from .registry import (
     REGISTRY_FILE,
     SCHEMA_VERSION,
     STATUSES,
+    SchemaVersionError,
     upgrade_registry,
 )
 
@@ -415,8 +416,11 @@ def run_export(config: ExportConfig) -> ExportResult:
         # A copy taken between the package upgrade and the wrapper's first
         # start is still v2; migrate the snapshot, never the live file.
         schema = schema_version(staging)
-        if schema in MIGRATABLE_SCHEMAS:
-            upgrade_registry(staging)
+        if schema in (SCHEMA_VERSION, *MIGRATABLE_SCHEMAS):
+            try:
+                upgrade_registry(staging)
+            except SchemaVersionError as exc:
+                raise ExportError(str(exc)) from exc
             schema = schema_version(staging)
         if schema != SCHEMA_VERSION:
             found = "unversioned" if schema == 0 else str(schema)
@@ -700,16 +704,23 @@ def _install_registry(
     the current schema.
     """
     target.parent.mkdir(parents=True, exist_ok=True)
-    staging = target.with_name(target.name + ".restore-tmp")
-    snapshot_registry(source, staging)
+    # A private directory keeps the destination out of reach of a symlink
+    # planted in the memory-writable state dir while snapshot_registry creates it.
+    staging_dir = Path(tempfile.mkdtemp(dir=target.parent, prefix=".restore-registry-"))
     try:
+        staging = staging_dir / REGISTRY_FILE
+        snapshot_registry(source, staging)
         if migrate:
             upgrade_registry(staging)
+        installed = schema_version(staging)
+        if installed != SCHEMA_VERSION:
+            raise ExportError(
+                f"the staged registry is schema {installed}, expected {SCHEMA_VERSION}"
+            )
         _fix_owner(staging, owner)
         os.replace(staging, target)
-    except BaseException:
-        staging.unlink(missing_ok=True)
-        raise
+    finally:
+        shutil.rmtree(staging_dir, ignore_errors=True)
 
 
 @dataclass(frozen=True)
@@ -741,7 +752,7 @@ def restore(config: RestoreConfig) -> RestoreReport:
     report = RestoreReport(
         export_dir=verified.directory,
         snapshot=snapshot,
-        schema_version=verified.schema_version,
+        schema_version=SCHEMA_VERSION,
         counts=verified.counts,
         registry_path=registry_path,
         graph=verified.graph,
