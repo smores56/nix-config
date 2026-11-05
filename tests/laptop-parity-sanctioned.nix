@@ -26,6 +26,11 @@ in
       "env.BLITZY_REPOS_DIR" = "work-policy: employer checkouts live only on the work host";
       "env.LOCALE_ARCHIVE_2_27" = "inherent: glibc locale archive";
     }
+    (group "inherent: NymVPN runs only on the NixOS laptop; the Mac has no daemon to control" [
+      "abbrs.nv"
+      "abbrs.nvc"
+      "abbrs.nvd"
+    ])
     (group linux [
       "env.SSH_ASKPASS"
       "env.SSH_ASKPASS_REQUIRE"

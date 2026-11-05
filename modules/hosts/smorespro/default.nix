@@ -19,7 +19,13 @@
     ./nymvpn.nix
     ./secrets.nix
   ];
-  homeModules = [ ./nymvpn-home.nix ];
+  user = {
+    shellAbbrs = {
+      nv = "sudo nym-vpnc";
+      nvc = "sudo nym-vpnc connect --wait";
+      nvd = "sudo nym-vpnc disconnect --wait";
+    };
+  };
 
   nixosOptions = {
     # YubiKey sudo without an sshd: pam_rssh dials the local fido2-agent.
