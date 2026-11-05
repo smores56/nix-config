@@ -43,8 +43,9 @@ home-switch user host:
     home-manager switch --flake .#{{user}}@{{host}} --no-write-lock-file
 
 # Install the work Mac's brew casks from its Brewfile (adds only; never uninstalls).
+# Built from the flake, so it works before the first home-manager switch.
 brew-bundle:
-    brew bundle --file="${XDG_CONFIG_HOME:-$HOME/.config}/homebrew/Brewfile"
+    brew bundle --file="$(nix build --no-link --print-out-paths '.#homeConfigurations."sam@smoreswork".config.xdg.configFile."homebrew/Brewfile".source')"
 
 # Install NixOS on a blank machine (wipes its disks).
 install host target:
