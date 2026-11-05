@@ -599,6 +599,48 @@ in
           )
         );
 
+        # The memory service is the only agent memory: Claude's own is off wherever it is configured,
+        # maki's bundled one is off wherever maki is, and the personal laptop reaches smortress's store.
+        single-memory = evalCheck "single-memory" (
+          let
+            ensure = cond: msg: lib.assertMsg cond "single-memory: ${msg}";
+            homes = lib.attrValues config.flake.homeConfigurations;
+            makiHomes = lib.filter (h: h.config.home.file ? ".config/maki/init.lua") homes;
+            pro = config.flake.homeConfigurations."smores@smorespro".config;
+          in
+          toString (
+            assert
+              ensure (lib.all (
+                h: h.config.home.activation ? claudeConfig
+              ) homes) "every home merges Claude's settings"
+              && ensure (makiHomes != [ ]) "no home runs maki"
+              && ensure (lib.all (
+                h: lib.hasInfix "memory = { enabled = false }" h.config.home.file.".config/maki/init.lua".text
+              ) makiHomes) "maki's bundled memory is on somewhere"
+              && ensure (pro.systemd.user.services ? cloudflared-memory) "smorespro has no memory tunnel forward";
+            "ok"
+          )
+        );
+
+        # `claude-config` is built, not evaluated, so its script text is what is checked.
+        claude-memory-off =
+          pkgs.runCommand "claude-memory-off"
+            {
+              nativeBuildInputs = [ pkgs.gnugrep ];
+            }
+            ''
+              ${lib.concatMapStrings (
+                home:
+                let
+                  tool = lib.findFirst (
+                    p: lib.getName p == "claude-config"
+                  ) (throw "claude-config is not installed") home.config.home.packages;
+                in
+                "grep -qF 'autoMemoryEnabled = false' ${lib.getExe tool}\n"
+              ) homesHere}
+              touch $out
+            '';
+
         # The two memory instances share one description: only the personal one refuses work repos,
         # and the Mac instance reads its key from the sops path and extracts through Claude.
         memory-instances = evalCheck "memory-instances" (

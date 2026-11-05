@@ -170,6 +170,18 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(stored.status, "failed")
         self.assertEqual(stored.last_error, "absent")
 
+    def test_record_attempt_can_restart_the_queue_clock(self):
+        entry = self.entry()
+        self.seed(entry)
+        before = self.registry.lookup(entry.group, entry.content_hash)
+        kept = self.registry.record_attempt(entry.group, entry.content_hash)
+        self.assertEqual(kept.queued_at, before.queued_at)
+        moved = self.registry.record_attempt(
+            entry.group, entry.content_hash, queued_at="2030-01-01T00:00:00Z"
+        )
+        self.assertEqual(moved.queued_at, "2030-01-01T00:00:00Z")
+        self.assertEqual(moved.attempts, before.attempts + 2)
+
     def test_record_attempt_counts_and_audits_in_one_transaction(self):
         entry = self.entry()
         self.seed(entry)

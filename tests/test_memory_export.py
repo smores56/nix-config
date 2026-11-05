@@ -453,23 +453,49 @@ class DatedExportTests(unittest.TestCase):
                 self.dated(root, root / "missing-state", "2026-11-02T03-17-00Z", keep=1)
             self.assertEqual(self.names(root), ["2026-11-01T03-17-00Z"])
 
-    def test_a_failed_graph_snapshot_keeps_the_new_export_and_prunes_nothing(self):
+    def graph_run(self, root: Path, state: Path, day: int, *, works: bool, keep: int):
+        graph_dir = graph_source(root) if works and not (root / "falkordb").exists() else root / "falkordb"
+        return run_dated_export(
+            ExportConfig(
+                root=root / "exports",
+                state_dir=state,
+                graph_dir=graph_dir if works else root / "no-graph",
+                graph_client=FakeRedis([BEFORE, FINISHED]),
+            ),
+            keep=keep,
+            now=datetime(2026, 11, day, 3, 17, tzinfo=timezone.utc),
+        )
+
+    def test_failing_graph_snapshots_still_cap_the_directories(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             state = state_with(root, [make_entry(1)])
-            self.dated(root, state, "2026-11-01T03-17-00Z", keep=1)
-            result = run_dated_export(
-                ExportConfig(
-                    root=root / "exports",
-                    state_dir=state,
-                    graph_dir=root / "no-graph",
-                    graph_client=FakeRedis([BEFORE, FINISHED]),
-                ),
-                keep=1,
-                now=datetime(2026, 11, 2, 3, 17, tzinfo=timezone.utc),
+            self.assertIsNone(self.graph_run(root, state, 1, works=True, keep=2).graph_error)
+            for day in range(2, 8):
+                self.assertIsNotNone(self.graph_run(root, state, day, works=False, keep=2).graph_error)
+            # The newest two, plus the one graph-bearing export that every later run lacked.
+            self.assertEqual(
+                self.names(root),
+                ["2026-11-01T03-17-00Z", "2026-11-06T03-17-00Z", "2026-11-07T03-17-00Z"],
             )
-            self.assertIsNotNone(result.graph_error)
-            self.assertEqual(self.names(root), ["2026-11-01T03-17-00Z", "2026-11-02T03-17-00Z"])
+            self.assertTrue((root / "exports" / "2026-11-01T03-17-00Z" / "graph.rdb").is_file())
+
+    def test_the_protected_graph_export_moves_on_once_a_newer_one_has_a_graph(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = state_with(root, [make_entry(1)])
+            self.graph_run(root, state, 1, works=True, keep=1)
+            self.graph_run(root, state, 2, works=False, keep=1)
+            self.graph_run(root, state, 3, works=True, keep=1)
+            self.assertEqual(self.names(root), ["2026-11-03T03-17-00Z"])
+
+    def test_a_failed_graph_snapshot_with_no_graph_anywhere_prunes_to_keep(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = state_with(root, [make_entry(1)])
+            for day in range(1, 5):
+                self.graph_run(root, state, day, works=False, keep=2)
+            self.assertEqual(self.names(root), ["2026-11-03T03-17-00Z", "2026-11-04T03-17-00Z"])
 
     def test_an_existing_dated_directory_is_refused_and_left_alone(self):
         with tempfile.TemporaryDirectory() as directory:

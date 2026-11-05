@@ -216,6 +216,12 @@ class ProxyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reply.status_code, 200)
         self.assertEqual(self.seen[0].content, b"{not json")
 
+    def test_no_upstream_configured_refuses_to_start(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MEMORY_LLM_UPSTREAM", None)
+            with self.assertRaises(ValueError):
+                create_app(api_key="k", transport=httpx.MockTransport(lambda r: response()))
+
     def test_no_configured_key_file_refuses_to_start(self):
         with mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop("MEMORY_LLM_KEY_FILE", None)

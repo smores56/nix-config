@@ -36,6 +36,10 @@ FAKE_CLAUDE = textwrap.dedent(
     time.sleep(float(os.environ.get("FAKE_CLAUDE_DELAY", "0")))
     os.remove(marker)
 
+    calls = len([n for n in os.listdir(log) if n.startswith("call-")])
+    if calls <= int(os.environ.get("FAKE_CLAUDE_FAIL_FIRST", "0")):
+        print("flaky", file=sys.stderr)
+        sys.exit(1)
     if mode == "exit1":
         print("boom", file=sys.stderr)
         sys.exit(1)
@@ -101,7 +105,7 @@ class FakeClaudeCase(unittest.TestCase):
         # The fake reads its own knobs from the environment; real runs pass none of these.
         return claude_chat.ClaudeConfig(
             binary=str(self.binary),
-            passthrough=("FAKE_CLAUDE_DIR", "FAKE_CLAUDE_MODE", "FAKE_CLAUDE_DELAY"),
+            passthrough=("FAKE_CLAUDE_DIR", "FAKE_CLAUDE_MODE", "FAKE_CLAUDE_DELAY", "FAKE_CLAUDE_FAIL_FIRST"),
             **overrides,
         )
 
@@ -302,6 +306,8 @@ class ProxyBackendTests(FakeClaudeCase, unittest.IsolatedAsyncioTestCase):
             api_key="openai-test-key",
             chat_backend="claude",
             claude=self.config(model="claude-haiku-5-5"),
+            claude_attempts=3,
+            claude_backoff=0.0,
             **kwargs,
         )
 
@@ -332,11 +338,43 @@ class ProxyBackendTests(FakeClaudeCase, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reply.status_code, 502)
         self.assertEqual(reply.json()["error"]["type"], "claude_failed")
 
-    async def test_a_nonzero_exit_is_a_502(self):
+    async def test_a_nonzero_exit_is_a_502_after_three_attempts(self):
         os.environ["FAKE_CLAUDE_MODE"] = "exit1"
         reply = await self.post(self.app(), "/v1/chat/completions", chat_body())
 
         self.assertEqual(reply.status_code, 502)
+        self.assertEqual(len(self.calls()), 3)
+
+    async def test_a_transient_failure_is_retried_into_a_success(self):
+        os.environ["FAKE_CLAUDE_FAIL_FIRST"] = "2"
+        self.addCleanup(os.environ.pop, "FAKE_CLAUDE_FAIL_FIRST", None)
+        reply = await self.post(self.app(), "/v1/chat/completions", chat_body(schema=SCHEMA))
+
+        self.assertEqual(reply.status_code, 200)
+        self.assertEqual(len(self.calls()), 3)
+
+    async def test_failures_beyond_the_attempt_budget_are_a_502(self):
+        os.environ["FAKE_CLAUDE_FAIL_FIRST"] = "3"
+        self.addCleanup(os.environ.pop, "FAKE_CLAUDE_FAIL_FIRST", None)
+        reply = await self.post(self.app(), "/v1/chat/completions", chat_body())
+
+        self.assertEqual(reply.status_code, 502)
+        self.assertEqual(len(self.calls()), 3)
+
+    async def test_a_bad_request_is_not_retried(self):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=self.app()), base_url="http://127.0.0.1") as client:
+            reply = await client.post("/v1/chat/completions", content=b"[1]")
+        self.assertEqual(reply.status_code, 400)
+        self.assertEqual(self.calls(), [])
+
+    async def test_health_goes_503_when_the_claude_binary_disappears(self):
+        app = self.app()
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1") as client:
+            self.assertEqual((await client.get("/health")).status_code, 200)
+            self.binary.unlink()
+            reply = await client.get("/health")
+        self.assertEqual(reply.status_code, 503)
+        self.assertEqual(reply.json()["status"], "degraded")
 
     async def test_a_timeout_is_a_504(self):
         os.environ["FAKE_CLAUDE_DELAY"] = "5"
@@ -347,10 +385,13 @@ class ProxyBackendTests(FakeClaudeCase, unittest.IsolatedAsyncioTestCase):
             api_key="k",
             chat_backend="claude",
             claude=self.config(timeout=0.3),
+            claude_attempts=3,
+            claude_backoff=0.0,
         )
         reply = await self.post(app, "/v1/chat/completions", chat_body())
 
         self.assertEqual(reply.status_code, 504)
+        self.assertEqual(len(self.calls()), 3)
 
     async def test_concurrency_is_capped_at_two_by_default(self):
         os.environ["FAKE_CLAUDE_DELAY"] = "0.4"

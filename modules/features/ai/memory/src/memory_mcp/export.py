@@ -444,12 +444,17 @@ _DATED_EXPORT = re.compile(r"^\d{4}-\d\d-\d\dT\d\d-\d\d-\d\dZ$")
 
 
 def prune_dated_exports(root: Path, keep: int) -> tuple[str, ...]:
-    """Remove all but the newest `keep` dated export directories; foreign entries stay."""
+    """Remove all but the newest `keep` dated export directories; foreign entries stay.
+
+    The newest export that holds a graph snapshot is kept even when it is older than the
+    window: while graph snapshots keep failing it is the only restorable graph.
+    """
     dated = sorted(
         (entry.name for entry in root.iterdir() if entry.is_dir() and _DATED_EXPORT.match(entry.name)),
         reverse=True,
     )
-    doomed = dated[keep:]
+    newest_graph = next((name for name in dated if (root / name / GRAPH_FILE).is_file()), None)
+    doomed = [name for name in dated[keep:] if name != newest_graph]
     for name in doomed:
         shutil.rmtree(root / name)
     return tuple(doomed)
@@ -461,8 +466,8 @@ def run_dated_export(
     """Export into `<root>/<timestamp>/` and keep the newest `keep` of them.
 
     For hosts without a backup tool owning history. A failed registry export
-    removes its half-made directory, and a failed graph snapshot, prune nothing,
-    so a broken run never costs an older good export.
+    removes its half-made directory and prunes nothing. A failed graph snapshot
+    still prunes, but the newest export with a graph survives it.
     """
     if keep < 1:
         raise ExportError("--keep must be at least 1")
@@ -478,10 +483,7 @@ def run_dated_export(
         # Created above, so this call owns it.
         shutil.rmtree(directory, ignore_errors=True)
         raise
-    # A missing graph means the run failed and needs attention; the older exports may be the only
-    # ones that hold a graph, so they stay.
-    if result.graph_error is None:
-        prune_dated_exports(config.root, keep)
+    prune_dated_exports(config.root, keep)
     return result
 
 

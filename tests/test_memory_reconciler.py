@@ -6,7 +6,7 @@ import tempfile
 import time
 import unittest
 from contextlib import redirect_stderr
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "modules/features/ai/memory/src"))
@@ -24,7 +24,32 @@ from memory_mcp.registry import Registry, RegistryEpisode  # noqa: E402
 NOW = datetime(2026, 10, 22, 12, 0, 0, tzinfo=timezone.utc)
 
 
-class FakeGraph:
+class Snapshot:
+    """What `GraphStore.snapshot` returns, answered by a fake's own per-row methods."""
+
+    def __init__(self, graph, group):
+        self.graph, self.group = graph, group
+
+    def episode_for(self, content, *, since=None):
+        return self.graph.episode_for(self.group, content, since=since)
+
+    def uuids(self, content):
+        return self.graph.episode_uuids(self.group, content)
+
+
+class SnapshotsLikeRows:
+    """One snapshot per call, counted; failures surface when the snapshot is taken."""
+
+    snapshots = 0
+
+    def snapshot(self, group):
+        self.snapshots += 1
+        if getattr(self, "error", False):
+            raise GraphUnavailable("connection refused")
+        return Snapshot(self, group)
+
+
+class FakeGraph(SnapshotsLikeRows):
     def __init__(self, results=None, *, error=False):
         self.results = list(results or [])
         self.error = error
@@ -73,7 +98,7 @@ class Clock:
         return self.value
 
 
-class RacingGraph:
+class RacingGraph(SnapshotsLikeRows):
     """Returns a match, but a concurrent tombstone lands before the write."""
 
     def __init__(self, registry, entry, ref):
@@ -106,12 +131,17 @@ class RacingBackend:
         return {"message": "queued"}
 
 
-class BlockingGraph:
+class BlockingGraph(SnapshotsLikeRows):
     """A graph client that blocks its worker thread and then reports an outage."""
 
     def __init__(self, delay=0.05):
         self.delay = delay
         self.calls = 0
+
+    def snapshot(self, group):
+        self.calls += 1
+        time.sleep(self.delay)
+        raise GraphUnavailable("connection refused")
 
     def episode_for(self, group, content, *, since=None):
         self.calls += 1
@@ -137,7 +167,7 @@ class StubRedis:
         return [["header"], list(self.rows), []]
 
 
-class SweepGraph:
+class SweepGraph(SnapshotsLikeRows):
     """Pending content is absent; its episodes appear only to the sweep."""
 
     def __init__(self, uuids=()):
@@ -155,6 +185,41 @@ class SweepGraph:
     def tombstone(self, group, episode_uuid_value, *, now):
         self.tombstoned.append((group, episode_uuid_value, now))
         return TombstoneResult()
+
+
+class ContentGraph(SnapshotsLikeRows):
+    """A graph that holds the given episodes and counts every per-row lookup."""
+
+    def __init__(self, episodes=()):
+        self.episodes = list(episodes)  # (content, EpisodeRef)
+        self.row_lookups = 0
+
+    def episode_for(self, group, content, *, since=None):
+        self.row_lookups += 1
+        return None
+
+    def episode_uuids(self, group, content):
+        self.row_lookups += 1
+        return []
+
+    def snapshot(self, group):
+        self.snapshots += 1
+        return GraphStore(client=StubContents(self.episodes)).snapshot(group)
+
+    def tombstone(self, group, episode_uuid_value, *, now):
+        return TombstoneResult()
+
+
+class StubContents:
+    """A FalkorDB client answering the one per-group query with content, uuid and time."""
+
+    def __init__(self, episodes):
+        self.episodes = episodes
+
+    def execute_command(self, *args):
+        if args[0] == "GRAPH.LIST":
+            return [b"owner--repo"]
+        return [["header"], [[content, ref.uuid, ref.created_at] for content, ref in self.episodes], []]
 
 
 class ReconcilerTests(unittest.IsolatedAsyncioTestCase):
@@ -216,6 +281,80 @@ class ReconcilerTests(unittest.IsolatedAsyncioTestCase):
             clock=self.clock,
             now=lambda: NOW,
         )
+
+    async def test_a_pass_reads_each_group_once_however_many_rows_it_holds(self):
+        refs = [(f"content {i}", EpisodeRef(uuid=f"g-{i}", created_at="2026-10-22T10:05:00Z")) for i in range(5)]
+        for content, _ in refs:
+            self.entry(content=content)
+        self.entry(content="never extracted")
+        graph = ContentGraph(refs)
+
+        counts = await self.reconciler(graph).reconcile_once()
+
+        self.assertEqual(graph.snapshots, 1)
+        # Only the one row about to be resubmitted is re-proved absent, individually.
+        self.assertEqual(graph.row_lookups, 1)
+        self.assertEqual(counts["active"], 5)
+        self.assertEqual(counts["retried"] + counts["waiting"], 1)
+
+    async def test_a_young_absent_row_costs_no_graph_lookup(self):
+        self.entry(created_at="2026-10-22T11:59:00Z")
+        graph = ContentGraph()
+        counts = await self.reconciler(graph).reconcile_once()
+        self.assertEqual((counts["waiting"], graph.row_lookups), (1, 0))
+
+    async def test_the_sweep_reuses_the_pass_snapshot(self):
+        for content in ("one", "two"):
+            self.registry.tombstone(self.entry(content=content), reason="forget")
+        graph = ContentGraph([("one", EpisodeRef(uuid="late", created_at="2026-10-22T11:00:00Z"))])
+        counts = await self.reconciler(graph).reconcile_once()
+        self.assertEqual(counts["swept"], 1)
+        self.assertEqual((graph.snapshots, graph.row_lookups), (1, 0))
+
+    async def test_a_resubmission_restarts_the_grace_window(self):
+        entry = self.entry(created_at="2026-10-22T10:00:00Z", attempts=1)
+        backend = FakeBackend()
+        reconciler = self.reconciler(
+            FakeGraph(), backend, config=ReconcilerConfig(grace=600, backoff=0, max_retries=2)
+        )
+        counts = await reconciler.reconcile_once()
+        self.assertEqual(counts["retried"], 1)
+        stored = self.registry.lookup(entry.group, entry.content_hash)
+        self.assertEqual(stored.queued_at, NOW.isoformat())
+
+        # Five minutes later the slow queue is still inside this attempt's window.
+        reconciler._now = lambda: NOW + timedelta(seconds=300)
+        counts = await reconciler.reconcile_once()
+        self.assertEqual((counts["waiting"], counts["retried"]), (1, 0))
+        self.assertEqual(len(backend.added), 1)
+
+    async def test_a_slow_queue_is_not_submitted_three_times_or_failed(self):
+        entry = self.entry(created_at="2026-10-22T10:00:00Z", attempts=1)
+        backend = FakeBackend()
+        reconciler = self.reconciler(
+            FakeGraph(), backend, config=ReconcilerConfig(grace=600, backoff=0, max_retries=2)
+        )
+        failed = 0
+        for minute in range(0, 9):
+            reconciler._now = lambda m=minute: NOW + timedelta(seconds=60 * m)
+            failed += (await reconciler.reconcile_once())["failed"]
+        self.assertEqual(len(backend.added), 1)
+        self.assertEqual(failed, 0)
+        self.assertEqual(self.registry.lookup(entry.group, entry.content_hash).status, "pending")
+
+    async def test_the_last_attempt_gets_a_full_window_before_the_row_fails(self):
+        entry = self.entry(created_at="2026-10-22T10:00:00Z", attempts=2)
+        backend = FakeBackend()
+        reconciler = self.reconciler(
+            FakeGraph(), backend, config=ReconcilerConfig(grace=600, backoff=0, max_retries=2)
+        )
+        counts = await reconciler.reconcile_once()
+        self.assertEqual(counts["retried"], 1)
+        reconciler._now = lambda: NOW + timedelta(seconds=300)
+        self.assertEqual((await reconciler.reconcile_once())["failed"], 0)
+        reconciler._now = lambda: NOW + timedelta(seconds=700)
+        self.assertEqual((await reconciler.reconcile_once())["failed"], 1)
+        self.assertEqual(self.registry.lookup(entry.group, entry.content_hash).status, "failed")
 
     async def test_a_found_episode_becomes_active_with_the_graph_uuid(self):
         entry = self.entry()
@@ -404,13 +543,18 @@ class ReconcilerTests(unittest.IsolatedAsyncioTestCase):
     async def test_backoff_prevents_a_second_retry_too_soon(self):
         entry = self.entry()
         backend = FakeBackend()
-        reconciler = self.reconciler(FakeGraph(), backend)
+        # A window shorter than the backoff: the grace has passed but the last submission is recent.
+        reconciler = self.reconciler(
+            FakeGraph(), backend, config=ReconcilerConfig(grace=30, backoff=60, max_retries=2)
+        )
         await reconciler.reconcile_once()
         self.clock.value += 10
+        reconciler._now = lambda: NOW + timedelta(seconds=40)
         counts = await reconciler.reconcile_once()
         self.assertEqual(counts["backoff"], 1)
         self.assertEqual(len(backend.added), 1)
         self.clock.value += 60
+        reconciler._now = lambda: NOW + timedelta(seconds=100)
         counts = await reconciler.reconcile_once()
         self.assertEqual(counts["retried"], 1)
         self.assertEqual(len(backend.added), 2)

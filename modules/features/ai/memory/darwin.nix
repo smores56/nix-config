@@ -57,6 +57,18 @@ let
       ${text}
     '';
 
+  # The nightly job runs unattended and launchd logs go unread: a failed export (including a
+  # failed graph snapshot, which exits non-zero) must reach the user.
+  exportRun = script "memory-export-run" ''
+    "$@"
+    rc=$?
+    [ "$rc" -eq 0 ] && exit 0
+    # argv, not interpolation, like the harvest notification.
+    /usr/bin/osascript -e 'on run argv' -e 'display notification (item 1 of argv) with title "Memory export"' \
+      -e 'end run' "Export failed (exit $rc); see ~/Library/Logs/memory-export.log" || true
+    exit "$rc"
+  '';
+
   graphitiReady = script "memory-graphiti-ready" service.graphitiReady;
   wrapperReady = script "memory-mcp-ready" service.wrapperReady;
 
@@ -238,7 +250,10 @@ in
     memory-export = {
       enable = true;
       config = {
-        ProgramArguments = service.exportArguments {
+        ProgramArguments = [
+          "${exportRun}"
+        ]
+        ++ service.exportArguments {
           inherit exportDir stateDir;
           graphDir = falkordbDir;
           extra = [

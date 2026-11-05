@@ -35,7 +35,8 @@ let
       reasoningEffort = "";
       chatBackend = "claude";
       inherit claudeBinary;
-      concurrency = 2;
+      # Graphiti's queue limit follows this; claude children are cheap to run four at a time.
+      concurrency = 4;
       retries = 6;
     };
     # Changing the model or width re-embeds the corpus: wipe the graph and replay it.

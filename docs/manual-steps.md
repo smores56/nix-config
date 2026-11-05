@@ -1426,8 +1426,9 @@ edit plus rebuild; the secret's `restartUnits` restarts the gateway.
 - A gateway outage does not fail a write: Graphiti answers 200 and extracts from
   an in-memory queue, so the registry row stays `pending` with no graph episode
   (`journalctl -u memory-graphiti-mcp`). The reconciler replays it after
-  `MEMORY_RECONCILE_GRACE` (12 h, long enough that a draining backlog is not
-  resubmitted as duplicates); to test, set it to `300` in a drop-in under
+  `MEMORY_RECONCILE_GRACE` (3 h, restarted at every attempt, so a row fails only
+  after three windows; long enough that a draining backlog is not resubmitted as
+  duplicates); to test, set it to `300` in a drop-in under
   `/run/systemd/system/memory-mcp.service.d/`, `daemon-reload`, restart.
 
 **Embedder.** Graphiti embeds with `qwen3-embedding-8b` (4096-d) through the same
@@ -1551,16 +1552,22 @@ calls, and work repos are accepted there (`MEMORY_WORK_POLICY=allow`, from
 - **Extraction.** There is no Anthropic key: the proxy answers Graphiti's chat
   completions by running `claude -p --model claude-haiku-5-5` on the Claude
   subscription (tools, MCP servers, settings and session files all off), at most
-  two at a time. Claude must be installed at `~/.local/bin/claude` and signed in.
-  A failed or errored run returns 502 and the registry row stays `pending` until
-  the reconciler replays it.
+  four at a time (Graphiti's queue limit follows). Claude must be installed at
+  `~/.local/bin/claude` and signed in. A failed or timed-out run is retried up to
+  three times before the proxy answers 502/504, and the registry row stays `pending`
+  until the reconciler replays it. `curl 127.0.0.1:8082/health` is 503 when the
+  binary is missing. Graphiti (`:8184`) and FalkorDB (`:6379`) are unauthenticated and
+  reachable by every local user (accepted); the instance serves only work repos,
+  `global` and directories outside any repo.
 - **Embeddings.** `text-embedding-3-small` (1536-d) through the employer's OpenAI
   key (`openai-api-key`). Changing the model or width re-embeds the corpus: wipe
   `~/.local/share/memory/falkordb` and run `memory reindex --all`.
 - **State and export.** Registry and graph live in `~/.local/share/memory`
   (FileVault); the wrapper's bearer token is generated there on first start. The
   `memory-export` agent runs nightly at 03:17 (after wake if the Mac was asleep)
-  and keeps the newest seven dated directories in `~/.local/share/memory-export`.
+  and keeps the newest seven dated directories in `~/.local/share/memory-export`
+  (plus the newest one holding a graph, if recent graph snapshots failed); a non-zero
+  exit raises a notification.
   There is no restic and no off-machine copy. `memory restore` drives systemd and
   does not apply here; restoring is stopping the agents and copying a dated
   export's `registry.sqlite` over `~/.local/share/memory/registry.sqlite`.

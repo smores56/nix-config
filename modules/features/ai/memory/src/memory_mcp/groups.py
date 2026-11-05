@@ -6,9 +6,10 @@ server only validates it. Work classification deliberately reads git config and
 every remote instead of matching path strings: a personal clone of a work fork
 still has the employer's upstream, and a work clone can live anywhere.
 
-Whether work repos are refused is per instance (`MEMORY_WORK_POLICY`): the
-personal store refuses them, and only the employer's own instance accepts them.
-Anything but an exact `allow` refuses.
+Which side of the work line a store serves is per instance (`MEMORY_WORK_POLICY`): the
+personal store refuses work repos, and the employer's instance (`allow`) serves only work
+repos, the shared `global` group, and directories outside any repo (`local--*`, which has
+nothing to classify). Anything but an exact `allow` is the personal store.
 """
 
 from __future__ import annotations
@@ -129,6 +130,13 @@ def work_reason_for_group(group: str, settings: WorkSettings | None = None) -> s
     return None
 
 
+def _work_instance_reason(group: str) -> str | None:
+    """Why the employer's instance refuses this group, or None when it serves it."""
+    if group == GLOBAL_GROUP or group.startswith("local--") or work_reason_for_group(group):
+        return None
+    return "not a work group, and this instance serves only work"
+
+
 def validate_group(group: str) -> str:
     """Validate and canonicalize a group name.
 
@@ -138,7 +146,7 @@ def validate_group(group: str) -> str:
     candidate = (group or "").strip().lower()
     if not _GROUP_RE.fullmatch(candidate):
         raise GroupRefused("group must match ^[a-z0-9_-]{1,128}$")
-    reason = None if work_allowed() else work_reason_for_group(candidate)
+    reason = _work_instance_reason(candidate) if work_allowed() else work_reason_for_group(candidate)
     if reason:
         raise GroupRefused(f"{reason}: {candidate}")
     return candidate
@@ -337,12 +345,14 @@ def derive_group(cwd: str, env: dict[str, str] | None = None) -> GroupContext:
         raise GroupRefused(f"not a directory: {absolute}")
 
     try:
-        marker = None if work_allowed() else work_marker(absolute, env)
-        if marker:
+        marker = work_marker(absolute, env)
+        if marker and not work_allowed():
             raise GroupRefused(f"refusing work directory {absolute} ({marker})")
         root = repo_root_for(absolute, env)
         if root is None:
             return GroupContext(group=_local_slug(absolute), cwd=absolute)
+        if work_allowed() and not marker:
+            raise GroupRefused(f"refusing {absolute}: not a work repo, and this instance serves only work")
         remotes = _remotes(root, env)
     except GitError as exc:
         if _has_git_marker(absolute):

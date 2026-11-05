@@ -4,8 +4,7 @@
 Sources are the user's commits in work-owner repos (git reflogs), GitHub PRs
 (gh) and Jira tickets (acli). Calendar and Granola titles are fetched
 interactively by the brain skill, and chat and mail are not sources: no
-collector or episode path exists for them. Episode
-text is a pure function of the source facts, so the memory store's
+collector or episode path exists for them. Episode text is a pure function of the source facts, so the memory store's
 content-hash identity makes a re-harvest a no-op; per-source cursors only bound
 how far back a run looks, and a source that fails keeps its cursor.
 """
@@ -227,13 +226,15 @@ def pr_repo(url):
     return match.group(1) if match else None
 
 
-def pr_episodes(results_by_role, user):
-    """One episode per PR and state. Update times stay out of the text so only a real change is new."""
+def pr_episodes(results_by_role, user, owners):
+    """One episode per work-owner PR and state. Update times stay out of the text so only a real change is new."""
+    work = {o.lower() for o in owners}
     merged = {}
     for role, results in results_by_role.items():
         for pr in results:
             url = pr.get("url") or ""
-            if repo := pr_repo(url):
+            # Fail closed, like the git source: search scoping is a courtesy, this is the gate.
+            if (repo := pr_repo(url)) and repo.split("/")[0].lower() in work:
                 merged.setdefault(url, (repo, pr, set()))[2].add(role)
     episodes = []
     for url, (repo, pr, roles) in sorted(merged.items()):
@@ -294,13 +295,20 @@ class Tools:
     memory: Callable = memory_writer()
 
 
-def collect_github(first, tools, user):
+def collect_github(first, tools, user, owners):
     span = f"--updated=>={first.isoformat()}"
+    # One scoped search per owner: personal PRs are never even fetched. No owners, no search.
     results = {
-        role: json.loads(tools.gh(["search", "prs", flag, span, "--limit", str(GH_LIMIT), "--json", GH_FIELDS]))
+        role: [
+            pr
+            for owner in owners
+            for pr in json.loads(
+                tools.gh(["search", "prs", "--owner", owner, flag, span, "--limit", str(GH_LIMIT), "--json", GH_FIELDS])
+            )
+        ]
         for role, flag in GH_ROLES.items()
-    }
-    return pr_episodes(results, user)
+    } if owners else {}
+    return pr_episodes(results, user, owners)
 
 
 def collect_jira(first, tools, user):
@@ -366,7 +374,7 @@ def harvest(config, now, tools, dry_run=None):
 
     collectors = {
         GIT: lambda: git_episodes(config.repo_roots, *windows[GIT], config.user, config.work_owners),
-        GITHUB: lambda: collect_github(windows[GITHUB][0], tools, config.user),
+        GITHUB: lambda: collect_github(windows[GITHUB][0], tools, config.user, config.work_owners),
         JIRA: lambda: collect_jira(windows[JIRA][0], tools, config.user),
     }
     ready = {}

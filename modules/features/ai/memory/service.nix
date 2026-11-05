@@ -29,9 +29,11 @@ let
   proxyPort = ports.memoryLlmProxy;
   hostLocal = "127.0.0.1";
 
-  # A shorter pending-stale window than the reconcile grace re-queues writes that
-  # are merely waiting behind a large backfill. 12h covers a day's queue.
-  reconcileGraceSeconds = 43200;
+  # How long one submission may sit in Graphiti's queue before the reconciler resubmits it. The
+  # window restarts at every attempt, so a row fails only after three windows (nine hours): long
+  # enough for a bulk harvest to drain behind the model's concurrency cap, short enough that a
+  # lost submission is replayed the same day. The pending-stale window of the write path reuses it.
+  reconcileGraceSeconds = 10800;
 
   # Digests pin the same bytes on a fresh host. FalkorDB is SSPLv1, not in nixpkgs.
   falkordbImage = "falkordb/falkordb-server:v4.22.2@sha256:103b70949bc9019dd025e62e077665349b73e96add5c45738e73ddf73eef6220";
@@ -148,6 +150,9 @@ in
   ];
 
   # Flags both Docker and podman accept; each runner adds its own network and restart flags.
+  # Graphiti (:8184) and FalkorDB (:6379) have no authentication: loopback is their only
+  # boundary, so every other user of the host can reach them (accepted; both stores hold only
+  # what that user wrote). The wrapper in front of them is the authenticated surface.
   containers = {
     falkordb = {
       image = falkordbImage;
@@ -184,10 +189,10 @@ in
         SERVER__HOST = graphitiListen;
         # Zero vector for query-less searches; must match the embedder width.
         EMBEDDING_DIM = toString embedder.dimensions;
-        # The gateway's MEMORY_UPSTREAM_CONCURRENCY holds the real ceiling; two here
-        # leaves one of a three-slot tier for interactive use. Oversubscribing triggers
-        # 429s; lower these first if they return.
-        SEMAPHORE_LIMIT = "2";
+        # Graphiti's own queue limit equals the proxy's permit count (`llm.concurrency`), so
+        # nothing waits in the proxy's lane. Oversubscribing the model triggers 429s: lower
+        # `llm.concurrency` first if they return.
+        SEMAPHORE_LIMIT = toString llm.concurrency;
       };
       hardening = [
         # Ingests untrusted text on the host's loopback: drop capabilities, block setuid.

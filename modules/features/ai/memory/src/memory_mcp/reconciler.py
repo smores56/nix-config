@@ -1,10 +1,12 @@
 """Background reconciler: pending registry rows become verified graph episodes.
 
 Graphiti accepts an episode into an in-memory queue and exposes no queue status,
-so a queued write is not proof of storage. This task polls FalkorDB every
-interval for every pending row by `(group_id, exact content)`. Found rows become
-`active` with the graph's own uuid; rows absent past a grace period are retried
-a bounded number of times and then marked `failed`.
+so a queued write is not proof of storage. Each interval this task reads every
+involved group once from FalkorDB and matches pending rows by exact content, in
+memory. Found rows become `active` with the graph's own uuid; rows absent past a
+grace period are retried a bounded number of times and then marked `failed`. Each
+resubmission restarts the grace window, so a merely slow queue is waited on rather
+than resubmitted and failed within minutes.
 
 Retries never overlap an in-flight submission for the same content, re-check
 presence immediately before resubmitting, and pause while the model endpoint is
@@ -113,6 +115,8 @@ class Reconciler:
         self._reported_error: str | None = None
         # Where the last pending pass stopped, so the next one pages on.
         self._pending_cursor: tuple[str, str, str] | None = None
+        # Per pass: one graph read per group, shared by the pending rows and the tombstone sweep.
+        self._snapshots: dict[str, object] = {}
 
     async def reconcile_once(self) -> dict[str, int]:
         counts = {
@@ -143,6 +147,7 @@ class Reconciler:
                 else None
             )
         self.last_error = None
+        self._snapshots = {}
         now = self._now()
         if rows:
             await self._reconcile_pending(rows, counts, now)
@@ -158,6 +163,12 @@ class Reconciler:
             await self._sweep_tombstoned(counts, now)
         return counts
 
+    async def _snapshot(self, group: str):
+        """The group's episodes as of this pass, read once off the event loop."""
+        if group not in self._snapshots:
+            self._snapshots[group] = await asyncio.to_thread(self.graph.snapshot, group)
+        return self._snapshots[group]
+
     async def _reconcile_pending(
         self, rows: list[RegistryEpisode], counts: dict[str, int], now: datetime
     ) -> None:
@@ -167,8 +178,8 @@ class Reconciler:
             key = (row.group, row.content_hash)
             try:
                 # Bound to this row's own write: a tombstoned episode with the same content is kept on purpose.
-                found = await asyncio.to_thread(
-                    self.graph.episode_for, row.group, row.content, since=row.queued_at
+                found = (await self._snapshot(row.group)).episode_for(
+                    row.content, since=row.queued_at
                 )
             except GraphUnavailable as exc:
                 # Unreachable graph: absence cannot be proven for later rows either; end the pass.
@@ -267,7 +278,7 @@ class Reconciler:
                     self._last_attempt.pop(key, None)
                     counts["active"] += 1
                 else:
-                    applied_retry, error = await self._resubmit(row)
+                    applied_retry, error = await self._resubmit(row, now)
                     self._last_attempt[key] = self._clock()
                     if not applied_retry:
                         counts["changed"] += 1
@@ -298,9 +309,7 @@ class Reconciler:
         stamp = now.isoformat()
         for row in rows:
             try:
-                uuids = await asyncio.to_thread(
-                    self.graph.episode_uuids, row.group, row.content
-                )
+                uuids = (await self._snapshot(row.group)).uuids(row.content)
                 for uuid_value in uuids:
                     await asyncio.to_thread(
                         self.graph.tombstone, row.group, uuid_value, now=stamp
@@ -333,7 +342,7 @@ class Reconciler:
             return True
         return self._clock() - last >= self.config.backoff
 
-    async def _resubmit(self, row: RegistryEpisode) -> tuple[bool, str | None]:
+    async def _resubmit(self, row: RegistryEpisode, now: datetime) -> tuple[bool, str | None]:
         error: str | None = None
         try:
             await self.backend.add_episode(
@@ -352,6 +361,8 @@ class Reconciler:
             row.group,
             row.content_hash,
             error=error,
+            # The pass start, not the submit time: an episode landing meanwhile still counts as this attempt's.
+            queued_at=now.isoformat(),
             audit=Audit(
                 actor="reconciler",
                 group=row.group,

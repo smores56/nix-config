@@ -392,20 +392,25 @@ class Registry:
         digest: str,
         *,
         error: str | None = None,
+        queued_at: str | None = None,
         from_statuses: tuple[str, ...] = ("pending",),
         audit: Audit | None = None,
     ) -> RegistryEpisode | None:
         """Count one submission attempt and remember the latest error.
+
+        `queued_at` restarts the queue clock: the reconciler's grace window is measured per
+        attempt, so a slow queue is waited on instead of being resubmitted and then failed.
 
         The status guard keeps a concurrent tombstone authoritative: a row that
         changed under the caller is left alone and no audit row is written.
         """
         with self._connect() as conn:
             cursor = conn.execute(
-                "UPDATE episodes SET attempts = attempts + 1, last_error = ? "
+                "UPDATE episodes SET attempts = attempts + 1, last_error = ?, "
+                "queued_at = COALESCE(?, queued_at) "
                 "WHERE group_id = ? AND content_hash = ? "
                 f"AND status IN ({_placeholders(from_statuses)})",
-                (error, group, digest, *from_statuses),
+                (error, queued_at, group, digest, *from_statuses),
             )
             if cursor.rowcount == 0:
                 return None

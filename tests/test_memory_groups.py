@@ -178,6 +178,34 @@ class WorkPolicyTests(GitFixture):
             self.assertEqual(validate_group("blitzy-org--repo"), "blitzy-org--repo")
             self.assertEqual(validate_group("work"), "work")
 
+    def test_allow_refuses_a_personal_repo(self):
+        repo = self.repo()
+        self.git(repo, "remote", "add", "origin", "git@github.com:smores56/nix-config.git")
+        with mock.patch.dict(os.environ, {"MEMORY_WORK_POLICY": "allow"}), self.assertRaises(GroupRefused):
+            derive_group(repo, self.env)
+
+    def test_allow_refuses_personal_group_names_but_keeps_shared_ones(self):
+        with mock.patch.dict(os.environ, {"MEMORY_WORK_POLICY": "allow"}):
+            for group in ("smores56--nix-config", "someone--else"):
+                with self.subTest(group=group), self.assertRaises(GroupRefused):
+                    validate_group(group)
+            for group in ("global", "local--scratch", "blitzy-org--repo"):
+                with self.subTest(group=group):
+                    self.assertEqual(validate_group(group), group)
+
+    def test_allow_still_gives_a_directory_outside_any_repo_a_local_group(self):
+        plain = self.root / "notes"
+        plain.mkdir()
+        with mock.patch.dict(os.environ, {"MEMORY_WORK_POLICY": "allow"}):
+            self.assertEqual(derive_group(plain, self.env).group, "local--notes")
+
+    def test_allow_refuses_a_work_marked_repo_whose_group_owner_is_personal(self):
+        repo = self.repo()
+        self.git(repo, "remote", "add", "origin", "git@github.com:smores56/fork.git")
+        self.git(repo, "config", "smores.flow", "pr")
+        with mock.patch.dict(os.environ, {"MEMORY_WORK_POLICY": "allow"}), self.assertRaises(GroupRefused):
+            derive_group(repo, self.env)
+
     def test_allow_still_validates_the_group_shape(self):
         with mock.patch.dict(os.environ, {"MEMORY_WORK_POLICY": "allow"}), self.assertRaises(GroupRefused):
             validate_group("../escape")

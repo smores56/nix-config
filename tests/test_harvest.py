@@ -210,20 +210,37 @@ class EpisodeTests(unittest.TestCase):
     def test_pull_requests_merge_roles_and_leave_out_volatile_times(self):
         pr = {"url": "https://github.com/acme/widgets/pull/7", "title": "Fix it", "state": "merged", "isDraft": False,
               "updatedAt": "2026-10-14T10:00:00Z", "closedAt": "2026-10-14T10:00:00Z"}
-        eps = self.h.pr_episodes({"author": [pr], "reviewer": [pr], "commenter": []}, "sam")
+        eps = self.h.pr_episodes({"author": [pr], "reviewer": [pr], "commenter": []}, "sam", OWNERS)
         (ep,) = eps
         self.assertIn("authored and reviewed", ep)
         self.assertIn("acme/widgets", ep)
         self.assertIn("merged", ep)
         self.assertNotIn("10:00", ep)
         later = {**pr, "updatedAt": "2026-10-15T09:00:00Z"}
-        self.assertEqual(self.h.pr_episodes({"author": [later], "reviewer": [pr], "commenter": []}, "sam"), eps)
+        self.assertEqual(self.h.pr_episodes({"author": [later], "reviewer": [pr], "commenter": []}, "sam", OWNERS), eps)
 
     def test_a_state_change_is_a_new_episode(self):
         pr = {"url": "https://github.com/a/b/pull/1", "title": "T", "state": "open", "isDraft": True}
-        a = self.h.pr_episodes({"author": [pr]}, "sam")
-        b = self.h.pr_episodes({"author": [{**pr, "state": "merged"}]}, "sam")
+        a = self.h.pr_episodes({"author": [pr]}, "sam", ("a",))
+        b = self.h.pr_episodes({"author": [{**pr, "state": "merged"}]}, "sam", ("a",))
         self.assertNotEqual(a, b)
+
+    def test_a_personal_owner_pull_request_is_never_an_episode(self):
+        personal = {"url": "https://github.com/smores56/nix-config/pull/9", "title": "Mine", "state": "open", "isDraft": False}
+        work = {"url": "https://github.com/acme/widgets/pull/7", "title": "Fix", "state": "open", "isDraft": False}
+        eps = self.h.pr_episodes({"author": [personal, work]}, "sam", OWNERS)
+        self.assertEqual(len(eps), 1)
+        self.assertNotIn("smores56", eps[0])
+
+    def test_owner_matching_is_case_insensitive_and_whole_owner(self):
+        pr = {"url": "https://github.com/ACME/w/pull/1", "title": "T", "state": "open"}
+        lookalike = {"url": "https://github.com/acme-evil/w/pull/2", "title": "T", "state": "open"}
+        eps = self.h.pr_episodes({"author": [pr, lookalike]}, "sam", OWNERS)
+        self.assertEqual(len(eps), 1)
+
+    def test_no_work_owners_means_no_pull_requests(self):
+        pr = {"url": "https://github.com/acme/widgets/pull/7", "title": "Fix", "state": "open"}
+        self.assertEqual(self.h.pr_episodes({"author": [pr]}, "sam", ()), [])
 
     def test_jira_reads_both_flat_and_nested_items(self):
         out = json.dumps([
@@ -263,6 +280,28 @@ class FakeTools:
         if self.memory_fails:
             raise self.h.MemoryWriteError("server unreachable")
         self.written.append(text)
+
+
+class GithubSearchTests(unittest.TestCase):
+    def setUp(self):
+        self.h = load_module()
+
+    def test_each_owner_is_searched_by_its_own_scope(self):
+        fake = FakeTools(self.h, prs=[])
+        self.h.collect_github(date(2026, 10, 1), fake.tools(), "sam", ("acme", "globex"))
+        scopes = [args[args.index("--owner") + 1] for args in fake.gh_calls]
+        self.assertEqual(sorted(set(scopes)), ["acme", "globex"])
+        self.assertEqual(len(fake.gh_calls), 6)
+
+    def test_no_owners_makes_no_search_at_all(self):
+        fake = FakeTools(self.h, prs=[])
+        self.assertEqual(self.h.collect_github(date(2026, 10, 1), fake.tools(), "sam", ()), [])
+        self.assertEqual(fake.gh_calls, [])
+
+    def test_a_personal_result_is_dropped_even_when_search_returns_it(self):
+        personal = {"url": "https://github.com/smores56/nix-config/pull/9", "title": "Mine", "state": "open"}
+        fake = FakeTools(self.h, prs=[personal])
+        self.assertEqual(self.h.collect_github(date(2026, 10, 1), fake.tools(), "sam", OWNERS), [])
 
 
 class HarvestTests(unittest.TestCase):

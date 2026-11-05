@@ -30,6 +30,11 @@ EPISODIC_MATCHES_QUERY = (
 EPISODIC_CONTENTS_QUERY = (
     "MATCH (e:Episodic) WHERE e.group_id=$g RETURN e.content, e.created_at"
 )
+# One query per group and pass: a row-by-row scan reads every episode once per row.
+EPISODIC_SNAPSHOT_QUERY = (
+    "MATCH (e:Episodic) WHERE e.group_id=$g RETURN e.content, e.uuid, e.created_at "
+    "ORDER BY e.created_at DESC"
+)
 # Exclusive: this episode is the only support, so invalidate the edge.
 _TOMBSTONE_EXCLUSIVE_QUERY = (
     f"MATCH (a)-[r:{RELATES_TO}]->(b) WHERE $ep IN r.episodes AND size(r.episodes) <= 1 "
@@ -112,6 +117,24 @@ def _not_older(ref: EpisodeRef, bound: datetime) -> bool:
     return created is not None and created >= bound
 
 
+@dataclass(frozen=True)
+class GroupSnapshot:
+    """Every episode of one group at one instant, keyed by exact content, newest first."""
+
+    by_content: dict[str, tuple[EpisodeRef, ...]]
+
+    def episode_for(self, content: str, *, since: str | None = None) -> EpisodeRef | None:
+        """The same answer as `GraphStore.episode_for`, from memory."""
+        notes = self.by_content.get(content, ())
+        bound = moment(since) if since is not None else None
+        if bound is not None:
+            notes = tuple(note for note in notes if _not_older(note, bound))
+        return notes[0] if notes else None
+
+    def uuids(self, content: str) -> list[str]:
+        return [note.uuid for note in self.by_content.get(content, ())]
+
+
 class GraphStore:
     def __init__(self, url: str = DEFAULT_REDIS_URL, *, client: object | None = None) -> None:
         self.url = url
@@ -169,6 +192,21 @@ class GraphStore:
         if bound is not None:
             notes = [note for note in notes if _not_older(note, bound)]
         return notes[0] if notes else None
+
+    def snapshot(self, group: str) -> GroupSnapshot:
+        """All of a group's episodes in one round trip; an unknown group is empty."""
+        names = self._graph_names()
+        if names is None:
+            raise GraphUnavailable("graph list unavailable")
+        if group not in names:
+            return GroupSnapshot({})
+        found: dict[str, list[EpisodeRef]] = {}
+        for row in self._query(group, EPISODIC_SNAPSHOT_QUERY, {"g": group}):
+            if not row or row[0] is None or len(row) < 2 or row[1] is None:
+                continue
+            ref = EpisodeRef(uuid=_text(row[1]), created_at=_text(row[2]) if len(row) > 2 and row[2] is not None else "")
+            found.setdefault(_text(row[0]), []).append(ref)
+        return GroupSnapshot({content: tuple(refs) for content, refs in found.items()})
 
     def contents(self, group: str) -> dict[str, tuple[str, ...]]:
         """Every episode timestamp in one group, keyed by exact episode content."""

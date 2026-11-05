@@ -55,7 +55,7 @@ from . import claude_chat
 
 logger = logging.getLogger("memory-mcp.llm-proxy")
 
-DEFAULT_UPSTREAM = "https://api.neuralwatt.com"
+UPSTREAM_ENV = "MEMORY_LLM_UPSTREAM"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8082
 DEFAULT_TIMEOUT = 600.0
@@ -64,6 +64,12 @@ KEY_FILE_ENV = "MEMORY_LLM_KEY_FILE"
 REASONING_EFFORT_ENV = "MEMORY_LLM_REASONING_EFFORT"
 CHAT_BACKEND_ENV = "MEMORY_LLM_CHAT_BACKEND"
 CHAT_BACKENDS = ("upstream", "claude")
+# A `claude -p` run fails for transient reasons (auth refresh, a network blip, an overloaded model)
+# that the next try usually clears; Graphiti drops the whole episode on one failed extraction.
+DEFAULT_CLAUDE_ATTEMPTS = 3
+DEFAULT_CLAUDE_BACKOFF = 2.0
+CLAUDE_ATTEMPTS_ENV = "MEMORY_CLAUDE_ATTEMPTS"
+CLAUDE_BACKOFF_ENV = "MEMORY_CLAUDE_BACKOFF"
 ALLOWED_HOSTS_ENV = "MEMORY_LLM_PROXY_ALLOWED_HOSTS"
 # A browser page or a DNS-rebinding name must not be able to spend the account's key; callers are
 # local processes that dial one of these names.
@@ -196,8 +202,13 @@ def create_app(
     chat_backend: str | None = None,
     claude: claude_chat.ClaudeConfig | None = None,
     allowed_hosts: tuple[str, ...] | None = None,
+    claude_attempts: int | None = None,
+    claude_backoff: float | None = None,
 ) -> Starlette:
-    base_url = (upstream or os.environ.get("MEMORY_LLM_UPSTREAM", DEFAULT_UPSTREAM)).rstrip("/")
+    configured_upstream = upstream or os.environ.get(UPSTREAM_ENV)
+    if not configured_upstream:
+        raise ValueError(f"{UPSTREAM_ENV} names the model provider and has no default")
+    base_url = configured_upstream.rstrip("/")
     concurrency = upstream_concurrency or _env_int(UPSTREAM_CONCURRENCY_ENV, DEFAULT_UPSTREAM_CONCURRENCY)
     retries = upstream_retries or _env_int(UPSTREAM_RETRIES_ENV, DEFAULT_UPSTREAM_RETRIES)
     effort = (os.environ.get(REASONING_EFFORT_ENV, "") if reasoning_effort is None else reasoning_effort).strip()
@@ -213,6 +224,12 @@ def create_app(
         else tuple(h for h in os.environ.get(ALLOWED_HOSTS_ENV, "").split(",") if h.strip())
     )
     hosts = LOOPBACK_HOSTS | {h.strip().lower() for h in extra_hosts}
+    attempts = claude_attempts or _env_int(CLAUDE_ATTEMPTS_ENV, DEFAULT_CLAUDE_ATTEMPTS)
+    backoff = (
+        claude_backoff
+        if claude_backoff is not None
+        else float(os.environ.get(CLAUDE_BACKOFF_ENV) or DEFAULT_CLAUDE_BACKOFF)
+    )
     # Per app, so two apps in one process (tests) do not share permits.
     extraction_lane = asyncio.Semaphore(concurrency)
     light_lane = asyncio.Semaphore(LIGHT_LANE_CONCURRENCY)
@@ -234,6 +251,15 @@ def create_app(
 
     async def health(_request: Request) -> JSONResponse:
         # Local answer: readiness fails when this process is gone, not while the chat model loads. `/v1/models` probes upstream.
+        # The claude binary is checked on disk only: a probe call would spend the subscription.
+        if claude_config is not None:
+            try:
+                claude_chat.check_binary(claude_config)
+            except claude_chat.ClaudeError as exc:
+                return JSONResponse(
+                    {"status": "degraded", "service": "memory-llm-proxy", "scope": "local", "reason": str(exc)},
+                    status_code=503,
+                )
         return JSONResponse(
             {"status": "ok", "service": "memory-llm-proxy", "scope": "local"}
         )
@@ -296,14 +322,22 @@ def create_app(
             payload = None
         if not isinstance(payload, dict):
             return error(400, "invalid_request", "the chat body must be a JSON object")
-        try:
-            async with extraction_lane:
-                reply = await claude_chat.complete(config, payload)
-        except claude_chat.ClaudeTimeout as exc:
-            return error(504, "claude_timeout", str(exc))
-        except claude_chat.ClaudeError as exc:
-            logger.warning("claude chat failed: %s", exc)
-            return error(502, "claude_failed", str(exc))
+        failure: claude_chat.ClaudeError | None = None
+        for attempt in range(attempts):
+            try:
+                # The permit covers one run and is released before backing off.
+                async with extraction_lane:
+                    reply = await claude_chat.complete(config, payload)
+                break
+            except claude_chat.ClaudeError as exc:
+                failure = exc
+                logger.warning("claude chat attempt %d/%d failed: %s", attempt + 1, attempts, exc)
+                if attempt + 1 < attempts:
+                    await asyncio.sleep(_backoff_seconds(attempt, base=backoff))
+        else:
+            if isinstance(failure, claude_chat.ClaudeTimeout):
+                return error(504, "claude_timeout", str(failure))
+            return error(502, "claude_failed", str(failure))
         return JSONResponse(reply)
 
     async def proxy(request: Request) -> Response:

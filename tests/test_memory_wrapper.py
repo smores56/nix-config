@@ -117,6 +117,20 @@ class FakeGraph:
         self._check()
         return dict((self.contents_map or {}).get(group, {}))
 
+    def snapshot(self, group):
+        """The reconciler's per-pass view, answered by this fake's own per-row methods."""
+        self._check()
+        graph = self
+
+        class Snapshot:
+            def episode_for(self, content, *, since=None):
+                return graph.episode_for(group, content, since=since)
+
+            def uuids(self, content):
+                return graph.episode_uuids(group, content)
+
+        return Snapshot()
+
     def episode_uuids(self, group, content):
         self._check()
         return list(self.uuids)
