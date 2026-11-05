@@ -319,14 +319,17 @@ polkit policy, so a same-UID process cannot authorize a tunnel change.
 
 Create the account once at <https://nym.com/account/create> and store the
 24-word access code in Bitwarden plus an offline copy. The CLI accepts the
-phrase only as argv, so run that one command from a history-free shell
-(`env HISTFILE=/dev/null bash`) and clear the terminal. Do not put it in sops,
-Syncthing, or a backup of `/var/lib/nym-vpnd` (account and config).
+phrase only as argv, and `sudo` logs argv, so do the one-time login in a root
+shell with history off. Do not put the phrase in sops, Syncthing, or a backup
+of `/var/lib/nym-vpnd` (account and config).
 
 ```sh
-# One-time device login; the daemon stores the account root-only.
-sudo nym-vpnc account set "<24 words>"
-sudo nym-vpnc account get
+# One-time device login. No sudo log, no shell history, no argv in a user process.
+sudo -i
+set +o history
+HISTFILE=/dev/null nym-vpnc account set "<24 words>"
+nym-vpnc account get
+exit
 
 # Daily use. Use two-hop Fast mode unless the session needs the mixnet.
 sudo nym-vpnc tunnel set --two-hop on
