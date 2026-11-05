@@ -14,9 +14,9 @@ let
     root = ./.;
     fileset = ./harvest.py;
   };
-  # Checkouts whose reflogs the harvest reads: codeRoot plus the work host's flat folder.
+  # Checkouts whose reflogs the harvest reads: reposRoot plus the work host's flat folder.
   repoRoots = [
-    cfg.codeRoot
+    cfg.reposRoot
     cfg.work.flatRepos.dir
   ];
   # launchd starts jobs with a bare PATH. gh and git come from Nix; acli is a Homebrew install.

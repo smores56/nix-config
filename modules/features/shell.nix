@@ -105,7 +105,7 @@ in
       copy = "osc copy";
       paste = "osc paste";
 
-      cn = "c ~/code/github.com/smores56/nix-config";
+      cn = "c ~/repos/github.com/smores56/nix-config";
       hm = "home-manager";
       hs = "home-manager switch --no-write-lock-file";
 

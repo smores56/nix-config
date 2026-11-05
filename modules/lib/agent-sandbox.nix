@@ -25,7 +25,7 @@ let
   ];
 
   homeRw = [
-    "$HOME/code"
+    "$HOME/repos"
     "$HOME/dev"
     "$HOME/Documents"
     "$HOME/Downloads"

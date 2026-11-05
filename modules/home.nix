@@ -24,7 +24,7 @@ in
       config.user.fontPackage
     ];
     file.".config/home-manager" = {
-      source = config.lib.file.mkOutOfStoreSymlink "${cfg.codeRoot}/github.com/smores56/nix-config";
+      source = config.lib.file.mkOutOfStoreSymlink "${cfg.reposRoot}/github.com/smores56/nix-config";
       force = true;
     };
     file.".config/nix/nix.conf".text = ''

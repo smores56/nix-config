@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Override auto-detected user/host and checkout root via BOOTSTRAP_USER, BOOTSTRAP_HOST, BOOTSTRAP_CODE_ROOT.
+# Override auto-detected user/host and checkout root via BOOTSTRAP_USER, BOOTSTRAP_HOST, BOOTSTRAP_REPOS_ROOT.
 
 REPO_OWNER="smores56"
 REPO_NAME="nix-config"
 REPO_URL_HTTPS="https://github.com/${REPO_OWNER}/${REPO_NAME}.git"
 REPO_URL_SSH="git@github.com:${REPO_OWNER}/${REPO_NAME}.git"
 GITHUB_HOST="github.com"
-CODE_ROOT="${BOOTSTRAP_CODE_ROOT:-${HOME}/code}"
-REPO_DIR="${CODE_ROOT}/${GITHUB_HOST}/${REPO_OWNER}/${REPO_NAME}"
+REPOS_ROOT="${BOOTSTRAP_REPOS_ROOT:-${HOME}/repos}"
+REPO_DIR="${REPOS_ROOT}/${GITHUB_HOST}/${REPO_OWNER}/${REPO_NAME}"
 
 USERNAME="${BOOTSTRAP_USER:-$(whoami)}"
 HOSTNAME="${BOOTSTRAP_HOST:-$(hostname -s 2>/dev/null || hostname)}"
@@ -59,14 +59,14 @@ validate_origin() {
   actual="$(git -C "$1" remote get-url origin 2>/dev/null || true)"
   case "$actual" in
     "$REPO_URL_HTTPS"|"$REPO_URL_SSH") return 0 ;;
-    "") err "Existing checkout at ${1} has no 'origin' remote. Remove or rename it, or set BOOTSTRAP_CODE_ROOT to a clean directory." ;;
-    *)  err "Existing checkout at ${1} has unexpected origin '${actual}' (expected ${REPO_URL_HTTPS} or ${REPO_URL_SSH}). Remove or rename it, or set BOOTSTRAP_CODE_ROOT to a clean directory." ;;
+    "") err "Existing checkout at ${1} has no 'origin' remote. Remove or rename it, or set BOOTSTRAP_REPOS_ROOT to a clean directory." ;;
+    *)  err "Existing checkout at ${1} has unexpected origin '${actual}' (expected ${REPO_URL_HTTPS} or ${REPO_URL_SSH}). Remove or rename it, or set BOOTSTRAP_REPOS_ROOT to a clean directory." ;;
   esac
 }
 
 clone_repo() {
   mkdir -p "$(dirname "$REPO_DIR")"
-  GHQ_ROOT="$CODE_ROOT" nix-shell -p ghq --run "ghq get '${REPO_URL_HTTPS}'"
+  GHQ_ROOT="$REPOS_ROOT" nix-shell -p ghq --run "ghq get '${REPO_URL_HTTPS}'"
 }
 
 command -v nix >/dev/null 2>&1 || err "Nix is not installed"
@@ -80,7 +80,7 @@ if is_git_checkout "$REPO_DIR"; then
   validate_origin "$REPO_DIR"
   skip "Repository already at ${REPO_DIR}"
 elif is_nonempty_dir "$REPO_DIR"; then
-  err "${REPO_DIR} exists but is not a Git checkout. Remove or rename it, or set BOOTSTRAP_CODE_ROOT to a clean directory."
+  err "${REPO_DIR} exists but is not a Git checkout. Remove or rename it, or set BOOTSTRAP_REPOS_ROOT to a clean directory."
 else
   info "Cloning repository via ghq into ${REPO_DIR}..."
   clone_repo

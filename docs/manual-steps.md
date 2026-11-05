@@ -199,7 +199,7 @@ sudo systemd-cryptenroll --recovery-key /dev/disk/by-partlabel/root
 
 # 5. Home config, FIDO2 handles, SSH (fresh installs have no checkout yet)
 nix run github:smores56/nix-config#bootstrap
-cd ~/code/github.com/smores56/nix-config
+cd ~/repos/github.com/smores56/nix-config
 nix run .#key-restore -- ~/Downloads/smorespro-restore-<time>.tar.gz
 ssh smortress true   # one graphical YubiKey PIN prompt on first use
 ```
@@ -1491,7 +1491,7 @@ on smortress:
 systemctl status memory-mcp memory-llm-proxy
 curl 127.0.0.1:8182/health
 curl 127.0.0.1:8082/v1/models        # proxied to Neuralwatt
-cd ~/code/<repo> && memory status    # group, registry counts, readiness
+cd ~/repos/<repo> && memory status    # group, registry counts, readiness
 systemctl list-timers 'memory-export*'
 ```
 
