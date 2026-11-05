@@ -142,7 +142,7 @@ in
     ++ workspaces
     ++ [
       (bind "T" false { spawn = [ "kitty" ]; } (open apps.kitty))
-      (bind "B" false { spawn = [ "brave" ]; } (open apps.brave))
+      (bind "B" false { spawn = [ "brave-origin" ]; } (open apps.brave))
       (bind "D" false { spawn-sh = niriLauncher; } "exec-and-forget /usr/bin/open -a Spotlight")
       (simple "Q" false "close-window" "close")
       (simple "O" false "toggle-overview" null)

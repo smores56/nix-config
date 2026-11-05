@@ -107,7 +107,7 @@ in
       {
         matches = [
           { app-id = "^kitty$"; }
-          { app-id = "^brave-browser$"; }
+          { app-id = "^brave-origin$"; }
         ];
         open-on-workspace = "1";
       }

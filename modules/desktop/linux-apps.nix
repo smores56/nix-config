@@ -10,7 +10,7 @@ in
   config = lib.mkIf isLinux {
     home.packages = with pkgs; [
       kdePackages.dolphin
-      brave
+      brave-origin
       evince
       feh
       vlc
@@ -28,9 +28,9 @@ in
     xdg.mimeApps = {
       enable = true;
       defaultApplications = {
-        "text/html" = "brave-browser.desktop";
-        "x-scheme-handler/http" = "brave-browser.desktop";
-        "x-scheme-handler/https" = "brave-browser.desktop";
+        "text/html" = "brave-origin.desktop";
+        "x-scheme-handler/http" = "brave-origin.desktop";
+        "x-scheme-handler/https" = "brave-origin.desktop";
       };
     };
   };

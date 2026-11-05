@@ -40,7 +40,7 @@ assert lib.all (k: niriBindings ? ${k}) (
 );
 # Launchers, monitors and layout actions.
 assert (find "T" false).niri == { spawn = [ "kitty" ]; };
-assert (find "B" false).niri == { spawn = [ "brave" ]; };
+assert (find "B" false).niri == { spawn = [ "brave-origin" ]; };
 assert lib.hasInfix shared.apps.brave (find "B" false).aerospace;
 assert lib.hasInfix shared.apps.kitty (find "T" false).aerospace;
 assert (find "Q" false).aerospace == "close";

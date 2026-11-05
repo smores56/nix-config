@@ -88,8 +88,8 @@ in
     ])
     (group harvest [ "harvest" ])
     (group "inherent: steam is a brew cask on the Mac" [ "steam" ])
-    (group "inherent: the Mac installs Brave from a brew cask, so it is not a nix home package" [
-      "brave"
+    (group "inherent: Linux runs the free Brave Origin nix package; the Mac uses the Brave brew cask" [
+      "brave-origin"
     ])
     (group "work-policy: personal desktop apps stay off the employer laptop" [
       "bitwarden-desktop"
