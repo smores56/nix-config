@@ -1,5 +1,4 @@
 {
-  config,
   lib,
   ...
 }:
@@ -22,11 +21,16 @@ in
     # Disjoint: a plain merge would let a shared chord silently overwrite a local one.
     binds = lib.attrsets.unionOfDisjoint (
       {
+        # Spotlight keeps Cmd+Space on macOS, so the launcher chord is niri's alone.
+        "Mod+Space".action.spawn-sh = shared.niriLauncher;
         "Super+Alt+C".action.spawn-sh = noctalia "panel-toggle control-center";
         "Mod+O".action.toggle-overview = [ ];
         "Mod+Shift+Space".action.switch-layout = "prev";
         # The escape hatch when a VM or remote desktop has grabbed every key; Super+Esc is lock.
-        "Mod+Shift+Escape".action.toggle-keyboard-shortcuts-inhibit = [ ];
+        "Mod+Shift+Escape" = {
+          allow-inhibiting = false;
+          action.toggle-keyboard-shortcuts-inhibit = [ ];
+        };
 
         "XF86AudioRaiseVolume".action.spawn = [
           "wpctl"

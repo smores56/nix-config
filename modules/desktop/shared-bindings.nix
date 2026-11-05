@@ -8,8 +8,10 @@ let
   niriLauncher = "noctalia msg panel-toggle launcher";
   niriLock = "noctalia msg session lock";
   open = bundle: "exec-and-forget /usr/bin/open -b ${bundle}";
-  # macOS has no lock command; sending its own Ctrl+Cmd+Q shortcut works whatever the password delay is.
-  macLock = "exec-and-forget /usr/bin/osascript -e 'tell application \"System Events\" to keystroke \"q\" using {control down, command down}'";
+  # macOS has no lock command; its own Ctrl+Cmd+Q shortcut locks whatever the password delay is. Key
+  # code 12 is Q on any layout, the timeout keeps an unanswered permission prompt from hanging the
+  # bind, and a refused keystroke falls back to sleeping the display rather than doing nothing.
+  macLock = "exec-and-forget /usr/bin/osascript -e 'with timeout of 5 seconds' -e 'tell application \"System Events\" to key code 12 using {control down, command down}' -e 'end timeout' || /usr/bin/pmset displaysleepnow";
 
   # One definition per input device setting, so macOS defaults and niri's input block cannot drift.
   input = {
@@ -29,9 +31,10 @@ let
     points = 30;
   };
 
-  # Super alone is free on Linux. On macOS Ctrl alone carries keys no terminal or text field uses
-  # (arrows, digits, Page keys), letters need Cmd+Ctrl because Ctrl+letter belongs to the shell,
-  # editors and Cocoa text editing, and Cmd+Q/Cmd+Esc mirror Super+Q/Super+Esc on purpose.
+  # Super alone is free on Linux. On macOS Ctrl alone takes only arrows, digits and Page keys, whose
+  # losses are minor (kitty's Ctrl+Shift tab and scroll keys, Brave's Ctrl+Page tab keys); letters
+  # need Cmd+Ctrl because Ctrl+letter belongs to the shell, editors and Cocoa text editing, and
+  # Cmd+Q/Cmd+Esc mirror Super+Q/Super+Esc on purpose.
   macMods = {
     nav = "ctrl";
     letter = "cmd-ctrl";
@@ -58,7 +61,7 @@ let
   };
 
   # The platform-specific command sits beside the key because the two window managers do not share
-  # a command vocabulary; a null AeroSpace command marks a Linux-only action.
+  # a command vocabulary.
   bindWith = mods: k: shift: niri: aerospace: {
     inherit
       mods
@@ -169,15 +172,12 @@ in
     apps
     gaps
     input
-    resize
     niriKey
     macKey
     niriLauncher
     niriLock
     ;
 
-  # Spotlight already owns Cmd+Space, so only niri binds a launcher.
-  linuxOnly = [ "Mod+Space" ];
   # Chords with no niri counterpart: restoring the AeroSpace app layout.
   macOnly = [ "cmd-ctrl-l" ];
 
@@ -188,7 +188,6 @@ in
     ++ workspaceSteps
     ++ resizes
     ++ [
-      (letter "Space" false { spawn-sh = niriLauncher; } null)
       (letter "T" false { spawn = [ "kitty" ]; } (open apps.kitty))
       (letter "B" false { spawn = [ "brave-origin" ]; } (open apps.brave))
       # AeroSpace's plain close never quits, which would leave windowless apps running.

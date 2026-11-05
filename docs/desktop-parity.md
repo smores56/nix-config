@@ -3,7 +3,9 @@
 Shared Niri and AeroSpace bindings live in `modules/desktop/shared-bindings.nix`.
 The window key is Super on Linux. On macOS it is Ctrl for arrows, digits and
 Page keys, and Command+Control for letters, because Ctrl+letter belongs to the
-shell, editors and text fields. No modifier is remapped, so each system keeps
+shell, editors and text fields. Ctrl+arrows and Ctrl+Page take a few app keys on
+macOS: kitty's Ctrl+Shift tab, scroll and window-jump keys, and Brave's
+Ctrl+Page tab keys (Ctrl+Tab still works). No modifier is remapped, so each system keeps
 its own app key (Command on macOS, Ctrl on Linux).
 
 Arrows focus and Shift+arrows move, crossing monitor edges, so there is no
@@ -17,14 +19,15 @@ through them, and Shift moves the window there and follows it.
 | Close window | Super+Q | Command+Q (quits the app with its last window) |
 | Lock | Super+Esc | Command+Esc |
 | Window switcher | Super+Tab (niri default) | Command+Tab |
-| Managed / native fullscreen | Super+F / Super+Shift+F | Command+Control+F / +Shift |
+| Maximize / fullscreen | Super+F / Super+Shift+F | Command+Control+F / +Shift (native) |
 | Floating | Super+V | Command+Control+V |
 | Tabbed (accordion) / tiles | Super+W / Super+E | Command+Control+W / E |
 | Width, height (Shift) | Super+Minus/Equal | Command+Control+Minus/Equal |
 
-Command+Q overrides the apps' own quit; Force Quit stays on Option+Command+Esc.
-Command+Esc sends macOS's Control+Command+Q lock shortcut, so the first press
-asks to let AeroSpace control System Events. Resize steps are points on
+Command+Q overrides the apps' own quit and closes one window at a time; Force
+Quit stays on Option+Command+Esc. Command+Esc sends macOS's Control+Command+Q
+lock shortcut, which needs AeroSpace to be allowed to control System Events;
+without that permission it sleeps the display instead. Resize steps are points on
 AeroSpace and percentages on Niri, and AeroSpace uses tree tiling rather than
 Niri's scrolling columns.
 
