@@ -116,11 +116,11 @@ system: [
     # daemon and CLI on one release so their IPC does not skew.
     nym-vpn-core = prev.stdenv.mkDerivation (finalAttrs: {
       pname = "nym-vpn-core";
-      version = "2026.10.0";
+      version = "2026.14.0";
 
       src = prev.fetchurl {
-        url = "https://github.com/nymtech/nym-vpn-client/releases/download/nym-vpn-core-v${finalAttrs.version}/nym-vpn-core-v${finalAttrs.version}_linux_x86_64.tar.gz";
-        hash = "sha256-k5q4MtwiS2J8Q7bCpWIHO6XbzVMFeavjvhOtH9ITbJs=";
+        url = "https://github.com/nymtech/nym-vpn-client/releases/download/nym-vpn-v${finalAttrs.version}/nym-vpn-core-v${finalAttrs.version}_linux_x86_64.tar.gz";
+        hash = "sha256-6ciyQda54CBjA9OBJytCKq4jK5NLhchv5ymFLTxAGKg=";
       };
 
       sourceRoot = "${finalAttrs.pname}-v${finalAttrs.version}_linux_x86_64";
