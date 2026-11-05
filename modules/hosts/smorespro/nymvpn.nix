@@ -81,6 +81,8 @@ in
       ProtectControlGroups = false;
       ReadWritePaths = [
         "/etc/resolv.conf"
+        # The daemon creates /var/run/nym-vpn.sock here.
+        "/run"
         "/run/resolvconf"
         "/var/lib/nym-vpnd"
         "/var/log/nym-vpnd"
