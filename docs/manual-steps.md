@@ -314,45 +314,52 @@ recipient.
 
 NymVPN is an outbound client on this host. It exposes nothing and does not
 replace the Cloudflare Tunnel. The root daemon is `nym-vpnd`; run `nym-vpnc`
-through `sudo` (one YubiKey touch). There is no passwordless group and no
-polkit policy, so a same-UID process cannot authorize a tunnel change.
+through `sudo`. There is no passwordless group and no polkit policy: an
+unprivileged process is refused, and `ProtectSystem` keeps `/usr` and `/etc`
+read-only so the daemon cannot install its polkit fallback. A process sharing
+this user's TTY can still reuse a live sudo ticket (five minutes), so treat
+that window as trusted.
 
 Create the account once at <https://nym.com/account/create> and store the
-24-word access code in Bitwarden plus an offline copy. The CLI accepts the
-phrase only as argv, and `sudo` logs argv, so do the one-time login in a root
-shell with history off. Do not put the phrase in sops, Syncthing, or a backup
-of `/var/lib/nym-vpnd` (account and config).
+24-word access code in Bitwarden plus an offline copy. Do not put the phrase in
+sops, Syncthing, or a backup of `/var/lib/nym-vpnd` (account and config). Enter
+it inside `start-session`, never as a `sudo` argument: sudo logs argv, and argv
+is readable from `/proc` by every local process.
 
 ```sh
-# One-time device login. No sudo log, no shell history, no argv in a user process.
-sudo -i
-set +o history
-HISTFILE=/dev/null nym-vpnc account set "<24 words>"
-nym-vpnc account get
+# One-time device login. The phrase goes to the session, not argv or history.
+sudo nym-vpnc start-session
+# At the session prompt (not your shell):
+account set "<24 words>"
+account get
 exit
 
-# Daily use. Mixnet (two-hop off) is the working mode; Fast/two-hop is blocked
-# on Linux by upstream nymtech/nym-vpn-client#6303.
+# Daily use. Mixnet (two-hop off) is the working mode; Fast/two-hop fails on
+# Linux with `sendmmsg: operation not permitted` (upstream #6303). A fresh
+# /var/lib/nym-vpnd defaults to two-hop on, so set this before the first connect.
 sudo nym-vpnc tunnel set --two-hop off
 sudo nym-vpnc connect --wait
 sudo nym-vpnc status
-sudo nym-vpnc dns get
-curl -s https://ifconfig.me
+getent hosts example.com
+cat /etc/resolv.conf        # only Nym's loopback resolver while connected
 
 # Syncthing and printers need the LAN at home; block it on untrusted Wi-Fi.
 sudo nym-vpnc lan set allow
 # sudo nym-vpnc lan set block
 
 # Captive portal: disconnect, sign in, then reconnect.
-sudo nym-vpnc disconnect
+sudo nym-vpnc disconnect --wait
 ```
 
-Fish abbreviations on this host: `nvon` connect, `nvoff` disconnect, `nvst`
-status, `nvdns` DNS, `nvlan` allow LAN, `nvmix`/`nvfast` mode, `nvlog` daemon
-log, `nvsvc` unit status, `nvre` restart the daemon.
+`dns get` prints only the custom-DNS setting; read `/etc/resolv.conf` to see the
+resolver actually applied. The unit removes stale `*.nym` resolvconf records and
+the nftables table on start and stop, so no manual cleanup is needed. If a
+killed stop still leaves networking broken, confirm `nym-vpnd` is stopped and
+run `sudo nft delete table inet nym` (deleting it while connected removes the
+kill switch).
 
-The unit removes stale `*.nym` resolvconf records on its next start or stop;
-no manual cleanup command is needed. Confirm DNS resolves before reconnecting.
+Fish abbreviations on this host: `nv` = `sudo nym-vpnc`, `nvc` = `connect
+--wait`, `nvd` = `disconnect --wait`.
 
 Phone (Galaxy S24 Ultra): install NymVPN from Google Play, sign in with the
 same 24-word code, then Settings → Kill switch → enable Android's Always-on VPN
