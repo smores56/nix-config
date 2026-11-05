@@ -1,4 +1,5 @@
 import os
+import socket
 import subprocess
 import sys
 import tempfile
@@ -12,6 +13,7 @@ from mcp.shared.memory import create_connected_server_and_client_session  # noqa
 from mcp.types import Tool  # noqa: E402
 
 from memory_mcp import shim  # noqa: E402
+from memory_mcp.groups import sanitize_machine  # noqa: E402
 from memory_mcp.client import ToolResult, UpstreamError  # noqa: E402
 from memory_mcp.schema import FALLBACK_TOOLS, FALLBACK_TOOL_NAMES  # noqa: E402
 from contextlib import asynccontextmanager
@@ -21,15 +23,25 @@ from memory_mcp.client import ClientConfig  # noqa: E402
 
 class ShimProxyTests(unittest.IsolatedAsyncioTestCase):
     def config(self, **overrides):
-        values = {"group": "owner--repo", "cwd": "/home/smores/code/example", "url": "http://127.0.0.1:8182/mcp"}
+        values = {
+            "group": "owner--repo",
+            "cwd": "/home/smores/code/example",
+            "url": "http://127.0.0.1:8182/mcp",
+            "machine": "smorespro",
+        }
         values.update(overrides)
         return shim.ShimConfig(**values)
 
-    def test_headers_carry_group_cwd_and_actor(self):
+    def test_headers_carry_group_cwd_actor_and_machine(self):
         headers = dict(self.config().client_config().headers)
         self.assertEqual(headers["X-Memory-Group"], "owner--repo")
         self.assertEqual(headers["X-Memory-Cwd"], "/home/smores/code/example")
         self.assertEqual(headers["X-Memory-Actor"], "maki")
+        self.assertEqual(headers["X-Memory-Machine"], "smorespro")
+
+    def test_the_machine_defaults_to_the_client_hostname(self):
+        config = shim.ShimConfig(group="owner--repo", cwd="/home/smores/code/example")
+        self.assertEqual(config.machine, sanitize_machine(socket.gethostname()))
 
     def test_no_tool_schema_accepts_a_group(self):
         for schema in FALLBACK_TOOLS:

@@ -22,7 +22,7 @@ from .export import (
     add_restore_parser,
 )
 from .export import dispatch as export_dispatch
-from .groups import GroupRefused, derive_group, validate_group
+from .groups import GroupRefused, derive_group, local_machine, validate_group
 from .mcp_auth import TokenMissingError, authorization
 
 DEFAULT_URL = "http://127.0.0.1:8182/mcp"
@@ -30,7 +30,7 @@ DEFAULT_TIMEOUT = 75.0
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="memory", description="Project-scoped cross-machine memory")
+    parser = argparse.ArgumentParser(prog="memory", description="Attributed cross-project memory")
     parser.add_argument("--group", help="Override the cwd-derived group (work groups are refused)")
     parser.add_argument("--cwd", help="Directory used to derive the group (default: the real cwd)")
     parser.add_argument("--url", default=os.environ.get("MEMORY_MCP_URL", DEFAULT_URL))
@@ -40,9 +40,12 @@ def build_parser() -> argparse.ArgumentParser:
     write = sub.add_parser("write", help="Store a memory; content defaults to stdin")
     write.add_argument("content", nargs="?", help="Memory text, or - for stdin")
 
-    search = sub.add_parser("search", help="Semantic search in this project and global memory")
+    search = sub.add_parser("search", help="Semantic search across every allowed project")
     search.add_argument("query")
     search.add_argument("--limit", type=int, default=5)
+    search.add_argument(
+        "--project", default="", help="Only this project group (default: every allowed group)"
+    )
 
     get = sub.add_parser("get", help="Show one full episode by exact reference")
     get.add_argument("ref", help="Registry uuid, hash prefix (>=12), or origin:origin_ref")
@@ -106,7 +109,7 @@ async def _invoke(args: argparse.Namespace, group: str, cwd: str) -> tuple[str, 
     if args.command == "write":
         arguments = {"content": _read_content(args.content)}
     elif args.command == "search":
-        arguments = {"query": args.query, "limit": args.limit}
+        arguments = {"query": args.query, "limit": args.limit, "project": args.project}
     elif args.command in ("get", "retry"):
         arguments = {"ref": args.ref}
     elif args.command == "promote":
@@ -129,6 +132,7 @@ async def _invoke(args: argparse.Namespace, group: str, cwd: str) -> tuple[str, 
             ("X-Memory-Group", group),
             ("X-Memory-Cwd", cwd),
             ("X-Memory-Actor", "cli"),
+            ("X-Memory-Machine", local_machine()),
             authorization(),
         ),
         timeout=float(os.environ.get("MEMORY_TIMEOUT", str(DEFAULT_TIMEOUT))),

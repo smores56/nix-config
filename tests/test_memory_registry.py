@@ -245,6 +245,18 @@ class RegistryTests(unittest.TestCase):
             self.registry.find_exact(entry.group, entry.content_hash[:12].upper()), entry
         )
 
+    def test_find_anywhere_resolves_across_groups(self):
+        entry = self.seed(self.entry(group="other--project", digest="e" * 64, status="active"))
+        self.assertEqual(self.registry.find_anywhere(entry.uuid).group, "other--project")
+        self.assertEqual(self.registry.find_anywhere("e" * 12).group, "other--project")
+
+    def test_find_anywhere_raises_on_an_ambiguous_prefix_across_groups(self):
+        self.registry.queue(self.entry(group="alpha--one", digest="f" * 64))
+        self.registry.queue(self.entry(group="beta--two", digest="f" * 64))
+        with self.assertRaises(AmbiguousRef) as caught:
+            self.registry.find_anywhere("f" * 12)
+        self.assertIn("use a longer hash prefix", str(caught.exception))
+
     def test_tombstone_marks_status_without_deleting(self):
         entry = self.entry(status="active")
         self.seed(entry)
@@ -462,12 +474,72 @@ class RegistryTests(unittest.TestCase):
             Registry(str(unversioned))
         self.assertIn("unversioned", str(caught.exception))
 
-    def test_an_older_schema_version_is_refused(self):
+    def test_schema_v2_migrates_the_machine_column_in_place(self):
+        legacy = Path(self.tmp.name) / "legacy-v2"
+        legacy.mkdir()
+        db = legacy / "registry.sqlite"
+        with sqlite3.connect(db) as conn:
+            conn.executescript(
+                """
+                CREATE TABLE episodes (
+                    group_id TEXT NOT NULL, content_hash TEXT NOT NULL, uuid TEXT NOT NULL,
+                    name TEXT NOT NULL, content TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'text',
+                    origin TEXT NOT NULL DEFAULT 'agent', origin_ref TEXT NOT NULL DEFAULT '',
+                    actor TEXT NOT NULL DEFAULT 'unknown', cwd TEXT NOT NULL DEFAULT '',
+                    tags TEXT NOT NULL DEFAULT '[]', valid_at TEXT NOT NULL, created_at TEXT NOT NULL,
+                    queued_at TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending',
+                    attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, graphiti_uuid TEXT,
+                    promoted_from_group TEXT, promoted_by TEXT, promoted_at TEXT,
+                    tombstoned_at TEXT, tombstone_reason TEXT,
+                    PRIMARY KEY (group_id, content_hash)
+                );
+                INSERT INTO episodes
+                    (group_id, content_hash, uuid, name, content, kind, origin, origin_ref,
+                     actor, cwd, tags, valid_at, created_at, queued_at, status)
+                VALUES
+                    ('owner--repo', 'a', 'u', 'n', 'c', 'text', 'agent', '',
+                     'maki', '/x', '[]', '2026-01-01', '2026-01-01', '2026-01-01', 'active');
+                PRAGMA user_version = 2;
+                """
+            )
+        registry = Registry(str(legacy))
+        self.assertEqual(registry.lookup("owner--repo", "a").machine, "")
+        with sqlite3.connect(db) as conn:
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION)
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(episodes)")}
+        self.assertIn("machine", columns)
+
+    def test_a_v3_registry_missing_the_column_is_repaired(self):
+        db = self.registry.db_path
+        conn = sqlite3.connect(db)
+        try:
+            conn.execute("ALTER TABLE episodes DROP COLUMN machine")
+            conn.commit()
+        finally:
+            conn.close()
+        repaired = Registry(self.tmp.name)
+        with sqlite3.connect(db) as conn:
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(episodes)")}
+        self.assertIn("machine", columns)
+        self.assertEqual(repaired.stats("owner--repo")["total"], 0)
+
+    def test_a_schema_older_than_v2_is_still_refused(self):
         with sqlite3.connect(self.registry.db_path) as conn:
-            conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION - 1}")
+            conn.execute("PRAGMA user_version = 1")
         with self.assertRaises(SchemaVersionError) as caught:
             Registry(self.tmp.name)
         self.assertIn("expected", str(caught.exception))
+
+    def test_machine_round_trips(self):
+        entry = replace(self.entry(), machine="smorespro")
+        self.registry.queue(entry)
+        self.assertEqual(self.registry.lookup("owner--repo", entry.content_hash).machine, "smorespro")
+
+    def test_groups_lists_only_groups_with_active_rows(self):
+        self.seed(self.entry(group="zeta--one", digest="b" * 64, status="active"))
+        self.seed(self.entry(group="alpha--two", digest="c" * 64, status="active"))
+        self.seed(self.entry(group="pending--three", digest="d" * 64, status="pending"))
+        self.assertEqual(self.registry.groups(), ["alpha--two", "zeta--one"])
 
     def test_timestamp_helpers(self):
         self.assertIsNotNone(parse_timestamp("2026-01-01T00:00:00Z"))

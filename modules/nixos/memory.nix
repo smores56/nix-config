@@ -257,6 +257,10 @@ in
                 "MEMORY_MCP_DEFAULT_ACTOR"
                 "open-webui"
               ]
+              [
+                "MEMORY_MCP_DEFAULT_MACHINE"
+                config.networking.hostName
+              ]
             ];
           }
         );

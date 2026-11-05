@@ -36,7 +36,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Sequence
 
-from .registry import REGISTRY_FILE, SCHEMA_VERSION, STATUSES
+from .registry import (
+    MIGRATABLE_SCHEMAS,
+    REGISTRY_FILE,
+    SCHEMA_VERSION,
+    STATUSES,
+    SchemaVersionError,
+    upgrade_registry,
+)
 
 EPISODES_FILE = "episodes.jsonl"
 GRAPH_FILE = "graph.rdb"
@@ -70,6 +77,7 @@ EPISODE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("origin_ref", "origin_ref"),
     ("actor", "actor"),
     ("cwd", "cwd"),
+    ("machine", "machine"),
     ("tags", "tags"),
     ("valid_at", "valid_at"),
     ("created_at", "created_at"),
@@ -405,7 +413,15 @@ def run_export(config: ExportConfig) -> ExportResult:
     with tempfile.TemporaryDirectory(dir=config.root, prefix=".staging-") as staging_dir:
         staging = Path(staging_dir) / REGISTRY_FILE
         snapshot_registry(config.registry_path, staging)
+        # A copy taken between the package upgrade and the wrapper's first
+        # start is still v2; migrate the snapshot, never the live file.
         schema = schema_version(staging)
+        if schema in (SCHEMA_VERSION, *MIGRATABLE_SCHEMAS):
+            try:
+                upgrade_registry(staging)
+            except SchemaVersionError as exc:
+                raise ExportError(str(exc)) from exc
+            schema = schema_version(staging)
         if schema != SCHEMA_VERSION:
             found = "unversioned" if schema == 0 else str(schema)
             raise ExportError(
@@ -525,7 +541,7 @@ def verify_export(directory: Path | str) -> VerifiedExport:
         raise ExportInvalid(f"{REGISTRY_FILE} is not a readable registry: {exc}") from exc
     if integrity != "ok":
         raise ExportInvalid(f"{REGISTRY_FILE} fails PRAGMA integrity_check: {integrity}")
-    if schema != SCHEMA_VERSION:
+    if schema not in (SCHEMA_VERSION, *MIGRATABLE_SCHEMAS):
         word = "newer" if schema > SCHEMA_VERSION else "older"
         raise ExportInvalid(
             f"the export's registry schema is {schema}, this code writes {SCHEMA_VERSION}; "
@@ -678,6 +694,35 @@ def _install(source: Path, target: Path, *, owner: str | None) -> None:
         raise
 
 
+def _install_registry(
+    source: Path, target: Path, *, owner: str | None, migrate: bool
+) -> None:
+    """Stage a consistent registry copy (WAL included), migrate it, then rename.
+
+    A plain file copy would miss a `-wal` the export still carries; the SQLite
+    backup API folds it into one file, which is then migrated if it predates
+    the current schema.
+    """
+    target.parent.mkdir(parents=True, exist_ok=True)
+    # A private directory keeps the destination out of reach of a symlink
+    # planted in the memory-writable state dir while snapshot_registry creates it.
+    staging_dir = Path(tempfile.mkdtemp(dir=target.parent, prefix=".restore-registry-"))
+    try:
+        staging = staging_dir / REGISTRY_FILE
+        snapshot_registry(source, staging)
+        if migrate:
+            upgrade_registry(staging)
+        installed = schema_version(staging)
+        if installed != SCHEMA_VERSION:
+            raise ExportError(
+                f"the staged registry is schema {installed}, expected {SCHEMA_VERSION}"
+            )
+        _fix_owner(staging, owner)
+        os.replace(staging, target)
+    finally:
+        shutil.rmtree(staging_dir, ignore_errors=True)
+
+
 @dataclass(frozen=True)
 class RestoreReport:
     export_dir: Path
@@ -707,7 +752,7 @@ def restore(config: RestoreConfig) -> RestoreReport:
     report = RestoreReport(
         export_dir=verified.directory,
         snapshot=snapshot,
-        schema_version=verified.schema_version,
+        schema_version=SCHEMA_VERSION,
         counts=verified.counts,
         registry_path=registry_path,
         graph=verified.graph,
@@ -721,10 +766,11 @@ def restore(config: RestoreConfig) -> RestoreReport:
         config.run(("systemctl", "stop", *config.units))
     parked_registry = _park_registry(registry_path, snapshot)
     try:
-        _install(
+        _install_registry(
             verified.directory / REGISTRY_FILE,
             registry_path,
             owner=config.owner,
+            migrate=verified.schema_version != SCHEMA_VERSION,
         )
     except (ExportError, OSError) as exc:
         parked_note = (

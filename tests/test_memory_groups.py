@@ -15,6 +15,7 @@ from memory_mcp.groups import (  # noqa: E402
     owner_is_work,
     parse_remote,
     sanitize_cwd,
+    sanitize_machine,
     sanitize_slug,
     validate_group,
 )
@@ -297,6 +298,12 @@ class GroupValidationTests(unittest.TestCase):
         self.assertEqual(sanitize_slug("My Repo.git"), "my-repo-git")
         self.assertEqual(sanitize_slug("---"), "unknown")
         self.assertEqual(len(sanitize_slug("x" * 200)), 60)
+
+    def test_sanitize_machine_accepts_hostnames_and_drops_everything_else(self):
+        self.assertEqual(sanitize_machine("Smores-Pro.lan"), "smores-pro.lan")
+        for value in ("", "  ", "bad host", "host/name", "x" * 65):
+            with self.subTest(value=value):
+                self.assertEqual(sanitize_machine(value), "")
 
     def test_sanitize_cwd_strips_escapes_and_keeps_one_line(self):
         self.assertEqual(sanitize_cwd("/home/smores/\x1b[31mcode\x1b[0m"), "/home/smores/code")

@@ -17,6 +17,7 @@ from __future__ import annotations
 import fnmatch
 import os
 import re
+import socket
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -42,6 +43,7 @@ _GIT_TIMEOUT = 10
 _GROUP_RE = re.compile(r"^[a-z0-9_-]{1,128}$")
 _INVALID_GROUP_CHARS = re.compile(r"[^a-z0-9_-]+")
 _ACTOR_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
+_MACHINE_RE = re.compile(r"^[a-z0-9._-]{1,64}$")
 _SCP_REMOTE = re.compile(r"^(?:[^@/]+@)?(?P<host>[^:/]+):(?P<path>.+)$")
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f\u200e\u200f\u202a-\u202e\u2066-\u2069]")
@@ -155,6 +157,21 @@ def validate_group(group: str) -> str:
 def sanitize_actor(actor: str | None) -> str:
     candidate = (actor or "").strip().lower()
     return candidate if _ACTOR_RE.fullmatch(candidate) else "unknown"
+
+
+def sanitize_machine(value: str | None) -> str:
+    """A hostname label, lowercased; empty when it cannot be a hostname.
+
+    Empty means "unknown source", not a made-up machine: legacy clients and
+    pinned scopes without MEMORY_MCP_DEFAULT_MACHINE have no honest label.
+    """
+    candidate = (value or "").strip().lower()
+    return candidate if _MACHINE_RE.fullmatch(candidate) else ""
+
+
+def local_machine() -> str:
+    """The machine this client runs on, for the X-Memory-Machine header."""
+    return sanitize_machine(socket.gethostname())
 
 
 def sanitize_cwd(value: str | None) -> str:

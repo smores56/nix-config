@@ -47,6 +47,7 @@ def make_entry(index: int, *, group: str = "owner--repo", status: str = "active"
         origin_ref=f"issue-{index}",
         actor="cli",
         cwd="/home/smores/code/x",
+        machine="smorespro",
         tags=("decision",),
         valid_at="2026-10-01T00:00:00Z",
         created_at=f"2026-10-0{index}T00:00:00Z",
@@ -276,6 +277,7 @@ class RegistrySnapshotTests(unittest.TestCase):
         self.assertEqual(record["origin_ref"], "issue-1")
         self.assertEqual(record["tags"], ["decision"])
         self.assertEqual(record["graphiti_uuid"], "graph-1")
+        self.assertEqual(record["machine"], "smorespro")
         self.assertEqual(record["content"], "content 1")
 
     def test_sidecars_are_adopted_only_once_they_exist(self):
@@ -389,6 +391,27 @@ class ExportTests(unittest.TestCase):
             (stale / "registry.sqlite").write_bytes(b"half")
             run_export(ExportConfig(root=root / "exports", state_dir=state))
             self.assertFalse(stale.exists())
+
+    def test_export_migrates_a_v2_registry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state_dir = root / "state"
+            db = build_state(state_dir, [make_entry(1)])
+            conn = sqlite3.connect(db)
+            try:
+                conn.execute("ALTER TABLE episodes DROP COLUMN machine")
+                conn.execute("PRAGMA user_version = 2")
+                conn.commit()
+            finally:
+                conn.close()
+            result = run_export(ExportConfig(root=root / "exports", state_dir=state_dir))
+            with sqlite3.connect(result.directory / "registry.sqlite") as conn:
+                version = conn.execute("PRAGMA user_version").fetchone()[0]
+            record = json.loads(
+                (result.directory / "episodes.jsonl").read_text(encoding="utf-8").strip()
+            )
+        self.assertEqual(version, SCHEMA_VERSION)
+        self.assertEqual(record["machine"], "")
 
     def test_unversioned_registry_is_refused_by_export(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -640,7 +663,7 @@ class RestoreTests(unittest.TestCase):
             self.assertFalse((root / "graph" / "dump.rdb").is_symlink())
 
     def test_other_schema_versions_are_refused(self):
-        for version, word in ((SCHEMA_VERSION + 1, "newer"), (SCHEMA_VERSION - 1, "older")):
+        for version, word in ((SCHEMA_VERSION + 1, "newer"), (1, "older")):
             with self.subTest(version=version), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 result = self.export(root, [make_entry(1)])
@@ -650,6 +673,25 @@ class RestoreTests(unittest.TestCase):
                     self.restore(result.directory, root)
                 self.assertIn(f"{word} schema", str(caught.exception))
                 self.assertFalse((root / "restored").exists())
+
+    def test_a_v2_export_is_migrated_on_restore(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = self.export(root, [make_entry(1)])
+            conn = sqlite3.connect(result.directory / "registry.sqlite")
+            try:
+                conn.execute("ALTER TABLE episodes DROP COLUMN machine")
+                conn.execute("PRAGMA user_version = 2")
+                conn.commit()
+            finally:
+                conn.close()
+            report = self.restore(result.directory, root)
+            restored = Registry(str(root / "restored"))
+            self.assertEqual(report.schema_version, SCHEMA_VERSION)
+            self.assertEqual(restored.lookup("owner--repo", f"{1:064x}").machine, "")
+            with sqlite3.connect(root / "restored/registry.sqlite") as conn:
+                version = conn.execute("PRAGMA user_version").fetchone()[0]
+        self.assertEqual(version, SCHEMA_VERSION)
 
     def test_a_matching_graph_snapshot_is_restored(self):
         with tempfile.TemporaryDirectory() as directory:
