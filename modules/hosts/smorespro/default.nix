@@ -19,6 +19,7 @@
     ./nymvpn.nix
     ./secrets.nix
   ];
+  homeModules = [ ./nymvpn-home.nix ];
 
   nixosOptions = {
     # YubiKey sudo without an sshd: pam_rssh dials the local fido2-agent.

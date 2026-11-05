@@ -331,8 +331,9 @@ HISTFILE=/dev/null nym-vpnc account set "<24 words>"
 nym-vpnc account get
 exit
 
-# Daily use. Use two-hop Fast mode unless the session needs the mixnet.
-sudo nym-vpnc tunnel set --two-hop on
+# Daily use. Mixnet (two-hop off) is the working mode; Fast/two-hop is blocked
+# on Linux by upstream nymtech/nym-vpn-client#6303.
+sudo nym-vpnc tunnel set --two-hop off
 sudo nym-vpnc connect --wait
 sudo nym-vpnc status
 sudo nym-vpnc dns get
@@ -345,6 +346,10 @@ sudo nym-vpnc lan set allow
 # Captive portal: disconnect, sign in, then reconnect.
 sudo nym-vpnc disconnect
 ```
+
+Fish abbreviations on this host: `nvon` connect, `nvoff` disconnect, `nvst`
+status, `nvdns` DNS, `nvlan` allow LAN, `nvmix`/`nvfast` mode, `nvlog` daemon
+log, `nvsvc` unit status, `nvre` restart the daemon.
 
 The unit removes stale `*.nym` resolvconf records on its next start or stop;
 no manual cleanup command is needed. Confirm DNS resolves before reconnecting.
