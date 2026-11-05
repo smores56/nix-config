@@ -326,7 +326,10 @@ user; on a laptop whose OS hostname is not `smoreswork`, override both:
 `BOOTSTRAP_USER=sam BOOTSTRAP_HOST=smoreswork ...`.
 
 MDM enrollment, FileVault, and OS updates stay with the employer; this repo only
-manages the user environment.
+manages the user environment. The memory instance additionally needs Docker
+Desktop (set to start at login) and Claude Code installed at
+`~/.local/bin/claude` and signed in; see
+[smoreswork/memory](#smoreswork-memory-instance).
 
 The GUI apps come from Homebrew, not nix. `just brew-bundle` installs the casks
 in `modules/features/brew.nix` (kitty and AeroSpace among them) from the
@@ -870,8 +873,11 @@ common file, rebuild each host, and open a new shell.
 
 The employer's OpenAI key in `secrets/smoreswork.yaml` only, for the work Mac's
 memory embeddings. Rotate it in the employer's OpenAI console, then
-`sops secrets/smoreswork.yaml`, commit, and `home-manager switch`. The Claude
-policy keeps it unreadable to agents; never print or decrypt it in a session.
+`sops secrets/smoreswork.yaml`, commit, and `home-manager switch`; the memory
+LLM proxy reads the key once at start, so
+`launchctl kickstart -k gui/$(id -u)/org.nix-community.home.memory-llm-proxy`
+picks up a rotation. The Claude policy keeps it unreadable to agents; never
+print or decrypt it in a session.
 
 ### restic repository password
 
@@ -1522,6 +1528,42 @@ only a first pass against a graph that matches none of the registry still needs
 `--force`.
 
 Do not run it while anything else writes memory.
+
+### smoreswork memory instance
+
+The work Mac runs the same service description as smortress
+(`modules/features/ai/memory/service.nix`) under launchd agents
+(`modules/features/ai/memory/darwin.nix`, instance in
+`modules/hosts/smoreswork/memory.nix`). Nothing leaves the machine except model
+calls, and work repos are accepted there (`MEMORY_WORK_POLICY=allow`, from
+`user.aiProfile = "work"`); the smortress wrapper pins `refuse`.
+
+- **Containers.** FalkorDB and Graphiti run through `/usr/local/bin/docker`
+  (Docker Desktop, socket `~/.docker/run/docker.sock`), published on
+  `127.0.0.1` only; Graphiti reaches the proxy and FalkorDB via
+  `host.docker.internal`. Docker Desktop must be running; the agents wait for it.
+  Container output is in `docker logs memory-graphiti-mcp`; the others log to
+  `~/Library/Logs/memory-*.log`.
+- **Extraction.** There is no Anthropic key: the proxy answers Graphiti's chat
+  completions by running `claude -p --model claude-haiku-5-5` on the Claude
+  subscription (tools, MCP servers, settings and session files all off), at most
+  two at a time. Claude must be installed at `~/.local/bin/claude` and signed in.
+  A failed or errored run returns 502 and the registry row stays `pending` until
+  the reconciler replays it.
+- **Embeddings.** `text-embedding-3-small` (1536-d) through the employer's OpenAI
+  key (`openai-api-key`). Changing the model or width re-embeds the corpus: wipe
+  `~/.local/share/memory/falkordb` and run `memory reindex --all`.
+- **State and export.** Registry and graph live in `~/.local/share/memory`
+  (FileVault); the wrapper's bearer token is generated there on first start. The
+  `memory-export` agent runs nightly at 03:17 (after wake if the Mac was asleep)
+  and keeps the newest seven dated directories in `~/.local/share/memory-export`.
+  There is no restic and no off-machine copy. `memory restore` drives systemd and
+  does not apply here; restoring is stopping the agents and copying a dated
+  export's `registry.sqlite` over `~/.local/share/memory/registry.sqlite`.
+- **Clients.** `memory` is on `PATH`. `~/.config/memory/claude-mcp.json` holds
+  the stdio entry for `memory-mcp-shim`; `claude --mcp-config
+  ~/.config/memory/claude-mcp.json` uses it. Claude's own settings files are not
+  touched.
 
 ### smortress/chat
 

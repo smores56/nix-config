@@ -520,6 +520,55 @@ in
           )
         );
 
+        # The two memory instances share one description: only the personal one refuses work repos,
+        # and the Mac instance reads its key from the sops path and extracts through Claude.
+        memory-instances = evalCheck "memory-instances" (
+          let
+            ensure = cond: msg: lib.assertMsg cond "memory-instances: ${msg}";
+            personal = config.flake.nixosConfigurations.smortress.config;
+            work = config.flake.homeConfigurations."sam@smoreswork".config;
+            envOf = pairs: lib.listToAttrs (map (p: lib.nameValuePair (lib.head p) (lib.last p)) pairs);
+            personalWrapper = envOf (
+              map (e: lib.splitString "=" e) personal.systemd.services.memory-mcp.serviceConfig.Environment
+            );
+            agents = work.launchd.agents;
+            agentEnv = name: agents.${name}.config.EnvironmentVariables;
+            argv = name: lib.concatStringsSep " " agents.${name}.config.ProgramArguments;
+          in
+          toString (
+            assert
+              ensure (
+                personalWrapper.MEMORY_WORK_POLICY == "refuse"
+              ) "the personal wrapper must refuse work repos"
+              && ensure (
+                (agentEnv "memory-mcp").MEMORY_WORK_POLICY == "allow"
+              ) "the work wrapper accepts work repos"
+              && ensure (
+                !((agentEnv "memory-llm-proxy") ? MEMORY_LLM_REASONING_EFFORT)
+              ) "the Mac proxy does not rewrite reasoning effort"
+              && ensure (
+                (agentEnv "memory-llm-proxy").MEMORY_LLM_CHAT_BACKEND == "claude"
+              ) "the Mac extracts through headless Claude"
+              && ensure (
+                (agentEnv "memory-llm-proxy").MEMORY_LLM_PROXY_ALLOWED_HOSTS == "host.docker.internal"
+              ) "the proxy admits the Docker Desktop host alias and nothing else"
+              && ensure (
+                (agentEnv "memory-llm-proxy").MEMORY_LLM_KEY_FILE == work.sops.secrets.openai-api-key.path
+              ) "the proxy reads the key from its sops path"
+              && ensure (
+                !lib.hasInfix "--network=host" (
+                  builtins.toJSON (lib.filterAttrs (n: _: lib.hasPrefix "memory-" n) agents)
+                )
+              ) "Docker Desktop has no host network"
+              && ensure (lib.hasInfix "--keep 7" (argv "memory-export")) "the nightly export keeps seven dated copies"
+              && ensure (
+                agents.memory-export.config.StartCalendarInterval != [ ]
+              ) "the nightly export is a calendar job"
+              && ensure (!(work.sops.secrets ? neuralwatt-api-key)) "the Mac holds no personal provider key";
+            "ok"
+          )
+        );
+
         # piv-ensure-proxy must pass arguments in order and use the cache dir the login wipe and Seatbelt deny name.
         piv-wiring =
           let

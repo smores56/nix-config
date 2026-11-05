@@ -24,13 +24,14 @@ import argparse
 import json
 import os
 import pwd
+import re
 import shutil
 import sqlite3
 import subprocess
 import sys
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Sequence
@@ -437,6 +438,51 @@ def run_export(config: ExportConfig) -> ExportResult:
         graph=config.graph_dir is not None and graph_error is None,
         graph_error=graph_error,
     )
+
+
+_DATED_EXPORT = re.compile(r"^\d{4}-\d\d-\d\dT\d\d-\d\d-\d\dZ$")
+
+
+def prune_dated_exports(root: Path, keep: int) -> tuple[str, ...]:
+    """Remove all but the newest `keep` dated export directories; foreign entries stay."""
+    dated = sorted(
+        (entry.name for entry in root.iterdir() if entry.is_dir() and _DATED_EXPORT.match(entry.name)),
+        reverse=True,
+    )
+    doomed = dated[keep:]
+    for name in doomed:
+        shutil.rmtree(root / name)
+    return tuple(doomed)
+
+
+def run_dated_export(
+    config: ExportConfig, *, keep: int, now: datetime | None = None
+) -> ExportResult:
+    """Export into `<root>/<timestamp>/` and keep the newest `keep` of them.
+
+    For hosts without a backup tool owning history. A failed registry export
+    removes its half-made directory, and a failed graph snapshot, prune nothing,
+    so a broken run never costs an older good export.
+    """
+    if keep < 1:
+        raise ExportError("--keep must be at least 1")
+    config.root.mkdir(parents=True, exist_ok=True)
+    directory = config.root / timestamp(now)
+    try:
+        directory.mkdir()
+    except FileExistsError as exc:
+        raise ExportError(f"{directory} already exists; refusing to overwrite an export") from exc
+    try:
+        result = run_export(replace(config, root=directory))
+    except BaseException:
+        # Created above, so this call owns it.
+        shutil.rmtree(directory, ignore_errors=True)
+        raise
+    # A missing graph means the run failed and needs attention; the older exports may be the only
+    # ones that hold a graph, so they stay.
+    if result.graph_error is None:
+        prune_dated_exports(config.root, keep)
+    return result
 
 
 @dataclass(frozen=True)
@@ -849,6 +895,12 @@ def add_export_parser(subparsers: Any) -> argparse.ArgumentParser:
         default=DEFAULT_GRAPH_TIMEOUT,
         help=f"Seconds to wait for BGSAVE (default {DEFAULT_GRAPH_TIMEOUT:g})",
     )
+    parser.add_argument(
+        "--keep",
+        type=int,
+        default=None,
+        help="Write a dated directory under the root and keep the newest N; without it the root is overwritten in place",
+    )
     return parser
 
 
@@ -897,15 +949,14 @@ def add_restore_parser(subparsers: Any) -> argparse.ArgumentParser:
 
 
 def export_command(args: argparse.Namespace) -> int:
-    result = run_export(
-        ExportConfig(
-            root=Path(args.root),
-            state_dir=Path(args.state_dir),
-            graph_dir=Path(args.graph_dir) if args.graph_dir else None,
-            graph_url=args.graph_url,
-            graph_timeout=args.graph_timeout,
-        )
+    config = ExportConfig(
+        root=Path(args.root),
+        state_dir=Path(args.state_dir),
+        graph_dir=Path(args.graph_dir) if args.graph_dir else None,
+        graph_url=args.graph_url,
+        graph_timeout=args.graph_timeout,
     )
+    result = run_export(config) if args.keep is None else run_dated_export(config, keep=args.keep)
     counts = " ".join(f"{key}={result.counts.get(key, 0)}" for key in (*STATUSES, "total"))
     print(f"exported {result.directory} ({counts})")
     print(f"graph: {GRAPH_FILE}" if result.graph else "graph: none")

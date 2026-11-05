@@ -64,7 +64,7 @@ adds its greeter as a host-local module.
 | `modules/ports.nix` | loopback port table shared by services and the tunnel |
 | `pkgs/overlays.nix` | nixpkgs overlays: pins and local package derivations |
 | `modules/features/agent-sandbox/` | the same-UID agent boundary; lists/backends in `modules/lib/agent-sandbox.{nix,sh}` |
-| `modules/features/ai/` | AI tooling: assistant context, brain, Claude policy, maki, memory, providers, sdlc, skills |
+| `modules/features/ai/` | AI tooling: assistant context, brain, Claude policy, maki, memory, providers, sdlc, skills. `memory/service.nix` is the one memory service description; `modules/nixos/memory.nix` and `memory/darwin.nix` render it |
 | `modules/features/tv/`, `modules/features/repos/` | Television repository and worktree cables; the `repos`/`worktrees` CLIs they call |
 | `tofu/` | minimal Cloudflare DNS/Access/notification objects; run via the `cloudflare-*` flake apps |
 | `modules/features/backup/` | Operator README, GitHub-mirror helpers and the metadata verifier |

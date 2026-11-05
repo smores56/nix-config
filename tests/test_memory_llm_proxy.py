@@ -58,6 +58,7 @@ class ProxyTests(unittest.IsolatedAsyncioTestCase):
             return handler(request)
 
         kwargs.setdefault("api_key", "test-key")
+        kwargs.setdefault("reasoning_effort", "none")
         return create_app(
             upstream="http://upstream",
             transport=httpx.MockTransport(record),
@@ -67,7 +68,7 @@ class ProxyTests(unittest.IsolatedAsyncioTestCase):
 
     async def call(self, app, method, path, *, json_body=None, headers=None):
         async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://proxy"
+            transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1"
         ) as client:
             return await client.request(method, path, json=json_body, headers=headers)
 
@@ -88,6 +89,22 @@ class ProxyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.body(self.seen[0])["reasoning_effort"], "none")
         self.assertEqual(self.body(self.seen[0])["model"], "qwen")
         self.assertEqual(reply.json()["choices"][0]["message"]["content"], "{}")
+
+    async def test_no_rewrite_unless_an_effort_is_configured(self):
+        app = self.app(lambda request: response(), reasoning_effort="")
+        await self.call(app, "POST", "/v1/chat/completions", json_body={"messages": []})
+        self.assertNotIn("reasoning_effort", self.body(self.seen[0]))
+
+    async def test_the_configured_effort_is_the_one_injected(self):
+        app = self.app(lambda request: response(), reasoning_effort="low")
+        await self.call(app, "POST", "/v1/chat/completions", json_body={"messages": []})
+        self.assertEqual(self.body(self.seen[0])["reasoning_effort"], "low")
+
+    async def test_the_effort_comes_from_the_environment(self):
+        with mock.patch.dict(os.environ, {"MEMORY_LLM_REASONING_EFFORT": "none"}):
+            app = self.app(lambda request: response(), reasoning_effort=None)
+        await self.call(app, "POST", "/v1/chat/completions", json_body={"messages": []})
+        self.assertEqual(self.body(self.seen[0])["reasoning_effort"], "none")
 
     async def test_explicit_reasoning_effort_is_preserved(self):
         app = self.app(lambda request: response())
@@ -129,6 +146,44 @@ class ProxyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reply.json()["error"]["message"], "loading")
         self.assertEqual(len(self.seen), 6)
 
+    async def raw(self, app, path, headers, method="GET"):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1"
+        ) as client:
+            return await client.request(method, path, headers=headers)
+
+    async def test_a_browser_origin_is_refused(self):
+        app = self.app(lambda request: response())
+        reply = await self.raw(app, "/v1/models", {"origin": "https://evil.example"})
+        self.assertEqual(reply.status_code, 403)
+        self.assertEqual(self.seen, [])
+
+    async def test_a_foreign_host_header_is_refused_before_routing(self):
+        app = self.app(lambda request: response())
+        for host in ("evil.example", "evil.example:8082", "127.0.0.1.evil.example", "host.docker.internal"):
+            with self.subTest(host=host):
+                reply = await self.raw(app, "/health", {"host": host})
+                self.assertEqual(reply.status_code, 403)
+        self.assertEqual(self.seen, [])
+
+    async def test_loopback_hosts_pass(self):
+        app = self.app(lambda request: response())
+        for host in ("127.0.0.1", "127.0.0.1:8082", "localhost", "localhost:8082"):
+            with self.subTest(host=host):
+                self.assertEqual((await self.raw(app, "/health", {"host": host})).status_code, 200)
+
+    async def test_an_extra_allowed_host_is_accepted_only_when_configured(self):
+        app = self.app(lambda request: response(), allowed_hosts=("host.docker.internal",))
+        reply = await self.raw(app, "/health", {"host": "host.docker.internal:8082"})
+        self.assertEqual(reply.status_code, 200)
+        self.assertEqual((await self.raw(app, "/health", {"host": "evil.example"})).status_code, 403)
+
+    async def test_allowed_hosts_come_from_the_environment(self):
+        with mock.patch.dict(os.environ, {"MEMORY_LLM_PROXY_ALLOWED_HOSTS": "host.docker.internal"}):
+            app = self.app(lambda request: response())
+        reply = await self.raw(app, "/health", {"host": "host.docker.internal:8082"})
+        self.assertEqual(reply.status_code, 200)
+
     async def test_health_answers_locally_without_the_upstream(self):
         app = self.app(lambda request: response(status=500))
         reply = await self.call(app, "GET", "/health")
@@ -153,13 +208,19 @@ class ProxyTests(unittest.IsolatedAsyncioTestCase):
     async def test_a_body_that_is_not_json_is_forwarded_untouched(self):
         app = self.app(lambda request: response())
         async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://proxy"
+            transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1"
         ) as client:
             reply = await client.post(
                 "/v1/chat/completions", content=b"{not json", headers={"content-type": "application/json"}
             )
         self.assertEqual(reply.status_code, 200)
         self.assertEqual(self.seen[0].content, b"{not json")
+
+    def test_no_configured_key_file_refuses_to_start(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MEMORY_LLM_KEY_FILE", None)
+            with self.assertRaises(llm_proxy.MissingKeyError):
+                self.app(lambda request: response(), api_key=None)
 
     def test_a_missing_or_blank_key_refuses_to_start(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -202,7 +263,7 @@ class ProxyTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             key_file = Path(tmp) / "neuralwatt-api-key"
             key_file.write_text("from-env\n", encoding="utf-8")
-            env = {"MEMORY_NEURALWATT_KEY_FILE": str(key_file)}
+            env = {"MEMORY_LLM_KEY_FILE": str(key_file)}
             with mock.patch.dict(os.environ, env):
                 app = self.app(lambda request: response(), api_key=None)
         await self.call(app, "GET", "/v1/models")
@@ -235,7 +296,7 @@ class ProxyTests(unittest.IsolatedAsyncioTestCase):
     async def test_an_oversize_body_is_rejected_by_declared_length_and_while_reading(self):
         app = self.app(lambda request: response())
         async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://proxy"
+            transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1"
         ) as client:
             declared = await client.post(
                 "/v1/chat/completions",

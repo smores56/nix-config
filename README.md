@@ -50,7 +50,11 @@ Cross-cutting values flow through `config.machine.*` and `config.user.*`, not
 - **Memory.** smortress runs a typed SQLite registry, FalkorDB and Graphiti,
   reached over the tunnel through `memory-mcp-shim`. Extraction and embeddings
   go through a loopback Neuralwatt gateway. The `memory` CLI: `write search get
-  retry promote reindex status tombstone export restore`. Server: `modules/nixos/memory.nix`.
+  retry promote reindex status tombstone export restore`. One service description
+  (`modules/features/ai/memory/service.nix`) is rendered by `modules/nixos/memory.nix`
+  (systemd and podman) and, for a local instance on smoreswork that extracts through
+  headless Claude and embeds through OpenAI, by `modules/features/ai/memory/darwin.nix`
+  (launchd and Docker Desktop).
 - **Public services.** `webProxy.services` become `<name>.sammohr.dev` through
   the tunnel; `ssh`, `llm`, `memory` and `chat` sit behind Cloudflare Access.
 - **Backups.** restic snapshots `/var/lib/data` to R2 and a local encrypted

@@ -21,6 +21,8 @@ in
       # The work account's bundle exists only on this machine.
       github-work-pat = { };
       github-work-signing-key = { };
+      # The employer's key for memory embeddings, read at run time by the memory LLM proxy.
+      openai-api-key = { };
     };
   };
 }

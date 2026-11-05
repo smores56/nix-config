@@ -5,6 +5,10 @@ inherits the process cwd. The shim therefore derives the group locally and the
 server only validates it. Work classification deliberately reads git config and
 every remote instead of matching path strings: a personal clone of a work fork
 still has the employer's upstream, and a work clone can live anywhere.
+
+Whether work repos are refused is per instance (`MEMORY_WORK_POLICY`): the
+personal store refuses them, and only the employer's own instance accepts them.
+Anything but an exact `allow` refuses.
 """
 
 from __future__ import annotations
@@ -30,6 +34,8 @@ DEFAULT_WORK_FLOW = "pr"
 DEFAULT_WORK_EMAIL = "smohr@blitzy.com"
 DEFAULT_WORK_OWNER_GLOBS = "blitzy,blitzy-*"
 DEFAULT_WORK_SSH_MARKER = "config.work"
+WORK_POLICY_ENV = "MEMORY_WORK_POLICY"
+WORK_POLICY_ALLOW = "allow"
 
 _GIT_TIMEOUT = 10
 _GROUP_RE = re.compile(r"^[a-z0-9_-]{1,128}$")
@@ -109,6 +115,10 @@ def owner_is_work(owner: str, settings: WorkSettings | None = None) -> bool:
     return any(fnmatch.fnmatchcase(lowered, pattern.lower()) for pattern in globs)
 
 
+def work_allowed() -> bool:
+    return os.environ.get(WORK_POLICY_ENV) == WORK_POLICY_ALLOW
+
+
 def work_reason_for_group(group: str, settings: WorkSettings | None = None) -> str | None:
     lowered = group.lower()
     if lowered == "work" or lowered.startswith("work:"):
@@ -128,7 +138,7 @@ def validate_group(group: str) -> str:
     candidate = (group or "").strip().lower()
     if not _GROUP_RE.fullmatch(candidate):
         raise GroupRefused("group must match ^[a-z0-9_-]{1,128}$")
-    reason = work_reason_for_group(candidate)
+    reason = None if work_allowed() else work_reason_for_group(candidate)
     if reason:
         raise GroupRefused(f"{reason}: {candidate}")
     return candidate
@@ -327,7 +337,7 @@ def derive_group(cwd: str, env: dict[str, str] | None = None) -> GroupContext:
         raise GroupRefused(f"not a directory: {absolute}")
 
     try:
-        marker = work_marker(absolute, env)
+        marker = None if work_allowed() else work_marker(absolute, env)
         if marker:
             raise GroupRefused(f"refusing work directory {absolute} ({marker})")
         root = repo_root_for(absolute, env)

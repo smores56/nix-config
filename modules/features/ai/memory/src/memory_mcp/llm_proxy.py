@@ -1,18 +1,22 @@
-"""Loopback OpenAI-compatible gateway in front of Neuralwatt.
+"""Loopback OpenAI-compatible gateway in front of Graphiti's model providers.
 
-Two request rewrites, everything else is relayed:
+What it adds, per instance configuration; everything else is relayed:
 
 - the account key: the gateway always sends `Authorization: Bearer <key>`;
   Graphiti's placeholder `Bearer none` and any other caller credential are
   replaced. A missing or empty key fails startup, so the unit fails visibly
   instead of serving unauthenticated calls.
-- `reasoning_effort: "none"` on chat completions: a reasoning model spends the
-  whole max_tokens budget on extraction and returns empty content that Graphiti
-  drops, and graphiti-core cannot set the field per request.
+- `reasoning_effort` on chat completions, only when `MEMORY_LLM_REASONING_EFFORT`
+  names one: a reasoning model otherwise spends the whole max_tokens budget on
+  extraction and returns empty content that Graphiti drops, and graphiti-core
+  cannot set the field per request.
+- `MEMORY_LLM_CHAT_BACKEND=claude` serves chat completions from headless Claude
+  Code (`claude_chat`) instead of the upstream; embeddings and the model list
+  still go upstream.
 
-Two behaviours Graphiti's requests depend on, kept on purpose: the account's tier
-allows three concurrent upstream slots, so extraction (chat completions) holds
-one of `MEMORY_UPSTREAM_CONCURRENCY` permits for the whole upstream call
+Two behaviours Graphiti's requests depend on, kept on purpose: the upstream
+allows a few concurrent slots, so extraction (chat completions) holds
+one of `MEMORY_UPSTREAM_CONCURRENCY` permits for the whole call
 (Graphiti's own semaphore bounds only one fan-out, not the process), and a 429 or
 503, which never ran, is retried up to `MEMORY_UPSTREAM_RETRIES` attempts,
 honouring a numeric `Retry-After`, because one rejected extraction call otherwise
@@ -41,9 +45,13 @@ from typing import Any, AsyncIterator
 
 import httpx
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
+
+from . import claude_chat
 
 logger = logging.getLogger("memory-mcp.llm-proxy")
 
@@ -51,9 +59,15 @@ DEFAULT_UPSTREAM = "https://api.neuralwatt.com"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8082
 DEFAULT_TIMEOUT = 600.0
-# systemd LoadCredential drops the sops secret here; MEMORY_NEURALWATT_KEY_FILE points at it.
-DEFAULT_KEY_FILE = "/run/secrets/neuralwatt-api-key"
-KEY_FILE_ENV = "MEMORY_NEURALWATT_KEY_FILE"
+# The key file is per instance (a systemd credential or a sops path); there is no default.
+KEY_FILE_ENV = "MEMORY_LLM_KEY_FILE"
+REASONING_EFFORT_ENV = "MEMORY_LLM_REASONING_EFFORT"
+CHAT_BACKEND_ENV = "MEMORY_LLM_CHAT_BACKEND"
+CHAT_BACKENDS = ("upstream", "claude")
+ALLOWED_HOSTS_ENV = "MEMORY_LLM_PROXY_ALLOWED_HOSTS"
+# A browser page or a DNS-rebinding name must not be able to spend the account's key; callers are
+# local processes that dial one of these names.
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "[::1]"})
 # A stalled upstream must not hold a connection forever.
 DEFAULT_READ_TIMEOUT = 300.0
 DEFAULT_CONNECT_TIMEOUT = 10.0
@@ -63,9 +77,8 @@ CHAT_PATH = "/v1/chat/completions"
 EMBEDDINGS_PATH = "/v1/embeddings"
 MODELS_PATH = "/v1/models"
 ALLOWED_ROUTES = {CHAT_PATH: "POST", EMBEDDINGS_PATH: "POST", MODELS_PATH: "GET"}
-REASONING_EFFORT = "none"
-# The PAYG tier has three slots and maki's chat shares the key; two leaves one for interactive use.
-# Graphiti's SEMAPHORE_LIMIT only bounds its own queue.
+# Graphiti's SEMAPHORE_LIMIT only bounds its own queue; this bounds the process. Two leaves a slot
+# of a three-slot tier free for interactive use and keeps two `claude -p` children at most.
 DEFAULT_UPSTREAM_CONCURRENCY = 2
 # Embeddings and the model list are short and run beside extraction, one at a time.
 LIGHT_LANE_CONCURRENCY = 1
@@ -99,7 +112,7 @@ REQUEST_STRIP = HOP_BY_HOP | {"host", "content-length", "authorization"}
 RESPONSE_STRIP = HOP_BY_HOP | {"content-length", "content-encoding"}
 
 
-def inject_thinking_off(body: bytes) -> bytes:
+def inject_reasoning_effort(body: bytes, effort: str) -> bytes:
     """Add `reasoning_effort` to a chat-completion body unless it is already set.
 
     Anything that is not a JSON object is forwarded byte-for-byte, and an
@@ -111,22 +124,25 @@ def inject_thinking_off(body: bytes) -> bytes:
         return body
     if not isinstance(payload, dict) or payload.get("reasoning_effort") is not None:
         return body
-    payload["reasoning_effort"] = REASONING_EFFORT
+    payload["reasoning_effort"] = effort
     return json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 
 def load_api_key(*, api_key: str | None = None, key_file: str | None = None) -> str:
-    """The Neuralwatt key from `api_key` (test seam), `key_file`, `MEMORY_NEURALWATT_KEY_FILE`, or the default path."""
+    """The upstream key from `api_key` (test seam), `key_file`, `MEMORY_LLM_KEY_FILE`."""
     if api_key is not None:
         key = api_key.strip()
     else:
-        path = Path(key_file or os.environ.get(KEY_FILE_ENV, DEFAULT_KEY_FILE))
+        configured = key_file or os.environ.get(KEY_FILE_ENV)
+        if not configured:
+            raise MissingKeyError(f"no LLM API key file configured ({KEY_FILE_ENV})")
+        path = Path(configured)
         try:
             key = path.read_text(encoding="utf-8").strip()
         except OSError as exc:
-            raise MissingKeyError(f"cannot read the Neuralwatt API key at {path}: {exc}") from exc
+            raise MissingKeyError(f"cannot read the LLM API key at {path}: {exc}") from exc
     if not key:
-        raise MissingKeyError("the Neuralwatt API key is empty")
+        raise MissingKeyError("the LLM API key is empty")
     return key
 
 
@@ -141,7 +157,7 @@ def _response_headers(response: httpx.Response) -> dict[str, str]:
 
 
 class MissingKeyError(RuntimeError):
-    """No usable Neuralwatt API key is configured."""
+    """No usable upstream API key is configured."""
 
 
 def _env_int(name: str, default: int) -> int:
@@ -176,10 +192,27 @@ def create_app(
     key_file: str | None = None,
     upstream_concurrency: int | None = None,
     upstream_retries: int | None = None,
+    reasoning_effort: str | None = None,
+    chat_backend: str | None = None,
+    claude: claude_chat.ClaudeConfig | None = None,
+    allowed_hosts: tuple[str, ...] | None = None,
 ) -> Starlette:
     base_url = (upstream or os.environ.get("MEMORY_LLM_UPSTREAM", DEFAULT_UPSTREAM)).rstrip("/")
     concurrency = upstream_concurrency or _env_int(UPSTREAM_CONCURRENCY_ENV, DEFAULT_UPSTREAM_CONCURRENCY)
     retries = upstream_retries or _env_int(UPSTREAM_RETRIES_ENV, DEFAULT_UPSTREAM_RETRIES)
+    effort = (os.environ.get(REASONING_EFFORT_ENV, "") if reasoning_effort is None else reasoning_effort).strip()
+    backend = chat_backend or os.environ.get(CHAT_BACKEND_ENV) or "upstream"
+    if backend not in CHAT_BACKENDS:
+        raise ValueError(f"{CHAT_BACKEND_ENV} must be one of {CHAT_BACKENDS}, not {backend!r}")
+    claude_config = (claude or claude_chat.config_from_env()) if backend == "claude" else None
+    if claude_config is not None:
+        claude_chat.check_binary(claude_config)
+    extra_hosts = (
+        allowed_hosts
+        if allowed_hosts is not None
+        else tuple(h for h in os.environ.get(ALLOWED_HOSTS_ENV, "").split(",") if h.strip())
+    )
+    hosts = LOOPBACK_HOSTS | {h.strip().lower() for h in extra_hosts}
     # Per app, so two apps in one process (tests) do not share permits.
     extraction_lane = asyncio.Semaphore(concurrency)
     light_lane = asyncio.Semaphore(LIGHT_LANE_CONCURRENCY)
@@ -256,6 +289,23 @@ def create_app(
     def error(status: int, kind: str, message: str) -> JSONResponse:
         return JSONResponse({"error": {"message": message, "type": kind}}, status_code=status)
 
+    async def chat_via_claude(config: claude_chat.ClaudeConfig, body: bytes) -> Response:
+        try:
+            payload = json.loads(body)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            payload = None
+        if not isinstance(payload, dict):
+            return error(400, "invalid_request", "the chat body must be a JSON object")
+        try:
+            async with extraction_lane:
+                reply = await claude_chat.complete(config, payload)
+        except claude_chat.ClaudeTimeout as exc:
+            return error(504, "claude_timeout", str(exc))
+        except claude_chat.ClaudeError as exc:
+            logger.warning("claude chat failed: %s", exc)
+            return error(502, "claude_failed", str(exc))
+        return JSONResponse(reply)
+
     async def proxy(request: Request) -> Response:
         expected = ALLOWED_ROUTES.get(request.url.path)
         if expected is None:
@@ -266,7 +316,10 @@ def create_app(
         if body is None:
             return error(413, "request_too_large", f"request body exceeds {MAX_REQUEST_BYTES} bytes")
         if request.url.path == CHAT_PATH:
-            body = inject_thinking_off(body)
+            if claude_config is not None:
+                return await chat_via_claude(claude_config, body)
+            if effort:
+                body = inject_reasoning_effort(body, effort)
         try:
             upstream_response = await send(request, body)
         except httpx.TimeoutException as exc:
@@ -279,7 +332,21 @@ def create_app(
             headers=_response_headers(upstream_response),
         )
 
+    def host_name(header: str) -> str:
+        value = header.strip().lower()
+        if value.startswith("["):
+            return value[: value.find("]") + 1]
+        return value.partition(":")[0]
+
+    async def guard(request: Request, call_next):
+        if "origin" in request.headers:
+            return error(403, "forbidden", "browser requests are not served")
+        if host_name(request.headers.get("host", "")) not in hosts:
+            return error(403, "forbidden", "unexpected Host header")
+        return await call_next(request)
+
     app = Starlette(
+        middleware=[Middleware(BaseHTTPMiddleware, dispatch=guard)],
         routes=[
             Route("/health", health, methods=["GET"]),
             Route("/{path:path}", proxy, methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]),
@@ -291,6 +358,7 @@ def create_app(
     # Visible to tests and operators instead of buried in the environment.
     app.state.upstream_concurrency = concurrency
     app.state.upstream_retries = retries
+    app.state.chat_backend = backend
     return app
 
 
@@ -301,7 +369,7 @@ def main() -> int:
     port = int(os.environ.get("MEMORY_LLM_PROXY_PORT", DEFAULT_PORT))
     try:
         app = create_app()
-    except MissingKeyError as exc:
+    except (MissingKeyError, claude_chat.ClaudeError) as exc:
         raise SystemExit(f"memory-llm-proxy: {exc}") from exc
     uvicorn.run(app, host=host, port=port, log_level="info")
     return 0

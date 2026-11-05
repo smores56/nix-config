@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -22,6 +23,7 @@ from memory_mcp.export import (  # noqa: E402
     RestoreConfig,
     parse_info,
     restore,
+    run_dated_export,
     run_export,
     snapshot_graph,
     snapshot_registry,
@@ -401,6 +403,103 @@ class ExportTests(unittest.TestCase):
                 run_export(ExportConfig(root=exports, state_dir=state))
             self.assertEqual(sorted(path.name for path in exports.iterdir()), [])
         self.assertIn("schema version", str(caught.exception))
+
+
+class DatedExportTests(unittest.TestCase):
+    def dated(self, root: Path, state: Path, stamp: str, keep: int = 7):
+        moment = datetime.strptime(stamp, export.TIMESTAMP_FORMAT).replace(tzinfo=timezone.utc)
+        return run_dated_export(ExportConfig(root=root / "exports", state_dir=state), keep=keep, now=moment)
+
+    def names(self, root: Path) -> list[str]:
+        return sorted(path.name for path in (root / "exports").iterdir())
+
+    def test_each_export_lands_in_its_own_dated_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = state_with(root, [make_entry(1)])
+            first = self.dated(root, state, "2026-11-01T03-17-00Z")
+            second = self.dated(root, state, "2026-11-02T03-17-00Z")
+            self.assertEqual(first.directory.name, "2026-11-01T03-17-00Z")
+            self.assertEqual(self.names(root), ["2026-11-01T03-17-00Z", "2026-11-02T03-17-00Z"])
+            self.assertTrue((second.directory / "registry.sqlite").is_file())
+
+    def test_only_the_newest_keep_exports_survive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = state_with(root, [make_entry(1)])
+            for day in range(1, 10):
+                self.dated(root, state, f"2026-11-0{day}T03-17-00Z", keep=7)
+            self.assertEqual(
+                self.names(root), [f"2026-11-0{day}T03-17-00Z" for day in range(3, 10)]
+            )
+
+    def test_pruning_leaves_foreign_entries_alone(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = state_with(root, [make_entry(1)])
+            (root / "exports").mkdir()
+            (root / "exports" / "notes.txt").write_text("keep me")
+            (root / "exports" / "manual-copy").mkdir()
+            for day in range(1, 4):
+                self.dated(root, state, f"2026-11-0{day}T03-17-00Z", keep=1)
+            self.assertEqual(self.names(root), ["2026-11-03T03-17-00Z", "manual-copy", "notes.txt"])
+
+    def test_a_failed_registry_export_prunes_nothing_and_leaves_no_empty_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = state_with(root, [make_entry(1)])
+            self.dated(root, state, "2026-11-01T03-17-00Z", keep=1)
+            with self.assertRaises(ExportError):
+                self.dated(root, root / "missing-state", "2026-11-02T03-17-00Z", keep=1)
+            self.assertEqual(self.names(root), ["2026-11-01T03-17-00Z"])
+
+    def test_a_failed_graph_snapshot_keeps_the_new_export_and_prunes_nothing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = state_with(root, [make_entry(1)])
+            self.dated(root, state, "2026-11-01T03-17-00Z", keep=1)
+            result = run_dated_export(
+                ExportConfig(
+                    root=root / "exports",
+                    state_dir=state,
+                    graph_dir=root / "no-graph",
+                    graph_client=FakeRedis([BEFORE, FINISHED]),
+                ),
+                keep=1,
+                now=datetime(2026, 11, 2, 3, 17, tzinfo=timezone.utc),
+            )
+            self.assertIsNotNone(result.graph_error)
+            self.assertEqual(self.names(root), ["2026-11-01T03-17-00Z", "2026-11-02T03-17-00Z"])
+
+    def test_an_existing_dated_directory_is_refused_and_left_alone(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = state_with(root, [make_entry(1)])
+            self.dated(root, state, "2026-11-01T03-17-00Z")
+            marker = root / "exports" / "2026-11-01T03-17-00Z" / "marker"
+            marker.write_text("keep")
+            with self.assertRaises(ExportError):
+                self.dated(root, state, "2026-11-01T03-17-00Z")
+            self.assertEqual(marker.read_text(), "keep")
+            self.assertTrue((marker.parent / "registry.sqlite").is_file())
+
+    def test_keep_must_be_positive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaises(ExportError):
+                self.dated(root, state_with(root, [make_entry(1)]), "2026-11-01T03-17-00Z", keep=0)
+
+    def test_the_cli_keeps_dated_directories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = state_with(root, [make_entry(1)])
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                code = cli.main(["export", "--root", str(root / "exports"), "--state-dir", str(state), "--keep", "2"])
+            self.assertEqual(code, 0, err.getvalue())
+            (only,) = (root / "exports").iterdir()
+            self.assertRegex(only.name, r"^\d{4}-\d\d-\d\dT\d\d-\d\d-\d\dZ$")
+            self.assertTrue((only / "registry.sqlite").is_file())
 
 
 class RestoreTests(unittest.TestCase):

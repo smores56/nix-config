@@ -159,6 +159,38 @@ class WorkRefusalTests(GitFixture):
         self.assert_work(repo)
 
 
+class WorkPolicyTests(GitFixture):
+    """The employer instance accepts work repos; every other value refuses."""
+
+    def work_repo(self):
+        repo = self.repo()
+        self.git(repo, "remote", "add", "origin", "git@github.com:blitzy-org/service.git")
+        self.git(repo, "config", "smores.flow", "pr")
+        return repo
+
+    def test_allow_derives_a_group_for_a_work_repo(self):
+        repo = self.work_repo()
+        with mock.patch.dict(os.environ, {"MEMORY_WORK_POLICY": "allow"}):
+            self.assertEqual(derive_group(repo, self.env).group, "blitzy-org--service")
+
+    def test_allow_accepts_work_group_names(self):
+        with mock.patch.dict(os.environ, {"MEMORY_WORK_POLICY": "allow"}):
+            self.assertEqual(validate_group("blitzy-org--repo"), "blitzy-org--repo")
+            self.assertEqual(validate_group("work"), "work")
+
+    def test_allow_still_validates_the_group_shape(self):
+        with mock.patch.dict(os.environ, {"MEMORY_WORK_POLICY": "allow"}), self.assertRaises(GroupRefused):
+            validate_group("../escape")
+
+    def test_unset_and_unknown_values_refuse(self):
+        repo = self.work_repo()
+        base = {k: v for k, v in os.environ.items() if k != "MEMORY_WORK_POLICY"}
+        for value in (None, "", "refuse", "ALLOW", "yes"):
+            env = base if value is None else {**base, "MEMORY_WORK_POLICY": value}
+            with self.subTest(value=value), mock.patch.dict(os.environ, env, clear=True), self.assertRaises(GroupRefused):
+                derive_group(repo, self.env)
+
+
 class GitFailureTests(GitFixture):
     def test_git_failure_inside_a_worktree_refuses(self):
         repo = self.repo()

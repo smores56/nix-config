@@ -5,7 +5,7 @@ filled in when the extraction endpoint returns. The reconciler uses `failures`
 to pause retries while either model endpoint is down, and search still needs
 the embedder.
 
-Extraction and embeddings both go through the Neuralwatt gateway on loopback,
+Extraction and embeddings both go through the instance's LLM gateway on loopback,
 which has no `/health` of its own for the embedder, so a real (tiny) embedding
 is the only honest probe.
 """
@@ -24,9 +24,9 @@ class ReadinessError(RuntimeError):
 @dataclass(frozen=True)
 class HealthProbes:
     llm_url: str
-    # Graphiti's embedding model (`MEMORY_EMBED_MODEL`, set once in modules/nixos/memory.nix).
+    # Graphiti's embedding model (`MEMORY_EMBED_MODEL`, set once per instance).
     embed_model: str
-    # The chat probe is a WAN round trip to Neuralwatt, not a loopback hop, so
+    # The chat probe is a WAN round trip to the model provider, not a loopback hop, so
     # the budget covers connect + response rather than one local socket write.
     timeout: float = 10.0
     # Test seam; production talks to real endpoints.

@@ -11,7 +11,10 @@
     ../../profiles/ai-tools.nix
     ../../profiles/darwin-work.nix
   ];
-  homeModules = [ ./sops.nix ];
+  homeModules = [
+    ./sops.nix
+    ./memory.nix
+  ];
 
   user = {
     aiProfile = "work";
