@@ -1323,12 +1323,8 @@ the only reliable hardening.
 Photos: the agent talks to Immich over its API rather than touching
 `/var/lib/data/photos`, using `secret/immich-agent-api-key` (below).
 
-Work Mac: Claude Code, not maki. `claude-policy-install` (sudo) writes the
-root-owned `/Library/Application Support/ClaudeCode/managed-settings.json` from
-`modules/features/ai/claude-policy.nix`: every Claude session runs Bash in
-Claude's Seatbelt sandbox with no unsandboxed retry, so the sops identity and
-decrypted secrets other than the GitHub and Access ones stay unreadable. Rerun
-it whenever activation prints `claude-policy: … stale`.
+Work Mac: Claude Code, not maki, with no sandbox: an agent there can read the
+sops identity and every decrypted secret.
 
 ### immich-agent-api-key
 

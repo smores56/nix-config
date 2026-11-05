@@ -45,8 +45,7 @@ Cross-cutting values flow through `config.machine.*` and `config.user.*`, not
   providers agents may use.
 - **Agent sandbox.** On the Linux hosts `m` is `agent-sandbox maki`, a
   same-UID bwrap boundary (`modules/lib/agent-sandbox.nix`). On smoreswork `m`
-  is `claude`, held by a root-owned managed policy that sandboxes every Bash
-  command (`modules/features/ai/claude-policy.nix`).
+  is `claude`, unsandboxed.
 - **Memory.** smortress runs a typed SQLite registry, FalkorDB and Graphiti,
   reached over the tunnel through `memory-mcp-shim`. Extraction and embeddings
   go through a loopback Neuralwatt gateway. The `memory` CLI: `write search get

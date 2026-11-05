@@ -585,9 +585,6 @@ in
           pkgs.runCommand "piv-wiring" { nativeBuildInputs = [ pkgs.gnugrep ]; } ''
             tr -d '\\\n' <${proxy} | grep -F 'piv-ensure.sh "' | grep -F 'opensc-pkcs11.so" "${cache}"' |
               grep -E 'piv-dialog +/nix/store/[^ ]+-piv-cache-askpass +/nix/store/[^ ]+-piv-k1.pub'
-            ${lib.optionalString (!pkgs.stdenv.hostPlatform.isLinux) ''
-              grep -F '"@UT@/piv"' ${src}/modules/features/ai/claude-policy.nix
-            ''}
             touch $out
           '';
 
