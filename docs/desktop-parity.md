@@ -13,7 +13,7 @@ and its resize increments are points rather than Niri's percentages. AeroSpace
 uses tree tiling, not Niri's scrolling columns. Niri-only actions such as
 Overview and column operations have no AeroSpace equivalent here.
 
-T opens kitty, B the browser (Chrome on macOS, Firefox on Linux), D the launcher
+T opens kitty, B the browser (Brave Origin on Linux, Brave on macOS), D the launcher
 (Spotlight on macOS) and Q closes the window. Arrows cross monitor edges; add
 Option to focus a monitor and Option+Shift to move to one. W toggles tabbed
 columns on Niri and accordion on AeroSpace, and Comma joins the next window.

@@ -28,7 +28,7 @@ in
       pkgs.git
     ];
     text = script ./repos.sh {
-      "@CODE_ROOT@" = lib.escapeShellArg cfg.codeRoot;
+      "@REPOS_ROOT@" = lib.escapeShellArg cfg.reposRoot;
       "@WORK_FLAT@" = lib.escapeShellArg workFlatDir;
       "@WORK_OWNERS@" = lib.escapeShellArgs cfg.work.githubOwners;
     };

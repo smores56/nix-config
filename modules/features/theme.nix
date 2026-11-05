@@ -73,7 +73,6 @@ in
       };
 
       targets = {
-        firefox.fonts.enable = false;
         kitty.fonts.enable = false;
         kitty.opacity.enable = false;
         helix.enable = false;

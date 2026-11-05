@@ -11,7 +11,7 @@ Priority: merge conflicts → review threads → CI.
 Use the helper for GitHub API work, replies, thread resolution, CI log extraction, and final verification:
 
 ```bash
-WATCH_PR="$HOME/code/github.com/smores56/nix-config/modules/features/ai/skills/resolve-pr/scripts/watch-pr.sh"
+WATCH_PR="$HOME/repos/github.com/smores56/nix-config/modules/features/ai/skills/resolve-pr/scripts/watch-pr.sh"
 PR="${1:-}"
 ITERATION=0
 ```

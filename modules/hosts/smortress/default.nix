@@ -60,7 +60,7 @@ in
     # Work checkouts inside these roots are refused by the server's employer check.
     filesearch = {
       roots = [
-        "/home/smores/code"
+        "/home/smores/repos"
         "/home/smores/Documents"
         "/home/smores/Downloads"
         "/home/smores/dev"

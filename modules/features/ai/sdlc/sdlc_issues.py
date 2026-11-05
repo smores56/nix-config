@@ -1029,7 +1029,7 @@ def cmd_review(args):
     env = {key: value for key, value in os.environ.items() if key != "REVDIFF_OUTPUT"}
     try:
         proc = subprocess.run(
-            ["revdiff", "--stdin", "--stdin-name", name],
+            ["revdiff", "--stdin", "--stdin-name", name, "--no-tree", "--wrap"],
             input=body,
             stdout=subprocess.PIPE,
             text=True,

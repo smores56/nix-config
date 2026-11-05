@@ -88,7 +88,9 @@ in
     ])
     (group harvest [ "harvest" ])
     (group "inherent: steam is a brew cask on the Mac" [ "steam" ])
-    (group "work-policy: Chrome is the work browser" [ "firefox" ])
+    (group "inherent: Linux runs the free Brave Origin nix package; the Mac uses the Brave brew cask" [
+      "brave-origin"
+    ])
     (group "work-policy: personal desktop apps stay off the employer laptop" [
       "bitwarden-desktop"
       "discord"

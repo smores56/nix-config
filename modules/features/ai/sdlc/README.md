@@ -49,7 +49,8 @@ without explicit human approval in the session.
 
 `sdlc review <feature>` (`sr`) is the line-anchored path:
 
-1. Pipe the issue body to `revdiff --stdin --stdin-name issue-<n>.md`.
+1. Pipe the issue body to `revdiff --stdin --stdin-name issue-<n>.md`, with
+   the tree collapsed (`--no-tree`) and word wrap on (`--wrap`).
 2. Annotate lines or the file, then quit with `q` to emit the annotations.
    `Q` discards them instead.
 3. Parse the `## file:line (type)` records, quote each anchored body line,

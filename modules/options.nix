@@ -127,10 +127,10 @@ in
       readOnly = true;
       description = "Personal GitHub account; repos it owns use the local flow.";
     };
-    codeRoot = lib.mkOption {
+    reposRoot = lib.mkOption {
       type = lib.types.str;
       readOnly = true;
-      description = "Root for ordinary git checkouts: <codeRoot>/<host>/<owner>/<repo>. Work hosts may also use user.work.flatRepos.";
+      description = "Root for ordinary git checkouts: <reposRoot>/<host>/<owner>/<repo>. Work hosts may also use user.work.flatRepos.";
     };
     shell = lib.mkOption {
       type = lib.types.enum [
@@ -191,7 +191,7 @@ in
         flow = "pr";
       };
       githubUser = "smores56";
-      codeRoot = "${homeDirectory}/code";
+      reposRoot = "${homeDirectory}/repos";
       shell = if machine.workHost then "zsh" else "fish";
       font = "Google Sans Code";
       fontPackage = pkgs.googlesans-code;

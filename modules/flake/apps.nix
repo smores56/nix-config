@@ -5,7 +5,7 @@
     let
       pkgs = import inputs.nixpkgs { inherit system; };
 
-      # The script is idempotent and clones the repo to $HOME/code itself.
+      # The script is idempotent and clones the repo to $HOME/repos itself.
       bootstrap = pkgs.writeShellApplication {
         name = "bootstrap";
         runtimeInputs = with pkgs; [

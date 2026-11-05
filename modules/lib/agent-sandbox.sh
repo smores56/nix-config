@@ -148,7 +148,7 @@ protect_repos() {
   local root entry gitdir common
   for root in "${HOME_RW[@]}"; do
     case "$root" in
-      "$home/code" | "$home/dev" | "$home/Documents" | "$home/Downloads") roots+=("$root") ;;
+      "$home/repos" | "$home/dev" | "$home/Documents" | "$home/Downloads") roots+=("$root") ;;
     esac
   done
   [ "${#roots[@]}" -gt 0 ] || return 0

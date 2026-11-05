@@ -84,6 +84,30 @@ system: [
         '';
       };
 
+    # nixpkgs-unstable carries Brave Origin; pin the current release so its
+    # Chromium base matches Brave instead of the input's older version. Bump
+    # version and both hashes from the release's brave-origin_*.deb assets.
+    brave-origin =
+      let
+        unstable = inputs.nixpkgs-unstable.legacyPackages.${system};
+        version = "1.98.63";
+        arch = if prev.stdenv.hostPlatform.isAarch64 then "arm64" else "amd64";
+      in
+      if prev.stdenv.hostPlatform.isLinux then
+        unstable.brave-origin.overrideAttrs (_: {
+          inherit version;
+          src = prev.fetchurl {
+            url = "https://github.com/brave/brave-browser/releases/download/v${version}/brave-origin_${version}_${arch}.deb";
+            hash =
+              if prev.stdenv.hostPlatform.isAarch64 then
+                "sha256-8nkMT9jDBJ1H2u6TJ4f2Hq50B8LKMN5q6Dar9TV9n4s="
+              else
+                "sha256-7b2eyO1VmShI/2iJYX+V1OnvFiW9ouWKLSJv9WBNScg=";
+          };
+        })
+      else
+        unstable.brave-origin;
+
     # Do not override libfido2/openssh: the hash change cascades through qtwebengine, KDE, and PySide
     # into uncached source builds. The fido2 module wraps ssh-sk-helper with a no-PC/SC libfido2
     # instead (OpenSSH's libfido2 lists the same token twice: USB HID + PC/SC).

@@ -52,9 +52,9 @@ in
                 test -w "$XDG_CONFIG_HOME/maki/pack-lock.json.lock"
               fi
               ! touch "$HOME/.agent-sandbox-probe" 2>/dev/null
-              if [ -d "$HOME/code" ]; then
-                touch "$HOME/code/.agent-sandbox-probe"
-                rm "$HOME/code/.agent-sandbox-probe"
+              if [ -d "$HOME/repos" ]; then
+                touch "$HOME/repos/.agent-sandbox-probe"
+                rm "$HOME/repos/.agent-sandbox-probe"
               fi
               if [ -d /var/lib/data/music ]; then
                 touch /var/lib/data/music/.agent-sandbox-probe
@@ -77,7 +77,7 @@ in
                 rm /var/lib/agent/books-ingest/.agent-sandbox-probe
               fi
               repo_list="$XDG_STATE_HOME/agent-sandbox-repos"
-              find "$HOME/code" "$HOME/dev" -maxdepth 8 -name .git -type d -prune -print >"$repo_list" 2>/dev/null || true
+              find "$HOME/repos" "$HOME/dev" -maxdepth 8 -name .git -type d -prune -print >"$repo_list" 2>/dev/null || true
               repo_count=0
               while IFS= read -r repo; do
                 [ -n "$repo" ] || continue

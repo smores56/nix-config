@@ -25,7 +25,7 @@ let
   ];
 
   homeRw = [
-    "$HOME/code"
+    "$HOME/repos"
     "$HOME/dev"
     "$HOME/Documents"
     "$HOME/Downloads"
@@ -69,6 +69,7 @@ let
     "$HOME/.cache/maki"
     "$HOME/.cache/mozilla"
     "$HOME/.cache/chromium"
+    "$HOME/.cache/BraveSoftware"
     "$HOME/.cache/gh"
     "$HOME/.mozilla"
     "$HOME/.var/app"

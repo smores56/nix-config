@@ -71,7 +71,7 @@ let
         layout = "h_tiles";
         children = [
           apps.kitty
-          apps.chrome
+          apps.brave
         ];
       }
       {
@@ -165,7 +165,7 @@ in
           })
           [
             apps.kitty
-            apps.chrome
+            apps.brave
           ];
 
       gaps = {
