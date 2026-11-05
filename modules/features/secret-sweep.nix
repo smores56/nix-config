@@ -8,7 +8,13 @@ let
     runtimeInputs = [ pkgs.gitleaks ];
     text = ''
       if [ "$#" -eq 0 ]; then
-        set -- "$HOME"
+        # ~/Library is never shared with the agent, and reading app containers there pops TCC
+        # prompts, so the default walks the rest of $HOME.
+        shopt -s dotglob nullglob
+        for entry in "$HOME"/*; do
+          [ "$(basename "$entry")" = Library ] && [ "$(uname)" = Darwin ] && continue
+          set -- "$@" "$entry"
+        done
       fi
       status=0
       for target in "$@"; do

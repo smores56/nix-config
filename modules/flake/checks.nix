@@ -660,6 +660,16 @@ in
             if grep -q 'A1b2C3d4E5f6' report.txt; then
               echo "secret-sweep printed the secret" >&2; exit 1
             fi
+            # With no arguments it walks $HOME, skipping ~/Library only on Darwin.
+            mkdir -p home/Library home/proj
+            cp dirty/.env home/Library/.env
+            cp clean/notes.txt home/proj/notes.txt
+            ${
+              if pkgs.stdenv.hostPlatform.isDarwin then
+                "HOME=$PWD/home ${lib.getExe sweep}"
+              else
+                "! HOME=$PWD/home ${lib.getExe sweep} >/dev/null 2>&1"
+            }
             touch $out
           '';
 
