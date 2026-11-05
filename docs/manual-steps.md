@@ -328,6 +328,12 @@ user; on a laptop whose OS hostname is not `smoreswork`, override both:
 MDM enrollment, FileVault, and OS updates stay with the employer; this repo only
 manages the user environment.
 
+The GUI apps come from Homebrew, not nix. `just brew-bundle` installs the casks
+in `modules/features/brew.nix` (kitty and AeroSpace among them) from the
+Brewfile home-manager writes to `~/.config/homebrew/Brewfile`. It only adds:
+packages the file omits are never uninstalled, and the employer's own are not
+declared. Home-manager switches never run brew.
+
 ## Tang Pi
 
 smortress's root disk gets a Clevis `sss` policy (Tang share + TPM2 share bound
@@ -1230,9 +1236,11 @@ Pairing a device:
    the whole truth and a click in the UI does not survive the next activation.
 
 The vault is `~/Sync/vault` on laptops and `/var/lib/data/vault` on smortress.
-It is ciphertext everywhere; plaintext exists only inside an unlocked client. On
-Linux, `vault <cmd>` prompts, mounts the vault into a temp dir, runs the
-command, and unmounts on exit, so nothing stays mounted between uses.
+It is ciphertext everywhere; plaintext exists only inside an unlocked client.
+`vault <cmd>` prompts, mounts the vault into a temp dir, runs the command, and
+unmounts on exit, so nothing stays mounted between uses. Linux mounts through
+FUSE; macOS through fuse-t, which macOS may ask you to approve once in System
+Settings, Privacy & Security.
 
 **One device at a time.** Unlock on one device and leave the others read-only.
 Two devices that create the same directory at once write two `dir.c9r` values,

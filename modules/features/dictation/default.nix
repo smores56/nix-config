@@ -43,19 +43,10 @@ let
     done
     exec ${lib.getExe voxtype} daemon
   '';
-
-  mdStructure = pkgs.writeShellApplication {
-    name = "md-structure";
-    runtimeInputs = [ pkgs.coreutils ];
-    text = builtins.replaceStrings [ "@PROMPT_FILE@" ] [ "${./md-structure.prompt.md}" ] (
-      builtins.readFile ./md-structure.sh
-    );
-  };
 in
 {
   config = lib.mkIf cfg.wayland {
     home.packages = [
-      mdStructure
       pkgs.wl-clipboard
       pkgs.wtype
     ];
@@ -100,8 +91,5 @@ in
       "record"
       "toggle"
     ];
-
-    # A non-zero exit leaves the buffer untouched.
-    programs.helix.settings.keys.normal.space.m = ":pipe md-structure";
   };
 }

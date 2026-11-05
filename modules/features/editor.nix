@@ -1,4 +1,5 @@
 {
+  config,
   pkgs,
   lib,
   ...
@@ -7,6 +8,30 @@ let
   tsJsRoots = [
     "package.json"
   ];
+
+  # Work keeps to the employer-approved assistant; personal hosts use the cheap maki model.
+  structureRunner =
+    {
+      personal = {
+        runner = "maki";
+        model = "neuralwatt/deepseek-v4.1-flash";
+      };
+      work = {
+        runner = "claude";
+        model = "haiku";
+      };
+    }
+    .${config.user.aiProfile};
+
+  mdStructure = pkgs.writeShellApplication {
+    name = "md-structure";
+    runtimeInputs = [ pkgs.coreutils ];
+    text =
+      builtins.replaceStrings
+        [ "@PROMPT_FILE@" "@RUNNER@" "@MODEL@" ]
+        [ "${./md-structure.prompt.md}" structureRunner.runner structureRunner.model ]
+        (builtins.readFile ./md-structure.sh);
+  };
 in
 {
   # NixOS defaults EDITOR to nano, leaking into login shells and the systemd user session;
@@ -21,7 +46,10 @@ in
     VISUAL = "hx";
   };
 
-  home.packages = with pkgs; [
+  home.packages = [
+    mdStructure
+  ]
+  ++ (with pkgs; [
     nixd
     ruff
     taplo
@@ -40,7 +68,7 @@ in
     yaml-language-server
     typescript-language-server
     vscode-langservers-extracted
-  ];
+  ]);
 
   programs.helix = {
     enable = true;
@@ -59,6 +87,8 @@ in
           s = ":write";
           c = ":quit";
           t = "hover";
+          # A non-zero exit leaves the buffer untouched.
+          m = ":pipe md-structure";
         };
       };
 

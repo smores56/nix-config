@@ -70,6 +70,7 @@ in
       wallpapersHome = lib.findFirst (
         home: builtins.any (p: lib.getName p == "wallpapers") home.config.home.packages
       ) null homesHere;
+      brewHome = lib.findFirst (home: home.config.xdg.configFile ? "homebrew/Brewfile") null homesHere;
       askpassHome = lib.findFirst (
         home: builtins.any (p: lib.getName p == "ssh-askpass") home.config.home.packages
       ) null homesHere;
@@ -192,6 +193,16 @@ in
                 ];
             };
           }
+          // lib.optionalAttrs (brewHome != null) {
+            brewfile = {
+              tools = [
+                pkgs.coreutils
+                pkgs.gnugrep
+                pkgs.gnused
+              ];
+              args = [ brewHome.config.xdg.configFile."homebrew/Brewfile".source ];
+            };
+          }
           // lib.optionalAttrs (scriptHome != null) {
             git-work-routing = {
               args = [ (configFile "git/config") ];
@@ -301,16 +312,30 @@ in
             };
           }
           // {
+            md-structure = {
+              tools = [
+                pkgs.bash
+                pkgs.coreutils
+                pkgs.gnugrep
+                pkgs.gnused
+              ];
+              args = [
+                "${src}/modules/features/md-structure.sh"
+                "${src}/modules/features/md-structure.prompt.md"
+              ];
+            };
             vault = {
               tools = [
                 pkgs.bash
                 pkgs.coreutils
-                pkgs.fuse3
                 pkgs.gnugrep
                 pkgs.gnused
-                pkgs.util-linux
               ];
-              args = [ "${src}/modules/features/vault.sh" ];
+              args = [
+                "${src}/modules/features/vault.sh"
+                "${src}/modules/features/vault-linux.sh"
+                "${src}/modules/features/vault-darwin.sh"
+              ];
             };
           }
         );
@@ -377,6 +402,26 @@ in
               aerospaceBindings =
                 config.flake.homeConfigurations."sam@smoreswork".config.programs.aerospace.settings.mode.main.binding;
             }
+          )
+        );
+
+        # Every home collects garbage on a timer; the Mac shares its SSH transports through a socket
+        # path that fits macOS's 104-byte limit (ssh appends a 17-byte suffix while binding).
+        home-maintenance = evalCheck "home-maintenance" (
+          toString (
+            let
+              ensure = cond: msg: lib.assertMsg cond "home-maintenance: ${msg}";
+              work = config.flake.homeConfigurations."sam@smoreswork".config;
+              mux = work.programs.ssh.settings."*".data or work.programs.ssh.settings."*";
+              socketBytes =
+                lib.stringLength (lib.replaceStrings [ "%C" ] [ (lib.fixedWidthString 40 "x" "") ] mux.ControlPath)
+                + 17;
+            in
+            ensure (lib.all (h: h.config.nix.gc.automatic) (
+              lib.attrValues config.flake.homeConfigurations
+            )) "every home collects garbage"
+            && ensure (mux.ControlMaster == "auto") "the Mac multiplexes SSH connections"
+            && ensure (socketBytes <= 104) "the control socket path is ${toString socketBytes} bytes"
           )
         );
 

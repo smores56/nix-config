@@ -10,6 +10,8 @@ if [ "$#" -eq 0 ]; then
   exit 2
 fi
 
+@PLATFORM@
+
 vault_dir=@VAULT@
 if [ ! -f "$vault_dir/vault.cryptomator" ]; then
   echo "vault: $vault_dir is not a Cryptomator vault" >&2
@@ -32,9 +34,9 @@ cleanup() {
   trap - EXIT INT TERM
   # cryptomator-cli exits only once the mount is gone, so unmount first (waiting would hang). A
   # child left by the command (previewer, watcher, Ctrl-C'd yazi) keeps a file open, so a plain
-  # unmount fails with EBUSY: retry lazily with `-z`, which detaches the tree.
-  if ! fusermount3 -u "$mountpoint" 2>/dev/null; then
-    fusermount3 -uz "$mountpoint" 2>/dev/null || true
+  # unmount fails with EBUSY: retry detaching the tree.
+  if ! unmount "$mountpoint"; then
+    unmount_detach "$mountpoint" || true
   fi
   if [ -n "$cli" ]; then
     # A lazily detached mount a stray child still holds can keep the CLI alive: bound the reap, then kill.
@@ -57,14 +59,14 @@ cli=$!
 pass=
 
 for _ in $(seq 1 60); do
-  mountpoint -q "$mountpoint" && break
+  is_mounted "$mountpoint" && break
   if ! kill -0 "$cli" 2>/dev/null; then
     echo "vault: cryptomator-cli exited before mounting (wrong password?)" >&2
     exit 1
   fi
   sleep 0.5
 done
-mountpoint -q "$mountpoint" || {
+is_mounted "$mountpoint" || {
   echo "vault: no mount appeared within 30s" >&2
   exit 1
 }

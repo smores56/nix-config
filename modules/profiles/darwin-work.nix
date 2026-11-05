@@ -2,12 +2,14 @@
 {
   home = [
     ../features/terminal.nix
+    ../features/brew.nix
     ../features/cargo.nix
     ../features/work-host.nix
     ../features/ai/claude-policy.nix
     ../desktop/aerospace/default.nix
     ../desktop/macos-defaults.nix
     ../features/wallpapers.nix
+    ../features/vault.nix
   ];
   nixos = [ ];
 }

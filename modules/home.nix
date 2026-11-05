@@ -55,6 +55,12 @@ in
     );
   };
 
+  # Only unreferenced paths: generations stay roots, so rollback keeps working.
+  nix.gc = {
+    automatic = true;
+    dates = "weekly";
+  };
+
   targets.genericLinux.enable = isLinux && !config.machine.nixos;
   xdg = lib.mkIf isLinux {
     enable = true;

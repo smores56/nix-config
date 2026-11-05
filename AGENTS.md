@@ -54,6 +54,7 @@ adds its greeter as a host-local module.
 | `modules/features/` | cross-platform home-manager modules (shell, editor, git, packages, theme, ai) |
 | `modules/features/syncthing.nix`, `modules/syncthing-devices.nix` | Syncthing folder carrying the Cryptomator vault as ciphertext; the device table is a plain attrset of public device IDs |
 | `modules/features/vault.nix` (`vault.sh`) | `vault <cmd>`: unlock the Cryptomator vault for exactly one command |
+| `modules/features/brew.nix` | the work Mac's Brewfile (`just brew-bundle` applies it) |
 | `modules/desktop/` | desktop-environment modules (niri, aerospace) |
 | `modules/nixos/` | NixOS system modules (base, desktop, networking, ssh, etc.) |
 | `modules/nixos/radicale.nix`, `open-webui.nix`, `navidrome.nix` | public tunnel apps with their own auth: CalDAV/CardDAV, chat, music |

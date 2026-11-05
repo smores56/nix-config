@@ -28,13 +28,14 @@ in
         ServerAliveCountMax = 3;
         HashKnownHosts = false;
         UserKnownHostsFile = "~/.config/ssh/known_hosts";
-      }
-      // lib.optionalAttrs isLinux {
+
         # Reuse one transport per destination (a cloudflared ProxyCommand costs a tunnel handshake each
-        # time), in the runtime dir, not ~/.ssh. darwin shares nothing: no XDG_RUNTIME_DIR (an unset
-        # ${VAR} is a fatal config error) and its TMPDIR is too long for a socket path.
+        # time). Linux keeps sockets in the runtime dir; darwin has no XDG_RUNTIME_DIR (an unset
+        # ${VAR} is a fatal config error) and its TMPDIR is too long for the 104-byte socket path, so
+        # it uses a short one under ~/.cache.
         ControlMaster = "auto";
-        ControlPath = "\${XDG_RUNTIME_DIR}/ssh-%C";
+        ControlPath =
+          if isLinux then "\${XDG_RUNTIME_DIR}/ssh-%C" else "${config.home.homeDirectory}/.cache/ssh-%C";
         ControlPersist = "10m";
       };
     };

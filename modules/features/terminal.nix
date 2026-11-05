@@ -6,7 +6,6 @@
 }:
 let
   shell = config.user.shell;
-  kittyApp = "${config.home.homeDirectory}/Applications/Home Manager Apps/kitty.app";
 in
 {
   fonts.fontconfig.enable = lib.mkIf config.machine.graphical true;
@@ -17,6 +16,8 @@ in
 
   programs.kitty = {
     enable = true;
+    # macOS installs kitty from brew (modules/features/brew.nix); home-manager writes only the config.
+    package = lib.mkIf pkgs.stdenv.hostPlatform.isDarwin null;
     settings = {
       font_family = "family='${config.user.font}' style=Regular";
       bold_font = "family='${config.user.font}' style=Bold";
@@ -33,20 +34,4 @@ in
       wayland_enable_ime = if config.machine.wayland then "yes" else "no";
     };
   };
-
-  # nix's kitty.app has a broken ad-hoc signature (launchd rejects GUI spawns, err 162) and
-  # copyApps reinstalls it every switch, so re-sign after. Its MacOS/kitty is also a nix wrapper
-  # that execs the store bundle's .kitty-wrapped, which makes LaunchServices drop the pid and
-  # AeroSpace lose its windows: promote the copy's real binary over the wrapper first (the GUI only
-  # loses the wrapper's PATH suffix, which the shell sets anyway).
-  home.activation.signKittyApp = lib.mkIf pkgs.stdenv.hostPlatform.isDarwin (
-    lib.hm.dag.entryAfter [ "copyApps" ] ''
-      if [ -d "${kittyApp}" ]; then
-        if [ -f "${kittyApp}/Contents/MacOS/.kitty-wrapped" ]; then
-          $DRY_RUN_CMD mv -f "${kittyApp}/Contents/MacOS/.kitty-wrapped" "${kittyApp}/Contents/MacOS/kitty"
-        fi
-        $DRY_RUN_CMD /usr/bin/codesign --force --deep --sign - "${kittyApp}" >/dev/null 2>&1 || true
-      fi
-    ''
-  );
 }

@@ -6,6 +6,8 @@
 }:
 let
   noti = "${pkgs.noti}/bin/noti";
+  # Installed by brew (modules/features/brew.nix); home-manager writes only the config.
+  aerospaceBin = "/opt/homebrew/bin/aerospace";
 
   shared = import ../shared-bindings.nix { inherit lib; };
   sharedBindings = builtins.listToAttrs (
@@ -98,7 +100,7 @@ let
       '';
   aerospaceLayout = pkgs.writeShellScriptBin "aerospace-layout" ''
     export AEROSPACE_LAYOUT_SPEC=${layoutSpecFile}
-    export AEROSPACE_BIN=${config.programs.aerospace.package}/bin/aerospace
+    export AEROSPACE_BIN=${aerospaceBin}
     exec ${pkgs.python3}/bin/python3 -I ${./aerospace_layout.py} "$@"
   '';
   # exec-and-forget discards output, so problems surface as a notification.
@@ -118,6 +120,7 @@ in
 
   programs.aerospace = {
     enable = true;
+    package = null;
 
     settings = {
       config-version = 2;
