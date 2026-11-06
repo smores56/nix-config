@@ -28,6 +28,14 @@ let
   ];
   # Absolute read-only shares mounted at the same path; the host store is always shared.
   extra = [ "/opt/homebrew" ];
+  # sops secrets copied into the guest each launch so the agent can sign and push (the human's
+  # choice on #386); the other secrets never leave the host.
+  handIn = [
+    "github-personal-pat"
+    "github-personal-signing-key"
+    "github-work-pat"
+    "github-work-signing-key"
+  ];
 
   substitutions = {
     vm = "agent-vm";
@@ -37,8 +45,16 @@ let
     # The guest has no Docker.app, so its CLI comes from the shared store; the daemon is the
     # host Docker Desktop, reached through the per-session forwarded socket.
     guestPath = lib.makeBinPath [ pkgs.docker-client ];
+    caBundle = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
   };
-  arrays = { inherit deny rw extra; };
+  arrays = {
+    inherit
+      deny
+      rw
+      extra
+      handIn
+      ;
+  };
 
   agentSandbox = pkgs.writeShellApplication {
     name = "agent-sandbox";

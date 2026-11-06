@@ -9,9 +9,11 @@ vm=@vm@
 image=@image@
 planner=@planner@
 guest_path_prefix=@guestPath@
+ca_bundle=@caBundle@
 deny=(@deny@)
 rw=(@rw@)
 extra=(@extra@)
+hand_in=(@handIn@)
 
 # State stays under ~/Library, which is never shared, so the guest cannot read its own login key.
 state="$HOME/Library/Application Support/agent-vm"
@@ -172,6 +174,19 @@ EOF
     tar -C "$HOME" -cf - -- "${copies[@]}" |
       guest_ssh -o BatchMode=yes "admin@$ip" "tar -C $(printf %q "$guest_home") -xf -"
   fi
+
+  # Hand in only the git identities the agent signs and pushes with, at the path the host's
+  # git and gh config name (sops-nix's generation dir, which the shared ~/.config/sops-nix
+  # link points at); the rest of the sops output stays on the host.
+  local dir names=()
+  dir=$(readlink -f "$HOME/.config/sops-nix/secrets" 2>/dev/null) || return 0
+  for name in "${hand_in[@]}"; do
+    if [ -r "$dir/$name" ]; then names+=("$name"); fi
+  done
+  if [ "${#names[@]}" -gt 0 ]; then
+    tar -C "$dir" -cf - -- "${names[@]}" |
+      guest_ssh -o BatchMode=yes "admin@$ip" "$(printf 'sudo -n mkdir -p %q && sudo -n chown admin %q && chmod 700 %q && tar -C %q -xf -' "$dir" "$dir" "$dir" "$dir")"
+  fi
 }
 
 provision() {
@@ -259,8 +274,9 @@ while IFS= read -r root; do
   case "$PWD/" in "$HOME/$root/"*) cwd="$PWD" ;; esac
 done < <(jq -r '.shares[].rel' "$shares")
 sock="/tmp/agent-docker-$$.sock"
-remote_cmd=$(printf 'export HOME=%q PATH=%q DOCKER_HOST=unix://%q; cd %q; exec' \
-  "$guest_home" "$guest_path_prefix:$PATH" "$sock" "$cwd")
+# The host's CA path comes from the nix installer under /nix/var, which the guest lacks.
+remote_cmd=$(printf 'export HOME=%q PATH=%q DOCKER_HOST=unix://%q SSL_CERT_FILE=%q NIX_SSL_CERT_FILE=%q; cd %q; exec' \
+  "$guest_home" "$guest_path_prefix:$PATH" "$sock" "$ca_bundle" "$ca_bundle" "$cwd")
 for a in "$@"; do remote_cmd+=" $(printf %q "$a")"; done
 # The forwarded Docker socket is an accepted risk (#386): containers can mount whatever Docker
 # Desktop's File sharing allows. ExitOnForwardFailure also makes ssh wait for the forward before
