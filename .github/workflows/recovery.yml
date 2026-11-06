@@ -1,0 +1,62 @@
+# Builds and publishes the recovery page. The Cloudflare Pages project and its DNS record
+# are created by `nix run .#cloudflare-apply` (tofu/pages.tf); this workflow only uploads
+# content, so it needs one Pages-scoped token and nothing else.
+name: recovery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "recovery/**"
+      - ".github/workflows/recovery.yml"
+  pull_request:
+    paths:
+      - "recovery/**"
+      - ".github/workflows/recovery.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: recovery-pages
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Typecheck
+        working-directory: recovery
+        run: deno task typecheck
+      - name: Test
+        working-directory: recovery
+        run: deno task test
+      - name: Build
+        working-directory: recovery
+        run: deno task build
+
+  deploy:
+    needs: check
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Build
+        working-directory: recovery
+        run: deno task build
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # env is not available in `with`, so the id is repeated here.
+          accountId: 385f7d47e2e8438fbda5d6f76d760434
+          workingDirectory: recovery
+          command: pages deploy dist --project-name recovery

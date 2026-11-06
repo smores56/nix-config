@@ -210,7 +210,8 @@ One key per GitHub account: `github-personal-signing-key` in
 `secrets/smoreswork.yaml` (the work Mac only). The public halves are committed
 in `modules/lib/signing-keys.nix`, which is what writes
 `~/.config/ssh/allowed_signers`, names the private half in `user.signingkey`,
-and lets smortress trust it for the forced `agent-ssh` login. Per account:
+and lets smortress trust it for the forced `agent-ssh` login (which lands in
+smortress's agent VM). Per account:
 
 1. Mint a new pair: `ssh-keygen -t ed25519 -N '' -C
    github-personal-signing-key -f /tmp/signing`.
@@ -297,6 +298,17 @@ the JSON, re-point DNS with `cloudflare-plan`/`cloudflare-apply` (`TunnelID`
 changed), restart `cloudflared-tunnel-smortress`, confirm SSH and the public
 hostnames, then delete the old tunnel. The step-by-step is under "Rotation
 checklist → cloudflared-credentials" in `docs/manual-steps.md`.
+
+### Cloudflare Pages token (GitHub Actions)
+
+The recovery workflow (`.github/workflows/recovery.yml`) publishes
+`recovery/dist` to the `recovery` Pages project with a token stored as the
+repository secret `CLOUDFLARE_API_TOKEN`. Mint it in the Cloudflare console with
+exactly one permission, **Account → Cloudflare Pages → Edit**, and no zone access:
+the workflow uploads files and nothing else. Rotate by creating the new token,
+updating the GitHub secret, running the workflow once, then revoking the old
+token. The Pages project itself, its custom domain and the `recovery` DNS record
+are tofu resources, applied with `nix run .#cloudflare-apply`.
 
 ## Stolen laptop or phone
 
