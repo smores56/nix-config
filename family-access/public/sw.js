@@ -1,4 +1,4 @@
-const CACHE = "family-access-shell-v1";
+const CACHE = "family-access-shell-v2";
 const ASSETS = [
   "./",
   "./index.html",
@@ -37,14 +37,17 @@ self.addEventListener("fetch", (event) => {
   ) {
     return;
   }
+  // Network-first so a shipped fix reaches an already-installed shell; fall
+  // back to the cached copy when offline.
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).then((response) => {
-        const copy = response.clone();
-        void caches.open(CACHE).then((cache) => cache.put(event.request, copy));
+    fetch(event.request)
+      .then((response) => {
+        if (response.ok) {
+          const copy = response.clone();
+          void caches.open(CACHE).then((cache) => cache.put(event.request, copy));
+        }
         return response;
-      });
-    }),
+      })
+      .catch(() => caches.match(event.request).then((cached) => cached ?? Response.error())),
   );
 });
