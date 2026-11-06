@@ -556,7 +556,7 @@ Secrets are split by scope:
   plus every host's key (`smortress`, `smorespro`, `smoreswork`). Each of those
   hosts can read the whole file, so host-only keys must not go in it.
 
-No host holds the admin identity, so edit from a laptop that has it:
+Every machine holds the admin identity (passphrase-wrapped), so edit anywhere:
 
 ```sh
 sops secrets/smortress.yaml
@@ -571,17 +571,18 @@ Never place a secret in the Nix store.
 ### Admin age key (keys.age)
 
 The admin identity is a single age key, stored passphrase-encrypted as
-`~/.config/sops/keys.age` on the operator's laptops (smorespro, smoreswork) and
-nowhere else. smortress keeps only its SSH host key, so a compromised server
-yields no identity that can re-encrypt `secrets/` or read anything already
-committed.
+`~/.config/sops/keys.age` on every machine (smortress, smorespro, smoreswork).
+It is a recipient of every file in `secrets/`, so any machine holding it can
+read and re-encrypt the whole tree. NixOS hosts still decrypt at boot with
+their SSH host keys, which is why losing `keys.age` does not stop a running
+host.
 
 `sops` receives the identity through `SOPS_AGE_KEY_CMD` → `sops-age-key` →
 `age --decrypt ~/.config/sops/keys.age`. `age` prompts on the tty and sops reads
 the identity from the wrapper's stdout, so the passphrase never lands in argv,
 the environment, or the store, and one sops run costs one prompt.
 
-Create it once on a laptop:
+Create it once, then copy the encrypted file to every machine:
 
 ```sh
 mkdir -p ~/.config/sops
@@ -591,13 +592,17 @@ age --decrypt ~/.config/sops/keys.age | age-keygen -y   # prints the recipient
 
 `age` creates the file `0644`; the subshell's `umask` keeps it `0600`.
 
-Copy the encrypted file to another laptop as-is (the passphrase travels
+Copy the encrypted file to every other machine as-is (the passphrase travels
 separately). Put the recipient into `.sops.yaml` as `&admin`, then re-encrypt
 the data key to the new recipient list:
 
 ```sh
 sops updatekeys secrets/smortress.yaml   # one prompt; values are untouched
 ```
+
+Repeat for every file the admin identity should read (`smorespro.yaml`,
+`common.yaml`, and, from the Mac, `smoreswork.yaml`), or the omitted recipient
+stanza is pruned from that file.
 
 `updatekeys` re-wraps only the *data key*: an identity that already unwrapped
 it keeps decrypting every current and future value. After the recipient swap,
@@ -607,45 +612,48 @@ rotate the data key itself so the retired identity is useless:
 sops rotate --in-place secrets/smortress.yaml   # new data key, same values
 ```
 
-Verify the laptop holds a working identity:
+Verify the machine holds a working identity:
 
 ```sh
 sops -d secrets/smortress.yaml > /dev/null   # one prompt, exit 0
 ```
 
-**Move it off every host.** After copying `keys.age` to the laptops, delete the
-copy on smortress along with any passphrase file next to it, then prove the
-host holds no admin identity:
+**Every machine.** Confirm each one has the file and a working identity:
 
 ```sh
-rm -f ~/.config/sops/keys.age /run/user/$(id -u)/age-*passphrase
-test ! -e ~/.config/sops/keys.age
-env -u SOPS_AGE_KEY_CMD sops -d secrets/smortress.yaml >/dev/null   # must fail
+test -e ~/.config/sops/keys.age
+sops -d secrets/smortress.yaml >/dev/null   # one prompt, exit 0
 ```
 
 The wrapper refuses to run while a plaintext `~/.config/sops/age/keys.txt`
 exists, because sops would load that default even with `SOPS_AGE_KEY_CMD` set.
 
-**Passphrase custody.** Bitwarden plus an off-site copy on offline media (not
-another machine). Keep the two apart; either alone is worthless. Losing both
-means losing the identity — nothing can unwrap `keys.age`. The secrets
-themselves survive (smortress's host key still decrypts them), so recovery is
-minting a new identity and re-keying (below), not restoring the old one.
+**Passphrase custody.** Bitwarden plus an off-site copy on offline media. Keep
+the encrypted file and the passphrase apart; either alone is worthless. Every
+machine carries the same encrypted file, so those copies die with their disks.
+Losing both means losing the identity — nothing can unwrap `keys.age`. The
+secrets themselves survive (host keys still decrypt their host files), so
+recovery is minting a new identity and re-keying (below), not restoring the old
+one.
 
-**Editing rule.** Every `sops` edit and `sops updatekeys` runs from a machine
-holding `keys.age`. On smortress the wrapper fails, which is the point: edit or
-rotate on a laptop, commit, then `sudo nixos-rebuild switch` on smortress. The
-message is printed on the terminal, because sops swallows the command's stderr.
-`SOPS_AGE_KEY_CMD` is a session variable, so reopen a shell that predates the
-last switch.
+**Editing rule.** Every `sops` edit and `sops updatekeys` runs from any machine
+holding `keys.age`; all of them can read the whole tree. On smortress, commit
+and `sudo nixos-rebuild switch` after editing so sops-nix redeploys
+`/run/secrets`. The wrapper's message is printed on the terminal, because sops
+swallows the command's stderr. `SOPS_AGE_KEY_CMD` is a session variable, so
+reopen a shell that predates the last switch.
 
 **Replace the admin identity** (also the path after a lost passphrase or a
 suspected leak):
 
 1. Mint a new `keys.age` (above) and swap the `&admin` recipient in
    `.sops.yaml`.
-2. Re-encrypt the data key to the new recipient list, then rotate the data key.
-   From a laptop that still holds the old identity:
+2. Re-encrypt the data key to the new recipient list, then rotate the data key,
+   for every file (`smortress.yaml`, `smorespro.yaml`, `common.yaml`,
+   `smoreswork.yaml`). Any identity that can still decrypt a file works; each
+   host key covers its own files, and `smoreswork.yaml` needs the Mac's
+   `~/.config/sops/smoreswork.key` via `SOPS_AGE_KEY_FILE`. From a machine that
+   still holds the old identity:
    ```sh
    sops updatekeys secrets/smortress.yaml
    sops rotate --in-place secrets/smortress.yaml
@@ -681,9 +689,10 @@ suspected leak):
 
 ### smoreswork sops key
 
-The work Mac decrypts at home-manager activation, which cannot prompt, so it
-uses a plaintext age identity instead of the passphrase-wrapped `keys.age`. Its
-recipient is `&smoreswork` in `.sops.yaml`.
+The work Mac needs an identity at home-manager activation, which cannot prompt,
+so it keeps a plaintext host identity (`~/.config/sops/smoreswork.key`) in
+addition to the passphrase-wrapped `keys.age` used for interactive sops. The
+host identity's recipient is `&smoreswork` in `.sops.yaml`.
 
 ```sh
 mkdir -p ~/.config/sops
@@ -959,6 +968,13 @@ loses the backups. Rotation: update the value and rebuild.
 Create a Cloudflare R2 API token scoped to the `restic-backup` bucket with
 Object Read & Write. Put the id and secret in `secrets/smortress.yaml`; the
 restic unit reads them through the sops template `restic-r2.env`.
+
+<!-- manual-step: secret/r2-access-key-id-readonly -->
+<!-- manual-step: secret/r2-secret-access-key-readonly -->
+
+A second token, scoped Object Read only, backs read-side consumers. Put its id
+and secret in `secrets/smortress.yaml` as `r2-access-key-id-readonly` and
+`r2-secret-access-key-readonly`.
 
 ### Radicale htpasswd
 

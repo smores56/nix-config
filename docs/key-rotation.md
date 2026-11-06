@@ -72,8 +72,8 @@ lost, mint a replacement with `nix run .#host-key -- <host>` and re-key
    `ssh -t smortress sudo true` (the first use prompts for the PIN once).
 
 The admin age key (`~/.config/sops/keys.age`) is deliberately excluded: it is
-the root of the secrets tree and stays passphrase-encrypted on both laptops, so
-a wiped `smorespro` still leaves `smoreswork`'s copy. PINs and PUKs are never
+the root of the secrets tree and stays passphrase-encrypted on every machine, so
+a wiped smorespro still leaves the copies on the others. PINs and PUKs are never
 written to the bundle. The enrollment script is restored as 0600 data; review
 it and `chmod +x` before running it.
 
