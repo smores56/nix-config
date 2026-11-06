@@ -1045,7 +1045,7 @@ in
               grep -F -- '--tmpfs /run' ${../lib/agent-sandbox.sh}
               grep -F -- 'no-user-rc' ${../nixos/ssh.nix}
               if grep -F -- 'no-touch-required' ${../nixos/ssh.nix}; then exit 1; fi
-              grep -F -- 'Photos' ${../lib/agent-sandbox.nix}
+              grep -F -- '/var/lib/data/photos' ${../lib/agent-sandbox.nix}
               touch $out
             '';
         agent-vm-linux-static =
@@ -1096,9 +1096,9 @@ in
               passAsFile = [ "firewall" ];
             }
             ''
-              grep -F 'iptables -w -I INPUT 1 -i vm-agent -j agent-vm-in' "$firewallPath"
+              grep -F '$t -w -I INPUT 1 -i vm-agent -j agent-vm-in' "$firewallPath"
               grep -F 'ip6tables -w -A agent-vm-in -j DROP' "$firewallPath"
-              grep -F 'iptables -w -A agent-vm-in -j DROP' "$firewallPath"
+              grep -xF 'iptables -w -A agent-vm-in -j DROP' "$firewallPath"
               grep -F 'iptables -w -A agent-vm-fwd -d 192.168.0.0/16 -j DROP' "$firewallPath"
               grep -F 'iptables -w -A agent-vm-fwd -d 127.0.0.0/8 -j DROP' "$firewallPath"
               l=${launcher}/bin/agent-sandbox
