@@ -1,9 +1,9 @@
 // Validates public/manifest.json against a Bitwarden export (protected or
 // plaintext) and, optionally, checks that the restic repository is reachable.
 //
-//   bun run validate --export ~/bitwarden_export.json \
+//   deno task validate --export ~/bitwarden_export.json \
 //     --export-password-file ~/.config/family-access/export-password
-//   bun run validate --export ~/export.json --restic-dir /var/backup/restic \
+//   deno task validate --export ~/export.json --restic-dir /var/backup/restic \
 //     --restic-password-file ~/.config/family-access/restic-password
 
 import { promises as fs } from "node:fs";

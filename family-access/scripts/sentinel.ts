@@ -4,13 +4,13 @@
 // Passwords come from files when possible: environment variables are visible to
 // any same-UID process. The env fallbacks exist for one-off runs.
 //
-//   bun run sentinel --local /var/lib/data/vault \
+//   deno task sentinel --local /var/lib/data/vault \
 //     --vault-password-file /run/secrets/vault-password
-//   bun run sentinel --repo /var/backup/restic --prefix var/lib/data/vault \
+//   deno task sentinel --repo /var/backup/restic --prefix var/lib/data/vault \
 //     --restic-password-file ~/.restic-pass --vault-password-file ~/.vault-pass
 //   R2_REPOSITORY=s3:https://<account>.r2.cloudflarestorage.com/restic-backup \
 //   R2_ENDPOINT=... R2_BUCKET=... R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... \
-//     bun run sentinel --r2 --prefix var/lib/data/vault \
+//     deno task sentinel --r2 --prefix var/lib/data/vault \
 //     --restic-password-file ~/.restic-pass --vault-password-file ~/.vault-pass
 
 import { promises as fs } from "node:fs";
