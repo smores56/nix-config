@@ -16,7 +16,6 @@ let
 
   sandbox = import ../lib/agent-sandbox.nix {
     inherit pkgs lib;
-    isServer = builtins.elem "server" config.machine.profiles;
   };
 
   # Only what a kernel needs; anything more is installed into the workspace.

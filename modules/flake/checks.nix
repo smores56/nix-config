@@ -1032,8 +1032,9 @@ in
               '';
           }
       // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
-        agent-sandbox-static =
-          pkgs.runCommand "agent-sandbox-static-check"
+        # The jupyter interpreter is the one bwrap profile left.
+        jupyter-sandbox-static =
+          pkgs.runCommand "jupyter-sandbox-static-check"
             {
               nativeBuildInputs = [ pkgs.gnugrep ];
             }
@@ -1044,10 +1045,97 @@ in
               grep -F -- '--tmpfs /run' ${../lib/agent-sandbox.sh}
               grep -F -- 'no-user-rc' ${../nixos/ssh.nix}
               if grep -F -- 'no-touch-required' ${../nixos/ssh.nix}; then exit 1; fi
-              grep -F -- 'agent-ssh' ${../nixos/ssh.nix}
-              grep -F -- 'Photos' ${../lib/agent-sandbox.nix}
-              grep -F -- 'gitdir/hooks' ${../lib/agent-sandbox.sh}
-              grep -F -- 'gitdir/config' ${../lib/agent-sandbox.sh}
+              grep -F -- '/var/lib/data/photos' ${../lib/agent-sandbox.nix}
+              touch $out
+            '';
+        agent-vm-linux-static =
+          let
+            hosts = map (n: config.flake.nixosConfigurations.${n}.config) [
+              "smortress"
+              "smorespro"
+            ];
+            facts =
+              host:
+              let
+                guest = host.microvm.vms.agent.config.config;
+                shares = guest.microvm.shares;
+                home = "/home/${host.machine.username}";
+              in
+              {
+                squash = lib.all (a: lib.elem a guest.microvm.virtiofsd.extraArgs) [
+                  "--translate-uid=squash-guest:0:1000:4294967295"
+                  "--translate-gid=squash-guest:0:100:4294967295"
+                  "--modcaps=-mknod"
+                ];
+                noXattr = lib.all (sh: !sh.posixAcl) shares;
+                # The home reaches the guest only through the assembled view.
+                noRawHome = lib.all (sh: sh.source != home && !(lib.hasPrefix "${home}/" sh.source)) shares;
+                guestBuilds = guest.microvm.writableStoreOverlay != null;
+                keyOnly =
+                  !guest.services.openssh.settings.PasswordAuthentication
+                  && !guest.services.openssh.settings.AllowAgentForwarding
+                  && guest.services.openssh.authorizedKeysFiles == [ "/run/secrets/agent-vm-authorized-keys" ];
+                denies = lib.all (d: lib.elem d host.agentVm.deny) [
+                  ".config/sops"
+                  ".local/share/keyrings"
+                  ".local/share/ykman"
+                  ".local/state/key-backup"
+                  ".config/BraveSoftware"
+                  ".config/mozilla"
+                  ".mozilla"
+                  ".config/Bitwarden"
+                  ".cache/cliphist"
+                  ".gnupg"
+                  "Sync"
+                ];
+                # A writable entry must never cover host-executed config or a denied path.
+                narrowRw = lib.all (
+                  r:
+                  !(lib.elem r [
+                    ""
+                    "."
+                    ".config"
+                    ".local"
+                    ".local/bin"
+                    ".cache"
+                    ".ssh"
+                  ])
+                  && lib.all (d: !(lib.hasPrefix "${r}/" d) && d != r) host.agentVm.deny
+                ) host.agentVm.rw;
+                firewall = host.networking.firewall.extraCommands;
+              };
+            all = map facts hosts;
+            ok = lib.all (
+              f: f.squash && f.noXattr && f.noRawHome && f.guestBuilds && f.keyOnly && f.denies && f.narrowRw
+            ) all;
+            launcher = (import ../lib/agent-vm.nix { inherit pkgs lib; }).launcher "smores";
+          in
+          assert lib.assertMsg ok
+            "agent-vm: a Linux guest lost uid squashing, the view, guest builds, key-only sshd or a deny entry";
+          pkgs.runCommand "agent-vm-linux-static-check"
+            {
+              nativeBuildInputs = [ pkgs.gnugrep ];
+              firewall = lib.concatStrings (map (f: f.firewall) all);
+              passAsFile = [ "firewall" ];
+            }
+            ''
+              grep -F -- '-I INPUT 1 -i vm-agent -j agent-vm-in' "$firewallPath"
+              if grep -F -- '-D INPUT' "$firewallPath"; then exit 1; fi
+              rules4=$(grep -o '/nix/store/[^ ]*-agent-vm-rules4' "$firewallPath" | head -1)
+              rules6=$(grep -o '/nix/store/[^ ]*-agent-vm-rules6' "$firewallPath" | head -1)
+              grep -xF -- '-A agent-vm-in -j DROP' "$rules4"
+              grep -xF -- '-A agent-vm-in -j DROP' "$rules6"
+              grep -xF -- '-A agent-vm-fwd -j DROP' "$rules6"
+              grep -xF -- '-A agent-vm-fwd -d 192.168.0.0/16 -j DROP' "$rules4"
+              grep -xF -- '-A agent-vm-fwd -d 127.0.0.0/8 -j DROP' "$rules4"
+              # The private-range drops come before the egress accept.
+              [ "$(grep -n -- '-d 10.0.0.0/8 -j DROP' "$rules4" | cut -d: -f1)" -lt "$(grep -n -- '-A agent-vm-fwd -j ACCEPT' "$rules4" | cut -d: -f1)" ]
+              l=${launcher}/bin/agent-sandbox
+              for opt in '-F /dev/null' IdentitiesOnly=yes IdentityAgent=none ForwardAgent=no \
+                PKCS11Provider=none PermitLocalCommand=no ProxyCommand=none ControlPath=none ClearAllForwardings=yes; do
+                grep -F -- "$opt" "$l"
+              done
+              if grep -qE '^[^#]*ssh [^"]*-A( |$)' "$l"; then exit 1; fi
               touch $out
             '';
         sshd-settings =
