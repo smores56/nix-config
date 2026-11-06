@@ -79,7 +79,9 @@ Unresolved / deferred: [list, or "none"]
 Stateless by design — but if the locked decisions feed later sessions,
 offer to persist them (memory note, or the sdlc feature issue for
 tracked features)
-before the session ends. Grilling that evaporates at the session boundary
+before the session ends. When grilling feeds an sdlc feature, fold the
+locked decisions into the issue's Design write-up structure (see `sdlc`) as
+design prose; never append them as a decision log. Grilling that evaporates at the session boundary
 is wasted interrogation.
 
 Do not begin implementation unless explicitly asked — grilling is the job.
