@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "bun run scripts/build.ts",
+    "sentinel": "bun run scripts/sentinel.ts",
     "test": "bun test",
     "typecheck": "bun x tsc --noEmit"
   },

@@ -98,7 +98,11 @@ export function isSafeName(name: unknown): name is string {
   );
 }
 
+const TREE_CACHE_LIMIT = 512;
+
 export class ResticRepository {
+  private readonly treeCache = new Map<string, ResticTree>();
+
   constructor(
     private readonly backend: ResticBackend,
     private readonly master: MasterKey,
@@ -122,7 +126,20 @@ export class ResticRepository {
   }
 
   async readTree(treeId: string): Promise<ResticTree> {
-    return decodeJson<ResticTree>(await this.readBlob(treeId));
+    const cached = this.treeCache.get(treeId);
+    if (cached) {
+      // Refresh insertion order so the oldest entry is evicted first.
+      this.treeCache.delete(treeId);
+      this.treeCache.set(treeId, cached);
+      return cached;
+    }
+    const tree = decodeJson<ResticTree>(await this.readBlob(treeId));
+    if (this.treeCache.size >= TREE_CACHE_LIMIT) {
+      const oldest = this.treeCache.keys().next().value;
+      if (oldest !== undefined) this.treeCache.delete(oldest);
+    }
+    this.treeCache.set(treeId, tree);
+    return tree;
   }
 
   async walk(snapshot: ResticSnapshot): Promise<ResticFile[]> {
