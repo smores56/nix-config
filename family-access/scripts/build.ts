@@ -1,23 +1,22 @@
-import { mkdir, cp, rm } from "node:fs/promises";
+import { cp, mkdir, rm } from "node:fs/promises";
+import * as esbuild from "esbuild";
 
 const dist = new URL("../dist/", import.meta.url);
 
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
 
-const result = await Bun.build({
-  entrypoints: [new URL("../src/main.ts", import.meta.url).pathname],
-  outdir: dist.pathname,
-  target: "browser",
+await esbuild.build({
+  entryPoints: [new URL("../src/main.ts", import.meta.url).pathname],
+  outfile: new URL("main.js", dist).pathname,
+  bundle: true,
   minify: true,
   sourcemap: "linked",
-  naming: "[name].[ext]",
+  platform: "browser",
+  format: "esm",
+  target: ["es2022"],
+  logLevel: "info",
 });
-
-if (!result.success) {
-  for (const log of result.logs) console.error(log);
-  process.exit(1);
-}
 
 for (const [from, to] of [
   ["index.html", "index.html"],
@@ -31,4 +30,4 @@ for (const [from, to] of [
   await cp(new URL(`../${from}`, import.meta.url), new URL(to, dist));
 }
 
-console.log(`built ${result.outputs.length} bundle(s) into ${dist.pathname}`);
+console.log(`built ${dist.pathname}`);

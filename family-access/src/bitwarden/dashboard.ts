@@ -1,10 +1,11 @@
-import type { BitwardenExport, BitwardenItem } from "./export";
+import { normalizeExport } from "./export.ts";
+import type { BitwardenExport, BitwardenItem } from "./export.ts";
 import type {
   FamilyAccessItem,
   FamilyAccessManifest,
   FamilyAccessItemType,
   MatchedItem,
-} from "../manifest";
+} from "../manifest.ts";
 
 const TYPE_NAMES: Record<number, FamilyAccessItemType> = {
   1: "login",
@@ -28,16 +29,10 @@ export function plaintextExport(json: string): BitwardenExport | null {
   } catch {
     return null;
   }
-  if (
-    typeof parsed === "object" &&
-    parsed !== null &&
-    !Array.isArray(parsed) &&
-    Array.isArray((parsed as { items?: unknown }).items) &&
-    (parsed as { encrypted?: unknown }).encrypted !== true
-  ) {
-    return parsed as BitwardenExport;
+  if (typeof parsed === "object" && parsed !== null && (parsed as { encrypted?: unknown }).encrypted === true) {
+    return null;
   }
-  return null;
+  return normalizeExport(parsed);
 }
 
 export function itemFaId(item: BitwardenItem): string | undefined {
@@ -92,7 +87,6 @@ function matchedItem(
     fields: (item.fields ?? [])
       .filter((field) => field.name?.trim().toLowerCase() !== FA_ID_FIELD)
       .map((field) => ({ name: field.name, value: field.value })),
-    folder: folderName(vault, item.folderId),
     deepLink: deepLink(vaultUrl, item.id),
   };
 }
@@ -124,29 +118,42 @@ export function matchVault(
   const vaultUrl = manifest.vaultUrl ?? "https://vault.bitwarden.com";
   const manifestFaIds = new Set<string>();
 
+  const claimed = new Map<string, string>();
+
   for (const section of manifest.sections) {
     for (const entry of section.items) {
-      manifestFaIds.add(entry.faId);
-      const byFa = byFaId.get(entry.faId)?.[0];
+      const faId = entry.faId.trim();
+      manifestFaIds.add(faId);
+      const candidates = byFaId.get(faId) ?? [];
+      if (candidates.length > 1) continue;
+      const byFa = candidates[0];
       const byUuid = entry.bitwardenUuid
-        ? vault.items.find((item) => item.id === entry.bitwardenUuid)
+        ? vault.items.find(
+            (item) => item.id.toLowerCase() === entry.bitwardenUuid!.toLowerCase(),
+          )
         : undefined;
 
       if (byFa && byUuid && byFa.id !== byUuid.id) {
         errors.push(
-          `"${entry.faId}": fa_id points to ${byFa.id} but the manifest UUID is ${byUuid.id}`,
+          `"${faId}": fa_id points to ${byFa.id} but the manifest UUID is ${byUuid.id}`,
         );
         continue;
       }
       const item = byUuid ?? byFa;
       if (!item) {
-        if (entry.required) errors.push(`required item "${entry.faId}" is missing`);
-        else warnings.push(`optional item "${entry.faId}" is missing`);
+        if (entry.required) errors.push(`required item "${faId}" is missing`);
+        else warnings.push(`optional item "${faId}" is missing`);
         continue;
       }
+      const owner = claimed.get(item.id);
+      if (owner && owner !== faId) {
+        errors.push(`fa_id "${faId}" and "${owner}" both resolve to the same Bitwarden item ${item.id}`);
+        continue;
+      }
+      claimed.set(item.id, faId);
 
-      checkItem(entry, item, vault, byFaId, errors, warnings);
-      matches.set(entry.faId, matchedItem(vault, item, vaultUrl));
+      checkItem(entry, item, vault, errors, warnings);
+      matches.set(faId, matchedItem(vault, item, vaultUrl));
     }
   }
 
@@ -161,18 +168,17 @@ function checkItem(
   entry: FamilyAccessItem,
   item: BitwardenItem,
   vault: BitwardenExport,
-  byFaId: Map<string, BitwardenItem[]>,
   errors: string[],
   warnings: string[],
 ): void {
-  const faId = entry.faId;
-  if (entry.bitwardenUuid && item.id !== entry.bitwardenUuid) {
+  const faId = entry.faId.trim();
+  if (
+    entry.bitwardenUuid &&
+    item.id.toLowerCase() !== entry.bitwardenUuid.toLowerCase()
+  ) {
     errors.push(
       `"${faId}": Bitwarden UUID changed (expected ${entry.bitwardenUuid}, found ${item.id}); the item was likely deleted and recreated`,
     );
-  }
-  if (byFaId.get(faId)?.length === 1 && byFaId.get(faId)?.[0].id !== item.id) {
-    errors.push(`"${faId}": fa_id and UUID point to different items`);
   }
   if (item.name !== entry.bitwardenName) {
     warnings.push(`"${faId}": Bitwarden name is "${item.name}", manifest says "${entry.bitwardenName}"`);

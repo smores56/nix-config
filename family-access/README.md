@@ -14,12 +14,14 @@ Treat this as future-inheritance, not an everyday password manager.
 
 ```sh
 cd family-access
-bun install
-bun test
-bun run build
+deno install
+deno task test
+deno task build
 ```
 
 The build writes `dist/`. Serve it over HTTPS or on `localhost`; `crypto.subtle` requires a secure context.
+
+Tooling is Deno (`deno.json`): `deno task typecheck`, `deno task build`, `deno task test`. The tasks declare only the permissions they need (read for the app and fixtures, env for the AWS SDK probe, read/write/run for the esbuild bundle). The browser artifact is plain ESM built with esbuild; the future Mac CLI will be a `deno compile` binary.
 Opening `index.html` with `file://` is not supported by the fetch-based blob/manifest
 loader, and plain HTTP from a LAN address will disable unlock.
 
@@ -63,18 +65,18 @@ environment variables are readable by any same-UID process.
 
 ```sh
 # local ciphertext directory
-bun run sentinel --local /var/lib/data/vault \
+deno task sentinel --local /var/lib/data/vault \
   --vault-password-file ~/.config/family-access/vault-password
 
 # local restic repository
-bun run sentinel --repo /var/backup/restic --prefix var/lib/data/vault \
+deno task sentinel --repo /var/backup/restic --prefix var/lib/data/vault \
   --restic-password-file ~/.config/family-access/restic-password \
   --vault-password-file ~/.config/family-access/vault-password
 
 # Cloudflare R2 (read-only token)
 R2_REPOSITORY=... R2_ENDPOINT=... R2_BUCKET=... \
 R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... \
-  bun run sentinel --r2 --prefix var/lib/data/vault \
+  deno task sentinel --r2 --prefix var/lib/data/vault \
   --restic-password-file ~/.config/family-access/restic-password \
   --vault-password-file ~/.config/family-access/vault-password
 ```
@@ -108,7 +110,7 @@ Bitwarden item was deleted and recreated. `validate` also checks the folder and
 item type when the manifest sets `folder`/`type`.
 
 ```sh
-bun run validate --export ~/bitwarden_export.json \
+deno task validate --export ~/bitwarden_export.json \
   --export-password-file ~/.config/family-access/export-password \
   --restic-dir /var/backup/restic \
   --restic-password-file ~/.config/family-access/restic-password

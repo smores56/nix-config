@@ -1,6 +1,7 @@
-import { beforeAll, describe, expect, test } from "bun:test";
-import { LocalBackend } from "./backend";
-import { isSafeName, openRepository, type ResticFile, type ResticRepository } from "./repository";
+import { beforeAll, describe, it as test } from "jsr:@std/testing/bdd";
+import { expect } from "jsr:@std/expect";
+import { LocalBackend } from "./backend.ts";
+import { isSafeName, openRepository, type ResticFile, type ResticRepository } from "./repository.ts";
 
 const fixture = new URL("../../test-fixtures/restic", import.meta.url).pathname;
 const backend = new LocalBackend(fixture);

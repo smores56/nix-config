@@ -1,0 +1,21 @@
+{
+  "nodeModulesDir": "auto",
+  "compilerOptions": {
+    "strict": true,
+    "lib": ["deno.window", "dom", "dom.iterable", "es2022"]
+  },
+  "tasks": {
+    "build": "deno run --allow-read --allow-write --allow-run --allow-env scripts/build.ts",
+    "test": "deno test --allow-read=. --allow-env",
+    "typecheck": "deno check $(find src scripts -name '*.ts' -not -path '*/node_modules/*')",
+    "sentinel": "deno run --allow-read --allow-env --allow-net scripts/sentinel.ts",
+    "validate": "deno run --allow-read --allow-env scripts/validate.ts"
+  },
+  "fmt": {
+    "lineWidth": 100,
+    "exclude": ["dist/", "node_modules/", "test-fixtures/"]
+  },
+  "lint": {
+    "exclude": ["dist/", "node_modules/", "test-fixtures/"]
+  }
+}

@@ -1,21 +1,21 @@
-import { decryptBlob, type DataKeys } from "./blob";
-import { decryptBitwardenExport, type BitwardenExport } from "./bitwarden/export";
-import { matchVault, plaintextExport } from "./bitwarden/dashboard";
-import { sanitizeFileName } from "./filenames";
+import { decryptBlob, type DataKeys } from "./blob.ts";
+import { decryptBitwardenExport, type BitwardenExport } from "./bitwarden/export.ts";
+import { matchVault, plaintextExport } from "./bitwarden/dashboard.ts";
+import { sanitizeFileName } from "./filenames.ts";
 import {
   renderManifest,
   validateManifest,
   type FamilyAccessManifest,
   type MatchedItem,
-} from "./manifest";
-import { R2Backend, repositoryPrefix } from "./restic/r2";
+} from "./manifest.ts";
+import { R2Backend, repositoryPrefix } from "./restic/r2.ts";
 import {
   openRepository,
   type ResticDirEntry,
   type ResticFile,
   type ResticRepository,
   type ResticSnapshot,
-} from "./restic/repository";
+} from "./restic/repository.ts";
 
 const form = document.querySelector<HTMLFormElement>("#unlock-form");
 const passwordInput = document.querySelector<HTMLInputElement>("#pwa-password");
@@ -106,7 +106,11 @@ function clearIdle(): void {
 
 function scheduleIdle(): void {
   clearIdle();
-  if (dataKeys) idleTimer = window.setTimeout(lock, 5 * 60_000);
+  if (dataKeys || matches) idleTimer = window.setTimeout(lock, 5 * 60_000);
+}
+
+function refreshLockButton(): void {
+  if (lockButton) lockButton.hidden = !(dataKeys || matches);
 }
 
 function clearRestore(): void {
@@ -127,8 +131,8 @@ function lock(): void {
   clearRestore();
   clearExport();
   if (passwordInput) passwordInput.value = "";
-  if (lockButton) lockButton.hidden = true;
-  setStatus("Locked. The password and keys were cleared from this page.");
+  refreshLockButton();
+  setStatus("Locked. The password, keys, and export were cleared from this page.");
 }
 
 async function loadManifest(): Promise<boolean> {
@@ -324,7 +328,7 @@ async function unlock(password: string): Promise<void> {
   setStatus("Deriving the key and decrypting in this browser...");
   const keys = await decryptBlob(envelope, password);
   dataKeys = keys;
-  if (lockButton) lockButton.hidden = false;
+  refreshLockButton();
   scheduleIdle();
   setStatus("Unlocked. Opening the restic repository...", "ok");
   try {
@@ -348,7 +352,7 @@ form?.addEventListener("submit", (event) => {
       dataKeys = null;
       clearIdle();
       clearRestore();
-      if (lockButton) lockButton.hidden = true;
+      refreshLockButton();
       setStatus(errorMessage(error), "error");
     })
     .finally(() => {
@@ -397,19 +401,30 @@ async function loadExport(): Promise<void> {
       vault = await decryptBitwardenExport(json, password);
     }
     const result = matchVault(manifestCache, vault);
-    matches = result.matches;
-    if (manifestRoot) manifestRoot.innerHTML = renderManifest(manifestCache, matches);
     const issues = [
       ...result.errors.map((issue) => `Error: ${issue}`),
       ...result.warnings.map((issue) => `Warning: ${issue}`),
     ];
+    const plaintextNote = plain
+      ? ["This export is not password protected; treat the file as the secret."]
+      : [];
     if (result.errors.length > 0) {
-      setExportStatus(`${result.errors.length} problem(s). ${issues.join(" ")}`, "error");
-    } else if (result.warnings.length > 0) {
-      setExportStatus(`Export loaded. ${issues.join(" ")}`, "info");
+      // Do not show credentials next to an item the manifest check rejected.
+      matches = null;
+      if (manifestRoot) manifestRoot.innerHTML = renderManifest(manifestCache);
+      setExportStatus(
+        `${result.errors.length} problem(s); credentials are hidden until they are fixed. ${issues.join(" ")}`,
+        "error",
+      );
     } else {
-      setExportStatus(`Export loaded. ${matches.size} item(s) matched.`, "ok");
+      matches = result.matches;
+      if (manifestRoot) manifestRoot.innerHTML = renderManifest(manifestCache, matches);
+      const notes = [...plaintextNote, ...result.warnings];
+      if (notes.length > 0) setExportStatus(`Export loaded. ${notes.join(" ")}`, "info");
+      else setExportStatus(`Export loaded. ${matches.size} item(s) matched.`, "ok");
     }
+    refreshLockButton();
+    scheduleIdle();
   } catch (error) {
     matches = null;
     if (manifestRoot) manifestRoot.innerHTML = renderManifest(manifestCache);
@@ -453,15 +468,21 @@ for (const event of ["pointerdown", "keydown"] as const) {
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     clearIdle();
-    if (dataKeys) idleTimer = window.setTimeout(lock, 30_000);
+    if (dataKeys || matches) idleTimer = window.setTimeout(lock, 30_000);
   } else {
     scheduleIdle();
   }
 });
 
+window.addEventListener("pagehide", () => {
+  if (dataKeys || matches) lock();
+});
+
 if (!secure) {
   if (unlockButton) unlockButton.disabled = true;
+  if (exportButton) exportButton.disabled = true;
   setStatus("Open this page over HTTPS or on localhost. Unlock is disabled.", "error");
+  setExportStatus("Open this page over HTTPS or on localhost to load an export.", "error");
 } else if ("serviceWorker" in navigator) {
   void navigator.serviceWorker.register(new URL("./sw.js", document.baseURI)).catch(() => {
     // The app works without the offline shell.

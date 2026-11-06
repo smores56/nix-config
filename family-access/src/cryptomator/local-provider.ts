@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
-import { MAX_FILE_BYTES, MAX_METADATA_BYTES, type VaultEntry, type VaultProvider } from "./vault";
+import { MAX_FILE_BYTES, MAX_METADATA_BYTES, type VaultEntry, type VaultProvider } from "./vault.ts";
 
 /** Read-only provider over a Cryptomator vault directory (tests and the Mac CLI). */
 export class LocalVaultProvider implements VaultProvider {

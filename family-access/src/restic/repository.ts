@@ -1,5 +1,5 @@
 import { decompress } from "fzstd";
-import type { ResticBackend } from "./backend";
+import type { ResticBackend } from "./backend.ts";
 import {
   maybeZstd,
   openKeyFile,
@@ -7,7 +7,7 @@ import {
   verifySha256,
   type MasterKey,
   type ResticKeyFile,
-} from "./crypto";
+} from "./crypto.ts";
 
 export type ResticConfig = {
   version: number;

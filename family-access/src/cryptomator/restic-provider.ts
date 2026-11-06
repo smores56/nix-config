@@ -1,10 +1,10 @@
-import type { ResticDirEntry, ResticRepository, ResticSnapshot } from "../restic/repository";
+import type { ResticDirEntry, ResticRepository, ResticSnapshot } from "../restic/repository.ts";
 import {
   MAX_FILE_BYTES,
   MAX_METADATA_BYTES,
   type VaultEntry,
   type VaultProvider,
-} from "./vault";
+} from "./vault.ts";
 
 function assertRelativePath(relative: string): void {
   if (relative.startsWith("/") || relative.includes("\0")) {

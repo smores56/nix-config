@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
-import { byteRange, repositoryPrefix } from "./r2";
+import { describe, it as test } from "jsr:@std/testing/bdd";
+import { expect } from "jsr:@std/expect";
+import { byteRange, repositoryPrefix } from "./r2.ts";
 
 describe("R2 helpers", () => {
   test("builds the correct range header", () => {

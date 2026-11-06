@@ -1,10 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { describe, it as test } from "jsr:@std/testing/bdd";
+import { expect } from "jsr:@std/expect";
 import {
   decryptBlob,
   encryptBlob,
   validateDataKeys,
   type DataKeys,
-} from "./blob";
+} from "./blob.ts";
 
 const payload: DataKeys = {
   version: 1,

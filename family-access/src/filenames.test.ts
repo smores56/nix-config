@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
-import { sanitizeFileName } from "./filenames";
+import { describe, it as test } from "jsr:@std/testing/bdd";
+import { expect } from "jsr:@std/expect";
+import { sanitizeFileName } from "./filenames.ts";
 
 describe("sanitizeFileName", () => {
   test("keeps ordinary names", () => {

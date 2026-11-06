@@ -1,9 +1,10 @@
-import { describe, expect, test } from "bun:test";
-import { LocalBackend } from "../restic/backend";
-import { openRepository } from "../restic/repository";
-import { LocalVaultProvider } from "./local-provider";
-import { ResticVaultProvider } from "./restic-provider";
-import { CryptomatorVault, ROOT_DIR_ID } from "./vault";
+import { describe, it as test } from "jsr:@std/testing/bdd";
+import { expect } from "jsr:@std/expect";
+import { LocalBackend } from "../restic/backend.ts";
+import { openRepository } from "../restic/repository.ts";
+import { LocalVaultProvider } from "./local-provider.ts";
+import { ResticVaultProvider } from "./restic-provider.ts";
+import { CryptomatorVault, ROOT_DIR_ID } from "./vault.ts";
 
 const fixture = new URL("../../test-fixtures/cryptomator-vault", import.meta.url).pathname;
 const password = "family-access-vault-fixture";

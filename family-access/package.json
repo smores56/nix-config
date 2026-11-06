@@ -2,12 +2,8 @@
   "name": "family-access",
   "private": true,
   "type": "module",
-  "scripts": {
-    "build": "bun run scripts/build.ts",
-    "sentinel": "bun run scripts/sentinel.ts",
-    "validate": "bun run scripts/validate.ts",
-    "test": "bun test",
-    "typecheck": "bun x tsc --noEmit"
+  "devDependencies": {
+    "esbuild": "^0.25.5"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1163.0",
@@ -15,9 +11,5 @@
     "@stablelib/poly1305": "^2.0.1",
     "fzstd": "^0.1.1",
     "hash-wasm": "^4.12.0"
-  },
-  "devDependencies": {
-    "bun-types": "latest",
-    "typescript": "^5.9.0"
   }
 }

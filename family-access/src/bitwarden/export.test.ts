@@ -1,11 +1,12 @@
-import { describe, expect, test } from "bun:test";
+import { describe, it as test } from "jsr:@std/testing/bdd";
+import { expect } from "jsr:@std/expect";
 import { argon2id } from "hash-wasm";
 import {
   decryptBitwardenExport,
   deriveExportKey,
   hkdfExpand,
   type BitwardenExport,
-} from "./export";
+} from "./export.ts";
 
 function toBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -200,6 +201,25 @@ describe("bitwarden export decryptor", () => {
     wrapper.data = "0.abc|def";
     await expect(decryptBitwardenExport(JSON.stringify(wrapper), "export-password")).rejects.toThrow(
       "unsupported cipher string",
+    );
+  });
+
+  test("caps Argon2 time and memory separately", async () => {
+    const wrapper = JSON.parse(
+      await makeExport(vault, "export-password", { kdfType: 0, kdfIterations: 100_000 }),
+    );
+    wrapper.kdfType = 1;
+    wrapper.kdfIterations = 100;
+    wrapper.kdfMemory = 8192;
+    wrapper.kdfParallelism = 1;
+    await expect(decryptBitwardenExport(JSON.stringify(wrapper), "export-password")).rejects.toThrow(
+      "Argon2 iterations",
+    );
+    wrapper.kdfIterations = 3;
+    wrapper.kdfMemory = 8;
+    wrapper.kdfParallelism = 4;
+    await expect(decryptBitwardenExport(JSON.stringify(wrapper), "export-password")).rejects.toThrow(
+      "Argon2 parameters",
     );
   });
 

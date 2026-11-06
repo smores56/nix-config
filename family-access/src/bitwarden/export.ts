@@ -56,8 +56,9 @@ export type PasswordProtectedExport = {
 const KDF_PBKDF2 = 0;
 const KDF_ARGON2ID = 1;
 
-const MAX_ITERATIONS = 2_000_000;
-const MAX_ARGON_MEMORY_KIB = 256 * 1024;
+const MAX_PBKDF2_ITERATIONS = 2_000_000;
+const MAX_ARGON_ITERATIONS = 64;
+const MAX_ARGON_MEMORY_KIB = 128 * 1024;
 const MAX_ARGON_PARALLELISM = 16;
 const MAX_CIPHERTEXT_BYTES = 32 * 1024 * 1024;
 
@@ -68,7 +69,15 @@ type ParsedCipherString = {
 };
 
 function fromBase64(value: string): Uint8Array<ArrayBuffer> {
-  return Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+  let binary: string;
+  try {
+    binary = atob(value);
+  } catch {
+    throw new Error("the export contains invalid base64");
+  }
+  const out = new Uint8Array(new ArrayBuffer(binary.length));
+  for (let index = 0; index < binary.length; index++) out[index] = binary.charCodeAt(index);
+  return out;
 }
 
 function fromBase64Url(value: string): Uint8Array {
@@ -147,12 +156,15 @@ async function deriveMaterial(
   memory?: number | null,
   parallelism?: number | null,
 ): Promise<Uint8Array> {
-  if (!Number.isInteger(iterations) || iterations < 1 || iterations > MAX_ITERATIONS) {
+  if (!Number.isInteger(iterations) || iterations < 1) {
     throw new Error("export KDF iterations are out of range");
   }
   // Bitwarden encodes the salt string as UTF-8; it is already base64 text.
   const saltBytes = new TextEncoder().encode(salt);
   if (kdfType === KDF_PBKDF2) {
+    if (iterations > MAX_PBKDF2_ITERATIONS) {
+      throw new Error("export PBKDF2 iterations are out of range");
+    }
     const key = await crypto.subtle.importKey(
       "raw",
       new TextEncoder().encode(password),
@@ -168,11 +180,14 @@ async function deriveMaterial(
     return new Uint8Array(bits);
   }
   if (kdfType === KDF_ARGON2ID) {
+    if (iterations > MAX_ARGON_ITERATIONS) {
+      throw new Error("export Argon2 iterations are out of range");
+    }
     const memoryKib = memory ?? 64 * 1024;
     const lanes = parallelism ?? 4;
     if (
       !Number.isInteger(memoryKib) ||
-      memoryKib < 8 ||
+      memoryKib < 8 * lanes ||
       memoryKib > MAX_ARGON_MEMORY_KIB ||
       !Number.isInteger(lanes) ||
       lanes < 1 ||
@@ -225,7 +240,7 @@ export async function decryptCipherString(value: unknown, key: ExportKey): Promi
   const parsed = parseCipherString(value);
   const expected = await hmacSha256(key.macKey, concat(parsed.iv, parsed.ciphertext));
   if (!timingSafeEqual(expected, parsed.mac)) {
-    throw new Error("the export password is wrong");
+    throw new Error("the export password is wrong or the export is damaged");
   }
   const cryptoKey = await crypto.subtle.importKey("raw", key.encKey as BufferSource, "AES-CBC", false, [
     "decrypt",
@@ -254,6 +269,71 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+/** Drops malformed items instead of letting one bad entry break the dashboard. */
+export function normalizeExport(value: unknown): BitwardenExport | null {
+  if (!isRecord(value) || !Array.isArray(value.items)) return null;
+  const folders = Array.isArray(value.folders)
+    ? value.folders
+        .filter(
+          (folder): folder is { id: string; name: string } =>
+            isRecord(folder) && typeof folder.id === "string" && typeof folder.name === "string",
+        )
+        .map((folder) => ({ id: folder.id, name: folder.name }))
+    : null;
+
+  const items: BitwardenItem[] = [];
+  for (const raw of value.items) {
+    if (
+      !isRecord(raw) ||
+      typeof raw.id !== "string" ||
+      typeof raw.name !== "string" ||
+      typeof raw.type !== "number"
+    ) {
+      continue;
+    }
+    const fields = Array.isArray(raw.fields)
+      ? raw.fields
+          .filter(
+            (field): field is BitwardenField =>
+              isRecord(field) &&
+              typeof field.name === "string" &&
+              typeof field.value === "string" &&
+              typeof field.type === "number",
+          )
+          .map((field) => ({ name: field.name, value: field.value, type: field.type }))
+      : null;
+    const login = isRecord(raw.login)
+      ? {
+          username: stringOrNull(raw.login.username),
+          password: stringOrNull(raw.login.password),
+          totp: stringOrNull(raw.login.totp),
+          uris: Array.isArray(raw.login.uris)
+            ? raw.login.uris
+                .filter(
+                  (entry): entry is { uri: string } =>
+                    isRecord(entry) && typeof entry.uri === "string",
+                )
+                .map((entry) => ({ uri: entry.uri }))
+            : null,
+        }
+      : null;
+    items.push({
+      id: raw.id,
+      name: raw.name,
+      type: raw.type,
+      folderId: stringOrNull(raw.folderId),
+      notes: stringOrNull(raw.notes),
+      fields,
+      login,
+    });
+  }
+  return { items, folders };
+}
+
 function isProtectedExport(value: unknown): value is PasswordProtectedExport {
   return (
     isRecord(value) &&
@@ -270,7 +350,6 @@ function isProtectedExport(value: unknown): value is PasswordProtectedExport {
 export async function decryptBitwardenExport(
   json: string,
   password: string,
-  limits: { maxIterations?: number } = {},
 ): Promise<BitwardenExport> {
   let parsed: unknown;
   try {
@@ -280,9 +359,6 @@ export async function decryptBitwardenExport(
   }
   if (!isProtectedExport(parsed)) {
     throw new Error("this is not a password-protected Bitwarden export");
-  }
-  if (limits.maxIterations !== undefined && parsed.kdfIterations > limits.maxIterations) {
-    throw new Error("export KDF iterations are above the configured limit");
   }
 
   const key = await deriveExportKey(
@@ -303,8 +379,7 @@ export async function decryptBitwardenExport(
   } catch {
     throw new Error("the decrypted export is not valid JSON");
   }
-  if (!isRecord(vault) || !Array.isArray(vault.items)) {
-    throw new Error("the decrypted export has no items");
-  }
-  return vault as BitwardenExport;
+  const normalized = normalizeExport(vault);
+  if (!normalized) throw new Error("the decrypted export has no items");
+  return normalized;
 }

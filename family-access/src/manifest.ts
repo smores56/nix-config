@@ -24,7 +24,6 @@ export type MatchedItem = {
   notes?: string;
   uris: string[];
   fields: Array<{ name: string; value: string }>;
-  folder?: string;
   deepLink: string;
 };
 
@@ -113,7 +112,9 @@ export function validateManifest(value: unknown): string[] {
         continue;
       }
       if (!isNonEmptyString(item.faId)) errors.push("a section item is missing fa_id");
-      else if (faIds.has(item.faId)) errors.push(`duplicate fa_id: ${item.faId}`);
+      else if (item.faId !== item.faId.trim()) {
+        errors.push(`fa_id "" has surrounding whitespace`);
+      } else if (faIds.has(item.faId)) errors.push(`duplicate fa_id: ${item.faId}`);
       else faIds.add(item.faId);
       if (!isNonEmptyString(item.title)) {
         errors.push(`item ${isNonEmptyString(item.faId) ? item.faId : "?"} is missing a title`);

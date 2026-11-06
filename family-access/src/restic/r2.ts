@@ -3,7 +3,7 @@ import {
   ListObjectsV2Command,
   S3Client,
 } from "@aws-sdk/client-s3";
-import type { ResticBackend } from "./backend";
+import type { ResticBackend } from "./backend.ts";
 
 export type R2Options = {
   endpoint: string;

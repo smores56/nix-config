@@ -15,12 +15,12 @@
 
 import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
-import { LocalBackend } from "../src/restic/backend";
-import { openRepository, type ResticRepository, type ResticSnapshot } from "../src/restic/repository";
-import { R2Backend, repositoryPrefix } from "../src/restic/r2";
-import { LocalVaultProvider } from "../src/cryptomator/local-provider";
-import { ResticVaultProvider } from "../src/cryptomator/restic-provider";
-import { CryptomatorVault, ROOT_DIR_ID, type VaultProvider } from "../src/cryptomator/vault";
+import { LocalBackend } from "../src/restic/backend.ts";
+import { openRepository, type ResticRepository, type ResticSnapshot } from "../src/restic/repository.ts";
+import { R2Backend, repositoryPrefix } from "../src/restic/r2.ts";
+import { LocalVaultProvider } from "../src/cryptomator/local-provider.ts";
+import { ResticVaultProvider } from "../src/cryptomator/restic-provider.ts";
+import { CryptomatorVault, ROOT_DIR_ID, type VaultProvider } from "../src/cryptomator/vault.ts";
 
 type Args = {
   local?: string;
@@ -73,7 +73,7 @@ function parseArgs(argv: string[]): Args {
       case "--help":
       case "-h":
         console.log(USAGE);
-        process.exit(0);
+        Deno.exit(0);
         break;
       default:
         throw new Error(`unknown argument: ${value}`);
@@ -99,13 +99,13 @@ async function password(
   label: string,
 ): Promise<string> {
   if (file) return readPasswordFile(file, label);
-  const value = process.env[envName];
+  const value = Deno.env.get(envName);
   if (!value) throw new Error(`${label} not provided (use --${label}-file or ${envName})`);
   return value;
 }
 
 function requireEnv(name: string): string {
-  const value = process.env[name];
+  const value = Deno.env.get(name);
   if (!value) throw new Error(`${name} is required`);
   return value;
 }
@@ -122,7 +122,7 @@ function pickSnapshot(repository: ResticRepository, id: string): ResticSnapshot 
 }
 
 async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2));
+  const args = parseArgs(Deno.args);
   const vaultPassword = await password(args.vaultPasswordFile, "VAULT_PASSWORD", "vault-password");
 
   let provider: VaultProvider;
@@ -154,7 +154,7 @@ async function main(): Promise<void> {
       bucket,
       accessKeyId: requireEnv("R2_ACCESS_KEY_ID"),
       secretAccessKey: requireEnv("R2_SECRET_ACCESS_KEY"),
-      region: process.env.R2_REGION ?? "auto",
+      region: Deno.env.get("R2_REGION") ?? "auto",
       prefix,
     });
     const repository = await openRepository(backend, resticPassword);
@@ -184,5 +184,5 @@ async function main(): Promise<void> {
 
 main().catch((error: unknown) => {
   console.error(`sentinel failed: ${error instanceof Error ? error.message : String(error)}`);
-  process.exit(1);
+  Deno.exit(1);
 });

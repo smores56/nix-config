@@ -8,11 +8,15 @@
 
 import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
-import { decryptBitwardenExport, type BitwardenExport } from "../src/bitwarden/export";
-import { matchVault, plaintextExport } from "../src/bitwarden/dashboard";
-import { validateManifest, type FamilyAccessManifest } from "../src/manifest";
-import { LocalBackend } from "../src/restic/backend";
-import { openRepository } from "../src/restic/repository";
+import { decryptBitwardenExport, type BitwardenExport } from "../src/bitwarden/export.ts";
+import { matchVault, plaintextExport } from "../src/bitwarden/dashboard.ts";
+import {
+  validateManifest,
+  type FamilyAccessManifest,
+  type MatchedItem,
+} from "../src/manifest.ts";
+import { LocalBackend } from "../src/restic/backend.ts";
+import { openRepository } from "../src/restic/repository.ts";
 
 type Args = {
   manifest: string;
@@ -55,7 +59,7 @@ function parseArgs(argv: string[]): Args {
       case "--help":
       case "-h":
         console.log(USAGE);
-        process.exit(0);
+        Deno.exit(0);
         break;
       default:
         throw new Error(`unknown argument: ${value}`);
@@ -70,7 +74,7 @@ function expandHome(path: string): string {
 
 async function readPassword(path: string | undefined, env: string, label: string) {
   if (!path) {
-    const value = process.env[env];
+    const value = Deno.env.get(env);
     if (!value) throw new Error(`${label} not provided`);
     return value;
   }
@@ -122,29 +126,41 @@ function errorMessage(error: unknown): string {
 }
 
 async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2));
+  const args = parseArgs(Deno.args);
   const manifest = JSON.parse(
     await fs.readFile(expandHome(args.manifest), "utf8"),
   ) as FamilyAccessManifest;
 
   const manifestErrors = validateManifest(manifest);
-  const vault = await loadExport(args);
-  const result = matchVault(manifest, vault);
+  if (manifestErrors.length > 0) {
+    for (const error of manifestErrors) console.error(`manifest: ${error}`);
+    Deno.exit(1);
+  }
+
+  const total = manifest.sections.reduce((sum, section) => sum + section.items.length, 0);
+  let result = {
+    matches: new Map<string, MatchedItem>(),
+    errors: [] as string[],
+    warnings: [] as string[],
+  };
+  if (args.export) {
+    const vault = await loadExport(args);
+    result = matchVault(manifest, vault);
+  } else {
+    console.log("no export provided; skipped item matching");
+  }
   const resticProblems = await checkRestic(args);
 
-  for (const error of manifestErrors) console.error(`manifest: ${error}`);
   for (const warning of result.warnings) console.warn(`warning: ${warning}`);
   for (const error of result.errors) console.error(`error: ${error}`);
   for (const problem of resticProblems) console.error(`error: ${problem}`);
 
-  console.log(
-    `${result.matches.size} of ${manifest.sections.reduce((sum, section) => sum + section.items.length, 0)} manifest items matched`,
-  );
-  const failed = manifestErrors.length + result.errors.length + resticProblems.length;
-  if (failed > 0) process.exit(1);
+  if (args.export) console.log(`${result.matches.size} of ${total} manifest items matched`);
+  const failed = result.errors.length + resticProblems.length;
+  if (failed > 0) Deno.exit(1);
 }
 
 main().catch((error: unknown) => {
   console.error(`validate failed: ${errorMessage(error)}`);
-  process.exit(1);
+  Deno.exit(1);
 });

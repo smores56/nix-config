@@ -1,9 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { describe, it as test } from "jsr:@std/testing/bdd";
+import { expect } from "jsr:@std/expect";
 import {
   renderManifest,
   validateManifest,
   type FamilyAccessManifest,
-} from "./manifest";
+} from "./manifest.ts";
 
 const manifest: FamilyAccessManifest = {
   version: 1,

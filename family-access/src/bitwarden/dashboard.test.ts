@@ -1,7 +1,8 @@
-import { describe, expect, test } from "bun:test";
-import type { BitwardenExport, BitwardenItem } from "./export";
-import { matchVault, plaintextExport, itemFaId } from "./dashboard";
-import { renderManifest, validateManifest, type FamilyAccessManifest } from "../manifest";
+import { describe, it as test } from "jsr:@std/testing/bdd";
+import { expect } from "jsr:@std/expect";
+import type { BitwardenExport, BitwardenItem } from "./export.ts";
+import { matchVault, plaintextExport, itemFaId } from "./dashboard.ts";
+import { renderManifest, validateManifest, type FamilyAccessManifest } from "../manifest.ts";
 
 const manifest: FamilyAccessManifest = {
   version: 1,
@@ -127,6 +128,7 @@ describe("bitwarden dashboard matching", () => {
     duplicate.items.push(item("email", { id: "other" }));
     const result = matchVault(manifest, duplicate);
     expect(result.errors.join(" ")).toContain("fa_id \"email\" is used by 2 Bitwarden items");
+    expect(result.matches.has("email")).toBe(false);
   });
 
   test("warns about a renamed item", () => {
@@ -180,6 +182,19 @@ describe("bitwarden dashboard matching", () => {
     );
     expect(itemFaId({ id: "x", name: "x", type: 1 })).toBeUndefined();
   });
+
+  test("rejects one vault item claimed by two manifest entries", () => {
+    const two = structuredClone(manifest);
+    two.sections[0].items.push({
+      faId: "email-copy",
+      title: "E-mail copy",
+      bitwardenName: "Email - Tuta",
+      bitwardenUuid: "11111111-1111-1111-1111-111111111111",
+      required: true,
+    });
+    const result = matchVault(two, vault);
+    expect(result.errors.join(" ")).toContain("both resolve to the same Bitwarden item");
+  });
 });
 
 describe("dashboard rendering", () => {
@@ -221,5 +236,8 @@ describe("dashboard rendering", () => {
     const badFolder = structuredClone(manifest);
     badFolder.sections[0].items[0].folder = "";
     expect(validateManifest(badFolder).join(" ")).toContain("empty folder");
+    const padded = structuredClone(manifest);
+    padded.sections[0].items[0].faId = " email ";
+    expect(validateManifest(padded).join(" ")).toContain("surrounding whitespace");
   });
 });
