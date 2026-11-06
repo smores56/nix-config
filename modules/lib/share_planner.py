@@ -53,8 +53,9 @@ def _has_descendant(rel, roots):
 
 def tag_for(rel):
     # Readable and unique: the slug alone can collide (".a-b" vs "a/b"), the hash suffix cannot.
+    # virtio-fs tags are at most 36 bytes, so the slug keeps 29.
     slug = re.sub(r"[^A-Za-z0-9]+", "_", rel).strip("_") or "root"
-    return f"{slug[:40]}-{hashlib.sha1(rel.encode()).hexdigest()[:6]}"
+    return f"{slug[:29]}-{hashlib.sha1(rel.encode()).hexdigest()[:6]}"
 
 
 def plan(home, deny, rw):
@@ -65,12 +66,22 @@ def plan(home, deny, rw):
 
     def walk(rel_dir):
         base = home / rel_dir if rel_dir else home
-        for entry in sorted(os.listdir(base)):
+        try:
+            entries = sorted(os.listdir(base))
+        except OSError as err:
+            # A split directory must be listed to keep its denied child out; if it cannot be,
+            # leaving it out entirely is the only safe answer.
+            print(f"share_planner: skipping {rel_dir or '.'}: {err.strerror}", file=sys.stderr)
+            return
+        for entry in entries:
             rel = f"{rel_dir}/{entry}" if rel_dir else entry
             if _is_within(rel, deny):
                 continue
             path = base / entry
-            st = path.lstat()
+            try:
+                st = path.lstat()
+            except OSError:
+                continue  # vanished mid-walk
             if stat.S_ISLNK(st.st_mode):
                 result.links.append(Link(rel, os.readlink(path)))
             elif stat.S_ISDIR(st.st_mode):

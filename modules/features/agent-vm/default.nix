@@ -15,8 +15,9 @@ let
     ".tart"
     ".Trash"
   ];
-  # Read-write; everything else shared is read-only. These are host-executed configs too (Claude
-  # hooks, kubeconfig exec, gh aliases, repo .git/config) — an accepted risk recorded on #386.
+  # Read-write; everything else shared is read-only. Each is also host-executed configuration
+  # (Claude hooks, kubeconfig exec, gh aliases, repo .git/config), so a guest can reach host code
+  # through them; that escape, and Docker Desktop's own File sharing, are accepted risks on #386.
   rw = [
     "Blitzy"
     "repos"
@@ -25,15 +26,19 @@ let
     ".kube"
     ".config/gh"
   ];
-  # The guest has no Docker.app, so its CLI comes from the shared store; the daemon is the
-  # host Docker Desktop, reached through the per-session forwarded socket.
-  guestPath = lib.makeBinPath [ pkgs.docker-client ];
+  # Absolute read-only shares mounted at the same path; the host store is always shared.
+  extra = [ "/opt/homebrew" ];
 
-  # Absolute read-only shares; the first is the host store, mounted at /nix/store in the guest.
-  extra = [
-    "/nix/store"
-    "/opt/homebrew"
-  ];
+  substitutions = {
+    vm = "agent-vm";
+    # Pinned so a re-clone gets the image the hardening was written against.
+    image = "ghcr.io/cirruslabs/macos-tahoe-base@sha256:4aaa751fa7538902d73c767f27a066fc87e83f183069da4e4b5022863abd4c77";
+    planner = "${../../lib/share_planner.py}";
+    # The guest has no Docker.app, so its CLI comes from the shared store; the daemon is the
+    # host Docker Desktop, reached through the per-session forwarded socket.
+    guestPath = lib.makeBinPath [ pkgs.docker-client ];
+  };
+  arrays = { inherit deny rw extra; };
 
   agentSandbox = pkgs.writeShellApplication {
     name = "agent-sandbox";
@@ -45,30 +50,13 @@ let
       pkgs.coreutils
     ];
     text =
-      builtins.replaceStrings
-        [
-          "@VM@"
-          "@IMAGE@"
-          "@PLANNER@"
-          "@GUEST_PATH@"
-          "@DENY@"
-          "@RW@"
-          "@EXTRA@"
-        ]
-        (
-          map lib.escapeShellArg [
-            "agent-vm"
-            "ghcr.io/cirruslabs/macos-tahoe-base:latest"
-            "${../../lib/share_planner.py}"
-          ]
-          ++ [ (lib.escapeShellArg guestPath) ]
-          ++ map (l: lib.escapeShellArg (lib.concatStringsSep " " l)) [
-            deny
-            rw
-            extra
-          ]
-        )
-        (builtins.readFile ./agent-vm.sh);
+      let
+        values =
+          lib.mapAttrs (_: lib.escapeShellArg) substitutions // lib.mapAttrs (_: lib.escapeShellArgs) arrays;
+      in
+      builtins.replaceStrings (map (n: "@${n}@") (lib.attrNames values)) (lib.attrValues values) (
+        builtins.readFile ./agent-vm.sh
+      );
   };
 in
 {

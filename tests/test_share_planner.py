@@ -85,7 +85,36 @@ class SharePlannerTests(unittest.TestCase):
         for rel in rels:
             for d in denied:
                 self.assertFalse(rel == d or rel.startswith(d + "/"), rel)
-                self.assertFalse(d.startswith(rel + "/") and rel in self.shares(plan), rel)
+        # No directory share may contain a denied path either.
+        for share in plan.shares:
+            for d in denied:
+                self.assertFalse(d.startswith(share.rel + "/"), share.rel)
+
+    def test_deny_wins_over_rw(self):
+        shares = self.shares(self.plan(rw=(".config",), deny=(".config/sops",)))
+        self.assertNotIn(".config", shares)
+        self.assertNotIn(".config/sops", shares)
+        self.assertEqual(shares[".config/gh"], "rw")
+
+    def test_unreadable_directory_is_skipped_not_fatal(self):
+        locked = self.home / ".config/locked"
+        locked.mkdir()
+        (locked / "inner").mkdir()
+        os.chmod(locked, 0)
+        try:
+            # .config is split (sops is denied), so the planner must list .config/locked's
+            # siblings without needing to read it; reading it fails and must not crash.
+            shares = self.shares(self.plan(deny=("Library", ".config/sops", ".config/locked/inner")))
+            self.assertNotIn(".config/locked", shares)
+            self.assertIn(".config/gh", shares)
+        finally:
+            os.chmod(locked, 0o755)
+
+    def test_tags_fit_the_virtio_fs_limit(self):
+        deep = self.home / ("x" * 80)
+        deep.mkdir()
+        for share in self.plan().shares:
+            self.assertLessEqual(len(share.tag.encode()), 36, share.tag)
 
     def test_sockets_are_skipped(self):
         sock = socket.socket(socket.AF_UNIX)
