@@ -116,6 +116,10 @@ deno task validate --export ~/bitwarden_export.json \
   --restic-password-file ~/.config/family-access/restic-password
 ```
 
+To try the dashboard without a real vault, load
+`test-fixtures/bitwarden/synthetic-export.json` with the password in that
+directory's README; its four synthetic items match the shipped manifest.
+
 Exit status is non-zero when any required item is missing, a UUID/fa_id/folder/
 type does not match, or the restic repository cannot be opened. A plaintext
 export is accepted with a warning; the password-protected form is preferred.

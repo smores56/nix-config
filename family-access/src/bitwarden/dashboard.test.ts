@@ -2,6 +2,7 @@ import { describe, it as test } from "jsr:@std/testing/bdd";
 import { expect } from "jsr:@std/expect";
 import type { BitwardenExport, BitwardenItem } from "./export.ts";
 import { matchVault, plaintextExport, itemFaId } from "./dashboard.ts";
+import { decryptBitwardenExport } from "./export.ts";
 import { renderManifest, validateManifest, type FamilyAccessManifest } from "../manifest.ts";
 
 const manifest: FamilyAccessManifest = {
@@ -174,6 +175,20 @@ describe("bitwarden dashboard matching", () => {
     expect(plaintextExport('{"items":[]}')?.items).toEqual([]);
     expect(plaintextExport('{"encrypted":true,"items":[]}')).toBeNull();
     expect(plaintextExport("not json")).toBeNull();
+  });
+
+  test("matches the shipped manifest with the synthetic export", async () => {
+    const manifest = JSON.parse(
+      await Deno.readTextFile(new URL("../../public/manifest.json", import.meta.url)),
+    );
+    const json = await Deno.readTextFile(
+      new URL("../../test-fixtures/bitwarden/synthetic-export.json", import.meta.url),
+    );
+    const vault = await decryptBitwardenExport(json, "synthetic-export-fixture-4f9c1a");
+    const result = matchVault(manifest, vault);
+    expect(result.errors).toEqual([]);
+    expect(result.matches.size).toBe(4);
+    expect(result.matches.get("email")?.password).toBe("okMfeBD8ush7HHMLbszsV5Bw");
   });
 
   test("reads fa_id case-insensitively and trims it", () => {

@@ -204,6 +204,17 @@ describe("bitwarden export decryptor", () => {
     );
   });
 
+  test("decrypts the committed synthetic export", async () => {
+    const json = await Deno.readTextFile(
+      new URL("../../test-fixtures/bitwarden/synthetic-export.json", import.meta.url),
+    );
+    const vault = await decryptBitwardenExport(json, "synthetic-export-fixture-4f9c1a");
+    expect(vault.items.find((item) => item.name === "Email - Tuta")?.login?.password).toBe(
+      "okMfeBD8ush7HHMLbszsV5Bw",
+    );
+    expect(vault.items.find((item) => item.name === "Immich")?.login?.username).toBe("family");
+  });
+
   test("caps Argon2 time and memory separately", async () => {
     const wrapper = JSON.parse(
       await makeExport(vault, "export-password", { kdfType: 0, kdfIterations: 100_000 }),
