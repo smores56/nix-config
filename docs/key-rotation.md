@@ -210,7 +210,8 @@ One key per GitHub account: `github-personal-signing-key` in
 `secrets/smoreswork.yaml` (the work Mac only). The public halves are committed
 in `modules/lib/signing-keys.nix`, which is what writes
 `~/.config/ssh/allowed_signers`, names the private half in `user.signingkey`,
-and lets smortress trust it for the forced `agent-ssh` login. Per account:
+and lets smortress trust it for the forced `agent-ssh` login (which lands in
+smortress's agent VM). Per account:
 
 1. Mint a new pair: `ssh-keygen -t ed25519 -N '' -C
    github-personal-signing-key -f /tmp/signing`.

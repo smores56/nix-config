@@ -27,8 +27,8 @@ in
     github-personal-pat = userOwned;
     github-personal-signing-key = userOwned;
 
-    # The sandbox launcher binds it at /run/agent/immich-key; declaring it here makes
-    # sops-nix materialise /run/secrets/immich-agent-api-key.
+    # Handed in to the agent VM (agentVm.secrets); declaring it here makes sops-nix
+    # materialise /run/secrets/immich-agent-api-key.
     immich-agent-api-key = userOwned;
 
     # Every personal host's shim/CLI presents it, so it lives in common.yaml. Where the

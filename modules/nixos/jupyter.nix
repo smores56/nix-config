@@ -1,5 +1,5 @@
 # Jupyter server for Open WebUI's code interpreter. Server and kernels run under
-# the minimal `jupyter` agent-sandbox profile (modules/lib/agent-sandbox.{nix,sh}):
+# the bwrap sandbox in modules/lib/jupyter-sandbox.{nix,sh}:
 # one writable workspace, no secrets or home config. It keeps the host network
 # namespace so Open WebUI reaches it on loopback.
 #
@@ -14,7 +14,7 @@
 let
   username = config.machine.username;
 
-  sandbox = import ../lib/agent-sandbox.nix {
+  sandbox = import ../lib/jupyter-sandbox.nix {
     inherit pkgs lib;
   };
 

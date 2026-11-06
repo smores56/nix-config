@@ -43,9 +43,11 @@ Cross-cutting values flow through `config.machine.*` and `config.user.*`, not
   sops signing key, chosen by repo owner; the work account exists only on
   smoreswork. `user.aiProfile` (`personal` or `work`) decides which model
   providers agents may use.
-- **Agent sandbox.** On the Linux hosts `m` is `agent-sandbox maki`, a
-  same-UID bwrap boundary (`modules/lib/agent-sandbox.nix`). On smoreswork `m`
-  is `claude`, unsandboxed.
+- **Agent VMs.** `a` runs the agent in a VM that cannot reach host sudo,
+  polkit or the YubiKey: `agent-sandbox maki` in a microvm.nix guest on Linux
+  (`modules/nixos/agent-vm.nix`), `agent-sandbox claude` in a Tart macOS guest
+  on smoreswork (`modules/features/agent-vm`). Plain `maki`/`claude` is the
+  unsandboxed opt-out.
 - **Memory.** smortress runs a typed SQLite registry, FalkorDB and Graphiti,
   reached over the tunnel through `memory-mcp-shim`. Extraction and embeddings
   go through a loopback Neuralwatt gateway. The `memory` CLI: `write search get

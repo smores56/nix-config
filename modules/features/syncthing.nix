@@ -30,7 +30,7 @@ in
     vaultPath = lib.mkOption {
       type = lib.types.str;
       default = "${config.home.homeDirectory}/Sync/vault";
-      description = "Directory holding the vault ciphertext. Under ~/Sync on laptops: outside the TCC-protected folders on macOS, and already masked from agent-sandbox.";
+      description = "Directory holding the vault ciphertext. Under ~/Sync on laptops: outside the TCC-protected folders on macOS, and never shared into the Linux agent VM.";
     };
     versioningPath = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
