@@ -18,6 +18,16 @@ await esbuild.build({
   logLevel: "info",
 });
 
+try {
+  await cp(
+    new URL("../public/data-keys.enc", import.meta.url),
+    new URL("data-keys.enc", dist),
+  );
+} catch (error) {
+  if ((error as { code?: string }).code !== "ENOENT") throw error;
+  console.log("no public/data-keys.enc yet; run deno task blob to create it");
+}
+
 for (const [from, to] of [
   ["index.html", "index.html"],
   ["src/style.css", "style.css"],

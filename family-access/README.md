@@ -28,8 +28,8 @@ loader, and plain HTTP from a LAN address will disable unlock.
 ## Scope so far
 
 The PWA scaffolds the blob envelope, the manifest validator/renderer, the unlock
-flow, and the restic snapshot browser. The real data-keys blob is produced in
-T5; until then the page says no blob is deployed. The Bitwarden export reader
+flow, and the restic snapshot browser. The data-keys blob is produced by
+`deno task blob`; until it is committed the page says no blob is deployed. The Bitwarden export reader
 and the Cloudflare Pages deployment are later tasks.
 
 ## Cryptomator vault reader
@@ -90,6 +90,17 @@ R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... \
 - The PWA password is separate from the Bitwarden master password.
 - The PWA must not persist the password or data keys; lock clears them.
 
+## Data-keys blob
+
+`deno task blob` prompts for the PWA password (twice) and the Cryptomator
+password, reads `r2-readonly-access-key-id`, `r2-readonly-secret-access-key`
+and `restic-password` from `../secrets/smortress.yaml`, encrypts
+the payload with Argon2id (3 passes, 64 MiB, 4 lanes) plus AES-256-GCM, writes
+`public/data-keys.enc`, then decrypts it again and walks R2 -> restic -> the
+Cryptomator sentinel. There is no password-file option and no legacy scrypt
+envelope. The blob is public ciphertext and is committed; the build copies it
+when present.
+
 ## Bitwarden export dashboard
 
 The manifest tells the family which Bitwarden items to open. If they also have a
@@ -100,7 +111,7 @@ instructions.
 `src/bitwarden/export.ts` implements Bitwarden's export format: PBKDF2-SHA256 or
 Argon2id over the export salt, HKDF-Expand of the result into separate `enc` and
 `mac` keys, then AES-256-CBC + HMAC-SHA256 cipher strings (`2.iv|ct|mac`).
-Limits: 2,000,000 KDF iterations, 256 MiB Argon2 memory, 32 MiB export file.
+Limits: 2,000,000 PBKDF2 iterations, 64 Argon2 iterations, 128 MiB Argon2 memory, 32 MiB export file.
 Nothing is stored: the plaintext export lives only in the tab and is dropped by
 "Lock and clear".
 

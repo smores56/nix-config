@@ -8,6 +8,7 @@
     "build": "deno run --allow-read --allow-write --allow-run --allow-env scripts/build.ts",
     "test": "deno test --allow-read=. --allow-env",
     "typecheck": "deno check $(find src scripts -name '*.ts' -not -path '*/node_modules/*')",
+    "blob": "deno run --allow-read --allow-write --allow-run --allow-env --allow-net scripts/blob.ts",
     "sentinel": "deno run --allow-read --allow-env --allow-net scripts/sentinel.ts",
     "validate": "deno run --allow-read --allow-env scripts/validate.ts"
   },

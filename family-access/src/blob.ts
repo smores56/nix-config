@@ -1,4 +1,4 @@
-import { scrypt } from "hash-wasm";
+import { argon2id } from "hash-wasm";
 
 export type DataKeys = {
   version: 1;
@@ -23,31 +23,34 @@ export type DataKeys = {
 };
 
 export type DataKeysBlob = {
-  version: 1;
-  kdf: "scrypt";
-  N: number;
-  r: number;
-  p: number;
+  version: 2;
+  kdf: "argon2id";
+  iterations: number;
+  memory: number;
+  parallelism: number;
   salt: string;
   nonce: string;
   ciphertext: string;
 };
 
-export type ScryptCost = {
-  N: number;
-  r: number;
-  p: number;
+export type Argon2Cost = {
+  iterations: number;
+  memory: number;
+  parallelism: number;
 };
 
-export const DEFAULT_COST: ScryptCost = { N: 65536, r: 8, p: 1 };
+export const DEFAULT_COST: Argon2Cost = {
+  iterations: 3,
+  memory: 64 * 1024,
+  parallelism: 4,
+};
 
-// 128 * N * r bytes; cap at 64 MiB so a hostile or corrupt blob cannot OOM a
-// phone. N must be a power of two for scrypt.
-const MAX_COST: ScryptCost & { memory: number } = {
-  N: 65536,
-  r: 8,
-  p: 2,
-  memory: 64 * 1024 * 1024,
+// Caps keep a hostile or corrupt blob from freezing a phone. Argon2 memory is
+// in KiB; the minimum is 8 KiB per lane (RFC 9106 section 3.1).
+const MAX_COST: Argon2Cost = {
+  iterations: 10,
+  memory: 256 * 1024,
+  parallelism: 16,
 };
 
 function toBase64(bytes: Uint8Array): string {
@@ -68,26 +71,35 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function validateCost(cost: ScryptCost): string[] {
+export function validateCost(cost: Argon2Cost): string[] {
   const errors: string[] = [];
-  if (!Number.isInteger(cost.N) || cost.N < 1024 || cost.N > MAX_COST.N) {
-    errors.push(`N must be an integer between 1024 and ${MAX_COST.N}`);
-  } else if ((cost.N & (cost.N - 1)) !== 0) {
-    errors.push("N must be a power of two");
+  if (
+    !Number.isInteger(cost.iterations) ||
+    cost.iterations < 1 ||
+    cost.iterations > MAX_COST.iterations
+  ) {
+    errors.push(`iterations must be an integer between 1 and ${MAX_COST.iterations}`);
   }
-  if (!Number.isInteger(cost.r) || cost.r < 1 || cost.r > MAX_COST.r) {
-    errors.push(`r must be an integer between 1 and ${MAX_COST.r}`);
+  if (
+    !Number.isInteger(cost.parallelism) ||
+    cost.parallelism < 1 ||
+    cost.parallelism > MAX_COST.parallelism
+  ) {
+    errors.push(`parallelism must be an integer between 1 and ${MAX_COST.parallelism}`);
   }
-  if (!Number.isInteger(cost.p) || cost.p < 1 || cost.p > MAX_COST.p) {
-    errors.push(`p must be an integer between 1 and ${MAX_COST.p}`);
-  }
-  if (128 * cost.N * cost.r > MAX_COST.memory) {
-    errors.push("scrypt memory cost is too high");
+  if (!Number.isInteger(cost.memory) || cost.memory < 8 || cost.memory > MAX_COST.memory) {
+    errors.push(`memory must be an integer between 8 and ${MAX_COST.memory} KiB`);
+  } else if (
+    Number.isInteger(cost.parallelism) &&
+    cost.parallelism >= 1 &&
+    cost.memory < 8 * cost.parallelism
+  ) {
+    errors.push("memory must be at least 8 KiB per lane");
   }
   return errors;
 }
 
-function assertCost(cost: ScryptCost): void {
+function assertCost(cost: Argon2Cost): void {
   const errors = validateCost(cost);
   if (errors.length > 0) throw new Error("invalid data-keys KDF parameters");
 }
@@ -124,23 +136,25 @@ export function validateDataKeys(value: unknown): string[] {
   return errors;
 }
 
-function aadFor(header: Pick<DataKeysBlob, "version" | "kdf" | "N" | "r" | "p">): Uint8Array {
+function aadFor(
+  header: Pick<DataKeysBlob, "version" | "kdf" | "iterations" | "memory" | "parallelism">,
+): Uint8Array {
   return new TextEncoder().encode(
-    `family-access:data-keys:v${header.version}|${header.kdf}|${header.N}|${header.r}|${header.p}`,
+    `family-access:data-keys:v${header.version}|${header.kdf}|${header.iterations}|${header.memory}|${header.parallelism}`,
   );
 }
 
 async function deriveKey(
   password: string,
   salt: Uint8Array,
-  cost: ScryptCost,
+  cost: Argon2Cost,
 ): Promise<CryptoKey> {
-  const raw = await scrypt({
+  const raw = await argon2id({
     password,
     salt,
-    costFactor: cost.N,
-    blockSize: cost.r,
-    parallelism: cost.p,
+    iterations: cost.iterations,
+    memorySize: cost.memory,
+    parallelism: cost.parallelism,
     hashLength: 32,
     outputType: "binary",
   });
@@ -153,14 +167,20 @@ async function deriveKey(
 export async function encryptBlob(
   payload: DataKeys,
   password: string,
-  cost: ScryptCost = DEFAULT_COST,
+  cost: Argon2Cost = DEFAULT_COST,
 ): Promise<DataKeysBlob> {
   const errors = validateDataKeys(payload);
   if (errors.length > 0) throw new Error(`invalid data keys: ${errors.join(", ")}`);
   if (!password) throw new Error("a PWA password is required");
   assertCost(cost);
 
-  const header = { version: 1 as const, kdf: "scrypt" as const, N: cost.N, r: cost.r, p: cost.p };
+  const header = {
+    version: 2 as const,
+    kdf: "argon2id" as const,
+    iterations: cost.iterations,
+    memory: cost.memory,
+    parallelism: cost.parallelism,
+  };
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const nonce = crypto.getRandomValues(new Uint8Array(12));
   const key = await deriveKey(password, salt, cost);
@@ -185,11 +205,15 @@ export async function decryptBlob(
   envelope: DataKeysBlob,
   password: string,
 ): Promise<DataKeys> {
-  if (!isRecord(envelope) || envelope.version !== 1 || envelope.kdf !== "scrypt") {
+  if (!isRecord(envelope) || envelope.version !== 2 || envelope.kdf !== "argon2id") {
     throw new Error("unsupported data-keys envelope");
   }
   if (!password) throw new Error("a PWA password is required");
-  assertCost({ N: envelope.N, r: envelope.r, p: envelope.p });
+  assertCost({
+    iterations: envelope.iterations,
+    memory: envelope.memory,
+    parallelism: envelope.parallelism,
+  });
 
   let salt: Uint8Array;
   let nonce: Uint8Array;
@@ -206,16 +230,20 @@ export async function decryptBlob(
   }
 
   const key = await deriveKey(password, salt, {
-    N: envelope.N,
-    r: envelope.r,
-    p: envelope.p,
+    iterations: envelope.iterations,
+    memory: envelope.memory,
+    parallelism: envelope.parallelism,
   });
 
   let plaintext: Uint8Array;
   try {
     plaintext = new Uint8Array(
       await crypto.subtle.decrypt(
-        { name: "AES-GCM", iv: nonce as BufferSource, additionalData: aadFor(envelope) as BufferSource },
+        {
+          name: "AES-GCM",
+          iv: nonce as BufferSource,
+          additionalData: aadFor(envelope) as BufferSource,
+        },
         key,
         ciphertext as BufferSource,
       ),
