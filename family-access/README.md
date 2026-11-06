@@ -93,7 +93,7 @@ R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... \
 ## Data-keys blob
 
 `deno task blob` prompts for the PWA password (twice) and the Cryptomator
-password, reads `r2-readonly-access-key-id`, `r2-readonly-secret-access-key`
+password, reads `r2-access-key-id-readonly`, `r2-secret-access-key-readonly`
 and `restic-password` from `../secrets/smortress.yaml`, encrypts
 the payload with Argon2id (3 passes, 64 MiB, 4 lanes) plus AES-256-GCM, writes
 `public/data-keys.enc`, then decrypts it again and walks R2 -> restic -> the

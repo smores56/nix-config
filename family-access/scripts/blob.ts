@@ -171,8 +171,8 @@ async function main(): Promise<void> {
     r2: {
       endpoint,
       bucket: BUCKET,
-      accessKeyId: requireSecret(secrets, "r2-readonly-access-key-id"),
-      secretAccessKey: requireSecret(secrets, "r2-readonly-secret-access-key"),
+      accessKeyId: requireSecret(secrets, "r2-access-key-id-readonly"),
+      secretAccessKey: requireSecret(secrets, "r2-secret-access-key-readonly"),
       region: "auto",
     },
     restic: {
