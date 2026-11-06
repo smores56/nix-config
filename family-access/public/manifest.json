@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "updated": "2026-11-05",
+  "sections": [
+    {
+      "id": "start",
+      "title": "Start here",
+      "description": "Read this section first. Do not skip the warnings above.",
+      "items": [
+        {
+          "faId": "start",
+          "title": "Read this first",
+          "bitwardenName": "START HERE",
+          "notes": "Open Bitwarden, read the START HERE item, then unlock the data keys on this page."
+        }
+      ]
+    },
+    {
+      "id": "accounts",
+      "title": "Accounts",
+      "description": "Passwords and recovery codes are in the Bitwarden Family Access folder.",
+      "items": [
+        {
+          "faId": "email",
+          "title": "E-mail (Tuta)",
+          "bitwardenName": "Email - Tuta",
+          "url": "https://app.tuta.com",
+          "required": true
+        },
+        {
+          "faId": "immich",
+          "title": "Photos (Immich)",
+          "bitwardenName": "Immich",
+          "url": "https://immich.sammohr.dev",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "data",
+      "title": "Data recovery",
+      "description": "Unlock the data keys above, then choose what to restore.",
+      "items": [
+        {
+          "faId": "data-recovery",
+          "title": "R2, restic, and vault keys",
+          "bitwardenName": "Data Recovery",
+          "required": true,
+          "recovery": true
+        }
+      ]
+    }
+  ],
+  "warnings": [
+    "Tuta free accounts are deleted after six months of inactivity.",
+    "Full photo and vault restore needs a Mac or a device with enough free space."
+  ],
+  "contacts": [
+    {
+      "name": "Technical helper",
+      "role": "Contact this person if the instructions fail.",
+      "contact": "Call the person named in the sealed letter."
+    }
+  ]
+}
