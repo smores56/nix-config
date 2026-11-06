@@ -71,8 +71,22 @@ let
     # The planner only reads the home, so it runs as its owner; the root step trusts its JSON
     # for paths alone and re-checks every source with O_NOFOLLOW.
     runuser -u ${user} -- ${python} -I ${planner} --home ${home} \
-      --deny ${lib.escapeShellArgs cfg.deny} --rw ${lib.escapeShellArgs cfg.rw} \
+      ${
+        lib.escapeShellArgs (
+          lib.concatMap (d: [
+            "--deny"
+            d
+          ]) cfg.deny
+          ++ lib.concatMap (r: [
+            "--rw"
+            r
+          ]) cfg.rw
+        )
+      } \
       | ${python} -I ${viewBuilder} --home ${home} --view ${view}
+    # Split dirs are tmpfs; read-only keeps the guest from leaving files beside the shares.
+    # Each bind keeps its own flags.
+    mount -o remount,ro ${view}
 
     install -d -m 0700 -o ${user} -g users ${stateDir}
     if [ ! -e ${stateDir}/id_ed25519 ]; then
