@@ -10,13 +10,13 @@ import { kitSlug, type KitValues, renderLabel, renderLetter, renderStartHere } f
 import { promptHidden, promptVisible, verifyBlobPassword } from "./prompt.ts";
 
 const DEFAULT_PWA_URL = "https://family.sammohr.dev/";
-const DEFAULT_FALLBACK_URL = "https://family-access.pages.dev/";
 const DEFAULT_OUT = "family-kit";
 
 type Args = {
   out: string;
   pwaUrl: string;
-  fallbackUrl: string;
+  /** Required: a guessed pages.dev address would be printed and never checked. */
+  fallbackUrl?: string;
   operator?: string;
   blob: string;
 };
@@ -34,7 +34,6 @@ function parseArgs(argv: string[]): Args {
   const args: Args = {
     out: DEFAULT_OUT,
     pwaUrl: DEFAULT_PWA_URL,
-    fallbackUrl: DEFAULT_FALLBACK_URL,
     blob: "public/data-keys.enc",
   };
   for (let index = 0; index < argv.length; index++) {
@@ -140,6 +139,8 @@ Recipients: ${names}
 
 async function main(): Promise<void> {
   const args = parseArgs(Deno.args);
+  if (!args.fallbackUrl) throw new Error("--fallback-url <pages.dev url> is required");
+  const fallbackUrl = args.fallbackUrl;
   const out = resolveOut(args.out);
   const operator = args.operator ?? (await promptVisible("Your name: "));
   if (!operator) throw new Error("a name is needed on the letters");
@@ -180,7 +181,7 @@ async function main(): Promise<void> {
     recoveryCode,
     pwaPassword,
     pwaUrl: args.pwaUrl,
-    fallbackUrl: args.fallbackUrl,
+    fallbackUrl,
   });
 
   for (const { recipient, slug } of slugged) {
