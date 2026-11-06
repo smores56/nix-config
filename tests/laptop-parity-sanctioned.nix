@@ -81,7 +81,6 @@ in
       "man-db"
     ])
     (group maki [
-      "agent-sandbox-check"
       "maki-session-resume"
       "maki-session-search"
       "rtk"
