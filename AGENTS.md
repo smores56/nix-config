@@ -67,6 +67,7 @@ adds its greeter as a host-local module.
 | `modules/features/ai/` | AI tooling: assistant context, harvest, Claude settings merge, maki, memory, providers, sdlc, skills. `memory/service.nix` is the one memory service description; `modules/nixos/memory.nix` and `memory/darwin.nix` render it |
 | `modules/features/tv/`, `modules/features/repos/` | Television repository and worktree cables; the `repos`/`worktrees` CLIs they call |
 | `tofu/` | minimal Cloudflare DNS/Access/notification objects plus the `recovery` Pages project and its DNS record; run via the `cloudflare-*` flake apps |
+| `recovery/` | the public recovery page (Deno, plain ESM) and its operator scripts: blob builder, kit, sentinel, smoke; published by `.github/workflows/recovery.yml` |
 | `modules/features/backup/` | Operator README, GitHub-mirror helpers and the metadata verifier |
 | `modules/desktop/aerospace/` | AeroSpace config + `aerospace-layout` |
 | `tests/` | Python unit tests and shell/module checks for the repo's tools (all run via flake checks) |
