@@ -40,6 +40,19 @@ jobs:
         working-directory: recovery
         run: deno task build
 
+      - name: Sentinel over the fixture snapshot
+        working-directory: recovery
+        env:
+          VAULT_PASSWORD: family-access-vault-fixture
+          RESTIC_PASSWORD: family-access-fixture
+        run: deno task sentinel --repo test-fixtures/restic-cryptomator --prefix var/lib/data/vault
+
+      - name: Headless browser smoke test
+        working-directory: recovery
+        env:
+          CHROME: google-chrome
+        run: deno task smoke
+
   deploy:
     needs: check
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
