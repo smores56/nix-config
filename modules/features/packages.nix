@@ -37,6 +37,8 @@
         uv
 
         cbonsai
+
+        deno
       ]
       ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
         libiconv
