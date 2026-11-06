@@ -54,7 +54,8 @@ public class CreateVault {
                 .build();
         CryptoFileSystemProvider.initialize(dir, props, URI.create("masterkeyfile:masterkey.cryptomator"));
         try (CryptoFileSystem fs = CryptoFileSystemProvider.newFileSystem(dir, props)) {
-            Files.writeString(fs.getPath("/recovery-sentinel.txt"), sentinel, StandardCharsets.UTF_8);
+            Files.createDirectories(fs.getPath("/Documents"));
+            Files.writeString(fs.getPath("/Documents/sentinel.txt"), sentinel, StandardCharsets.UTF_8);
             Files.writeString(fs.getPath("/caf\u00e9.txt"), "nfc name\n", StandardCharsets.UTF_8);
             Files.writeString(fs.getPath("/cafe\u0301.txt"), "nfd name\n", StandardCharsets.UTF_8);
             Files.writeString(fs.getPath("/empty.txt"), "", StandardCharsets.UTF_8);

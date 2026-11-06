@@ -52,13 +52,18 @@ format and verified against vaults created by cryptofs 2.8.0 / cryptolib 2.2.0.
 - `test-fixtures/cryptomator-vault/` is a reference vault created by the Java
   implementation (password `family-access-vault-fixture`). It covers root and
   nested names, 0/1/32 KiB/32 KiB+1/100 KB files, a shortened file name, a
-  shortened directory, an NFC name, a symlink, and `dirid.c9r` backups. See
-  `test-fixtures/CreateVault.java` for how it was produced. Its sentinel sits
-  at the vault root, not in `Documents/`: `src/cryptomator/vault.test.ts` pins
-  the fixture's root listing and the ciphertext path derived from its
-  masterkey, so moving it means regenerating both together.
+  shortened directory, an NFC name, a symlink, `dirid.c9r` backups, and the
+  production layout of the sentinel at `Documents/sentinel.txt`. `CreateVault.java`
+  reproduces it: compile with a JDK 25 and the cryptomator-cli `mods/` and
+  `libs/` jars (the jars use class files a JDK 21 cannot load), then run it with
+  the vault password and `"vault-sentinel: 6f1c2a7e"`.
 - `test-fixtures/restic-cryptomator/` stores the same vault at
-  `var/lib/data/vault` in a restic repository (password `family-access-fixture`).
+  `/var/lib/data/vault` in a restic repository (password `family-access-fixture`).
+  The path matters: the tree must read `var/lib/data/vault`, so build it inside a
+  mount namespace where the vault really sits there (`unshare -rm`,
+  `mount --bind <tmp>/var /var`, `restic backup /var/lib/data/vault`).
+  `src/cryptomator/vault.test.ts` pins the fixture root's ciphertext path, so
+  regenerating means updating that one assertion with the value the reader prints.
 
 ### Real-vault sentinel
 
@@ -150,3 +155,20 @@ record that keeps that name off the `*.sammohr.dev` tunnel wildcard.
 `.github/workflows/recovery.yml` typechecks, tests and builds on every change
 under `recovery/`, then uploads `dist/` to the project on push to `main` using a
 Pages-only API token (procedure in `docs/key-rotation.md`).
+
+## Checks
+
+```sh
+deno task typecheck
+deno task test
+deno task build
+deno task smoke    # headless Chrome: CHROME=<path> or --chrome <path>
+deno task sentinel --repo test-fixtures/restic-cryptomator --prefix var/lib/data/vault
+```
+
+`deno task smoke` serves `dist/` on a loopback port and asserts the built page
+renders its shell and reaches the unlock prompt, which is the only check that
+notices a broken bundle or a CSP that blocks the module. The sentinel command
+needs `VAULT_PASSWORD` and `RESTIC_PASSWORD` (the fixture values are in the
+fixture list above). Both run in `.github/workflows/recovery.yml` on every
+change under `recovery/`, before the deploy job.

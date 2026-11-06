@@ -32,7 +32,7 @@ describe("cryptomator vault reader", () => {
 
   test("derives the documented root directory path", async () => {
     expect(await vault.ciphertextPath(ROOT_DIR_ID)).toBe(
-      "d/ED/5AD542HXVAJNAAOWAF4BFRUYW5ISBG",
+      "d/F3/4IOJSAVEAWLGR3YHD2PNFZLIGAD52S",
     );
   });
 
@@ -45,7 +45,7 @@ describe("cryptomator vault reader", () => {
         "file:chunk-plus-one.bin",
         "file:empty.txt",
         "file:exact-chunk.bin",
-        "file:family-access-sentinel.txt",
+        "dir:Documents",
         "file:one-byte.bin",
         "symlink:link-to-hello.txt",
       ].sort(),
@@ -55,8 +55,9 @@ describe("cryptomator vault reader", () => {
     );
   });
 
-  test("decrypts the sentinel from the root directory", async () => {
-    expect(await vault.readTextFile(item("family-access-sentinel.txt"))).toBe(
+  test("decrypts the sentinel from Documents/", async () => {
+    const documents = await vault.list(item("Documents").dirId!);
+    expect(await vault.readTextFile(item("sentinel.txt", documents))).toBe(
       "vault-sentinel: 6f1c2a7e",
     );
   });
@@ -143,7 +144,7 @@ describe("cryptomator failure modes", () => {
 
   test("rejects a tampered file header", async () => {
     const provider = new LocalVaultProvider(fixture);
-    const path = item("family-access-sentinel.txt").encryptedPath;
+    const path = item("café.txt").encryptedPath;
     const patched = {
       list: provider.list.bind(provider),
       readText: provider.readText.bind(provider),
@@ -157,7 +158,7 @@ describe("cryptomator failure modes", () => {
     };
     const opened = await CryptomatorVault.open(patched, password);
     const entries = await opened.list(ROOT_DIR_ID);
-    await expect(opened.readFile(item("family-access-sentinel.txt", entries))).rejects.toThrow();
+    await expect(opened.readFile(item("café.txt", entries))).rejects.toThrow();
   });
 
   test("rejects a ciphertext truncated at a chunk boundary", async () => {
@@ -193,9 +194,7 @@ describe("cryptomator failure modes", () => {
     const documents = entries.find((entry) => entry.name === "documents")!;
     expect(documents.kind).toBe("unknown");
     expect(documents.damaged).toBeDefined();
-    expect(entries.find((entry) => entry.name === "family-access-sentinel.txt")?.kind).toBe(
-      "file",
-    );
+    expect(entries.find((entry) => entry.name === "empty.txt")?.kind).toBe("file");
   });
 
   test("caps metadata reads", async () => {
@@ -223,7 +222,10 @@ describe("restic-backed vault provider", () => {
     );
     const resticVault = await CryptomatorVault.open(provider, password);
     const entries = await resticVault.list(ROOT_DIR_ID);
-    const sentinel = entries.find((entry) => entry.name === "family-access-sentinel.txt")!;
+    const documentsDir = entries.find((entry) => entry.name === "Documents")!;
+    const sentinel = (await resticVault.list(documentsDir.dirId!)).find(
+      (entry) => entry.name === "sentinel.txt",
+    )!;
     expect(await resticVault.readTextFile(sentinel)).toBe("vault-sentinel: 6f1c2a7e");
     const documents = await resticVault.list(
       entries.find((entry) => entry.name === "documents")!.dirId!,

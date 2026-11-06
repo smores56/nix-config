@@ -10,6 +10,7 @@
     "typecheck": "deno check $(find src scripts -name '*.ts' -not -path '*/node_modules/*')",
     "blob": "deno run --allow-read --allow-write --allow-run --allow-env --allow-net scripts/blob.ts",
     "sentinel": "deno run --allow-read --allow-env --allow-net scripts/sentinel.ts",
+    "smoke": "deno run --allow-read --allow-run --allow-net --allow-env scripts/smoke.ts",
     "kit": "deno run --allow-read --allow-write --allow-env scripts/kit.ts"
   },
   "fmt": {
