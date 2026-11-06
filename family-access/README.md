@@ -145,3 +145,33 @@ directory's README; its four synthetic items match the shipped manifest.
 Exit status is non-zero when any required item is missing, a UUID/fa_id/folder/
 type does not match, or the restic repository cannot be opened. A plaintext
 export is accepted with a warning; the password-protected form is preferred.
+
+## Restore in the PWA
+
+`Restore everything to a folder` walks the selected snapshot and writes every
+file into a folder the operator picks (`src/restore.ts` strips the snapshot's
+shared root, so the folder starts at `photos/`). Each file streams through
+restic blob by blob, so memory stays at one blob whatever the total size, and
+a file already present with the same size is skipped, which makes a stopped run
+resumable.
+
+The directory handle comes from the File System Access API. WebKit implements
+neither `showDirectoryPicker` nor a usable Service-Worker streaming download on
+macOS, iPadOS or iOS, so Safari downloads single files only (buffered, capped at
+256 MiB). The letter tells the family to use Chrome on the Mac for the full
+library and keeps Safari for reading and single files.
+
+## Recovery kit
+
+`deno task kit` renders the printable kit: a two-page letter per family member
+(cover, then the instructions), a drive label, the `START-HERE.txt` that sits at
+the root of each USB drive, and a checklist. It prompts for the Bitwarden
+e-mail, master password and two-step recovery code, the page password, and the
+recipients' names; it verifies the page password against `public/data-keys.enc`
+before writing anything.
+
+The output is plaintext, so it is written 0700/0600 and the script refuses a
+destination inside the repository. Print the letters, copy `drive-<name>/` to
+the drives, seal, and delete the folder. The media carry only the Bitwarden
+login, the recovery code, the page URL and the page password: reprint when one
+of those changes, never when keys, buckets or paths change.

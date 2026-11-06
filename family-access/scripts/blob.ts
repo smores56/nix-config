@@ -19,6 +19,7 @@ import { R2Backend, repositoryPrefix } from "../src/restic/r2.ts";
 import { openRepository } from "../src/restic/repository.ts";
 import { ResticVaultProvider } from "../src/cryptomator/restic-provider.ts";
 import { CryptomatorVault } from "../src/cryptomator/vault.ts";
+import { promptHidden, promptNewPassword } from "./prompt.ts";
 import { readSentinel, SENTINEL_PATH } from "../src/sentinel.ts";
 
 const DEFAULT_ACCOUNT_ID = "385f7d47e2e8438fbda5d6f76d760434";
@@ -77,43 +78,6 @@ function parseArgs(argv: string[]): Args {
     }
   }
   return args;
-}
-
-async function promptHidden(label: string): Promise<string> {
-  if (!Deno.stdin.isTerminal()) throw new Error("run the builder in a terminal");
-  await Deno.stderr.write(new TextEncoder().encode(label));
-  const bytes: number[] = [];
-  const buffer = new Uint8Array(1);
-  Deno.stdin.setRaw(true);
-  try {
-    while (true) {
-      const read = await Deno.stdin.read(buffer);
-      if (read === null) break;
-      const byte = buffer[0];
-      if (byte === 13 || byte === 10) break;
-      if (byte === 3) {
-        await Deno.stderr.write(new TextEncoder().encode("\n"));
-        Deno.exit(130);
-      }
-      if (byte === 127 || byte === 8) {
-        bytes.pop();
-        continue;
-      }
-      if (byte >= 32) bytes.push(byte);
-    }
-  } finally {
-    Deno.stdin.setRaw(false);
-  }
-  await Deno.stderr.write(new TextEncoder().encode("\n"));
-  return new TextDecoder().decode(new Uint8Array(bytes));
-}
-
-async function promptNewPassword(label: string): Promise<string> {
-  const first = await promptHidden(label);
-  if (!first) throw new Error("the password is empty");
-  const second = await promptHidden("Repeat password: ");
-  if (first !== second) throw new Error("the passwords do not match");
-  return first;
 }
 
 async function readSecrets(path: string): Promise<Record<string, string>> {

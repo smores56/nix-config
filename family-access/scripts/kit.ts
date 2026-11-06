@@ -1,0 +1,213 @@
+// Builds the printed recovery kit: one letter, one drive label, one plain-text
+// drive file and a checklist per family member. Everything it writes is
+// plaintext, so it refuses to write inside the repository and creates the
+// output tree 0700 with 0600 files.
+//
+//   deno task kit [--out ~/family-kit] [--pwa-url <url>] [--fallback-url <url>]
+//                 [--operator <name>] [--blob public/data-keys.enc]
+
+import { kitSlug, type KitValues, renderLabel, renderLetter, renderStartHere } from "../src/kit.ts";
+import { promptHidden, promptVisible, verifyBlobPassword } from "./prompt.ts";
+
+const DEFAULT_PWA_URL = "https://family.sammohr.dev/";
+const DEFAULT_FALLBACK_URL = "https://family-access.pages.dev/";
+const DEFAULT_OUT = "family-kit";
+
+type Args = {
+  out: string;
+  pwaUrl: string;
+  fallbackUrl: string;
+  operator?: string;
+  blob: string;
+};
+
+const USAGE = "usage: kit [--out <dir>] [--pwa-url <url>] [--fallback-url <url>] " +
+  "[--operator <name>] [--blob public/data-keys.enc]";
+
+function takeValue(argv: string[], index: number, flag: string): string {
+  const value = argv[index + 1];
+  if (value === undefined || value.startsWith("-")) throw new Error(`${flag} needs a value`);
+  return value;
+}
+
+function parseArgs(argv: string[]): Args {
+  const args: Args = {
+    out: DEFAULT_OUT,
+    pwaUrl: DEFAULT_PWA_URL,
+    fallbackUrl: DEFAULT_FALLBACK_URL,
+    blob: "public/data-keys.enc",
+  };
+  for (let index = 0; index < argv.length; index++) {
+    const value = argv[index];
+    switch (value) {
+      case "--out":
+        args.out = takeValue(argv, index++, value);
+        break;
+      case "--pwa-url":
+        args.pwaUrl = takeValue(argv, index++, value);
+        break;
+      case "--fallback-url":
+        args.fallbackUrl = takeValue(argv, index++, value);
+        break;
+      case "--operator":
+        args.operator = takeValue(argv, index++, value);
+        break;
+      case "--blob":
+        args.blob = takeValue(argv, index++, value);
+        break;
+      case "--help":
+      case "-h":
+        console.log(USAGE);
+        Deno.exit(0);
+        break;
+      default:
+        throw new Error(`unknown argument: ${value}`);
+    }
+  }
+  return args;
+}
+
+function homePath(path: string): string {
+  return path.startsWith("~/") ? `${Deno.env.get("HOME") ?? ""}${path.slice(1)}` : path;
+}
+
+function resolveOut(path: string): string {
+  const resolved = homePath(path).replace(/\/+$/, "");
+  const absolute = resolved.startsWith("/") ? resolved : `${Deno.cwd()}/${resolved}`;
+  const out = new URL(`file://${absolute}/`);
+  const repo = new URL("../../", import.meta.url);
+  if (out.href.startsWith(repo.href)) {
+    throw new Error("refusing to write plaintext secrets inside the repository");
+  }
+  return out.pathname;
+}
+
+async function writeSecret(path: string, text: string): Promise<void> {
+  await Deno.writeTextFile(path, text, { mode: 0o600 });
+  await Deno.chmod(path, 0o600);
+}
+
+function checklist(recipients: string[], values: KitValues): string {
+  const names = recipients.map((name) => kitSlug(name)).join(", ");
+  return `# Recovery kit checklist
+
+Generated for: ${recipients.join(", ")}
+
+The folder holds **plaintext passwords**. Treat it like the letters: print it,
+then delete it (or keep it only on an encrypted disk).
+
+## 1. Print
+
+- [ ] \`letter-*.html\` - one per person, two pages: cover and instructions.
+- [ ] \`label-*.html\` - drive labels, cut to 70x40 mm.
+
+## 2. Write the two drives
+
+Each drive is exFAT (readable on macOS and Windows) and named after its owner.
+
+- [ ] \`drive-<name>/START-HERE.txt\` goes at the drive root.
+- [ ] Eject cleanly, then plug it back in and open \`START-HERE.txt\` once.
+
+## 3. Seal
+
+- [ ] Put one letter + one label + one drive per person.
+- [ ] Seal the letter in an envelope, label the envelope with the person's name.
+- [ ] Hand over in person; the recipient keeps it sealed until needed.
+
+## 4. Verify before handing over
+
+- [ ] Open \`${values.pwaUrl}\` in a browser and unlock it with the page password on
+  the letter: it must show the account list.
+- [ ] On a Mac, open the same page in Chrome and confirm the "Restore everything"
+  button appears.
+- [ ] Copy \`START-HERE.txt\` off a drive on a machine that is not yours and read it.
+
+## 5. Reprint rules
+
+The media carry only the Bitwarden login, the two-step recovery code, the page
+URL and the page password. Reprint both when:
+
+- the Bitwarden master password or its recovery code changes,
+- the page password changes (rerun \`deno task blob\` first),
+- the page address changes.
+
+Nothing else on the media changes when keys, buckets or paths change: those
+live in the encrypted blob behind the page password.
+
+Recipients: ${names}
+`;
+}
+
+async function main(): Promise<void> {
+  const args = parseArgs(Deno.args);
+  const out = resolveOut(args.out);
+  const operator = args.operator ?? (await promptVisible("Your name: "));
+  if (!operator) throw new Error("a name is needed on the letters");
+
+  const recipients: string[] = [];
+  while (true) {
+    const name = (await promptVisible(`Recipient ${recipients.length + 1} (blank when done): `))
+      .trim();
+    if (!name) break;
+    recipients.push(name);
+  }
+  if (recipients.length === 0) throw new Error("no recipients");
+
+  console.log("These values are printed on both the letters and the drives.");
+  const bitwardenEmail = (await promptVisible("Bitwarden e-mail: ")).trim();
+  const bitwardenPassword = await promptHidden("Bitwarden master password: ");
+  const recoveryCode = (await promptVisible("Bitwarden two-step recovery code: ")).trim();
+  const pwaPassword = await promptHidden("PWA (page) password: ");
+
+  const opens = await verifyBlobPassword(args.blob, pwaPassword);
+  if (opens === false) {
+    throw new Error(
+      `that password does not open ${args.blob}; the letters would be useless. Fix it and rerun`,
+    );
+  }
+  if (opens === null) console.log(`note: ${args.blob} is missing, so the password is unchecked`);
+
+  await Deno.mkdir(out, { recursive: true, mode: 0o700 });
+  await Deno.chmod(out, 0o700);
+
+  const written: string[] = [];
+  const slugged = recipients.map((recipient) => ({ recipient, slug: kitSlug(recipient) }));
+  const valuesFor = (recipient: string): KitValues => ({
+    recipient,
+    operatorName: operator,
+    bitwardenEmail,
+    bitwardenPassword,
+    recoveryCode,
+    pwaPassword,
+    pwaUrl: args.pwaUrl,
+    fallbackUrl: args.fallbackUrl,
+  });
+
+  for (const { recipient, slug } of slugged) {
+    const values = valuesFor(recipient);
+    const driveDir = `${out}drive-${slug}/`;
+    await Deno.mkdir(driveDir, { recursive: true, mode: 0o700 });
+    await Deno.chmod(driveDir, 0o700);
+
+    await writeSecret(`${out}letter-${slug}.html`, renderLetter(values));
+    await writeSecret(`${out}label-${slug}.html`, renderLabel(values));
+    await writeSecret(`${driveDir}START-HERE.txt`, renderStartHere(values));
+    written.push(
+      `${out}letter-${slug}.html`,
+      `${out}label-${slug}.html`,
+      `${driveDir}START-HERE.txt`,
+    );
+  }
+
+  await writeSecret(`${out}CHECKLIST.md`, checklist(recipients, valuesFor(recipients[0])));
+  written.push(`${out}CHECKLIST.md`);
+
+  console.log(`wrote ${written.length} file(s) under ${out}`);
+  for (const path of written) console.log(`  ${path}`);
+  console.log("plaintext secrets: print the letters, then delete this folder.");
+}
+
+main().catch((error: unknown) => {
+  console.error(`kit failed: ${error instanceof Error ? error.message : String(error)}`);
+  Deno.exit(1);
+});
