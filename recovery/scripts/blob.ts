@@ -187,16 +187,26 @@ async function main(): Promise<void> {
 
   console.log("Deriving the key with Argon2id...");
   const envelope = await encryptBlob(keys, recoveryPassword);
-  await Deno.writeTextFile(args.out, JSON.stringify(envelope, null, 2) + "\n");
-  console.log(`wrote ${args.out}`);
 
-  const check = await decryptBlob(envelope, recoveryPassword);
-  if (JSON.stringify(check) !== JSON.stringify(keys)) {
-    throw new Error("the self-test decrypted different data");
+  // Land the blob only after every check passes: a failed self-test must not
+  // leave a broken envelope where the build and git both pick it up.
+  const staged = `${args.out}.tmp`;
+  await Deno.writeTextFile(staged, JSON.stringify(envelope, null, 2) + "\n");
+  let keep = false;
+  try {
+    const check = await decryptBlob(envelope, recoveryPassword);
+    if (JSON.stringify(check) !== JSON.stringify(keys)) {
+      throw new Error("the self-test decrypted different data");
+    }
+    console.log("self-test: the blob decrypts with the recovery password");
+
+    if (args.check) await selfTest(keys);
+    await Deno.rename(staged, args.out);
+    keep = true;
+    console.log(`wrote ${args.out}`);
+  } finally {
+    if (!keep) await Deno.remove(staged).catch(() => undefined);
   }
-  console.log("self-test: the blob decrypts with the recovery password");
-
-  if (args.check) await selfTest(keys);
   console.log("done");
 }
 
