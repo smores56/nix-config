@@ -1,6 +1,13 @@
 import { decryptBlob, type DataKeys } from "./blob";
+import { decryptBitwardenExport, type BitwardenExport } from "./bitwarden/export";
+import { matchVault, plaintextExport } from "./bitwarden/dashboard";
 import { sanitizeFileName } from "./filenames";
-import { renderManifest, validateManifest, type FamilyAccessManifest } from "./manifest";
+import {
+  renderManifest,
+  validateManifest,
+  type FamilyAccessManifest,
+  type MatchedItem,
+} from "./manifest";
 import { R2Backend, repositoryPrefix } from "./restic/r2";
 import {
   openRepository,
@@ -21,6 +28,11 @@ const snapshotSelect = document.querySelector<HTMLSelectElement>("#snapshot-sele
 const breadcrumbs = document.querySelector<HTMLElement>("#breadcrumbs");
 const browserStatus = document.querySelector<HTMLDivElement>("#browser-status");
 const browserList = document.querySelector<HTMLUListElement>("#browser");
+const exportForm = document.querySelector<HTMLFormElement>("#export-form");
+const exportFile = document.querySelector<HTMLInputElement>("#export-file");
+const exportPassword = document.querySelector<HTMLInputElement>("#export-password");
+const exportButton = document.querySelector<HTMLButtonElement>("#export-button");
+const exportStatus = document.querySelector<HTMLDivElement>("#export-status");
 
 const secure = window.isSecureContext;
 let dataKeys: DataKeys | null = null;
@@ -28,6 +40,8 @@ let repository: ResticRepository | null = null;
 let snapshot: ResticSnapshot | null = null;
 let currentPath = "";
 let entriesByPath = new Map<string, ResticDirEntry>();
+let manifestCache: FamilyAccessManifest | null = null;
+let matches: Map<string, MatchedItem> | null = null;
 let idleTimer: number | undefined;
 
 function errorMessage(error: unknown): string {
@@ -64,6 +78,25 @@ function setBrowserStatus(message: string, tone: "info" | "error" | "ok" = "info
   browserStatus.dataset.tone = tone;
 }
 
+function setExportStatus(
+  message: string,
+  tone: "info" | "error" | "ok" = "info",
+): void {
+  if (!exportStatus) return;
+  exportStatus.textContent = message;
+  exportStatus.dataset.tone = tone;
+}
+
+function clearExport(): void {
+  matches = null;
+  if (exportFile) exportFile.value = "";
+  if (exportPassword) exportPassword.value = "";
+  setExportStatus("");
+  if (manifestCache && manifestRoot) {
+    manifestRoot.innerHTML = renderManifest(manifestCache);
+  }
+}
+
 function clearIdle(): void {
   if (idleTimer !== undefined) {
     clearTimeout(idleTimer);
@@ -92,6 +125,7 @@ function lock(): void {
   dataKeys = null;
   clearIdle();
   clearRestore();
+  clearExport();
   if (passwordInput) passwordInput.value = "";
   if (lockButton) lockButton.hidden = true;
   setStatus("Locked. The password and keys were cleared from this page.");
@@ -107,7 +141,8 @@ async function loadManifest(): Promise<boolean> {
     const manifest = (await response.json()) as FamilyAccessManifest;
     const errors = validateManifest(manifest);
     if (errors.length > 0) throw new Error(errors.join(", "));
-    manifestRoot.innerHTML = renderManifest(manifest);
+    manifestCache = manifest;
+    manifestRoot.innerHTML = renderManifest(manifest, matches ?? undefined);
     return true;
   } catch (error) {
     manifestRoot.innerHTML = "";
@@ -323,6 +358,66 @@ form?.addEventListener("submit", (event) => {
 });
 
 lockButton?.addEventListener("click", lock);
+
+const MAX_EXPORT_BYTES = 32 * 1024 * 1024;
+
+exportForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (exportButton) exportButton.disabled = true;
+  void loadExport().finally(() => {
+    if (exportButton) exportButton.disabled = false;
+  });
+});
+
+async function loadExport(): Promise<void> {
+  if (!manifestCache) {
+    setExportStatus("The access manifest is not loaded yet.", "error");
+    return;
+  }
+  const file = exportFile?.files?.[0];
+  if (!file) {
+    setExportStatus("Choose a Bitwarden export file first.", "error");
+    return;
+  }
+  if (file.size > MAX_EXPORT_BYTES) {
+    setExportStatus("That export file is too large.", "error");
+    return;
+  }
+  const password = exportPassword?.value ?? "";
+  setExportStatus("Reading the export...");
+  try {
+    const json = await file.text();
+    const plain = plaintextExport(json);
+    let vault: BitwardenExport;
+    if (plain) {
+      vault = plain;
+    } else {
+      if (!password) throw new Error("Enter the export password.");
+      setExportStatus("Deriving the export key in this browser...");
+      vault = await decryptBitwardenExport(json, password);
+    }
+    const result = matchVault(manifestCache, vault);
+    matches = result.matches;
+    if (manifestRoot) manifestRoot.innerHTML = renderManifest(manifestCache, matches);
+    const issues = [
+      ...result.errors.map((issue) => `Error: ${issue}`),
+      ...result.warnings.map((issue) => `Warning: ${issue}`),
+    ];
+    if (result.errors.length > 0) {
+      setExportStatus(`${result.errors.length} problem(s). ${issues.join(" ")}`, "error");
+    } else if (result.warnings.length > 0) {
+      setExportStatus(`Export loaded. ${issues.join(" ")}`, "info");
+    } else {
+      setExportStatus(`Export loaded. ${matches.size} item(s) matched.`, "ok");
+    }
+  } catch (error) {
+    matches = null;
+    if (manifestRoot) manifestRoot.innerHTML = renderManifest(manifestCache);
+    setExportStatus(`Could not read the export: ${errorMessage(error)}`, "error");
+  } finally {
+    if (exportPassword) exportPassword.value = "";
+  }
+}
 
 snapshotSelect?.addEventListener("change", () => {
   if (!repository || !snapshotSelect) return;

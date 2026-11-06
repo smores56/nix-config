@@ -77,6 +77,31 @@
         <ul id="browser" class="items"></ul>
       </section>
 
+      <section id="export-card" class="card" aria-labelledby="export-title">
+        <h2 id="export-title">Read Bitwarden items (optional)</h2>
+        <p class="muted">
+          If you have a password-protected Bitwarden JSON export, load it here
+          to show the credentials next to these instructions. It is decrypted
+          in this browser and never uploaded.
+        </p>
+        <form id="export-form" class="unlock-form">
+          <label for="export-file">Export file</label>
+          <input id="export-file" type="file" accept="application/json,.json" />
+          <label for="export-password">Export password</label>
+          <div class="row">
+            <input
+              id="export-password"
+              type="password"
+              autocomplete="off"
+              autocapitalize="none"
+              spellcheck="false"
+            />
+            <button type="submit" id="export-button">Load export</button>
+          </div>
+        </form>
+        <div id="export-status" class="status" role="status" aria-live="polite"></div>
+      </section>
+
       <section id="manifest" class="manifest" aria-live="polite"></section>
 
       <footer class="footer">

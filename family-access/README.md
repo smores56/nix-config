@@ -87,3 +87,33 @@ R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... \
 - The blob is public but encrypted; the PWA password is the data gate.
 - The PWA password is separate from the Bitwarden master password.
 - The PWA must not persist the password or data keys; lock clears them.
+
+## Bitwarden export dashboard
+
+The manifest tells the family which Bitwarden items to open. If they also have a
+password-protected Bitwarden JSON export, the page can decrypt it in memory and
+show each item's username, password, TOTP, notes, and custom fields next to the
+instructions.
+
+`src/bitwarden/export.ts` implements Bitwarden's export format: PBKDF2-SHA256 or
+Argon2id over the export salt, HKDF-Expand of the result into separate `enc` and
+`mac` keys, then AES-256-CBC + HMAC-SHA256 cipher strings (`2.iv|ct|mac`).
+Limits: 2,000,000 KDF iterations, 256 MiB Argon2 memory, 32 MiB export file.
+Nothing is stored: the plaintext export lives only in the tab and is dropped by
+"Lock and clear".
+
+Vault items are matched to the manifest by the `fa_id` custom field, with the
+vault UUID as a cross-check: a UUID that no longer matches the item means the
+Bitwarden item was deleted and recreated. `validate` also checks the folder and
+item type when the manifest sets `folder`/`type`.
+
+```sh
+bun run validate --export ~/bitwarden_export.json \
+  --export-password-file ~/.config/family-access/export-password \
+  --restic-dir /var/backup/restic \
+  --restic-password-file ~/.config/family-access/restic-password
+```
+
+Exit status is non-zero when any required item is missing, a UUID/fa_id/folder/
+type does not match, or the restic repository cannot be opened. A plaintext
+export is accepted with a warning; the password-protected form is preferred.

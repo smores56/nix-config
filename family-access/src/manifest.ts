@@ -1,12 +1,31 @@
+export type FamilyAccessItemType = "login" | "note" | "card" | "identity";
+
 export type FamilyAccessItem = {
   faId: string;
   title: string;
   bitwardenName: string;
   bitwardenUuid?: string;
+  /** Bitwarden folder the item must live in. */
+  folder?: string;
+  type?: FamilyAccessItemType;
   url?: string;
   notes?: string;
   required?: boolean;
   recovery?: boolean;
+};
+
+/** A manifest item joined with the matching Bitwarden vault item. */
+export type MatchedItem = {
+  id: string;
+  name: string;
+  username?: string;
+  password?: string;
+  totp?: string;
+  notes?: string;
+  uris: string[];
+  fields: Array<{ name: string; value: string }>;
+  folder?: string;
+  deepLink: string;
 };
 
 export type FamilyAccessSection = {
@@ -25,6 +44,8 @@ export type FamilyAccessContact = {
 export type FamilyAccessManifest = {
   version: 1;
   updated: string;
+  /** Web vault base URL used for item deep links. */
+  vaultUrl?: string;
   sections: FamilyAccessSection[];
   warnings?: string[];
   contacts?: FamilyAccessContact[];
@@ -47,11 +68,20 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
+const ITEM_TYPES = new Set(["login", "note", "card", "identity"]);
+
+function isItemType(value: unknown): value is FamilyAccessItemType {
+  return typeof value === "string" && ITEM_TYPES.has(value);
+}
+
 export function validateManifest(value: unknown): string[] {
   const errors: string[] = [];
   if (!isRecord(value)) return ["manifest must be an object"];
   if (value.version !== 1) errors.push("unsupported manifest version");
   if (!isNonEmptyString(value.updated)) errors.push("updated is missing");
+  if (value.vaultUrl !== undefined && (typeof value.vaultUrl !== "string" || !isHttpUrl(value.vaultUrl))) {
+    errors.push("vaultUrl must be an http URL");
+  }
   if (!Array.isArray(value.sections) || value.sections.length === 0) {
     return [...errors, "sections are missing"];
   }
@@ -106,6 +136,12 @@ export function validateManifest(value: unknown): string[] {
       if (item.bitwardenUuid !== undefined && typeof item.bitwardenUuid !== "string") {
         errors.push(`item ${isNonEmptyString(item.faId) ? item.faId : "?"} has a non-string Bitwarden UUID`);
       }
+      if (item.folder !== undefined && !isNonEmptyString(item.folder)) {
+        errors.push(`item ${isNonEmptyString(item.faId) ? item.faId : "?"} has an empty folder`);
+      }
+      if (item.type !== undefined && !isItemType(item.type)) {
+        errors.push(`item ${isNonEmptyString(item.faId) ? item.faId : "?"} has an unknown type`);
+      }
     }
   }
 
@@ -141,7 +177,34 @@ function escapeHtml(value: unknown): string {
     .replaceAll("'", "&#39;");
 }
 
-export function renderManifest(manifest: FamilyAccessManifest): string {
+function renderMatchedItem(matched: MatchedItem): string {
+  const rows: string[] = [];
+  const row = (label: string, value: string): string =>
+    `<p class="credential-row"><span>${escapeHtml(label)}</span><code>${escapeHtml(value)}</code></p>`;
+  if (matched.username) rows.push(row("Username", matched.username));
+  if (matched.password) rows.push(row("Password", matched.password));
+  if (matched.totp) rows.push(row("TOTP", matched.totp));
+  for (const field of matched.fields) {
+    if (field.value) rows.push(row(field.name || "Field", field.value));
+  }
+  const uris = matched.uris
+    .map((uri) => `<a class="item-link" href="${escapeHtml(uri)}" rel="noreferrer">${escapeHtml(uri)}</a>`)
+    .join(" ");
+  const notes = matched.notes
+    ? `<div class="credential-notes">${escapeHtml(matched.notes)}</div>`
+    : "";
+  return `<div class="credentials" data-bitwarden-id="${escapeHtml(matched.id)}">
+  ${rows.join("\n  ")}
+  ${uris ? `<p class="credential-links">${uris}</p>` : ""}
+  ${notes}
+  <a class="item-link" href="${escapeHtml(matched.deepLink)}" rel="noreferrer">Open in Bitwarden</a>
+</div>`;
+}
+
+export function renderManifest(
+  manifest: FamilyAccessManifest,
+  matches?: Map<string, MatchedItem>,
+): string {
   const errors = validateManifest(manifest);
   if (errors.length > 0) throw new Error(`invalid manifest: ${errors.join(", ")}`);
 
@@ -163,10 +226,12 @@ export function renderManifest(manifest: FamilyAccessManifest): string {
           ]
             .filter(Boolean)
             .join("");
+          const matched = matches?.get(item.faId);
+          const details = matched ? renderMatchedItem(matched) : "";
           return `<li class="item" data-fa-id="${escapeHtml(item.faId)}">
   <div class="item-head"><span class="item-title">${title}</span>${badges}</div>
   <p class="item-credential">Bitwarden: <code>${credential}</code></p>
-  ${notes}${link}
+  ${notes}${details}${link}
 </li>`;
         })
         .join("\n");

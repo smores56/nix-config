@@ -5,6 +5,7 @@
   "scripts": {
     "build": "bun run scripts/build.ts",
     "sentinel": "bun run scripts/sentinel.ts",
+    "validate": "bun run scripts/validate.ts",
     "test": "bun test",
     "typecheck": "bun x tsc --noEmit"
   },
