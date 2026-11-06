@@ -1,4 +1,4 @@
-// Renders the recovery kit: two letter sets that the operator prints and seals,
+// Renders the recovery kit: one letter set per person that the operator prints and seals,
 // and the plain-text file that sits at the root of each USB drive. Everything
 // here carries the stable root of trust only (Bitwarden + the recovery password and
 // URL); the values are supplied by the caller and never stored in the repo.

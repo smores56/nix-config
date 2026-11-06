@@ -16,7 +16,7 @@ resource "cloudflare_pages_project" "recovery" {
 resource "cloudflare_pages_domain" "recovery" {
   account_id   = var.account_id
   project_name = cloudflare_pages_project.recovery.name
-  domain       = "recovery.${var.domain}"
+  name         = "recovery.${var.domain}"
 }
 
 resource "cloudflare_dns_record" "recovery" {

@@ -83,7 +83,7 @@ function resolveOut(path: string): string {
 
 async function writeSecret(path: string, text: string): Promise<void> {
   await Deno.writeTextFile(path, text, { mode: 0o600 });
-  await Deno.chmod(path, 0o600);
+  await Deno.chmod(path, 0o600).catch(() => undefined); // exFAT and other foreign filesystems
 }
 
 function checklist(recipients: string[], values: KitValues): string {
@@ -123,8 +123,8 @@ Each drive is exFAT (readable on macOS and Windows) and named after its owner.
 
 ## 5. Reprint rules
 
-The media carry only the Bitwarden login, the two-step recovery code, the page
-URL and the recovery password. Reprint both when:
+The media carry the Bitwarden e-mail, its **master password**, the two-step
+recovery code, the page URL and the recovery password. Reprint both when:
 
 - the Bitwarden master password or its recovery code changes,
 - the recovery password changes (rerun \`deno task blob\` first),
@@ -166,10 +166,12 @@ async function main(): Promise<void> {
       `that password does not open ${args.blob}; the letters would be useless. Fix it and rerun`,
     );
   }
-  if (opens === null) console.log(`note: ${args.blob} is missing, so the password is unchecked`);
+  if (opens === null) {
+    throw new Error(`${args.blob} is missing; build it with deno task blob before printing a kit`);
+  }
 
   await Deno.mkdir(out, { recursive: true, mode: 0o700 });
-  await Deno.chmod(out, 0o700);
+  await Deno.chmod(out, 0o700).catch(() => undefined);
 
   const written: string[] = [];
   const slugged = recipients.map((recipient) => ({ recipient, slug: kitSlug(recipient) }));
@@ -188,7 +190,7 @@ async function main(): Promise<void> {
     const values = valuesFor(recipient);
     const driveDir = `${out}drive-${slug}/`;
     await Deno.mkdir(driveDir, { recursive: true, mode: 0o700 });
-    await Deno.chmod(driveDir, 0o700);
+    await Deno.chmod(driveDir, 0o700).catch(() => undefined);
 
     await writeSecret(`${out}letter-${slug}.html`, renderLetter(values));
     await writeSecret(`${out}label-${slug}.html`, renderLabel(values));

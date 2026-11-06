@@ -17,6 +17,7 @@ async function readRaw(label: string, echo: boolean): Promise<string> {
       const byte = buffer[0];
       if (byte === 13 || byte === 10) break;
       if (byte === 3) {
+        Deno.stdin.setRaw(false);
         await Deno.stderr.write(new TextEncoder().encode("\n"));
         Deno.exit(130);
       }

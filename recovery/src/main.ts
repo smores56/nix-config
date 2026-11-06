@@ -255,14 +255,19 @@ async function download(entry: ResticDirEntry): Promise<void> {
     if (picker) {
       const handle = await picker.call(window, { suggestedName: name });
       const writable = await handle.createWritable();
-      for await (const chunk of repository.readFileChunks(file)) {
-        await writable.write(chunk);
+      try {
+        for await (const chunk of repository.readFileChunks(file)) {
+          await writable.write(chunk);
+        }
+        await writable.close();
+      } catch (error) {
+        await writable.abort?.().catch(() => undefined);
+        throw error;
       }
-      await writable.close();
     } else {
       if (file.size !== undefined && file.size > MAX_BUFFERED_DOWNLOAD) {
         setBrowserStatus(
-          `This file is ${formatBytes(file.size)}. The browser download fallback is limited to ${formatBytes(MAX_BUFFERED_DOWNLOAD)}; use Chrome with the save picker or the Mac CLI.`,
+          `This file is ${formatBytes(file.size)}. The browser download fallback is limited to ${formatBytes(MAX_BUFFERED_DOWNLOAD)}; open this page in Chrome to save files of this size.`,
           "error",
         );
         return;
@@ -379,7 +384,8 @@ async function restoreAll(): Promise<void> {
   if (
     !window.confirm(
       `Restore ${files.length} files (${formatBytes(totalBytes)}) into a folder you choose?\n\n` +
-        "Files already there with the same size are skipped, so you can stop and run it again.",
+        "Files already there with the same size are skipped; any other file with the same " +
+          "name is overwritten. You can stop and run it again.",
     )
   ) {
     setRestoreStatus("");
@@ -410,21 +416,26 @@ async function restoreAll(): Promise<void> {
   let written = 0;
   let skipped = 0;
   let doneBytes = 0;
+  let skippedBytes = 0;
   const problems: string[] = [];
 
   try {
     for (const file of files) {
       if (restoreStop) break;
-      const segments = relativeSegments(prefix, file.path);
-      const name = segments.pop() ?? "";
+      if (problems.length >= 20 && written === 0) {
+        problems.push("stopping early: nothing has succeeded yet");
+        break;
+      }
       try {
+        const segments = relativeSegments(prefix, file.path);
+        const name = segments.pop() ?? "";
         const directory = await ensureDirectory(root, segments);
         const existing = await existingFile(directory, name);
         if (existing && file.size !== undefined && existing.size === file.size) {
           skipped++;
           done++;
-          doneBytes += file.size;
-          setRestoreProgress(doneBytes, totalBytes);
+          skippedBytes += file.size;
+          setRestoreProgress(doneBytes + skippedBytes, totalBytes);
           continue;
         }
 
@@ -436,8 +447,9 @@ async function restoreAll(): Promise<void> {
             await writable.write(chunk);
           }
           if (restoreStop) {
-            await writable.abort?.();
-            await directory.removeEntry(name).catch(() => undefined);
+            // abort() keeps a pre-existing file; only remove what this run made.
+            await writable.abort?.().catch(() => undefined);
+            if (existing === null) await directory.removeEntry(name).catch(() => undefined);
             break;
           }
           await writable.close();
@@ -449,9 +461,9 @@ async function restoreAll(): Promise<void> {
         written++;
         done++;
         doneBytes += file.size ?? 0;
-        setRestoreProgress(doneBytes, totalBytes);
+        setRestoreProgress(doneBytes + skippedBytes, totalBytes);
         setRestoreStatus(
-          `${done} of ${files.length} files, ${formatBytes(doneBytes)} of ${formatBytes(totalBytes)}...`,
+          `${done} of ${files.length} files, ${formatBytes(doneBytes + skippedBytes)} of ${formatBytes(totalBytes)}...`,
         );
         setBrowserStatus(`Restoring ${segments.length > 0 ? segments.join("/") + "/" : ""}${name}`);
       } catch (error) {
@@ -466,8 +478,8 @@ async function restoreAll(): Promise<void> {
   }
 
   const summary = restoreStop
-    ? `Stopped: ${written} written, ${skipped} already there.`
-    : `Restored ${written} files, skipped ${skipped} already there, ${formatBytes(doneBytes)} total.`;
+    ? `Stopped: ${written} written (${formatBytes(doneBytes)}), ${skipped} already there.`
+    : `Restored ${written} files (${formatBytes(doneBytes)}), skipped ${skipped} already there.`;
   if (problems.length > 0) {
     setRestoreStatus(
       `${summary} ${problems.length} file(s) failed; first: ${problems[0]}`,

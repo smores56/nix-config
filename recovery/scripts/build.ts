@@ -34,6 +34,7 @@ for (const [from, to] of [
   ["public/manifest.json", "manifest.json"],
   ["public/manifest.webmanifest", "manifest.webmanifest"],
   ["public/sw.js", "sw.js"],
+  ["public/_headers", "_headers"],
   ["public/icon-192.png", "icon-192.png"],
   ["public/icon-512.png", "icon-512.png"],
 ] as const) {

@@ -21,16 +21,9 @@ deno task build
 
 The build writes `dist/`. Serve it over HTTPS or on `localhost`; `crypto.subtle` requires a secure context.
 
-Tooling is Deno (`deno.json`): `deno task typecheck`, `deno task build`, `deno task test`. The tasks declare only the permissions they need (read for the app and fixtures, env for the AWS SDK probe, read/write/run for the esbuild bundle). The browser artifact is plain ESM built with esbuild; the future Mac CLI will be a `deno compile` binary.
+Tooling is Deno (`deno.json`): `deno task typecheck`, `deno task build`, `deno task test`. The tasks declare only the permissions they need (read for the app and fixtures, env for the AWS SDK probe, read/write/run for the esbuild bundle). The browser artifact is plain ESM built with esbuild.
 Opening `index.html` with `file://` is not supported by the fetch-based blob/manifest
 loader, and plain HTTP from a LAN address will disable unlock.
-
-## Scope so far
-
-The page scaffolds the blob envelope, the manifest validator/renderer, the unlock
-flow, and the restic snapshot browser. The data-keys blob is produced by
-`deno task blob`; until it is committed the page says no blob is deployed. The
-Cloudflare Pages deployment is a later task.
 
 ## Cryptomator vault reader
 

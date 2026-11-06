@@ -1,0 +1,12 @@
+/*
+  X-Frame-Options: DENY
+  Content-Security-Policy: frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Permissions-Policy: geolocation=(), microphone=(), camera=()
+
+/data-keys.enc
+  Cache-Control: no-store
+
+/_headers
+  Cache-Control: no-store

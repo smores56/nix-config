@@ -308,7 +308,9 @@ exactly one permission, **Account → Cloudflare Pages → Edit**, and no zone a
 the workflow uploads files and nothing else. Rotate by creating the new token,
 updating the GitHub secret, running the workflow once, then revoking the old
 token. The Pages project itself, its custom domain and the `recovery` DNS record
-are tofu resources, applied with `nix run .#cloudflare-apply`.
+are tofu resources, applied with `nix run .#cloudflare-apply`. Cloudflare validates
+a Pages custom domain asynchronously: the first apply can leave it pending, so run
+the app again and check `recovery.sammohr.dev` before printing any letter.
 
 ## Stolen laptop or phone
 
