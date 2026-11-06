@@ -1065,6 +1065,7 @@ in
                 squash = lib.all (a: lib.elem a guest.microvm.virtiofsd.extraArgs) [
                   "--translate-uid=squash-guest:0:1000:4294967295"
                   "--translate-gid=squash-guest:0:100:4294967295"
+                  "--modcaps=-mknod"
                 ];
                 noXattr = lib.all (sh: !sh.posixAcl) shares;
                 # The home reaches the guest only through the assembled view.
@@ -1077,13 +1078,35 @@ in
                 denies = lib.all (d: lib.elem d host.agentVm.deny) [
                   ".config/sops"
                   ".local/share/keyrings"
+                  ".local/share/ykman"
+                  ".local/state/key-backup"
+                  ".config/BraveSoftware"
+                  ".config/mozilla"
+                  ".mozilla"
+                  ".config/Bitwarden"
+                  ".cache/cliphist"
+                  ".gnupg"
                   "Sync"
                 ];
+                # A writable entry must never cover host-executed config or a denied path.
+                narrowRw = lib.all (
+                  r:
+                  !(lib.elem r [
+                    ""
+                    "."
+                    ".config"
+                    ".local"
+                    ".local/bin"
+                    ".cache"
+                    ".ssh"
+                  ])
+                  && lib.all (d: !(lib.hasPrefix "${r}/" d) && d != r) host.agentVm.deny
+                ) host.agentVm.rw;
                 firewall = host.networking.firewall.extraCommands;
               };
             all = map facts hosts;
             ok = lib.all (
-              f: f.squash && f.noXattr && f.noRawHome && f.guestBuilds && f.keyOnly && f.denies
+              f: f.squash && f.noXattr && f.noRawHome && f.guestBuilds && f.keyOnly && f.denies && f.narrowRw
             ) all;
             launcher = (import ../lib/agent-vm.nix { inherit pkgs lib; }).launcher "smores";
           in
@@ -1096,11 +1119,17 @@ in
               passAsFile = [ "firewall" ];
             }
             ''
-              grep -F '$t -w -I INPUT 1 -i vm-agent -j agent-vm-in' "$firewallPath"
-              grep -F 'ip6tables -w -A agent-vm-in -j DROP' "$firewallPath"
-              grep -xF 'iptables -w -A agent-vm-in -j DROP' "$firewallPath"
-              grep -F 'iptables -w -A agent-vm-fwd -d 192.168.0.0/16 -j DROP' "$firewallPath"
-              grep -F 'iptables -w -A agent-vm-fwd -d 127.0.0.0/8 -j DROP' "$firewallPath"
+              grep -F -- '-I INPUT 1 -i vm-agent -j agent-vm-in' "$firewallPath"
+              if grep -F -- '-D INPUT' "$firewallPath"; then exit 1; fi
+              rules4=$(grep -o '/nix/store/[^ ]*-agent-vm-rules4' "$firewallPath" | head -1)
+              rules6=$(grep -o '/nix/store/[^ ]*-agent-vm-rules6' "$firewallPath" | head -1)
+              grep -xF -- '-A agent-vm-in -j DROP' "$rules4"
+              grep -xF -- '-A agent-vm-in -j DROP' "$rules6"
+              grep -xF -- '-A agent-vm-fwd -j DROP' "$rules6"
+              grep -xF -- '-A agent-vm-fwd -d 192.168.0.0/16 -j DROP' "$rules4"
+              grep -xF -- '-A agent-vm-fwd -d 127.0.0.0/8 -j DROP' "$rules4"
+              # The private-range drops come before the egress accept.
+              [ "$(grep -n -- '-d 10.0.0.0/8 -j DROP' "$rules4" | cut -d: -f1)" -lt "$(grep -n -- '-A agent-vm-fwd -j ACCEPT' "$rules4" | cut -d: -f1)" ]
               l=${launcher}/bin/agent-sandbox
               for opt in '-F /dev/null' IdentitiesOnly=yes IdentityAgent=none ForwardAgent=no \
                 PKCS11Provider=none PermitLocalCommand=no ProxyCommand=none ControlPath=none ClearAllForwardings=yes; do

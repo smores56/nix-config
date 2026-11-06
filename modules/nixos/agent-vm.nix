@@ -20,18 +20,27 @@ let
   uid = 1000;
   gid = 100;
 
-  name = "agent";
-  tap = "vm-agent";
-  hostAddr = "10.77.0.1";
-  guestAddr = "10.77.0.2";
+  vmLib = import ../lib/agent-vm.nix { inherit pkgs lib; };
+  inherit (vmLib)
+    name
+    tap
+    hostAddr
+    guestAddr
+    stateDir
+    ;
   # Locally administered unicast, fixed so the guest's networkd match never changes.
   guestMac = "02:00:0a:4d:00:02";
 
   runDir = "/run/agent-vm";
   view = "${runDir}/home";
   secretsDir = "${runDir}/secrets";
-  stateDir = "/var/lib/agent-vm";
   authorizedKeys = "agent-vm-authorized-keys";
+  # The agent's own XDG dirs (the launcher points XDG_*_HOME at them).
+  agentDirs = [
+    ".local/state/agent"
+    ".local/share/agent"
+    ".cache/agent"
+  ];
 
   planner = ../lib/share_planner.py;
   viewBuilder = ../lib/agent_view.py;
@@ -68,6 +77,10 @@ let
     install -d -m 0755 ${view}
     mount -t tmpfs -o mode=0755,nosuid,nodev,size=16m agent-vm-home ${view}
 
+    # The planner shares only what exists, and the guest cannot create these under read-only
+    # parents; made as the user, so no root write follows a path in the home.
+    runuser -u ${user} -- mkdir -p ${lib.escapeShellArgs (map (rel: "${home}/${rel}") agentDirs)}
+
     # The planner only reads the home, so it runs as its owner; the root step trusts its JSON
     # for paths alone and re-checks every source with O_NOFOLLOW.
     runuser -u ${user} -- ${python} -I ${planner} --home ${home} \
@@ -88,10 +101,16 @@ let
     # Each bind keeps its own flags.
     mount -o remount,ro ${view}
 
-    install -d -m 0700 -o ${user} -g users ${stateDir}
+    # Root-owned so the user can read the launcher key but not swap either file for a symlink
+    # that this root step would then copy into the guest.
+    install -d -m 0755 -o root -g root ${stateDir}
     if [ ! -e ${stateDir}/id_ed25519 ]; then
-      runuser -u ${user} -- ssh-keygen -q -t ed25519 -N "" -C agent-vm -f ${stateDir}/id_ed25519
+      ssh-keygen -q -t ed25519 -N "" -C agent-vm -f ${stateDir}/id_ed25519
     fi
+    chown root:root ${stateDir}/id_ed25519.pub
+    chown ${user}:users ${stateDir}/id_ed25519
+    chmod 0644 ${stateDir}/id_ed25519.pub
+    chmod 0400 ${stateDir}/id_ed25519
     install -d -m 0755 ${secretsDir}
     install -m 0644 ${stateDir}/id_ed25519.pub ${secretsDir}/${authorizedKeys}
     for secret in ${lib.escapeShellArgs cfg.secrets}; do
@@ -109,43 +128,40 @@ let
   '';
 
   # Dedicated chains jumped to from the top of INPUT/FORWARD, ahead of nixos-fw and netavark.
-  firewallUp = ''
-    for t in iptables ip6tables; do
-      for c in agent-vm-in agent-vm-fwd; do
-        $t -w -N $c 2>/dev/null || $t -w -F $c
-      done
-      $t -w -D INPUT -i ${tap} -j agent-vm-in 2>/dev/null || true
-      $t -w -D FORWARD -i ${tap} -j agent-vm-fwd 2>/dev/null || true
-      $t -w -D FORWARD -o ${tap} -j agent-vm-fwd 2>/dev/null || true
-      $t -w -I INPUT 1 -i ${tap} -j agent-vm-in
-      $t -w -I FORWARD 1 -i ${tap} -j agent-vm-fwd
-      $t -w -I FORWARD 1 -o ${tap} -j agent-vm-fwd
-    done
-    ip6tables -w -A agent-vm-in -j DROP
-    ip6tables -w -A agent-vm-fwd -j DROP
-
-    iptables -w -A agent-vm-in -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+  # iptables-restore --noflush replaces each chain's rules in one transaction and the jumps are
+  # never removed (no extraStopCommands), so a firewall restart leaves tap traffic filtered.
+  rules4 = pkgs.writeText "agent-vm-rules4" ''
+    *filter
+    :agent-vm-in - [0:0]
+    :agent-vm-fwd - [0:0]
+    -A agent-vm-in -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
     ${lib.concatMapStrings (port: ''
-      iptables -w -A agent-vm-in -d ${hostAddr} -p tcp --dport ${toString port} -j ACCEPT
+      -A agent-vm-in -d ${hostAddr} -p tcp --dport ${toString port} -j ACCEPT
     '') proxied}
-    iptables -w -A agent-vm-in -j DROP
-
-    iptables -w -A agent-vm-fwd -o ${tap} -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-    iptables -w -A agent-vm-fwd -o ${tap} -j DROP
+    -A agent-vm-in -j DROP
+    -A agent-vm-fwd -o ${tap} -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+    -A agent-vm-fwd -o ${tap} -j DROP
     ${lib.concatMapStrings (net: ''
-      iptables -w -A agent-vm-fwd -d ${net} -j DROP
+      -A agent-vm-fwd -d ${net} -j DROP
     '') privateNets}
-    iptables -w -A agent-vm-fwd -j ACCEPT
+    -A agent-vm-fwd -j ACCEPT
+    COMMIT
   '';
-  firewallDown = ''
+  rules6 = pkgs.writeText "agent-vm-rules6" ''
+    *filter
+    :agent-vm-in - [0:0]
+    :agent-vm-fwd - [0:0]
+    -A agent-vm-in -j DROP
+    -A agent-vm-fwd -j DROP
+    COMMIT
+  '';
+  firewallUp = ''
+    iptables-restore -w --noflush ${rules4}
+    ip6tables-restore -w --noflush ${rules6}
     for t in iptables ip6tables; do
-      $t -w -D INPUT -i ${tap} -j agent-vm-in 2>/dev/null || true
-      $t -w -D FORWARD -i ${tap} -j agent-vm-fwd 2>/dev/null || true
-      $t -w -D FORWARD -o ${tap} -j agent-vm-fwd 2>/dev/null || true
-      for c in agent-vm-in agent-vm-fwd; do
-        $t -w -F $c 2>/dev/null || true
-        $t -w -X $c 2>/dev/null || true
-      done
+      $t -w -C INPUT -i ${tap} -j agent-vm-in 2>/dev/null || $t -w -I INPUT 1 -i ${tap} -j agent-vm-in
+      $t -w -C FORWARD -i ${tap} -j agent-vm-fwd 2>/dev/null || $t -w -I FORWARD 1 -i ${tap} -j agent-vm-fwd
+      $t -w -C FORWARD -o ${tap} -j agent-vm-fwd 2>/dev/null || $t -w -I FORWARD 1 -o ${tap} -j agent-vm-fwd
     done
   '';
 
@@ -223,6 +239,9 @@ let
         virtiofsd.extraArgs = [
           "--translate-uid=squash-guest:0:${toString uid}:4294967295"
           "--translate-gid=squash-guest:0:${toString gid}:4294967295"
+          # virtiofsd runs as root: without CAP_MKNOD guest root cannot plant device nodes in the
+          # writable trees or the extra shares, whose real host paths are not nodev.
+          "--modcaps=-mknod"
         ];
         shares =
           map
@@ -311,7 +330,6 @@ let
 
       services.openssh = {
         enable = true;
-        listenAddresses = [ { addr = guestAddr; } ];
         # /etc is rebuilt every boot; /var persists, so the launcher's known_hosts stays valid.
         hostKeys = [
           {
@@ -354,6 +372,7 @@ let
         agent-vm-writable = {
           wantedBy = [ "multi-user.target" ];
           after = [ "local-fs.target" ];
+          before = [ "sshd.service" ];
           serviceConfig = {
             Type = "oneshot";
             RemainAfterExit = true;
@@ -425,7 +444,7 @@ in
   };
 
   config = {
-    agentVm = {
+    agentVm = lib.mapAttrs (_: lib.mkDefault) {
       deny = [
         ".config/sops"
         ".config/BraveSoftware"
@@ -460,12 +479,9 @@ in
         ".cargo/git"
         ".npm"
         ".bun/install/cache"
-        # The agent's own XDG dirs (the launcher points XDG_*_HOME here), so the human's state
-        # is never extended and guest sessions survive restarts.
-        ".local/state/agent"
-        ".local/share/agent"
-        ".cache/agent"
-      ];
+      ]
+      # The human's state is never extended, and guest sessions survive restarts.
+      ++ agentDirs;
       secrets = [
         "github-personal-pat"
         "github-personal-signing-key"
@@ -480,6 +496,9 @@ in
 
     microvm.vms.${name} = {
       autostart = true;
+      # A host switch must not kill running agent sessions; `agent-sandbox restart` says how to
+      # pick up a changed guest.
+      restartIfChanged = false;
       config = guest;
     };
 
@@ -516,6 +535,22 @@ in
     // lib.mapAttrs (_: v: v.service) hostProxies;
     systemd.sockets = lib.mapAttrs (_: v: v.socket) hostProxies;
 
+    assertions = [
+      {
+        assertion = config.networking.firewall.enable && !config.networking.nftables.enable;
+        message = "agent-vm isolates the tap with iptables firewall extraCommands";
+      }
+      {
+        assertion = lib.all (
+          pair: lib.elem (lib.removePrefix "/run/secrets/" (lib.last (lib.splitString "|" pair))) cfg.secrets
+        ) vmLib.secretEnv;
+        message = "agent-vm: every secret the launcher exports must be in agentVm.secrets";
+      }
+    ];
+
+    # microvm.nix allows qemu-bridge-helper onto every bridge; this VM uses a plain tap.
+    environment.etc."qemu/bridge.conf".text = "deny all\n";
+
     networking = {
       nat = {
         enable = true;
@@ -524,7 +559,6 @@ in
       networkmanager.unmanaged = [ tap ];
       firewall = {
         extraCommands = firewallUp;
-        extraStopCommands = firewallDown;
       };
     };
   };

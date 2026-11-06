@@ -81,6 +81,7 @@ in
       "man-db"
     ])
     (group maki [
+      "agent-vm-check"
       "maki-session-resume"
       "maki-session-search"
       "rtk"

@@ -10,9 +10,9 @@ check:
 check-build:
     nix flake check
 
-# Run the real sandbox and assert the boundary.
-agent-sandbox-check:
-    agent-sandbox-check
+# Assert the Linux agent VM boundary from inside the guest.
+agent-vm-check:
+    agent-vm-check
 
 # Run the Python unit suite with its dependencies.
 test:

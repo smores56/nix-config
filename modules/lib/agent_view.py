@@ -5,15 +5,15 @@ non-recursive bind mounts (read-only ones remounted read-only, enforced by the h
 kernel), plain files are read-only file binds, and symlinks are recreated. Anything the
 plan leaves out, the deny list above all, has no path in the view at all.
 
-Runs as root from agent-vm-view.service: `share_planner.py ... | agent_view.py --home H --view V`.
+Runs as root from agent-vm-prep.service (modules/nixos/agent-vm.nix): `share_planner.py ... | agent_view.py --home H --view V`.
 """
 
 import argparse
+import ctypes
 import json
 import os
 import posixpath
 import stat
-import subprocess
 import sys
 from dataclasses import dataclass
 
@@ -65,18 +65,41 @@ def view_ops(plan):
     return [Dir(""), *map(Dir, dirs), *sorted(entries, key=lambda e: e.rel)]
 
 
-def _mount(*args, pass_fds=()):
-    subprocess.run(["mount", *args], check=True, pass_fds=pass_fds)
+MS_RDONLY, MS_NOSUID, MS_NODEV, MS_REMOUNT, MS_BIND = 1, 2, 4, 32, 4096
+_libc = ctypes.CDLL(None, use_errno=True)
+
+
+def _mount(source, target, flags):
+    # mount(2) directly: util-linux mount(8) canonicalizes a bind source back into a path and
+    # re-walks it, which would undo the fd pinning below.
+    if _libc.mount(source, target.encode(), None, flags, None) != 0:
+        err = ctypes.get_errno()
+        raise OSError(err, os.strerror(err), target)
+
+
+def _open_nofollow(home, rel, leaf_flags):
+    """Open home/rel refusing a symlink at every component, ancestors included."""
+    fd = os.open(home, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        parts = rel.split("/") if rel else []
+        for i, part in enumerate(parts):
+            last = i == len(parts) - 1
+            flags = os.O_PATH | os.O_NOFOLLOW | (leaf_flags if last else os.O_DIRECTORY)
+            nxt = os.open(part, flags, dir_fd=fd)
+            os.close(fd)
+            fd = nxt
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
 
 
 def _bind(op, home, view):
-    source = os.path.join(home, op.rel)
     target = os.path.join(view, op.rel)
-    # O_PATH|O_NOFOLLOW pins the inode the plan saw: a path swapped for a symlink since
-    # planning cannot redirect a root bind mount elsewhere on the host.
-    flags = os.O_PATH | os.O_NOFOLLOW | (os.O_DIRECTORY if op.is_dir else 0)
+    # A pinned fd: a path swapped for a symlink after planning cannot redirect a root bind
+    # mount elsewhere on the host.
     try:
-        fd = os.open(source, flags)
+        fd = _open_nofollow(home, op.rel, os.O_DIRECTORY if op.is_dir else 0)
     except OSError as err:
         print(f"agent_view: skipping {op.rel}: {err}", file=sys.stderr)
         return
@@ -89,11 +112,9 @@ def _bind(op, home, view):
             os.mkdir(target)
         else:
             open(target, "x").close()
-        _mount("--bind", f"/proc/self/fd/{fd}", target, pass_fds=(fd,))
-        if op.read_only:
-            _mount("-o", "remount,bind,ro,nosuid,nodev", target)
-        else:
-            _mount("-o", "remount,bind,nosuid,nodev", target)
+        _mount(f"/proc/self/fd/{fd}".encode(), target, MS_BIND)
+        flags = MS_REMOUNT | MS_BIND | MS_NOSUID | MS_NODEV
+        _mount(None, target, flags | (MS_RDONLY if op.read_only else 0))
     finally:
         os.close(fd)
 
@@ -102,7 +123,11 @@ def apply(ops, home, view):
     for op in ops:
         target = os.path.join(view, op.rel) if op.rel else view
         if isinstance(op, Dir):
-            st = os.lstat(os.path.join(home, op.rel) if op.rel else home)
+            fd = _open_nofollow(home, op.rel, os.O_DIRECTORY)
+            try:
+                st = os.fstat(fd)
+            finally:
+                os.close(fd)
             if op.rel:
                 os.mkdir(target)
             os.chown(target, st.st_uid, st.st_gid)

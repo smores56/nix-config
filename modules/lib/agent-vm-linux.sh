@@ -16,8 +16,9 @@ known="$state/known_hosts"
 
 case "${1:-}" in
 restart)
-  # The VM and its view are root services; this launcher never asks for elevation itself.
-  echo "agent-sandbox: re-plan the home view with: sudo systemctl restart $unit" >&2
+  # The VM and its view are root services; this launcher never asks for elevation itself. A host
+  # switch never restarts the guest, so this is also how a changed guest config takes effect.
+  echo "agent-sandbox: re-plan the home view and pick up guest changes with: sudo systemctl restart $unit" >&2
   exit 0
   ;;
 -h | --help)
@@ -44,13 +45,22 @@ ssh_opts=(
   -o ClearAllForwardings=yes -o UserKnownHostsFile="$known" -o StrictHostKeyChecking=accept-new
 )
 
+ssh_opts+=(-o ConnectTimeout=5)
+
 # The unit is active once qemu starts; sshd needs the guest boot.
-for _ in $(seq 60); do
-  if ssh "${ssh_opts[@]}" -o ConnectTimeout=2 -o BatchMode=yes "$user@$addr" true 2>/dev/null; then
+ready=
+while [ "$SECONDS" -lt 90 ]; do
+  if err=$(ssh "${ssh_opts[@]}" -o BatchMode=yes "$user@$addr" true 2>&1); then
+    ready=1
     break
   fi
   sleep 1
 done
+if [ -z "$ready" ]; then
+  # A host key mismatch here means the guest's /var was recreated: drop the line from $known.
+  echo "agent-sandbox: the guest did not accept SSH within 90s: $err" >&2
+  exit 1
+fi
 
 # The guest's system first, then the host's nix and home entries resolved to store paths, which
 # the guest sees through the shared store; host-only paths are dropped.
