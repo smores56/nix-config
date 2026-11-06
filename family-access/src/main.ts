@@ -2,6 +2,7 @@ import { decryptBlob, type DataKeys } from "./blob.ts";
 import { decryptBitwardenExport, type BitwardenExport } from "./bitwarden/export.ts";
 import { matchVault, plaintextExport } from "./bitwarden/dashboard.ts";
 import { sanitizeFileName } from "./filenames.ts";
+import { commonDirectoryPrefix, relativeSegments } from "./restore.ts";
 import {
   renderManifest,
   validateManifest,
@@ -28,6 +29,10 @@ const snapshotSelect = document.querySelector<HTMLSelectElement>("#snapshot-sele
 const breadcrumbs = document.querySelector<HTMLElement>("#breadcrumbs");
 const browserStatus = document.querySelector<HTMLDivElement>("#browser-status");
 const browserList = document.querySelector<HTMLUListElement>("#browser");
+const restoreButton = document.querySelector<HTMLButtonElement>("#restore-all");
+const restoreCancelButton = document.querySelector<HTMLButtonElement>("#restore-cancel");
+const restoreStatus = document.querySelector<HTMLDivElement>("#restore-status");
+const restoreProgress = document.querySelector<HTMLProgressElement>("#restore-progress");
 const exportForm = document.querySelector<HTMLFormElement>("#export-form");
 const exportFile = document.querySelector<HTMLInputElement>("#export-file");
 const exportPassword = document.querySelector<HTMLInputElement>("#export-password");
@@ -106,6 +111,7 @@ function clearIdle(): void {
 
 function scheduleIdle(): void {
   clearIdle();
+  if (restoring) return;
   if (dataKeys || matches) idleTimer = window.setTimeout(lock, 5 * 60_000);
 }
 
@@ -123,6 +129,11 @@ function clearRestore(): void {
   if (breadcrumbs) breadcrumbs.innerHTML = "";
   if (browserList) browserList.innerHTML = "";
   if (browserStatus) browserStatus.textContent = "";
+  if (restoreStatus) restoreStatus.textContent = "";
+  if (restoreProgress) {
+    restoreProgress.hidden = true;
+    restoreProgress.value = 0;
+  }
 }
 
 function lock(): void {
@@ -237,7 +248,18 @@ type FileHandle = {
   createWritable: () => Promise<{
     write: (data: Uint8Array) => Promise<void>;
     close: () => Promise<void>;
+    abort?: () => Promise<void>;
   }>;
+  getFile: () => Promise<File>;
+};
+
+type DirectoryHandle = {
+  getDirectoryHandle: (
+    name: string,
+    options?: { create?: boolean },
+  ) => Promise<DirectoryHandle>;
+  getFileHandle: (name: string, options?: { create?: boolean }) => Promise<FileHandle>;
+  removeEntry: (name: string) => Promise<void>;
 };
 
 const MAX_BUFFERED_DOWNLOAD = 256 * 1024 * 1024;
@@ -309,6 +331,181 @@ async function download(entry: ResticDirEntry): Promise<void> {
     }
     setBrowserStatus(`Download failed: ${errorMessage(error)}`, "error");
   }
+}
+
+// --- Restore queue -----------------------------------------------------------
+// Walks the selected snapshot and writes every file into a folder the family
+// picks. Each file streams through restic blob by blob, so memory stays at one
+// blob regardless of total size. Needs a directory handle, which only Chromium
+// on the desktop implements; Safari gets the single-file path above.
+
+let restoring = false;
+let restoreStop = false;
+
+function setRestoreStatus(message: string, tone: "info" | "error" | "ok" = "info"): void {
+  if (!restoreStatus) return;
+  restoreStatus.textContent = message;
+  restoreStatus.dataset.tone = tone;
+}
+
+function setRestoreProgress(doneBytes: number, totalBytes: number): void {
+  if (!restoreProgress) return;
+  restoreProgress.hidden = totalBytes === 0;
+  restoreProgress.max = Math.max(totalBytes, 1);
+  restoreProgress.value = doneBytes;
+}
+
+async function ensureDirectory(
+  root: DirectoryHandle,
+  segments: string[],
+): Promise<DirectoryHandle> {
+  let directory = root;
+  for (const segment of segments) {
+    directory = await directory.getDirectoryHandle(segment, { create: true });
+  }
+  return directory;
+}
+
+async function existingFile(directory: DirectoryHandle, name: string): Promise<File | null> {
+  try {
+    return await (await directory.getFileHandle(name)).getFile();
+  } catch {
+    return null; // Missing files are the normal case.
+  }
+}
+
+async function restoreAll(): Promise<void> {
+  const repo = repository;
+  const current = snapshot;
+  if (!repo || !current) return;
+  if (restoring) return;
+
+  const picker = (
+    window as unknown as {
+      showDirectoryPicker?: (options: {
+        mode: string;
+        id?: string;
+      }) => Promise<DirectoryHandle>;
+    }
+  ).showDirectoryPicker;
+  if (!picker) {
+    setRestoreStatus(
+      "This browser cannot write into a folder. Open this page in Chrome or Edge on the Mac to restore everything; Safari can still download single files.",
+      "error",
+    );
+    return;
+  }
+
+  setRestoreStatus("Reading the file list from R2...");
+  let files: ResticFile[];
+  try {
+    files = await repo.walk(current);
+  } catch (error) {
+    setRestoreStatus(`Could not read the snapshot: ${errorMessage(error)}`, "error");
+    return;
+  }
+  const totalBytes = files.reduce((sum, file) => sum + (file.size ?? 0), 0);
+  if (
+    !window.confirm(
+      `Restore ${files.length} files (${formatBytes(totalBytes)}) into a folder you choose?\n\n` +
+        "Files already there with the same size are skipped, so you can stop and run it again.",
+    )
+  ) {
+    setRestoreStatus("");
+    return;
+  }
+
+  let root: DirectoryHandle;
+  try {
+    root = await picker.call(window, { mode: "readwrite", id: "family-access-restore" });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      setRestoreStatus("");
+      return;
+    }
+    setRestoreStatus(`Could not open that folder: ${errorMessage(error)}`, "error");
+    return;
+  }
+
+  const prefix = commonDirectoryPrefix(files.map((file) => file.path));
+  restoring = true;
+  restoreStop = false;
+  clearIdle();
+  if (restoreButton) restoreButton.disabled = true;
+  if (restoreCancelButton) restoreCancelButton.hidden = false;
+  setRestoreProgress(0, totalBytes);
+
+  let done = 0;
+  let written = 0;
+  let skipped = 0;
+  let doneBytes = 0;
+  const problems: string[] = [];
+
+  try {
+    for (const file of files) {
+      if (restoreStop) break;
+      const segments = relativeSegments(prefix, file.path);
+      const name = segments.pop() ?? "";
+      try {
+        const directory = await ensureDirectory(root, segments);
+        const existing = await existingFile(directory, name);
+        if (existing && file.size !== undefined && existing.size === file.size) {
+          skipped++;
+          done++;
+          doneBytes += file.size;
+          setRestoreProgress(doneBytes, totalBytes);
+          continue;
+        }
+
+        const handle = await directory.getFileHandle(name, { create: true });
+        const writable = await handle.createWritable();
+        try {
+          for await (const chunk of repo.readFileChunks(file)) {
+            if (restoreStop) break;
+            await writable.write(chunk);
+          }
+          if (restoreStop) {
+            await writable.abort?.();
+            await directory.removeEntry(name).catch(() => undefined);
+            break;
+          }
+          await writable.close();
+        } catch (error) {
+          await writable.abort?.().catch(() => undefined);
+          throw error;
+        }
+
+        written++;
+        done++;
+        doneBytes += file.size ?? 0;
+        setRestoreProgress(doneBytes, totalBytes);
+        setRestoreStatus(
+          `${done} of ${files.length} files, ${formatBytes(doneBytes)} of ${formatBytes(totalBytes)}...`,
+        );
+        setBrowserStatus(`Restoring ${segments.length > 0 ? segments.join("/") + "/" : ""}${name}`);
+      } catch (error) {
+        problems.push(`${file.path}: ${errorMessage(error)}`);
+      }
+    }
+  } finally {
+    restoring = false;
+    if (restoreButton) restoreButton.disabled = false;
+    if (restoreCancelButton) restoreCancelButton.hidden = true;
+    scheduleIdle();
+  }
+
+  const summary = restoreStop
+    ? `Stopped: ${written} written, ${skipped} already there.`
+    : `Restored ${written} files, skipped ${skipped} already there, ${formatBytes(doneBytes)} total.`;
+  if (problems.length > 0) {
+    setRestoreStatus(
+      `${summary} ${problems.length} file(s) failed; first: ${problems[0]}`,
+      "error",
+    );
+  } else {
+    setRestoreStatus(summary, "ok");
+  }
+  setBrowserStatus("");
 }
 
 async function unlock(password: string): Promise<void> {
@@ -461,6 +658,15 @@ browserList?.addEventListener("click", (event) => {
   if (entry) void download(entry);
 });
 
+restoreButton?.addEventListener("click", () => {
+  void restoreAll();
+});
+
+restoreCancelButton?.addEventListener("click", () => {
+  restoreStop = true;
+  setRestoreStatus("Stopping after the current file...");
+});
+
 for (const event of ["pointerdown", "keydown"] as const) {
   document.addEventListener(event, scheduleIdle, { passive: true });
 }
@@ -468,7 +674,9 @@ for (const event of ["pointerdown", "keydown"] as const) {
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     clearIdle();
-    if (dataKeys || matches) idleTimer = window.setTimeout(lock, 30_000);
+    // A running restore keeps its keys: it writes plaintext the user asked for,
+    // and a two-hour job must not die because the tab was backgrounded.
+    if (!restoring && (dataKeys || matches)) idleTimer = window.setTimeout(lock, 30_000);
   } else {
     scheduleIdle();
   }

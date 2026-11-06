@@ -75,6 +75,18 @@
         <nav id="breadcrumbs" class="breadcrumbs" aria-label="Path"></nav>
         <div id="browser-status" class="status" role="status" aria-live="polite"></div>
         <ul id="browser" class="items"></ul>
+        <div class="row">
+          <button type="button" id="restore-all">Restore everything to a folder...</button>
+          <button type="button" id="restore-cancel" hidden>Stop</button>
+        </div>
+        <p class="muted">
+          Restoring the whole library needs a browser that can write into a
+          folder: Chrome or Edge on a Mac. Safari can still download single
+          files. Nothing is uploaded, and files already in the folder are
+          skipped, so a stopped restore can be run again.
+        </p>
+        <progress id="restore-progress" max="1" value="0" hidden></progress>
+        <div id="restore-status" class="status" role="status" aria-live="polite"></div>
       </section>
 
       <section id="export-card" class="card" aria-labelledby="export-title">
