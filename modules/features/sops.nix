@@ -1,4 +1,4 @@
-# Admin sops decryption: the age identity lives off every host in a passphrase-encrypted file.
+# Sops decryption: the admin age identity is a passphrase-encrypted file on every machine.
 # Shells hand sops the unwrapped identity through a command, so no plaintext keys.txt exists.
 {
   lib,

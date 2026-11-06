@@ -1,7 +1,8 @@
 keys:
-  # `admin` is the operator's age key (never on a host). NixOS hosts derive theirs from the SSH host key
-  # (`nix run .#host-key`); home-only Darwin smoreswork has no sshd, so it uses `~/.config/sops/smoreswork.key`.
-  - &admin age1clqsa9h07xs3zftkkcnl4ag4u3pq2qty0p3dl8wc0u77fkegryhs9u72kt
+  # `admin` is the operator's age key, passphrase-wrapped at ~/.config/sops/keys.age on every machine.
+  # NixOS hosts also derive an identity from the SSH host key (`nix run .#host-key`); home-only Darwin
+  # smoreswork has no sshd, so it uses `~/.config/sops/smoreswork.key`.
+  - &admin age1skuwunreduvw8gtkzyf9atsyjnku388ly8c252h3qger84fg5d7q4kf6xs
   - &smortress age19k8s634eqfnptm8fngc8c3yl5cyk5t4wqgaukya4j6kjtvzm2q9sq674ru
   - &smorespro age1ng2qumh78k49jy468kermj7qtxgtmtusqtuwjexpnzav3qv5uufq6zugcv
   - &smoreswork age15mcd3zu8teatdq8d6kcgztd26w4dxm8gcvhpgdmkl7nmsew2tuus0l94ak

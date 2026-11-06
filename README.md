@@ -63,7 +63,7 @@ Cross-cutting values flow through `config.machine.*` and `config.user.*`, not
 - **Backups.** restic snapshots `/var/lib/data` to R2 and a local encrypted
   disk nightly; guide in `modules/features/backup/README.md`.
 - **Secrets.** sops-nix; `secrets/<host>.yaml` is host-only, `secrets/common.yaml`
-  is shared. No host holds the admin age key.
+  is shared. The admin age key is passphrase-wrapped on every machine.
 
 ## Use
 

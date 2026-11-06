@@ -296,7 +296,7 @@ Next:
   ssh smortress true
   ssh -t smortress sudo true
 
-The admin age key stays on the laptops.
+The admin age key is not in this bundle (~/.config/sops/keys.age).
 EOF
 else
   cat <<EOF
@@ -307,7 +307,7 @@ Next:
   ssh smortress true         # one graphical PIN prompt on first use
   ssh -t smortress sudo true # one touch
 
-The admin age key stays on the laptops.
+The admin age key is not in this bundle (~/.config/sops/keys.age).
 EOF
 fi
 
