@@ -16,10 +16,7 @@
     ./memory.nix
   ];
 
-  user = {
-    aiProfile = "work";
-    shellAbbrs.m = "claude";
-  };
+  user.aiProfile = "work";
 
   homeOptions = {
     # Ciphertext vault copy under ~/Sync, outside TCC-protected folders; only Cryptomator unlocks it.

@@ -97,7 +97,7 @@ in
       et = "pick text hx";
       l = "eza --icons -lh";
       t = "zellij a -c main";
-      a = "mkdir -p";
+      m = "mkdir -p";
       f = "yazi";
       b = "bat";
       g = "lazygit";
