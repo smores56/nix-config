@@ -85,7 +85,11 @@ problem (the user's stated constraints first, generic qualities second). State
 which you'd pick and why, including what would change your mind. Be explicit
 about what you are uncertain about rather than papering over it.
 
-Produce a concrete artifact — a markdown one-pager that moves work forward:
+Produce a concrete artifact — a markdown one-pager that moves work forward.
+When the output lands in an sdlc feature issue, the `sdlc` skill's Design
+write-up structure supersedes this template (Summary → Problem → Goals →
+Proposed design → Alternatives considered → Risks → Validation → Open
+questions); "Not Doing" becomes Non-goals and Alternatives considered.
 
 ```markdown
 # [Idea Name]

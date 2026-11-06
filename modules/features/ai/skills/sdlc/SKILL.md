@@ -50,6 +50,34 @@ PR.
 8. **Complete** — when no task is open, `sdlc complete <feature>`;
    `sdlc cancel <feature>` when the feature dies.
 
+## Design write-up
+
+The `## Design` section reads top-down as a technical design, for a reader
+who has not seen the conversation. Sections, in order:
+
+1. **Summary** — 2-4 sentences: what we build and why; readable alone.
+2. **Problem** — current state and why it matters, concretely.
+3. **Goals / Non-goals**.
+4. **Proposed design** — overview first, then one subsection per component.
+   Prose first; bullets only for true enumerations; a small diagram or table
+   where it clarifies.
+5. **Alternatives considered** — table: option, why not, evidence link.
+6. **Risks and accepted residuals**.
+7. **Validation** — how we will know it works; open assumptions as
+   checkboxes.
+8. **Open questions**.
+
+Rules:
+
+- Lead with the conclusion; define a term before using it; one idea per
+  paragraph.
+- No bold run-on bullets. State decisions as the design, not as a "locked
+  decisions" log; grill-me output is folded in, not appended.
+- Evidence, spike and research results go in issue comments or a short
+  trailing `Evidence` appendix with links, never inline before the proposal.
+- `## Plan` stays separate (task list). The approval hash covers `## Design`
+  only, so restructuring an approved design triggers re-approval.
+
 ## Ledger
 
 - One private registry repo, default `smores56/sdlc` (`$SDLC_REPO`). No
