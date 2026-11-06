@@ -1,6 +1,6 @@
 {
-  "name": "Family Access",
-  "short_name": "Family",
+  "name": "Recovery kit",
+  "short_name": "Recovery",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

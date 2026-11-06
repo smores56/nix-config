@@ -141,3 +141,12 @@ destination inside the repository. Print the letters, copy `drive-<name>/` to
 the drives, seal, and delete the folder. The media carry only the Bitwarden
 login, the recovery code, the page URL and the recovery password: reprint when one
 of those changes, never when keys, buckets or paths change.
+
+## Deployment
+
+`nix run .#cloudflare-apply` owns the Cloudflare side (`tofu/pages.tf`): the
+`recovery` Pages project, the `recovery.sammohr.dev` custom domain, and the DNS
+record that keeps that name off the `*.sammohr.dev` tunnel wildcard.
+`.github/workflows/recovery.yml` typechecks, tests and builds on every change
+under `recovery/`, then uploads `dist/` to the project on push to `main` using a
+Pages-only API token (procedure in `docs/key-rotation.md`).

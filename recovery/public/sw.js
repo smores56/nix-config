@@ -1,4 +1,4 @@
-const CACHE = "family-access-shell-v2";
+const CACHE = "recovery-shell-v1";
 const ASSETS = [
   "./",
   "./index.html",
