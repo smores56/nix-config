@@ -16,11 +16,16 @@
 import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { LocalBackend } from "../src/restic/backend.ts";
-import { openRepository, type ResticRepository, type ResticSnapshot } from "../src/restic/repository.ts";
+import {
+  openRepository,
+  type ResticRepository,
+  type ResticSnapshot,
+} from "../src/restic/repository.ts";
 import { R2Backend, repositoryPrefix } from "../src/restic/r2.ts";
 import { LocalVaultProvider } from "../src/cryptomator/local-provider.ts";
 import { ResticVaultProvider } from "../src/cryptomator/restic-provider.ts";
 import { CryptomatorVault, ROOT_DIR_ID, type VaultProvider } from "../src/cryptomator/vault.ts";
+import { readSentinel, SENTINEL_PATH } from "../src/sentinel.ts";
 
 type Args = {
   local?: string;
@@ -174,12 +179,8 @@ async function main(): Promise<void> {
   for (const item of root.slice(0, 20)) {
     console.log(`  ${item.kind}: ${item.name}${item.damaged ? ` (damaged: ${item.damaged})` : ""}`);
   }
-  const sentinel = root.find(
-    (item) => item.kind === "file" && item.name === "family-access-sentinel.txt",
-  );
-  if (!sentinel) throw new Error("the vault has no sentinel file");
-  const text = await vault.readTextFile(sentinel);
-  console.log(`sentinel: ${JSON.stringify(text.trim())}`);
+  const sentinel = await readSentinel(vault);
+  console.log(`sentinel (${SENTINEL_PATH}): ${JSON.stringify(sentinel)}`);
 }
 
 main().catch((error: unknown) => {

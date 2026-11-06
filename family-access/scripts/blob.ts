@@ -6,30 +6,34 @@
 // and walks the real data path (R2 -> restic -> Cryptomator sentinel).
 //
 //   deno task blob [--out public/data-keys.enc] [--secrets ../secrets/smortress.yaml]
-//                  [--account-id <id>] [--no-check]
+//                  [--account-id <id>] [--no-check] [--check-only]
+//
+// `--check-only` re-runs the data-path check against an existing blob: it needs
+// the PWA password but not the Cryptomator password, which the blob already
+// carries.
 //
 // Passwords are only read from the terminal: there is no password-file option.
 
-import { encryptBlob, decryptBlob, type DataKeys } from "../src/blob.ts";
+import { type DataKeys, type DataKeysBlob, decryptBlob, encryptBlob } from "../src/blob.ts";
 import { R2Backend, repositoryPrefix } from "../src/restic/r2.ts";
 import { openRepository } from "../src/restic/repository.ts";
 import { ResticVaultProvider } from "../src/cryptomator/restic-provider.ts";
-import { CryptomatorVault, ROOT_DIR_ID } from "../src/cryptomator/vault.ts";
+import { CryptomatorVault } from "../src/cryptomator/vault.ts";
+import { readSentinel, SENTINEL_PATH } from "../src/sentinel.ts";
 
 const DEFAULT_ACCOUNT_ID = "385f7d47e2e8438fbda5d6f76d760434";
 const BUCKET = "restic-backup";
-const SENTINEL = "family-access-sentinel.txt";
 
 type Args = {
   out: string;
   secrets: string;
   accountId: string;
   check: boolean;
+  checkOnly: boolean;
 };
 
-const USAGE =
-  "usage: blob [--out public/data-keys.enc] [--secrets ../secrets/smortress.yaml] " +
-  "[--account-id <id>] [--no-check]";
+const USAGE = "usage: blob [--out public/data-keys.enc] [--secrets ../secrets/smortress.yaml] " +
+  "[--account-id <id>] [--no-check] [--check-only]";
 
 function takeValue(argv: string[], index: number, flag: string): string {
   const value = argv[index + 1];
@@ -43,6 +47,7 @@ function parseArgs(argv: string[]): Args {
     secrets: "../secrets/smortress.yaml",
     accountId: DEFAULT_ACCOUNT_ID,
     check: true,
+    checkOnly: false,
   };
   for (let index = 0; index < argv.length; index++) {
     const value = argv[index];
@@ -58,6 +63,9 @@ function parseArgs(argv: string[]): Args {
         break;
       case "--no-check":
         args.check = false;
+        break;
+      case "--check-only":
+        args.checkOnly = true;
         break;
       case "--help":
       case "-h":
@@ -149,15 +157,40 @@ async function selfTest(keys: DataKeys): Promise<void> {
 
   const provider = new ResticVaultProvider(repository, snapshot, keys.restic.vaultPath);
   const vault = await CryptomatorVault.open(provider, keys.vault.password);
-  const root = await vault.list(ROOT_DIR_ID);
-  const sentinel = root.find((item) => item.kind === "file" && item.name === SENTINEL);
-  if (!sentinel) throw new Error(`the vault has no ${SENTINEL}`);
-  const text = await vault.readTextFile(sentinel);
-  console.log(`vault: ${root.length} root entries, sentinel ${JSON.stringify(text.trim())}`);
+  let text: string;
+  try {
+    text = await readSentinel(vault);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `snapshot ${snapshot.id} (${snapshot.time}): ${reason}; if you just created it, ` +
+        "run a backup first",
+    );
+  }
+  console.log(`vault: ${SENTINEL_PATH} in snapshot ${snapshot.id}, ${JSON.stringify(text)}`);
+}
+
+async function checkExisting(args: Args): Promise<void> {
+  let text: string;
+  try {
+    text = await Deno.readTextFile(args.out);
+  } catch {
+    throw new Error(`${args.out} is missing; build it first`);
+  }
+  const envelope = JSON.parse(text) as DataKeysBlob;
+  console.log("The PWA password is written on the media; it is not stored anywhere.");
+  const keys = await decryptBlob(envelope, await promptHidden("PWA password: "));
+  console.log(`${args.out}: decrypts with the PWA password; checking the data path`);
+  await selfTest(keys);
+  console.log("done");
 }
 
 async function main(): Promise<void> {
   const args = parseArgs(Deno.args);
+  if (args.checkOnly) {
+    await checkExisting(args);
+    return;
+  }
   console.log("The PWA password is written on the media; it is not stored anywhere.");
   const pwaPassword = await promptNewPassword("PWA password: ");
   console.log("The Cryptomator password is used to open the vault during the self-test.");

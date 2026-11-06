@@ -53,15 +53,20 @@ format and verified against vaults created by cryptofs 2.8.0 / cryptolib 2.2.0.
   implementation (password `family-access-vault-fixture`). It covers root and
   nested names, 0/1/32 KiB/32 KiB+1/100 KB files, a shortened file name, a
   shortened directory, an NFC name, a symlink, and `dirid.c9r` backups. See
-  `test-fixtures/CreateVault.java` for how it was produced.
+  `test-fixtures/CreateVault.java` for how it was produced. Its sentinel sits
+  at the vault root, not in `Documents/`: `src/cryptomator/vault.test.ts` pins
+  the fixture's root listing and the ciphertext path derived from its
+  masterkey, so moving it means regenerating both together.
 - `test-fixtures/restic-cryptomator/` stores the same vault at
   `var/lib/data/vault` in a restic repository (password `family-access-fixture`).
 
 ### Real-vault sentinel
 
 Run the same reader against the production vault; it prints the sentinel file
-and fails loudly if anything does not decrypt. Prefer password files: exported
-environment variables are readable by any same-UID process.
+and fails loudly if anything does not decrypt. The sentinel is
+`Documents/sentinel.txt` inside the vault (`src/sentinel.ts`); the vault root
+stays the Cryptomator layout. Prefer password files: exported environment
+variables are readable by any same-UID process.
 
 ```sh
 # local ciphertext directory
@@ -100,6 +105,12 @@ the payload with Argon2id (3 passes, 64 MiB, 4 lanes) plus AES-256-GCM, writes
 Cryptomator sentinel. There is no password-file option and no legacy scrypt
 envelope. The blob is public ciphertext and is committed; the build copies it
 when present.
+
+`deno task blob --check-only` repeats just the last step against the committed
+blob. It needs the PWA password only: the blob already carries the restic and
+Cryptomator credentials, so the check also proves they are the right ones. It
+reads the newest R2 snapshot, so a sentinel added after the last backup fails
+until a backup runs.
 
 ## Bitwarden export dashboard
 
