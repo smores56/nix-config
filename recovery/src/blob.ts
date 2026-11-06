@@ -140,7 +140,7 @@ function aadFor(
   header: Pick<DataKeysBlob, "version" | "kdf" | "iterations" | "memory" | "parallelism">,
 ): Uint8Array {
   return new TextEncoder().encode(
-    `family-access:data-keys:v${header.version}|${header.kdf}|${header.iterations}|${header.memory}|${header.parallelism}`,
+    `recovery:data-keys:v${header.version}|${header.kdf}|${header.iterations}|${header.memory}|${header.parallelism}`,
   );
 }
 
@@ -171,7 +171,7 @@ export async function encryptBlob(
 ): Promise<DataKeysBlob> {
   const errors = validateDataKeys(payload);
   if (errors.length > 0) throw new Error(`invalid data keys: ${errors.join(", ")}`);
-  if (!password) throw new Error("a PWA password is required");
+  if (!password) throw new Error("a recovery password is required");
   assertCost(cost);
 
   const header = {
@@ -208,7 +208,7 @@ export async function decryptBlob(
   if (!isRecord(envelope) || envelope.version !== 2 || envelope.kdf !== "argon2id") {
     throw new Error("unsupported data-keys envelope");
   }
-  if (!password) throw new Error("a PWA password is required");
+  if (!password) throw new Error("a recovery password is required");
   assertCost({
     iterations: envelope.iterations,
     memory: envelope.memory,

@@ -3,10 +3,10 @@ import { expect } from "jsr:@std/expect";
 import {
   renderManifest,
   validateManifest,
-  type FamilyAccessManifest,
+  type RecoveryManifest,
 } from "./manifest.ts";
 
-const manifest: FamilyAccessManifest = {
+const manifest: RecoveryManifest = {
   version: 1,
   updated: "2026-11-05",
   sections: [
@@ -15,7 +15,6 @@ const manifest: FamilyAccessManifest = {
       title: "Start here",
       items: [
         {
-          faId: "start",
           title: "Read this first",
           bitwardenName: "START HERE",
         },
@@ -26,14 +25,12 @@ const manifest: FamilyAccessManifest = {
       title: "Accounts",
       items: [
         {
-          faId: "email",
           title: "E-mail (Tuta)",
           bitwardenName: "Email - Tuta",
           url: "https://app.tuta.com",
           required: true,
         },
         {
-          faId: "immich",
           title: "Photos (Immich)",
           bitwardenName: "Immich",
           url: "https://immich.sammohr.dev",
@@ -46,7 +43,6 @@ const manifest: FamilyAccessManifest = {
       title: "Data recovery",
       items: [
         {
-          faId: "data-recovery",
           title: "R2, restic, and vault keys",
           bitwardenName: "Data Recovery",
           required: true,
@@ -63,14 +59,14 @@ describe("family access manifest", () => {
     expect(validateManifest(manifest)).toEqual([]);
   });
 
-  test("rejects duplicate fa_id values", () => {
-    const dup: FamilyAccessManifest = structuredClone(manifest);
-    dup.sections[1].items[1].faId = "email";
+  test("rejects duplicate item titles", () => {
+    const dup: RecoveryManifest = structuredClone(manifest);
+    dup.sections[1].items[1].title = "E-mail (Tuta)";
     expect(validateManifest(dup).join(" ")).toContain("duplicate");
   });
 
   test("rejects a non-http URL", () => {
-    const bad: FamilyAccessManifest = structuredClone(manifest);
+    const bad: RecoveryManifest = structuredClone(manifest);
     bad.sections[1].items[0].url = "javascript:alert(1)";
     expect(validateManifest(bad).join(" ")).toContain("http");
   });
@@ -82,11 +78,10 @@ describe("family access manifest", () => {
     expect(html).toContain('href="https://app.tuta.com"');
     expect(html).toContain("Data recovery");
     expect(html).toContain("Tuta free accounts");
-    expect(html).toContain('data-fa-id="email"');
   });
 
   test("escapes untrusted text", () => {
-    const bad: FamilyAccessManifest = structuredClone(manifest);
+    const bad: RecoveryManifest = structuredClone(manifest);
     bad.sections[0].items[0].title = '<img src=x onerror=alert(1)>';
     const html = renderManifest(bad);
     expect(html).not.toContain("<img src=x");

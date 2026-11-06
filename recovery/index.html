@@ -10,7 +10,7 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; connect-src 'self' https://*.r2.cloudflarestorage.com; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'self'; form-action 'none'"
     />
-    <title>Family Access</title>
+    <title>Recovery Kit</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icon-192.png" sizes="192x192" type="image/png" />
     <link rel="apple-touch-icon" href="./icon-192.png" />
@@ -19,11 +19,11 @@
   <body>
     <main class="shell">
       <header class="hero">
-        <p class="eyebrow">Private family recovery</p>
-        <h1>Family Access</h1>
+        <p class="eyebrow">Private recovery page</p>
+        <h1>Recovery kit</h1>
         <p class="lede">
-          This page is only for people the owner has chosen. If you are not one
-          of them, close it.
+          This page belongs to one person and the relatives they chose. If that
+          is not you, close it.
         </p>
       </header>
 
@@ -31,22 +31,22 @@
         <h2>Before you start</h2>
         <ul>
           <li>Use a device you trust, not a shared or public computer.</li>
-          <li>Keep the drive and the sealed letter in separate places.</li>
-          <li>The PWA password is not your Bitwarden password.</li>
+          <li>Do not type these passwords into a page someone links you.</li>
+          <li>The recovery password is not the Bitwarden master password.</li>
         </ul>
       </section>
 
       <section class="card" aria-labelledby="unlock-title">
         <h2 id="unlock-title">Unlock the data keys</h2>
         <p class="muted">
-          Enter the PWA password from the sealed letter or the drive. It is
+          Enter the recovery password from the sealed letter or the drive. It is
           never stored or sent anywhere.
         </p>
         <form id="unlock-form" class="unlock-form">
-          <label for="pwa-password">PWA password</label>
+          <label for="recovery-password">Recovery password</label>
           <div class="row">
             <input
-              id="pwa-password"
+              id="recovery-password"
               type="password"
               autocomplete="off"
               autocapitalize="none"
@@ -63,6 +63,38 @@
           Lock and clear
         </button>
       </section>
+
+      <section id="start-here" class="card" aria-labelledby="start-title">
+        <h2 id="start-title">Start here</h2>
+        <ol>
+          <li>
+            <strong>Sign in to the e-mail account today.</strong> Free Tuta
+            accounts are deleted after six months without a sign-in. The
+            password is in Bitwarden; the Bitwarden master password and the
+            two-step recovery code are on the sealed letter.
+          </li>
+          <li>
+            <strong>Open Bitwarden</strong> and keep it signed in while you work
+            through the list below.
+          </li>
+          <li>
+            <strong>Work down the account list, one line at a time.</strong> Each
+            entry names the Bitwarden item to open and what to do with it.
+          </li>
+          <li>
+            <strong>Restore the files last, on a Mac in Chrome.</strong> The
+            library takes hours, so start it and leave the tab open. Files
+            already in the folder are skipped, so it can be stopped and
+            restarted.
+          </li>
+        </ol>
+        <p class="muted">
+          This page is not a will and gives no legal advice. Do not change the
+          Bitwarden master password until you have everything you need.
+        </p>
+      </section>
+
+      <section id="manifest" class="manifest" aria-live="polite"></section>
 
       <section id="restore" class="card" hidden>
         <h2>Restore data</h2>
@@ -88,33 +120,6 @@
         <progress id="restore-progress" max="1" value="0" hidden></progress>
         <div id="restore-status" class="status" role="status" aria-live="polite"></div>
       </section>
-
-      <section id="export-card" class="card" aria-labelledby="export-title">
-        <h2 id="export-title">Read Bitwarden items (optional)</h2>
-        <p class="muted">
-          If you have a password-protected Bitwarden JSON export, load it here
-          to show the credentials next to these instructions. It is decrypted
-          in this browser and never uploaded.
-        </p>
-        <form id="export-form" class="unlock-form">
-          <label for="export-file">Export file</label>
-          <input id="export-file" type="file" accept="application/json,.json" />
-          <label for="export-password">Export password</label>
-          <div class="row">
-            <input
-              id="export-password"
-              type="password"
-              autocomplete="off"
-              autocapitalize="none"
-              spellcheck="false"
-            />
-            <button type="submit" id="export-button">Load export</button>
-          </div>
-        </form>
-        <div id="export-status" class="status" role="status" aria-live="polite"></div>
-      </section>
-
-      <section id="manifest" class="manifest" aria-live="polite"></section>
 
       <footer class="footer">
         <p>

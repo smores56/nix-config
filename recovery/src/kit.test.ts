@@ -8,9 +8,9 @@ const values: KitValues = {
   bitwardenEmail: "sam@example.com",
   bitwardenPassword: "master-pw",
   recoveryCode: "ABCDE-FGHIJ",
-  pwaPassword: "pwa-pw",
-  pwaUrl: "https://family.sammohr.dev/",
-  fallbackUrl: "https://family-access.pages.dev/",
+  recoveryPassword: "pwa-pw",
+  pageUrl: "https://recovery.sammohr.dev/",
+  fallbackUrl: "https://recovery.pages.dev/",
 };
 
 describe("kitSlug", () => {
@@ -30,8 +30,8 @@ describe("renderStartHere", () => {
         "master-pw",
         "ABCDE-FGHIJ",
         "pwa-pw",
-        "https://family.sammohr.dev/",
-        "https://family-access.pages.dev/",
+        "https://recovery.sammohr.dev/",
+        "https://recovery.pages.dev/",
       ]
     ) {
       expect(text).toContain(value);

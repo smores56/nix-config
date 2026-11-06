@@ -1,7 +1,7 @@
 // Builds the encrypted data-keys blob that ships with the PWA.
 //
 // Reads the R2 read-only token and restic password from sops, prompts for the
-// PWA password (twice) and the Cryptomator password, encrypts the payload with
+// recovery password (twice) and the Cryptomator password, encrypts the payload with
 // Argon2id + AES-256-GCM, writes public/data-keys.enc, then decrypts it again
 // and walks the real data path (R2 -> restic -> Cryptomator sentinel).
 //
@@ -9,7 +9,7 @@
 //                  [--account-id <id>] [--no-check] [--check-only]
 //
 // `--check-only` re-runs the data-path check against an existing blob: it needs
-// the PWA password but not the Cryptomator password, which the blob already
+// the recovery password but not the Cryptomator password, which the blob already
 // carries.
 //
 // Passwords are only read from the terminal: there is no password-file option.
@@ -142,9 +142,9 @@ async function checkExisting(args: Args): Promise<void> {
     throw new Error(`${args.out} is missing; build it first`);
   }
   const envelope = JSON.parse(text) as DataKeysBlob;
-  console.log("The PWA password is written on the media; it is not stored anywhere.");
-  const keys = await decryptBlob(envelope, await promptHidden("PWA password: "));
-  console.log(`${args.out}: decrypts with the PWA password; checking the data path`);
+  console.log("The recovery password is written on the media; it is not stored anywhere.");
+  const keys = await decryptBlob(envelope, await promptHidden("recovery password: "));
+  console.log(`${args.out}: decrypts with the recovery password; checking the data path`);
   await selfTest(keys);
   console.log("done");
 }
@@ -155,8 +155,8 @@ async function main(): Promise<void> {
     await checkExisting(args);
     return;
   }
-  console.log("The PWA password is written on the media; it is not stored anywhere.");
-  const pwaPassword = await promptNewPassword("PWA password: ");
+  console.log("The recovery password is written on the media; it is not stored anywhere.");
+  const recoveryPassword = await promptNewPassword("recovery password: ");
   console.log("The Cryptomator password is used to open the vault during the self-test.");
   const vaultPassword = await promptNewPassword("Cryptomator password: ");
 
@@ -186,15 +186,15 @@ async function main(): Promise<void> {
   };
 
   console.log("Deriving the key with Argon2id...");
-  const envelope = await encryptBlob(keys, pwaPassword);
+  const envelope = await encryptBlob(keys, recoveryPassword);
   await Deno.writeTextFile(args.out, JSON.stringify(envelope, null, 2) + "\n");
   console.log(`wrote ${args.out}`);
 
-  const check = await decryptBlob(envelope, pwaPassword);
+  const check = await decryptBlob(envelope, recoveryPassword);
   if (JSON.stringify(check) !== JSON.stringify(keys)) {
     throw new Error("the self-test decrypted different data");
   }
-  console.log("self-test: the blob decrypts with the PWA password");
+  console.log("self-test: the blob decrypts with the recovery password");
 
   if (args.check) await selfTest(keys);
   console.log("done");

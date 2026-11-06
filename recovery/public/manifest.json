@@ -8,7 +8,6 @@
       "description": "Read this section first. Do not skip the warnings above.",
       "items": [
         {
-          "faId": "start",
           "title": "Read this first",
           "bitwardenName": "START HERE",
           "notes": "Open Bitwarden, read the START HERE item, then unlock the data keys on this page."
@@ -21,14 +20,12 @@
       "description": "Passwords and recovery codes are in the Bitwarden Family Access folder.",
       "items": [
         {
-          "faId": "email",
           "title": "E-mail (Tuta)",
           "bitwardenName": "Email - Tuta",
           "url": "https://app.tuta.com",
           "required": true
         },
         {
-          "faId": "immich",
           "title": "Photos (Immich)",
           "bitwardenName": "Immich",
           "url": "https://immich.sammohr.dev",
@@ -42,7 +39,6 @@
       "description": "Unlock the data keys above, then choose what to restore.",
       "items": [
         {
-          "faId": "data-recovery",
           "title": "R2, restic, and vault keys",
           "bitwardenName": "Data Recovery",
           "required": true,

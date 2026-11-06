@@ -1,6 +1,6 @@
 // Renders the recovery kit: two letter sets that the operator prints and seals,
 // and the plain-text file that sits at the root of each USB drive. Everything
-// here carries the stable root of trust only (Bitwarden + the PWA password and
+// here carries the stable root of trust only (Bitwarden + the recovery password and
 // URL); the values are supplied by the caller and never stored in the repo.
 
 export type KitValues = {
@@ -9,8 +9,8 @@ export type KitValues = {
   bitwardenEmail: string;
   bitwardenPassword: string;
   recoveryCode: string;
-  pwaPassword: string;
-  pwaUrl: string;
+  recoveryPassword: string;
+  pageUrl: string;
   fallbackUrl: string;
 };
 
@@ -55,7 +55,7 @@ export function renderLetter(values: KitValues): string {
   const name = escapeHtml(values.recipient);
   const operator = escapeHtml(values.operatorName);
   const email = escapeHtml(values.bitwardenEmail);
-  const pwa = escapeHtml(values.pwaUrl);
+  const pwa = escapeHtml(values.pageUrl);
   const fallback = escapeHtml(values.fallbackUrl);
 
   return `<!doctype html>
@@ -94,15 +94,15 @@ export function renderLetter(values: KitValues): string {
   <h2>2. The instructions page</h2>
   <p>${operator} made a web page that explains, account by account, what to open and what to do.
   It is the same page on every device, and it asks for one password of its own:</p>
-  ${secret("Instructions page", pwa)}
-  ${secret("Instructions page password", values.pwaPassword)}
+  ${secret("Recovery page", pwa)}
+  ${secret("Recovery password", values.recoveryPassword)}
   <p class="muted">If that address ever stops working, try ${fallback}.</p>
 
   <h2>3. His files: photos and documents</h2>
   <p>The photos and documents are backed up nightly to cloud storage. The instructions page can
   download them, but the full library is large (tens of gigabytes), so use a Mac for that:</p>
   <ul>
-    <li>On the Mac, open the instructions page in <strong>Google Chrome</strong> (not Safari).</li>
+    <li>On the Mac, open the recovery page in <strong>Google Chrome</strong> (not Safari).</li>
     <li>Unlock the page with the password above, then press "Restore everything to a folder".</li>
     <li>Pick a folder, for example on an external drive, and leave the tab open while it works.</li>
     <li>If it stops, run it again: files that are already there are skipped.</li>
@@ -140,12 +140,12 @@ drive hold the same information; you only need one of them.
    Recovery code:     ${values.recoveryCode}
 
 2. INSTRUCTIONS PAGE
-   Address:           ${values.pwaUrl}
+   Address:           ${values.pageUrl}
    Fallback address:  ${values.fallbackUrl}
-   Page password:     ${values.pwaPassword}
+   Page password:     ${values.recoveryPassword}
 
 3. FILES (photos, documents)
-   Open the instructions page in Google Chrome on a Mac and press
+   Open the recovery page in Google Chrome on a Mac and press
    "Restore everything to a folder". Safari can read the page and download
    single files, but it cannot restore everything at once.
    The library is large; use an external drive and leave the tab open.

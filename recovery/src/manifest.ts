@@ -1,53 +1,38 @@
-export type FamilyAccessItemType = "login" | "note" | "card" | "identity";
+export type RecoveryItemType = "login" | "note" | "card" | "identity";
 
-export type FamilyAccessItem = {
-  faId: string;
+export type RecoveryItem = {
   title: string;
   bitwardenName: string;
-  bitwardenUuid?: string;
   /** Bitwarden folder the item must live in. */
   folder?: string;
-  type?: FamilyAccessItemType;
+  type?: RecoveryItemType;
   url?: string;
   notes?: string;
   required?: boolean;
   recovery?: boolean;
 };
 
-/** A manifest item joined with the matching Bitwarden vault item. */
-export type MatchedItem = {
-  id: string;
-  name: string;
-  username?: string;
-  password?: string;
-  totp?: string;
-  notes?: string;
-  uris: string[];
-  fields: Array<{ name: string; value: string }>;
-  deepLink: string;
-};
-
-export type FamilyAccessSection = {
+export type RecoverySection = {
   id: string;
   title: string;
   description?: string;
-  items: FamilyAccessItem[];
+  items: RecoveryItem[];
 };
 
-export type FamilyAccessContact = {
+export type RecoveryContact = {
   name: string;
   role: string;
   contact?: string;
 };
 
-export type FamilyAccessManifest = {
+export type RecoveryManifest = {
   version: 1;
   updated: string;
-  /** Web vault base URL used for item deep links. */
+  /** Optional Bitwarden web vault base URL. */
   vaultUrl?: string;
-  sections: FamilyAccessSection[];
+  sections: RecoverySection[];
   warnings?: string[];
-  contacts?: FamilyAccessContact[];
+  contacts?: RecoveryContact[];
 };
 
 function isNonEmptyString(value: unknown): value is string {
@@ -69,7 +54,7 @@ function isHttpUrl(value: string): boolean {
 
 const ITEM_TYPES = new Set(["login", "note", "card", "identity"]);
 
-function isItemType(value: unknown): value is FamilyAccessItemType {
+function isItemType(value: unknown): value is RecoveryItemType {
   return typeof value === "string" && ITEM_TYPES.has(value);
 }
 
@@ -86,7 +71,7 @@ export function validateManifest(value: unknown): string[] {
   }
 
   const sectionIds = new Set<string>();
-  const faIds = new Set<string>();
+  const titles = new Set<string>();
 
   for (const section of value.sections) {
     if (!isRecord(section)) {
@@ -111,37 +96,32 @@ export function validateManifest(value: unknown): string[] {
         errors.push("a section item is not an object");
         continue;
       }
-      if (!isNonEmptyString(item.faId)) errors.push("a section item is missing fa_id");
-      else if (item.faId !== item.faId.trim()) {
-        errors.push(`fa_id "" has surrounding whitespace`);
-      } else if (faIds.has(item.faId)) errors.push(`duplicate fa_id: ${item.faId}`);
-      else faIds.add(item.faId);
-      if (!isNonEmptyString(item.title)) {
-        errors.push(`item ${isNonEmptyString(item.faId) ? item.faId : "?"} is missing a title`);
-      }
+      const label = isNonEmptyString(item.title) ? item.title : "?";
+      if (!isNonEmptyString(item.title)) errors.push("a section item is missing a title");
+      else if (item.title !== item.title.trim()) {
+        errors.push(`item title "${item.title}" has surrounding whitespace`);
+      } else if (titles.has(item.title)) errors.push(`duplicate item title: ${item.title}`);
+      else titles.add(item.title);
       if (!isNonEmptyString(item.bitwardenName)) {
-        errors.push(`item ${isNonEmptyString(item.faId) ? item.faId : "?"} is missing a Bitwarden item name`);
+        errors.push(`item ${label} is missing a Bitwarden item name`);
       }
       if (item.url !== undefined && (typeof item.url !== "string" || !isHttpUrl(item.url))) {
-        errors.push(`item ${isNonEmptyString(item.faId) ? item.faId : "?"} has a non-http URL`);
+        errors.push(`item ${label} has a non-http URL`);
       }
       if (item.notes !== undefined && typeof item.notes !== "string") {
-        errors.push(`item ${isNonEmptyString(item.faId) ? item.faId : "?"} has non-string notes`);
+        errors.push(`item ${label} has non-string notes`);
       }
       if (item.required !== undefined && typeof item.required !== "boolean") {
-        errors.push(`item ${isNonEmptyString(item.faId) ? item.faId : "?"} has a non-boolean required flag`);
+        errors.push(`item ${label} has a non-boolean required flag`);
       }
       if (item.recovery !== undefined && typeof item.recovery !== "boolean") {
-        errors.push(`item ${isNonEmptyString(item.faId) ? item.faId : "?"} has a non-boolean recovery flag`);
-      }
-      if (item.bitwardenUuid !== undefined && typeof item.bitwardenUuid !== "string") {
-        errors.push(`item ${isNonEmptyString(item.faId) ? item.faId : "?"} has a non-string Bitwarden UUID`);
+        errors.push(`item ${label} has a non-boolean recovery flag`);
       }
       if (item.folder !== undefined && !isNonEmptyString(item.folder)) {
-        errors.push(`item ${isNonEmptyString(item.faId) ? item.faId : "?"} has an empty folder`);
+        errors.push(`item ${label} has an empty folder`);
       }
       if (item.type !== undefined && !isItemType(item.type)) {
-        errors.push(`item ${isNonEmptyString(item.faId) ? item.faId : "?"} has an unknown type`);
+        errors.push(`item ${label} has an unknown type`);
       }
     }
   }
@@ -178,34 +158,7 @@ function escapeHtml(value: unknown): string {
     .replaceAll("'", "&#39;");
 }
 
-function renderMatchedItem(matched: MatchedItem): string {
-  const rows: string[] = [];
-  const row = (label: string, value: string): string =>
-    `<p class="credential-row"><span>${escapeHtml(label)}</span><code>${escapeHtml(value)}</code></p>`;
-  if (matched.username) rows.push(row("Username", matched.username));
-  if (matched.password) rows.push(row("Password", matched.password));
-  if (matched.totp) rows.push(row("TOTP", matched.totp));
-  for (const field of matched.fields) {
-    if (field.value) rows.push(row(field.name || "Field", field.value));
-  }
-  const uris = matched.uris
-    .map((uri) => `<a class="item-link" href="${escapeHtml(uri)}" rel="noreferrer">${escapeHtml(uri)}</a>`)
-    .join(" ");
-  const notes = matched.notes
-    ? `<div class="credential-notes">${escapeHtml(matched.notes)}</div>`
-    : "";
-  return `<div class="credentials" data-bitwarden-id="${escapeHtml(matched.id)}">
-  ${rows.join("\n  ")}
-  ${uris ? `<p class="credential-links">${uris}</p>` : ""}
-  ${notes}
-  <a class="item-link" href="${escapeHtml(matched.deepLink)}" rel="noreferrer">Open in Bitwarden</a>
-</div>`;
-}
-
-export function renderManifest(
-  manifest: FamilyAccessManifest,
-  matches?: Map<string, MatchedItem>,
-): string {
+export function renderManifest(manifest: RecoveryManifest): string {
   const errors = validateManifest(manifest);
   if (errors.length > 0) throw new Error(`invalid manifest: ${errors.join(", ")}`);
 
@@ -227,12 +180,10 @@ export function renderManifest(
           ]
             .filter(Boolean)
             .join("");
-          const matched = matches?.get(item.faId);
-          const details = matched ? renderMatchedItem(matched) : "";
-          return `<li class="item" data-fa-id="${escapeHtml(item.faId)}">
+          return `<li class="item">
   <div class="item-head"><span class="item-title">${title}</span>${badges}</div>
   <p class="item-credential">Bitwarden: <code>${credential}</code></p>
-  ${notes}${details}${link}
+  ${notes}${link}
 </li>`;
         })
         .join("\n");

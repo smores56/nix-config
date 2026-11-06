@@ -1,9 +1,9 @@
-# Family Access PWA
+# Recovery kit
 
 Treat this as future-inheritance, not an everyday password manager.
 
-- The PWA is a **static, public** site. It contains no secrets.
-- The family enters a separate **PWA password** from the sealed letter or drive.
+- The page is a **static, public** site at `recovery.sammohr.dev`. It contains no secrets.
+- The family enters a separate **recovery password** from the sealed letter or drive.
 - The password decrypts a small `data-keys.enc` blob in the browser.
 - The blob contains only the R2 read-only token, restic password, vault password,
   and data paths. It does not contain the Bitwarden root.
@@ -13,7 +13,7 @@ Treat this as future-inheritance, not an everyday password manager.
 ## Build and test
 
 ```sh
-cd family-access
+cd recovery
 deno install
 deno task test
 deno task build
@@ -27,10 +27,10 @@ loader, and plain HTTP from a LAN address will disable unlock.
 
 ## Scope so far
 
-The PWA scaffolds the blob envelope, the manifest validator/renderer, the unlock
+The page scaffolds the blob envelope, the manifest validator/renderer, the unlock
 flow, and the restic snapshot browser. The data-keys blob is produced by
-`deno task blob`; until it is committed the page says no blob is deployed. The Bitwarden export reader
-and the Cloudflare Pages deployment are later tasks.
+`deno task blob`; until it is committed the page says no blob is deployed. The
+Cloudflare Pages deployment is a later task.
 
 ## Cryptomator vault reader
 
@@ -40,7 +40,7 @@ AES-SIV names and directory IDs, the scrypt/AES-KW masterkey file, the signed
 symlinks, other cipher combos, and files above 256 MiB.
 
 `ResticVaultProvider` maps the vault's ciphertext paths onto a restic snapshot,
-so the PWA can list and decrypt selected documents without restoring the whole
+so the page can list and decrypt selected documents without restoring the whole
 vault. `LocalVaultProvider` does the same on a local directory.
 
 The reader is derived from `cryptomator-ts` (MIT, `src/cryptomator/MIT-LICENSE.txt`),
@@ -71,33 +71,33 @@ variables are readable by any same-UID process.
 ```sh
 # local ciphertext directory
 deno task sentinel --local /var/lib/data/vault \
-  --vault-password-file ~/.config/family-access/vault-password
+  --vault-password-file ~/.config/recovery/vault-password
 
 # local restic repository
 deno task sentinel --repo /var/backup/restic --prefix var/lib/data/vault \
-  --restic-password-file ~/.config/family-access/restic-password \
-  --vault-password-file ~/.config/family-access/vault-password
+  --restic-password-file ~/.config/recovery/restic-password \
+  --vault-password-file ~/.config/recovery/vault-password
 
 # Cloudflare R2 (read-only token)
 R2_REPOSITORY=... R2_ENDPOINT=... R2_BUCKET=... \
 R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... \
   deno task sentinel --r2 --prefix var/lib/data/vault \
-  --restic-password-file ~/.config/family-access/restic-password \
-  --vault-password-file ~/.config/family-access/vault-password
+  --restic-password-file ~/.config/recovery/restic-password \
+  --vault-password-file ~/.config/recovery/vault-password
 ```
 
 `VAULT_PASSWORD` and `RESTIC_PASSWORD` still work as a fallback.
 
 ## Security notes
 
-- Never commit a plaintext data-keys payload or the PWA password.
-- The blob is public but encrypted; the PWA password is the data gate.
-- The PWA password is separate from the Bitwarden master password.
-- The PWA must not persist the password or data keys; lock clears them.
+- Never commit a plaintext data-keys payload or the recovery password.
+- The blob is public but encrypted; the recovery password is the data gate.
+- The recovery password is separate from the Bitwarden master password.
+- The page must not persist the password or data keys; lock clears them.
 
 ## Data-keys blob
 
-`deno task blob` prompts for the PWA password (twice) and the Cryptomator
+`deno task blob` prompts for the recovery password (twice) and the Cryptomator
 password, reads `r2-access-key-id-readonly`, `r2-secret-access-key-readonly`
 and `restic-password` from `../secrets/smortress.yaml`, encrypts
 the payload with Argon2id (3 passes, 64 MiB, 4 lanes) plus AES-256-GCM, writes
@@ -107,46 +107,12 @@ envelope. The blob is public ciphertext and is committed; the build copies it
 when present.
 
 `deno task blob --check-only` repeats just the last step against the committed
-blob. It needs the PWA password only: the blob already carries the restic and
+blob. It needs the recovery password only: the blob already carries the restic and
 Cryptomator credentials, so the check also proves they are the right ones. It
 reads the newest R2 snapshot, so a sentinel added after the last backup fails
 until a backup runs.
 
-## Bitwarden export dashboard
-
-The manifest tells the family which Bitwarden items to open. If they also have a
-password-protected Bitwarden JSON export, the page can decrypt it in memory and
-show each item's username, password, TOTP, notes, and custom fields next to the
-instructions.
-
-`src/bitwarden/export.ts` implements Bitwarden's export format: PBKDF2-SHA256 or
-Argon2id over the export salt, HKDF-Expand of the result into separate `enc` and
-`mac` keys, then AES-256-CBC + HMAC-SHA256 cipher strings (`2.iv|ct|mac`).
-Limits: 2,000,000 PBKDF2 iterations, 64 Argon2 iterations, 128 MiB Argon2 memory, 32 MiB export file.
-Nothing is stored: the plaintext export lives only in the tab and is dropped by
-"Lock and clear".
-
-Vault items are matched to the manifest by the `fa_id` custom field, with the
-vault UUID as a cross-check: a UUID that no longer matches the item means the
-Bitwarden item was deleted and recreated. `validate` also checks the folder and
-item type when the manifest sets `folder`/`type`.
-
-```sh
-deno task validate --export ~/bitwarden_export.json \
-  --export-password-file ~/.config/family-access/export-password \
-  --restic-dir /var/backup/restic \
-  --restic-password-file ~/.config/family-access/restic-password
-```
-
-To try the dashboard without a real vault, load
-`test-fixtures/bitwarden/synthetic-export.json` with the password in that
-directory's README; its four synthetic items match the shipped manifest.
-
-Exit status is non-zero when any required item is missing, a UUID/fa_id/folder/
-type does not match, or the restic repository cannot be opened. A plaintext
-export is accepted with a warning; the password-protected form is preferred.
-
-## Restore in the PWA
+## Restore in the page
 
 `Restore everything to a folder` walks the selected snapshot and writes every
 file into a folder the operator picks (`src/restore.ts` strips the snapshot's
@@ -166,12 +132,12 @@ library and keeps Safari for reading and single files.
 `deno task kit` renders the printable kit: a two-page letter per family member
 (cover, then the instructions), a drive label, the `START-HERE.txt` that sits at
 the root of each USB drive, and a checklist. It prompts for the Bitwarden
-e-mail, master password and two-step recovery code, the page password, and the
-recipients' names; it verifies the page password against `public/data-keys.enc`
+e-mail, master password and two-step recovery code, the recovery password, and the
+recipients' names; it verifies the recovery password against `public/data-keys.enc`
 before writing anything.
 
 The output is plaintext, so it is written 0700/0600 and the script refuses a
 destination inside the repository. Print the letters, copy `drive-<name>/` to
 the drives, seal, and delete the folder. The media carry only the Bitwarden
-login, the recovery code, the page URL and the page password: reprint when one
+login, the recovery code, the page URL and the recovery password: reprint when one
 of those changes, never when keys, buckets or paths change.

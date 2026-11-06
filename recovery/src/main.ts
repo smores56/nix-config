@@ -1,13 +1,10 @@
 import { decryptBlob, type DataKeys } from "./blob.ts";
-import { decryptBitwardenExport, type BitwardenExport } from "./bitwarden/export.ts";
-import { matchVault, plaintextExport } from "./bitwarden/dashboard.ts";
 import { sanitizeFileName } from "./filenames.ts";
 import { commonDirectoryPrefix, relativeSegments } from "./restore.ts";
 import {
   renderManifest,
   validateManifest,
-  type FamilyAccessManifest,
-  type MatchedItem,
+  type RecoveryManifest,
 } from "./manifest.ts";
 import { R2Backend, repositoryPrefix } from "./restic/r2.ts";
 import {
@@ -19,7 +16,7 @@ import {
 } from "./restic/repository.ts";
 
 const form = document.querySelector<HTMLFormElement>("#unlock-form");
-const passwordInput = document.querySelector<HTMLInputElement>("#pwa-password");
+const passwordInput = document.querySelector<HTMLInputElement>("#recovery-password");
 const unlockButton = document.querySelector<HTMLButtonElement>("#unlock-button");
 const lockButton = document.querySelector<HTMLButtonElement>("#lock-button");
 const status = document.querySelector<HTMLDivElement>("#status");
@@ -33,11 +30,6 @@ const restoreButton = document.querySelector<HTMLButtonElement>("#restore-all");
 const restoreCancelButton = document.querySelector<HTMLButtonElement>("#restore-cancel");
 const restoreStatus = document.querySelector<HTMLDivElement>("#restore-status");
 const restoreProgress = document.querySelector<HTMLProgressElement>("#restore-progress");
-const exportForm = document.querySelector<HTMLFormElement>("#export-form");
-const exportFile = document.querySelector<HTMLInputElement>("#export-file");
-const exportPassword = document.querySelector<HTMLInputElement>("#export-password");
-const exportButton = document.querySelector<HTMLButtonElement>("#export-button");
-const exportStatus = document.querySelector<HTMLDivElement>("#export-status");
 
 const secure = window.isSecureContext;
 let dataKeys: DataKeys | null = null;
@@ -45,8 +37,7 @@ let repository: ResticRepository | null = null;
 let snapshot: ResticSnapshot | null = null;
 let currentPath = "";
 let entriesByPath = new Map<string, ResticDirEntry>();
-let manifestCache: FamilyAccessManifest | null = null;
-let matches: Map<string, MatchedItem> | null = null;
+let manifestCache: RecoveryManifest | null = null;
 let idleTimer: number | undefined;
 
 function errorMessage(error: unknown): string {
@@ -83,25 +74,6 @@ function setBrowserStatus(message: string, tone: "info" | "error" | "ok" = "info
   browserStatus.dataset.tone = tone;
 }
 
-function setExportStatus(
-  message: string,
-  tone: "info" | "error" | "ok" = "info",
-): void {
-  if (!exportStatus) return;
-  exportStatus.textContent = message;
-  exportStatus.dataset.tone = tone;
-}
-
-function clearExport(): void {
-  matches = null;
-  if (exportFile) exportFile.value = "";
-  if (exportPassword) exportPassword.value = "";
-  setExportStatus("");
-  if (manifestCache && manifestRoot) {
-    manifestRoot.innerHTML = renderManifest(manifestCache);
-  }
-}
-
 function clearIdle(): void {
   if (idleTimer !== undefined) {
     clearTimeout(idleTimer);
@@ -112,11 +84,11 @@ function clearIdle(): void {
 function scheduleIdle(): void {
   clearIdle();
   if (restoring) return;
-  if (dataKeys || matches) idleTimer = window.setTimeout(lock, 5 * 60_000);
+  if (dataKeys) idleTimer = window.setTimeout(lock, 5 * 60_000);
 }
 
 function refreshLockButton(): void {
-  if (lockButton) lockButton.hidden = !(dataKeys || matches);
+  if (lockButton) lockButton.hidden = !dataKeys;
 }
 
 function clearRestore(): void {
@@ -140,10 +112,9 @@ function lock(): void {
   dataKeys = null;
   clearIdle();
   clearRestore();
-  clearExport();
   if (passwordInput) passwordInput.value = "";
   refreshLockButton();
-  setStatus("Locked. The password, keys, and export were cleared from this page.");
+  setStatus("Locked. The password and keys were cleared from this page.");
 }
 
 async function loadManifest(): Promise<boolean> {
@@ -153,11 +124,11 @@ async function loadManifest(): Promise<boolean> {
       cache: "no-store",
     });
     if (!response.ok) throw new Error(`manifest HTTP ${response.status}`);
-    const manifest = (await response.json()) as FamilyAccessManifest;
+    const manifest = (await response.json()) as RecoveryManifest;
     const errors = validateManifest(manifest);
     if (errors.length > 0) throw new Error(errors.join(", "));
     manifestCache = manifest;
-    manifestRoot.innerHTML = renderManifest(manifest, matches ?? undefined);
+    manifestRoot.innerHTML = renderManifest(manifest);
     return true;
   } catch (error) {
     manifestRoot.innerHTML = "";
@@ -417,7 +388,7 @@ async function restoreAll(): Promise<void> {
 
   let root: DirectoryHandle;
   try {
-    root = await picker.call(window, { mode: "readwrite", id: "family-access-restore" });
+    root = await picker.call(window, { mode: "readwrite", id: "recovery-restore" });
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       setRestoreStatus("");
@@ -516,7 +487,7 @@ async function unlock(password: string): Promise<void> {
   });
   if (response.status === 404) {
     throw new Error(
-      "No data-keys blob is deployed yet. Run the family-access blob builder and push the result.",
+      "No data-keys blob is deployed yet. Run the recovery blob builder and push the result.",
     );
   }
   if (!response.ok) throw new Error(`data-keys HTTP ${response.status}`);
@@ -559,77 +530,6 @@ form?.addEventListener("submit", (event) => {
 });
 
 lockButton?.addEventListener("click", lock);
-
-const MAX_EXPORT_BYTES = 32 * 1024 * 1024;
-
-exportForm?.addEventListener("submit", (event) => {
-  event.preventDefault();
-  if (exportButton) exportButton.disabled = true;
-  void loadExport().finally(() => {
-    if (exportButton) exportButton.disabled = false;
-  });
-});
-
-async function loadExport(): Promise<void> {
-  if (!manifestCache) {
-    setExportStatus("The access manifest is not loaded yet.", "error");
-    return;
-  }
-  const file = exportFile?.files?.[0];
-  if (!file) {
-    setExportStatus("Choose a Bitwarden export file first.", "error");
-    return;
-  }
-  if (file.size > MAX_EXPORT_BYTES) {
-    setExportStatus("That export file is too large.", "error");
-    return;
-  }
-  const password = exportPassword?.value ?? "";
-  setExportStatus("Reading the export...");
-  try {
-    const json = await file.text();
-    const plain = plaintextExport(json);
-    let vault: BitwardenExport;
-    if (plain) {
-      vault = plain;
-    } else {
-      if (!password) throw new Error("Enter the export password.");
-      setExportStatus("Deriving the export key in this browser...");
-      vault = await decryptBitwardenExport(json, password);
-    }
-    const result = matchVault(manifestCache, vault);
-    const issues = [
-      ...result.errors.map((issue) => `Error: ${issue}`),
-      ...result.warnings.map((issue) => `Warning: ${issue}`),
-    ];
-    const plaintextNote = plain
-      ? ["This export is not password protected; treat the file as the secret."]
-      : [];
-    if (result.errors.length > 0) {
-      // Do not show credentials next to an item the manifest check rejected.
-      matches = null;
-      if (manifestRoot) manifestRoot.innerHTML = renderManifest(manifestCache);
-      setExportStatus(
-        `${result.errors.length} problem(s); credentials are hidden until they are fixed. ${issues.join(" ")}`,
-        "error",
-      );
-    } else {
-      matches = result.matches;
-      if (manifestRoot) manifestRoot.innerHTML = renderManifest(manifestCache, matches);
-      const notes = [...plaintextNote, ...result.warnings];
-      if (notes.length > 0) setExportStatus(`Export loaded. ${notes.join(" ")}`, "info");
-      else setExportStatus(`Export loaded. ${matches.size} item(s) matched.`, "ok");
-    }
-    refreshLockButton();
-    scheduleIdle();
-  } catch (error) {
-    matches = null;
-    if (manifestRoot) manifestRoot.innerHTML = renderManifest(manifestCache);
-    setExportStatus(`Could not read the export: ${errorMessage(error)}`, "error");
-  } finally {
-    if (exportPassword) exportPassword.value = "";
-  }
-}
 
 snapshotSelect?.addEventListener("change", () => {
   if (!repository || !snapshotSelect) return;
@@ -676,21 +576,19 @@ document.addEventListener("visibilitychange", () => {
     clearIdle();
     // A running restore keeps its keys: it writes plaintext the user asked for,
     // and a two-hour job must not die because the tab was backgrounded.
-    if (!restoring && (dataKeys || matches)) idleTimer = window.setTimeout(lock, 30_000);
+    if (!restoring && dataKeys) idleTimer = window.setTimeout(lock, 30_000);
   } else {
     scheduleIdle();
   }
 });
 
 window.addEventListener("pagehide", () => {
-  if (dataKeys || matches) lock();
+  if (dataKeys) lock();
 });
 
 if (!secure) {
   if (unlockButton) unlockButton.disabled = true;
-  if (exportButton) exportButton.disabled = true;
   setStatus("Open this page over HTTPS or on localhost. Unlock is disabled.", "error");
-  setExportStatus("Open this page over HTTPS or on localhost to load an export.", "error");
 } else if ("serviceWorker" in navigator) {
   void navigator.serviceWorker.register(new URL("./sw.js", document.baseURI)).catch(() => {
     // The app works without the offline shell.
@@ -701,7 +599,7 @@ void (async () => {
   const manifestOk = await loadManifest();
   if (!manifestOk || !secure) return;
   if (await blobExists()) {
-    setStatus("The data-keys blob is deployed. Enter the PWA password to unlock.");
+    setStatus("The data-keys blob is deployed. Enter the recovery password to unlock.");
   } else {
     setStatus(
       "No data-keys blob is deployed yet. The access manifest is still available; data restore will work after the blob is generated.",

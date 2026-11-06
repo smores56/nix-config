@@ -3,25 +3,25 @@
 // plaintext, so it refuses to write inside the repository and creates the
 // output tree 0700 with 0600 files.
 //
-//   deno task kit [--out ~/family-kit] [--pwa-url <url>] [--fallback-url <url>]
+//   deno task kit [--out ~/recovery-kit] [--page-url <url>] [--fallback-url <url>]
 //                 [--operator <name>] [--blob public/data-keys.enc]
 
 import { kitSlug, type KitValues, renderLabel, renderLetter, renderStartHere } from "../src/kit.ts";
 import { promptHidden, promptVisible, verifyBlobPassword } from "./prompt.ts";
 
-const DEFAULT_PWA_URL = "https://family.sammohr.dev/";
-const DEFAULT_OUT = "family-kit";
+const DEFAULT_PAGE_URL = "https://recovery.sammohr.dev/";
+const DEFAULT_OUT = "recovery-kit";
 
 type Args = {
   out: string;
-  pwaUrl: string;
+  pageUrl: string;
   /** Required: a guessed pages.dev address would be printed and never checked. */
   fallbackUrl?: string;
   operator?: string;
   blob: string;
 };
 
-const USAGE = "usage: kit [--out <dir>] [--pwa-url <url>] [--fallback-url <url>] " +
+const USAGE = "usage: kit [--out <dir>] [--page-url <url>] [--fallback-url <url>] " +
   "[--operator <name>] [--blob public/data-keys.enc]";
 
 function takeValue(argv: string[], index: number, flag: string): string {
@@ -33,7 +33,7 @@ function takeValue(argv: string[], index: number, flag: string): string {
 function parseArgs(argv: string[]): Args {
   const args: Args = {
     out: DEFAULT_OUT,
-    pwaUrl: DEFAULT_PWA_URL,
+    pageUrl: DEFAULT_PAGE_URL,
     blob: "public/data-keys.enc",
   };
   for (let index = 0; index < argv.length; index++) {
@@ -42,8 +42,8 @@ function parseArgs(argv: string[]): Args {
       case "--out":
         args.out = takeValue(argv, index++, value);
         break;
-      case "--pwa-url":
-        args.pwaUrl = takeValue(argv, index++, value);
+      case "--page-url":
+        args.pageUrl = takeValue(argv, index++, value);
         break;
       case "--fallback-url":
         args.fallbackUrl = takeValue(argv, index++, value);
@@ -115,7 +115,7 @@ Each drive is exFAT (readable on macOS and Windows) and named after its owner.
 
 ## 4. Verify before handing over
 
-- [ ] Open \`${values.pwaUrl}\` in a browser and unlock it with the page password on
+- [ ] Open \`${values.pageUrl}\` in a browser and unlock it with the recovery password on
   the letter: it must show the account list.
 - [ ] On a Mac, open the same page in Chrome and confirm the "Restore everything"
   button appears.
@@ -124,14 +124,14 @@ Each drive is exFAT (readable on macOS and Windows) and named after its owner.
 ## 5. Reprint rules
 
 The media carry only the Bitwarden login, the two-step recovery code, the page
-URL and the page password. Reprint both when:
+URL and the recovery password. Reprint both when:
 
 - the Bitwarden master password or its recovery code changes,
-- the page password changes (rerun \`deno task blob\` first),
+- the recovery password changes (rerun \`deno task blob\` first),
 - the page address changes.
 
 Nothing else on the media changes when keys, buckets or paths change: those
-live in the encrypted blob behind the page password.
+live in the encrypted blob behind the recovery password.
 
 Recipients: ${names}
 `;
@@ -158,9 +158,9 @@ async function main(): Promise<void> {
   const bitwardenEmail = (await promptVisible("Bitwarden e-mail: ")).trim();
   const bitwardenPassword = await promptHidden("Bitwarden master password: ");
   const recoveryCode = (await promptVisible("Bitwarden two-step recovery code: ")).trim();
-  const pwaPassword = await promptHidden("PWA (page) password: ");
+  const recoveryPassword = await promptHidden("Recovery password: ");
 
-  const opens = await verifyBlobPassword(args.blob, pwaPassword);
+  const opens = await verifyBlobPassword(args.blob, recoveryPassword);
   if (opens === false) {
     throw new Error(
       `that password does not open ${args.blob}; the letters would be useless. Fix it and rerun`,
@@ -179,8 +179,8 @@ async function main(): Promise<void> {
     bitwardenEmail,
     bitwardenPassword,
     recoveryCode,
-    pwaPassword,
-    pwaUrl: args.pwaUrl,
+    recoveryPassword,
+    pageUrl: args.pageUrl,
     fallbackUrl,
   });
 
