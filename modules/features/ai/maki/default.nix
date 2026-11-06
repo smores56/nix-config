@@ -249,8 +249,9 @@ in
       memoryPackage
     ];
 
-    user.shellAbbrs.ms = "pick maki-sessions maki-session-resume";
-    # Plain `maki` stays the unsandboxed binary.
+    # Agent sessions live in the guest's XDG dirs, so resuming one goes through the VM too.
+    user.shellAbbrs.ms = "agent-sandbox pick maki-sessions maki-session-resume";
+    # Plain `maki` stays the unsandboxed binary on the host.
     user.shellAbbrs.a = "agent-sandbox maki";
   };
 }

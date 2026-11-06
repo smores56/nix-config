@@ -42,6 +42,21 @@ in
   };
 
   nixosOptions = {
+    # The media and ingest trees the bwrap sandbox gave agents; photos and the vault stay out.
+    agentVm.extraShares = [
+      {
+        path = "/var/lib/data/music";
+        readOnly = false;
+      }
+      {
+        path = "/var/lib/data/books";
+        readOnly = false;
+      }
+      {
+        path = "/var/lib/agent";
+        readOnly = false;
+      }
+    ];
     # restic runs as root and reads smores-owned sources.
     systemd.tmpfiles.rules = [
       # 0751: PrivateUsers services (Immich) map smores:users to nobody, so they need traverse only.

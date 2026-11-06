@@ -10,17 +10,15 @@ let
   # each PIV key lives in its YubiKey's slot 9a.
   yubikeyKeys = import ../lib/yubikey-keys.nix;
   user = config.machine.username;
-  # The agent's key is forced into the sandbox on every host; the PIV login
+  # The agent's key is forced into the agent VM on every host; the PIV login
   # keys keep normal interactive shells.
-  agentSandbox = import ../lib/agent-sandbox.nix {
-    inherit pkgs lib;
-    isServer = builtins.elem "server" config.machine.profiles;
-  };
+  agentVm = import ../lib/agent-vm.nix { inherit pkgs lib; };
+  agentLoginShell = agentVm.agentLoginShell user;
   forcedKey =
     k:
-    ''command="${agentSandbox.agentSsh}/bin/agent-ssh",no-user-rc,no-port-forwarding,no-agent-forwarding,no-X11-forwarding ${k.pubkey}'';
-  # The personal sops signing key is also the laptop sandbox's login: forced
-  # into the sandbox, never an interactive shell.
+    ''command="${agentVm.agentSsh user}/bin/agent-ssh",no-user-rc,no-port-forwarding,no-agent-forwarding,no-X11-forwarding ${k.pubkey}'';
+  # The personal sops signing key is also the laptop guest's login: forced
+  # into this host's guest, never an interactive host shell.
   signingKeys = import ../lib/signing-keys.nix;
   authorizedKeys = map (k: k.pubkey) yubikeyKeys.piv ++ [
     (forcedKey { pubkey = signingKeys.personal; })
@@ -80,12 +78,12 @@ in
       # executed by the login shell; the wrapper skips fish's user config for
       # exactly that command and runs fish normally everywhere else.
       users.users.${user} = {
-        shell = lib.mkForce agentSandbox.agentLoginShell;
+        shell = lib.mkForce agentLoginShell;
         openssh.authorizedKeys.keys = authorizedKeys;
       };
       # pam_shells/chsh read this; the shell also lands in systemPackages via
       # users-groups.nix, which creates /run/current-system/sw/bin/<name>.
-      environment.shells = [ agentSandbox.agentLoginShell ];
+      environment.shells = [ agentLoginShell ];
     })
 
     (lib.mkIf (config.exposeSsh.enable || config.sudoKey.enable) {
