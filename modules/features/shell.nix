@@ -66,6 +66,7 @@ in
     packages = [
       pkgs.osc
       pkgs.pfetch-rs
+      pkgs.trash-cli
       zellijTabRename
     ];
 
@@ -106,6 +107,7 @@ in
       paste = "osc paste";
 
       cn = "c ~/repos/github.com/smores56/nix-config";
+      ct = "trash-empty -f";
       hm = "home-manager";
       hs = "home-manager switch --no-write-lock-file";
 
