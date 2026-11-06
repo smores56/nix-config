@@ -52,12 +52,11 @@ generated hardware config, then run `nix run .#bootstrap`.
   (see [Recovery](#recovery)).
 - **Out-of-band access**: the physical console. There is no inbound SSH port;
   SSH is tunnel-only.
-- **Maki sandbox**: `m` runs Maki through `agent-sandbox`; the bind and secret
-  lists are `homeRw`/`homeRo`/`configAllow`/`secretBind` in
-  `modules/lib/agent-sandbox.nix`. `~/.ssh`, `~/.config/{ssh-sk,sops}`, the
-  PIV/sudo agent and every secret not on the allowlist are absent, and
-  `/var/lib/data/photos` is masked by a tmpfs. See [Agent sandbox](#agent-sandbox).
-- **Maki signing**: commits inside the sandbox sign with the sops key for the
+- **Agent VM**: `a` runs maki in the microvm guest. The guest also gets the
+  music, books and agent-ingest trees (`agentVm.extraShares` in the host's
+  `default.nix`); `/var/lib/data/photos` and the vault are never shared. See
+  [Agent VMs](#agent-vms).
+- **Maki signing**: commits inside the agent VM sign with the sops key for the
   repo owner's account (`user.signingkey`, `gpg.format=ssh`) and
   `commit.gpgsign = true`. That is config, not enforcement: `--no-gpg-sign`
   still produces an unsigned commit, which review or PR checks catch.
@@ -1348,63 +1347,88 @@ and it is resolved by hand. One copy per version that cannot be merged, so if a
 device was paused across several remote changes (a restore plus more than one
 save) expect more than one conflict file; keep the newest and delete the rest.
 
-## Agent sandbox
+## Agent VMs
 
-`agent-sandbox <harness>` is the explicit same-UID boundary; `m` is a fish/zsh
-abbreviation for `agent-sandbox maki`. Install `maki` manually in
-`~/.local/bin` (there is no wrapper), and run plain `maki` only when you mean
-to work unsandboxed. It runs on the personal Linux hosts only.
-`agent-sandbox-check` runs the real boundary and asserts the core properties.
+Agents run inside a VM on every host, so nothing they do can reach the host's
+sudo, polkit, YubiKey, PIN or admin prompts. `a` starts one: `agent-sandbox
+maki` on Linux, `agent-sandbox claude` on smoreswork. Plain `maki` or `claude`
+on the host is the deliberate unsandboxed opt-out. The design and its accepted
+risks are on smores56/sdlc#386.
 
-The sandbox binds an explicit config allowlist and masks the whole `~/.config`;
-if a tool needs its config, add the directory to `CONFIG_ALLOW` in
-`modules/lib/agent-sandbox.nix`. `~/.ssh` contains no keys: `allowed_signers`
-and `known_hosts` live in `~/.config/ssh`, and the home-manager activation
-moves them there. The agent's SSH credential is the personal sops signing key,
-and smortress authorizes it only with a forced `agent-ssh` command that
-re-enters the sandbox.
+Each guest sees the home at the same path, minus a deny list (`agentVm.deny` in
+`modules/nixos/agent-vm.nix`; `deny` in `modules/features/agent-vm/default.nix`
+on the Mac). Everything else is read-only except the `rw` list. Visible on
+purpose: shell histories, agent transcripts, and credential files in shared
+paths. What is not shared: browser profiles, keyrings, `~/.config/sops`, key
+backups, clipboard history, `~/Library` on the Mac, and `~/Sync` on Linux. The
+writable trees include repos, and the agent may write their `.git/config` and
+hooks, which you later run on the host; that is accepted (full git for agents).
+Keep secrets out of shared paths: run `secret-sweep` after adding files under
+the home and move or delete what it reports.
 
-Existing repos keep `.git/hooks` and `.git/config` read-only inside the
-boundary, so the agent cannot install hooks or set `core.hooksPath`; the hooks
-already in the repo still run for the agent. Renaming a repo's `.git` still
-moves the read-only mounts with it, so this is a raised bar, not a kernel
-boundary.
+### Linux (smortress, smorespro)
 
-Bubblewrap scans the repos that exist at start, so a repo the agent creates
-inside the boundary is writable and is reviewed like any other code.
+A microvm.nix NixOS guest that starts at boot (`microvm@agent.service`).
+`agent-vm-prep` assembles the guest's home view on a tmpfs before each start,
+and virtiofsd writes every guest file as you (guest root included), so guest
+root cannot plant root-owned, setuid-root or device files on the host. The
+sops secrets in `agentVm.secrets` are copied into a read-only share at
+`/run/secrets`; the others never leave the host. The guest builds with its own
+store layered over the host's, never the host daemon.
 
-Residuals of the same-UID model: `~/.cargo/registry`, `~/.cargo/git`, `~/.npm`,
-and the Bun cache stay writable for build speed, so a modified cache entry can
-affect a later unsandboxed build; `~/.local/state/*` entries that are not
-explicitly masked remain readable read-only; and the sandbox holds the signing
-keys by design, so review and the PR gate stay the control.
+Network: tap `vm-agent` (host `10.77.0.1`, guest `10.77.0.2`). The guest
+reaches the internet through NAT and, on the host, only the LLM and memory
+ports, through socket proxies; it cannot reach other host services or the LAN.
 
-Nix: `/nix/store` is read-only, and so is `/nix/var/nix` whenever a daemon
-socket exists, so `nix` resolves to the daemon instead of a local store. A local
-store would take its lock files inside the read-only store and fail; the state
-dir bwrap creates is writable, which is exactly what makes `store = auto` choose
-it. Agent builds run in the daemon's sandbox as `nixbld`
-(`nix.settings.build-users-group` in `modules/nixos/base.nix`) and the paths
-they add persist in the host store.
+After a host switch, the guest keeps running its old config; running sessions
+survive. Pick up guest changes or new top-level home entries with:
 
-On Linux the config allowlist is read-only, but `CONFIG_WRITABLE` in
-`modules/lib/agent-sandbox.nix` lists files a tool must lock or rewrite. Each
-gets a writable copy under the agent state bound over the read-only file —
-currently only `maki/pack-lock.json.lock`, so maki's package lock works while
-the plugin config stays immutable. The host sidecar is created empty if absent
-(maki creates the same file itself). macOS has no mount namespace and copies the
-allowlist into a writable agent config dir instead, so it needs neither.
+```sh
+sudo systemctl restart microvm@agent.service
+```
 
-Clipboard history is deliberately not persisted: the cliphist database is
-removed and the sandbox masks `~/.cache/cliphist`. There is no same-UID
-permission that makes a live history unreadable without root; not storing it is
-the only reliable hardening.
+`agent-vm-check` (also `just agent-vm-check`) asserts the boundary from inside
+the guest: denied paths absent, read-only and writable shares behave,
+hand-in secrets readable, guest files owned by you, `mknod` refused, host sshd
+unreachable, the memory proxy reachable. Run it after changing the module.
 
-Photos: the agent talks to Immich over its API rather than touching
-`/var/lib/data/photos`, using `secret/immich-agent-api-key` (below).
+The agent's maki state lives in `~/.local/state/agent`, `~/.local/share/agent`
+and `~/.cache/agent` (the launcher points the XDG dirs there), so `ms` resumes
+guest sessions through `agent-sandbox`. maki is installed manually in
+`~/.local/bin`.
 
-Work Mac: Claude Code, not maki, with no sandbox: an agent there can read the
-sops identity and every decrypted secret.
+The personal sops signing key logs in to smortress only through a forced
+`agent-ssh` command, which lands in smortress's own guest, never a host shell.
+A laptop guest reaches smortress that way through the tunnel.
+
+### smoreswork
+
+A headless Tart macOS guest (`modules/features/agent-vm`). Once per Mac:
+
+1. Turn off AirPlay Receiver (System Settings → General → AirDrop & Handoff):
+   it is the one host service the guest can reach that can pop a dialog.
+2. Narrow Docker Desktop's File sharing (Settings → Resources → File sharing)
+   to the shared trees (`~/Blitzy`, `~/repos`). Containers started through the
+   forwarded socket can mount whatever is listed there, `/Users` included.
+3. Run `agent-sandbox provision` (clones the pinned image, hardens the guest,
+   rotates its admin password, installs the login key), then `a` and sign in to
+   Claude inside the guest; the guest keeps its own login.
+
+`agent-sandbox restart` stops the VM so the next launch re-plans the shares;
+`agent-sandbox stop` shuts it down. The four `github-{personal,work}-{pat,signing-key}`
+secrets are handed in at the host's sops-nix path on each launch; the rest stay
+on the host. Docker comes from the host's Docker Desktop through a per-session
+forwarded socket, so Docker Desktop must be running.
+
+### Scrub at source
+
+`secret-sweep` (offline, redacted gitleaks) scans the home, skipping `~/Library`
+on the Mac. Run it on each host, then delete or move each finding out of the
+shared paths. Credentials that were only ever needed by humans are better
+revoked than hidden: the two work GCP service-account keys
+(`dev-service-account@blitzy-os-dev`, `@blitzy-platform-stage`) were removed
+locally; revoke them in IAM only after confirming with the team that nothing
+else (CI, teammates) uses them.
 
 ### immich-agent-api-key
 
@@ -1413,11 +1437,10 @@ sops identity and every decrypted secret.
 Scoped Immich API key for the agent, user-readable in `secrets/common.yaml`.
 Create it in Immich under Account Settings → API Keys with **asset.read,
 asset.upload, album.read, album.create** only — no asset delete, no user or
-admin scope. The sandbox binds it into the boundary at `/run/agent/immich-key`
-and exports `IMMICH_API_KEY` (`read_secret` in `modules/lib/agent-sandbox.sh`);
-nothing outside the sandbox reads it. `/var/lib/data/photos` is masked by a
-tmpfs inside the boundary, so the agent uploads through the API only and never
-sees the managed library.
+admin scope. The agent VM hands it in at `/run/secrets/immich-agent-api-key` and the
+launcher exports `IMMICH_API_KEY` (`secretEnv` in `modules/lib/agent-vm.nix`).
+`/var/lib/data/photos` is never shared into the guest, so the agent uploads
+through the API only and never sees the managed library.
 
 To rotate: create the new key in Immich, update the common file, rebuild both
 hosts so sops rewrites `/run/secrets/…`, then delete the old key in Immich.
@@ -1694,7 +1717,7 @@ a fresh chat from exactly those fields. Tool ids are `server:mcp:<info.id>`, so
 renaming a server's `info.id` breaks the default silently. Existing chats keep
 their own toggles; only new ones pick this up.
 
-**Code interpreter** is Jupyter in the `jupyter` agent-sandbox profile
+**Code interpreter** is Jupyter in a bwrap sandbox (`modules/lib/jupyter-sandbox.nix`)
 (loopback `8888`, token from the `jupyter-token` secret), so generated code runs
 with the vault, `~/Sync` and the host secrets masked. **Web search** goes to the
 TinyFish shim on loopback `8899` because the bundled engines are unmaintained

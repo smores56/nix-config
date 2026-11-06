@@ -94,6 +94,9 @@ in
         cache-type-k = "q4_0";
         cache-type-v = "q4_0";
         parallel = 1;
+        # /slots can return the last prompt, and the agent VM reaches this port; secret-review
+        # sends unredacted findings here.
+        no-slots = true;
         cont-batching = true;
         flash-attn = "on";
         spec-type = "draft-dflash";

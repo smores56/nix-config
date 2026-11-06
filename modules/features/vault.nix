@@ -1,6 +1,7 @@
 # `vault <cmd>`: unlock the Cryptomator vault for exactly one command. Plaintext exists only in a
-# temporary mount that is unmounted on exit; on Linux agent-sandbox masks ~/Sync (which holds the vault; Mac agents run unsandboxed),
-# and the server never unlocks anything.
+# temporary mount that is unmounted on exit. The Linux agent VM never shares ~/Sync (which holds
+# the vault); the Mac VM shares the ciphertext, an accepted risk on sdlc #386. The server never
+# unlocks anything.
 {
   config,
   lib,
