@@ -60,10 +60,10 @@ adds its greeter as a host-local module.
 | `modules/nixos/radicale.nix`, `open-webui.nix`, `navidrome.nix` | public tunnel apps with their own auth: CalDAV/CardDAV, chat, music |
 | `modules/nixos/restic-backup.nix` | restic repos, schedule, retention and the Immich db dump |
 | `modules/flake/` | flake-parts modules: configurations, checks, apps (`apps.nix`, `apps/`), formatter, nixpkgs |
-| `modules/lib/` | helpers: sandbox lists, key tables, `secret-path.nix`, `hardening.nix` |
+| `modules/lib/` | helpers: the share planner and agent-VM view/launcher, the Jupyter bwrap sandbox, key tables, `secret-path.nix`, `hardening.nix` |
 | `modules/ports.nix` | loopback port table shared by services and the tunnel |
 | `pkgs/overlays.nix` | nixpkgs overlays: pins and local package derivations |
-| `modules/features/agent-sandbox/` | the same-UID agent boundary; lists/backends in `modules/lib/agent-sandbox.{nix,sh}` |
+| `modules/nixos/agent-vm.nix`, `modules/features/agent-vm/` | the agent VMs: Linux microvm guest (host module, view, firewall) and its launcher; the Mac Tart launcher. Shared facts in `modules/lib/agent-vm.nix`, planner in `modules/lib/share_planner.py` |
 | `modules/features/ai/` | AI tooling: assistant context, harvest, Claude settings merge, maki, memory, providers, sdlc, skills. `memory/service.nix` is the one memory service description; `modules/nixos/memory.nix` and `memory/darwin.nix` render it |
 | `modules/features/tv/`, `modules/features/repos/` | Television repository and worktree cables; the `repos`/`worktrees` CLIs they call |
 | `tofu/` | minimal Cloudflare DNS/Access/notification objects; run via the `cloudflare-*` flake apps |
@@ -180,7 +180,7 @@ nix eval --json .#checks.x86_64-linux --apply builtins.attrNames
 
 Some checks are Linux-only (`manual-steps-sync`, `pam-auth-gates`,
 `sshd-settings`, `github-metadata`, `memory-export-restore`, `ssh-askpass`,
-`agent-sandbox-static`, `eval-nixos-*`); build the one that matches
+`agent-vm-linux-static`, `jupyter-sandbox-static`, `eval-nixos-*`); build the one that matches
 what you touched, e.g. `nix build .#checks.aarch64-darwin.git-work-routing`.
 
 Run `manual-steps-sync` after touching hosts, sops keys, `tofu/`, `webProxy`

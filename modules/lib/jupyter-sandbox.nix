@@ -1,5 +1,5 @@
-# The bwrap sandbox for the Open WebUI code interpreter (modules/nixos/jupyter.nix). Agents moved to
-# the agent VM (modules/nixos/agent-vm.nix); the shell backend is modules/lib/agent-sandbox.sh.
+# The bwrap sandbox for the Open WebUI code interpreter (modules/nixos/jupyter.nix); the shell
+# backend is modules/lib/jupyter-sandbox.sh. Agents run in the agent VM (modules/nixos/agent-vm.nix).
 {
   pkgs,
   lib,
@@ -64,9 +64,8 @@ let
     )
   '';
 
-  # Minimal profile for the Open WebUI code interpreter: untrusted code gets one writable workspace,
-  # no agent config, git/ssh shims, promoted secrets or repo protection. It keeps the masks, the
-  # same-UID boundary and the host network namespace (Open WebUI reaches it on loopback).
+  # Untrusted code gets one writable workspace and no secrets or home config. It keeps the masks,
+  # the same-UID boundary and the host network namespace (Open WebUI reaches it on loopback).
   jupyterWorkspace = "/var/lib/agent/jupyter";
 
   jupyterPath = lib.makeBinPath [
@@ -94,16 +93,10 @@ let
 
   jupyterConfigFile = pkgs.writeText "jupyter-sandbox.conf" ''
     ${renderList "HOME_RW" [ jupyterWorkspace ]}
-    ${renderList "HOME_RO" [ ]}
     ${renderList "HOME_MASK_DIRS" homeMaskDirs}
     ${renderList "HOME_MASK_FILES" homeMaskFiles}
-    ${renderList "CONFIG_ALLOW" [ ]}
-    ${renderList "CONFIG_WRITABLE" [ ]}
-    ${renderList "SECRET_BIND" [ ]}
-    ${renderList "SECRET_READ" [ ]}
     ${renderList "ENV_EXTRA" jupyterEnvExtra}
     ${renderList "ENV_PASSTHROUGH" [ "JUPYTER_TOKEN" ]}
-    EMPTY_DIR="${pkgs.emptyDirectory}"
   '';
 
   # A sops secret the launcher reads host-side; it reaches the sandbox only as JUPYTER_TOKEN, so no token is in the store or unit.
@@ -121,7 +114,7 @@ let
       export AGENT_SANDBOX_CONFIG=${jupyterConfigFile}
       export AGENT_SANDBOX_PATH=${jupyterPath}
       export AGENT_SANDBOX_BWRAP=${lib.getExe bwrap}
-      exec ${pkgs.bash}/bin/bash ${./agent-sandbox.sh} "$@"
+      exec ${pkgs.bash}/bin/bash ${./jupyter-sandbox.sh} "$@"
     '';
   };
 

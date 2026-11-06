@@ -1039,13 +1039,11 @@ in
               nativeBuildInputs = [ pkgs.gnugrep ];
             }
             ''
-              grep -F -- '--clearenv' ${../lib/agent-sandbox.sh}
-              grep -F -- '--unshare-pid' ${../lib/agent-sandbox.sh}
-              grep -F -- '--unshare-user' ${../lib/agent-sandbox.sh}
-              grep -F -- '--tmpfs /run' ${../lib/agent-sandbox.sh}
-              grep -F -- 'no-user-rc' ${../nixos/ssh.nix}
-              if grep -F -- 'no-touch-required' ${../nixos/ssh.nix}; then exit 1; fi
-              grep -F -- '/var/lib/data/photos' ${../lib/agent-sandbox.nix}
+              grep -F -- '--clearenv' ${../lib/jupyter-sandbox.sh}
+              grep -F -- '--unshare-pid' ${../lib/jupyter-sandbox.sh}
+              grep -F -- '--unshare-user' ${../lib/jupyter-sandbox.sh}
+              grep -F -- '--tmpfs /run' ${../lib/jupyter-sandbox.sh}
+              grep -F -- '/var/lib/data/photos' ${../lib/jupyter-sandbox.nix}
               touch $out
             '';
         agent-vm-linux-static =
@@ -1130,6 +1128,9 @@ in
               grep -xF -- '-A agent-vm-fwd -d 127.0.0.0/8 -j DROP' "$rules4"
               # The private-range drops come before the egress accept.
               [ "$(grep -n -- '-d 10.0.0.0/8 -j DROP' "$rules4" | cut -d: -f1)" -lt "$(grep -n -- '-A agent-vm-fwd -j ACCEPT' "$rules4" | cut -d: -f1)" ]
+              # The forced key that lands laptop agents in this host's guest.
+              grep -F -- 'no-user-rc' ${../nixos/ssh.nix}
+              if grep -F -- 'no-touch-required' ${../nixos/ssh.nix}; then exit 1; fi
               l=${launcher}/bin/agent-sandbox
               for opt in '-F /dev/null' IdentitiesOnly=yes IdentityAgent=none ForwardAgent=no \
                 PKCS11Provider=none PermitLocalCommand=no ProxyCommand=none ControlPath=none ClearAllForwardings=yes; do
