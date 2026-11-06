@@ -16,8 +16,8 @@ in
 {
   shell = merge [
     {
-      "abbrs.m" =
-        "work-policy: unsandboxed `claude` on the Mac (Sam's choice, managed policy removed 2026-11-04); `agent-sandbox maki` on Linux";
+      "abbrs.a" =
+        "inherent: the agent differs per host (`agent-sandbox claude` in the Tart VM on the Mac, `agent-sandbox maki` on Linux)";
       "abbrs.ms" = maki;
       "abbrs.ns" = "inherent: nixos-rebuild exists only on NixOS";
       "env.CC" = "inherent: macOS toolchain in /usr/bin";
@@ -81,7 +81,6 @@ in
       "man-db"
     ])
     (group maki [
-      "agent-sandbox"
       "agent-sandbox-check"
       "maki-session-resume"
       "maki-session-search"

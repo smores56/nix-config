@@ -251,6 +251,6 @@ in
 
     user.shellAbbrs.ms = "pick maki-sessions maki-session-resume";
     # Plain `maki` stays the unsandboxed binary.
-    user.shellAbbrs.m = "agent-sandbox maki";
+    user.shellAbbrs.a = "agent-sandbox maki";
   };
 }

@@ -1006,6 +1006,31 @@ in
             niri-config =
               config.flake.homeConfigurations."smores@smorespro".config.xdg.configFile.niri-config.source;
           }
+      # The Mac agent VM launcher as built: its ssh must never pick up the host's identities,
+      # forwards or config, and the deny list must reach the planner (sdlc #386).
+      //
+        lib.optionalAttrs
+          (config.flake.homeConfigurations."sam@smoreswork".activationPackage.system == system)
+          {
+            agent-vm-static =
+              let
+                launcher = lib.getExe (
+                  lib.findFirst (p: lib.getName p == "agent-sandbox") (throw "agent-sandbox not on the work Mac")
+                    config.flake.homeConfigurations."sam@smoreswork".config.home.packages
+                );
+              in
+              pkgs.runCommand "agent-vm-static-check" { nativeBuildInputs = [ pkgs.gnugrep ]; } ''
+                for opt in '-F /dev/null' 'IdentitiesOnly=yes' 'IdentityAgent=none' 'ForwardAgent=no' \
+                  'PKCS11Provider=none' 'PermitLocalCommand=no' 'ProxyCommand=none' 'ControlPath=none' \
+                  'ExitOnForwardFailure=yes' 'deny=(Library .config/sops' '@sha256:'; do
+                  grep -qF -- "$opt" ${launcher} || { echo "agent-vm launcher lacks: $opt" >&2; exit 1; }
+                done
+                # Tart's --ssh forwards the host agent into the guest.
+                if grep -qE 'tart run[^#]*--ssh' ${launcher}; then exit 1; fi
+                if grep -qE '^[^#]*ssh [^"]*-A( |$)' ${launcher}; then exit 1; fi
+                touch $out
+              '';
+          }
       // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
         agent-sandbox-static =
           pkgs.runCommand "agent-sandbox-static-check"
