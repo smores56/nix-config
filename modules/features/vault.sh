@@ -1,76 +1,90 @@
 #!/usr/bin/env bash
-# Unlock the Cryptomator vault for exactly one command, then unmount.
-# The password goes to cryptomator-cli on stdin, never argv. The trap unmounts and removes the
-# mount point even when the command fails or is interrupted.
-# Usage: vault <command> [args...]
-
-if [ "$#" -eq 0 ]; then
-  echo "usage: vault <command> [args...]" >&2
-  echo "  e.g. vault yazi, vault zathura ./docs/book.pdf" >&2
-  exit 2
-fi
+# Open the vault for one foreground session. Must be started as root through `sudo vault`.
+#
+# The store is owned by the `vault` user and the human's uid has no access to it at rest, so this
+# mount is the only way in. bindfs maps the vault user to the caller, so inside ~/Vault everything
+# looks owned by the human and editors, file managers and previewers behave normally.
+#
+# No argument: hold the mount until Ctrl-C. With a command: run it in ~/Vault as the caller and
+# unmount when it exits. Either way the trap unmounts, so the window is exactly the foreground
+# process.
+#
+# Usage: sudo vault [command [args...]]
 
 @PLATFORM@
 
-vault_dir=@VAULT@
-if [ ! -f "$vault_dir/vault.cryptomator" ]; then
-  echo "vault: $vault_dir is not a Cryptomator vault" >&2
+store=@STORE@
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "vault: run this as 'sudo vault'" >&2
+  exit 1
+fi
+caller=${SUDO_USER:-}
+if [ -z "$caller" ] || [ "$caller" = root ]; then
+  echo "vault: start it as 'sudo vault' from your own session, not as root" >&2
+  exit 1
+fi
+if [ ! -d "$store" ]; then
+  echo "vault: $store is missing; run the migration first" >&2
   exit 1
 fi
 
-pass=
-IFS= read -rs -p 'vault password: ' pass || {
-  echo
-  echo "vault: no password entered" >&2
+mountpoint="$(home_of "$caller")/Vault"
+if [ -z "${mountpoint%/Vault}" ]; then
+  echo "vault: could not resolve $caller's home directory" >&2
   exit 1
-}
-echo
+fi
+if is_mounted "$mountpoint"; then
+  echo "vault: $mountpoint is already open" >&2
+  exit 1
+fi
 
-mountpoint=$(mktemp -d "${TMPDIR:-/tmp}/vault.XXXXXX")
-cli=
+mkdir -p "$mountpoint"
+chown "$caller" "$mountpoint"
+
+mounter=
 # shellcheck disable=SC2329 # invoked by the traps
 cleanup() {
   # Run once: the INT/TERM trap ends in `exit`, which would fire the EXIT trap again.
   trap - EXIT INT TERM
-  # cryptomator-cli exits only once the mount is gone, so unmount first (waiting would hang). A
-  # child left by the command (previewer, watcher, Ctrl-C'd yazi) keeps a file open, so a plain
-  # unmount fails with EBUSY: retry detaching the tree.
+  # A child the command left behind keeps a file open, so a plain unmount fails with EBUSY: detach
+  # the tree instead of leaving a stale mount owned by a dead session.
   if ! unmount "$mountpoint"; then
     unmount_detach "$mountpoint" || true
   fi
-  if [ -n "$cli" ]; then
-    # A lazily detached mount a stray child still holds can keep the CLI alive: bound the reap, then kill.
-    for _ in $(seq 1 40); do
-      kill -0 "$cli" 2>/dev/null || break
+  if [ -n "$mounter" ]; then
+    for _ in $(seq 1 20); do
+      kill -0 "$mounter" 2>/dev/null || break
       sleep 0.25
     done
-    kill "$cli" 2>/dev/null || true
-    wait "$cli" 2>/dev/null || true
+    kill "$mounter" 2>/dev/null || true
+    wait "$mounter" 2>/dev/null || true
   fi
-  rmdir "$mountpoint" 2>/dev/null || true
 }
 trap cleanup EXIT
-# Interrupted: unmount and leave, or the command would run against an unmounted tree.
 trap 'cleanup; exit 130' INT TERM
 
-printf '%s\n' "$pass" | cryptomator-cli unlock --password:stdin \
-  --mounter=@MOUNTER@ --mountPoint="$mountpoint" "$vault_dir" &
-cli=$!
-pass=
+# The store is 0700 for the vault user; mapping that user to the caller is what makes the tree
+# usable for the session without ever handing the human's uid the real permissions.
+bindfs --foreground -u "$caller" -g "$(group_of "$caller")" "$store" "$mountpoint" &
+mounter=$!
 
 for _ in $(seq 1 60); do
   is_mounted "$mountpoint" && break
-  if ! kill -0 "$cli" 2>/dev/null; then
-    echo "vault: cryptomator-cli exited before mounting (wrong password?)" >&2
+  if ! kill -0 "$mounter" 2>/dev/null; then
+    echo "vault: bindfs exited before mounting" >&2
     exit 1
   fi
-  sleep 0.5
+  sleep 0.25
 done
-is_mounted "$mountpoint" || {
-  echo "vault: no mount appeared within 30s" >&2
+if ! is_mounted "$mountpoint"; then
+  echo "vault: no mount appeared within 15s" >&2
   exit 1
-}
+fi
 
-status=0
-( cd "$mountpoint" && "$@" ) || status=$?
-exit "$status"
+if [ "$#" -eq 0 ]; then
+  echo "vault open at $mountpoint; Ctrl-C to close."
+  wait "$mounter" || true
+else
+  ( cd "$mountpoint" && exec sudo -u "$caller" -- "$@" )
+fi
