@@ -340,19 +340,6 @@ in
                 "${src}/modules/features/md-structure.prompt.md"
               ];
             };
-            vault = {
-              tools = [
-                pkgs.bash
-                pkgs.coreutils
-                pkgs.gnugrep
-                pkgs.gnused
-              ];
-              args = [
-                "${src}/modules/features/vault.sh"
-                "${src}/modules/features/vault-linux.sh"
-                "${src}/modules/features/vault-darwin.sh"
-              ];
-            };
           }
         );
 
@@ -1084,7 +1071,7 @@ in
                   ".config/Bitwarden"
                   ".cache/cliphist"
                   ".gnupg"
-                  "Sync"
+                  "Vault"
                 ];
                 # A writable entry must never cover host-executed config or a denied path.
                 narrowRw = lib.all (

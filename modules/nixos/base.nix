@@ -93,7 +93,7 @@ in
   # would run those builders as root.
   nix.settings.build-users-group = "nixbld";
 
-  # Setuid fusermount3 for unprivileged FUSE mounts (cryptomator-cli on laptops),
+  # Setuid fusermount3 so unprivileged FUSE mounts work (AppImages, gvfs),
   # independent of gvfs pulling fuse in.
   programs.fuse.enable = true;
 

@@ -6,7 +6,7 @@
 # hosts means the YubiKey-gated sudo, and the mount lives exactly as long as the foreground process.
 #
 # On the work Mac the same script runs against the root-owned store documented in
-# docs/manual-steps.md; fuse-t provides the mount there.
+# docs/manual-steps.md; bindfs there sits on the fuse-t runtime.
 {
   lib,
   pkgs,
@@ -28,9 +28,11 @@ let
     runtimeInputs = [
       pkgs.bindfs
       pkgs.coreutils
-      pkgs.sudo
     ]
-    ++ lib.optionals (!isDarwin) [ pkgs.util-linux ];
+    ++ lib.optionals (!isDarwin) [
+      pkgs.sudo
+      pkgs.util-linux
+    ];
     text = script;
   };
 in

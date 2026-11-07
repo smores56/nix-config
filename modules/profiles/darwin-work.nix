@@ -8,6 +8,7 @@
     ../desktop/aerospace/default.nix
     ../desktop/macos-defaults.nix
     ../features/wallpapers.nix
+    ../features/vault.nix
     ../features/agent-vm
   ];
   nixos = [ ];

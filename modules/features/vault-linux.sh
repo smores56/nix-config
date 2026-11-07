@@ -7,3 +7,10 @@ unmount() { umount "$1" 2>/dev/null; }
 unmount_detach() { umount -l "$1" 2>/dev/null; }
 home_of() { getent passwd "$1" | cut -d: -f6; }
 group_of() { id -gn "$1"; }
+store_owner() { echo vault; }
+store_group() { echo vault; }
+run_as() {
+  local user=$1
+  shift
+  sudo -u "$user" -H env HOME="$(home_of "$user")" USER="$user" LOGNAME="$user" -- "$@"
+}

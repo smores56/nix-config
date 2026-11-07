@@ -119,18 +119,6 @@ in
       };
     };
 
-    # A bindfs mount outlives a killed `sudo vault`; close it at boot so no stale mount survives the
-    # session that opened it. The condition keeps the unit a no-op when nothing is mounted.
-    systemd.services.vault-unmount = {
-      description = "Close a stale vault mount";
-      wantedBy = [ "multi-user.target" ];
-      unitConfig.ConditionPathIsMountPoint = "${home}/Vault";
-      serviceConfig = {
-        Type = "oneshot";
-        ExecStart = "${pkgs.util-linux}/bin/umount -R ${home}/Vault";
-      };
-    };
-
     # tmpfiles fixes the top-level directory only, so nothing starts syncing until the
     # migration has chowned the whole tree to `vault` and dropped this marker.
     systemd.services.syncthing.unitConfig.ConditionPathExists = migrated;

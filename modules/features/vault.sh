@@ -35,8 +35,15 @@ if [ -z "${mountpoint%/Vault}" ]; then
   exit 1
 fi
 if is_mounted "$mountpoint"; then
-  echo "vault: $mountpoint is already open" >&2
-  exit 1
+  # A FUSE mount whose server died still answers `mountpoint`; detach it rather than refusing
+  # until the next reboot.
+  if ! stat "$mountpoint" >/dev/null 2>&1; then
+    unmount_detach "$mountpoint" || true
+  fi
+  if is_mounted "$mountpoint"; then
+    echo "vault: $mountpoint is already open" >&2
+    exit 1
+  fi
 fi
 
 mkdir -p "$mountpoint"
@@ -66,12 +73,14 @@ trap 'cleanup; exit 130' INT TERM
 
 # The store is 0700 for the vault user; mapping that user to the caller is what makes the tree
 # usable for the session without ever handing the human's uid the real permissions.
-bindfs --foreground -u "$caller" -g "$(group_of "$caller")" "$store" "$mountpoint" &
+bindfs --foreground -u "$caller" -g "$(group_of "$caller")" \
+  --create-for-user="$(store_owner)" --create-for-group="$(store_group)" \
+  "$store" "$mountpoint" &
 mounter=$!
 
 for _ in $(seq 1 60); do
   is_mounted "$mountpoint" && break
-  if ! kill -0 "$mounter" 2>/dev/null; then
+  if ! jobs -pr | grep -qx "$mounter"; then
     echo "vault: bindfs exited before mounting" >&2
     exit 1
   fi
@@ -86,5 +95,5 @@ if [ "$#" -eq 0 ]; then
   echo "vault open at $mountpoint; Ctrl-C to close."
   wait "$mounter" || true
 else
-  ( cd "$mountpoint" && exec sudo -u "$caller" -- "$@" )
+  ( cd "$mountpoint" && run_as "$caller" "$@" )
 fi

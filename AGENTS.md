@@ -53,7 +53,7 @@ adds its greeter as a host-local module.
 | `modules/home.nix` | home-manager base (fonts, nix.conf, darwin helpers) |
 | `modules/features/` | cross-platform home-manager modules (shell, editor, git, packages, theme, ai) |
 | `modules/nixos/vault-sync.nix`, `modules/syncthing-devices.nix` | The vault: one plaintext tree synced between the hosts that hold it, owned and synced by the `vault` user; the device table is a plain attrset of public device IDs |
-| `modules/features/vault.nix` (`vault.sh`) | `vault <cmd>`: unlock the Cryptomator vault for exactly one command |
+| `modules/features/vault.nix` (`vault.sh`) | `sudo vault [cmd]`: bindfs-mount the vault at `~/Vault` for one foreground session |
 | `modules/features/brew.nix` | the work Mac's Brewfile (`just brew-bundle` applies it) |
 | `modules/desktop/` | desktop-environment modules (niri, aerospace) |
 | `modules/nixos/` | NixOS system modules (base, desktop, networking, ssh, etc.) |
