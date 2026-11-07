@@ -48,6 +48,10 @@ Cross-cutting values flow through `config.machine.*` and `config.user.*`, not
   (`modules/nixos/agent-vm.nix`), `agent-sandbox claude` in a Tart macOS guest
   on smoreswork (`modules/features/agent-vm`). Plain `maki`/`claude` is the
   unsandboxed opt-out.
+- **Private chat.** `mp` (`maki-private`) runs the local smortress qwen with
+  its own XDG config: no MCP or memory, no project config, and only read-only
+  tools plus TinyFish search. State, data, cache, and logs live in tmpfs and
+  are removed on exit (`modules/features/ai/maki/default.nix`).
 - **Memory.** smortress runs a typed SQLite registry, FalkorDB and Graphiti,
   reached over the tunnel through `memory-mcp-shim`. Extraction and embeddings
   go through a loopback Neuralwatt gateway. The `memory` CLI: `write search get
