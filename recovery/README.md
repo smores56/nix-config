@@ -125,21 +125,6 @@ macOS, iPadOS or iOS, so Safari downloads single files only (buffered, capped at
 256 MiB). The letter tells the family to use Chrome on the Mac for the full
 library and keeps Safari for reading and single files.
 
-## Recovery kit
-
-`deno task kit` renders the printable kit: a two-page letter per family member
-(cover, then the instructions), a drive label, the `START-HERE.txt` that sits at
-the root of each USB drive, and a checklist. It prompts for the Bitwarden
-e-mail, master password and two-step recovery code, the recovery password, and the
-recipients' names; it verifies the recovery password against `public/data-keys.enc`
-before writing anything.
-
-The output is plaintext, so it is written 0700/0600 and the script refuses a
-destination inside the repository. Print the letters, copy `drive-<name>/` to
-the drives, seal, and delete the folder. The media carry only the Bitwarden
-login, the recovery code, the page URL and the recovery password: reprint when one
-of those changes, never when keys, buckets or paths change.
-
 ## Deployment
 
 `nix run .#cloudflare-apply` owns the Cloudflare side (`tofu/pages.tf`): the
@@ -166,25 +151,15 @@ needs `VAULT_PASSWORD` and `RESTIC_PASSWORD` (the fixture values are in the
 fixture list above). Both run in `.github/workflows/recovery.yml` on every
 change under `recovery/`, before the deploy job.
 
-Preview the output with fake values before typing anything real:
-
-```sh
-deno task kit --demo                       # writes $TMPDIR/recovery-kit-demo
-deno task kit --demo --out /tmp/kit-preview
-```
-
-Demo mode asks for nothing, checks no password against the blob, and stamps
-every file with `DEMO - FAKE VALUES` so a preview can never be sealed or handed
-over. Open `letter-*.html` in a browser and print it to see the real layout.
-
 ## Recovery links
 
-The letter and the drive carry a link of the form
-`https://recovery.sammohr.dev/#recovery-password=<password>`. The password sits in
+The letter and the drive can carry a link of the form
+`https://recovery.sammohr.dev/#<password>` (percent-encoded). The password sits in
 the URL *fragment*, which no browser sends to a server, so it cannot reach
-Cloudflare's access logs, a proxy, or a `Referer` header. `src/main.ts` reads it,
+Cloudflare's access logs, a proxy, or a `Referer` header. `src/main.ts` reads the whole fragment,
 strips it with `history.replaceState` before the Argon2 derivation starts, and
 unlocks; a link that fails falls back to the typed password with an error message.
 
 A link is the password in another form: it is printed on the same paper and must
-not be sent by message. The letter says that next to the link.
+not be sent by message. Any fragment is treated as a password, so a stray
+`#anchor` fails and the page asks for the typed password instead.

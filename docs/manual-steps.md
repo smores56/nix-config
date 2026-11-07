@@ -1819,18 +1819,16 @@ from `/etc/ssh/ssh_host_ed25519_key`. From a laptop with the admin identity, add
 the replacement host recipient to `.sops.yaml` and run
 `sops updatekeys secrets/smortress.yaml`.
 
-**Recovery kit (the page the family opens).** Three operator steps, in order.
-In the Cryptomator app create `Documents/sentinel.txt` with any canary text
-(`sentinel: 6f1c2a7e`), edit on one device only, let Syncthing settle and let the
-nightly restic run so the newest snapshot contains it. Then
-`nix run .#cloudflare-apply` creates the `recovery` Pages project,
+**Recovery page (what the family opens).** In the Cryptomator app create
+`Documents/sentinel.txt` with any canary text (`sentinel: 6f1c2a7e`), edit on one
+device only, let Syncthing settle and let the nightly restic run so the newest
+snapshot contains it. Then `nix run .#cloudflare-apply` creates the Pages project,
 `recovery.sammohr.dev` and its CNAME (run it twice if the domain is still
 pending), and the `CLOUDFLARE_API_TOKEN` repository secret must exist (see
-*Cloudflare Pages token* in `docs/key-rotation.md`). Finally, in `recovery/`,
-`deno task blob` and `deno task blob --check-only` must both pass before
-`deno task kit` prints the letters (the pages.dev fallback defaults to
-`https://sam-mohr-data-recovery.pages.dev/`); the print,
-seal and drive steps are in `recovery/README.md`.
+*Cloudflare Pages token* in `docs/key-rotation.md`). In `recovery/`,
+`deno task blob` and `deno task blob --check-only` must both pass. The letters,
+drive contents and labels are the operator own template, kept outside this
+repository; `recovery/README.md` describes what the page expects of them.
 
 **Admin key or its passphrase lost.** Recovery is a new identity, not a
 restore; see *Replace the admin identity* under *Admin age key (keys.age)*.
