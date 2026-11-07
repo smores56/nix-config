@@ -38,8 +38,8 @@ let
     "$HOME/.mozilla"
     "$HOME/.var/app"
     "$HOME/.local/share/Steam"
-    # `vault <cmd>` promises the agent never sees the vault ciphertext, so every profile masks the tree.
-    "$HOME/Sync"
+    # `sudo vault` is the only way in: mask the store and the mountpoint in every profile.
+    "$HOME/Vault"
     # Durable server data: neither belongs in an agent namespace even if /var is bound later.
     "/var/lib/data/photos"
     "/var/lib/data/vault"
