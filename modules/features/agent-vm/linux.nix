@@ -14,7 +14,7 @@ let
   guestCheck = ''
     set -eu
     fail() { echo "agent-vm-check: $*" >&2; exit 1; }
-    for p in .config/sops .local/share/keyrings .gnupg Sync; do
+    for p in .config/sops .local/share/keyrings .gnupg Vault; do
       [ ! -e "$HOME/$p" ] || fail "denied path $p is visible"
     done
     ! touch "$HOME/.config/.agent-vm-probe" 2>/dev/null || fail "~/.config is writable"

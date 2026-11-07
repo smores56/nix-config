@@ -467,8 +467,8 @@ in
         ".var/app"
         ".steam"
         ".local/share/Steam"
-        # `vault <cmd>` promises the agent never sees the vault ciphertext.
-        "Sync"
+        # `sudo vault` is the only way in, and the guest has neither sudo nor the mount.
+        "Vault"
       ];
       rw = [
         "repos"
