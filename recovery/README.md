@@ -132,7 +132,9 @@ library and keeps Safari for reading and single files.
 record that keeps that name off the `*.sammohr.dev` tunnel wildcard.
 `.github/workflows/recovery.yml` typechecks, tests and builds on every change
 under `recovery/`, then uploads `dist/` to the project on push to `main` using a
-Pages-only API token (procedure in `docs/key-rotation.md`).
+Pages-only API token (procedure in `docs/key-rotation.md`). The workflow never
+creates the project: if it reports the project missing, run
+`sudo nix run .#cloudflare-apply` first.
 
 ## Checks
 
