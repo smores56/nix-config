@@ -149,6 +149,13 @@ in
       "piv-pin-wipe"
       "sops-nix"
     ])
+    (group
+      "inherent: NixOS collects the store as root and expires home-manager generations; macOS's user nix-gc agent is its only collector"
+      [
+        "home-manager-auto-expire"
+        "nix-gc"
+      ]
+    )
     (group harvest [ "harvest" ])
     (group todo [
       "syncthing"
