@@ -38,4 +38,13 @@ describe("readSentinel", () => {
     const { repository } = fakeRepository([]);
     await expect(readSentinel(repository, snapshot)).rejects.toThrow(SENTINEL_PATH);
   });
+
+  test("says to take a backup when the snapshot predates the migration", async () => {
+    const repository = {
+      listDirectory: async () => {
+        throw new Error("directory not found: var/lib/data/vault/Documents");
+      },
+    } as unknown as ResticRepository;
+    await expect(readSentinel(repository, snapshot)).rejects.toThrow("take a backup first");
+  });
 });

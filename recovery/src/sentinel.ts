@@ -14,7 +14,16 @@ export async function readSentinel(
 ): Promise<string> {
   // Descend to the folder instead of walking the snapshot: a full walk lists every directory
   // in the tree over R2, which on a library this size takes minutes for one small file.
-  const entries = await repository.listDirectory(snapshot, SENTINEL_DIR);
+  let entries: ResticDirEntry[];
+  try {
+    entries = await repository.listDirectory(snapshot, SENTINEL_DIR);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `the newest snapshot has no ${SENTINEL_DIR} (${reason}); a snapshot taken before the ` +
+        "vault migration contains the ciphertext, so take a backup first",
+    );
+  }
   const entry: ResticDirEntry | undefined = entries.find(
     (candidate) => candidate.type === "file" && candidate.name === SENTINEL_FILE,
   );
