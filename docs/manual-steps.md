@@ -1402,7 +1402,10 @@ the new service refuses to start until `/var/lib/vault-migrated` exists, and
    `sudo chown -R vault:vault /var/lib/data/vault /var/lib/syncthing-versions`
    and `sudo chmod 700 /var/lib/data/vault` (copying preserves the old 755 root).
 6. `sudo touch /var/lib/vault-migrated`, rebuild, `sudo systemctl start syncthing`,
-   and check the folder and its devices in the UI.
+   and check the folder and its devices in the UI. Do this on every host that runs
+   Syncthing: a host whose store will be pulled from the others needs only the empty
+   directory, but without the marker its unit is skipped with `unmet condition check
+   ConditionPathExists=/var/lib/vault-migrated` and it never joins.
 7. Before Syncthing starts on any host that still has ciphertext under `~/Sync`, move
    it aside (`mv ~/Sync ~/Sync.old`) so the guest view cannot see it; delete it when
    the cold copy goes.
