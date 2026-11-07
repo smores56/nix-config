@@ -979,20 +979,6 @@ A second token, scoped Object Read only, backs read-side consumers. Put its id
 and secret in `secrets/smortress.yaml` as `r2-access-key-id-readonly` and
 `r2-secret-access-key-readonly`.
 
-### Radicale htpasswd (retired)
-
-<!-- manual-step: secret/radicale-htpasswd -->
-
-Radicale is removed. Before the first rebuild that drops it, export or merge
-any VTODO/VEVENT/VCARD data from `/var/lib/data/radicale`, remove the DAVx5
-account and Tasks.org lists on the phone, and remove any `dav.sammohr.dev`
-subscription from Tuta. The store stays inside restic's `/var/lib/data` until
-you delete it; nothing removes it automatically, and the `dav` hostname now
-returns 404 without its ingress. Delete this key with
-`sops secrets/smortress.yaml`, then remove this section; the
-`manual-steps-sync` check requires the anchor until then. The bcrypt hash
-remains in git history, so also rotate the password if it was reused.
-
 ### Jupyter token
 
 <!-- manual-step: secret/jupyter-token -->
