@@ -13,6 +13,7 @@
 {
   config,
   lib,
+  pkgs,
   ...
 }:
 let
@@ -29,6 +30,7 @@ let
   stateDir = "/var/lib/syncthing";
   versions = "/var/lib/syncthing-versions/vault";
   oldState = "/home/${config.machine.username}/.local/state/syncthing";
+  home = "/home/${config.machine.username}";
 in
 {
   options.vaultSync.device = lib.mkOption {
@@ -114,6 +116,18 @@ in
             fsPath = versions;
           };
         };
+      };
+    };
+
+    # A bindfs mount outlives a killed `sudo vault`; close it at boot so no stale mount survives the
+    # session that opened it. The condition keeps the unit a no-op when nothing is mounted.
+    systemd.services.vault-unmount = {
+      description = "Close a stale vault mount";
+      wantedBy = [ "multi-user.target" ];
+      unitConfig.ConditionPathIsMountPoint = "${home}/Vault";
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${pkgs.util-linux}/bin/umount -R ${home}/Vault";
       };
     };
 

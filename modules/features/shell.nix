@@ -94,6 +94,7 @@ in
   user.shellAbbrs = lib.mkMerge [
     {
       e = "hx";
+      v = "sudo vault";
       ef = "pick files hx";
       et = "pick text hx";
       l = "eza --icons -lh";
