@@ -19,6 +19,9 @@
     ./nymvpn.nix
     ./secrets.nix
   ];
+  homeModules = [
+    ./todo.nix
+  ];
   user = {
     shellAbbrs = {
       nv = "sudo nym-vpnc";

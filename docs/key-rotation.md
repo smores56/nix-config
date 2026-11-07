@@ -285,14 +285,6 @@ by the Jupyter unit through `JUPYTER_TOKEN_FILE` and injected into Open WebUI's
 environment file. Replace it, rebuild, and restart `jupyter` and `open-webui`;
 running kernels do not survive, which is the point of rotating it.
 
-### Radicale htpasswd
-
-One bcrypt line from `htpasswd -nB smores` in `secrets/smortress.yaml`
-(`radicale-htpasswd`), owner `radicale` 0400. Replace it and rebuild. Radicale
-has no session layer, so every client keeps failing with 401 until it is
-re-added in DAVx5 and anywhere the htpasswd is stored in a config file (khal,
-vdirsyncer) or a keychain entry.
-
 ### cloudflared credentials
 
 The tunnel JSON (`AccountTag`, `TunnelID`, `TunnelSecret`) in

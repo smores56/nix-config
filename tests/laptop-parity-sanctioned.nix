@@ -12,6 +12,7 @@ let
   memoryLocal = "work-policy: the Mac runs its own local memory instance; Linux uses smortress's";
   zsh = "inherent: the Mac's shell is zsh, Linux's is fish";
   harvest = "work-policy: the work-trail harvest into the Mac's memory runs on the work host only";
+  todo = "inherent: todo.txt sync is part of the Linux desktop; the Mac's Syncthing is a root LaunchDaemon, so a human-editable folder needs a second identity";
 in
 {
   shell = merge [
@@ -19,6 +20,7 @@ in
       "abbrs.a" =
         "inherent: the agent differs per host (`agent-sandbox claude` in the Tart VM on the Mac, `agent-sandbox maki` on Linux)";
       "abbrs.ms" = maki;
+      "abbrs.mp" = maki;
       "abbrs.ns" = "inherent: nixos-rebuild exists only on NixOS";
       "env.CC" = "inherent: macOS toolchain in /usr/bin";
       "env.CXX" = "inherent: macOS toolchain in /usr/bin";
@@ -82,6 +84,7 @@ in
     ])
     (group maki [
       "agent-vm-check"
+      "maki-private"
       "maki-session-resume"
       "maki-session-search"
       "rtk"
@@ -89,6 +92,10 @@ in
     (group memoryLocal [
       "memory"
       "memory-mcp"
+    ])
+    (group todo [
+      "syncthing"
+      "todo.txt-cli"
     ])
     (group harvest [ "harvest" ])
     (group "inherent: steam is a brew cask on the Mac" [ "steam" ])
@@ -143,6 +150,10 @@ in
       "sops-nix"
     ])
     (group harvest [ "harvest" ])
+    (group todo [
+      "syncthing"
+      "syncthing-init"
+    ])
     (group memoryLocal [
       "memory-export"
       "memory-falkordb"
@@ -162,6 +173,7 @@ in
   };
 
   activation = merge [
+    { "todoFiles" = todo; }
     (group mac [
       "checkAppManagementPermission"
       "configureSystemHotkeys"

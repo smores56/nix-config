@@ -78,7 +78,6 @@ in
       services = {
         calibre.port = ports.calibre;
         immich.port = ports.immich;
-        dav.port = ports.radicale;
         navidrome.port = ports.navidrome;
         # Reachable only through the tunnel; must never lose Access (web-proxy.nix asserts it).
         ssh = {

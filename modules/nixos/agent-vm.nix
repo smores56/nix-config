@@ -469,6 +469,11 @@ in
         ".local/share/Steam"
         # `sudo vault` is the only way in, and the guest has neither sudo nor the mount.
         "Vault"
+        # Personal tasks and both Syncthing state dirs: the device key, the GUI
+        # API key, and the vault's retired identity copy.
+        "Tasks"
+        ".local/state/syncthing"
+        ".local/state/syncthing-todo"
       ];
       rw = [
         "repos"

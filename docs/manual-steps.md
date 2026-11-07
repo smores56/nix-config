@@ -728,7 +728,7 @@ One root-only token shared by OpenTofu and the email alert sender. Mint it at
 <https://dash.cloudflare.com> → My Profile → API Tokens with:
 
 - Zone:DNS:Edit for `sammohr.dev`;
-- Zone:Rulesets:Edit for `sammohr.dev` (the `dav` rate-limit ruleset);
+- Zone:Rulesets:Edit for `sammohr.dev` (the public-app rate-limit ruleset);
 - Access: Apps and Policies:Edit;
 - Notifications:Edit;
 - Email Sending:Edit;
@@ -979,13 +979,19 @@ A second token, scoped Object Read only, backs read-side consumers. Put its id
 and secret in `secrets/smortress.yaml` as `r2-access-key-id-readonly` and
 `r2-secret-access-key-readonly`.
 
-### Radicale htpasswd
+### Radicale htpasswd (retired)
 
 <!-- manual-step: secret/radicale-htpasswd -->
 
-One bcrypt line from `htpasswd -nB smores`, owner `radicale`, 0400. Rotation:
-regenerate, update `secrets/smortress.yaml`, rebuild, and re-add the account in
-DAVx5/khal.
+Radicale is removed. Before the first rebuild that drops it, export or merge
+any VTODO/VEVENT/VCARD data from `/var/lib/data/radicale`, remove the DAVx5
+account and Tasks.org lists on the phone, and remove any `dav.sammohr.dev`
+subscription from Tuta. The store stays inside restic's `/var/lib/data` until
+you delete it; nothing removes it automatically, and the `dav` hostname now
+returns 404 without its ingress. Delete this key with
+`sops secrets/smortress.yaml`, then remove this section; the
+`manual-steps-sync` check requires the anchor until then. The bcrypt hash
+remains in git history, so also rotate the password if it was reused.
 
 ### Jupyter token
 
@@ -1513,6 +1519,40 @@ To rotate: create the new key in Immich, update the common file, rebuild both
 hosts so sops rewrites `/run/secrets/…`, then delete the old key in Immich.
 
 
+### todo.txt
+
+`~/Tasks/todo.txt` on smorespro is edited with `todo.sh` or Helix and synced
+to the phone by a second, user-level Syncthing daemon
+([`modules/hosts/smorespro/todo.nix`](../modules/hosts/smorespro/todo.nix)).
+It has its own state under `~/.local/state/syncthing-todo`, so it never touches
+the vault's identity or trees.
+
+After the first rebuild, on the laptop:
+
+```sh
+systemctl --user status syncthing
+# GUI: http://127.0.0.1:8385
+syncthing --home ~/.local/state/syncthing-todo/syncthing device-id
+```
+
+Local discovery is off because the vault daemon owns port 21027; the two
+devices find each other through global discovery and the relay client. No
+inbound firewall port is opened.
+
+On the phone, in Syncthing-Fork, accept the `Todo` folder and add the laptop
+device (or accept the folder invitation). Keep the folder **outside** the
+vault folder, in shared storage. Install 0x54ask from F-Droid and select that
+folder; it merges Syncthing conflict copies. Keep the Syncthing-Fork battery
+exemption.
+
+Edit on one device at a time. A concurrent edit leaves
+`todo.sync-conflict-<date>-<time>-<device>.txt`; 0x54ask merges it, or merge by
+hand from the 30-day version set under
+`~/.local/state/syncthing-todo/versions/todo`.
+
+The work Mac is out of scope: it runs Syncthing as a root LaunchDaemon, so a
+human-editable folder needs a second launchd identity.
+
 ## Public services
 
 Services come from `webProxy.services` on each NixOS host. Each becomes
@@ -1840,22 +1880,13 @@ but unreadable, a second card (piv-ensure needs exactly one), or a
 `YK_ENSURE_NO_PROMPT` caller all keep failing the PIV pre-connect instead of
 downgrading, and the PIV-only hosts (tang-pi) never opt in.
 
-### dav.sammohr.dev
-
-<!-- manual-step: service/smortress/dav -->
-
-Radicale over the tunnel at `https://dav.sammohr.dev/`, public with its own
-bcrypt auth; CalDAV clients cannot complete an Access login. The zone's
-rate-limit ruleset (`dav_rate_limit` in `tofu/main.tf`) is managed by
-`nix run .#cloudflare-apply`.
-
 ### music.sammohr.dev
 
 <!-- manual-step: service/smortress/navidrome -->
 
 Navidrome at `https://music.sammohr.dev/`, public with its own auth and under
-the same per-IP rate limit as `dav`. Create the first account in the web UI; it
-becomes the admin.
+the same per-IP rate limit as the other public apps. Create the first account
+in the web UI; it becomes the admin.
 
 ## Recovery
 
