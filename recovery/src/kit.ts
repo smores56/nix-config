@@ -12,6 +12,8 @@ export type KitValues = {
   recoveryPassword: string;
   pageUrl: string;
   fallbackUrl: string;
+  /** Demo runs use fake values; every file is stamped so none can be handed over. */
+  demo?: boolean;
 };
 
 export function kitSlug(name: string): string {
@@ -45,6 +47,8 @@ const STYLE = `
   .warn { border-left: 4px solid #a00; padding-left: 0.8rem; }
   ol li, ul li { margin: 0.35rem 0; }
   .muted { color: #555; font-size: 10pt; }
+  .demo { border: 2px solid #a00; background: #fff1f1; color: #a00; padding: 0.4rem 0.6rem;
+    font: 700 11pt/1.3 system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.08em; }
 `;
 
 function secret(label: string, value: string): string {
@@ -67,6 +71,7 @@ export function renderLetter(values: KitValues): string {
 </head>
 <body>
 <section class="page cover">
+  ${values.demo ? `<p class="demo">DEMO - FAKE VALUES - do not print or seal</p>` : ""}
   <h1>For ${name}</h1>
   <p><strong>Private. From ${operator}.</strong></p>
   <p>Do not open this envelope unless ${operator} has died or can no longer act for himself.
@@ -75,6 +80,7 @@ export function renderLetter(values: KitValues): string {
 </section>
 
 <section class="page">
+  ${values.demo ? `<p class="demo">DEMO - FAKE VALUES - do not print or seal</p>` : ""}
   <h1>What this is</h1>
   <p>${operator} set this up so you can get into his accounts and his files without needing
   anything from his computers. There are two things inside: this letter and a small USB drive
@@ -128,7 +134,10 @@ export function renderLetter(values: KitValues): string {
 }
 
 export function renderStartHere(values: KitValues): string {
-  return `RECOVERY KIT - ${values.recipient}
+  const banner = values.demo
+    ? "=".repeat(60) + "\nDEMO FILE - FAKE VALUES - do not print, seal or use\n" + "=".repeat(60) + "\n\n"
+    : "";
+  return `${banner}RECOVERY KIT - ${values.recipient}
 From ${values.operatorName}. Private.
 
 Open the envelope marked "${values.recipient}" before using this drive. The letter and this
@@ -179,6 +188,7 @@ export function renderLabel(values: KitValues): string {
 </head>
 <body>
 <div class="label">
+  ${values.demo ? '<p class="demo">DEMO - FAKE VALUES</p>' : ""}
   <h1>Recovery kit - ${name}</h1>
   <p>From ${operator}. Contains passwords.</p>
   <p class="big">Do not open or plug in unless ${operator} has died or cannot act.</p>

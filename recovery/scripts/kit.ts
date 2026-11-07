@@ -19,10 +19,12 @@ type Args = {
   fallbackUrl?: string;
   operator?: string;
   blob: string;
+  demo: boolean;
+  outGiven: boolean;
 };
 
 const USAGE = "usage: kit [--out <dir>] [--page-url <url>] [--fallback-url <url>] " +
-  "[--operator <name>] [--blob public/data-keys.enc]";
+  "[--operator <name>] [--blob public/data-keys.enc] [--demo]";
 
 function takeValue(argv: string[], index: number, flag: string): string {
   const value = argv[index + 1];
@@ -35,12 +37,18 @@ function parseArgs(argv: string[]): Args {
     out: DEFAULT_OUT,
     pageUrl: DEFAULT_PAGE_URL,
     blob: "public/data-keys.enc",
+    demo: false,
+    outGiven: false,
   };
   for (let index = 0; index < argv.length; index++) {
     const value = argv[index];
     switch (value) {
       case "--out":
         args.out = takeValue(argv, index++, value);
+        args.outGiven = true;
+        break;
+      case "--demo":
+        args.demo = true;
         break;
       case "--page-url":
         args.pageUrl = takeValue(argv, index++, value);
@@ -88,9 +96,10 @@ async function writeSecret(path: string, text: string): Promise<void> {
 
 function checklist(recipients: string[], values: KitValues): string {
   const names = recipients.map((name) => kitSlug(name)).join(", ");
+  const demo = values.demo ? "**DEMO - FAKE VALUES - do not print or use this kit.**\n\n" : "";
   return `# Recovery kit checklist
 
-Generated for: ${recipients.join(", ")}
+${demo}Generated for: ${recipients.join(", ")}
 
 The folder holds **plaintext passwords**. Treat it like the letters: print it,
 then delete it (or keep it only on an encrypted disk).
@@ -137,8 +146,72 @@ Recipients: ${names}
 `;
 }
 
+async function writeKit(
+  out: string,
+  recipients: string[],
+  valuesFor: (recipient: string) => KitValues,
+): Promise<void> {
+  await Deno.mkdir(out, { recursive: true, mode: 0o700 });
+  await Deno.chmod(out, 0o700).catch(() => undefined);
+
+  const written: string[] = [];
+  for (const recipient of recipients) {
+    const slug = kitSlug(recipient);
+    const values = valuesFor(recipient);
+    const driveDir = out + "drive-" + slug + "/";
+    await Deno.mkdir(driveDir, { recursive: true, mode: 0o700 });
+    await Deno.chmod(driveDir, 0o700).catch(() => undefined);
+
+    await writeSecret(out + "letter-" + slug + ".html", renderLetter(values));
+    await writeSecret(out + "label-" + slug + ".html", renderLabel(values));
+    await writeSecret(driveDir + "START-HERE.txt", renderStartHere(values));
+    written.push(
+      out + "letter-" + slug + ".html",
+      out + "label-" + slug + ".html",
+      driveDir + "START-HERE.txt",
+    );
+  }
+
+  await writeSecret(out + "CHECKLIST.md", checklist(recipients, valuesFor(recipients[0])));
+  written.push(out + "CHECKLIST.md");
+
+  console.log("wrote " + written.length + " file(s) under " + out);
+  for (const path of written) console.log("  " + path);
+  console.log(
+    valuesFor(recipients[0]).demo
+      ? "demo: fake values only; nothing here can unlock anything."
+      : "plaintext secrets: print the letters, then delete this folder.",
+  );
+}
+
+function demoValues(args: Args): (recipient: string) => KitValues {
+  return (recipient) => ({
+    recipient,
+    operatorName: "Sam Example",
+    bitwardenEmail: "sam@example.com",
+    bitwardenPassword: "DEMO-master-password",
+    recoveryCode: "DEMO-CODE-1234",
+    recoveryPassword: "DEMO-recovery-password",
+    pageUrl: args.pageUrl,
+    fallbackUrl: args.fallbackUrl ?? "https://demo.pages.dev/",
+    demo: true,
+  });
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(Deno.args);
+
+  if (args.demo) {
+    // No prompts and no blob check: a demo exists to inspect the layout and
+    // wording before any real secret is typed into this terminal.
+    console.log("DEMO: fake values, no prompts, no recovery-password check.");
+    const out = resolveOut(
+      args.outGiven ? args.out : `${Deno.env.get("TMPDIR") ?? "/tmp"}/recovery-kit-demo`,
+    );
+    await writeKit(out, ["Alex Example", "Jordan Example"], demoValues(args));
+    return;
+  }
+
   if (!args.fallbackUrl) throw new Error("--fallback-url <pages.dev url> is required");
   const fallbackUrl = args.fallbackUrl;
   const out = resolveOut(args.out);
@@ -147,8 +220,9 @@ async function main(): Promise<void> {
 
   const recipients: string[] = [];
   while (true) {
-    const name = (await promptVisible(`Recipient ${recipients.length + 1} (blank when done): `))
-      .trim();
+    const name = (
+      await promptVisible(`Recipient ${recipients.length + 1} (blank when done): `)
+    ).trim();
     if (!name) break;
     recipients.push(name);
   }
@@ -170,12 +244,7 @@ async function main(): Promise<void> {
     throw new Error(`${args.blob} is missing; build it with deno task blob before printing a kit`);
   }
 
-  await Deno.mkdir(out, { recursive: true, mode: 0o700 });
-  await Deno.chmod(out, 0o700).catch(() => undefined);
-
-  const written: string[] = [];
-  const slugged = recipients.map((recipient) => ({ recipient, slug: kitSlug(recipient) }));
-  const valuesFor = (recipient: string): KitValues => ({
+  await writeKit(out, recipients, (recipient) => ({
     recipient,
     operatorName: operator,
     bitwardenEmail,
@@ -184,30 +253,7 @@ async function main(): Promise<void> {
     recoveryPassword,
     pageUrl: args.pageUrl,
     fallbackUrl,
-  });
-
-  for (const { recipient, slug } of slugged) {
-    const values = valuesFor(recipient);
-    const driveDir = `${out}drive-${slug}/`;
-    await Deno.mkdir(driveDir, { recursive: true, mode: 0o700 });
-    await Deno.chmod(driveDir, 0o700).catch(() => undefined);
-
-    await writeSecret(`${out}letter-${slug}.html`, renderLetter(values));
-    await writeSecret(`${out}label-${slug}.html`, renderLabel(values));
-    await writeSecret(`${driveDir}START-HERE.txt`, renderStartHere(values));
-    written.push(
-      `${out}letter-${slug}.html`,
-      `${out}label-${slug}.html`,
-      `${driveDir}START-HERE.txt`,
-    );
-  }
-
-  await writeSecret(`${out}CHECKLIST.md`, checklist(recipients, valuesFor(recipients[0])));
-  written.push(`${out}CHECKLIST.md`);
-
-  console.log(`wrote ${written.length} file(s) under ${out}`);
-  for (const path of written) console.log(`  ${path}`);
-  console.log("plaintext secrets: print the letters, then delete this folder.");
+  }));
 }
 
 main().catch((error: unknown) => {

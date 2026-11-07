@@ -69,3 +69,19 @@ describe("renderLabel", () => {
     expect(html).toContain("Do not open");
   });
 });
+
+describe("demo mode", () => {
+  const demo = { ...values, demo: true };
+
+  test("stamps the letter, the drive file and the label", () => {
+    expect(renderLetter(demo)).toContain("DEMO");
+    expect(renderStartHere(demo)).toContain("DEMO");
+    expect(renderLabel(demo)).toContain("DEMO");
+  });
+
+  test("leaves a real kit unmarked", () => {
+    expect(renderLetter(values)).not.toContain("DEMO");
+    expect(renderStartHere(values)).not.toContain("DEMO");
+    expect(renderLabel(values)).not.toContain("DEMO");
+  });
+});

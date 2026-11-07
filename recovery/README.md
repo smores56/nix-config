@@ -165,3 +165,14 @@ notices a broken bundle or a CSP that blocks the module. The sentinel command
 needs `VAULT_PASSWORD` and `RESTIC_PASSWORD` (the fixture values are in the
 fixture list above). Both run in `.github/workflows/recovery.yml` on every
 change under `recovery/`, before the deploy job.
+
+Preview the output with fake values before typing anything real:
+
+```sh
+deno task kit --demo                       # writes $TMPDIR/recovery-kit-demo
+deno task kit --demo --out /tmp/kit-preview
+```
+
+Demo mode asks for nothing, checks no password against the blob, and stamps
+every file with `DEMO - FAKE VALUES` so a preview can never be sealed or handed
+over. Open `letter-*.html` in a browser and print it to see the real layout.
