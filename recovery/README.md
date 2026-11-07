@@ -174,3 +174,13 @@ unlocks; a link that fails falls back to the typed password with an error messag
 A link is the password in another form: it is printed on the same paper and must
 not be sent by message. Any fragment is treated as a password, so a stray
 `#anchor` fails and the page asks for the typed password instead.
+
+The page shows only the password field until the blob decrypts; everything else
+lives behind `#unlocked` so a relative opening it does not read account
+instructions before they have proven they hold the letter. After unlock the data
+section is first, then the manifest.
+
+Browsing starts at `dataRoot` (`src/restore.ts`): the directory every configured
+data path shares, which is `var/lib/data`, so the top level is `photos/`,
+`vault/` and `db/` rather than the snapshot root's single `var/`. The breadcrumb
+root and the first listing both use it.

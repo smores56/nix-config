@@ -1,7 +1,7 @@
 import { decryptBlob, type DataKeys } from "./blob.ts";
 import { sanitizeFileName } from "./filenames.ts";
 import { reachHint } from "./hint.ts";
-import { commonDirectoryPrefix, relativeSegments } from "./restore.ts";
+import { commonDirectoryPrefix, dataRoot, relativeSegments } from "./restore.ts";
 import { passwordFromHash } from "./link.ts";
 import {
   renderManifest,
@@ -32,14 +32,15 @@ const restoreButton = document.querySelector<HTMLButtonElement>("#restore-all");
 const restoreCancelButton = document.querySelector<HTMLButtonElement>("#restore-cancel");
 const restoreStatus = document.querySelector<HTMLDivElement>("#restore-status");
 const restoreProgress = document.querySelector<HTMLProgressElement>("#restore-progress");
+const unlockedRoot = document.querySelector<HTMLElement>("#unlocked");
 
 const secure = window.isSecureContext;
 let dataKeys: DataKeys | null = null;
 let repository: ResticRepository | null = null;
 let snapshot: ResticSnapshot | null = null;
 let currentPath = "";
+let browseRoot = "";
 let entriesByPath = new Map<string, ResticDirEntry>();
-let manifestCache: RecoveryManifest | null = null;
 let idleTimer: number | undefined;
 
 function errorMessage(error: unknown): string {
@@ -97,6 +98,7 @@ function clearRestore(): void {
   repository = null;
   snapshot = null;
   currentPath = "";
+  browseRoot = "";
   entriesByPath = new Map();
   if (restoreSection) restoreSection.hidden = true;
   if (snapshotSelect) snapshotSelect.innerHTML = "";
@@ -114,6 +116,8 @@ function lock(): void {
   dataKeys = null;
   clearIdle();
   clearRestore();
+  if (unlockedRoot) unlockedRoot.hidden = true;
+  if (manifestRoot) manifestRoot.innerHTML = "";
   if (passwordInput) passwordInput.value = "";
   refreshLockButton();
   setStatus("Locked. The password and keys were cleared from this page.");
@@ -129,12 +133,13 @@ async function loadManifest(): Promise<boolean> {
     const manifest = (await response.json()) as RecoveryManifest;
     const errors = validateManifest(manifest);
     if (errors.length > 0) throw new Error(errors.join(", "));
-    manifestCache = manifest;
     manifestRoot.innerHTML = renderManifest(manifest);
     return true;
   } catch (error) {
-    manifestRoot.innerHTML = "";
-    setStatus(`The access manifest could not be loaded: ${errorMessage(error)}`, "error");
+    manifestRoot.innerHTML =
+      `<section class="card warning"><h2>Account list</h2><p>The account list could not be loaded: ${
+        escapeHtml(errorMessage(error))
+      }.</p></section>`;
     return false;
   }
 }
@@ -171,24 +176,35 @@ async function loadRepository(keys: DataKeys): Promise<void> {
   const repo = await openRepository(backend, keys.restic.password);
   repository = repo;
   if (repo.snapshots.length === 0) throw new Error("the restic repository has no snapshots");
+  browseRoot = dataRoot([
+    keys.restic.photosPath,
+    keys.restic.vaultPath,
+    // The dump is a file; the directory it lives in is what shares a parent
+    // with the others.
+    ...(keys.restic.dbPath ? [commonDirectoryPrefix([keys.restic.dbPath])] : []),
+  ]);
   renderSnapshots(repo.snapshots);
-  if (restoreSection) restoreSection.hidden = false;
   await selectSnapshot(repo.snapshots[0]);
 }
 
 async function selectSnapshot(next: ResticSnapshot): Promise<void> {
   snapshot = next;
-  currentPath = "";
+  currentPath = browseRoot;
   await renderBrowser();
 }
 
 function renderBreadcrumbs(): void {
   if (!breadcrumbs) return;
-  const segments = currentPath.split("/").filter(Boolean);
+  const below = currentPath.startsWith(`${browseRoot}/`)
+    ? currentPath.slice(browseRoot.length)
+    : currentPath === browseRoot
+    ? ""
+    : currentPath;
+  const segments = below.split("/").filter(Boolean);
   const parts = [
-    `<button type="button" class="crumb" data-browse="">root</button>`,
+    `<button type="button" class="crumb" data-browse="${escapeHtml(browseRoot)}">${escapeHtml(browseRoot ? `/${browseRoot}` : "root")}</button>`,
     ...segments.map((segment, index) => {
-      const path = segments.slice(0, index + 1).join("/");
+      const path = [browseRoot, ...segments.slice(0, index + 1)].filter(Boolean).join("/");
       return `<button type="button" class="crumb" data-browse="${escapeHtml(path)}">${escapeHtml(segment)}</button>`;
     }),
   ];
@@ -197,10 +213,11 @@ function renderBreadcrumbs(): void {
 
 async function renderBrowser(): Promise<void> {
   if (!repository || !snapshot || !browserList) return;
+  // Draw the path first, so a failed listing still leaves a way back up.
+  renderBreadcrumbs();
   try {
     const entries = await repository.listDirectory(snapshot, currentPath);
     entriesByPath = new Map(entries.map((entry) => [entry.path, entry]));
-    renderBreadcrumbs();
     browserList.innerHTML = entries
       .map((entry) => {
         if (entry.type === "dir") {
@@ -209,10 +226,21 @@ async function renderBrowser(): Promise<void> {
         return `<li class="item"><div class="item-row"><span>${escapeHtml(entry.name)}</span><span class="item-meta">${formatBytes(entry.size)}</span><button type="button" data-file="${escapeHtml(entry.path)}">Download</button></div></li>`;
       })
       .join("");
-    setBrowserStatus(`${entries.length} entries in ${currentPath || "the snapshot root"}.`);
+    setBrowserStatus(
+      `${entries.length} entries in ${currentPath ? `/${currentPath}` : "the snapshot root"}.`,
+    );
   } catch (error) {
     entriesByPath.clear();
     browserList.innerHTML = "";
+    if (browseRoot && currentPath === browseRoot) {
+      // A snapshot taken before the data moved under one parent, or one from
+      // another host, has no shared root: open at the snapshot root instead of
+      // dead-ending in an empty card.
+      browseRoot = "";
+      currentPath = "";
+      await renderBrowser();
+      return;
+    }
     setBrowserStatus(`Could not list this folder: ${errorMessage(error)}`, "error");
   }
 }
@@ -495,7 +523,7 @@ async function restoreAll(): Promise<void> {
 
 async function unlock(password: string): Promise<void> {
   if (!secure) throw new Error("Open this page over HTTPS or on localhost.");
-  setStatus("Fetching the encrypted data-keys blob...");
+  setStatus("Opening the recovery kit...");
   const response = await fetch(new URL("./data-keys.enc", document.baseURI), {
     cache: "no-store",
   });
@@ -507,18 +535,23 @@ async function unlock(password: string): Promise<void> {
   if (!response.ok) throw new Error(`data-keys HTTP ${response.status}`);
 
   const envelope = await response.json();
-  setStatus("Deriving the key and decrypting in this browser...");
+  setStatus("Checking the password...");
   const keys = await decryptBlob(envelope, password);
   dataKeys = keys;
+  if (unlockedRoot) unlockedRoot.hidden = false;
+  if (restoreSection) restoreSection.hidden = false;
   refreshLockButton();
   scheduleIdle();
-  setStatus("Unlocked. Opening the restic repository...", "ok");
+  setStatus("Unlocked. Opening the data...", "ok");
+  // Only now, once the password has proven to open the kit: the account list is
+  // instructions for the family, not something anyone may read before.
+  await loadManifest();
   try {
     await loadRepository(keys);
     setStatus("Unlocked.", "ok");
   } catch (error) {
     const message = reachHint(errorMessage(error), location.origin);
-    setStatus(`Unlocked, but the restic repository could not be opened: ${message}`, "error");
+    setStatus(`Unlocked, but the data could not be opened: ${message}`, "error");
     setBrowserStatus(`Restic repository error: ${message}`, "error");
   }
 }
@@ -532,6 +565,8 @@ form?.addEventListener("submit", (event) => {
   unlock(password)
     .catch((error: unknown) => {
       dataKeys = null;
+      if (unlockedRoot) unlockedRoot.hidden = true;
+      if (restoreSection) restoreSection.hidden = true;
       clearIdle();
       clearRestore();
       refreshLockButton();
@@ -610,8 +645,7 @@ if (!secure) {
 }
 
 void (async () => {
-  const manifestOk = await loadManifest();
-  if (!manifestOk || !secure) return;
+  if (!secure) return;
   if (await blobExists()) {
     const fromLink = passwordFromHash(location.hash);
     if (fromLink) {
@@ -630,10 +664,8 @@ void (async () => {
         return;
       }
     }
-    setStatus("The data-keys blob is deployed. Enter the recovery password to unlock.");
+    setStatus("");
   } else {
-    setStatus(
-      "No data-keys blob is deployed yet. The access manifest is still available; data restore will work after the blob is generated.",
-    );
+    setStatus("This page is not set up yet: no recovery data has been published.");
   }
 })();

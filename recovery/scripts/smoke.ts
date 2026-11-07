@@ -104,6 +104,13 @@ async function main(): Promise<void> {
     throw new Error(`${root}/index.html is missing; run deno task build first`);
   }
 
+  // Everything but the password field lives behind #unlocked, so a relative who
+  // opens the page before holding the letter reads nothing they should not.
+  const locked = await Deno.readTextFile(`${root}/index.html`);
+  if (!/<div[^>]*\bid="unlocked"[^>]*\bhidden\b/.test(locked)) {
+    throw new Error("index.html must keep #unlocked hidden until the password is entered");
+  }
+
   const envelope = JSON.stringify(await encryptBlob(SMOKE_KEYS, SMOKE_PASSWORD, SMOKE_COST));
 
   const server = Deno.serve({ port: 0, hostname: "127.0.0.1" }, async (request) => {
@@ -140,11 +147,14 @@ async function main(): Promise<void> {
     }).output();
 
     const dom = new TextDecoder().decode(result.stdout);
+    // The account list is fetched only after the password decrypts the kit, so a
+    // rendered manifest in this dump also proves the gate opened.
     const missing = [
       "<title>Recovery Kit</title>",
-      `id="start-here"`,
+      `id="manifest"`,
       `id="restore-all"`,
       `id="recovery-password"`,
+      "manifest-section-",
       "Unlocked",
     ].filter((marker) => !dom.includes(marker));
 

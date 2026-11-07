@@ -1,6 +1,6 @@
 import { describe, it as test } from "jsr:@std/testing/bdd";
 import { expect } from "jsr:@std/expect";
-import { commonDirectoryPrefix, relativeSegments } from "./restore.ts";
+import { commonDirectoryPrefix, dataRoot, relativeSegments } from "./restore.ts";
 
 describe("commonDirectoryPrefix", () => {
   test("strips the shared root so restored folders start at their own names", () => {
@@ -44,5 +44,30 @@ describe("relativeSegments", () => {
   test("rejects traversal segments", () => {
     expect(() => relativeSegments("", "../etc/passwd")).toThrow("unsafe restore segment");
     expect(() => relativeSegments("", "a/../b")).toThrow("unsafe restore segment");
+  });
+});
+
+describe("dataRoot", () => {
+  test("opens at the parent the configured data paths share", () => {
+    expect(
+      dataRoot([
+        "var/lib/data/photos",
+        "var/lib/data/vault",
+        "var/lib/data/db/immich.dump",
+      ]),
+    ).toBe("var/lib/data");
+  });
+
+  test("ignores a leading slash and empty entries", () => {
+    expect(dataRoot(["/var/lib/data/photos", "/var/lib/data/vault", ""])).toBe("var/lib/data");
+  });
+
+  test("takes a single configured path as a directory", () => {
+    expect(dataRoot(["var/lib/data/photos"])).toBe("var/lib/data/photos");
+  });
+
+  test("falls back to the snapshot root when nothing is shared", () => {
+    expect(dataRoot(["photos", "vault"])).toBe("");
+    expect(dataRoot([])).toBe("");
   });
 });

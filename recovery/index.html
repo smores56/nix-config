@@ -19,29 +19,11 @@
   <body>
     <main class="shell">
       <header class="hero">
-        <p class="eyebrow">Private recovery page</p>
         <h1>Recovery kit</h1>
-        <p class="lede">
-          This page belongs to one person and the relatives they chose. If that
-          is not you, close it.
-        </p>
+        <p class="lede">Enter the recovery password from the sealed letter.</p>
       </header>
 
-      <section class="card warning" role="note">
-        <h2>Before you start</h2>
-        <ul>
-          <li>Use a device you trust, not a shared or public computer.</li>
-          <li>Do not type these passwords into a page someone links you.</li>
-          <li>The recovery password is not the Bitwarden master password.</li>
-        </ul>
-      </section>
-
-      <section class="card" aria-labelledby="unlock-title">
-        <h2 id="unlock-title">Unlock the data keys</h2>
-        <p class="muted">
-          Enter the recovery password from the sealed letter or the drive. It is
-          never stored or sent anywhere.
-        </p>
+      <section class="card">
         <form id="unlock-form" class="unlock-form">
           <label for="recovery-password">Recovery password</label>
           <div class="row">
@@ -50,6 +32,7 @@
               type="password"
               autocomplete="off"
               autocapitalize="none"
+              autocorrect="off"
               spellcheck="false"
               required
             />
@@ -64,69 +47,29 @@
         </button>
       </section>
 
-      <section id="start-here" class="card" aria-labelledby="start-title">
-        <h2 id="start-title">Start here</h2>
-        <ol>
-          <li>
-            <strong>Sign in to the e-mail account today.</strong> Free Tuta
-            accounts are deleted after six months without a sign-in. The
-            password is in Bitwarden; the Bitwarden master password and the
-            two-step recovery code are on the sealed letter.
-          </li>
-          <li>
-            <strong>Open Bitwarden</strong> and keep it signed in while you work
-            through the list below.
-          </li>
-          <li>
-            <strong>Work down the account list, one line at a time.</strong> Each
-            entry names the Bitwarden item to open and what to do with it.
-          </li>
-          <li>
-            <strong>Restore the files last, on a Mac in Chrome.</strong> The
-            library takes hours, so start it and leave the tab open. Files
-            already in the folder are skipped, so it can be stopped and
-            restarted.
-          </li>
-        </ol>
-        <p class="muted">
-          This page is not a will and gives no legal advice. Do not change the
-          Bitwarden master password until you have everything you need.
-        </p>
-      </section>
+      <div id="unlocked" hidden>
+        <section id="restore" class="card" aria-labelledby="data-title" hidden>
+          <h2 id="data-title">Data</h2>
+          <label for="snapshot-select">Snapshot</label>
+          <select id="snapshot-select"></select>
+          <nav id="breadcrumbs" class="breadcrumbs" aria-label="Path"></nav>
+          <div id="browser-status" class="status" role="status" aria-live="polite"></div>
+          <ul id="browser" class="items"></ul>
+          <div class="row">
+            <button type="button" id="restore-all">Restore everything to a folder...</button>
+            <button type="button" id="restore-cancel" hidden>Stop</button>
+          </div>
+          <progress id="restore-progress" max="1" value="0" hidden></progress>
+          <div id="restore-status" class="status" role="status" aria-live="polite"></div>
+          <p class="muted">
+            Restoring the whole library needs Chrome or Edge on a Mac. Everything
+            happens in this browser, nothing is uploaded, and files already in
+            the folder are skipped, so a stopped restore can be run again.
+          </p>
+        </section>
 
-      <section id="manifest" class="manifest" aria-live="polite"></section>
-
-      <section id="restore" class="card" hidden>
-        <h2>Restore data</h2>
-        <p class="muted">
-          Browse a restic snapshot and download files. Everything happens in
-          this browser; nothing is uploaded.
-        </p>
-        <label for="snapshot-select">Snapshot</label>
-        <select id="snapshot-select"></select>
-        <nav id="breadcrumbs" class="breadcrumbs" aria-label="Path"></nav>
-        <div id="browser-status" class="status" role="status" aria-live="polite"></div>
-        <ul id="browser" class="items"></ul>
-        <div class="row">
-          <button type="button" id="restore-all">Restore everything to a folder...</button>
-          <button type="button" id="restore-cancel" hidden>Stop</button>
-        </div>
-        <p class="muted">
-          Restoring the whole library needs a browser that can write into a
-          folder: Chrome or Edge on a Mac. Safari can still download single
-          files. Nothing is uploaded, and files already in the folder are
-          skipped, so a stopped restore can be run again.
-        </p>
-        <progress id="restore-progress" max="1" value="0" hidden></progress>
-        <div id="restore-status" class="status" role="status" aria-live="polite"></div>
-      </section>
-
-      <footer class="footer">
-        <p>
-          Data restore is client-side. No password, key, or file is sent to a
-          server.
-        </p>
-      </footer>
+        <section id="manifest" class="manifest" aria-live="polite"></section>
+      </div>
     </main>
     <noscript>This page needs JavaScript to unlock the data keys.</noscript>
     <script type="module" src="./main.js"></script>

@@ -25,8 +25,36 @@ export function commonDirectoryPrefix(paths: string[]): string {
   return common.join("/");
 }
 
+/**
+ * The directory the page opens at and the family browses from: the longest run
+ * of leading segments every path shares. The configured data paths sit under
+ * one parent (`var/lib/data`), so that parent is the top of the tree instead of
+ * the snapshot root, whose only child is `var/`. A single path is taken as a
+ * directory, since the caller passes directories it configured.
+ */
+export function dataRoot(paths: string[]): string {
+  const split = paths
+    .map((path) => path.split("/").filter(Boolean))
+    .filter((segments) => segments.length > 0);
+  const [first, ...rest] = split;
+  if (!first) return "";
+
+  let common = first;
+  for (const segments of rest) {
+    let index = 0;
+    while (index < common.length && index < segments.length && common[index] === segments[index]) {
+      index++;
+    }
+    common = common.slice(0, index);
+  }
+  return common.join("/");
+}
+
 /** Path segments below `prefix`, one per restore directory level. */
-export function relativeSegments(prefix: string, path: string): string[] {
+export function relativeSegments(
+  prefix: string,
+  path: string,
+): string[] {
   const segments = path.split("/").filter(Boolean);
   const root = prefix ? prefix.split("/").filter(Boolean) : [];
   for (let index = 0; index < root.length; index++) {
