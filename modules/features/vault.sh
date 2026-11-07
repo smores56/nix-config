@@ -86,5 +86,5 @@ if [ "$#" -eq 0 ]; then
   echo "vault open at $mountpoint; Ctrl-C to close."
   wait "$mounter" || true
 else
-  ( cd "$mountpoint" && exec sudo -u "$caller" -- "$@" )
+  ( cd "$mountpoint" && run_as "$caller" "$@" )
 fi

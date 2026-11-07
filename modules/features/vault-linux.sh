@@ -7,3 +7,8 @@ unmount() { umount "$1" 2>/dev/null; }
 unmount_detach() { umount -l "$1" 2>/dev/null; }
 home_of() { getent passwd "$1" | cut -d: -f6; }
 group_of() { id -gn "$1"; }
+run_as() {
+  local user=$1
+  shift
+  sudo -u "$user" -- "$@"
+}

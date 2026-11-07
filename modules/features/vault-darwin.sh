@@ -12,3 +12,8 @@ unmount() { umount "$1" 2>/dev/null; }
 unmount_detach() { diskutil unmount force "$1" >/dev/null 2>&1; }
 home_of() { dscl . -read "/Users/$1" NFSHomeDirectory | awk '{print $2}'; }
 group_of() { id -gn "$1"; }
+run_as() {
+  local user=$1
+  shift
+  /usr/bin/sudo -u "$user" -- "$@"
+}

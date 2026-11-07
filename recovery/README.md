@@ -5,10 +5,10 @@ Treat this as future-inheritance, not an everyday password manager.
 - The page is a **static, public** site at `recovery.sammohr.dev`. It contains no secrets.
 - The family enters a separate **recovery password** from the sealed letter or drive.
 - The password decrypts a small `data-keys.enc` blob in the browser.
-- The blob contains only the R2 read-only token, restic password, vault password,
-  and data paths. It does not contain the Bitwarden root.
-- Data restore runs client-side with the TypeScript restic reader and a
-  Cryptomator vault reader. No server sees the password, keys, or files.
+- The blob contains only the R2 read-only token, restic password and data paths.
+  It does not contain the Bitwarden root.
+- Data restore runs client-side with the TypeScript restic reader. No server sees
+  the password, keys, or files.
 
 ## Build and test
 
@@ -25,82 +25,37 @@ Tooling is Deno (`deno.json`): `deno task typecheck`, `deno task build`, `deno t
 Opening `index.html` with `file://` is not supported by the fetch-based blob/manifest
 loader, and plain HTTP from a LAN address will disable unlock.
 
-## Cryptomator vault reader
-
-`src/cryptomator/vault.ts` reads vault format 8 with `cipherCombo: SIV_GCM`:
-AES-SIV names and directory IDs, the scrypt/AES-KW masterkey file, the signed
-`vault.cryptomator`, and AES-GCM file contents. It is read-only and refuses
-symlinks, other cipher combos, and files above 256 MiB.
-
-`ResticVaultProvider` maps the vault's ciphertext paths onto a restic snapshot,
-so the page can list and decrypt selected documents without restoring the whole
-vault. `LocalVaultProvider` does the same on a local directory.
-
-The reader is derived from `cryptomator-ts` (MIT, `src/cryptomator/MIT-LICENSE.txt`),
-with the content crypto and name handling corrected against the published vault
-format and verified against vaults created by cryptofs 2.8.0 / cryptolib 2.2.0.
-
 ### Fixtures
 
-- `test-fixtures/cryptomator-vault/` is a reference vault created by the Java
-  implementation (password `family-access-vault-fixture`). It covers root and
-  nested names, 0/1/32 KiB/32 KiB+1/100 KB files, a shortened file name, a
-  shortened directory, an NFC name, a symlink, `dirid.c9r` backups, and the
-  production layout of the sentinel at `Documents/sentinel.txt`. `CreateVault.java`
-  reproduces it: compile with a JDK 25 and the cryptomator-cli `mods/` and
-  `libs/` jars (the jars use class files a JDK 21 cannot load), then run it with
-  the vault password and `"vault-sentinel: 6f1c2a7e"`.
-- `test-fixtures/restic-cryptomator/` stores the same vault at
-  `/var/lib/data/vault` in a restic repository (password `family-access-fixture`).
-  The path matters: the tree must read `var/lib/data/vault`, so build it inside a
-  mount namespace where the vault really sits there (`unshare -rm`,
-  `mount --bind <tmp>/var /var`, `restic backup /var/lib/data/vault`).
-  `src/cryptomator/vault.test.ts` pins the fixture root's ciphertext path, so
-  regenerating means updating that one assertion with the value the reader prints.
+- `test-fixtures/restic/` is a restic repository (password `family-access-fixture`)
+  holding a small tree that exercises the reader: nested documents, an empty
+  file, a name longer than 200 bytes and binary content. The page browses real
+  snapshots; the fixture only pins the reader, so it does not need the production
+  layout and needs neither JDK nor a mount namespace.
 
-### Real-vault sentinel
+### Sentinel
 
-Run the same reader against the production vault; it prints the sentinel file
-and fails loudly if anything does not decrypt. The sentinel is
-`Documents/sentinel.txt` inside the vault (`src/sentinel.ts`); the vault root
-stays the Cryptomator layout. Prefer password files: exported environment
-variables are readable by any same-UID process.
+`deno task blob` and `deno task blob --check-only` walk R2 -> restic and read
+`var/lib/data/vault/Documents/sentinel.txt` (`src/sentinel.ts`). Create it once
+with `sudo vault` open:
 
 ```sh
-# local ciphertext directory
-deno task sentinel --local /var/lib/data/vault \
-  --vault-password-file ~/.config/recovery/vault-password
-
-# local restic repository
-deno task sentinel --repo /var/backup/restic --prefix var/lib/data/vault \
-  --restic-password-file ~/.config/recovery/restic-password \
-  --vault-password-file ~/.config/recovery/vault-password
-
-# Cloudflare R2 (read-only token)
-R2_REPOSITORY=... R2_ENDPOINT=... R2_BUCKET=... \
-R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... \
-  deno task sentinel --r2 --prefix var/lib/data/vault \
-  --restic-password-file ~/.config/recovery/restic-password \
-  --vault-password-file ~/.config/recovery/vault-password
+mkdir -p ~/Vault/Documents
+echo "sentinel: 6f1c2a7e" > ~/Vault/Documents/sentinel.txt
 ```
 
-`VAULT_PASSWORD` and `RESTIC_PASSWORD` still work as a fallback.
+then let a restic run pick it up.
 
-## Security notes
-
-- Never commit a plaintext data-keys payload or the recovery password.
 - The blob is public but encrypted; the recovery password is the data gate.
 - The recovery password is separate from the Bitwarden master password.
 - The page must not persist the password or data keys; lock clears them.
 
 ## Data-keys blob
 
-`deno task blob` prompts for the recovery password (twice) and the Cryptomator
-password, reads `r2-access-key-id-readonly`, `r2-secret-access-key-readonly`
+`deno task blob` prompts for the recovery password (twice), reads `r2-access-key-id-readonly`, `r2-secret-access-key-readonly`
 and `restic-password` from `../secrets/smortress.yaml`, encrypts
 the payload with Argon2id (3 passes, 64 MiB, 4 lanes) plus AES-256-GCM, writes
-`public/data-keys.enc`, then decrypts it again and walks R2 -> restic -> the
-Cryptomator sentinel. There is no password-file option and no legacy scrypt
+`public/data-keys.enc`, then decrypts it again and walks R2 -> restic -> the vault sentinel. There is no password-file option and no legacy scrypt
 envelope. The blob is public ciphertext and is committed; the build copies it
 when present.
 
@@ -114,8 +69,8 @@ character is normalized to NFC on both the build and browser side, but nothing
 can rescue a password that was transcribed differently than it will be printed.
 
 `deno task blob --check-only` repeats just the last step against the committed
-blob. It needs the recovery password only: the blob already carries the restic and
-Cryptomator credentials, so the check also proves they are the right ones. It
+blob. It needs the recovery password only: the blob already carries the restic credentials, so the check also proves they
+are the right ones. It
 reads the newest R2 snapshot, so a sentinel added after the last backup fails
 until a backup runs.
 
@@ -152,14 +107,12 @@ deno task typecheck
 deno task test
 deno task build
 deno task smoke    # headless Chrome: CHROME=<path> or --chrome <path>
-deno task sentinel --repo test-fixtures/restic-cryptomator --prefix var/lib/data/vault
 ```
 
 `deno task smoke` serves `dist/` on a loopback port and asserts the built page
 renders its shell and reaches the unlock prompt, which is the only check that
-notices a broken bundle or a CSP that blocks the module. The sentinel command
-needs `VAULT_PASSWORD` and `RESTIC_PASSWORD` (the fixture values are in the
-fixture list above). Both run in `.github/workflows/recovery.yml` on every
+notices a broken bundle, a CSP that blocks the module, or a blob the browser
+cannot open. Both run in `.github/workflows/recovery.yml` on every
 change under `recovery/`, before the deploy job.
 
 ## Recovery links

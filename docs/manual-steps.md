@@ -1303,52 +1303,102 @@ sudo restic-local snapshots
 
 ## Syncthing and the vault
 
-Personal files live in a Cryptomator vault that Syncthing replicates as
-ciphertext. The device table is
-[`modules/syncthing-devices.nix`](../modules/syncthing-devices.nix): device IDs
-are public keys, so they are committed, and each device's `key.pem` is the only
-secret. Every host sets `syncthing.device` in its `default.nix`, naming its row in that
-table.
+Personal files live in one plaintext tree, `/var/lib/data/vault`, owned by the
+`vault` user (uid 981) and synced between the hosts in
+[`modules/syncthing-devices.nix`](../modules/syncthing-devices.nix). Syncthing
+runs as `vault` from the system service in
+[`modules/nixos/vault-sync.nix`](../modules/nixos/vault-sync.nix), so the human's
+uid has no access to the tree at rest. Nothing is encrypted on disk beyond LUKS:
+restic encrypts the offsite copy, which is why the restic password alone
+recovers everything.
+
+Device IDs are public keys, so they are committed; each device's `key.pem` is the
+only secret. Every NixOS host sets `vaultSync.device` in its `default.nix`,
+naming its row in that table.
 
 Pairing a device:
 
 1. Install Syncthing. Android: the `researchxxl/syncthing-android` fork from
    F-Droid/Obtainium, and grant the battery-optimisation exemption — without it
-   the folder stops syncing once the screen is off. macOS: home-manager's launchd
-   agent; never the menu-bar app alongside it, because two instances share one
-   config directory.
-2. Read the device ID: `syncthing device-id` on a Linux/macOS host, the app's
-   settings screen on Android.
-3. Add it to the table, set `syncthing.device` on the new host, and rebuild.
+   the folder stops syncing once the screen is off. The work Mac runs a root
+   daemon instead of the menu-bar app (below).
+2. Read the device ID: `syncthing device-id` on a Linux host, the app's settings
+   screen on Android.
+3. Add it to the table, set `vaultSync.device` on the new host, and rebuild.
    `overrideDevices`/`overrideFolders` are on, so the table and the folder are
    the whole truth and a click in the UI does not survive the next activation.
 
-The vault is `~/Sync/vault` on laptops and `/var/lib/data/vault` on smortress.
-It is ciphertext everywhere; plaintext exists only inside an unlocked client.
-`vault <cmd>` prompts, mounts the vault into a temp dir, runs the command, and
-unmounts on exit, so nothing stays mounted between uses. Linux mounts through
-FUSE; macOS through fuse-t, which macOS may ask you to approve once in System
-Settings, Privacy & Security.
+Opening the vault:
 
-**One device at a time.** Unlock on one device and leave the others read-only.
-Two devices that create the same directory at once write two `dir.c9r` values,
-and the loser becomes an orphaned content directory that only Cryptomator's
-vault health check can recover, into `LOST+FOUND`. Password changes obey the same
-rule: change it on one device, let Syncthing converge, then unlock the next,
-because the old `masterkey.cryptomator.*.bkup` copies in the folder keep the old
-password valid forever.
+```sh
+sudo vault          # mount ~/Vault, hold until Ctrl-C
+sudo vault yazi     # mount, run one command, unmount on exit
+```
+
+`sudo vault` mounts the store with bindfs, which maps the `vault` user to you, so
+`~/Vault` behaves like a normal folder while it is open. On the NixOS hosts root
+means the YubiKey touch. A oneshot unit closes a stale mount at boot, and `v`
+expands to `sudo vault`. Nothing is reachable between sessions.
+
+**The work Mac (smoreswork).** home-manager cannot declare a system user or a
+root daemon, so Syncthing there runs as root from a hand-installed plist with
+its state at `/var/lib/syncthing` and the store at `/var/lib/data/vault`. Carry
+the identity over once so the committed device ID stays valid:
+
+```sh
+sudo install -d -m 0700 /var/lib/data/vault /var/lib/syncthing
+sudo install -o root -g wheel -m 0600 ~/.local/state/syncthing/cert.pem \
+  ~/.local/state/syncthing/key.pem /var/lib/syncthing/
+```
+
+Install `/Library/LaunchDaemons/local.syncthing.vault.plist` with
+`Label local.syncthing.vault`, `UserName root`, `RunAtLoad` and `KeepAlive`
+true, and `ProgramArguments` = `[<syncthing path> serve --no-browser
+--home=/var/lib/syncthing]`, then:
+
+```sh
+sudo chown root:wheel /Library/LaunchDaemons/local.syncthing.vault.plist
+sudo chmod 0644 /Library/LaunchDaemons/local.syncthing.vault.plist
+sudo launchctl bootstrap system /Library/LaunchDaemons/local.syncthing.vault.plist
+```
+
+That config is hand-made, so it can drift from this repository without a check
+noticing: when the folder or the device table changes, edit it there too.
+`sudo vault` works as on the NixOS hosts, with fuse-t behind bindfs (approve it
+once in System Settings, Privacy & Security).
 
 **Version history** is Syncthing staggered versioning at
 `/var/lib/syncthing-versions/vault` on smortress — outside `/var/lib/data`, so
-restic never carries it. Restore by copying the versioned file back into the
-vault and letting it converge. The version file is ciphertext under its own
-`~YYYYMMDD-HHMMSS` suffix; strip the suffix when copying it back, never decrypt
-it. A `*.sync-conflict-*` file appearing in the decrypted view is the expected
-outcome of a two-device edit: Syncthing keeps both copies, the conflict copy
-decrypts to a normal readable name (`name.sync-conflict-<date>-<device>.<ext>`),
-and it is resolved by hand. One copy per version that cannot be merged, so if a
-device was paused across several remote changes (a restore plus more than one
-save) expect more than one conflict file; keep the newest and delete the rest.
+restic never carries it. Restore by copying the versioned file back (strip the
+`~YYYYMMDD-HHMMSS` suffix) and letting it converge. A `*.sync-conflict-*` file is
+the expected outcome of a two-device edit; keep the newest and delete the rest.
+
+### Vault migration, Cryptomator to plaintext
+
+Do this with Syncthing stopped on every device, and do not rebuild before step 6:
+the new service refuses to start until `/var/lib/vault-migrated` exists, and
+`tmpfiles` would hand the ciphertext to the `vault` user before it is converted.
+
+1. Snapshot the ciphertext so the old tree stays in the repository:
+   `sudo systemctl start restic-backups-r2.service`.
+2. Stop Syncthing everywhere (`systemctl --user stop syncthing` before the switch
+   removes the user unit, `sudo systemctl stop syncthing` after it) and pause the
+   folder on the phone.
+3. On smortress, mount the old vault and copy the plaintext out of it:
+   `cryptomator-cli unlock --mounter=… --mountPoint=/mnt/oldvault /var/lib/data/vault`,
+   then `sudo mkdir -p /var/lib/data/staging && sudo cp -a /mnt/oldvault/Sync/. /var/lib/data/staging/`.
+4. Verify while it is still mounted: `sudo diff -r /mnt/oldvault/Sync /var/lib/data/staging`
+   must print nothing.
+5. Swap: `sudo mv /var/lib/data/vault /var/lib/vault-ciphertext`,
+   `sudo mv /var/lib/data/staging /var/lib/data/vault`,
+   `sudo chown -R vault:vault /var/lib/data/vault /var/lib/syncthing-versions`.
+6. `sudo touch /var/lib/vault-migrated`, rebuild, `sudo systemctl start syncthing`,
+   and check the folder and its devices in the UI.
+7. Laptops: once the plaintext has synced down, `mv ~/Sync ~/Sync.old` and delete
+   it when the cold copy goes.
+8. Rebuild the blob (`deno task blob`; the sentinel check now reads a plain file),
+   then `deno task blob --check-only`.
+9. Delete `/var/lib/vault-ciphertext` after two restic runs and one page restore.
 
 ## Agent VMs
 
@@ -1822,8 +1872,8 @@ from `/etc/ssh/ssh_host_ed25519_key`. From a laptop with the admin identity, add
 the replacement host recipient to `.sops.yaml` and run
 `sops updatekeys secrets/smortress.yaml`.
 
-**Recovery page (what the family opens).** In the Cryptomator app create
-`Documents/sentinel.txt` with any canary text (`sentinel: 6f1c2a7e`), edit on one
+**Recovery page (what the family opens).** With `sudo vault` open, create
+`Documents/sentinel.txt` in `~/Vault` with any canary text (`sentinel: 6f1c2a7e`), edit on one
 device only, let Syncthing settle and let the nightly restic run so the newest
 snapshot contains it. Then `nix run .#cloudflare-apply` creates the Pages project,
 `recovery.sammohr.dev` and its CNAME (run it twice if the domain is still

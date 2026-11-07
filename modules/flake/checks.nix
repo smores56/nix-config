@@ -340,19 +340,6 @@ in
                 "${src}/modules/features/md-structure.prompt.md"
               ];
             };
-            vault = {
-              tools = [
-                pkgs.bash
-                pkgs.coreutils
-                pkgs.gnugrep
-                pkgs.gnused
-              ];
-              args = [
-                "${src}/modules/features/vault.sh"
-                "${src}/modules/features/vault-linux.sh"
-                "${src}/modules/features/vault-darwin.sh"
-              ];
-            };
           }
         );
 

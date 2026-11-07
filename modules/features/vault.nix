@@ -28,9 +28,11 @@ let
     runtimeInputs = [
       pkgs.bindfs
       pkgs.coreutils
-      pkgs.sudo
     ]
-    ++ lib.optionals (!isDarwin) [ pkgs.util-linux ];
+    ++ lib.optionals (!isDarwin) [
+      pkgs.sudo
+      pkgs.util-linux
+    ];
     text = script;
   };
 in
