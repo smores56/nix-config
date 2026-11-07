@@ -471,8 +471,10 @@ in
             )
           );
 
-        # Every home collects garbage on a timer; the Mac shares its SSH transports through a socket
-        # path that fits macOS's 104-byte limit (ssh appends a 17-byte suffix while binding).
+        # NixOS collects through its root timer; a non-NixOS home's agent is the only collector
+        # there, and NixOS homes expire their home-manager generations for the next root run. The
+        # Mac also shares its SSH transports through a socket path that fits macOS's 104-byte limit
+        # (ssh appends a 17-byte suffix while binding).
         home-maintenance = evalCheck "home-maintenance" (
           toString (
             let
@@ -482,10 +484,18 @@ in
               socketBytes =
                 lib.stringLength (lib.replaceStrings [ "%C" ] [ (lib.fixedWidthString 40 "x" "") ] mux.ControlPath)
                 + 17;
+              nonNixosHomes = lib.filterAttrs (_: h: !h.config.machine.nixos) config.flake.homeConfigurations;
+              nixosHomes = lib.filterAttrs (_: h: h.config.machine.nixos) config.flake.homeConfigurations;
             in
-            ensure (lib.all (h: h.config.nix.gc.automatic) (
-              lib.attrValues config.flake.homeConfigurations
-            )) "every home collects garbage"
+            ensure (lib.all (h: h.config.nix.gc.automatic) (lib.attrValues nonNixosHomes)) (
+              "every non-NixOS home collects garbage"
+            )
+            && ensure (lib.all (h: h.config.nix.gc.automatic) (
+              lib.attrValues config.flake.nixosConfigurations
+            )) "every NixOS host collects garbage"
+            && ensure (lib.all (h: h.config.services.home-manager.autoExpire.enable) (
+              lib.attrValues nixosHomes
+            )) "every NixOS home expires old generations"
             && ensure (mux.ControlMaster == "auto") "the Mac multiplexes SSH connections"
             && ensure (socketBytes <= 104) "the control socket path is ${toString socketBytes} bytes"
           )

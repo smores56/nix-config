@@ -112,8 +112,6 @@ in
       hm = "home-manager";
       hs = "home-manager switch --no-write-lock-file";
 
-      ng = "nix-collect-garbage --delete-old";
-
       sm = "ssh smores@smortress -t fish";
     }
     (lib.mkIf pkgs.stdenv.hostPlatform.isLinux {

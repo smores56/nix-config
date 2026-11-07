@@ -93,6 +93,15 @@ in
   # would run those builders as root.
   nix.settings.build-users-group = "nixbld";
 
+  # Weekly collection as root, keeping a 30-day rollback window. A user-level
+  # timer cannot collect the store when only root is trusted; home-manager
+  # generations are expired separately by services.home-manager.autoExpire.
+  nix.gc = {
+    automatic = true;
+    dates = "weekly";
+    options = "--delete-older-than 30d";
+  };
+
   # Setuid fusermount3 so unprivileged FUSE mounts work (AppImages, gvfs),
   # independent of gvfs pulling fuse in.
   programs.fuse.enable = true;
