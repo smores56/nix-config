@@ -58,5 +58,6 @@ in
     sock
     opensc
     ensureProxy
+    dialog
     ;
 }

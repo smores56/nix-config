@@ -10,6 +10,7 @@
 let
   yubikeyKeys = import ../lib/yubikey-keys.nix;
   isServer = builtins.elem "server" config.machine.profiles;
+  piv = import ../lib/piv.nix { inherit config lib pkgs; };
 
   # OpenSSH's only libfido2 consumer is libexec/ssh-sk-helper. The default libfido2 links PC/SC, so
   # with pcscd running it sees the YubiKey twice (USB HID + PC/SC) and asks for a touch to pick one.
@@ -23,8 +24,12 @@ let
     '';
   };
 
-  # Via SSH_ASKPASS_REQUIRE=force. Nothing it could be asked needs an answer (piv-ensure owns the
-  # PIV PIN; sudo handles are touch-only), so every prompt fails closed and a changed host key is never accepted unseen.
+  # Via SSH_ASKPASS_REQUIRE=force. Only a password prompt may be answered: a
+  # touch request is announced and fails, the agent's "Allow use of key" question
+  # (the only prompt with SSH_ASKPASS_PROMPT=confirm) fails, and a host-key
+  # question arrives without a hint and fails too, so a new or changed key is
+  # never accepted unseen. A password prompt opens the same masked dialog as the
+  # PIV PIN; that is what feeds the smortress fallback when no YubiKey is inserted.
   askpass = pkgs.writeShellApplication {
     name = "ssh-askpass";
     runtimeInputs = [ pkgs.libnotify ];
@@ -32,7 +37,12 @@ let
       case "''${1:-}" in
         "Confirm user presence for key"*)
           "''${SSH_ASKPASS_NOTIFY:-notify-send}" -u critical "YubiKey touch requested" "$1" || true
+          exit 1
           ;;
+      esac
+      if [ "''${SSH_ASKPASS_PROMPT:-}" = confirm ]; then exit 1; fi
+      case "''${1:-}" in
+        *[Pp]assword* | *[Pp]assphrase*) exec ${lib.getExe piv.dialog} "$1" ;;
       esac
       exit 1
     '';

@@ -506,7 +506,8 @@ from `modules/lib/yubikey-keys.nix`. `modules/features/piv.nix` defines
 agent first (one PIN per login session), then `nc` connects. Pin the host key
 once per laptop;
 `SSH_ASKPASS_REQUIRE=force` sends the `yes/no` prompt to the session askpass,
-which fails closed, so the first connection fails until this is done:
+which fails closed on everything but a password prompt, so the first connection
+fails until this is done:
 
 ```sh
 echo '10.0.0.193 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAQcI4/G5fQWGgkF1s7zkhWrXz/64LWeUJYh3SB231B2' \
@@ -1857,7 +1858,7 @@ searchable until it is on the checked-out tree.
 
 <!-- manual-step: service/smortress/ssh -->
 
-`ssh.sammohr.dev`, SSH to the loopback sshd (key-only), with service auth for
+`ssh.sammohr.dev`, SSH to the loopback sshd (key-first), with service auth for
 `cloudflared access ssh`. `ssh` must keep Access enabled; evaluation fails
 otherwise.
 
@@ -1865,6 +1866,19 @@ otherwise.
 which `piv-ensure` (the ProxyCommand) loads on first use and reloads from the
 login-session PIN cache after another PIV client reset the card session. The
 forwarded agent holds only the touch-only sudo handles.
+
+With no YubiKey attached at all, the client proxy opts into the password
+fallback (`YK_ENSURE_PASSWORD_FALLBACK` in `modules/features/cloudflared.nix`):
+the pre-connect stands down and ssh falls through to the `smores` account
+password, the same one behind `secret/smores-password-hash`, answered in the
+Linux session's masked dialog (`modules/features/fido2.nix`; macOS has no
+session askpass and prompts on the terminal). It is the account
+password, and `sudo` falls back to it, so this login is root-equivalent; the
+Cloudflare Access policy plus the loopback bind stay the outer gate. A key
+stack that cannot be enumerated (pcscd down, a timeout), a card that is present
+but unreadable, a second card (piv-ensure needs exactly one), or a
+`YK_ENSURE_NO_PROMPT` caller all keep failing the PIV pre-connect instead of
+downgrading, and the PIV-only hosts (tang-pi) never opt in.
 
 ### music.sammohr.dev
 

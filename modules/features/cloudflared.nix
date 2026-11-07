@@ -43,7 +43,14 @@ let
   };
 
   tunnel = "${cloudflared-access}/bin/cloudflared-access ssh --hostname %h";
-  smortressProxy = if isServer then tunnel else "${lib.getExe piv.ensureProxy} ${tunnel}";
+  # `ssh smortress` needs no YubiKey: the pre-connect step stands down when no
+  # card is present, and ssh then falls through to sshd's password prompt. PIV-only
+  # hosts (tang-pi) keep the hard failure because they do not opt in.
+  smortressProxy =
+    if isServer then
+      tunnel
+    else
+      "env YK_ENSURE_PASSWORD_FALLBACK=1 ${lib.getExe piv.ensureProxy} ${tunnel}";
 
   forward = sub: port: {
     Unit = {

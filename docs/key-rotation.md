@@ -79,6 +79,11 @@ it and `chmod +x` before running it.
 
 ## Lost or stolen key
 
+Revoking means reaching the host, and losing the key does not lock that out:
+`ssh smortress` falls back to the `smores` account password when no YubiKey is
+inserted (`docs/manual-steps.md`, "smortress/ssh"). Use it for the steps below
+until the replacement is enrolled.
+
 1. Remove the key's entries from `modules/lib/yubikey-keys.nix` (its PIV 9a
    public key and certificate, and its sudo public key). That file feeds
    sshd's `authorized_keys`, `/etc/ssh/sudo_authorized_keys`, and pam_p11's

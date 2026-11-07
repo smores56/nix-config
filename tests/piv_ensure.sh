@@ -43,10 +43,16 @@ EOF
 cat >"$work/bin/ykman" <<EOF
 #!$BASH
 echo "ykman \$*" >>"$log"
-[ -e "$state/no-card" ] && { echo "ERROR: No YubiKey detected" >&2; exit 2; }
 case "\$*" in
-  "list --serials") cat "$state/serial" ;;
-  "piv info") printf 'PIV version:              5.7.1\nPIN tries remaining:      %s/3\n' "\$(cat "$state/tries")" ;;
+  "list --serials")
+    # Real ykman exits 0 with an empty list when no key is attached, and exits 0
+    # with an ERROR on stderr when PC/SC is unavailable.
+    [ -e "$state/pcsc-broken" ] && { echo "ERROR: Unable to list devices for connection" >&2; exit 0; }
+    [ -e "$state/no-card" ] && exit 0
+    cat "$state/serial" ;;
+  "piv info")
+    [ -e "$state/no-card" ] && { echo "ERROR: No YubiKey detected" >&2; exit 2; }
+    printf 'PIV version:              5.7.1\nPIN tries remaining:      %s/3\n' "\$(cat "$state/tries")" ;;
   *) exit 2 ;;
 esac
 EOF
@@ -171,6 +177,34 @@ reset no-card
 out=$(run 2>&1) && fail "loaded with no readable card"
 [[ $out == *"retry count"* ]] || fail "ykman failure lost its hint: '$out'"
 [ "$(loads)" = 0 ] || fail "ykman failure still reached ssh-add -s"
+
+# No YubiKey and an opted-in caller: connect anyway so sshd can offer the password fallback.
+reset no-card
+run YK_ENSURE_PASSWORD_FALLBACK=1 || fail "password fallback with no card failed"
+[ "$(loads)$(dialogs)" = 00 ] || fail "password fallback touched the dialog or the card"
+rm -f "$sock"
+run YK_ENSURE_PASSWORD_FALLBACK=1 || fail "password fallback still required the PIV agent"
+
+# A caller that must never prompt keeps failing, fallback or not.
+reset no-card
+if run YK_ENSURE_PASSWORD_FALLBACK=1 YK_ENSURE_NO_PROMPT=1 2>/dev/null; then
+  fail "no-prompt caller fell back to a password"
+fi
+[ "$(loads)$(dialogs)" = 00 ] || fail "no-prompt fallback reached the dialog or the card"
+
+# A stack that cannot enumerate cards is not "no card": it must never downgrade to a password.
+reset pcsc-broken
+out=$(run YK_ENSURE_PASSWORD_FALLBACK=1 2>&1) && fail "password fallback ignored a broken PIV stack"
+[[ $out == *"enumerate"* ]] || fail "broken PIV stack lost its hint: '$out'"
+[ "$(loads)$(dialogs)" = 00 ] || fail "broken PIV stack reached the dialog or the card"
+
+# A card that is present but unreadable is not "no card": it must never downgrade to a password.
+reset
+echo garbage >"$state/tries"
+if run YK_ENSURE_PASSWORD_FALLBACK=1 2>/dev/null; then
+  fail "password fallback ignored a present but unreadable card"
+fi
+[ "$(loads)" = 0 ] || fail "unreadable card in fallback mode reached ssh-add -s"
 
 reset cancel
 if run 2>/dev/null; then fail "cancelled dialog reported success"; fi

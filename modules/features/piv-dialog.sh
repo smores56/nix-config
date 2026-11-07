@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-# Asks for the PIV PIN once and prints it: a masked macOS dialog, fuzzel on the
-# live Wayland session, or the controlling terminal when neither exists.
+# Asks for a secret once and prints it: a masked macOS dialog, fuzzel on the
+# live Wayland session, or the controlling terminal when neither exists. The
+# optional argument is the prompt label (default: the PIV PIN); only the Linux
+# surfaces use it, so the AppleScript label stays a constant.
 set -euo pipefail
+
+label=${1-YubiKey PIN}
+# ssh's password prompt already ends in ": "; keep fuzzel's own spacing clean.
+label=${label%"${label##*[![:space:]]}"}
 
 case ${PIV_PLATFORM:-$(uname -s)} in
   darwin | Darwin)
@@ -26,12 +32,12 @@ wayland_socket() {
 }
 
 if wl=$(wayland_socket); then
-  WAYLAND_DISPLAY=$wl exec timeout 120 "${PIV_FUZZEL:-fuzzel}" --dmenu --prompt-only="YubiKey PIN " \
+  WAYLAND_DISPLAY=$wl exec timeout 120 "${PIV_FUZZEL:-fuzzel}" --dmenu --prompt-only="$label " \
     --password='*' --namespace=pin --cache=/dev/null
 fi
 
 if { exec 3<>/dev/tty; } 2>/dev/null; then
-  printf 'YubiKey PIN ' >&3
+  printf '%s ' "$label" >&3
   IFS= read -rs pin <&3 || exit 1
   printf '\n' >&3
   printf '%s\n' "$pin"
