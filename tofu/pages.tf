@@ -5,9 +5,11 @@
 # record: a specific name wins over `*.sammohr.dev`, and without it the letter's URL would
 # reach smortress and 404.
 
+# The project name is the public default host (<name>.pages.dev). Renaming it replaces the
+# project: Cloudflare rebuilds it empty and the domain binding below moves over.
 resource "cloudflare_pages_project" "recovery" {
   account_id        = var.account_id
-  name              = "recovery"
+  name              = "sam-mohr-data-recovery"
   production_branch = "main"
 }
 
@@ -20,11 +22,11 @@ resource "cloudflare_pages_domain" "recovery" {
 }
 
 resource "cloudflare_dns_record" "recovery" {
-  # `recovery.pages.dev` follows the project name above; keep the two in step.
+  # The project subdomain follows the project name above; keep the two in step.
   zone_id = data.cloudflare_zone.this.zone_id
   name    = "recovery.${var.domain}"
   type    = "CNAME"
-  content = "recovery.pages.dev"
+  content = "sam-mohr-data-recovery.pages.dev"
   proxied = true
   ttl     = 1
 

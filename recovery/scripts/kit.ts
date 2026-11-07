@@ -10,12 +10,13 @@ import { kitSlug, type KitValues, renderLabel, renderLetter, renderStartHere } f
 import { promptHidden, promptVisible, verifyBlobPassword } from "./prompt.ts";
 
 const DEFAULT_PAGE_URL = "https://recovery.sammohr.dev/";
+const DEFAULT_FALLBACK_URL = "https://sam-mohr-data-recovery.pages.dev/";
 const DEFAULT_OUT = "recovery-kit";
 
 type Args = {
   out: string;
   pageUrl: string;
-  /** Required: a guessed pages.dev address would be printed and never checked. */
+  /** Defaults to the project's pages.dev host; a guess would be printed unchecked. */
   fallbackUrl?: string;
   operator?: string;
   blob: string;
@@ -193,7 +194,7 @@ function demoValues(args: Args): (recipient: string) => KitValues {
     recoveryCode: "DEMO-CODE-1234",
     recoveryPassword: "DEMO-recovery-password",
     pageUrl: args.pageUrl,
-    fallbackUrl: args.fallbackUrl ?? "https://demo.pages.dev/",
+    fallbackUrl: args.fallbackUrl ?? DEFAULT_FALLBACK_URL,
     demo: true,
   });
 }
@@ -212,8 +213,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (!args.fallbackUrl) throw new Error("--fallback-url <pages.dev url> is required");
-  const fallbackUrl = args.fallbackUrl;
+  const fallbackUrl = args.fallbackUrl ?? DEFAULT_FALLBACK_URL;
   const out = resolveOut(args.out);
   const operator = args.operator ?? (await promptVisible("Your name: "));
   if (!operator) throw new Error("a name is needed on the letters");

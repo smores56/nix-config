@@ -72,4 +72,4 @@ jobs:
           # env is not available in `with`, so the id is repeated here.
           accountId: 385f7d47e2e8438fbda5d6f76d760434
           workingDirectory: recovery
-          command: pages deploy dist --project-name recovery
+          command: pages deploy dist --project-name sam-mohr-data-recovery

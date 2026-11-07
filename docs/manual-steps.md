@@ -1828,7 +1828,8 @@ nightly restic run so the newest snapshot contains it. Then
 pending), and the `CLOUDFLARE_API_TOKEN` repository secret must exist (see
 *Cloudflare Pages token* in `docs/key-rotation.md`). Finally, in `recovery/`,
 `deno task blob` and `deno task blob --check-only` must both pass before
-`deno task kit --fallback-url <pages.dev url>` prints the letters; the print,
+`deno task kit` prints the letters (the pages.dev fallback defaults to
+`https://sam-mohr-data-recovery.pages.dev/`); the print,
 seal and drive steps are in `recovery/README.md`.
 
 **Admin key or its passphrase lost.** Recovery is a new identity, not a
