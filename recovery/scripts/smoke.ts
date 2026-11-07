@@ -30,10 +30,6 @@ const SMOKE_KEYS: DataKeys = {
     photosPath: "var/lib/data/photos",
     vaultPath: "var/lib/data/vault",
   },
-  vault: {
-    password: "smoke-vault-password",
-    path: "var/lib/data/vault",
-  },
 };
 
 const USAGE = "usage: smoke [--dist <dir>] [--chrome <path>]";

@@ -1,63 +1,36 @@
 import { describe, it as test } from "jsr:@std/testing/bdd";
 import { expect } from "jsr:@std/expect";
-import { type CryptomatorVault, type DirID, type Item, ROOT_DIR_ID } from "./cryptomator/vault.ts";
-import { readSentinel } from "./sentinel.ts";
+import type { ResticFile, ResticRepository, ResticSnapshot } from "./restic/repository.ts";
+import { readSentinel, SENTINEL_PATH } from "./sentinel.ts";
 
-const DOCS = "docs" as DirID;
-const OTHER = "other" as DirID;
+const snapshot = { id: "abc", time: "2026-11-07T00:00:00Z", tree: "0".repeat(64), paths: [] } as
+  ResticSnapshot;
 
-function file(name: string): Item {
-  return { name, kind: "file", encryptedPath: `d/f/${name}`, shortened: false };
-}
-
-function dir(name: string, dirId: DirID): Item {
-  return { name, kind: "dir", encryptedPath: `d/d/${name}`, dirId, shortened: false };
-}
-
-function fakeVault(trees: Record<string, Item[]>, text = "sentinel: 6f1c2a7e\n") {
-  const reads: Item[] = [];
-  const vault = {
-    list: async (dirId: DirID) => trees[String(dirId)] ?? [],
-    readTextFile: async (item: Item) => {
-      reads.push(item);
-      return text;
+function fakeRepository(files: ResticFile[], text = "sentinel: 6f1c2a7e\n") {
+  const read: string[] = [];
+  const repository = {
+    walk: async () => files,
+    readFile: async (file: ResticFile) => {
+      read.push(file.path);
+      return new TextEncoder().encode(text);
     },
-  } as Pick<CryptomatorVault, "list" | "readTextFile">;
-  return { vault, reads };
+  } as unknown as ResticRepository;
+  return { repository, read };
 }
 
 describe("readSentinel", () => {
-  test("reads Documents/sentinel.txt and trims it", async () => {
-    const { vault, reads } = fakeVault({
-      [String(ROOT_DIR_ID)]: [file("IMPORTANT.rtf"), dir("Documents", DOCS)],
-      [String(DOCS)]: [file("sentinel.txt"), dir("Taxes", OTHER)],
-    });
+  test("reads the sentinel from the store and trims it", async () => {
+    const { repository, read } = fakeRepository([
+      { path: "var/lib/data/photos/2024/a.jpg", blobs: [] },
+      { path: SENTINEL_PATH, blobs: [] },
+    ]);
 
-    expect(await readSentinel(vault)).toBe("sentinel: 6f1c2a7e");
-    expect(reads.map((item) => item.name)).toEqual(["sentinel.txt"]);
+    expect(await readSentinel(repository, snapshot)).toBe("sentinel: 6f1c2a7e");
+    expect(read).toEqual([SENTINEL_PATH]);
   });
 
-  test("rejects a sentinel left at the vault root", async () => {
-    const { vault } = fakeVault({
-      [String(ROOT_DIR_ID)]: [file("sentinel.txt"), dir("Documents", DOCS)],
-      [String(DOCS)]: [],
-    });
-
-    await expect(readSentinel(vault)).rejects.toThrow("Documents/sentinel.txt");
-  });
-
-  test("names the missing folder", async () => {
-    const { vault } = fakeVault({ [String(ROOT_DIR_ID)]: [file("IMPORTANT.rtf")] });
-
-    await expect(readSentinel(vault)).rejects.toThrow("Documents/");
-  });
-
-  test("names the missing file", async () => {
-    const { vault } = fakeVault({
-      [String(ROOT_DIR_ID)]: [dir("Documents", DOCS)],
-      [String(DOCS)]: [file("budget.txt")],
-    });
-
-    await expect(readSentinel(vault)).rejects.toThrow("Documents/sentinel.txt");
+  test("names the path it expected when the snapshot has no sentinel", async () => {
+    const { repository } = fakeRepository([{ path: "var/lib/data/photos/a.jpg", blobs: [] }]);
+    await expect(readSentinel(repository, snapshot)).rejects.toThrow(SENTINEL_PATH);
   });
 });

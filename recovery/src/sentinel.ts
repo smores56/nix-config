@@ -1,23 +1,20 @@
-// The recovery sentinel the family PWA looks for: a plaintext file inside the
-// vault that proves the reader, the restic snapshot and the Cryptomator key all
-// work. It lives in a folder so the vault root stays the Cryptomator layout.
+// The recovery sentinel: a plaintext file in the vault that proves the snapshot holds the real
+// documents, not just a directory tree. It sits in a folder so the store root stays tidy.
 
-import { type CryptomatorVault, ROOT_DIR_ID } from "./cryptomator/vault.ts";
+import type { ResticFile, ResticRepository, ResticSnapshot } from "./restic/repository.ts";
 
 export const SENTINEL_DIR = "Documents";
 export const SENTINEL_FILE = "sentinel.txt";
-export const SENTINEL_PATH = `${SENTINEL_DIR}/${SENTINEL_FILE}`;
+/** Path relative to the snapshot root, so it names the store without a mount. */
+export const SENTINEL_PATH = `var/lib/data/vault/${SENTINEL_DIR}/${SENTINEL_FILE}`;
 
-type VaultReader = Pick<CryptomatorVault, "list" | "readTextFile">;
+export async function readSentinel(
+  repository: ResticRepository,
+  snapshot: ResticSnapshot,
+): Promise<string> {
+  const files = await repository.walk(snapshot);
+  const file: ResticFile | undefined = files.find((entry) => entry.path === SENTINEL_PATH);
+  if (!file) throw new Error(`the snapshot has no ${SENTINEL_PATH}`);
 
-export async function readSentinel(vault: VaultReader): Promise<string> {
-  const root = await vault.list(ROOT_DIR_ID);
-  const folder = root.find((item) => item.kind === "dir" && item.name === SENTINEL_DIR);
-  if (!folder?.dirId) throw new Error(`the vault has no ${SENTINEL_DIR}/ folder at its root`);
-
-  const entries = await vault.list(folder.dirId);
-  const file = entries.find((item) => item.kind === "file" && item.name === SENTINEL_FILE);
-  if (!file) throw new Error(`the vault has no ${SENTINEL_PATH}`);
-
-  return (await vault.readTextFile(file)).trim();
+  return new TextDecoder().decode(await repository.readFile(file)).trim();
 }
