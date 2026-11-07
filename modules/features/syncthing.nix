@@ -58,7 +58,7 @@ in
         devices = lib.mapAttrs (name: id: { inherit id name; }) devices;
         folders.vault = {
           id = "vault";
-          label = "Cryptomator vault";
+          label = "Vault";
           path = cfg.vaultPath;
           type = "sendreceive";
           devices = peers;
