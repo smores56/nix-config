@@ -62,12 +62,21 @@ let
     hash = "sha256-u7zVtmtXH0OP8gGBhGSONyEaHYLEktMoNK8toscZN1U=";
   };
 
+  # The vision encoder: the Heretic finetune only abliterates text layers, so the
+  # base checkpoint's qwen3vl projector matches it. Without it the server reports
+  # modalities.vision=false and rejects image parts.
+  mmprojModel = pkgs.fetchurl {
+    url = "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/mmproj-F16.gguf";
+    hash = "sha256-y7hBqe4GNrLsFy9buN8uqN/rAekP58YSZYHWYqC05D4=";
+  };
+
   # RTX 3090 VRAM budget (24,576 MiB):
   #   Model weights (RVN IQ4_XS):  14,385 MiB
   #   DFlash2 drafter (Q2_K):         672 MiB
   #   Runtime/CUDA overhead:         1,200 MiB
   #   KV (target q4_0 + drafter, 200K ctx): ~7,500 MiB
-  #   Total: ~23.2 GiB — 200K is the ceiling; larger ctx needs lighter weights
+  #   Total: ~23.2 GiB — 200K is the ceiling; larger ctx needs lighter weights.
+  #   The 927 MiB vision projector stays on the CPU (see no-mmproj-offload).
 in
 {
   config = {
@@ -103,6 +112,10 @@ in
         spec-draft-n-max = 3;
         model-draft = draftModel;
         n-gpu-layers-draft = 99;
+        mmproj = mmprojModel;
+        # The card sits at ~20.5 GiB before vision; keeping the encoder on the
+        # CPU leaves the projector and its compute buffer out of VRAM.
+        no-mmproj-offload = true;
         reasoning-format = "deepseek";
         # Qwen3.8 model-card sampling (thinking mode; non-thinking: 0.7/0.8,
         # presence-penalty 1.5)

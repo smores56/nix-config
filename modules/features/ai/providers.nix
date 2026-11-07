@@ -93,6 +93,8 @@ let
     id = "qwen3.8-27b";
     context = 200192;
     output = 200192;
+    # nixos/llm.nix loads the base checkpoint's qwen3vl projector.
+    vision = true;
     prompt = 0.0;
     completion = 0.0;
   };
