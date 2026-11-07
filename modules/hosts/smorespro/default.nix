@@ -20,7 +20,7 @@
     ./secrets.nix
   ];
   homeModules = [
-    ../../features/todo.nix
+    ./todo.nix
   ];
   user = {
     shellAbbrs = {

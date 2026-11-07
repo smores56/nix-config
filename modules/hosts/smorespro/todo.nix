@@ -1,8 +1,7 @@
 # Plain-text todos: one todo.txt in ~/Tasks, edited with todo.sh or Helix and
 # synced to the phone. The vault's Syncthing runs as the isolated `vault` user
 # and cannot host a file the human edits, so this is a second, user-level
-# daemon with its own ports and identity. The phone runs Syncthing-Fork and
-# 0x54ask; see docs/manual-steps.md ("todo.txt").
+# daemon under its own XDG state; see docs/manual-steps.md ("todo.txt").
 {
   config,
   lib,
@@ -10,24 +9,18 @@
   ...
 }:
 let
-  devices = import ../syncthing-devices.nix;
+  devices = import ../../syncthing-devices.nix;
   home = config.home.homeDirectory;
-  identity = "${home}/.local/state/syncthing-todo-identity";
+  stateHome = "${home}/.local/state/syncthing-todo";
 
-  # The migration copied the old user Syncthing identity into the vault
-  # service, so starting in the default ~/.local/state/syncthing would reuse
-  # the vault daemon's device ID. Generate a separate identity and install it
-  # before the service starts; this replaces home-manager's own copyKeys hook.
-  prepareIdentity = pkgs.writeShellScript "todo-syncthing-identity" ''
-    set -eu
-    state="''${XDG_STATE_HOME:-$HOME/.local/state}/syncthing"
-    if [ ! -e "${identity}/cert.pem" ] || [ ! -e "${identity}/key.pem" ]; then
-      ${lib.getExe pkgs.syncthing} generate --home "${identity}" --no-port-probing
-    fi
-    ${pkgs.coreutils}/bin/install -dm700 "$state"
-    ${pkgs.coreutils}/bin/install -Dm400 "${identity}/cert.pem" "$state/cert.pem"
-    ${pkgs.coreutils}/bin/install -Dm400 "${identity}/key.pem" "$state/key.pem"
-  '';
+  # The vault daemon and this one must not share a state directory: the old
+  # user-level directory still holds the vault's migrated identity, and
+  # vault-sync reads it as a recovery source. A private XDG home also keeps the
+  # old config and index out of this daemon.
+  syncthingEnv = [
+    "XDG_STATE_HOME=${stateHome}"
+    "XDG_CONFIG_HOME=${stateHome}"
+  ];
 in
 {
   home.packages = [
@@ -37,18 +30,22 @@ in
 
   # todo.sh looks here by default; the package's own config under $out/etc is
   # never consulted. The activation only creates missing files, so a rebuild
-  # never overwrites the synced list.
+  # never bumps the synced list's mtime.
   xdg.configFile."todo/config".text = ''
     export TODO_DIR="$HOME/Tasks"
     export TODO_FILE="todo.txt"
     export DONE_FILE="done.txt"
     export REPORT_FILE="report.txt"
   '';
-  home.sessionVariables.TODOTXT_CFG_FILE = "${config.xdg.configHome}/todo/config";
 
   home.activation.todoFiles = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     run ${pkgs.coreutils}/bin/mkdir -p "$HOME/Tasks"
-    run ${pkgs.coreutils}/bin/touch "$HOME/Tasks/todo.txt" "$HOME/Tasks/done.txt"
+    if [ ! -e "$HOME/Tasks/todo.txt" ]; then
+      run ${pkgs.coreutils}/bin/touch "$HOME/Tasks/todo.txt"
+    fi
+    if [ ! -e "$HOME/Tasks/done.txt" ]; then
+      run ${pkgs.coreutils}/bin/touch "$HOME/Tasks/done.txt"
+    fi
   '';
 
   services.syncthing = {
@@ -62,9 +59,12 @@ in
         listenAddresses = [
           "tcp://0.0.0.0:22001"
           "quic://0.0.0.0:22001"
+          # The default listen set includes the relay client; an explicit set
+          # must add it back or a phone behind CGNAT/VPN never connects.
+          "dynamic+https://relays.syncthing.net/endpoint"
         ];
-        localAnnouncePort = 21028;
-        localAnnounceMCAddr = "[ff12::8384]:21028";
+        # The vault daemon owns 21027 on this host; discovery is global/relay.
+        localAnnounceEnabled = false;
         relaysEnabled = true;
       };
       devices.phone = {
@@ -80,19 +80,20 @@ in
         fsWatcherEnabled = true;
         rescanIntervalS = 3600;
         ignorePerms = true;
-        # Seeded before the first sync; a conflict is a normal file the phone
-        # app merges, and the version set keeps 30 days outside the tree.
+        # A conflict is a normal file the phone app merges; the version set
+        # keeps 30 days under this daemon's private state.
         versioning = {
           type = "staggered";
           params = {
             maxAge = "2592000";
             cleanupIntervalS = "3600";
           };
-          fsPath = "${home}/.local/state/syncthing-versions/todo";
+          fsPath = "${stateHome}/versions/todo";
         };
       };
     };
   };
 
-  systemd.user.services.syncthing.Service.ExecStartPre = lib.mkForce "${prepareIdentity}";
+  systemd.user.services.syncthing.Service.Environment = syncthingEnv;
+  systemd.user.services.syncthing-init.Service.Environment = syncthingEnv;
 }
