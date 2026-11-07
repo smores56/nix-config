@@ -45,8 +45,8 @@ in
       "dialout"
     ];
     shell = pkgs.${config.user.shell};
-    # The Syncthing vault runs as a home-manager user unit; lingering starts it
-    # at boot without a login.
+    # User services (and anything a login shell would otherwise start) keep running
+    # without a login session.
     linger = true;
   };
 
@@ -112,8 +112,7 @@ in
   programs.${config.user.shell}.enable = true;
   nixpkgs.config.allowUnfree = true;
 
-  # The Syncthing vault watcher needs more inotify watches than the default
-  # allows for Cryptomator's flattened layout (about two directories per
-  # cleartext folder).
+  # Syncthing watches the vault tree; the default budget is too small for a tree
+  # this size.
   boot.kernel.sysctl."fs.inotify.max_user_watches" = 204800;
 }

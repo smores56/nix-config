@@ -17,11 +17,4 @@
   ];
 
   user.aiProfile = "work";
-
-  homeOptions = {
-    # Ciphertext vault copy under ~/Sync, outside TCC-protected folders; only Cryptomator unlocks it.
-    syncthing = {
-      device = "smoreswork";
-    };
-  };
 }

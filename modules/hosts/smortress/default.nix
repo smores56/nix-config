@@ -27,13 +27,6 @@ in
   ];
 
   homeOptions = {
-    # Ciphertext relay only; version history lives outside `/var/lib/data` so restic's
-    # single source path skips it.
-    syncthing = {
-      device = "smortress";
-      vaultPath = "/var/lib/data/vault";
-      versioningPath = "/var/lib/syncthing-versions/vault";
-    };
     calibre = {
       passwordFile = "/run/secrets/calibre-password";
       # On the media dataset so it is backed up and the ingest queue can write it.
@@ -42,6 +35,7 @@ in
   };
 
   nixosOptions = {
+    vaultSync.device = "smortress";
     # The media and ingest trees the bwrap sandbox gave agents; photos and the vault stay out.
     agentVm.extraShares = [
       {
@@ -68,8 +62,6 @@ in
       "d /var/lib/data/wallpapers 0775 smores users -"
       "d /var/lib/agent 0775 smores users -"
       "d /var/lib/agent/books-ingest 0775 smores users -"
-      # Outside the durable tree so restic skips it.
-      "d /var/lib/syncthing-versions 0700 smores users -"
     ];
     exposeSsh.enable = true;
     # Work checkouts inside these roots are refused by the server's employer check.

@@ -52,7 +52,7 @@ adds its greeter as a host-local module.
 | `modules/hosts/` | per-host `default.nix` (facts, option values, explicit profile list, optional `homeModules`/`nixosModules` host-local modules), optional `hardware.nix`, `disko.nix`, `secrets.nix`, and those host-only modules |
 | `modules/home.nix` | home-manager base (fonts, nix.conf, darwin helpers) |
 | `modules/features/` | cross-platform home-manager modules (shell, editor, git, packages, theme, ai) |
-| `modules/features/syncthing.nix`, `modules/syncthing-devices.nix` | Syncthing folder carrying the Cryptomator vault as ciphertext; the device table is a plain attrset of public device IDs |
+| `modules/nixos/vault-sync.nix`, `modules/syncthing-devices.nix` | The vault: one plaintext tree synced between the hosts that hold it, owned and synced by the `vault` user; the device table is a plain attrset of public device IDs |
 | `modules/features/vault.nix` (`vault.sh`) | `vault <cmd>`: unlock the Cryptomator vault for exactly one command |
 | `modules/features/brew.nix` | the work Mac's Brewfile (`just brew-bundle` applies it) |
 | `modules/desktop/` | desktop-environment modules (niri, aerospace) |

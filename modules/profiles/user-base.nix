@@ -11,7 +11,6 @@
     ../features/cloudflared.nix
     ../features/fido2.nix
     ../features/piv.nix
-    ../features/syncthing.nix
     ../features/theme.nix
   ];
   nixos = [ ];

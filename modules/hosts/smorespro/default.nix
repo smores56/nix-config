@@ -30,12 +30,6 @@
   nixosOptions = {
     # YubiKey sudo without an sshd: pam_rssh dials the local fido2-agent.
     sudoKey.enable = true;
-  };
-
-  homeOptions = {
-    # Ciphertext copy of the vault under ~/Sync; only Cryptomator unlocks it.
-    syncthing = {
-      device = "smorespro";
-    };
+    vaultSync.device = "smorespro";
   };
 }

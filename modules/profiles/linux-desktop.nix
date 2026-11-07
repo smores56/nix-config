@@ -13,5 +13,6 @@
   nixos = [
     ../nixos/desktop.nix
     ../nixos/niri.nix
+    ../nixos/vault-sync.nix
   ];
 }
