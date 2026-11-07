@@ -67,6 +67,55 @@ let
     net = true
   '';
 
+  # Private chat profile. Init disables every tool that can write, run, or
+  # reach memory, leaving read-only tools plus the owned TinyFish search.
+  # instructions.files = { } drops AGENTS.md and the rest of the project text
+  # that loads at any trust level.
+  privateInitLua = ''
+    -- Managed by home-manager (modules/features/ai/maki). Manual edits are clobbered.
+    -- Private chat profile: local qwen only, no memory, no MCP, no project
+    -- config, and no tool that writes, runs, or delegates.
+    maki.setup({
+      always_yolo = true,
+      instructions = { files = { } },
+      -- A future cwd with a .maki config cannot be trusted interactively here.
+      trust = { prompt = false },
+      provider = {
+        default_model = "${privateModel}",
+        allowed_models = { "${privateModel}" },
+      },
+      plugins = {
+        bash = { enabled = false },
+        code_execution = { enabled = false },
+        edit = { enabled = false },
+        write = { enabled = false },
+        skill = { enabled = false },
+        task = { enabled = false },
+        memory = { enabled = false },
+        sessions = { enabled = false },
+        batch = { enabled = false },
+        question = { enabled = false },
+        todo_write = { enabled = false },
+        -- Fetching arbitrary URLs would let a prompt-injected page exfiltrate
+        -- anything the read-only tools can reach.
+        webfetch = { enabled = false },
+        -- The bundled websearch only speaks Exa/You.com; the owned plugin
+        -- below uses the TinyFish Search API instead.
+        websearch = { enabled = false },
+      },
+    })
+
+    require("websearch_owned")
+  '';
+
+  # websearch_owned reads TINYFISH_API_KEY from the environment; nothing else
+  # in this profile gets a grant.
+  privatePluginToml = ''
+    [permissions]
+    env = true
+    net = true
+  '';
+
   # Catalogs and pricing live in providers.nix; display names and auth wiring here.
   providerEntries = {
     ${smortress.providerId} = {
@@ -82,20 +131,24 @@ let
       api_key_env = neuralwatt.keyEnv;
     };
   };
-  providersToml = (pkgs.formats.toml { }).generate "maki-providers.toml" (
-    lib.listToAttrs (
-      map (
-        p:
-        lib.nameValuePair p.providerId (
-          providerEntries.${p.providerId}
-          // {
-            protocol = "openai";
-            models = p.makiModels;
-          }
-        )
-      ) providers
-    )
-  );
+  providerEntry =
+    p:
+    lib.nameValuePair p.providerId (
+      providerEntries.${p.providerId}
+      // {
+        protocol = "openai";
+        models = p.makiModels;
+      }
+    );
+  mkProvidersToml =
+    name: ps: (pkgs.formats.toml { }).generate name (lib.listToAttrs (map providerEntry ps));
+
+  providersToml = mkProvidersToml "maki-providers.toml" providers;
+
+  # The private profile ships the local qwen only, so no remote key or remote
+  # model is even visible to a session that runs there.
+  privateModel = "${smortress.providerId}/${(lib.head smortress.makiModels).id}";
+  privateProvidersToml = mkProvidersToml "maki-private-providers.toml" [ smortress ];
 
   # A stdio shim rather than a URL entry: maki's HTTP client cannot send the
   # group and cwd headers. The group is fixed at maki start (`/cd` does not
@@ -169,6 +222,54 @@ let
   makiSessionSearchBin = pkgs.writeShellScriptBin "maki-session-search" ''
     exec ${pkgs.python3}/bin/python3 ${./maki-session-search.py} "$@"
   '';
+  # A separate XDG_CONFIG_HOME hides the shared mcp.toml (Graphiti memory) and
+  # providers.toml (remote keys). State, data, cache, and logs go to tmpfs and
+  # are removed on exit, so no transcript reaches disk. The cwd is an empty
+  # tmpfs directory, so no project config, commands, or instruction files load.
+  makiPrivate = pkgs.writeShellScriptBin "maki-private" ''
+    set -eu
+    umask 077
+    for arg in "$@"; do
+      case "$arg" in
+        --no-plugins | --trust)
+          printf 'maki-private: %s would bypass the private profile\n' "$arg" >&2
+          exit 2
+          ;;
+      esac
+    done
+    if [ -z "''${HOME:-}" ]; then
+      printf 'maki-private: HOME is not set\n' >&2
+      exit 1
+    fi
+    # Startup would otherwise move ~/.maki into the tmpfs config and run its
+    # init.lua, so refuse rather than silently consume the legacy data.
+    if [ -e "$HOME/.maki" ]; then
+      printf 'maki-private: refusing to start: legacy ~/.maki exists and maki would migrate it\n' >&2
+      exit 1
+    fi
+    # The search plugin needs the key; fish exports it, but a non-fish launcher
+    # may not, and the host secret is available in the agent VM.
+    if [ -z "''${TINYFISH_API_KEY:-}" ] && [ -r /run/secrets/tinyfish-api-key ]; then
+      TINYFISH_API_KEY=$(cat /run/secrets/tinyfish-api-key)
+      export TINYFISH_API_KEY
+    fi
+    runtime="''${XDG_RUNTIME_DIR:-/dev/shm}"
+    [ -d "$runtime" ] || runtime=/dev/shm
+    root=$(mktemp -d "$runtime/maki-private.XXXXXX")
+    cleanup() { [ -d "$root" ] && rm -rf -- "$root"; }
+    trap cleanup EXIT
+    trap 'exit 130' INT TERM HUP
+    mkdir -p "$root/state" "$root/data" "$root/cache" "$root/cwd" "$root/logs"
+    cd "$root/cwd"
+    XDG_CONFIG_HOME="$HOME/.config/maki-private" \
+    XDG_STATE_HOME="$root/state" \
+    XDG_DATA_HOME="$root/data" \
+    XDG_CACHE_HOME="$root/cache" \
+    OTEL_SDK_DISABLED=true \
+    MAKI_ENABLE_TELEMETRY=false \
+    maki -m ${privateModel} --no-commands "$@"
+  '';
+
   makiSessionCable = pkgs.writers.writeTOML "maki-sessions.toml" {
     metadata = {
       name = "maki-sessions";
@@ -240,10 +341,28 @@ in
         force = true;
         text = mcpToml;
       };
+
+      ".config/maki-private/maki/init.lua" = {
+        force = true;
+        text = privateInitLua;
+      };
+      ".config/maki-private/maki/plugin.toml" = {
+        force = true;
+        text = privatePluginToml;
+      };
+      ".config/maki-private/maki/providers.toml" = {
+        force = true;
+        source = privateProvidersToml;
+      };
+      ".config/maki-private/maki/lua/websearch_owned.lua" = {
+        force = true;
+        source = ./lua/websearch_owned.lua;
+      };
     };
 
     home.packages = [
       pkgs.rtk
+      makiPrivate
       makiSessionSearchBin
       makiSessionResume
       memoryPackage
@@ -253,5 +372,7 @@ in
     user.shellAbbrs.ms = "agent-sandbox pick maki-sessions maki-session-resume";
     # Plain `maki` stays the unsandboxed binary on the host.
     user.shellAbbrs.a = "agent-sandbox maki";
+    # Local qwen chat: no memory, no MCP, no tools that write or run, RAM-only transcripts.
+    user.shellAbbrs.mp = "maki-private";
   };
 }
