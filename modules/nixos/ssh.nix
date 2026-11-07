@@ -45,14 +45,19 @@ in
         # would bypass the server-side policy.
         authorizedKeysInHomedir = false;
         settings = {
-          # Key-only: no passwords, no keyboard-interactive, no root login.
-          PasswordAuthentication = false;
+          # Key-first, still password-capable: the account password is the
+          # break-glass login when no YubiKey is at hand. The tunnel's Access
+          # policy and the loopback bind stay the outer gate, and
+          # KbdInteractiveAuthentication stays off so only the PAM password path
+          # remains; root never logs in.
+          PasswordAuthentication = true;
           KbdInteractiveAuthentication = false;
           PermitRootLogin = "no";
           PubkeyAuthentication = true;
-          # One factor. A FIDO2 login key would have to assert user verification (PIN); none
-          # is authorized, and this has no effect on PIV and software keys.
-          AuthenticationMethods = "publickey";
+          # Left at sshd's `any` so either factor is accepted; `publickey` alone
+          # would make the password fallback unreachable. A FIDO2 login key would
+          # have to assert user verification (PIN); none is authorized, and this
+          # has no effect on PIV and software keys.
           PubkeyAuthOptions = "verify-required";
           AllowUsers = [ user ];
           # sshfs (pm) uses the SFTP subsystem, not TCP forwarding. Only the
@@ -64,10 +69,13 @@ in
           # A per-key command= does NOT suppress ~/.ssh/rc; no-user-rc on the
           # forced key and this global setting both close it.
           PermitUserRC = false;
-          # A rejected offer counts against the limit. Clients offer the three PIV keys or the
-          # one forced sandbox key; headroom covers clients that also offer agent keys.
+          # A rejected offer counts against the limit. Clients offer the three PIV keys, then the
+          # password fallback, or the one forced sandbox key; headroom covers clients that also
+          # offer agent keys.
           MaxAuthTries = 10;
-          LoginGraceTime = 20;
+          # A typed password follows the key offers, so the timer covers reaching
+          # for the password manager, not just the auth round trips.
+          LoginGraceTime = 60;
           AcceptEnv = [
             "COLORTERM"
             "TERM"

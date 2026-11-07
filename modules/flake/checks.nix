@@ -728,24 +728,40 @@ in
           )
         );
 
-        # piv-ensure-proxy must pass arguments in order and use the cache dir the login wipe names.
+        # piv-ensure-proxy must pass arguments in order and use the cache dir the login wipe names;
+        # a laptop's smortress proxy opts into the password fallback with an `env` prefix.
         piv-wiring =
           let
             laptop = lib.findFirst (h: !(builtins.elem "server" h.config.machine.profiles)) null homesHere;
-            proxy = lib.head (
-              lib.splitString " " laptop.config.programs.ssh.settings.smortress.data.ProxyCommand
-            );
+            command = laptop.config.programs.ssh.settings.smortress.data.ProxyCommand;
+            tangPi = laptop.config.programs.ssh.settings."tang-pi".data.ProxyCommand;
+            args = lib.splitString " " command;
+            proxy = lib.elemAt args (if lib.hasPrefix "env " command then 2 else 0);
             cache =
               if pkgs.stdenv.hostPlatform.isLinux then
                 "\${XDG_RUNTIME_DIR:?}/piv"
               else
                 "$(/usr/bin/getconf DARWIN_USER_TEMP_DIR)piv";
           in
-          pkgs.runCommand "piv-wiring" { nativeBuildInputs = [ pkgs.gnugrep ]; } ''
-            tr -d '\\\n' <${proxy} | grep -F 'piv-ensure.sh "' | grep -F 'opensc-pkcs11.so" "${cache}"' |
-              grep -E 'piv-dialog +/nix/store/[^ ]+-piv-cache-askpass +/nix/store/[^ ]+-piv-k1.pub'
-            touch $out
-          '';
+          pkgs.runCommand "piv-wiring"
+            {
+              nativeBuildInputs = [
+                pkgs.coreutils
+                pkgs.gnugrep
+              ];
+            }
+            ''
+              test "$(echo ${lib.escapeShellArg command} | cut -d' ' -f1)" = env
+              test "$(echo ${lib.escapeShellArg command} | cut -d' ' -f2)" = YK_ENSURE_PASSWORD_FALLBACK=1
+              # The Pi is key-only; it must never carry the password opt-in.
+              if echo ${lib.escapeShellArg tangPi} | grep -qF YK_ENSURE_PASSWORD_FALLBACK; then
+                echo "tang-pi must stay PIV-only" >&2
+                exit 1
+              fi
+              tr -d '\\\n' <${proxy} | grep -F 'piv-ensure.sh "' | grep -F 'opensc-pkcs11.so" "${cache}"' |
+                grep -E 'piv-dialog +/nix/store/[^ ]+-piv-cache-askpass +/nix/store/[^ ]+-piv-k1.pub'
+              touch $out
+            '';
 
         wallpapers-units =
           let
@@ -1142,10 +1158,11 @@ in
               sshd -T -f ${
                 config.flake.nixosConfigurations.smortress.config.environment.etc."ssh/sshd_config".source
               } -h "$key" 2>/dev/null >settings
-              grep -Fx 'AuthenticationMethods publickey' settings
+              grep -Fx 'AuthenticationMethods any' settings
               grep -Fx 'pubkeyauthoptions verify-required' settings
-              grep -Fx 'PasswordAuthentication no' settings
+              grep -Fx 'PasswordAuthentication yes' settings
               grep -Fx 'KbdInteractiveAuthentication no' settings
+              grep -Fx 'UsePAM yes' settings
               grep -Fx 'PermitRootLogin no' settings
               grep -Fx 'PermitEmptyPasswords no' settings
               grep -Fx 'AllowTcpForwarding no' settings
@@ -1155,7 +1172,7 @@ in
               grep -Fx 'AllowUsers smores' settings
               grep -Fx 'PermitUserRC no' settings
               grep -Fx 'MaxAuthTries 10' settings
-              grep -Fx 'LoginGraceTime 20' settings
+              grep -Fx 'LoginGraceTime 60' settings
               if grep -q '^AuthorizedKeysFile .*\.ssh/authorized_keys' settings; then exit 1; fi
               grep -q '^listenaddress 127\.0\.0\.1:' settings
               touch $out
@@ -1167,8 +1184,12 @@ in
         pam-auth-gates =
           let
             cfg = config.flake.nixosConfigurations.smorespro.config;
+            server = config.flake.nixosConfigurations.smortress.config;
             rendered =
               service: pkgs.writeText "pam-${service}.rendered" cfg.security.pam.services.${service}.text;
+            serverRendered =
+              service:
+              pkgs.writeText "pam-server-${service}.rendered" server.security.pam.services.${service}.text;
             expected =
               name: lines: pkgs.writeText "pam-${name}.expected" (lib.concatStringsSep "\n" lines + "\n");
             # One line per auth rule: control, module basename, args with store paths reduced to basenames
@@ -1235,6 +1256,16 @@ in
                   "required pam_deny.so"
                 ]
               } login.stack
+
+              # smortress's sshd carries the password fallback: pam_unix, then deny, nothing in front.
+              normalize ${serverRendered "sshd"} > sshd.stack
+              diff -u ${
+                expected "sshd" [
+                  "sufficient pam_unix.so likeauth try_first_pass"
+                  "required pam_deny.so"
+                ]
+              } sshd.stack
+              ! grep -qE 'pam_(p11|fprintd|exec|rssh)\.so' ${serverRendered "sshd"}
 
               # A relative or missing probe is SYSTEM_ERR; for the card gate pam_p11 would then run unguarded.
               probes ${rendered "login"} > login.probes

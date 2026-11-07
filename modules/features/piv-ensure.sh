@@ -27,6 +27,27 @@ healthy() {
 }
 
 healthy "$@" && exit 0
+
+# A host that also accepts a password stays reachable with no YubiKey. The
+# opt-in travels on the ProxyCommand (YK_ENSURE_PASSWORD_FALLBACK); only an
+# absent key qualifies, and a stack that cannot enumerate keys (pcscd down, a
+# timeout) keeps failing loudly so a broken PIV setup never downgrades the
+# login. YK_ENSURE_NO_PROMPT callers keep their no-input contract.
+if list=$(timeout 10 ykman list --serials </dev/null 2>&1); then
+  # Serials are digit-only lines; a warning next to one is ignored, but an error
+  # with no serial means the stack cannot enumerate at all.
+  serial=$(printf '%s\n' "$list" | sed -n 's/^\([0-9][0-9]*\)$/\1/p' | sort -u | paste -sd, -)
+  if [ -z "$serial" ] && [ -n "$list" ]; then
+    die "ykman cannot enumerate YubiKeys: $list"
+  fi
+else
+  die "ykman cannot enumerate YubiKeys (timed out or pcscd is unavailable)"
+fi
+serial=${serial:--}
+if [ "$serial" = - ] && [ "${YK_ENSURE_PASSWORD_FALLBACK:-}" = 1 ] && [ -z "${YK_ENSURE_NO_PROMPT:-}" ]; then
+  exit 0
+fi
+
 [ -S "$sock" ] || die "the PIV agent is not running ($sock)"
 
 umask 077
@@ -45,8 +66,6 @@ read -r tries max < <(timeout 10 ykman piv info </dev/null 2>/dev/null |
 [ -n "${tries:-}" ] && [ -n "${max:-}" ] ||
   die "cannot read the PIV PIN retry count; is exactly one YubiKey inserted?"
 [ "$tries" -ge 2 ] || die "only $tries PIV PIN try left; recover the PIN before using SSH"
-serial=$(timeout 10 ykman list --serials </dev/null 2>/dev/null | sort -u | paste -sd, -) || serial=
-serial=${serial:--}
 
 # ssh-add reads the PIN via the askpass from the cache file; stdin is a ProxyCommand's transport, never the PIN.
 load() {
