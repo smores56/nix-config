@@ -730,7 +730,10 @@ One root-only token shared by OpenTofu and the email alert sender. Mint it at
 - Zone:Rulesets:Edit for `sammohr.dev` (the `dav` rate-limit ruleset);
 - Access: Apps and Policies:Edit;
 - Notifications:Edit;
-- Email Sending:Edit.
+- Email Sending:Edit;
+- Workers R2 Storage:Edit on the account (`cloudflare_r2_bucket_cors` sets the
+  bucket policy the recovery page needs; without it the apply fails with
+  `403 Forbidden` / `Authentication error` on `PUT .../r2/buckets/*/cors`).
 
 Readers: `nix run .#cloudflare-*` and the `cloudflare-email` unit. Rotate in the
 dashboard, update this key, rebuild, and prove it with
