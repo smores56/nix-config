@@ -10,7 +10,7 @@ const values: KitValues = {
   recoveryCode: "ABCDE-FGHIJ",
   recoveryPassword: "pwa-pw",
   pageUrl: "https://recovery.sammohr.dev/",
-  fallbackUrl: "https://recovery.pages.dev/",
+  fallbackUrl: "https://sam-mohr-data-recovery.pages.dev/",
 };
 
 describe("kitSlug", () => {
@@ -31,7 +31,7 @@ describe("renderStartHere", () => {
         "ABCDE-FGHIJ",
         "pwa-pw",
         "https://recovery.sammohr.dev/",
-        "https://recovery.pages.dev/",
+        "https://sam-mohr-data-recovery.pages.dev/",
       ]
     ) {
       expect(text).toContain(value);
