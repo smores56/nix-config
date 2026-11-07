@@ -22,16 +22,23 @@ resource "cloudflare_r2_bucket_cors" "restic" {
         "https://*.sam-mohr-data-recovery.pages.dev",
       ]
       methods = ["GET", "HEAD"]
-      # Every header the browser puts on a signed request; a name the signer adds later
-      # and this list misses fails the preflight, so keep it a superset.
+      # Exactly what Chrome asks for on the SDK's signed GET, captured from a
+      # real preflight. R2 hides the origin header as soon as one requested
+      # header is missing, and the browser only reports "Failed to fetch", so
+      # this list has to be a superset. Recapture with:
+      #   curl -X OPTIONS -H 'Origin: https://recovery.sammohr.dev' \
+      #     -H 'Access-Control-Request-Method: GET' \
+      #     -H 'Access-Control-Request-Headers: <the list Chrome sends>' \
+      #     .../r2.cloudflarestorage.com/restic-backup/config
       headers = [
+        "amz-sdk-invocation-id",
+        "amz-sdk-request",
         "authorization",
+        "x-amz-checksum-mode",
         "x-amz-content-sha256",
         "x-amz-date",
         "x-amz-security-token",
         "x-amz-user-agent",
-        "amz-sdk-invocation-id",
-        "amz-sdk-request",
         "range",
         "content-type",
       ]
