@@ -21,9 +21,8 @@ Two repos, same snapshots, one source path:
 | `local` | `/var/backup/restic`, on the LUKS-encrypted backup disk |
 
 - **One source:** `/var/lib/data` — the whole durable tree: the brain/vault
-  ciphertext, wallpapers, books/music/photos, the memory export, the GitHub
-  mirrors, Radicale and Open WebUI state. There are no excludes inside the
-  tree.
+  tree, wallpapers, books/music/photos, the memory export, the GitHub
+  mirrors, and Open WebUI state. There are no excludes inside the tree.
 - **Password:** `sops.secrets.restic-password` (`/run/secrets/restic-password`),
   the same key for both repos. Losing it means losing both repos.
 - **Schedule:** nightly at 03:30 with up to 15 minutes of random delay

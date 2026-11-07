@@ -28,7 +28,7 @@ the file free of `TODO`/`TBD`.
 
 Credential rotation lives in `docs/key-rotation.md`: the YubiKey and machine
 lifecycle, and per-secret procedures for the sops signing keys, restic, R2, the
-memory/Jupyter/Radicale tokens and the cloudflared tunnel.
+memory/Jupyter tokens and the cloudflared tunnel.
 
 The `justfile` is the command index. Point users at `just --list` instead of
 duplicating commands in prose; add a recipe there when an operation becomes a
@@ -57,7 +57,7 @@ adds its greeter as a host-local module.
 | `modules/features/brew.nix` | the work Mac's Brewfile (`just brew-bundle` applies it) |
 | `modules/desktop/` | desktop-environment modules (niri, aerospace) |
 | `modules/nixos/` | NixOS system modules (base, desktop, networking, ssh, etc.) |
-| `modules/nixos/radicale.nix`, `open-webui.nix`, `navidrome.nix` | public tunnel apps with their own auth: CalDAV/CardDAV, chat, music |
+| `modules/nixos/open-webui.nix`, `navidrome.nix` | public tunnel apps with their own auth: chat, music |
 | `modules/nixos/restic-backup.nix` | restic repos, schedule, retention and the Immich db dump |
 | `modules/flake/` | flake-parts modules: configurations, checks, apps (`apps.nix`, `apps/`), formatter, nixpkgs |
 | `modules/lib/` | helpers: the share planner and agent-VM view/launcher, the Jupyter bwrap sandbox, key tables, `secret-path.nix`, `hardening.nix` |

@@ -10,7 +10,6 @@
     ../nixos/cloudflare-tofu.nix
     ../nixos/web-proxy.nix
     ../nixos/immich.nix
-    ../nixos/radicale.nix
     ../nixos/navidrome.nix
     ../nixos/jupyter.nix
     ../nixos/open-webui.nix

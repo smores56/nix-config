@@ -14,10 +14,6 @@
       mode = "0400";
     };
 
-    radicale-htpasswd = {
-      owner = "radicale";
-      mode = "0400";
-    };
     restic-password = { };
     r2-access-key-id = { };
     r2-secret-access-key = { };
