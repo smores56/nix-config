@@ -1824,7 +1824,9 @@ the replacement host recipient to `.sops.yaml` and run
 device only, let Syncthing settle and let the nightly restic run so the newest
 snapshot contains it. Then `nix run .#cloudflare-apply` creates the Pages project,
 `recovery.sammohr.dev` and its CNAME (run it twice if the domain is still
-pending), and the `CLOUDFLARE_API_TOKEN` repository secret must exist (see
+pending), and the bucket CORS policy that lets the page read restic from the
+browser; without that policy every read fails as "Failed to fetch". The
+`CLOUDFLARE_API_TOKEN` repository secret must exist (see
 *Cloudflare Pages token* in `docs/key-rotation.md`). In `recovery/`,
 `deno task blob` and `deno task blob --check-only` must both pass. Retype the
 recovery password at every prompt: the builder asks a third time and opens the

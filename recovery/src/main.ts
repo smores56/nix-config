@@ -1,5 +1,6 @@
 import { decryptBlob, type DataKeys } from "./blob.ts";
 import { sanitizeFileName } from "./filenames.ts";
+import { reachHint } from "./hint.ts";
 import { commonDirectoryPrefix, relativeSegments } from "./restore.ts";
 import { passwordFromHash } from "./link.ts";
 import {
@@ -516,7 +517,7 @@ async function unlock(password: string): Promise<void> {
     await loadRepository(keys);
     setStatus("Unlocked.", "ok");
   } catch (error) {
-    const message = errorMessage(error);
+    const message = reachHint(errorMessage(error), location.origin);
     setStatus(`Unlocked, but the restic repository could not be opened: ${message}`, "error");
     setBrowserStatus(`Restic repository error: ${message}`, "error");
   }
