@@ -6,9 +6,19 @@
 let
   ports = import ../ports.nix;
 
+  # DFlash2 copies the target's positions into its text-only draft KV cache, so
+  # mtmd image chunks leave a gap and every image request 500s ("failed to
+  # process mtmd chunk"). This is Sphinx-8's open PR against the same revision;
+  # drop it when z-lab merges an equivalent fix.
+  dflashVisionPatch = pkgs.fetchurl {
+    url = "https://github.com/Sphinx-8/llama.cpp-dflash2-vision/commit/46d78b7fa5de4a6526c9b950a15d48682285f1d7.patch";
+    hash = "sha256-uwOUSSOP+3tkc9VVzQhFE+YOoSBdrLeZ2kApoOD4W8A=";
+  };
+
   llama-cpp = pkgs.stdenv.mkDerivation {
     pname = "llama-cpp";
     version = "dflash2-1deefcca";
+    patches = [ dflashVisionPatch ];
     src = pkgs.fetchFromGitHub {
       owner = "z-lab";
       repo = "llama.cpp-fork";
