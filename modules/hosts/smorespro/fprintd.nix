@@ -104,7 +104,8 @@ in
     security.pam.services.sudo.fprintAuth = false;
     security.pam.services.su.fprintAuth = false;
     security.pam.services.login.fprintAuth = false;
-    # Would block ~30s before PIN/password; smorespro's greeter opts back in with a short timeout.
+    # Unlock-only: the greeter is password-only, and pam_fprintd would block the
+    # password for its whole timeout.
     security.pam.services.greetd.fprintAuth = false;
     # One finger must not authorize root via pkexec.
     security.pam.services.polkit-1.fprintAuth = false;

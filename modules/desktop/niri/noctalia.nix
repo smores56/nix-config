@@ -20,6 +20,9 @@ in
         time_format = "{:%-I:%M %p}";
         clipboard_enabled = true;
         clipboard_auto_paste = "auto";
+        # Keep the login screen's wallpaper, palette and font in step with the
+        # session; the greeter allows this user to sync without a polkit prompt.
+        greeter_sync.auto_sync = true;
         # Logout, reboot and power off have no key; typing their name in the launcher finds them.
         launcher.providers.session.global = true;
       };

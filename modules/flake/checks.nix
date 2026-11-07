@@ -1215,17 +1215,16 @@ in
                 ${probes}
               }
 
+              # The greeter is password-only: no fingerprint, smartcard or gate
+              # may run before pam_unix.
               normalize ${rendered "greetd"} > greetd.stack
               diff -u ${
                 expected "greetd" [
-                  "[success=1 default=ignore] pam_exec.so quiet quiet_log pam-lid-closed"
-                  "sufficient pam_fprintd.so timeout=5 max-tries=1"
-                  "[success=1 default=ignore] pam_exec.so quiet quiet_log pam-ccid-absent"
-                  "[success=done authinfo_unavail=ignore default=die] pam_p11.so opensc-pkcs11.so ^[0-9]{8}$"
                   "sufficient pam_unix.so likeauth nullok try_first_pass"
                   "required pam_deny.so"
                 ]
               } greetd.stack
+              ! grep -qE 'pam_(p11|fprintd|exec)\.so' greetd.stack
 
               normalize ${rendered "login"} > login.stack
               diff -u ${
@@ -1238,11 +1237,9 @@ in
               } login.stack
 
               # A relative or missing probe is SYSTEM_ERR; for the card gate pam_p11 would then run unguarded.
-              probes ${rendered "greetd"} > greetd.probes
               probes ${rendered "login"} > login.probes
-              test "$(wc -l < greetd.probes)" -eq 2
               test "$(wc -l < login.probes)" -eq 1
-              for p in $(cat greetd.probes login.probes); do test -x "$p"; done
+              for p in $(cat login.probes); do test -x "$p"; done
 
               # A stray global p11/fprintd option would put a PIN-or-nothing module in front of sudo and every admin prompt.
               ${lib.concatStringsSep "\n" (

@@ -1,5 +1,6 @@
-# smorespro greeter and lock-screen PAM: fingerprint, YubiKey PIV PIN, then password,
-# each tried only when usable.
+# smorespro PAM: the greeter asks for the password only; the lock screen and the
+# text console accept a YubiKey PIV PIN or the password, and the lock screen also
+# drives the fingerprint reader over D-Bus.
 {
   config,
   inputs,
@@ -8,22 +9,6 @@
   ...
 }:
 let
-  # pam_exec has no PATH, so each probe carries its own. A probe that cannot run
-  # fails open: it costs the fingerprint path, never the password.
-  # Exit 0 = lid closed: skip pam_fprintd.
-  lidClosed = pkgs.writeShellApplication {
-    name = "pam-lid-closed";
-    runtimeInputs = [
-      config.systemd.package
-    ];
-    text = ''
-      # Single test, no pipeline: SIGPIPE under pipefail would report the lid as open.
-      [ "$(busctl --system --timeout=1 get-property \
-        org.freedesktop.login1 /org/freedesktop/login1 \
-        org.freedesktop.login1.Manager LidClosed)" = "b true" ]
-    '';
-  };
-
   # Exit 0 = no CCID interface: skip pam_p11. Scanning sysfs (~9 ms) avoids pcsc
   # enumeration (~2 s with no token). Detects a reader, not a card.
   ccidAbsent = pkgs.writeShellApplication {
@@ -99,42 +84,34 @@ in
 
   services.displayManager.noctalia-greeter = {
     enable = true;
-    passwordless-sync-users = [ ];
-    # An empty submit starts the PAM conversation (and fprintd).
-    settings.auth.allow_empty_password = true;
+    # Sync only writes wallpaper, palette, font and layout; letting the user run
+    # it without a polkit prompt keeps the login screen matching the lock screen.
+    passwordless-sync-users = [ config.machine.username ];
+    settings = {
+      # Open on the password step instead of a user picker.
+      user.default = config.machine.username;
+      session.default = "Niri";
+      # The lock screen has no session or scheme picker; neither does login.
+      appearance.scheme_selector_position = "hidden";
+      clock = {
+        time_format = "{:%-I:%M %p}";
+        date_format = "%a, %b %d";
+      };
+      # An empty submit must not start a PAM conversation.
+      auth.allow_empty_password = false;
+    };
   };
 
-  # Fingerprint first; the lid gate skips the ~5 s wait when the sensor is behind a closed lid.
-  security.pam.services.greetd.fprintAuth = lib.mkForce true;
-  security.pam.services.greetd.rules.auth.fprintd.args = lib.mkForce [
-    "timeout=5"
-    "max-tries=1"
-  ];
-  security.pam.services.greetd.rules.auth.fprintd.order =
-    config.security.pam.services.greetd.rules.auth.p11.order - 10;
-
-  security.pam.services.greetd.rules.auth.lidGate =
-    gate config.security.pam.services.greetd.fprintAuth
-      (config.security.pam.services.greetd.rules.auth.fprintd.order - 1)
-      lidClosed;
-
-  # PIV + PIN; the card gate skips pcsc enumeration when no reader is present.
-  security.pam.services.greetd.p11Auth = true;
-  security.pam.services.greetd.rules.auth.p11.args = lib.mkForce [
-    "${pkgs.opensc}/lib/opensc-pkcs11.so"
-    "^[0-9]{8}$"
-  ];
-  security.pam.services.greetd.rules.auth.p11.control = lib.mkForce p11Control;
-  security.pam.services.greetd.rules.auth.cardGate =
-    gate config.security.pam.services.greetd.p11Auth
-      (config.security.pam.services.greetd.rules.auth.p11.order - 1)
-      ccidAbsent;
-
-  # pam_p11 passes the PIN as authtok; keep it out of login.keyring.
+  # Login is password-only: fprintd.nix already disables pam_fprintd on greetd,
+  # and PIV stays off because a typed password must never burn a PIV retry.
+  security.pam.services.greetd.p11Auth = false;
+  # greetd inherits gnome-keyring's enable, which inserts an early optional
+  # pam_unix and a second prompt. Keep the greeter to one password prompt.
   security.pam.services.greetd.enableGnomeKeyring = false;
 
   # The lock screen hardcodes `login` and drives fprintd over D-Bus, so no
-  # pam_fprintd here. The text console gets PIN-or-password too.
+  # pam_fprintd here. PIN-or-password here serves the lock screen and the text
+  # console; `login` cannot be split between them.
   security.pam.services.login.p11Auth = true;
   # gnome-keyring splits `login` into two pam_unix prompts, breaking the
   # single-prompt invariant.
