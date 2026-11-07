@@ -119,6 +119,31 @@ describe("blob hardening", () => {
     await expect(decryptBlob({ ...envelope, iterations: 2 } as never, password)).rejects.toThrow();
   });
 
+  // The terminal that captures the password and the browser that types it can
+  // disagree on the Unicode form of an accented character: a Mac keyboard gives
+  // NFD, a paste from a file often gives NFC. Argon2 hashes bytes, so the same
+  // password would derive two different keys.
+  test("opens a blob whose password was entered in a different Unicode form", async () => {
+    const composed = "café-pässword";
+    const decomposed = composed.normalize("NFD");
+    expect(decomposed).not.toEqual(composed);
+
+    const envelope = await encryptBlob(payload, decomposed, fast);
+    await expect(decryptBlob(envelope, composed)).resolves.toEqual(payload);
+  });
+
+  // A newline or an escape sequence pasted into the prompt must not become part
+  // of the key: it is invisible on the printed letter and impossible to retype.
+  test("rejects a password with a control character", async () => {
+    await expect(encryptBlob(payload, "correct horse\n", fast)).rejects.toThrow(
+      "password contains a control character",
+    );
+    const envelope = await encryptBlob(payload, password, fast);
+    await expect(decryptBlob(envelope, "correct horse\n")).rejects.toThrow(
+      "password contains a control character",
+    );
+  });
+
   test("validates cost ranges", async () => {
     expect(validateCost(fast)).toEqual([]);
     expect(validateCost({ iterations: 0, memory: 8192, parallelism: 1 })).not.toEqual([]);

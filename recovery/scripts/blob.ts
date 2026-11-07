@@ -19,7 +19,7 @@ import { R2Backend, repositoryPrefix } from "../src/restic/r2.ts";
 import { openRepository } from "../src/restic/repository.ts";
 import { ResticVaultProvider } from "../src/cryptomator/restic-provider.ts";
 import { CryptomatorVault } from "../src/cryptomator/vault.ts";
-import { promptHidden, promptNewPassword } from "./prompt.ts";
+import { promptHidden, promptNewPassword, verifyBlobPassword } from "./prompt.ts";
 import { readSentinel, SENTINEL_PATH } from "../src/sentinel.ts";
 
 const DEFAULT_ACCOUNT_ID = "385f7d47e2e8438fbda5d6f76d760434";
@@ -201,6 +201,21 @@ async function main(): Promise<void> {
     console.log("self-test: the blob decrypts with the recovery password");
 
     if (args.check) await selfTest(keys);
+
+    // Everything above reused the string captured at the first prompt, so it
+    // cannot catch a typo, a paste artifact, or a Unicode form that the browser
+    // will not reproduce. Ask again from scratch and open the file that was
+    // actually written.
+    console.log("Type the recovery password once more, to prove the written file opens with it.");
+    const retyped = await promptHidden("recovery password again: ");
+    if ((await verifyBlobPassword(staged, retyped)) !== true) {
+      throw new Error(
+        "the written blob did not open with the password typed again; the two entries differ, " +
+          "so the letter would print a password that cannot unlock the page",
+      );
+    }
+    console.log("re-entry: the written blob opens with the password typed again");
+
     await Deno.rename(staged, args.out);
     keep = true;
     console.log(`wrote ${args.out}`);

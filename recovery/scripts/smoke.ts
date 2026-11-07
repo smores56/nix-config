@@ -1,10 +1,40 @@
 // Serves dist/ and boots it in headless Chrome: the page must render its shell,
-// run its module, fetch the blob and reach the unlock prompt. This catches a
-// broken bundle or a bad CSP that unit tests cannot see.
+// run its module, unlock from a link fragment and reach the restore UI. This
+// catches a broken bundle, a bad CSP, or a blob the browser cannot open — none
+// of which unit tests can see.
+//
+// The blob served to Chrome is replaced by a fixture built here with a known
+// password, so the run proves the browser derives the same key the builder does
+// without needing the real recovery password.
 //
 //   deno task smoke [--dist dist] [--chrome /path/to/chrome]
 //
 // CHROME is used when --chrome is absent; otherwise the usual names are tried.
+
+import { encryptBlob, type DataKeys } from "../src/blob.ts";
+
+const SMOKE_PASSWORD = "smoke password";
+const SMOKE_COST = { iterations: 1, memory: 8192, parallelism: 1 };
+
+const SMOKE_KEYS: DataKeys = {
+  version: 1,
+  r2: {
+    endpoint: "https://example.invalid",
+    bucket: "restic-backup",
+    accessKeyId: "smoke-access-key",
+    secretAccessKey: "smoke-secret-key",
+  },
+  restic: {
+    password: "smoke-restic-password",
+    repository: "s3:https://example.invalid/restic-backup",
+    photosPath: "var/lib/data/photos",
+    vaultPath: "var/lib/data/vault",
+  },
+  vault: {
+    password: "smoke-vault-password",
+    path: "var/lib/data/vault",
+  },
+};
 
 const USAGE = "usage: smoke [--dist <dir>] [--chrome <path>]";
 
@@ -74,10 +104,17 @@ async function main(): Promise<void> {
     throw new Error(`${root}/index.html is missing; run deno task build first`);
   }
 
+  const envelope = JSON.stringify(await encryptBlob(SMOKE_KEYS, SMOKE_PASSWORD, SMOKE_COST));
+
   const server = Deno.serve({ port: 0, hostname: "127.0.0.1" }, async (request) => {
     const path = new URL(request.url).pathname;
     const relative = path === "/" ? "index.html" : decodeURIComponent(path).replace(/^\/+/, "");
     if (relative.includes("..")) return new Response("forbidden", { status: 403 });
+    if (relative === "data-keys.enc") {
+      return new Response(envelope, {
+        headers: { "content-type": "application/json", "cache-control": "no-store" },
+      });
+    }
     try {
       const body = await Deno.readFile(`${root}/${relative}`);
       return new Response(body, { headers: { "content-type": contentType(relative) } });
@@ -87,14 +124,14 @@ async function main(): Promise<void> {
   });
 
   try {
-    const url = `http://127.0.0.1:${server.addr.port}/`;
+    const url = `http://127.0.0.1:${server.addr.port}/#${encodeURIComponent(SMOKE_PASSWORD)}`;
     const result = await new Deno.Command(chrome, {
       args: [
         "--headless=new",
         "--no-sandbox",
         "--disable-gpu",
         "--disable-dev-shm-usage",
-        "--virtual-time-budget=8000",
+        "--virtual-time-budget=20000",
         "--dump-dom",
         url,
       ],
@@ -107,17 +144,18 @@ async function main(): Promise<void> {
       "<title>Recovery Kit</title>",
       `id="start-here"`,
       `id="restore-all"`,
-      "The data-keys blob is deployed",
       `id="recovery-password"`,
+      "Unlocked",
     ].filter((marker) => !dom.includes(marker));
 
     if (missing.length > 0) {
       const stderr = new TextDecoder().decode(result.stderr).split("\n").slice(-8).join("\n");
       throw new Error(
-        `the page did not boot: missing ${missing.join(", ")}\nlast chrome output:\n${stderr}`,
+        `the page did not boot or did not unlock: missing ${missing.join(", ")}\n` +
+          `last chrome output:\n${stderr}`,
       );
     }
-    console.log(`smoke: ${url} rendered the shell, ran main.js and found the blob`);
+    console.log(`smoke: ${url.split("#")[0]}#<password> unlocked from the fragment`);
   } finally {
     await server.shutdown();
   }

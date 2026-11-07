@@ -144,13 +144,39 @@ function aadFor(
   );
 }
 
+// The same password reaches the key from two very different keyboards: the
+// operator types it into a raw-mode terminal prompt, then a relative presses it
+// into the browser (or opens the link from the letter). macOS gives the
+// decomposed (NFD) spelling of an accented character, a paste from a file often
+// gives the composed one, and Argon2 hashes bytes — so the two spellings would
+// derive different keys. Normalize to NFC on both sides.
+export function normalizePassword(password: string): string {
+  return password.normalize("NFC");
+}
+
+// A newline, a tab, or an escape sequence that slipped in from a paste is
+// invisible on the printed letter, so nobody can ever retype it. Fail loudly
+// instead of shipping a blob only the pasting machine can open.
+function assertPrintable(password: string): void {
+  for (const char of password) {
+    const code = char.codePointAt(0) ?? 0;
+    if (code < 0x20 || code === 0x7f) {
+      throw new Error(
+        `the password contains a control character (U+${code.toString(16).padStart(4, "0")}); ` +
+          "retype it instead of pasting it",
+      );
+    }
+  }
+}
+
 async function deriveKey(
   password: string,
   salt: Uint8Array,
   cost: Argon2Cost,
 ): Promise<CryptoKey> {
+  assertPrintable(password);
   const raw = await argon2id({
-    password,
+    password: normalizePassword(password),
     salt,
     iterations: cost.iterations,
     memorySize: cost.memory,
