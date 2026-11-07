@@ -1,24 +1,21 @@
 // Builds the encrypted data-keys blob that ships with the PWA.
 //
 // Reads the R2 read-only token and restic password from sops, prompts for the
-// recovery password (twice) and the Cryptomator password, encrypts the payload with
-// Argon2id + AES-256-GCM, writes public/data-keys.enc, then decrypts it again
-// and walks the real data path (R2 -> restic -> Cryptomator sentinel).
+// recovery password (twice), encrypts the payload with Argon2id + AES-256-GCM,
+// writes public/data-keys.enc, then decrypts it again and walks the real data path
+// (R2 -> restic -> vault sentinel).
 //
 //   deno task blob [--out public/data-keys.enc] [--secrets ../secrets/smortress.yaml]
 //                  [--account-id <id>] [--no-check] [--check-only]
 //
-// `--check-only` re-runs the data-path check against an existing blob: it needs
-// the recovery password but not the Cryptomator password, which the blob already
-// carries.
+// `--check-only` re-runs the data-path check against an existing blob. It needs
+// only the recovery password: the blob carries the restic and R2 credentials.
 //
 // Passwords are only read from the terminal: there is no password-file option.
 
 import { type DataKeys, type DataKeysBlob, decryptBlob, encryptBlob } from "../src/blob.ts";
 import { R2Backend, repositoryPrefix } from "../src/restic/r2.ts";
 import { openRepository } from "../src/restic/repository.ts";
-import { ResticVaultProvider } from "../src/cryptomator/restic-provider.ts";
-import { CryptomatorVault } from "../src/cryptomator/vault.ts";
 import { promptHidden, promptNewPassword, verifyBlobPassword } from "./prompt.ts";
 import { readSentinel, SENTINEL_PATH } from "../src/sentinel.ts";
 
@@ -119,11 +116,9 @@ async function selfTest(keys: DataKeys): Promise<void> {
   const snapshot = repository.snapshots[0];
   console.log(`restic: ${repository.snapshots.length} snapshot(s), latest ${snapshot.time}`);
 
-  const provider = new ResticVaultProvider(repository, snapshot, keys.restic.vaultPath);
-  const vault = await CryptomatorVault.open(provider, keys.vault.password);
   let text: string;
   try {
-    text = await readSentinel(vault);
+    text = await readSentinel(repository, snapshot);
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     throw new Error(
@@ -157,8 +152,6 @@ async function main(): Promise<void> {
   }
   console.log("The recovery password is written on the media; it is not stored anywhere.");
   const recoveryPassword = await promptNewPassword("recovery password: ");
-  console.log("The Cryptomator password is used to open the vault during the self-test.");
-  const vaultPassword = await promptNewPassword("Cryptomator password: ");
 
   const secrets = await readSecrets(args.secrets);
   const endpoint = `https://${args.accountId}.r2.cloudflarestorage.com`;
@@ -178,10 +171,6 @@ async function main(): Promise<void> {
       photosPath: "var/lib/data/photos",
       vaultPath: "var/lib/data/vault",
       dbPath: "var/lib/data/db/immich.dump",
-    },
-    vault: {
-      password: vaultPassword,
-      path: "var/lib/data/vault",
     },
   };
 

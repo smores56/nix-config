@@ -25,10 +25,6 @@ const payload: DataKeys = {
     vaultPath: "var/lib/data/vault",
     dbPath: "var/lib/data/db/immich.dump",
   },
-  vault: {
-    password: "test-vault-password",
-    path: "var/lib/data/vault",
-  },
 };
 
 const fast = { iterations: 1, memory: 8192, parallelism: 1 };
@@ -82,9 +78,6 @@ describe("data-keys blob", () => {
     expect(
       validateDataKeys({ ...payload, restic: { ...payload.restic, password: "" } }),
     ).not.toEqual([]);
-    expect(
-      validateDataKeys({ ...payload, vault: { ...payload.vault, password: "" } }),
-    ).not.toEqual([]);
   });
 
   test("does not put the password in the envelope", async () => {
@@ -92,7 +85,6 @@ describe("data-keys blob", () => {
     const serialized = JSON.stringify(envelope);
     expect(serialized).not.toContain(password);
     expect(serialized).not.toContain(payload.restic.password);
-    expect(serialized).not.toContain(payload.vault.password);
   });
 });
 

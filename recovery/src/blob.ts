@@ -16,10 +16,6 @@ export type DataKeys = {
     vaultPath: string;
     dbPath?: string;
   };
-  vault: {
-    password: string;
-    path: string;
-  };
 };
 
 export type DataKeysBlob = {
@@ -122,14 +118,6 @@ export function validateDataKeys(value: unknown): string[] {
   else {
     for (const field of ["password", "repository", "photosPath", "vaultPath"] as const) {
       if (!isNonEmptyString(restic[field])) errors.push(`restic.${field} is missing`);
-    }
-  }
-
-  const vault = value.vault;
-  if (!isRecord(vault)) errors.push("vault is missing");
-  else {
-    for (const field of ["password", "path"] as const) {
-      if (!isNonEmptyString(vault[field])) errors.push(`vault.${field} is missing`);
     }
   }
 
