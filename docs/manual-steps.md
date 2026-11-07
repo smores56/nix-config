@@ -1393,10 +1393,14 @@ the new service refuses to start until `/var/lib/vault-migrated` exists, and
 4. Verify while it is still mounted: `sudo diff -r /mnt/oldvault /var/lib/data/staging`
    must print nothing. Stop here if it prints anything: the next step moves the only
    copy of the ciphertext aside, and an empty store would sync its deletions out.
-5. Swap, using `mv -T` so a re-run cannot nest one tree inside the other:
+5. Before swapping, prove the staging tree holds no Cryptomator scaffolding
+   (`sudo test ! -e /var/lib/data/staging/d -a ! -e /var/lib/data/staging/masterkey.cryptomator`)
+   and no ciphertext (`sudo find /var/lib/data/staging -name "*.c9r" | head` must print nothing).
+   Then swap, using `mv -T` so a re-run cannot nest one tree inside the other:
    `sudo mv -T /var/lib/data/vault /var/lib/vault-ciphertext`,
    `sudo mv -T /var/lib/data/staging /var/lib/data/vault`,
-   `sudo chown -R vault:vault /var/lib/data/vault /var/lib/syncthing-versions`.
+   `sudo chown -R vault:vault /var/lib/data/vault /var/lib/syncthing-versions`
+   and `sudo chmod 700 /var/lib/data/vault` (copying preserves the old 755 root).
 6. `sudo touch /var/lib/vault-migrated`, rebuild, `sudo systemctl start syncthing`,
    and check the folder and its devices in the UI.
 7. Before Syncthing starts on any host that still has ciphertext under `~/Sync`, move
