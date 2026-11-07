@@ -1813,6 +1813,33 @@ remote is enough. `.git`-ignored trees are skipped, which includes unmerged
 `.worktrees` checkouts; a file that exists only on an unmerged branch is not
 searchable until it is on the checked-out tree.
 
+### todo.txt
+
+`~/Tasks/todo.txt` on smorespro is edited with `todo.sh` or Helix and synced
+to the phone by a user-level Syncthing service (`modules/features/todo.nix`).
+It is deliberately separate from the vault daemon: the vault runs as the
+`vault` user, and the human cannot edit its tree.
+
+After the first rebuild, on the laptop:
+
+```sh
+systemctl --user status syncthing
+# GUI: http://127.0.0.1:8385
+syncthing device-id
+```
+
+On the phone, in Syncthing-Fork, accept the `Todo` folder and add the laptop
+device (or accept the folder invitation). Point the folder at a path in shared
+storage. Install 0x54ask from F-Droid and select that folder; it merges
+Syncthing conflict copies. Keep the Syncthing-Fork battery exemption.
+
+Edit on one device at a time. A concurrent edit leaves
+`todo.txt.sync-conflict-*`; 0x54ask merges it, or merge by hand from the
+30-day version set under `~/.local/state/syncthing-versions/todo`.
+
+The work Mac is out of scope: it runs Syncthing as a root LaunchDaemon, so a
+human-editable folder needs a second launchd identity.
+
 ### smortress/ssh
 
 <!-- manual-step: service/smortress/ssh -->
