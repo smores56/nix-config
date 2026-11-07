@@ -3,6 +3,8 @@
 // here carries the stable root of trust only (Bitwarden + the recovery password and
 // URL); the values are supplied by the caller and never stored in the repo.
 
+import { recoveryLink } from "./link.ts";
+
 export type KitValues = {
   recipient: string;
   operatorName: string;
@@ -102,6 +104,9 @@ export function renderLetter(values: KitValues): string {
   It is the same page on every device, and it asks for one password of its own:</p>
   ${secret("Recovery page", pwa)}
   ${secret("Recovery password", values.recoveryPassword)}
+  <p><strong>Or just open this link</strong>: the page unlocks itself, no typing.
+  The link contains the password, so treat it exactly like the password above.</p>
+  ${secret("Open this link", recoveryLink(values.pageUrl, values.recoveryPassword))}
   <p class="muted">If that address ever stops working, try ${fallback}.</p>
 
   <h2>3. His files: photos and documents</h2>
@@ -121,7 +126,8 @@ export function renderLetter(values: KitValues): string {
 
   <h2>Please do not</h2>
   <ul class="warn">
-    <li>Send these passwords by e-mail, text, or chat, or type them into a page someone links you.</li>
+    <li>Send these passwords by e-mail, text, or chat. The link above is a password in a
+    different form: only open it from this letter, never one sent to you by message.</li>
     <li>Change the Bitwarden master password before you have everything you need.</li>
     <li>Throw this letter or the USB drive away: they are the only copies.</li>
   </ul>
@@ -151,7 +157,9 @@ drive hold the same information; you only need one of them.
 2. INSTRUCTIONS PAGE
    Address:           ${values.pageUrl}
    Fallback address:  ${values.fallbackUrl}
-   Page password:     ${values.recoveryPassword}
+   Recovery password: ${values.recoveryPassword}
+   Open this link:    ${recoveryLink(values.pageUrl, values.recoveryPassword)}
+   (the link contains the password; treat it like the password)
 
 3. FILES (photos, documents)
    Open the recovery page in Google Chrome on a Mac and press

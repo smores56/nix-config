@@ -176,3 +176,15 @@ deno task kit --demo --out /tmp/kit-preview
 Demo mode asks for nothing, checks no password against the blob, and stamps
 every file with `DEMO - FAKE VALUES` so a preview can never be sealed or handed
 over. Open `letter-*.html` in a browser and print it to see the real layout.
+
+## Recovery links
+
+The letter and the drive carry a link of the form
+`https://recovery.sammohr.dev/#recovery-password=<password>`. The password sits in
+the URL *fragment*, which no browser sends to a server, so it cannot reach
+Cloudflare's access logs, a proxy, or a `Referer` header. `src/main.ts` reads it,
+strips it with `history.replaceState` before the Argon2 derivation starts, and
+unlocks; a link that fails falls back to the typed password with an error message.
+
+A link is the password in another form: it is printed on the same paper and must
+not be sent by message. The letter says that next to the link.

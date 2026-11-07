@@ -127,6 +127,8 @@ Each drive is exFAT (readable on macOS and Windows) and named after its owner.
 
 - [ ] Open \`${values.pageUrl}\` in a browser and unlock it with the recovery password on
   the letter: it must show the account list.
+- [ ] Click the link printed in the letter: it must unlock by itself, and the address
+  bar must lose the \`#\` part.
 - [ ] On a Mac, open the same page in Chrome and confirm the "Restore everything"
   button appears.
 - [ ] Copy \`START-HERE.txt\` off a drive on a machine that is not yours and read it.

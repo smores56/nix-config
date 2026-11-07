@@ -1,6 +1,7 @@
 import { decryptBlob, type DataKeys } from "./blob.ts";
 import { sanitizeFileName } from "./filenames.ts";
 import { commonDirectoryPrefix, relativeSegments } from "./restore.ts";
+import { passwordFromHash } from "./link.ts";
 import {
   renderManifest,
   validateManifest,
@@ -611,6 +612,23 @@ void (async () => {
   const manifestOk = await loadManifest();
   if (!manifestOk || !secure) return;
   if (await blobExists()) {
+    const fromLink = passwordFromHash(location.hash);
+    if (fromLink) {
+      // Strip the password before the (slow) key derivation, so it never sits
+      // in the address bar or in a history entry the next person can read.
+      history.replaceState(null, "", location.pathname + location.search);
+      setStatus("Opening the link from the letter...");
+      try {
+        await unlock(fromLink);
+        return;
+      } catch (error) {
+        setStatus(
+          `That link did not unlock the page: ${errorMessage(error)}. Type the recovery password from the letter instead.`,
+          "error",
+        );
+        return;
+      }
+    }
     setStatus("The data-keys blob is deployed. Enter the recovery password to unlock.");
   } else {
     setStatus(

@@ -85,3 +85,16 @@ describe("demo mode", () => {
     expect(renderLabel(values)).not.toContain("DEMO");
   });
 });
+
+describe("recovery link", () => {
+  test("the letter and the drive file carry a link that unlocks the page", () => {
+    for (const text of [renderLetter(values), renderStartHere(values)]) {
+      expect(text).toContain("#recovery-password=pwa-pw");
+    }
+  });
+
+  test("the query string never carries the password", () => {
+    const html = renderLetter(values);
+    expect(html).not.toContain("?recovery-password");
+  });
+});
