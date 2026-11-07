@@ -24,8 +24,9 @@ let
   id = 981;
 
   store = "/var/lib/data/vault";
-  # Written by the one-time migration (docs/manual-steps.md) once the tree is plaintext and
-  # owned by `vault`; until then the daemon does not start.
+  # Per host: written once that host's store is in its final shape - after the one-time
+  # migration on smortress, or next to an empty directory on a host that will pull its copy.
+  # Until it exists the daemon does not start (docs/manual-steps.md).
   migrated = "/var/lib/vault-migrated";
   stateDir = "/var/lib/syncthing";
   versions = "/var/lib/syncthing-versions/vault";
@@ -120,7 +121,8 @@ in
     };
 
     # tmpfiles fixes the top-level directory only, so nothing starts syncing until the
-    # migration has chowned the whole tree to `vault` and dropped this marker.
+    # migration has chowned the whole tree to `vault` and dropped this marker. A host that
+    # pulls its whole store needs it too: its empty directory is the final shape.
     systemd.services.syncthing.unitConfig.ConditionPathExists = migrated;
     systemd.services.syncthing.unitConfig.RequiresMountsFor = [ stateDir ];
   };
