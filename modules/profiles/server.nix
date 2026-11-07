@@ -2,6 +2,9 @@
 {
   home = [
     ../features/calibre.nix
+    # The store lives here, so the operator needs the same one-session mount for a sentinel
+    # or an inspection.
+    ../features/vault.nix
   ];
   nixos = [
     ../nixos/cloudflare-tofu.nix

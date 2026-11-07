@@ -12,5 +12,5 @@ store_group() { echo vault; }
 run_as() {
   local user=$1
   shift
-  sudo -u "$user" -H env HOME="$(home_of "$user")" USER="$user" LOGNAME="$user" -- "$@"
+  sudo -u "$user" -H env HOME="$(home_of "$user")" USER="$user" LOGNAME="$user" "$@"
 }

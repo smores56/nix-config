@@ -20,5 +20,5 @@ store_group() { echo wheel; }
 run_as() {
   local user=$1
   shift
-  /usr/bin/sudo -u "$user" -H env HOME="$(home_of "$user")" USER="$user" LOGNAME="$user" -- "$@"
+  /usr/bin/sudo -u "$user" -H env HOME="$(home_of "$user")" USER="$user" LOGNAME="$user" "$@"
 }
