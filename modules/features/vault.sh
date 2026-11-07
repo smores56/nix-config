@@ -73,7 +73,7 @@ trap 'cleanup; exit 130' INT TERM
 
 # The store is 0700 for the vault user; mapping that user to the caller is what makes the tree
 # usable for the session without ever handing the human's uid the real permissions.
-bindfs --foreground -u "$caller" -g "$(group_of "$caller")" \
+bindfs -f -u "$caller" -g "$(group_of "$caller")" \
   --create-for-user="$(store_owner)" --create-for-group="$(store_group)" \
   "$store" "$mountpoint" &
 mounter=$!
