@@ -1,4 +1,7 @@
 # shellcheck shell=bash
+# System tools are not in a Nix-built PATH; the caller's shell provides them.
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
 # macOS half of vault.sh: fuse-t serves the mount over a loopback NFS server, so it appears in
 # `mount` under its resolved path and unmounts with umount (or diskutil when a child holds it).
 is_mounted() {

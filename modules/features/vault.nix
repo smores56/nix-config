@@ -30,6 +30,7 @@ let
       pkgs.coreutils
     ]
     ++ lib.optionals (!isDarwin) [
+      pkgs.glibc.bin # getent, for home_of
       pkgs.sudo
       pkgs.util-linux
     ];
