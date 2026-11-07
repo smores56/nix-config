@@ -1826,7 +1826,11 @@ snapshot contains it. Then `nix run .#cloudflare-apply` creates the Pages projec
 `recovery.sammohr.dev` and its CNAME (run it twice if the domain is still
 pending), and the `CLOUDFLARE_API_TOKEN` repository secret must exist (see
 *Cloudflare Pages token* in `docs/key-rotation.md`). In `recovery/`,
-`deno task blob` and `deno task blob --check-only` must both pass. The letters,
+`deno task blob` and `deno task blob --check-only` must both pass. Retype the
+recovery password at every prompt: the builder asks a third time and opens the
+written file with that fresh entry, because a pasted value or a different
+Unicode form of an accented character would print a password the page cannot
+open. The letters,
 drive contents and labels are the operator own template, kept outside this
 repository; `recovery/README.md` describes what the page expects of them.
 

@@ -104,6 +104,15 @@ Cryptomator sentinel. There is no password-file option and no legacy scrypt
 envelope. The blob is public ciphertext and is committed; the build copies it
 when present.
 
+Before the blob is renamed into place it asks for the recovery password a third
+time, from scratch, and opens the file that was just written with that entry.
+The first two prompts only prove the two entries agree with each other; they
+cannot prove the letter will print a password the browser also derives, because
+they reuse the string captured in memory. Retype the password at every prompt:
+a newline or an escape sequence pasted in is rejected, and an accented
+character is normalized to NFC on both the build and browser side, but nothing
+can rescue a password that was transcribed differently than it will be printed.
+
 `deno task blob --check-only` repeats just the last step against the committed
 blob. It needs the recovery password only: the blob already carries the restic and
 Cryptomator credentials, so the check also proves they are the right ones. It
