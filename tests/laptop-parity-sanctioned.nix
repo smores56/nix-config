@@ -13,6 +13,7 @@ let
   zsh = "inherent: the Mac's shell is zsh, Linux's is fish";
   harvest = "work-policy: the work-trail harvest into the Mac's memory runs on the work host only";
   todo = "inherent: todo.txt sync is part of the Linux desktop; the Mac's Syncthing is a root LaunchDaemon, so a human-editable folder needs a second identity";
+  noVault = "work-policy: the work Mac no longer holds the vault";
 in
 {
   shell = merge [
@@ -23,6 +24,7 @@ in
       "abbrs.mp" = maki;
       "abbrs.td" = todo;
       "abbrs.te" = todo;
+      "abbrs.v" = noVault;
       "abbrs.ns" = "inherent: nixos-rebuild exists only on NixOS";
       "env.CC" = "inherent: macOS toolchain in /usr/bin";
       "env.CXX" = "inherent: macOS toolchain in /usr/bin";
@@ -99,6 +101,7 @@ in
       "syncthing"
       "todo.txt-cli"
     ])
+    (group noVault [ "vault" ])
     (group harvest [ "harvest" ])
     (group "inherent: steam is a brew cask on the Mac" [ "steam" ])
     (group "inherent: Linux runs the free Brave Origin nix package; the Mac uses the Brave brew cask" [

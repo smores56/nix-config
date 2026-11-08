@@ -94,7 +94,6 @@ in
   user.shellAbbrs = lib.mkMerge [
     {
       e = "hx";
-      v = "sudo vault";
       ef = "pick files hx";
       et = "pick text hx";
       l = "eza --icons -lh";
@@ -115,6 +114,7 @@ in
       sm = "ssh smores@smortress -t fish";
     }
     (lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
+      v = "sudo vault";
       ns = "sudo nixos-rebuild --flake ~/.config/home-manager switch --upgrade";
     })
   ];

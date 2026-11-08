@@ -2,7 +2,6 @@
 # ever adds: no `cleanup`, so the employer's own brew packages stay untouched.
 {
   xdg.configFile."homebrew/Brewfile".text = ''
-    tap "macos-fuse-t/cask"
     tap "nikitabobko/tap"
 
     # kitty and aerospace come from brew: their nix builds carry a signature launchd rejects, and
@@ -13,8 +12,6 @@
     # registration that `open -b com.brave.Browser` depends on.
     cask "brave-browser"
 
-    # vault mounts through fuse-t.
-    cask "macos-fuse-t/cask/fuse-t"
     cask "tailscale-app"
     cask "docker-desktop"
 

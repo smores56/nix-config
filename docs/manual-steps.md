@@ -1313,8 +1313,7 @@ Pairing a device:
 
 1. Install Syncthing. Android: the `researchxxl/syncthing-android` fork from
    F-Droid/Obtainium, and grant the battery-optimisation exemption — without it
-   the folder stops syncing once the screen is off. The work Mac runs a root
-   daemon instead of the menu-bar app (below).
+   the folder stops syncing once the screen is off.
 2. Read the device ID: `syncthing device-id` on a Linux host, the app's settings
    screen on Android.
 3. Add it to the table, set `vaultSync.device` on the new host, and rebuild.
@@ -1332,33 +1331,6 @@ sudo vault yazi     # mount, run one command, unmount on exit
 `~/.local/share/vault` behaves like a normal folder while it is open. On the
 NixOS hosts root means the YubiKey touch. The wrapper detaches a stale mount when it next runs,
 and `v` expands to `sudo vault`. Nothing is reachable between sessions.
-
-**The work Mac (smoreswork).** home-manager cannot declare a system user or a
-root daemon, so Syncthing there runs as root from a hand-installed plist with
-its state at `/var/lib/syncthing` and the store at `/var/lib/data/vault`. Carry
-the identity over once so the committed device ID stays valid:
-
-```sh
-sudo install -d -m 0700 /var/lib/data/vault /var/lib/syncthing
-sudo install -o root -g wheel -m 0600 ~/.local/state/syncthing/cert.pem \
-  ~/.local/state/syncthing/key.pem /var/lib/syncthing/
-```
-
-Install `/Library/LaunchDaemons/local.syncthing.vault.plist` with
-`Label local.syncthing.vault`, `UserName root`, `RunAtLoad` and `KeepAlive`
-true, and `ProgramArguments` = `[<syncthing path> serve --no-browser
---home=/var/lib/syncthing]`, then:
-
-```sh
-sudo chown root:wheel /Library/LaunchDaemons/local.syncthing.vault.plist
-sudo chmod 0644 /Library/LaunchDaemons/local.syncthing.vault.plist
-sudo launchctl bootstrap system /Library/LaunchDaemons/local.syncthing.vault.plist
-```
-
-That config is hand-made, so it can drift from this repository without a check
-noticing: when the folder or the device table changes, edit it there too.
-`sudo vault` works as on the NixOS hosts, with bindfs on top of a FUSE runtime (the fuse-t cask; approve it once in
-System Settings, Privacy & Security).
 
 **Version history** is Syncthing staggered versioning at
 `/var/lib/syncthing-versions/vault` on smortress — outside `/var/lib/data`, so
@@ -1563,8 +1535,7 @@ hand from the 30-day version set under
 `~/.local/state/syncthing-todo/versions/todo` on the laptop or
 `/var/lib/syncthing-versions/todo` on smortress.
 
-The work Mac is out of scope: it runs Syncthing as a root LaunchDaemon, so a
-human-editable folder needs a second launchd identity.
+The work Mac is out of scope.
 
 ## Public services
 
