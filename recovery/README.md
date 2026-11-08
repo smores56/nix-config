@@ -78,14 +78,17 @@ until a backup runs.
 
 ## Restore in the page
 
-The page always opens the latest snapshot. `Download all files` (Chromium) walks
-the data root and writes each file into a folder the operator picks as soon as
-its tree entry is read (`src/restore.ts` strips the data root, so the folder
-starts at `photos/`). Folder rows have the same Download action scoped to that
-folder; Chromium streams only that folder's tree, while other browsers build an
-in-memory zip. Each file streams through restic blob by blob, so memory stays at
-one blob whatever the total size, and a file already present with the same size
-is skipped, which makes a stopped run resumable.
+The page always opens the latest snapshot. `Download all` (Chromium) walks the
+data root and writes each file into a folder the operator picks as soon as its
+tree entry is read (`src/restore.ts` strips the data root, so the folder starts
+at `photos/`). The button shows an approximate size from the snapshot's
+`summary.total_bytes_processed`; without a streaming browser it is disabled,
+because the full library is far too large for a zip fallback. Folder rows have
+the same Download action scoped to that folder; Chromium streams only that
+folder's tree, while other browsers build an in-memory zip. Each file streams
+through restic blob by blob, so memory stays at one blob whatever the total
+size, and a file already present with the same size is skipped, which makes a
+stopped run resumable.
 
 The directory handle comes from the File System Access API. WebKit implements
 neither `showDirectoryPicker` nor a usable Service-Worker streaming download on

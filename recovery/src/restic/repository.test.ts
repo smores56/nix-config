@@ -32,6 +32,10 @@ describe("restic repository reader", () => {
     expect(repo.snapshots[0].tree).toMatch(/^[0-9a-f]{64}$/);
   });
 
+  test("exposes the snapshot size summary", () => {
+    expect(repo.snapshots[0].summary?.total_bytes_processed).toBeGreaterThan(0);
+  });
+
   test("rejects the wrong password", async () => {
     await expect(openRepository(backend, "wrong-password")).rejects.toThrow();
   });

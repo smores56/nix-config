@@ -62,6 +62,11 @@ function formatBytes(bytes: number | undefined): string {
   return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GiB`;
 }
 
+function formatGigabytes(bytes: number): string {
+  const gb = bytes / 1_000_000_000;
+  return gb < 0.1 ? "<0.1 GB" : `${gb.toFixed(1)} GB`;
+}
+
 function setStatus(message: string, tone: "info" | "error" | "ok" = "info"): void {
   if (!status) return;
   status.textContent = message;
@@ -143,6 +148,12 @@ async function loadRepository(keys: DataKeys): Promise<void> {
   snapshot = latest;
   if (footerBackup) {
     footerBackup.textContent = snapshotTime(latest.time);
+  }
+  const estimate = latest.summary?.total_bytes_processed;
+  if (restoreButton) {
+    restoreButton.textContent = estimate !== undefined && estimate > 0
+      ? `Download all (${formatGigabytes(estimate)})`
+      : "Download all";
   }
   entriesByPath = new Map();
   await renderTree();
@@ -663,7 +674,10 @@ async function unlock(password: string): Promise<void> {
     setBrowserStatus(`Could not open the backup: ${message}`, "error");
     if (treeList) treeList.innerHTML = treeMessage("The backup could not be opened.", "error");
     if (footerBackup) footerBackup.textContent = "unavailable";
-    if (restoreButton) restoreButton.disabled = true;
+    if (restoreButton) {
+      restoreButton.textContent = "Download all";
+      restoreButton.disabled = true;
+    }
   });
   await Promise.all([manifestLoad, repositoryLoad]);
 }
@@ -734,7 +748,9 @@ restoreCancelButton?.addEventListener("click", () => {
   setRestoreStatus("Stopping after the current file...");
 });
 
-if (restoreBlurb) restoreBlurb.hidden = supportsDirectoryPicker();
+const canStream = supportsDirectoryPicker();
+if (restoreBlurb) restoreBlurb.hidden = canStream;
+if (restoreButton) restoreButton.disabled = !canStream;
 
 if (!secure) {
   if (unlockButton) unlockButton.disabled = true;

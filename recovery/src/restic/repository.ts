@@ -23,6 +23,10 @@ export type ResticSnapshot = {
   hostname?: string;
   tags?: string[];
   original?: string;
+  summary?: {
+    total_bytes_processed?: number;
+    total_files_processed?: number;
+  };
 };
 
 export type ResticTree = {
