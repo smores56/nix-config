@@ -114,7 +114,7 @@ in
       sm = "ssh smores@smortress -t fish";
     }
     (lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
-      v = "sudo vault";
+      v = "sudo vault yazi";
       ns = "sudo nixos-rebuild --flake ~/.config/home-manager switch --upgrade";
     })
   ];
