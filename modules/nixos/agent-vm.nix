@@ -107,6 +107,7 @@ let
     {
       wantedBy = [ "multi-user.target" ];
       after = [ "network-online.target" ];
+      wants = [ "network-online.target" ];
       serviceConfig = {
         Type = "simple";
         LoadCredential = "${c.secret}:/run/secrets/${c.secret}";
@@ -133,6 +134,7 @@ let
     {
       wantedBy = [ "multi-user.target" ];
       after = [ "network-online.target" ];
+      wants = [ "network-online.target" ];
       serviceConfig = {
         Type = "simple";
         LoadCredential = "${c.secret}:/run/secrets/${c.secret}";
@@ -881,13 +883,6 @@ in
           ExecStart = "${updateScript}/bin/agent-vm-update --check";
         };
       };
-      agent-vm-staleness.timer = {
-        wantedBy = [ "timers.target" ];
-        timerConfig = {
-          OnBootSec = "10min";
-          OnUnitActiveSec = "15min";
-        };
-      };
       agent-vm-verify = {
         description = "Verify the agent VM's view, shares, secrets and firewall from the host";
         after = [
@@ -926,6 +921,13 @@ in
     }
     // lib.mapAttrs (_: v: v.service) hostProxies
     // brokerServices;
+    systemd.timers."agent-vm-staleness" = {
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnBootSec = "10min";
+        OnUnitActiveSec = "15min";
+      };
+    };
     systemd.sockets = lib.mapAttrs (_: v: v.socket) hostProxies;
 
     assertions = [
