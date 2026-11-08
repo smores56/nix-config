@@ -6,6 +6,7 @@
 }:
 let
   cfg = config.user;
+  colors = config.lib.stylix.colors;
   secretPath = import ../lib/secret-path.nix config;
 
   inherit (cfg) work;
@@ -129,6 +130,20 @@ in
           delta = {
             navigate = true;
             line-numbers = true;
+            # bat's Stylix theme; home-manager rebuilds bat's cache with it.
+            syntax-theme = "base16-stylix";
+            minus-style = "syntax #${colors.base01}";
+            plus-style = "syntax #${colors.base01}";
+            minus-emph-style = "syntax #${colors.base02}";
+            plus-emph-style = "syntax #${colors.base02}";
+            line-numbers-minus-style = "#${colors.base08}";
+            line-numbers-plus-style = "#${colors.base0B}";
+            line-numbers-zero-style = "#${colors.base03}";
+            file-style = "#${colors.base0D} bold";
+            file-decoration-style = "#${colors.base0D} ul";
+            hunk-header-decoration-style = "#${colors.base0D} ul";
+            commit-style = "#${colors.base0E} bold";
+            commit-decoration-style = "#${colors.base0E}";
           };
           pager = {
             diff = "delta";

@@ -25,7 +25,9 @@ in
       vlc
       gimp
       transmission_4-gtk
-      discord
+      # Stylix writes ~/.config/Vencord/themes/stylix.theme.css; enable it once
+      # in Vencord > Themes (Vencord owns its settings file).
+      (discord.override { withVencord = true; })
       krita
       steamWithXcb
       bitwarden-menu
