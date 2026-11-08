@@ -82,6 +82,8 @@ exports=(
   "XDG_CACHE_HOME=/var/lib/agent-vm/cache"
   "XDG_DATA_HOME=/var/lib/agent-vm/data"
   "GH_CONFIG_DIR=/var/lib/agent-vm/gh"
+  # calibredb otherwise tries the read-only ~/.config/calibre and falls back to a temp dir.
+  "CALIBRE_CONFIG_DIRECTORY=/var/lib/agent-vm/calibre"
 )
 remote="cd $(printf %q "$PWD") 2>/dev/null || { echo 'agent-sandbox: cwd is not shared; starting in ~' >&2; cd; };"
 remote+=" export$(printf ' %q' "${exports[@]}");"

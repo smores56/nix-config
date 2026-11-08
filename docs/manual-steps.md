@@ -1466,9 +1466,9 @@ survive. Pick up guest changes or new top-level home entries with:
 sudo systemctl restart microvm@agent.service
 ```
 
-`agent-vm-verify` (also `just agent-vm-verify`) asserts the boundary from the
-host after prep, where a compromised guest cannot lie about it: the view is a
-read-only `nosuid,nodev` tmpfs, the visible tree is exactly the allowlist,
+`agent-vm-verify` (also `just agent-vm-verify`, which adds sudo) asserts the
+boundary from the host after prep, where a compromised guest cannot lie about it:
+the view is a read-only `nosuid,nodev` tmpfs, the visible tree is exactly the allowlist,
 writable and read-only roots behave, every bind is `nosuid,nodev`, secret files
 are 0400 and user-owned, the host holds no `nix-store.img` mount or loop
 device, and the tap and firewall chains exist. It is also a oneshot that runs

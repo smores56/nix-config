@@ -459,6 +459,7 @@ let
         "d /var/lib/agent-vm/cache 0755 ${user} users -"
         "d /var/lib/agent-vm/data 0755 ${user} users -"
         "d /var/lib/agent-vm/gh 0700 ${user} users -"
+        "d /var/lib/agent-vm/calibre 0755 ${user} users -"
         "f /var/lib/agent-vm/known_hosts 0644 ${user} users -"
       ];
 

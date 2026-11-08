@@ -2,6 +2,12 @@
 # from outside the guest (sdlc #450). @name@ values are substituted by modules/nixos/agent-vm.nix.
 set -euo pipefail
 
+# runuser and iptables need root; without it every write probe fails for the wrong reason.
+if [ "$(id -u)" -ne 0 ]; then
+  echo "agent-vm-verify: run as root: sudo agent-vm-verify" >&2
+  exit 2
+fi
+
 view=@view@
 secrets=@secrets@
 user=@user@
