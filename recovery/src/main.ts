@@ -25,6 +25,8 @@ const snapshotSingle = document.querySelector<HTMLElement>("#snapshot-single");
 const snapshotSelect = document.querySelector<HTMLSelectElement>("#snapshot-select");
 const browserStatus = document.querySelector<HTMLDivElement>("#browser-status");
 const treeList = document.querySelector<HTMLUListElement>("#browser");
+const treeWrap = document.querySelector<HTMLElement>(".tree-wrap");
+const collapseTreeButton = document.querySelector<HTMLButtonElement>("#collapse-tree");
 const restoreButton = document.querySelector<HTMLButtonElement>("#restore-all");
 const restoreCancelButton = document.querySelector<HTMLButtonElement>("#restore-cancel");
 const restoreStatus = document.querySelector<HTMLDivElement>("#restore-status");
@@ -175,6 +177,11 @@ function treeMessage(message: string, tone: "info" | "error" = "info"): string {
   return `<li class="tree-message${tone === "error" ? " error" : ""}">${escapeHtml(message)}</li>`;
 }
 
+function updateCollapseButton(): void {
+  if (!collapseTreeButton || !treeList) return;
+  collapseTreeButton.hidden = treeList.querySelector("details[open]") === null;
+}
+
 function sortEntries(entries: ResticDirEntry[]): ResticDirEntry[] {
   return [...entries].sort((left, right) => {
     if (left.type !== right.type) return left.type === "dir" ? -1 : 1;
@@ -213,11 +220,13 @@ async function renderTree(allowFallback = true): Promise<void> {
   if (!repository || !snapshot || !treeList) return;
   const generation = ++treeGeneration;
   entriesByPath.clear();
+  updateCollapseButton();
   treeList.innerHTML = treeMessage("Reading the backup...");
   try {
     const entries = await repository.listDirectory(snapshot, browseRoot);
     if (generation !== treeGeneration) return;
     treeList.innerHTML = renderEntries(entries);
+    updateCollapseButton();
   } catch (error) {
     if (generation !== treeGeneration) return;
     if (allowFallback && browseRoot) {
@@ -229,6 +238,7 @@ async function renderTree(allowFallback = true): Promise<void> {
       return;
     }
     treeList.innerHTML = treeMessage(`Could not list this backup: ${errorMessage(error)}`, "error");
+    updateCollapseButton();
   }
 }
 
@@ -534,7 +544,7 @@ async function unlock(password: string): Promise<void> {
   const envelope = await response.json();
   const keys = await decryptBlob(envelope, password);
   setStatus("");
-  if (gate) gate.hidden = true;
+  gate?.remove();
   if (unlockedRoot) unlockedRoot.hidden = false;
   if (restoreSection) restoreSection.hidden = false;
 
@@ -600,11 +610,22 @@ treeList?.addEventListener(
   "toggle",
   (event) => {
     const details = event.target;
-    if (!(details instanceof HTMLDetailsElement) || !details.open) return;
+    if (!(details instanceof HTMLDetailsElement)) return;
+    updateCollapseButton();
+    if (!details.open) return;
     void loadDirectory(details);
   },
   true,
 );
+
+collapseTreeButton?.addEventListener("click", () => {
+  if (!treeList) return;
+  for (const details of treeList.querySelectorAll<HTMLDetailsElement>("details[open]")) {
+    details.open = false;
+  }
+  updateCollapseButton();
+  if (treeWrap) treeWrap.scrollTop = 0;
+});
 
 treeList?.addEventListener("click", (event) => {
   const target = (event.target as HTMLElement).closest<HTMLElement>("[data-file]");

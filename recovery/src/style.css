@@ -100,28 +100,18 @@ code {
   padding: 1.25rem 0 1.5rem;
 }
 
-/* The locked page is a gate, not a landing page: one field, one action, and a
-   sentence that tells a stranger where the secret lives. */
+/* The locked page is a gate: one field, one action, centered. */
 .gate {
-  display: grid;
-  align-content: center;
-  justify-items: center;
-  gap: 0.75rem;
-  width: min(100%, 26rem);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   min-height: calc(100svh - 2.75rem);
-  margin-inline: auto;
+  padding: 1rem 0;
 }
 
 .gate-form {
-  display: grid;
-  gap: 0.4rem;
-  width: 100%;
-}
-
-.gate-form label {
-  color: var(--muted);
-  font-size: 0.82rem;
-  font-weight: 600;
+  width: min(100%, 24rem);
 }
 
 .row {
@@ -179,11 +169,19 @@ button.secondary:hover {
   filter: none;
 }
 
-.gate-help {
-  width: 100%;
+button.ghost {
+  min-height: 2rem;
+  padding: 0.25rem 0.5rem;
+  border-color: transparent;
+  background: transparent;
   color: var(--muted);
-  font-size: 0.82rem;
-  line-height: 1.45;
+  font-size: 0.76rem;
+}
+
+button.ghost:hover {
+  background: var(--hover);
+  color: var(--text);
+  filter: none;
 }
 
 .status {
@@ -197,8 +195,12 @@ button.secondary:hover {
 }
 
 .gate .status {
-  width: 100%;
-  margin: 0;
+  width: min(100%, 24rem);
+  margin: 0.6rem 0 0;
+}
+
+.files-panel > .status {
+  margin: 0.55rem 0;
 }
 
 .status:empty {
@@ -342,8 +344,15 @@ span.account-name {
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.8rem 1rem;
-  border-bottom: 1px solid var(--hairline);
+  padding: 0 0 0.65rem;
+}
+
+.files-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
 }
 
 .files-title p {
@@ -391,6 +400,10 @@ span.account-name {
   min-height: 14rem;
   max-height: 66svh;
   overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
   padding: 0.3rem 0;
   overscroll-behavior: contain;
 }
@@ -403,20 +416,48 @@ span.account-name {
 }
 
 .tree-children {
-  margin-left: 0.9rem;
+  margin-left: 0.95rem;
   padding-left: 0.35rem;
   border-left: 1px solid var(--hairline);
 }
 
 .tree details > summary {
-  padding: 0.28rem 0.8rem 0.28rem 0.6rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.6rem;
   border-radius: 0.35rem;
   cursor: pointer;
   font-size: 0.88rem;
+  list-style: none;
+}
+
+.tree details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.tree details > summary::before {
+  content: "";
+  flex: none;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(-45deg);
+  transition: transform 120ms ease;
+}
+
+.tree details[open] > summary::before {
+  transform: rotate(45deg);
 }
 
 .tree details > summary:hover {
   background: var(--hover);
+}
+
+.tree-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .tree summary .tree-name {
@@ -431,7 +472,7 @@ span.account-name {
   width: 100%;
   height: auto;
   min-height: 0;
-  padding: 0.28rem 0.8rem 0.28rem 1.45rem;
+  padding: 0.3rem 0.6rem 0.3rem 1.5rem;
   border: 0;
   border-radius: 0.35rem;
   background: transparent;
@@ -469,9 +510,7 @@ span.account-name {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem 0.75rem;
-  padding: 0.7rem 1rem;
-  border-top: 1px solid var(--hairline);
-  background: color-mix(in srgb, var(--bg) 30%, var(--surface));
+  padding: 0.7rem 0 0;
 }
 
 .restore-hint {
@@ -534,6 +573,20 @@ progress {
   .files-head {
     flex-direction: column;
     gap: 0.5rem;
+  }
+
+  .files-tools {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .tree-children {
+    margin-left: 0.7rem;
+    padding-left: 0.25rem;
+  }
+
+  .file-button {
+    padding-left: 1.35rem;
   }
 
   .snapshot-field {

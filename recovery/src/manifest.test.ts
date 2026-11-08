@@ -15,17 +15,19 @@ const manifest: RecoveryManifest = {
         {
           title: "Bitwarden",
           url: "https://vault.bitwarden.com",
-          notes: "The master password and two-step recovery code are on the sealed letter.",
+          notes: "Master password and two-step recovery code are on the sealed letter.",
         },
         {
-          title: "E-mail (Tuta)",
+          title: "Tuta",
           bitwardenName: "Email - Tuta",
           url: "https://app.tuta.com",
+          notes: "Email · sam@sammohr.dev",
         },
         {
-          title: "Photos (Immich)",
+          title: "Immich",
           bitwardenName: "Immich",
           url: "https://immich.sammohr.dev",
+          notes: "Photos and images.",
         },
       ],
     },
@@ -59,7 +61,8 @@ describe("recovery manifest", () => {
     const html = renderManifest(manifest);
     expect(html).toContain("Accounts");
     expect(html).toContain("Passwords and recovery codes");
-    expect(html).toContain("E-mail (Tuta)");
+    expect(html).toContain("Tuta");
+    expect(html).toContain("sam@sammohr.dev");
     expect(html).toContain('href="https://app.tuta.com"');
     expect(html).toContain('target="_blank"');
     expect(html).toContain("Email - Tuta");

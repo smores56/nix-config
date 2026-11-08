@@ -152,10 +152,9 @@ async function main(): Promise<void> {
     // The account list is fetched only after the password decrypts the kit, so a
     // rendered manifest in this dump also proves the gate opened.
     const missing = [
-      "<title>Recovery Kit</title>",
+      "<title>Recovery</title>",
       `id="manifest"`,
       `id="restore-all"`,
-      `id="recovery-password"`,
       `id="manifest-section-accounts"`,
       "Photos and documents",
     ].filter((marker) => !dom.includes(marker));
@@ -166,6 +165,12 @@ async function main(): Promise<void> {
         `the page did not boot or did not unlock: missing ${missing.join(", ")}\n` +
           `last chrome output:\n${stderr}`,
       );
+    }
+    const leftover = [`id="gate"`, `placeholder="Recovery password"`].filter((marker) =>
+      dom.includes(marker)
+    );
+    if (leftover.length > 0) {
+      throw new Error(`the unlock gate was not removed: still found ${leftover.join(", ")}`);
     }
     console.log(`smoke: ${url.split("#")[0]}#<password> unlocked from the fragment`);
   } finally {

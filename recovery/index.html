@@ -10,7 +10,7 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; connect-src 'self' https://*.r2.cloudflarestorage.com; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'self'; form-action 'none'"
     />
-    <title>Recovery Kit</title>
+    <title>Recovery</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icon-192.png" sizes="192x192" type="image/png" />
     <link rel="apple-touch-icon" href="./icon-192.png" />
@@ -18,11 +18,8 @@
   </head>
   <body>
     <main class="shell">
-      <h1 class="sr-only">Recovery kit</h1>
-
       <section id="gate" class="gate" aria-label="Unlock">
         <form id="unlock-form" class="gate-form">
-          <label for="recovery-password">Recovery password</label>
           <div class="row">
             <input
               id="recovery-password"
@@ -31,33 +28,33 @@
               autocapitalize="none"
               autocorrect="off"
               spellcheck="false"
-              aria-describedby="gate-help"
+              placeholder="Recovery password"
+              aria-label="Recovery password"
               required
             />
             <button type="submit" id="unlock-button">Unlock</button>
           </div>
         </form>
         <div id="status" class="status" role="status" aria-live="polite"></div>
-        <p id="gate-help" class="gate-help">
-          The password is on the sealed letter or USB drive with your name on it.
-          If you were not given one, there is nothing here for you.
-        </p>
       </section>
 
       <div id="unlocked" class="unlocked" hidden>
         <div id="manifest" class="manifest" aria-live="polite"></div>
 
-        <section id="restore" class="panel files-panel" aria-labelledby="files-title" hidden>
+        <section id="restore" class="files-panel" aria-labelledby="files-title" hidden>
           <header class="files-head">
             <div class="files-title">
               <h2 id="files-title">Photos and documents</h2>
               <p>Nightly backup. Decrypted in this browser; nothing is uploaded.</p>
             </div>
-            <label id="snapshot-field" class="snapshot-field" for="snapshot-select">
-              <span>Backup</span>
-              <select id="snapshot-select"></select>
-            </label>
-            <span id="snapshot-single" class="snapshot-single" hidden></span>
+            <div class="files-tools">
+              <button type="button" id="collapse-tree" class="ghost" hidden>Collapse all</button>
+              <label id="snapshot-field" class="snapshot-field" for="snapshot-select">
+                <span>Backup</span>
+                <select id="snapshot-select"></select>
+              </label>
+              <span id="snapshot-single" class="snapshot-single" hidden></span>
+            </div>
           </header>
 
           <div id="browser-status" class="status" role="status" aria-live="polite"></div>

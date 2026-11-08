@@ -5,22 +5,24 @@
     {
       "id": "accounts",
       "title": "Accounts",
-      "description": "Passwords and recovery codes are in Bitwarden, in the Family Access folder. The item name is shown beside each service.",
+      "description": "Passwords and recovery codes are in Bitwarden, in the Family Access folder.",
       "items": [
         {
           "title": "Bitwarden",
           "url": "https://vault.bitwarden.com",
-          "notes": "The master password and two-step recovery code are on the sealed letter."
+          "notes": "Master password and two-step recovery code are on the sealed letter."
         },
         {
-          "title": "E-mail (Tuta)",
+          "title": "Tuta",
           "bitwardenName": "Email - Tuta",
-          "url": "https://app.tuta.com"
+          "url": "https://app.tuta.com",
+          "notes": "Email · sam@sammohr.dev"
         },
         {
-          "title": "Photos (Immich)",
+          "title": "Immich",
           "bitwardenName": "Immich",
-          "url": "https://immich.sammohr.dev"
+          "url": "https://immich.sammohr.dev",
+          "notes": "Photos and images."
         }
       ]
     }
