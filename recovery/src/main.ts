@@ -79,11 +79,10 @@ function setRestoreStatus(message: string, tone: "info" | "error" | "ok" = "info
   restoreStatus.dataset.tone = tone;
 }
 
-function setRestoreProgress(doneBytes: number, totalBytes: number): void {
+function setRestoreIndeterminate(): void {
   if (!restoreProgress) return;
-  restoreProgress.hidden = totalBytes === 0;
-  restoreProgress.max = Math.max(totalBytes, 1);
-  restoreProgress.value = doneBytes;
+  restoreProgress.hidden = false;
+  restoreProgress.removeAttribute("value");
 }
 
 async function loadManifest(): Promise<RecoveryManifest | null> {
@@ -392,46 +391,28 @@ async function pickRestoreRoot(): Promise<DirectoryHandle | null> {
   }
 }
 
-async function restoreFiles(
-  files: ResticFile[],
+async function restoreInto(
+  root: DirectoryHandle,
+  files: AsyncIterable<ResticFile>,
   prefix: string,
-  what: string,
 ): Promise<void> {
   const repo = repository;
-  if (!repo || restoring || files.length === 0) return;
-
-  const totalBytes = files.reduce((sum, file) => sum + (file.size ?? 0), 0);
-  if (
-    !window.confirm(
-      `Restore ${files.length} files (${
-        formatBytes(totalBytes)
-      }) from ${what} into a folder you choose?\n\n` +
-        "Files already there with the same size are skipped; any other file with the same " +
-        "name is overwritten. You can stop and run it again.",
-    )
-  ) {
-    setRestoreStatus("");
-    return;
-  }
-
-  const root = await pickRestoreRoot();
-  if (!root) return;
-
+  if (!repo) return;
   restoring = true;
   restoreStop = false;
   if (restoreButton) restoreButton.disabled = true;
   if (restoreCancelButton) restoreCancelButton.hidden = false;
-  setRestoreProgress(0, totalBytes);
+  setRestoreIndeterminate();
+  setRestoreStatus("Starting download...");
 
   let done = 0;
   let written = 0;
   let skipped = 0;
   let doneBytes = 0;
-  let skippedBytes = 0;
   const problems: string[] = [];
 
   try {
-    for (const file of files) {
+    for await (const file of files) {
       if (restoreStop) break;
       if (problems.length >= 20 && written === 0) {
         problems.push("stopping early: nothing has succeeded yet");
@@ -445,8 +426,7 @@ async function restoreFiles(
         if (existing && file.size !== undefined && existing.size === file.size) {
           skipped++;
           done++;
-          skippedBytes += file.size;
-          setRestoreProgress(doneBytes + skippedBytes, totalBytes);
+          setRestoreStatus(`${done} files checked, ${skipped} already there...`);
           continue;
         }
 
@@ -472,26 +452,32 @@ async function restoreFiles(
         written++;
         done++;
         doneBytes += file.size ?? 0;
-        setRestoreProgress(doneBytes + skippedBytes, totalBytes);
         setRestoreStatus(
-          `${done} of ${files.length} files, ${formatBytes(doneBytes + skippedBytes)} of ${
-            formatBytes(totalBytes)
-          }...`,
+          `${written} files downloaded (${formatBytes(doneBytes)}), ${skipped} already there...`,
         );
-        setBrowserStatus(`Restoring ${segments.length > 0 ? segments.join("/") + "/" : ""}${name}`);
+        setBrowserStatus(
+          `Downloading ${segments.length > 0 ? segments.join("/") + "/" : ""}${name}`,
+        );
       } catch (error) {
         problems.push(`${file.path}: ${errorMessage(error)}`);
       }
     }
+  } catch (error) {
+    problems.push(`could not read the backup: ${errorMessage(error)}`);
   } finally {
     restoring = false;
     if (restoreButton) restoreButton.disabled = false;
     if (restoreCancelButton) restoreCancelButton.hidden = true;
+    if (restoreProgress) {
+      restoreProgress.hidden = true;
+      restoreProgress.value = 0;
+    }
   }
 
+  const summaryBytes = formatBytes(doneBytes);
   const summary = restoreStop
-    ? `Stopped: ${written} written (${formatBytes(doneBytes)}), ${skipped} already there.`
-    : `Restored ${written} files (${formatBytes(doneBytes)}), skipped ${skipped} already there.`;
+    ? `Stopped: ${written} files downloaded (${summaryBytes}), ${skipped} already there.`
+    : `Downloaded ${written} files (${summaryBytes}), skipped ${skipped} already there.`;
   if (problems.length > 0) {
     setRestoreStatus(
       `${summary} ${problems.length} file(s) failed; first: ${problems[0]}`,
@@ -507,18 +493,28 @@ async function restoreAll(): Promise<void> {
   const repo = repository;
   const current = snapshot;
   if (!repo || !current || restoreBusy || restoring) return;
+  if (!supportsDirectoryPicker()) {
+    setRestoreStatus(
+      "Saving to a folder needs Chrome or Edge. This browser can download one folder as a zip.",
+      "error",
+    );
+    return;
+  }
   restoreBusy = true;
   try {
-    setRestoreStatus("Reading the file list from R2...");
-    let files: ResticFile[];
-    try {
-      files = await repo.walk(current);
-    } catch (error) {
-      setRestoreStatus(`Could not read the snapshot: ${errorMessage(error)}`, "error");
+    if (
+      !window.confirm(
+        "Download all backup files into a folder you choose?\n\n" +
+          "Files already there with the same size are skipped; any other file with the same " +
+          "name is overwritten. You can stop and run it again.",
+      )
+    ) {
+      setRestoreStatus("");
       return;
     }
-    const prefix = commonDirectoryPrefix(files.map((file) => file.path));
-    await restoreFiles(files, prefix, "the whole backup");
+    const root = await pickRestoreRoot();
+    if (!root) return;
+    await restoreInto(root, repo.walkFiles(current, browseRoot), browseRoot);
   } finally {
     restoreBusy = false;
   }
@@ -528,28 +524,34 @@ async function restoreFolder(folderPath: string): Promise<void> {
   const repo = repository;
   const current = snapshot;
   if (!repo || !current || restoreBusy || restoring) return;
+  if (!supportsDirectoryPicker()) {
+    setRestoreStatus(
+      "Saving to a folder needs Chrome or Edge. This browser can download this folder as a zip.",
+      "error",
+    );
+    return;
+  }
+  const name = folderPath.split("/").pop() || folderPath;
   restoreBusy = true;
   try {
-    const name = folderPath.split("/").pop() || folderPath;
-    setRestoreStatus(`Reading the file list for ${name}/...`);
-    let files: ResticFile[];
-    try {
-      files = await repo.walkDirectory(current, folderPath);
-    } catch (error) {
-      setRestoreStatus(`Could not read the snapshot: ${errorMessage(error)}`, "error");
+    if (
+      !window.confirm(
+        `Download the ${name}/ folder into a folder you choose?\n\n` +
+          "Files already there with the same size are skipped; any other file with the same " +
+          "name is overwritten. You can stop and run it again.",
+      )
+    ) {
+      setRestoreStatus("");
       return;
     }
-    if (files.length === 0) {
-      setRestoreStatus(`There are no files in ${name}/.`, "error");
-      return;
-    }
+    const root = await pickRestoreRoot();
+    if (!root) return;
     const parent = folderPath.split("/").slice(0, -1).join("/");
-    await restoreFiles(files, parent, `${name}/`);
+    await restoreInto(root, repo.walkFiles(current, folderPath), parent);
   } finally {
     restoreBusy = false;
   }
 }
-
 function concatenateChunks(chunks: Uint8Array[]): Uint8Array {
   const length = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
   const data = new Uint8Array(length);
@@ -577,40 +579,37 @@ async function downloadFolderZip(folderPath: string): Promise<void> {
   restoreBusy = true;
   const name = folderPath.split("/").pop() || folderPath;
   try {
-    setRestoreStatus(`Reading the file list for ${name}/...`);
-    let files: ResticFile[];
-    try {
-      files = await repo.walkDirectory(current, folderPath);
-    } catch (error) {
-      setRestoreStatus(`Could not read the snapshot: ${errorMessage(error)}`, "error");
-      return;
-    }
-    if (files.length === 0) {
-      setRestoreStatus(`There are no files in ${name}/.`, "error");
-      return;
-    }
-    const totalBytes = files.reduce((sum, file) => sum + (file.size ?? 0), 0);
-    if (totalBytes > MAX_ZIP_BYTES) {
-      setRestoreStatus(
-        `This folder is ${formatBytes(totalBytes)}. The browser zip download is limited to ${
-          formatBytes(MAX_ZIP_BYTES)
-        }; use Chrome or Edge to save it directly.`,
-        "error",
-      );
-      return;
-    }
     const prefix = folderPath.split("/").slice(0, -1).join("/");
     const entries: Record<string, Uint8Array> = {};
     let done = 0;
-    for (const file of files) {
+    let totalBytes = 0;
+    for await (const file of repo.walkFiles(current, folderPath)) {
+      if (file.size !== undefined) {
+        totalBytes += file.size;
+        if (totalBytes > MAX_ZIP_BYTES) {
+          setRestoreStatus(
+            `This folder is over ${
+              formatBytes(MAX_ZIP_BYTES)
+            }. The browser zip download is capped; use Chrome or Edge to save it directly.`,
+            "error",
+          );
+          return;
+        }
+      }
       const path = relativeSegments(prefix, file.path).join("/");
       const chunks: Uint8Array[] = [];
       for await (const chunk of repo.readFileChunks(file)) chunks.push(chunk);
       entries[path] = concatenateChunks(chunks);
       done++;
-      if (done === files.length || done % 10 === 0) {
-        setRestoreStatus(`Building ${name}.zip... ${done} of ${files.length} files`);
+      if (done === 1 || done % 10 === 0) {
+        setRestoreStatus(
+          `Building ${name}.zip... ${done} files, ${formatBytes(totalBytes)}`,
+        );
       }
+    }
+    if (done === 0) {
+      setRestoreStatus(`There are no files in ${name}/.`, "error");
+      return;
     }
     setRestoreStatus(`Compressing ${name}.zip...`);
     const zipped = await zipFiles(entries);

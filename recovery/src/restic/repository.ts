@@ -143,45 +143,54 @@ export class ResticRepository {
   }
 
   async walk(snapshot: ResticSnapshot): Promise<ResticFile[]> {
-    return this.walkTree(snapshot.tree, "");
+    const files: ResticFile[] = [];
+    for await (const file of this.walkFiles(snapshot)) files.push(file);
+    return files;
   }
 
   /** Walk one directory subtree instead of the whole snapshot. */
   async walkDirectory(snapshot: ResticSnapshot, directory: string): Promise<ResticFile[]> {
-    const { treeId, prefix } = await this.resolveDirectory(snapshot, directory);
-    return this.walkTree(treeId, prefix);
+    const files: ResticFile[] = [];
+    for await (const file of this.walkFiles(snapshot, directory)) files.push(file);
+    return files;
   }
 
-  private async walkTree(rootTreeId: string, rootPrefix: string): Promise<ResticFile[]> {
-    const files: ResticFile[] = [];
-    const stack = new Set<string>();
+  /** Stream files as their trees are read, without building the whole list first. */
+  async *walkFiles(
+    snapshot: ResticSnapshot,
+    directory = "",
+  ): AsyncGenerator<ResticFile> {
+    const { treeId, prefix } = await this.resolveDirectory(snapshot, directory);
+    yield* this.walkTreeFiles(treeId, prefix, 0, new Set());
+  }
 
-    const visit = async (treeId: string, prefix: string, depth: number): Promise<void> => {
-      if (depth > 128) throw new Error("restic tree is too deep");
-      if (stack.has(treeId)) throw new Error("restic tree contains a cycle");
-      stack.add(treeId);
-      try {
-        const tree = await this.readTree(treeId);
-        for (const node of tree.nodes ?? []) {
-          if (!isSafeName(node.name)) throw new Error(`unsafe restic name: ${String(node.name)}`);
-          const path = prefix ? `${prefix}/${node.name}` : node.name;
-          if (node.type === "dir") {
-            await visit(treeIdOf(node, path), path, depth + 1);
-          } else if (node.type === "file") {
-            files.push({
-              path,
-              blobs: Array.isArray(node.content) ? node.content : [],
-              size: typeof node.size === "number" ? node.size : 0,
-            });
-          }
+  private async *walkTreeFiles(
+    rootTreeId: string,
+    rootPrefix: string,
+    depth: number,
+    stack: Set<string>,
+  ): AsyncGenerator<ResticFile> {
+    if (depth > 128) throw new Error("restic tree is too deep");
+    if (stack.has(rootTreeId)) throw new Error("restic tree contains a cycle");
+    stack.add(rootTreeId);
+    try {
+      const tree = await this.readTree(rootTreeId);
+      for (const node of tree.nodes ?? []) {
+        if (!isSafeName(node.name)) throw new Error(`unsafe restic name: ${String(node.name)}`);
+        const path = rootPrefix ? `${rootPrefix}/${node.name}` : node.name;
+        if (node.type === "dir") {
+          yield* this.walkTreeFiles(treeIdOf(node, path), path, depth + 1, stack);
+        } else if (node.type === "file") {
+          yield {
+            path,
+            blobs: Array.isArray(node.content) ? node.content : [],
+            size: typeof node.size === "number" ? node.size : 0,
+          };
         }
-      } finally {
-        stack.delete(treeId);
       }
-    };
-
-    await visit(rootTreeId, rootPrefix, 0);
-    return files;
+    } finally {
+      stack.delete(rootTreeId);
+    }
   }
 
   private async resolveDirectory(
