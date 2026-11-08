@@ -1,0 +1,12 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-broker"
+version = "0.1.0"
+description = "Credential-injecting capability broker for the agent VM"
+requires-python = ">=3.11"
+
+[project.scripts]
+agent-broker = "agent_broker.__main__:main"

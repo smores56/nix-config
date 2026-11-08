@@ -21,6 +21,107 @@ let
   uid = 1000;
   gid = 100;
 
+  # Each capability is one guest-visible port and one host broker. `brokerPort` defaults to the
+  # guest port; a capability fronting an existing host service names a distinct one.
+  caps = lib.mapAttrs (
+    _: c: c // { brokerPort = if c.brokerPort == 0 then c.guestPort else c.brokerPort; }
+  ) cfg.capabilities;
+
+  brokerPackage = pkgs.callPackage ../lib/agent-broker/package.nix { };
+
+  # What the guest may know about its capabilities: addresses and dummy values, never secrets.
+  capabilityJson = pkgs.writeText "agent-vm-capabilities.json" (
+    builtins.toJSON {
+      capabilities = lib.mapAttrs (_: c: {
+        inherit (c) type guestPort;
+        url = "http://127.0.0.1:${toString c.guestPort}";
+        inherit (c) env;
+      }) caps;
+    }
+  );
+  capabilityEnv = pkgs.writeText "agent-vm-capabilities.env" (
+    lib.concatStrings (
+      lib.mapAttrsToList (
+        _: c:
+        lib.concatStrings (lib.mapAttrsToList (k: v: "export ${k}=${lib.escapeShellArg v}\n") c.env)
+      ) caps
+    )
+  );
+
+  brokerConfig =
+    c:
+    pkgs.writeText "agent-broker-${toString c.guestPort}.json" (
+      builtins.toJSON {
+        listen = "127.0.0.1:${toString c.brokerPort}";
+        inherit (c) upstream allow;
+        auth = {
+          inherit (c.auth) kind header username;
+          credential = c.secret;
+        };
+      }
+    );
+
+  brokerService =
+    c:
+    {
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network-online.target" ];
+      serviceConfig = {
+        Type = "simple";
+        LoadCredential = "${c.secret}:/run/secrets/${c.secret}";
+        ExecStart = "${brokerPackage}/bin/agent-broker ${brokerConfig c}";
+        Restart = "always";
+        RestartSec = "5s";
+        DynamicUser = true;
+        PrivateTmp = true;
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        NoNewPrivileges = true;
+        RestrictAddressFamilies = [
+          "AF_INET"
+          "AF_INET6"
+          "AF_UNIX"
+        ];
+      };
+    };
+
+  # A TCP capability owns its listener through the declared command; the token reaches it as a
+  # systemd credential, so the command reads $CREDENTIALS_DIRECTORY/<secret>.
+  tcpService =
+    c:
+    {
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network-online.target" ];
+      serviceConfig = {
+        Type = "simple";
+        LoadCredential = "${c.secret}:/run/secrets/${c.secret}";
+        ExecStart = "/bin/sh -c ${lib.escapeShellArg (lib.replaceStrings [ "%PORT%" ] [ (toString c.brokerPort) ] c.command)}";
+        Restart = "always";
+        RestartSec = "5s";
+        DynamicUser = true;
+        PrivateTmp = true;
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        NoNewPrivileges = true;
+      };
+    };
+
+  brokerServices = lib.mapAttrs' (
+    n: c: lib.nameValuePair "agent-broker-${n}" (if c.type == "http" then brokerService c else tcpService c)
+  ) caps;
+
+  # Stable guest-visible ports. `proxied` reaches host services directly; each capability goes
+  # to its broker instead while keeping the same port in the guest.
+  relays =
+    map (p: {
+      port = p;
+      target = p;
+    }) proxied
+    ++ lib.mapAttrsToList (_: c: {
+      inherit (c) guestPort;
+      target = c.brokerPort;
+    }) caps;
+
   vmLib = import ../lib/agent-vm.nix { inherit pkgs lib; };
   inherit (vmLib)
     name
@@ -179,7 +280,7 @@ let
     -A agent-vm-in -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
     ${lib.concatMapStrings (port: ''
       -A agent-vm-in -d ${hostAddr} -p tcp --dport ${toString port} -j ACCEPT
-    '') proxied}
+    '') (map (r: r.port) relays)}
     -A agent-vm-in -j DROP
     -A agent-vm-fwd -o ${tap} -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
     -A agent-vm-fwd -o ${tap} -j DROP
@@ -208,22 +309,22 @@ let
   '';
 
   proxySockets =
-    prefix: listen: target: ports:
+    prefix: listen: targetFor: relays:
     lib.listToAttrs (
-      map (port: {
-        name = "${prefix}-${toString port}";
+      map (r: {
+        name = "${prefix}-${toString r.port}";
         value = {
           socket = {
             wantedBy = [ "sockets.target" ];
             socketConfig = {
-              ListenStream = "${listen}:${toString port}";
+              ListenStream = "${listen}:${toString r.port}";
               # The listen address may appear after the socket unit starts (the host tap).
               FreeBind = true;
             };
           };
           service = {
             serviceConfig = {
-              ExecStart = "${pkgs.systemd}/lib/systemd/systemd-socket-proxyd ${target}:${toString port}";
+              ExecStart = "${pkgs.systemd}/lib/systemd/systemd-socket-proxyd ${targetFor r}";
               DynamicUser = true;
               PrivateTmp = true;
               ProtectSystem = "strict";
@@ -232,12 +333,16 @@ let
             };
           };
         };
-      }) ports
+      }) relays
     );
-  # Guest ports the tunnel reaches from the host; the guest initiates the other direction.
   hostProxies =
-    proxySockets "agent-vm-proxy" hostAddr "127.0.0.1" proxied
-    // proxySockets "agent-vm-ingress" "127.0.0.1" guestAddr cfg.ingressPorts;
+    proxySockets "agent-vm-proxy" hostAddr (r: "127.0.0.1:${toString r.target}") relays
+    // proxySockets "agent-vm-ingress" "127.0.0.1" (r: "${guestAddr}:${toString r.port}") (
+      map (p: {
+        port = p;
+        target = p;
+      }) cfg.ingressPorts
+    );
 
   # The guest has no SSH agent: the human's ~/.ssh/config would offer YubiKey identities that
   # cannot sign there. A laptop guest reaches smortress with the personal signing key, whose
@@ -266,9 +371,11 @@ let
   guest =
     { lib, pkgs, ... }:
     let
-      guestProxies = proxySockets "agent-vm-proxy" "127.0.0.1" hostAddr proxied;
+      guestProxies = proxySockets "agent-vm-proxy" "127.0.0.1" (r: "${hostAddr}:${toString r.port}") relays;
       # The runtime binds loopback; this relay is the only listener on the tap address.
-      guestIngress = proxySockets "agent-vm-ingress" guestAddr "127.0.0.1" cfg.ingressPorts;
+      guestIngress = proxySockets "agent-vm-ingress" guestAddr (r: "127.0.0.1:${toString r.port}") (
+        map (p: { port = p; target = p; }) cfg.ingressPorts
+      );
     in
     {
       microvm = {
@@ -450,6 +557,9 @@ let
         "d /var/lib/agent-vm 0755 ${user} users -"
         "d /var/lib/agent-vm/cache 0755 ${user} users -"
         "d /var/lib/agent-vm/data 0755 ${user} users -"
+        "d /run/agent-vm 0755 root root -"
+        "C /run/agent-vm/capabilities.json 0644 root root - ${capabilityJson}"
+        "C /run/agent-vm/capabilities.env 0644 root root - ${capabilityEnv}"
         "d /var/lib/agent-vm/gh 0700 ${user} users -"
         "d /var/lib/agent-vm/calibre 0755 ${user} users -"
         "f /var/lib/agent-vm/known_hosts 0644 ${user} users -"
@@ -469,6 +579,57 @@ in
     allowRw = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       description = "Home-relative paths shared read-write; nothing else in the home is visible.";
+    };
+    capabilities = lib.mkOption {
+      type = lib.types.attrsOf (
+        lib.types.submodule {
+          options = {
+            type = lib.mkOption { type = lib.types.enum [ "http" "tcp" ]; };
+            upstream = lib.mkOption {
+              type = lib.types.str;
+              default = "";
+              description = "Absolute upstream URL for an http capability.";
+            };
+            command = lib.mkOption {
+              type = lib.types.str;
+              default = "";
+              description = "Relay command for a tcp capability; %PORT% is the host listener.";
+            };
+            secret = lib.mkOption { type = lib.types.str; };
+            guestPort = lib.mkOption { type = lib.types.port; };
+            brokerPort = lib.mkOption {
+              type = lib.types.port;
+              default = 0;
+              description = "Host loopback port the broker listens on; 0 reuses guestPort.";
+            };
+            allow = lib.mkOption {
+              type = lib.types.listOf lib.types.str;
+              default = [ ];
+              description = "Allowed METHOD /path pairs; empty allows every request.";
+            };
+            env = lib.mkOption {
+              type = lib.types.attrsOf lib.types.str;
+              default = { };
+              description = "Guest environment variables naming this capability's endpoints.";
+            };
+            auth = lib.mkOption {
+              type = lib.types.submodule {
+                options = {
+                  kind = lib.mkOption {
+                    type = lib.types.enum [ "bearer" "header" "basic" "none" ];
+                    default = "none";
+                  };
+                  header = lib.mkOption { type = lib.types.str; default = ""; };
+                  username = lib.mkOption { type = lib.types.str; default = ""; };
+                };
+              };
+              default = { };
+            };
+          };
+        }
+      );
+      default = { };
+      description = "Guest capabilities mediated by a host broker; the secret never enters the guest.";
     };
     ingressPorts = lib.mkOption {
       type = lib.types.listOf lib.types.port;
@@ -594,7 +755,8 @@ in
         };
       };
     }
-    // lib.mapAttrs (_: v: v.service) hostProxies;
+    // lib.mapAttrs (_: v: v.service) hostProxies
+    // brokerServices;
     systemd.sockets = lib.mapAttrs (_: v: v.socket) hostProxies;
 
     assertions = [

@@ -14,6 +14,13 @@
   memoryMcp = 8182;
   # The memory-LLM gateway: Graphiti's extraction and embedding route.
   memoryLlmProxy = 8082;
+  # Agent-VM capability brokers: guest-facing ports and the host broker ports they reach.
+  agentNeuralwatt = 8083;
+  agentTinyfish = 8084;
+  agentSshRelay = 8085;
+  agentBrokerMemory = 8186;
+  agentBrokerCalibre = 8187;
+  agentBrokerImmich = 2288;
   filesMcp = 8185;
   openWebui = 3210;
 }

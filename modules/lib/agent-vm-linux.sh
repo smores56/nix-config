@@ -86,6 +86,7 @@ exports=(
   "CALIBRE_CONFIG_DIRECTORY=/var/lib/agent-vm/calibre"
 )
 remote="cd $(printf %q "$PWD") 2>/dev/null || { echo 'agent-sandbox: cwd is not shared; starting in ~' >&2; cd; };"
+remote+=" if [ -r /run/agent-vm/capabilities.env ]; then . /run/agent-vm/capabilities.env; fi;"
 remote+=" export$(printf ' %q' "${exports[@]}");"
 for pair in "${secret_env[@]}"; do
   var=${pair%%|*}

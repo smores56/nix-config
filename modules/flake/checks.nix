@@ -1168,6 +1168,23 @@ in
                     ".gnupg"
                   ])
                 ) host.agentVm.allowRw;
+                # Every capability keeps its guest port, reaches only its broker, and its secret
+                # is not handed into the guest.
+                capabilities = lib.all (
+                  n:
+                  let
+                    c = host.agentVm.capabilities.${n};
+                    brokerPort = if c.brokerPort == 0 then c.guestPort else c.brokerPort;
+                    relay = "agent-vm-proxy-${toString c.guestPort}";
+                  in
+                  c.guestPort != 0
+                  && !(lib.elem c.secret host.agentVm.secrets)
+                  && host.systemd.sockets ? relay
+                  && host.systemd.services ? relay
+                  && lib.hasInfix "127.0.0.1:${toString brokerPort}" host.systemd.services.${relay}.serviceConfig.ExecStart
+                  && host.systemd.services ? "agent-broker-${n}"
+                  && guest.systemd.sockets ? relay
+                ) (builtins.attrNames host.agentVm.capabilities);
                 firewall = host.networking.firewall.extraCommands;
                 # The host relay, guest relay and guest firewall must agree on every ingress port.
                 ingress = lib.all (
@@ -1198,6 +1215,7 @@ in
               && f.allowlist
               && f.verify
               && f.narrowRw
+              && f.capabilities
               && f.ingress
             ) all;
             launcher = (import ../lib/agent-vm.nix { inherit pkgs lib; }).launcher "smores";
