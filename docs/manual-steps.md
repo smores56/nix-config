@@ -309,6 +309,13 @@ Maki's personal profile on this host reads `NEURALWATT_API_KEY` and
 `TINYFISH_API_KEY` from `secrets/common.yaml`, which names smorespro as a
 recipient.
 
+#### Discord
+
+The Discord package carries Vencord so Stylix's generated theme applies. After
+the first home-manager switch, enable `stylix.theme.css` once in Discord's
+Vencord settings → Themes. Vencord owns
+`~/.config/Vencord/settings/settings.json`, so the repo does not manage it.
+
 #### NymVPN
 
 NymVPN is an outbound client on this host. It exposes nothing and does not

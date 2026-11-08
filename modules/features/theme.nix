@@ -18,9 +18,9 @@ let
       in
       lib.removeSuffix ".yml" (lib.removeSuffix ".yaml" file);
 
-  # eza merges LS_COLORS over its built-in theme. Stylix's vivid theme maps
-  # directories to base0F, which is near-invisible on the darker palettes, so
-  # eza gets a small palette-derived set instead of the full vivid output.
+  # eza's defaults are ANSI and follow the palette, but Stylix's vivid theme
+  # maps directories to base0F, which is near-invisible on the darker schemes.
+  # Pin the file types eza draws most to higher-contrast palette colors.
   hexToRgb =
     hex:
     let
@@ -49,23 +49,6 @@ let
     "tw=1;${fg "base0E"}"
     "ow=1;${fg "base0E"}"
     "st=${fg "base0E"}"
-    "*.tar=${fg "base08"}"
-    "*.tgz=${fg "base08"}"
-    "*.zip=${fg "base08"}"
-    "*.gz=${fg "base08"}"
-    "*.bz2=${fg "base08"}"
-    "*.xz=${fg "base08"}"
-    "*.zst=${fg "base08"}"
-    "*.md=${fg "base0A"}"
-    "*.nix=${fg "base0D"}"
-    "*.rs=${fg "base0E"}"
-    "*.py=${fg "base0E"}"
-    "*.ts=${fg "base0D"}"
-    "*.js=${fg "base0A"}"
-    "*.json=${fg "base0A"}"
-    "*.toml=${fg "base0A"}"
-    "*.yaml=${fg "base0A"}"
-    "*.yml=${fg "base0A"}"
   ];
 in
 {
@@ -103,7 +86,7 @@ in
     '';
 
     home = {
-      pointerCursor.enable = lib.mkIf (graphical && pkgs.stdenv.hostPlatform.isLinux) true;
+      pointerCursor.enable = lib.mkIf desktop true;
       sessionVariables.LS_COLORS = lsColors;
     };
 
@@ -127,9 +110,6 @@ in
       targets = {
         kitty.fonts.enable = false;
         kitty.opacity.enable = false;
-        # Zellij 0.44 ignores the external theme file this target writes, so the
-        # theme is defined inline in modules/features/zellij.nix instead.
-        zellij.enable = false;
         # GNOME's target writes dconf settings; this is a niri session, and the
         # rest are unused apps that also write dconf for no benefit.
         gnome.enable = false;

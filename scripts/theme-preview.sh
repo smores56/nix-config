@@ -1,24 +1,27 @@
 #!/usr/bin/env bash
 # One-time base16 preview: a picker and a live maki session in one kitty OS window.
-# Run from the nix-config checkout, pick a scheme, then delete this script.
+# Pick a scheme, note the name, then delete this script.
 set -euo pipefail
 
 repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-work="${XDG_CACHE_HOME:-$HOME/.cache}/theme-preview"
-schemes=$(nix eval --raw --inputs-from "$repo" nixpkgs#base16-schemes.outPath)/share/themes
+cache="${XDG_CACHE_HOME:-$HOME/.cache}"
+mkdir -p -- "$cache"
+work=$(mktemp -d "$cache/theme-preview.XXXXXX")
+trap 'rm -rf -- "$work"' EXIT
+
+schemes_out=$(nix build --no-link --print-out-paths --inputs-from "$repo" nixpkgs#base16-schemes)
+schemes=$schemes_out/share/themes
 [ -d "$schemes" ] || {
   printf 'theme-preview: no base16 schemes at %s\n' "$schemes" >&2
   exit 1
 }
 
-command -v kitty >/dev/null || {
-  printf 'theme-preview: kitty is not on PATH\n' >&2
-  exit 1
-}
-command -v maki >/dev/null || {
-  printf 'theme-preview: maki is not on PATH\n' >&2
-  exit 1
-}
+for command in kitty kitten maki; do
+  command -v "$command" >/dev/null || {
+    printf 'theme-preview: %s is not on PATH\n' "$command" >&2
+    exit 1
+  }
+done
 
 if fzf=$(command -v fzf); then
   :
@@ -29,7 +32,6 @@ else
   exit 1
 fi
 
-rm -rf -- "$work"
 mkdir -p -- "$work/conf"
 
 # The tinted-kitty base16 template, byte-compatible with the include Stylix
@@ -79,17 +81,20 @@ done
 cat >"$work/apply" <<'APPLY'
 #!/usr/bin/env bash
 set -euo pipefail
-exec "${KITTEN:-kitten}" @ set-colors -a -- "$THEME_PREVIEW_WORK/conf/$1.conf"
+case "$1" in
+  "" | */* | .*) exit 2 ;;
+esac
+exec "${KITTEN:?}" @ set-colors -a -- "$THEME_PREVIEW_WORK/conf/$1.conf"
 APPLY
 
 cat >"$work/picker" <<'PICKER'
 #!/usr/bin/env bash
 set -euo pipefail
 work=${THEME_PREVIEW_WORK:?}
-kitten=${KITTEN:-kitten}
+kitten=${KITTEN:?}
 chosen=$work/chosen
 
-names=$(find "$work/conf" -maxdepth 1 -name '*.conf' -printf '%f\n' | sed 's/\.conf$//' | sort)
+names=$(for conf in "$work"/conf/*.conf; do basename -- "$conf" .conf; done | sort)
 
 if selected=$(printf '%s\n' "$names" |
   "$FZF" --ansi --no-info --reverse --height=100% --color=16 \
@@ -97,8 +102,12 @@ if selected=$(printf '%s\n' "$names" |
     --header='Enter: keep this theme   Esc: restore the Stylix palette' \
     --bind "focus:execute-silent($work/apply {})"); then
   printf '%s\n' "$selected" >"$chosen"
+  variant=$(sed -n 's/^variant: "\(.*\)"/\1/p' "$THEME_PREVIEW_SCHEMES/$selected.yaml" | head -1)
   printf 'Selected base16 scheme: %s\n' "$selected"
-  printf 'The palette stays applied while maki runs. Remember the name for the follow-up.\n'
+  if [ -n "$variant" ]; then
+    printf 'Variant: %s (set stylix.polarity = "%s" if it changes).\n' "$variant" "$variant"
+  fi
+  printf 'The palette stays applied while maki runs.\n'
   read -r -n 1 -s -p 'Press any key to close this pane...' || true
   printf '\n'
 else
@@ -112,16 +121,26 @@ chmod +x "$work/apply" "$work/picker"
 
 cat >"$work/session.conf" <<EOF
 layout splits
-launch --var role=picker --title base16-preview $work/picker
+launch --var role=picker --title base16-preview "$work/picker"
 launch --location=vsplit --title maki maki
 focus_matching_window var:role=picker
 EOF
 
 export THEME_PREVIEW_WORK=$work
+export THEME_PREVIEW_SCHEMES=$schemes
 export FZF=$fzf
 KITTEN=$(command -v kitten)
 export KITTEN
 
 printf 'Converted %d base16 schemes.\n' "$count"
 printf 'Starting kitty: picker on the left, maki (system theme) on the right.\n'
-exec kitty -o allow_remote_control=yes --session "$work/session.conf"
+# socket-only keeps remote control off the tty, so fzf and maki output cannot
+# issue kitty commands; the children inherit KITTY_LISTEN_ON for set-colors.
+kitty \
+  -o allow_remote_control=socket-only \
+  -o listen_on="unix:$work/kitty.sock" \
+  --session "$work/session.conf"
+
+if [ -s "$work/chosen" ]; then
+  printf 'Chosen base16 scheme: %s\n' "$(cat -- "$work/chosen")"
+fi

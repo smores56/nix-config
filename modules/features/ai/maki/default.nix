@@ -29,8 +29,7 @@ let
     maki.setup({
       always_yolo = true,
       always_thinking = "max",
-      -- Follow the terminal's ANSI palette, so the one-time theme preview
-      -- recolors maki live and normal sessions inherit the Stylix scheme.
+      -- Follow the terminal's ANSI palette so maki inherits the Stylix scheme.
       ui = {
         theme = "system";
       },
@@ -85,6 +84,9 @@ let
       instructions = { files = { } },
       -- A future cwd with a .maki config cannot be trusted interactively here.
       trust = { prompt = false },
+      ui = {
+        theme = "system";
+      },
       provider = {
         default_model = "${privateModel}",
         allowed_models = { "${privateModel}" },

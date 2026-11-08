@@ -38,6 +38,9 @@ in
       "abbrs.nvd"
     ])
     (group linux [
+      "env.GTK2_RC_FILES"
+      "env.QT_QPA_PLATFORMTHEME"
+      "env.QT_STYLE_OVERRIDE"
       "env.SSH_ASKPASS"
       "env.SSH_ASKPASS_REQUIRE"
       "env.SSH_SK_HELPER"
@@ -114,6 +117,7 @@ in
       "vlc"
     ])
     (group linux [
+      "adw-gtk3"
       "bibata-cursors"
       "bitwarden-menu"
       "brightnessctl"
@@ -127,6 +131,10 @@ in
       "index.theme"
       "noctalia"
       "playerctl"
+      "qt5ct"
+      "qt6ct"
+      "qtstyleplugin-kvantum"
+      "qtstyleplugin-kvantum5"
       "shared-mime-info"
       "slurp"
       "ssh-askpass"
@@ -187,6 +195,7 @@ in
       "sops-nix"
     ])
     (group linux [
+      "dconfSettings"
       "reloadSystemd"
       "stylixLookAndFeel"
     ])
