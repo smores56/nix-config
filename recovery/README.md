@@ -151,3 +151,7 @@ data path shares, which is `var/lib/data`, so the top level is `photos/`,
 `vault/` and `db/` rather than the snapshot root's single `var/`. The browser
 renders that level as a tree of native `<details>` disclosures; each folder
 loads its children from restic only when it is opened.
+
+The account list in `public/manifest.json` is fetched only after the page unlocks,
+but the file itself is public on the static site: it carries provider names and
+URLs, never credentials. Treat it as readable by anyone who guesses the address.

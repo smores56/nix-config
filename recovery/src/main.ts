@@ -1,10 +1,9 @@
-import { zip } from "fflate";
 import { type DataKeys, decryptBlob } from "./blob.ts";
-import { sanitizeFileName } from "./filenames.ts";
+import { sanitizeFileName, uniqueFileName } from "./filenames.ts";
 import { reachHint } from "./hint.ts";
 import { commonDirectoryPrefix, dataRoot, relativeSegments } from "./restore.ts";
 import { passwordFromHash } from "./link.ts";
-import { type RecoveryManifest, renderManifest, validateManifest } from "./manifest.ts";
+import { escapeHtml, type RecoveryManifest, renderManifest, validateManifest } from "./manifest.ts";
 import { R2Backend, repositoryPrefix } from "./restic/r2.ts";
 import {
   openRepository,
@@ -13,6 +12,7 @@ import {
   type ResticRepository,
   type ResticSnapshot,
 } from "./restic/repository.ts";
+import { streamZip } from "./zip.ts";
 
 const gate = document.querySelector<HTMLElement>("#gate");
 const form = document.querySelector<HTMLFormElement>("#unlock-form");
@@ -24,7 +24,6 @@ const restoreSection = document.querySelector<HTMLElement>("#restore");
 const footerBackup = document.querySelector<HTMLElement>("#footer-backup");
 const footerUpdated = document.querySelector<HTMLTimeElement>("#footer-updated");
 const treeList = document.querySelector<HTMLUListElement>("#browser");
-const treeWrap = document.querySelector<HTMLElement>(".tree-wrap");
 const restoreButton = document.querySelector<HTMLButtonElement>("#restore-all");
 const restoreCancelButton = document.querySelector<HTMLButtonElement>("#restore-cancel");
 const restoreStatus = document.querySelector<HTMLDivElement>("#restore-status");
@@ -43,26 +42,12 @@ function errorMessage(error: unknown): string {
   return String(error);
 }
 
-function escapeHtml(value: unknown): string {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
 function formatBytes(bytes: number | undefined): string {
   if (bytes === undefined) return "";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GiB`;
-}
-
-function formatGigabytes(bytes: number): string {
-  const gb = bytes / 1_000_000_000;
-  return gb < 0.1 ? "<0.1 GB" : `${gb.toFixed(1)} GB`;
+  if (bytes < 1000) return `${bytes} B`;
+  if (bytes < 1_000_000) return `${(bytes / 1000).toFixed(1)} KB`;
+  if (bytes < 1_000_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
+  return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
 }
 
 function setStatus(message: string, tone: "info" | "error" | "ok" = "info"): void {
@@ -81,6 +66,14 @@ function setRestoreIndeterminate(): void {
   if (!restoreProgress) return;
   restoreProgress.hidden = false;
   restoreProgress.removeAttribute("value");
+}
+
+function isBusy(): boolean {
+  if (restoreBusy || restoring || downloading) {
+    setRestoreStatus("Another download is already running; wait for it to finish.", "error");
+    return true;
+  }
+  return false;
 }
 
 async function loadManifest(): Promise<RecoveryManifest | null> {
@@ -155,8 +148,9 @@ async function loadRepository(keys: DataKeys): Promise<void> {
   const estimate = latest.summary?.total_bytes_processed;
   if (restoreButton) {
     restoreButton.textContent = estimate !== undefined && estimate > 0
-      ? `Download all (${formatGigabytes(estimate)})`
+      ? `Download all (${formatBytes(estimate)})`
       : "Download all";
+    restoreButton.disabled = !supportsDirectoryPicker();
   }
   entriesByPath = new Map();
   await renderTree();
@@ -274,20 +268,22 @@ const SKIP_EXISTING_NOTE =
   "name is overwritten. You can stop and run it again.";
 
 async function download(entry: ResticDirEntry): Promise<void> {
-  if (!repository) return;
+  if (!repository || isBusy()) return;
+  downloading = true;
   const file: ResticFile = {
     path: entry.path,
     blobs: entry.blobs ?? [],
     size: entry.size ?? 0,
   };
   const name = sanitizeFileName(entry.path.split("/").pop() || "download");
-  setRestoreStatus(`Downloading ${name}...`);
 
   const picker = (
     window as unknown as {
       showSaveFilePicker?: (options: { suggestedName: string }) => Promise<FileHandle>;
     }
   ).showSaveFilePicker;
+
+  setRestoreStatus(picker ? `Choose where to save ${name}...` : `Downloading ${name}...`);
 
   try {
     if (picker) {
@@ -314,7 +310,18 @@ async function download(entry: ResticDirEntry): Promise<void> {
       }
       if (file.size === undefined || file.size === 0) {
         const chunks: Uint8Array[] = [];
-        for await (const chunk of repository.readFileChunks(file)) chunks.push(chunk);
+        let buffered = 0;
+        for await (const chunk of repository.readFileChunks(file)) {
+          buffered += chunk.length;
+          if (buffered > MAX_BUFFERED_DOWNLOAD) {
+            throw new Error(
+              `file is larger than the ${
+                formatBytes(MAX_BUFFERED_DOWNLOAD)
+              } browser download limit; open this page in Chrome to save it`,
+            );
+          }
+          chunks.push(chunk);
+        }
         const blob = new Blob(chunks as BlobPart[]);
         const url = URL.createObjectURL(blob);
         const anchor = document.createElement("a");
@@ -348,6 +355,8 @@ async function download(entry: ResticDirEntry): Promise<void> {
       return;
     }
     setRestoreStatus(`Download failed: ${errorMessage(error)}`, "error");
+  } finally {
+    downloading = false;
   }
 }
 
@@ -360,6 +369,7 @@ async function download(entry: ResticDirEntry): Promise<void> {
 
 let restoring = false;
 let restoreBusy = false;
+let downloading = false;
 let restoreStop = false;
 
 async function ensureDirectory(
@@ -376,8 +386,11 @@ async function ensureDirectory(
 async function existingFile(directory: DirectoryHandle, name: string): Promise<File | null> {
   try {
     return await (await directory.getFileHandle(name)).getFile();
-  } catch {
-    return null; // Missing files are the normal case.
+  } catch (error) {
+    // Only a genuinely missing file means this run creates it; any other error
+    // must not make Stop delete a file that was already there.
+    if (error instanceof Error && error.name === "NotFoundError") return null;
+    throw error;
   }
 }
 
@@ -423,29 +436,55 @@ async function restoreInto(
   setRestoreIndeterminate();
   setRestoreStatus("Starting download...");
 
+  const MAX_CONSECUTIVE_FAILURES = 20;
   let done = 0;
   let written = 0;
   let skipped = 0;
   let doneBytes = 0;
+  let failures = 0;
+  let consecutiveFailures = 0;
+  let lastStatusAt = 0;
   const problems: string[] = [];
+  // Sanitized names can collide (a:b and a_b, or two names sharing the first
+  // 200 bytes). Claim one output name per directory so a later file is never
+  // mistaken for an earlier one by the size-only skip check.
+  const claimedByDirectory = new Map<string, Set<string>>();
+
+  const recordFailure = (message: string): void => {
+    failures++;
+    if (problems.length < 10) problems.push(message);
+  };
+
+  const statusThrottled = (message: string): void => {
+    const now = performance.now();
+    if (now - lastStatusAt < 500) return;
+    lastStatusAt = now;
+    setRestoreStatus(message);
+  };
 
   try {
     for await (const file of files) {
       if (restoreStop) break;
-      if (problems.length >= 20 && written === 0) {
-        problems.push("stopping early: nothing has succeeded yet");
-        break;
-      }
       try {
         const segments = relativeSegments(prefix, file.path);
-        const name = segments.pop() ?? "";
+        const directoryKey = segments.join("/");
+        let claimed = claimedByDirectory.get(directoryKey);
+        if (!claimed) {
+          claimed = new Set();
+          claimedByDirectory.set(directoryKey, claimed);
+        }
+        const name = uniqueFileName(claimed, segments.pop() ?? "");
         const displayPath = `${segments.length > 0 ? segments.join("/") + "/" : ""}${name}`;
         const directory = await ensureDirectory(root, segments);
         const existing = await existingFile(directory, name);
+        // existingFile returns null only for NotFoundError, so only a file this
+        // run creates may be removed on stop or failure.
+        const created = existing === null;
         if (existing && file.size !== undefined && existing.size === file.size) {
           skipped++;
           done++;
-          setRestoreStatus(
+          consecutiveFailures = 0;
+          statusThrottled(
             `Checking ${displayPath} — ${done} files checked, ${skipped} already there...`,
           );
           continue;
@@ -461,32 +500,39 @@ async function restoreInto(
           if (restoreStop) {
             // abort() keeps a pre-existing file; only remove what this run made.
             await writable.abort?.().catch(() => undefined);
-            if (existing === null) await directory.removeEntry(name).catch(() => undefined);
+            if (created) await directory.removeEntry(name).catch(() => undefined);
             break;
           }
           await writable.close();
         } catch (error) {
           await writable.abort?.().catch(() => undefined);
+          if (created) await directory.removeEntry(name).catch(() => undefined);
           throw error;
         }
 
         written++;
         done++;
         doneBytes += file.size ?? 0;
-        setRestoreStatus(
+        consecutiveFailures = 0;
+        statusThrottled(
           `Downloading ${displayPath} — ${written} files downloaded (${
             formatBytes(doneBytes)
           }), ${skipped} already there...`,
         );
       } catch (error) {
-        problems.push(`${file.path}: ${errorMessage(error)}`);
+        recordFailure(`${file.path}: ${errorMessage(error)}`);
+        consecutiveFailures++;
+        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+          recordFailure(`stopping early: ${MAX_CONSECUTIVE_FAILURES} failures in a row`);
+          break;
+        }
       }
     }
   } catch (error) {
-    problems.push(`could not read the backup: ${errorMessage(error)}`);
+    recordFailure(`could not read the backup: ${errorMessage(error)}`);
   } finally {
     restoring = false;
-    if (restoreButton) restoreButton.disabled = false;
+    if (restoreButton) restoreButton.disabled = !supportsDirectoryPicker();
     if (restoreCancelButton) restoreCancelButton.hidden = true;
     if (restoreProgress) {
       restoreProgress.hidden = true;
@@ -498,11 +544,8 @@ async function restoreInto(
   const summary = restoreStop
     ? `Stopped: ${written} files downloaded (${summaryBytes}), ${skipped} already there.`
     : `Downloaded ${written} files (${summaryBytes}), skipped ${skipped} already there.`;
-  if (problems.length > 0) {
-    setRestoreStatus(
-      `${summary} ${problems.length} file(s) failed; first: ${problems[0]}`,
-      "error",
-    );
+  if (failures > 0) {
+    setRestoreStatus(`${summary} ${failures} file(s) failed; first: ${problems[0]}`, "error");
   } else {
     setRestoreStatus(summary, "ok");
   }
@@ -514,7 +557,7 @@ async function startStreamingRestore(
   confirmMessage: string,
 ): Promise<void> {
   const repo = repository;
-  if (!repo || restoreBusy || restoring) return;
+  if (!repo || isBusy()) return;
   if (!supportsDirectoryPicker()) {
     setRestoreStatus(
       `${FOLDER_PICKER_HELP} Use a folder Download button for a zip instead.`,
@@ -560,70 +603,48 @@ async function restoreFolder(folderPath: string): Promise<void> {
   );
 }
 
-function concatenateChunks(chunks: Uint8Array[]): Uint8Array {
-  const length = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-  const data = new Uint8Array(length);
-  let offset = 0;
-  for (const chunk of chunks) {
-    data.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return data;
-}
-
-function zipFiles(entries: Record<string, Uint8Array>): Promise<Uint8Array> {
-  return new Promise((resolve, reject) => {
-    zip(entries, { level: 0 }, (error, data) => {
-      if (error) reject(error);
-      else resolve(data);
-    });
-  });
-}
-
 async function downloadFolderZip(folderPath: string): Promise<void> {
   const repo = repository;
   const current = snapshot;
-  if (!repo || !current || restoreBusy || restoring) return;
+  if (!repo || !current || isBusy()) return;
   restoreBusy = true;
   const name = folderPath.split("/").pop() || folderPath;
   try {
     const prefix = folderPath.split("/").slice(0, -1).join("/");
-    const entries: Record<string, Uint8Array> = {};
+    // Same name claim as a direct restore: two restic names that sanitize alike
+    // must not overwrite each other inside the archive.
+    const claimed = new Set<string>();
     let done = 0;
-    let totalBytes = 0;
-    for await (const file of repo.walkFiles(current, folderPath)) {
-      if (file.size !== undefined) {
-        totalBytes += file.size;
-        if (totalBytes > MAX_ZIP_BYTES) {
-          setRestoreStatus(
+    let declaredBytes = 0;
+    const files = (async function* () {
+      for await (const file of repo.walkFiles(current, folderPath)) {
+        declaredBytes += file.size ?? 0;
+        if (declaredBytes > MAX_ZIP_BYTES) {
+          throw new Error(
             `This folder is over ${
               formatBytes(MAX_ZIP_BYTES)
-            }. The browser zip download is capped; use Chrome, Edge, or Brave with File System Access enabled to save it directly.`,
-            "error",
+            }; the browser zip fallback is capped. Use Chrome, Edge, or Brave with File System Access enabled to save it directly.`,
           );
-          return;
         }
+        const segments = relativeSegments(prefix, file.path);
+        const leaf = uniqueFileName(claimed, segments.pop() ?? "");
+        const path = [...segments, leaf].join("/");
+        done++;
+        if (done === 1 || done % 10 === 0) {
+          setRestoreStatus(
+            `Building ${name}.zip... ${done} files, ${formatBytes(declaredBytes)}`,
+          );
+        }
+        yield { path, chunks: repo.readFileChunks(file) };
       }
-      const path = relativeSegments(prefix, file.path).join("/");
-      const chunks: Uint8Array[] = [];
-      for await (const chunk of repo.readFileChunks(file)) chunks.push(chunk);
-      entries[path] = concatenateChunks(chunks);
-      done++;
-      if (done === 1 || done % 10 === 0) {
-        setRestoreStatus(
-          `Building ${name}.zip... ${done} files, ${formatBytes(totalBytes)}`,
-        );
-      }
-    }
+    })();
+    const chunks = await streamZip(files, { maxBytes: MAX_ZIP_BYTES });
     if (done === 0) {
       setRestoreStatus(`There are no files in ${name}/.`, "error");
       return;
     }
-    setRestoreStatus(`Compressing ${name}.zip...`);
-    const zipped = await zipFiles(entries);
-    for (const key of Object.keys(entries)) delete entries[key];
     const url = URL.createObjectURL(
-      new Blob([zipped.buffer as ArrayBuffer], { type: "application/zip" }),
+      new Blob(chunks as BlobPart[], { type: "application/zip" }),
     );
     const anchor = document.createElement("a");
     anchor.href = url;
@@ -677,6 +698,13 @@ async function unlock(password: string): Promise<void> {
   gate?.remove();
   if (unlockedRoot) unlockedRoot.hidden = false;
   if (restoreSection) restoreSection.hidden = false;
+  // The gate held the only live region, so announce the change by moving focus
+  // to the account header a keyboard or screen-reader user lands on.
+  const heading = manifestRoot?.querySelector<HTMLElement>("h2");
+  if (heading) {
+    heading.tabIndex = -1;
+    heading.focus();
+  }
   await repositoryLoad;
 }
 
@@ -758,17 +786,17 @@ if (!secure) {
 }
 
 void (async () => {
+  // Strip the password before anything else, including a network probe or an
+  // early return, so it never sits in the address bar or a history entry.
+  const fromLink = passwordFromHash(location.hash);
+  if (fromLink) history.replaceState(null, "", location.pathname + location.search);
   if (!secure) return;
   if (!(await blobExists())) {
     if (unlockButton) unlockButton.disabled = true;
     setStatus("This page is not set up yet: no recovery data has been published.", "error");
     return;
   }
-  const fromLink = passwordFromHash(location.hash);
   if (!fromLink) return;
-  // Strip the password before the (slow) key derivation, so it never sits
-  // in the address bar or in a history entry the next person can read.
-  history.replaceState(null, "", location.pathname + location.search);
   setStatus("Opening the link from the letter...");
   try {
     await unlock(fromLink);

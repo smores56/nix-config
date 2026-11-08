@@ -1,11 +1,12 @@
 import { beforeAll, describe, it as test } from "jsr:@std/testing/bdd";
 import { expect } from "jsr:@std/expect";
-import { LocalBackend } from "./backend.ts";
+import { LocalBackend, type ResticBackend } from "./backend.ts";
 import {
   isSafeName,
   openRepository,
   type ResticFile,
   type ResticRepository,
+  sortSnapshots,
 } from "./repository.ts";
 
 const fixture = new URL("../../test-fixtures/restic", import.meta.url).pathname;
@@ -106,5 +107,47 @@ describe("restic repository reader", () => {
     expect(isSafeName("..")).toBe(false);
     expect(isSafeName("a/b")).toBe(false);
     expect(isSafeName("a\0b")).toBe(false);
+  });
+});
+
+class RecordingBackend implements ResticBackend {
+  readonly calls: string[] = [];
+
+  constructor(private readonly inner: ResticBackend) {}
+
+  read(path: string, offset?: number, length?: number): Promise<Uint8Array> {
+    this.calls.push(`read ${path}`);
+    return this.inner.read(path, offset, length);
+  }
+
+  list(prefix: string): Promise<string[]> {
+    this.calls.push(`list ${prefix}`);
+    return this.inner.list(prefix);
+  }
+}
+
+describe("repository opening", () => {
+  test("lists snapshots before reading the index files", async () => {
+    const recorder = new RecordingBackend(backend);
+    await openRepository(recorder, password);
+    const snapshotsAt = recorder.calls.indexOf("list snapshots/");
+    const indexAt = recorder.calls.indexOf("list index/");
+    expect(snapshotsAt).toBeGreaterThanOrEqual(0);
+    expect(indexAt).toBeGreaterThan(snapshotsAt);
+  });
+
+  test("orders snapshots by instant, not by text", () => {
+    const older = { id: "older", time: "2024-03-31T01:30:00+01:00", tree: "x", paths: [] };
+    const newer = { id: "newer", time: "2024-03-31T01:00:00+00:00", tree: "x", paths: [] };
+    expect(sortSnapshots([older, newer]).map((snapshot) => snapshot.id)).toEqual([
+      "newer",
+      "older",
+    ]);
+  });
+
+  test("parks unreadable times after dated snapshots", () => {
+    const bad = { id: "bad", time: "not-a-date", tree: "x", paths: [] };
+    const good = { id: "good", time: "2024-01-01T00:00:00Z", tree: "x", paths: [] };
+    expect(sortSnapshots([bad, good]).map((snapshot) => snapshot.id)).toEqual(["good", "bad"]);
   });
 });

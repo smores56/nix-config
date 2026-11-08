@@ -61,7 +61,6 @@ type BlobLocation = {
   offset: number;
   length: number;
   uncompressed?: number;
-  type: string;
 };
 
 type IndexFile = {
@@ -262,6 +261,27 @@ export class ResticRepository {
   }
 }
 
+/**
+ * Newest first. Snapshot times are RFC3339 with an offset, so comparing the
+ * text can pick the wrong one around a DST change; compare the instants and
+ * fall back to the text only when a time is unreadable.
+ */
+export function sortSnapshots(snapshots: ResticSnapshot[]): ResticSnapshot[] {
+  const instant = (value: string): number | null => {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? null : parsed;
+  };
+  return [...snapshots].sort((a, b) => {
+    const aTime = instant(a.time);
+    const bTime = instant(b.time);
+    if (aTime === null && bTime === null) return b.time.localeCompare(a.time);
+    if (aTime === null) return 1;
+    if (bTime === null) return -1;
+    if (aTime !== bTime) return bTime - aTime;
+    return b.time.localeCompare(a.time);
+  });
+}
+
 export async function openRepository(
   backend: ResticBackend,
   password: string,
@@ -284,17 +304,40 @@ export async function openRepository(
       : "";
     throw new Error(`unable to open restic repository${detail}`);
   }
+  const key: MasterKey = master;
 
   const config = decodeJson<ResticConfig>(
-    openWithMaster(await backend.read("config"), master),
+    openWithMaster(await backend.read("config"), key),
   );
   if (config.version !== 1 && config.version !== 2) {
     throw new Error(`unsupported restic repository version: ${config.version}`);
   }
 
+  // restic's format doc requires the snapshot list to be collected before the
+  // index: a snapshot written by a backup that is still running may otherwise
+  // be newer than the index files this reader has already loaded, and its tree
+  // blob would be missing from the index.
+  const snapshots: ResticSnapshot[] = [];
+  for (const snapshotPath of (await backend.list("snapshots/")).filter(isStorageId)) {
+    try {
+      const plain = maybeZstd(openWithMaster(await backend.read(snapshotPath), key));
+      const snapshot = decodeJson<Omit<ResticSnapshot, "id">>(plain);
+      if (typeof snapshot.tree !== "string" || typeof snapshot.time !== "string") {
+        continue;
+      }
+      snapshots.push({
+        id: snapshotPath.split("/").pop() ?? snapshotPath,
+        ...snapshot,
+        paths: Array.isArray(snapshot.paths) ? snapshot.paths : [],
+      });
+    } catch {
+      // Skip an unreadable snapshot; the remaining ones are still usable.
+    }
+  }
+
   const indexFiles: Array<{ id: string; body: IndexFile }> = [];
   for (const indexPath of (await backend.list("index/")).filter(isStorageId)) {
-    const plain = maybeZstd(openWithMaster(await backend.read(indexPath), master));
+    const plain = maybeZstd(openWithMaster(await backend.read(indexPath), key));
     indexFiles.push({
       id: indexPath.split("/").pop() ?? indexPath,
       body: decodeJson<IndexFile>(plain),
@@ -311,30 +354,9 @@ export async function openRepository(
           offset: blob.offset,
           length: blob.length,
           uncompressed: blob.uncompressed_length,
-          type: blob.type,
         });
       }
     }
   }
-
-  const snapshots: ResticSnapshot[] = [];
-  for (const snapshotPath of (await backend.list("snapshots/")).filter(isStorageId)) {
-    try {
-      const plain = maybeZstd(openWithMaster(await backend.read(snapshotPath), master));
-      const snapshot = decodeJson<Omit<ResticSnapshot, "id">>(plain);
-      if (typeof snapshot.tree !== "string" || typeof snapshot.time !== "string") {
-        continue;
-      }
-      snapshots.push({
-        id: snapshotPath.split("/").pop() ?? snapshotPath,
-        ...snapshot,
-        paths: Array.isArray(snapshot.paths) ? snapshot.paths : [],
-      });
-    } catch {
-      // Skip an unreadable snapshot; the remaining ones are still usable.
-    }
-  }
-  snapshots.sort((a, b) => b.time.localeCompare(a.time));
-
-  return new ResticRepository(backend, master, config, index, snapshots);
+  return new ResticRepository(backend, key, config, index, sortSnapshots(snapshots));
 }
