@@ -839,7 +839,7 @@ caught the same night.
 <!-- manual-step: secret/calibre-password -->
 
 OPDS password for the single `smores56` user, user-readable, from
-`secrets/smortress.yaml`. The service re-applies it on every start, and the
+`secrets/common.yaml`. The service re-applies it on every start, and the
 agent VM hands it in as `/run/secrets/calibre-password` for `calibredb`
 against the Content server. Rotating is: edit this key, rebuild,
 `systemctl --user restart calibre-server` (a rebuild does not restart a user
@@ -1059,13 +1059,14 @@ run above is the proof.
 
 #### calibre-password
 
-The single `smores56` OPDS account, in `secrets/smortress.yaml`.
+The single `smores56` OPDS account, in `secrets/common.yaml` and declared in
+`modules/nixos/secrets-common.nix`.
 `modules/features/calibre.nix` re-applies the password in `ExecStartPre` on
 every start of the user unit `calibre-server`, and a rebuild does not restart
 a user unit whose definition did not change:
 
 ```sh
-sops secrets/smortress.yaml          # replace calibre-password
+sops secrets/common.yaml          # replace calibre-password
 sudo nixos-rebuild switch            # redeploys /run/secrets/calibre-password
 systemctl --user restart calibre-server
 ```

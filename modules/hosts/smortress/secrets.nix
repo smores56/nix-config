@@ -8,12 +8,6 @@
     # Shared by OpenTofu and the email alert sender.
     cloudflare-api-token = { };
     cloudflared-credentials = { };
-    # Read by the user's calibre-server unit and handed into the guest (agentVm.secrets).
-    calibre-password = {
-      owner = config.machine.username;
-      mode = "0400";
-    };
-
     restic-password = { };
     r2-access-key-id = { };
     r2-secret-access-key = { };
