@@ -82,7 +82,8 @@ The page always opens the latest snapshot. `Restore all files` walks it and
 writes every file into a folder the operator picks (`src/restore.ts` strips the
 snapshot's shared root, so the folder starts at `photos/`). Each folder row also
 has a `Download` button: Chromium writes just that folder into the chosen
-directory, while other browsers download it as an in-memory zip.
+directory, while other browsers download it as an in-memory zip. A folder
+download walks only that folder's restic tree, not the rest of the snapshot.
 Each file streams through
 restic blob by blob, so memory stays at one blob whatever the total size, and
 a file already present with the same size is skipped, which makes a stopped run

@@ -211,6 +211,7 @@ button.secondary:hover {
 
 .page-header {
   flex: none;
+  text-align: center;
 }
 
 .manifest {
@@ -229,12 +230,14 @@ button.secondary:hover {
 
 .page-header .panel-head {
   padding: 0 0 0.55rem;
+  border-bottom: 0;
 }
 
 .page-header .account-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
   gap: 0 1.25rem;
+  justify-items: center;
   padding: 0.55rem 0 0.75rem;
 }
 

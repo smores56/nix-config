@@ -534,8 +534,7 @@ async function restoreFolder(folderPath: string): Promise<void> {
     setRestoreStatus(`Reading the file list for ${name}/...`);
     let files: ResticFile[];
     try {
-      const all = await repo.walk(current);
-      files = all.filter((file) => file.path.startsWith(`${folderPath}/`));
+      files = await repo.walkDirectory(current, folderPath);
     } catch (error) {
       setRestoreStatus(`Could not read the snapshot: ${errorMessage(error)}`, "error");
       return;
@@ -581,8 +580,7 @@ async function downloadFolderZip(folderPath: string): Promise<void> {
     setRestoreStatus(`Reading the file list for ${name}/...`);
     let files: ResticFile[];
     try {
-      const all = await repo.walk(current);
-      files = all.filter((file) => file.path.startsWith(`${folderPath}/`));
+      files = await repo.walkDirectory(current, folderPath);
     } catch (error) {
       setRestoreStatus(`Could not read the snapshot: ${errorMessage(error)}`, "error");
       return;

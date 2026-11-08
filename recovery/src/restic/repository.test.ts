@@ -1,7 +1,12 @@
 import { beforeAll, describe, it as test } from "jsr:@std/testing/bdd";
 import { expect } from "jsr:@std/expect";
 import { LocalBackend } from "./backend.ts";
-import { isSafeName, openRepository, type ResticFile, type ResticRepository } from "./repository.ts";
+import {
+  isSafeName,
+  openRepository,
+  type ResticFile,
+  type ResticRepository,
+} from "./repository.ts";
 
 const fixture = new URL("../../test-fixtures/restic", import.meta.url).pathname;
 const backend = new LocalBackend(fixture);
@@ -41,6 +46,22 @@ describe("restic repository reader", () => {
     expect(names.some((name) => name.endsWith("compressible.txt"))).toBe(true);
     expect(names.some((name) => name.endsWith("binary.bin"))).toBe(true);
     expect(names.some((name) => name.endsWith("large.bin"))).toBe(true);
+  });
+
+  test("walks only a selected directory", async () => {
+    const all = await repo.walk(repo.snapshots[0]);
+    const nested = all.find((file) => file.path.endsWith("documents/nested/hello.txt"));
+    if (!nested) throw new Error("fixture documents/nested/hello.txt missing");
+    const marker = "/documents/";
+    const documents = nested.path.slice(
+      0,
+      nested.path.lastIndexOf(marker) + "/documents".length,
+    );
+    const scoped = await repo.walkDirectory(repo.snapshots[0], documents);
+    expect(scoped.length).toBeGreaterThan(0);
+    expect(scoped.every((file) => file.path.startsWith(`${documents}/`))).toBe(true);
+    expect(scoped.some((file) => file.path.endsWith("documents/nested/hello.txt"))).toBe(true);
+    expect(scoped.some((file) => file.path.endsWith("family-access-sentinel.txt"))).toBe(false);
   });
 
   test("restores the sentinel and nested text exactly", async () => {

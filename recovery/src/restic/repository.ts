@@ -1,12 +1,12 @@
 import { decompress } from "fzstd";
 import type { ResticBackend } from "./backend.ts";
 import {
+  type MasterKey,
   maybeZstd,
   openKeyFile,
   openWithMaster,
-  verifySha256,
-  type MasterKey,
   type ResticKeyFile,
+  verifySha256,
 } from "./crypto.ts";
 
 export type ResticConfig = {
@@ -143,6 +143,16 @@ export class ResticRepository {
   }
 
   async walk(snapshot: ResticSnapshot): Promise<ResticFile[]> {
+    return this.walkTree(snapshot.tree, "");
+  }
+
+  /** Walk one directory subtree instead of the whole snapshot. */
+  async walkDirectory(snapshot: ResticSnapshot, directory: string): Promise<ResticFile[]> {
+    const { treeId, prefix } = await this.resolveDirectory(snapshot, directory);
+    return this.walkTree(treeId, prefix);
+  }
+
+  private async walkTree(rootTreeId: string, rootPrefix: string): Promise<ResticFile[]> {
     const files: ResticFile[] = [];
     const stack = new Set<string>();
 
@@ -170,14 +180,14 @@ export class ResticRepository {
       }
     };
 
-    await visit(snapshot.tree, "", 0);
+    await visit(rootTreeId, rootPrefix, 0);
     return files;
   }
 
-  async listDirectory(
+  private async resolveDirectory(
     snapshot: ResticSnapshot,
     directory: string,
-  ): Promise<ResticDirEntry[]> {
+  ): Promise<{ treeId: string; prefix: string }> {
     const segments = directory.split("/").filter(Boolean);
     let treeId = snapshot.tree;
     let prefix = "";
@@ -191,6 +201,14 @@ export class ResticRepository {
       treeId = treeIdOf(node, prefix ? `${prefix}/${segment}` : segment);
       prefix = prefix ? `${prefix}/${segment}` : segment;
     }
+    return { treeId, prefix };
+  }
+
+  async listDirectory(
+    snapshot: ResticSnapshot,
+    directory: string,
+  ): Promise<ResticDirEntry[]> {
+    const { treeId, prefix } = await this.resolveDirectory(snapshot, directory);
 
     const tree = await this.readTree(treeId);
     return (tree.nodes ?? [])
@@ -201,9 +219,7 @@ export class ResticRepository {
         path: prefix ? `${prefix}/${node.name}` : node.name,
         type: node.type as "file" | "dir",
         size: typeof node.size === "number" ? node.size : 0,
-        ...(node.type === "file"
-          ? { blobs: Array.isArray(node.content) ? node.content : [] }
-          : {}),
+        ...(node.type === "file" ? { blobs: Array.isArray(node.content) ? node.content : [] } : {}),
       }));
   }
 
@@ -250,10 +266,9 @@ export async function openRepository(
     }
   }
   if (!master) {
-    const detail =
-      keyPaths.length === 1 && lastKeyError instanceof Error
-        ? `: ${lastKeyError.message}`
-        : "";
+    const detail = keyPaths.length === 1 && lastKeyError instanceof Error
+      ? `: ${lastKeyError.message}`
+      : "";
     throw new Error(`unable to open restic repository${detail}`);
   }
 
