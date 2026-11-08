@@ -23,12 +23,10 @@ const manifestRoot = document.querySelector<HTMLElement>("#manifest");
 const restoreSection = document.querySelector<HTMLElement>("#restore");
 const footerBackup = document.querySelector<HTMLElement>("#footer-backup");
 const footerUpdated = document.querySelector<HTMLTimeElement>("#footer-updated");
-const browserStatus = document.querySelector<HTMLDivElement>("#browser-status");
 const treeList = document.querySelector<HTMLUListElement>("#browser");
 const treeWrap = document.querySelector<HTMLElement>(".tree-wrap");
 const restoreButton = document.querySelector<HTMLButtonElement>("#restore-all");
 const restoreCancelButton = document.querySelector<HTMLButtonElement>("#restore-cancel");
-const restoreBlurb = document.querySelector<HTMLElement>("#restore-blurb");
 const restoreStatus = document.querySelector<HTMLDivElement>("#restore-status");
 const restoreProgress = document.querySelector<HTMLProgressElement>("#restore-progress");
 const unlockedRoot = document.querySelector<HTMLElement>("#unlocked");
@@ -71,12 +69,6 @@ function setStatus(message: string, tone: "info" | "error" | "ok" = "info"): voi
   if (!status) return;
   status.textContent = message;
   status.dataset.tone = tone;
-}
-
-function setBrowserStatus(message: string, tone: "info" | "error" | "ok" = "info"): void {
-  if (!browserStatus) return;
-  browserStatus.textContent = message;
-  browserStatus.dataset.tone = tone;
 }
 
 function setRestoreStatus(message: string, tone: "info" | "error" | "ok" = "info"): void {
@@ -131,7 +123,7 @@ function snapshotTime(time: string): string {
 }
 
 async function loadRepository(keys: DataKeys): Promise<void> {
-  setBrowserStatus("Opening the backup...");
+  setRestoreStatus("Opening the backup...");
   const prefix = repositoryPrefix(keys.restic.repository, keys.r2.bucket);
   const backend = new R2Backend({ ...keys.r2, prefix });
   const repo = await openRepository(backend, keys.restic.password);
@@ -157,7 +149,7 @@ async function loadRepository(keys: DataKeys): Promise<void> {
   }
   entriesByPath = new Map();
   await renderTree();
-  setBrowserStatus("");
+  setRestoreStatus("");
 }
 
 function treeMessage(message: string, tone: "info" | "error" = "info"): string {
@@ -276,7 +268,7 @@ async function download(entry: ResticDirEntry): Promise<void> {
     size: entry.size ?? 0,
   };
   const name = sanitizeFileName(entry.path.split("/").pop() || "download");
-  setBrowserStatus(`Downloading ${name}...`);
+  setRestoreStatus(`Downloading ${name}...`);
 
   const picker = (
     window as unknown as {
@@ -299,7 +291,7 @@ async function download(entry: ResticDirEntry): Promise<void> {
       }
     } else {
       if (file.size !== undefined && file.size > MAX_BUFFERED_DOWNLOAD) {
-        setBrowserStatus(
+        setRestoreStatus(
           `This file is ${formatBytes(file.size)}. The browser download fallback is limited to ${
             formatBytes(MAX_BUFFERED_DOWNLOAD)
           }; open this page in Chrome to save files of this size.`,
@@ -336,13 +328,13 @@ async function download(entry: ResticDirEntry): Promise<void> {
         setTimeout(() => URL.revokeObjectURL(url), 60_000);
       }
     }
-    setBrowserStatus(`Downloaded ${name}.`, "ok");
+    setRestoreStatus(`Downloaded ${name}.`, "ok");
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      setBrowserStatus("Download cancelled.");
+      setRestoreStatus("Download cancelled.");
       return;
     }
-    setBrowserStatus(`Download failed: ${errorMessage(error)}`, "error");
+    setRestoreStatus(`Download failed: ${errorMessage(error)}`, "error");
   }
 }
 
@@ -417,7 +409,6 @@ async function restoreInto(
   if (restoreCancelButton) restoreCancelButton.hidden = false;
   setRestoreIndeterminate();
   setRestoreStatus("Starting download...");
-  setBrowserStatus("");
 
   let done = 0;
   let written = 0;
@@ -502,7 +493,6 @@ async function restoreInto(
   } else {
     setRestoreStatus(summary, "ok");
   }
-  setBrowserStatus("");
 }
 
 async function restoreAll(): Promise<void> {
@@ -674,7 +664,7 @@ async function unlock(password: string): Promise<void> {
     repository = null;
     snapshot = null;
     const message = reachHint(errorMessage(error), location.origin);
-    setBrowserStatus(`Could not open the backup: ${message}`, "error");
+    setRestoreStatus(`Could not open the backup: ${message}`, "error");
     if (treeList) treeList.innerHTML = treeMessage("The backup could not be opened.", "error");
     if (footerBackup) footerBackup.textContent = "unavailable";
     if (restoreButton) {
@@ -751,9 +741,7 @@ restoreCancelButton?.addEventListener("click", () => {
   setRestoreStatus("Stopping after the current file...");
 });
 
-const canStream = supportsDirectoryPicker();
-if (restoreBlurb) restoreBlurb.hidden = canStream;
-if (restoreButton) restoreButton.disabled = !canStream;
+if (restoreButton) restoreButton.disabled = !supportsDirectoryPicker();
 
 if (!secure) {
   if (unlockButton) unlockButton.disabled = true;

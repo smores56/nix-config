@@ -44,8 +44,6 @@
         </header>
 
         <section id="restore" class="files-panel" aria-label="Backup files" hidden>
-          <div id="browser-status" class="status" role="status" aria-live="polite"></div>
-
           <div class="tree-wrap">
             <ul id="browser" class="tree" aria-label="Backup files"></ul>
           </div>
@@ -53,7 +51,7 @@
           <div class="restore-bar">
             <button type="button" id="restore-all">Download all (calculating size...)</button>
             <button type="button" id="restore-cancel" class="secondary" hidden>Stop</button>
-            <p id="restore-blurb" class="restore-blurb" hidden>
+            <p id="restore-blurb" class="restore-blurb">
               Full download needs a browser that can stream files, e.g. Google Chrome
             </p>
             <progress id="restore-progress" max="1" value="0" hidden></progress>
