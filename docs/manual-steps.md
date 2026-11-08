@@ -1448,14 +1448,32 @@ git worktree registered under `~/dev` is recreated with `worktrees prune` then
 A microvm.nix NixOS guest that starts at boot (`microvm@agent.service`).
 `agent-vm-prep` assembles the guest's home view on a tmpfs before each start,
 and virtiofsd writes every guest file as you (guest root included), so guest
-root cannot plant root-owned, setuid-root or device files on the host. The
-sops secrets in `agentVm.secrets` are copied into a read-only share at
-`/run/secrets`; the others never leave the host. The guest builds with its own
-store layered over the host's, never the host daemon.
+root cannot plant root-owned, setuid-root or device files on the host. Credentials are not handed into the guest. Each one is a **capability**
+(`agentVm.capabilities`): a host systemd unit holds the sops value in a
+systemd credential and exposes a loopback broker; the guest keeps a stable
+loopback port, gets a dummy client value where a tool insists on one, and
+reads `/run/agent-vm/capabilities.json`/`.env` for the addresses. The
+capabilities are Neuralwatt (streaming), TinyFish, Calibre (basic auth),
+Immich, the memory MCP token, and (on smorespro) the smortress SSH relay;
+only the GitHub PAT and the commit-signing key still travel in
+`agentVm.secrets`. Rotating any mediated secret is: edit the sops entry,
+`sudo systemctl restart agent-broker-<name>` on the host. The guest and its
+sessions are untouched. `agent-vm-verify` asserts every broker is loopback,
+every tap relay targets it, and no mediated secret is under
+`/run/agent-vm/secrets`.
+
+The guest closure and the active userland can lag the host. `agent-sandbox
+status` (`just agent-vm-status`) prints the booted, current and expected
+closures and the number of human sessions. `agent-vm-update` (`just
+agent-vm-update`, as root) switches userland in place when only packages or
+units changed, and for a kernel/early-boot change reboots the guest after
+waiting for human ptys (or with `--force`); the writable store layer is
+recreated on that restart. A timer logs drift every 15 minutes.
 
 Network: tap `vm-agent` (host `10.77.0.1`, guest `10.77.0.2`). The guest
-reaches the internet through NAT and, on the host, only the LLM and memory
-ports, through socket proxies; it cannot reach other host services or the LAN.
+reaches the internet through NAT and, on the host, only the LLM port and its
+capability brokers, through socket proxies; it cannot reach other host
+services or the LAN.
 In the other direction the host reaches only the assistant port on the tap,
 through the `agent-vm-ingress` relays (see [smortress/agent](#smortressagent)).
 

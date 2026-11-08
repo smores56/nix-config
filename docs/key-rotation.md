@@ -332,3 +332,10 @@ the app again and check `recovery.sammohr.dev` before printing any letter.
    the device could read the vault.
 6. On the phone, use the account console to remote-wipe and remove the device
    from Bitwarden and Cloudflare sessions.
+
+Agent VM capabilities live in `agentVm.capabilities`
+(`modules/nixos/agent-vm.nix`). Each broker reads its secret from a systemd
+credential, so rotating one is: update the sops entry, then
+`sudo systemctl restart agent-broker-<name>`. The guest keeps a dummy value and
+no restart or new session is needed. The GitHub PAT and the commit-signing key
+still travel in `agentVm.secrets` and rotate with the usual hand-in flow.
