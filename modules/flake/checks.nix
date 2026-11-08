@@ -1119,6 +1119,16 @@ in
                   !guest.services.openssh.settings.PasswordAuthentication
                   && !guest.services.openssh.settings.AllowAgentForwarding
                   && guest.services.openssh.authorizedKeysFiles == [ "/run/secrets/agent-vm-authorized-keys" ];
+                # `%h` feeds cloudflared, which needs the public hostname; a bare
+                # "smortress" fails DNS. The server guest gets no alias at all.
+                sshAlias =
+                  let
+                    text = guest.environment.etc."agent-vm/ssh_config".text;
+                  in
+                  if lib.elem "server" host.machine.profiles then
+                    !lib.hasInfix "Host smortress" text
+                  else
+                    lib.hasInfix "HostName ssh.sammohr.dev" text;
                 denies = lib.all (d: lib.elem d host.agentVm.deny) [
                   ".config/sops"
                   ".local/share/keyrings"
@@ -1185,6 +1195,7 @@ in
               && f.guestBuilds
               && f.storeSafe
               && f.keyOnly
+              && f.sshAlias
               && f.denies
               && f.narrowRw
               && f.ingress

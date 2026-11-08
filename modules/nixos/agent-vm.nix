@@ -228,7 +228,7 @@ let
   guestSshConfig = ''
     ${lib.optionalString (!isServer) ''
       Host smortress
-        HostName smortress
+        HostName ssh.sammohr.dev
         User ${user}
         ProxyCommand cloudflared-access ssh --hostname %h
         IdentityFile /run/secrets/github-personal-signing-key
