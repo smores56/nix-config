@@ -94,7 +94,7 @@ in
       enable = true;
       autoEnable = true;
       polarity = "dark";
-      base16Scheme = "${pkgs.base16-schemes}/share/themes/rose-pine-moon.yaml";
+      base16Scheme = "${pkgs.base16-schemes}/share/themes/shadesmear-dark.yaml";
 
       fonts.monospace = {
         package = config.user.fontPackage;
