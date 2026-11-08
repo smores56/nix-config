@@ -9,7 +9,7 @@ mkdir -p -- "$cache"
 work=$(mktemp -d "$cache/theme-preview.XXXXXX")
 trap 'rm -rf -- "$work"' EXIT
 
-schemes_out=$(nix build --no-link --print-out-paths --inputs-from "$repo" nixpkgs#base16-schemes)
+schemes_out=$(nix build --no-link --print-out-paths --inputs-from "$repo" 'nixpkgs#base16-schemes^out')
 schemes=$schemes_out/share/themes
 [ -d "$schemes" ] || {
   printf 'theme-preview: no base16 schemes at %s\n' "$schemes" >&2
@@ -25,7 +25,7 @@ done
 
 if fzf=$(command -v fzf); then
   :
-elif fzf_out=$(nix build --no-link --print-out-paths --inputs-from "$repo" nixpkgs#fzf 2>/dev/null); then
+elif fzf_out=$(nix build --no-link --print-out-paths --inputs-from "$repo" 'nixpkgs#fzf^out' 2>/dev/null); then
   fzf=$fzf_out/bin/fzf
 else
   printf 'theme-preview: cannot obtain fzf\n' >&2
