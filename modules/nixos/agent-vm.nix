@@ -384,7 +384,10 @@ let
         ];
         trusted-users = [ user ];
       };
-      environment.systemPackages = [ guestSsh ];
+      environment.systemPackages = [
+        guestSsh
+        pkgs.calibre
+      ];
       environment.etc."agent-vm/ssh_config".text = guestSshConfig;
 
       # Files a tool must rewrite under a read-only share get a guest-local copy bound over them.
@@ -505,6 +508,7 @@ in
         "tinyfish-api-key"
         "immich-agent-api-key"
         "cloudflare-access-ssh-token"
+        "calibre-password"
       ];
       guestWritable = [ ".config/maki/pack-lock.json.lock" ];
     };

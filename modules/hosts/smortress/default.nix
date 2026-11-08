@@ -43,21 +43,6 @@ in
     vaultSync.device = "smortress";
     # The assistant gateway binds loopback in the guest; the host proxies it to the tunnel.
     agentVm.ingressPorts = [ ports.agent ];
-    # The media and ingest trees the bwrap sandbox gave agents; photos and the vault stay out.
-    agentVm.extraShares = [
-      {
-        path = "/var/lib/data/music";
-        readOnly = false;
-      }
-      {
-        path = "/var/lib/data/books";
-        readOnly = false;
-      }
-      {
-        path = "/var/lib/agent";
-        readOnly = false;
-      }
-    ];
     # restic runs as root and reads smores-owned sources.
     systemd.tmpfiles.rules = [
       # 0751: PrivateUsers services (Immich) map smores:users to nobody, so they need traverse only.
@@ -68,7 +53,6 @@ in
       "d /var/lib/data/books 0775 smores users -"
       "d /var/lib/data/wallpapers 0775 smores users -"
       "d /var/lib/agent 0775 smores users -"
-      "d /var/lib/agent/books-ingest 0775 smores users -"
     ];
     exposeSsh.enable = true;
     # Work checkouts inside these roots are refused by the server's employer check.
