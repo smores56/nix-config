@@ -14,6 +14,7 @@
   homeModules = [
     ./sops.nix
     ./memory.nix
+    ../../features/chat-proxy.nix
   ];
 
   user.aiProfile = "work";
