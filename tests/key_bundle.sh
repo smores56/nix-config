@@ -23,11 +23,11 @@ mode() {
 }
 
 src="$root/src"
-mkdir -p "$src/.config/ssh-sk/k1" "$src/dev"
+mkdir -p "$src/.config/ssh-sk/k1" "$src/wip"
 ssh-keygen -q -t ed25519 -N "" -C "test k1 sudo" -f "$src/.config/ssh-sk/k1/sudo"
 ssh-keygen -q -t ed25519 -N "" -C "not the same key" -f "$root/wrong"
-printf '#!/bin/sh\necho hi\n' >"$src/dev/setup-yubikey.sh"
-chmod 700 "$src/dev/setup-yubikey.sh"
+printf '#!/bin/sh\necho hi\n' >"$src/wip/setup-yubikey.sh"
+chmod 700 "$src/wip/setup-yubikey.sh"
 
 pubkeys="$root/pubkeys"
 printf 'k1/sudo\t%s\n' "$(awk '{print $1" "$2}' "$src/.config/ssh-sk/k1/sudo.pub")" >"$pubkeys"
@@ -63,7 +63,7 @@ for forbidden in keys.age "root/"; do
     *"$forbidden"*) fail "bundle contains forbidden $forbidden" ;;
   esac
 done
-for wanted in home/.config/ssh-sk/k1/sudo home/dev/setup-yubikey.sh; do
+for wanted in home/.config/ssh-sk/k1/sudo home/wip/setup-yubikey.sh; do
   grep -qF "$wanted" <<<"$contents" || fail "bundle is missing $wanted"
 done
 
@@ -73,7 +73,25 @@ run_restore "$dst" "$archive" >/dev/null
 cmp "$src/.config/ssh-sk/k1/sudo" "$dst/.config/ssh-sk/k1/sudo" \
   || fail "restored handle differs"
 [ "$(mode "$dst/.config/ssh-sk/k1/sudo")" = "-rw-------" ] || fail "handle is not 0600"
-[ "$(mode "$dst/dev/setup-yubikey.sh")" = "-rw-------" ] || fail "script is not 0600"
+[ "$(mode "$dst/wip/setup-yubikey.sh")" = "-rw-------" ] || fail "script is not 0600"
+
+# A bundle made before the ~/dev -> ~/wip rename still restores the script, but under ~/wip.
+legacy="$root/legacy"
+mkdir -p "$legacy"
+tar -C "$legacy" -xzf "$archive"
+mkdir -p "$legacy/home/dev"
+mv "$legacy/home/wip/setup-yubikey.sh" "$legacy/home/dev/setup-yubikey.sh"
+rmdir "$legacy/home/wip"
+(
+  cd "$legacy"
+  find . -type f ! -name MANIFEST ! -name SHA256SUMS -print0 | sort -z | xargs -0 -r sha256sum
+) >"$legacy/SHA256SUMS"
+tar -C "$legacy" -czf "$root/legacy.tar.gz" .
+dst_legacy="$root/dst-legacy"
+mkdir -p "$dst_legacy"
+run_restore "$dst_legacy" "$root/legacy.tar.gz" --no-verify >/dev/null
+[ "$(mode "$dst_legacy/wip/setup-yubikey.sh")" = "-rw-------" ] || fail "legacy script is not 0600"
+[ ! -e "$dst_legacy/dev" ] || fail "legacy script restored under ~/dev"
 
 if run_restore "$dst" "$archive" >/dev/null 2>&1; then
   fail "overwrote a handle without --force"

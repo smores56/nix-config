@@ -1037,7 +1037,7 @@ in
               config.flake.homeConfigurations."smores@smorespro".config.xdg.configFile.niri-config.source;
           }
       # The Mac agent VM launcher as built: its ssh must never pick up the host's identities,
-      # forwards or config, and the deny list must reach the planner (sdlc #427).
+      # forwards or config, and the allowlist must reach the planner (sdlc #450).
       //
         lib.optionalAttrs
           (config.flake.homeConfigurations."sam@smoreswork".activationPackage.system == system)

@@ -3,7 +3,7 @@
 The view is a tmpfs that one virtiofs share exports to the guest: planned shares are
 non-recursive bind mounts (read-only ones remounted read-only, enforced by the host
 kernel), plain files are read-only file binds, and symlinks are recreated. Anything the
-plan leaves out, the deny list above all, has no path in the view at all.
+plan leaves out, everything outside the allowlist, has no path in the view at all.
 
 Runs as root from agent-vm-prep.service (modules/nixos/agent-vm.nix): `share_planner.py ... | agent_view.py --home H --view V`.
 """

@@ -375,7 +375,8 @@ in
       memoryPackage
     ];
 
-    # Agent sessions live in the guest's XDG dirs, so resuming one goes through the VM too.
+    # Sessions live in the shared ~/.local/state/maki, so the host and the guest resume each
+    # other's; the sandbox launcher keeps an agent session inside the VM while it runs.
     user.shellAbbrs.ms = "agent-sandbox pick maki-sessions maki-session-resume";
     # Plain `maki` stays the unsandboxed binary on the host.
     user.shellAbbrs.a = "agent-sandbox maki";

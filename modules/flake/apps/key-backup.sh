@@ -167,8 +167,8 @@ fi
 # Keep it non-executable and review it after a restore.
 
 script_state=no
-if [ -f "$HOME/dev/setup-yubikey.sh" ]; then
-  install -D -m 600 "$HOME/dev/setup-yubikey.sh" "$stage/home/dev/setup-yubikey.sh"
+if [ -f "$HOME/wip/setup-yubikey.sh" ]; then
+  install -D -m 600 "$HOME/wip/setup-yubikey.sh" "$stage/home/wip/setup-yubikey.sh"
   script_state=yes
 fi
 
