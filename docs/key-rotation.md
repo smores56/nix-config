@@ -133,6 +133,11 @@ PIN change keeps both, so log out as step 2 says.
 
 ## smoreswork (work Mac)
 
+`sam` is not an administrator on this Mac. `sudo` prompts for the smartcard PIN
+and then fails at `sam is not in the sudoers file`; do not use it.
+`sc_auth pair`/`unpair` and any `sudo` command below are IT/MDM actions.
+Only k2 is paired; use k2 for login, or ask IT to pair k1/k3.
+
 Same design as Linux: the launchd `piv-agent` (`~/.ssh/piv-agent.sock`, never
 forwarded) holds the OpenSC provider, `piv-ensure` loads it with one masked
 dialog per login session, and `sudo-agent` holds only the three sudo handles
@@ -151,12 +156,13 @@ sops keys, not a YubiKey.
    default is off; if MDM sets `checkCertificateTrust`, self-signed 9a/9d
    certificates may need an exception:
    ```sh
-   sudo defaults read /Library/Preferences/com.apple.security.smartcard checkCertificateTrust
+   defaults read /Library/Preferences/com.apple.security.smartcard checkCertificateTrust
    ```
-2. Pair the 9a identity for **each** key:
+2. Ask IT to pair the 9a identity for **each** key:
    ```sh
    sc_auth pair -u sam -h <9a hash from sc_auth identities>
    ```
+   `sam` cannot run this; pairing requires administrator credentials.
    macOS also wants a 9d certificate for the keychain/volume. If a key does
    not have one, generate it (operator, per key, output path required):
    ```sh
@@ -164,7 +170,7 @@ sops keys, not a YubiKey.
    ykman piv certificates generate 9d /tmp/9d-kN.pub --subject "CN=smores 9d kN" --valid-days 3650
    ```
    macOS uses 9a for authentication and 9d for the keychain/volume. Do not
-   enable FileVault smart-card unlock. Repeat until `sc_auth list -u sam`
+   enable FileVault smart-card unlock. Ask IT to repeat until `sc_auth list -u sam`
    shows all three 9a hashes.
 3. Test SSH with each key:
    ```sh
@@ -192,7 +198,7 @@ sops keys, not a YubiKey.
 5. Do not enable FileVault smart-card unlock. Verify:
    ```sh
    fdesetup status
-   sudo fdesetup list
+   # ask IT/MDM to run: sudo fdesetup list
    ```
 6. Bitwarden/1Password isolation: keep Bitwarden in its own browser profile with
    no 1Password extension, keep its vault timeout short with biometrics on, and
@@ -315,7 +321,7 @@ the app again and check `recovery.sammohr.dev` before printing any letter.
    `cloudflared` credentials.
 2. If a YubiKey was with the device, remove its three public entries as in
    “Lost or stolen key” and remove it from Bitwarden's 2FA.
-3. `smoreswork` only: unpair the smart card (`sc_auth unpair -u sam -h <hash>`
+3. `smoreswork` only: ask IT/MDM to unpair the smart card (`sc_auth unpair -u sam -h <hash>`
    for each hash in `sc_auth list -u sam`), remove the machine's
    `sudo-agent` socket, and have the employer rotate the FileVault
    recovery key and institutional recovery material — the repo does not own

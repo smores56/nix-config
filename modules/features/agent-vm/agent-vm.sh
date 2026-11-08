@@ -1,5 +1,6 @@
-# agent-sandbox (macOS): run an agent inside a headless Tart macOS VM (sdlc #386).
+# agent-sandbox (macOS): run an agent inside a headless Tart macOS VM (sdlc #427).
 #   agent-sandbox provision   one-time: clone the image, harden the guest, install the login key
+#   agent-sandbox provision-nix  opt-in: install a guest-local Nix store and use it
 #   agent-sandbox restart     stop the VM so the next launch re-plans the shares
 #   agent-sandbox stop
 #   agent-sandbox [cmd...]    default `claude`; runs in the guest at the same $PWD
@@ -13,6 +14,7 @@ ca_bundle=@caBundle@
 deny=(@deny@)
 rw=(@rw@)
 extra=(@extra@)
+guest_config=(@guestConfig@)
 hand_in=(@handIn@)
 
 # State stays under ~/Library, which is never shared, so the guest cannot read its own login key.
@@ -21,6 +23,10 @@ key="$state/id_ed25519"
 known="$state/known_hosts"
 lock="$state/lock"
 guest_home=/Users/sam
+nix_marker="$state/guest-nix"
+nix_mode=0
+[ -f "$nix_marker" ] && nix_mode=1
+host_store=1
 # Virtualization.framework accepts 12 directory-sharing devices, and the multi-directory device
 # that carries the read-only shares is one of them.
 max_devices=12
@@ -95,7 +101,7 @@ dir_args() {
   jq -r --arg h "$HOME" '.shares[]
     | if .mode == "rw" then "--dir=\($h)/\(.rel):tag=\(.tag)"
       else "--dir=\(.tag):\($h)/\(.rel):ro" end' "$1"
-  printf -- '--dir=/nix/store:ro,tag=nix-store\n'
+  [ "$host_store" -eq 1 ] && [ "$nix_mode" -eq 0 ] && printf -- '--dir=/nix/store:ro,tag=nix-store\n'
   local i=0
   for p in "${extra[@]}"; do
     printf -- '--dir=%s:ro,tag=extra%d\n' "$p" "$i"
@@ -125,7 +131,7 @@ start_vm() {
 setup_guest() {
   local ip="$1" shares="$2" fresh="$3"
   {
-    printf 'set -e\nh=%q\n' "$guest_home"
+    printf 'set -e\nh=%q\nnix_mode=%q\n' "$guest_home" "$nix_mode"
     cat <<'EOF'
 mounted() { mount | grep -q " on $(cd "$1" 2>/dev/null && pwd -P) "; }
 # Make $1 a symlink to $2, clearing what an earlier plan left there: a mount, an empty directory
@@ -143,7 +149,9 @@ place_mount() {
   mkdir -p "$1"
   mounted "$1" || sudo -n mount_virtiofs "$2" "$1"
 }
-mounted /nix/store || sudo -n mount_virtiofs nix-store /nix/store
+if [ "$nix_mode" != 1 ]; then
+  mounted /nix/store || sudo -n mount_virtiofs nix-store /nix/store
+fi
 EOF
     local i=0
     for p in "${extra[@]}"; do
@@ -175,6 +183,15 @@ EOF
       guest_ssh -o BatchMode=yes "admin@$ip" "tar -C $(printf %q "$guest_home") -xf -"
   fi
 
+  # Copy the host CLI config into a guest-local tree. The host paths are denied, so this is the
+  # only copy the guest sees; the guest can write its own config without touching the host.
+  local conf="$guest_home/Library/Application Support/agent-config" rel
+  for rel in "${guest_config[@]}"; do
+    [ -e "$HOME/$rel" ] || continue
+    tar -C "$HOME" -cf - -- "$rel" |
+      guest_ssh -o BatchMode=yes "admin@$ip" "mkdir -p $(printf %q "$conf") && tar -C $(printf %q "$conf") -xf -"
+  done
+
   # Hand in only the git identities the agent signs and pushes with, at the path the host's
   # git and gh config name (sops-nix's generation dir, which the shared ~/.config/sops-nix
   # link points at); the rest of the sops output stays on the host.
@@ -190,6 +207,7 @@ EOF
 }
 
 provision() {
+  [ -f "$nix_marker" ] && die "guest Nix is provisioned; re-clone the guest to reset"
   mkdir -p "$state"
   [ -f "$key" ] || ssh-keygen -q -t ed25519 -N '' -C 'agent-sandbox host->guest' -f "$key"
   [ -n "$(vm_field Name)" ] || tart clone "$image" "$vm"
@@ -237,8 +255,63 @@ EOF
   echo "agent-sandbox: provisioned $vm; the first launch boots it with the shares"
 }
 
+# Opt-in: install a guest-local Nix store. The default launcher keeps the host store read-only
+# at /nix/store; after this succeeds, the marker makes the launcher use the guest profile and
+# store. This is the only way to build Darwin outputs in the guest without forwarding the host
+# nix-daemon.
+provision_nix() {
+  [ -f "$nix_marker" ] && die "guest Nix is already provisioned"
+  mkdir -p "$state"
+  for _ in $(seq 120); do mkdir "$lock" 2>/dev/null && break; sleep 1; done
+  [ -d "$lock" ] || die "another launch holds $lock"
+  trap 'rmdir "$lock" 2>/dev/null || true' EXIT
+  [ -f "$key" ] && [ -n "$(vm_field Name)" ] || die "not provisioned; run: agent-sandbox provision"
+  stop_vm
+  host_store=0
+  local fresh="$state/plan.json" shares="$state/vm-shares.json" tmp ip
+  tmp=$(mktemp "$state/plan.XXXXXX")
+  mkdir -p "$HOME/.local/state/agent" "$HOME/.cache/agent"
+  plan >"$tmp"
+  mv "$tmp" "$fresh"
+  jq '{shares}' "$fresh" >"$shares"
+  start_vm "$shares"
+  ip=$(wait_for_guest)
+
+  # The launcher's synthetic /nix line owns the mountpoint; the installer needs to create its
+  # own APFS volume, so remove the line and reboot before installing.
+  guest_ssh -o BatchMode=yes "admin@$ip" "sudo -n sed -i '' '/^nix[[:space:]]/d' /etc/synthetic.conf" || die "could not remove the launcher's synthetic /nix entry"
+  guest_ssh -o BatchMode=yes "admin@$ip" 'sudo -n shutdown -r now' >/dev/null 2>&1 || true
+  sleep 15
+  ip=$(wait_for_guest)
+
+  guest_ssh -t "admin@$ip" "curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm --extra-conf 'experimental-features = nix-command flakes'" || die "guest Nix install failed"
+  guest_ssh -o BatchMode=yes "admin@$ip" 'sudo -n sh -c "printf \"min-free = 5368709120\nmax-free = 21474836480\nauto-optimise-store = true\n\" >> /etc/nix/nix.conf"' || true
+  guest_ssh -o BatchMode=yes "admin@$ip" 'HOME=/Users/sam /nix/var/nix/profiles/default/bin/nix profile install nixpkgs#git nixpkgs#gh nixpkgs#jq nixpkgs#docker-client nixpkgs#ripgrep nixpkgs#claude-code nixpkgs#cacert nixpkgs#google-cloud-sdk nixpkgs#kubectl' || die "guest tool install failed"
+  guest_ssh -o BatchMode=yes "admin@$ip" 'HOME=/Users/sam /nix/var/nix/profiles/default/bin/nix --version' >/dev/null || die "guest Nix is not usable"
+
+  # Weekly GC as a system LaunchDaemon; a headless guest has no Aqua session for a user agent.
+  guest_ssh -o BatchMode=yes "admin@$ip" 'sudo -n mkdir -p /Library/LaunchDaemons && sudo -n tee /Library/LaunchDaemons/local.nix-gc.plist >/dev/null <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>local.nix-gc</string>
+<key>ProgramArguments</key><array>
+<string>/nix/var/nix/profiles/default/bin/nix-collect-garbage</string>
+<string>--delete-older-than</string><string>14d</string>
+</array>
+<key>StartCalendarInterval</key><dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>3</integer></dict>
+</dict></plist>
+EOF
+sudo -n launchctl bootstrap system /Library/LaunchDaemons/local.nix-gc.plist' || true
+
+  touch "$nix_marker"
+  stop_vm
+  echo "agent-sandbox: guest Nix store provisioned; the next launch uses the guest profile"
+}
+
 case "${1:-}" in
   provision) provision; exit ;;
+  provision-nix) provision_nix; exit ;;
   stop) stop_vm; exit ;;
   restart) stop_vm; shift ;;
 esac
@@ -249,7 +322,14 @@ fresh="$state/plan.json"
 shares="$state/vm-shares.json"
 # Per-process temp file: concurrent launches each write a whole plan, then rename atomically.
 tmp=$(mktemp "$state/plan.XXXXXX")
+mkdir -p "$HOME/.local/state/agent" "$HOME/.cache/agent"
 plan >"$tmp"
+if [ "$nix_mode" -eq 1 ]; then
+  # The guest profile and Nix state belong to the guest store; the host's links would shadow
+  # them, and place_link() refuses a non-empty guest directory.
+  jq '(.shares |= map(select(.rel != ".nix-profile" and .rel != ".local/state/nix" and .rel != ".config/nix"))) | (.links |= map(select(.rel != ".nix-profile" and .rel != ".local/state/nix" and .rel != ".config/nix"))) | (.copies |= map(select(. != ".nix-profile" and . != ".local/state/nix" and . != ".config/nix")))' "$tmp" > "$tmp.filtered"
+  mv "$tmp.filtered" "$tmp"
+fi
 mv "$tmp" "$fresh"
 
 # One launcher at a time boots and prepares the guest; sessions themselves run concurrently.
@@ -274,11 +354,22 @@ while IFS= read -r root; do
   case "$PWD/" in "$HOME/$root/"*) cwd="$PWD" ;; esac
 done < <(jq -r '.shares[].rel' "$shares")
 sock="/tmp/agent-docker-$$.sock"
+conf="$guest_home/Library/Application Support/agent-config"
+if [ "$nix_mode" -eq 1 ]; then
+  ca_file="$guest_home/.nix-profile/etc/ssl/certs/ca-bundle.crt"
+else
+  ca_file="$ca_bundle"
+fi
+if [ "$nix_mode" -eq 1 ]; then
+  guest_path="$guest_home/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$guest_home/.local/state/agent/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+else
+  guest_path="$guest_path_prefix:$PATH"
+fi
 # The host's CA path comes from the nix installer under /nix/var, which the guest lacks.
-remote_cmd=$(printf 'export HOME=%q PATH=%q DOCKER_HOST=unix://%q SSL_CERT_FILE=%q NIX_SSL_CERT_FILE=%q; cd %q; exec' \
-  "$guest_home" "$guest_path_prefix:$PATH" "$sock" "$ca_bundle" "$ca_bundle" "$cwd")
+remote_cmd=$(printf 'export HOME=%q PATH=%q DOCKER_HOST=unix://%q DOCKER_CONFIG=%q GH_CONFIG_DIR=%q KUBECONFIG=%q CLOUDSDK_CONFIG=%q SSL_CERT_FILE=%q NIX_SSL_CERT_FILE=%q; cd %q; exec' \
+  "$guest_home" "$guest_path" "$sock" "$conf/.docker" "$conf/.config/gh" "$conf/.kube/config" "$conf/.config/gcloud" "$ca_file" "$ca_file" "$cwd")
 for a in "$@"; do remote_cmd+=" $(printf %q "$a")"; done
-# The forwarded Docker socket is an accepted risk (#386): containers can mount whatever Docker
+# The forwarded Docker socket is an accepted risk (#427): containers can mount whatever Docker
 # Desktop's File sharing allows. ExitOnForwardFailure also makes ssh wait for the forward before
 # the command starts, so the agent never races an absent socket.
 forward=()

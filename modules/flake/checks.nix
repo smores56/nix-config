@@ -396,6 +396,23 @@ in
             ]
         );
 
+        # The work Mac is a standard user: no local vault, no Syncthing peer, no fuse-t, and
+        # `v` must open the vault on smortress rather than run local sudo.
+        work-unprivileged =
+          let
+            work = config.flake.homeConfigurations."sam@smoreswork".config;
+            devices = import ../syncthing-devices.nix;
+          in
+          evalCheck "work-unprivileged" (
+            toString (
+              assert !(lib.any (p: lib.getName p == "vault") work.home.packages);
+              assert !(devices ? smoreswork);
+              assert !(lib.hasInfix "fuse-t" work.xdg.configFile."homebrew/Brewfile".text);
+              assert lib.hasPrefix "ssh -t smortress" work.user.shellAbbrs.v;
+              "ok"
+            )
+          );
+
         desktop-bindings = evalCheck "desktop-bindings" (
           toString (
             import ../../tests/shared_desktop_bindings.nix {
@@ -1020,7 +1037,7 @@ in
               config.flake.homeConfigurations."smores@smorespro".config.xdg.configFile.niri-config.source;
           }
       # The Mac agent VM launcher as built: its ssh must never pick up the host's identities,
-      # forwards or config, and the deny list must reach the planner (sdlc #386).
+      # forwards or config, and the deny list must reach the planner (sdlc #427).
       //
         lib.optionalAttrs
           (config.flake.homeConfigurations."sam@smoreswork".activationPackage.system == system)
@@ -1035,9 +1052,22 @@ in
               pkgs.runCommand "agent-vm-static-check" { nativeBuildInputs = [ pkgs.gnugrep ]; } ''
                 for opt in '-F /dev/null' 'IdentitiesOnly=yes' 'IdentityAgent=none' 'ForwardAgent=no' \
                   'PKCS11Provider=none' 'PermitLocalCommand=no' 'ProxyCommand=none' 'ControlPath=none' \
-                  'ExitOnForwardFailure=yes' 'deny=(Library .config/sops' '@sha256:'; do
+                  'ExitOnForwardFailure=yes' 'deny=(Library .cache/Bitwarden' '@sha256:'; do
                   grep -qF -- "$opt" ${launcher} || { echo "agent-vm launcher lacks: $opt" >&2; exit 1; }
                 done
+                for opt in '.config/sops' '.config/ssh-sk' '.ssh/google_compute_engine' \
+                  '.local/state/key-backup' '.local/share/memory' '.docker' 'Vault' 'Sync' \
+                  'provision-nix' 'guest-nix' 'min-free' 'nix-collect-garbage' 'claude-code' 'cacert' 'google-cloud-sdk' 'kubectl' \
+                  '.nix-profile' '.local/state/nix' '.config/nix'; do
+                  grep -qF -- "$opt" ${launcher} || { echo "agent-vm launcher lacks: $opt" >&2; exit 1; }
+                done
+                grep -qF 'deny=(Library .cache/Bitwarden .cache/cliphist .claude .config/Bitwarden .config/gh .config/gcloud .config/op .config/sops .config/ssh-sk .config/tutanota-desktop .docker .git-credentials .gnupg .kube .local/share/Bitwarden .local/share/memory .local/share/proton-pass-cli .local/state/harvest .local/state/key-backup .local/state/proton .local/state/syncthing .netrc .npmrc .op .pki .ssh/google_compute_engine .tart .Trash .zsh_history .bash_history Sync Vault)' ${launcher}
+                grep -qF 'guest_config=(.config/gh .config/gcloud .docker/config.json .kube)' ${launcher}
+                grep -qF 'DOCKER_CONFIG=' ${launcher}
+                grep -qF 'GH_CONFIG_DIR=' ${launcher}
+                grep -qF 'KUBECONFIG=' ${launcher}
+                grep -qF 'CLOUDSDK_CONFIG=' ${launcher}
+                grep -qF 'rw=(Blitzy repos dev .local/state/agent .cache/agent)' ${launcher}
                 # Tart's --ssh forwards the host agent into the guest.
                 if grep -qE 'tart run[^#]*--ssh' ${launcher}; then exit 1; fi
                 if grep -qE '^[^#]*ssh [^"]*-A( |$)' ${launcher}; then exit 1; fi
@@ -1098,6 +1128,19 @@ in
                   ".config/mozilla"
                   ".mozilla"
                   ".config/Bitwarden"
+                  ".cache/Bitwarden"
+                  ".local/share/Bitwarden"
+                  ".config/op"
+                  ".op"
+                  ".config/ssh-sk"
+                  ".local/share/memory"
+                  ".local/state/harvest"
+                  ".docker"
+                  ".netrc"
+                  ".npmrc"
+                  ".git-credentials"
+                  ".zsh_history"
+                  ".bash_history"
                   ".cache/cliphist"
                   ".gnupg"
                   ".local/share/vault"
