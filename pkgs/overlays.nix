@@ -155,6 +155,49 @@ system: [
       };
     });
 
+    # Upstream ships one source tree as both a calibre plugin and a standalone CLI. The agent
+    # VM uses the CLI, so patch only Royal Road to send the browser navigation headers its
+    # Cloudflare rules require; the nixpkgs release is older and fails on current story pages.
+    fanficfare = prev.python3Packages.buildPythonApplication rec {
+      pname = "fanficfare";
+      version = "4.63.0";
+      pyproject = true;
+
+      src = prev.fetchFromGitHub {
+        owner = "JimmXinu";
+        repo = "FanFicFare";
+        rev = "v${version}";
+        hash = "sha256-sYxOlTF20mx2q2ypLbO8f8c2jJXKVqI2H6+By4wjvxs=";
+      };
+
+      patches = [ ./fanficfare-secfetch.patch ];
+
+      nativeBuildInputs = [ prev.python3Packages.setuptools ];
+
+      propagatedBuildInputs = with prev.python3Packages; [
+        apsw
+        beautifulsoup4
+        brotli
+        chardet
+        cloudscraper
+        html2text
+        html5lib
+        requests
+        requests-file
+        urllib3
+      ];
+
+      doCheck = false;
+
+      meta = {
+        description = "Tool for downloading fanfiction to eBook formats";
+        homepage = "https://github.com/JimmXinu/FanFicFare";
+        license = prev.lib.licenses.gpl3;
+        mainProgram = "fanficfare";
+        platforms = prev.lib.platforms.unix;
+      };
+    };
+
     # Adds the user-presence check so sudo rejects a touchless signature even from a compromised
     # agent. Full buildRustPackage: overrideAttrs can't recompute cargoDeps after cargoHash changes.
     pam_rssh = prev.rustPlatform.buildRustPackage (finalAttrs: {

@@ -1,10 +1,9 @@
-# calibre + FanFicFare CLI (headless story downloads). Agents reach the library through the
-# Content server API as the writable OPDS account (modules/nixos/agent-vm.nix hands in the
+# calibre + the FanFicFare CLI (headless story downloads). Agents reach the library through
+# the Content server API as the writable OPDS account (modules/nixos/agent-vm.nix hands in the
 # password); no process writes the library behind the running server.
-# Install the FanFicFare plugin zip once:
-#   calibre-debug -c "from calibre.customize.ui import add_plugin; add_plugin('/tmp/FanFicFarePlugin.zip')"
-# Download (writes the epub to CWD, does not add it):
-#   calibre-debug --run-plugin FanFicFare -- --with-library "$HOME/Calibre Library" <story-url>
+# Agents use the guest's `fanficfare-download` wrapper (modules/nixos/agent-vm.nix), which
+# applies warning-free title pages and adds or replaces the EPUB in one step. FanFicFare is
+# the standalone CLI from pkgs/overlays.nix; it needs no calibre plugin.
 # Upstream: https://github.com/JimmXinu/FanFicFare
 {
   config,
@@ -61,7 +60,10 @@ in
   };
 
   config = {
-    home.packages = [ pkgs.calibre ];
+    home.packages = [
+      pkgs.calibre
+      pkgs.fanficfare
+    ];
 
     systemd.user.services.calibre-server = {
       Unit = {

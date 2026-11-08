@@ -446,6 +446,48 @@ let
       guestIngress = proxySockets "agent-vm-ingress" guestAddr (r: "127.0.0.1:${toString r.port}") (
         map (p: { port = p; target = p; }) cfg.ingressPorts
       );
+
+      # Site warning lists are metadata, not story content. This drops them from the
+      # generated title page; FanFicFare never put them in calibre tags.
+      fanficfareIni = pkgs.writeText "fanficfare-personal.ini" ''
+        [defaults]
+        titlepage_entries: seriesHTML,category,genre,language,characters,ships,status,datePublished,dateUpdated,dateCreated,rating,numChapters,numWords,publisher,description
+
+        [www.royalroad.com]
+        slow_down_sleep_time:1
+      '';
+
+      # One step for agents: download into a scratch directory, then add/replace through the
+      # broker-backed calibredb wrapper. Automerge keeps a re-download from duplicating a book.
+      fanficfareDownload = pkgs.writeShellApplication {
+        name = "fanficfare-download";
+        runtimeInputs = [
+          pkgs.coreutils
+          pkgs.fanficfare
+        ];
+        text = ''
+          set -euo pipefail
+
+          if [ $# -eq 0 ]; then
+            echo "usage: fanficfare-download <story-url>..." >&2
+            exit 2
+          fi
+
+          work=$(mktemp -d)
+          trap 'rm -rf "$work"' EXIT
+
+          ( cd "$work" && fanficfare -c ${fanficfareIni} "$@" )
+
+          shopt -s nullglob
+          epubs=("$work"/*.epub)
+          if [ ''${#epubs[@]} -eq 0 ]; then
+            echo "fanficfare-download: no EPUB written" >&2
+            exit 1
+          fi
+
+          ${guestCalibre}/bin/calibredb add --automerge overwrite "''${epubs[@]}"
+        '';
+      };
     in
     {
       microvm = {
@@ -592,6 +634,7 @@ let
       environment.systemPackages = [
         guestSsh
         guestCalibre
+        fanficfareDownload
       ];
       environment.etc."agent-vm/ssh_config".text = guestSshConfig;
 

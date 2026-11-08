@@ -1,0 +1,16 @@
+--- a/fanficfare/fetchers/base_fetcher.py
++++ b/fanficfare/fetchers/base_fetcher.py
+@@ -85,6 +85,13 @@
+             headers['Referer']=referer
+         if image is True:
+             headers["Accept"] = "image/*"
++        # Royal Road's Cloudflare rules gate HTML behind browser navigation
++        # headers; a bare requests GET gets a JS challenge instead of content.
++        if 'royalroad.com' in url:
++            headers['Sec-Fetch-Dest'] = 'image' if image else 'document'
++            headers['Sec-Fetch-Mode'] = 'no-cors' if image else 'navigate'
++            headers['Sec-Fetch-Site'] = 'same-origin' if referer else 'none'
++            headers['Upgrade-Insecure-Requests'] = '1'
+         # if "xf2test" in url:
+         #     import base64
+         #     base64string = base64.encodestring(b"sbreview2019:Fs2PwuVE9").replace(b'\n', b'')
