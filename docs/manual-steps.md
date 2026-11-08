@@ -808,6 +808,14 @@ and chat proxy then fail closed (the email OTP policy still serves humans). The
 no `cloudflare-apply` (the chat application's own policy change does); the
 `expiring_service_token_alert` notification covers expiry.
 
+Rotation and revocation: replace the two lines in the host's sops file, re-deploy
+it (`just switch smorespro`, or `just home-switch sam smoreswork`), then restart
+the unit so the clients re-read it: `systemctl --user restart chat-proxy` on
+NixOS, `launchctl kickstart -k gui/$(id -u)/org.nix-community.home.chat-proxy` on
+the Mac. Both clients
+read the token only at start, so a re-deploy alone leaves a running proxy sending
+the old value; a token deleted in the dashboard is rejected by the edge at once.
+
 ### github-repo-pat
 
 <!-- manual-step: secret/github-repo-pat -->
@@ -1159,7 +1167,7 @@ Tofu providers come from `tofu/versions.tf`; notification policies come from
 <!-- manual-step: provider/cloudflare -->
 
 The only OpenTofu provider. The zone `sammohr.dev` already lives in the account;
-OpenTofu manages a wildcard proxied CNAME, the `ssh`/`llm`/`memory` Access
+OpenTofu manages a wildcard proxied CNAME, the `ssh`/`llm`/`memory`/`chat` Access
 applications, the email allow-list and service-auth policies, and the
 tunnel-health and service-token-expiry notifications.
 

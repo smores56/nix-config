@@ -24,6 +24,10 @@ let
       admin off
     }
 
+    # Open WebUI serves relative paths, so the browser stays on this origin. Its rare absolute
+    # redirects would land on the public hostname and show the PIN page; rewriting Location is
+    # rejected because Caddy's RE2 cannot exclude Access's own login path and a blind rewrite
+    # loops on a revoked token.
     http://127.0.0.1:${toString port} {
       reverse_proxy https://chat.sammohr.dev {
         # Caddy forwards the incoming Host by default, so without this the edge sees 127.0.0.1
@@ -35,8 +39,8 @@ let
     }
   '';
 
-  # The unit names only this wrapper; the token is read at start, so a sops rotation needs no
-  # rebuild and the service definition never carries it.
+  # The unit names only this wrapper; the token is read at start, so a rotation needs no wrapper
+  # rebuild (re-deploy the secret, then restart the unit) and no unit ever holds the value.
   chatProxy = pkgs.writeShellApplication {
     name = "chat-proxy";
     runtimeInputs = [ pkgs.caddy ];

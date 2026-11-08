@@ -26,7 +26,8 @@ resource "cloudflare_zero_trust_access_policy" "email" {
   }
 }
 
-# Lets unattended `cloudflared access ssh/tcp` clients in without a browser login.
+# Lets unattended `cloudflared access ssh/tcp` clients and a blessed device's
+# chat proxy in without a browser login.
 resource "cloudflare_zero_trust_access_policy" "service_auth" {
   account_id = var.account_id
   name       = "service auth"
