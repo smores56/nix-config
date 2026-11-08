@@ -100,7 +100,10 @@ in
       "memory"
       "memory-mcp"
     ])
-    (group todo [ "todo.txt-cli" ])
+    (group todo [
+      "todo.txt-cli"
+      "tuxedo"
+    ])
     (group noVault [ "vault" ])
     (group harvest [ "harvest" ])
     (group "inherent: steam is a brew cask on the Mac" [ "steam" ])
