@@ -56,7 +56,7 @@ while IFS=' ' read -r target opts; do
     *,ro,*) [ "$writable" -eq 1 ] && fail "writable root is read-only: $rel" ;;
     *) [ "$writable" -eq 1 ] || fail "read-only root is writable: $rel" ;;
   esac
-done < <(findmnt -R -n -o TARGET,OPTIONS "$view")
+done < <(findmnt -R -l -n -o TARGET,OPTIONS "$view")
 
 # Writes land where they should, as the human.
 for rel in ".local/state/maki" ".local/logs/maki" "repos" "wip"; do
