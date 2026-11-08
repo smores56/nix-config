@@ -2,7 +2,8 @@
 # and runs the local LLM, Immich/Calibre, and the backup disk.
 let
   ports = import ../../ports.nix;
-  # ssh/llm/memory want an email allow-list plus a Service Auth policy for unattended clients.
+  # ssh/llm/memory/chat want an email allow-list plus a Service Auth policy: unattended clients
+  # authenticate with a token, and a blessed device's chat proxy skips the browser PIN page.
   serviceAuth = {
     enable = true;
     serviceAuth = true;
@@ -103,10 +104,11 @@ in
           protocol = "tcp";
           access = serviceAuth;
         };
-        # Human-facing PWA: Access plus its own login; no service token.
+        # Human-facing PWA: Access plus its own login; the service token lets a blessed
+        # device's chat proxy reach it without the PIN page.
         chat = {
           port = ports.openWebui;
-          access.enable = true;
+          access = serviceAuth;
         };
         # Human-facing assistant: Access plus the runtime's own pairing.
         agent = {

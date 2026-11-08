@@ -58,7 +58,7 @@ in
                 access = {
                   enable = lib.mkEnableOption "Cloudflare Access in front of this endpoint (account IdP, shared allow-list)";
                   serviceAuth = lib.mkEnableOption ''
-                    an additional Cloudflare Access Service Auth policy accepting any valid account service token. Set it for endpoints unattended clients reach (cloudflared access ssh/tcp) so they authenticate with a token minted in the dashboard instead of an IdP browser login; the email allow-list policy stays as a human fallback
+                    an additional Cloudflare Access Service Auth policy accepting any valid account service token. Set it for endpoints unattended clients reach, so they authenticate with a token minted in the dashboard instead of an IdP browser login: `cloudflared access ssh/tcp` and a blessed client's local chat proxy, whose browser cannot send service-token headers; the email allow-list policy stays as a human fallback
                   '';
                 };
               };

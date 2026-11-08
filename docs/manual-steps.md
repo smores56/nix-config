@@ -782,22 +782,39 @@ through an apply.
 
 <!-- manual-step: secret/cloudflare-access-ssh-token -->
 
-Per-host Cloudflare Access service token for `cloudflared access ssh`, exported
-as `TUNNEL_SERVICE_TOKEN_ID` and `TUNNEL_SERVICE_TOKEN_SECRET`. The value is two
-lines: the client ID, then the client secret. `cloudflared-access`
-(`modules/features/cloudflared.nix`) reads it only from the host's sops
-deployment: `/run/secrets/cloudflare-access-ssh-token` from sops-nix on NixOS,
-and the sops-nix user path on Darwin. A missing, unreadable or malformed file is
-a hard failure; there is no cache or password-manager fallback.
+Per-host Cloudflare Access service token: one credential behind two clients.
+`cloudflared-access` (`modules/features/cloudflared.nix`) reads it as
+`TUNNEL_SERVICE_TOKEN_ID` and `TUNNEL_SERVICE_TOKEN_SECRET` for
+`cloudflared access ssh`; `chat-proxy` (`modules/features/chat-proxy.nix`) reads
+it as `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` so the browser reaches
+`chat.sammohr.dev` without the Access one-time-PIN page. The value is two lines:
+the client ID, then the client secret. Both wrappers read it only from the
+host's sops deployment: `/run/secrets/cloudflare-access-ssh-token` from sops-nix
+on NixOS, and the sops-nix user path on Darwin. A missing, unreadable or
+malformed file is a hard failure in either; there is no cache or
+password-manager fallback.
 
 A NixOS declaration must hand the user access (`owner`/`mode`), because the
 proxy runs as the user; `modules/hosts/smorespro/secrets.nix` is the example.
 
 Mint one token per client machine under Zero Trust → Access → Service Auth, then
 paste both lines as `cloudflare-access-ssh-token` in that host's file
-(`secrets/smorespro.yaml`, `secrets/smoreswork.yaml`). The `service_auth` policy
-accepts any valid service token, so no `cloudflare-apply` is needed; the
+(`secrets/smorespro.yaml`, `secrets/smoreswork.yaml`). That single token makes
+the machine blessed: `cloudflared` and the chat proxy both read it, so the
+browser opens `http://127.0.0.1:8787` on that device. To revoke one machine,
+delete its token in Zero Trust → Access → Service Auth; its cloudflared forwards
+and chat proxy then fail closed (the email OTP policy still serves humans). The
+`service_auth` policy accepts any valid service token, so minting a token needs
+no `cloudflare-apply` (the chat application's own policy change does); the
 `expiring_service_token_alert` notification covers expiry.
+
+Rotation and revocation: replace the two lines in the host's sops file, re-deploy
+it (`just switch smorespro`, or `just home-switch sam smoreswork`), then restart
+the unit so the clients re-read it: `systemctl --user restart chat-proxy` on
+NixOS, `launchctl kickstart -k gui/$(id -u)/org.nix-community.home.chat-proxy` on
+the Mac. Both clients
+read the token only at start, so a re-deploy alone leaves a running proxy sending
+the old value; a token deleted in the dashboard is rejected by the edge at once.
 
 ### github-repo-pat
 
@@ -1160,8 +1177,8 @@ Manual, one-time (dashboard):
   `cloudflared-credentials`).
 - Mint the Access service token(s) used by unattended clients; the service-auth
   policy references them. OpenTofu does not create tokens. One
-  `any_valid_service_token` policy covers `ssh`, `llm`, and `memory`, so any
-  service token in the account reaches all three endpoints.
+  `any_valid_service_token` policy covers `ssh`, `llm`, `memory`, and `chat`, so
+  any service token in the account reaches all four endpoints.
 - Onboard the Email Service sending subdomain (`send.sammohr.dev`) and add its
   SPF/DKIM/DMARC records. Verify the destination (`sam@sammohr.dev`). Leave the
   apex DMARC record alone (`p=reject`).
@@ -1843,6 +1860,12 @@ the port the ingress returns 502.
 behind Access plus Open WebUI's own email/password login. It is the phone PWA
 and the desktop web app; SQLite, uploads and the workspace live under
 `/var/lib/data/open-webui`, so restic covers them with the durable tree.
+
+A blessed device does not see Access at all: its local chat proxy
+(`modules/features/chat-proxy.nix`) adds the device's service token and listens
+on `http://127.0.0.1:8787`. Open that URL **on the blessed device itself**; the
+listener is loopback-only. Other devices use `https://chat.sammohr.dev` and the
+email OTP prompt as before.
 
 Two OpenAI-compatible backends are declared in `modules/nixos/open-webui.nix`,
 index-aligned with their keys: local llama.cpp (`qwen3.8-27b`, keyless, works

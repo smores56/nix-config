@@ -26,7 +26,8 @@ resource "cloudflare_zero_trust_access_policy" "email" {
   }
 }
 
-# Lets unattended `cloudflared access ssh/tcp` clients in without a browser login.
+# Lets unattended `cloudflared access ssh/tcp` clients and a blessed device's
+# chat proxy in without a browser login.
 resource "cloudflare_zero_trust_access_policy" "service_auth" {
   account_id = var.account_id
   name       = "service auth"
@@ -110,7 +111,8 @@ resource "cloudflare_zero_trust_access_application" "memory" {
   }
 }
 
-# Access email allow-list is the human policy; Open WebUI's own login is a second layer.
+# Access email allow-list is the human policy; Open WebUI's own login is a second layer. The
+# service-auth policy lets a blessed device's local chat proxy in without the browser PIN page.
 resource "cloudflare_zero_trust_access_application" "chat" {
   account_id       = var.account_id
   name             = "chat"
@@ -122,6 +124,10 @@ resource "cloudflare_zero_trust_access_application" "chat" {
     {
       id         = cloudflare_zero_trust_access_policy.email.id
       precedence = 1
+    },
+    {
+      id         = cloudflare_zero_trust_access_policy.service_auth.id
+      precedence = 2
     },
   ]
 
