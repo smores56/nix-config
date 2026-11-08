@@ -172,8 +172,7 @@ EOF
       done
   } | guest_ssh -o BatchMode=yes "admin@$ip" 'sh -s'
 
-  # .claude.json and Finder/CoreFoundation files are guest-local state, not context. The git
-  # excludes file is a plain host file, so the guest gets the same copy at the same path.
+  # .claude.json and Finder/CoreFoundation files are guest-local state, not context.
   local copies=()
   while IFS= read -r rel; do
     case "$rel" in .claude.json | .DS_Store | .CFUserTextEncoding) continue ;; esac
