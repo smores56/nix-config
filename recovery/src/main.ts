@@ -417,6 +417,7 @@ async function restoreInto(
   if (restoreCancelButton) restoreCancelButton.hidden = false;
   setRestoreIndeterminate();
   setRestoreStatus("Starting download...");
+  setBrowserStatus("");
 
   let done = 0;
   let written = 0;
@@ -434,12 +435,15 @@ async function restoreInto(
       try {
         const segments = relativeSegments(prefix, file.path);
         const name = segments.pop() ?? "";
+        const displayPath = `${segments.length > 0 ? segments.join("/") + "/" : ""}${name}`;
         const directory = await ensureDirectory(root, segments);
         const existing = await existingFile(directory, name);
         if (existing && file.size !== undefined && existing.size === file.size) {
           skipped++;
           done++;
-          setRestoreStatus(`${done} files checked, ${skipped} already there...`);
+          setRestoreStatus(
+            `Checking ${displayPath} — ${done} files checked, ${skipped} already there...`,
+          );
           continue;
         }
 
@@ -466,10 +470,9 @@ async function restoreInto(
         done++;
         doneBytes += file.size ?? 0;
         setRestoreStatus(
-          `${written} files downloaded (${formatBytes(doneBytes)}), ${skipped} already there...`,
-        );
-        setBrowserStatus(
-          `Downloading ${segments.length > 0 ? segments.join("/") + "/" : ""}${name}`,
+          `Downloading ${displayPath} — ${written} files downloaded (${
+            formatBytes(doneBytes)
+          }), ${skipped} already there...`,
         );
       } catch (error) {
         problems.push(`${file.path}: ${errorMessage(error)}`);
