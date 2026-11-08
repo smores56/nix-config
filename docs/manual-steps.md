@@ -1947,6 +1947,17 @@ GitHub PAT and signing key are the #459 residuals. The personal skills are
 every `~/.agents/skills` entry except `brain`, linked at start. `agent-sandbox
 status` and `sudo agent-vm-update` manage the guest update state.
 
+**Neuralwatt subscription.** The account is on Standard monthly: $50 prepaid
+per month for 6.25 kWh at $8/kWh, with same-rate overage past the allowance.
+Energy billing is the right shape for this workload: 5.45B tokens were mostly
+prompt-cache reads, so the last month cost $30.30 in billed energy against
+about $124 at nominal token prices. The assistant shares `neuralwatt-api-key`
+with Maki, so usage is not separable per client; the account-level monthly
+allowance and the overage cap in the Neuralwatt console are the only spend
+bound. Set or change the cap there, not in the repo, and keep a payment method
+on file so a small overage does not stop the assistant at the prepaid limit.
+There is no dedicated assistant key and no new `agentVm.secrets` name.
+
 ### smortress/chat
 
 <!-- manual-step: service/smortress/chat -->
