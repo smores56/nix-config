@@ -11,8 +11,9 @@ user=@user@
 key=@stateDir@/id_ed25519
 unit=@unit@
 secret_env=(@secretEnv@)
-state="${XDG_STATE_HOME:-$HOME/.local/state}/agent-vm"
-known="$state/known_hosts"
+# Host-side state beside the launcher key; prep creates the file user-owned so accept-new can
+# remember the guest key.
+known="@stateDir@/known_hosts"
 
 case "${1:-}" in
 restart)
@@ -33,11 +34,11 @@ if ! systemctl is-active --quiet "$unit"; then
   echo "agent-sandbox: $unit is not running (start it with: sudo systemctl start $unit)" >&2
   exit 1
 fi
+
 if [ ! -r "$key" ]; then
   echo "agent-sandbox: $key is missing; agent-vm-prep.service creates it" >&2
   exit 1
 fi
-mkdir -p "$state"
 
 ssh_opts=(
   -F /dev/null -i "$key" -o IdentitiesOnly=yes -o IdentityAgent=none -o ForwardAgent=no
@@ -63,8 +64,9 @@ if [ -z "$ready" ]; then
   exit 1
 fi
 
-# The guest's system first, then the host's nix and home entries resolved to store paths, which
-# the guest sees through the shared store; host-only paths are dropped.
+# The guest's system first, then the host's nix and home entries. Store paths reach the guest
+# through the read-only store share; a home entry only matters when it stays a directory (the
+# guest's view exposes the allowlist), and any other one is inert.
 guest_path=/run/wrappers/bin:/run/current-system/sw/bin
 IFS=: read -ra entries <<<"$PATH"
 for entry in "${entries[@]}"; do
@@ -73,16 +75,15 @@ for entry in "${entries[@]}"; do
   case "$resolved" in /nix/store/* | "$HOME"/*) guest_path+=":$resolved" ;; esac
 done
 
-# maki's log dir is parent(XDG_STATE_HOME)/logs/maki, so state sits one level down.
+# Tool state stays guest-local; maki reads the real ~/.config and keeps its sessions in the
+# host-shared ~/.local/state/maki.
 exports=(
   "HOME=$HOME" "USER=$user" "LOGNAME=$user" "PATH=$guest_path"
-  "XDG_STATE_HOME=$HOME/.local/state/agent/state"
-  "XDG_CACHE_HOME=$HOME/.cache/agent"
-  "XDG_DATA_HOME=$HOME/.local/share/agent"
-  "GH_CONFIG_DIR=$HOME/.cache/agent/gh"
+  "XDG_CACHE_HOME=/var/lib/agent-vm/cache"
+  "XDG_DATA_HOME=/var/lib/agent-vm/data"
+  "GH_CONFIG_DIR=/var/lib/agent-vm/gh"
 )
-remote="mkdir -p ~/.local/state/agent/state ~/.cache/agent/gh ~/.local/share/agent;"
-remote+=" cd $(printf %q "$PWD") 2>/dev/null || { echo 'agent-sandbox: cwd is not shared; starting in ~' >&2; cd; };"
+remote="cd $(printf %q "$PWD") 2>/dev/null || { echo 'agent-sandbox: cwd is not shared; starting in ~' >&2; cd; };"
 remote+=" export$(printf ' %q' "${exports[@]}");"
 for pair in "${secret_env[@]}"; do
   var=${pair%%|*}

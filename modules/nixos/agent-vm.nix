@@ -138,6 +138,11 @@ let
     chmod 0400 ${stateDir}/id_ed25519
     install -d -m 0755 ${secretsDir}
     install -m 0644 ${stateDir}/id_ed25519.pub ${secretsDir}/${authorizedKeys}
+    # The launcher's ssh client writes this to remember the guest key; the directory stays
+    # root-owned so the file cannot be swapped for a symlink into the home.
+    if [ ! -e ${stateDir}/known_hosts ]; then
+      install -m 0644 -o ${user} -g users /dev/null ${stateDir}/known_hosts
+    fi
     for secret in ${lib.escapeShellArgs cfg.secrets}; do
       if [ -e "/run/secrets/$secret" ]; then
         install -m 0400 -o ${user} -g users "/run/secrets/$secret" "${secretsDir}/$secret"
@@ -239,7 +244,7 @@ let
       IdentityAgent none
       ForwardAgent no
       ControlMaster no
-      UserKnownHostsFile ${home}/.local/state/agent/known_hosts
+      UserKnownHostsFile /var/lib/agent-vm/known_hosts
   '';
   # Ahead of the home profile on the guest PATH (the launcher puts /run/current-system first).
   guestSsh = pkgs.writeShellScriptBin "ssh" ''
@@ -428,6 +433,16 @@ let
         };
       };
       systemd.sockets = lib.mapAttrs (_: v: v.socket) (guestProxies // guestIngress);
+
+      # Guest-local tool state: the home is a read-only view, so caches, data, gh and writable
+      # copies live under /var, which is the guest's own volume.
+      systemd.tmpfiles.rules = [
+        "d /var/lib/agent-vm 0755 ${user} users -"
+        "d /var/lib/agent-vm/cache 0755 ${user} users -"
+        "d /var/lib/agent-vm/data 0755 ${user} users -"
+        "d /var/lib/agent-vm/gh 0700 ${user} users -"
+        "f /var/lib/agent-vm/known_hosts 0644 ${user} users -"
+      ];
 
       system.stateVersion = "26.05";
     };
