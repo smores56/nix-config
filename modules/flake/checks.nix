@@ -1052,22 +1052,23 @@ in
               pkgs.runCommand "agent-vm-static-check" { nativeBuildInputs = [ pkgs.gnugrep ]; } ''
                 for opt in '-F /dev/null' 'IdentitiesOnly=yes' 'IdentityAgent=none' 'ForwardAgent=no' \
                   'PKCS11Provider=none' 'PermitLocalCommand=no' 'ProxyCommand=none' 'ControlPath=none' \
-                  'ExitOnForwardFailure=yes' 'deny=(Library .cache/Bitwarden' '@sha256:'; do
+                  'ExitOnForwardFailure=yes' 'allow=()' '@sha256:'; do
                   grep -qF -- "$opt" ${launcher} || { echo "agent-vm launcher lacks: $opt" >&2; exit 1; }
                 done
-                for opt in '.config/sops' '.config/ssh-sk' '.ssh/google_compute_engine' \
-                  '.local/state/key-backup' '.local/share/memory' '.docker' 'Vault' 'Sync' \
-                  'provision-nix' 'guest-nix' 'min-free' 'nix-collect-garbage' 'claude-code' 'cacert' 'google-cloud-sdk' 'kubectl' \
-                  '.nix-profile' '.local/state/nix' '.config/nix'; do
+                for opt in 'provision-nix' 'guest-nix' 'min-free' 'nix-collect-garbage' 'claude-code' \
+                  'cacert' 'google-cloud-sdk' 'kubectl' '.nix-profile' '.local/state/nix' '.config/nix'; do
                   grep -qF -- "$opt" ${launcher} || { echo "agent-vm launcher lacks: $opt" >&2; exit 1; }
                 done
-                grep -qF 'deny=(Library .cache/Bitwarden .cache/cliphist .claude .config/Bitwarden .config/gh .config/gcloud .config/op .config/sops .config/ssh-sk .config/tutanota-desktop .docker .git-credentials .gnupg .kube .local/share/Bitwarden .local/share/memory .local/share/proton-pass-cli .local/state/harvest .local/state/key-backup .local/state/proton .local/state/syncthing .netrc .npmrc .op .pki .ssh/google_compute_engine .tart .Trash .zsh_history .bash_history Sync Vault)' ${launcher}
-                grep -qF 'guest_config=(.config/gh .config/gcloud .docker/config.json .kube)' ${launcher}
+                # The allowlist is the sanctioned set; anything else in a share is a new surface.
+                grep -qF 'allow_rw=(Blitzy repos wip .claude/file-history .claude/plans .claude/projects .claude/tasks)' ${launcher}
+                if grep -qF 'deny=' ${launcher}; then exit 1; fi
+                grep -qF 'guest_config=(.config/gh .config/gcloud .config/git .docker/config.json .kube)' ${launcher}
                 grep -qF 'DOCKER_CONFIG=' ${launcher}
                 grep -qF 'GH_CONFIG_DIR=' ${launcher}
                 grep -qF 'KUBECONFIG=' ${launcher}
                 grep -qF 'CLOUDSDK_CONFIG=' ${launcher}
-                grep -qF 'rw=(Blitzy repos dev .local/state/agent .cache/agent)' ${launcher}
+                grep -qF 'GIT_CONFIG_GLOBAL=' ${launcher}
+                grep -qF '.config/sops-nix/secrets' ${launcher}
                 # Tart's --ssh forwards the host agent into the guest.
                 if grep -qE 'tart run[^#]*--ssh' ${launcher}; then exit 1; fi
                 if grep -qE '^[^#]*ssh [^"]*-A( |$)' ${launcher}; then exit 1; fi
