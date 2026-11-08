@@ -3,8 +3,9 @@
 # (modules/features/agent-vm) opens an SSH session into it.
 #
 # The guest sees $HOME at the same path through one virtiofs share of a host-assembled view
-# (modules/lib/agent_view.py): everything but `deny`, read-only except `rw`. virtiofsd squashes
-# every guest uid to the human's, so guest root cannot plant root-owned or setuid-root files.
+# (modules/lib/agent_view.py): only `allow` (read-only) and `allowRw` (read-write); anything else
+# has no path in the guest. virtiofsd squashes every guest uid to the human's, so guest root
+# cannot plant root-owned or setuid-root files.
 {
   config,
   lib,
@@ -31,23 +32,56 @@ let
   # Locally administered unicast, fixed so the guest's networkd match never changes.
   guestMac = "02:00:0a:4d:00:02";
 
-  # microvm.nix keeps this image in its own state dir, named after the VM.
-  storeImage = "${config.microvm.stateDir}/${name}/nix-store.img";
-
   runDir = "/run/agent-vm";
   view = "${runDir}/home";
   secretsDir = "${runDir}/secrets";
   authorizedKeys = "agent-vm-authorized-keys";
-  # The agent's own XDG dirs (the launcher points XDG_*_HOME at them).
-  agentDirs = [
-    ".local/state/agent"
-    ".local/share/agent"
-    ".cache/agent"
+  # Shared maki state (the launcher leaves XDG_STATE_HOME at its default). The guest cannot
+  # create them under the read-only view, so prep makes them as the user first.
+  stateDirs = [
+    ".local/state/maki"
+    ".local/logs/maki"
   ];
 
   planner = ../lib/share_planner.py;
   viewBuilder = ../lib/agent_view.py;
   python = lib.getExe pkgs.python3;
+
+  # Asserted from the host, not the guest: a compromised guest cannot report a clean boundary.
+  verifyScript = pkgs.writeShellApplication {
+    name = "agent-vm-verify";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.findutils
+      pkgs.util-linux
+      pkgs.gnugrep
+      pkgs.iproute2
+      pkgs.iptables
+    ];
+    text =
+      builtins.replaceStrings
+        [
+          "@view@"
+          "@secrets@"
+          "@user@"
+          "@tap@"
+          "@allow@"
+          "@allowRw@"
+          "@hostAddr@"
+          "@secretsList@"
+        ]
+        [
+          view
+          secretsDir
+          user
+          tap
+          (lib.escapeShellArgs cfg.allow)
+          (lib.escapeShellArgs cfg.allowRw)
+          vmLib.hostAddr
+          (lib.escapeShellArgs cfg.secrets)
+        ]
+        (builtins.readFile ../lib/agent-vm-verify.sh);
+  };
 
   # Host loopback services the agent uses; both are token-authenticated.
   proxied = [
@@ -74,27 +108,6 @@ let
         pkgs.openssh
       ]
     }
-    # A guest `nix store gc` unlinks paths it has registered. When the same path
-    # exists in the host store, overlayfs records the unlink as a whiteout in the
-    # guest's writable layer, hiding the host path from the guest permanently:
-    # home-manager symlinks in the shared home (maki's init.lua among them) go
-    # dangle and the agent silently runs without its managed config. Drop only
-    # whiteouts that still mask a host path; guest-built paths have no lower
-    # layer and stay. The image is mounted only while the guest is down, since
-    # qemu holds it open otherwise.
-    if ! systemctl is-active --quiet microvm@${name}.service && [ -f ${storeImage} ]; then
-      storeMount=$(mktemp -d)
-      if mount -o loop ${storeImage} "$storeMount"; then
-        for entry in "$storeMount"/store/*; do
-          [ -c "$entry" ] || continue
-          entryName=$(basename "$entry")
-          if [ -e "/nix/store/$entryName" ]; then rm -f "$entry"; fi
-        done
-        umount "$storeMount"
-      fi
-      rmdir "$storeMount"
-    fi
-
     if mountpoint -q ${view}; then umount -R ${view}; fi
     rm -rf ${view} ${secretsDir}
     install -d -m 0711 ${runDir}
@@ -103,7 +116,7 @@ let
 
     # The planner shares only what exists, and the guest cannot create these under read-only
     # parents; made as the user, so no root write follows a path in the home.
-    runuser -u ${user} -- mkdir -p ${lib.escapeShellArgs (map (rel: "${home}/${rel}") agentDirs)}
+    runuser -u ${user} -- mkdir -p ${lib.escapeShellArgs (map (rel: "${home}/${rel}") stateDirs)}
 
     # The planner only reads the home, so it runs as its owner; the root step trusts its JSON
     # for paths alone and re-checks every source with O_NOFOLLOW.
@@ -111,13 +124,13 @@ let
       ${
         lib.escapeShellArgs (
           lib.concatMap (d: [
-            "--deny"
+            "--allow"
             d
-          ]) cfg.deny
+          ]) cfg.allow
           ++ lib.concatMap (r: [
-            "--rw"
+            "--allow-rw"
             r
-          ]) cfg.rw
+          ]) cfg.allowRw
         )
       } \
       | ${python} -I ${viewBuilder} --home ${home} --view ${view}
@@ -137,6 +150,11 @@ let
     chmod 0400 ${stateDir}/id_ed25519
     install -d -m 0755 ${secretsDir}
     install -m 0644 ${stateDir}/id_ed25519.pub ${secretsDir}/${authorizedKeys}
+    # The launcher's ssh client writes this to remember the guest key; the directory stays
+    # root-owned so the file cannot be swapped for a symlink into the home.
+    if [ ! -e ${stateDir}/known_hosts ]; then
+      install -m 0644 -o ${user} -g users /dev/null ${stateDir}/known_hosts
+    fi
     for secret in ${lib.escapeShellArgs cfg.secrets}; do
       if [ -e "/run/secrets/$secret" ]; then
         install -m 0400 -o ${user} -g users "/run/secrets/$secret" "${secretsDir}/$secret"
@@ -238,7 +256,7 @@ let
       IdentityAgent none
       ForwardAgent no
       ControlMaster no
-      UserKnownHostsFile ${home}/.local/state/agent/known_hosts
+      UserKnownHostsFile /var/lib/agent-vm/known_hosts
   '';
   # Ahead of the home profile on the guest PATH (the launcher puts /run/current-system first).
   guestSsh = pkgs.writeShellScriptBin "ssh" ''
@@ -256,11 +274,14 @@ let
       microvm = {
         hypervisor = "qemu";
         # microvm.nix otherwise loads the guest's closure into the guest's Nix DB
-        # with `nix-store --load-db` on every boot. A guest `nix store gc` then
-        # deletes those host-store paths, and the overlay keeps each deletion as a
-        # whiteout masking the host's copy (see the prep script above). The guest
-        # reads /nix/store directly, so it does not need its closure registered.
+        # with `nix-store --load-db` on every boot. A guest `nix store gc` could then
+        # unlink host-store paths the guest never owned; registering is not needed
+        # because the guest reads /nix/store directly through the read-only share.
         registerClosure = false;
+        # A fresh writable layer on every hypervisor start, including a crash restart: the host
+        # never mounts or parses the guest's image, and guest builds reset with it. microvm.nix
+        # reruns this before it recreates the missing volume.
+        preStart = "rm -f nix-store.img";
         inherit (cfg) vcpu mem;
         interfaces = [
           {
@@ -399,7 +420,10 @@ let
         ];
         trusted-users = [ user ];
       };
-      environment.systemPackages = [ guestSsh ];
+      environment.systemPackages = [
+        guestSsh
+        pkgs.calibre
+      ];
       environment.etc."agent-vm/ssh_config".text = guestSshConfig;
 
       # Files a tool must rewrite under a read-only share get a guest-local copy bound over them.
@@ -428,6 +452,16 @@ let
       };
       systemd.sockets = lib.mapAttrs (_: v: v.socket) (guestProxies // guestIngress);
 
+      # Guest-local tool state: the home is a read-only view, so caches, data, gh and writable
+      # copies live under /var, which is the guest's own volume.
+      systemd.tmpfiles.rules = [
+        "d /var/lib/agent-vm 0755 ${user} users -"
+        "d /var/lib/agent-vm/cache 0755 ${user} users -"
+        "d /var/lib/agent-vm/data 0755 ${user} users -"
+        "d /var/lib/agent-vm/gh 0700 ${user} users -"
+        "f /var/lib/agent-vm/known_hosts 0644 ${user} users -"
+      ];
+
       system.stateVersion = "26.05";
     };
 in
@@ -435,13 +469,13 @@ in
   imports = [ inputs.microvm.nixosModules.host ];
 
   options.agentVm = {
-    deny = lib.mkOption {
+    allow = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      description = "Home-relative paths the guest never sees.";
+      description = "Home-relative paths shared read-only; nothing else in the home is visible.";
     };
-    rw = lib.mkOption {
+    allowRw = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      description = "Home-relative paths shared read-write; everything else shared is read-only.";
+      description = "Home-relative paths shared read-write; nothing else in the home is visible.";
     };
     extraShares = lib.mkOption {
       type = lib.types.listOf (
@@ -485,61 +519,22 @@ in
 
   config = {
     agentVm = lib.mapAttrs (_: lib.mkDefault) {
-      deny = [
-        ".config/sops"
-        ".config/BraveSoftware"
-        ".cache/BraveSoftware"
-        ".config/chromium"
-        ".cache/chromium"
-        ".config/mozilla"
-        ".cache/mozilla"
-        ".mozilla"
-        ".config/tutanota-desktop"
-        ".config/Bitwarden"
-        ".cache/Bitwarden"
-        ".local/share/Bitwarden"
-        ".config/op"
-        ".op"
-        ".config/ssh-sk"
-        ".local/share/keyrings"
-        ".local/share/memory"
-        ".local/state/harvest"
-        ".local/share/ykman"
-        ".local/state/key-backup"
-        ".docker"
-        ".netrc"
-        ".npmrc"
-        ".git-credentials"
-        ".zsh_history"
-        ".bash_history"
-        ".local/share/proton-pass-cli"
-        ".local/state/proton"
-        ".cache/cliphist"
-        ".gnupg"
-        ".pki"
-        ".var/app"
-        ".steam"
-        ".local/share/Steam"
-        # `sudo vault` and the todo bindfs are the only ways in; the guest has
-        # neither sudo nor the mounts.
-        ".local/share/vault"
-        ".local/share/todo"
-        # The Syncthing state dir holds the device key, the GUI API key, and the
-        # vault's retired identity copy.
-        ".local/state/syncthing"
+      allow = [
+        # Skills discovery for maki; symlinks into the shared store.
+        ".agents"
+        # The real tool config, shared read-only; maki's pack lock is bound over separately.
+        ".config/maki"
+        ".config/git"
+        # The manually installed maki binary; no Nix package exists yet.
+        ".local/bin"
       ];
-      rw = [
+      allowRw = [
         "repos"
-        "dev"
-        "Documents"
-        "Downloads"
-        ".cargo/registry"
-        ".cargo/git"
-        ".npm"
-        ".bun/install/cache"
-      ]
-      # The human's state is never extended, and guest sessions survive restarts.
-      ++ agentDirs;
+        "wip"
+        # Shared maki sessions and logs: the host and the guest resume each other's sessions.
+        ".local/state/maki"
+        ".local/logs/maki"
+      ];
       secrets = [
         "github-personal-pat"
         "github-personal-signing-key"
@@ -548,6 +543,7 @@ in
         "tinyfish-api-key"
         "immich-agent-api-key"
         "cloudflare-access-ssh-token"
+        "calibre-password"
       ];
       guestWritable = [ ".config/maki/pack-lock.json.lock" ];
     };
@@ -560,6 +556,8 @@ in
       config = guest;
     };
 
+    # Also the manual entry point; the unit logs a failing assertion after every prep.
+    environment.systemPackages = [ verifyScript ];
     systemd.services = {
       agent-vm-prep = {
         description = "Assemble the agent VM's home view and hand-in secrets";
@@ -580,6 +578,26 @@ in
           RemainAfterExit = true;
           ExecStart = prepScript;
           ExecStop = "-${pkgs.util-linux}/bin/umount -R ${view}";
+        };
+      };
+      agent-vm-verify = {
+        description = "Verify the agent VM's view, shares, secrets and firewall from the host";
+        after = [
+          "agent-vm-prep.service"
+          "agent-vm-net.service"
+          "firewall.service"
+        ];
+        requires = [ "agent-vm-prep.service" ];
+        wants = [
+          "agent-vm-net.service"
+          "firewall.service"
+        ];
+        # partOf makes a prep restart re-run the assertion; the oneshot has no timer.
+        partOf = [ "agent-vm-prep.service" ];
+        wantedBy = [ "multi-user.target" ];
+        serviceConfig = {
+          Type = "oneshot";
+          ExecStart = "${verifyScript}/bin/agent-vm-verify";
         };
       };
       agent-vm-net = {

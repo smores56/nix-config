@@ -2,8 +2,8 @@
 
 Public keys and certificates live in the repo; private key material never
 does. The three YubiKeys (`k1`, `k2`, `k3`) are interchangeable and every
-authorized list carries all three. The operator setup script is `~/dev/setup-yubikey.sh` on `smorespro`; it is
-untracked and lives only in `~/dev`. It produces `~/yubikey-setup/kN/` with the
+authorized list carries all three. The operator setup script is `~/wip/setup-yubikey.sh` on `smorespro`; it is
+untracked and lives only in `~/wip`. It produces `~/yubikey-setup/kN/` with the
 public material and a report. The Bitwarden restore bundle (below) carries the
 script as data; the report directory is not copied.
 

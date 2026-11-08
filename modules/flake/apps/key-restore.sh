@@ -263,8 +263,18 @@ for src in "$stage"/home/.config/ssh-sk/*/*; do
   fi
 done
 
-if [ -f "$stage/home/dev/setup-yubikey.sh" ] && { [ -e "$HOME/dev/setup-yubikey.sh" ] || [ -L "$HOME/dev/setup-yubikey.sh" ]; } && [ "$force" -eq 0 ]; then
-  echo "key-restore: $HOME/dev/setup-yubikey.sh already exists; pass --force to replace it" >&2
+# A bundle from before the ~/dev -> ~/wip rename still carries home/dev/setup-yubikey.sh;
+# restore it beside the new tree, never into ~/dev.
+setup_src=""
+for rel in home/wip/setup-yubikey.sh home/dev/setup-yubikey.sh; do
+  if [ -f "$stage/$rel" ]; then
+    setup_src="$stage/$rel"
+    break
+  fi
+done
+
+if [ -n "$setup_src" ] && { [ -e "$HOME/wip/setup-yubikey.sh" ] || [ -L "$HOME/wip/setup-yubikey.sh" ]; } && [ "$force" -eq 0 ]; then
+  echo "key-restore: $HOME/wip/setup-yubikey.sh already exists; pass --force to replace it" >&2
   exit 1
 fi
 
@@ -281,8 +291,8 @@ if [ "$installed" -eq 0 ]; then
   exit 1
 fi
 
-if [ -f "$stage/home/dev/setup-yubikey.sh" ]; then
-  install -D -m 600 "$stage/home/dev/setup-yubikey.sh" "$HOME/dev/setup-yubikey.sh"
+if [ -n "$setup_src" ]; then
+  install -D -m 600 "$setup_src" "$HOME/wip/setup-yubikey.sh"
   echo "key-restore: restored the enrollment script as data; review it, then chmod +x" >&2
 fi
 

@@ -11,8 +11,8 @@ image=@image@
 planner=@planner@
 guest_path_prefix=@guestPath@
 ca_bundle=@caBundle@
-deny=(@deny@)
-rw=(@rw@)
+allow=(@allow@)
+allow_rw=(@allowRw@)
 extra=(@extra@)
 guest_config=(@guestConfig@)
 hand_in=(@handIn@)
@@ -89,8 +89,8 @@ stop_vm() {
 
 plan() {
   local args=(--home "$HOME")
-  for d in "${deny[@]}"; do args+=(--deny "$d"); done
-  for r in "${rw[@]}"; do args+=(--rw "$r"); done
+  for d in "${allow[@]}"; do args+=(--allow "$d"); done
+  for r in "${allow_rw[@]}"; do args+=(--allow-rw "$r"); done
   python3 "$planner" "${args[@]}"
 }
 
@@ -172,7 +172,8 @@ EOF
       done
   } | guest_ssh -o BatchMode=yes "admin@$ip" 'sh -s'
 
-  # .claude.json and Finder/CoreFoundation files are guest-local state, not context.
+  # .claude.json and Finder/CoreFoundation files are guest-local state, not context. The git
+  # excludes file is a plain host file, so the guest gets the same copy at the same path.
   local copies=()
   while IFS= read -r rel; do
     case "$rel" in .claude.json | .DS_Store | .CFUserTextEncoding) continue ;; esac
@@ -188,21 +189,21 @@ EOF
   local conf="$guest_home/Library/Application Support/agent-config" rel
   for rel in "${guest_config[@]}"; do
     [ -e "$HOME/$rel" ] || continue
-    tar -C "$HOME" -cf - -- "$rel" |
+    tar -C "$HOME" -chf - -- "$rel" |
       guest_ssh -o BatchMode=yes "admin@$ip" "mkdir -p $(printf %q "$conf") && tar -C $(printf %q "$conf") -xf -"
   done
 
   # Hand in only the git identities the agent signs and pushes with, at the path the host's
-  # git and gh config name (sops-nix's generation dir, which the shared ~/.config/sops-nix
-  # link points at); the rest of the sops output stays on the host.
-  local dir names=()
+  # git config names. The guest's ~/.config/sops-nix is real guest state, not a shared link, so
+  # the copy is written there and the host's sops output stays on the host.
+  local dir names=() guest_secrets="$guest_home/.config/sops-nix/secrets"
   dir=$(readlink -f "$HOME/.config/sops-nix/secrets" 2>/dev/null) || return 0
   for name in "${hand_in[@]}"; do
     if [ -r "$dir/$name" ]; then names+=("$name"); fi
   done
   if [ "${#names[@]}" -gt 0 ]; then
     tar -C "$dir" -cf - -- "${names[@]}" |
-      guest_ssh -o BatchMode=yes "admin@$ip" "$(printf 'sudo -n mkdir -p %q && sudo -n chown admin %q && chmod 700 %q && tar -C %q -xf -' "$dir" "$dir" "$dir" "$dir")"
+      guest_ssh -o BatchMode=yes "admin@$ip" "$(printf 'sudo -n mkdir -p %q && sudo -n chown admin %q && chmod 700 %q && tar -C %q -xf -' "$guest_secrets" "$guest_secrets" "$guest_secrets" "$guest_secrets")"
   fi
 }
 
@@ -270,8 +271,7 @@ provision_nix() {
   host_store=0
   local fresh="$state/plan.json" shares="$state/vm-shares.json" tmp ip
   tmp=$(mktemp "$state/plan.XXXXXX")
-  mkdir -p "$HOME/.local/state/agent" "$HOME/.cache/agent"
-  plan >"$tmp"
+  plan >"$tmp" || die "share planning failed"
   mv "$tmp" "$fresh"
   jq '{shares}' "$fresh" >"$shares"
   start_vm "$shares"
@@ -322,8 +322,7 @@ fresh="$state/plan.json"
 shares="$state/vm-shares.json"
 # Per-process temp file: concurrent launches each write a whole plan, then rename atomically.
 tmp=$(mktemp "$state/plan.XXXXXX")
-mkdir -p "$HOME/.local/state/agent" "$HOME/.cache/agent"
-plan >"$tmp"
+plan >"$tmp" || die "share planning failed"
 if [ "$nix_mode" -eq 1 ]; then
   # The guest profile and Nix state belong to the guest store; the host's links would shadow
   # them, and place_link() refuses a non-empty guest directory.
@@ -361,13 +360,13 @@ else
   ca_file="$ca_bundle"
 fi
 if [ "$nix_mode" -eq 1 ]; then
-  guest_path="$guest_home/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$guest_home/.local/state/agent/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+  guest_path="$guest_home/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 else
   guest_path="$guest_path_prefix:$PATH"
 fi
 # The host's CA path comes from the nix installer under /nix/var, which the guest lacks.
-remote_cmd=$(printf 'export HOME=%q PATH=%q DOCKER_HOST=unix://%q DOCKER_CONFIG=%q GH_CONFIG_DIR=%q KUBECONFIG=%q CLOUDSDK_CONFIG=%q SSL_CERT_FILE=%q NIX_SSL_CERT_FILE=%q; cd %q; exec' \
-  "$guest_home" "$guest_path" "$sock" "$conf/.docker" "$conf/.config/gh" "$conf/.kube/config" "$conf/.config/gcloud" "$ca_file" "$ca_file" "$cwd")
+remote_cmd=$(printf 'export HOME=%q PATH=%q DOCKER_HOST=unix://%q DOCKER_CONFIG=%q GH_CONFIG_DIR=%q KUBECONFIG=%q CLOUDSDK_CONFIG=%q GIT_CONFIG_GLOBAL=%q SSL_CERT_FILE=%q NIX_SSL_CERT_FILE=%q; cd %q; exec' \
+  "$guest_home" "$guest_path" "$sock" "$conf/.docker" "$conf/.config/gh" "$conf/.kube/config" "$conf/.config/gcloud" "$conf/.config/git/config" "$ca_file" "$ca_file" "$cwd")
 for a in "$@"; do remote_cmd+=" $(printf %q "$a")"; done
 # The forwarded Docker socket is an accepted risk (#427): containers can mount whatever Docker
 # Desktop's File sharing allows. ExitOnForwardFailure also makes ssh wait for the forward before

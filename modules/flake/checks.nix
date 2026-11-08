@@ -1037,7 +1037,7 @@ in
               config.flake.homeConfigurations."smores@smorespro".config.xdg.configFile.niri-config.source;
           }
       # The Mac agent VM launcher as built: its ssh must never pick up the host's identities,
-      # forwards or config, and the deny list must reach the planner (sdlc #427).
+      # forwards or config, and the allowlist must reach the planner (sdlc #450).
       //
         lib.optionalAttrs
           (config.flake.homeConfigurations."sam@smoreswork".activationPackage.system == system)
@@ -1052,22 +1052,23 @@ in
               pkgs.runCommand "agent-vm-static-check" { nativeBuildInputs = [ pkgs.gnugrep ]; } ''
                 for opt in '-F /dev/null' 'IdentitiesOnly=yes' 'IdentityAgent=none' 'ForwardAgent=no' \
                   'PKCS11Provider=none' 'PermitLocalCommand=no' 'ProxyCommand=none' 'ControlPath=none' \
-                  'ExitOnForwardFailure=yes' 'deny=(Library .cache/Bitwarden' '@sha256:'; do
+                  'ExitOnForwardFailure=yes' 'allow=()' '@sha256:'; do
                   grep -qF -- "$opt" ${launcher} || { echo "agent-vm launcher lacks: $opt" >&2; exit 1; }
                 done
-                for opt in '.config/sops' '.config/ssh-sk' '.ssh/google_compute_engine' \
-                  '.local/state/key-backup' '.local/share/memory' '.docker' 'Vault' 'Sync' \
-                  'provision-nix' 'guest-nix' 'min-free' 'nix-collect-garbage' 'claude-code' 'cacert' 'google-cloud-sdk' 'kubectl' \
-                  '.nix-profile' '.local/state/nix' '.config/nix'; do
+                for opt in 'provision-nix' 'guest-nix' 'min-free' 'nix-collect-garbage' 'claude-code' \
+                  'cacert' 'google-cloud-sdk' 'kubectl' '.nix-profile' '.local/state/nix' '.config/nix'; do
                   grep -qF -- "$opt" ${launcher} || { echo "agent-vm launcher lacks: $opt" >&2; exit 1; }
                 done
-                grep -qF 'deny=(Library .cache/Bitwarden .cache/cliphist .claude .config/Bitwarden .config/gh .config/gcloud .config/op .config/sops .config/ssh-sk .config/tutanota-desktop .docker .git-credentials .gnupg .kube .local/share/Bitwarden .local/share/memory .local/share/proton-pass-cli .local/state/harvest .local/state/key-backup .local/state/proton .local/state/syncthing .netrc .npmrc .op .pki .ssh/google_compute_engine .tart .Trash .zsh_history .bash_history Sync Vault)' ${launcher}
-                grep -qF 'guest_config=(.config/gh .config/gcloud .docker/config.json .kube)' ${launcher}
+                # The allowlist is the sanctioned set; anything else in a share is a new surface.
+                grep -qF 'allow_rw=(Blitzy repos wip .claude/file-history .claude/plans .claude/projects .claude/tasks)' ${launcher}
+                if grep -qF 'deny=' ${launcher}; then exit 1; fi
+                grep -qF 'guest_config=(.config/gh .config/gcloud .config/git .docker/config.json .kube)' ${launcher}
                 grep -qF 'DOCKER_CONFIG=' ${launcher}
                 grep -qF 'GH_CONFIG_DIR=' ${launcher}
                 grep -qF 'KUBECONFIG=' ${launcher}
                 grep -qF 'CLOUDSDK_CONFIG=' ${launcher}
-                grep -qF 'rw=(Blitzy repos dev .local/state/agent .cache/agent)' ${launcher}
+                grep -qF 'GIT_CONFIG_GLOBAL=' ${launcher}
+                grep -qF '.config/sops-nix/secrets' ${launcher}
                 # Tart's --ssh forwards the host agent into the guest.
                 if grep -qE 'tart run[^#]*--ssh' ${launcher}; then exit 1; fi
                 if grep -qE '^[^#]*ssh [^"]*-A( |$)' ${launcher}; then exit 1; fi
@@ -1112,8 +1113,16 @@ in
                 # The home reaches the guest only through the assembled view.
                 noRawHome = lib.all (sh: sh.source != home && !(lib.hasPrefix "${home}/" sh.source)) shares;
                 guestBuilds = guest.microvm.writableStoreOverlay != null;
+                # The host never parses the guest's store image: a fresh one per start, and the
+                # prep script holds no loop mount.
+                freshStore = lib.hasInfix "rm -f nix-store.img" guest.microvm.preStart;
+                prep = host.systemd.services.agent-vm-prep.serviceConfig.ExecStart;
+                verify = host.systemd.services ? agent-vm-verify;
+                # No path outside the home may be shared at all: the media and ingest trees are gone.
+                noExtraShares = host.agentVm.extraShares == [ ];
+                verifyScript = host.systemd.services.agent-vm-verify.serviceConfig.ExecStart;
                 # A persistent writable overlay must not register the closure, or a
-                # guest GC whiteouts host store paths (modules/nixos/agent-vm.nix).
+                # guest GC could unlink host store paths (modules/nixos/agent-vm.nix).
                 storeSafe = !guest.microvm.registerClosure;
                 keyOnly =
                   !guest.services.openssh.settings.PasswordAuthentication
@@ -1129,47 +1138,37 @@ in
                     !lib.hasInfix "Host smortress" text
                   else
                     lib.hasInfix "HostName ssh.sammohr.dev" text;
-                denies = lib.all (d: lib.elem d host.agentVm.deny) [
-                  ".config/sops"
-                  ".local/share/keyrings"
-                  ".local/share/ykman"
-                  ".local/state/key-backup"
-                  ".config/BraveSoftware"
-                  ".config/mozilla"
-                  ".mozilla"
-                  ".config/Bitwarden"
-                  ".cache/Bitwarden"
-                  ".local/share/Bitwarden"
-                  ".config/op"
-                  ".op"
-                  ".config/ssh-sk"
-                  ".local/share/memory"
-                  ".local/state/harvest"
-                  ".docker"
-                  ".netrc"
-                  ".npmrc"
-                  ".git-credentials"
-                  ".zsh_history"
-                  ".bash_history"
-                  ".cache/cliphist"
-                  ".gnupg"
-                  ".local/share/vault"
-                  ".local/share/todo"
-                ];
-                # A writable entry must never cover host-executed config or a denied path.
+                # The home is an allowlist, so the sanctioned set is the check: a stray entry is
+                # a new data surface, not a tuning knob.
+                allowlist =
+                  lib.sort (a: b: a < b) host.agentVm.allow == lib.sort (a: b: a < b) [
+                    ".agents"
+                    ".config/git"
+                    ".config/maki"
+                    ".local/bin"
+                  ]
+                  &&
+                    lib.sort (a: b: a < b) host.agentVm.allowRw == lib.sort (a: b: a < b) [
+                      ".local/logs/maki"
+                      ".local/state/maki"
+                      "repos"
+                      "wip"
+                    ];
+                # A writable entry must never be a whole home or a host-executed config tree.
                 narrowRw = lib.all (
                   r:
                   !(lib.elem r [
                     ""
                     "."
                     ".config"
+                    ".config/maki"
                     ".local"
                     ".local/bin"
                     ".cache"
                     ".ssh"
+                    ".gnupg"
                   ])
-                  && lib.all (d: !(lib.hasPrefix "${r}/" d) && d != r) host.agentVm.deny
-                ) host.agentVm.rw;
+                ) host.agentVm.allowRw;
                 firewall = host.networking.firewall.extraCommands;
                 # The host relay, guest relay and guest firewall must agree on every ingress port.
                 ingress = lib.all (
@@ -1193,21 +1192,26 @@ in
               && f.noXattr
               && f.noRawHome
               && f.guestBuilds
+              && f.freshStore
               && f.storeSafe
               && f.keyOnly
               && f.sshAlias
-              && f.denies
+              && f.allowlist
+              && f.verify
+              && f.noExtraShares
               && f.narrowRw
               && f.ingress
             ) all;
             launcher = (import ../lib/agent-vm.nix { inherit pkgs lib; }).launcher "smores";
           in
           assert lib.assertMsg ok
-            "agent-vm: a Linux guest lost uid squashing, the view, guest builds, store safety, key-only sshd or a deny entry";
+            "agent-vm: a Linux guest lost uid squashing, the view, guest builds, store safety, key-only sshd or the allowlist";
           pkgs.runCommand "agent-vm-linux-static-check"
             {
               nativeBuildInputs = [ pkgs.gnugrep ];
               firewall = lib.concatStrings (map (f: f.firewall) all);
+              prepScripts = lib.concatStringsSep " " (map (f: "${f.prep}") all);
+              verifyScripts = lib.concatStringsSep " " (map (f: "${f.verifyScript}") all);
               passAsFile = [ "firewall" ];
             }
             ''
@@ -1222,6 +1226,20 @@ in
               grep -xF -- '-A agent-vm-fwd -d 127.0.0.0/8 -j DROP' "$rules4"
               # The private-range drops come before the egress accept.
               [ "$(grep -n -- '-d 10.0.0.0/8 -j DROP' "$rules4" | cut -d: -f1)" -lt "$(grep -n -- '-A agent-vm-fwd -j ACCEPT' "$rules4" | cut -d: -f1)" ]
+              # The host never mounts the guest store image, and prep never parses it.
+              for p in $prepScripts; do
+                if grep -F -- 'mount -o loop' "$p"; then exit 1; fi
+                if grep -F -- 'nix-store.img' "$p"; then exit 1; fi
+                grep -qF -- '--allow' "$p" || { echo "agent-vm-prep does not pass --allow" >&2; exit 1; }
+                grep -qF -- '--allow-rw' "$p" || { echo "agent-vm-prep does not pass --allow-rw" >&2; exit 1; }
+                if grep -qF -- '--deny' "$p"; then exit 1; fi
+              done
+              # The host-side verifier asserts the boundary the guest reports nothing about.
+              for p in $verifyScripts; do
+                for opt in findmnt nix-store.img /proc/mounts agent-vm-in agent-vm-fwd nosuid; do
+                  grep -F -- "$opt" "$p" || { echo "agent-vm-verify lacks: $opt" >&2; exit 1; }
+                done
+              done
               # The forced key that lands laptop agents in this host's guest.
               grep -F -- 'no-user-rc' ${../nixos/ssh.nix}
               if grep -F -- 'no-touch-required' ${../nixos/ssh.nix}; then exit 1; fi

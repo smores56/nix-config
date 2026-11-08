@@ -1,10 +1,11 @@
-"""Plan which parts of $HOME an agent VM sees (sdlc #386).
+"""Plan which parts of $HOME an agent VM sees (sdlc #450).
 
-VM file shares are whole directories and ignore file modes inside them, so the deny list is the
-control: every top-level entry is shared at its own path, and any directory that is an ancestor
-of a denied path (or of a read-write path, so that one can get its own mode) is split into its
-children. Entries a directory share cannot carry become links (symlinks, recreated in the guest)
-or copies (plain files, snapshotted read-only).
+VM file shares are whole directories and ignore file modes inside them, so the allowlist is the
+control: nothing is shared unless it is under an allow root, and a root is either read-only
+(`allow`) or read-write (`allowRw`). Ancestors of roots become plain directories in the view, and
+a directory that is an ancestor of a root with the other mode is split into its children so each
+mode gets its own bind. Roots are deduped to their shallowest ancestor of the same mode; a root
+that is a symlink fails closed, and a root that does not exist is skipped with a warning.
 """
 
 import argparse
@@ -25,26 +26,19 @@ class Share:
     tag: str
 
 
-@dataclass(frozen=True)
-class Link:
-    rel: str
-    target: str
-
-
 @dataclass
 class Plan:
     shares: list = field(default_factory=list)
-    links: list = field(default_factory=list)
     copies: list = field(default_factory=list)
+
+
+class PlanError(Exception):
+    pass
 
 
 def _norm(rel):
     parts = [p for p in rel.split("/") if p not in ("", ".")]
     return "/".join(parts)
-
-
-def _is_within(rel, roots):
-    return any(rel == r or rel.startswith(r + "/") for r in roots)
 
 
 def _has_descendant(rel, roots):
@@ -58,41 +52,73 @@ def tag_for(rel):
     return f"{slug[:29]}-{hashlib.sha1(rel.encode()).hexdigest()[:6]}"
 
 
-def plan(home, deny, rw):
+def _roots(allow, allow_rw):
+    """Map each effective root to its mode, dropping roots covered by a same-mode ancestor."""
+    roots = {}
+    for rel in map(_norm, allow):
+        if rel:
+            roots[rel] = "ro"
+    # A path in both lists is writable; the caller asked for it.
+    for rel in map(_norm, allow_rw):
+        if rel:
+            roots[rel] = "rw"
+    return {
+        rel: mode
+        for rel, mode in roots.items()
+        if not any(
+            other != rel and rel.startswith(other + "/") and other_mode == mode
+            for other, other_mode in roots.items()
+        )
+    }
+
+
+def plan(home, allow, allow_rw):
     home = Path(home)
-    deny = [d for d in map(_norm, deny) if d]
-    rw = [r for r in map(_norm, rw) if r]
+    roots = _roots(allow, allow_rw)
     result = Plan()
+
+    for rel in roots:
+        try:
+            st = (home / rel).lstat()
+        except OSError as err:
+            print(f"share_planner: skipping {rel}: {err.strerror}", file=sys.stderr)
+            continue
+        if stat.S_ISLNK(st.st_mode):
+            raise PlanError(f"{rel} is a symlink; an allow root must be a real path")
 
     def walk(rel_dir):
         base = home / rel_dir if rel_dir else home
         try:
             entries = sorted(os.listdir(base))
         except OSError as err:
-            # A split directory must be listed to keep its denied child out; if it cannot be,
-            # leaving it out entirely is the only safe answer.
             print(f"share_planner: skipping {rel_dir or '.'}: {err.strerror}", file=sys.stderr)
             return
         for entry in entries:
             rel = f"{rel_dir}/{entry}" if rel_dir else entry
-            if _is_within(rel, deny):
-                continue
+            # The most specific allow root covering the entry decides whether and how it is shared.
+            covering = [r for r in roots if rel == r or rel.startswith(r + "/")]
+            mode = roots[max(covering, key=len)] if covering else None
+            if mode is None and not _has_descendant(rel, roots):
+                continue  # outside the allowlist, and no allowed path beneath it
             path = base / entry
             try:
                 st = path.lstat()
             except OSError:
                 continue  # vanished mid-walk
             if stat.S_ISLNK(st.st_mode):
-                result.links.append(Link(rel, os.readlink(path)))
-            elif stat.S_ISDIR(st.st_mode):
-                if _has_descendant(rel, deny) or _has_descendant(rel, rw):
+                raise PlanError(f"{rel} is a symlink on an allow path; refusing to follow it")
+            if stat.S_ISDIR(st.st_mode):
+                if mode is None or _has_descendant(rel, roots):
                     walk(rel)
                 else:
-                    mode = "rw" if _is_within(rel, rw) else "ro"
                     result.shares.append(Share(rel, mode, tag_for(rel)))
             elif stat.S_ISREG(st.st_mode):
+                if mode is None:
+                    raise PlanError(f"{rel} is a file, not a directory, on the way to an allow root")
                 result.copies.append(rel)
-            # Sockets, fifos and devices are host-local; nothing to carry over.
+            elif mode is not None:
+                # Sockets, fifos and devices are host-local; nothing to carry over.
+                print(f"share_planner: skipping {rel}: not a file or directory", file=sys.stderr)
 
     walk("")
     return result
@@ -101,21 +127,26 @@ def plan(home, deny, rw):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--home", default=os.environ.get("HOME"))
-    parser.add_argument("--deny", action="append", default=[])
-    parser.add_argument("--rw", action="append", default=[])
+    parser.add_argument("--allow", action="append", default=[])
+    parser.add_argument("--allow-rw", action="append", default=[])
     args = parser.parse_args(argv)
-    result = plan(args.home, args.deny, args.rw)
+    try:
+        result = plan(args.home, args.allow, args.allow_rw)
+    except PlanError as err:
+        print(f"share_planner: {err}", file=sys.stderr)
+        return 1
     json.dump(
         {
             "shares": [asdict(s) for s in result.shares],
-            "links": [asdict(link) for link in result.links],
+            "links": [],
             "copies": result.copies,
         },
         sys.stdout,
         indent=2,
     )
     sys.stdout.write("\n")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -52,9 +52,9 @@ generated hardware config, then run `nix run .#bootstrap`.
   (see [Recovery](#recovery)).
 - **Out-of-band access**: the physical console. There is no inbound SSH port;
   SSH is tunnel-only.
-- **Agent VM**: `a` runs maki in the microvm guest. The guest also gets the
-  music, books and agent-ingest trees (`agentVm.extraShares` in the host's
-  `default.nix`); `/var/lib/data/photos` and the vault are never shared. See
+- **Agent VM**: `a` runs maki in the microvm guest. The guest sees only the
+  allowlisted home trees; `/var/lib/data` (music, books, photos) and the vault
+  are never shared. Calibre changes go through its Content server API. See
   [Agent VMs](#agent-vms).
 - **Maki signing**: commits inside the agent VM sign with the sops key for the
   repo owner's account (`user.signingkey`, `gpg.format=ssh`) and
@@ -838,10 +838,12 @@ caught the same night.
 
 <!-- manual-step: secret/calibre-password -->
 
-OPDS password for the single `smores56` user, user-readable. The service
-re-applies it on every start, so rotating is: edit this key, rebuild,
+OPDS password for the single `smores56` user, user-readable, from
+`secrets/smortress.yaml`. The service re-applies it on every start, and the
+agent VM hands it in as `/run/secrets/calibre-password` for `calibredb`
+against the Content server. Rotating is: edit this key, rebuild,
 `systemctl --user restart calibre-server` (a rebuild does not restart a user
-unit whose definition is unchanged) and refresh OPDS clients.
+unit whose definition is unchanged), then refresh OPDS and agent clients.
 
 ### smores-password-hash
 
@@ -1057,9 +1059,10 @@ run above is the proof.
 
 #### calibre-password
 
-The single `smores56` OPDS account. `modules/features/calibre.nix` re-applies
-the password in `ExecStartPre` on every start of the user unit `calibre-server`,
-and a rebuild does not restart a user unit whose definition did not change:
+The single `smores56` OPDS account, in `secrets/smortress.yaml`.
+`modules/features/calibre.nix` re-applies the password in `ExecStartPre` on
+every start of the user unit `calibre-server`, and a rebuild does not restart
+a user unit whose definition did not change:
 
 ```sh
 sops secrets/smortress.yaml          # replace calibre-password
@@ -1421,17 +1424,23 @@ maki` on Linux, `agent-sandbox claude` on smoreswork. Plain `maki` or `claude`
 on the host is the deliberate unsandboxed opt-out. The design and its accepted
 risks are on smores56/sdlc#427.
 
-Each guest sees the home at the same path, minus a deny list (`agentVm.deny` in
-`modules/nixos/agent-vm.nix`; `deny` in `modules/features/agent-vm/default.nix`
-on the Mac). Everything else is read-only except the `rw` list. Visible on
-purpose on Linux: shell histories, agent transcripts, and credential files in
-shared paths. The Mac deny list hides transient history files and personal
-secret state. What is not shared: browser profiles, keyrings, `~/.config/sops`,
-key backups, FIDO2 handles, clipboard history, `~/Library` on the Mac, and `~/.local/share/vault` on Linux. The
-writable trees include repos, and the agent may write their `.git/config` and
-hooks, which you later run on the host; that is accepted (full git for agents).
-Keep secrets out of shared paths: run `secret-sweep` after adding files under
-the home and move or delete what it reports.
+Each guest sees an explicit allowlist, not the whole home. `agentVm.allow` and
+`agentVm.allowRw` (`modules/nixos/agent-vm.nix`) and the arrays in
+`modules/features/agent-vm/default.nix` on the Mac name every visible path;
+anything else has no path in the guest at all. On Linux the writable trees are
+`~/repos`, `~/wip`, `~/.local/state/maki` and `~/.local/logs/maki`; the
+read-only roots are `~/.agents`, `~/.config/maki`, `~/.config/git`,
+`~/.local/bin`. On the Mac the writable trees are
+`~/Blitzy`, `~/repos`, `~/wip` and Claude's session-state dirs. The writable
+trees include repos, and the agent may write their `.git/config` and hooks,
+which you later run on the host; that is accepted (full git for agents).
+Keep secrets out of the allowlisted trees: run `secret-sweep` after adding
+files under the home and move or delete what it reports.
+
+`~/dev` is now `~/wip`. On each host, `mv ~/dev ~/wip` before rebuilding; a
+git worktree registered under `~/dev` is recreated with `worktrees prune` then
+`worktrees new`.
+
 
 ### Linux (smortress, smorespro)
 
@@ -1456,15 +1465,38 @@ survive. Pick up guest changes or new top-level home entries with:
 sudo systemctl restart microvm@agent.service
 ```
 
-`agent-vm-check` (also `just agent-vm-check`) asserts the boundary from inside
-the guest: denied paths absent, read-only and writable shares behave,
-hand-in secrets readable, guest files owned by you, `mknod` refused, host sshd
-unreachable, the memory proxy reachable. Run it after changing the module.
+`agent-vm-verify` (also `just agent-vm-verify`) asserts the boundary from the
+host after prep, where a compromised guest cannot lie about it: the view is a
+read-only `nosuid,nodev` tmpfs, the visible tree is exactly the allowlist,
+writable and read-only roots behave, every bind is `nosuid,nodev`, secret files
+are 0400 and user-owned, the host holds no `nix-store.img` mount or loop
+device, and the tap and firewall chains exist. It is also a oneshot that runs
+after every prep, so a regression shows up in `journalctl -u agent-vm-verify`.
+`agent-vm-check` (also `just agent-vm-check`) stays the functional smoke test
+from inside the guest: allowlisted paths present, everything else absent,
+config read-only, state and repos writable, hand-in secrets readable, guest
+files owned by you, `mknod` refused, host sshd unreachable, the memory proxy
+reachable.
 
-The agent's maki state lives in `~/.local/state/agent`, `~/.local/share/agent`
-and `~/.cache/agent` (the launcher points the XDG dirs there), so `ms` resumes
-guest sessions through `agent-sandbox`. maki is installed manually in
-`~/.local/bin`.
+maki reads the real `~/.config/maki` and `~/.config/git` read-only and keeps
+its sessions in `~/.local/state/maki` and logs in `~/.local/logs/maki`, both
+shared with the host, so the host's unsandboxed `maki` and the guest resume
+each other's sessions and `ms` works through `agent-sandbox`. The guest's own
+cache, data and gh state live under `/var/lib/agent-vm`. maki is installed
+manually in `~/.local/bin` and is shared read-only. One-time migration from
+the old launcher state:
+
+```sh
+mv ~/.local/state/agent/state/maki/. ~/.local/state/maki/
+rm -rf ~/.local/state/agent ~/.local/share/agent ~/.cache/agent
+```
+
+The guest's writable store layer is recreated on every start, so guest builds
+reset; the host store is never mounted or parsed.
+
+The guest home is read-only apart from the allowlist, so `nix profile install`
+cannot write `~/.nix-profile`; use `nix build`, `nix develop`, or `nix shell`
+inside a checkout instead.
 
 The personal sops signing key logs in to smortress only through a forced
 `agent-ssh` command, which lands in smortress's own guest, never a host shell.
@@ -1488,23 +1520,26 @@ Once per Mac:
 1. Turn off AirPlay Receiver (System Settings → General → AirDrop & Handoff):
    it is the one host service the guest can reach that can pop a dialog.
 2. Narrow Docker Desktop's File sharing (Settings → Resources → File sharing)
-   to the agent-safe trees: `~/Blitzy`, `~/repos`, `~/dev`, `~/Documents`,
-   `~/Downloads`, `~/Desktop`. Never `$HOME`, `~/.config`, `~/.cache`,
-   `~/Library`, `~/Vault`, or `~/Sync`: a container can read everything in the
+   to the agent-safe trees: `~/Blitzy`, `~/repos`, `~/wip`. Never `$HOME`,
+   `~/.config`, `~/.cache`, `~/Library`, `~/Documents`, `~/Downloads`,
+   `~/Desktop`, `~/Vault`, or `~/Sync`: a container can read everything in the
    listed trees.
 3. Run `agent-sandbox provision` (clones the pinned image, hardens the guest,
    rotates its admin password, installs the login key), then `a` and sign in to
    Claude inside the guest; the guest keeps its own login.
 
 `agent-sandbox restart` stops the VM so the next launch re-plans the shares;
-`agent-sandbox stop` shuts it down. The four `github-{personal,work}-{pat,signing-key}`
-secrets are handed in at the host's sops-nix path on each launch; the rest stay
-on the host. The host's `.claude`, gh, gcloud, and kube config are denied in the
-shared home; the guest gets its own `.claude` and guest-local copies of gh,
-gcloud, and kube config, with `GH_CONFIG_DIR`, `KUBECONFIG`, and
-`CLOUDSDK_CONFIG` pointed at the copies. Docker comes from the host's Docker
-Desktop through a per-session forwarded socket, so Docker Desktop must be
-running.
+`agent-sandbox stop` shuts it down. The guest sees only `~/Blitzy`, `~/repos`,
+`~/wip`, and Claude's `projects`, `file-history`, `tasks`, and `plans`
+directories, so `claude --resume` sees host and guest sessions alike. Claude's
+config and `~/.claude.json` stay host-only; the guest keeps its own login and
+config, and does not read the host's `history.jsonl`. The
+`github-{personal,work}-{pat,signing-key}` and `calibre-password` secrets are
+handed in as files on each launch; the rest stay on the host. The guest gets
+guest-local copies of gh, gcloud, git, and kube config, with `GH_CONFIG_DIR`,
+`GIT_CONFIG_GLOBAL`, `KUBECONFIG`, and `CLOUDSDK_CONFIG` pointed at the copies,
+Docker comes from the host's Docker Desktop
+through a per-session forwarded socket, so Docker Desktop must be running.
 
 #### Guest-local Nix store (opt-in)
 
@@ -1624,7 +1659,18 @@ public and rely on their own app auth.
 <!-- manual-step: service/smortress/calibre -->
 
 `calibre.sammohr.dev` → loopback `ports.calibre`, HTTP, public (no Access).
-OPDS clients authenticate as `smores56` with `calibre-password`.
+OPDS clients authenticate as `smores56` with `calibre-password`. Agents reach
+the same library through the Content server API, never a share:
+
+```sh
+calibredb list --with-library 'https://calibre.sammohr.dev/#books' \
+  --username smores56 --password '<f:/run/secrets/calibre-password>'
+```
+
+`add`, `set_metadata`, `add_format`, `remove`, `remove_format`, and
+`embed_metadata` run server-side; the account must be writable (the
+provisioning step clears a read-only flag). An upload larger than 100 MB is
+rejected at Cloudflare.
 
 ### smortress/immich
 
@@ -2084,7 +2130,7 @@ Generates the pre-generated host SSH key under the gitignored
 Run `nix run .#key-backup` on a machine **before** wiping or reinstalling it.
 It archives `~/.config/ssh-sk/k{1,2,3}/sudo` — the FIDO2 credential *handles*
 that make the YubiKeys usable for sudo — the host SSH
-key, and the untracked `~/dev/setup-yubikey.sh` if present. A machine wipe
+key, and the untracked `~/wip/setup-yubikey.sh` if present. A machine wipe
 destroys the handles; without them OpenSSH cannot use the credential even with
 the right key inserted. The setup script is restored as **data** (0600), not
 executable; review it and `chmod +x` after a restore.

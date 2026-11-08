@@ -1,68 +1,36 @@
 # The Mac agent boundary (sdlc #427): `agent-sandbox claude` runs Claude in a headless Tart macOS
-# guest that sees $HOME at identical paths minus `deny`, so it has no host USB (YubiKey), host GUI
-# dialogs or host sockets. Plain `claude` on the host stays the deliberate opt-out.
+# guest that sees only the `allowRw` tree at identical paths, so it has no host USB (YubiKey), host
+# GUI dialogs or host sockets. Plain `claude` on the host stays the deliberate opt-out.
 {
   lib,
   pkgs,
   ...
 }:
 let
-  # Never shared: browser/app data and Keychains live in ~/Library; .tart holds the VM's own disk;
-  # .Trash is TCC-protected and Virtualization.framework refuses the whole config over it.
-  # The rest are personal secrets and host-executed config. The guest gets its own .claude and
-  # copies of the gh/gcloud/kube config below, so the host copies stay host-only.
-  deny = [
-    "Library"
-    ".cache/Bitwarden"
-    ".cache/cliphist"
-    ".claude"
-    ".config/Bitwarden"
-    ".config/gh"
-    ".config/gcloud"
-    ".config/op"
-    ".config/sops"
-    ".config/ssh-sk"
-    ".config/tutanota-desktop"
-    ".docker"
-    ".git-credentials"
-    ".gnupg"
-    ".kube"
-    ".local/share/Bitwarden"
-    ".local/share/memory"
-    ".local/share/proton-pass-cli"
-    ".local/state/harvest"
-    ".local/state/key-backup"
-    ".local/state/proton"
-    ".local/state/syncthing"
-    ".netrc"
-    ".npmrc"
-    ".op"
-    ".pki"
-    ".ssh/google_compute_engine"
-    ".tart"
-    ".Trash"
-    ".zsh_history"
-    ".bash_history"
-    "Sync"
-    "Vault"
-  ];
-  # Read-write; everything else shared is read-only. The host config that executes code on the
-  # host (Claude hooks, gh aliases, kube exec, gcloud exec) is denied above and copied to the
-  # guest-local tree below, so the guest cannot make the host run its config.
-  rw = [
+  # The allowlist is the control: nothing outside these trees is visible in the guest. Claude's
+  # session state is shared so the host and the guest resume each other's conversations; its
+  # config (~/.claude.json, settings.json, skills, agents, plugins, commands, CLAUDE.md) stays
+  # host-only, and the guest keeps its own login and settings.
+  allow = [ ];
+  allowRw = [
     "Blitzy"
     "repos"
-    "dev"
-    ".local/state/agent"
-    ".cache/agent"
+    "wip"
+    ".claude/file-history"
+    ".claude/plans"
+    ".claude/projects"
+    ".claude/tasks"
   ];
   # Absolute read-only shares mounted at the same path; the host store is always shared.
-  extra = [ "/opt/homebrew" ];
+  # /opt/homebrew is deliberately absent: a tool that needs it gets a narrow root instead.
+  extra = [ ];
   # Host CLI config copied into a guest-local tree each launch, with the env vars below pointing
-  # at the copy. The host paths are denied, so this is the only copy the guest can see.
+  # at the copy. Those host paths are not visible in the guest, so the guest can write its own
+  # config without touching the host.
   guestConfig = [
     ".config/gh"
     ".config/gcloud"
+    ".config/git"
     ".docker/config.json"
     ".kube"
   ];
@@ -73,6 +41,7 @@ let
     "github-personal-signing-key"
     "github-work-pat"
     "github-work-signing-key"
+    "calibre-password"
   ];
 
   substitutions = {
@@ -87,8 +56,8 @@ let
   };
   arrays = {
     inherit
-      deny
-      rw
+      allow
+      allowRw
       extra
       guestConfig
       handIn
