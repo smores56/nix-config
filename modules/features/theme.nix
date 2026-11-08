@@ -6,6 +6,7 @@
 }:
 let
   graphical = config.machine.graphical;
+  desktop = graphical && pkgs.stdenv.hostPlatform.isLinux;
   colors = config.lib.stylix.colors;
   scheme = config.stylix.base16Scheme;
   schemeName =
@@ -16,6 +17,39 @@ let
         file = baseNameOf (toString scheme);
       in
       lib.removeSuffix ".yml" (lib.removeSuffix ".yaml" file);
+
+  # eza's defaults are ANSI and follow the palette, but Stylix's vivid theme
+  # maps directories to base0F, which is near-invisible on the darker schemes.
+  # Pin the file types eza draws most to higher-contrast palette colors.
+  hexToRgb =
+    hex:
+    let
+      n = lib.fromHexString hex;
+      b = n - 256 * builtins.div n 256;
+      g = builtins.div n 256 - 256 * builtins.div n 65536;
+      r = builtins.div n 65536;
+    in
+    "${toString r};${toString g};${toString b}";
+  fg = base: "38;2;${hexToRgb colors.${base}}";
+  lsColors = lib.concatStringsSep ":" [
+    "di=1;${fg "base0D"}"
+    "ln=1;${fg "base0C"}"
+    "mh=1;${fg "base0C"}"
+    "ex=1;${fg "base0B"}"
+    "fi=${fg "base05"}"
+    "no=${fg "base05"}"
+    "or=1;${fg "base08"}"
+    "mi=${fg "base08"}"
+    "pi=${fg "base0A"}"
+    "so=${fg "base0A"}"
+    "bd=1;${fg "base0A"}"
+    "cd=1;${fg "base0A"}"
+    "su=1;${fg "base08"}"
+    "sg=1;${fg "base0E"}"
+    "tw=1;${fg "base0E"}"
+    "ow=1;${fg "base0E"}"
+    "st=${fg "base0E"}"
+  ];
 in
 {
   config = {
@@ -52,7 +86,8 @@ in
     '';
 
     home = {
-      pointerCursor.enable = lib.mkIf (graphical && pkgs.stdenv.hostPlatform.isLinux) true;
+      pointerCursor.enable = lib.mkIf desktop true;
+      sessionVariables.LS_COLORS = lsColors;
     };
 
     stylix = {
@@ -75,13 +110,15 @@ in
       targets = {
         kitty.fonts.enable = false;
         kitty.opacity.enable = false;
-        helix.enable = false;
-        lazygit.enable = false;
-        opencode.enable = false;
-        gtk.enable = false;
-        gnome.enable = lib.mkDefault false;
+        # GNOME's target writes dconf settings; this is a niri session, and the
+        # rest are unused apps that also write dconf for no benefit.
+        gnome.enable = false;
         gnome-text-editor.enable = false;
         eog.enable = false;
+        # GTK and Qt are desktop-only; their target code and packages are
+        # meaningless on the server and macOS hosts.
+        gtk.enable = desktop;
+        qt.enable = desktop;
       };
     };
   };

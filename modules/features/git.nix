@@ -6,6 +6,27 @@
 }:
 let
   cfg = config.user;
+  colors = config.lib.stylix.colors;
+  # A subtle diff tint over base00; delta has no alpha colors.
+  blend =
+    from: to: pct:
+    let
+      f = lib.fromHexString from;
+      t = lib.fromHexString to;
+      mix = a: b: builtins.div (a * (100 - pct) + b * pct) 100;
+      channel =
+        n:
+        let
+          h = lib.toHexString n;
+        in
+        if builtins.stringLength h == 1 then "0${h}" else h;
+      r = mix (builtins.div f 65536) (builtins.div t 65536);
+      g = mix (builtins.div (f - 65536 * builtins.div f 65536) 256) (
+        builtins.div (t - 65536 * builtins.div t 65536) 256
+      );
+      b = mix (f - 256 * builtins.div f 256) (t - 256 * builtins.div t 256);
+    in
+    "#${channel r}${channel g}${channel b}";
   secretPath = import ../lib/secret-path.nix config;
 
   inherit (cfg) work;
@@ -129,6 +150,20 @@ in
           delta = {
             navigate = true;
             line-numbers = true;
+            # bat's Stylix theme; home-manager rebuilds bat's cache with it.
+            syntax-theme = "base16-stylix";
+            minus-style = "syntax ${blend colors.base00 colors.base08 15}";
+            plus-style = "syntax ${blend colors.base00 colors.base0B 15}";
+            minus-emph-style = "syntax ${blend colors.base00 colors.base08 30}";
+            plus-emph-style = "syntax ${blend colors.base00 colors.base0B 30}";
+            line-numbers-minus-style = "#${colors.base08}";
+            line-numbers-plus-style = "#${colors.base0B}";
+            line-numbers-zero-style = "#${colors.base03}";
+            file-style = "#${colors.base0D} bold";
+            file-decoration-style = "#${colors.base0D} ul";
+            hunk-header-decoration-style = "#${colors.base0D} ul";
+            commit-style = "#${colors.base0E} bold";
+            commit-decoration-style = "#${colors.base0E}";
           };
           pager = {
             diff = "delta";

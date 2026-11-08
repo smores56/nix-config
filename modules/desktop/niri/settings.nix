@@ -43,6 +43,13 @@ in
     hotkey-overlay.skip-at-startup = true;
     layout = {
       gaps = shared.gaps.compact;
+      focus-ring = {
+        enable = true;
+        width = 4;
+        active.color = "#${colors.base0D}";
+        inactive.color = "#${colors.base02}";
+        urgent.color = "#${colors.base08}";
+      };
       background-color = "#${colors.base00}";
       shadow = {
         enable = true;

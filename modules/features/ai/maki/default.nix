@@ -29,6 +29,10 @@ let
     maki.setup({
       always_yolo = true,
       always_thinking = "max",
+      -- Follow the terminal's ANSI palette so maki inherits the Stylix scheme.
+      ui = {
+        theme = "system";
+      },
       -- Only the declared neuralwatt models (+ smortress qwen as backup),
       -- excluding every other provider, including the built-in deepseek that
       -- appears when the DEEPSEEK_API_KEY env var is present, and the rest of
@@ -80,6 +84,9 @@ let
       instructions = { files = { } },
       -- A future cwd with a .maki config cannot be trusted interactively here.
       trust = { prompt = false },
+      ui = {
+        theme = "system";
+      },
       provider = {
         default_model = "${privateModel}",
         allowed_models = { "${privateModel}" },
