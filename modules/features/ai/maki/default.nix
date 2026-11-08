@@ -29,6 +29,11 @@ let
     maki.setup({
       always_yolo = true,
       always_thinking = "max",
+      -- Follow the terminal's ANSI palette, so the one-time theme preview
+      -- recolors maki live and normal sessions inherit the Stylix scheme.
+      ui = {
+        theme = "system";
+      },
       -- Only the declared neuralwatt models (+ smortress qwen as backup),
       -- excluding every other provider, including the built-in deepseek that
       -- appears when the DEEPSEEK_API_KEY env var is present, and the rest of
