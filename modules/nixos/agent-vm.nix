@@ -3,8 +3,9 @@
 # (modules/features/agent-vm) opens an SSH session into it.
 #
 # The guest sees $HOME at the same path through one virtiofs share of a host-assembled view
-# (modules/lib/agent_view.py): everything but `deny`, read-only except `rw`. virtiofsd squashes
-# every guest uid to the human's, so guest root cannot plant root-owned or setuid-root files.
+# (modules/lib/agent_view.py): only `allow` (read-only) and `allowRw` (read-write); anything else
+# has no path in the guest. virtiofsd squashes every guest uid to the human's, so guest root
+# cannot plant root-owned or setuid-root files.
 {
   config,
   lib,
@@ -38,11 +39,11 @@ let
   view = "${runDir}/home";
   secretsDir = "${runDir}/secrets";
   authorizedKeys = "agent-vm-authorized-keys";
-  # The agent's own XDG dirs (the launcher points XDG_*_HOME at them).
-  agentDirs = [
-    ".local/state/agent"
-    ".local/share/agent"
-    ".cache/agent"
+  # Shared maki state (the launcher leaves XDG_STATE_HOME at its default). The guest cannot
+  # create them under the read-only view, so prep makes them as the user first.
+  stateDirs = [
+    ".local/state/maki"
+    ".local/logs/maki"
   ];
 
   planner = ../lib/share_planner.py;
@@ -103,7 +104,7 @@ let
 
     # The planner shares only what exists, and the guest cannot create these under read-only
     # parents; made as the user, so no root write follows a path in the home.
-    runuser -u ${user} -- mkdir -p ${lib.escapeShellArgs (map (rel: "${home}/${rel}") agentDirs)}
+    runuser -u ${user} -- mkdir -p ${lib.escapeShellArgs (map (rel: "${home}/${rel}") stateDirs)}
 
     # The planner only reads the home, so it runs as its owner; the root step trusts its JSON
     # for paths alone and re-checks every source with O_NOFOLLOW.
@@ -111,13 +112,13 @@ let
       ${
         lib.escapeShellArgs (
           lib.concatMap (d: [
-            "--deny"
+            "--allow"
             d
-          ]) cfg.deny
+          ]) cfg.allow
           ++ lib.concatMap (r: [
-            "--rw"
+            "--allow-rw"
             r
-          ]) cfg.rw
+          ]) cfg.allowRw
         )
       } \
       | ${python} -I ${viewBuilder} --home ${home} --view ${view}
@@ -435,13 +436,13 @@ in
   imports = [ inputs.microvm.nixosModules.host ];
 
   options.agentVm = {
-    deny = lib.mkOption {
+    allow = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      description = "Home-relative paths the guest never sees.";
+      description = "Home-relative paths shared read-only; nothing else in the home is visible.";
     };
-    rw = lib.mkOption {
+    allowRw = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      description = "Home-relative paths shared read-write; everything else shared is read-only.";
+      description = "Home-relative paths shared read-write; nothing else in the home is visible.";
     };
     extraShares = lib.mkOption {
       type = lib.types.listOf (
@@ -485,61 +486,23 @@ in
 
   config = {
     agentVm = lib.mapAttrs (_: lib.mkDefault) {
-      deny = [
-        ".config/sops"
-        ".config/BraveSoftware"
-        ".cache/BraveSoftware"
-        ".config/chromium"
-        ".cache/chromium"
-        ".config/mozilla"
-        ".cache/mozilla"
-        ".mozilla"
-        ".config/tutanota-desktop"
-        ".config/Bitwarden"
-        ".cache/Bitwarden"
-        ".local/share/Bitwarden"
-        ".config/op"
-        ".op"
-        ".config/ssh-sk"
-        ".local/share/keyrings"
-        ".local/share/memory"
-        ".local/state/harvest"
-        ".local/share/ykman"
-        ".local/state/key-backup"
-        ".docker"
-        ".netrc"
-        ".npmrc"
-        ".git-credentials"
-        ".zsh_history"
-        ".bash_history"
-        ".local/share/proton-pass-cli"
-        ".local/state/proton"
-        ".cache/cliphist"
-        ".gnupg"
-        ".pki"
-        ".var/app"
-        ".steam"
-        ".local/share/Steam"
-        # `sudo vault` and the todo bindfs are the only ways in; the guest has
-        # neither sudo nor the mounts.
-        ".local/share/vault"
-        ".local/share/todo"
-        # The Syncthing state dir holds the device key, the GUI API key, and the
-        # vault's retired identity copy.
-        ".local/state/syncthing"
+      allow = [
+        # Skills discovery for maki; symlinks into the shared store.
+        ".agents"
+        # The real tool config, shared read-only; maki's pack lock is bound over separately.
+        ".config/maki"
+        ".config/git"
+        # The manually installed maki binary; no Nix package exists yet.
+        ".local/bin"
+        ".gitignore"
       ];
-      rw = [
+      allowRw = [
         "repos"
-        "dev"
-        "Documents"
-        "Downloads"
-        ".cargo/registry"
-        ".cargo/git"
-        ".npm"
-        ".bun/install/cache"
-      ]
-      # The human's state is never extended, and guest sessions survive restarts.
-      ++ agentDirs;
+        "wip"
+        # Shared maki sessions and logs: the host and the guest resume each other's sessions.
+        ".local/state/maki"
+        ".local/logs/maki"
+      ];
       secrets = [
         "github-personal-pat"
         "github-personal-signing-key"

@@ -1129,47 +1129,38 @@ in
                     !lib.hasInfix "Host smortress" text
                   else
                     lib.hasInfix "HostName ssh.sammohr.dev" text;
-                denies = lib.all (d: lib.elem d host.agentVm.deny) [
-                  ".config/sops"
-                  ".local/share/keyrings"
-                  ".local/share/ykman"
-                  ".local/state/key-backup"
-                  ".config/BraveSoftware"
-                  ".config/mozilla"
-                  ".mozilla"
-                  ".config/Bitwarden"
-                  ".cache/Bitwarden"
-                  ".local/share/Bitwarden"
-                  ".config/op"
-                  ".op"
-                  ".config/ssh-sk"
-                  ".local/share/memory"
-                  ".local/state/harvest"
-                  ".docker"
-                  ".netrc"
-                  ".npmrc"
-                  ".git-credentials"
-                  ".zsh_history"
-                  ".bash_history"
-                  ".cache/cliphist"
-                  ".gnupg"
-                  ".local/share/vault"
-                  ".local/share/todo"
-                ];
-                # A writable entry must never cover host-executed config or a denied path.
+                # The home is an allowlist, so the sanctioned set is the check: a stray entry is
+                # a new data surface, not a tuning knob.
+                allowlist =
+                  lib.sort (a: b: a < b) host.agentVm.allow == lib.sort (a: b: a < b) [
+                    ".agents"
+                    ".config/git"
+                    ".config/maki"
+                    ".gitignore"
+                    ".local/bin"
+                  ]
+                  &&
+                    lib.sort (a: b: a < b) host.agentVm.allowRw == lib.sort (a: b: a < b) [
+                      ".local/logs/maki"
+                      ".local/state/maki"
+                      "repos"
+                      "wip"
+                    ];
+                # A writable entry must never be a whole home or a host-executed config tree.
                 narrowRw = lib.all (
                   r:
                   !(lib.elem r [
                     ""
                     "."
                     ".config"
+                    ".config/maki"
                     ".local"
                     ".local/bin"
                     ".cache"
                     ".ssh"
+                    ".gnupg"
                   ])
-                  && lib.all (d: !(lib.hasPrefix "${r}/" d) && d != r) host.agentVm.deny
-                ) host.agentVm.rw;
+                ) host.agentVm.allowRw;
                 firewall = host.networking.firewall.extraCommands;
                 # The host relay, guest relay and guest firewall must agree on every ingress port.
                 ingress = lib.all (
@@ -1196,14 +1187,14 @@ in
               && f.storeSafe
               && f.keyOnly
               && f.sshAlias
-              && f.denies
+              && f.allowlist
               && f.narrowRw
               && f.ingress
             ) all;
             launcher = (import ../lib/agent-vm.nix { inherit pkgs lib; }).launcher "smores";
           in
           assert lib.assertMsg ok
-            "agent-vm: a Linux guest lost uid squashing, the view, guest builds, store safety, key-only sshd or a deny entry";
+            "agent-vm: a Linux guest lost uid squashing, the view, guest builds, store safety, key-only sshd or the allowlist";
           pkgs.runCommand "agent-vm-linux-static-check"
             {
               nativeBuildInputs = [ pkgs.gnugrep ];
