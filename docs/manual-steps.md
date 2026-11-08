@@ -1494,6 +1494,10 @@ rm -rf ~/.local/state/agent ~/.local/share/agent ~/.cache/agent
 The guest's writable store layer is recreated on every start, so guest builds
 reset; the host store is never mounted or parsed.
 
+The guest home is read-only apart from the allowlist, so `nix profile install`
+cannot write `~/.nix-profile`; use `nix build`, `nix develop`, or `nix shell`
+inside a checkout instead.
+
 The personal sops signing key logs in to smortress only through a forced
 `agent-ssh` command, which lands in smortress's own guest, never a host shell.
 A laptop guest reaches smortress that way through the tunnel.

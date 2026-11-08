@@ -585,10 +585,13 @@ in
         after = [
           "agent-vm-prep.service"
           "agent-vm-net.service"
-          "nixos-fw.service"
+          "firewall.service"
         ];
         requires = [ "agent-vm-prep.service" ];
-        wants = [ "nixos-fw.service" ];
+        wants = [
+          "agent-vm-net.service"
+          "firewall.service"
+        ];
         # partOf makes a prep restart re-run the assertion; the oneshot has no timer.
         partOf = [ "agent-vm-prep.service" ];
         wantedBy = [ "multi-user.target" ];
