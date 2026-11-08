@@ -45,7 +45,7 @@ let
     - Never write secrets, tokens, or transient task state
 
     # Tools
-    - Story downloads: in the Linux agent VM run `fanficfare-download <story-url> ...`; it keeps site warning lists off the EPUB title page and adds or replaces the book in calibre. The calibre FanFicFare plugin is not installed
+    - Story downloads in the Linux agent VM: `fanficfare-download <url> ...` (no calibre plugin)
 
     # Style
     - Prefer functional style: pure functions, immutability, composition over inheritance; single-purpose functions; structured types over untyped maps
