@@ -18,9 +18,9 @@ known="@stateDir@/known_hosts"
 case "${1:-}" in
 restart)
   # The VM and its view are root services; this launcher never asks for elevation itself. A host
-  # switch never restarts the guest, so this is also how a changed guest config takes effect and
-  # how a guest-side `nix store gc` that masked host store paths is repaired.
-  echo "agent-sandbox: re-plan the home view, repair masked store paths and pick up guest changes with: sudo systemctl restart $unit" >&2
+  # switch never restarts the guest, so this is also how a changed guest config takes effect. The
+  # guest's writable store layer is discarded on every start, so guest builds reset too.
+  echo "agent-sandbox: re-plan the home view and pick up guest changes with: sudo systemctl restart $unit" >&2
   exit 0
   ;;
 -h | --help)

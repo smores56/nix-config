@@ -1112,8 +1112,12 @@ in
                 # The home reaches the guest only through the assembled view.
                 noRawHome = lib.all (sh: sh.source != home && !(lib.hasPrefix "${home}/" sh.source)) shares;
                 guestBuilds = guest.microvm.writableStoreOverlay != null;
+                # The host never parses the guest's store image: a fresh one per start, and the
+                # prep script holds no loop mount.
+                freshStore = lib.hasInfix "rm -f nix-store.img" guest.microvm.preStart;
+                prep = host.systemd.services.agent-vm-prep.serviceConfig.ExecStart;
                 # A persistent writable overlay must not register the closure, or a
-                # guest GC whiteouts host store paths (modules/nixos/agent-vm.nix).
+                # guest GC could unlink host store paths (modules/nixos/agent-vm.nix).
                 storeSafe = !guest.microvm.registerClosure;
                 keyOnly =
                   !guest.services.openssh.settings.PasswordAuthentication
@@ -1184,6 +1188,7 @@ in
               && f.noXattr
               && f.noRawHome
               && f.guestBuilds
+              && f.freshStore
               && f.storeSafe
               && f.keyOnly
               && f.sshAlias
@@ -1199,6 +1204,7 @@ in
             {
               nativeBuildInputs = [ pkgs.gnugrep ];
               firewall = lib.concatStrings (map (f: f.firewall) all);
+              prepScripts = lib.concatStringsSep " " (map (f: "${f.prep}") all);
               passAsFile = [ "firewall" ];
             }
             ''
@@ -1213,6 +1219,11 @@ in
               grep -xF -- '-A agent-vm-fwd -d 127.0.0.0/8 -j DROP' "$rules4"
               # The private-range drops come before the egress accept.
               [ "$(grep -n -- '-d 10.0.0.0/8 -j DROP' "$rules4" | cut -d: -f1)" -lt "$(grep -n -- '-A agent-vm-fwd -j ACCEPT' "$rules4" | cut -d: -f1)" ]
+              # The host never mounts the guest store image, and prep never parses it.
+              for p in $prepScripts; do
+                if grep -F -- 'mount -o loop' "$p"; then exit 1; fi
+                if grep -F -- 'nix-store.img' "$p"; then exit 1; fi
+              done
               # The forced key that lands laptop agents in this host's guest.
               grep -F -- 'no-user-rc' ${../nixos/ssh.nix}
               if grep -F -- 'no-touch-required' ${../nixos/ssh.nix}; then exit 1; fi

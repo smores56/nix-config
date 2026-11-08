@@ -32,9 +32,6 @@ let
   # Locally administered unicast, fixed so the guest's networkd match never changes.
   guestMac = "02:00:0a:4d:00:02";
 
-  # microvm.nix keeps this image in its own state dir, named after the VM.
-  storeImage = "${config.microvm.stateDir}/${name}/nix-store.img";
-
   runDir = "/run/agent-vm";
   view = "${runDir}/home";
   secretsDir = "${runDir}/secrets";
@@ -75,27 +72,6 @@ let
         pkgs.openssh
       ]
     }
-    # A guest `nix store gc` unlinks paths it has registered. When the same path
-    # exists in the host store, overlayfs records the unlink as a whiteout in the
-    # guest's writable layer, hiding the host path from the guest permanently:
-    # home-manager symlinks in the shared home (maki's init.lua among them) go
-    # dangle and the agent silently runs without its managed config. Drop only
-    # whiteouts that still mask a host path; guest-built paths have no lower
-    # layer and stay. The image is mounted only while the guest is down, since
-    # qemu holds it open otherwise.
-    if ! systemctl is-active --quiet microvm@${name}.service && [ -f ${storeImage} ]; then
-      storeMount=$(mktemp -d)
-      if mount -o loop ${storeImage} "$storeMount"; then
-        for entry in "$storeMount"/store/*; do
-          [ -c "$entry" ] || continue
-          entryName=$(basename "$entry")
-          if [ -e "/nix/store/$entryName" ]; then rm -f "$entry"; fi
-        done
-        umount "$storeMount"
-      fi
-      rmdir "$storeMount"
-    fi
-
     if mountpoint -q ${view}; then umount -R ${view}; fi
     rm -rf ${view} ${secretsDir}
     install -d -m 0711 ${runDir}
@@ -262,11 +238,14 @@ let
       microvm = {
         hypervisor = "qemu";
         # microvm.nix otherwise loads the guest's closure into the guest's Nix DB
-        # with `nix-store --load-db` on every boot. A guest `nix store gc` then
-        # deletes those host-store paths, and the overlay keeps each deletion as a
-        # whiteout masking the host's copy (see the prep script above). The guest
-        # reads /nix/store directly, so it does not need its closure registered.
+        # with `nix-store --load-db` on every boot. A guest `nix store gc` could then
+        # unlink host-store paths the guest never owned; registering is not needed
+        # because the guest reads /nix/store directly through the read-only share.
         registerClosure = false;
+        # A fresh writable layer on every hypervisor start, including a crash restart: the host
+        # never mounts or parses the guest's image, and guest builds reset with it. microvm.nix
+        # reruns this before it recreates the missing volume.
+        preStart = "rm -f nix-store.img";
         inherit (cfg) vcpu mem;
         interfaces = [
           {
