@@ -23,7 +23,6 @@ in
       "abbrs.ms" = maki;
       "abbrs.mp" = maki;
       "abbrs.td" = todo;
-      "abbrs.te" = todo;
       "abbrs.v" = noVault;
       "abbrs.ns" = "inherent: nixos-rebuild exists only on NixOS";
       "env.CC" = "inherent: macOS toolchain in /usr/bin";
@@ -100,10 +99,7 @@ in
       "memory"
       "memory-mcp"
     ])
-    (group todo [
-      "todo.txt-cli"
-      "tuxedo"
-    ])
+    (group todo [ "tuxedo" ])
     (group noVault [ "vault" ])
     (group harvest [ "harvest" ])
     (group "inherent: steam is a brew cask on the Mac" [ "steam" ])

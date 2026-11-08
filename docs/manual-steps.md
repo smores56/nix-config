@@ -1600,9 +1600,8 @@ hosts so sops rewrites `/run/secrets/…`, then delete the old key in Immich.
 `~/.local/share/todo/todo.txt` is the single list. It is a bindfs mount of
 `/var/lib/data/todo`, which the vault Syncthing daemon carries alongside the
 vault. The same daemon and the same device identity serve both folders on
-smortress and smorespro; there is no separate todo daemon. `todo.sh`, `td`, and
-`te` use `~/.local/share/todo` on both hosts; `te` and todo.sh's `$EDITOR` run
-tuxedo on the file.
+smortress and smorespro; there is no separate todo daemon. `td` runs tuxedo on
+`~/.local/share/todo/todo.txt` on both hosts.
 
 The common module is [`modules/features/todo.nix`](../modules/features/todo.nix).
 The shared folder and mount are
