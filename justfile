@@ -14,6 +14,10 @@ check-build:
 agent-vm-check:
     agent-vm-check
 
+# Assert the agent VM view, shares, secrets and firewall from the host.
+agent-vm-verify:
+    sudo agent-vm-verify
+
 # Run the Python unit suite with its dependencies.
 test:
     nix build --no-link .#checks.$(nix eval --impure --raw --expr builtins.currentSystem).unit-tests

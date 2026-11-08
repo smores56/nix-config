@@ -47,6 +47,38 @@ let
   viewBuilder = ../lib/agent_view.py;
   python = lib.getExe pkgs.python3;
 
+  # Asserted from the host, not the guest: a compromised guest cannot report a clean boundary.
+  verifyScript = pkgs.writeShellApplication {
+    name = "agent-vm-verify";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.findutils
+      pkgs.util-linux
+      pkgs.gnugrep
+      pkgs.iproute2
+      pkgs.iptables
+    ];
+    text =
+      builtins.replaceStrings
+        [
+          "@view@"
+          "@secrets@"
+          "@user@"
+          "@tap@"
+          "@allow@"
+          "@allowRw@"
+        ]
+        [
+          view
+          secretsDir
+          user
+          tap
+          (lib.escapeShellArgs cfg.allow)
+          (lib.escapeShellArgs cfg.allowRw)
+        ]
+        (builtins.readFile ../lib/agent-vm-verify.sh);
+  };
+
   # Host loopback services the agent uses; both are token-authenticated.
   proxied = [
     ports.llm
@@ -521,6 +553,8 @@ in
       config = guest;
     };
 
+    # Also the manual entry point; the unit logs a failing assertion after every prep.
+    environment.systemPackages = [ verifyScript ];
     systemd.services = {
       agent-vm-prep = {
         description = "Assemble the agent VM's home view and hand-in secrets";
@@ -541,6 +575,21 @@ in
           RemainAfterExit = true;
           ExecStart = prepScript;
           ExecStop = "-${pkgs.util-linux}/bin/umount -R ${view}";
+        };
+      };
+      agent-vm-verify = {
+        description = "Verify the agent VM's view, shares, secrets and firewall from the host";
+        after = [
+          "agent-vm-prep.service"
+          "agent-vm-net.service"
+          "nixos-fw.service"
+        ];
+        requires = [ "agent-vm-prep.service" ];
+        wants = [ "nixos-fw.service" ];
+        wantedBy = [ "multi-user.target" ];
+        serviceConfig = {
+          Type = "oneshot";
+          ExecStart = "${verifyScript}/bin/agent-vm-verify";
         };
       };
       agent-vm-net = {

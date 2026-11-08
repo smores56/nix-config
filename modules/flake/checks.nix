@@ -1117,6 +1117,8 @@ in
                 # prep script holds no loop mount.
                 freshStore = lib.hasInfix "rm -f nix-store.img" guest.microvm.preStart;
                 prep = host.systemd.services.agent-vm-prep.serviceConfig.ExecStart;
+                verify = host.systemd.services ? agent-vm-verify;
+                verifyScript = host.systemd.services.agent-vm-verify.serviceConfig.ExecStart;
                 # A persistent writable overlay must not register the closure, or a
                 # guest GC could unlink host store paths (modules/nixos/agent-vm.nix).
                 storeSafe = !guest.microvm.registerClosure;
@@ -1194,6 +1196,7 @@ in
               && f.keyOnly
               && f.sshAlias
               && f.allowlist
+              && f.verify
               && f.narrowRw
               && f.ingress
             ) all;
@@ -1206,6 +1209,7 @@ in
               nativeBuildInputs = [ pkgs.gnugrep ];
               firewall = lib.concatStrings (map (f: f.firewall) all);
               prepScripts = lib.concatStringsSep " " (map (f: "${f.prep}") all);
+              verifyScripts = lib.concatStringsSep " " (map (f: "${f.verifyScript}") all);
               passAsFile = [ "firewall" ];
             }
             ''
@@ -1224,6 +1228,12 @@ in
               for p in $prepScripts; do
                 if grep -F -- 'mount -o loop' "$p"; then exit 1; fi
                 if grep -F -- 'nix-store.img' "$p"; then exit 1; fi
+              done
+              # The host-side verifier asserts the boundary the guest reports nothing about.
+              for p in $verifyScripts; do
+                for opt in findmnt nix-store.img /proc/mounts agent-vm-in agent-vm-fwd nosuid; do
+                  grep -F -- "$opt" "$p" || { echo "agent-vm-verify lacks: $opt" >&2; exit 1; }
+                done
               done
               # The forced key that lands laptop agents in this host's guest.
               grep -F -- 'no-user-rc' ${../nixos/ssh.nix}
