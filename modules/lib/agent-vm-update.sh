@@ -6,8 +6,6 @@ expected_file=@expected@
 key=@key@
 known=@known@
 guest=@user@@@guestAddr@
-unit=@unit@
-
 [ "$(id -u)" -eq 0 ] || {
   echo "agent-vm-update: run as root (sudo agent-vm-update)" >&2
   exit 2
@@ -37,9 +35,9 @@ done
 
 expected=$(readlink "$expected_file" 2>/dev/null || true)
 [ -n "$expected" ] || { echo "agent-vm-update: no expected toplevel at $expected_file" >&2; exit 1; }
-info=$(run 'printf "%s|%s|%s" "$(readlink /run/booted-system)" "$(readlink /run/current-system)" "$(who | wc -l)"' 2>/dev/null) ||
-  { echo "agent-vm-update: guest unreachable" >&2; exit 1; }
-IFS='|' read -r booted current humans <<<"$info"
+booted=$(run 'readlink /run/booted-system') || { echo "agent-vm-update: guest unreachable" >&2; exit 1; }
+current=$(run 'readlink /run/current-system') || { echo "agent-vm-update: guest unreachable" >&2; exit 1; }
+humans=$(run 'who | wc -l') || { echo "agent-vm-update: guest unreachable" >&2; exit 1; }
 
 if [ "$booted" = "$expected" ]; then
   echo "agent-vm-update: current (booted=$expected)"

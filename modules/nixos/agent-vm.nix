@@ -241,7 +241,6 @@ let
         "@known@"
         "@user@"
         "@guestAddr@"
-        "@unit@"
       ]
       [
         "${config.microvm.stateDir}/${name}/toplevel"
@@ -249,7 +248,6 @@ let
         "${stateDir}/known_hosts"
         user
         guestAddr
-        "microvm@${name}.service"
       ]
       (builtins.readFile ../lib/agent-vm-update.sh);
   };
