@@ -486,9 +486,22 @@ in
         ".mozilla"
         ".config/tutanota-desktop"
         ".config/Bitwarden"
+        ".cache/Bitwarden"
+        ".local/share/Bitwarden"
+        ".config/op"
+        ".op"
+        ".config/ssh-sk"
         ".local/share/keyrings"
+        ".local/share/memory"
+        ".local/state/harvest"
         ".local/share/ykman"
         ".local/state/key-backup"
+        ".docker"
+        ".netrc"
+        ".npmrc"
+        ".git-credentials"
+        ".zsh_history"
+        ".bash_history"
         ".local/share/proton-pass-cli"
         ".local/state/proton"
         ".cache/cliphist"
@@ -546,6 +559,11 @@ in
         ];
         requiredBy = [ "microvm-virtiofsd@${name}.service" ];
         partOf = [ "microvm@${name}.service" ];
+        # virtiofsd and the VM require this unit, so a restart here propagates to the VM and
+        # drops every agent-sandbox session. The prep script is stable across host switches;
+        # `agent-sandbox restart` / `sudo systemctl restart microvm@agent.service` is the
+        # explicit way to re-plan the view.
+        restartIfChanged = false;
         after = [ "local-fs.target" ];
         serviceConfig = {
           Type = "oneshot";
@@ -560,6 +578,9 @@ in
         bindsTo = [ "microvm-tap-interfaces@${name}.service" ];
         before = [ "microvm@${name}.service" ];
         requiredBy = [ "microvm@${name}.service" ];
+        # Same propagation: the VM requires this unit, so a host-switch restart would stop the
+        # guest. The tap address is stable; `microvm@agent` restart re-applies it.
+        restartIfChanged = false;
         serviceConfig = {
           Type = "oneshot";
           RemainAfterExit = true;
@@ -580,6 +601,12 @@ in
           pair: lib.elem (lib.removePrefix "/run/secrets/" (lib.last (lib.splitString "|" pair))) cfg.secrets
         ) vmLib.secretEnv;
         message = "agent-vm: every secret the launcher exports must be in agentVm.secrets";
+      }
+      {
+        assertion =
+          config.systemd.services."agent-vm-prep".restartIfChanged == false
+          && config.systemd.services."agent-vm-net".restartIfChanged == false;
+        message = "agent-vm: prep/net must not restart on host switch; they are requiredBy the VM and would drop every session";
       }
     ];
 

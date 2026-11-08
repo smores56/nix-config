@@ -1330,7 +1330,8 @@ sudo vault yazi     # mount, run one command, unmount on exit
 `sudo vault` mounts the store with bindfs, which maps the `vault` user to you, so
 `~/.local/share/vault` behaves like a normal folder while it is open. On the
 NixOS hosts root means the YubiKey touch. The wrapper detaches a stale mount when it next runs,
-and `v` opens Yazi in the vault (`sudo vault yazi`). Nothing is reachable between sessions.
+and `v` opens Yazi in the vault (`sudo vault yazi`) on the Linux hosts; on the
+work Mac `v` runs that command over SSH on smortress. Nothing is reachable between sessions.
 
 **Version history** is Syncthing staggered versioning at
 `/var/lib/syncthing-versions/vault` on smortress — outside `/var/lib/data`, so
@@ -1384,14 +1385,15 @@ Agents run inside a VM on every host, so nothing they do can reach the host's
 sudo, polkit, YubiKey, PIN or admin prompts. `a` starts one: `agent-sandbox
 maki` on Linux, `agent-sandbox claude` on smoreswork. Plain `maki` or `claude`
 on the host is the deliberate unsandboxed opt-out. The design and its accepted
-risks are on smores56/sdlc#386.
+risks are on smores56/sdlc#427.
 
 Each guest sees the home at the same path, minus a deny list (`agentVm.deny` in
 `modules/nixos/agent-vm.nix`; `deny` in `modules/features/agent-vm/default.nix`
 on the Mac). Everything else is read-only except the `rw` list. Visible on
-purpose: shell histories, agent transcripts, and credential files in shared
-paths. What is not shared: browser profiles, keyrings, `~/.config/sops`, key
-backups, clipboard history, `~/Library` on the Mac, and `~/.local/share/vault` on Linux. The
+purpose on Linux: shell histories, agent transcripts, and credential files in
+shared paths. The Mac deny list hides transient history files and personal
+secret state. What is not shared: browser profiles, keyrings, `~/.config/sops`,
+key backups, FIDO2 handles, clipboard history, `~/Library` on the Mac, and `~/.local/share/vault` on Linux. The
 writable trees include repos, and the agent may write their `.git/config` and
 hooks, which you later run on the host; that is accepted (full git for agents).
 Keep secrets out of shared paths: run `secret-sweep` after adding files under
@@ -1434,13 +1436,26 @@ A laptop guest reaches smortress that way through the tunnel.
 
 ### smoreswork
 
-A headless Tart macOS guest (`modules/features/agent-vm`). Once per Mac:
+A headless Tart macOS guest (`modules/features/agent-vm`). The work Mac is a
+standard user: `sudo` asks for the smartcard PIN and then fails at `sam is not
+in the sudoers file`; do not use it. `home-manager switch` and user Nix builds
+work. `nix upgrade-nix`, daemon changes, admin-requiring Brew casks, and
+`sc_auth pair`/`unpair` need IT. Only YubiKey k2 is paired; ask IT to pair or
+replace the others. The vault is remote-only: `v` runs `ssh -t smortress sudo
+vault yazi` (the NixOS hosts still have local `sudo vault`). Use
+`key-backup --no-host-key` on this Mac; the default host-key read needs root.
+Removing the retired root Syncthing daemon and `/var/lib/data/vault` is an IT
+action (`launchctl` system domain), after confirming smortress has the data.
+
+Once per Mac:
 
 1. Turn off AirPlay Receiver (System Settings → General → AirDrop & Handoff):
    it is the one host service the guest can reach that can pop a dialog.
 2. Narrow Docker Desktop's File sharing (Settings → Resources → File sharing)
-   to the shared trees (`~/Blitzy`, `~/repos`). Containers started through the
-   forwarded socket can mount whatever is listed there, `/Users` included.
+   to the agent-safe trees: `~/Blitzy`, `~/repos`, `~/dev`, `~/Documents`,
+   `~/Downloads`, `~/Desktop`. Never `$HOME`, `~/.config`, `~/.cache`,
+   `~/Library`, `~/Vault`, or `~/Sync`: a container can read everything in the
+   listed trees.
 3. Run `agent-sandbox provision` (clones the pinned image, hardens the guest,
    rotates its admin password, installs the login key), then `a` and sign in to
    Claude inside the guest; the guest keeps its own login.
@@ -1448,8 +1463,39 @@ A headless Tart macOS guest (`modules/features/agent-vm`). Once per Mac:
 `agent-sandbox restart` stops the VM so the next launch re-plans the shares;
 `agent-sandbox stop` shuts it down. The four `github-{personal,work}-{pat,signing-key}`
 secrets are handed in at the host's sops-nix path on each launch; the rest stay
-on the host. Docker comes from the host's Docker Desktop through a per-session
-forwarded socket, so Docker Desktop must be running.
+on the host. The host's `.claude`, gh, gcloud, and kube config are denied in the
+shared home; the guest gets its own `.claude` and guest-local copies of gh,
+gcloud, and kube config, with `GH_CONFIG_DIR`, `KUBECONFIG`, and
+`CLOUDSDK_CONFIG` pointed at the copies. Docker comes from the host's Docker
+Desktop through a per-session forwarded socket, so Docker Desktop must be
+running.
+
+#### Guest-local Nix store (opt-in)
+
+When you need to build or validate Darwin outputs inside the guest, run once:
+
+```sh
+agent-sandbox provision-nix
+```
+
+It boots the guest without the host store, removes the launcher's synthetic
+`/nix` entry, reboots, installs Determinate Nix into the guest's own APFS
+volume, installs git/gh/jq/docker-client/ripgrep/claude-code/cacert/gcloud/kubectl
+into the guest profile, sets `min-free`/`max-free` and a weekly GC, and writes
+the `guest-nix` marker. Later launches use the guest profile and store, so the
+agent can run `nix flake check`, `nix build`, `nix develop`, and `nix shell`
+without forwarding the host nix-daemon. The guest store is separate and is
+GC'd; the host store is not mounted in this mode, so the guest substitutes from
+`cache.nixos.org`.
+
+Sign in to Claude inside the guest; the guest keeps its own login and
+`~/.claude` config. The host binary is not used in this mode. Do not re-run
+`agent-sandbox provision` after this. To return to the
+shared host store, delete `~/Library/Application Support/agent-vm/guest-nix`;
+the guest store is shadowed, not deleted. Validate this path on the Mac before
+relying on it for a release. If provisioning fails, a fresh guest is the reliable
+reset (`tart delete agent-vm`, then `agent-sandbox provision`); re-running may
+not repair a partial install.
 
 ### Scrub at source
 
