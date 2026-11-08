@@ -30,6 +30,33 @@ let
       r = builtins.div n 65536;
     in
     "${toString r};${toString g};${toString b}";
+  # revdiff resolves chroma-style through Chroma's built-in registry, so a base16
+  # slug such as shadesmear-dark is not a style name. Use the scheme's own name
+  # when Chroma ships it, else a muted style matching the scheme's polarity.
+  # Names mirror the Chroma styles vendored by revdiff 1.13.0.
+  chromaStyles = lib.concatMap (line: lib.splitString " " (lib.trim line)) (
+    lib.splitString "\n" ''
+      abap algol algol_nu arduino ashen aura-theme-dark aura-theme-dark-soft
+      autumn average base16-snazzy borland bw catppuccin-frappe catppuccin-latte
+      catppuccin-macchiato catppuccin-mocha colorful darcula doom-one doom-one2
+      dracula emacs evergarden friendly fruity github github-dark gruvbox
+      gruvbox-light hr_high_contrast hrdark igor kanagawa-dragon kanagawa-lotus
+      kanagawa-wave lovelace manni modus-operandi modus-vivendi monokai
+      monokailight murphy native nord nordic onedark onesenterprise paraiso-dark
+      paraiso-light pastie perldoc pygments rainbow_dash rose-pine rose-pine-dawn
+      rose-pine-moon rpgle rrt solarized-dark solarized-dark256 solarized-light
+      swapoff tango tokyonight-day tokyonight-moon tokyonight-night
+      tokyonight-storm trac vim vs vulcan witchhazel xcode xcode-dark
+    ''
+  );
+  chromaStyle =
+    if builtins.elem schemeName chromaStyles then
+      schemeName
+    else if config.stylix.polarity == "light" then
+      "gruvbox-light"
+    else
+      "gruvbox";
+
   fg = base: "38;2;${hexToRgb colors.${base}}";
   lsColors = lib.concatStringsSep ":" [
     "di=1;${fg "base0D"}"
@@ -64,7 +91,7 @@ in
       # author: nix-config
       # bundled: false
 
-      chroma-style = ${schemeName}
+      chroma-style = ${chromaStyle}
       color-accent = #${colors.base0D}
       color-border = #${colors.base02}
       color-normal = #${colors.base05}
