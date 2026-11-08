@@ -6,6 +6,7 @@
 }:
 let
   graphical = config.machine.graphical;
+  desktop = graphical && pkgs.stdenv.hostPlatform.isLinux;
   colors = config.lib.stylix.colors;
   scheme = config.stylix.base16Scheme;
   schemeName =
@@ -129,11 +130,15 @@ in
         # Zellij 0.44 ignores the external theme file this target writes, so the
         # theme is defined inline in modules/features/zellij.nix instead.
         zellij.enable = false;
-        # GNOME's target writes dconf settings; this is a niri session.
+        # GNOME's target writes dconf settings; this is a niri session, and the
+        # rest are unused apps that also write dconf for no benefit.
         gnome.enable = false;
-        # The GTK target writes dconf settings; it is enabled only on graphical
-        # Linux hosts once programs.dconf.enable is available there.
-        gtk.enable = false;
+        gnome-text-editor.enable = false;
+        eog.enable = false;
+        # GTK and Qt are desktop-only; their target code and packages are
+        # meaningless on the server and macOS hosts.
+        gtk.enable = desktop;
+        qt.enable = desktop;
       };
     };
   };

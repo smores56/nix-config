@@ -21,6 +21,10 @@ in
 
   time.timeZone = "America/New_York";
 
+  # Stylix's GTK target and home-manager's gtk activation load dconf; without
+  # the service the switch aborts on its D-Bus call on niri hosts.
+  programs.dconf.enable = true;
+
   i18n.defaultLocale = "en_US.UTF-8";
   i18n.extraLocaleSettings = lib.genAttrs [
     "LC_ADDRESS"
