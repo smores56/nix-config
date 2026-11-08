@@ -1330,7 +1330,7 @@ sudo vault yazi     # mount, run one command, unmount on exit
 `sudo vault` mounts the store with bindfs, which maps the `vault` user to you, so
 `~/.local/share/vault` behaves like a normal folder while it is open. On the
 NixOS hosts root means the YubiKey touch. The wrapper detaches a stale mount when it next runs,
-and `v` expands to `sudo vault`. Nothing is reachable between sessions.
+and `v` opens Yazi in the vault (`sudo vault yazi`). Nothing is reachable between sessions.
 
 **Version history** is Syncthing staggered versioning at
 `/var/lib/syncthing-versions/vault` on smortress — outside `/var/lib/data`, so
