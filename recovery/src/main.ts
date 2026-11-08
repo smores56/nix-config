@@ -20,9 +20,8 @@ const unlockButton = document.querySelector<HTMLButtonElement>("#unlock-button")
 const status = document.querySelector<HTMLDivElement>("#status");
 const manifestRoot = document.querySelector<HTMLElement>("#manifest");
 const restoreSection = document.querySelector<HTMLElement>("#restore");
-const snapshotField = document.querySelector<HTMLElement>("#snapshot-field");
-const snapshotSingle = document.querySelector<HTMLElement>("#snapshot-single");
-const snapshotSelect = document.querySelector<HTMLSelectElement>("#snapshot-select");
+const latestBackupLabel = document.querySelector<HTMLElement>("#snapshot-label");
+const footerUpdated = document.querySelector<HTMLTimeElement>("#footer-updated");
 const browserStatus = document.querySelector<HTMLDivElement>("#browser-status");
 const treeList = document.querySelector<HTMLUListElement>("#browser");
 const treeWrap = document.querySelector<HTMLElement>(".tree-wrap");
@@ -88,8 +87,8 @@ function setRestoreProgress(doneBytes: number, totalBytes: number): void {
   restoreProgress.value = doneBytes;
 }
 
-async function loadManifest(): Promise<boolean> {
-  if (!manifestRoot) return false;
+async function loadManifest(): Promise<RecoveryManifest | null> {
+  if (!manifestRoot) return null;
   try {
     const response = await fetch(new URL("./manifest.json", document.baseURI), {
       cache: "no-store",
@@ -99,13 +98,13 @@ async function loadManifest(): Promise<boolean> {
     const errors = validateManifest(manifest);
     if (errors.length > 0) throw new Error(errors.join(", "));
     manifestRoot.innerHTML = renderManifest(manifest);
-    return true;
+    return manifest;
   } catch (error) {
     manifestRoot.innerHTML =
       `<section class="notice" role="note"><p class="notice-title">Accounts</p><p>The account list could not be loaded: ${
         escapeHtml(errorMessage(error))
       }.</p></section>`;
-    return false;
+    return null;
   }
 }
 
@@ -127,27 +126,6 @@ function snapshotTime(time: string): string {
   return date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
-function snapshotLabel(item: ResticSnapshot): string {
-  const parts = [snapshotTime(item.time)];
-  if (item.hostname) parts.push(item.hostname);
-  if (item.tags?.length) parts.push(item.tags.join(", "));
-  return parts.join(" · ");
-}
-
-function renderSnapshots(snapshots: ResticSnapshot[]): void {
-  if (snapshotSelect) {
-    snapshotSelect.innerHTML = snapshots
-      .map((item, index) => `<option value="${index}">${escapeHtml(snapshotLabel(item))}</option>`)
-      .join("");
-  }
-  const single = snapshots.length === 1;
-  if (snapshotField) snapshotField.hidden = single;
-  if (snapshotSingle) {
-    snapshotSingle.hidden = !single;
-    snapshotSingle.textContent = single ? snapshotLabel(snapshots[0]) : "";
-  }
-}
-
 async function loadRepository(keys: DataKeys): Promise<void> {
   setBrowserStatus("Opening the backup...");
   const prefix = repositoryPrefix(keys.restic.repository, keys.r2.bucket);
@@ -162,15 +140,14 @@ async function loadRepository(keys: DataKeys): Promise<void> {
     // with the others.
     ...(keys.restic.dbPath ? [commonDirectoryPrefix([keys.restic.dbPath])] : []),
   ]);
-  renderSnapshots(repo.snapshots);
-  await selectSnapshot(repo.snapshots[0]);
-  setBrowserStatus("");
-}
-
-async function selectSnapshot(next: ResticSnapshot): Promise<void> {
-  snapshot = next;
+  const latest = repo.snapshots[0];
+  snapshot = latest;
+  if (latestBackupLabel) {
+    latestBackupLabel.textContent = `Latest backup: ${snapshotTime(latest.time)}`;
+  }
   entriesByPath = new Map();
   await renderTree();
+  setBrowserStatus("");
 }
 
 function treeMessage(message: string, tone: "info" | "error" = "info"): string {
@@ -194,12 +171,18 @@ function sortEntries(entries: ResticDirEntry[]): ResticDirEntry[] {
 
 function renderEntries(entries: ResticDirEntry[]): string {
   if (entries.length === 0) return treeMessage("This folder is empty.");
+  const canDownloadFolder = supportsDirectoryPicker();
   return sortEntries(entries)
     .map((entry) => {
       entriesByPath.set(entry.path, entry);
       if (entry.type === "dir") {
+        const download = canDownloadFolder
+          ? `<button type="button" class="ghost folder-download" data-dir-download="${
+            escapeHtml(entry.path)
+          }" aria-label="Download ${escapeHtml(entry.name)} folder">Download</button>`
+          : "";
         return `<li class="tree-dir"><details data-path="${escapeHtml(entry.path)}">
-  <summary><span class="tree-name">${escapeHtml(entry.name)}/</span></summary>
+  <summary><span class="tree-name">${escapeHtml(entry.name)}/</span>${download}</summary>
   <ul class="tree-children"></ul>
 </details></li>`;
       }
@@ -362,12 +345,14 @@ async function download(entry: ResticDirEntry): Promise<void> {
 }
 
 // --- Restore queue -----------------------------------------------------------
-// Walks the selected snapshot and writes every file into a folder the family
-// picks. Each file streams through restic blob by blob, so memory stays at one
-// blob regardless of total size. Needs a directory handle, which only Chromium
-// on the desktop implements; Safari gets the single-file path above.
+// Walks the latest snapshot (or just one folder of it) and writes the files
+// into a folder the family picks. Each file streams through restic blob by blob,
+// so memory stays at one blob regardless of total size. Needs a directory
+// handle, which only Chromium on the desktop implements; Safari gets the
+// single-file path above.
 
 let restoring = false;
+let restoreBusy = false;
 let restoreStop = false;
 
 async function ensureDirectory(
@@ -389,12 +374,7 @@ async function existingFile(directory: DirectoryHandle, name: string): Promise<F
   }
 }
 
-async function restoreAll(): Promise<void> {
-  const repo = repository;
-  const current = snapshot;
-  if (!repo || !current) return;
-  if (restoring) return;
-
+async function pickRestoreRoot(): Promise<DirectoryHandle | null> {
   const picker = (
     window as unknown as {
       showDirectoryPicker?: (options: {
@@ -405,24 +385,37 @@ async function restoreAll(): Promise<void> {
   ).showDirectoryPicker;
   if (!picker) {
     setRestoreStatus(
-      "This browser cannot write into a folder. Use Chrome or Edge on a computer to restore everything; you can still download files one at a time.",
+      "This browser cannot write into a folder. Use Chrome or Edge on a computer to restore folders; you can still download files one at a time.",
       "error",
     );
-    return;
+    return null;
   }
-
-  setRestoreStatus("Reading the file list from R2...");
-  let files: ResticFile[];
   try {
-    files = await repo.walk(current);
+    return await picker.call(window, { mode: "readwrite", id: "recovery-restore" });
   } catch (error) {
-    setRestoreStatus(`Could not read the snapshot: ${errorMessage(error)}`, "error");
-    return;
+    if (error instanceof Error && error.name === "AbortError") {
+      setRestoreStatus("");
+      return null;
+    }
+    setRestoreStatus(`Could not open that folder: ${errorMessage(error)}`, "error");
+    return null;
   }
+}
+
+async function restoreFiles(
+  files: ResticFile[],
+  prefix: string,
+  what: string,
+): Promise<void> {
+  const repo = repository;
+  if (!repo || restoring || files.length === 0) return;
+
   const totalBytes = files.reduce((sum, file) => sum + (file.size ?? 0), 0);
   if (
     !window.confirm(
-      `Restore ${files.length} files (${formatBytes(totalBytes)}) into a folder you choose?\n\n` +
+      `Restore ${files.length} files (${
+        formatBytes(totalBytes)
+      }) from ${what} into a folder you choose?\n\n` +
         "Files already there with the same size are skipped; any other file with the same " +
         "name is overwritten. You can stop and run it again.",
     )
@@ -431,19 +424,9 @@ async function restoreAll(): Promise<void> {
     return;
   }
 
-  let root: DirectoryHandle;
-  try {
-    root = await picker.call(window, { mode: "readwrite", id: "recovery-restore" });
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      setRestoreStatus("");
-      return;
-    }
-    setRestoreStatus(`Could not open that folder: ${errorMessage(error)}`, "error");
-    return;
-  }
+  const root = await pickRestoreRoot();
+  if (!root) return;
 
-  const prefix = commonDirectoryPrefix(files.map((file) => file.path));
   restoring = true;
   restoreStop = false;
   if (restoreButton) restoreButton.disabled = true;
@@ -530,6 +513,53 @@ async function restoreAll(): Promise<void> {
   setBrowserStatus("");
 }
 
+async function restoreAll(): Promise<void> {
+  const repo = repository;
+  const current = snapshot;
+  if (!repo || !current || restoreBusy || restoring) return;
+  restoreBusy = true;
+  try {
+    setRestoreStatus("Reading the file list from R2...");
+    let files: ResticFile[];
+    try {
+      files = await repo.walk(current);
+    } catch (error) {
+      setRestoreStatus(`Could not read the snapshot: ${errorMessage(error)}`, "error");
+      return;
+    }
+    const prefix = commonDirectoryPrefix(files.map((file) => file.path));
+    await restoreFiles(files, prefix, "the whole backup");
+  } finally {
+    restoreBusy = false;
+  }
+}
+
+async function restoreFolder(folderPath: string): Promise<void> {
+  const repo = repository;
+  const current = snapshot;
+  if (!repo || !current || restoreBusy || restoring) return;
+  restoreBusy = true;
+  try {
+    const name = folderPath.split("/").pop() || folderPath;
+    setRestoreStatus(`Reading the file list for ${name}/...`);
+    let files: ResticFile[];
+    try {
+      const all = await repo.walk(current);
+      files = all.filter((file) => file.path.startsWith(`${folderPath}/`));
+    } catch (error) {
+      setRestoreStatus(`Could not read the snapshot: ${errorMessage(error)}`, "error");
+      return;
+    }
+    if (files.length === 0) {
+      setRestoreStatus(`There are no files in ${name}/.`, "error");
+      return;
+    }
+    const parent = folderPath.split("/").slice(0, -1).join("/");
+    await restoreFiles(files, parent, `${name}/`);
+  } finally {
+    restoreBusy = false;
+  }
+}
 async function unlock(password: string): Promise<void> {
   if (!secure) throw new Error("Open this page over HTTPS or on localhost.");
   setStatus("Unlocking...");
@@ -549,16 +579,21 @@ async function unlock(password: string): Promise<void> {
   if (restoreSection) restoreSection.hidden = false;
 
   // The account list and the backup are independent; start both together.
-  const manifest = loadManifest();
+  const manifestLoad = loadManifest().then((manifest) => {
+    if (!footerUpdated) return;
+    footerUpdated.textContent = manifest?.updated ?? "unknown";
+    if (manifest) footerUpdated.dateTime = manifest.updated;
+  });
   const repositoryLoad = loadRepository(keys).catch((error: unknown) => {
     repository = null;
     snapshot = null;
     const message = reachHint(errorMessage(error), location.origin);
     setBrowserStatus(`Could not open the backup: ${message}`, "error");
     if (treeList) treeList.innerHTML = treeMessage("The backup could not be opened.", "error");
+    if (latestBackupLabel) latestBackupLabel.textContent = "Latest backup: unavailable";
     if (restoreButton) restoreButton.disabled = true;
   });
-  await Promise.all([manifest, repositoryLoad]);
+  await Promise.all([manifestLoad, repositoryLoad]);
 }
 
 function supportsDirectoryPicker(): boolean {
@@ -600,12 +635,6 @@ form?.addEventListener("submit", (event) => {
     });
 });
 
-snapshotSelect?.addEventListener("change", () => {
-  if (!repository || !snapshotSelect) return;
-  const next = repository.snapshots[Number(snapshotSelect.value)];
-  if (next) void selectSnapshot(next);
-});
-
 treeList?.addEventListener(
   "toggle",
   (event) => {
@@ -628,9 +657,17 @@ collapseTreeButton?.addEventListener("click", () => {
 });
 
 treeList?.addEventListener("click", (event) => {
-  const target = (event.target as HTMLElement).closest<HTMLElement>("[data-file]");
-  if (!target?.dataset.file) return;
-  const entry = entriesByPath.get(target.dataset.file);
+  const target = event.target as HTMLElement;
+  const folder = target.closest<HTMLElement>("[data-dir-download]");
+  if (folder?.dataset.dirDownload) {
+    event.preventDefault();
+    event.stopPropagation();
+    void restoreFolder(folder.dataset.dirDownload);
+    return;
+  }
+  const file = target.closest<HTMLElement>("[data-file]");
+  if (!file?.dataset.file) return;
+  const entry = entriesByPath.get(file.dataset.file);
   if (entry) void download(entry);
 });
 

@@ -10,24 +10,20 @@ const manifest: RecoveryManifest = {
     {
       id: "accounts",
       title: "Accounts",
-      description: "Passwords and recovery codes are in Bitwarden, in the Family Access folder.",
+      description:
+        "The Bitwarden root password and recovery codes are in the letter/thumb drive. All accounts below use the username sam@sammohr.dev.",
       items: [
         {
-          title: "Bitwarden",
+          title: "Bitwarden (password manager)",
           url: "https://vault.bitwarden.com",
-          notes: "Master password and two-step recovery code are on the sealed letter.",
         },
         {
-          title: "Tuta",
-          bitwardenName: "Email - Tuta",
+          title: "Tuta (email provider)",
           url: "https://app.tuta.com",
-          notes: "Email · sam@sammohr.dev",
         },
         {
-          title: "Immich",
-          bitwardenName: "Immich",
+          title: "Immich (photo library)",
           url: "https://immich.sammohr.dev",
-          notes: "Photos and images.",
         },
       ],
     },
@@ -40,32 +36,30 @@ describe("recovery manifest", () => {
     expect(validateManifest(manifest)).toEqual([]);
   });
 
-  test("allows an item without a Bitwarden item name", () => {
-    expect(manifest.sections[0].items[0].bitwardenName).toBeUndefined();
-    expect(validateManifest(manifest)).toEqual([]);
-  });
-
   test("rejects duplicate item titles", () => {
     const dup: RecoveryManifest = structuredClone(manifest);
-    dup.sections[0].items[1].title = "Bitwarden";
+    dup.sections[0].items[1].title = "Bitwarden (password manager)";
     expect(validateManifest(dup).join(" ")).toContain("duplicate");
   });
 
-  test("rejects a non-http URL", () => {
+  test("rejects a non-http or missing URL", () => {
     const bad: RecoveryManifest = structuredClone(manifest);
     bad.sections[0].items[0].url = "javascript:alert(1)";
     expect(validateManifest(bad).join(" ")).toContain("http");
+    const missing: RecoveryManifest = structuredClone(manifest);
+    missing.sections[0].items[0].url = "" as never;
+    expect(validateManifest(missing).join(" ")).toContain("http");
   });
 
-  test("renders sections, links, item names, and warnings", () => {
+  test("renders sections, visible URLs, links, and warnings", () => {
     const html = renderManifest(manifest);
     expect(html).toContain("Accounts");
-    expect(html).toContain("Passwords and recovery codes");
-    expect(html).toContain("Tuta");
+    expect(html).toContain("The Bitwarden root password and recovery codes");
     expect(html).toContain("sam@sammohr.dev");
+    expect(html).toContain("Tuta (email provider)");
     expect(html).toContain('href="https://app.tuta.com"');
+    expect(html).toContain('class="account-url">https://app.tuta.com');
     expect(html).toContain('target="_blank"');
-    expect(html).toContain("Email - Tuta");
     expect(html).toContain("A warning from the manifest.");
     expect(html).not.toContain("Contacts");
   });
@@ -90,14 +84,9 @@ describe("manifest hardening", () => {
     expect(validateManifest(emptyItems)).not.toEqual([]);
   });
 
-  test("rejects non-string warnings and malformed item text", () => {
+  test("rejects non-string warnings and missing update dates", () => {
     expect(validateManifest({ ...manifest, warnings: [42] } as never)).not.toEqual([]);
-    const badNotes = structuredClone(manifest);
-    badNotes.sections[0].items[0].notes = 7 as never;
-    expect(validateManifest(badNotes)).not.toEqual([]);
-    const badName = structuredClone(manifest);
-    badName.sections[0].items[1].bitwardenName = " ";
-    expect(validateManifest(badName)).not.toEqual([]);
+    expect(validateManifest({ ...manifest, updated: "" }).join(" ")).toContain("updated");
   });
 
   test("ships a valid, placeholder-free manifest", () => {
@@ -106,10 +95,5 @@ describe("manifest hardening", () => {
     );
     expect(validateManifest(shipped)).toEqual([]);
     expect(JSON.stringify(shipped)).not.toContain("Fill this in");
-  });
-
-  test("renders the updated date", () => {
-    expect(renderManifest(manifest)).toContain("Updated");
-    expect(renderManifest(manifest)).toContain("2026-11-08");
   });
 });

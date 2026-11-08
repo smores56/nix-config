@@ -78,9 +78,11 @@ until a backup runs.
 
 ## Restore in the page
 
-`Restore all files` walks the selected snapshot and writes every
-file into a folder the operator picks (`src/restore.ts` strips the snapshot's
-shared root, so the folder starts at `photos/`). Each file streams through
+The page always opens the latest snapshot. `Restore all files` walks it and
+writes every file into a folder the operator picks (`src/restore.ts` strips the
+snapshot's shared root, so the folder starts at `photos/`). Each folder row also
+has a `Download` button that writes just that folder into the chosen directory.
+Each file streams through
 restic blob by blob, so memory stays at one blob whatever the total size, and
 a file already present with the same size is skipped, which makes a stopped run
 resumable.

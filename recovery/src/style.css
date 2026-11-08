@@ -232,13 +232,6 @@ button.ghost:hover {
   align-content: start;
 }
 
-.updated {
-  padding-right: 0.15rem;
-  color: var(--muted);
-  font-size: 0.72rem;
-  text-align: right;
-}
-
 .panel {
   overflow: hidden;
   border: 1px solid var(--border);
@@ -266,7 +259,7 @@ button.ghost:hover {
 }
 
 .account-row {
-  padding: 0.55rem 1rem;
+  padding: 0.6rem 1rem;
   border-top: 1px solid var(--hairline);
 }
 
@@ -274,14 +267,8 @@ button.ghost:hover {
   border-top: 0;
 }
 
-.account-top {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.25rem 0.6rem;
-}
-
 .account-name {
+  display: block;
   font-size: 0.92rem;
   font-weight: 600;
   text-decoration: none;
@@ -292,28 +279,13 @@ a.account-name:hover {
   text-underline-offset: 2px;
 }
 
-span.account-name {
-  color: var(--text);
-}
-
-.account-credential {
-  margin-left: auto;
+.account-url {
+  display: block;
+  margin-top: 0.12rem;
+  overflow-wrap: anywhere;
   color: var(--muted);
-  font-size: 0.74rem;
-}
-
-.account-credential code {
-  padding: 0.05rem 0.28rem;
-  border: 1px solid var(--hairline);
-  border-radius: 0.3rem;
-  background: var(--bg);
-}
-
-.account-notes {
-  margin-top: 0.18rem;
-  color: var(--muted);
-  font-size: 0.78rem;
-  line-height: 1.4;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
 }
 
 .notice {
@@ -339,57 +311,20 @@ span.account-name {
   min-width: 0;
 }
 
-.files-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0 0 0.65rem;
-}
-
-.files-tools {
+.files-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
-  gap: 0.5rem;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  min-height: 2rem;
+  padding: 0 0 0.65rem;
 }
 
-.files-title p {
-  margin-top: 0.18rem;
-  color: var(--muted);
-  font-size: 0.8rem;
-}
-
-.snapshot-field {
-  display: flex;
-  flex: 0 1 auto;
-  align-items: center;
-  gap: 0.45rem;
+.snapshot-label {
   color: var(--muted);
   font-size: 0.78rem;
-  white-space: nowrap;
-}
-
-.snapshot-field select {
-  max-width: 16rem;
-  height: 2.1rem;
-  padding: 0.25rem 0.4rem;
-  border: 1px solid var(--border);
-  border-radius: 0.45rem;
-  background: var(--bg);
-  color: var(--text);
-  font: inherit;
-  font-size: 0.8rem;
-}
-
-.snapshot-single {
-  max-width: 18rem;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 0.78rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 /* The file tree is built from native <details>/<summary> disclosures. Folders
@@ -532,9 +467,19 @@ progress {
   outline-offset: 2px;
 }
 
+.site-footer {
+  grid-column: 1 / -1;
+  margin-top: 0.25rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--hairline);
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-align: center;
+}
+
 @media (min-width: 861px) {
   .files-panel {
-    height: calc(100svh - 2.75rem);
+    height: calc(100svh - 6rem);
   }
 
   .tree-wrap {
@@ -570,14 +515,8 @@ progress {
     width: 100%;
   }
 
-  .files-head {
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .files-tools {
-    justify-content: flex-start;
-    width: 100%;
+  .files-bar {
+    align-items: flex-start;
   }
 
   .tree-children {
@@ -585,27 +524,16 @@ progress {
     padding-left: 0.25rem;
   }
 
+  button.folder-download {
+    flex: none;
+    margin-left: auto;
+    min-height: 1.7rem;
+    padding: 0.1rem 0.45rem;
+    font-size: 0.7rem;
+  }
+
   .file-button {
     padding-left: 1.35rem;
-  }
-
-  .snapshot-field {
-    width: 100%;
-  }
-
-  .snapshot-field select {
-    flex: 1 1 auto;
-    max-width: none;
-  }
-
-  .snapshot-single {
-    max-width: none;
-    white-space: normal;
-  }
-
-  .account-credential {
-    flex-basis: 100%;
-    margin-left: 0;
   }
 
   .restore-bar button {

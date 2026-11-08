@@ -5,24 +5,19 @@
     {
       "id": "accounts",
       "title": "Accounts",
-      "description": "Passwords and recovery codes are in Bitwarden, in the Family Access folder.",
+      "description": "The Bitwarden root password and recovery codes are in the letter/thumb drive. All accounts below use the username sam@sammohr.dev.",
       "items": [
         {
-          "title": "Bitwarden",
-          "url": "https://vault.bitwarden.com",
-          "notes": "Master password and two-step recovery code are on the sealed letter."
+          "title": "Bitwarden (password manager)",
+          "url": "https://vault.bitwarden.com"
         },
         {
-          "title": "Tuta",
-          "bitwardenName": "Email - Tuta",
-          "url": "https://app.tuta.com",
-          "notes": "Email · sam@sammohr.dev"
+          "title": "Tuta (email provider)",
+          "url": "https://app.tuta.com"
         },
         {
-          "title": "Immich",
-          "bitwardenName": "Immich",
-          "url": "https://immich.sammohr.dev",
-          "notes": "Photos and images."
+          "title": "Immich (photo library)",
+          "url": "https://immich.sammohr.dev"
         }
       ]
     }

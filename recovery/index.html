@@ -41,21 +41,11 @@
       <div id="unlocked" class="unlocked" hidden>
         <div id="manifest" class="manifest" aria-live="polite"></div>
 
-        <section id="restore" class="files-panel" aria-labelledby="files-title" hidden>
-          <header class="files-head">
-            <div class="files-title">
-              <h2 id="files-title">Photos and documents</h2>
-              <p>Nightly backup. Decrypted in this browser; nothing is uploaded.</p>
-            </div>
-            <div class="files-tools">
-              <button type="button" id="collapse-tree" class="ghost" hidden>Collapse all</button>
-              <label id="snapshot-field" class="snapshot-field" for="snapshot-select">
-                <span>Backup</span>
-                <select id="snapshot-select"></select>
-              </label>
-              <span id="snapshot-single" class="snapshot-single" hidden></span>
-            </div>
-          </header>
+        <section id="restore" class="files-panel" aria-label="Backup files" hidden>
+          <div class="files-bar">
+            <span id="snapshot-label" class="snapshot-label"></span>
+            <button type="button" id="collapse-tree" class="ghost" hidden>Collapse all</button>
+          </div>
 
           <div id="browser-status" class="status" role="status" aria-live="polite"></div>
 
@@ -71,6 +61,11 @@
           </div>
           <div id="restore-status" class="status" role="status" aria-live="polite"></div>
         </section>
+
+        <footer class="site-footer">
+          Ask Andrey for help if you need tech support - updated
+          <time id="footer-updated"></time>
+        </footer>
       </div>
     </main>
     <noscript>This page needs JavaScript to unlock the data keys.</noscript>

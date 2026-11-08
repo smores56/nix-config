@@ -1,9 +1,6 @@
 export type RecoveryItem = {
   title: string;
-  /** Item name to search for in the Bitwarden Family Access folder. */
-  bitwardenName?: string;
-  url?: string;
-  notes?: string;
+  url: string;
 };
 
 export type RecoverySection = {
@@ -79,14 +76,8 @@ export function validateManifest(value: unknown): string[] {
         errors.push(`item title "${item.title}" has surrounding whitespace`);
       } else if (titles.has(item.title)) errors.push(`duplicate item title: ${item.title}`);
       else titles.add(item.title);
-      if (item.bitwardenName !== undefined && !isNonEmptyString(item.bitwardenName)) {
-        errors.push(`item ${label} has an empty Bitwarden item name`);
-      }
-      if (item.url !== undefined && (typeof item.url !== "string" || !isHttpUrl(item.url))) {
-        errors.push(`item ${label} has a non-http URL`);
-      }
-      if (item.notes !== undefined && typeof item.notes !== "string") {
-        errors.push(`item ${label} has non-string notes`);
+      if (!isNonEmptyString(item.url) || !isHttpUrl(item.url)) {
+        errors.push(`item ${label} has a missing or non-http URL`);
       }
     }
   }
@@ -114,25 +105,13 @@ function escapeHtml(value: unknown): string {
 
 function renderItem(item: RecoveryItem): string {
   const title = escapeHtml(item.title);
-  const href = item.url ? escapeHtml(item.url) : "";
-  const name = item.url
-    ? `<a class="account-name" href="${href}" target="_blank" rel="noreferrer noopener">${title}</a>`
-    : `<span class="account-name">${title}</span>`;
-  const itemName = item.bitwardenName ? escapeHtml(item.bitwardenName) : "";
-  const credential = item.bitwardenName
-    ? `<span class="account-credential" title="Bitwarden item"><span class="sr-only">Bitwarden item: </span><code>${itemName}</code></span>`
-    : "";
-  const notes = item.notes ? `<p class="account-notes">${escapeHtml(item.notes)}</p>` : "";
-  return `<li class="account-row"><div class="account-top">${name}${credential}</div>${notes}</li>`;
+  const url = escapeHtml(item.url);
+  return `<li class="account-row"><a class="account-name" href="${url}" target="_blank" rel="noreferrer noopener">${title}</a><span class="account-url">${url}</span></li>`;
 }
 
 export function renderManifest(manifest: RecoveryManifest): string {
   const errors = validateManifest(manifest);
   if (errors.length > 0) throw new Error(`invalid manifest: ${errors.join(", ")}`);
-
-  const updatedDate = escapeHtml(manifest.updated);
-  const updated =
-    `<p class="updated">Updated <time datetime="${updatedDate}">${updatedDate}</time></p>`;
 
   const warnings = (manifest.warnings ?? [])
     .map((warning) => `<li>${escapeHtml(warning)}</li>`)
@@ -158,5 +137,5 @@ export function renderManifest(manifest: RecoveryManifest): string {
     })
     .join("\n");
 
-  return `${updated}\n${warningBlock}\n${sections}`;
+  return `${warningBlock}\n${sections}`;
 }
