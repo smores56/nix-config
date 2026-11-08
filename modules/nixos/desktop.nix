@@ -18,6 +18,10 @@ in
   config = lib.mkIf config.machine.graphical {
     hardware.bluetooth.enable = true;
 
+    # Stylix's GTK target and home-manager's gtk activation load dconf; without
+    # the service the switch aborts on its D-Bus call.
+    programs.dconf.enable = true;
+
     environment.systemPackages = [
       pkgs.playerctl
       pkgs.networkmanagerapplet

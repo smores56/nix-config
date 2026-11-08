@@ -5,6 +5,8 @@ _: {
     settings = {
       show_startup_tips = false;
       session_serialization = false;
+      # Stylix writes themes/stylix.kdl with a theme named `default`; zellij
+      # merges the user theme dir over its built-ins, so this picks it up.
       theme = "default";
     };
 

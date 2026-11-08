@@ -74,8 +74,6 @@ in
     enable = true;
 
     settings = {
-      theme = "rose_pine_moon";
-
       keys.normal = {
         C-r = [
           ":config-reload"

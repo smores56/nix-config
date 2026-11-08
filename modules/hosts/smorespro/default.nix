@@ -21,6 +21,7 @@
     ../../nixos/todo-daemon.nix
   ];
   homeModules = [
+    ../../features/chat-proxy.nix
     ../../features/todo.nix
   ];
   user = {
