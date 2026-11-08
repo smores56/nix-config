@@ -11,6 +11,7 @@
   lib,
   pkgs,
   inputs,
+  aiProviders,
   ...
 }:
 let
@@ -40,7 +41,6 @@ let
       r
     ]) cfg.allowRw
   );
-
 
   calibredbWrapper = pkgs.writeShellScriptBin "calibredb" ''
     for a in "$@"; do
@@ -95,11 +95,220 @@ let
   capabilityEnv = pkgs.writeText "agent-vm-capabilities.env" (
     lib.concatStrings (
       lib.mapAttrsToList (
-        _: c:
-        lib.concatStrings (lib.mapAttrsToList (k: v: "export ${k}=${lib.escapeShellArg v}\n") c.env)
+        _: c: lib.concatStrings (lib.mapAttrsToList (k: v: "export ${k}=${lib.escapeShellArg v}\n") c.env)
       ) caps
     )
   );
+
+  nanobotPackage = pkgs.nanobot;
+  # One state path: the wrapper, the host view, the unit's sandbox and the backup all read it.
+  assistantState = vmLib.assistantState user;
+  sdlcGuest = import ../lib/sdlc.nix { inherit pkgs; };
+  sharedSkillNames = import ../lib/skills.nix ../features/ai/skills;
+  # `brain` reads the work-memory instance; the assistant keeps the shared skills only.
+  assistantSkills = lib.subtractLists [ "brain" ] sharedSkillNames;
+
+  # The query is one argument list, so search text can never become shell syntax.
+  tinyfishSearch = pkgs.writeShellApplication {
+    name = "tinyfish-search";
+    runtimeInputs = [ pkgs.curl ];
+    text = ''
+      set -euo pipefail
+      if [ $# -eq 0 ]; then
+        echo "usage: tinyfish-search <query>" >&2
+        exit 2
+      fi
+      exec curl -sS --max-time 20 -H 'Accept: application/json' \
+        --get --data-urlencode "query=$*" "$TINYFISH_BASE_URL"
+    '';
+  };
+
+  tinyfishSkill = pkgs.writeText "tinyfish-search-SKILL.md" ''
+    ---
+    name: tinyfish-search
+    description: Search the web with the TinyFish Search API for current results.
+    metadata: {"nanobot":{"requires":{"bins":["tinyfish-search"]}}}
+    ---
+
+    # TinyFish search
+
+    Run the helper with the query as one argument; it URL-encodes the query. The
+    host broker adds the API key.
+
+    ```sh
+    tinyfish-search "QUERY"
+    ```
+
+    Read `.results[]` and use `title`, `url`, and `snippet` in the answer. If the
+    call fails or returns no results, fall back to the built-in `web_search`.
+  '';
+
+  nanobotConfig = pkgs.writeText "nanobot-config.json" (
+    builtins.toJSON {
+      providers = {
+        custom = {
+          apiKey = "none";
+          apiBase = "http://127.0.0.1:${toString ports.agentNeuralwatt}/v1";
+        };
+        smortress = {
+          apiKey = null;
+          apiBase = aiProviders.smortress.baseUrl;
+        };
+      };
+      modelPresets = {
+        neuralwatt = {
+          provider = "custom";
+          model = aiProviders.neuralwatt.models.deepseekFlash.id;
+          maxTokens = aiProviders.neuralwatt.models.deepseekFlash.max_output_tokens;
+          contextWindowTokens = aiProviders.neuralwatt.models.deepseekFlash.context_window;
+        };
+        # The outage fallback. The windows stay small so a prompt does not try to
+        # fill the local model's full 200k context on a shared machine.
+        local = {
+          provider = "smortress";
+          model = aiProviders.smortress.models.qwen38.id;
+          maxTokens = 8192;
+          contextWindowTokens = 32768;
+        };
+      };
+      agents.defaults = {
+        modelPreset = "neuralwatt";
+        disabled_skills = [
+          "summarize"
+          "tmux"
+          "clawhub"
+          "image-generation"
+          "memory"
+        ];
+        dream = {
+          enabled = false;
+        };
+      };
+      channels.websocket = {
+        enabled = true;
+        host = "127.0.0.1";
+        port = ports.agent;
+        tokenIssueSecret = "\${NANOBOT_WEB_TOKEN}";
+        websocketRequiresToken = true;
+      };
+      transcription = {
+        enabled = false;
+      };
+      tools = {
+        restrict_to_workspace = false;
+        web = {
+          search = {
+            provider = "duckduckgo";
+            max_results = 5;
+          };
+          fetch = {
+            # Fetch directly from the sandbox rather than through r.jina.ai, which
+            # would see every URL the agent reads.
+            use_jina_reader = false;
+          };
+        };
+        exec = {
+          path_prepend = "/run/current-system/sw/bin:/run/wrappers/bin";
+          allowed_env_keys = [
+            "GH_TOKEN"
+            "TINYFISH_BASE_URL"
+            "SDLC_REPO"
+            "GH_CONFIG_DIR"
+            "GIT_CONFIG_GLOBAL"
+          ];
+        };
+        cli_apps = {
+          enable = false;
+        };
+        image_generation = {
+          enabled = false;
+        };
+        ssrf_whitelist = [
+          # The capability brokers and the memory MCP listen on the guest's loopback.
+          "127.0.0.1/32"
+        ];
+        mcp_servers.memory = {
+          type = "streamableHttp";
+          url = "http://127.0.0.1:${toString ports.memoryMcp}/mcp";
+          headers = {
+            "X-Memory-Group" = "global";
+            "X-Memory-Cwd" = home;
+            "X-Memory-Actor" = "nanobot";
+            "X-Memory-Machine" = "smortress";
+          };
+          tool_timeout = 30;
+        };
+      };
+    }
+  );
+
+  agentAssistant = pkgs.writeShellApplication {
+    name = "agent-assistant";
+    runtimeInputs = [
+      nanobotPackage
+      pkgs.openssl
+      pkgs.coreutils
+      pkgs.diffutils
+      pkgs.gh
+      pkgs.git
+      pkgs.jq
+      pkgs.ripgrep
+      pkgs.curl
+      sdlcGuest
+    ];
+    text = ''
+      set -eu
+      state=${lib.escapeShellArg assistantState}
+      export HOME="$state/home"
+      export XDG_STATE_HOME="$HOME/.local/state"
+      export XDG_CACHE_HOME="$HOME/.cache"
+      export XDG_DATA_HOME="$HOME/.local/share"
+      export GH_CONFIG_DIR="$state/gh"
+      export GIT_CONFIG_GLOBAL="${home}/.config/git/config"
+      export SDLC_REPO="smores56/sdlc"
+      mkdir -p "$HOME/.nanobot/workspace/skills" "$GH_CONFIG_DIR"
+      # Sessions and the WebUI token live here; keep other host users out of the tree.
+      chmod 700 "$state"
+      if [ -r /run/agent-vm/capabilities.env ]; then
+        # shellcheck source=/dev/null
+        . /run/agent-vm/capabilities.env
+      fi
+      if [ -r /run/secrets/github-personal-pat ]; then
+        GH_TOKEN="$(cat /run/secrets/github-personal-pat)"
+        export GH_TOKEN
+      fi
+      # Nix owns the config while it still says what Nix wrote. Compare normalized
+      # JSON, because nanobot re-serializes on a settings save; a missing pristine
+      # copy means this state predates the split, so Nix installs and adopts it.
+      config="$HOME/.nanobot/config.json"
+      pristine="$state/nanobot-config.json"
+      nix_owns_config() {
+        [ ! -e "$pristine" ] && return 0
+        jq -S . "$config" 2>/dev/null | cmp -s - <(jq -S . "$pristine" 2>/dev/null)
+      }
+      if [ ! -e "$config" ] || nix_owns_config; then
+        install -m 600 ${nanobotConfig} "$config"
+      fi
+      install -m 600 ${nanobotConfig} "$pristine"
+      if [ ! -s "$HOME/.nanobot/web-token" ]; then
+        (umask 077; ${pkgs.openssl}/bin/openssl rand -hex 32 > "$HOME/.nanobot/web-token")
+      fi
+      NANOBOT_WEB_TOKEN="$(cat "$HOME/.nanobot/web-token")"
+      export NANOBOT_WEB_TOKEN
+      install -D -m 644 ${tinyfishSkill} "$HOME/.nanobot/workspace/skills/tinyfish-search/SKILL.md"
+      for s in ${lib.escapeShellArgs assistantSkills}; do
+        ln -sfn "${home}/.agents/skills/$s" "$HOME/.nanobot/workspace/skills/$s"
+      done
+      case "''${1:-}" in
+        token) cat "$HOME/.nanobot/web-token" ;;
+        # The supervised entry point; `webui` is an interactive client that exits
+        # when the gateway does, so it must never be the unit's ExecStart.
+        gateway) exec ${nanobotPackage}/bin/nanobot gateway --foreground ;;
+        serve) exec ${nanobotPackage}/bin/nanobot webui --no-open ;;
+        *) exec ${nanobotPackage}/bin/nanobot "$@" ;;
+      esac
+    '';
+  };
 
   brokerConfig =
     c:
@@ -114,55 +323,54 @@ let
       }
     );
 
-  brokerService =
-    c:
-    {
-      wantedBy = [ "multi-user.target" ];
-      after = [ "network-online.target" ];
-      wants = [ "network-online.target" ];
-      serviceConfig = {
-        Type = "simple";
-        LoadCredential = "${c.secret}:/run/secrets/${c.secret}";
-        ExecStart = "${brokerPackage}/bin/agent-broker ${brokerConfig c}";
-        Restart = "always";
-        RestartSec = "5s";
-        DynamicUser = true;
-        PrivateTmp = true;
-        ProtectSystem = "strict";
-        ProtectHome = true;
-        NoNewPrivileges = true;
-        RestrictAddressFamilies = [
-          "AF_INET"
-          "AF_INET6"
-          "AF_UNIX"
-        ];
-      };
+  brokerService = c: {
+    wantedBy = [ "multi-user.target" ];
+    after = [ "network-online.target" ];
+    wants = [ "network-online.target" ];
+    serviceConfig = {
+      Type = "simple";
+      LoadCredential = "${c.secret}:/run/secrets/${c.secret}";
+      ExecStart = "${brokerPackage}/bin/agent-broker ${brokerConfig c}";
+      Restart = "always";
+      RestartSec = "5s";
+      DynamicUser = true;
+      PrivateTmp = true;
+      ProtectSystem = "strict";
+      ProtectHome = true;
+      NoNewPrivileges = true;
+      RestrictAddressFamilies = [
+        "AF_INET"
+        "AF_INET6"
+        "AF_UNIX"
+      ];
     };
+  };
 
   # A TCP capability owns its listener through the declared command; the token reaches it as a
   # systemd credential, so the command reads $CREDENTIALS_DIRECTORY/<secret>.
-  tcpService =
-    c:
-    {
-      wantedBy = [ "multi-user.target" ];
-      after = [ "network-online.target" ];
-      wants = [ "network-online.target" ];
-      serviceConfig = {
-        Type = "simple";
-        LoadCredential = "${c.secret}:/run/secrets/${c.secret}";
-        ExecStart = "/bin/sh -c ${lib.escapeShellArg (lib.replaceStrings [ "%PORT%" ] [ (toString c.brokerPort) ] c.command)}";
-        Restart = "always";
-        RestartSec = "5s";
-        DynamicUser = true;
-        PrivateTmp = true;
-        ProtectSystem = "strict";
-        ProtectHome = true;
-        NoNewPrivileges = true;
-      };
+  tcpService = c: {
+    wantedBy = [ "multi-user.target" ];
+    after = [ "network-online.target" ];
+    wants = [ "network-online.target" ];
+    serviceConfig = {
+      Type = "simple";
+      LoadCredential = "${c.secret}:/run/secrets/${c.secret}";
+      ExecStart = "/bin/sh -c ${
+        lib.escapeShellArg (lib.replaceStrings [ "%PORT%" ] [ (toString c.brokerPort) ] c.command)
+      }";
+      Restart = "always";
+      RestartSec = "5s";
+      DynamicUser = true;
+      PrivateTmp = true;
+      ProtectSystem = "strict";
+      ProtectHome = true;
+      NoNewPrivileges = true;
     };
+  };
 
   brokerServices = lib.mapAttrs' (
-    n: c: lib.nameValuePair "agent-broker-${n}" (if c.type == "http" then brokerService c else tcpService c)
+    n: c:
+    lib.nameValuePair "agent-broker-${n}" (if c.type == "http" then brokerService c else tcpService c)
   ) caps;
 
   # Stable guest-visible ports. `proxied` reaches host services directly; each capability goes
@@ -197,7 +405,8 @@ let
   stateDirs = [
     ".local/state/maki"
     ".local/logs/maki"
-  ];
+  ]
+  ++ lib.optional isServer ".local/state/agent-assistant";
 
   planner = ../lib/share_planner.py;
   viewBuilder = ../lib/agent_view.py;
@@ -246,22 +455,23 @@ let
       pkgs.openssh
       pkgs.systemd
     ];
-    text = builtins.replaceStrings
-      [
-        "@expected@"
-        "@key@"
-        "@known@"
-        "@user@"
-        "@guestAddr@"
-      ]
-      [
-        "${config.microvm.stateDir}/${name}/toplevel"
-        "${stateDir}/id_ed25519"
-        "${stateDir}/known_hosts"
-        user
-        guestAddr
-      ]
-      (builtins.readFile ../lib/agent-vm-update.sh);
+    text =
+      builtins.replaceStrings
+        [
+          "@expected@"
+          "@key@"
+          "@known@"
+          "@user@"
+          "@guestAddr@"
+        ]
+        [
+          "${config.microvm.stateDir}/${name}/toplevel"
+          "${stateDir}/id_ed25519"
+          "${stateDir}/known_hosts"
+          user
+          guestAddr
+        ]
+        (builtins.readFile ../lib/agent-vm-update.sh);
   };
 
   # Host loopback services the agent uses; both are token-authenticated.
@@ -308,6 +518,10 @@ let
     # The planner shares only what exists, and the guest cannot create these under read-only
     # parents; made as the user, so no root write follows a path in the home.
     runuser -u ${user} -- mkdir -p ${lib.escapeShellArgs (map (rel: "${home}/${rel}") stateDirs)}
+    ${lib.optionalString isServer ''
+      # Sessions and the WebUI token sit here: no other host user may traverse.
+      install -d -m 0700 -o ${user} -g users ${lib.escapeShellArg assistantState}
+    ''}
 
     # The planner only reads the home, so it runs as its owner; the root step trusts its JSON
     # for paths alone and re-checks every source with O_NOFOLLOW.
@@ -453,10 +667,15 @@ let
   guest =
     { lib, pkgs, ... }:
     let
-      guestProxies = proxySockets "agent-vm-proxy" "127.0.0.1" (r: "${hostAddr}:${toString r.port}") relays;
+      guestProxies = proxySockets "agent-vm-proxy" "127.0.0.1" (
+        r: "${hostAddr}:${toString r.port}"
+      ) relays;
       # The runtime binds loopback; this relay is the only listener on the tap address.
       guestIngress = proxySockets "agent-vm-ingress" guestAddr (r: "127.0.0.1:${toString r.port}") (
-        map (p: { port = p; target = p; }) cfg.ingressPorts
+        map (p: {
+          port = p;
+          target = p;
+        }) cfg.ingressPorts
       );
 
       # Site warning lists are metadata, not story content. This drops them from the
@@ -647,33 +866,90 @@ let
         guestSsh
         guestCalibre
         fanficfareDownload
-      ];
+        sdlcGuest
+        tinyfishSearch
+        pkgs.gh
+        pkgs.git
+        pkgs.jq
+        pkgs.ripgrep
+        pkgs.curl
+      ]
+      # The assistant is a server service: the laptop guest has no ingress and no
+      # always-on duty, so it gets neither the wrapper nor the unit.
+      ++ lib.optionals isServer [ agentAssistant ];
       environment.etc."agent-vm/ssh_config".text = guestSshConfig;
 
       # Files a tool must rewrite under a read-only share get a guest-local copy bound over them.
-      systemd.services = lib.mapAttrs (_: v: v.service) (guestProxies // guestIngress) // {
-        agent-vm-writable = {
-          wantedBy = [ "multi-user.target" ];
-          after = [ "local-fs.target" ];
-          before = [ "sshd.service" ];
-          serviceConfig = {
-            Type = "oneshot";
-            RemainAfterExit = true;
+      systemd.services =
+        lib.mapAttrs (_: v: v.service) (guestProxies // guestIngress)
+        // {
+          agent-vm-writable = {
+            wantedBy = [ "multi-user.target" ];
+            after = [ "local-fs.target" ];
+            before = [ "sshd.service" ];
+            serviceConfig = {
+              Type = "oneshot";
+              RemainAfterExit = true;
+            };
+            path = [
+              pkgs.coreutils
+              pkgs.util-linux
+            ];
+            script = lib.concatMapStrings (rel: ''
+              src=${home}/${rel}
+              copy=/var/lib/agent-vm/writable/${rel}
+              if [ -f "$src" ] && ! mountpoint -q "$src"; then
+                install -D -m 0644 -o ${user} -g users "$src" "$copy"
+                mount --bind "$copy" "$src"
+              fi
+            '') cfg.guestWritable;
           };
-          path = [
-            pkgs.coreutils
-            pkgs.util-linux
-          ];
-          script = lib.concatMapStrings (rel: ''
-            src=${home}/${rel}
-            copy=/var/lib/agent-vm/writable/${rel}
-            if [ -f "$src" ] && ! mountpoint -q "$src"; then
-              install -D -m 0644 -o ${user} -g users "$src" "$copy"
-              mount --bind "$copy" "$src"
-            fi
-          '') cfg.guestWritable;
+        }
+        // lib.optionalAttrs isServer {
+          nanobot-assistant = {
+            description = "nanobot assistant at agent.sammohr.dev";
+            wantedBy = [ "multi-user.target" ];
+            after = [
+              "network-online.target"
+              "run-secrets.mount"
+            ];
+            wants = [ "network-online.target" ];
+            serviceConfig = {
+              User = user;
+              Group = "users";
+              WorkingDirectory = home;
+              Environment = [ "PATH=/run/wrappers/bin:/run/current-system/sw/bin" ];
+              # `gateway --foreground` is the supervised runtime; `nanobot webui` is
+              # an interactive client that exits when the gateway does.
+              ExecStart = "${agentAssistant}/bin/agent-assistant gateway";
+              Restart = "always";
+              RestartSec = "5s";
+              # Sessions and the token are private; the rest of the VM stays read-only.
+              UMask = "0077";
+              # ProtectSystem=strict makes every mount read-only, including the rw
+              # shares, so reopen exactly the view's writable roots. `-` ignores a
+              # root the view omitted because the host path does not exist.
+              ReadWritePaths = map (r: "-${home}/${r}") cfg.allowRw;
+              NoNewPrivileges = true;
+              PrivateTmp = true;
+              ProtectSystem = "strict";
+              ProtectKernelTunables = true;
+              ProtectKernelModules = true;
+              ProtectControlGroups = true;
+              ProtectClock = true;
+              ProtectHostname = true;
+              RestrictAddressFamilies = [
+                "AF_UNIX"
+                "AF_INET"
+                "AF_INET6"
+                "AF_NETLINK"
+              ];
+              RestrictRealtime = true;
+              RestrictSUIDSGID = true;
+              LockPersonality = true;
+            };
+          };
         };
-      };
       systemd.sockets = lib.mapAttrs (_: v: v.socket) (guestProxies // guestIngress);
 
       # Guest-local tool state: the home is a read-only view, so caches, data, gh and writable
@@ -709,7 +985,12 @@ in
       type = lib.types.attrsOf (
         lib.types.submodule {
           options = {
-            type = lib.mkOption { type = lib.types.enum [ "http" "tcp" ]; };
+            type = lib.mkOption {
+              type = lib.types.enum [
+                "http"
+                "tcp"
+              ];
+            };
             upstream = lib.mkOption {
               type = lib.types.str;
               default = "";
@@ -741,11 +1022,22 @@ in
               type = lib.types.submodule {
                 options = {
                   kind = lib.mkOption {
-                    type = lib.types.enum [ "bearer" "header" "basic" "none" ];
+                    type = lib.types.enum [
+                      "bearer"
+                      "header"
+                      "basic"
+                      "none"
+                    ];
                     default = "none";
                   };
-                  header = lib.mkOption { type = lib.types.str; default = ""; };
-                  username = lib.mkOption { type = lib.types.str; default = ""; };
+                  header = lib.mkOption {
+                    type = lib.types.str;
+                    default = "";
+                  };
+                  username = lib.mkOption {
+                    type = lib.types.str;
+                    default = "";
+                  };
                 };
               };
               default = { };
@@ -782,114 +1074,118 @@ in
   };
 
   config = {
-    agentVm = lib.mapAttrs (_: lib.mkDefault) {
-      allow = [
-        # Skills discovery for maki; symlinks into the shared store.
-        ".agents"
-        # The real tool config, shared read-only; maki's pack lock is bound over separately.
-        ".config/maki"
-        ".config/git"
-        # The manually installed maki binary; no Nix package exists yet.
-        ".local/bin"
-      ];
-      allowRw = [
-        "repos"
-        "wip"
-        # Shared maki sessions and logs: the host and the guest resume each other's sessions.
-        ".local/state/maki"
-        ".local/logs/maki"
-      ];
-      # Only values that cannot be mediated stay here; every capability holds its own secret on
-      # the host (see `capabilities`).
-      secrets = [
-        "github-personal-pat"
-        "github-personal-signing-key"
-      ];
-      guestWritable = [ ".config/maki/pack-lock.json.lock" ];
-    }
-    // {
-      capabilities = (
-        {
-          neuralwatt = {
-            type = "http";
-            upstream = "https://api.neuralwatt.com";
-            secret = "neuralwatt-api-key";
-            guestPort = ports.agentNeuralwatt;
-            allow = [
-              "POST /v1/chat/completions"
-              "GET /v1/models"
-            ];
+    agentVm =
+      lib.mapAttrs (_: lib.mkDefault) {
+        allow = [
+          # Skills discovery for maki; symlinks into the shared store.
+          ".agents"
+          # The real tool config, shared read-only; maki's pack lock is bound over separately.
+          ".config/maki"
+          ".config/git"
+          # The manually installed maki binary; no Nix package exists yet.
+          ".local/bin"
+        ];
+        allowRw = [
+          "repos"
+          "wip"
+          # Shared maki sessions and logs: the host and the guest resume each other's sessions.
+          ".local/state/maki"
+          ".local/logs/maki"
+        ]
+        # nanobot sessions, pairing and the generated WebUI token; server-only.
+        ++ lib.optional isServer ".local/state/agent-assistant";
+        # Only values that cannot be mediated stay here; every capability holds its own secret on
+        # the host (see `capabilities`).
+        secrets = [
+          "github-personal-pat"
+          "github-personal-signing-key"
+        ];
+        guestWritable = [ ".config/maki/pack-lock.json.lock" ];
+      }
+      // {
+        capabilities = (
+          {
+            neuralwatt = {
+              type = "http";
+              upstream = "https://api.neuralwatt.com";
+              secret = "neuralwatt-api-key";
+              guestPort = ports.agentNeuralwatt;
+              allow = [
+                "POST /v1/chat/completions"
+                "GET /v1/models"
+              ];
 
-            auth.kind = "bearer";
-          };
-          tinyfish = {
-            type = "http";
-            upstream = "https://api.search.tinyfish.ai";
-            secret = "tinyfish-api-key";
-            guestPort = ports.agentTinyfish;
-            allow = [ "GET /" ];
-            env.TINYFISH_BASE_URL = "http://127.0.0.1:${toString ports.agentTinyfish}";
-            auth = {
-              kind = "header";
-              header = "X-API-Key";
+              auth.kind = "bearer";
             };
-          };
-          calibre = {
-            type = "http";
-            upstream = if isServer then "http://127.0.0.1:${toString ports.calibre}" else "https://calibre.sammohr.dev";
-            secret = "calibre-password";
-            guestPort = ports.calibre;
-            brokerPort = ports.agentBrokerCalibre;
-            env.CALIBRE_LIBRARY_URL = "http://127.0.0.1:${toString ports.calibre}/#books";
-            auth = {
-              kind = "basic";
-              username = "smores56";
+            tinyfish = {
+              type = "http";
+              upstream = "https://api.search.tinyfish.ai";
+              secret = "tinyfish-api-key";
+              guestPort = ports.agentTinyfish;
+              allow = [ "GET /" ];
+              env.TINYFISH_BASE_URL = "http://127.0.0.1:${toString ports.agentTinyfish}";
+              auth = {
+                kind = "header";
+                header = "X-API-Key";
+              };
             };
-          };
-        }
-        // lib.optionalAttrs (!isServer) {
-          smortress-ssh = {
-            type = "tcp";
-            secret = "cloudflare-access-ssh-token";
-            guestPort = ports.agentSshRelay;
-            command = "${cloudflaredAccess}/bin/cloudflared-access-host tcp --hostname ssh.sammohr.dev --url 127.0.0.1:%PORT%";
-          };
-        }
-        // lib.optionalAttrs isServer {
-          memory = {
-            type = "http";
-            upstream = "http://127.0.0.1:${toString ports.memoryMcp}";
-            secret = "memory-mcp-token";
-            guestPort = ports.memoryMcp;
-            brokerPort = ports.agentBrokerMemory;
-            allow = [
-              "GET /mcp"
-              "POST /mcp"
-              "DELETE /mcp"
-            ];
-            auth.kind = "bearer";
-          };
-        }
-        // lib.optionalAttrs isServer {
-          immich = {
-            type = "http";
-            upstream = "http://127.0.0.1:${toString ports.immich}";
-            secret = "immich-agent-api-key";
-            # Immich binds the wildcard, so the tap address on 2283 is taken; use the broker port.
-            guestPort = ports.agentBrokerImmich;
-            brokerPort = ports.agentBrokerImmich;
-            env = {
-              IMMICH_API_URL = "http://127.0.0.1:${toString ports.agentBrokerImmich}";
-              IMMICH_API_KEY = "none";
+            calibre = {
+              type = "http";
+              upstream =
+                if isServer then "http://127.0.0.1:${toString ports.calibre}" else "https://calibre.sammohr.dev";
+              secret = "calibre-password";
+              guestPort = ports.calibre;
+              brokerPort = ports.agentBrokerCalibre;
+              env.CALIBRE_LIBRARY_URL = "http://127.0.0.1:${toString ports.calibre}/#books";
+              auth = {
+                kind = "basic";
+                username = "smores56";
+              };
             };
-            auth = {
-              kind = "header";
-              header = "X-Api-Key";
+          }
+          // lib.optionalAttrs (!isServer) {
+            smortress-ssh = {
+              type = "tcp";
+              secret = "cloudflare-access-ssh-token";
+              guestPort = ports.agentSshRelay;
+              command = "${cloudflaredAccess}/bin/cloudflared-access-host tcp --hostname ssh.sammohr.dev --url 127.0.0.1:%PORT%";
             };
-          };
-        }
-      );
-    };
+          }
+          // lib.optionalAttrs isServer {
+            memory = {
+              type = "http";
+              upstream = "http://127.0.0.1:${toString ports.memoryMcp}";
+              secret = "memory-mcp-token";
+              guestPort = ports.memoryMcp;
+              brokerPort = ports.agentBrokerMemory;
+              allow = [
+                "GET /mcp"
+                "POST /mcp"
+                "DELETE /mcp"
+              ];
+              auth.kind = "bearer";
+            };
+          }
+          // lib.optionalAttrs isServer {
+            immich = {
+              type = "http";
+              upstream = "http://127.0.0.1:${toString ports.immich}";
+              secret = "immich-agent-api-key";
+              # Immich binds the wildcard, so the tap address on 2283 is taken; use the broker port.
+              guestPort = ports.agentBrokerImmich;
+              brokerPort = ports.agentBrokerImmich;
+              env = {
+                IMMICH_API_URL = "http://127.0.0.1:${toString ports.agentBrokerImmich}";
+                IMMICH_API_KEY = "none";
+              };
+              auth = {
+                kind = "header";
+                header = "X-Api-Key";
+              };
+            };
+          }
+        );
+      };
 
     microvm.vms.${name} = {
       autostart = true;

@@ -50,6 +50,8 @@ system: [
 
     concord = concord.packages.${system}.default;
 
+    nanobot = final.callPackage ./nanobot { inherit inputs; };
+
     # Fixes CVE-2026-87766 (setup-time symlink traversal).
     bubblewrap = inputs.nixpkgs-unstable.legacyPackages.${system}.bubblewrap;
 

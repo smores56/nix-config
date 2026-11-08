@@ -17,6 +17,10 @@ let
       "GH_TOKEN|/run/secrets/github-personal-pat"
     ];
 
+    # The assistant's state tree: the host view, the wrapper, the unit sandbox and
+    # the backup all derive the same path from this.
+    assistantState = user: "/home/${user}/.local/state/agent-assistant";
+
     launcher =
       user:
       pkgs.writeShellApplication {
@@ -30,7 +34,12 @@ let
           let
             values = {
               inherit user;
-              inherit (self) guestAddr stateDir unit vmStateDir;
+              inherit (self)
+                guestAddr
+                stateDir
+                unit
+                vmStateDir
+                ;
             };
           in
           builtins.replaceStrings (map (n: "@${n}@") (lib.attrNames values) ++ [ "@secretEnv@" ]) (

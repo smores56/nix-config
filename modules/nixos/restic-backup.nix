@@ -9,6 +9,7 @@
 }:
 let
   hardening = import ../lib/hardening.nix;
+  vmLib = import ../lib/agent-vm.nix { inherit pkgs lib; };
 
   # The Immich database is the photo library's source of truth, so a dump has
   # to land inside the tree before restic walks it. The postgres user owns the
@@ -24,11 +25,53 @@ let
     mv "$tmp" ${lib.escapeShellArg dumpFile}
   '';
 
+  assistantState = vmLib.assistantState config.machine.username;
+
+  # Sessions are live SQLite databases. Dump consistent copies and keep the
+  # databases themselves out of the snapshot; restic never reads a torn file.
+  assistantDump = pkgs.writeShellScript "restic-assistant-dump" ''
+    set -euo pipefail
+    root=${lib.escapeShellArg "${assistantState}/home/.nanobot"}
+    out=${lib.escapeShellArg "${assistantState}/backup"}
+    install -d -m 0700 "$out"
+    found=0
+    for db in "$root"/sessions/*/sessions.sqlite3 "$root"/sessions/sessions.sqlite3; do
+      [ -e "$db" ] || continue
+      case "$db" in
+        */sessions/sessions.sqlite3) id=legacy ;;
+        *) id=''${db%/sessions.sqlite3}; id=''${id##*/} ;;
+      esac
+      install -d -m 0700 "$out/$id"
+      tmp="$out/$id/sessions.sqlite3.tmp"
+      ${pkgs.sqlite}/bin/sqlite3 "$db" ".backup '$tmp'"
+      mv "$tmp" "$out/$id/sessions.sqlite3"
+      found=1
+    done
+    if [ "$found" -eq 0 ]; then
+      rm -rf "$out"
+      exit 0
+    fi
+  '';
+
   common = {
     paths = [
-      # The whole durable tree; no second source path is needed.
       "/var/lib/data"
+      # The assistant's sessions, workspace and pairing; its logs, run files,
+      # live databases, WebUI token and re-pairable gh config are excluded.
+      assistantState
     ];
+    exclude = [
+      "${assistantState}/home/.nanobot/logs"
+      "${assistantState}/home/.nanobot/run"
+      "${assistantState}/home/.nanobot/media"
+      "${assistantState}/home/.nanobot/llm_usage.sqlite3*"
+      "${assistantState}/home/.nanobot/sessions/*/sessions.sqlite3*"
+      "${assistantState}/home/.nanobot/sessions/sessions.sqlite3*"
+      "${assistantState}/home/.nanobot/web-token"
+      "${assistantState}/gh"
+    ];
+    # A missing state tree (the user removed it) must not fail the whole backup.
+    backupPrepareCommand = "install -d -m 0700 -o ${config.machine.username} -g users ${lib.escapeShellArg assistantState}";
     passwordFile = config.sops.secrets.restic-password.path;
     pruneOpts = [
       "--keep-daily 14"
@@ -97,10 +140,31 @@ in
   # The restic module exposes no `onFailure`, so the alert is attached to the generated
   # units by name; %n mails each repo's own journal. `wants` not `requires`: a down
   # database still lets the tree back up.
+  systemd.services.restic-assistant-dump = {
+    description = "Dump the assistant sessions databases into the backed-up state";
+    path = [ pkgs.coreutils ];
+    onFailure = [ "cloudflare-email@%n.service" ];
+    serviceConfig = hardening // {
+      Type = "oneshot";
+      User = config.machine.username;
+      Group = "users";
+      ExecStart = assistantDump;
+      ProtectHome = false;
+      ReadWritePaths = [ assistantState ];
+      TimeoutStartSec = "1h";
+    };
+  };
+
   systemd.services."restic-backups-r2" = {
     onFailure = [ "cloudflare-email@%n.service" ];
-    wants = [ "restic-db-dump.service" ];
-    after = [ "restic-db-dump.service" ];
+    wants = [
+      "restic-db-dump.service"
+      "restic-assistant-dump.service"
+    ];
+    after = [
+      "restic-db-dump.service"
+      "restic-assistant-dump.service"
+    ];
   };
 
   # The local repo lives on the backup disk: wait for that mount, or a missing
@@ -108,7 +172,13 @@ in
   systemd.services."restic-backups-local" = {
     onFailure = [ "cloudflare-email@%n.service" ];
     unitConfig.RequiresMountsFor = [ "/var/backup" ];
-    wants = [ "restic-db-dump.service" ];
-    after = [ "restic-db-dump.service" ];
+    wants = [
+      "restic-db-dump.service"
+      "restic-assistant-dump.service"
+    ];
+    after = [
+      "restic-db-dump.service"
+      "restic-assistant-dump.service"
+    ];
   };
 }

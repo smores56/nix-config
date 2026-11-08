@@ -1147,12 +1147,16 @@ in
                     ".local/bin"
                   ]
                   &&
-                    lib.sort (a: b: a < b) host.agentVm.allowRw == lib.sort (a: b: a < b) [
-                      ".local/logs/maki"
-                      ".local/state/maki"
-                      "repos"
-                      "wip"
-                    ];
+                    lib.sort (a: b: a < b) host.agentVm.allowRw == lib.sort (a: b: a < b) (
+                      [
+                        ".local/logs/maki"
+                        ".local/state/maki"
+                        "repos"
+                        "wip"
+                      ]
+                      # The assistant state is shared only where the assistant runs.
+                      ++ lib.optional (lib.elem "server" host.machine.profiles) ".local/state/agent-assistant"
+                    );
                 # A writable entry must never be a whole home or a host-executed config tree.
                 narrowRw = lib.all (
                   r:
@@ -1181,7 +1185,9 @@ in
                   && !(lib.elem c.secret host.agentVm.secrets)
                   && host.systemd.sockets ? "${relay}"
                   && host.systemd.services ? "${relay}"
-                  && lib.hasInfix "127.0.0.1:${toString brokerPort}" host.systemd.services.${relay}.serviceConfig.ExecStart
+                  &&
+                    lib.hasInfix "127.0.0.1:${toString brokerPort}"
+                      host.systemd.services.${relay}.serviceConfig.ExecStart
                   && host.systemd.services ? "agent-broker-${n}"
                   && guest.systemd.sockets ? "${relay}"
                 ) (builtins.attrNames host.agentVm.capabilities);
@@ -1202,6 +1208,20 @@ in
                   && lib.hasInfix "127.0.0.1:${toString p}" guest.systemd.services."${name}".serviceConfig.ExecStart
                   && lib.elem p guest.networking.firewall.allowedTCPPorts
                 ) host.agentVm.ingressPorts;
+                # The assistant unit must supervise the gateway (the interactive
+                # `webui` client exits with it) and take its state from the #450
+                # view; the laptop guest has no assistant at all.
+                assistant =
+                  if lib.elem "server" host.machine.profiles then
+                    guest.systemd.services ? "nanobot-assistant"
+                    && guest.systemd.services.nanobot-assistant.serviceConfig.Restart == "always"
+                    && lib.hasInfix "agent-assistant gateway" guest.systemd.services.nanobot-assistant.serviceConfig.ExecStart
+                    && lib.elem ".local/state/agent-assistant" host.agentVm.allowRw
+                    && lib.any (p: lib.getName p == "agent-assistant") guest.environment.systemPackages
+                  else
+                    !(guest.systemd.services ? "nanobot-assistant")
+                    && !(lib.elem ".local/state/agent-assistant" host.agentVm.allowRw)
+                    && !(lib.any (p: lib.getName p == "agent-assistant") guest.environment.systemPackages);
               };
             all = map facts hosts;
             ok = lib.all (
@@ -1220,6 +1240,7 @@ in
               && f.capabilities
               && f.reconcile
               && f.ingress
+              && f.assistant
             ) all;
             launcher = (import ../lib/agent-vm.nix { inherit pkgs lib; }).launcher "smores";
           in

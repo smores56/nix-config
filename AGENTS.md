@@ -63,7 +63,7 @@ adds its greeter as a host-local module.
 | `modules/flake/` | flake-parts modules: configurations, checks, apps (`apps.nix`, `apps/`), formatter, nixpkgs |
 | `modules/lib/` | helpers: the share planner and agent-VM view/launcher, the Jupyter bwrap sandbox, key tables, `secret-path.nix`, `hardening.nix` |
 | `modules/ports.nix` | loopback port table shared by services and the tunnel |
-| `pkgs/overlays.nix` | nixpkgs overlays: pins and local package derivations |
+| `pkgs/overlays.nix`, `pkgs/nanobot/` | nixpkgs overlays: pins and local package derivations; the uv2nix-built nanobot environment |
 | `modules/nixos/agent-vm.nix`, `modules/features/agent-vm/` | the agent VMs: Linux microvm guest (host module, view, firewall) and its launcher; the Mac Tart launcher. Shared facts in `modules/lib/agent-vm.nix`, planner in `modules/lib/share_planner.py` and the host-side verifier in `modules/lib/agent-vm-verify.sh` |
 | `modules/features/ai/` | AI tooling: assistant context, harvest, Claude settings merge, maki, memory, providers, sdlc, skills. `memory/service.nix` is the one memory service description; `modules/nixos/memory.nix` and `memory/darwin.nix` render it |
 | `modules/features/tv/`, `modules/features/repos/` | Television repository and worktree cables; the `repos`/`worktrees` CLIs they call |

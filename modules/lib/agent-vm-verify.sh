@@ -37,10 +37,26 @@ done
 expected_top=$(printf '%s\n' "${allow[@]}" "${allow_rw[@]}" | cut -d/ -f1 | sort -u)
 actual_top=$(list_dir "$view")
 [ "$actual_top" = "$expected_top" ] || fail "top level is: $actual_top"
-[ "$(list_dir "$view/.config" | tr '\n' ' ')" = "git maki " ] || fail ".config exposes more than maki and git"
-[ "$(list_dir "$view/.local" | tr '\n' ' ')" = "bin logs state " ] || fail ".local exposes more than bin, logs and state"
-[ "$(list_dir "$view/.local/state" | tr '\n' ' ')" = "maki " ] || fail ".local/state exposes more than maki"
-[ "$(list_dir "$view/.local/logs" | tr '\n' ' ')" = "maki " ] || fail ".local/logs exposes more than maki"
+# A parent of an allowed path must expose only the allowed children, derived from
+# the lists so an allowlist change never leaves a stale expectation behind.
+check_parent() {
+  local dir=$1 entry name expected actual
+  expected=$(
+    for entry in "${allow[@]}" "${allow_rw[@]}"; do
+      case "$entry" in
+        "$dir"/*)
+          name=${entry#"$dir"/}
+          printf '%s\n' "${name%%/*}"
+          ;;
+      esac
+    done | sort -u
+  )
+  actual=$(list_dir "$view/$dir")
+  [ "$actual" = "$expected" ] || fail "$dir is: $actual"
+}
+for dir in .config .local .local/state .local/logs; do
+  check_parent "$dir"
+done
 for p in .ssh .gnupg .cache .local/share Documents Downloads Desktop .config/sops .config/gh; do
   [ ! -e "$view/$p" ] || fail "absent path is visible: $p"
 done
@@ -65,7 +81,7 @@ while IFS=' ' read -r target opts; do
 done < <(findmnt -R -l -n -o TARGET,OPTIONS "$view")
 
 # Writes land where they should, as the human.
-for rel in ".local/state/maki" ".local/logs/maki" "repos" "wip"; do
+for rel in "${allow_rw[@]}"; do
   [ -d "$view/$rel" ] || continue
   if ! as_user touch "$view/$rel/.agent-vm-verify" 2>/dev/null; then
     fail "$rel is not writable"
@@ -73,7 +89,7 @@ for rel in ".local/state/maki" ".local/logs/maki" "repos" "wip"; do
     rm -f "$view/$rel/.agent-vm-verify"
   fi
 done
-for rel in ".agents" ".config/maki" ".config/git" ".local/bin"; do
+for rel in "${allow[@]}"; do
   [ -d "$view/$rel" ] || continue
   if as_user touch "$view/$rel/.agent-vm-verify" 2>/dev/null; then
     rm -f "$view/$rel/.agent-vm-verify"

@@ -1929,6 +1929,24 @@ change or the guest firewall and relay stay on the old generation:
 `sudo systemctl restart microvm@agent.service`. Until the runtime listens on
 the port the ingress returns 502.
 
+The runtime is `nanobot-assistant.service` in the guest, running
+`agent-assistant gateway` (`nanobot gateway --foreground`, `Restart=always`).
+The `serve` subcommand is the interactive WebUI client, not the service. The
+unit exists only on smortress; the laptop guest has neither the service nor the
+state share. Its instance, sessions, workspace, and generated WebUI token live
+under `~/.local/state/agent-assistant`, which is also the restic path. The
+backup excludes `logs`, `run`, `media`, `llm_usage.sqlite3`, the live
+`sessions.sqlite3` databases (per-workspace dumps land in `backup/`), the WebUI
+token, and `gh`; re-pair the phone and run `gh auth login` after a restore.
+`agent-sandbox agent-assistant token` prints the WebUI token; deleting
+`home/.nanobot/web-token` and restarting the service rotates it. Nix owns
+`config.json` until the WebUI edits it; after that the edited file wins, and
+removing it re-installs the Nix config. The assistant uses the `neuralwatt`,
+`tinyfish`, and `memory` capabilities; no mediated key is in the guest. The
+GitHub PAT and signing key are the #459 residuals. The personal skills are
+every `~/.agents/skills` entry except `brain`, linked at start. `agent-sandbox
+status` and `sudo agent-vm-update` manage the guest update state.
+
 ### smortress/chat
 
 <!-- manual-step: service/smortress/chat -->

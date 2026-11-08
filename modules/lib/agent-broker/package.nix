@@ -1,5 +1,8 @@
 # One binary for every HTTP capability: Credential injection, route allowlist and streaming.
-{ pkgs, lib ? pkgs.lib }:
+{
+  pkgs,
+  lib ? pkgs.lib,
+}:
 pkgs.python3Packages.buildPythonApplication {
   pname = "agent-broker";
   version = "0.1.0";

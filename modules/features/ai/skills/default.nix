@@ -3,13 +3,7 @@
   ...
 }:
 let
-  # Stray dirs (__pycache__, editor droppings) would ship as broken skills.
-  sharedSkillNames =
-    let
-      entries = lib.filterAttrs (_: type: type == "directory") (builtins.readDir ./.);
-      hasSkill = name: builtins.pathExists (./. + "/${name}/SKILL.md");
-    in
-    builtins.filter hasSkill (lib.attrNames entries);
+  sharedSkillNames = import ../../../lib/skills.nix ./.;
 
   # ~/.agents/skills is the shared user-scope location: maki and codex both
   # scan it. Claude Code reads ~/.claude/skills.

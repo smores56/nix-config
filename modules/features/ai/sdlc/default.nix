@@ -1,9 +1,7 @@
 { pkgs, ... }:
 {
   home.packages = [
-    (pkgs.writeShellScriptBin "sdlc" ''
-      exec ${pkgs.python3}/bin/python3 ${./sdlc_issues.py} "$@"
-    '')
+    (import ../../../lib/sdlc.nix { inherit pkgs; })
     pkgs.revdiff
   ];
 
