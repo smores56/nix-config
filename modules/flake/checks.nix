@@ -1082,6 +1082,9 @@ in
                 # The home reaches the guest only through the assembled view.
                 noRawHome = lib.all (sh: sh.source != home && !(lib.hasPrefix "${home}/" sh.source)) shares;
                 guestBuilds = guest.microvm.writableStoreOverlay != null;
+                # A persistent writable overlay must not register the closure, or a
+                # guest GC whiteouts host store paths (modules/nixos/agent-vm.nix).
+                storeSafe = !guest.microvm.registerClosure;
                 keyOnly =
                   !guest.services.openssh.settings.PasswordAuthentication
                   && !guest.services.openssh.settings.AllowAgentForwarding
@@ -1118,12 +1121,20 @@ in
               };
             all = map facts hosts;
             ok = lib.all (
-              f: f.squash && f.noXattr && f.noRawHome && f.guestBuilds && f.keyOnly && f.denies && f.narrowRw
+              f:
+              f.squash
+              && f.noXattr
+              && f.noRawHome
+              && f.guestBuilds
+              && f.storeSafe
+              && f.keyOnly
+              && f.denies
+              && f.narrowRw
             ) all;
             launcher = (import ../lib/agent-vm.nix { inherit pkgs lib; }).launcher "smores";
           in
           assert lib.assertMsg ok
-            "agent-vm: a Linux guest lost uid squashing, the view, guest builds, key-only sshd or a deny entry";
+            "agent-vm: a Linux guest lost uid squashing, the view, guest builds, store safety, key-only sshd or a deny entry";
           pkgs.runCommand "agent-vm-linux-static-check"
             {
               nativeBuildInputs = [ pkgs.gnugrep ];
