@@ -254,6 +254,8 @@ type DirectoryHandle = {
 
 const MAX_BUFFERED_DOWNLOAD = 256 * 1024 * 1024;
 const MAX_ZIP_BYTES = 256 * 1024 * 1024;
+const FOLDER_PICKER_HELP =
+  "Saving to a folder needs Chrome, Edge, or Brave with File System Access enabled (brave://flags/#file-system-access-api).";
 
 async function download(entry: ResticDirEntry): Promise<void> {
   if (!repository) return;
@@ -495,7 +497,7 @@ async function restoreAll(): Promise<void> {
   if (!repo || !current || restoreBusy || restoring) return;
   if (!supportsDirectoryPicker()) {
     setRestoreStatus(
-      "Saving to a folder needs Chrome or Edge. This browser can download one folder as a zip.",
+      `${FOLDER_PICKER_HELP} This browser can download one folder as a zip.`,
       "error",
     );
     return;
@@ -526,7 +528,7 @@ async function restoreFolder(folderPath: string): Promise<void> {
   if (!repo || !current || restoreBusy || restoring) return;
   if (!supportsDirectoryPicker()) {
     setRestoreStatus(
-      "Saving to a folder needs Chrome or Edge. This browser can download this folder as a zip.",
+      `${FOLDER_PICKER_HELP} This browser can download this folder as a zip.`,
       "error",
     );
     return;
@@ -590,7 +592,7 @@ async function downloadFolderZip(folderPath: string): Promise<void> {
           setRestoreStatus(
             `This folder is over ${
               formatBytes(MAX_ZIP_BYTES)
-            }. The browser zip download is capped; use Chrome or Edge to save it directly.`,
+            }. The browser zip download is capped; use Chrome, Edge, or Brave with File System Access enabled to save it directly.`,
             "error",
           );
           return;

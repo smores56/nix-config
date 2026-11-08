@@ -90,9 +90,12 @@ is skipped, which makes a stopped run resumable.
 The directory handle comes from the File System Access API. WebKit implements
 neither `showDirectoryPicker` nor a usable Service-Worker streaming download on
 macOS, iPadOS or iOS, so folder downloads there fall back to a zip buffered in
-memory (capped at 256 MiB), and single files download as before. The letter tells
-the family to use Chrome on the Mac for the full library and keeps Safari for
-reading and smaller folder downloads.
+memory (capped at 256 MiB), and single files download as before. Brave is
+Chromium but disables the API by default: enable
+`brave://flags/#file-system-access-api` and relaunch to get folder streaming;
+otherwise Brave uses the same buffered zip fallback. The letter tells the family
+to use Chrome on the Mac for the full library and keeps Safari for reading and
+smaller folder downloads.
 
 ## Deployment
 
