@@ -1097,7 +1097,8 @@ in
                   ".config/Bitwarden"
                   ".cache/cliphist"
                   ".gnupg"
-                  "Vault"
+                  ".local/share/vault"
+                  ".local/share/todo"
                 ];
                 # A writable entry must never cover host-executed config or a denied path.
                 narrowRw = lib.all (

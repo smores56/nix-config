@@ -20,7 +20,8 @@
     ./secrets.nix
   ];
   homeModules = [
-    ./todo.nix
+    ../../features/todo.nix
+    ./todo-sync.nix
   ];
   user = {
     shellAbbrs = {

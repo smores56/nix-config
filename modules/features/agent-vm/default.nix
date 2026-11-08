@@ -12,6 +12,8 @@ let
   deny = [
     "Library"
     ".config/sops"
+    ".local/share/vault"
+    ".local/share/todo"
     ".tart"
     ".Trash"
   ];

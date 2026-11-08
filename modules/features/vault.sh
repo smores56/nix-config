@@ -2,12 +2,13 @@
 # Open the vault for one foreground session. Must be started as root through `sudo vault`.
 #
 # The store is owned by the `vault` user and the human's uid has no access to it at rest, so this
-# mount is the only way in. bindfs maps the vault user to the caller, so inside ~/Vault everything
-# looks owned by the human and editors, file managers and previewers behave normally.
+# mount is the only way in. bindfs maps the vault user to the caller, so inside
+# ~/.local/share/vault everything looks owned by the human and editors, file
+# managers and previewers behave normally.
 #
-# No argument: hold the mount until Ctrl-C. With a command: run it in ~/Vault as the caller and
-# unmount when it exits. Either way the trap unmounts, so the window is exactly the foreground
-# process.
+# No argument: hold the mount until Ctrl-C. With a command: run it in
+# ~/.local/share/vault as the caller and unmount when it exits. Either way the
+# trap unmounts, so the window is exactly the foreground process.
 #
 # Usage: sudo vault [command [args...]]
 
@@ -29,11 +30,12 @@ if [ ! -d "$store" ]; then
   exit 1
 fi
 
-mountpoint="$(home_of "$caller")/Vault"
-if [ -z "${mountpoint%/Vault}" ]; then
+home_dir="$(home_of "$caller")"
+if [ -z "$home_dir" ]; then
   echo "vault: could not resolve $caller's home directory" >&2
   exit 1
 fi
+mountpoint="$home_dir/.local/share/vault"
 if is_mounted "$mountpoint"; then
   # A FUSE mount whose server died still answers `mountpoint`; detach it rather than refusing
   # until the next reboot.

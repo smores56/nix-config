@@ -18,6 +18,11 @@
 }:
 let
   devices = import ../syncthing-devices.nix;
+  # On smortress the todo peers share this daemon's device map but not the vault
+  # folder; the folder itself is in modules/nixos/todo-server.nix. The assertion
+  # below rejects a key collision with the vault table.
+  todoDevices = import ../todo-devices.nix;
+  todoPeers = lib.optionalAttrs (config.vaultSync.device == "smortress") todoDevices;
 
   # Pinned so ownership and the bindfs mapping stay stable across rebuilds. 1000 is the human,
   # 982 is the memory service.
@@ -44,6 +49,10 @@ in
       {
         assertion = builtins.hasAttr config.vaultSync.device devices;
         message = "vaultSync.device (${config.vaultSync.device}) needs its ID in modules/syncthing-devices.nix before Syncthing can run here; the local device is part of the config Syncthing writes.";
+      }
+      {
+        assertion = builtins.intersectAttrs todoDevices devices == { };
+        message = "modules/todo-devices.nix keys must not collide with modules/syncthing-devices.nix; the vault folder derives its peers from the vault table.";
       }
     ];
 
@@ -96,7 +105,7 @@ in
         devices = lib.mapAttrs (name: value: {
           id = value;
           name = name;
-        }) devices;
+        }) (devices // todoPeers);
         folders.vault = {
           id = "vault";
           label = "Vault";

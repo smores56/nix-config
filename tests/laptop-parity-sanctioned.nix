@@ -21,6 +21,8 @@ in
         "inherent: the agent differs per host (`agent-sandbox claude` in the Tart VM on the Mac, `agent-sandbox maki` on Linux)";
       "abbrs.ms" = maki;
       "abbrs.mp" = maki;
+      "abbrs.td" = todo;
+      "abbrs.te" = todo;
       "abbrs.ns" = "inherent: nixos-rebuild exists only on NixOS";
       "env.CC" = "inherent: macOS toolchain in /usr/bin";
       "env.CXX" = "inherent: macOS toolchain in /usr/bin";
