@@ -29,6 +29,65 @@ let
 
   brokerPackage = pkgs.callPackage ../lib/agent-broker/package.nix { };
 
+  aiProviders = config._module.args.aiProviders;
+  # The guest's maki talks to the broker, never the public API; the host keeps its own config.
+  guestProvidersToml = (pkgs.formats.toml { }).generate "maki-providers-guest.toml" {
+    neuralwatt = {
+      display_name = "Neuralwatt (agent broker)";
+      protocol = "openai";
+      base_url = "http://127.0.0.1:${toString ports.agentNeuralwatt}/v1";
+      api_key = "none";
+      models = aiProviders.neuralwatt.makiModels;
+    };
+    smortress = {
+      display_name = "Qwen3.8 uncensored (smortress)";
+      protocol = "openai";
+      base_url = aiProviders.smortress.baseUrl;
+      api_key = "none";
+      models = aiProviders.smortress.makiModels;
+    };
+  };
+
+  calibredbWrapper = pkgs.writeShellScriptBin "calibredb" ''
+    for a in "$@"; do
+      case "$a" in
+        --with-library | --with-library=* | -w | -w=*) exec ${pkgs.calibre}/bin/calibredb "$@";;
+      esac
+    done
+    if [ -n "''${CALIBRE_LIBRARY_URL:-}" ]; then
+      exec ${pkgs.calibre}/bin/calibredb --with-library "$CALIBRE_LIBRARY_URL" "$@"
+    fi
+    exec ${pkgs.calibre}/bin/calibredb "$@"
+  '';
+  # calibre's other binaries plus the broker-aware calibredb; one package so the profile has no
+  # duplicate bin/calibredb.
+  guestCalibre = pkgs.runCommandLocal "calibre-agent" { } ''
+    mkdir -p $out/bin
+    for b in ${pkgs.calibre}/bin/*; do
+      n=$(basename "$b")
+      if [ "$n" = calibredb ]; then continue; fi
+      ln -s "$b" "$out/bin/$n"
+    done
+    ln -s ${calibredbWrapper}/bin/calibredb "$out/bin/calibredb"
+  '';
+
+  # Holds the Access token on the host; the guest only dials the relay.
+  cloudflaredAccess = pkgs.writeShellApplication {
+    name = "cloudflared-access-host";
+    runtimeInputs = [ pkgs.cloudflared ];
+    text = ''
+      {
+        IFS= read -r token_id || true
+        IFS= read -r token_secret || true
+      } < "$CREDENTIALS_DIRECTORY/cloudflare-access-ssh-token"
+      export TUNNEL_SERVICE_TOKEN_ID="$token_id" TUNNEL_SERVICE_TOKEN_SECRET="$token_secret"
+      exec cloudflared access "$@"
+    '';
+  };
+  guestSshProxy = pkgs.writeShellScriptBin "agent-vm-ssh-proxy" ''
+    exec ${pkgs.socat}/bin/socat - TCP:127.0.0.1:${toString ports.agentSshRelay}
+  '';
+
   # What the guest may know about its capabilities: addresses and dummy values, never secrets.
   capabilityJson = pkgs.writeText "agent-vm-capabilities.json" (
     builtins.toJSON {
@@ -118,7 +177,7 @@ let
       target = p;
     }) proxied
     ++ lib.mapAttrsToList (_: c: {
-      inherit (c) guestPort;
+      port = c.guestPort;
       target = c.brokerPort;
     }) caps;
 
@@ -185,10 +244,8 @@ let
   };
 
   # Host loopback services the agent uses; both are token-authenticated.
-  proxied = [
-    ports.llm
-    ports.memoryMcp
-  ];
+  # Host loopback services the guest reaches directly; capabilities bring their own broker.
+  proxied = [ ports.llm ];
   privateNets = [
     "0.0.0.0/8"
     "10.0.0.0/8"
@@ -261,6 +318,10 @@ let
         install -m 0400 -o ${user} -g users "/run/secrets/$secret" "${secretsDir}/$secret"
       fi
     done
+    # The memory shim always sends a bearer token; the broker replaces this placeholder.
+    printf 'none' > "${secretsDir}/memory-mcp-token"
+    chown ${user}:users "${secretsDir}/memory-mcp-token"
+    chmod 0400 "${secretsDir}/memory-mcp-token"
   '';
 
   netScript = pkgs.writeShellScript "agent-vm-net" ''
@@ -353,7 +414,7 @@ let
       Host smortress
         HostName ssh.sammohr.dev
         User ${user}
-        ProxyCommand cloudflared-access ssh --hostname %h
+        ProxyCommand ${guestSshProxy}/bin/agent-vm-ssh-proxy
         IdentityFile /run/secrets/github-personal-signing-key
     ''}
     Host *
@@ -521,7 +582,7 @@ let
       };
       environment.systemPackages = [
         guestSsh
-        pkgs.calibre
+        guestCalibre
       ];
       environment.etc."agent-vm/ssh_config".text = guestSshConfig;
 
@@ -539,14 +600,25 @@ let
             pkgs.coreutils
             pkgs.util-linux
           ];
-          script = lib.concatMapStrings (rel: ''
-            src=${home}/${rel}
-            copy=/var/lib/agent-vm/writable/${rel}
-            if [ -f "$src" ] && ! mountpoint -q "$src"; then
-              install -D -m 0644 -o ${user} -g users "$src" "$copy"
-              mount --bind "$copy" "$src"
-            fi
-          '') cfg.guestWritable;
+          script =
+            lib.concatMapStrings (
+              rel: ''
+                src=${home}/${rel}
+                copy=/var/lib/agent-vm/writable/${rel}
+                if [ -f "$src" ] && ! mountpoint -q "$src"; then
+                  install -D -m 0644 -o ${user} -g users "$src" "$copy"
+                  mount --bind "$copy" "$src"
+                fi
+              ''
+            ) cfg.guestWritable
+            + lib.optionalString (caps ? neuralwatt) ''
+              src=${guestProvidersToml}
+              copy=/var/lib/agent-vm/writable/.config/maki/providers.toml
+              if [ -f "$src" ] && ! mountpoint -q ${home}/.config/maki/providers.toml; then
+                install -D -m 0644 -o ${user} -g users "$src" "$copy"
+                mount --bind "$copy" ${home}/.config/maki/providers.toml
+              fi
+            '';
         };
       };
       systemd.sockets = lib.mapAttrs (_: v: v.socket) (guestProxies // guestIngress);
@@ -674,17 +746,95 @@ in
         ".local/state/maki"
         ".local/logs/maki"
       ];
+      # Only values that cannot be mediated stay here; every capability holds its own secret on
+      # the host (see `capabilities`).
       secrets = [
         "github-personal-pat"
         "github-personal-signing-key"
-        "memory-mcp-token"
-        "neuralwatt-api-key"
-        "tinyfish-api-key"
-        "immich-agent-api-key"
-        "cloudflare-access-ssh-token"
-        "calibre-password"
       ];
       guestWritable = [ ".config/maki/pack-lock.json.lock" ];
+    }
+    // {
+      capabilities = (
+        {
+          neuralwatt = {
+            type = "http";
+            upstream = "https://api.neuralwatt.com";
+            secret = "neuralwatt-api-key";
+            guestPort = ports.agentNeuralwatt;
+            allow = [
+              "POST /v1/chat/completions"
+              "GET /v1/models"
+            ];
+            env.NEURALWATT_BASE_URL = "http://127.0.0.1:${toString ports.agentNeuralwatt}/v1";
+            auth.kind = "bearer";
+          };
+          tinyfish = {
+            type = "http";
+            upstream = "https://api.search.tinyfish.ai";
+            secret = "tinyfish-api-key";
+            guestPort = ports.agentTinyfish;
+            allow = [ "GET /" ];
+            env.TINYFISH_BASE_URL = "http://127.0.0.1:${toString ports.agentTinyfish}";
+            auth = {
+              kind = "header";
+              header = "X-API-Key";
+            };
+          };
+          calibre = {
+            type = "http";
+            upstream = if isServer then "http://127.0.0.1:${toString ports.calibre}" else "https://calibre.sammohr.dev";
+            secret = "calibre-password";
+            guestPort = ports.calibre;
+            brokerPort = ports.agentBrokerCalibre;
+            env.CALIBRE_LIBRARY_URL = "http://127.0.0.1:${toString ports.calibre}/#books";
+            auth = {
+              kind = "basic";
+              username = "smores56";
+            };
+          };
+        }
+        // lib.optionalAttrs (!isServer) {
+          smortress-ssh = {
+            type = "tcp";
+            secret = "cloudflare-access-ssh-token";
+            guestPort = ports.agentSshRelay;
+            command = "${cloudflaredAccess}/bin/cloudflared-access-host tcp --hostname ssh.sammohr.dev --url 127.0.0.1:%PORT%";
+          };
+        }
+        // lib.optionalAttrs isServer {
+          memory = {
+            type = "http";
+            upstream = "http://127.0.0.1:${toString ports.memoryMcp}";
+            secret = "memory-mcp-token";
+            guestPort = ports.memoryMcp;
+            brokerPort = ports.agentBrokerMemory;
+            allow = [
+              "GET /mcp"
+              "POST /mcp"
+              "DELETE /mcp"
+            ];
+            auth.kind = "bearer";
+          };
+        }
+        // lib.optionalAttrs isServer {
+          immich = {
+            type = "http";
+            upstream = "http://127.0.0.1:${toString ports.immich}";
+            secret = "immich-agent-api-key";
+            guestPort = ports.immich;
+            brokerPort = ports.agentBrokerImmich;
+            env = {
+              IMMICH_API_URL = "http://127.0.0.1:${toString ports.immich}";
+              IMMICH_API_KEY = "none";
+            };
+            auth = {
+              kind = "header";
+              header = "X-Api-Key";
+            };
+          };
+        }
+      );
     };
 
     microvm.vms.${name} = {

@@ -1179,11 +1179,11 @@ in
                   in
                   c.guestPort != 0
                   && !(lib.elem c.secret host.agentVm.secrets)
-                  && host.systemd.sockets ? relay
-                  && host.systemd.services ? relay
+                  && host.systemd.sockets ? "${relay}"
+                  && host.systemd.services ? "${relay}"
                   && lib.hasInfix "127.0.0.1:${toString brokerPort}" host.systemd.services.${relay}.serviceConfig.ExecStart
                   && host.systemd.services ? "agent-broker-${n}"
-                  && guest.systemd.sockets ? relay
+                  && guest.systemd.sockets ? "${relay}"
                 ) (builtins.attrNames host.agentVm.capabilities);
                 firewall = host.networking.firewall.extraCommands;
                 # The host relay, guest relay and guest firewall must agree on every ingress port.
@@ -1221,7 +1221,7 @@ in
             launcher = (import ../lib/agent-vm.nix { inherit pkgs lib; }).launcher "smores";
           in
           assert lib.assertMsg ok
-            "agent-vm: a Linux guest lost uid squashing, the view, guest builds, store safety, key-only sshd or the allowlist";
+            "agent-vm: a Linux guest lost uid squashing, the view, guest builds, store safety, key-only sshd, the allowlist or a capability";
           pkgs.runCommand "agent-vm-linux-static-check"
             {
               nativeBuildInputs = [ pkgs.gnugrep ];

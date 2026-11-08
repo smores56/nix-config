@@ -59,8 +59,8 @@ end
 
 -- Run one TinyFish search. Returns the results array, or nil plus an error
 -- string that still carries the API's own message so a 402/403 is diagnosable.
-local function request_results(key, query)
-  local url = ENDPOINT .. "?query=" .. urlencode(query)
+local function request_results(key, query, base)
+  local url = (base or ENDPOINT) .. "?query=" .. urlencode(query)
   local resp, err = maki.net.request(url, {
     headers = {
       ["Accept"] = "application/json",
@@ -123,13 +123,17 @@ maki.api.register_tool({
       return { llm_output = "error: query is required", is_error = true }
     end
 
+    -- The agent guest reaches a host broker through TINYFISH_BASE_URL and needs no key there;
+    -- the host still requires the sops secret.
+    local base = maki.uv.os_getenv("TINYFISH_BASE_URL")
     local key = maki.uv.os_getenv("TINYFISH_API_KEY")
-    if not key or key == "" then
+    if (not key or key == "") and (not base or base == "") then
       return {
         llm_output = "error: TINYFISH_API_KEY is not set; add tinyfish-api-key to the sops secrets and open a new shell",
         is_error = true,
       }
     end
+    key = key or "none"
 
     local num = input.num_results
     if type(num) ~= "number" then
@@ -137,7 +141,7 @@ maki.api.register_tool({
     end
     num = math.floor(num or DEFAULT_NUM_RESULTS)
     num = math.max(1, math.min(num, MAX_NUM_RESULTS))
-    local results, err = request_results(key, query)
+    local results, err = request_results(key, query, base)
     if not results then
       return { llm_output = "error: " .. err, is_error = true }
     end

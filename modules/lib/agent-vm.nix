@@ -13,9 +13,6 @@ let
     # Secrets the launcher promotes into the session environment (VAR|guest path).
     secretEnv = [
       "GH_TOKEN|/run/secrets/github-personal-pat"
-      "NEURALWATT_API_KEY|/run/secrets/neuralwatt-api-key"
-      "TINYFISH_API_KEY|/run/secrets/tinyfish-api-key"
-      "IMMICH_API_KEY|/run/secrets/immich-agent-api-key"
     ];
 
     launcher =
