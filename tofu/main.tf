@@ -1,5 +1,7 @@
 # Ingress stays in Nix (modules/nixos/web-proxy.nix); the tunnel and its Access service token are
 # operator-minted.
+# Every application uses the one-month session maximum; the account's global session is set to
+# match in the dashboard (docs/manual-steps.md, "provider/cloudflare").
 
 resource "cloudflare_dns_record" "wildcard" {
   zone_id = data.cloudflare_zone.this.zone_id
@@ -47,7 +49,7 @@ resource "cloudflare_zero_trust_access_application" "ssh" {
   name             = "ssh"
   domain           = "ssh.${var.domain}"
   type             = "self_hosted"
-  session_duration = "24h"
+  session_duration = "720h"
 
   policies = [
     {
@@ -70,7 +72,7 @@ resource "cloudflare_zero_trust_access_application" "llm" {
   name             = "llm"
   domain           = "llm.${var.domain}"
   type             = "self_hosted"
-  session_duration = "24h"
+  session_duration = "720h"
 
   policies = [
     {
@@ -93,7 +95,7 @@ resource "cloudflare_zero_trust_access_application" "memory" {
   name             = "memory"
   domain           = "memory.${var.domain}"
   type             = "self_hosted"
-  session_duration = "24h"
+  session_duration = "720h"
 
   policies = [
     {
@@ -118,7 +120,7 @@ resource "cloudflare_zero_trust_access_application" "chat" {
   name             = "chat"
   domain           = "chat.${var.domain}"
   type             = "self_hosted"
-  session_duration = "24h"
+  session_duration = "720h"
 
   policies = [
     {
@@ -142,7 +144,7 @@ resource "cloudflare_zero_trust_access_application" "agent" {
   name             = "agent"
   domain           = "agent.${var.domain}"
   type             = "self_hosted"
-  session_duration = "24h"
+  session_duration = "720h"
 
   policies = [
     {

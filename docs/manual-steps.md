@@ -1179,6 +1179,16 @@ Manual, one-time (dashboard):
   policy references them. OpenTofu does not create tokens. One
   `any_valid_service_token` policy covers `ssh`, `llm`, `memory`, and `chat`, so
   any service token in the account reaches all four endpoints.
+- Add **Passkeys** under Integrations → Identity providers and turn on
+  *Automatically prompt on the login page*. Enroll once from any application:
+  *Sign in with a passkey* → *Set one up* → verify with the email OTP →
+  biometric. Passkeys live in the device's authenticator (Google Password
+  Manager on Android, iCloud Keychain on macOS); enable that sync if every
+  device should share one.
+- Set the global session duration (Access controls → Access settings) to one
+  month, matching the applications' `720h` (the Access maximum). The email
+  allow-list policy stays untouched, so One-time PIN remains the fallback login
+  method; a passkey authenticates, and the policy still authorizes.
 - Onboard the Email Service sending subdomain (`send.sammohr.dev`) and add its
   SPF/DKIM/DMARC records. Verify the destination (`sam@sammohr.dev`). Leave the
   apex DMARC record alone (`p=reject`).
