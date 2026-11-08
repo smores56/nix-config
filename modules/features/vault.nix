@@ -1,8 +1,9 @@
 # `sudo vault`: open the vault for one foreground session.
 #
 # The store is owned by the `vault` user and the human's uid has no access to it at rest (see
-# modules/nixos/vault-sync.nix). bindfs maps that user to the caller and mounts the tree at ~/Vault,
-# so editors and file managers work normally for the session. Root is required, which on the NixOS
+# modules/nixos/vault-sync.nix). bindfs maps that user to the caller and mounts
+# the tree at ~/.local/share/vault, so editors and file managers work normally
+# for the session. Root is required, which on the NixOS
 # hosts means the YubiKey-gated sudo, and the mount lives exactly as long as the foreground process.
 #
 # On the work Mac the same script runs against the root-owned store documented in

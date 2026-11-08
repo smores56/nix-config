@@ -38,11 +38,15 @@ let
     "$HOME/.mozilla"
     "$HOME/.var/app"
     "$HOME/.local/share/Steam"
-    # `sudo vault` is the only way in: mask the store and the mountpoint in every profile.
-    "$HOME/Vault"
-    # Durable server data: neither belongs in an agent namespace even if /var is bound later.
+    # `sudo vault` and the todo mount are the only ways in: mask the stores
+    # and mountpoints in every profile.
+    "$HOME/.local/share/vault"
+    "$HOME/.local/share/todo"
+    # Durable server data: these do not belong in an agent namespace even if
+    # /var is bound later.
     "/var/lib/data/photos"
     "/var/lib/data/vault"
+    "/var/lib/data/todo"
   ];
 
   homeMaskFiles = [

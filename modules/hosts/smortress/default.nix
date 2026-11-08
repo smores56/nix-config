@@ -24,6 +24,10 @@ in
   nixosModules = [
     ./boot.nix
     ./secrets.nix
+    ../../nixos/todo-server.nix
+  ];
+  homeModules = [
+    ../../features/todo.nix
   ];
 
   homeOptions = {

@@ -1324,14 +1324,14 @@ Pairing a device:
 Opening the vault:
 
 ```sh
-sudo vault          # mount ~/Vault, hold until Ctrl-C
+sudo vault          # mount ~/.local/share/vault, hold until Ctrl-C
 sudo vault yazi     # mount, run one command, unmount on exit
 ```
 
 `sudo vault` mounts the store with bindfs, which maps the `vault` user to you, so
-`~/Vault` behaves like a normal folder while it is open. On the NixOS hosts root
-means the YubiKey touch. A oneshot unit closes a stale mount at boot, and `v`
-expands to `sudo vault`. Nothing is reachable between sessions.
+`~/.local/share/vault` behaves like a normal folder while it is open. On the
+NixOS hosts root means the YubiKey touch. The wrapper detaches a stale mount when it next runs,
+and `v` expands to `sudo vault`. Nothing is reachable between sessions.
 
 **The work Mac (smoreswork).** home-manager cannot declare a system user or a
 root daemon, so Syncthing there runs as root from a hand-installed plist with
@@ -1419,7 +1419,7 @@ Each guest sees the home at the same path, minus a deny list (`agentVm.deny` in
 on the Mac). Everything else is read-only except the `rw` list. Visible on
 purpose: shell histories, agent transcripts, and credential files in shared
 paths. What is not shared: browser profiles, keyrings, `~/.config/sops`, key
-backups, clipboard history, `~/Library` on the Mac, and `~/Vault` on Linux. The
+backups, clipboard history, `~/Library` on the Mac, and `~/.local/share/vault` on Linux. The
 writable trees include repos, and the agent may write their `.git/config` and
 hooks, which you later run on the host; that is accepted (full git for agents).
 Keep secrets out of shared paths: run `secret-sweep` after adding files under
@@ -1507,13 +1507,31 @@ hosts so sops rewrites `/run/secrets/…`, then delete the old key in Immich.
 
 ### todo.txt
 
-`~/Tasks/todo.txt` on smorespro is edited with `todo.sh` or Helix and synced
-to the phone by a second, user-level Syncthing daemon
-([`modules/hosts/smorespro/todo.nix`](../modules/hosts/smorespro/todo.nix)).
-It has its own state under `~/.local/state/syncthing-todo`, so it never touches
-the vault's identity or trees.
+`~/.local/share/todo/todo.txt` is the single list. On smorespro it is a real
+user-owned directory; on smortress the vault Syncthing daemon carries
+`/var/lib/data/todo` and an always-on bindfs mounts it at the same hidden path.
+`todo.sh`, `td`, and `te` use `~/.local/share/todo` on both hosts.
 
-After the first rebuild, on the laptop:
+The common module is [`modules/features/todo.nix`](../modules/features/todo.nix).
+The laptop's user-level daemon is
+[`modules/hosts/smorespro/todo-sync.nix`](../modules/hosts/smorespro/todo-sync.nix);
+the server's folder and mount are
+[`modules/nixos/todo-server.nix`](../modules/nixos/todo-server.nix).
+
+Before the first rebuild, stop the laptop daemon and move the existing files so
+the first sync sees them at the new path:
+
+```sh
+systemctl --user stop syncthing
+mkdir -p ~/.local/share/todo
+mv ~/Tasks/todo.txt ~/Tasks/done.txt ~/.local/share/todo/
+# move report.txt and any todo.sync-conflict-* files too
+rmdir ~/Tasks
+```
+
+Skip the move on a fresh host. Then rebuild.
+
+After the first rebuild, on smorespro:
 
 ```sh
 systemctl --user status syncthing
@@ -1521,20 +1539,29 @@ systemctl --user status syncthing
 syncthing --home ~/.local/state/syncthing-todo/syncthing device-id
 ```
 
-Local discovery is off because the vault daemon owns port 21027; the two
-devices find each other through global discovery and the relay client. No
-inbound firewall port is opened.
+Local discovery is off because the vault daemon owns port 21027; the peers find
+each other through global discovery and the relay client. No inbound firewall
+port is opened.
+
+On smortress, the vault daemon already has a committed identity and is the
+always-on peer; the bindfs service mounts the store at
+`~/.local/share/todo`. The folder rides the vault daemon, so it starts only
+after the vault migration marker `/var/lib/vault-migrated` exists. Add the
+laptop's user-level device ID to
+[`modules/todo-devices.nix`](../modules/todo-devices.nix) after that first run,
+then rebuild smortress. The phone's ID is already in
+`modules/syncthing-devices.nix`.
 
 On the phone, in Syncthing-Fork, accept the `Todo` folder and add the laptop
-device (or accept the folder invitation). Keep the folder **outside** the
-vault folder, in shared storage. Install 0x54ask from F-Droid and select that
-folder; it merges Syncthing conflict copies. Keep the Syncthing-Fork battery
-exemption.
+and server devices as needed. Keep the folder **outside** the vault folder, in
+shared storage. Install 0x54ask from F-Droid and select that folder; it merges
+Syncthing conflict copies. Keep the Syncthing-Fork battery exemption.
 
 Edit on one device at a time. A concurrent edit leaves
 `todo.sync-conflict-<date>-<time>-<device>.txt`; 0x54ask merges it, or merge by
 hand from the 30-day version set under
-`~/.local/state/syncthing-todo/versions/todo`.
+`~/.local/state/syncthing-todo/versions/todo` on the laptop or
+`/var/lib/syncthing-versions/todo` on smortress.
 
 The work Mac is out of scope: it runs Syncthing as a root LaunchDaemon, so a
 human-editable folder needs a second launchd identity.
@@ -1917,7 +1944,7 @@ the replacement host recipient to `.sops.yaml` and run
 `sops updatekeys secrets/smortress.yaml`.
 
 **Recovery page (what the family opens).** With `sudo vault` open, in a normal shell (not
-the root shell) create `~/Vault/Documents/sentinel.txt` with any canary text
+the root shell) create `~/.local/share/vault/Documents/sentinel.txt` with any canary text
 (`sentinel: 6f1c2a7e`), edit on one
 device only, let Syncthing settle and let the nightly restic run so the newest
 snapshot contains it. Then `nix run .#cloudflare-apply` creates the Pages project,
