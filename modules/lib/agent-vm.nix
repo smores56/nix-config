@@ -10,6 +10,8 @@ let
     hostAddr = "10.77.0.1";
     guestAddr = "10.77.0.2";
     stateDir = "/var/lib/agent-vm";
+    # Where microvm.nix links the guest toplevel the next boot would use.
+    vmStateDir = "/var/lib/microvms/agent";
     # Secrets the launcher promotes into the session environment (VAR|guest path).
     secretEnv = [
       "GH_TOKEN|/run/secrets/github-personal-pat"
@@ -28,7 +30,7 @@ let
           let
             values = {
               inherit user;
-              inherit (self) guestAddr stateDir unit;
+              inherit (self) guestAddr stateDir unit vmStateDir;
             };
           in
           builtins.replaceStrings (map (n: "@${n}@") (lib.attrNames values) ++ [ "@secretEnv@" ]) (

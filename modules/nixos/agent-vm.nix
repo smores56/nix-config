@@ -243,6 +243,33 @@ let
         (builtins.readFile ../lib/agent-vm-verify.sh);
   };
 
+  updateScript = pkgs.writeShellApplication {
+    name = "agent-vm-update";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.openssh
+      pkgs.systemd
+    ];
+    text = builtins.replaceStrings
+      [
+        "@expected@"
+        "@key@"
+        "@known@"
+        "@user@"
+        "@guestAddr@"
+        "@unit@"
+      ]
+      [
+        "${config.microvm.stateDir}/${name}/toplevel"
+        "${stateDir}/id_ed25519"
+        "${stateDir}/known_hosts"
+        user
+        guestAddr
+        "microvm@${name}.service"
+      ]
+      (builtins.readFile ../lib/agent-vm-update.sh);
+  };
+
   # Host loopback services the agent uses; both are token-authenticated.
   # Host loopback services the guest reaches directly; capabilities bring their own broker.
   proxied = [ ports.llm ];
@@ -846,7 +873,10 @@ in
     };
 
     # Also the manual entry point; the unit logs a failing assertion after every prep.
-    environment.systemPackages = [ verifyScript ];
+    environment.systemPackages = [
+      verifyScript
+      updateScript
+    ];
     systemd.services = {
       agent-vm-prep = {
         description = "Assemble the agent VM's home view and hand-in secrets";
@@ -867,6 +897,24 @@ in
           RemainAfterExit = true;
           ExecStart = prepScript;
           ExecStop = "-${pkgs.util-linux}/bin/umount -R ${view}";
+        };
+      };
+      agent-vm-staleness = {
+        description = "Log whether the agent guest is behind its expected closure";
+        after = [
+          "agent-vm-prep.service"
+          "agent-vm-net.service"
+        ];
+        serviceConfig = {
+          Type = "oneshot";
+          ExecStart = "${updateScript}/bin/agent-vm-update --check";
+        };
+      };
+      agent-vm-staleness.timer = {
+        wantedBy = [ "timers.target" ];
+        timerConfig = {
+          OnBootSec = "10min";
+          OnUnitActiveSec = "15min";
         };
       };
       agent-vm-verify = {

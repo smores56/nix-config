@@ -15,6 +15,7 @@ secret_env=(@secretEnv@)
 # remember the guest key.
 known="@stateDir@/known_hosts"
 
+do_status=0
 case "${1:-}" in
 restart)
   # The VM and its view are root services; this launcher never asks for elevation itself. A host
@@ -23,8 +24,11 @@ restart)
   echo "agent-sandbox: re-plan the home view and pick up guest changes with: sudo systemctl restart $unit" >&2
   exit 0
   ;;
+status)
+  do_status=1
+  ;;
 -h | --help)
-  echo "usage: agent-sandbox [cmd [args...]] | restart   (default cmd: maki)"
+  echo "usage: agent-sandbox [cmd [args...]] | restart | status   (default cmd: maki)"
   exit 0
   ;;
 esac
@@ -48,6 +52,28 @@ ssh_opts=(
 )
 
 ssh_opts+=(-o ConnectTimeout=5)
+
+if [ "$do_status" -eq 1 ]; then
+  expected=$(readlink @vmStateDir@/toplevel 2>/dev/null || true)
+  info=$(ssh "${ssh_opts[@]}" -o BatchMode=yes -o ConnectTimeout=5 "$user@$addr" \
+    'printf "%s|%s|%s" "$(readlink /run/booted-system)" "$(readlink /run/current-system)" "$(who | wc -l)"' 2>/dev/null) ||
+    { echo "agent-sandbox: guest unreachable" >&2; exit 1; }
+  IFS='|' read -r booted current humans <<<"$info"
+  printf 'booted:  %s\ncurrent: %s\nexpected: %s\nhuman sessions: %s\n' \
+    "$booted" "$current" "${expected:-unknown}" "$humans"
+  if [ -z "$expected" ]; then
+    echo "state: unknown (no expected toplevel)"
+  elif [ "$booted" = "$expected" ]; then
+    echo "state: current"
+  elif [ "$current" = "$expected" ]; then
+    echo "state: userland current, reboot pending; sudo agent-vm-update --now"
+  elif [ "$booted" = "$current" ]; then
+    echo "state: userland stale; sudo agent-vm-update"
+  else
+    echo "state: stale; sudo agent-vm-update --now"
+  fi
+  exit 0
+fi
 
 # The unit is active once qemu starts; sshd needs the guest boot.
 ready=

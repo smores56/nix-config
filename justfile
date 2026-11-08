@@ -125,3 +125,11 @@ backup-logs repo:
 # Update every flake input.
 update:
     nix flake update
+
+# Show the agent guest's booted/current/expected closures and human sessions.
+agent-vm-status:
+    agent-sandbox status
+
+# Apply a live userland update, or the boot a guest closure change needs.
+agent-vm-update:
+    sudo agent-vm-update
