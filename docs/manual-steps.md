@@ -1470,6 +1470,9 @@ units changed, and for a kernel/early-boot change reboots the guest after
 waiting for human ptys (or with `--force`); the writable store layer is
 recreated on that restart. A timer logs drift every 15 minutes.
 
+An allowlist addition applies to a running guest on the next switch (the
+activation reconcile adds new binds; removals wait for the next VM start).
+
 Network: tap `vm-agent` (host `10.77.0.1`, guest `10.77.0.2`). The guest
 reaches the internet through NAT and, on the host, only the LLM port and its
 capability brokers, through socket proxies; it cannot reach other host

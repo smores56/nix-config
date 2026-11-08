@@ -29,6 +29,18 @@ let
 
   brokerPackage = pkgs.callPackage ../lib/agent-broker/package.nix { };
 
+  # Shared by the boot-time build and the live reconcile, so the two cannot diverge.
+  plannerArgs = lib.escapeShellArgs (
+    lib.concatMap (d: [
+      "--allow"
+      d
+    ]) cfg.allow
+    ++ lib.concatMap (r: [
+      "--allow-rw"
+      r
+    ]) cfg.allowRw
+  );
+
 
   calibredbWrapper = pkgs.writeShellScriptBin "calibredb" ''
     for a in "$@"; do
@@ -273,8 +285,20 @@ let
         pkgs.coreutils
         pkgs.util-linux
         pkgs.openssh
+        pkgs.systemd
       ]
     }
+    if [ "''${1:-}" = --reconcile ]; then
+      # A switch runs this while the guest and its sessions stay up; additions appear live and
+      # removals wait for the next VM start (pulling a path out from under a process is worse).
+      systemctl is-active --quiet microvm@${name}.service || exit 0
+      mountpoint -q ${view} || exit 0
+      trap 'mount -o remount,ro ${view}' EXIT
+      mount -o remount,rw ${view}
+      runuser -u ${user} -- ${python} -I ${planner} --home ${home} ${plannerArgs} \
+        | ${python} -I ${viewBuilder} --home ${home} --view ${view} --reconcile
+      exit 0
+    fi
     if mountpoint -q ${view}; then umount -R ${view}; fi
     rm -rf ${view} ${secretsDir}
     install -d -m 0711 ${runDir}
@@ -287,19 +311,7 @@ let
 
     # The planner only reads the home, so it runs as its owner; the root step trusts its JSON
     # for paths alone and re-checks every source with O_NOFOLLOW.
-    runuser -u ${user} -- ${python} -I ${planner} --home ${home} \
-      ${
-        lib.escapeShellArgs (
-          lib.concatMap (d: [
-            "--allow"
-            d
-          ]) cfg.allow
-          ++ lib.concatMap (r: [
-            "--allow-rw"
-            r
-          ]) cfg.allowRw
-        )
-      } \
+    runuser -u ${user} -- ${python} -I ${planner} --home ${home} ${plannerArgs} \
       | ${python} -I ${viewBuilder} --home ${home} --view ${view}
     # Split dirs are tmpfs; read-only keeps the guest from leaving files beside the shares.
     # Each bind keeps its own flags.
@@ -892,6 +904,14 @@ in
       verifyScript
       updateScript
     ];
+    # Apply allowlist additions to a running guest on switch; the script no-ops when the VM is
+    # down and removals are deferred to the next start.
+    system.activationScripts.agent-vm-reconcile = {
+      deps = [ "specialfs" ];
+      text = ''
+        ${prepScript} --reconcile >/dev/null 2>&1 || true
+      '';
+    };
     systemd.services = {
       agent-vm-prep = {
         description = "Assemble the agent VM's home view and hand-in secrets";

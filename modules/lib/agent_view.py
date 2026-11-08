@@ -85,7 +85,7 @@ def _open_nofollow(home, rel, leaf_flags):
         raise
 
 
-def _bind(op, home, view):
+def _bind(op, home, view, reconcile=False):
     target = os.path.join(view, op.rel)
     # A pinned fd: a path swapped for a symlink after planning cannot redirect a root bind
     # mount elsewhere on the host.
@@ -100,9 +100,16 @@ def _bind(op, home, view):
             print(f"agent_view: skipping {op.rel}: type changed", file=sys.stderr)
             return
         if op.is_dir:
-            os.mkdir(target)
+            if reconcile:
+                os.makedirs(target, exist_ok=True)
+            else:
+                os.mkdir(target)
         else:
-            open(target, "x").close()
+            try:
+                open(target, "x").close()
+            except FileExistsError:
+                if not reconcile:
+                    raise
         _mount(f"/proc/self/fd/{fd}".encode(), target, MS_BIND)
         flags = MS_REMOUNT | MS_BIND | MS_NOSUID | MS_NODEV
         _mount(None, target, flags | (MS_RDONLY if op.read_only else 0))
@@ -110,7 +117,7 @@ def _bind(op, home, view):
         os.close(fd)
 
 
-def apply(ops, home, view):
+def apply(ops, home, view, reconcile=False):
     for op in ops:
         target = os.path.join(view, op.rel) if op.rel else view
         if isinstance(op, Dir):
@@ -120,19 +127,25 @@ def apply(ops, home, view):
             finally:
                 os.close(fd)
             if op.rel:
-                os.mkdir(target)
+                if reconcile:
+                    os.makedirs(target, exist_ok=True)
+                else:
+                    os.mkdir(target)
             os.chown(target, st.st_uid, st.st_gid)
             os.chmod(target, stat.S_IMODE(st.st_mode))
         else:
-            _bind(op, home, view)
+            if reconcile and os.path.ismount(target):
+                continue
+            _bind(op, home, view, reconcile)
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--home", required=True)
     parser.add_argument("--view", required=True)
+    parser.add_argument("--reconcile", action="store_true")
     args = parser.parse_args(argv)
-    apply(view_ops(json.load(sys.stdin)), args.home, args.view)
+    apply(view_ops(json.load(sys.stdin)), args.home, args.view, args.reconcile)
 
 
 if __name__ == "__main__":

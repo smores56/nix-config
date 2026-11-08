@@ -1185,6 +1185,8 @@ in
                   && host.systemd.services ? "agent-broker-${n}"
                   && guest.systemd.sockets ? "${relay}"
                 ) (builtins.attrNames host.agentVm.capabilities);
+                # Allowlist additions reach a running guest on switch; removals wait for a boot.
+                reconcile = host.system.activationScripts ? agent-vm-reconcile;
                 firewall = host.networking.firewall.extraCommands;
                 # The host relay, guest relay and guest firewall must agree on every ingress port.
                 ingress = lib.all (
@@ -1216,6 +1218,7 @@ in
               && f.verify
               && f.narrowRw
               && f.capabilities
+              && f.reconcile
               && f.ingress
             ) all;
             launcher = (import ../lib/agent-vm.nix { inherit pkgs lib; }).launcher "smores";
