@@ -1479,64 +1479,55 @@ hosts so sops rewrites `/run/secrets/…`, then delete the old key in Immich.
 
 ### todo.txt
 
-`~/.local/share/todo/todo.txt` is the single list. On smorespro it is a real
-user-owned directory; on smortress the vault Syncthing daemon carries
-`/var/lib/data/todo` and an always-on bindfs mounts it at the same hidden path.
-`todo.sh`, `td`, and `te` use `~/.local/share/todo` on both hosts.
+`~/.local/share/todo/todo.txt` is the single list. It is a bindfs mount of
+`/var/lib/data/todo`, which the vault Syncthing daemon carries alongside the
+vault. The same daemon and the same device identity serve both folders on
+smortress and smorespro; there is no separate todo daemon. `todo.sh`, `td`, and
+`te` use `~/.local/share/todo` on both hosts.
 
 The common module is [`modules/features/todo.nix`](../modules/features/todo.nix).
-The laptop's user-level daemon is
-[`modules/hosts/smorespro/todo-sync.nix`](../modules/hosts/smorespro/todo-sync.nix);
-the server's folder and mount are
-[`modules/nixos/todo-server.nix`](../modules/nixos/todo-server.nix).
+The shared folder and mount are
+[`modules/nixos/todo-daemon.nix`](../modules/nixos/todo-daemon.nix), imported by
+both hosts. The vault daemon GUI at `http://127.0.0.1:8384` shows both folders.
 
-Before the first rebuild, stop the laptop daemon and move the existing files so
-the first sync sees them at the new path:
+The folder rides the vault daemon, so it starts only after the vault migration
+marker `/var/lib/vault-migrated` exists.
+
+Migrating smorespro from the old user-level todo daemon:
 
 ```sh
 systemctl --user stop syncthing
-mkdir -p ~/.local/share/todo
-mv ~/Tasks/todo.txt ~/Tasks/done.txt ~/.local/share/todo/
-# move report.txt and any todo.sync-conflict-* files too
-rmdir ~/Tasks
+sudo install -d -o vault -g vault -m 0700 /var/lib/data/todo
+sudo mv ~/.local/share/todo/* /var/lib/data/todo/
+sudo chown -R vault:vault /var/lib/data/todo
+rm -rf ~/.local/state/syncthing-todo
+rm -rf ~/.local/share/todo
 ```
 
-Skip the move on a fresh host. Then rebuild.
-
-After the first rebuild, on smorespro:
+If the list is still in `~/Tasks`, move that path instead. Then apply both
+planes on smorespro:
 
 ```sh
-systemctl --user status syncthing
-# GUI: http://127.0.0.1:8385
-syncthing --home ~/.local/state/syncthing-todo/syncthing device-id
+home-manager switch --flake .#smores@smorespro
+sudo nixos-rebuild switch --flake .#smorespro
 ```
 
-Local discovery is off because the vault daemon owns port 21027; the peers find
-each other through global discovery and the relay client. No inbound firewall
-port is opened.
+On smortress:
 
-On smortress, the vault daemon already has a committed identity and is the
-always-on peer; the bindfs service mounts the store at
-`~/.local/share/todo`. The folder rides the vault daemon, so it starts only
-after the vault migration marker `/var/lib/vault-migrated` exists. Add the
-laptop's user-level device ID to
-[`modules/todo-devices.nix`](../modules/todo-devices.nix) after that first run,
-then rebuild smortress. The phone's ID is already in
-`modules/syncthing-devices.nix`.
+```sh
+just switch smortress
+```
 
-On the phone, in Syncthing-Fork, accept the `Todo` folder and add the laptop
-and server devices as needed. Keep the folder **outside** the vault folder, in
-shared storage. Install 0x54ask from F-Droid and select that folder; it merges
-Syncthing conflict copies. Keep the Syncthing-Fork battery exemption.
+The phone reuses the existing `smorespro` vault device (`HYVRSZX-...`) for the
+`Todo` folder; the old `FADK72N`/`smorespro-todo` device is retired. Remove it
+from Syncthing-Fork and let the `Todo` folder sync from the existing
+`smorespro` and `smortress` devices. Keep the folder outside the vault folder.
 
 Edit on one device at a time. A concurrent edit leaves
 `todo.sync-conflict-<date>-<time>-<device>.txt`; 0x54ask merges it, or merge by
-hand from the 30-day version set under
-`~/.local/state/syncthing-todo/versions/todo` on the laptop or
-`/var/lib/syncthing-versions/todo` on smortress.
+hand from the 30-day version set under `/var/lib/syncthing-versions/todo`.
 
 The work Mac is out of scope.
-
 ## Public services
 
 Services come from `webProxy.services` on each NixOS host. Each becomes

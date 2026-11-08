@@ -24,7 +24,7 @@ in
   nixosModules = [
     ./boot.nix
     ./secrets.nix
-    ../../nixos/todo-server.nix
+    ../../nixos/todo-daemon.nix
   ];
   homeModules = [
     ../../features/todo.nix

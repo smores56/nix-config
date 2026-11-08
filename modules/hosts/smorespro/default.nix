@@ -18,10 +18,10 @@
     ./fprintd.nix
     ./nymvpn.nix
     ./secrets.nix
+    ../../nixos/todo-daemon.nix
   ];
   homeModules = [
     ../../features/todo.nix
-    ./todo-sync.nix
   ];
   user = {
     shellAbbrs = {

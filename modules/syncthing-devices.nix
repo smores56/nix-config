@@ -1,6 +1,7 @@
 # Syncthing device IDs: the hash of each device's public certificate, so safe to commit (`key.pem`
-# is the secret). Pairing a peer is one line here (`syncthing device-id` on that host); the folder
-# is shared with every device in the table. A plain attrset the module imports by relative path.
+# is the secret). Pairing a peer is one line here (`syncthing device-id` on that host); the vault
+# and todo folders are shared with every device in the table. A plain attrset the module imports
+# by relative path.
 {
   smortress = "DGDHUDO-5HJZ2BV-GGSYMRE-HE52WK2-CXSJIEU-3P5T4RJ-IJVYNXP-TN7TQQ6";
   smorespro = "HYVRSZX-BJVBP6-KHRNJBU-4AX3NSP-ROKHJIZ-ZDW5SUQ-G2AUTUQ-MRQWDQ2";

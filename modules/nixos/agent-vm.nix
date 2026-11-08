@@ -501,10 +501,9 @@ in
         # neither sudo nor the mounts.
         ".local/share/vault"
         ".local/share/todo"
-        # Both Syncthing state dirs: the device key, the GUI API key, and the
+        # The Syncthing state dir holds the device key, the GUI API key, and the
         # vault's retired identity copy.
         ".local/state/syncthing"
-        ".local/state/syncthing-todo"
       ];
       rw = [
         "repos"

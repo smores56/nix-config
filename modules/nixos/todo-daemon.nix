@@ -1,7 +1,6 @@
-# The smortress half of the todo sync. The vault Syncthing daemon carries the
-# todo folder, so the server is an always-on peer without a second daemon or a
-# user-level daemon that can read the human's home. An always-on bindfs mount
-# maps the vault user's /var/lib/data/todo into the hidden XDG data path.
+# The todo folder on the vault Syncthing daemon. Both NixOS hosts run the same
+# daemon and share two folders: vault and todo. The todo store is vault-owned;
+# an always-on bindfs maps it to the human's hidden XDG data path.
 #
 # The folder rides the vault daemon, so it starts only after the vault migration
 # marker (/var/lib/vault-migrated) exists; without that marker neither the vault
@@ -13,7 +12,7 @@
   ...
 }:
 let
-  todoDevices = import ../todo-devices.nix;
+  devices = import ../syncthing-devices.nix;
   user = config.machine.username;
   home = "/home/${user}";
   mountpoint = "${home}/.local/share/todo";
@@ -41,7 +40,7 @@ in
     label = "Todo";
     path = "/var/lib/data/todo";
     type = "sendreceive";
-    devices = [ "phone" ] ++ lib.attrNames todoDevices;
+    devices = lib.remove config.vaultSync.device (lib.attrNames devices);
     fsWatcherEnabled = true;
     rescanIntervalS = 3600;
     ignorePerms = true;

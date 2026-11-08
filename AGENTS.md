@@ -53,7 +53,7 @@ adds its greeter as a host-local module.
 | `modules/home.nix` | home-manager base (fonts, nix.conf, darwin helpers) |
 | `modules/features/` | cross-platform home-manager modules (shell, editor, git, packages, theme, ai) |
 | `modules/nixos/vault-sync.nix`, `modules/syncthing-devices.nix` | The vault: one plaintext tree synced between the hosts that hold it, owned and synced by the `vault` user; the device table is a plain attrset of public device IDs |
-| `modules/features/todo.nix`, `modules/todo-devices.nix`, `modules/hosts/smorespro/todo-sync.nix`, `modules/nixos/todo-server.nix` | `todo.txt` in `~/.local/share/todo`: shared config, laptop user daemon, server vault-daemon folder and always-on bindfs |
+| `modules/features/todo.nix`, `modules/nixos/todo-daemon.nix` | `todo.txt` in `~/.local/share/todo`: shared config plus the vault-daemon folder and always-on bindfs on both NixOS hosts |
 | `modules/features/vault.nix` (`vault.sh`) | `sudo vault [cmd]`: bindfs-mount the vault at `~/.local/share/vault` for one foreground session |
 | `modules/features/brew.nix` | the work Mac's Brewfile (`just brew-bundle` applies it) |
 | `modules/desktop/` | desktop-environment modules (niri, aerospace) |
