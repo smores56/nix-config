@@ -21,13 +21,14 @@ const unlockButton = document.querySelector<HTMLButtonElement>("#unlock-button")
 const status = document.querySelector<HTMLDivElement>("#status");
 const manifestRoot = document.querySelector<HTMLElement>("#manifest");
 const restoreSection = document.querySelector<HTMLElement>("#restore");
-const footerBackup = document.querySelector<HTMLTimeElement>("#footer-backup");
+const footerBackup = document.querySelector<HTMLElement>("#footer-backup");
 const footerUpdated = document.querySelector<HTMLTimeElement>("#footer-updated");
 const browserStatus = document.querySelector<HTMLDivElement>("#browser-status");
 const treeList = document.querySelector<HTMLUListElement>("#browser");
 const treeWrap = document.querySelector<HTMLElement>(".tree-wrap");
 const restoreButton = document.querySelector<HTMLButtonElement>("#restore-all");
 const restoreCancelButton = document.querySelector<HTMLButtonElement>("#restore-cancel");
+const restoreBlurb = document.querySelector<HTMLElement>("#restore-blurb");
 const restoreStatus = document.querySelector<HTMLDivElement>("#restore-status");
 const restoreProgress = document.querySelector<HTMLProgressElement>("#restore-progress");
 const unlockedRoot = document.querySelector<HTMLElement>("#unlocked");
@@ -142,7 +143,6 @@ async function loadRepository(keys: DataKeys): Promise<void> {
   snapshot = latest;
   if (footerBackup) {
     footerBackup.textContent = snapshotTime(latest.time);
-    footerBackup.dateTime = latest.time;
   }
   entriesByPath = new Map();
   await renderTree();
@@ -733,6 +733,8 @@ restoreCancelButton?.addEventListener("click", () => {
   restoreStop = true;
   setRestoreStatus("Stopping after the current file...");
 });
+
+if (restoreBlurb) restoreBlurb.hidden = supportsDirectoryPicker();
 
 if (!secure) {
   if (unlockButton) unlockButton.disabled = true;

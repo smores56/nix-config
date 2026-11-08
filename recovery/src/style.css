@@ -465,6 +465,15 @@ button.folder-download:hover {
   padding: 0.7rem 0 0;
 }
 
+.restore-blurb {
+  flex: 1 1 16rem;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
+  text-align: right;
+}
+
 progress {
   flex-basis: 100%;
   width: 100%;
@@ -535,7 +544,18 @@ progress {
     padding-left: 1.35rem;
   }
 
-  .restore-bar button {
-    flex: 1 1 auto;
+  .restore-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .restore-bar > button {
+    width: 100%;
+  }
+
+  .restore-blurb {
+    flex: none;
+    margin-left: 0;
+    text-align: center;
   }
 }

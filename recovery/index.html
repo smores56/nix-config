@@ -53,6 +53,9 @@
           <div class="restore-bar">
             <button type="button" id="restore-all">Download all files...</button>
             <button type="button" id="restore-cancel" class="secondary" hidden>Stop</button>
+            <p id="restore-blurb" class="restore-blurb" hidden>
+              Use Google Chrome on your Mac to download folders directly.
+            </p>
             <progress id="restore-progress" max="1" value="0" hidden></progress>
           </div>
           <div id="restore-status" class="status" role="status" aria-live="polite"></div>
@@ -61,7 +64,7 @@
         <footer class="site-footer">
           <span>Ask Andrey for help if you need tech support</span>
           <span class="footer-sep" aria-hidden="true">·</span>
-          <span>Latest backup <time id="footer-backup"></time></span>
+          <span>Latest backup <span id="footer-backup">loading...</span></span>
           <span class="footer-sep" aria-hidden="true">·</span>
           <span>updated <time id="footer-updated"></time></span>
         </footer>
