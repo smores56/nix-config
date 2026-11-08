@@ -15,9 +15,8 @@ PLAN = {
     "shares": [
         {"rel": "repos", "mode": "rw", "tag": "repos-aaaaaa"},
         {"rel": ".config/git", "mode": "ro", "tag": "config_git-bbbbbb"},
-        {"rel": ".local/share/agent/x", "mode": "rw", "tag": "x-cccccc"},
+        {"rel": ".local/state/maki/x", "mode": "rw", "tag": "x-cccccc"},
     ],
-    "links": [{"rel": ".config/maki", "target": "/nix/store/abc-maki"}],
     "copies": [".zsh_history", ".config/starship.toml"],
 }
 
@@ -34,7 +33,7 @@ class ViewOpsTests(unittest.TestCase):
         dirs = [op.rel for op in self.of(self.av.Dir)]
         self.assertEqual(dirs[0], "")
         self.assertEqual(
-            set(dirs), {"", ".config", ".local", ".local/share", ".local/share/agent"}
+            set(dirs), {"", ".config", ".local", ".local/state", ".local/state/maki"}
         )
 
     def test_dirs_precede_their_children(self):
@@ -58,20 +57,10 @@ class ViewOpsTests(unittest.TestCase):
             self.assertTrue(binds[rel].read_only)
             self.assertFalse(binds[rel].is_dir)
 
-    def test_links_are_recreated(self):
-        self.assertEqual(
-            self.of(self.av.Symlink),
-            [self.av.Symlink(".config/maki", "/nix/store/abc-maki")],
-        )
-
     def test_every_planned_path_appears_once(self):
         rels = [op.rel for op in self.ops if not isinstance(op, self.av.Dir)]
         self.assertEqual(len(rels), len(set(rels)))
-        planned = (
-            {s["rel"] for s in PLAN["shares"]}
-            | {l["rel"] for l in PLAN["links"]}
-            | set(PLAN["copies"])
-        )
+        planned = {s["rel"] for s in PLAN["shares"]} | set(PLAN["copies"])
         self.assertEqual(set(rels), planned)
 
     def test_rejects_escaping_paths(self):

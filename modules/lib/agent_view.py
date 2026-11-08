@@ -2,8 +2,8 @@
 
 The view is a tmpfs that one virtiofs share exports to the guest: planned shares are
 non-recursive bind mounts (read-only ones remounted read-only, enforced by the host
-kernel), plain files are read-only file binds, and symlinks are recreated. Anything the
-plan leaves out, everything outside the allowlist, has no path in the view at all.
+kernel) and plain files are read-only file binds. Anything the plan leaves out, everything
+outside the allowlist, has no path in the view at all.
 
 Runs as root from agent-vm-prep.service (modules/nixos/agent-vm.nix): `share_planner.py ... | agent_view.py --home H --view V`.
 """
@@ -30,12 +30,6 @@ class Bind:
     is_dir: bool
 
 
-@dataclass(frozen=True)
-class Symlink:
-    rel: str
-    target: str
-
-
 def _checked(rel):
     norm = posixpath.normpath(rel) if rel else ""
     if not rel or norm != rel or norm.startswith(("/", "..")) or norm == ".":
@@ -55,9 +49,6 @@ def view_ops(plan):
             raise ValueError(f"agent_view: unknown mode {share['mode']!r}")
         entries.append(Bind(_checked(share["rel"]), share["mode"] == "ro", True))
     entries += [Bind(_checked(rel), True, False) for rel in plan.get("copies", [])]
-    entries += [
-        Symlink(_checked(link["rel"]), link["target"]) for link in plan.get("links", [])
-    ]
     dirs = sorted(
         {a for e in entries for a in _ancestors(e.rel)},
         key=lambda rel: (rel.count("/"), rel),
@@ -132,16 +123,8 @@ def apply(ops, home, view):
                 os.mkdir(target)
             os.chown(target, st.st_uid, st.st_gid)
             os.chmod(target, stat.S_IMODE(st.st_mode))
-        elif isinstance(op, Bind):
-            _bind(op, home, view)
         else:
-            os.symlink(op.target, target)
-            os.lchown(target, *_owner(home))
-
-
-def _owner(home):
-    st = os.stat(home)
-    return st.st_uid, st.st_gid
+            _bind(op, home, view)
 
 
 def main(argv=None):

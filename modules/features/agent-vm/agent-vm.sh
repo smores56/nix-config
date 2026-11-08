@@ -13,7 +13,6 @@ guest_path_prefix=@guestPath@
 ca_bundle=@caBundle@
 allow=(@allow@)
 allow_rw=(@allowRw@)
-extra=(@extra@)
 guest_config=(@guestConfig@)
 hand_in=(@handIn@)
 
@@ -94,19 +93,14 @@ plan() {
   python3 "$planner" "${args[@]}"
 }
 
-# Read-write shares and the absolute shares get their own tagged device so the guest can mount
-# them at the identical path (git worktrees and Claude project keys record physical paths);
-# read-only shares ride one multi-directory device and are reached through guest symlinks.
+# Read-write shares get their own tagged device so the guest can mount them at the identical
+# path (git worktrees and Claude project keys record physical paths); read-only shares ride one
+# multi-directory device and are reached through guest symlinks.
 dir_args() {
   jq -r --arg h "$HOME" '.shares[]
     | if .mode == "rw" then "--dir=\($h)/\(.rel):tag=\(.tag)"
       else "--dir=\(.tag):\($h)/\(.rel):ro" end' "$1"
   [ "$host_store" -eq 1 ] && [ "$nix_mode" -eq 0 ] && printf -- '--dir=/nix/store:ro,tag=nix-store\n'
-  local i=0
-  for p in "${extra[@]}"; do
-    printf -- '--dir=%s:ro,tag=extra%d\n' "$p" "$i"
-    i=$((i + 1))
-  done
 }
 
 start_vm() {
@@ -126,7 +120,7 @@ start_vm() {
 }
 
 # Idempotent per session. Mounts and read-only symlinks follow the shares the VM booted with;
-# home-manager symlinks and plain top-level files follow the fresh plan.
+# plain top-level files follow the fresh plan.
 # shellcheck disable=SC2016 # the printf formats emit guest-side shell; $h expands there
 setup_guest() {
   local ip="$1" shares="$2" fresh="$3"
@@ -153,11 +147,6 @@ if [ "$nix_mode" != 1 ]; then
   mounted /nix/store || sudo -n mount_virtiofs nix-store /nix/store
 fi
 EOF
-    local i=0
-    for p in "${extra[@]}"; do
-      printf 'sudo -n mkdir -p %q; mounted %q || sudo -n mount_virtiofs extra%d %q\n' "$p" "$p" "$i" "$p"
-      i=$((i + 1))
-    done
     jq -r '.shares[] | select(.mode == "rw") | "\(.tag)\t\(.rel)"' "$shares" |
       while IFS=$'\t' read -r tag rel; do
         printf 'place_mount "$h"/%q %q\n' "$rel" "$tag"
@@ -165,10 +154,6 @@ EOF
     jq -r '.shares[] | select(.mode == "ro") | "\(.tag)\t\(.rel)"' "$shares" |
       while IFS=$'\t' read -r tag rel; do
         printf 'place_link "$h"/%q %q\n' "$rel" "/Volumes/My Shared Files/$tag"
-      done
-    jq -r '.links[] | "\(.rel)\t\(.target)"' "$fresh" |
-      while IFS=$'\t' read -r rel target; do
-        printf 'place_link "$h"/%q %q\n' "$rel" "$target"
       done
   } | guest_ssh -o BatchMode=yes "admin@$ip" 'sh -s'
 
@@ -325,7 +310,7 @@ plan >"$tmp" || die "share planning failed"
 if [ "$nix_mode" -eq 1 ]; then
   # The guest profile and Nix state belong to the guest store; the host's links would shadow
   # them, and place_link() refuses a non-empty guest directory.
-  jq '(.shares |= map(select(.rel != ".nix-profile" and .rel != ".local/state/nix" and .rel != ".config/nix"))) | (.links |= map(select(.rel != ".nix-profile" and .rel != ".local/state/nix" and .rel != ".config/nix"))) | (.copies |= map(select(. != ".nix-profile" and . != ".local/state/nix" and . != ".config/nix")))' "$tmp" > "$tmp.filtered"
+  jq '(.shares |= map(select(.rel != ".nix-profile" and .rel != ".local/state/nix" and .rel != ".config/nix"))) | (.copies |= map(select(. != ".nix-profile" and . != ".local/state/nix" and . != ".config/nix")))' "$tmp" > "$tmp.filtered"
   mv "$tmp.filtered" "$tmp"
 fi
 mv "$tmp" "$fresh"

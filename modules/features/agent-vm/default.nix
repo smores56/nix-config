@@ -21,9 +21,6 @@ let
     ".claude/projects"
     ".claude/tasks"
   ];
-  # Absolute read-only shares mounted at the same path; the host store is always shared.
-  # /opt/homebrew is deliberately absent: a tool that needs it gets a narrow root instead.
-  extra = [ ];
   # Host CLI config copied into a guest-local tree each launch, with the env vars below pointing
   # at the copy. Those host paths are not visible in the guest, so the guest can write its own
   # config without touching the host.
@@ -58,7 +55,6 @@ let
     inherit
       allow
       allowRw
-      extra
       guestConfig
       handIn
       ;

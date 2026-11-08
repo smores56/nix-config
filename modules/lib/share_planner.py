@@ -77,14 +77,13 @@ def plan(home, allow, allow_rw):
     roots = _roots(allow, allow_rw)
     result = Plan()
 
+    # walk() fails closed on a symlink anywhere on an allow path; here we only report roots that
+    # are not there, so a typo is visible instead of silently dropping a tree.
     for rel in roots:
         try:
-            st = (home / rel).lstat()
+            (home / rel).lstat()
         except OSError as err:
             print(f"share_planner: skipping {rel}: {err.strerror}", file=sys.stderr)
-            continue
-        if stat.S_ISLNK(st.st_mode):
-            raise PlanError(f"{rel} is a symlink; an allow root must be a real path")
 
     def walk(rel_dir):
         base = home / rel_dir if rel_dir else home
@@ -138,7 +137,6 @@ def main(argv=None):
     json.dump(
         {
             "shares": [asdict(s) for s in result.shares],
-            "links": [],
             "copies": result.copies,
         },
         sys.stdout,

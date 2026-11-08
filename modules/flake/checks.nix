@@ -1119,7 +1119,6 @@ in
                 prep = host.systemd.services.agent-vm-prep.serviceConfig.ExecStart;
                 verify = host.systemd.services ? agent-vm-verify;
                 # No path outside the home may be shared at all: the media and ingest trees are gone.
-                noExtraShares = host.agentVm.extraShares == [ ];
                 verifyScript = host.systemd.services.agent-vm-verify.serviceConfig.ExecStart;
                 # A persistent writable overlay must not register the closure, or a
                 # guest GC could unlink host store paths (modules/nixos/agent-vm.nix).
@@ -1198,7 +1197,6 @@ in
               && f.sshAlias
               && f.allowlist
               && f.verify
-              && f.noExtraShares
               && f.narrowRw
               && f.ingress
             ) all;

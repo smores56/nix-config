@@ -296,7 +296,7 @@ let
           "--translate-uid=squash-guest:0:${toString uid}:4294967295"
           "--translate-gid=squash-guest:0:${toString gid}:4294967295"
           # virtiofsd runs as root: without CAP_MKNOD guest root cannot plant device nodes in the
-          # writable trees or the extra shares, whose real host paths are not nodev.
+          # writable trees, whose real host paths are not nodev.
           "--modcaps=-mknod"
         ];
         shares =
@@ -309,33 +309,25 @@ let
                 posixAcl = false;
               }
             )
-            (
-              [
-                {
-                  tag = "ro-store";
-                  source = "/nix/store";
-                  mountPoint = "/nix/.ro-store";
-                  readOnly = true;
-                }
-                {
-                  tag = "home";
-                  source = view;
-                  mountPoint = home;
-                }
-                {
-                  tag = "secrets";
-                  source = secretsDir;
-                  mountPoint = "/run/secrets";
-                  readOnly = true;
-                }
-              ]
-              ++ lib.imap0 (i: share: {
-                tag = "extra${toString i}";
-                source = share.path;
-                mountPoint = share.path;
-                inherit (share) readOnly;
-              }) cfg.extraShares
-            );
+            ([
+              {
+                tag = "ro-store";
+                source = "/nix/store";
+                mountPoint = "/nix/.ro-store";
+                readOnly = true;
+              }
+              {
+                tag = "home";
+                source = view;
+                mountPoint = home;
+              }
+              {
+                tag = "secrets";
+                source = secretsDir;
+                mountPoint = "/run/secrets";
+                readOnly = true;
+              }
+            ]);
         # Builds stay in the guest: the host daemon would run fixed-output fetches on the host's
         # own network, past the firewall below.
         writableStoreOverlay = "/nix/.rw-store";
@@ -477,21 +469,6 @@ in
     allowRw = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       description = "Home-relative paths shared read-write; nothing else in the home is visible.";
-    };
-    extraShares = lib.mkOption {
-      type = lib.types.listOf (
-        lib.types.submodule {
-          options = {
-            path = lib.mkOption { type = lib.types.str; };
-            readOnly = lib.mkOption {
-              type = lib.types.bool;
-              default = true;
-            };
-          };
-        }
-      );
-      default = [ ];
-      description = "Paths outside the home shared at the same path.";
     };
     ingressPorts = lib.mkOption {
       type = lib.types.listOf lib.types.port;
