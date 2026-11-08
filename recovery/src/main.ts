@@ -116,9 +116,20 @@ async function blobExists(): Promise<boolean> {
   }
 }
 
-function snapshotTime(time: string): string {
-  const date = new Date(time);
-  if (Number.isNaN(date.getTime())) return time.slice(0, 16).replace("T", " ");
+function parseDateTime(value: string): Date {
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (dateOnly) {
+    return new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]));
+  }
+  return new Date(value);
+}
+
+function formatDateTime(value: string): string {
+  const date = parseDateTime(value);
+  if (Number.isNaN(date.getTime())) return value.slice(0, 16).replace("T", " ");
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return date.toLocaleDateString(undefined, { dateStyle: "medium" });
+  }
   return date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
@@ -139,7 +150,7 @@ async function loadRepository(keys: DataKeys): Promise<void> {
   const latest = repo.snapshots[0];
   snapshot = latest;
   if (footerBackup) {
-    footerBackup.textContent = snapshotTime(latest.time);
+    footerBackup.textContent = formatDateTime(latest.time);
   }
   const estimate = latest.summary?.total_bytes_processed;
   if (restoreButton) {
@@ -197,7 +208,6 @@ async function renderTree(allowFallback = true): Promise<void> {
   if (!repository || !snapshot || !treeList) return;
   const generation = ++treeGeneration;
   entriesByPath.clear();
-  treeList.innerHTML = treeMessage("Reading the backup...");
   try {
     const entries = await repository.listDirectory(snapshot, browseRoot);
     if (generation !== treeGeneration) return;
@@ -259,6 +269,9 @@ const MAX_BUFFERED_DOWNLOAD = 256 * 1024 * 1024;
 const MAX_ZIP_BYTES = 256 * 1024 * 1024;
 const FOLDER_PICKER_HELP =
   "Saving to a folder needs Chrome, Edge, or Brave with File System Access enabled (brave://flags/#file-system-access-api).";
+const SKIP_EXISTING_NOTE =
+  "Files already there with the same size are skipped; any other file with the same " +
+  "name is overwritten. You can stop and run it again.";
 
 async function download(entry: ResticDirEntry): Promise<void> {
   if (!repository) return;
@@ -379,7 +392,7 @@ async function pickRestoreRoot(): Promise<DirectoryHandle | null> {
   ).showDirectoryPicker;
   if (!picker) {
     setRestoreStatus(
-      "This browser cannot write into a folder. Use Chrome or Edge on a computer to restore folders; you can still download files one at a time.",
+      `${FOLDER_PICKER_HELP} You can still download files one at a time.`,
       "error",
     );
     return null;
@@ -495,69 +508,58 @@ async function restoreInto(
   }
 }
 
-async function restoreAll(): Promise<void> {
+async function startStreamingRestore(
+  files: AsyncIterable<ResticFile>,
+  prefix: string,
+  confirmMessage: string,
+): Promise<void> {
   const repo = repository;
-  const current = snapshot;
-  if (!repo || !current || restoreBusy || restoring) return;
+  if (!repo || restoreBusy || restoring) return;
   if (!supportsDirectoryPicker()) {
     setRestoreStatus(
-      `${FOLDER_PICKER_HELP} This browser can download one folder as a zip.`,
+      `${FOLDER_PICKER_HELP} Use a folder Download button for a zip instead.`,
       "error",
     );
     return;
   }
   restoreBusy = true;
   try {
-    if (
-      !window.confirm(
-        "Download all backup files into a folder you choose?\n\n" +
-          "Files already there with the same size are skipped; any other file with the same " +
-          "name is overwritten. You can stop and run it again.",
-      )
-    ) {
+    if (!window.confirm(confirmMessage)) {
       setRestoreStatus("");
       return;
     }
     const root = await pickRestoreRoot();
     if (!root) return;
-    await restoreInto(root, repo.walkFiles(current, browseRoot), browseRoot);
+    await restoreInto(root, files, prefix);
   } finally {
     restoreBusy = false;
   }
 }
 
+async function restoreAll(): Promise<void> {
+  const repo = repository;
+  const current = snapshot;
+  if (!repo || !current) return;
+  await startStreamingRestore(
+    repo.walkFiles(current, browseRoot),
+    browseRoot,
+    "Download all backup files into a folder you choose?\n\n" + SKIP_EXISTING_NOTE,
+  );
+}
+
 async function restoreFolder(folderPath: string): Promise<void> {
   const repo = repository;
   const current = snapshot;
-  if (!repo || !current || restoreBusy || restoring) return;
-  if (!supportsDirectoryPicker()) {
-    setRestoreStatus(
-      `${FOLDER_PICKER_HELP} This browser can download this folder as a zip.`,
-      "error",
-    );
-    return;
-  }
+  if (!repo || !current) return;
   const name = folderPath.split("/").pop() || folderPath;
-  restoreBusy = true;
-  try {
-    if (
-      !window.confirm(
-        `Download the ${name}/ folder into a folder you choose?\n\n` +
-          "Files already there with the same size are skipped; any other file with the same " +
-          "name is overwritten. You can stop and run it again.",
-      )
-    ) {
-      setRestoreStatus("");
-      return;
-    }
-    const root = await pickRestoreRoot();
-    if (!root) return;
-    const parent = folderPath.split("/").slice(0, -1).join("/");
-    await restoreInto(root, repo.walkFiles(current, folderPath), parent);
-  } finally {
-    restoreBusy = false;
-  }
+  const parent = folderPath.split("/").slice(0, -1).join("/");
+  await startStreamingRestore(
+    repo.walkFiles(current, folderPath),
+    parent,
+    `Download the ${name}/ folder into a folder you choose?\n\n` + SKIP_EXISTING_NOTE,
+  );
 }
+
 function concatenateChunks(chunks: Uint8Array[]): Uint8Array {
   const length = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
   const data = new Uint8Array(length);
@@ -650,14 +652,12 @@ async function unlock(password: string): Promise<void> {
   const envelope = await response.json();
   const keys = await decryptBlob(envelope, password);
   setStatus("");
-  gate?.remove();
-  if (unlockedRoot) unlockedRoot.hidden = false;
-  if (restoreSection) restoreSection.hidden = false;
 
-  // The account list and the backup are independent; start both together.
+  // Start both reads, but render the account header and footer date before revealing
+  // the unlocked view so the header does not pop in afterwards.
   const manifestLoad = loadManifest().then((manifest) => {
     if (!footerUpdated) return;
-    footerUpdated.textContent = manifest?.updated ?? "unknown";
+    footerUpdated.textContent = manifest ? formatDateTime(manifest.updated) : "unknown";
     if (manifest) footerUpdated.dateTime = manifest.updated;
   });
   const repositoryLoad = loadRepository(keys).catch((error: unknown) => {
@@ -672,7 +672,12 @@ async function unlock(password: string): Promise<void> {
       restoreButton.disabled = true;
     }
   });
-  await Promise.all([manifestLoad, repositoryLoad]);
+
+  await manifestLoad;
+  gate?.remove();
+  if (unlockedRoot) unlockedRoot.hidden = false;
+  if (restoreSection) restoreSection.hidden = false;
+  await repositoryLoad;
 }
 
 function supportsDirectoryPicker(): boolean {

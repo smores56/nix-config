@@ -137,5 +137,5 @@ export function renderManifest(manifest: RecoveryManifest): string {
     })
     .join("\n");
 
-  return `${warningBlock}\n${sections}`;
+  return [warningBlock, sections].filter(Boolean).join("\n");
 }

@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "updated": "2026-11-08",
+  "updated": "2026-11-08T03:17:08+00:00",
   "sections": [
     {
       "id": "accounts",
       "title": "Accounts",
-      "description": "The Bitwarden root password and recovery codes are in the letter/thumb drive. All accounts below use the username sam@sammohr.dev.",
+      "description": "The Bitwarden root password and recovery codes are in the letter/thumb drive · All accounts below use the username sam@sammohr.dev",
       "items": [
         {
           "title": "Bitwarden (password manager)",

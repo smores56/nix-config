@@ -11,7 +11,7 @@ const manifest: RecoveryManifest = {
       id: "accounts",
       title: "Accounts",
       description:
-        "The Bitwarden root password and recovery codes are in the letter/thumb drive. All accounts below use the username sam@sammohr.dev.",
+        "The Bitwarden root password and recovery codes are in the letter/thumb drive · All accounts below use the username sam@sammohr.dev",
       items: [
         {
           title: "Bitwarden (password manager)",
