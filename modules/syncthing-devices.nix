@@ -4,7 +4,7 @@
 # by relative path.
 {
   smortress = "DGDHUDO-5HJZ2BV-GGSYMRE-HE52WK2-CXSJIEU-3P5T4RJ-IJVYNXP-TN7TQQ6";
-  smorespro = "HYVRSZX-BJVBP6-KHRNJBU-4AX3NSP-ROKHJIZ-ZDW5SUQ-G2AUTUQ-MRQWDQ2";
+  smorespro = "HYVRSZX-BJVBP6B-KHRNJBU-4AX3NSP-ROKHJIZ-ZDW5SUQ-G2AUTUQ-MRQWDQ2";
   # Syncthing-Fork on the phone (com.github.catfriend1.syncthingfork); it configures its own folder path.
   phone = "EBFGS6E-QH3E3XF-2LJKWGW-ST6I4L2-IISJRXQ-REBYRU4-S6LH4XY-DPRZMQ4";
 }
