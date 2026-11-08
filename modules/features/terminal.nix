@@ -24,7 +24,7 @@ in
       italic_font = "family='${config.user.font}' style=Italic";
       bold_italic_font = "family='${config.user.font}' style='Bold Italic'";
       font_size = 12;
-      background_opacity = lib.mkForce "0.8";
+      background_opacity = lib.mkForce "0.95";
       shell = "${pkgs.${shell}}/bin/${shell}";
       tab_bar_min_tabs = 2;
       hide_window_decorations = "yes";
