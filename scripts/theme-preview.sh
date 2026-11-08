@@ -63,21 +63,42 @@ convert() {
   ' "$1"
 }
 
+# The shortlist under consideration. Names are base16-schemes file stems;
+# a name with no file fails loudly instead of silently shrinking the picker.
+shortlist=(
+  ashes
+  chinoiserie-morandi
+  da-one-sea
+  darkmoss
+  darktooth
+  eighties
+  gruvbox-material-dark-medium
+  helios
+  hopscotch
+  horizon-dark
+  material
+  shadesmear-dark
+  tender
+  terracotta-dark
+  tokyo-city-terminal-dark
+  tomorrow-night-eighties
+  woodland
+  zenbones
+)
+
 count=0
-for yaml in "$schemes"/*.yaml; do
-  name=$(basename -- "$yaml" .yaml)
+for name in "${shortlist[@]}"; do
+  yaml=$schemes/$name.yaml
+  [ -f "$yaml" ] || {
+    printf 'theme-preview: no base16 scheme named %s\n' "$name" >&2
+    exit 1
+  }
   if ! convert "$yaml" >"$work/conf/$name.conf"; then
-    printf 'theme-preview: skipping malformed scheme %s\n' "$yaml" >&2
-    rm -f -- "$work/conf/$name.conf"
-    continue
+    printf 'theme-preview: malformed scheme %s\n' "$yaml" >&2
+    exit 1
   fi
   count=$((count + 1))
 done
-[ "$count" -gt 0 ] || {
-  printf 'theme-preview: no schemes converted\n' >&2
-  exit 1
-}
-
 cat >"$work/apply" <<'APPLY'
 #!/usr/bin/env bash
 set -euo pipefail
