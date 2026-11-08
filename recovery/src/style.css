@@ -169,21 +169,6 @@ button.secondary:hover {
   filter: none;
 }
 
-button.ghost {
-  min-height: 2rem;
-  padding: 0.25rem 0.5rem;
-  border-color: transparent;
-  background: transparent;
-  color: var(--muted);
-  font-size: 0.76rem;
-}
-
-button.ghost:hover {
-  background: var(--hover);
-  color: var(--text);
-  filter: none;
-}
-
 .status {
   margin: 0.6rem 1rem;
   padding: 0.5rem 0.7rem;
@@ -217,19 +202,45 @@ button.ghost:hover {
   color: color-mix(in srgb, var(--success) 78%, var(--text));
 }
 
-/* Unlocked: a compact account column and the file browser. The browser gets the
-   remaining width and the full viewport height; the account list stays short. */
+/* Unlocked: account header, then the file browser filling the page. */
 .unlocked {
-  display: grid;
-  grid-template-columns: 20rem minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
-  align-items: start;
+}
+
+.page-header {
+  flex: none;
 }
 
 .manifest {
   display: grid;
   gap: 0.6rem;
   align-content: start;
+}
+
+.page-header .panel {
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.page-header .panel-head {
+  padding: 0 0 0.55rem;
+}
+
+.page-header .account-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0 1.25rem;
+  padding: 0.55rem 0 0.75rem;
+}
+
+.page-header .account-row {
+  padding: 0.35rem 0;
+  border-top: 0;
 }
 
 .panel {
@@ -309,22 +320,7 @@ a.account-name:hover {
   display: flex;
   flex-direction: column;
   min-width: 0;
-}
-
-.files-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem 1rem;
-  min-height: 2rem;
-  padding: 0 0 0.65rem;
-}
-
-.snapshot-label {
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-variant-numeric: tabular-nums;
+  min-height: 0;
 }
 
 /* The file tree is built from native <details>/<summary> disclosures. Folders
@@ -399,6 +395,24 @@ a.account-name:hover {
   font-weight: 600;
 }
 
+button.folder-download {
+  flex: none;
+  margin-left: auto;
+  min-height: 1.7rem;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.35rem;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+button.folder-download:hover {
+  border-color: var(--primary);
+  filter: none;
+}
+
 .file-button {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -448,13 +462,6 @@ a.account-name:hover {
   padding: 0.7rem 0 0;
 }
 
-.restore-hint {
-  flex: 1 1 14rem;
-  color: var(--muted);
-  font-size: 0.76rem;
-  line-height: 1.4;
-}
-
 progress {
   flex-basis: 100%;
   width: 100%;
@@ -468,18 +475,23 @@ progress {
 }
 
 .site-footer {
-  grid-column: 1 / -1;
-  margin-top: 0.25rem;
-  padding-top: 0.7rem;
-  border-top: 1px solid var(--hairline);
+  flex: none;
   color: var(--muted);
   font-size: 0.72rem;
   text-align: center;
 }
 
+.footer-sep {
+  margin: 0 0.3rem;
+}
+
 @media (min-width: 861px) {
+  .unlocked {
+    height: calc(100svh - 2.75rem);
+  }
+
   .files-panel {
-    height: calc(100svh - 6rem);
+    flex: 1 1 auto;
   }
 
   .tree-wrap {
@@ -488,10 +500,6 @@ progress {
 }
 
 @media (max-width: 860px) {
-  .unlocked {
-    grid-template-columns: 1fr;
-  }
-
   .tree-wrap {
     max-height: 58svh;
   }
@@ -515,21 +523,9 @@ progress {
     width: 100%;
   }
 
-  .files-bar {
-    align-items: flex-start;
-  }
-
   .tree-children {
     margin-left: 0.7rem;
     padding-left: 0.25rem;
-  }
-
-  button.folder-download {
-    flex: none;
-    margin-left: auto;
-    min-height: 1.7rem;
-    padding: 0.1rem 0.45rem;
-    font-size: 0.7rem;
   }
 
   .file-button {

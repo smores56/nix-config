@@ -81,7 +81,8 @@ until a backup runs.
 The page always opens the latest snapshot. `Restore all files` walks it and
 writes every file into a folder the operator picks (`src/restore.ts` strips the
 snapshot's shared root, so the folder starts at `photos/`). Each folder row also
-has a `Download` button that writes just that folder into the chosen directory.
+has a `Download` button: Chromium writes just that folder into the chosen
+directory, while other browsers download it as an in-memory zip.
 Each file streams through
 restic blob by blob, so memory stays at one blob whatever the total size, and
 a file already present with the same size is skipped, which makes a stopped run
@@ -89,9 +90,10 @@ resumable.
 
 The directory handle comes from the File System Access API. WebKit implements
 neither `showDirectoryPicker` nor a usable Service-Worker streaming download on
-macOS, iPadOS or iOS, so Safari downloads single files only (buffered, capped at
-256 MiB). The letter tells the family to use Chrome on the Mac for the full
-library and keeps Safari for reading and single files.
+macOS, iPadOS or iOS, so folder downloads there fall back to a zip buffered in
+memory (capped at 256 MiB), and single files download as before. The letter tells
+the family to use Chrome on the Mac for the full library and keeps Safari for
+reading and smaller folder downloads.
 
 ## Deployment
 
@@ -136,9 +138,8 @@ not be sent by message. Any fragment is treated as a password, so a stray
 The page shows only the password field until the blob decrypts; everything else
 lives behind `#unlocked` so a relative opening it does not read account
 instructions before they have proven they hold the letter. After unlock the
-account list is a short sidebar on wide screens, and the file browser takes the
-rest of the width and height; on narrow screens the account list stacks above
-the browser.
+accounts are a header across the top, with the file browser filling the rest of
+the page and the backup/support dates in a single footer.
 
 Browsing starts at `dataRoot` (`src/restore.ts`): the directory every configured
 data path shares, which is `var/lib/data`, so the top level is `photos/`,

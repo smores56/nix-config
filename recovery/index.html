@@ -39,14 +39,11 @@
       </section>
 
       <div id="unlocked" class="unlocked" hidden>
-        <div id="manifest" class="manifest" aria-live="polite"></div>
+        <header class="page-header">
+          <div id="manifest" class="manifest" aria-live="polite"></div>
+        </header>
 
         <section id="restore" class="files-panel" aria-label="Backup files" hidden>
-          <div class="files-bar">
-            <span id="snapshot-label" class="snapshot-label"></span>
-            <button type="button" id="collapse-tree" class="ghost" hidden>Collapse all</button>
-          </div>
-
           <div id="browser-status" class="status" role="status" aria-live="polite"></div>
 
           <div class="tree-wrap">
@@ -56,15 +53,17 @@
           <div class="restore-bar">
             <button type="button" id="restore-all">Restore all files...</button>
             <button type="button" id="restore-cancel" class="secondary" hidden>Stop</button>
-            <p id="restore-hint" class="restore-hint"></p>
             <progress id="restore-progress" max="1" value="0" hidden></progress>
           </div>
           <div id="restore-status" class="status" role="status" aria-live="polite"></div>
         </section>
 
         <footer class="site-footer">
-          Ask Andrey for help if you need tech support - updated
-          <time id="footer-updated"></time>
+          <span>Ask Andrey for help if you need tech support</span>
+          <span class="footer-sep" aria-hidden="true">·</span>
+          <span>Latest backup <time id="footer-backup"></time></span>
+          <span class="footer-sep" aria-hidden="true">·</span>
+          <span>updated <time id="footer-updated"></time></span>
         </footer>
       </div>
     </main>

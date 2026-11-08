@@ -156,7 +156,7 @@ async function main(): Promise<void> {
       `id="manifest"`,
       `id="restore-all"`,
       `id="manifest-section-accounts"`,
-      `id="snapshot-label"`,
+      `id="footer-backup"`,
       `id="browser"`,
     ].filter((marker) => !dom.includes(marker));
 

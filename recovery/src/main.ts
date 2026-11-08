@@ -1,3 +1,4 @@
+import { zip } from "fflate";
 import { type DataKeys, decryptBlob } from "./blob.ts";
 import { sanitizeFileName } from "./filenames.ts";
 import { reachHint } from "./hint.ts";
@@ -20,17 +21,15 @@ const unlockButton = document.querySelector<HTMLButtonElement>("#unlock-button")
 const status = document.querySelector<HTMLDivElement>("#status");
 const manifestRoot = document.querySelector<HTMLElement>("#manifest");
 const restoreSection = document.querySelector<HTMLElement>("#restore");
-const latestBackupLabel = document.querySelector<HTMLElement>("#snapshot-label");
+const footerBackup = document.querySelector<HTMLTimeElement>("#footer-backup");
 const footerUpdated = document.querySelector<HTMLTimeElement>("#footer-updated");
 const browserStatus = document.querySelector<HTMLDivElement>("#browser-status");
 const treeList = document.querySelector<HTMLUListElement>("#browser");
 const treeWrap = document.querySelector<HTMLElement>(".tree-wrap");
-const collapseTreeButton = document.querySelector<HTMLButtonElement>("#collapse-tree");
 const restoreButton = document.querySelector<HTMLButtonElement>("#restore-all");
 const restoreCancelButton = document.querySelector<HTMLButtonElement>("#restore-cancel");
 const restoreStatus = document.querySelector<HTMLDivElement>("#restore-status");
 const restoreProgress = document.querySelector<HTMLProgressElement>("#restore-progress");
-const restoreHint = document.querySelector<HTMLElement>("#restore-hint");
 const unlockedRoot = document.querySelector<HTMLElement>("#unlocked");
 
 const secure = window.isSecureContext;
@@ -142,8 +141,9 @@ async function loadRepository(keys: DataKeys): Promise<void> {
   ]);
   const latest = repo.snapshots[0];
   snapshot = latest;
-  if (latestBackupLabel) {
-    latestBackupLabel.textContent = `Latest backup: ${snapshotTime(latest.time)}`;
+  if (footerBackup) {
+    footerBackup.textContent = snapshotTime(latest.time);
+    footerBackup.dateTime = latest.time;
   }
   entriesByPath = new Map();
   await renderTree();
@@ -152,11 +152,6 @@ async function loadRepository(keys: DataKeys): Promise<void> {
 
 function treeMessage(message: string, tone: "info" | "error" = "info"): string {
   return `<li class="tree-message${tone === "error" ? " error" : ""}">${escapeHtml(message)}</li>`;
-}
-
-function updateCollapseButton(): void {
-  if (!collapseTreeButton || !treeList) return;
-  collapseTreeButton.hidden = treeList.querySelector("details[open]") === null;
 }
 
 function sortEntries(entries: ResticDirEntry[]): ResticDirEntry[] {
@@ -171,16 +166,13 @@ function sortEntries(entries: ResticDirEntry[]): ResticDirEntry[] {
 
 function renderEntries(entries: ResticDirEntry[]): string {
   if (entries.length === 0) return treeMessage("This folder is empty.");
-  const canDownloadFolder = supportsDirectoryPicker();
   return sortEntries(entries)
     .map((entry) => {
       entriesByPath.set(entry.path, entry);
       if (entry.type === "dir") {
-        const download = canDownloadFolder
-          ? `<button type="button" class="ghost folder-download" data-dir-download="${
-            escapeHtml(entry.path)
-          }" aria-label="Download ${escapeHtml(entry.name)} folder">Download</button>`
-          : "";
+        const download = `<button type="button" class="folder-download" data-dir-download="${
+          escapeHtml(entry.path)
+        }" aria-label="Download ${escapeHtml(entry.name)} folder">Download</button>`;
         return `<li class="tree-dir"><details data-path="${escapeHtml(entry.path)}">
   <summary><span class="tree-name">${escapeHtml(entry.name)}/</span>${download}</summary>
   <ul class="tree-children"></ul>
@@ -203,13 +195,11 @@ async function renderTree(allowFallback = true): Promise<void> {
   if (!repository || !snapshot || !treeList) return;
   const generation = ++treeGeneration;
   entriesByPath.clear();
-  updateCollapseButton();
   treeList.innerHTML = treeMessage("Reading the backup...");
   try {
     const entries = await repository.listDirectory(snapshot, browseRoot);
     if (generation !== treeGeneration) return;
     treeList.innerHTML = renderEntries(entries);
-    updateCollapseButton();
   } catch (error) {
     if (generation !== treeGeneration) return;
     if (allowFallback && browseRoot) {
@@ -221,7 +211,6 @@ async function renderTree(allowFallback = true): Promise<void> {
       return;
     }
     treeList.innerHTML = treeMessage(`Could not list this backup: ${errorMessage(error)}`, "error");
-    updateCollapseButton();
   }
 }
 
@@ -265,6 +254,7 @@ type DirectoryHandle = {
 };
 
 const MAX_BUFFERED_DOWNLOAD = 256 * 1024 * 1024;
+const MAX_ZIP_BYTES = 256 * 1024 * 1024;
 
 async function download(entry: ResticDirEntry): Promise<void> {
   if (!repository) return;
@@ -560,6 +550,89 @@ async function restoreFolder(folderPath: string): Promise<void> {
     restoreBusy = false;
   }
 }
+
+function concatenateChunks(chunks: Uint8Array[]): Uint8Array {
+  const length = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const data = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    data.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return data;
+}
+
+function zipFiles(entries: Record<string, Uint8Array>): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    zip(entries, { level: 0 }, (error, data) => {
+      if (error) reject(error);
+      else resolve(data);
+    });
+  });
+}
+
+async function downloadFolderZip(folderPath: string): Promise<void> {
+  const repo = repository;
+  const current = snapshot;
+  if (!repo || !current || restoreBusy || restoring) return;
+  restoreBusy = true;
+  const name = folderPath.split("/").pop() || folderPath;
+  try {
+    setRestoreStatus(`Reading the file list for ${name}/...`);
+    let files: ResticFile[];
+    try {
+      const all = await repo.walk(current);
+      files = all.filter((file) => file.path.startsWith(`${folderPath}/`));
+    } catch (error) {
+      setRestoreStatus(`Could not read the snapshot: ${errorMessage(error)}`, "error");
+      return;
+    }
+    if (files.length === 0) {
+      setRestoreStatus(`There are no files in ${name}/.`, "error");
+      return;
+    }
+    const totalBytes = files.reduce((sum, file) => sum + (file.size ?? 0), 0);
+    if (totalBytes > MAX_ZIP_BYTES) {
+      setRestoreStatus(
+        `This folder is ${formatBytes(totalBytes)}. The browser zip download is limited to ${
+          formatBytes(MAX_ZIP_BYTES)
+        }; use Chrome or Edge to save it directly.`,
+        "error",
+      );
+      return;
+    }
+    const prefix = folderPath.split("/").slice(0, -1).join("/");
+    const entries: Record<string, Uint8Array> = {};
+    let done = 0;
+    for (const file of files) {
+      const path = relativeSegments(prefix, file.path).join("/");
+      const chunks: Uint8Array[] = [];
+      for await (const chunk of repo.readFileChunks(file)) chunks.push(chunk);
+      entries[path] = concatenateChunks(chunks);
+      done++;
+      if (done === files.length || done % 10 === 0) {
+        setRestoreStatus(`Building ${name}.zip... ${done} of ${files.length} files`);
+      }
+    }
+    setRestoreStatus(`Compressing ${name}.zip...`);
+    const zipped = await zipFiles(entries);
+    for (const key of Object.keys(entries)) delete entries[key];
+    const url = URL.createObjectURL(
+      new Blob([zipped.buffer as ArrayBuffer], { type: "application/zip" }),
+    );
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${sanitizeFileName(name)}.zip`;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    setRestoreStatus(`Downloaded ${name}.zip.`, "ok");
+  } catch (error) {
+    setRestoreStatus(`Folder download failed: ${errorMessage(error)}`, "error");
+  } finally {
+    restoreBusy = false;
+  }
+}
+
 async function unlock(password: string): Promise<void> {
   if (!secure) throw new Error("Open this page over HTTPS or on localhost.");
   setStatus("Unlocking...");
@@ -590,7 +663,7 @@ async function unlock(password: string): Promise<void> {
     const message = reachHint(errorMessage(error), location.origin);
     setBrowserStatus(`Could not open the backup: ${message}`, "error");
     if (treeList) treeList.innerHTML = treeMessage("The backup could not be opened.", "error");
-    if (latestBackupLabel) latestBackupLabel.textContent = "Latest backup: unavailable";
+    if (footerBackup) footerBackup.textContent = "unavailable";
     if (restoreButton) restoreButton.disabled = true;
   });
   await Promise.all([manifestLoad, repositoryLoad]);
@@ -606,11 +679,6 @@ function supportsDirectoryPicker(): boolean {
 function configureRestore(): void {
   const supported = supportsDirectoryPicker();
   if (restoreButton) restoreButton.hidden = !supported;
-  if (restoreHint) {
-    restoreHint.textContent = supported
-      ? "Files with the same name and size are skipped, so a stopped restore can be run again."
-      : "Folder restore needs Chrome or Edge on a computer. You can still download files one at a time.";
-  }
 }
 
 form?.addEventListener("submit", (event) => {
@@ -640,21 +708,11 @@ treeList?.addEventListener(
   (event) => {
     const details = event.target;
     if (!(details instanceof HTMLDetailsElement)) return;
-    updateCollapseButton();
     if (!details.open) return;
     void loadDirectory(details);
   },
   true,
 );
-
-collapseTreeButton?.addEventListener("click", () => {
-  if (!treeList) return;
-  for (const details of treeList.querySelectorAll<HTMLDetailsElement>("details[open]")) {
-    details.open = false;
-  }
-  updateCollapseButton();
-  if (treeWrap) treeWrap.scrollTop = 0;
-});
 
 treeList?.addEventListener("click", (event) => {
   const target = event.target as HTMLElement;
@@ -662,7 +720,9 @@ treeList?.addEventListener("click", (event) => {
   if (folder?.dataset.dirDownload) {
     event.preventDefault();
     event.stopPropagation();
-    void restoreFolder(folder.dataset.dirDownload);
+    const path = folder.dataset.dirDownload;
+    if (supportsDirectoryPicker()) void restoreFolder(path);
+    else void downloadFolderZip(path);
     return;
   }
   const file = target.closest<HTMLElement>("[data-file]");

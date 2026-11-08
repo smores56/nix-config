@@ -9,6 +9,7 @@
     "@aws-sdk/client-s3": "^3.1163.0",
     "@noble/ciphers": "^2.4.0",
     "@stablelib/poly1305": "^2.0.1",
+    "fflate": "^0.8.2",
     "fzstd": "^0.1.1",
     "hash-wasm": "^4.12.0"
   }

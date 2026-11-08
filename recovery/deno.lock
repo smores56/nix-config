@@ -11,6 +11,7 @@
     "npm:@noble/ciphers@^2.4.0": "2.4.0",
     "npm:@stablelib/poly1305@^2.0.1": "2.0.1",
     "npm:esbuild@~0.25.5": "0.25.12",
+    "npm:fflate@~0.8.2": "0.8.3",
     "npm:fzstd@~0.1.1": "0.1.1",
     "npm:hash-wasm@^4.12.0": "4.12.0"
   },
@@ -474,6 +475,9 @@
       "scripts": true,
       "bin": true
     },
+    "fflate@0.8.3": {
+      "integrity": "sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA=="
+    },
     "fzstd@0.1.1": {
       "integrity": "sha512-dkuVSOKKwh3eas5VkJy1AW1vFpet8TA/fGmVA5krThl8YcOVE/8ZIoEA1+U1vEn5ckxxhLirSdY837azmbaNHA=="
     },
@@ -491,6 +495,7 @@
         "npm:@noble/ciphers@^2.4.0",
         "npm:@stablelib/poly1305@^2.0.1",
         "npm:esbuild@~0.25.5",
+        "npm:fflate@~0.8.2",
         "npm:fzstd@~0.1.1",
         "npm:hash-wasm@^4.12.0"
       ]
