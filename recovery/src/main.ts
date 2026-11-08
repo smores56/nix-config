@@ -673,11 +673,6 @@ function supportsDirectoryPicker(): boolean {
   );
 }
 
-function configureRestore(): void {
-  const supported = supportsDirectoryPicker();
-  if (restoreButton) restoreButton.hidden = !supported;
-}
-
 form?.addEventListener("submit", (event) => {
   event.preventDefault();
   const password = passwordInput?.value ?? "";
@@ -736,8 +731,6 @@ restoreCancelButton?.addEventListener("click", () => {
   restoreStop = true;
   setRestoreStatus("Stopping after the current file...");
 });
-
-configureRestore();
 
 if (!secure) {
   if (unlockButton) unlockButton.disabled = true;
