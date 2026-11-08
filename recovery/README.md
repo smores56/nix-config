@@ -48,7 +48,9 @@ then let a restic run pick it up.
 
 - The blob is public but encrypted; the recovery password is the data gate.
 - The recovery password is separate from the Bitwarden master password.
-- The page must not persist the password or data keys; lock clears them.
+- The page must not persist the password or data keys. They live in memory
+  for the tab's lifetime and disappear when it is closed or refreshed; there is
+  no lock button or idle timeout.
 
 ## Data-keys blob
 
@@ -76,7 +78,7 @@ until a backup runs.
 
 ## Restore in the page
 
-`Restore everything to a folder` walks the selected snapshot and writes every
+`Restore all files` walks the selected snapshot and writes every
 file into a folder the operator picks (`src/restore.ts` strips the snapshot's
 shared root, so the folder starts at `photos/`). Each file streams through
 restic blob by blob, so memory stays at one blob whatever the total size, and
@@ -110,7 +112,8 @@ deno task smoke    # headless Chrome: CHROME=<path> or --chrome <path>
 ```
 
 `deno task smoke` serves `dist/` on a loopback port and asserts the built page
-renders its shell and reaches the unlock prompt, which is the only check that
+renders its shell, unlocks from a link fragment and reaches the account and
+file UI, which is the only check that
 notices a broken bundle, a CSP that blocks the module, or a blob the browser
 cannot open. Both run in `.github/workflows/recovery.yml` on every
 change under `recovery/`, before the deploy job.
@@ -130,10 +133,13 @@ not be sent by message. Any fragment is treated as a password, so a stray
 
 The page shows only the password field until the blob decrypts; everything else
 lives behind `#unlocked` so a relative opening it does not read account
-instructions before they have proven they hold the letter. After unlock the data
-section is first, then the manifest.
+instructions before they have proven they hold the letter. After unlock the
+account list is a short sidebar on wide screens, and the file browser takes the
+rest of the width and height; on narrow screens the account list stacks above
+the browser.
 
 Browsing starts at `dataRoot` (`src/restore.ts`): the directory every configured
 data path shares, which is `var/lib/data`, so the top level is `photos/`,
-`vault/` and `db/` rather than the snapshot root's single `var/`. The breadcrumb
-root and the first listing both use it.
+`vault/` and `db/` rather than the snapshot root's single `var/`. The browser
+renders that level as a tree of native `<details>` disclosures; each folder
+loads its children from restic only when it is opened.

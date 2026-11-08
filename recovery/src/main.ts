@@ -1,13 +1,9 @@
-import { decryptBlob, type DataKeys } from "./blob.ts";
+import { type DataKeys, decryptBlob } from "./blob.ts";
 import { sanitizeFileName } from "./filenames.ts";
 import { reachHint } from "./hint.ts";
 import { commonDirectoryPrefix, dataRoot, relativeSegments } from "./restore.ts";
 import { passwordFromHash } from "./link.ts";
-import {
-  renderManifest,
-  validateManifest,
-  type RecoveryManifest,
-} from "./manifest.ts";
+import { type RecoveryManifest, renderManifest, validateManifest } from "./manifest.ts";
 import { R2Backend, repositoryPrefix } from "./restic/r2.ts";
 import {
   openRepository,
@@ -17,31 +13,31 @@ import {
   type ResticSnapshot,
 } from "./restic/repository.ts";
 
+const gate = document.querySelector<HTMLElement>("#gate");
 const form = document.querySelector<HTMLFormElement>("#unlock-form");
 const passwordInput = document.querySelector<HTMLInputElement>("#recovery-password");
 const unlockButton = document.querySelector<HTMLButtonElement>("#unlock-button");
-const lockButton = document.querySelector<HTMLButtonElement>("#lock-button");
 const status = document.querySelector<HTMLDivElement>("#status");
 const manifestRoot = document.querySelector<HTMLElement>("#manifest");
 const restoreSection = document.querySelector<HTMLElement>("#restore");
+const snapshotField = document.querySelector<HTMLElement>("#snapshot-field");
+const snapshotSingle = document.querySelector<HTMLElement>("#snapshot-single");
 const snapshotSelect = document.querySelector<HTMLSelectElement>("#snapshot-select");
-const breadcrumbs = document.querySelector<HTMLElement>("#breadcrumbs");
 const browserStatus = document.querySelector<HTMLDivElement>("#browser-status");
-const browserList = document.querySelector<HTMLUListElement>("#browser");
+const treeList = document.querySelector<HTMLUListElement>("#browser");
 const restoreButton = document.querySelector<HTMLButtonElement>("#restore-all");
 const restoreCancelButton = document.querySelector<HTMLButtonElement>("#restore-cancel");
 const restoreStatus = document.querySelector<HTMLDivElement>("#restore-status");
 const restoreProgress = document.querySelector<HTMLProgressElement>("#restore-progress");
+const restoreHint = document.querySelector<HTMLElement>("#restore-hint");
 const unlockedRoot = document.querySelector<HTMLElement>("#unlocked");
 
 const secure = window.isSecureContext;
-let dataKeys: DataKeys | null = null;
 let repository: ResticRepository | null = null;
 let snapshot: ResticSnapshot | null = null;
-let currentPath = "";
 let browseRoot = "";
 let entriesByPath = new Map<string, ResticDirEntry>();
-let idleTimer: number | undefined;
+let treeGeneration = 0;
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
@@ -77,50 +73,17 @@ function setBrowserStatus(message: string, tone: "info" | "error" | "ok" = "info
   browserStatus.dataset.tone = tone;
 }
 
-function clearIdle(): void {
-  if (idleTimer !== undefined) {
-    clearTimeout(idleTimer);
-    idleTimer = undefined;
-  }
+function setRestoreStatus(message: string, tone: "info" | "error" | "ok" = "info"): void {
+  if (!restoreStatus) return;
+  restoreStatus.textContent = message;
+  restoreStatus.dataset.tone = tone;
 }
 
-function scheduleIdle(): void {
-  clearIdle();
-  if (restoring) return;
-  if (dataKeys) idleTimer = window.setTimeout(lock, 5 * 60_000);
-}
-
-function refreshLockButton(): void {
-  if (lockButton) lockButton.hidden = !dataKeys;
-}
-
-function clearRestore(): void {
-  repository = null;
-  snapshot = null;
-  currentPath = "";
-  browseRoot = "";
-  entriesByPath = new Map();
-  if (restoreSection) restoreSection.hidden = true;
-  if (snapshotSelect) snapshotSelect.innerHTML = "";
-  if (breadcrumbs) breadcrumbs.innerHTML = "";
-  if (browserList) browserList.innerHTML = "";
-  if (browserStatus) browserStatus.textContent = "";
-  if (restoreStatus) restoreStatus.textContent = "";
-  if (restoreProgress) {
-    restoreProgress.hidden = true;
-    restoreProgress.value = 0;
-  }
-}
-
-function lock(): void {
-  dataKeys = null;
-  clearIdle();
-  clearRestore();
-  if (unlockedRoot) unlockedRoot.hidden = true;
-  if (manifestRoot) manifestRoot.innerHTML = "";
-  if (passwordInput) passwordInput.value = "";
-  refreshLockButton();
-  setStatus("Locked. The password and keys were cleared from this page.");
+function setRestoreProgress(doneBytes: number, totalBytes: number): void {
+  if (!restoreProgress) return;
+  restoreProgress.hidden = totalBytes === 0;
+  restoreProgress.max = Math.max(totalBytes, 1);
+  restoreProgress.value = doneBytes;
 }
 
 async function loadManifest(): Promise<boolean> {
@@ -137,7 +100,7 @@ async function loadManifest(): Promise<boolean> {
     return true;
   } catch (error) {
     manifestRoot.innerHTML =
-      `<section class="card warning"><h2>Account list</h2><p>The account list could not be loaded: ${
+      `<section class="notice" role="note"><p class="notice-title">Accounts</p><p>The account list could not be loaded: ${
         escapeHtml(errorMessage(error))
       }.</p></section>`;
     return false;
@@ -156,26 +119,40 @@ async function blobExists(): Promise<boolean> {
   }
 }
 
+function snapshotTime(time: string): string {
+  const date = new Date(time);
+  if (Number.isNaN(date.getTime())) return time.slice(0, 16).replace("T", " ");
+  return date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+function snapshotLabel(item: ResticSnapshot): string {
+  const parts = [snapshotTime(item.time)];
+  if (item.hostname) parts.push(item.hostname);
+  if (item.tags?.length) parts.push(item.tags.join(", "));
+  return parts.join(" · ");
+}
+
 function renderSnapshots(snapshots: ResticSnapshot[]): void {
-  if (!snapshotSelect) return;
-  snapshotSelect.innerHTML = snapshots
-    .map((item, index) => {
-      const context = [item.hostname, item.tags?.join(", "), item.paths.join(", ")]
-        .filter(Boolean)
-        .join(" | ");
-      const label = `${item.time} - ${item.id.slice(0, 8)}${context ? ` - ${context}` : ""}`;
-      return `<option value="${index}">${escapeHtml(label)}</option>`;
-    })
-    .join("");
+  if (snapshotSelect) {
+    snapshotSelect.innerHTML = snapshots
+      .map((item, index) => `<option value="${index}">${escapeHtml(snapshotLabel(item))}</option>`)
+      .join("");
+  }
+  const single = snapshots.length === 1;
+  if (snapshotField) snapshotField.hidden = single;
+  if (snapshotSingle) {
+    snapshotSingle.hidden = !single;
+    snapshotSingle.textContent = single ? snapshotLabel(snapshots[0]) : "";
+  }
 }
 
 async function loadRepository(keys: DataKeys): Promise<void> {
-  setBrowserStatus("Opening the restic repository...");
+  setBrowserStatus("Opening the backup...");
   const prefix = repositoryPrefix(keys.restic.repository, keys.r2.bucket);
   const backend = new R2Backend({ ...keys.r2, prefix });
   const repo = await openRepository(backend, keys.restic.password);
   repository = repo;
-  if (repo.snapshots.length === 0) throw new Error("the restic repository has no snapshots");
+  if (repo.snapshots.length === 0) throw new Error("the backup has no snapshots");
   browseRoot = dataRoot([
     keys.restic.photosPath,
     keys.restic.vaultPath,
@@ -185,63 +162,94 @@ async function loadRepository(keys: DataKeys): Promise<void> {
   ]);
   renderSnapshots(repo.snapshots);
   await selectSnapshot(repo.snapshots[0]);
+  setBrowserStatus("");
 }
 
 async function selectSnapshot(next: ResticSnapshot): Promise<void> {
   snapshot = next;
-  currentPath = browseRoot;
-  await renderBrowser();
+  entriesByPath = new Map();
+  await renderTree();
 }
 
-function renderBreadcrumbs(): void {
-  if (!breadcrumbs) return;
-  const below = currentPath.startsWith(`${browseRoot}/`)
-    ? currentPath.slice(browseRoot.length)
-    : currentPath === browseRoot
-    ? ""
-    : currentPath;
-  const segments = below.split("/").filter(Boolean);
-  const parts = [
-    `<button type="button" class="crumb" data-browse="${escapeHtml(browseRoot)}">${escapeHtml(browseRoot ? `/${browseRoot}` : "root")}</button>`,
-    ...segments.map((segment, index) => {
-      const path = [browseRoot, ...segments.slice(0, index + 1)].filter(Boolean).join("/");
-      return `<button type="button" class="crumb" data-browse="${escapeHtml(path)}">${escapeHtml(segment)}</button>`;
-    }),
-  ];
-  breadcrumbs.innerHTML = parts.join('<span class="crumb-sep">/</span>');
+function treeMessage(message: string, tone: "info" | "error" = "info"): string {
+  return `<li class="tree-message${tone === "error" ? " error" : ""}">${escapeHtml(message)}</li>`;
 }
 
-async function renderBrowser(): Promise<void> {
-  if (!repository || !snapshot || !browserList) return;
-  // Draw the path first, so a failed listing still leaves a way back up.
-  renderBreadcrumbs();
+function sortEntries(entries: ResticDirEntry[]): ResticDirEntry[] {
+  return [...entries].sort((left, right) => {
+    if (left.type !== right.type) return left.type === "dir" ? -1 : 1;
+    return left.name.localeCompare(right.name, undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
+  });
+}
+
+function renderEntries(entries: ResticDirEntry[]): string {
+  if (entries.length === 0) return treeMessage("This folder is empty.");
+  return sortEntries(entries)
+    .map((entry) => {
+      entriesByPath.set(entry.path, entry);
+      if (entry.type === "dir") {
+        return `<li class="tree-dir"><details data-path="${escapeHtml(entry.path)}">
+  <summary><span class="tree-name">${escapeHtml(entry.name)}/</span></summary>
+  <ul class="tree-children"></ul>
+</details></li>`;
+      }
+      const size = formatBytes(entry.size);
+      return `<li class="tree-file">
+  <button type="button" class="file-button" data-file="${escapeHtml(entry.path)}" title="Download ${
+        escapeHtml(entry.name)
+      }">
+    <span class="tree-name"><span class="sr-only">Download </span>${escapeHtml(entry.name)}</span>
+    <span class="tree-size">${escapeHtml(size)}</span>
+  </button>
+</li>`;
+    })
+    .join("");
+}
+
+async function renderTree(allowFallback = true): Promise<void> {
+  if (!repository || !snapshot || !treeList) return;
+  const generation = ++treeGeneration;
+  entriesByPath.clear();
+  treeList.innerHTML = treeMessage("Reading the backup...");
   try {
-    const entries = await repository.listDirectory(snapshot, currentPath);
-    entriesByPath = new Map(entries.map((entry) => [entry.path, entry]));
-    browserList.innerHTML = entries
-      .map((entry) => {
-        if (entry.type === "dir") {
-          return `<li class="item"><div class="item-row"><button type="button" class="link-button" data-dir="${escapeHtml(entry.path)}">${escapeHtml(entry.name)}/</button></div></li>`;
-        }
-        return `<li class="item"><div class="item-row"><span>${escapeHtml(entry.name)}</span><span class="item-meta">${formatBytes(entry.size)}</span><button type="button" data-file="${escapeHtml(entry.path)}">Download</button></div></li>`;
-      })
-      .join("");
-    setBrowserStatus(
-      `${entries.length} entries in ${currentPath ? `/${currentPath}` : "the snapshot root"}.`,
-    );
+    const entries = await repository.listDirectory(snapshot, browseRoot);
+    if (generation !== treeGeneration) return;
+    treeList.innerHTML = renderEntries(entries);
   } catch (error) {
-    entriesByPath.clear();
-    browserList.innerHTML = "";
-    if (browseRoot && currentPath === browseRoot) {
+    if (generation !== treeGeneration) return;
+    if (allowFallback && browseRoot) {
       // A snapshot taken before the data moved under one parent, or one from
       // another host, has no shared root: open at the snapshot root instead of
-      // dead-ending in an empty card.
+      // dead-ending in an empty panel.
       browseRoot = "";
-      currentPath = "";
-      await renderBrowser();
+      await renderTree(false);
       return;
     }
-    setBrowserStatus(`Could not list this folder: ${errorMessage(error)}`, "error");
+    treeList.innerHTML = treeMessage(`Could not list this backup: ${errorMessage(error)}`, "error");
+  }
+}
+
+async function loadDirectory(details: HTMLDetailsElement): Promise<void> {
+  const path = details.dataset.path ?? "";
+  if (details.dataset.loaded === "true" || details.dataset.loading === "true") return;
+  const list = details.querySelector<HTMLUListElement>(":scope > ul.tree-children");
+  if (!list || !repository || !snapshot) return;
+  const generation = treeGeneration;
+  details.dataset.loading = "true";
+  list.innerHTML = treeMessage("Loading...");
+  try {
+    const entries = await repository.listDirectory(snapshot, path);
+    if (generation !== treeGeneration || !details.isConnected) return;
+    list.innerHTML = renderEntries(entries);
+    details.dataset.loaded = "true";
+  } catch (error) {
+    if (generation !== treeGeneration || !details.isConnected) return;
+    list.innerHTML = treeMessage(errorMessage(error), "error");
+  } finally {
+    if (generation === treeGeneration) delete details.dataset.loading;
   }
 }
 
@@ -297,7 +305,9 @@ async function download(entry: ResticDirEntry): Promise<void> {
     } else {
       if (file.size !== undefined && file.size > MAX_BUFFERED_DOWNLOAD) {
         setBrowserStatus(
-          `This file is ${formatBytes(file.size)}. The browser download fallback is limited to ${formatBytes(MAX_BUFFERED_DOWNLOAD)}; open this page in Chrome to save files of this size.`,
+          `This file is ${formatBytes(file.size)}. The browser download fallback is limited to ${
+            formatBytes(MAX_BUFFERED_DOWNLOAD)
+          }; open this page in Chrome to save files of this size.`,
           "error",
         );
         return;
@@ -316,7 +326,9 @@ async function download(entry: ResticDirEntry): Promise<void> {
         const buffer = new Uint8Array(file.size);
         let offset = 0;
         for await (const chunk of repository.readFileChunks(file)) {
-          if (offset + chunk.length > buffer.length) throw new Error("file is larger than expected");
+          if (offset + chunk.length > buffer.length) {
+            throw new Error("file is larger than expected");
+          }
           buffer.set(chunk, offset);
           offset += chunk.length;
         }
@@ -347,19 +359,6 @@ async function download(entry: ResticDirEntry): Promise<void> {
 
 let restoring = false;
 let restoreStop = false;
-
-function setRestoreStatus(message: string, tone: "info" | "error" | "ok" = "info"): void {
-  if (!restoreStatus) return;
-  restoreStatus.textContent = message;
-  restoreStatus.dataset.tone = tone;
-}
-
-function setRestoreProgress(doneBytes: number, totalBytes: number): void {
-  if (!restoreProgress) return;
-  restoreProgress.hidden = totalBytes === 0;
-  restoreProgress.max = Math.max(totalBytes, 1);
-  restoreProgress.value = doneBytes;
-}
 
 async function ensureDirectory(
   root: DirectoryHandle,
@@ -396,7 +395,7 @@ async function restoreAll(): Promise<void> {
   ).showDirectoryPicker;
   if (!picker) {
     setRestoreStatus(
-      "This browser cannot write into a folder. Open this page in Chrome or Edge on the Mac to restore everything; Safari can still download single files.",
+      "This browser cannot write into a folder. Use Chrome or Edge on a computer to restore everything; you can still download files one at a time.",
       "error",
     );
     return;
@@ -415,7 +414,7 @@ async function restoreAll(): Promise<void> {
     !window.confirm(
       `Restore ${files.length} files (${formatBytes(totalBytes)}) into a folder you choose?\n\n` +
         "Files already there with the same size are skipped; any other file with the same " +
-          "name is overwritten. You can stop and run it again.",
+        "name is overwritten. You can stop and run it again.",
     )
   ) {
     setRestoreStatus("");
@@ -437,7 +436,6 @@ async function restoreAll(): Promise<void> {
   const prefix = commonDirectoryPrefix(files.map((file) => file.path));
   restoring = true;
   restoreStop = false;
-  clearIdle();
   if (restoreButton) restoreButton.disabled = true;
   if (restoreCancelButton) restoreCancelButton.hidden = false;
   setRestoreProgress(0, totalBytes);
@@ -493,7 +491,9 @@ async function restoreAll(): Promise<void> {
         doneBytes += file.size ?? 0;
         setRestoreProgress(doneBytes + skippedBytes, totalBytes);
         setRestoreStatus(
-          `${done} of ${files.length} files, ${formatBytes(doneBytes + skippedBytes)} of ${formatBytes(totalBytes)}...`,
+          `${done} of ${files.length} files, ${formatBytes(doneBytes + skippedBytes)} of ${
+            formatBytes(totalBytes)
+          }...`,
         );
         setBrowserStatus(`Restoring ${segments.length > 0 ? segments.join("/") + "/" : ""}${name}`);
       } catch (error) {
@@ -504,7 +504,6 @@ async function restoreAll(): Promise<void> {
     restoring = false;
     if (restoreButton) restoreButton.disabled = false;
     if (restoreCancelButton) restoreCancelButton.hidden = true;
-    scheduleIdle();
   }
 
   const summary = restoreStop
@@ -523,36 +522,49 @@ async function restoreAll(): Promise<void> {
 
 async function unlock(password: string): Promise<void> {
   if (!secure) throw new Error("Open this page over HTTPS or on localhost.");
-  setStatus("Opening the recovery kit...");
+  setStatus("Unlocking...");
   const response = await fetch(new URL("./data-keys.enc", document.baseURI), {
     cache: "no-store",
   });
   if (response.status === 404) {
-    throw new Error(
-      "No data-keys blob is deployed yet. Run the recovery blob builder and push the result.",
-    );
+    throw new Error("No recovery data has been published yet.");
   }
-  if (!response.ok) throw new Error(`data-keys HTTP ${response.status}`);
+  if (!response.ok) throw new Error(`Could not read the recovery data (HTTP ${response.status}).`);
 
   const envelope = await response.json();
-  setStatus("Checking the password...");
   const keys = await decryptBlob(envelope, password);
-  dataKeys = keys;
+  setStatus("");
+  if (gate) gate.hidden = true;
   if (unlockedRoot) unlockedRoot.hidden = false;
   if (restoreSection) restoreSection.hidden = false;
-  refreshLockButton();
-  scheduleIdle();
-  setStatus("Unlocked. Opening the data...", "ok");
-  // Only now, once the password has proven to open the kit: the account list is
-  // instructions for the family, not something anyone may read before.
-  await loadManifest();
-  try {
-    await loadRepository(keys);
-    setStatus("Unlocked.", "ok");
-  } catch (error) {
+
+  // The account list and the backup are independent; start both together.
+  const manifest = loadManifest();
+  const repositoryLoad = loadRepository(keys).catch((error: unknown) => {
+    repository = null;
+    snapshot = null;
     const message = reachHint(errorMessage(error), location.origin);
-    setStatus(`Unlocked, but the data could not be opened: ${message}`, "error");
-    setBrowserStatus(`Restic repository error: ${message}`, "error");
+    setBrowserStatus(`Could not open the backup: ${message}`, "error");
+    if (treeList) treeList.innerHTML = treeMessage("The backup could not be opened.", "error");
+    if (restoreButton) restoreButton.disabled = true;
+  });
+  await Promise.all([manifest, repositoryLoad]);
+}
+
+function supportsDirectoryPicker(): boolean {
+  return (
+    typeof (window as unknown as { showDirectoryPicker?: unknown }).showDirectoryPicker ===
+      "function"
+  );
+}
+
+function configureRestore(): void {
+  const supported = supportsDirectoryPicker();
+  if (restoreButton) restoreButton.hidden = !supported;
+  if (restoreHint) {
+    restoreHint.textContent = supported
+      ? "Files with the same name and size are skipped, so a stopped restore can be run again."
+      : "Folder restore needs Chrome or Edge on a computer. You can still download files one at a time.";
   }
 }
 
@@ -560,25 +572,23 @@ form?.addEventListener("submit", (event) => {
   event.preventDefault();
   const password = passwordInput?.value ?? "";
   if (!password) return;
-  if (unlockButton) unlockButton.disabled = true;
+  if (unlockButton) {
+    unlockButton.disabled = true;
+    unlockButton.textContent = "Unlocking...";
+  }
   setStatus("Unlocking...");
   unlock(password)
     .catch((error: unknown) => {
-      dataKeys = null;
-      if (unlockedRoot) unlockedRoot.hidden = true;
-      if (restoreSection) restoreSection.hidden = true;
-      clearIdle();
-      clearRestore();
-      refreshLockButton();
       setStatus(errorMessage(error), "error");
     })
     .finally(() => {
-      if (unlockButton) unlockButton.disabled = false;
+      if (unlockButton) {
+        unlockButton.disabled = false;
+        unlockButton.textContent = "Unlock";
+      }
       if (passwordInput) passwordInput.value = "";
     });
 });
-
-lockButton?.addEventListener("click", lock);
 
 snapshotSelect?.addEventListener("change", () => {
   if (!repository || !snapshotSelect) return;
@@ -586,24 +596,20 @@ snapshotSelect?.addEventListener("change", () => {
   if (next) void selectSnapshot(next);
 });
 
-breadcrumbs?.addEventListener("click", (event) => {
-  const target = (event.target as HTMLElement).closest<HTMLElement>("[data-browse]");
-  if (!target) return;
-  currentPath = target.dataset.browse ?? "";
-  void renderBrowser();
-});
+treeList?.addEventListener(
+  "toggle",
+  (event) => {
+    const details = event.target;
+    if (!(details instanceof HTMLDetailsElement) || !details.open) return;
+    void loadDirectory(details);
+  },
+  true,
+);
 
-browserList?.addEventListener("click", (event) => {
-  const target = event.target as HTMLElement;
-  const directory = target.closest<HTMLElement>("[data-dir]");
-  if (directory) {
-    currentPath = directory.dataset.dir ?? "";
-    void renderBrowser();
-    return;
-  }
-  const file = target.closest<HTMLElement>("[data-file]");
-  if (!file?.dataset.file) return;
-  const entry = entriesByPath.get(file.dataset.file);
+treeList?.addEventListener("click", (event) => {
+  const target = (event.target as HTMLElement).closest<HTMLElement>("[data-file]");
+  if (!target?.dataset.file) return;
+  const entry = entriesByPath.get(target.dataset.file);
   if (entry) void download(entry);
 });
 
@@ -616,24 +622,7 @@ restoreCancelButton?.addEventListener("click", () => {
   setRestoreStatus("Stopping after the current file...");
 });
 
-for (const event of ["pointerdown", "keydown"] as const) {
-  document.addEventListener(event, scheduleIdle, { passive: true });
-}
-
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden) {
-    clearIdle();
-    // A running restore keeps its keys: it writes plaintext the user asked for,
-    // and a two-hour job must not die because the tab was backgrounded.
-    if (!restoring && dataKeys) idleTimer = window.setTimeout(lock, 30_000);
-  } else {
-    scheduleIdle();
-  }
-});
-
-window.addEventListener("pagehide", () => {
-  if (dataKeys) lock();
-});
+configureRestore();
 
 if (!secure) {
   if (unlockButton) unlockButton.disabled = true;
@@ -646,26 +635,25 @@ if (!secure) {
 
 void (async () => {
   if (!secure) return;
-  if (await blobExists()) {
-    const fromLink = passwordFromHash(location.hash);
-    if (fromLink) {
-      // Strip the password before the (slow) key derivation, so it never sits
-      // in the address bar or in a history entry the next person can read.
-      history.replaceState(null, "", location.pathname + location.search);
-      setStatus("Opening the link from the letter...");
-      try {
-        await unlock(fromLink);
-        return;
-      } catch (error) {
-        setStatus(
-          `That link did not unlock the page: ${errorMessage(error)}. Type the recovery password from the letter instead.`,
-          "error",
-        );
-        return;
-      }
-    }
-    setStatus("");
-  } else {
-    setStatus("This page is not set up yet: no recovery data has been published.");
+  if (!(await blobExists())) {
+    if (unlockButton) unlockButton.disabled = true;
+    setStatus("This page is not set up yet: no recovery data has been published.", "error");
+    return;
+  }
+  const fromLink = passwordFromHash(location.hash);
+  if (!fromLink) return;
+  // Strip the password before the (slow) key derivation, so it never sits
+  // in the address bar or in a history entry the next person can read.
+  history.replaceState(null, "", location.pathname + location.search);
+  setStatus("Opening the link from the letter...");
+  try {
+    await unlock(fromLink);
+  } catch (error) {
+    setStatus(
+      `That link did not unlock the page: ${
+        errorMessage(error)
+      }. Type the recovery password from the letter instead.`,
+      "error",
+    );
   }
 })();

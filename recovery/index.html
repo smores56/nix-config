@@ -18,13 +18,10 @@
   </head>
   <body>
     <main class="shell">
-      <header class="hero">
-        <h1>Recovery kit</h1>
-        <p class="lede">Enter the recovery password from the sealed letter.</p>
-      </header>
+      <h1 class="sr-only">Recovery kit</h1>
 
-      <section class="card">
-        <form id="unlock-form" class="unlock-form">
+      <section id="gate" class="gate" aria-label="Unlock">
+        <form id="unlock-form" class="gate-form">
           <label for="recovery-password">Recovery password</label>
           <div class="row">
             <input
@@ -34,41 +31,49 @@
               autocapitalize="none"
               autocorrect="off"
               spellcheck="false"
+              aria-describedby="gate-help"
               required
             />
             <button type="submit" id="unlock-button">Unlock</button>
           </div>
         </form>
-        <div id="status" class="status" role="status" aria-live="polite">
-          Checking for a data-keys blob...
-        </div>
-        <button id="lock-button" class="secondary" type="button" hidden>
-          Lock and clear
-        </button>
+        <div id="status" class="status" role="status" aria-live="polite"></div>
+        <p id="gate-help" class="gate-help">
+          The password is on the sealed letter or USB drive with your name on it.
+          If you were not given one, there is nothing here for you.
+        </p>
       </section>
 
-      <div id="unlocked" hidden>
-        <section id="restore" class="card" aria-labelledby="data-title" hidden>
-          <h2 id="data-title">Data</h2>
-          <label for="snapshot-select">Snapshot</label>
-          <select id="snapshot-select"></select>
-          <nav id="breadcrumbs" class="breadcrumbs" aria-label="Path"></nav>
-          <div id="browser-status" class="status" role="status" aria-live="polite"></div>
-          <ul id="browser" class="items"></ul>
-          <div class="row">
-            <button type="button" id="restore-all">Restore everything to a folder...</button>
-            <button type="button" id="restore-cancel" hidden>Stop</button>
-          </div>
-          <progress id="restore-progress" max="1" value="0" hidden></progress>
-          <div id="restore-status" class="status" role="status" aria-live="polite"></div>
-          <p class="muted">
-            Restoring the whole library needs Chrome or Edge on a Mac. Everything
-            happens in this browser, nothing is uploaded, and files already in
-            the folder are skipped, so a stopped restore can be run again.
-          </p>
-        </section>
+      <div id="unlocked" class="unlocked" hidden>
+        <div id="manifest" class="manifest" aria-live="polite"></div>
 
-        <section id="manifest" class="manifest" aria-live="polite"></section>
+        <section id="restore" class="panel files-panel" aria-labelledby="files-title" hidden>
+          <header class="files-head">
+            <div class="files-title">
+              <h2 id="files-title">Photos and documents</h2>
+              <p>Nightly backup. Decrypted in this browser; nothing is uploaded.</p>
+            </div>
+            <label id="snapshot-field" class="snapshot-field" for="snapshot-select">
+              <span>Backup</span>
+              <select id="snapshot-select"></select>
+            </label>
+            <span id="snapshot-single" class="snapshot-single" hidden></span>
+          </header>
+
+          <div id="browser-status" class="status" role="status" aria-live="polite"></div>
+
+          <div class="tree-wrap">
+            <ul id="browser" class="tree" aria-label="Backup files"></ul>
+          </div>
+
+          <div class="restore-bar">
+            <button type="button" id="restore-all">Restore all files...</button>
+            <button type="button" id="restore-cancel" class="secondary" hidden>Stop</button>
+            <p id="restore-hint" class="restore-hint"></p>
+            <progress id="restore-progress" max="1" value="0" hidden></progress>
+          </div>
+          <div id="restore-status" class="status" role="status" aria-live="polite"></div>
+        </section>
       </div>
     </main>
     <noscript>This page needs JavaScript to unlock the data keys.</noscript>

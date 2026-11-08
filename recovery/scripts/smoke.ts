@@ -11,7 +11,7 @@
 //
 // CHROME is used when --chrome is absent; otherwise the usual names are tried.
 
-import { encryptBlob, type DataKeys } from "../src/blob.ts";
+import { type DataKeys, encryptBlob } from "../src/blob.ts";
 
 const SMOKE_PASSWORD = "smoke password";
 const SMOKE_COST = { iterations: 1, memory: 8192, parallelism: 1 };
@@ -75,8 +75,14 @@ function contentType(path: string): string {
 }
 
 async function findChrome(explicit?: string): Promise<string> {
-  const candidates = [explicit, Deno.env.get("CHROME"), "chromium", "chromium-browser",
-    "google-chrome", "google-chrome-stable"].filter((value): value is string => !!value);
+  const candidates = [
+    explicit,
+    Deno.env.get("CHROME"),
+    "chromium",
+    "chromium-browser",
+    "google-chrome",
+    "google-chrome-stable",
+  ].filter((value): value is string => !!value);
   for (const candidate of candidates) {
     try {
       const result = await new Deno.Command(candidate, {
@@ -150,8 +156,8 @@ async function main(): Promise<void> {
       `id="manifest"`,
       `id="restore-all"`,
       `id="recovery-password"`,
-      "manifest-section-",
-      "Unlocked",
+      `id="manifest-section-accounts"`,
+      "Photos and documents",
     ].filter((marker) => !dom.includes(marker));
 
     if (missing.length > 0) {
