@@ -820,10 +820,11 @@ in
             type = "http";
             upstream = "http://127.0.0.1:${toString ports.immich}";
             secret = "immich-agent-api-key";
-            guestPort = ports.immich;
+            # Immich binds the wildcard, so the tap address on 2283 is taken; use the broker port.
+            guestPort = ports.agentBrokerImmich;
             brokerPort = ports.agentBrokerImmich;
             env = {
-              IMMICH_API_URL = "http://127.0.0.1:${toString ports.immich}";
+              IMMICH_API_URL = "http://127.0.0.1:${toString ports.agentBrokerImmich}";
               IMMICH_API_KEY = "none";
             };
             auth = {
