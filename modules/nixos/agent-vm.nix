@@ -67,6 +67,8 @@ let
           "@tap@"
           "@allow@"
           "@allowRw@"
+          "@hostAddr@"
+          "@secretsList@"
         ]
         [
           view
@@ -75,6 +77,8 @@ let
           tap
           (lib.escapeShellArgs cfg.allow)
           (lib.escapeShellArgs cfg.allowRw)
+          vmLib.hostAddr
+          (lib.escapeShellArgs cfg.secrets)
         ]
         (builtins.readFile ../lib/agent-vm-verify.sh);
   };
@@ -523,7 +527,6 @@ in
         ".config/git"
         # The manually installed maki binary; no Nix package exists yet.
         ".local/bin"
-        ".gitignore"
       ];
       allowRw = [
         "repos"
@@ -586,6 +589,8 @@ in
         ];
         requires = [ "agent-vm-prep.service" ];
         wants = [ "nixos-fw.service" ];
+        # partOf makes a prep restart re-run the assertion; the oneshot has no timer.
+        partOf = [ "agent-vm-prep.service" ];
         wantedBy = [ "multi-user.target" ];
         serviceConfig = {
           Type = "oneshot";

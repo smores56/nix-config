@@ -1118,6 +1118,8 @@ in
                 freshStore = lib.hasInfix "rm -f nix-store.img" guest.microvm.preStart;
                 prep = host.systemd.services.agent-vm-prep.serviceConfig.ExecStart;
                 verify = host.systemd.services ? agent-vm-verify;
+                # No path outside the home may be shared at all: the media and ingest trees are gone.
+                noExtraShares = host.agentVm.extraShares == [ ];
                 verifyScript = host.systemd.services.agent-vm-verify.serviceConfig.ExecStart;
                 # A persistent writable overlay must not register the closure, or a
                 # guest GC could unlink host store paths (modules/nixos/agent-vm.nix).
@@ -1143,7 +1145,6 @@ in
                     ".agents"
                     ".config/git"
                     ".config/maki"
-                    ".gitignore"
                     ".local/bin"
                   ]
                   &&
@@ -1197,6 +1198,7 @@ in
               && f.sshAlias
               && f.allowlist
               && f.verify
+              && f.noExtraShares
               && f.narrowRw
               && f.ingress
             ) all;
@@ -1228,6 +1230,9 @@ in
               for p in $prepScripts; do
                 if grep -F -- 'mount -o loop' "$p"; then exit 1; fi
                 if grep -F -- 'nix-store.img' "$p"; then exit 1; fi
+                grep -qF -- '--allow' "$p" || { echo "agent-vm-prep does not pass --allow" >&2; exit 1; }
+                grep -qF -- '--allow-rw' "$p" || { echo "agent-vm-prep does not pass --allow-rw" >&2; exit 1; }
+                if grep -qF -- '--deny' "$p"; then exit 1; fi
               done
               # The host-side verifier asserts the boundary the guest reports nothing about.
               for p in $verifyScripts; do

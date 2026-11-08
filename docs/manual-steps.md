@@ -1430,7 +1430,7 @@ Each guest sees an explicit allowlist, not the whole home. `agentVm.allow` and
 anything else has no path in the guest at all. On Linux the writable trees are
 `~/repos`, `~/wip`, `~/.local/state/maki` and `~/.local/logs/maki`; the
 read-only roots are `~/.agents`, `~/.config/maki`, `~/.config/git`,
-`~/.local/bin` and `~/.gitignore`. On the Mac the writable trees are
+`~/.local/bin`. On the Mac the writable trees are
 `~/Blitzy`, `~/repos`, `~/wip` and Claude's session-state dirs. The writable
 trees include repos, and the agent may write their `.git/config` and hooks,
 which you later run on the host; that is accepted (full git for agents).
@@ -1534,7 +1534,7 @@ config, and does not read the host's `history.jsonl`. The
 handed in as files on each launch; the rest stay on the host. The guest gets
 guest-local copies of gh, gcloud, git, and kube config, with `GH_CONFIG_DIR`,
 `GIT_CONFIG_GLOBAL`, `KUBECONFIG`, and `CLOUDSDK_CONFIG` pointed at the copies,
-and a copy of `~/.gitignore`. Docker comes from the host's Docker Desktop
+Docker comes from the host's Docker Desktop
 through a per-session forwarded socket, so Docker Desktop must be running.
 
 #### Guest-local Nix store (opt-in)

@@ -111,7 +111,8 @@ in
     git-lfs
   ];
 
-  home.file.".gitignore".text = ''
+  # Inside the allowlisted ~/.config/git so the agent guest sees the same excludes file.
+  home.file.".config/git/ignore".text = ''
     .worktrees/
     **/.claude/settings.local.json
   '';
@@ -140,7 +141,7 @@ in
             signingkey = personalSigningKey;
           };
           core = {
-            excludesFile = "~/.gitignore";
+            excludesFile = "~/.config/git/ignore";
             pager = "delta";
           };
           push.default = "simple";

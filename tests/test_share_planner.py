@@ -4,7 +4,7 @@ import os
 import socket
 import tempfile
 import unittest
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 
@@ -148,6 +148,26 @@ class SharePlannerTests(unittest.TestCase):
 
     def test_the_same_path_in_both_lists_is_read_write(self):
         self.assertEqual(self.shares(self.plan(allow=("repos",), allow_rw=("repos",))), {"repos": "rw"})
+
+    def test_symlink_inside_an_allowed_directory_is_part_of_the_share(self):
+        (self.home / ".config/git/config").symlink_to("/nix/store/abc-git-config")
+        shares = self.shares(self.plan(allow=(".config/git",), allow_rw=()))
+        self.assertEqual(shares, {".config/git": "ro"})
+
+    def test_cli_returns_nonzero_on_a_symlink_root(self):
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            rc = self.sp.main(["--home", str(self.home), "--allow", ".zshrc"])
+        self.assertEqual(rc, 1)
+        self.assertIn(".zshrc", stderr.getvalue())
+
+    def test_cli_accepts_allow_and_allow_rw(self):
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            rc = self.sp.main(["--home", str(self.home), "--allow", "repos", "--allow-rw", "wip"])
+        self.assertEqual(rc, 0)
+        self.assertIn('"rel": "repos"', stdout.getvalue())
+        self.assertIn('"mode": "rw"', stdout.getvalue())
 
 
 if __name__ == "__main__":

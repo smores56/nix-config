@@ -25,6 +25,9 @@ let
     ! touch "$HOME/.config/maki/.agent-vm-probe" 2>/dev/null || fail "~/.config/maki is writable"
     ! touch "$HOME/.agent-vm-probe" 2>/dev/null || fail "the home root is writable"
     if [ -w "$HOME/.local/bin" ]; then fail "~/.local/bin is writable"; fi
+    # The one writable file under the read-only maki config has a guest-local bind-over.
+    lock="$HOME/.config/maki/pack-lock.json.lock"
+    if [ -e "$lock" ] && [ ! -w "$lock" ]; then fail "the maki pack lock is not writable"; fi
     [ -w "$HOME/.local/state/maki" ] || fail "the maki state is not writable"
     [ -w "$HOME/.local/logs/maki" ] || fail "the maki log dir is not writable"
     [ -w "$HOME/repos" ] || fail "repos is not writable"

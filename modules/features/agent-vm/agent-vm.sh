@@ -179,7 +179,6 @@ EOF
     case "$rel" in .claude.json | .DS_Store | .CFUserTextEncoding) continue ;; esac
     if [ -f "$HOME/$rel" ]; then copies+=("$rel"); fi
   done < <(jq -r '.copies[]' "$fresh")
-  if [ -f "$HOME/.gitignore" ]; then copies+=(".gitignore"); fi
   if [ "${#copies[@]}" -gt 0 ]; then
     tar -C "$HOME" -cf - -- "${copies[@]}" |
       guest_ssh -o BatchMode=yes "admin@$ip" "tar -C $(printf %q "$guest_home") -xf -"
@@ -190,7 +189,7 @@ EOF
   local conf="$guest_home/Library/Application Support/agent-config" rel
   for rel in "${guest_config[@]}"; do
     [ -e "$HOME/$rel" ] || continue
-    tar -C "$HOME" -cf - -- "$rel" |
+    tar -C "$HOME" -chf - -- "$rel" |
       guest_ssh -o BatchMode=yes "admin@$ip" "mkdir -p $(printf %q "$conf") && tar -C $(printf %q "$conf") -xf -"
   done
 
@@ -272,7 +271,7 @@ provision_nix() {
   host_store=0
   local fresh="$state/plan.json" shares="$state/vm-shares.json" tmp ip
   tmp=$(mktemp "$state/plan.XXXXXX")
-  plan >"$tmp"
+  plan >"$tmp" || die "share planning failed"
   mv "$tmp" "$fresh"
   jq '{shares}' "$fresh" >"$shares"
   start_vm "$shares"
@@ -323,7 +322,7 @@ fresh="$state/plan.json"
 shares="$state/vm-shares.json"
 # Per-process temp file: concurrent launches each write a whole plan, then rename atomically.
 tmp=$(mktemp "$state/plan.XXXXXX")
-plan >"$tmp"
+plan >"$tmp" || die "share planning failed"
 if [ "$nix_mode" -eq 1 ]; then
   # The guest profile and Nix state belong to the guest store; the host's links would shadow
   # them, and place_link() refuses a non-empty guest directory.

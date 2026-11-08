@@ -8,6 +8,7 @@ user=@user@
 tap=@tap@
 allow=(@allow@)
 allow_rw=(@allowRw@)
+expected_secrets=(@secretsList@)
 
 failures=0
 fail() {
@@ -38,7 +39,9 @@ for p in .ssh .gnupg .cache .local/share Documents Downloads Desktop .config/sop
   [ ! -e "$view/$p" ] || fail "absent path is visible: $p"
 done
 
-# Every bind is nosuid and nodev, and read-only unless it is an allowRw root.
+# Every bind is nosuid and nodev, and read-only unless it is an allowRw root. nosuid/nodev on
+# every bind is also the guarantee the design asks for by name: no setuid or setgid binary and
+# no device node is usable from the view.
 while IFS=' ' read -r target opts; do
   [ "$target" = "$view" ] && continue
   for flag in nosuid nodev; do
@@ -71,28 +74,28 @@ for rel in ".agents" ".config/maki" ".config/git" ".local/bin"; do
     fail "$rel is writable"
   fi
 done
-if as_user touch "$view/.gitignore" 2>/dev/null; then
-  fail ".gitignore is writable"
-fi
-# The maki pack lock is the one writable file under a read-only root: a guest-local bind-over.
-lock="$view/.config/maki/pack-lock.json.lock"
-if [ -f "$lock" ]; then
-  as_user test -w "$lock" || fail "the maki pack lock is not writable"
-  findmnt -M "$lock" >/dev/null || fail "the maki pack lock has no bind-over"
-fi
+# The maki pack lock is bound over inside the guest, so its writability is the guest check's.
 
-# Secrets are readable by the human alone.
-while IFS= read -r f; do
-  [ "$(stat -c %a "$f")" = 400 ] || fail "$f is not mode 0400"
-  [ "$(stat -c %u "$f")" = "$(id -u "$user")" ] || fail "$f is not owned by $user"
-done < <(find "$secrets" -maxdepth 1 -type f)
+# Every sops secret the host holds for the guest arrives user-owned, mode 0400. A name the
+# host does not have (a host-scoped secret) is a warning: nothing was handed in, which the
+# operator sees in the unit's journal.
+for name in "${expected_secrets[@]}"; do
+  if [ ! -e "/run/secrets/$name" ]; then
+    echo "agent-vm-verify: note: /run/secrets/$name is absent on this host" >&2
+    continue
+  fi
+  f="$secrets/$name"
+  [ -f "$f" ] || { fail "hand-in secret is missing: $name"; continue; }
+  [ "$(stat -c %a "$f")" = 400 ] || fail "$name is not mode 0400"
+  [ "$(stat -c %u "$f")" = "$(id -u "$user")" ] || fail "$name is not owned by $user"
+done
 
 # The host never touches the guest's store image.
 if grep -qF nix-store.img /proc/mounts; then fail "a mount references nix-store.img"; fi
 if losetup -a | grep -qF nix-store.img; then fail "a loop device references nix-store.img"; fi
 
 # The tap and both firewall chains exist.
-ip -4 addr show "$tap" | grep -qF "10.77.0.1/30" || fail "$tap lacks its address"
+ip -4 addr show "$tap" | grep -qF "@hostAddr@/30" || fail "$tap lacks its address"
 for chain in agent-vm-in agent-vm-fwd; do
   iptables -S "$chain" >/dev/null 2>&1 || fail "firewall chain $chain is missing"
 done
