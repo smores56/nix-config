@@ -1,9 +1,11 @@
 # Loopback ports shared by more than one file (a listener and its tunnel ingress, or a service
-# and a client default); single-module ports live with that module. Ssh/llm/memory/chat require
-# Access; calibre and immich are public with their own app auth. A plain attrset outside
+# and a client default); single-module ports live with that module. Ssh/llm/memory/chat/agent
+# require Access; calibre and immich are public with their own app auth. A plain attrset outside
 # modules/{features,desktop,nixos} so import-tree skips it; modules import it by relative path.
 {
   llm = 8081;
+  # The hosted assistant gateway: the guest listens, the host proxies it to the tunnel.
+  agent = 42700;
   calibre = 8181;
   immich = 2283;
   navidrome = 4533;

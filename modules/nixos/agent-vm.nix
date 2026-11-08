@@ -190,10 +190,10 @@ let
   '';
 
   proxySockets =
-    listen: target:
+    prefix: listen: target: ports:
     lib.listToAttrs (
       map (port: {
-        name = "agent-vm-proxy-${toString port}";
+        name = "${prefix}-${toString port}";
         value = {
           socket = {
             wantedBy = [ "sockets.target" ];
@@ -214,9 +214,12 @@ let
             };
           };
         };
-      }) proxied
+      }) ports
     );
-  hostProxies = proxySockets hostAddr "127.0.0.1";
+  # Guest ports the tunnel reaches from the host; the guest initiates the other direction.
+  hostProxies =
+    proxySockets "agent-vm-proxy" hostAddr "127.0.0.1" proxied
+    // proxySockets "agent-vm-ingress" "127.0.0.1" guestAddr cfg.ingressPorts;
 
   # The guest has no SSH agent: the human's ~/.ssh/config would offer YubiKey identities that
   # cannot sign there. A laptop guest reaches smortress with the personal signing key, whose
@@ -245,7 +248,9 @@ let
   guest =
     { lib, pkgs, ... }:
     let
-      guestProxies = proxySockets "127.0.0.1" hostAddr;
+      guestProxies = proxySockets "agent-vm-proxy" "127.0.0.1" hostAddr proxied;
+      # The runtime binds loopback; this relay is the only listener on the tap address.
+      guestIngress = proxySockets "agent-vm-ingress" guestAddr "127.0.0.1" cfg.ingressPorts;
     in
     {
       microvm = {
@@ -334,7 +339,7 @@ let
           "1.1.1.1"
           "9.9.9.9"
         ];
-        firewall.allowedTCPPorts = [ 22 ];
+        firewall.allowedTCPPorts = [ 22 ] ++ cfg.ingressPorts;
       };
       systemd.network.networks."10-tap" = {
         matchConfig.MACAddress = guestMac;
@@ -398,7 +403,7 @@ let
       environment.etc."agent-vm/ssh_config".text = guestSshConfig;
 
       # Files a tool must rewrite under a read-only share get a guest-local copy bound over them.
-      systemd.services = lib.mapAttrs (_: v: v.service) guestProxies // {
+      systemd.services = lib.mapAttrs (_: v: v.service) (guestProxies // guestIngress) // {
         agent-vm-writable = {
           wantedBy = [ "multi-user.target" ];
           after = [ "local-fs.target" ];
@@ -421,7 +426,7 @@ let
           '') cfg.guestWritable;
         };
       };
-      systemd.sockets = lib.mapAttrs (_: v: v.socket) guestProxies;
+      systemd.sockets = lib.mapAttrs (_: v: v.socket) (guestProxies // guestIngress);
 
       system.stateVersion = "26.05";
     };
@@ -452,6 +457,11 @@ in
       );
       default = [ ];
       description = "Paths outside the home shared at the same path.";
+    };
+    ingressPorts = lib.mkOption {
+      type = lib.types.listOf lib.types.port;
+      default = [ ];
+      description = "Guest TCP ports the host reaches through a guest-side relay; each port needs a runtime listening on loopback in the guest.";
     };
     secrets = lib.mkOption {
       type = lib.types.listOf lib.types.str;
@@ -607,6 +617,12 @@ in
           config.systemd.services."agent-vm-prep".restartIfChanged == false
           && config.systemd.services."agent-vm-net".restartIfChanged == false;
         message = "agent-vm: prep/net must not restart on host switch; they are requiredBy the VM and would drop every session";
+      }
+      {
+        assertion =
+          !(config ? webProxy && config.webProxy.services ? agent)
+          || lib.elem config.webProxy.services.agent.port cfg.ingressPorts;
+        message = "agent-vm: webProxy.services.agent.port must be in agentVm.ingressPorts, or the tunnel points at a port with no guest relay";
       }
     ];
 

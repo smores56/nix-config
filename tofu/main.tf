@@ -130,6 +130,26 @@ resource "cloudflare_zero_trust_access_application" "chat" {
   }
 }
 
+# Access email allow-list is the human policy; the assistant runtime's pairing is a second layer.
+resource "cloudflare_zero_trust_access_application" "agent" {
+  account_id       = var.account_id
+  name             = "agent"
+  domain           = "agent.${var.domain}"
+  type             = "self_hosted"
+  session_duration = "24h"
+
+  policies = [
+    {
+      id         = cloudflare_zero_trust_access_policy.email.id
+      precedence = 1
+    },
+  ]
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
 resource "cloudflare_notification_policy" "tunnel_health" {
   account_id = var.account_id
   name       = "tunnel health"

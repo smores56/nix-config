@@ -1161,6 +1161,20 @@ in
                   && lib.all (d: !(lib.hasPrefix "${r}/" d) && d != r) host.agentVm.deny
                 ) host.agentVm.rw;
                 firewall = host.networking.firewall.extraCommands;
+                # The host relay, guest relay and guest firewall must agree on every ingress port.
+                ingress = lib.all (
+                  p:
+                  let
+                    name = "agent-vm-ingress-${toString p}";
+                  in
+                  host.systemd.sockets ? "${name}"
+                  && host.systemd.sockets."${name}".socketConfig.ListenStream == "127.0.0.1:${toString p}"
+                  && lib.hasInfix "10.77.0.2:${toString p}" host.systemd.services."${name}".serviceConfig.ExecStart
+                  && guest.systemd.sockets ? "${name}"
+                  && guest.systemd.sockets."${name}".socketConfig.ListenStream == "10.77.0.2:${toString p}"
+                  && lib.hasInfix "127.0.0.1:${toString p}" guest.systemd.services."${name}".serviceConfig.ExecStart
+                  && lib.elem p guest.networking.firewall.allowedTCPPorts
+                ) host.agentVm.ingressPorts;
               };
             all = map facts hosts;
             ok = lib.all (
@@ -1173,6 +1187,7 @@ in
               && f.keyOnly
               && f.denies
               && f.narrowRw
+              && f.ingress
             ) all;
             launcher = (import ../lib/agent-vm.nix { inherit pkgs lib; }).launcher "smores";
           in

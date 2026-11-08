@@ -12,14 +12,16 @@ let
   # Apex domain whose subdomains are exposed (e.g. calibre.<domain>).
   domain = "sammohr.dev";
 
-  # A typo that clears `access.enable` would publish sshd, the LLM, or the
-  # memory MCP to the internet. OpenTofu owns those apps and their policies;
-  # this assertion stops the mistake before the tunnel ingress is applied.
+  # A typo that clears `access.enable` would publish sshd, the LLM, the
+  # memory MCP, or the assistant to the internet. OpenTofu owns those apps and
+  # their policies; this assertion stops the mistake before the tunnel ingress
+  # is applied.
   protected = [
     "ssh"
     "llm"
     "memory"
     "chat"
+    "agent"
   ];
 in
 {

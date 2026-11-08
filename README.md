@@ -65,7 +65,7 @@ Cross-cutting values flow through `config.machine.*` and `config.user.*`, not
   writes work-repo commits, GitHub PRs and Jira tickets into the local memory
   instance as idempotent episodes. Chat and mail are never harvested.
 - **Public services.** `webProxy.services` become `<name>.sammohr.dev` through
-  the tunnel; `ssh`, `llm`, `memory` and `chat` sit behind Cloudflare Access.
+  the tunnel; `ssh`, `llm`, `memory`, `chat` and `agent` sit behind Cloudflare Access.
 - **Backups.** restic snapshots `/var/lib/data` to R2 and a local encrypted
   disk nightly; guide in `modules/features/backup/README.md`.
 - **Secrets.** sops-nix; `secrets/<host>.yaml` is host-only, `secrets/common.yaml`

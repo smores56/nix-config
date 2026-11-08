@@ -1150,9 +1150,9 @@ Tofu providers come from `tofu/versions.tf`; notification policies come from
 <!-- manual-step: provider/cloudflare -->
 
 The only OpenTofu provider. The zone `sammohr.dev` already lives in the account;
-OpenTofu manages a wildcard proxied CNAME, the `ssh`/`llm`/`memory` Access
-applications, the email allow-list and service-auth policies, and the
-tunnel-health and service-token-expiry notifications.
+OpenTofu manages a wildcard proxied CNAME, the `ssh`/`llm`/`memory`/`chat`/
+`agent` Access applications, the email allow-list and service-auth policies, and
+the tunnel-health and service-token-expiry notifications.
 
 Manual, one-time (dashboard):
 
@@ -1419,6 +1419,8 @@ store layered over the host's, never the host daemon.
 Network: tap `vm-agent` (host `10.77.0.1`, guest `10.77.0.2`). The guest
 reaches the internet through NAT and, on the host, only the LLM and memory
 ports, through socket proxies; it cannot reach other host services or the LAN.
+In the other direction the host reaches only the assistant port on the tap,
+through the `agent-vm-ingress` relays (see [smortress/agent](#smortressagent)).
 
 After a host switch, the guest keeps running its old config; running sessions
 survive. Pick up guest changes or new top-level home entries with:
@@ -1585,10 +1587,10 @@ The work Mac is out of scope.
 ## Public services
 
 Services come from `webProxy.services` on each NixOS host. Each becomes
-`<name>.<domain>` through the tunnel. `ssh`, `llm`, `memory`, and `chat`
-have Cloudflare Access applications (hand-written in `tofu/`); `access.enable`
-on any other service fails evaluation. Calibre and Immich are public and rely
-on their own app auth.
+`<name>.<domain>` through the tunnel. `ssh`, `llm`, `memory`, `chat`, and
+`agent` have Cloudflare Access applications (hand-written in `tofu/`);
+`access.enable` on any other service fails evaluation. Calibre and Immich are
+public and rely on their own app auth.
 
 ### smortress/calibre
 
@@ -1812,6 +1814,27 @@ calls, and work repos are accepted there (`MEMORY_WORK_POLICY=allow`, from
   `modules/features/ai/claude.nix`); no other key is touched. Restart running
   Claude sessions to load the server.
 
+### smortress/agent
+
+<!-- manual-step: service/smortress/agent -->
+
+`agent.sammohr.dev` → the host loopback relay `agent-vm-ingress-42700.socket`,
+which forwards to the guest relay of the same name; the guest relay listens on
+the tap address and forwards to the runtime on `127.0.0.1:42700`. The runtime
+binds only loopback; the guest relay owns the tap address. Cloudflare Access's
+email allow-list is the remote gate; the runtime's own pairing or token is the
+second layer. The relays are L4, so the guest also receives Cloudflare's
+`Cf-Access-Jwt-Assertion`; treat it as a human credential there (do not log or
+forward it) and keep the Access session short. Any host process can also reach
+the loopback relay without Access, so keep the host single-user.
+
+Apply the edge with `just cloudflare-apply` (creates the Access application) and
+`just switch smortress`. A host switch does not restart the guest
+(`microvm.vms.agent.restartIfChanged = false`), so restart it once after this
+change or the guest firewall and relay stay on the old generation:
+`sudo systemctl restart microvm@agent.service`. Until the runtime listens on
+the port the ingress returns 502.
+
 ### smortress/chat
 
 <!-- manual-step: service/smortress/chat -->
@@ -1950,7 +1973,7 @@ plan/apply fail. Rotate it (see `cloudflare-api-token`) and check with
 `sudo nix run .#cloudflare-plan`.
 
 **Access misconfiguration.** Clearing `access.enable` on `ssh`/`llm`/`memory`/
-`chat` fails evaluation, and OpenTofu has `prevent_destroy` on those apps and
+`chat`/`agent` fails evaluation, and OpenTofu has `prevent_destroy` on those apps and
 policies. A wrong *policy* (e.g. email) still locks out the browser: fix it in
 OpenTofu, or in the dashboard as break-glass.
 

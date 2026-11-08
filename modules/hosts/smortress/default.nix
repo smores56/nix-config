@@ -40,6 +40,8 @@ in
 
   nixosOptions = {
     vaultSync.device = "smortress";
+    # The assistant gateway binds loopback in the guest; the host proxies it to the tunnel.
+    agentVm.ingressPorts = [ ports.agent ];
     # The media and ingest trees the bwrap sandbox gave agents; photos and the vault stay out.
     agentVm.extraShares = [
       {
@@ -104,6 +106,11 @@ in
         # Human-facing PWA: Access plus its own login; no service token.
         chat = {
           port = ports.openWebui;
+          access.enable = true;
+        };
+        # Human-facing assistant: Access plus the runtime's own pairing.
+        agent = {
+          port = ports.agent;
           access.enable = true;
         };
       };
