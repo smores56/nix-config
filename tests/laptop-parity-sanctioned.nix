@@ -12,7 +12,7 @@ let
   memoryLocal = "work-policy: the Mac runs its own local memory instance; Linux uses smortress's";
   zsh = "inherent: the Mac's shell is zsh, Linux's is fish";
   harvest = "work-policy: the work-trail harvest into the Mac's memory runs on the work host only";
-  todo = "inherent: todo.txt sync is part of the Linux desktop; the Mac's Syncthing is a root LaunchDaemon, so a human-editable folder needs a second identity";
+  todo = "inherent: todo.txt is part of the Linux hosts; the Mac has no todo sync";
   noVault = "work-policy: the work Mac no longer holds the vault";
 in
 {
@@ -97,10 +97,7 @@ in
       "memory"
       "memory-mcp"
     ])
-    (group todo [
-      "syncthing"
-      "todo.txt-cli"
-    ])
+    (group todo [ "todo.txt-cli" ])
     (group noVault [ "vault" ])
     (group harvest [ "harvest" ])
     (group "inherent: steam is a brew cask on the Mac" [ "steam" ])
@@ -162,10 +159,6 @@ in
       ]
     )
     (group harvest [ "harvest" ])
-    (group todo [
-      "syncthing"
-      "syncthing-init"
-    ])
     (group memoryLocal [
       "memory-export"
       "memory-falkordb"
@@ -185,7 +178,6 @@ in
   };
 
   activation = merge [
-    { "todoFiles" = todo; }
     (group mac [
       "checkAppManagementPermission"
       "configureSystemHotkeys"

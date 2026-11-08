@@ -1,7 +1,7 @@
 # Plain-text todos: one todo.txt in ~/.local/share/todo, edited with todo.sh or
-# Helix. The data lives under XDG_DATA_HOME; the sync daemon is host-specific
-# (user-level on smorespro, the vault daemon plus an always-on bindfs on
-# smortress). See docs/manual-steps.md ("todo.txt").
+# Helix. The data lives under XDG_DATA_HOME; the vault Syncthing daemon on both
+# NixOS hosts carries the store and an always-on bindfs mounts it. See
+# docs/manual-steps.md ("todo.txt").
 {
   config,
   pkgs,
