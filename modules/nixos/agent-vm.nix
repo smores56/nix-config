@@ -29,24 +29,6 @@ let
 
   brokerPackage = pkgs.callPackage ../lib/agent-broker/package.nix { };
 
-  aiProviders = config._module.args.aiProviders;
-  # The guest's maki talks to the broker, never the public API; the host keeps its own config.
-  guestProvidersToml = (pkgs.formats.toml { }).generate "maki-providers-guest.toml" {
-    neuralwatt = {
-      display_name = "Neuralwatt (agent broker)";
-      protocol = "openai";
-      base_url = "http://127.0.0.1:${toString ports.agentNeuralwatt}/v1";
-      api_key = "none";
-      models = aiProviders.neuralwatt.makiModels;
-    };
-    smortress = {
-      display_name = "Qwen3.8 uncensored (smortress)";
-      protocol = "openai";
-      base_url = aiProviders.smortress.baseUrl;
-      api_key = "none";
-      models = aiProviders.smortress.makiModels;
-    };
-  };
 
   calibredbWrapper = pkgs.writeShellScriptBin "calibredb" ''
     for a in "$@"; do
@@ -627,25 +609,14 @@ let
             pkgs.coreutils
             pkgs.util-linux
           ];
-          script =
-            lib.concatMapStrings (
-              rel: ''
-                src=${home}/${rel}
-                copy=/var/lib/agent-vm/writable/${rel}
-                if [ -f "$src" ] && ! mountpoint -q "$src"; then
-                  install -D -m 0644 -o ${user} -g users "$src" "$copy"
-                  mount --bind "$copy" "$src"
-                fi
-              ''
-            ) cfg.guestWritable
-            + lib.optionalString (caps ? neuralwatt) ''
-              src=${guestProvidersToml}
-              copy=/var/lib/agent-vm/writable/.config/maki/providers.toml
-              if [ -f "$src" ] && ! mountpoint -q ${home}/.config/maki/providers.toml; then
-                install -D -m 0644 -o ${user} -g users "$src" "$copy"
-                mount --bind "$copy" ${home}/.config/maki/providers.toml
-              fi
-            '';
+          script = lib.concatMapStrings (rel: ''
+            src=${home}/${rel}
+            copy=/var/lib/agent-vm/writable/${rel}
+            if [ -f "$src" ] && ! mountpoint -q "$src"; then
+              install -D -m 0644 -o ${user} -g users "$src" "$copy"
+              mount --bind "$copy" "$src"
+            fi
+          '') cfg.guestWritable;
         };
       };
       systemd.sockets = lib.mapAttrs (_: v: v.socket) (guestProxies // guestIngress);
@@ -793,7 +764,7 @@ in
               "POST /v1/chat/completions"
               "GET /v1/models"
             ];
-            env.NEURALWATT_BASE_URL = "http://127.0.0.1:${toString ports.agentNeuralwatt}/v1";
+
             auth.kind = "bearer";
           };
           tinyfish = {

@@ -134,9 +134,20 @@ let
     };
     ${neuralwatt.providerId} = {
       display_name = "Neuralwatt";
-      base_url = neuralwatt.baseUrl;
-      api_key_env = neuralwatt.keyEnv;
-    };
+      # Linux hosts run the capability broker: it holds the key and streams upstream, and the
+      # guest reaches it over the tap on the same loopback port. Darwin has no broker.
+      base_url =
+        if pkgs.stdenv.hostPlatform.isLinux then
+          "http://127.0.0.1:${toString ports.agentNeuralwatt}/v1"
+        else
+          neuralwatt.baseUrl;
+    }
+    // (
+      if pkgs.stdenv.hostPlatform.isLinux then
+        { api_key = "none"; }
+      else
+        { api_key_env = neuralwatt.keyEnv; }
+    );
   };
   providerEntry =
     p:
