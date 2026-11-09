@@ -42,7 +42,10 @@ in
   nixosOptions = {
     vaultSync.device = "smortress";
     # The assistant gateway binds loopback in the guest; the host proxies it to the tunnel.
-    agentVm.ingressPorts = [ ports.agent ];
+    agentVm.ingressPorts = [
+      ports.agent
+      ports.letta
+    ];
     # restic runs as root and reads smores-owned sources.
     systemd.tmpfiles.rules = [
       # 0751: PrivateUsers services (Immich) map smores:users to nobody, so they need traverse only.

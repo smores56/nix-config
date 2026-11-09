@@ -1183,6 +1183,7 @@ in
                       ]
                       # The assistant state is shared only where the assistant runs.
                       ++ lib.optional (lib.elem "server" host.machine.profiles) ".local/state/agent-assistant"
+                      ++ lib.optional (lib.elem "server" host.machine.profiles) ".local/state/letta"
                     );
                 # A writable entry must never be a whole home or a host-executed config tree.
                 narrowRw = lib.all (
@@ -1245,9 +1246,16 @@ in
                     && lib.hasInfix "agent-assistant gateway" guest.systemd.services.nanobot-assistant.serviceConfig.ExecStart
                     && lib.elem ".local/state/agent-assistant" host.agentVm.allowRw
                     && lib.any (p: lib.getName p == "agent-assistant") guest.environment.systemPackages
+                    # Letta is the second assistant: same supervision, its own state root.
+                    && guest.systemd.services ? "letta-assistant"
+                    && guest.systemd.services.letta-assistant.serviceConfig.Restart == "always"
+                    && lib.hasInfix "agent-letta server" guest.systemd.services.letta-assistant.serviceConfig.ExecStart
+                    && lib.elem ".local/state/letta" host.agentVm.allowRw
                   else
                     !(guest.systemd.services ? "nanobot-assistant")
                     && !(lib.elem ".local/state/agent-assistant" host.agentVm.allowRw)
+                    && !(guest.systemd.services ? "letta-assistant")
+                    && !(lib.elem ".local/state/letta" host.agentVm.allowRw)
                     && !(lib.any (p: lib.getName p == "agent-assistant") guest.environment.systemPackages);
               };
             all = map facts hosts;
