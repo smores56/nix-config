@@ -32,6 +32,7 @@ class FakeLLM:
         self.finish_reason = finish_reason
         self.content = content
         self.fail_status = fail_status
+        self.failures: list[int] = []
         self.requests: list[tuple[str, str, dict[str, Any]]] = []
         self._server: socketserver.ThreadingUnixStreamServer | None = None
         self._thread: threading.Thread | None = None
@@ -81,14 +82,18 @@ class FakeLLM:
         self._server = None
         self._thread = None
 
+    def queue_failure(self, status: int, count: int = 1) -> None:
+        self.failures.extend([status] * count)
+
     def _handle(self, request: BaseHTTPRequestHandler) -> None:
         parsed = urlparse(request.path)
         length = int(request.headers.get("Content-Length", "0") or 0)
         body = request.rfile.read(length) if length else b""
         payload = json.loads(body) if body else {}
         self.requests.append((request.command, parsed.path, payload))
-        if self.fail_status is not None:
-            self._send_json(request, self.fail_status, {"message": "injected failure"})
+        failure = self.failures.pop(0) if self.failures else self.fail_status
+        if failure is not None:
+            self._send_json(request, failure, {"message": "injected failure"})
             return
         if request.command == "GET" and parsed.path == "/v1/models":
             self._send_json(
@@ -104,8 +109,18 @@ class FakeLLM:
                 for part in (message.get("content") or [])
                 if isinstance(part, dict)
             )
+            texts = [
+                str(part.get("text", ""))
+                for message in messages
+                if isinstance(message, dict)
+                for part in (message.get("content") or [])
+                if isinstance(part, dict) and part.get("type") == "text"
+            ]
+            is_color_question = any("dominant background color" in text for text in texts)
             content = (
-                self.content
+                self.answer
+                if is_color_question
+                else self.content
                 if self.content is not None
                 else self.answer
                 if has_image

@@ -89,6 +89,8 @@ let
 in
 {
   modelAlias = "photo-triage";
+  mainModelHash = "sha256-thWFa6SmINs74AT/XlxGs6bFw6F9JHvvLPbL4coyWqQ=";
+  mmprojHash = "sha256-y7hBqe4GNrLsFy9buN8uqN/rAekP58YSZYHWYqC05D4=";
   commonSettings = {
     n-gpu-layers = 99;
     cache-type-k = "q4_0";

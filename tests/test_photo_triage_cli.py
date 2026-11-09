@@ -106,22 +106,28 @@ class CliTests(unittest.TestCase):
         finally:
             _restore_env(old)
 
-    def test_run_stub_fails_inside_the_unit(self):
-        old = _set_env(PHOTO_TRIAGE_UNIT="1")
-        try:
-            with redirect_stderr(io.StringIO()):
-                self.assertEqual(main(["run"]), 2)
-        finally:
-            _restore_env(old)
+    def test_run_without_a_scan_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            old = _set_env(PHOTO_TRIAGE_UNIT="1", PHOTO_TRIAGE_DATA_DIR=tmp)
+            try:
+                with redirect_stderr(io.StringIO()):
+                    self.assertEqual(main(["run"]), 1)
+            finally:
+                _restore_env(old)
 
-    def test_dev_fixtures_reaches_the_stub_but_still_fails(self):
-        old = {key: os.environ.get(key) for key in ("PHOTO_TRIAGE_UNIT",)}
-        os.environ.pop("PHOTO_TRIAGE_UNIT", None)
-        try:
-            with redirect_stderr(io.StringIO()):
-                self.assertEqual(main(["run", "--dev-fixtures"]), 2)
-        finally:
-            _restore_env(old)
+    def test_run_without_a_scan_fails_with_dev_fixtures(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            old = {
+                key: os.environ.get(key)
+                for key in ("PHOTO_TRIAGE_UNIT", "PHOTO_TRIAGE_DATA_DIR")
+            }
+            os.environ["PHOTO_TRIAGE_DATA_DIR"] = tmp
+            os.environ.pop("PHOTO_TRIAGE_UNIT", None)
+            try:
+                with redirect_stderr(io.StringIO()):
+                    self.assertEqual(main(["run", "--dev-fixtures"]), 1)
+            finally:
+                _restore_env(old)
 
 
 if __name__ == "__main__":
