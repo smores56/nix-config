@@ -1005,6 +1005,26 @@ A second token, scoped Object Read only, backs read-side consumers. Put its id
 and secret in `secrets/smortress.yaml` as `r2-access-key-id-readonly` and
 `r2-secret-access-key-readonly`.
 
+### photo-triage Immich API keys
+
+<!-- manual-step: secret/photo-triage-immich-read-key -->
+<!-- manual-step: secret/photo-triage-immich-album-key -->
+
+Two Immich API keys owned by the main user, stored in
+`secrets/smortress.yaml` and loaded only through `LoadCredential`:
+
+- `photo-triage-immich-read-key`: exactly `asset.read`, `asset.view`,
+  `album.read`, `duplicate.read`. The scorer holds it for the whole run.
+- `photo-triage-immich-album-key`: exactly `album.read`, `album.create`,
+  `albumAsset.create`, `albumAsset.delete`. Only the album and calibration
+  publisher commands load it.
+
+Immich compares the permission set for equality and rejects any extra
+permission (including an `all` key). Host wiring:
+`photoTriage.readKeyFile = "/run/secrets/photo-triage-immich-read-key"` and
+`photoTriage.albumKeyFile = "/run/secrets/photo-triage-immich-album-key"`.
+Rotation is in `docs/key-rotation.md`.
+
 ### Jupyter token
 
 <!-- manual-step: secret/jupyter-token -->

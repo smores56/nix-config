@@ -16,6 +16,15 @@
     github-repo-pat = {
       mode = "0400";
     };
+
+    # Photo-triage: read/score key and album-writer key (see docs/key-rotation.md).
+    photo-triage-immich-read-key = { };
+    photo-triage-immich-album-key = { };
+  };
+
+  photoTriage = {
+    readKeyFile = config.sops.secrets.photo-triage-immich-read-key.path;
+    albumKeyFile = config.sops.secrets.photo-triage-immich-album-key.path;
   };
 
   webProxy.credentialsFile = config.sops.secrets.cloudflared-credentials.path;
