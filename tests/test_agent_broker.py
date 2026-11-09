@@ -14,6 +14,7 @@ from agent_broker import (  # noqa: E402
     allowed,
     build_headers,
     load_config,
+    normalize_path,
     read_credential,
 )
 
@@ -46,7 +47,29 @@ class BrokerTests(unittest.TestCase):
         self.assertTrue(allowed(rules, "POST", "/v1/chat/completions"))
         self.assertFalse(allowed(rules, "GET", "/v1/chat/completions"))
         self.assertFalse(allowed(rules, "POST", "/v1/embeddings"))
-        self.assertTrue(allowed((), "GET", "/anything"))
+        self.assertFalse(allowed((), "GET", "/anything"))
+
+    def test_normalize_path(self):
+        self.assertEqual(normalize_path("/a/./b/../c"), "/a/c")
+        self.assertEqual(normalize_path("//a//b"), "/a/b")
+        self.assertEqual(normalize_path("/a%2Fb"), "/a/b")
+        self.assertEqual(normalize_path("/a%252Fb"), "/a%2Fb")
+        with self.assertRaises(ValueError):
+            normalize_path("/a/\x00/b")
+
+    def test_traversal_cannot_escape_a_rule(self):
+        rules = ("POST /api/search/metadata",)
+        for path in (
+            "/api/search/../assets/1/original",
+            "/api/search/%2e%2e/assets/1/original",
+            "/api/search/%2E%2E/assets/1/original",
+        ):
+            with self.subTest(path=path):
+                self.assertFalse(allowed(rules, "POST", normalize_path(path)))
+
+    def test_prefix_rule_cannot_be_escaped(self):
+        self.assertFalse(allowed(("GET /api/*",), "GET", normalize_path("/api/../admin")))
+        self.assertTrue(allowed(("GET /api/*",), "GET", normalize_path("/api/../api/admin")))
 
     def test_allow_prefix_rule(self):
         self.assertTrue(allowed(("POST /mcp*",), "POST", "/mcp/messages"))
@@ -57,17 +80,42 @@ class BrokerTests(unittest.TestCase):
             path = Path(tmp, "c.json")
             path.write_text(
                 '{"listen": "127.0.0.1:9", "upstream": "https://example.com",'
-                ' "auth": {"kind": "bearer", "credential": "k"}}'
+                ' "allow": ["GET /"], "auth": {"kind": "bearer", "credential": "k"}}'
             )
             config = load_config(path)
             self.assertEqual(config.host, "127.0.0.1")
             self.assertEqual(config.port, 9)
-            path.write_text('{"listen": "127.0.0.1:9", "upstream": "https://e", "auth": {"kind": "bearer"}}')
+            path.write_text(
+                '{"listen": "127.0.0.1:9", "upstream": "https://e",'
+                ' "allow": ["GET /"], "auth": {"kind": "bearer"}}'
+            )
             with self.assertRaises(ValueError):
                 load_config(path)
-            path.write_text('{"listen": "nope", "upstream": "https://e"}')
+            path.write_text('{"listen": "nope", "upstream": "https://e", "allow": ["GET /"]}')
             with self.assertRaises(ValueError):
                 load_config(path)
+
+    def test_config_rejects_empty_allow(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp, "c.json")
+            path.write_text(
+                '{"listen": "127.0.0.1:9", "upstream": "https://example.com",'
+                ' "auth": {"kind": "none"}}'
+            )
+            with self.assertRaises(ValueError):
+                load_config(path)
+
+    def test_config_rejects_malformed_rules(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp, "c.json")
+            for rule in ("GET", "GET api", "/api"):
+                with self.subTest(rule=rule):
+                    path.write_text(
+                        '{"listen": "127.0.0.1:9", "upstream": "https://example.com",'
+                        f' "allow": ["{rule}"], "auth": {{"kind": "none"}}}}'
+                    )
+                    with self.assertRaises(ValueError):
+                        load_config(path)
 
     def test_credential_comes_from_the_credentials_directory(self):
         with tempfile.TemporaryDirectory() as tmp:

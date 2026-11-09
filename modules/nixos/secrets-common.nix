@@ -27,9 +27,6 @@ in
     github-personal-pat = userOwned;
     github-personal-signing-key = userOwned;
 
-    # Handed in to the agent VM (agentVm.secrets); declaring it here makes sops-nix
-    # materialise /run/secrets/immich-agent-api-key.
-    immich-agent-api-key = userOwned;
     # Handed into both agent VMs (agentVm.secrets on Linux, handIn on the Mac) for calibredb
     # against the Content server; the server itself reads it on smortress.
     calibre-password = userOwned;

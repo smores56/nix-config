@@ -1454,13 +1454,13 @@ systemd credential and exposes a loopback broker; the guest keeps a stable
 loopback port, gets a dummy client value where a tool insists on one, and
 reads `/run/agent-vm/capabilities.json`/`.env` for the addresses. The
 capabilities are Neuralwatt (streaming), TinyFish, Calibre (basic auth),
-Immich, the memory MCP token, and (on smorespro) the smortress SSH relay;
-only the GitHub PAT and the commit-signing key still travel in
-`agentVm.secrets`. Rotating any mediated secret is: edit the sops entry,
+the memory MCP token, and (on smorespro) the smortress SSH relay; only the
+GitHub PAT and the commit-signing key still travel in `agentVm.secrets`.
+Every HTTP capability must declare a non-empty `allow` list; an empty list is
+rejected. Rotating any mediated secret is: edit the sops entry,
 `sudo systemctl restart agent-broker-<name>` on the host. The guest and its
-sessions are untouched. `agent-vm-verify` asserts every broker is loopback,
-every tap relay targets it, and no mediated secret is under
-`/run/agent-vm/secrets`.
+sessions are untouched. `agent-vm-verify` asserts the home view, the shares,
+the hand-in secrets and the tap firewall.
 
 The guest closure and the active userland can lag the host. `agent-sandbox
 status` (`just agent-vm-status`) prints the booted, current and expected
@@ -1604,16 +1604,24 @@ else (CI, teammates) uses them.
 
 <!-- manual-step: secret/immich-agent-api-key -->
 
-Scoped Immich API key for the agent, user-readable in `secrets/common.yaml`.
-Create it in Immich under Account Settings → API Keys with **asset.read,
-asset.upload, album.read, album.create** only — no asset delete, no user or
-admin scope. The agent VM hands it in at `/run/secrets/immich-agent-api-key` and the
-launcher exports `IMMICH_API_KEY` (`secretEnv` in `modules/lib/agent-vm.nix`).
-`/var/lib/data/photos` is never shared into the guest, so the agent uploads
-through the API only and never sees the managed library.
+The agent VM no longer has an Immich capability. The broker allowed every route,
+so the guest could reach the whole Immich route surface; the documented key
+carried `asset.read`, `asset.upload`, `album.read` and `album.create` (it did
+not grant `asset.view` or `asset.download`, so thumbnails and originals were not
+reachable with those scopes). The capability and the `secrets-common.nix`
+declaration are removed, so the secret is no longer materialised at
+`/run/secrets/immich-agent-api-key`.
 
-To rotate: create the new key in Immich, update the common file, rebuild both
-hosts so sops rewrites `/run/secrets/…`, then delete the old key in Immich.
+The key is compromised: an earlier launcher revision exported the real value,
+and the value appears in host maki session transcripts that are shared into the
+guest. The transcript values were redacted on 2026-11-09; treat the key as
+compromised until this operator step is done.
+
+Operator step: revoke the key in Immich under Account Settings → API Keys, then
+remove `immich-agent-api-key` from `secrets/common.yaml` with `sops` and delete
+this anchor. After the host switch, run `agent-sandbox restart` so the guest
+drops the stale `IMMICH_API_URL`/`IMMICH_API_KEY=none` environment. The
+photo-triage design uses separate host-scoped keys and does not need this one.
 
 
 ### todo.txt
