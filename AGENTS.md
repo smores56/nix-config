@@ -169,8 +169,8 @@ just verify-nixos smortress         # also smorespro
 ```
 
 `just test` runs the Python unit suite (the `unit-tests` check) after touching
-`modules/features/ai/` or maki session search; `just check-build` builds every
-check for the current system.
+`modules/features/ai/`, photo-triage, or maki session search; `just check-build`
+builds every check for the current system.
 
 Checks are organised in `modules/flake/checks.nix`: `scriptChecks` runs each
 `tests/<name>.sh` against tools and files from a generated home as the `<name>`

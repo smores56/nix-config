@@ -36,10 +36,12 @@ in
 
       src = inputs.self;
 
-      # One env for the memory suite's imports (mcp brings the rest transitively).
+      # One env for the unit suite's imports (mcp brings the rest transitively);
+      # the photo-triage fixtures render synthetic images with Pillow.
       unitTestsPython = pkgs.python3.withPackages (ps: [
         ps.mcp
         ps.redis
+        ps.pillow
       ]);
 
       mkEvalChecks =
