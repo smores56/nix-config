@@ -9,7 +9,7 @@ import socket
 import sys
 from pathlib import Path
 
-from . import __version__
+from . import __version__, calibration
 from .albums import AlbumError, album_status, load_export, preflight, sync_export
 from .db import Database
 from .decisions import POLICY, decide_scan
@@ -142,6 +142,33 @@ def build_parser() -> argparse.ArgumentParser:
     )
     probe.add_argument("--asset-id", required=True)
     album_commands.add_parser("status", help="print the local album snapshots")
+
+    calibration_parser = commands.add_parser(
+        "calibration", help="sample, label and evaluate the delete policy"
+    )
+    calibration_commands = calibration_parser.add_subparsers(
+        dest="calibration_command", required=True
+    )
+    sample = calibration_commands.add_parser("sample", help="build a stratified sample")
+    sample.add_argument("--scan-id", type=int, default=None)
+    sample.add_argument("--min-per-cluster", type=int, default=30)
+    sample.add_argument("--total", type=int, default=300)
+    sample.add_argument("--name", default=None)
+    sample.add_argument("--publish", action="store_true", help="write sample albums")
+    sample.add_argument("--chunk", type=chunk_size, default=100)
+    labels = calibration_commands.add_parser("labels", help="import human labels")
+    labels.add_argument("--file", required=True)
+    labels.add_argument("--scan-id", type=int, default=None)
+    labels.add_argument("--source", default="human")
+    labels.add_argument(
+        "--replace", action="store_true", help="delete all labels from this source first"
+    )
+    report = calibration_commands.add_parser("report", help="precision and go/no-go")
+    report.add_argument("--scan-id", type=int, default=None)
+    report.add_argument("--name", default=None)
+    report.add_argument("--source", default="human")
+    report.add_argument("--min-labelled", type=int, default=30)
+    report.add_argument("--max-false-rate", type=float, default=0.0)
 
     run = commands.add_parser("run", help="score the library (service only)")
     run.add_argument("--dev-fixtures", action="store_true", help=argparse.SUPPRESS)
@@ -451,6 +478,86 @@ def albums_command(args: argparse.Namespace) -> int:
         database.close()
 
 
+def calibration_command(args: argparse.Namespace) -> int:
+    database = Database(data_dir() / DB_NAME)
+    try:
+        scan_id = args.scan_id if args.scan_id is not None else database.latest_complete_scan()
+        if scan_id is None:
+            print("photo-triage: no completed scan in the database", file=sys.stderr)
+            return 1
+        decisions = calibration.decisions_for_scan(database, scan_id)
+        if not decisions:
+            print("photo-triage: the scan has no decisions; run decide first", file=sys.stderr)
+            return 1
+        if args.calibration_command == "sample":
+            if database.latest_complete_scan() != scan_id:
+                raise ValueError(f"scan {scan_id} is not the latest complete scan")
+            sample = calibration.build_sample(
+                decisions,
+                min_per_cluster=args.min_per_cluster,
+                total=args.total,
+            )
+            split = calibration.split_sample(sample)
+            name = args.name or calibration.sample_name(scan_id)
+            calibration.record_sample(database, name, scan_id, split)
+            result = {
+                "name": name,
+                "scan_id": scan_id,
+                "sample": len(sample),
+                "dev": len(split["dev"]),
+                "heldout": len(split["heldout"]),
+            }
+            if args.publish:
+                client = ImmichClient(
+                    socket_path=album_socket(), api_key=load_album_key()
+                )
+                run_id = database.start_run("calibration-publish", scan_id)
+                try:
+                    reports = calibration.publish_sample(
+                        database, client, scan_id, split, chunk=args.chunk
+                    )
+                except BaseException as error:
+                    database.finish_run(run_id, "failed", {"error": str(error)})
+                    raise
+                reconciled = all(report.reconciled for report in reports)
+                database.finish_run(
+                    run_id,
+                    "complete" if reconciled else "failed",
+                    {"reports": [report.as_dict() for report in reports]},
+                )
+                result["albums"] = [report.as_dict() for report in reports]
+                if not reconciled:
+                    result["reconciled"] = False
+            print(json.dumps(result, sort_keys=True))
+            return 0 if result.get("reconciled", True) else 1
+        if args.calibration_command == "labels":
+            entries = calibration.load_labels(args.file)
+            if args.replace:
+                database.clear_labels(args.source)
+            count = calibration.record_labels(
+                database, decisions, entries, source=args.source
+            )
+            print(json.dumps({"scan_id": scan_id, "labels": count}, sort_keys=True))
+            return 0
+        name = args.name or calibration.sample_name(scan_id)
+        report = calibration.build_report(
+            database,
+            scan_id,
+            name,
+            max_false_rate=args.max_false_rate,
+            min_labelled=args.min_labelled,
+            source=args.source,
+        )
+        calibration.record_report(database, scan_id, report)
+        print(json.dumps(report, sort_keys=True))
+        return 0 if report["go_no_go"]["passed"] else 1
+    except (AlbumError, ImmichError, ValueError) as error:
+        print(f"photo-triage: {error}", file=sys.stderr)
+        return 1
+    finally:
+        database.close()
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "doctor":
@@ -469,6 +576,8 @@ def main(argv: list[str] | None = None) -> int:
         return decide_command(args)
     if args.command == "albums":
         return albums_command(args)
+    if args.command == "calibration":
+        return calibration_command(args)
     if args.command == "run":
         return run(args.dev_fixtures, args.scan_id, args.max_assets)
     return 2

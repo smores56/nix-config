@@ -12,7 +12,12 @@ from typing import Any, Callable
 from .db import Database
 from .immich import ImmichClient, ImmichError
 
-ALBUM_NAMES = {"delete": "triage-delete", "review": "triage-review"}
+ALBUM_NAMES = {
+    "delete": "triage-delete",
+    "review": "triage-review",
+    "calibration-dev": "photo-triage-dev",
+    "calibration-heldout": "photo-triage-heldout",
+}
 CHUNK_MAX = 1000
 
 
@@ -68,7 +73,11 @@ def load_export(database: Database, path: str | Path) -> dict[str, Any]:
 
 
 def verify_export(
-    database: Database, export: dict[str, Any], *, path: str | Path | None = None
+    database: Database,
+    export: dict[str, Any],
+    *,
+    path: str | Path | None = None,
+    require_calibration: bool = True,
 ) -> None:
     """Refuse any export that is not the latest complete decide artifact."""
     required = {
@@ -157,6 +166,19 @@ def verify_export(
         raise AlbumError(
             f"scan {export['scan_id']} is not the latest complete scan; rescan and decide first"
         )
+    if require_calibration:
+        report_row = database.latest_calibration_report(export["scan_id"])
+        if report_row is None or report_row["state"] != "complete":
+            raise AlbumError(
+                "no passing calibration report for this scan; run calibration report"
+            )
+        report = json.loads(report_row["stats_json"] or "{}")
+        if not report.get("go_no_go", {}).get("passed"):
+            raise AlbumError("the latest calibration report did not pass")
+        if report.get("decide_run_id") != export["run_id"]:
+            raise AlbumError("calibration report is for another decide run")
+        if report.get("policy_fingerprint") != export["policy_fingerprint"]:
+            raise AlbumError("calibration report policy does not match this export")
     stats = json.loads(run["stats_json"] or "{}")
     for key in (
         "policy_version",

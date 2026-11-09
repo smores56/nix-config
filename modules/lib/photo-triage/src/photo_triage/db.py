@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = "6"
+SCHEMA_VERSION = "8"
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_meta (
     key TEXT PRIMARY KEY,
@@ -129,6 +129,13 @@ CREATE TABLE IF NOT EXISTS label_sets (
     name TEXT PRIMARY KEY,
     split TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS calibration_samples (
+    name TEXT NOT NULL,
+    scan_id INTEGER NOT NULL,
+    asset_id TEXT NOT NULL,
+    split TEXT NOT NULL,
+    PRIMARY KEY (name, asset_id)
+);
 CREATE TABLE IF NOT EXISTS duplicate_groups (
     scan_id INTEGER NOT NULL,
     group_id TEXT NOT NULL,
@@ -217,6 +224,21 @@ class Database:
                     "groups_built INTEGER NOT NULL, completed_at TEXT NOT NULL)"
                 )
                 current = 6
+            if current < 7:
+                self.connection.execute(
+                    "CREATE TABLE IF NOT EXISTS calibration_samples ("
+                    "name TEXT NOT NULL, asset_id TEXT NOT NULL, split TEXT NOT NULL, "
+                    "PRIMARY KEY (name, asset_id))"
+                )
+                current = 7
+            if current < 8:
+                columns = self._columns("calibration_samples")
+                if "scan_id" not in columns:
+                    self.connection.execute(
+                        "ALTER TABLE calibration_samples ADD COLUMN "
+                        "scan_id INTEGER NOT NULL DEFAULT 0"
+                    )
+                current = 8
             self._write_schema_version(target)
             self.connection.commit()
         except BaseException:
@@ -846,6 +868,70 @@ class Database:
             "WHERE scan_id = ? ORDER BY asset_id",
             (scan_id,),
         ).fetchall()
+
+    def record_sample(
+        self, name: str, scan_id: int, assets: list[tuple[str, str]]
+    ) -> None:
+        with self.connection:
+            self.connection.execute(
+                "DELETE FROM calibration_samples WHERE name = ?", (name,)
+            )
+            self.connection.executemany(
+                "INSERT INTO calibration_samples(name, scan_id, asset_id, split) "
+                "VALUES (?, ?, ?, ?)",
+                [(name, scan_id, asset_id, split) for asset_id, split in assets],
+            )
+
+    def sample_assets(self, name: str) -> list[sqlite3.Row]:
+        return self.connection.execute(
+            "SELECT asset_id, scan_id, split FROM calibration_samples WHERE name = ? "
+            "ORDER BY asset_id",
+            (name,),
+        ).fetchall()
+
+    def record_labels(
+        self, labels: list[tuple[str, str | None, str, str]]
+    ) -> None:
+        with self.connection:
+            for asset_id, cluster, label, source in labels:
+                self.connection.execute(
+                    "DELETE FROM labels WHERE asset_id = ? AND source = ?",
+                    (asset_id, source),
+                )
+                self.connection.execute(
+                    "INSERT INTO labels(asset_id, cluster, label, source, created_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (asset_id, cluster, label, source, _now()),
+                )
+
+    def labels_for(self, asset_ids: list[str] | None = None) -> list[sqlite3.Row]:
+        if asset_ids is None:
+            return self.connection.execute(
+                "SELECT asset_id, cluster, label, source, created_at FROM labels "
+                "ORDER BY asset_id"
+            ).fetchall()
+        if not asset_ids:
+            return []
+        placeholders = ",".join("?" for _ in asset_ids)
+        return self.connection.execute(
+            "SELECT asset_id, cluster, label, source, created_at FROM labels "
+            f"WHERE asset_id IN ({placeholders}) ORDER BY asset_id",
+            asset_ids,
+        ).fetchall()
+
+    def clear_labels(self, source: str) -> int:
+        cursor = self.connection.execute(
+            "DELETE FROM labels WHERE source = ?", (source,)
+        )
+        self.connection.commit()
+        return cursor.rowcount
+
+    def latest_calibration_report(self, scan_id: int) -> sqlite3.Row | None:
+        return self.connection.execute(
+            "SELECT * FROM runs WHERE kind = 'calibration-report' AND scan_id = ? "
+            "ORDER BY id DESC LIMIT 1",
+            (scan_id,),
+        ).fetchone()
 
     def run(self, run_id: int) -> sqlite3.Row | None:
         return self.connection.execute(

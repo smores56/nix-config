@@ -678,7 +678,7 @@ class DecisionTests(unittest.TestCase):
                 database.connection.execute(
                     "SELECT value FROM schema_meta WHERE key = 'schema_version'"
                 ).fetchone()["value"],
-                "6",
+                "8",
             )
             self.assertIn("metrics_sha256", database._columns("previews"))
             self.assertEqual(

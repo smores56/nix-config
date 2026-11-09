@@ -59,6 +59,7 @@ class AlbumTests(unittest.TestCase):
         keep=("k1",),
         safe=True,
         run_state="complete",
+        calibration=True,
     ):
         assets = {}
         for asset_id in delete:
@@ -111,7 +112,35 @@ class AlbumTests(unittest.TestCase):
                 "export_sha256": hashlib.sha256(body.encode()).hexdigest(),
             },
         )
+        if calibration:
+            report_run = self.database.start_run("calibration-report", self.scan_id)
+            self.database.finish_run(
+                report_run,
+                "complete",
+                {
+                    "decide_run_id": run_id,
+                    "policy_fingerprint": "fingerprint",
+                    "go_no_go": {"passed": True},
+                },
+            )
         return export, path
+
+    def test_album_sync_requires_a_passing_calibration_report(self):
+        export, path = self.export(calibration=False)
+        with self.assertRaises(AlbumError):
+            load_export(self.database, path)
+        report_run = self.database.start_run("calibration-report", self.scan_id)
+        self.database.finish_run(
+            report_run,
+            "failed",
+            {
+                "decide_run_id": export["run_id"],
+                "policy_fingerprint": "fingerprint",
+                "go_no_go": {"passed": False},
+            },
+        )
+        with self.assertRaises(AlbumError):
+            load_export(self.database, path)
 
     def test_verify_accepts_a_matching_artifact(self):
         export, path = self.export()

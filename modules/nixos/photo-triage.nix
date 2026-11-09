@@ -53,6 +53,11 @@ let
     export PHOTO_TRIAGE_IMMICH_ALBUM_SOCKET=${immichAlbumSocket}
     exec ${cfg.package}/bin/photo-triage albums "$@"
   '';
+  calibrationRun = pkgs.writeShellScript "photo-triage-calibration-run" ''
+    export PHOTO_TRIAGE_DATA_DIR=${dataDir}
+    export PHOTO_TRIAGE_IMMICH_ALBUM_SOCKET=${immichAlbumSocket}
+    exec ${cfg.package}/bin/photo-triage calibration "$@"
+  '';
   # Transient units run the CLI as the service user with only the Unix sockets
   # and the data root reachable.
   transientProperties = [
@@ -92,6 +97,19 @@ let
           ${lib.escapeShellArgs transientProperties} \
           '--property=LoadCredential=immich-album-key:${cfg.albumKeyFile}' \
           -- ${albumsRun} "$@"
+      ''
+  );
+  calibrationAdmin = pkgs.writeShellScriptBin "photo-triage-calibration" (
+    if cfg.albumKeyFile == null then
+      ''
+        exec /run/wrappers/bin/sudo -u ${user} -- ${calibrationRun} "$@"
+      ''
+    else
+      ''
+        exec /run/wrappers/bin/sudo ${pkgs.systemd}/bin/systemd-run --quiet --pipe --wait --collect \
+          ${lib.escapeShellArgs transientProperties} \
+          '--property=LoadCredential=immich-album-key:${cfg.albumKeyFile}' \
+          -- ${calibrationRun} "$@"
       ''
   );
 
@@ -314,6 +332,7 @@ in
     environment.systemPackages = [
       admin
       albumsAdmin
+      calibrationAdmin
     ];
 
     assertions = [
