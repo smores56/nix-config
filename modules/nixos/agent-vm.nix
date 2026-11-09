@@ -779,18 +779,22 @@ let
       fanficfareIni = pkgs.writeText "fanficfare-personal.ini" ''
         [defaults]
         titlepage_entries: seriesHTML,category,genre,language,characters,ships,status,datePublished,dateUpdated,dateCreated,rating,numChapters,numWords,publisher,description
+        include_images: coveronly
 
         [www.royalroad.com]
         slow_down_sleep_time:1
       '';
 
-      # One step for agents: download into a scratch directory, then add/replace through the
-      # broker-backed calibredb wrapper. Automerge keeps a re-download from duplicating a book.
+      # One step for agents: download into a scratch directory, add or replace each book through
+      # the broker-backed calibredb wrapper, then set the library cover from the EPUB's cover.
       fanficfareDownload = pkgs.writeShellApplication {
         name = "fanficfare-download";
         runtimeInputs = [
           pkgs.coreutils
           pkgs.fanficfare
+          pkgs.gnugrep
+          pkgs.gnused
+          pkgs.unzip
         ];
         text = ''
           set -euo pipefail
@@ -803,7 +807,7 @@ let
           work=$(mktemp -d)
           trap 'rm -rf "$work"' EXIT
 
-          ( cd "$work" && fanficfare -c ${fanficfareIni} "$@" )
+          ( cd "$work" && fanficfare --non-interactive -c ${fanficfareIni} "$@" )
 
           shopt -s nullglob
           epubs=("$work"/*.epub)
@@ -812,7 +816,34 @@ let
             exit 1
           fi
 
-          ${guestCalibre}/bin/calibredb add --automerge overwrite "''${epubs[@]}"
+          for epub in "''${epubs[@]}"; do
+            out=$(${guestCalibre}/bin/calibredb add --automerge overwrite "$epub")
+            printf '%s\n' "$out"
+            id=$(printf '%s\n' "$out" | sed -n 's/.*book ids: \([0-9][0-9]*\).*/\1/p')
+            if [ -z "$id" ]; then
+              echo "fanficfare-download: could not read the book id for $epub" >&2
+              continue
+            fi
+
+            cover=$(unzip -Z1 "$epub" | grep -m1 '^OEBPS/images/cover\.' || true)
+            if [ -z "$cover" ]; then
+              continue
+            fi
+            ext="''${cover##*.}"
+            unzip -p "$epub" "$cover" > "$work/cover.$ext"
+            case "$ext" in
+              jpg|jpeg|png) coverfile="$work/cover.$ext" ;;
+              *)
+                coverfile="$work/cover.jpg"
+                if ! ${guestCalibre}/bin/calibre-debug -c "from PIL import Image; Image.open('$work/cover.$ext').convert('RGB').save('$coverfile', 'JPEG', quality=90)" >/dev/null 2>&1; then
+                  echo "fanficfare-download: cover conversion failed for $epub" >&2
+                  continue
+                fi
+                ;;
+            esac
+            ${guestCalibre}/bin/calibredb set_metadata "$id" --field "cover:$coverfile" >/dev/null || \
+              echo "fanficfare-download: cover update failed for book $id" >&2
+          done
         '';
       };
     in
