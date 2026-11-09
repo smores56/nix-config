@@ -22,6 +22,7 @@ let
     "memory"
     "chat"
     "agent"
+    "nanobot"
   ];
 in
 {

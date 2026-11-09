@@ -26,6 +26,8 @@ let
   '';
 
   assistantState = vmLib.assistantState user;
+  # Letta's MemFS, transcripts and provider record; a sibling of the nanobot tree.
+  lettaState = "/home/${user}/.local/state/letta";
   user = config.machine.username;
   home = "/home/${user}";
 
@@ -41,6 +43,9 @@ let
       # The assistant's sessions, workspace and pairing; its logs, run files,
       # live databases, WebUI token and re-pairable gh config are excluded.
       assistantState
+      # Letta's state is JSONL and git, which restic reads directly: no dump step and
+      # no excludes, unlike the SQLite sessions above.
+      lettaState
     ];
     exclude = [
       "${assistantState}/home/.nanobot/logs"

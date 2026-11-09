@@ -1896,11 +1896,11 @@ calls, and work repos are accepted there (`MEMORY_WORK_POLICY=allow`, from
 
 <!-- manual-step: service/smortress/agent -->
 
-`agent.sammohr.dev` → the host loopback relay `agent-vm-ingress-42700.socket`,
+`agent.sammohr.dev` → the host loopback relay `agent-vm-ingress-42701.socket`,
 which forwards to the guest relay of the same name; the guest relay listens on
-the tap address and forwards to the runtime on `127.0.0.1:42700`. The runtime
-binds only loopback; the guest relay owns the tap address. Cloudflare Access's
-email allow-list is the remote gate; the runtime's own pairing or token is the
+the tap address and forwards to the Letta App Server on `127.0.0.1:42701`. The
+runtime binds only loopback; the guest relay owns the tap address. Cloudflare
+Access's email allow-list is the remote gate; the App Server's own token is the
 second layer. The relays are L4, so the guest also receives Cloudflare's
 `Cf-Access-Jwt-Assertion`; treat it as a human credential there (do not log or
 forward it) and keep the Access session short. Any host process can also reach
@@ -1912,6 +1912,47 @@ Apply the edge with `just cloudflare-apply` (creates the Access application) and
 change or the guest firewall and relay stay on the old generation:
 `sudo systemctl restart microvm@agent.service`. Until the runtime listens on
 the port the ingress returns 502.
+
+The runtime is `letta-assistant.service` in the guest, running `agent-letta
+server` (`letta server --backend local --listen ws://127.0.0.1:42701`,
+`Restart=always`). The wrapper pins the local backend so agent state cannot
+leave the guest, and sets `DISABLE_AUTOUPDATER=1` because the store is
+read-only. Its state is `~/.local/state/letta`, which is also the restic path:
+`home/` holds the CLI's own `~/.letta` settings, and `backend/` is
+`LETTA_LOCAL_BACKEND_DIR` with `memfs/`, `conversations/`, `agents/`,
+`providers/` and `runs/`. The backup needs no dump step and no excludes, unlike
+nanobot's SQLite sessions: Letta's state is JSONL and git, which the host reads
+directly. Nix seeds `backend/providers/auth.json` with an OpenAI-compatible
+record pointing at the neuralwatt capability broker
+(`http://127.0.0.1:8083/v1`), which injects the real key; the guest-side key is
+Letta's own `not-needed` placeholder. Nix owns that file until a `/connect`
+rewrites it, after which the edited file wins and removing it re-installs the
+Nix record. The unit exists only on smortress; the laptop guest has neither the
+service nor the state share.
+
+**Neuralwatt subscription.** The account is on Standard monthly: $50 prepaid
+per month for 6.25 kWh at $8/kWh, with same-rate overage past the allowance.
+Energy billing is the right shape for this workload: 5.45B tokens were mostly
+prompt-cache reads, so the last month cost $30.30 in billed energy against
+about $124 at nominal token prices. The assistant shares `neuralwatt-api-key`
+with Maki, so usage is not separable per client; the account-level monthly
+allowance and the overage cap in the Neuralwatt console are the only spend
+bound. Set or change the cap there, not in the repo, and keep a payment method
+on file so a small overage does not stop the assistant at the prepaid limit.
+There is no dedicated assistant key and no new `agentVm.secrets` name.
+
+### smortress/nanobot
+
+<!-- manual-step: service/smortress/nanobot -->
+
+`nanobot.sammohr.dev` → the host loopback relay
+`agent-vm-ingress-42700.socket`, which forwards to the guest relay of the same
+name; the guest relay listens on the tap address and forwards to the runtime on
+`127.0.0.1:42700`. Same shape as `agent`: loopback-only runtime, Access as the
+remote gate, the runtime's own pairing as the second layer. Apply the edge with
+`just cloudflare-apply` and `just switch smortress`, then restart the guest once
+(`sudo systemctl restart microvm@agent.service`) so the new relay and firewall
+rule take effect.
 
 The runtime is `nanobot-assistant.service` in the guest, running
 `agent-assistant gateway` (`nanobot gateway --foreground`, `Restart=always`).
@@ -1934,17 +1975,6 @@ removing it re-installs the Nix config. The assistant uses the `neuralwatt`,
 GitHub PAT and signing key are the #459 residuals. The personal skills are
 every `~/.agents/skills` entry except `brain`, linked at start. `agent-sandbox
 status` and `sudo agent-vm-update` manage the guest update state.
-
-**Neuralwatt subscription.** The account is on Standard monthly: $50 prepaid
-per month for 6.25 kWh at $8/kWh, with same-rate overage past the allowance.
-Energy billing is the right shape for this workload: 5.45B tokens were mostly
-prompt-cache reads, so the last month cost $30.30 in billed energy against
-about $124 at nominal token prices. The assistant shares `neuralwatt-api-key`
-with Maki, so usage is not separable per client; the account-level monthly
-allowance and the overage cap in the Neuralwatt console are the only spend
-bound. Set or change the cap there, not in the repo, and keep a payment method
-on file so a small overage does not stop the assistant at the prepaid limit.
-There is no dedicated assistant key and no new `agentVm.secrets` name.
 
 ### smortress/chat
 

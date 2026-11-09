@@ -25,6 +25,12 @@ in
     let
       pkgs = mkPkgs system { };
 
+      # The local overlays carry the uv2nix-built assistant environments; the checks below
+      # exercise them as built, not as declared.
+      overlaidPkgs = pkgs.extend (
+        lib.composeManyExtensions ((import ../../pkgs/overlays.nix { inherit inputs; }) system)
+      );
+
       # One nixpkgs for lint tools so the format check agrees with `nix fmt`.
       lintPkgs = import inputs.nixpkgs { inherit system; };
 
@@ -1024,6 +1030,27 @@ in
               tofu fmt -check -recursive ${src}/tofu
               touch $out
             '';
+
+        # The wheel is a payload carrier: a bundled Node runtime plus prebuilt native
+        # modules that autoPatchelfHook rewrites. A patchelf or payload regression shows
+        # up here as a launcher that cannot start, not as a guest that boots without an
+        # assistant (sdlc #495).
+        letta-package =
+          pkgs.runCommand "letta-package-check"
+            {
+              nativeBuildInputs = [
+                overlaidPkgs.letta
+                pkgs.gnugrep
+              ];
+            }
+            ''
+              export HOME=$TMPDIR
+              letta --version | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+'
+              letta server --help | grep -qF -- '--ws-auth'
+              letta server --help | grep -qF -- '--openai-api'
+              letta server --help | grep -qF -- '--listen'
+              touch $out
+            '';
       }
       // homeChecks
       // nixosChecks
@@ -1156,6 +1183,7 @@ in
                       ]
                       # The assistant state is shared only where the assistant runs.
                       ++ lib.optional (lib.elem "server" host.machine.profiles) ".local/state/agent-assistant"
+                      ++ lib.optional (lib.elem "server" host.machine.profiles) ".local/state/letta"
                     );
                 # A writable entry must never be a whole home or a host-executed config tree.
                 narrowRw = lib.all (
@@ -1218,9 +1246,16 @@ in
                     && lib.hasInfix "agent-assistant gateway" guest.systemd.services.nanobot-assistant.serviceConfig.ExecStart
                     && lib.elem ".local/state/agent-assistant" host.agentVm.allowRw
                     && lib.any (p: lib.getName p == "agent-assistant") guest.environment.systemPackages
+                    # Letta is the second assistant: same supervision, its own state root.
+                    && guest.systemd.services ? "letta-assistant"
+                    && guest.systemd.services.letta-assistant.serviceConfig.Restart == "always"
+                    && lib.hasInfix "agent-letta server" guest.systemd.services.letta-assistant.serviceConfig.ExecStart
+                    && lib.elem ".local/state/letta" host.agentVm.allowRw
                   else
                     !(guest.systemd.services ? "nanobot-assistant")
                     && !(lib.elem ".local/state/agent-assistant" host.agentVm.allowRw)
+                    && !(guest.systemd.services ? "letta-assistant")
+                    && !(lib.elem ".local/state/letta" host.agentVm.allowRw)
                     && !(lib.any (p: lib.getName p == "agent-assistant") guest.environment.systemPackages);
               };
             all = map facts hosts;

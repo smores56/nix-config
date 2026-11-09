@@ -158,6 +158,26 @@ resource "cloudflare_zero_trust_access_application" "agent" {
   }
 }
 
+# nanobot's own hostname, after `agent` moved to the Letta App Server. Same policy.
+resource "cloudflare_zero_trust_access_application" "nanobot" {
+  account_id       = var.account_id
+  name             = "nanobot"
+  domain           = "nanobot.${var.domain}"
+  type             = "self_hosted"
+  session_duration = "720h"
+
+  policies = [
+    {
+      id         = cloudflare_zero_trust_access_policy.email.id
+      precedence = 1
+    },
+  ]
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
 resource "cloudflare_notification_policy" "tunnel_health" {
   account_id = var.account_id
   name       = "tunnel health"

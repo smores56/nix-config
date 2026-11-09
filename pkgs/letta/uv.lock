@@ -1,0 +1,26 @@
+version = 1
+revision = 5
+requires-python = ">=3.11"
+
+[[package]]
+name = "letta"
+version = "0.34.12"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ce/7b/0a5e9349c12a37107cc567e9cb5aa6d07c0446fa0751d5ebec2f1c558ec9/letta-0.34.12-py3-none-macosx_14_0_arm64.whl", hash = "sha256:e8aebda3bfb10c6d84db2e777313a83b9f117dd3dc9eaef784072f70cf61b3c7", size = 71691175, upload-time = "2026-10-12T20:47:35.858Z" },
+    { url = "https://files.pythonhosted.org/packages/bc/ef/b0edffb5c2437ac1a0477e0130df76116f06fbadcfd383550eda1dd5967e/letta-0.34.12-py3-none-macosx_14_0_x86_64.whl", hash = "sha256:c3d236c8eab13c1d984d4594fc80df61bdc5af8660a333c85b15e38f56b6d4b7", size = 75001007, upload-time = "2026-10-12T20:47:40.068Z" },
+    { url = "https://files.pythonhosted.org/packages/c8/56/7ffe63af1b23473f132038552d1699a8faa88534625df10803d723bb0934/letta-0.34.12-py3-none-manylinux_2_28_aarch64.whl", hash = "sha256:ea22580ea3199f1eb1ffe953a98b6d67e0ff2a7f2e640dba19ee84780dcca150", size = 78665960, upload-time = "2026-10-12T20:47:43.564Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/b1/5368f201c4461e8ee076c72b3df09ff305666e9aa243492529abb2f4d4a1/letta-0.34.12-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:f98c16343995c46a5047deed7f1314bd3aff9affd69b8c2e105ae454b6d18b24", size = 79399718, upload-time = "2026-10-12T20:47:47.963Z" },
+    { url = "https://files.pythonhosted.org/packages/80/18/02528567061b1dcb6ae6c0d88849f15605916ce0131cdac88131d90b7c92/letta-0.34.12-py3-none-win_amd64.whl", hash = "sha256:1778ae9d94cbddd054d747df9651a102de3f52f864a16b0829197f7ba76891ef", size = 78362449, upload-time = "2026-10-12T20:47:52.141Z" },
+]
+
+[[package]]
+name = "letta-assistant-env"
+version = "0.0.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "letta" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "letta", specifier = "==0.34.12" }]

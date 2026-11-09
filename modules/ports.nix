@@ -6,6 +6,8 @@
   llm = 8081;
   # The hosted assistant gateway: the guest listens, the host proxies it to the tunnel.
   agent = 42700;
+  # The Letta App Server: same shape, a second guest listener and host relay.
+  letta = 42701;
   calibre = 8181;
   immich = 2283;
   navidrome = 4533;

@@ -101,8 +101,10 @@ let
   );
 
   nanobotPackage = pkgs.nanobot;
+  lettaPackage = pkgs.letta;
   # One state path: the wrapper, the host view, the unit's sandbox and the backup all read it.
   assistantState = vmLib.assistantState user;
+  lettaState = "${home}/.local/state/letta";
   sdlcGuest = import ../lib/sdlc.nix { inherit pkgs; };
   sharedSkillNames = import ../lib/skills.nix ../features/ai/skills;
   # `brain` reads the work-memory instance; the assistant keeps the shared skills only.
@@ -333,6 +335,72 @@ let
     '';
   };
 
+  # Letta's provider record, written by Nix so the guest never needs an interactive
+  # `/connect`. The broker injects the real key, so the guest-side key is the placeholder
+  # Letta itself uses for keyless OpenAI-compatible endpoints.
+  lettaProviderAuth = pkgs.writeText "letta-provider-auth.json" (
+    builtins.toJSON {
+      version = 1;
+      providers = {
+        lc-openai-compatible = {
+          id = "local-provider-lc-openai-compatible";
+          name = "lc-openai-compatible";
+          provider_type = "openai-compatible";
+          provider_category = "byok";
+          auth = {
+            type = "api";
+            key = "not-needed";
+          };
+          base_url = "http://127.0.0.1:${toString ports.agentNeuralwatt}/v1";
+          created_at = "1970-01-01T00:00:00.000Z";
+          updated_at = "1970-01-01T00:00:00.000Z";
+        };
+      };
+    }
+  );
+
+  # The App Server writes `~/.letta/settings.json` on startup, so HOME has to be writable
+  # even though the backend directory is pinned separately. Both live under the one state
+  # path the view shares and the backup walks.
+  agentLetta = pkgs.writeShellApplication {
+    name = "agent-letta";
+    runtimeInputs = [
+      lettaPackage
+      pkgs.coreutils
+      pkgs.diffutils
+      pkgs.jq
+    ];
+    text = ''
+      set -eu
+      state=${lib.escapeShellArg lettaState}
+      export HOME="$state/home"
+      export XDG_STATE_HOME="$HOME/.local/state"
+      export XDG_CACHE_HOME="$HOME/.cache"
+      export XDG_DATA_HOME="$HOME/.local/share"
+      export LETTA_LOCAL_BACKEND_DIR="$state/backend"
+      # The packaged CLI must never try to update itself inside a read-only store.
+      export DISABLE_AUTOUPDATER=1
+      mkdir -p "$HOME" "$state/backend/providers"
+      chmod 700 "$state"
+      # Nix owns the provider record while it still says what Nix wrote; Letta rewrites
+      # auth.json on `/connect`, so a changed file is the human's and is left alone.
+      auth="$state/backend/providers/auth.json"
+      pristine="$state/letta-provider-auth.json"
+      if [ ! -e "$auth" ] || jq -S . "$auth" 2>/dev/null | cmp -s - <(jq -S . "$pristine" 2>/dev/null); then
+        install -m 600 ${lettaProviderAuth} "$auth"
+      fi
+      install -m 600 ${lettaProviderAuth} "$pristine"
+      case "''${1:-}" in
+        server)
+          shift
+          exec ${lettaPackage}/bin/letta server --backend local \
+            --listen "ws://127.0.0.1:${toString ports.letta}" "$@"
+          ;;
+        *) exec ${lettaPackage}/bin/letta "$@" ;;
+      esac
+    '';
+  };
+
   brokerConfig =
     c:
     pkgs.writeText "agent-broker-${toString c.guestPort}.json" (
@@ -429,7 +497,8 @@ let
     ".local/state/maki"
     ".local/logs/maki"
   ]
-  ++ lib.optional isServer ".local/state/agent-assistant";
+  ++ lib.optional isServer ".local/state/agent-assistant"
+  ++ lib.optional isServer ".local/state/letta";
 
   planner = ../lib/share_planner.py;
   viewBuilder = ../lib/agent_view.py;
@@ -972,6 +1041,49 @@ let
               LockPersonality = true;
             };
           };
+
+          letta-assistant = {
+            description = "Letta App Server at agent.sammohr.dev";
+            wantedBy = [ "multi-user.target" ];
+            after = [
+              "network-online.target"
+              "run-secrets.mount"
+            ];
+            wants = [ "network-online.target" ];
+            serviceConfig = {
+              User = user;
+              Group = "users";
+              WorkingDirectory = home;
+              Environment = [ "PATH=/run/wrappers/bin:/run/current-system/sw/bin" ];
+              # The wrapper pins `--backend local` and the loopback listener, so agent state
+              # cannot leave the guest and the host relay is the only route in.
+              ExecStart = "${agentLetta}/bin/agent-letta server";
+              Restart = "always";
+              RestartSec = "5s";
+              UMask = "0077";
+              # ProtectSystem=strict makes every mount read-only, including the rw
+              # shares, so reopen exactly the view's writable roots. `-` ignores a
+              # root the view omitted because the host path does not exist.
+              ReadWritePaths = map (r: "-${home}/${r}") cfg.allowRw;
+              NoNewPrivileges = true;
+              PrivateTmp = true;
+              ProtectSystem = "strict";
+              ProtectKernelTunables = true;
+              ProtectKernelModules = true;
+              ProtectControlGroups = true;
+              ProtectClock = true;
+              ProtectHostname = true;
+              RestrictAddressFamilies = [
+                "AF_UNIX"
+                "AF_INET"
+                "AF_INET6"
+                "AF_NETLINK"
+              ];
+              RestrictRealtime = true;
+              RestrictSUIDSGID = true;
+              LockPersonality = true;
+            };
+          };
         };
       systemd.sockets = lib.mapAttrs (_: v: v.socket) (guestProxies // guestIngress);
 
@@ -1116,7 +1228,9 @@ in
           ".local/logs/maki"
         ]
         # nanobot sessions, pairing and the generated WebUI token; server-only.
-        ++ lib.optional isServer ".local/state/agent-assistant";
+        ++ lib.optional isServer ".local/state/agent-assistant"
+        # Letta's MemFS, transcripts and provider record; server-only.
+        ++ lib.optional isServer ".local/state/letta";
         # Only values that cannot be mediated stay here; every capability holds its own secret on
         # the host (see `capabilities`).
         secrets = [
@@ -1328,6 +1442,12 @@ in
           !(config ? webProxy && config.webProxy.services ? agent)
           || lib.elem config.webProxy.services.agent.port cfg.ingressPorts;
         message = "agent-vm: webProxy.services.agent.port must be in agentVm.ingressPorts, or the tunnel points at a port with no guest relay";
+      }
+      {
+        assertion =
+          !(config ? webProxy && config.webProxy.services ? nanobot)
+          || lib.elem config.webProxy.services.nanobot.port cfg.ingressPorts;
+        message = "agent-vm: webProxy.services.nanobot.port must be in agentVm.ingressPorts, or the tunnel points at a port with no guest relay";
       }
       {
         assertion = lib.all (c: c.type != "http" || c.allow != [ ]) (lib.attrValues cfg.capabilities);
