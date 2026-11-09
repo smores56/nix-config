@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = "3"
+SCHEMA_VERSION = "4"
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_meta (
     key TEXT PRIMARY KEY,
@@ -63,7 +63,8 @@ CREATE TABLE IF NOT EXISTS previews (
     phash INTEGER,
     lap_var REAL,
     mean_luma REAL,
-    hi_clip REAL
+    hi_clip REAL,
+    heuristics_version TEXT
 );
 CREATE TABLE IF NOT EXISTS scores (
     id INTEGER PRIMARY KEY,
@@ -150,19 +151,36 @@ class Database:
         self.connection.execute("PRAGMA busy_timeout=5000")
         self.connection.execute("PRAGMA foreign_keys=ON")
         self.connection.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
         row = self.connection.execute(
             "SELECT value FROM schema_meta WHERE key = 'schema_version'"
         ).fetchone()
-        if row is not None and row["value"] != SCHEMA_VERSION:
-            raise RuntimeError(
-                f"photo-triage database schema {row['value']} is not {SCHEMA_VERSION}; "
-                "migrate or remove the database before running"
+        if row is None:
+            self.connection.execute(
+                "INSERT INTO schema_meta(key, value) VALUES ('schema_version', ?)",
+                (SCHEMA_VERSION,),
             )
-        self.connection.execute(
-            "INSERT OR IGNORE INTO schema_meta(key, value) VALUES ('schema_version', ?)",
-            (SCHEMA_VERSION,),
-        )
-        self.connection.commit()
+            self.connection.commit()
+            return
+        current, target = int(row["value"]), int(SCHEMA_VERSION)
+        if current > target:
+            raise RuntimeError(
+                f"photo-triage database schema {current} is newer than {target}"
+            )
+        if current < 4:
+            columns = {
+                item["name"]
+                for item in self.connection.execute("PRAGMA table_info(previews)").fetchall()
+            }
+            if "heuristics_version" not in columns:
+                self.connection.execute("ALTER TABLE previews ADD COLUMN heuristics_version TEXT")
+            self.connection.execute(
+                "UPDATE schema_meta SET value = ? WHERE key = 'schema_version'",
+                (SCHEMA_VERSION,),
+            )
+            self.connection.commit()
 
     def close(self) -> None:
         self.connection.close()
@@ -281,8 +299,10 @@ class Database:
             parameters.append(reason)
         cursor = self.connection.execute(statement, parameters)
         self.connection.execute(
-            "UPDATE previews SET state = NULL, reason = NULL WHERE asset_id IN "
-            "(SELECT asset_id FROM scan_assets WHERE scan_id = ? AND state = 'pending')",
+            "UPDATE previews SET state = NULL, reason = NULL, phash = NULL, "
+            "lap_var = NULL, mean_luma = NULL, hi_clip = NULL, heuristics_version = NULL "
+            "WHERE asset_id IN (SELECT asset_id FROM scan_assets WHERE scan_id = ? "
+            "AND state = 'pending')",
             (scan_id,),
         )
         self.connection.commit()
@@ -466,6 +486,118 @@ class Database:
 
     def rollback(self) -> None:
         self.connection.rollback()
+
+
+    def scan_image_assets(self, scan_id: int, limit: int | None = None) -> list[str]:
+        statement = (
+            "SELECT sa.asset_id FROM scan_assets sa "
+            "JOIN assets a ON a.id = sa.asset_id "
+            "WHERE sa.scan_id = ? AND a.type = 'IMAGE' ORDER BY sa.asset_id"
+        )
+        parameters: list[Any] = [scan_id]
+        if limit is not None:
+            statement += " LIMIT ?"
+            parameters.append(limit)
+        return [str(row["asset_id"]) for row in self.connection.execute(statement, parameters)]
+
+    def update_preview_metrics(
+        self,
+        asset_id: str,
+        *,
+        phash: int,
+        lap_var: float,
+        mean_luma: float,
+        hi_clip: float,
+        heuristics_version: str,
+    ) -> None:
+        self.connection.execute(
+            "UPDATE previews SET phash = ?, lap_var = ?, mean_luma = ?, hi_clip = ?, "
+            "heuristics_version = ? WHERE asset_id = ?",
+            (phash, lap_var, mean_luma, hi_clip, heuristics_version, asset_id),
+        )
+
+    def asset_metrics(self, asset_id: str) -> sqlite3.Row | None:
+        return self.connection.execute(
+            "SELECT a.id, a.width, a.height, a.file_size, a.taken_at, a.is_favorite, "
+            "a.is_archived, a.is_trashed, a.visibility, p.lap_var, p.mean_luma, p.hi_clip "
+            "FROM assets a LEFT JOIN previews p ON p.asset_id = a.id WHERE a.id = ?",
+            (asset_id,),
+        ).fetchone()
+
+    def clear_generated_groups(self, scan_id: int) -> None:
+        self.connection.execute(
+            "DELETE FROM duplicate_members WHERE scan_id = ? AND group_id IN "
+            "(SELECT group_id FROM duplicate_groups WHERE scan_id = ? AND source IN ('exact', 'near'))",
+            (scan_id, scan_id),
+        )
+        self.connection.execute(
+            "DELETE FROM duplicate_groups WHERE scan_id = ? AND source IN ('exact', 'near')",
+            (scan_id,),
+        )
+
+    def insert_duplicate_group(
+        self,
+        scan_id: int,
+        group_id: str,
+        source: str,
+        tier: str,
+        distance_json: str,
+        members: list[tuple[str, float | None, int]],
+    ) -> None:
+        self.connection.execute(
+            "INSERT OR REPLACE INTO duplicate_groups"
+            "(scan_id, group_id, source, tier, distance_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (scan_id, group_id, source, tier, distance_json, _now()),
+        )
+        for asset_id, distance, keep_rank in members:
+            self.connection.execute(
+                "INSERT OR REPLACE INTO duplicate_members"
+                "(scan_id, group_id, asset_id, distance, keep_rank) VALUES (?, ?, ?, ?, ?)",
+                (scan_id, group_id, asset_id, distance, keep_rank),
+            )
+
+    def exact_duplicate_groups(self, scan_id: int) -> list[tuple[str, list[str]]]:
+        rows = self.connection.execute(
+            "SELECT a.checksum AS checksum, group_concat(a.id) AS ids FROM scan_assets sa "
+            "JOIN assets a ON a.id = sa.asset_id WHERE sa.scan_id = ? AND a.type = 'IMAGE' "
+            "AND a.checksum IS NOT NULL AND a.checksum != '' "
+            "GROUP BY a.checksum HAVING count(*) >= 2",
+            (scan_id,),
+        ).fetchall()
+        return [(str(row["checksum"]), sorted(str(row["ids"]).split(","))) for row in rows]
+
+    def scan_phash_rows(
+        self, scan_id: int, *, generator_id: str, heuristics_version: str
+    ) -> list[tuple[str, int, float]]:
+        rows = self.connection.execute(
+            "SELECT sa.asset_id AS asset_id, p.phash AS phash, p.lap_var AS lap_var "
+            "FROM scan_assets sa JOIN previews p ON p.asset_id = sa.asset_id "
+            "JOIN assets a ON a.id = sa.asset_id WHERE sa.scan_id = ? AND a.type = 'IMAGE' "
+            "AND p.state = 'ready' AND p.generator_id = ? AND p.heuristics_version = ? "
+            "AND p.phash IS NOT NULL ORDER BY sa.asset_id",
+            (scan_id, generator_id, heuristics_version),
+        ).fetchall()
+        return [
+            (str(row["asset_id"]), int(row["phash"]), float(row["lap_var"] or 0.0))
+            for row in rows
+        ]
+
+    def immich_duplicate_groups(self, scan_id: int) -> list[sqlite3.Row]:
+        return self.connection.execute(
+            "SELECT group_id, distance_json FROM duplicate_groups "
+            "WHERE scan_id = ? AND source = 'immich'",
+            (scan_id,),
+        ).fetchall()
+
+    def update_duplicate_keep_ranks(
+        self, scan_id: int, group_id: str, ranked: list[tuple[str, int]]
+    ) -> None:
+        for asset_id, keep_rank in ranked:
+            self.connection.execute(
+                "UPDATE duplicate_members SET keep_rank = ? WHERE scan_id = ? "
+                "AND group_id = ? AND asset_id = ?",
+                (keep_rank, scan_id, group_id, asset_id),
+            )
 
     def score_count(self) -> int:
         row = self.connection.execute("SELECT count(*) AS count FROM scores").fetchone()

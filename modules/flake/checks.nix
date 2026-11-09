@@ -42,6 +42,7 @@ in
         ps.mcp
         ps.redis
         ps.pillow
+        ps.numpy
       ]);
 
       mkEvalChecks =
