@@ -278,18 +278,16 @@ the swap — both write the same bucket, which is harmless for one restic client
 ### Memory MCP token
 
 `memory-mcp-token` in `secrets/common.yaml`, user-readable, presented as
-`Authorization: Bearer` by Maki's shim, the `memory` CLI, and Open WebUI. Mint
+`Authorization: Bearer` by Maki's shim and the `memory` CLI. Mint
 `openssl rand -base64 32`, replace the value, then rebuild smortress (the
-secret's `restartUnits` restarts `memory-mcp`) and every laptop. Open WebUI
-embeds the token in its tool-server configuration and is not in `restartUnits`,
-so restart it by hand; Maki caches it per session, so it needs a restart too.
+secret's `restartUnits` restarts `memory-mcp`) and every laptop. Maki caches it
+per session, so it needs a restart too.
 
 ### Jupyter token
 
-A random 32-byte value in `secrets/smortress.yaml` (`jupyter-token`), 0400, read
-by the Jupyter unit through `JUPYTER_TOKEN_FILE` and injected into Open WebUI's
-environment file. Replace it, rebuild, and restart `jupyter` and `open-webui`;
-running kernels do not survive, which is the point of rotating it.
+Retired with the Open WebUI code interpreter. The value is still in
+`secrets/smortress.yaml` and nothing declares it; delete it on the next sops
+edit.
 
 ### cloudflared credentials
 

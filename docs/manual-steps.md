@@ -787,7 +787,7 @@ Per-host Cloudflare Access service token: one credential behind two clients.
 `TUNNEL_SERVICE_TOKEN_ID` and `TUNNEL_SERVICE_TOKEN_SECRET` for
 `cloudflared access ssh`; `chat-proxy` (`modules/features/chat-proxy.nix`) reads
 it as `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` so the browser reaches
-`chat.sammohr.dev` without the Access one-time-PIN page. The value is two lines:
+`agent.sammohr.dev` without the Access one-time-PIN page. The value is two lines:
 the client ID, then the client secret. Both wrappers read it only from the
 host's sops deployment: `/run/secrets/cloudflare-access-ssh-token` from sops-nix
 on NixOS, and the sops-nix user path on Darwin. A missing, unreadable or
@@ -1009,18 +1009,17 @@ and secret in `secrets/smortress.yaml` as `r2-access-key-id-readonly` and
 
 <!-- manual-step: secret/jupyter-token -->
 
-Random 32 bytes in `secrets/smortress.yaml`, 0400 owned by `smores` (the
-sandboxed Jupyter unit runs as that user), read by the Jupyter server and
-injected into Open WebUI's environment file. Rotation invalidates running
-kernels.
+Retired with the Open WebUI code interpreter. The value is still in
+`secrets/smortress.yaml` and nothing declares it; delete it on the next sops
+edit.
 
 ### Memory MCP token
 
 <!-- manual-step: secret/memory-mcp-token -->
 
 Random 32 bytes in `secrets/common.yaml`, user-readable 0400. Presented as
-`Authorization: Bearer` by Maki, the memory CLI/shim, and Open WebUI. Rotation
-requires restarting `memory-mcp`, Maki, and Open WebUI.
+`Authorization: Bearer` by Maki and the memory CLI/shim. Rotation requires
+restarting `memory-mcp` and Maki.
 
 ### Rotation checklist
 
@@ -1896,29 +1895,66 @@ calls, and work repos are accepted there (`MEMORY_WORK_POLICY=allow`, from
 
 <!-- manual-step: service/smortress/agent -->
 
-`agent.sammohr.dev` → the host loopback relay `agent-vm-ingress-42701.socket`,
-which forwards to the guest relay of the same name; the guest relay listens on
-the tap address and forwards to the Letta App Server on `127.0.0.1:42701`. The
-runtime binds only loopback; the guest relay owns the tap address. Cloudflare
-Access's email allow-list is the only remote gate: the App Server runs without
-`--ws-auth`, which is correct for a loopback listener, so it accepts native
-clients (no `Origin` header) and answers `403` to Origin-bearing browser
-upgrades. There is no web UI — `/` is `404` — so the clients are the Letta Code
-CLI and the desktop/mobile apps. The relays are L4, so the guest also receives
-Cloudflare's `Cf-Access-Jwt-Assertion`; treat it as a human credential there
-(do not log or forward it) and keep the Access session short. Any host process
-can also reach the loopback relay without Access, so keep the host single-user.
+`agent.sammohr.dev` → the loopback Open WebUI server (`ports.openWebui`), HTTP
+behind Access plus Open WebUI's own email/password login. It is the phone PWA
+and the desktop web app for the Letta agent; SQLite, uploads and the workspace
+live under `/var/lib/data/open-webui`, so restic covers them with the durable
+tree.
 
-Apply the edge with `just cloudflare-apply` (creates the Access application) and
-`just switch smortress`. A host switch does not restart the guest
-(`microvm.vms.agent.restartIfChanged = false`), so restart it once after this
-change or the guest firewall and relay stay on the old generation:
-`sudo systemctl restart microvm@agent.service`. Until the runtime listens on
-the port the ingress returns 502.
+A blessed device does not see Access at all: its local proxy
+(`modules/features/chat-proxy.nix`) adds the device's service token and listens
+on `http://127.0.0.1:8787`. Open that URL **on the blessed device itself**; the
+listener is loopback-only. Other devices use `https://agent.sammohr.dev` and the
+email OTP prompt as before.
+
+**One backend: the Letta App Server.** `modules/nixos/open-webui.nix` declares a
+single OpenAI-compatible connection at `http://127.0.0.1:42701/v1`, keyless
+(`none`, because Open WebUI rejects an empty key). The App Server runs in the
+guest with `--openai-api`, which adds `/v1/models`, `/v1/chat/completions` and
+`/v1/responses` to its loopback listener; the host reaches it through the
+`agent-vm-ingress-42701` relay, so the App Server has no public hostname and
+needs no `--ws-auth`. `ENABLE_PERSISTENT_CONFIG` is off: the connection comes
+from the environment and admin-UI edits do not survive a restart.
+
+**Continuity.** `ENABLE_FORWARD_USER_INFO_HEADERS=True` makes Open WebUI send
+`X-OpenWebUI-Chat-Id`, and the App Server uses that header as the conversation
+key for streaming requests. One Open WebUI chat is therefore one persistent
+Letta conversation, and MemFS is shared across all of them. Without the header
+every turn would start a fresh temporary conversation and the agent would lose
+the thread.
+
+`DEFAULT_MODELS` is `nanobot`, the agent's *name*: the App Server advertises
+each agent as a model named after it when that name is unique, and the picker
+lists that name. Renaming the agent breaks the default. The agent id also
+resolves as a model id, but the picker would not show it.
+
+**The agent runs its own tools.** Open WebUI declares no MCP tool servers, no
+code interpreter and no web search: the agent has its own shell, file access,
+web search through the `tinyfish` capability and memory through MemFS. Offering
+Open WebUI's would either be ignored by the OpenAI-compatible layer or duplicate
+what the agent already has.
+
+**Chat is browser-only.** The Access application admits the email allow-list and
+a service token; nothing else calls Open WebUI's API.
+
+Apply the edge with `just cloudflare-apply` and `just switch smortress`. A host
+switch does not restart the guest (`microvm.vms.agent.restartIfChanged =
+false`), so restart it once after this change or the guest firewall and relay
+stay on the old generation: `sudo systemctl restart microvm@agent.service`.
+Until the runtime listens on the port the ingress returns 502.
+
+**The App Server itself has no public hostname.** It binds loopback in the
+guest; the host relay `agent-vm-ingress-42701.socket` forwards to the guest
+relay of the same name, which listens on the tap address and forwards to
+`127.0.0.1:42701`. The relays are L4, so the guest also receives Cloudflare's
+`Cf-Access-Jwt-Assertion` when a request arrives through the tunnel; treat it as
+a human credential there (do not log or forward it) and keep the Access session
+short. Any host process can also reach the loopback relay without Access, so
+keep the host single-user.
 
 The runtime is `letta-assistant.service` in the guest, running `agent-letta
-server` (`letta server --backend local --listen ws://127.0.0.1:42701`,
-`Restart=always`). The wrapper pins the local backend so agent state cannot
+server` (`letta server --backend local --openai-api --listen
+ws://127.0.0.1:42701`, `Restart=always`). The wrapper pins the local backend so agent state cannot
 leave the guest, and sets `DISABLE_AUTOUPDATER=1` because the store is
 read-only. Its state is `~/.local/state/letta`, which is also the restic path:
 `home/` holds the CLI's own `~/.letta` settings, and `backend/` is
@@ -2009,74 +2045,13 @@ GitHub PAT and signing key are the #459 residuals. The personal skills are
 every `~/.agents/skills` entry except `brain`, linked at start. `agent-sandbox
 status` and `sudo agent-vm-update` manage the guest update state.
 
-### smortress/chat
-
-<!-- manual-step: service/smortress/chat -->
-
-`chat.sammohr.dev` → the loopback Open WebUI server (`ports.openWebui`), HTTP
-behind Access plus Open WebUI's own email/password login. It is the phone PWA
-and the desktop web app; SQLite, uploads and the workspace live under
-`/var/lib/data/open-webui`, so restic covers them with the durable tree.
-
-A blessed device does not see Access at all: its local chat proxy
-(`modules/features/chat-proxy.nix`) adds the device's service token and listens
-on `http://127.0.0.1:8787`. Open that URL **on the blessed device itself**; the
-listener is loopback-only. Other devices use `https://chat.sammohr.dev` and the
-email OTP prompt as before.
-
-Two OpenAI-compatible backends are declared in `modules/nixos/open-webui.nix`,
-index-aligned with their keys: local llama.cpp (`qwen3.8-27b`, keyless, works
-with no network) and Neuralwatt (`deepseek-v4.1-flash`, the default through
-`DEFAULT_MODELS`). The Neuralwatt key reaches the unit only through the rendered
-sops environment file, never the Nix store. Open WebUI has no automatic
-failover, so the local model is a manual pick, not a fallback chain.
-`ENABLE_PERSISTENT_CONFIG` is off: every connection, tool server and engine
-below comes from the environment, and edits made in the admin UI do not survive
-a restart. Model ids are bare unless a connection sets `prefix_id`, so
-`DEFAULT_MODELS` must match what the picker lists.
-
-**Tool servers** are `ConfigVar`s in `TOOL_SERVER_CONNECTIONS`, type
-`MCP (Streamable HTTP)`. The memory wrapper is registered with its sops bearer
-token at `http://127.0.0.1:8182/mcp`. Open WebUI cannot send the `X-Memory-*`
-headers, so the deployment pins one scope for clients that send none
-(`MEMORY_MCP_DEFAULT_GROUP=global`, `MEMORY_MCP_DEFAULT_CWD=/chat`,
-`MEMORY_MCP_DEFAULT_ACTOR=open-webui`, `MEMORY_MCP_DEFAULT_MACHINE=smortress`);
-that keeps chat writes in the shared group and labels them, while searches read
-every allowed group. Maki and the CLI keep the strict header contract.
-`files-mcp` (`http://127.0.0.1:8185/mcp`) needs no token. A
-malformed value is silently dropped by Open WebUI, so an empty External Tool
-Servers list means the JSON is broken.
-
-**New chats start with every tool on.** `DEFAULT_MODEL_METADATA` gives each
-model `capabilities.{web_search,code_interpreter}`, `defaultFeatureIds` for both
-features and `toolIds = [server:mcp:memory, server:mcp:files]`. The backend
-merges it into every model's `info.meta` when the list is built (`capabilities`
-merge, per-model values winning; other keys are fill-only), and the chat UI seeds
-a fresh chat from exactly those fields. Tool ids are `server:mcp:<info.id>`, so
-renaming a server's `info.id` breaks the default silently. Existing chats keep
-their own toggles; only new ones pick this up.
-
-**Code interpreter** is Jupyter in a bwrap sandbox (`modules/lib/jupyter-sandbox.nix`)
-(loopback `8888`, token from the `jupyter-token` secret), so generated code runs
-with the vault, `~/Sync` and the host secrets masked. **Web search** goes to the
-TinyFish shim on loopback `8899` because the bundled engines are unmaintained
-scrapers; the shim holds `tinyfish-api-key` and returns the bare array the
-`external` engine expects.
-
-**Chat is browser-only.** The Access application admits the email allow-list
-and no service token, and nothing in the stack calls Open WebUI's
-OpenAI-compatible API: Maki reaches llama.cpp and Neuralwatt through its own
-provider config, so no API key is issued.
-
-For the first deployment, apply the Access application before rebuilding:
-`sudo nix run .#cloudflare-apply`, then `just switch smortress`.
-
 ### Phone file search
 
 `files-mcp` is a read-only file-search MCP on loopback `ports.filesMcp` over
-`/home/smores/{code,Documents,Downloads,dev}`. Open WebUI registers it as a
-second tool connection (`http://127.0.0.1:8185/mcp`, no auth) in
-`TOOL_SERVER_CONNECTIONS`, so chats get its tools with no setup.
+`/home/smores/{code,Documents,Downloads,dev}`. Nothing registers it as a tool
+connection any more: Open WebUI's tool servers went with the raw-model
+playground, and the Letta agent has its own file tools. The service still runs,
+unregistered, for any MCP client that wants it.
 
 Tools: `file_search` (file names and contents), `file_read` (one file, with
 line numbers), and `file_list`. Paths outside the roots, secret-like files
