@@ -1254,8 +1254,11 @@ in
                     && lib.elem ".local/state/agent-assistant" host.agentVm.allowRw
                     && lib.any (p: lib.getName p == "agent-assistant") guest.environment.systemPackages
                     # Letta is the second assistant: same supervision, its own state root.
+                    # `wantedBy` is the boot property T8 verified: without it the unit is
+                    # defined but never started, and every other assertion still passes.
                     && guest.systemd.services ? "letta-assistant"
                     && guest.systemd.services.letta-assistant.serviceConfig.Restart == "always"
+                    && lib.elem "multi-user.target" guest.systemd.services.letta-assistant.wantedBy
                     && lib.hasInfix "agent-letta server" guest.systemd.services.letta-assistant.serviceConfig.ExecStart
                     && lib.elem ".local/state/letta" host.agentVm.allowRw
                   else
