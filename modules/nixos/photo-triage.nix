@@ -1,6 +1,5 @@
-# Local photo triage: a dedicated system user, a fixed data root, two Unix-socket
-# relays, and a scorer with no IP stack. The scoring server and the run itself are
-# added by later tasks; this module owns the boundary they must live inside.
+# Local photo triage: a dedicated system user, a fixed data root, an Immich relay,
+# a Unix-socket scoring server, and a scorer with no IP stack. T5 adds the run.
 {
   config,
   lib,
@@ -11,6 +10,7 @@ let
   ports = import ../ports.nix;
   cfg = config.photoTriage;
   hardening = import ../lib/hardening.nix;
+  models = import ../lib/llama-cpp-models.nix { inherit pkgs; };
 
   user = "photo-triage";
   group = user;
@@ -19,7 +19,6 @@ let
   immichSocket = "${runtimeDir}/immich.sock";
   llmSocket = "${runtimeDir}/llm.sock";
   immichUpstream = "127.0.0.1:${toString ports.immich}";
-  llmUpstream = "127.0.0.1:${toString cfg.llmPort}";
 
   # The shared sandbox is the minimum; every unit adds its own deltas.
   base = hardening // {
@@ -42,11 +41,39 @@ let
     export PHOTO_TRIAGE_DATA_DIR=${dataDir}
     export PHOTO_TRIAGE_IMMICH_SOCKET=${immichSocket}
     export PHOTO_TRIAGE_LLM_SOCKET=${llmSocket}
+    export PHOTO_TRIAGE_MODEL=${models.modelAlias}
     exec ${cfg.package}/bin/photo-triage "$@"
   '';
   admin = pkgs.writeShellScriptBin "photo-triage-admin" ''
     exec /run/wrappers/bin/sudo -u ${user} -- ${adminRun} "$@"
   '';
+
+  scoringSettings = models.commonSettings // {
+    host = llmSocket;
+    alias = models.modelAlias;
+    model = models.mainModel;
+    ctx-size = 8192;
+    no-cont-batching = true;
+    reasoning = "off";
+    no-webui = true;
+    cors-origins = "localhost";
+    log-verbosity = 1;
+    temp = 0;
+    top-k = 1;
+    top-p = 1;
+    min-p = 0;
+    repeat-penalty = 1;
+    seed = 42;
+  };
+  scoringExec = toString [
+    (lib.getExe' models.llama-cpp "llama-server")
+    (lib.cli.toCommandLine (optionName: {
+      option = if builtins.stringLength optionName > 1 then "--${optionName}" else "-${optionName}";
+      sep = " ";
+      explicitBool = false;
+      formatArg = lib.generators.mkValueStringDefault { };
+    }) scoringSettings)
+  ];
 
   mkRelay =
     {
@@ -59,6 +86,8 @@ let
       inherit description;
       wantedBy = [ "multi-user.target" ];
       after = [ "systemd-tmpfiles-setup.service" ] ++ after;
+      startLimitIntervalSec = 3600;
+      startLimitBurst = 10;
       # ProtectSystem=strict makes /run read-only; this directory is the one write.
       serviceConfig = base // {
         User = user;
@@ -67,8 +96,6 @@ let
         ReadWritePaths = [ runtimeDir ];
         Restart = "always";
         RestartSec = "2s";
-        StartLimitIntervalSec = "1h";
-        StartLimitBurst = 10;
         RestrictAddressFamilies = [
           "AF_UNIX"
           "AF_INET"
@@ -85,11 +112,6 @@ in
       type = lib.types.package;
       default = pkgs.callPackage ../lib/photo-triage/package.nix { };
       description = "The photo-triage package to run.";
-    };
-    llmPort = lib.mkOption {
-      type = lib.types.port;
-      default = ports.photoTriageLlm;
-      description = "Loopback port of the dedicated scoring llama.cpp.";
     };
   };
 
@@ -114,24 +136,62 @@ in
       upstream = "TCP:${immichUpstream}";
       after = [ "immich-server.service" ];
     };
-    systemd.services.photo-triage-llm-relay = mkRelay {
-      description = "photo-triage scoring-model Unix-socket relay";
-      socket = llmSocket;
-      upstream = "TCP:${llmUpstream}";
+    systemd.services.llama-cpp-photo-triage = {
+      description = "llama.cpp photo-triage scoring server";
+      # Manual: T10's orchestrator stops the interactive server and starts this one.
+      wantedBy = [ ];
+      conflicts = [ "llama-cpp.service" ];
+      requires = [ "nvidia-uvm.service" ];
+      after = [ "nvidia-uvm.service" ];
+      startLimitIntervalSec = 3600;
+      startLimitBurst = 10;
+      serviceConfig = base // {
+        ExecStart = scoringExec;
+        Restart = "on-failure";
+        RestartSec = "300s";
+        TimeoutStartSec = "1h";
+        User = user;
+        Group = group;
+        SupplementaryGroups = [ "video" ];
+        StateDirectory = "llama-cpp-photo-triage";
+        StateDirectoryMode = "0700";
+        CacheDirectory = "llama-cpp-photo-triage";
+        CacheDirectoryMode = "0700";
+        WorkingDirectory = "/var/lib/llama-cpp-photo-triage";
+        Environment = [ "LLAMA_CACHE=/var/cache/llama-cpp-photo-triage" ];
+        # The GPU needs the real device nodes; everything else stays sandboxed.
+        PrivateDevices = false;
+        PrivateUsers = true;
+        PrivateMounts = true;
+        ProtectProc = "invisible";
+        ProcSubset = "pid";
+        IPAddressAllow = "localhost";
+        IPAddressDeny = "any";
+        MemoryDenyWriteExecute = true;
+        RestrictAddressFamilies = [
+          "AF_INET"
+          "AF_INET6"
+          "AF_UNIX"
+        ];
+        AmbientCapabilities = [ "" ];
+        SystemCallFilter = base.SystemCallFilter ++ [ "~@privileged" ];
+        SystemCallErrorNumber = "EPERM";
+        RestrictNamespaces = true;
+        ProtectClock = true;
+        ProtectHostname = true;
+        ProtectKernelLogs = true;
+        RemoveIPC = true;
+      };
     };
 
     systemd.services.photo-triage = {
       description = "Local photo-triage scorer";
       # Manual, and deliberately not wantedBy anything: the run is started by the
       # operator (T10 adds the maintenance-window orchestrator).
-      requires = [
-        "photo-triage-immich-relay.service"
-        "photo-triage-llm-relay.service"
-      ];
-      after = [
-        "photo-triage-immich-relay.service"
-        "photo-triage-llm-relay.service"
-      ];
+      requires = [ "photo-triage-immich-relay.service" ];
+      after = [ "photo-triage-immich-relay.service" ];
+      startLimitIntervalSec = 3600;
+      startLimitBurst = 10;
       serviceConfig = base // {
         User = user;
         Group = group;
@@ -144,11 +204,11 @@ in
           "PHOTO_TRIAGE_DATA_DIR=${dataDir}"
           "PHOTO_TRIAGE_IMMICH_SOCKET=${immichSocket}"
           "PHOTO_TRIAGE_LLM_SOCKET=${llmSocket}"
+          "PHOTO_TRIAGE_MODEL=${models.modelAlias}"
         ];
         Restart = "on-failure";
         RestartSec = "5s";
-        StartLimitIntervalSec = "1h";
-        StartLimitBurst = 10;
+        RestartPreventExitStatus = [ 2 ];
         # Previews live in RAM; the shared sandbox's PrivateTmp is disk-backed here.
         PrivateTmp = "disconnected";
         PrivateNetwork = true;
@@ -177,10 +237,6 @@ in
       {
         assertion = !(lib.hasPrefix "/var/lib/agent-vm" dataDir);
         message = "photo-triage: the data root must not be under the agent VM tree";
-      }
-      {
-        assertion = cfg.llmPort != ports.immich && cfg.llmPort != ports.llm;
-        message = "photo-triage: llmPort must not collide with Immich or the interactive LLM";
       }
       {
         assertion = !(config.services ? immich) || config.services.immich.enable;

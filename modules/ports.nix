@@ -24,6 +24,4 @@
   agentBrokerCalibre = 8187;
   filesMcp = 8185;
   openWebui = 3210;
-  # The dedicated photo-triage scoring server; the scorer reaches it through a Unix relay.
-  photoTriageLlm = 8188;
 }

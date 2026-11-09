@@ -17,8 +17,12 @@ pkgs.python3Packages.buildPythonApplication {
   };
 
   build-system = [ pkgs.python3Packages.hatchling ];
+  dependencies = [ pkgs.python3Packages.pillow ];
   doCheck = false;
-  pythonImportsCheck = [ "photo_triage" ];
+  pythonImportsCheck = [
+    "photo_triage"
+    "photo_triage.model"
+  ];
 
   meta = {
     description = "Local photo triage for Immich";
