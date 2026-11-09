@@ -61,7 +61,7 @@ adds its greeter as a host-local module.
 | `modules/nixos/open-webui.nix`, `navidrome.nix` | public tunnel apps with their own auth: chat, music |
 | `modules/nixos/restic-backup.nix` | restic repos, schedule, retention and the Immich db dump |
 | `modules/flake/` | flake-parts modules: configurations, checks, apps (`apps.nix`, `apps/`), formatter, nixpkgs |
-| `modules/lib/` | helpers: the share planner and agent-VM view/launcher, the Jupyter bwrap sandbox, key tables, `secret-path.nix`, `hardening.nix` |
+| `modules/lib/` | helpers: the share planner and agent-VM view/launcher, the Jupyter bwrap sandbox, key tables, `secret-path.nix`, `hardening.nix`, the photo-triage package |
 | `modules/ports.nix` | loopback port table shared by services and the tunnel |
 | `pkgs/overlays.nix`, `pkgs/nanobot/`, `pkgs/letta/` | nixpkgs overlays: pins and local package derivations; the uv2nix-built nanobot and Letta environments |
 | `modules/nixos/agent-vm.nix`, `modules/features/agent-vm/` | the agent VMs: Linux microvm guest (host module, view, firewall) and its launcher; the Mac Tart launcher. Shared facts in `modules/lib/agent-vm.nix`, planner in `modules/lib/share_planner.py` and the host-side verifier in `modules/lib/agent-vm-verify.sh` |
