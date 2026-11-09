@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from .albums import AlbumError, album_status, load_export, preflight, sync_export
 from .db import Database
 from .decisions import POLICY, decide_scan
 from .duplicates import PHASH_THRESHOLD, analyze_scan
@@ -21,6 +22,7 @@ from .score import ScorerError, score_library
 DB_NAME = "triage.db"
 DEFAULT_DATA_DIR = "/var/lib/photo-triage"
 DEFAULT_IMMICH_SOCKET = "/run/photo-triage/immich.sock"
+DEFAULT_IMMICH_ALBUM_SOCKET = "/run/photo-triage/immich-album.sock"
 DEFAULT_LLM_SOCKET = "/run/photo-triage/llm.sock"
 
 
@@ -36,6 +38,10 @@ def llm_socket() -> str:
     return os.environ.get("PHOTO_TRIAGE_LLM_SOCKET", DEFAULT_LLM_SOCKET)
 
 
+def album_socket() -> str:
+    return os.environ.get("PHOTO_TRIAGE_IMMICH_ALBUM_SOCKET", DEFAULT_IMMICH_ALBUM_SOCKET)
+
+
 def load_immich_key() -> str:
     directory = os.environ.get("CREDENTIALS_DIRECTORY")
     if not directory:
@@ -49,6 +55,29 @@ def load_immich_key() -> str:
     if not value:
         raise SystemExit(f"photo-triage: empty Immich read key: {path}")
     return value
+
+
+def load_album_key() -> str:
+    directory = os.environ.get("CREDENTIALS_DIRECTORY")
+    if not directory:
+        raise SystemExit(
+            "photo-triage: CREDENTIALS_DIRECTORY is not set; the unit must "
+            "LoadCredential immich-album-key"
+        )
+    path = Path(directory, "immich-album-key")
+    if not path.is_file():
+        raise SystemExit(f"photo-triage: missing Immich album key: {path}")
+    value = path.read_text().strip()
+    if not value:
+        raise SystemExit(f"photo-triage: empty Immich album key: {path}")
+    return value
+
+
+def chunk_size(value: str) -> int:
+    number = int(value)
+    if not 1 <= number <= 1000:
+        raise argparse.ArgumentTypeError("chunk must be between 1 and 1000")
+    return number
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -94,6 +123,25 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="decide a partial scan (failed and running scans are always rejected)",
     )
+
+    albums = commands.add_parser("albums", help="reconcile decisions into Immich albums")
+    album_commands = albums.add_subparsers(dest="album_command", required=True)
+    sync = album_commands.add_parser("sync", help="diff and write the two triage albums")
+    sync.add_argument("--scan-id", type=int, default=None)
+    sync.add_argument("--export", default=None, help="membership export path")
+    sync.add_argument("--dry-run", action="store_true", help="print the diff, call nothing")
+    sync.add_argument(
+        "--reconcile",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="re-read album counts after writing (default: on)",
+    )
+    sync.add_argument("--chunk", type=chunk_size, default=100)
+    probe = album_commands.add_parser(
+        "preflight", help="prove the album key's scopes with a probe asset"
+    )
+    probe.add_argument("--asset-id", required=True)
+    album_commands.add_parser("status", help="print the local album snapshots")
 
     run = commands.add_parser("run", help="score the library (service only)")
     run.add_argument("--dev-fixtures", action="store_true", help=argparse.SUPPRESS)
@@ -328,6 +376,81 @@ def run(dev_fixtures: bool, scan_id_arg: int | None = None, max_assets: int | No
         database.close()
 
 
+def albums_command(args: argparse.Namespace) -> int:
+    database = Database(data_dir() / DB_NAME)
+    try:
+        if args.album_command == "status":
+            print(json.dumps(album_status(database), sort_keys=True))
+            return 0
+        if args.album_command == "preflight":
+            client = ImmichClient(
+                socket_path=album_socket(), api_key=load_album_key()
+            )
+            run_id = database.start_run("albums-preflight")
+            try:
+                result = preflight(client, probe_asset_id=args.asset_id)
+            except BaseException as error:
+                database.finish_run(run_id, "failed", {"error": str(error)})
+                raise
+            database.finish_run(run_id, "complete", result)
+            print(json.dumps(result, sort_keys=True))
+            return 0
+        scan_id = args.scan_id
+        if args.export is not None:
+            path = Path(args.export)
+        else:
+            if scan_id is None:
+                scan_id = database.latest_complete_scan()
+            if scan_id is None:
+                print("photo-triage: no completed scan in the database", file=sys.stderr)
+                return 1
+            path = data_dir() / f"triage-membership-{scan_id}.json"
+        export = load_export(database, path)
+        if args.scan_id is not None and export["scan_id"] != args.scan_id:
+            raise AlbumError(
+                f"export belongs to scan {export['scan_id']}, not {args.scan_id}"
+            )
+        client = None
+        if not args.dry_run:
+            client = ImmichClient(
+                socket_path=album_socket(), api_key=load_album_key()
+            )
+        run_id = None if args.dry_run else database.start_run("albums", export["scan_id"])
+        try:
+            reports = sync_export(
+                database,
+                client,
+                export,
+                path=path,
+                dry_run=args.dry_run,
+                reconcile=args.reconcile,
+                chunk=args.chunk,
+            )
+        except BaseException as error:
+            if run_id is not None:
+                database.finish_run(
+                    run_id, "failed", {"decide_run_id": export["run_id"], "error": str(error)}
+                )
+            raise
+        reconciled = all(report.reconciled for report in reports)
+        if run_id is not None:
+            database.finish_run(
+                run_id,
+                "complete" if reconciled else "failed",
+                {
+                    "decide_run_id": export["run_id"],
+                    "reports": [report.as_dict() for report in reports],
+                },
+            )
+        print(json.dumps({"reports": [report.as_dict() for report in reports]}, sort_keys=True))
+        return 0 if reconciled else 1
+    except (AlbumError, ImmichError) as error:
+        print(f"photo-triage: {error}", file=sys.stderr)
+        return 1
+    finally:
+        database.close()
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "doctor":
@@ -344,6 +467,8 @@ def main(argv: list[str] | None = None) -> int:
         return analyze_command(args)
     if args.command == "decide":
         return decide_command(args)
+    if args.command == "albums":
+        return albums_command(args)
     if args.command == "run":
         return run(args.dev_fixtures, args.scan_id, args.max_assets)
     return 2
