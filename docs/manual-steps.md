@@ -1936,8 +1936,12 @@ unit exists only on smortress; the laptop guest has neither the service nor the
 state share. Its instance, sessions, workspace, and generated WebUI token live
 under `~/.local/state/agent-assistant`, which is also the restic path. The
 backup excludes `logs`, `run`, `media`, `llm_usage.sqlite3`, the live
-`sessions.sqlite3` databases (per-workspace dumps land in `backup/`), the WebUI
-token, and `gh`; re-pair the phone and run `gh auth login` after a restore.
+`sessions.sqlite3` databases and their WAL, the WebUI token, and `gh`; before
+each snapshot the host runs `agent-assistant dump` **inside the guest**, which
+writes per-workspace copies to `backup/`. Never open the live database from the
+host: a host-side process bypasses the guest's WAL locks and breaks the running
+gateway (`database disk image is malformed` / `disk I/O error`). Re-pair the
+phone and run `gh auth login` after a restore.
 `agent-sandbox agent-assistant token` prints the WebUI token; deleting
 `home/.nanobot/web-token` and restarting the service rotates it. Nix owns
 `config.json` until the WebUI edits it; after that the edited file wins, and

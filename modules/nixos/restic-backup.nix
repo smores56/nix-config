@@ -25,33 +25,15 @@ let
     mv "$tmp" ${lib.escapeShellArg dumpFile}
   '';
 
-  assistantState = vmLib.assistantState config.machine.username;
+  assistantState = vmLib.assistantState user;
+  user = config.machine.username;
+  home = "/home/${user}";
 
-  # Sessions are live SQLite databases. Dump consistent copies and keep the
-  # databases themselves out of the snapshot; restic never reads a torn file.
-  assistantDump = pkgs.writeShellScript "restic-assistant-dump" ''
-    set -euo pipefail
-    root=${lib.escapeShellArg "${assistantState}/home/.nanobot"}
-    out=${lib.escapeShellArg "${assistantState}/backup"}
-    install -d -m 0700 "$out"
-    found=0
-    for db in "$root"/sessions/*/sessions.sqlite3 "$root"/sessions/sessions.sqlite3; do
-      [ -e "$db" ] || continue
-      case "$db" in
-        */sessions/sessions.sqlite3) id=legacy ;;
-        *) id=''${db%/sessions.sqlite3}; id=''${id##*/} ;;
-      esac
-      install -d -m 0700 "$out/$id"
-      tmp="$out/$id/sessions.sqlite3.tmp"
-      ${pkgs.sqlite}/bin/sqlite3 "$db" ".backup '$tmp'"
-      mv "$tmp" "$out/$id/sessions.sqlite3"
-      found=1
-    done
-    if [ "$found" -eq 0 ]; then
-      rm -rf "$out"
-      exit 0
-    fi
-  '';
+  # The sessions database lives on the virtiofs share, and only the guest may
+  # open it: a host process bypasses the guest's WAL locks and breaks the live
+  # connection. The guest wrapper dumps consistent copies into `backup/`; the
+  # host only snapshots those.
+  assistantDump = "${vmLib.launcher user}/bin/agent-sandbox agent-assistant dump";
 
   common = {
     paths = [
@@ -71,7 +53,15 @@ let
       "${assistantState}/gh"
     ];
     # A missing state tree (the user removed it) must not fail the whole backup.
-    backupPrepareCommand = "install -d -m 0700 -o ${config.machine.username} -g users ${lib.escapeShellArg assistantState}";
+    # The dump runs in the guest; a failure keeps the previous copy and still
+    # backs up the durable tree.
+    backupPrepareCommand = ''
+      ${pkgs.coreutils}/bin/install -d -m 0700 -o ${user} -g users ${lib.escapeShellArg assistantState}
+      cd ${lib.escapeShellArg home}
+      ${pkgs.util-linux}/bin/runuser -u ${user} -- ${pkgs.coreutils}/bin/env HOME=${lib.escapeShellArg home} \
+        ${assistantDump} \
+        || echo "restic: the assistant dump failed; snapshotted the previous copy" >&2
+    '';
     passwordFile = config.sops.secrets.restic-password.path;
     pruneOpts = [
       "--keep-daily 14"
@@ -140,31 +130,10 @@ in
   # The restic module exposes no `onFailure`, so the alert is attached to the generated
   # units by name; %n mails each repo's own journal. `wants` not `requires`: a down
   # database still lets the tree back up.
-  systemd.services.restic-assistant-dump = {
-    description = "Dump the assistant sessions databases into the backed-up state";
-    path = [ pkgs.coreutils ];
-    onFailure = [ "cloudflare-email@%n.service" ];
-    serviceConfig = hardening // {
-      Type = "oneshot";
-      User = config.machine.username;
-      Group = "users";
-      ExecStart = assistantDump;
-      ProtectHome = false;
-      ReadWritePaths = [ assistantState ];
-      TimeoutStartSec = "1h";
-    };
-  };
-
   systemd.services."restic-backups-r2" = {
     onFailure = [ "cloudflare-email@%n.service" ];
-    wants = [
-      "restic-db-dump.service"
-      "restic-assistant-dump.service"
-    ];
-    after = [
-      "restic-db-dump.service"
-      "restic-assistant-dump.service"
-    ];
+    wants = [ "restic-db-dump.service" ];
+    after = [ "restic-db-dump.service" ];
   };
 
   # The local repo lives on the backup disk: wait for that mount, or a missing
@@ -172,13 +141,7 @@ in
   systemd.services."restic-backups-local" = {
     onFailure = [ "cloudflare-email@%n.service" ];
     unitConfig.RequiresMountsFor = [ "/var/backup" ];
-    wants = [
-      "restic-db-dump.service"
-      "restic-assistant-dump.service"
-    ];
-    after = [
-      "restic-db-dump.service"
-      "restic-assistant-dump.service"
-    ];
+    wants = [ "restic-db-dump.service" ];
+    after = [ "restic-db-dump.service" ];
   };
 }

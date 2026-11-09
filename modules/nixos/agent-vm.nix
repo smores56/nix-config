@@ -254,6 +254,7 @@ let
       pkgs.jq
       pkgs.ripgrep
       pkgs.curl
+      pkgs.sqlite
       sdlcGuest
     ];
     text = ''
@@ -301,6 +302,28 @@ let
       done
       case "''${1:-}" in
         token) cat "$HOME/.nanobot/web-token" ;;
+        # The sessions database is on the virtiofs share, and only this guest may open it:
+        # a host process bypasses the guest's WAL locks and corrupts the live connection.
+        # The host backup calls this through agent-sandbox, then snapshots the copies.
+        dump)
+          root="$HOME/.nanobot"
+          out="$state/backup"
+          install -d -m 0700 "$out"
+          found=0
+          for db in "$root"/sessions/*/sessions.sqlite3 "$root"/sessions/sessions.sqlite3; do
+            [ -e "$db" ] || continue
+            case "$db" in
+              */sessions/sessions.sqlite3) id=legacy ;;
+              *) id=''${db%/sessions.sqlite3}; id=''${id##*/} ;;
+            esac
+            install -d -m 0700 "$out/$id"
+            tmp="$out/$id/sessions.sqlite3.tmp"
+            sqlite3 "$db" ".backup '$tmp'"
+            mv "$tmp" "$out/$id/sessions.sqlite3"
+            found=1
+          done
+          [ "$found" -eq 1 ] || rm -rf "$out"
+          ;;
         # The supervised entry point; `webui` is an interactive client that exits
         # when the gateway does, so it must never be the unit's ExecStart.
         gateway) exec ${nanobotPackage}/bin/nanobot gateway --foreground ;;
