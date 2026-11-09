@@ -1,14 +1,46 @@
-"""Command-line entry point for the photo-triage scaffold."""
+"""Command-line entry point for photo-triage."""
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import socket
 import sys
 from pathlib import Path
 
 from . import __version__
+from .db import Database
+from .immich import ImmichClient, ImmichError
+from .scan import PAGE_SIZE, scan_library
+
+DB_NAME = "triage.db"
+DEFAULT_DATA_DIR = "/var/lib/photo-triage"
+DEFAULT_IMMICH_SOCKET = "/run/photo-triage/immich.sock"
+DEFAULT_LLM_SOCKET = "/run/photo-triage/llm.sock"
+
+
+def data_dir() -> Path:
+    return Path(os.environ.get("PHOTO_TRIAGE_DATA_DIR", DEFAULT_DATA_DIR))
+
+
+def immich_socket() -> str:
+    return os.environ.get("PHOTO_TRIAGE_IMMICH_SOCKET", DEFAULT_IMMICH_SOCKET)
+
+
+def load_immich_key() -> str:
+    directory = os.environ.get("CREDENTIALS_DIRECTORY")
+    if not directory:
+        raise SystemExit(
+            "photo-triage: CREDENTIALS_DIRECTORY is not set; the unit must LoadCredential immich-read-key"
+        )
+    path = Path(directory, "immich-read-key")
+    if not path.is_file():
+        raise SystemExit(f"photo-triage: missing Immich read key: {path}")
+    value = path.read_text().strip()
+    if not value:
+        raise SystemExit(f"photo-triage: empty Immich read key: {path}")
+    return value
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -18,24 +50,34 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=__version__)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("doctor", help="check the data root and relay sockets")
+
+    scan = commands.add_parser("scan", help="scan the Immich library into the local database")
+    scan.add_argument("--page-size", type=int, default=PAGE_SIZE)
+    scan.add_argument("--max-assets", type=int, default=None)
+
+    coverage = commands.add_parser("coverage", help="print a scan generation's coverage")
+    coverage.add_argument("--scan-id", type=int, default=None)
+
+    requeue = commands.add_parser("requeue", help="reopen skipped assets in a scan generation")
+    requeue.add_argument("--scan-id", type=int, default=None)
+    requeue.add_argument("--reason", default=None)
+
     run = commands.add_parser("run", help="score the library (service only)")
     run.add_argument("--dev-fixtures", action="store_true", help=argparse.SUPPRESS)
     return parser
 
 
 def doctor() -> int:
-    data_dir = Path(os.environ.get("PHOTO_TRIAGE_DATA_DIR", "/var/lib/photo-triage"))
+    root = data_dir()
     sockets = {
-        "immich": Path(
-            os.environ.get("PHOTO_TRIAGE_IMMICH_SOCKET", "/run/photo-triage/immich.sock")
-        ),
-        "llm": Path(os.environ.get("PHOTO_TRIAGE_LLM_SOCKET", "/run/photo-triage/llm.sock")),
+        "immich": Path(immich_socket()),
+        "llm": Path(os.environ.get("PHOTO_TRIAGE_LLM_SOCKET", DEFAULT_LLM_SOCKET)),
     }
     problems = []
-    if not data_dir.is_dir():
-        problems.append(f"missing data dir: {data_dir}")
-    elif not os.access(data_dir, os.W_OK):
-        problems.append(f"data dir is not writable: {data_dir}")
+    if not root.is_dir():
+        problems.append(f"missing data dir: {root}")
+    elif not os.access(root, os.W_OK):
+        problems.append(f"data dir is not writable: {root}")
     for name, path in sockets.items():
         if not path.exists():
             problems.append(f"missing {name} relay socket: {path}")
@@ -52,8 +94,74 @@ def doctor() -> int:
         print(f"fail: {problem}", file=sys.stderr)
     if problems:
         return 1
-    print(f"ok data={data_dir} immich={sockets['immich']} llm={sockets['llm']}")
+    print(f"ok data={root} immich={sockets['immich']} llm={sockets['llm']}")
     return 0
+
+
+def scan_command(args: argparse.Namespace) -> int:
+    database = Database(data_dir() / DB_NAME)
+    try:
+        client = ImmichClient(socket_path=immich_socket(), api_key=load_immich_key())
+        scan_id = scan_library(
+            client,
+            database,
+            page_size=args.page_size,
+            max_assets=args.max_assets,
+        )
+        print(
+            json.dumps(
+                {
+                    "scan_id": scan_id,
+                    "coverage": database.coverage(scan_id),
+                    "duplicates": database.duplicates_summary(scan_id),
+                },
+                sort_keys=True,
+            )
+        )
+        return 0
+    except ImmichError as error:
+        print(f"photo-triage: {error}", file=sys.stderr)
+        return 1
+    except Exception as error:
+        print(f"photo-triage: {error}", file=sys.stderr)
+        return 1
+    finally:
+        database.close()
+
+
+def coverage_command(args: argparse.Namespace) -> int:
+    database = Database(data_dir() / DB_NAME)
+    try:
+        scan_id = args.scan_id if args.scan_id is not None else database.latest_scan()
+        if scan_id is None:
+            print("photo-triage: no scans in the database", file=sys.stderr)
+            return 1
+        state = database.scan_state(scan_id)
+        if state is None:
+            print(f"photo-triage: no scan {scan_id}", file=sys.stderr)
+            return 1
+        print(json.dumps(database.coverage(scan_id), sort_keys=True))
+        return 0
+    finally:
+        database.close()
+
+
+def requeue_command(args: argparse.Namespace) -> int:
+    database = Database(data_dir() / DB_NAME)
+    try:
+        scan_id = args.scan_id if args.scan_id is not None else database.latest_scan()
+        if scan_id is None:
+            print("photo-triage: no scans in the database", file=sys.stderr)
+            return 1
+        state = database.scan_state(scan_id)
+        if state is None:
+            print(f"photo-triage: no scan {scan_id}", file=sys.stderr)
+            return 1
+        count = database.requeue(scan_id, args.reason)
+        print(json.dumps({"scan_id": scan_id, "requeued": count}, sort_keys=True))
+        return 0
+    finally:
+        database.close()
 
 
 def run(dev_fixtures: bool) -> int:
@@ -71,6 +179,12 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "doctor":
         return doctor()
+    if args.command == "scan":
+        return scan_command(args)
+    if args.command == "coverage":
+        return coverage_command(args)
+    if args.command == "requeue":
+        return requeue_command(args)
     if args.command == "run":
         return run(args.dev_fixtures)
     return 2
