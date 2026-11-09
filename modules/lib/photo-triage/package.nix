@@ -17,11 +17,15 @@ pkgs.python3Packages.buildPythonApplication {
   };
 
   build-system = [ pkgs.python3Packages.hatchling ];
-  dependencies = [ pkgs.python3Packages.pillow ];
+  dependencies = [
+    pkgs.python3Packages.pillow
+    pkgs.python3Packages.numpy
+  ];
   doCheck = false;
   pythonImportsCheck = [
     "photo_triage"
     "photo_triage.model"
+    "photo_triage.duplicates"
   ];
 
   meta = {

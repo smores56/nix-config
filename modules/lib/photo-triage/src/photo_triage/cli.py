@@ -11,6 +11,7 @@ from pathlib import Path
 
 from . import __version__
 from .db import Database
+from .duplicates import PHASH_THRESHOLD, analyze_scan
 from .immich import ImmichClient, ImmichError
 from .model import LLMClient, LLMError, MODEL_ALIAS
 from .scan import PAGE_SIZE, scan_library
@@ -69,6 +70,11 @@ def build_parser() -> argparse.ArgumentParser:
     requeue.add_argument("--reason", default=None)
 
     commands.add_parser("self-test", help="check the scoring model alias and vision")
+
+    analyze = commands.add_parser("analyze", help="compute preview heuristics and duplicate groups")
+    analyze.add_argument("--scan-id", type=int, default=None)
+    analyze.add_argument("--threshold", type=int, default=PHASH_THRESHOLD)
+    analyze.add_argument("--max-assets", type=int, default=None)
 
     run = commands.add_parser("run", help="score the library (service only)")
     run.add_argument("--dev-fixtures", action="store_true", help=argparse.SUPPRESS)
@@ -187,6 +193,37 @@ def self_test_command() -> int:
     return 0
 
 
+def analyze_command(args: argparse.Namespace) -> int:
+    database = Database(data_dir() / DB_NAME)
+    try:
+        scan_id = args.scan_id if args.scan_id is not None else database.latest_scan()
+        if scan_id is None:
+            print("photo-triage: no completed scan in the database", file=sys.stderr)
+            return 1
+        if not 0 <= args.threshold <= 32:
+            print("photo-triage: threshold must be between 0 and 32", file=sys.stderr)
+            return 2
+        immich = ImmichClient(socket_path=immich_socket(), api_key=load_immich_key())
+        immich.assert_read_permissions()
+        stats = analyze_scan(
+            immich,
+            database,
+            scan_id,
+            threshold=args.threshold,
+            max_assets=args.max_assets,
+        )
+        print(json.dumps(stats, sort_keys=True))
+        if stats["assets"] > 0 and stats["previews"] == 0:
+            print("photo-triage: no previews were analyzed", file=sys.stderr)
+            return 1
+        return 0
+    except Exception as error:
+        print(f"photo-triage: {error}", file=sys.stderr)
+        return 1
+    finally:
+        database.close()
+
+
 def run(dev_fixtures: bool, scan_id_arg: int | None = None, max_assets: int | None = None) -> int:
     if not dev_fixtures and os.environ.get("PHOTO_TRIAGE_UNIT") != "1":
         print(
@@ -232,6 +269,8 @@ def main(argv: list[str] | None = None) -> int:
         return requeue_command(args)
     if args.command == "self-test":
         return self_test_command()
+    if args.command == "analyze":
+        return analyze_command(args)
     if args.command == "run":
         return run(args.dev_fixtures, args.scan_id, args.max_assets)
     return 2
