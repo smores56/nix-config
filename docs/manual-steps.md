@@ -1600,30 +1600,6 @@ revoked than hidden: the two work GCP service-account keys
 locally; revoke them in IAM only after confirming with the team that nothing
 else (CI, teammates) uses them.
 
-### immich-agent-api-key
-
-<!-- manual-step: secret/immich-agent-api-key -->
-
-The agent VM no longer has an Immich capability. The broker allowed every route,
-so the guest could reach the whole Immich route surface; the documented key
-carried `asset.read`, `asset.upload`, `album.read` and `album.create` (it did
-not grant `asset.view` or `asset.download`, so thumbnails and originals were not
-reachable with those scopes). The capability and the `secrets-common.nix`
-declaration are removed, so the secret is no longer materialised at
-`/run/secrets/immich-agent-api-key`.
-
-The key is compromised: an earlier launcher revision exported the real value,
-and the value appears in host maki session transcripts that are shared into the
-guest. The transcript values were redacted on 2026-11-09; treat the key as
-compromised until this operator step is done.
-
-Operator step: revoke the key in Immich under Account Settings → API Keys, then
-remove `immich-agent-api-key` from `secrets/common.yaml` with `sops` and delete
-this anchor. After the host switch, run `agent-sandbox restart` so the guest
-drops the stale `IMMICH_API_URL`/`IMMICH_API_KEY=none` environment. The
-photo-triage design uses separate host-scoped keys and does not need this one.
-
-
 ### todo.txt
 
 `~/.local/share/todo/todo.txt` is the single list. It is a bindfs mount of
