@@ -25,6 +25,12 @@ in
     let
       pkgs = mkPkgs system { };
 
+      # The local overlays carry the uv2nix-built assistant environments; the checks below
+      # exercise them as built, not as declared.
+      overlaidPkgs = pkgs.extend (
+        lib.composeManyExtensions ((import ../../pkgs/overlays.nix { inherit inputs; }) system)
+      );
+
       # One nixpkgs for lint tools so the format check agrees with `nix fmt`.
       lintPkgs = import inputs.nixpkgs { inherit system; };
 
@@ -1022,6 +1028,27 @@ in
             }
             ''
               tofu fmt -check -recursive ${src}/tofu
+              touch $out
+            '';
+
+        # The wheel is a payload carrier: a bundled Node runtime plus prebuilt native
+        # modules that autoPatchelfHook rewrites. A patchelf or payload regression shows
+        # up here as a launcher that cannot start, not as a guest that boots without an
+        # assistant (sdlc #495).
+        letta-package =
+          pkgs.runCommand "letta-package-check"
+            {
+              nativeBuildInputs = [
+                overlaidPkgs.letta
+                pkgs.gnugrep
+              ];
+            }
+            ''
+              export HOME=$TMPDIR
+              letta --version | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+'
+              letta server --help | grep -qF -- '--ws-auth'
+              letta server --help | grep -qF -- '--openai-api'
+              letta server --help | grep -qF -- '--listen'
               touch $out
             '';
       }
