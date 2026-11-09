@@ -20,7 +20,6 @@ let
     "ssh"
     "llm"
     "memory"
-    "chat"
     "agent"
     "nanobot"
   ];

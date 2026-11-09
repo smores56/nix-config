@@ -1,4 +1,4 @@
-# Blessed devices reach chat.sammohr.dev (Open WebUI) without the Cloudflare Access one-time PIN:
+# Blessed devices reach agent.sammohr.dev (Open WebUI) without the Cloudflare Access one-time PIN:
 # service tokens travel as HTTP headers, which no browser sends, so a loopback Caddy adds this
 # device's token. `cloudflared access tcp` cannot stand in for it: it dials a TCP ingress, not the
 # HTTP one the browser needs. Non-blessed devices keep the email OTP policy as fallback.
@@ -29,10 +29,10 @@ let
     # rejected because Caddy's RE2 cannot exclude Access's own login path and a blind rewrite
     # loops on a revoked token.
     http://127.0.0.1:${toString port} {
-      reverse_proxy https://chat.sammohr.dev {
+      reverse_proxy https://agent.sammohr.dev {
         # Caddy forwards the incoming Host by default, so without this the edge sees 127.0.0.1
         # and rejects the request (Host must match the tunnel hostname).
-        header_up Host chat.sammohr.dev
+        header_up Host agent.sammohr.dev
         header_up Cf-Access-Client-Id {env.CF_ACCESS_CLIENT_ID}
         header_up Cf-Access-Client-Secret {env.CF_ACCESS_CLIENT_SECRET}
       }
@@ -67,7 +67,7 @@ in
 {
   systemd.user.services."chat-proxy" = lib.mkIf (!isDarwin) {
     Unit = {
-      Description = "Loopback Caddy that adds this device's Cloudflare Access token for chat.sammohr.dev";
+      Description = "Loopback Caddy that adds this device's Cloudflare Access token for agent.sammohr.dev";
       After = [ "network-online.target" ];
       Wants = [ "network-online.target" ];
     };

@@ -2,8 +2,9 @@
 # and runs the local LLM, Immich/Calibre, and the backup disk.
 let
   ports = import ../../ports.nix;
-  # ssh/llm/memory/chat want an email allow-list plus a Service Auth policy: unattended clients
-  # authenticate with a token, and a blessed device's chat proxy skips the browser PIN page.
+  # ssh/llm/memory/agent want an email allow-list plus a Service Auth policy: unattended
+  # clients authenticate with a token, and a blessed device's proxy skips the browser PIN
+  # page.
   serviceAuth = {
     enable = true;
     serviceAuth = true;
@@ -91,17 +92,12 @@ in
           protocol = "tcp";
           access = serviceAuth;
         };
-        # Human-facing PWA: Access plus its own login; the service token lets a blessed
-        # device's chat proxy reach it without the PIN page.
-        chat = {
+        # Human-facing assistant: Access plus Open WebUI's own login; the service token
+        # lets a blessed device's proxy reach it without the PIN page. `agent` is the
+        # browser frontend for the Letta agent; nanobot keeps its own hostname beside it.
+        agent = {
           port = ports.openWebui;
           access = serviceAuth;
-        };
-        # Human-facing assistant: Access plus the runtime's own pairing. `agent` is the
-        # Letta App Server; nanobot keeps its own hostname beside it.
-        agent = {
-          port = ports.letta;
-          access.enable = true;
         };
         nanobot = {
           port = ports.agent;

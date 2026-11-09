@@ -1446,12 +1446,9 @@ in
         message = "agent-vm: prep/net must not restart on host switch; they are requiredBy the VM and would drop every session";
       }
       {
-        assertion =
-          !(config ? webProxy && config.webProxy.services ? agent)
-          || lib.elem config.webProxy.services.agent.port cfg.ingressPorts;
-        message = "agent-vm: webProxy.services.agent.port must be in agentVm.ingressPorts, or the tunnel points at a port with no guest relay";
-      }
-      {
+        # Only `nanobot` is a guest listener. `agent` is Open WebUI on the host, so it has
+        # no guest relay to agree with; `ports.letta` stays in `ingressPorts` because the
+        # host relay is now Open WebUI's route into the guest rather than the tunnel's.
         assertion =
           !(config ? webProxy && config.webProxy.services ? nanobot)
           || lib.elem config.webProxy.services.nanobot.port cfg.ingressPorts;
