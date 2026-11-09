@@ -991,6 +991,11 @@ in
               touch $out
             '';
 
+        photo-triage-package = pkgs.runCommand "photo-triage-package" { } ''
+          ${(pkgs.callPackage ../lib/photo-triage/package.nix { })}/bin/photo-triage --version
+          touch $out
+        '';
+
         bootstrap =
           pkgs.runCommand "bootstrap-check"
             {

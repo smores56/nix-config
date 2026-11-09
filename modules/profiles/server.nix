@@ -15,6 +15,7 @@
     ../nixos/open-webui.nix
     ../nixos/tinyfish-shim.nix
     ../nixos/llm.nix
+    ../nixos/photo-triage.nix
     ../nixos/memory.nix
     ../nixos/filesearch.nix
     ../nixos/nvidia.nix
