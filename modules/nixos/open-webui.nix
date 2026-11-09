@@ -11,7 +11,7 @@ let
   # The App Server advertises each agent as a model, named after the agent when that name
   # is unique. `DEFAULT_MODELS` must match what the picker lists, so this is the agent's
   # name and not its id: renaming the agent breaks the default.
-  agentModel = "nanobot";
+  agentModel = "Letta";
 in
 {
   services.open-webui = {
