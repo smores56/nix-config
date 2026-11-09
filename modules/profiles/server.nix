@@ -11,9 +11,7 @@
     ../nixos/web-proxy.nix
     ../nixos/immich.nix
     ../nixos/navidrome.nix
-    ../nixos/jupyter.nix
     ../nixos/open-webui.nix
-    ../nixos/tinyfish-shim.nix
     ../nixos/llm.nix
     ../nixos/photo-triage.nix
     ../nixos/memory.nix

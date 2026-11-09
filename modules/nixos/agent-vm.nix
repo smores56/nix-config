@@ -393,7 +393,11 @@ let
       case "''${1:-}" in
         server)
           shift
-          exec ${lettaPackage}/bin/letta server --backend local \
+          # `--openai-api` adds /v1/models, /v1/chat/completions and /v1/responses to the
+          # same loopback listener, which is how Open WebUI on the host drives the agent.
+          # It needs no `--ws-auth`: those routes are plain HTTP, and the listener is
+          # loopback-only, so the host relay stays the only route in.
+          exec ${lettaPackage}/bin/letta server --backend local --openai-api \
             --listen "ws://127.0.0.1:${toString ports.letta}" "$@"
           ;;
         *) exec ${lettaPackage}/bin/letta "$@" ;;
@@ -1442,12 +1446,9 @@ in
         message = "agent-vm: prep/net must not restart on host switch; they are requiredBy the VM and would drop every session";
       }
       {
-        assertion =
-          !(config ? webProxy && config.webProxy.services ? agent)
-          || lib.elem config.webProxy.services.agent.port cfg.ingressPorts;
-        message = "agent-vm: webProxy.services.agent.port must be in agentVm.ingressPorts, or the tunnel points at a port with no guest relay";
-      }
-      {
+        # Only `nanobot` is a guest listener. `agent` is Open WebUI on the host, so it has
+        # no guest relay to agree with; `ports.letta` stays in `ingressPorts` because the
+        # host relay is now Open WebUI's route into the guest rather than the tunnel's.
         assertion =
           !(config ? webProxy && config.webProxy.services ? nanobot)
           || lib.elem config.webProxy.services.nanobot.port cfg.ingressPorts;

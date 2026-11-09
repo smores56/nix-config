@@ -1110,20 +1110,6 @@ in
               '';
           }
       // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
-        # The jupyter interpreter is the one bwrap profile left.
-        jupyter-sandbox-static =
-          pkgs.runCommand "jupyter-sandbox-static-check"
-            {
-              nativeBuildInputs = [ pkgs.gnugrep ];
-            }
-            ''
-              grep -F -- '--clearenv' ${../lib/jupyter-sandbox.sh}
-              grep -F -- '--unshare-pid' ${../lib/jupyter-sandbox.sh}
-              grep -F -- '--unshare-user' ${../lib/jupyter-sandbox.sh}
-              grep -F -- '--tmpfs /run' ${../lib/jupyter-sandbox.sh}
-              grep -F -- '/var/lib/data/photos' ${../lib/jupyter-sandbox.nix}
-              touch $out
-            '';
         agent-vm-linux-static =
           let
             hosts = map (n: config.flake.nixosConfigurations.${n}.config) [
