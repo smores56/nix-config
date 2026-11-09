@@ -115,10 +115,12 @@ resource "cloudflare_zero_trust_access_application" "memory" {
 
 # Access email allow-list is the human policy; Open WebUI's own login is a second layer. The
 # service-auth policy lets a blessed device's local proxy in without the browser PIN page.
-# `chat.sammohr.dev` was retired when this hostname took over the browser frontend; its
-# application is removed here, which needs `just cloudflare-tofu state rm
-# cloudflare_zero_trust_access_application.chat` first because the old block carried
-# `prevent_destroy`.
+#
+# `chat.sammohr.dev` was retired when this hostname took over the browser frontend. Its
+# application cannot be destroyed in the same apply that drops it, because the old block
+# carried `prevent_destroy`; run `just cloudflare-tofu state rm
+# cloudflare_zero_trust_access_application.chat` first, then delete the orphaned application
+# in Zero Trust.
 resource "cloudflare_zero_trust_access_application" "agent" {
   account_id       = var.account_id
   name             = "agent"

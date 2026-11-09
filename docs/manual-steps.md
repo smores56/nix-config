@@ -1937,11 +1937,16 @@ what the agent already has.
 **Chat is browser-only.** The Access application admits the email allow-list and
 a service token; nothing else calls Open WebUI's API.
 
-Apply the edge with `just cloudflare-apply` and `just switch smortress`. A host
-switch does not restart the guest (`microvm.vms.agent.restartIfChanged =
-false`), so restart it once after this change or the guest firewall and relay
-stay on the old generation: `sudo systemctl restart microvm@agent.service`.
-Until the runtime listens on the port the ingress returns 502.
+Apply the edge with `just cloudflare-apply` and `just switch smortress`. The
+retired `chat.sammohr.dev` application cannot be destroyed in the same apply
+that drops it, because its old block carried `prevent_destroy`: run `just
+cloudflare-tofu state rm cloudflare_zero_trust_access_application.chat` first,
+then delete the orphaned application in Zero Trust. A host switch does not
+restart the guest (`microvm.vms.agent.restartIfChanged = false`), so restart it
+once after this change or the guest firewall and relay stay on the old
+generation: `sudo systemctl restart microvm@agent.service`. Until the runtime
+listens on the port the ingress returns 502. Each blessed device needs a
+re-deploy too, because its `chat-proxy` now names the new hostname.
 
 **The App Server itself has no public hostname.** It binds loopback in the
 guest; the host relay `agent-vm-ingress-42701.socket` forwards to the guest
