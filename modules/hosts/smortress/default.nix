@@ -97,8 +97,13 @@ in
           port = ports.openWebui;
           access = serviceAuth;
         };
-        # Human-facing assistant: Access plus the runtime's own pairing.
+        # Human-facing assistant: Access plus the runtime's own pairing. `agent` is the
+        # Letta App Server; nanobot keeps its own hostname beside it.
         agent = {
+          port = ports.letta;
+          access.enable = true;
+        };
+        nanobot = {
           port = ports.agent;
           access.enable = true;
         };

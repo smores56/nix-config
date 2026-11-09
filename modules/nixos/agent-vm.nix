@@ -1444,6 +1444,12 @@ in
         message = "agent-vm: webProxy.services.agent.port must be in agentVm.ingressPorts, or the tunnel points at a port with no guest relay";
       }
       {
+        assertion =
+          !(config ? webProxy && config.webProxy.services ? nanobot)
+          || lib.elem config.webProxy.services.nanobot.port cfg.ingressPorts;
+        message = "agent-vm: webProxy.services.nanobot.port must be in agentVm.ingressPorts, or the tunnel points at a port with no guest relay";
+      }
+      {
         assertion = lib.all (c: c.type != "http" || c.allow != [ ]) (lib.attrValues cfg.capabilities);
         message = "agent-vm: every http capability needs a non-empty allow list";
       }
