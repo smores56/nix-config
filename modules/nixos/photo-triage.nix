@@ -99,17 +99,22 @@ let
           -- ${albumsRun} "$@"
       ''
   );
-  calibrationAdmin = pkgs.writeShellScriptBin "photo-triage-calibration" (
+  calibrationAdmin = pkgs.writeShellScriptBin "photo-triage-calibration" ''
+    exec /run/wrappers/bin/sudo -u ${user} -- ${calibrationRun} "$@"
+  '';
+  # Only the sample publisher receives the album key; labels and reports run
+  # with no Immich credential at all.
+  calibrationPublishAdmin = pkgs.writeShellScriptBin "photo-triage-calibration-publish" (
     if cfg.albumKeyFile == null then
       ''
-        exec /run/wrappers/bin/sudo -u ${user} -- ${calibrationRun} "$@"
+        exec /run/wrappers/bin/sudo -u ${user} -- ${calibrationRun} sample "$@"
       ''
     else
       ''
         exec /run/wrappers/bin/sudo ${pkgs.systemd}/bin/systemd-run --quiet --pipe --wait --collect \
           ${lib.escapeShellArgs transientProperties} \
           '--property=LoadCredential=immich-album-key:${cfg.albumKeyFile}' \
-          -- ${calibrationRun} "$@"
+          -- ${calibrationRun} sample "$@"
       ''
   );
 
@@ -333,6 +338,7 @@ in
       admin
       albumsAdmin
       calibrationAdmin
+      calibrationPublishAdmin
     ];
 
     assertions = [
