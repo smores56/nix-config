@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = "4"
+SCHEMA_VERSION = "6"
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_meta (
     key TEXT PRIMARY KEY,
@@ -35,6 +35,14 @@ CREATE TABLE IF NOT EXISTS scan_assets (
     state TEXT NOT NULL,
     reason TEXT,
     PRIMARY KEY (scan_id, asset_id)
+);
+CREATE TABLE IF NOT EXISTS scan_analysis (
+    scan_id INTEGER PRIMARY KEY,
+    generation INTEGER NOT NULL,
+    generator_id TEXT NOT NULL,
+    heuristics_version TEXT NOT NULL,
+    groups_built INTEGER NOT NULL,
+    completed_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS assets (
     id TEXT PRIMARY KEY,
@@ -64,7 +72,9 @@ CREATE TABLE IF NOT EXISTS previews (
     lap_var REAL,
     mean_luma REAL,
     hi_clip REAL,
-    heuristics_version TEXT
+    heuristics_version TEXT,
+    metrics_sha256 TEXT,
+    metrics_at TEXT
 );
 CREATE TABLE IF NOT EXISTS scores (
     id INTEGER PRIMARY KEY,
@@ -91,8 +101,10 @@ CREATE TABLE IF NOT EXISTS decisions (
     cluster TEXT,
     signals_json TEXT NOT NULL,
     decision TEXT NOT NULL,
-    decided_at TEXT NOT NULL
+    decided_at TEXT NOT NULL,
+    PRIMARY KEY (scan_id, asset_id)
 );
+CREATE INDEX IF NOT EXISTS decisions_asset ON decisions(asset_id);
 CREATE TABLE IF NOT EXISTS albums (
     kind TEXT PRIMARY KEY,
     immich_album_id TEXT,
@@ -138,7 +150,7 @@ CREATE TABLE IF NOT EXISTS duplicate_members (
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 class Database:
@@ -169,18 +181,81 @@ class Database:
             raise RuntimeError(
                 f"photo-triage database schema {current} is newer than {target}"
             )
-        if current < 4:
-            columns = {
-                item["name"]
-                for item in self.connection.execute("PRAGMA table_info(previews)").fetchall()
-            }
-            if "heuristics_version" not in columns:
-                self.connection.execute("ALTER TABLE previews ADD COLUMN heuristics_version TEXT")
-            self.connection.execute(
-                "UPDATE schema_meta SET value = ? WHERE key = 'schema_version'",
-                (SCHEMA_VERSION,),
-            )
+        if current == target:
+            return
+        try:
+            self.connection.execute("BEGIN IMMEDIATE")
+            row = self.connection.execute(
+                "SELECT value FROM schema_meta WHERE key = 'schema_version'"
+            ).fetchone()
+            current = int(row["value"])
+            if current > target:
+                raise RuntimeError(
+                    f"photo-triage database schema {current} is newer than {target}"
+                )
+            if current < 4:
+                if "heuristics_version" not in self._columns("previews"):
+                    self.connection.execute(
+                        "ALTER TABLE previews ADD COLUMN heuristics_version TEXT"
+                    )
+                current = 4
+            if current < 5:
+                self._migrate_decisions_primary_key()
+                current = 5
+            if current < 6:
+                columns = self._columns("previews")
+                if "metrics_sha256" not in columns:
+                    self.connection.execute(
+                        "ALTER TABLE previews ADD COLUMN metrics_sha256 TEXT"
+                    )
+                if "metrics_at" not in columns:
+                    self.connection.execute("ALTER TABLE previews ADD COLUMN metrics_at TEXT")
+                self.connection.execute(
+                    "CREATE TABLE IF NOT EXISTS scan_analysis ("
+                    "scan_id INTEGER PRIMARY KEY, generation INTEGER NOT NULL, "
+                    "generator_id TEXT NOT NULL, heuristics_version TEXT NOT NULL, "
+                    "groups_built INTEGER NOT NULL, completed_at TEXT NOT NULL)"
+                )
+                current = 6
+            self._write_schema_version(target)
             self.connection.commit()
+        except BaseException:
+            self.connection.rollback()
+            raise
+
+    def _columns(self, table: str) -> set[str]:
+        return {
+            str(item["name"])
+            for item in self.connection.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+
+    def _write_schema_version(self, version: int) -> None:
+        self.connection.execute(
+            "UPDATE schema_meta SET value = ? WHERE key = 'schema_version'", (str(version),)
+        )
+
+    def _migrate_decisions_primary_key(self) -> None:
+        self.connection.execute(
+            "CREATE TABLE IF NOT EXISTS decisions_v5 ("
+            "asset_id TEXT NOT NULL, scan_id INTEGER NOT NULL, "
+            "policy_version TEXT NOT NULL, heuristics_version TEXT NOT NULL, "
+            "score_id INTEGER REFERENCES scores(id), cluster TEXT, "
+            "signals_json TEXT NOT NULL, decision TEXT NOT NULL, "
+            "decided_at TEXT NOT NULL, PRIMARY KEY (scan_id, asset_id))"
+        )
+        self.connection.execute("DELETE FROM decisions_v5")
+        self.connection.execute(
+            "INSERT OR REPLACE INTO decisions_v5("
+            "asset_id, scan_id, policy_version, heuristics_version, score_id, "
+            "cluster, signals_json, decision, decided_at) "
+            "SELECT asset_id, scan_id, policy_version, heuristics_version, score_id, "
+            "cluster, signals_json, decision, decided_at FROM decisions"
+        )
+        self.connection.execute("DROP TABLE decisions")
+        self.connection.execute("ALTER TABLE decisions_v5 RENAME TO decisions")
+        self.connection.execute(
+            "CREATE INDEX IF NOT EXISTS decisions_asset ON decisions(asset_id)"
+        )
 
     def close(self) -> None:
         self.connection.close()
@@ -210,9 +285,19 @@ class Database:
         row = self.connection.execute("SELECT state FROM scans WHERE id = ?", (scan_id,)).fetchone()
         return row["state"] if row else None
 
+    def scan_as_of(self, scan_id: int) -> str | None:
+        row = self.connection.execute("SELECT as_of FROM scans WHERE id = ?", (scan_id,)).fetchone()
+        return row["as_of"] if row else None
+
     def latest_scan(self) -> int | None:
         row = self.connection.execute(
             "SELECT id FROM scans WHERE state IN ('complete', 'partial') ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        return int(row["id"]) if row else None
+
+    def latest_complete_scan(self) -> int | None:
+        row = self.connection.execute(
+            "SELECT id FROM scans WHERE state = 'complete' ORDER BY id DESC LIMIT 1"
         ).fetchone()
         return int(row["id"]) if row else None
 
@@ -372,6 +457,12 @@ class Database:
         return [str(row["asset_id"]) for row in rows]
 
     def start_run(self, kind: str, scan_id: int | None = None) -> int:
+        if scan_id is not None:
+            self.connection.execute(
+                "UPDATE runs SET state = 'interrupted', finished_at = ? "
+                "WHERE kind = ? AND scan_id = ? AND state = 'running'",
+                (_now(), kind, scan_id),
+            )
         cursor = self.connection.execute(
             "INSERT INTO runs(kind, scan_id, started_at, state) VALUES (?, ?, ?, 'running')",
             (kind, scan_id, _now()),
@@ -379,12 +470,62 @@ class Database:
         self.connection.commit()
         return int(cursor.lastrowid)
 
-    def finish_run(self, run_id: int, state: str, stats: dict[str, Any]) -> None:
+    def start_analysis(
+        self, scan_id: int, *, generator_id: str, heuristics_version: str
+    ) -> int:
+        try:
+            self.connection.execute("BEGIN IMMEDIATE")
+            row = self.analysis(scan_id)
+            generation = (int(row["generation"]) if row is not None else 0) + 1
+            self.connection.execute(
+                "INSERT INTO scan_analysis(scan_id, generation, generator_id, "
+                "heuristics_version, groups_built, completed_at) VALUES (?, ?, ?, ?, 0, ?) "
+                "ON CONFLICT(scan_id) DO UPDATE SET generation = excluded.generation, "
+                "generator_id = excluded.generator_id, "
+                "heuristics_version = excluded.heuristics_version, groups_built = 0, "
+                "completed_at = excluded.completed_at",
+                (scan_id, generation, generator_id, heuristics_version, _now()),
+            )
+            self.connection.commit()
+            return generation
+        except BaseException:
+            self.connection.rollback()
+            raise
+
+    def finish_analysis(self, scan_id: int, generation: int, *, commit: bool = True) -> None:
+        self.connection.execute(
+            "UPDATE scan_analysis SET groups_built = 1, completed_at = ? "
+            "WHERE scan_id = ? AND generation = ?",
+            (_now(), scan_id, generation),
+        )
+        if commit:
+            self.connection.commit()
+
+    def analysis(self, scan_id: int) -> sqlite3.Row | None:
+        return self.connection.execute(
+            "SELECT * FROM scan_analysis WHERE scan_id = ?", (scan_id,)
+        ).fetchone()
+
+    def analysis_ready(
+        self, scan_id: int, *, generator_id: str, heuristics_version: str
+    ) -> bool:
+        row = self.analysis(scan_id)
+        return bool(
+            row is not None
+            and int(row["groups_built"]) == 1
+            and row["generator_id"] == generator_id
+            and row["heuristics_version"] == heuristics_version
+        )
+
+    def finish_run(
+        self, run_id: int, state: str, stats: dict[str, Any], *, commit: bool = True
+    ) -> None:
         self.connection.execute(
             "UPDATE runs SET finished_at = ?, state = ?, stats_json = ? WHERE id = ?",
             (_now(), state, json.dumps(stats, sort_keys=True), run_id),
         )
-        self.connection.commit()
+        if commit:
+            self.connection.commit()
 
     def preview(self, asset_id: str) -> sqlite3.Row | None:
         return self.connection.execute(
@@ -509,11 +650,21 @@ class Database:
         mean_luma: float,
         hi_clip: float,
         heuristics_version: str,
+        bytes_sha256: str,
     ) -> None:
         self.connection.execute(
             "UPDATE previews SET phash = ?, lap_var = ?, mean_luma = ?, hi_clip = ?, "
-            "heuristics_version = ? WHERE asset_id = ?",
-            (phash, lap_var, mean_luma, hi_clip, heuristics_version, asset_id),
+            "heuristics_version = ?, metrics_sha256 = ?, metrics_at = ? WHERE asset_id = ?",
+            (
+                phash,
+                lap_var,
+                mean_luma,
+                hi_clip,
+                heuristics_version,
+                bytes_sha256,
+                _now(),
+                asset_id,
+            ),
         )
 
     def asset_metrics(self, asset_id: str) -> sqlite3.Row | None:
@@ -606,3 +757,92 @@ class Database:
     def preview_count(self) -> int:
         row = self.connection.execute("SELECT count(*) AS count FROM previews").fetchone()
         return int(row["count"])
+
+    def decision_rows(self, scan_id: int) -> list[sqlite3.Row]:
+        return self.connection.execute(
+            "SELECT sa.asset_id AS asset_id, a.width AS width, a.height AS height, "
+            "a.checksum AS checksum, a.updated_at AS asset_updated_at, "
+            "a.is_favorite AS is_favorite, a.is_archived AS is_archived, "
+            "a.is_trashed AS is_trashed, a.visibility AS visibility, "
+            "p.state AS preview_state, p.generator_id AS preview_generator, "
+            "p.heuristics_version AS preview_heuristics_version, "
+            "p.bytes_sha256 AS preview_sha256, p.asset_checksum AS preview_asset_checksum, "
+            "p.asset_updated_at AS preview_asset_updated_at, "
+            "p.metrics_sha256 AS metrics_sha256, p.metrics_at AS metrics_at, "
+            "p.phash AS phash, p.lap_var AS lap_var, p.mean_luma AS mean_luma, "
+            "p.hi_clip AS hi_clip, "
+            "s.id AS score_id, s.preview_sha256 AS score_preview_sha256, "
+            "s.model_id AS model_id, s.mmproj_sha256 AS mmproj_sha256, "
+            "s.prompt_version AS prompt_version, "
+            "s.verdict AS verdict, s.defects_json AS defects_json, "
+            "s.interest AS interest, s.confidence AS confidence "
+            "FROM scan_assets sa JOIN assets a ON a.id = sa.asset_id "
+            "LEFT JOIN previews p ON p.asset_id = sa.asset_id "
+            "LEFT JOIN scores s ON s.id = (SELECT id FROM scores "
+            "WHERE asset_id = sa.asset_id AND is_active = 1 "
+            "AND preview_sha256 = p.bytes_sha256 ORDER BY id DESC LIMIT 1) "
+            "WHERE sa.scan_id = ? AND sa.state IN ('scored', 'reused') "
+            "AND a.type = 'IMAGE' "
+            "ORDER BY sa.asset_id",
+            (scan_id,),
+        ).fetchall()
+
+    def undecided_assets(self, scan_id: int) -> list[str]:
+        return [
+            str(row["asset_id"])
+            for row in self.connection.execute(
+                "SELECT sa.asset_id FROM scan_assets sa JOIN assets a ON a.id = sa.asset_id "
+                "WHERE sa.scan_id = ? AND sa.state NOT IN ('scored', 'reused') "
+                "AND a.type = 'IMAGE' ORDER BY sa.asset_id",
+                (scan_id,),
+            )
+        ]
+
+    def duplicate_groups_for_scan(self, scan_id: int) -> list[sqlite3.Row]:
+        return self.connection.execute(
+            "SELECT g.group_id AS group_id, g.source AS source, g.tier AS tier, "
+            "gm.asset_id AS asset_id, gm.keep_rank AS keep_rank, gm.distance AS distance "
+            "FROM duplicate_groups g JOIN duplicate_members gm "
+            "ON gm.scan_id = g.scan_id AND gm.group_id = g.group_id "
+            "WHERE g.scan_id = ? ORDER BY g.group_id, gm.keep_rank",
+            (scan_id,),
+        ).fetchall()
+
+    def delete_decisions(self, scan_id: int) -> None:
+        self.connection.execute("DELETE FROM decisions WHERE scan_id = ?", (scan_id,))
+
+    def insert_decision(
+        self,
+        *,
+        asset_id: str,
+        scan_id: int,
+        policy_version: str,
+        heuristics_version: str,
+        score_id: int | None,
+        cluster: str,
+        signals: dict[str, Any],
+        decision: str,
+    ) -> None:
+        self.connection.execute(
+            "INSERT INTO decisions(asset_id, scan_id, policy_version, heuristics_version, "
+            "score_id, cluster, signals_json, decision, decided_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                asset_id,
+                scan_id,
+                policy_version,
+                heuristics_version,
+                score_id,
+                cluster,
+                json.dumps(signals, sort_keys=True),
+                decision,
+                _now(),
+            ),
+        )
+
+    def decisions_for_scan(self, scan_id: int) -> list[sqlite3.Row]:
+        return self.connection.execute(
+            "SELECT asset_id, decision, cluster, signals_json FROM decisions "
+            "WHERE scan_id = ? ORDER BY asset_id",
+            (scan_id,),
+        ).fetchall()

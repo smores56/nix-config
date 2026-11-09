@@ -11,6 +11,7 @@ from pathlib import Path
 
 from . import __version__
 from .db import Database
+from .decisions import POLICY, decide_scan
 from .duplicates import PHASH_THRESHOLD, analyze_scan
 from .immich import ImmichClient, ImmichError
 from .model import LLMClient, LLMError, MODEL_ALIAS
@@ -75,6 +76,24 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("--scan-id", type=int, default=None)
     analyze.add_argument("--threshold", type=int, default=PHASH_THRESHOLD)
     analyze.add_argument("--max-assets", type=int, default=None)
+
+    decide = commands.add_parser("decide", help="turn scores and duplicates into decisions")
+    decide.add_argument("--scan-id", type=int, default=None)
+    decide.add_argument("--cap", type=int, default=None)
+    decide.add_argument(
+        "--out",
+        default=None,
+        help="write the membership export here "
+        "(default: <data>/triage-membership-<scan-id>.json)",
+    )
+    decide.add_argument(
+        "--dry-run", action="store_true", help="compute without writing the database or export"
+    )
+    decide.add_argument(
+        "--allow-partial",
+        action="store_true",
+        help="decide a partial scan (failed and running scans are always rejected)",
+    )
 
     run = commands.add_parser("run", help="score the library (service only)")
     run.add_argument("--dev-fixtures", action="store_true", help=argparse.SUPPRESS)
@@ -193,6 +212,58 @@ def self_test_command() -> int:
     return 0
 
 
+def decide_command(args: argparse.Namespace) -> int:
+    database = Database(data_dir() / DB_NAME)
+    try:
+        scan_id = (
+            args.scan_id if args.scan_id is not None else database.latest_complete_scan()
+        )
+        if scan_id is None:
+            print("photo-triage: no completed scan in the database", file=sys.stderr)
+            return 1
+        if args.cap is not None and not 0 <= args.cap <= POLICY["delete_cap"]:
+            print(
+                f"photo-triage: cap must be between 0 and {POLICY['delete_cap']}",
+                file=sys.stderr,
+            )
+            return 2
+        export_path = (
+            Path(args.out)
+            if args.out is not None
+            else data_dir() / f"triage-membership-{scan_id}.json"
+        )
+        result = decide_scan(
+            database,
+            scan_id,
+            cap=args.cap,
+            export_path=export_path,
+            allow_partial=args.allow_partial,
+            dry_run=args.dry_run,
+        )
+        summary = {
+            key: result[key]
+            for key in (
+                "scan_id",
+                "run_id",
+                "policy_version",
+                "policy_fingerprint",
+                "manifest_sha256",
+                "safe_to_delete",
+                "cap",
+                "counts",
+            )
+        }
+        summary["export"] = None if args.dry_run else str(export_path)
+        summary["dry_run"] = bool(args.dry_run)
+        print(json.dumps(summary, sort_keys=True))
+        return 0
+    except Exception as error:
+        print(f"photo-triage: {error}", file=sys.stderr)
+        return 1
+    finally:
+        database.close()
+
+
 def analyze_command(args: argparse.Namespace) -> int:
     database = Database(data_dir() / DB_NAME)
     try:
@@ -271,6 +342,8 @@ def main(argv: list[str] | None = None) -> int:
         return self_test_command()
     if args.command == "analyze":
         return analyze_command(args)
+    if args.command == "decide":
+        return decide_command(args)
     if args.command == "run":
         return run(args.dev_fixtures, args.scan_id, args.max_assets)
     return 2

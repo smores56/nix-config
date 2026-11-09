@@ -20,6 +20,7 @@ from photo_triage.immich import READ_PERMISSIONS, ImmichClient  # noqa: E402
 from photo_triage.model import LLMClient  # noqa: E402
 from photo_triage.scan import scan_library  # noqa: E402
 from photo_triage.score import (  # noqa: E402
+    PREVIEW_GENERATOR,
     SCHEMA,
     ScoreSchemaError,
     ScorerError,
@@ -92,6 +93,17 @@ class ScoreTests(unittest.TestCase):
             "SELECT verdict, interest, confidence FROM scores LIMIT 1"
         ).fetchone()
         self.assertEqual((row["verdict"], row["interest"], row["confidence"]), ("review", 3, 0.8))
+
+    def test_scored_preview_is_recorded_for_the_analyzer(self):
+        self.score()
+        row = self.database.connection.execute(
+            "SELECT p.asset_id, p.generator_id, p.asset_checksum, p.asset_updated_at, "
+            "a.checksum, a.updated_at FROM previews p JOIN assets a ON a.id = p.asset_id "
+            "LIMIT 1"
+        ).fetchone()
+        self.assertEqual(row["generator_id"], PREVIEW_GENERATOR)
+        self.assertEqual(row["asset_checksum"], row["checksum"])
+        self.assertEqual(row["asset_updated_at"], row["updated_at"])
 
     def test_reuses_scores_across_generations(self):
         self.score()
