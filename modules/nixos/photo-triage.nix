@@ -16,8 +16,10 @@ let
   group = user;
   dataDir = "/var/lib/photo-triage";
   runtimeDir = "/run/photo-triage";
+  albumRuntimeDir = "/run/photo-triage-album";
+  maintenance = "${runtimeDir}/maintenance";
   immichSocket = "${runtimeDir}/immich.sock";
-  immichAlbumSocket = "${runtimeDir}/immich-album.sock";
+  immichAlbumSocket = "${albumRuntimeDir}/immich.sock";
   llmSocket = "${runtimeDir}/llm.sock";
   immichUpstream = "127.0.0.1:${toString ports.immich}";
 
@@ -118,6 +120,13 @@ let
       ''
   );
 
+  # Idempotent teardown shared by the maintenance unit and the failure handler.
+  windowStop = pkgs.writeShellScript "photo-triage-window-stop" ''
+    ${pkgs.systemd}/bin/systemctl stop llama-cpp-photo-triage.service || true
+    ${pkgs.coreutils}/bin/rm -f ${maintenance}
+    ${pkgs.systemd}/bin/systemctl start --no-block llama-cpp.service || true
+  '';
+
   scoringSettings = models.commonSettings // {
     host = llmSocket;
     alias = models.modelAlias;
@@ -150,6 +159,7 @@ let
       description,
       socket,
       upstream,
+      directory ? runtimeDir,
       after ? [ ],
     }:
     {
@@ -163,7 +173,7 @@ let
         User = user;
         Group = group;
         ExecStart = "${pkgs.socat}/bin/socat UNIX-LISTEN:${socket},fork,mode=0600,unlink-early ${upstream}";
-        ReadWritePaths = [ runtimeDir ];
+        ReadWritePaths = [ directory ];
         Restart = "always";
         RestartSec = "2s";
         RestrictAddressFamilies = [
@@ -220,6 +230,7 @@ in
 
     systemd.tmpfiles.rules = [
       "d ${runtimeDir} 0750 ${user} ${group} -"
+      "d ${albumRuntimeDir} 0750 ${user} ${group} -"
       "d ${dataDir} 0750 ${user} ${group} -"
     ];
 
@@ -232,20 +243,36 @@ in
     systemd.services.photo-triage-immich-album-relay = mkRelay {
       description = "photo-triage Immich album-writer Unix-socket relay";
       socket = immichAlbumSocket;
+      directory = albumRuntimeDir;
       upstream = "TCP:${immichUpstream}";
       after = [ "immich-server.service" ];
     };
     systemd.services.llama-cpp-photo-triage = {
       description = "llama.cpp photo-triage scoring server";
-      # Manual: T10's orchestrator stops the interactive server and starts this one.
+      # Manual: the orchestrator's maintenance window starts this and stops it.
       wantedBy = [ ];
       conflicts = [ "llama-cpp.service" ];
-      requires = [ "nvidia-uvm.service" ];
-      after = [ "nvidia-uvm.service" ];
+      requires = [
+        "nvidia-uvm.service"
+        "photo-triage-maintenance.service"
+      ];
+      after = [
+        "nvidia-uvm.service"
+        "photo-triage-maintenance.service"
+      ];
+      restartIfChanged = false;
+      onFailure = [
+        "photo-triage-restore.service"
+        "cloudflare-email@%n.service"
+      ];
       startLimitIntervalSec = 3600;
       startLimitBurst = 10;
       serviceConfig = base // {
         ExecStart = scoringExec;
+        # ProtectSystem=strict would otherwise make the socket bind fail.
+        RuntimeDirectory = "photo-triage";
+        RuntimeDirectoryMode = "0750";
+        RuntimeDirectoryPreserve = "yes";
         Restart = "on-failure";
         RestartSec = "300s";
         TimeoutStartSec = "1h";
@@ -283,18 +310,68 @@ in
       };
     };
 
+    systemd.services.photo-triage-maintenance = {
+      description = "photo-triage maintenance window";
+      # Bound to the run: a run stop/failure ends the window, but a run
+      # restart leaves the window (and the scoring server) up.
+      bindsTo = [ "photo-triage.service" ];
+      restartIfChanged = false;
+      onFailure = [
+        "photo-triage-restore.service"
+        "cloudflare-email@%n.service"
+      ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = pkgs.writeShellScript "photo-triage-maintenance-start" ''
+          ${pkgs.coreutils}/bin/mkdir -p ${runtimeDir}
+          ${pkgs.coreutils}/bin/touch ${maintenance}
+          ${pkgs.systemd}/bin/systemctl stop --no-block llama-cpp.service || true
+        '';
+        ExecStop = windowStop;
+      };
+    };
+
+    systemd.services.photo-triage-restore = {
+      description = "restore the interactive model after a photo-triage failure";
+      onFailure = [ "cloudflare-email@%n.service" ];
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = windowStop;
+      };
+    };
+
     systemd.services.photo-triage = {
-      description = "Local photo-triage scorer";
-      # Manual, and deliberately not wantedBy anything: the run is started by the
-      # operator (T10 adds the maintenance-window orchestrator).
-      requires = [ "photo-triage-immich-relay.service" ];
-      after = [ "photo-triage-immich-relay.service" ];
-      startLimitIntervalSec = 3600;
+      description = "Local photo-triage orchestrator";
+      # Manual, and deliberately not wantedBy anything: the operator opens the
+      # maintenance window with `systemctl start photo-triage.service`.
+      requires = [
+        "photo-triage-immich-relay.service"
+        "llama-cpp-photo-triage.service"
+      ];
+      wants = [ "photo-triage-maintenance.service" ];
+      after = [
+        "photo-triage-immich-relay.service"
+        "photo-triage-maintenance.service"
+        "llama-cpp-photo-triage.service"
+      ];
+      restartIfChanged = false;
+      onFailure = [
+        "photo-triage-restore.service"
+        "cloudflare-email@%n.service"
+      ];
+      startLimitIntervalSec = 86400;
       startLimitBurst = 10;
       serviceConfig = base // {
         User = user;
         Group = group;
-        ExecStart = "${cfg.package}/bin/photo-triage run";
+        Type = "notify";
+        NotifyAccess = "main";
+        WatchdogSec = "600s";
+        RuntimeMaxSec = "7 days";
+        TimeoutStartSec = "1h";
+        TimeoutStopSec = "600s";
+        ExecStart = "${cfg.package}/bin/photo-triage orchestrate";
         StateDirectory = "photo-triage";
         StateDirectoryMode = "0750";
         WorkingDirectory = dataDir;
@@ -308,11 +385,9 @@ in
           "PHOTO_TRIAGE_MMPROJ_SHA256=${models.mmprojHash}"
         ];
         Restart = "on-failure";
-        RestartSec = "5s";
-        RestartPreventExitStatus = [
-          1
-          2
-        ];
+        RestartSec = "30s";
+        # 2 is a deliberate rejection (validation, no assets); do not loop.
+        RestartPreventExitStatus = [ 2 ];
         LoadCredential = lib.optionals (cfg.readKeyFile != null) [
           "immich-read-key:${cfg.readKeyFile}"
         ];
@@ -321,12 +396,12 @@ in
         PrivateNetwork = true;
         PrivateIPC = true;
         RestrictAddressFamilies = [ "AF_UNIX" ];
-        TemporaryFileSystem = [ "/run" ];
-        # Bind the directory, not the socket inodes: a relay restart replaces the
-        # socket and the scorer must see the new one.
+        # /run stays visible for the notify socket; bind the relay directory so
+        # the scorer sees a restarted relay, and block the egress sockets.
         BindReadOnlyPaths = [ runtimeDir ];
         InaccessiblePaths = [
           "/nix/var/nix/daemon-socket"
+          "/run/dbus"
           "/dev/shm"
         ];
         ProtectProc = "invisible";

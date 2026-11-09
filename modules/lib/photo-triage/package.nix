@@ -29,6 +29,7 @@ pkgs.python3Packages.buildPythonApplication {
     "photo_triage.decisions"
     "photo_triage.albums"
     "photo_triage.calibration"
+    "photo_triage.operations"
   ];
 
   meta = {

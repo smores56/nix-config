@@ -9,7 +9,7 @@ import socket
 import sys
 from pathlib import Path
 
-from . import __version__, calibration
+from . import __version__, calibration, operations
 from .albums import AlbumError, album_status, load_export, preflight, sync_export
 from .db import Database
 from .decisions import POLICY, decide_scan
@@ -22,7 +22,7 @@ from .score import ScorerError, score_library
 DB_NAME = "triage.db"
 DEFAULT_DATA_DIR = "/var/lib/photo-triage"
 DEFAULT_IMMICH_SOCKET = "/run/photo-triage/immich.sock"
-DEFAULT_IMMICH_ALBUM_SOCKET = "/run/photo-triage/immich-album.sock"
+DEFAULT_IMMICH_ALBUM_SOCKET = "/run/photo-triage-album/immich.sock"
 DEFAULT_LLM_SOCKET = "/run/photo-triage/llm.sock"
 
 
@@ -174,6 +174,19 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--dev-fixtures", action="store_true", help=argparse.SUPPRESS)
     run.add_argument("--scan-id", type=int, default=None)
     run.add_argument("--max-assets", type=int, default=None)
+
+    orchestrate = commands.add_parser(
+        "orchestrate", help="scan, score, analyze and decide (service only)"
+    )
+    orchestrate.add_argument("--scan-id", type=int, default=None)
+    orchestrate.add_argument("--fresh", action="store_true", help="force a new scan")
+    orchestrate.add_argument("--max-assets", type=int, default=None)
+    orchestrate.add_argument("--page-size", type=int, default=PAGE_SIZE)
+    commands.add_parser("status", help="progress, albums and ETA")
+    benchmark = commands.add_parser("benchmark", help="measure scoring throughput")
+    benchmark.add_argument("--count", type=int, default=10)
+    benchmark.add_argument("--scan-id", type=int, default=None)
+    benchmark.add_argument("--history", action="store_true")
     return parser
 
 
@@ -558,6 +571,73 @@ def calibration_command(args: argparse.Namespace) -> int:
         database.close()
 
 
+def orchestrate_command(args: argparse.Namespace) -> int:
+    database = Database(data_dir() / DB_NAME)
+    try:
+        immich = ImmichClient(socket_path=immich_socket(), api_key=load_immich_key())
+        model = LLMClient(
+            socket_path=llm_socket(),
+            model=os.environ.get("PHOTO_TRIAGE_MODEL", MODEL_ALIAS),
+        )
+        result = operations.orchestrate(
+            immich,
+            model,
+            database,
+            scan_id=args.scan_id,
+            max_assets=args.max_assets,
+            page_size=args.page_size,
+            export_dir=data_dir(),
+        )
+        print(json.dumps(result, sort_keys=True))
+        return 0
+    except SystemExit as error:
+        print(f"photo-triage: {error}", file=sys.stderr)
+        return 2
+    except ValueError as error:
+        print(f"photo-triage: {error}", file=sys.stderr)
+        return 1 if "rerun decide" in str(error) else 2
+    except (ImmichError, LLMError, ScorerError) as error:
+        print(f"photo-triage: {error}", file=sys.stderr)
+        return 1
+    finally:
+        database.close()
+
+
+def status_command() -> int:
+    database = Database(data_dir() / DB_NAME)
+    try:
+        print(json.dumps(operations.status(database), sort_keys=True))
+        return 0
+    finally:
+        database.close()
+
+
+def benchmark_command(args: argparse.Namespace) -> int:
+    database = Database(data_dir() / DB_NAME)
+    try:
+        if args.history:
+            print(json.dumps(operations.benchmark_history(database), sort_keys=True))
+            return 0
+        immich = ImmichClient(socket_path=immich_socket(), api_key=load_immich_key())
+        model = LLMClient(
+            socket_path=llm_socket(),
+            model=os.environ.get("PHOTO_TRIAGE_MODEL", MODEL_ALIAS),
+        )
+        result = operations.benchmark(
+            immich, model, database, count=args.count, scan_id=args.scan_id
+        )
+        print(json.dumps(result, sort_keys=True))
+        return 0
+    except ValueError as error:
+        print(f"photo-triage: {error}", file=sys.stderr)
+        return 2
+    except (ImmichError, LLMError, ScorerError) as error:
+        print(f"photo-triage: {error}", file=sys.stderr)
+        return 1
+    finally:
+        database.close()
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "doctor":
@@ -580,4 +660,10 @@ def main(argv: list[str] | None = None) -> int:
         return calibration_command(args)
     if args.command == "run":
         return run(args.dev_fixtures, args.scan_id, args.max_assets)
+    if args.command == "orchestrate":
+        return orchestrate_command(args)
+    if args.command == "status":
+        return status_command()
+    if args.command == "benchmark":
+        return benchmark_command(args)
     return 2
