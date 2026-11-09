@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 import sys
+from urllib.parse import quote
 
 from aiohttp import ClientSession, ClientTimeout, web
 
-from . import HOP_BY_HOP, allowed, build_headers, load_config, read_credential
+from . import (
+    HOP_BY_HOP,
+    allowed,
+    build_headers,
+    load_config,
+    normalize_path,
+    read_credential,
+)
 
 # Large enough for a calibre upload; the broker still streams rather than buffering the reply.
 MAX_REQUEST_BYTES = 200 * 1024 * 1024
@@ -16,9 +24,15 @@ def make_app(config, key: str) -> web.Application:
     app = web.Application(client_max_size=MAX_REQUEST_BYTES)
 
     async def handle(request: web.Request) -> web.StreamResponse:
-        if not allowed(config.allow, request.method, request.path):
+        try:
+            path = normalize_path(request.rel_url.raw_path)
+        except ValueError:
+            return web.Response(status=400, text="agent-broker: invalid path\n")
+        if not allowed(config.allow, request.method, path):
             return web.Response(status=403, text="agent-broker: route not allowed\n")
-        url = config.upstream + request.path_qs
+        url = config.upstream + quote(path, safe="/")
+        if request.query_string:
+            url += "?" + request.query_string
         headers = build_headers(dict(request.headers), config.auth, key)
         timeout = ClientTimeout(total=None, connect=10, sock_read=600)
         async with ClientSession(timeout=timeout) as session:

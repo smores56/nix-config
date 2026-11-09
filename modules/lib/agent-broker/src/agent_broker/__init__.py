@@ -10,8 +10,10 @@ from __future__ import annotations
 import base64
 import json
 import os
+import posixpath
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import unquote
 
 # Connection-scoped headers terminate at each hop and are never forwarded.
 HOP_BY_HOP = frozenset(
@@ -77,6 +79,12 @@ def load_config(path: str | Path) -> Config:
         raise ValueError("header auth needs a header name")
     if config.auth.kind != "none" and not config.auth.credential:
         raise ValueError("an auth kind needs a credential")
+    if not config.allow:
+        raise ValueError("allow must list at least one METHOD /path rule")
+    for rule in config.allow:
+        method, separator, rule_path = rule.partition(" ")
+        if not separator or not method or not rule_path.startswith("/"):
+            raise ValueError(f"invalid allow rule {rule!r}; expected 'METHOD /path'")
     if not config.upstream.startswith(("http://", "https://")):
         raise ValueError(f"upstream must be an absolute http(s) URL, got {config.upstream!r}")
     return config
@@ -89,10 +97,19 @@ def read_credential(name: str) -> str:
     return Path(directory, name).read_text().strip()
 
 
+def normalize_path(path: str) -> str:
+    """Decode and canonicalize a request path so the rule and the upstream agree."""
+    decoded = unquote(path, errors="strict")
+    if "\x00" in decoded:
+        raise ValueError("path contains a NUL byte")
+    normalized = posixpath.normpath("/" + decoded.lstrip("/"))
+    return normalized
+
+
 def allowed(rules: tuple[str, ...], method: str, path: str) -> bool:
-    """Match "METHOD /path" rules; a trailing * is a prefix, and no rules allow everything."""
+    """Match "METHOD /path" rules; a trailing * is a prefix. No rules allow nothing."""
     if not rules:
-        return True
+        return False
     for rule in rules:
         rule_method, _, rule_path = rule.partition(" ")
         if rule_method and rule_method != method:

@@ -20,7 +20,6 @@
   agentSshRelay = 8085;
   agentBrokerMemory = 8186;
   agentBrokerCalibre = 8187;
-  agentBrokerImmich = 2288;
   filesMcp = 8185;
   openWebui = 3210;
 }

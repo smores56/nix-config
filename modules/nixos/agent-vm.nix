@@ -1011,7 +1011,7 @@ in
             allow = lib.mkOption {
               type = lib.types.listOf lib.types.str;
               default = [ ];
-              description = "Allowed METHOD /path pairs; empty allows every request.";
+              description = "Allowed METHOD /path pairs; empty is rejected. Use explicit METHOD /* rules when a service's route surface is intentionally open.";
             };
             env = lib.mkOption {
               type = lib.types.attrsOf lib.types.str;
@@ -1137,6 +1137,19 @@ in
               guestPort = ports.calibre;
               brokerPort = ports.agentBrokerCalibre;
               env.CALIBRE_LIBRARY_URL = "http://127.0.0.1:${toString ports.calibre}/#books";
+              # Calibre is a writable management capability by design: the broker injects
+              # the human's basic-auth credential, so the Content server is not a boundary
+              # against the guest. Every method the old empty list admitted (minus TRACE and
+              # CONNECT) is listed here explicitly now that an empty list is rejected.
+              allow = [
+                "GET /*"
+                "HEAD /*"
+                "OPTIONS /*"
+                "POST /*"
+                "PUT /*"
+                "PATCH /*"
+                "DELETE /*"
+              ];
               auth = {
                 kind = "basic";
                 username = "smores56";
@@ -1164,24 +1177,6 @@ in
                 "DELETE /mcp"
               ];
               auth.kind = "bearer";
-            };
-          }
-          // lib.optionalAttrs isServer {
-            immich = {
-              type = "http";
-              upstream = "http://127.0.0.1:${toString ports.immich}";
-              secret = "immich-agent-api-key";
-              # Immich binds the wildcard, so the tap address on 2283 is taken; use the broker port.
-              guestPort = ports.agentBrokerImmich;
-              brokerPort = ports.agentBrokerImmich;
-              env = {
-                IMMICH_API_URL = "http://127.0.0.1:${toString ports.agentBrokerImmich}";
-                IMMICH_API_KEY = "none";
-              };
-              auth = {
-                kind = "header";
-                header = "X-Api-Key";
-              };
             };
           }
         );
@@ -1310,6 +1305,10 @@ in
           !(config ? webProxy && config.webProxy.services ? agent)
           || lib.elem config.webProxy.services.agent.port cfg.ingressPorts;
         message = "agent-vm: webProxy.services.agent.port must be in agentVm.ingressPorts, or the tunnel points at a port with no guest relay";
+      }
+      {
+        assertion = lib.all (c: c.type != "http" || c.allow != [ ]) (lib.attrValues cfg.capabilities);
+        message = "agent-vm: every http capability needs a non-empty allow list";
       }
     ];
 
