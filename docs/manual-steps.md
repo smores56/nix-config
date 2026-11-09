@@ -1930,6 +1930,20 @@ rewrites it, after which the edited file wins and removing it re-installs the
 Nix record. The unit exists only on smortress; the laptop guest has neither the
 service nor the state share.
 
+The Graphiti corpus was migrated before the service was first deployed, into a
+staging tree at `~/wip/letta-migration/state` (the guest could not write
+`.local/state/letta` until the view was rebuilt). After the first switch and
+guest restart, move it into place once:
+
+```sh
+mv ~/wip/letta-migration/state/* ~/.local/state/letta/
+```
+
+That tree holds the agent record, its MemFS git repository and the provider
+record; the service picks it up on the next start. `~/wip/letta-migration` also
+keeps `episodes.jsonl` (the raw dump) and `project.py` (the projection script),
+which are not needed at runtime.
+
 **Neuralwatt subscription.** The account is on Standard monthly: $50 prepaid
 per month for 6.25 kWh at $8/kWh, with same-rate overage past the allowance.
 Energy billing is the right shape for this workload: 5.45B tokens were mostly

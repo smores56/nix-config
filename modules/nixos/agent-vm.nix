@@ -1053,7 +1053,11 @@ let
             serviceConfig = {
               User = user;
               Group = "users";
-              WorkingDirectory = home;
+              # The CLI writes `<cwd>/.letta` for project settings, so the working directory
+              # has to be writable. Clients pass their own cwd per runtime start, so this
+              # only sets where the server itself stands.
+              WorkingDirectory = "${lettaState}/home";
+              ExecStartPre = "${pkgs.coreutils}/bin/mkdir -p ${lettaState}/home";
               Environment = [ "PATH=/run/wrappers/bin:/run/current-system/sw/bin" ];
               # The wrapper pins `--backend local` and the loopback listener, so agent state
               # cannot leave the guest and the host relay is the only route in.
