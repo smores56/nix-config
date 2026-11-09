@@ -26,6 +26,7 @@ pkgs.python3Packages.buildPythonApplication {
     "photo_triage"
     "photo_triage.model"
     "photo_triage.duplicates"
+    "photo_triage.decisions"
   ];
 
   meta = {

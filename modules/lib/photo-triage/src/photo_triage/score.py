@@ -236,8 +236,10 @@ def score_library(
                 asset_id,
                 state="ready",
                 reason=None,
-                generator_id="immich-preview",
+                generator_id=PREVIEW_GENERATOR,
                 bytes_sha256=digest,
+                asset_checksum=revision[0],
+                asset_updated_at=revision[1],
             )
             if database.active_score(
                 asset_id, digest, resolved_model, resolved_mmproj, prompt_version

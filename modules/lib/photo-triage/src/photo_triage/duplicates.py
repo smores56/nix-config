@@ -209,6 +209,8 @@ def _preview_metrics(
         and cached["asset_updated_at"] == revision[1]
         and cached["heuristics_version"] == HEURISTICS_VERSION
         and cached["phash"] is not None
+        and cached["metrics_sha256"] == cached["bytes_sha256"]
+        and cached["metrics_at"] is not None
     ):
         return "ready"
     raw = _fetch_preview(immich, asset_id, sleep)
@@ -238,6 +240,7 @@ def _preview_metrics(
         mean_luma=float(values["mean_luma"]),
         hi_clip=float(values["hi_clip"]),
         heuristics_version=HEURISTICS_VERSION,
+        bytes_sha256=digest,
     )
     database.commit()
     return "ready"
@@ -269,6 +272,11 @@ def analyze_scan(
             stats["previews" if status == "ready" else "skipped"] += 1
 
         if max_assets is None:
+            generation = database.start_analysis(
+                scan_id,
+                generator_id=PREVIEW_GENERATOR,
+                heuristics_version=HEURISTICS_VERSION,
+            )
             database.clear_generated_groups(scan_id)
 
             exact_ids: set[str] = set()
@@ -351,6 +359,8 @@ def analyze_scan(
                 )
                 stats["immich_groups"] += 1
 
+            database.commit()
+            database.finish_analysis(scan_id, generation, commit=False)
             database.commit()
 
         database.finish_run(run_id, "complete", stats)
