@@ -11,3 +11,6 @@ secrets/hosts/
 keys.age
 keys.txt
 tofu/.terraform/
+
+# Per-session git worktrees; never part of the tree.
+.worktrees/
