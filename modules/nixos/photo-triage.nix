@@ -42,6 +42,8 @@ let
     export PHOTO_TRIAGE_IMMICH_SOCKET=${immichSocket}
     export PHOTO_TRIAGE_LLM_SOCKET=${llmSocket}
     export PHOTO_TRIAGE_MODEL=${models.modelAlias}
+    export PHOTO_TRIAGE_MODEL_ID=${models.mainModelHash}
+    export PHOTO_TRIAGE_MMPROJ_SHA256=${models.mmprojHash}
     exec ${cfg.package}/bin/photo-triage "$@"
   '';
   admin = pkgs.writeShellScriptBin "photo-triage-admin" ''
@@ -205,10 +207,15 @@ in
           "PHOTO_TRIAGE_IMMICH_SOCKET=${immichSocket}"
           "PHOTO_TRIAGE_LLM_SOCKET=${llmSocket}"
           "PHOTO_TRIAGE_MODEL=${models.modelAlias}"
+          "PHOTO_TRIAGE_MODEL_ID=${models.mainModelHash}"
+          "PHOTO_TRIAGE_MMPROJ_SHA256=${models.mmprojHash}"
         ];
         Restart = "on-failure";
         RestartSec = "5s";
-        RestartPreventExitStatus = [ 2 ];
+        RestartPreventExitStatus = [
+          1
+          2
+        ];
         # Previews live in RAM; the shared sandbox's PrivateTmp is disk-backed here.
         PrivateTmp = "disconnected";
         PrivateNetwork = true;

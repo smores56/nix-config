@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = "2"
+SCHEMA_VERSION = "3"
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_meta (
     key TEXT PRIMARY KEY,
@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 CREATE TABLE IF NOT EXISTS runs (
     id INTEGER PRIMARY KEY,
     kind TEXT NOT NULL,
+    scan_id INTEGER,
     started_at TEXT NOT NULL,
     finished_at TEXT,
     state TEXT NOT NULL,
@@ -57,6 +58,8 @@ CREATE TABLE IF NOT EXISTS previews (
     reason TEXT,
     generator_id TEXT,
     bytes_sha256 TEXT,
+    asset_checksum TEXT,
+    asset_updated_at TEXT,
     phash INTEGER,
     lap_var REAL,
     mean_luma REAL,
@@ -69,10 +72,10 @@ CREATE TABLE IF NOT EXISTS scores (
     model_id TEXT NOT NULL,
     mmproj_sha256 TEXT NOT NULL,
     prompt_version TEXT NOT NULL,
-    verdict TEXT NOT NULL,
+    verdict TEXT NOT NULL CHECK (verdict IN ('keep', 'review', 'delete')),
     defects_json TEXT NOT NULL,
-    interest INTEGER,
-    confidence REAL,
+    interest INTEGER CHECK (interest BETWEEN 1 AND 5),
+    confidence REAL CHECK (confidence BETWEEN 0 AND 1),
     raw_sha256 TEXT,
     created_at TEXT NOT NULL,
     is_active INTEGER NOT NULL DEFAULT 1,
@@ -333,3 +336,141 @@ class Database:
             "SELECT count(*) AS count FROM duplicate_members WHERE scan_id = ?", (scan_id,)
         ).fetchone()["count"]
         return {"groups": int(groups), "members": int(members)}
+
+    def pending_assets(self, scan_id: int, limit: int | None = None) -> list[str]:
+        statement = (
+            "SELECT sa.asset_id FROM scan_assets sa "
+            "JOIN assets a ON a.id = sa.asset_id "
+            "WHERE sa.scan_id = ? AND sa.state = 'pending' "
+            "ORDER BY sa.asset_id"
+        )
+        parameters: list[Any] = [scan_id]
+        if limit is not None:
+            statement += " LIMIT ?"
+            parameters.append(limit)
+        rows = self.connection.execute(statement, parameters).fetchall()
+        return [str(row["asset_id"]) for row in rows]
+
+    def start_run(self, kind: str, scan_id: int | None = None) -> int:
+        cursor = self.connection.execute(
+            "INSERT INTO runs(kind, scan_id, started_at, state) VALUES (?, ?, ?, 'running')",
+            (kind, scan_id, _now()),
+        )
+        self.connection.commit()
+        return int(cursor.lastrowid)
+
+    def finish_run(self, run_id: int, state: str, stats: dict[str, Any]) -> None:
+        self.connection.execute(
+            "UPDATE runs SET finished_at = ?, state = ?, stats_json = ? WHERE id = ?",
+            (_now(), state, json.dumps(stats, sort_keys=True), run_id),
+        )
+        self.connection.commit()
+
+    def preview(self, asset_id: str) -> sqlite3.Row | None:
+        return self.connection.execute(
+            "SELECT * FROM previews WHERE asset_id = ?", (asset_id,)
+        ).fetchone()
+
+    def record_preview(
+        self,
+        asset_id: str,
+        *,
+        state: str,
+        reason: str | None,
+        generator_id: str,
+        bytes_sha256: str | None,
+        asset_checksum: str | None = None,
+        asset_updated_at: str | None = None,
+    ) -> None:
+        self.connection.execute(
+            "INSERT INTO previews(asset_id, state, reason, generator_id, bytes_sha256, "
+            "asset_checksum, asset_updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(asset_id) DO UPDATE SET state = excluded.state, "
+            "reason = excluded.reason, generator_id = excluded.generator_id, "
+            "bytes_sha256 = excluded.bytes_sha256, asset_checksum = excluded.asset_checksum, "
+            "asset_updated_at = excluded.asset_updated_at",
+            (asset_id, state, reason, generator_id, bytes_sha256, asset_checksum, asset_updated_at),
+        )
+
+    def mark_scan_asset(
+        self, scan_id: int, asset_id: str, state: str, reason: str | None = None
+    ) -> None:
+        self.connection.execute(
+            "UPDATE scan_assets SET state = ?, reason = ? WHERE scan_id = ? AND asset_id = ?",
+            (state, reason, scan_id, asset_id),
+        )
+
+    def active_score(
+        self,
+        asset_id: str,
+        preview_sha256: str,
+        model_id: str,
+        mmproj_sha256: str,
+        prompt_version: str,
+    ) -> sqlite3.Row | None:
+        return self.connection.execute(
+            "SELECT id FROM scores WHERE asset_id = ? AND preview_sha256 = ? "
+            "AND model_id = ? AND mmproj_sha256 = ? AND prompt_version = ? AND is_active = 1",
+            (asset_id, preview_sha256, model_id, mmproj_sha256, prompt_version),
+        ).fetchone()
+
+    def record_score(
+        self,
+        *,
+        asset_id: str,
+        preview_sha256: str,
+        model_id: str,
+        mmproj_sha256: str,
+        prompt_version: str,
+        verdict: str,
+        defects: list[str],
+        interest: int,
+        confidence: float,
+        raw_sha256: str,
+    ) -> None:
+        with self.connection:
+            self.connection.execute(
+                "UPDATE scores SET is_active = 0 WHERE asset_id = ? AND NOT ("
+                "preview_sha256 = ? AND model_id = ? AND mmproj_sha256 = ? AND prompt_version = ?)",
+                (asset_id, preview_sha256, model_id, mmproj_sha256, prompt_version),
+            )
+            self.connection.execute(
+                "INSERT INTO scores(asset_id, preview_sha256, model_id, mmproj_sha256, "
+                "prompt_version, verdict, defects_json, interest, confidence, raw_sha256, "
+                "created_at, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1) "
+                "ON CONFLICT(asset_id, preview_sha256, model_id, mmproj_sha256, prompt_version) "
+                "DO UPDATE SET is_active = 1, verdict = excluded.verdict, "
+                "defects_json = excluded.defects_json, interest = excluded.interest, "
+                "confidence = excluded.confidence, raw_sha256 = excluded.raw_sha256, "
+                "created_at = excluded.created_at",
+                (
+                    asset_id,
+                    preview_sha256,
+                    model_id,
+                    mmproj_sha256,
+                    prompt_version,
+                    verdict,
+                    json.dumps(defects, sort_keys=True),
+                    interest,
+                    confidence,
+                    raw_sha256,
+                    _now(),
+                ),
+            )
+
+    def asset_revision(self, asset_id: str) -> tuple[str | None, str | None]:
+        row = self.connection.execute(
+            "SELECT checksum, updated_at FROM assets WHERE id = ?", (asset_id,)
+        ).fetchone()
+        return (row["checksum"], row["updated_at"]) if row else (None, None)
+
+    def rollback(self) -> None:
+        self.connection.rollback()
+
+    def score_count(self) -> int:
+        row = self.connection.execute("SELECT count(*) AS count FROM scores").fetchone()
+        return int(row["count"])
+
+    def preview_count(self) -> int:
+        row = self.connection.execute("SELECT count(*) AS count FROM previews").fetchone()
+        return int(row["count"])

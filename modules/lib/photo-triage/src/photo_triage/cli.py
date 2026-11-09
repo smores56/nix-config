@@ -14,6 +14,7 @@ from .db import Database
 from .immich import ImmichClient, ImmichError
 from .model import LLMClient, LLMError, MODEL_ALIAS
 from .scan import PAGE_SIZE, scan_library
+from .score import ScorerError, score_library
 
 DB_NAME = "triage.db"
 DEFAULT_DATA_DIR = "/var/lib/photo-triage"
@@ -71,6 +72,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = commands.add_parser("run", help="score the library (service only)")
     run.add_argument("--dev-fixtures", action="store_true", help=argparse.SUPPRESS)
+    run.add_argument("--scan-id", type=int, default=None)
+    run.add_argument("--max-assets", type=int, default=None)
     return parser
 
 
@@ -184,15 +187,37 @@ def self_test_command() -> int:
     return 0
 
 
-def run(dev_fixtures: bool) -> int:
+def run(dev_fixtures: bool, scan_id_arg: int | None = None, max_assets: int | None = None) -> int:
     if not dev_fixtures and os.environ.get("PHOTO_TRIAGE_UNIT") != "1":
         print(
             "photo-triage: run through the service, or pass --dev-fixtures",
             file=sys.stderr,
         )
         return 2
-    print("photo-triage: scoring is not implemented in this scaffold", file=sys.stderr)
-    return 2
+    database = Database(data_dir() / DB_NAME)
+    try:
+        scan_id = scan_id_arg if scan_id_arg is not None else database.latest_scan()
+        if scan_id is None:
+            print("photo-triage: no completed scan in the database", file=sys.stderr)
+            return 1
+        immich = ImmichClient(socket_path=immich_socket(), api_key=load_immich_key())
+        model = LLMClient(
+            socket_path=llm_socket(),
+            model=os.environ.get("PHOTO_TRIAGE_MODEL", MODEL_ALIAS),
+        )
+        model.wait_ready()
+        model.vision_self_test()
+        stats = score_library(immich, model, database, scan_id, max_assets=max_assets)
+        print(json.dumps(stats, sort_keys=True))
+        if stats["pending"] > 0 and stats["scored"] + stats["reused"] == 0:
+            print("photo-triage: no assets were scored", file=sys.stderr)
+            return 1
+        return 0
+    except (ImmichError, LLMError, ScorerError) as error:
+        print(f"photo-triage: {error}", file=sys.stderr)
+        return 1
+    finally:
+        database.close()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -208,5 +233,5 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "self-test":
         return self_test_command()
     if args.command == "run":
-        return run(args.dev_fixtures)
+        return run(args.dev_fixtures, args.scan_id, args.max_assets)
     return 2
