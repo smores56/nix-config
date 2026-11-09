@@ -14,6 +14,9 @@ from urllib.parse import quote
 from .transport import UnixHTTPConnection
 
 READ_PERMISSIONS = frozenset({"asset.read", "asset.view", "album.read", "duplicate.read"})
+ALBUM_PERMISSIONS = frozenset(
+    {"album.read", "album.create", "albumAsset.create", "albumAsset.delete"}
+)
 TRANSIENT_STATUS = frozenset({408, 429, 500, 502, 503, 504})
 
 
@@ -141,4 +144,64 @@ class ImmichClient:
         payload = self._json("GET", "/api/duplicates")
         if not isinstance(payload, list):
             raise ImmichError(0, "duplicates response is not a list", transient=False)
+        return payload
+
+    def assert_album_permissions(self) -> None:
+        granted = set(self.permissions())
+        if granted != ALBUM_PERMISSIONS:
+            missing = sorted(ALBUM_PERMISSIONS - granted)
+            extra = sorted(granted - ALBUM_PERMISSIONS)
+            raise ImmichPermissionError(
+                403,
+                f"album key permissions mismatch; missing={missing} extra={extra}",
+                transient=False,
+            )
+
+    def albums(self, name: str | None = None) -> list[dict[str, Any]]:
+        path = "/api/albums"
+        if name is not None:
+            path += f"?name={quote(name, safe='')}"
+        payload = self._json("GET", path)
+        if not isinstance(payload, list):
+            raise ImmichError(0, "albums response is not a list", transient=False)
+        # The server filters by name; filter again so a proxy or older server
+        # cannot hand us an unrelated album.
+        albums = [album for album in payload if isinstance(album, dict)]
+        if name is not None:
+            albums = [album for album in albums if album.get("albumName") == name]
+        return albums
+
+    def album(self, album_id: str) -> dict[str, Any]:
+        payload = self._json("GET", f"/api/albums/{quote(album_id, safe='')}")
+        if not isinstance(payload, dict) or not payload.get("id"):
+            raise ImmichError(0, "unexpected album payload", transient=False)
+        return payload
+
+    def create_album(self, name: str) -> dict[str, Any]:
+        body = json.dumps({"albumName": name}).encode("utf-8")
+        payload = self._json("POST", "/api/albums", body=body)
+        if not isinstance(payload, dict) or not payload.get("id"):
+            raise ImmichError(0, "unexpected album payload", transient=False)
+        return payload
+
+    def add_album_assets(self, album_id: str, asset_ids: list[str]) -> list[dict[str, Any]]:
+        body = json.dumps({"ids": asset_ids}).encode("utf-8")
+        payload = self._json(
+            "PUT", f"/api/albums/{quote(album_id, safe='')}/assets", body=body
+        )
+        return self._bulk_response(payload)
+
+    def remove_album_assets(self, album_id: str, asset_ids: list[str]) -> list[dict[str, Any]]:
+        body = json.dumps({"ids": asset_ids}).encode("utf-8")
+        payload = self._json(
+            "DELETE", f"/api/albums/{quote(album_id, safe='')}/assets", body=body
+        )
+        return self._bulk_response(payload)
+
+    @staticmethod
+    def _bulk_response(payload: Any) -> list[dict[str, Any]]:
+        if not isinstance(payload, list) or not all(
+            isinstance(item, dict) and "id" in item for item in payload
+        ):
+            raise ImmichError(0, "unexpected bulk response", transient=False)
         return payload

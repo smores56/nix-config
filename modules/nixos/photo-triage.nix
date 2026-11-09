@@ -17,6 +17,7 @@ let
   dataDir = "/var/lib/photo-triage";
   runtimeDir = "/run/photo-triage";
   immichSocket = "${runtimeDir}/immich.sock";
+  immichAlbumSocket = "${runtimeDir}/immich-album.sock";
   llmSocket = "${runtimeDir}/llm.sock";
   immichUpstream = "127.0.0.1:${toString ports.immich}";
 
@@ -40,15 +41,59 @@ let
   adminRun = pkgs.writeShellScript "photo-triage-admin-run" ''
     export PHOTO_TRIAGE_DATA_DIR=${dataDir}
     export PHOTO_TRIAGE_IMMICH_SOCKET=${immichSocket}
+    export PHOTO_TRIAGE_IMMICH_ALBUM_SOCKET=${immichAlbumSocket}
     export PHOTO_TRIAGE_LLM_SOCKET=${llmSocket}
     export PHOTO_TRIAGE_MODEL=${models.modelAlias}
     export PHOTO_TRIAGE_MODEL_ID=${models.mainModelHash}
     export PHOTO_TRIAGE_MMPROJ_SHA256=${models.mmprojHash}
     exec ${cfg.package}/bin/photo-triage "$@"
   '';
-  admin = pkgs.writeShellScriptBin "photo-triage-admin" ''
-    exec /run/wrappers/bin/sudo -u ${user} -- ${adminRun} "$@"
+  albumsRun = pkgs.writeShellScript "photo-triage-albums-run" ''
+    export PHOTO_TRIAGE_DATA_DIR=${dataDir}
+    export PHOTO_TRIAGE_IMMICH_ALBUM_SOCKET=${immichAlbumSocket}
+    exec ${cfg.package}/bin/photo-triage albums "$@"
   '';
+  # Transient units run the CLI as the service user with only the Unix sockets
+  # and the data root reachable.
+  transientProperties = [
+    "--uid=${user}"
+    "--gid=${group}"
+    "--property=WorkingDirectory=${dataDir}"
+    "--property=NoNewPrivileges=yes"
+    "--property=PrivateTmp=yes"
+    "--property=ProtectSystem=strict"
+    "--property=ReadWritePaths=${dataDir} ${runtimeDir}"
+    "--property=RestrictAddressFamilies=AF_UNIX"
+    "--property=CapabilityBoundingSet="
+  ];
+  admin = pkgs.writeShellScriptBin "photo-triage-admin" (
+    if cfg.readKeyFile == null then
+      ''
+        exec /run/wrappers/bin/sudo -u ${user} -- ${adminRun} "$@"
+      ''
+    else
+      ''
+        exec /run/wrappers/bin/sudo ${pkgs.systemd}/bin/systemd-run --quiet --pipe --wait --collect \
+          ${lib.escapeShellArgs transientProperties} \
+          '--property=LoadCredential=immich-read-key:${cfg.readKeyFile}' \
+          -- ${adminRun} "$@"
+      ''
+  );
+  # The album key never reaches the scorer unit. systemd-run supplies the key
+  # through LoadCredential, so it is neither in the environment nor in argv.
+  albumsAdmin = pkgs.writeShellScriptBin "photo-triage-albums" (
+    if cfg.albumKeyFile == null then
+      ''
+        exec /run/wrappers/bin/sudo -u ${user} -- ${albumsRun} "$@"
+      ''
+    else
+      ''
+        exec /run/wrappers/bin/sudo ${pkgs.systemd}/bin/systemd-run --quiet --pipe --wait --collect \
+          ${lib.escapeShellArgs transientProperties} \
+          '--property=LoadCredential=immich-album-key:${cfg.albumKeyFile}' \
+          -- ${albumsRun} "$@"
+      ''
+  );
 
   scoringSettings = models.commonSettings // {
     host = llmSocket;
@@ -115,9 +160,32 @@ in
       default = pkgs.callPackage ../lib/photo-triage/package.nix { };
       description = "The photo-triage package to run.";
     };
+    readKeyFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = ''
+        File containing the Immich read/score API key. The scorer unit loads it
+        as the immich-read-key credential; set it from the host's sops secret.
+      '';
+    };
+    albumKeyFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = ''
+        File containing the Immich album-writer API key. Only the albums command
+        loads it, as the immich-album-key credential.
+      '';
+    };
   };
 
   config = {
+    warnings =
+      lib.optionals (cfg.readKeyFile == null) [
+        "photo-triage: photoTriage.readKeyFile is not configured; scan and analyze will fail at runtime"
+      ]
+      ++ lib.optionals (cfg.albumKeyFile == null) [
+        "photo-triage: photoTriage.albumKeyFile is not configured; album sync and preflight will fail at runtime"
+      ];
     users.groups.${group} = { };
     users.users.${user} = {
       isSystemUser = true;
@@ -135,6 +203,12 @@ in
     systemd.services.photo-triage-immich-relay = mkRelay {
       description = "photo-triage Immich Unix-socket relay";
       socket = immichSocket;
+      upstream = "TCP:${immichUpstream}";
+      after = [ "immich-server.service" ];
+    };
+    systemd.services.photo-triage-immich-album-relay = mkRelay {
+      description = "photo-triage Immich album-writer Unix-socket relay";
+      socket = immichAlbumSocket;
       upstream = "TCP:${immichUpstream}";
       after = [ "immich-server.service" ];
     };
@@ -216,6 +290,9 @@ in
           1
           2
         ];
+        LoadCredential = lib.optionals (cfg.readKeyFile != null) [
+          "immich-read-key:${cfg.readKeyFile}"
+        ];
         # Previews live in RAM; the shared sandbox's PrivateTmp is disk-backed here.
         PrivateTmp = "disconnected";
         PrivateNetwork = true;
@@ -234,7 +311,10 @@ in
       };
     };
 
-    environment.systemPackages = [ admin ];
+    environment.systemPackages = [
+      admin
+      albumsAdmin
+    ];
 
     assertions = [
       {

@@ -846,3 +846,58 @@ class Database:
             "WHERE scan_id = ? ORDER BY asset_id",
             (scan_id,),
         ).fetchall()
+
+    def run(self, run_id: int) -> sqlite3.Row | None:
+        return self.connection.execute(
+            "SELECT * FROM runs WHERE id = ?", (run_id,)
+        ).fetchone()
+
+    def latest_decide_run(self, scan_id: int) -> int | None:
+        row = self.connection.execute(
+            "SELECT id FROM runs WHERE kind = 'decide' AND scan_id = ? "
+            "AND state = 'complete' ORDER BY id DESC LIMIT 1",
+            (scan_id,),
+        ).fetchone()
+        return int(row["id"]) if row else None
+
+    def album(self, kind: str) -> sqlite3.Row | None:
+        return self.connection.execute(
+            "SELECT * FROM albums WHERE kind = ?", (kind,)
+        ).fetchone()
+
+    def set_album(self, kind: str, immich_album_id: str, generation: int | None) -> None:
+        with self.connection:
+            self.connection.execute(
+                "INSERT INTO albums(kind, immich_album_id, generation, last_synced_at) "
+                "VALUES (?, ?, ?, NULL) ON CONFLICT(kind) DO UPDATE SET "
+                "immich_album_id = excluded.immich_album_id, "
+                "generation = excluded.generation, last_synced_at = NULL",
+                (kind, immich_album_id, generation),
+            )
+
+    def album_members(self, kind: str) -> list[str]:
+        return [
+            str(row["asset_id"])
+            for row in self.connection.execute(
+                "SELECT asset_id FROM album_membership WHERE kind = ? ORDER BY asset_id",
+                (kind,),
+            )
+        ]
+
+    def replace_album_members(
+        self, kind: str, asset_ids: list[str], generation: int
+    ) -> None:
+        synced_at = _now()
+        with self.connection:
+            self.connection.execute(
+                "DELETE FROM album_membership WHERE kind = ?", (kind,)
+            )
+            self.connection.executemany(
+                "INSERT INTO album_membership(kind, asset_id, generation, synced_at) "
+                "VALUES (?, ?, ?, ?)",
+                [(kind, asset_id, generation, synced_at) for asset_id in asset_ids],
+            )
+            self.connection.execute(
+                "UPDATE albums SET generation = ?, last_synced_at = ? WHERE kind = ?",
+                (generation, synced_at, kind),
+            )
