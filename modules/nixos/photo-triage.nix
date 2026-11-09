@@ -53,6 +53,11 @@ let
     export PHOTO_TRIAGE_IMMICH_ALBUM_SOCKET=${immichAlbumSocket}
     exec ${cfg.package}/bin/photo-triage albums "$@"
   '';
+  calibrationRun = pkgs.writeShellScript "photo-triage-calibration-run" ''
+    export PHOTO_TRIAGE_DATA_DIR=${dataDir}
+    export PHOTO_TRIAGE_IMMICH_ALBUM_SOCKET=${immichAlbumSocket}
+    exec ${cfg.package}/bin/photo-triage calibration "$@"
+  '';
   # Transient units run the CLI as the service user with only the Unix sockets
   # and the data root reachable.
   transientProperties = [
@@ -92,6 +97,24 @@ let
           ${lib.escapeShellArgs transientProperties} \
           '--property=LoadCredential=immich-album-key:${cfg.albumKeyFile}' \
           -- ${albumsRun} "$@"
+      ''
+  );
+  calibrationAdmin = pkgs.writeShellScriptBin "photo-triage-calibration" ''
+    exec /run/wrappers/bin/sudo -u ${user} -- ${calibrationRun} "$@"
+  '';
+  # Only the sample publisher receives the album key; labels and reports run
+  # with no Immich credential at all.
+  calibrationPublishAdmin = pkgs.writeShellScriptBin "photo-triage-calibration-publish" (
+    if cfg.albumKeyFile == null then
+      ''
+        exec /run/wrappers/bin/sudo -u ${user} -- ${calibrationRun} sample "$@"
+      ''
+    else
+      ''
+        exec /run/wrappers/bin/sudo ${pkgs.systemd}/bin/systemd-run --quiet --pipe --wait --collect \
+          ${lib.escapeShellArgs transientProperties} \
+          '--property=LoadCredential=immich-album-key:${cfg.albumKeyFile}' \
+          -- ${calibrationRun} sample "$@"
       ''
   );
 
@@ -314,6 +337,8 @@ in
     environment.systemPackages = [
       admin
       albumsAdmin
+      calibrationAdmin
+      calibrationPublishAdmin
     ];
 
     assertions = [
