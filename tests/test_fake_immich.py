@@ -132,27 +132,38 @@ class FakeImmichTests(unittest.TestCase):
         self.assertEqual(last["assets"]["count"], total - (last_page - 1) * size)
         self.assertIsNone(last["assets"]["nextPage"])
 
-    def test_search_withholds_trashed_and_archived_by_default(self):
+    def test_search_visibility_and_deleted_filters(self):
         hidden = dict(self.keep)
         hidden["id"] = "asset-hidden"
-        hidden["isTrashed"] = True
+        hidden["visibility"] = "hidden"
         archived = dict(self.keep)
         archived["id"] = "asset-archived"
+        archived["visibility"] = "archive"
         archived["isArchived"] = True
+        trashed = dict(self.keep)
+        trashed["id"] = "asset-trashed"
+        trashed["isTrashed"] = True
         with FakeImmich(
-            assets=self.assets + [hidden, archived], keys=KEYS, api_key="read-key"
+            assets=self.assets + [hidden, archived, trashed], keys=KEYS, api_key="read-key"
         ) as immich:
             _, default = _request(
                 immich.base_url, "POST", "/api/search/metadata", {"page": 1, "size": 100}
             )
-            _, include = _request(
+            _, timeline = _request(
                 immich.base_url,
                 "POST",
                 "/api/search/metadata",
-                {"page": 1, "size": 100, "withDeleted": True, "withArchived": True},
+                {"page": 1, "size": 100, "visibility": "timeline"},
             )
-        self.assertEqual(default["assets"]["count"], len(self.assets))
-        self.assertEqual(include["assets"]["count"], len(self.assets) + 2)
+            _, timeline_deleted = _request(
+                immich.base_url,
+                "POST",
+                "/api/search/metadata",
+                {"page": 1, "size": 100, "visibility": "timeline", "withDeleted": True},
+            )
+        self.assertEqual(default["assets"]["count"], len(self.assets) + 2)
+        self.assertEqual(timeline["assets"]["count"], len(self.assets))
+        self.assertEqual(timeline_deleted["assets"]["count"], len(self.assets) + 1)
 
     def test_thumbnail_and_missing_preview(self):
         status, payload = _request(

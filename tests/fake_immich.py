@@ -9,6 +9,8 @@ API. Nothing here touches a real Immich instance.
 from __future__ import annotations
 
 import json
+import os
+import socketserver
 import threading
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -47,8 +49,10 @@ class FakeImmich:
         api_key: str = "test-key",
         permissions: list[str] | None = None,
         require_auth: bool = True,
+        unix_path: str | None = None,
     ) -> None:
         self.api_key = api_key
+        self.unix_path = unix_path
         self.keys = (
             {key: list(value) for key, value in keys.items()}
             if keys is not None
@@ -105,13 +109,23 @@ class FakeImmich:
             def log_message(self, *args: object) -> None:
                 return
 
-        self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        self._server.daemon_threads = True
+        if self.unix_path:
+            server = socketserver.ThreadingUnixStreamServer
+
+            class UnixServer(server):
+                daemon_threads = True
+
+            self._server = UnixServer(self.unix_path, Handler)
+            os.chmod(self.unix_path, 0o600)
+            self.base_url = f"unix:{self.unix_path}"
+        else:
+            self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+            self._server.daemon_threads = True
+            self.base_url = f"http://127.0.0.1:{self._server.server_port}"
         self._thread = threading.Thread(
             target=self._server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
         )
         self._thread.start()
-        self.base_url = f"http://127.0.0.1:{self._server.server_port}"
         return self.base_url
 
     def stop(self) -> None:
@@ -120,6 +134,11 @@ class FakeImmich:
             self._server.server_close()
         if self._thread is not None:
             self._thread.join(timeout=5)
+        if self.unix_path:
+            try:
+                os.unlink(self.unix_path)
+            except FileNotFoundError:
+                pass
         self._server = None
         self._thread = None
         self.base_url = ""
@@ -410,17 +429,20 @@ class FakeImmich:
 
     def _visible(self, data: dict[str, Any]) -> list[dict[str, Any]]:
         with_deleted = bool(data.get("withDeleted", False))
-        with_archived = bool(data.get("withArchived", False))
         requested_type = data.get("type")
+        requested_visibility = data.get("visibility")
+        created_before = data.get("createdBefore")
         assets = []
         for asset in self.assets.values():
             if not with_deleted and asset.get("isTrashed"):
                 continue
-            if not with_archived and asset.get("isArchived"):
-                continue
             if requested_type and asset.get("type") != requested_type:
                 continue
+            if requested_visibility and asset.get("visibility", "timeline") != requested_visibility:
+                continue
             if asset.get("visibility") == "locked":
+                continue
+            if created_before and asset.get("createdAt", "") >= created_before:
                 continue
             assets.append(asset)
         return sorted(assets, key=lambda asset: (asset.get("localDateTime", ""), asset["id"]))
