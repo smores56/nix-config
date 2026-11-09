@@ -393,7 +393,11 @@ let
       case "''${1:-}" in
         server)
           shift
-          exec ${lettaPackage}/bin/letta server --backend local \
+          # `--openai-api` adds /v1/models, /v1/chat/completions and /v1/responses to the
+          # same loopback listener, which is how Open WebUI on the host drives the agent.
+          # It needs no `--ws-auth`: those routes are plain HTTP, and the listener is
+          # loopback-only, so the host relay stays the only route in.
+          exec ${lettaPackage}/bin/letta server --backend local --openai-api \
             --listen "ws://127.0.0.1:${toString ports.letta}" "$@"
           ;;
         *) exec ${lettaPackage}/bin/letta "$@" ;;

@@ -36,21 +36,15 @@ in
     memory-mcp-token = userOwned // {
       group = if config.systemd.services ? memory-mcp then "memory" else "users";
       mode = "0440";
-      # Open WebUI embeds the token, so it must restart with the listener or calls 401.
-      restartUnits =
-        lib.optional (config.systemd.services ? memory-mcp) "memory-mcp.service"
-        ++ lib.optional (config.systemd.services ? open-webui) "open-webui.service";
+      restartUnits = lib.optional (config.systemd.services ? memory-mcp) "memory-mcp.service";
     };
 
     # maki's hosted-inference key. The fish init exports it from this path, so
     # the user must be able to read it on every personal host.
     neuralwatt-api-key = userOwned // {
-      # Only smortress runs the memory gateway and Open WebUI, and both read the
-      # credential at start; naming a unit other hosts lack would fail their
-      # activation.
-      restartUnits =
-        lib.optional (config.systemd.services ? memory-llm-proxy) "memory-llm-proxy.service"
-        ++ lib.optional (config.systemd.services ? open-webui) "open-webui.service";
+      # Only smortress runs the memory gateway, which reads the credential at start;
+      # naming a unit other hosts lack would fail their activation.
+      restartUnits = lib.optional (config.systemd.services ? memory-llm-proxy) "memory-llm-proxy.service";
     };
 
     # `neededForUsers` decrypts into /run/secrets-for-users before users activation, the
