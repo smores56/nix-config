@@ -1047,7 +1047,7 @@ let
           };
 
           letta-assistant = {
-            description = "Letta App Server at agent.sammohr.dev";
+            description = "Letta App Server (loopback; Open WebUI's backend)";
             wantedBy = [ "multi-user.target" ];
             after = [
               "network-online.target"
