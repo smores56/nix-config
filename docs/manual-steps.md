@@ -1900,11 +1900,14 @@ calls, and work repos are accepted there (`MEMORY_WORK_POLICY=allow`, from
 which forwards to the guest relay of the same name; the guest relay listens on
 the tap address and forwards to the Letta App Server on `127.0.0.1:42701`. The
 runtime binds only loopback; the guest relay owns the tap address. Cloudflare
-Access's email allow-list is the remote gate; the App Server's own token is the
-second layer. The relays are L4, so the guest also receives Cloudflare's
-`Cf-Access-Jwt-Assertion`; treat it as a human credential there (do not log or
-forward it) and keep the Access session short. Any host process can also reach
-the loopback relay without Access, so keep the host single-user.
+Access's email allow-list is the only remote gate: the App Server runs without
+`--ws-auth`, which is correct for a loopback listener, so it accepts native
+clients (no `Origin` header) and answers `403` to Origin-bearing browser
+upgrades. There is no web UI — `/` is `404` — so the clients are the Letta Code
+CLI and the desktop/mobile apps. The relays are L4, so the guest also receives
+Cloudflare's `Cf-Access-Jwt-Assertion`; treat it as a human credential there
+(do not log or forward it) and keep the Access session short. Any host process
+can also reach the loopback relay without Access, so keep the host single-user.
 
 Apply the edge with `just cloudflare-apply` (creates the Access application) and
 `just switch smortress`. A host switch does not restart the guest
@@ -1943,6 +1946,22 @@ That tree holds the agent record, its MemFS git repository and the provider
 record; the service picks it up on the next start. `~/wip/letta-migration` also
 keeps `episodes.jsonl` (the raw dump) and `project.py` (the projection script),
 which are not needed at runtime.
+
+The move also strands the CLI's own bookkeeping: `home/.letta/settings.json`
+and `settings.local.json` record the backend as an absolute
+`local:<path>` key, and the migration ran against the staging path. The service
+is unaffected (it reads `LETTA_LOCAL_BACKEND_DIR`), but the CLI would look for
+the agent in the now-empty staging tree and start a fresh one. Repoint both
+files once:
+
+```sh
+cd ~/.local/state/letta/home/.letta
+sed -i 's#local:/home/smores/wip/letta-migration/state/backend#local:/home/smores/.local/state/letta/backend#g' \
+  settings.json settings.local.json
+```
+
+Verify with `letta --backend local agents list`: it must return the migrated
+agent, not an empty list.
 
 **Neuralwatt subscription.** The account is on Standard monthly: $50 prepaid
 per month for 6.25 kWh at $8/kWh, with same-rate overage past the allowance.
