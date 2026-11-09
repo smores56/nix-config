@@ -242,26 +242,6 @@ in
         Environment = service.toStrings (
           service.wrapperEnvironment {
             stateDir = dataDir;
-            extra = [
-              # Open WebUI's MCP client cannot send X-Memory-* headers; pin it to the shared
-              # group. Header-sending clients keep the strict contract.
-              [
-                "MEMORY_MCP_DEFAULT_GROUP"
-                "global"
-              ]
-              [
-                "MEMORY_MCP_DEFAULT_CWD"
-                "/chat"
-              ]
-              [
-                "MEMORY_MCP_DEFAULT_ACTOR"
-                "open-webui"
-              ]
-              [
-                "MEMORY_MCP_DEFAULT_MACHINE"
-                config.networking.hostName
-              ]
-            ];
           }
         );
         # Bounds how long the pre-start probe can hold activation.
