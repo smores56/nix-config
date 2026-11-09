@@ -12,6 +12,7 @@ from pathlib import Path
 from . import __version__
 from .db import Database
 from .immich import ImmichClient, ImmichError
+from .model import LLMClient, LLMError, MODEL_ALIAS
 from .scan import PAGE_SIZE, scan_library
 
 DB_NAME = "triage.db"
@@ -26,6 +27,10 @@ def data_dir() -> Path:
 
 def immich_socket() -> str:
     return os.environ.get("PHOTO_TRIAGE_IMMICH_SOCKET", DEFAULT_IMMICH_SOCKET)
+
+
+def llm_socket() -> str:
+    return os.environ.get("PHOTO_TRIAGE_LLM_SOCKET", DEFAULT_LLM_SOCKET)
 
 
 def load_immich_key() -> str:
@@ -62,6 +67,8 @@ def build_parser() -> argparse.ArgumentParser:
     requeue.add_argument("--scan-id", type=int, default=None)
     requeue.add_argument("--reason", default=None)
 
+    commands.add_parser("self-test", help="check the scoring model alias and vision")
+
     run = commands.add_parser("run", help="score the library (service only)")
     run.add_argument("--dev-fixtures", action="store_true", help=argparse.SUPPRESS)
     return parser
@@ -71,7 +78,7 @@ def doctor() -> int:
     root = data_dir()
     sockets = {
         "immich": Path(immich_socket()),
-        "llm": Path(os.environ.get("PHOTO_TRIAGE_LLM_SOCKET", DEFAULT_LLM_SOCKET)),
+        "llm": Path(llm_socket()),
     }
     problems = []
     if not root.is_dir():
@@ -164,6 +171,19 @@ def requeue_command(args: argparse.Namespace) -> int:
         database.close()
 
 
+def self_test_command() -> int:
+    model = os.environ.get("PHOTO_TRIAGE_MODEL", MODEL_ALIAS)
+    client = LLMClient(socket_path=llm_socket(), model=model)
+    try:
+        client.wait_ready()
+        client.vision_self_test()
+    except LLMError as error:
+        print(f"photo-triage: {error}", file=sys.stderr)
+        return 1
+    print(json.dumps({"ok": "vision self-test"}, sort_keys=True))
+    return 0
+
+
 def run(dev_fixtures: bool) -> int:
     if not dev_fixtures and os.environ.get("PHOTO_TRIAGE_UNIT") != "1":
         print(
@@ -172,7 +192,7 @@ def run(dev_fixtures: bool) -> int:
         )
         return 2
     print("photo-triage: scoring is not implemented in this scaffold", file=sys.stderr)
-    return 0
+    return 2
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -185,6 +205,8 @@ def main(argv: list[str] | None = None) -> int:
         return coverage_command(args)
     if args.command == "requeue":
         return requeue_command(args)
+    if args.command == "self-test":
+        return self_test_command()
     if args.command == "run":
         return run(args.dev_fixtures)
     return 2

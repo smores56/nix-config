@@ -106,20 +106,20 @@ class CliTests(unittest.TestCase):
         finally:
             _restore_env(old)
 
-    def test_run_is_a_noop_inside_the_unit(self):
+    def test_run_stub_fails_inside_the_unit(self):
         old = _set_env(PHOTO_TRIAGE_UNIT="1")
         try:
             with redirect_stderr(io.StringIO()):
-                self.assertEqual(main(["run"]), 0)
+                self.assertEqual(main(["run"]), 2)
         finally:
             _restore_env(old)
 
-    def test_dev_fixtures_runs_outside_the_unit(self):
+    def test_dev_fixtures_reaches_the_stub_but_still_fails(self):
         old = {key: os.environ.get(key) for key in ("PHOTO_TRIAGE_UNIT",)}
         os.environ.pop("PHOTO_TRIAGE_UNIT", None)
         try:
             with redirect_stderr(io.StringIO()):
-                self.assertEqual(main(["run", "--dev-fixtures"]), 0)
+                self.assertEqual(main(["run", "--dev-fixtures"]), 2)
         finally:
             _restore_env(old)
 
