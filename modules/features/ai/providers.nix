@@ -66,6 +66,32 @@ let
     cacheRead = 0.02;
   };
 
+  # Neuralwatt maps `reasoning_effort` per model, and Kimi K3.1 Pro takes the
+  # full public scale, so spell the effort names instead of a token budget.
+  # Omitting adaptive leaves the request silent, which keeps the model default.
+  kimiProModel =
+    (mkModel {
+      id = "kimi-k3.1-pro";
+      context = 1048576;
+      # No separate output cap: completion shares the 1M window.
+      output = 1048576;
+      vision = true;
+      prompt = 2.00;
+      completion = 10.00;
+      cacheRead = 0.20;
+    })
+    // {
+      thinking_fields = {
+        off.reasoning_effort = "none";
+        minimal.reasoning_effort = "low";
+        low.reasoning_effort = "low";
+        medium.reasoning_effort = "medium";
+        high.reasoning_effort = "high";
+        xhigh.reasoning_effort = "max";
+        max.reasoning_effort = "max";
+      };
+    };
+
   neuralwatt = {
     providerId = "neuralwatt";
     baseUrl = "https://api.neuralwatt.com/v1";
@@ -85,6 +111,7 @@ let
         completion = 3.20;
         cacheRead = 0.25;
       })
+      kimiProModel
     ];
   };
 
