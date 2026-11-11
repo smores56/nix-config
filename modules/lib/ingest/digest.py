@@ -1,10 +1,11 @@
 """Host writer for the cluster digest (smores56/sdlc#595, part of #509).
 
 The `cluster` guest's CronJob rewrites `/mnt/data/cluster-digest/latest.json`
-every 15 minutes (the same host tree at `/var/lib/data/cluster-digest`, shared
-read-write into the guest). This writer watches that one file and, for every
-document whose `generated_at` is newer than the cursor, age-encrypts the exact
-bytes into Kanbei's read-only inbox as `cluster-digest-<UTC>.age`.
+every 15 minutes (the same host tree at
+`/var/lib/kanbei-ingest/shares/cluster-digest`, shared read-write into the
+guest). This writer watches that one file and, for every document whose
+`generated_at` is newer than the cursor, age-encrypts the exact bytes into
+Kanbei's read-only inbox as `cluster-digest-<UTC>.age`.
 
 The platform writer already renames `latest.json` into place atomically, but a
 reader still has to prove it did not see a half-written or virtiofs-stale file:

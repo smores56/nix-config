@@ -228,8 +228,10 @@ Content-Security-Policy: default-src 'none'; connect-src 'self'; img-src 'self' 
   the first line of the connection, before TLS). `/api/chat` additionally requires
   `Authorization: Bearer <session>`, where the session is minted only by
   `/api/passkey/auth/verify`; without it the answer is a 401 and **no** chat turn runs, stub
-  or local. The shell unlocks silently with a resident passkey on load and prompts for one
-  otherwise.
+  or local. On load the shell requests an assertion with
+  `mediation: "conditional"`, so the browser offers only a passkey that already exists
+  (autofill) and never prompts when there is none; the explicit **Passkey** button still
+  runs the modal assertion and the registration ceremony.
 - With a session, `/api/chat` forwards to the guest's local chat lane when one is configured
   and returns `{"reply": "…", "lane": "local"}`; without a lane it returns a deterministic
   stub (`lane: "stub"`). Upstream failures are JSON 502s.
@@ -238,7 +240,8 @@ Content-Security-Policy: default-src 'none'; connect-src 'self'; img-src 'self' 
   consume it and refuse replays, cross-purpose use, and expiry. Cryptographic
   attestation/assertion verification is **not** implemented yet; `/verify` returns
   `{"ok": true, "stub": true}` after the lifecycle checks. WebAuthn RP ID/origin are
-  `kanbei.sammohr.dev` / `https://kanbei.sammohr.dev`.
+  `kanbei.sammohr.dev` / `https://kanbei.sammohr.dev`. The exact remaining work is in
+  [Accepted residual risks](#accepted-residual-risks).
 
 ## Spikes and how to run them
 
@@ -298,7 +301,28 @@ separately; it needs a Chromium binary, which the unit-test sandbox does not car
   DNS-01 needs `Zone:DNS:Edit` on `sammohr.dev`. If that token is narrowed later, mint a
   scoped token and point `LoadCredential` at it.
 - **Passkey verification is a stub.** Challenge lifecycle and origin/RP binding are real;
-  attestation and assertion signatures are not verified yet.
+  attestation and assertion signatures are not verified yet. The remaining work, in order:
+  1. persist enrolled credentials — `/api/passkey/register/verify` must store the
+     credential id, the COSE public key, the signature counter and the transports, and
+     `/api/passkey/auth/options` must return their ids in `allowCredentials` (today it
+     returns `[]`, which is why conditional mediation can only offer a discoverable
+     passkey);
+  2. parse `clientDataJSON` in both verify handlers and reject a wrong `type`,
+     `challenge` (already checked), `origin` other than `https://kanbei.sammohr.dev`, or
+     `crossOrigin`;
+  3. parse `authenticatorData`: check `rpIdHash == SHA-256("kanbei.sammohr.dev")`, the
+     `UP`/`UV` flags (`userVerification: "required"`), and a non-decreasing signature
+     counter against the stored credential;
+  4. verify the assertion signature (ES256 with the stored P-256 key, EdDSA if enrolled)
+     over `authenticatorData || SHA-256(clientDataJSON)`; mint the session only after
+     that succeeds;
+  5. on registration, CBOR-decode `attestationObject`, extract the credential public
+     key from `authData`, and accept only `fmt: "none"` until an attestation policy
+     exists;
+  6. add tests with offline authenticator vectors for a good assertion plus wrong
+     origin, wrong RP id, replayed counter and bad signature, so the stub cannot regress
+     into a bypass. Until then the only defence in front of `/api/chat` is the
+     relay-token handshake (above) plus the session gate.
 - **Relay is unauthenticated at the socket.** Only group `kanbei-tunnel` (cloudflared) can
   connect, and only over loopback; a host process running as cloudflared's dynamic uid could
   use it. Host root and the DynamicUser boundary are outside this control.

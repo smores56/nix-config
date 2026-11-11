@@ -508,16 +508,20 @@ The five ingest guests and their host writer/proxy/resolver are behind
    repeat the one-time login and re-stage `ingest-tuta-env`. Both are in
    [`docs/kanbei-ingest-tuta.md`](kanbei-ingest-tuta.md#tuta-client-bumps).
 
-5. **Cluster digest.** `cluster-vm.nix` creates and shares
-   `/var/lib/data/cluster-digest` (0770 `kanbei-digest:kanbei-digest`, uid 983);
+5. **Cluster digest.** `cluster-vm.nix` creates and shares the host tree
+   `/var/lib/kanbei-ingest/shares/cluster-digest` (0770
+   `kanbei-digest:kanbei-digest`, uid 983) inside a `0700 root:root` parent chain;
    the platform CronJob writes `latest.json` there every 15 minutes through that
-   share's uid mapping. Confirm the one-way feed and the ownership gate:
+   share's uid mapping (the guest path stays `/mnt/data/cluster-digest`, so the
+   platform PV is unchanged). Confirm the one-way feed and the ownership gate:
 
    ```sh
    sudo systemctl status ingest-writer-cluster-digest
-   sudo ls -ld /var/lib/data/cluster-digest        # 0770 kanbei-digest, not smores
-   sudo -u smores test -r /var/lib/data/cluster-digest || echo 'not readable as smores'
-   sudo ls -l /var/lib/data/cluster-digest/latest.json
+   sudo ls -ld /var/lib/kanbei-ingest /var/lib/kanbei-ingest/shares  # 0700 root
+   sudo ls -ld /var/lib/kanbei-ingest/shares/cluster-digest          # 0770 kanbei-digest
+   sudo -u smores test -r /var/lib/kanbei-ingest/shares/cluster-digest || echo 'not readable as smores'
+   sudo -u smores test -w /var/lib/kanbei-ingest || echo 'state root not writable as smores'
+   sudo ls -l /var/lib/kanbei-ingest/shares/cluster-digest/latest.json
    sudo cat /var/lib/kanbei-ingest/state/cluster-digest.last-ok
    sudo ls -l /var/lib/data/inbox/cluster-digest-*.age
    ```

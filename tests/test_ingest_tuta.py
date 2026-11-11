@@ -311,6 +311,25 @@ class MailTests(unittest.TestCase):
                 self.mail.load_state(path)
 
 
+class DigestSharePathTests(unittest.TestCase):
+    """The digest share must not sit under the human-owned `/var/lib/data` (0751)."""
+
+    def setUp(self):
+        self.verify = load("verify")
+
+    def test_digest_tree_lives_in_the_root_only_state_root(self):
+        digest = self.verify.DIGEST
+        self.assertFalse(digest.startswith("/var/lib/data/"))
+        self.assertTrue(digest.startswith("/var/lib/kanbei-ingest/shares/"))
+        self.assertEqual(self.verify.DIGEST_PRIVATE_PARENTS[-1], digest.rsplit("/", 1)[0])
+        for parent in self.verify.DIGEST_PRIVATE_PARENTS:
+            self.assertTrue(digest.startswith(parent + "/"), parent)
+
+    def test_shared_parent_chain_is_the_world_readable_root_chain(self):
+        # `/var/lib` and `/var` are 0755 root: the human can read but never write them.
+        self.assertEqual(set(self.verify.DIGEST_SHARED_PARENTS), {"/var", "/var/lib"})
+
+
 class DigestTests(unittest.TestCase):
     def setUp(self):
         self.digest = load("digest")

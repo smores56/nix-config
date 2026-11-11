@@ -103,13 +103,20 @@
     return response.json();
   }
 
-  async function unlock() {
+  // `mode.conditional` is the autofill path: the browser only offers a passkey that
+  // already exists there, and the promise settles when the owner picks one. The explicit
+  // button calls this without it and always gets the modal prompt.
+  async function unlock(mode) {
+    const conditional = Boolean(mode && mode.conditional);
     if (!window.PublicKeyCredential || !navigator.credentials) {
       setStatus("This browser cannot use a passkey; chat stays locked.");
       return;
     }
+    // The conditional request stays pending until the owner picks a credential, so the
+    // locked state has to be visible before the await.
+    if (conditional) setStatus("Locked: use the Passkey button to unlock chat.");
     const options = await postJson("/api/passkey/auth/options", {});
-    const assertion = await navigator.credentials.get({
+    const request = {
       publicKey: {
         challenge: base64urlToBytes(options.challenge),
         rpId: options.rpId,
@@ -117,7 +124,9 @@
         userVerification: options.userVerification,
         timeout: options.timeout,
       },
-    });
+    };
+    if (conditional) request.mediation = "conditional";
+    const assertion = await navigator.credentials.get(request);
     const verified = await postJson("/api/passkey/auth/verify", {
       challenge: options.challenge,
       credential: {
@@ -134,8 +143,9 @@
     }
   }
 
-  // A resident passkey answers silently on load; anything else leaves chat locked.
-  unlock().catch(() => {
+  // Conditional mediation on load is silent: with no stored passkey the browser never
+  // prompts, and the explicit Passkey button remains the way to unlock.
+  unlock({ conditional: true }).catch(() => {
     session = "";
     setStatus("Locked: use the Passkey button to unlock chat.");
   });

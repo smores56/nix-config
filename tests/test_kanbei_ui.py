@@ -173,6 +173,15 @@ class ChatTests(ServerCase):
         self.assertIn("error", json.loads(body))
 
 
+class RelayTimeoutTests(unittest.TestCase):
+    def test_the_token_window_is_short_and_the_request_window_long(self):
+        server = load_server()
+        # The auth line and the TLS handshake it gates are bounded; only the
+        # authenticated request gets the long read timeout.
+        self.assertEqual(server.AUTH_TIMEOUT, 10.0)
+        self.assertGreater(server.REQUEST_TIMEOUT, server.AUTH_TIMEOUT)
+
+
 class PasskeyTests(ServerCase):
     def test_register_challenge_is_single_use(self):
         _status, _headers, body = self.request("POST", "/api/passkey/register/options", {})
@@ -247,6 +256,10 @@ class RendererPolicyTests(unittest.TestCase):
         self.assertIn("renderModelText", app)
         self.assertNotIn("http://", app)
         self.assertNotIn("https://", app)
+        # On load the shell must use conditional mediation (autofill only offers an
+        # existing passkey); the explicit button keeps the modal assertion.
+        self.assertIn('request.mediation = "conditional"', app)
+        self.assertIn("unlock({ conditional: true })", app)
 
     def run_node(self, script: str) -> None:
         result = subprocess.run(
