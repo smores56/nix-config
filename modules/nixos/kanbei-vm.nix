@@ -247,6 +247,10 @@ let
   guest =
     { lib, ... }:
     {
+      # T11: the llama.cpp chat/embeddings/rerank lanes. A guest module, so it only evaluates
+      # while this guest exists (kanbeiVm.enable).
+      imports = [ ./kanbei-inference.nix ];
+
       microvm = {
         hypervisor = "qemu";
         vcpu = 8;

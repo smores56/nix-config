@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "destination": "/var/lib/kanbei/models",
+  "models": {
+    "chat": {
+      "repo": "0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF",
+      "file": "RVN-IQ4_XS-multilingual.gguf",
+      "size": 15082506784,
+      "sha256": "b615856ba4a620db3be004ff5e5c46b3a6c5c3a17d247bef2cf6cbe1ca325aa4",
+      "quant": "IQ4_XS",
+      "note": "The MTP-free text file: the -mtp.gguf variants carry the 1-layer MTP head this lane keeps switched off."
+    },
+    "embeddings": {
+      "repo": "Qwen/Qwen3-Embedding-0.6B-GGUF",
+      "file": "Qwen3-Embedding-0.6B-Q8_0.gguf",
+      "size": 639150592,
+      "sha256": "06507c7b42688469c4e7298b0a1e16deff06caf291cf0a5b278c308249c3e439",
+      "quant": "Q8_0",
+      "note": "Decoder embedding model: last-token pooling."
+    },
+    "rerank": {
+      "repo": "gpustack/bge-reranker-v2-m3-GGUF",
+      "file": "bge-reranker-v2-m3-Q8_0.gguf",
+      "size": 635676416,
+      "sha256": "a43c7c9b11a4c1517e5bf95151960e1621d1b72f7a493364b01e386cf1aaa1d3",
+      "quant": "Q8_0",
+      "note": "Cross-encoder: the GGUF metadata supplies the rank pooling, so the server takes no --pooling."
+    }
+  }
+}

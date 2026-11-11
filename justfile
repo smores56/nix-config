@@ -22,6 +22,9 @@ agent-vm-verify:
 test:
     nix build --no-link .#checks.$(nix eval --impure --raw --expr builtins.currentSystem).unit-tests
 
+# Evaluate the kanbei inference lanes (lane fit, 128k recall, q8_0 vs f16); skips without a live endpoint.
+inference-eval *args:
+    nix shell nixpkgs#python3 -c python3 tests/inference/run_all.py {{args}}
 # Evaluate one home-manager configuration (e.g. smores smortress).
 verify-home user host:
     nix eval --raw .#homeConfigurations.'"{{user}}@{{host}}"'.activationPackage.drvPath

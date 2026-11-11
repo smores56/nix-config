@@ -56,7 +56,7 @@ lsmod | grep nvidia                        # empty
 | runner | qemu, `microvm` machine, `pcie=on` |
 | cpu/mem | 8 vcpu, 8192 MiB |
 | network | none — `microvm.interfaces = [ ]`, no tap, no firewall rules |
-| vsock | cid 4 (asserted unique across guests); the relay socket contract is T11's |
+| vsock | cid 4 (asserted unique across guests); the inference lanes stay loopback-only, the host relay is T14's |
 | disk | one raw image `data.img` (`serial=kanbei-data`, 64 GiB, created by `preStart`), `/dev/disk/by-id/virtio-kanbei-data` |
 | console | guest serial on QEMU stdio → `StandardOutput=append:` a root-only file |
 | host store | `/nix/store` virtiofs, read-only, `registerClosure = false` |
@@ -79,6 +79,14 @@ guest. `inbox` is root-owned 0755 and the guest's payload user reads batch files
 dropped payloads must be 0644 (the content is age ciphertext; readability is
 not confidentiality), and `kanbei-enroll` is the guest's one host-writable path
 (root-only 0700, nothing on the host reads it except the operator).
+
+The guest's inference lanes (`modules/nixos/kanbei-inference.nix`, T11) run as
+that uid 1000: one GPU `llama-server` for chat and two CPU servers for
+embeddings/reranking, all on `127.0.0.1`. The weights are data on the LUKS
+volume (`/var/lib/kanbei/models`), not in the store, so a rebuilt guest never
+re-downloads 14 GiB. `docs/kanbei-inference.md` has the pool math, flags, eval
+protocol and residuals; the download/verify procedure is step 6 of the operator
+steps above.
 
 ## vTPM and what the seal binds to
 

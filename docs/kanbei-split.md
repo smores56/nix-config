@@ -170,6 +170,13 @@ in `docs/manual-steps.md`, design and recovery flow in
 - The guest console goes to a root-only file, the swtpm state and the console
   directory are 0700 root, and `kanbei` units deliberately carry no
   `cloudflare-email@` failure hook.
+- The inference lanes (T11) are one GPU `llama-server` (unified q8_0 KV pool,
+  160k tokens, four slots) and two CPU servers (embeddings, reranking), all bound
+  to `127.0.0.1`. Weights are data on the LUKS volume with a sha256 manifest,
+  never in the store. No host relay exists yet, so prompt text cannot cross the
+  guest boundary even to the host; the vsock relay is T14's. The pool math,
+  eval protocol and the `q8_0`/`--kv-unified-per-slot` residuals are in
+  [`docs/kanbei-inference.md`](kanbei-inference.md).
 
 ## Accepted residuals
 

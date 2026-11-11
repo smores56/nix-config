@@ -256,6 +256,49 @@ lsmod | grep nvidia                      # empty while the guest owns the GPU
 If the group gained a device, stop the guest and re-record the pair in
 `modules/nixos/kanbei-vm.nix` rather than widening the passthrough.
 
+**6. Model download and verification.** The guest has no NIC, so the weights are
+fetched on the host into the locked volume. The manifest is the contract
+(`modules/lib/kanbei-models.json`, installed in the guest as
+`/var/lib/kanbei/models/llama-models.json`); the tool refuses a size or sha256
+mismatch and never installs a partial file. The volume is 64 GiB and the three
+files are ~14.4 GiB, so check free space first.
+
+```sh
+sudo systemctl stop microvm@kanbei.service
+sudo cryptsetup open --key-file /var/lib/kanbei-vm/enroll/recovery.key \
+  /var/lib/microvms/kanbei/data.img kanbei-data
+sudo mount /dev/mapper/kanbei-data /mnt
+df -h /mnt                                   # >= 16 GiB free
+
+# Fetch, hash-check, install as root:kanbei (guest uid/gid 1000) 0640.
+sudo nix shell nixpkgs#python3 -c python3 modules/lib/kanbei-fetch-models.py \
+  --dest /mnt/models --uid 1000 --gid 1000
+
+# Re-verify without the network (this is the check to repeat after any copy).
+sudo nix shell nixpkgs#python3 -c python3 modules/lib/kanbei-fetch-models.py \
+  --check --dest /mnt/models
+
+sudo umount /mnt && sudo cryptsetup close kanbei-data
+sudo systemctl start microvm@kanbei.service
+```
+
+The tool prints `ok <name>: <path> (<bytes> bytes, sha256 verified)` per model;
+`--check` exits 2 on a mismatch. A workstation copy is moved in the same way
+(mount the image on the host, copy into `/mnt/models`, then `--check`). Staging
+through the read-only `inbox` share also works, but the copy then happens in the
+guest console as root and the same `--check` must pass.
+
+Verify the guest picked the files up:
+
+```sh
+sudo systemctl status kanbei-chat.service kanbei-embeddings.service kanbei-rerank.service
+sudo journalctl -u kanbei-inference-gpu -u kanbei-chat -n 40 --no-pager
+# inside the guest console: kanbei-inference-eval
+```
+
+`docs/kanbei-inference.md` has the eval thresholds and the f16 reference-server
+command for the quality sample.
+
 ### smorespro
 
 <!-- manual-step: host/smorespro -->
