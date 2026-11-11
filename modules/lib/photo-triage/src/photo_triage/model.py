@@ -27,10 +27,19 @@ def _token_count(value: object) -> int | str:
 
 
 class LLMError(Exception):
-    def __init__(self, message: str, *, status: int = 0, transient: bool = False) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        status: int = 0,
+        transient: bool = False,
+        truncated_content: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.status = status
         self.transient = transient
+        # A reply cut at max_tokens; the caller may still salvage its prefix.
+        self.truncated_content = truncated_content
 
 
 def _synthetic_image() -> str:
@@ -128,15 +137,16 @@ class LLMClient:
         choice = choices[0]
         if not isinstance(choice, dict):
             raise LLMError("scoring model choice is not an object")
+        message = choice.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
         if choice.get("finish_reason") == "length":
             usage = response.get("usage")
             completion = usage.get("completion_tokens") if isinstance(usage, dict) else None
             raise LLMError(
                 f"scoring model hit max_tokens (max_tokens={max_tokens}, "
-                f"completion_tokens={_token_count(completion)})"
+                f"completion_tokens={_token_count(completion)})",
+                truncated_content=content if isinstance(content, str) else "",
             )
-        message = choice.get("message")
-        content = message.get("content") if isinstance(message, dict) else None
         if not isinstance(content, str) or not content.strip():
             raise LLMError("scoring model returned empty content")
         return response

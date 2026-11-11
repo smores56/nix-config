@@ -704,7 +704,7 @@ class Database:
         defects: list[str],
         interest: int,
         confidence: float,
-        raw_sha256: str,
+        raw_sha256: str | None,
     ) -> None:
         with self.connection:
             self.connection.execute(

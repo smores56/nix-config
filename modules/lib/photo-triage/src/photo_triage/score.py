@@ -9,6 +9,7 @@ import json
 import logging
 import math
 import os
+import re
 import time
 from typing import Any, Callable
 
@@ -126,6 +127,29 @@ def normalize_preview(data: bytes) -> tuple[bytes, str]:
         raise PreviewError("decode") from error
     normalized = buffer.getvalue()
     return normalized, hashlib.sha256(normalized).hexdigest()
+
+
+TRUNCATED_OBJECT = re.compile(
+    r'"(verdict|defects|interest|confidence)"\s*:'
+)
+
+
+def salvage_truncated(content: str) -> dict[str, Any] | None:
+    """Turn a reply cut at max_tokens into a review-only score.
+
+    The only unbounded part of the grammar is the defects list, so a truncated
+    reply is usually a repetition loop. Its verdict cannot be trusted: keep the
+    asset out of the delete album and let a human look at it.
+    """
+
+    if not content.lstrip().startswith("{") or TRUNCATED_OBJECT.search(content) is None:
+        return None
+    return {
+        "verdict": "review",
+        "defects": [],
+        "interest": 3,
+        "confidence": 0.0,
+    }
 
 
 def _unique_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -303,6 +327,7 @@ def score_library(
         "model_calls": 0,
         "repaired_defects": 0,
         "repaired_confidence": 0,
+        "repaired_truncated": 0,
     }
     try:
         asset_ids = database.pending_assets(scan_id, max_assets)
@@ -388,7 +413,7 @@ def score_library(
                 continue
             messages = _messages(normalized)
             score = None
-            raw_sha = ""
+            raw_sha: str | None = ""
             try:
                 for attempt in range(MAX_MODEL_ATTEMPTS):
                     stats["model_calls"] += 1
@@ -413,9 +438,18 @@ def score_library(
             except LLMError as error:
                 if error.transient:
                     raise ScorerError(f"scoring model unavailable: {error}") from error
-                _skip(database, scan_id, asset_id, "model", _model_failure_detail(error))
-                stats["skipped"] += 1
-                continue
+                truncated = error.truncated_content or ""
+                salvaged = salvage_truncated(truncated)
+                if salvaged is None:
+                    _skip(
+                        database, scan_id, asset_id, "model", _model_failure_detail(error)
+                    )
+                    stats["skipped"] += 1
+                    continue
+                score = salvaged
+                # No verdict came out of this reply, so there is no text to pin.
+                raw_sha = None
+                stats["repaired_truncated"] += 1
             except ScoreSchemaError as error:
                 _skip(database, scan_id, asset_id, "schema", error)
                 stats["skipped"] += 1
@@ -437,18 +471,19 @@ def score_library(
             database.mark_scan_asset(scan_id, asset_id, "scored")
             database.commit()
             stats["scored"] += 1
-        if stats["skipped"]:
+        if stats["skipped"] or stats["repaired_truncated"]:
             # One aggregate line: per-asset warnings would flood the journal.
             # Totals are per generation, so a bounded benchmark repeats them.
             coverage = database.coverage(scan_id)
             logger.warning(
                 "photo-triage skips scan=%s reasons=%s details=%s repaired_defects=%s "
-                "repaired_confidence=%s",
+                "repaired_confidence=%s repaired_truncated=%s",
                 scan_id,
                 json.dumps(coverage["reasons"], sort_keys=True),
                 json.dumps(coverage["details"], sort_keys=True),
                 stats["repaired_defects"],
                 stats["repaired_confidence"],
+                stats["repaired_truncated"],
             )
         state = "complete" if stats["scored"] + stats["reused"] > 0 else "failed"
         database.finish_run(run_id, state, stats)

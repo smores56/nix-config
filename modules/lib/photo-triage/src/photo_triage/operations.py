@@ -98,6 +98,7 @@ def orchestrate(
             "model_calls": 0,
             "repaired_defects": 0,
             "repaired_confidence": 0,
+            "repaired_truncated": 0,
         }
         if pending:
             score_stats = score_library(

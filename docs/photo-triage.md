@@ -80,17 +80,23 @@ Zero-status model errors are the client's own text (for example
 `hit max_tokens (max_tokens=512, completion_tokens=512)`); a peer-controlled
 transport error reads `model http=0 class=transport`.
 
-Two model habits are repaired instead of skipped. A repeated defect entry is
+Three model habits are repaired instead of skipped. A repeated defect entry is
 de-duplicated. A confidence outside 0-1, or exactly 1 (certainty and 1% on a
 0-100 scale are indistinguishable), is recorded as 0 and the reply is routed to
-`review`, so a repaired number can never justify a delete. Runs report
-`repaired_defects` and `repaired_confidence`; duplicate JSON keys are rejected
-outright.
+`review`, so a repaired number can never justify a delete. A reply cut at
+`max_tokens` that is still a verdict object is salvaged as `review` with zero
+confidence: the defects list is the grammar's only unbounded part, so a
+truncated reply is usually a repetition loop and its verdict cannot be trusted.
+A salvaged row never justifies a delete on its own, but like any `review` row it
+can serve as the keeper of an exact duplicate. Repaired rows count as scored, so
+`requeue` does not retry them; a new prompt or schema version rescores them.
+Runs report `repaired_defects`, `repaired_confidence` and `repaired_truncated`;
+duplicate JSON keys are rejected outright.
 
 - `model`: the server rejected the request (non-transient errors skip at once),
   with `model http=<status> class=<name>` where name is `context-overflow`,
   `image`, `template`, `grammar` or `other`; or the reply stopped at
-  `max_tokens`.
+  `max_tokens` with no salvageable verdict.
 - `schema`: the reply was not the verdict JSON after three attempts; the detail
   separates a short prose reply (`len=1-63, braces=none`) from a truncated one
   (`braces=unbalanced`). Only the replies that are not repairable land here.

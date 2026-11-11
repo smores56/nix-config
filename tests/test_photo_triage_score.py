@@ -191,8 +191,22 @@ class ScoreTests(unittest.TestCase):
         self.assertTrue(detail.isprintable())
         self.assertNotIn("\x1b", detail)
 
-    def test_max_tokens_skip_records_the_finish_reason(self):
+    def test_truncated_reply_is_salvaged_to_review(self):
         self.fake_llm.finish_reason = "length"
+        stats = self.score()
+        self.assertEqual(stats["scored"], self.scanned)
+        self.assertEqual(stats["skipped"], 0)
+        self.assertEqual(stats["repaired_truncated"], self.scanned)
+        row = self.database.connection.execute(
+            "SELECT verdict, confidence, raw_sha256 FROM scores ORDER BY asset_id LIMIT 1"
+        ).fetchone()
+        self.assertEqual(
+            (row["verdict"], row["confidence"], row["raw_sha256"]), ("review", 0.0, None)
+        )
+
+    def test_truncated_reply_without_a_verdict_is_skipped(self):
+        self.fake_llm.finish_reason = "length"
+        self.fake_llm.content = "blur blur blur"
         stats = self.score()
         self.assertEqual(stats["scored"], 0)
         coverage = self.database.coverage(self.scan_id)
