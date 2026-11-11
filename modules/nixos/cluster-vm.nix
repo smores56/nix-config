@@ -34,9 +34,13 @@ let
   # host ingest writer encrypts each new document into Kanbei's inbox. It is *not* a
   # human-owned data share: the tree belongs to the dedicated digest uid at 0770, so a
   # compromised cluster workload cannot inject into a tree Kanbei reads, and `smores` can
-  # neither read nor write it. The guest reaches it through an explicit uid mapping.
+  # neither read nor write it. It also sits under the root-only ingest state root, not
+  # `/var/lib/data`: that directory is `0751 smores:users`, so its owner could rename or
+  # replace the child tree whatever the child's mode. The guest reaches it through an
+  # explicit uid mapping.
   digestName = "cluster-digest";
-  digestDir = "/var/lib/data/${digestName}";
+  digestDir = ingest.constants.digestDir;
+  digestParent = ingest.constants.digestParent;
   digestTranslation = [
     "--translate-uid=guest:0:${toString ingest.constants.digestUid}:1"
     "--translate-uid=guest:1000:${toString ingest.constants.digestUid}:1"
@@ -163,6 +167,12 @@ let
     install -d -m 0700 ${facts.stateDir}
     install -d -m 0700 -o 65534 -g 65534 ${facts.stateDir}/secrets
     install -d -m 0700 -o 65534 -g 65534 ${facts.stateDir}/kubeconfig
+    # The digest share's parents are root-only and must exist before virtiofsd starts;
+    # `install -d` leaves an existing directory's mode alone, so the tmpfiles rules below
+    # stay the authority on 0700.
+    install -d -m 0700 -o root -g root ${ingest.constants.stateRoot}
+    install -d -m 0700 -o root -g root ${digestParent}
+    install -d -m 0770 -o ${toString ingest.constants.digestUid} -g ${toString ingest.constants.digestUid} ${digestDir}
     if [ -s /run/secrets/k3s-cluster-token ]; then
       install -m 0400 -o 65534 -g 65534 /run/secrets/k3s-cluster-token ${facts.stateDir}/secrets/k3s-cluster-token
     elif [ ! -s ${facts.stateDir}/secrets/k3s-cluster-token ]; then
@@ -375,9 +385,12 @@ in
 
   # The shares' host paths must exist before virtiofsd starts. immich/graphiti are empty until
   # T6 moves the apps; music and books already exist from the host's own tmpfiles. The digest
-  # tree is the one share the human does not own: 0770 on a dedicated uid, so neither `smores`
-  # nor a guest mapped onto it can be read or written by the human account.
+  # tree is the one share the human does not own: it sits in a 0700 root parent chain (never
+  # `/var/lib/data`, which `smores` owns at 0751 and could therefore rename) and is 0770 on a
+  # dedicated uid, so the human account can neither replace nor read it.
   systemd.tmpfiles.rules = map (name: "d /var/lib/data/${name} 0775 ${user} users -") dataShares ++ [
+    "d ${ingest.constants.stateRoot} 0700 root root -"
+    "d ${digestParent} 0700 root root -"
     "d ${digestDir} 0770 ${ingest.constants.digestUser} ${ingest.constants.digestUser} -"
   ];
 
@@ -477,9 +490,12 @@ in
         && share.mountPoint == "/mnt/data/${digestName}"
         && !(share.readOnly or false)
         && lib.any (a: lib.hasInfix "guest:1000:${toString ingest.constants.digestUid}:1" a) share.extraArgs
+        && lib.elem "d ${digestParent} 0700 root root -" config.systemd.tmpfiles.rules
         && lib.elem "d ${digestDir} 0770 ${ingest.constants.digestUser} ${ingest.constants.digestUser} -" config.systemd.tmpfiles.rules
+        && !lib.hasPrefix "/var/lib/data/" digestDir
+        && lib.hasPrefix "${ingest.constants.stateRoot}/" digestDir
         && ingest.constants.digestUid != config.users.users.${user}.uid;
-      message = "cluster-vm: the cluster-digest tree must be 0770 on the dedicated digest uid, mapped explicitly for the guest, and never owned by ${user}";
+      message = "cluster-vm: the cluster-digest tree must be 0770 on the dedicated digest uid under a root-only parent (never /var/lib/data, which ${user} owns), mapped explicitly for the guest, and never owned by ${user}";
     }
     {
       assertion =

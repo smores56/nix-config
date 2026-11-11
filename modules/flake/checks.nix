@@ -502,9 +502,13 @@ in
             assert ingest.constants.searchQueryPort == 7101;
             assert ingest.constants.ageKeyPort != ingest.sources.search.queryPort;
             # The digest tree has its own identity; mapping it to the human or to root is
-            # the injection the 0770 share exists to stop.
+            # the injection the 0770 share exists to stop. It must also stay outside
+            # `/var/lib/data` (0751 `smores:users`), whose owner can rename any child tree.
             assert ingest.constants.digestUser == "kanbei-digest";
             assert ingest.constants.digestUid != 0 && ingest.constants.digestUid != 1000;
+            assert ingest.constants.digestParent == "${ingest.constants.stateRoot}/shares";
+            assert ingest.constants.digestDir == "${ingest.constants.digestParent}/cluster-digest";
+            assert !(lib.hasPrefix "/var/lib/data" ingest.constants.digestDir);
             assert ingest.validateHostSources ingest.hostSources == [ ];
             assert
               ingest.validateHostSources (
@@ -553,11 +557,13 @@ in
             assert host.services.syncthing.user == "vault";
             assert lib.any (b: lib.any (p: lib.hasPrefix "/var/lib/data" p) b.paths) backups;
             assert lib.all (b: !lib.any (p: lib.hasPrefix phone.plaintextDir p) b.paths) backups;
-            assert host.kanbeiVm.enable == false;
-            # The gate, not the declaration: with the guest off the secret must not exist.
-            assert !(host.sops.secrets ? phone-folder-password);
+            # The gate, not the declaration, either side of the cutover: the sops secret
+            # and the password unit exist exactly while `kanbeiVm.enable` is set, so this
+            # check holds with the default (off) and in the forced-on eval.
+            assert host.kanbeiVm.enable == (host.sops.secrets ? phone-folder-password);
             assert
-              !(lib.any (unit: unit == "kanbei-phone-password.service") (lib.attrNames host.systemd.services));
+              host.kanbeiVm.enable
+              == (lib.any (unit: unit == "kanbei-phone-password") (lib.attrNames host.systemd.services));
             "ok"
           )
         );

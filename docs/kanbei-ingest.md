@@ -224,7 +224,7 @@ both a non-allowlisted hostname and an extra egress rule are rejected.
 The `cluster` guest's platform CronJob rewrites
 `/mnt/data/cluster-digest/latest.json` every 15 minutes
 (`homelabs-platform`, `platform/digest/`). `modules/nixos/cluster-vm.nix` shares
-the host tree `/var/lib/data/cluster-digest` into the guest, and
+the host tree `/var/lib/kanbei-ingest/shares/cluster-digest` into the guest, and
 `ingest-writer-cluster-digest.service` reads it from the host side:
 
 - `read_stable` stats before and after the read and retries when inode, size or
@@ -242,15 +242,23 @@ the host tree `/var/lib/data/cluster-digest` into the guest, and
   using the shared `<source>.alerted` marker.
 
 The digest tree is **not** a human-owned data share. It is
-`/var/lib/data/cluster-digest`, mode `0770`, owned by the dedicated
-`kanbei-digest` uid (983) — never `smores`. The cluster guest reaches it through an
-explicit `--translate-uid`/`--translate-gid` mapping for guest 0 and 1000 onto that
-uid, so the CronJob's writes land as `kanbei-digest`, a compromised workload cannot
-write as the human, and the host writer (root) is the only reader. `smores` can
-neither read nor write the directory or its contents; `kanbei-ingest-verify` proves
-it with `runuser -u smores -- test -r/-w`. The share assertion in `cluster-vm.nix`
-and the writer assertion in `ingest-vm.nix` fail evaluation if either side is renamed
-or the mapping drops back to a human uid.
+`/var/lib/kanbei-ingest/shares/cluster-digest`, mode `0770`, owned by the dedicated
+`kanbei-digest` uid (983) — never `smores`. It deliberately does **not** live under
+`/var/lib/data`: that directory is `0751 smores:users`, so its owner could rename or
+replace any child tree whatever the child's own mode. The parent chain
+(`/var/lib/kanbei-ingest`, `/var/lib/kanbei-ingest/shares`) is `0700 root:root`, so
+the share itself is the only writable object and the human cannot even traverse to
+it. The cluster guest reaches it through an explicit
+`--translate-uid`/`--translate-gid` mapping for guest 0 and 1000 onto that uid, so
+the CronJob's writes land as `kanbei-digest`, a compromised workload cannot write as
+the human, and the host writer (root) is the only reader. `smores` can neither read
+nor write the directory, its contents or its parents; `kanbei-ingest-verify` proves
+it with `runuser -u smores -- test -r/-w` on the tree and both private parents (and
+`test -w` on `/var/lib` and `/var`). The share assertion in `cluster-vm.nix`, the
+writer assertion in `ingest-vm.nix` and `kanbei-ingest-guards` fail evaluation if the
+tree moves back under `/var/lib/data`, either side is renamed, or the mapping drops
+back to a human uid. The guest path stays `/mnt/data/cluster-digest`, so the platform
+PV contract (`cluster-digest-data`) is unchanged.
 
 ## Freshness heartbeats
 
@@ -329,9 +337,12 @@ It asserts:
   whose SNI differs from an allowlisted CONNECT host is refused before dialling;
 - **egress**: the guest's own probe logs `INGEST-EGRESS-DROPPED`, and
   `iptables -S ingest-search-fwd` ends in DROP with no non-conntrack ACCEPT;
-- **digest**: the workspace check asserts the cluster share, the writer's state
-  files and the heartbeat's host-source entry; the writer itself is proven by
-  `tests/test_ingest_tuta.py` (stable read, cursor dedupe, staleness alert).
+- **digest**: the tree is `0770 kanbei-digest` inside a `0700 root` parent chain,
+  and `runuser -u smores` can neither read nor write the tree or its private
+  parents (nor write `/var/lib`/`/var`); the workspace check asserts the share,
+  the writer's state files and the heartbeat's host-source entry, and the writer
+  itself is proven by `tests/test_ingest_tuta.py` (stable read, cursor dedupe,
+  staleness alert, host path outside `/var/lib/data`).
 
 The age identity in the round-trip is a temporary test key written under `/run`;
 production batches are encrypted to Kanbei's published recipient and only the

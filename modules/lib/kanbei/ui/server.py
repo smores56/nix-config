@@ -51,6 +51,11 @@ RP_ID = "kanbei.sammohr.dev"
 ORIGIN = f"https://{RP_ID}"
 MAX_BODY = 64 * 1024
 MAX_MESSAGE = 8000
+# A connection that cannot present the relay token inside this window is dropped before
+# it can hold a thread. The token line and the TLS handshake it gates share the short
+# window; only the authenticated request afterwards gets the long timeout.
+AUTH_TIMEOUT = 10.0
+REQUEST_TIMEOUT = 120.0
 VMADDR_CID_ANY = 0xFFFFFFFF
 SESSION_TTL = 12 * 3600.0
 
@@ -410,7 +415,7 @@ class KanbeiServer(ThreadingHTTPServer):
         super().__init__(address, handler)
 
     def finish_request(self, request, client_address) -> None:
-        request.settimeout(120)
+        request.settimeout(AUTH_TIMEOUT)
         try:
             # The relay token is the first line on the raw stream, before TLS. A
             # connection that cannot prove it never reaches the handler and never
@@ -424,6 +429,9 @@ class KanbeiServer(ThreadingHTTPServer):
             sys.stderr.write(f"kanbei-ui: rejected connection: {exc}\n")
             self.shutdown_request(request)
             return
+        # Only the authenticated connection may take its time on a request; the raw socket
+        # has been detached by wrap_socket, so the timeout is set on the wrapping socket.
+        connection.settimeout(REQUEST_TIMEOUT)
         self.auth_state.authenticated = True
         try:
             super().finish_request(connection, client_address)

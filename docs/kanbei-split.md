@@ -95,11 +95,16 @@ static PV. The host paths and their restic coverage are unchanged.
 | `/var/lib/data/books` | `/mnt/data/books` | `books-data` |
 | `/var/lib/data/graphiti` | `/mnt/data/graphiti` | `graphiti-data` |
 
-The one-way **cluster digest** is not in that table: `/var/lib/data/cluster-digest`
-is 0770 `kanbei-digest:kanbei-digest` (uid/gid 983), the CronJob reaches it
-through its own `--translate-uid`/`--translate-gid` mapping of guest 0/1000 onto
-983, and `smores` can neither read nor write it. It is a feed into Kanbei, not
-app data, so it gets no static PV and no restic exclusion.
+The one-way **cluster digest** is not in that table: the host tree is
+`/var/lib/kanbei-ingest/shares/cluster-digest` (not `/var/lib/data`, whose 0751
+`smores:users` owner could rename the child), the tree is 0770
+`kanbei-digest:kanbei-digest` (uid/gid 983) inside a `0700 root:root` parent chain,
+the CronJob reaches it through its own `--translate-uid`/`--translate-gid` mapping
+of guest 0/1000 onto 983, and `smores` can neither read nor write it. The guest
+mount is unchanged at `/mnt/data/cluster-digest`, which is what the platform's
+`cluster-digest-data` PV references, so the host move is invisible to
+`homelabs-platform`. It is a feed into Kanbei, not app data, so it needs no restic
+coverage.
 
 The PVs are `hostPath` (the mount is node-local and single-node); T6 declares
 them in `homelabs-platform`. Every data share uses an explicit virtiofsd
@@ -287,12 +292,14 @@ platform side stays unchanged. The scoped key, endpoint and manual steps are in
 
 ### Cluster digest (T21)
 
-The platform CronJob writes `latest.json` into the `cluster-digest` share every
-15 minutes. The host ingest writer watches it with a stat-before/stat-after
-stable read, dedupes on `generated_at`, age-encrypts each new document into the
-inbox, and records the document epoch for the T14 heartbeat, which now carries
-host sources alongside guests. A stale digest pages exactly like a stale guest,
-using the shared marker so the writer and the heartbeat never double-page.
+The platform CronJob writes `latest.json` into the `cluster-digest` share
+(`/mnt/data/cluster-digest` in the guest, backed by the host's root-parented
+`/var/lib/kanbei-ingest/shares/cluster-digest`) every 15 minutes. The host ingest
+writer watches it with a stat-before/stat-after stable read, dedupes on
+`generated_at`, age-encrypts each new document into the inbox, and records the
+document epoch for the T14 heartbeat, which now carries host sources alongside
+guests. A stale digest pages exactly like a stale guest, using the shared marker
+so the writer and the heartbeat never double-page.
 
 ## The phone pipeline (T19)
 

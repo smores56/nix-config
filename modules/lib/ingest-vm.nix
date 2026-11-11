@@ -19,6 +19,12 @@ let
     digestUser = "kanbei-digest";
     digestUid = 983;
     stateRoot = "/var/lib/kanbei-ingest";
+    # The digest tree lives inside the root-only state root, never under `/var/lib/data`:
+    # that directory is `0751 smores:users`, so its owner could rename or replace any child
+    # tree regardless of the child's own mode. A 0700 root parent chain makes the share
+    # itself the only writable object, and only for the digest uid.
+    digestParent = "/var/lib/kanbei-ingest/shares";
+    digestDir = "/var/lib/kanbei-ingest/shares/cluster-digest";
     logDir = "/var/log/kanbei-ingest";
     policyFile = "/etc/kanbei-ingest/policy.json";
     # Kanbei publishes its age recipient through this port on its Firecracker vsock. The guest
@@ -142,9 +148,9 @@ let
   };
 
   # Sources the host itself writes into the plane (no guest, no tap, no
-  # allowlist): the cluster digest lands on a data share, and the host writer
-  # encrypts it exactly like a guest batch. The heartbeat treats them as
-  # sources for freshness and alerting.
+  # allowlist): the cluster digest lands on its own root-parented share, and the
+  # host writer encrypts it exactly like a guest batch. The heartbeat treats them
+  # as sources for freshness and alerting.
   hostSources = {
     cluster-digest = {
       windowSeconds = 3600;

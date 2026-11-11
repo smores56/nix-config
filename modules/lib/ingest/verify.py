@@ -11,7 +11,9 @@ batch is seeded again, and then proves:
      identity (the same framing/encryption path as Kanbei's published key);
   b. a non-allowlisted DNS name and a non-matching SNI are refused; and
   c. the guest cannot egress directly: its own probe logs INGEST-EGRESS-DROPPED
-     and the per-tap forward chain ends in DROP with no non-conntrack ACCEPT.
+     and the per-tap forward chain ends in DROP with no non-conntrack ACCEPT; and
+  d. the cluster-digest share and its parent chain are unreadable and unwritable
+     by the human account, so `smores` cannot rename or replace the tree.
 
 It restores the writer and leaves the guest running. Nothing here runs in CI;
 the eval checks cover the policy validators instead.
@@ -40,7 +42,15 @@ VSOCK = "/var/lib/microvms/search/notify.vsock"
 POLICY = "/etc/kanbei-ingest/policy.json"
 INBOX = "/var/lib/data/inbox"
 CHAIN = "ingest-search-fwd"
-DIGEST = "/var/lib/data/cluster-digest"
+# The digest tree lives in the root-only ingest state root, never under
+# `/var/lib/data` (0751 `smores:users`), where the human could rename the child.
+DIGEST = "/var/lib/kanbei-ingest/shares/cluster-digest"
+# Every directory between the tree and the state root must deny the human both read
+# and write; without traversal or write, a rename/replace is impossible.
+DIGEST_PRIVATE_PARENTS = ("/var/lib/kanbei-ingest", "/var/lib/kanbei-ingest/shares")
+# Above the state root only write matters: the human may read `/var/lib`, but cannot
+# rename anything in it.
+DIGEST_SHARED_PARENTS = ("/var/lib", "/var")
 DIGEST_USER = "kanbei-digest"
 HUMAN = "smores"
 
@@ -340,7 +350,7 @@ def check_secret(since: str) -> None:
 
 
 def check_digest_share() -> None:
-    """The digest tree is 0770 on its own uid; the human can neither read nor write it."""
+    """The digest tree is 0770 on its own uid inside a root-only parent chain."""
     try:
         info = os.stat(DIGEST)
     except FileNotFoundError:
@@ -351,14 +361,33 @@ def check_digest_share() -> None:
     if want and str(info.st_uid) != want:
         fail(f"{DIGEST} is owned by uid {info.st_uid}, expected {DIGEST_USER} ({want})")
     human = run(["id", "-u", HUMAN]).stdout.strip()
-    if human and str(info.st_uid) == human:
+    if not human:
+        fail(f"{HUMAN} does not exist; cannot prove the digest share is private")
+    if str(info.st_uid) == human:
         fail(f"{DIGEST} is owned by {HUMAN}; the digest share must not be human-owned")
     shell = shutil.which("bash") or "/run/current-system/sw/bin/bash"
-    for flag, word in (("-r", "read"), ("-w", "write")):
-        probe = run(["runuser", "-u", HUMAN, "--", shell, "-c", f"test {flag} {DIGEST}"])
-        if probe.returncode == 0:
-            fail(f"{HUMAN} can {word} {DIGEST}; the digest share must be private")
-    say(f"PASS digest: {DIGEST} is 0770 {DIGEST_USER}, unreadable and unwritable by {HUMAN}")
+
+    def denies(path: str, flags: tuple[tuple[str, str], ...]) -> None:
+        probe = os.stat(path)
+        if str(probe.st_uid) == human:
+            fail(f"{path} is owned by {HUMAN}; the digest parent chain must be root-owned")
+        if probe.st_mode & 0o022:
+            fail(f"{path} is group/other writable ({probe.st_mode & 0o777:o}); the digest parent chain must be private")
+        for flag, word in flags:
+            result = run(["runuser", "-u", HUMAN, "--", shell, "-c", f"test {flag} {path}"])
+            if result.returncode == 0:
+                fail(f"{HUMAN} can {word} {path}; the digest share must be private")
+
+    # Read and write on the tree and its private chain; write alone above it.
+    denies(DIGEST, (("-r", "read"), ("-w", "write")))
+    for parent in DIGEST_PRIVATE_PARENTS:
+        denies(parent, (("-r", "read"), ("-w", "write")))
+    for parent in DIGEST_SHARED_PARENTS:
+        denies(parent, (("-w", "write"),))
+    say(
+        f"PASS digest: {DIGEST} is 0770 {DIGEST_USER} inside a root-only chain; "
+        f"{HUMAN} can neither read nor write it nor its parents"
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

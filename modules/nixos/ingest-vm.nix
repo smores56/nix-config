@@ -162,8 +162,9 @@ let
   };
 
   recipientFile = "${constants.stateRoot}/age-recipient";
-  # The cluster CronJob's share and the one file the host writer watches.
-  digestShare = "/var/lib/data/cluster-digest";
+  # The cluster CronJob's share and the one file the host writer watches. The share sits
+  # inside the root-only state root so no human-owned parent can rename it.
+  digestShare = ingest.constants.digestDir;
   digestFile = "${digestShare}/latest.json";
   digestWindowSeconds = ingest.hostSources.cluster-digest.windowSeconds;
 
@@ -1086,7 +1087,7 @@ in
         };
 
         # The cluster digest is the one host-written source: the platform
-        # CronJob writes latest.json into the data share, and this watcher
+        # CronJob writes latest.json into the root-parented share, and this watcher
         # age-encrypts each new `generated_at` into the inbox. It does not bind
         # to microvm@cluster: the writer must survive a cluster restart and just
         # wait for the next document.
@@ -1622,7 +1623,9 @@ in
       }
       {
         # The cluster digest share belongs to the dedicated digest uid, never to the human:
-        # guest 0/1000 are translated onto it and `smores` keeps no access.
+        # guest 0/1000 are translated onto it and `smores` keeps no access. It must also stay
+        # out of `/var/lib/data`, whose 0751 `smores:users` parent lets the human rename any
+        # child tree whatever that child's mode.
         assertion =
           let
             share = lib.findFirst (
@@ -1633,10 +1636,12 @@ in
           !(config.microvm.vms ? cluster)
           || (
             share != null
+            && !lib.hasPrefix "/var/lib/data/" digestShare
+            && lib.hasPrefix "${constants.stateRoot}/" digestShare
             && lib.any (a: lib.hasInfix "guest:0:${toString ingest.constants.digestUid}:1" a) share.extraArgs
             && lib.elem "d ${digestShare} 0770 ${ingest.constants.digestUser} ${ingest.constants.digestUser} -" rules
           );
-        message = "ingest-vm: the cluster digest tree must be owned by the digest uid at 0770 and reached through its uid mapping";
+        message = "ingest-vm: the cluster digest tree must sit under the root-only state root, be owned by the digest uid at 0770 and be reached through its uid mapping";
       }
       {
         assertion =
