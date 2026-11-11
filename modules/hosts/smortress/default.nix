@@ -27,6 +27,7 @@ in
     ./boot.nix
     ./secrets.nix
     ../../nixos/host-hardening.nix
+    ../../nixos/cluster-data-apps.nix
     ../../nixos/todo-daemon.nix
     # Host-local: the k3s guest and its tap/firewall plumbing are smortress-only.
     ../../nixos/cluster-vm.nix
@@ -47,6 +48,8 @@ in
 
   nixosOptions = {
     hostHardening.enable = true;
+    # Flip only after the cluster serves every data app; stops the native services.
+    clusterDataApps.enable = false;
     # Deliberately off until the one-time GPU cutover (docs/kanbei-vm.md); Immich triage still
     # owns the 3090 and enabling this stops nvidia/llm/photo-triage on the host.
     kanbeiVm.enable = false;
