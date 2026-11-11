@@ -61,6 +61,86 @@ ps -eo user,pid,args            # as smores: no other user's processes
 sudo -v; sudo -v                # each prompts for a fresh touch
 ```
 
+## The `cluster` guest
+
+`modules/nixos/cluster-vm.nix` (smortress only) runs a qemu microVM named
+`cluster`: 8 vcpu, 15 GiB, one tap (`vm-cluster`, `10.77.1.0/30`, host
+`10.77.1.1`), and single-node k3s 1.35. The guest has no other NIC. Shared
+facts (tap, `/30`, MAC, state paths) come from `modules/lib/vm-host.nix`; the
+`agent` guest keeps its own constants.
+
+- Addons Flux owns are disabled: `traefik`, `servicelb`, `local-storage`,
+  `metrics-server`. CoreDNS stays: Flux's Git sources need cluster DNS and no
+  platform manifest declares it yet.
+- gVisor is registered through `services.k3s.containerdConfigTemplate`
+  (`io.containerd.runsc.v1`) with `pkgs.gvisor` on the k3s unit's `PATH`. The
+  template extends k3s's own `base` (the legacy v2 template the NixOS module
+  writes; containerd 2 still renders it). The `gvisor` RuntimeClass
+  (`handler: runsc`) is a platform-repo object (`smores56/sdlc#578`), not a
+  guest object. Kata is the documented fallback runtime and is not configured.
+- The kubeconfig is published through a rw share at
+  `/var/lib/cluster-vm/kubeconfig/admin.conf` with the tap address, so
+  `sudo cluster-kubectl get nodes` works from the host as root.
+
+### PV contract
+
+App data stays on the host; each tree is a rw virtiofs share and becomes a
+static PV. The host paths and their restic coverage are unchanged.
+
+| Host path | Guest mount | Static PV (platform repo) |
+|---|---|---|
+| `/var/lib/data/immich` | `/mnt/data/immich` | `immich-data` |
+| `/var/lib/data/music` | `/mnt/data/music` | `music-data` |
+| `/var/lib/data/books` | `/mnt/data/books` | `books-data` |
+| `/var/lib/data/graphiti` | `/mnt/data/graphiti` | `graphiti-data` |
+
+The PVs are `hostPath` (the mount is node-local and single-node); T6 declares
+them in `homelabs-platform`. Every data share uses an explicit virtiofsd
+translation, never the agent VM's squash to `smores`: guest root maps to host
+`nobody` (65534), guest uid 1000 keeps its identity, and guest gid 0/1000 map
+to host `users` (100). Files an app writes therefore land as `smores:users`,
+and guest root cannot plant host-root-owned files. Pods must run as uid 1000
+(PSA `restricted` requires non-root anyway); a pod running as root can read the
+trees but only writes as `nobody`. `--modcaps=-mknod` keeps guest root from
+creating device nodes in the mount.
+
+### Firewall and the Kanbei boundary
+
+The design says "nftables"; this host has `networking.nftables.enable = false`
+and the agent guest already owns iptables chains, so the cluster uses iptables
+too. One mechanism filters every tap: dedicated `cluster-vm-in` and
+`cluster-vm-fwd` chains, jumped to from the top of `INPUT`/`FORWARD`, replaced
+atomically by `iptables-restore --noflush`, and never unjumped. The forward
+policy is default-deny: no `vm-*` to `vm-*` forwarding at all (the `vm-+`
+wildcard covers future taps, including a Kanbei relay tap), private networks
+are dropped, and the only new-connection flows are TCP 80/443, DNS (53) and
+NTP (123). The host input chain accepts replies only; nothing on the host is
+reachable from the guest. The cluster has no route to and no rule for a Kanbei
+relay, and evaluation asserts that no generated rule names a Kanbei tap.
+
+### Manual steps
+
+1. **k3s token.** The guest reads `/run/secrets/k3s-cluster-token`. The sops
+   contract is a `k3s-cluster-token` key in `secrets/smortress.yaml`, declared
+   in `modules/hosts/smortress/secrets.nix`; the host prep unit copies
+   `/run/secrets/k3s-cluster-token` into the guest's read-only share when it
+   exists. The key is not in the yaml yet (it cannot be encrypted from this
+   checkout), so add it with `sops secrets/smortress.yaml` and declare it. Until
+   then the prep unit generates a host-local token at
+   `/var/lib/cluster-vm/secrets/k3s-cluster-token` (0400, `nobody`), which
+   survives reboots. `manual-steps-sync` has no `secret/k3s-cluster-token`
+   anchor until the key exists in a `secrets/*.yaml` file; adding the anchor
+   early would fail the check as stale.
+2. **Firewall.** No manual step: the chains are applied by
+   `networking.firewall.extraCommands`. Verify with
+   `sudo iptables -S cluster-vm-in` and `sudo iptables -S cluster-vm-fwd`.
+3. **Host access.** `sudo cluster-kubectl get nodes` uses
+   `/var/lib/cluster-vm/kubeconfig/admin.conf`. To run a gVisor pod, apply a
+   pod with `runtimeClassName: gvisor` once the platform repo declares the
+   RuntimeClass.
+4. **Boot.** Ring 0 only: no nested-KVM or VFIO need. The guest needs the tap,
+   15 GiB RAM and a 64 GiB `var.img` on the host.
+
 ## Accepted residuals
 
 ### A later human touch runs whatever the unattended maki planted

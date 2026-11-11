@@ -65,6 +65,7 @@ adds its greeter as a host-local module.
 | `modules/ports.nix` | loopback port table shared by services and the tunnel |
 | `pkgs/overlays.nix`, `pkgs/nanobot/`, `pkgs/letta/` | nixpkgs overlays: pins and local package derivations; the uv2nix-built nanobot and Letta environments |
 | `modules/nixos/agent-vm.nix`, `modules/features/agent-vm/` | the agent VMs: Linux microvm guest (host module, view, firewall) and its launcher; the Mac Tart launcher. Shared facts in `modules/lib/agent-vm.nix`, planner in `modules/lib/share_planner.py` and the host-side verifier in `modules/lib/agent-vm-verify.sh` |
+| `modules/nixos/cluster-vm.nix`, `modules/lib/vm-host.nix` | the smortress-only k3s guest: qemu microVM, gVisor containerd runtime, virtiofs data shares and the host's tap/firewall/token staging; shared per-guest facts live in `modules/lib/vm-host.nix` |
 | `modules/features/ai/` | AI tooling: assistant context, harvest, Claude settings merge, maki, memory, providers, sdlc, skills. `memory/service.nix` is the one memory service description; `modules/nixos/memory.nix` and `memory/darwin.nix` render it |
 | `modules/features/tv/`, `modules/features/repos/` | Television repository and worktree cables; the `repos`/`worktrees` CLIs they call |
 | `tofu/` | minimal Cloudflare DNS/Access/notification objects plus the `recovery` Pages project and its DNS record; run via the `cloudflare-*` flake apps |

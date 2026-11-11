@@ -28,6 +28,8 @@ in
     ./secrets.nix
     ../../nixos/host-hardening.nix
     ../../nixos/todo-daemon.nix
+    # Host-local: the k3s guest and its tap/firewall plumbing are smortress-only.
+    ../../nixos/cluster-vm.nix
   ];
   homeModules = [
     ../../features/todo.nix
