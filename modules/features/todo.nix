@@ -3,7 +3,6 @@
 # NixOS hosts carries the store and an always-on bindfs mounts it. See
 # docs/manual-steps.md ("todo.txt").
 {
-  config,
   pkgs,
   ...
 }:
@@ -19,8 +18,11 @@
     '';
   };
 
-  # `t` is Zellij; td keeps the hidden path out of the way.
+  # `t` is Zellij; td edits the vault-owned store as `vault` itself. The sudo
+  # path is absolute so a `sudo` planted earlier on PATH never runs, and
+  # `-H` keeps tuxedo's config and cache in vault's own home
+  # (docs/kanbei-split.md).
   user.shellAbbrs = {
-    td = "tuxedo ${config.home.homeDirectory}/.local/share/todo/todo.txt";
+    td = "/run/wrappers/bin/sudo -H -u vault ${pkgs.tuxedo}/bin/tuxedo /var/lib/data/todo/todo.txt";
   };
 }

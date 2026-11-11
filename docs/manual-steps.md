@@ -148,6 +148,28 @@ boot`): lzbt embeds the JWE in the signed UKI, so without it the next boot
 still uses the old token. An older generation keeps its older JWE too, so
 rolling back after a re-bind prompts for the passphrase until it is rebuilt.
 
+#### Assistant-host hardening
+
+`hostHardening.enable` (`modules/nixos/host-hardening.nix`) turns smortress
+into a host an unattended assistant cannot quietly escalate on. After the first
+switch that enables it, confirm all three on the machine:
+
+```sh
+sudo -v; sudo -v                 # each invocation asks for a fresh touch
+cat /proc/1/cmdline              # as smores: Permission denied
+cat /sys/kernel/yama/ptrace_scope  # 2
+systemctl status proc-hidepid    # active (exited); /proc has hidepid=2,gid=proc
+```
+
+The `proc` group is the kernel's allow-list and is held only by
+`systemd-logind.service` and `user@.service`; add a monitoring unit to it with
+`SupplementaryGroups = [ "proc" ]` when one starts running here. The first
+switch remounts `/proc` immediately, but the user manager already running was
+started without the group — reboot once (or `loginctl terminate-user smores`)
+before trusting user services. What the hardening cannot stop — most
+importantly a planted `sudo` that runs on the owner's next touch — is recorded
+in [`docs/kanbei-split.md`](kanbei-split.md).
+
 ### smorespro
 
 <!-- manual-step: host/smorespro -->
@@ -1622,11 +1644,17 @@ else (CI, teammates) uses them.
 
 ### todo.txt
 
-`~/.local/share/todo/todo.txt` is the single list. It is a bindfs mount of
-`/var/lib/data/todo`, which the vault Syncthing daemon carries alongside the
-vault. The same daemon and the same device identity serve both folders on
-smortress and smorespro; there is no separate todo daemon. `td` runs tuxedo on
-`~/.local/share/todo/todo.txt` on both hosts.
+`/var/lib/data/todo/todo.txt` is the single list, carried by the vault
+Syncthing daemon alongside the vault and bindfs-mounted at
+`~/.local/share/todo` for everything that reads it by path. The same daemon and
+the same device identity serve both folders on smortress and smorespro; there is
+no separate todo daemon. `td` edits the store as `vault`
+(`/run/wrappers/bin/sudo -H -u vault tuxedo /var/lib/data/todo/todo.txt`, with
+the wrapper and the tuxedo binary both absolute), so one YubiKey touch opens
+the list and no process of the owner writes it; a `sudo` planted on `PATH`
+never receives the touch. The bindfs mount stays until the vault/todo split
+(`smores56/sdlc#587`) drops it; tuxedo then keeps its config and cache in
+vault's own home rather than the owner's.
 
 The common module is [`modules/features/todo.nix`](../modules/features/todo.nix).
 The shared folder and mount are

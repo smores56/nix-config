@@ -27,6 +27,16 @@ in
 {
   options.exposeSsh.enable = lib.mkEnableOption "sshd bound to loopback for Cloudflare Tunnel access";
   options.sudoKey.enable = lib.mkEnableOption "YubiKey touch-only sudo via pam_rssh (without sshd)";
+  options.sudoTicketTimeout = lib.mkOption {
+    type = lib.types.ints.unsigned;
+    default = 5;
+    description = ''
+      Minutes a successful sudo authentication stays valid; 0 asks for a fresh
+      touch or password every time. A host that needs another value sets this
+      option, because sudo keeps one `Defaults timestamp_timeout` per file and
+      a second entry would leave the outcome to ordering.
+    '';
+  };
 
   config = lib.mkMerge [
     (lib.mkIf config.exposeSsh.enable {
@@ -94,6 +104,12 @@ in
       environment.shells = [ agentLoginShell ];
     })
 
+    # A server's ticket covers reaching for the password manager; the laptop
+    # keeps sudo's own 5.
+    (lib.mkIf config.exposeSsh.enable {
+      sudoTicketTimeout = lib.mkDefault 15;
+    })
+
     (lib.mkIf (config.exposeSsh.enable || config.sudoKey.enable) {
       # sudo must consult PAM for pam_rssh to run; the password remains the
       # fallback after the sufficient rssh module.
@@ -101,10 +117,9 @@ in
       # One touch per TTY per 15 minutes on a server; a laptop keeps sudo's
       # default 5 so a hijacked session is not trusted for longer than before.
       # sudo records a successful (key or password) auth in its own timestamp,
-      # so repeat sudos skip PAM entirely.
-      security.sudo.extraConfig = "Defaults timestamp_timeout=${
-        if config.exposeSsh.enable then "15" else "5"
-      }";
+      # so repeat sudos skip PAM entirely. host-hardening.nix sets
+      # `sudoTicketTimeout = 0` here rather than adding a second Defaults line.
+      security.sudo.extraConfig = "Defaults timestamp_timeout=${toString config.sudoTicketTimeout}";
 
       # Separate FIDO2 key (touch only, no PIN), never used for login, forwarded via the
       # client's sudo agent.

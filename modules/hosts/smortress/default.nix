@@ -26,6 +26,7 @@ in
   nixosModules = [
     ./boot.nix
     ./secrets.nix
+    ../../nixos/host-hardening.nix
     ../../nixos/todo-daemon.nix
   ];
   homeModules = [
@@ -41,6 +42,7 @@ in
   };
 
   nixosOptions = {
+    hostHardening.enable = true;
     vaultSync.device = "smortress";
     # The assistant gateway binds loopback in the guest; the host proxies it to the tunnel.
     agentVm.ingressPorts = [

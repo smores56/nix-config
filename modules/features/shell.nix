@@ -114,7 +114,7 @@ in
       sm = "ssh smores@smortress -t fish";
     }
     (lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
-      v = "sudo vault yazi";
+      # `v` lives in the vault module; it needs the built wrapper's path.
       ns = "sudo nixos-rebuild --flake ~/.config/home-manager switch --upgrade";
     })
     (lib.mkIf pkgs.stdenv.hostPlatform.isDarwin {

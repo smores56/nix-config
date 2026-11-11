@@ -30,4 +30,9 @@ let
 in
 {
   home.packages = [ vault ];
+
+  # Absolute sudo: a `sudo` planted earlier on PATH (an rc file, ~/.local/bin)
+  # must never be the one that gets the YubiKey touch. Absolute vault too, so
+  # sudo's PATH cannot pick a different one.
+  user.shellAbbrs.v = "/run/wrappers/bin/sudo ${vault}/bin/vault yazi";
 }

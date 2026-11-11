@@ -45,6 +45,7 @@ let
     - Never write secrets, tokens, or transient task state
 
     # Tools
+    - Never run anything that needs superuser rights (`sudo`, `su`, `doas`, polkit actions); ask the human to run it and wait for their answer
     - Story downloads in the Linux agent VM: `fanficfare-download <url> ...` (no calibre plugin)
 
     # Style
