@@ -23,6 +23,8 @@ from photo_triage.albums import (  # noqa: E402
 )
 from photo_triage.cli import main  # noqa: E402
 from photo_triage.db import Database  # noqa: E402
+from photo_triage.decisions import POLICY_VERSION  # noqa: E402
+from photo_triage.score import PREVIEW_GENERATOR  # noqa: E402
 from photo_triage.immich import (  # noqa: E402
     ALBUM_PERMISSIONS,
     ImmichClient,
@@ -36,6 +38,8 @@ class AlbumTests(unittest.TestCase):
         self.database = Database(Path(self._tmp.name, "triage.db"))
         self.scan_id = self.database.start_scan({})
         self.database.finish_scan(self.scan_id, "complete")
+        self.database.mark_stack_primaries(self.scan_id, [])
+        self.database.commit()
         self.socket = str(Path(self._tmp.name, "immich.sock"))
         self.fake = FakeImmich(
             assets=[{"id": asset_id} for asset_id in ("d1", "r1", "k1", "p1")],
@@ -73,10 +77,10 @@ class AlbumTests(unittest.TestCase):
             "scan_id": self.scan_id,
             "scan_state": "complete",
             "run_id": run_id,
-            "policy_version": "policy",
+            "policy_version": POLICY_VERSION,
             "policy_fingerprint": "fingerprint",
             "heuristics_version": "v1",
-            "generator_id": "generator",
+            "generator_id": PREVIEW_GENERATOR,
             "analysis_generation": 1,
             "cap": 100,
             "delete": sorted(delete),
@@ -103,10 +107,10 @@ class AlbumTests(unittest.TestCase):
             run_id,
             run_state,
             {
-                "policy_version": "policy",
+                "policy_version": POLICY_VERSION,
                 "policy_fingerprint": "fingerprint",
                 "heuristics_version": "v1",
-                "generator_id": "generator",
+                "generator_id": PREVIEW_GENERATOR,
                 "analysis_generation": 1,
                 "cap": 100,
                 "export_sha256": hashlib.sha256(body.encode()).hexdigest(),

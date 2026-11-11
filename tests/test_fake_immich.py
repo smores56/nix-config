@@ -11,7 +11,13 @@ sys.path.insert(0, str(Path(__file__).parent))
 from fake_immich import FakeImmich  # noqa: E402
 from photo_triage_fixtures import assets_for, generate_corpus  # noqa: E402
 
-READ_PERMISSIONS = ["asset.read", "asset.view", "album.read", "duplicate.read"]
+READ_PERMISSIONS = [
+    "asset.read",
+    "asset.view",
+    "album.read",
+    "duplicate.read",
+    "stack.read",
+]
 WRITE_PERMISSIONS = ["album.read", "album.create", "albumAsset.create", "albumAsset.delete"]
 KEYS = {"read-key": READ_PERMISSIONS, "write-key": WRITE_PERMISSIONS}
 OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -169,6 +175,7 @@ class FakeImmichTests(unittest.TestCase):
         primary = dict(self.keep)
         primary["id"] = "asset-stack-primary"
         primary["stackId"] = "stack-1"
+        primary["stackPrimary"] = True
         member = dict(self.keep)
         member["id"] = "asset-stack-member"
         member["stackId"] = "stack-1"
@@ -187,8 +194,15 @@ class FakeImmichTests(unittest.TestCase):
                 "/api/search/metadata",
                 {"page": 1, "size": 100, "withStacked": True},
             )
+            _, stacks = _request(immich.base_url, "GET", "/api/stacks")
         self.assertEqual(unstacked["assets"]["count"], len(self.assets))
         self.assertEqual(stacked["assets"]["count"], len(self.assets) + 2)
+        self.assertEqual(len(stacks), 1)
+        self.assertEqual(stacks[0]["primaryAssetId"], "asset-stack-primary")
+        self.assertEqual(
+            {asset["id"] for asset in stacks[0]["assets"]},
+            {"asset-stack-primary", "asset-stack-member"},
+        )
 
     def test_thumbnail_and_missing_preview(self):
         status, payload = _request(

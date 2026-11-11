@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "modules/lib/photo-triage/src
 from photo_triage.cli import main  # noqa: E402
 from photo_triage.db import Database  # noqa: E402
 from photo_triage.duplicates import (  # noqa: E402
+    _rank,
     analyze_scan,
     hamming,
     laplacian_variance,
@@ -136,6 +137,38 @@ class DuplicateTests(unittest.TestCase):
         }
         self.assertEqual(near_members["asset-duplicate-a"], 0)
         self.assertEqual(near_members["asset-duplicate-b"], 1)
+
+    def test_rank_prefers_a_trusted_stack_primary(self):
+        def row(asset_id, primary, width, lap, size, verdict="keep"):
+            return {
+                "id": asset_id,
+                "is_favorite": 0,
+                "stack_primary": primary,
+                "is_archived": 0,
+                "is_trashed": 0,
+                "visibility": "timeline",
+                "width": width,
+                "height": width,
+                "lap_var": lap,
+                "hi_clip": 0.0,
+                "file_size": size,
+                "taken_at": "2024-01-01T00:00:00.000Z",
+                "verdict": verdict,
+            }
+
+        ranked = _rank(
+            [row("sharp", 0, 4000, 900.0, 9_000_000), row("primary", 1, 1000, 5.0, 10)],
+            set(),
+        )
+        self.assertEqual(ranked[0][0], "primary")
+        ranked = _rank(
+            [
+                row("sharp", 0, 4000, 900.0, 9_000_000),
+                row("primary", 1, 1000, 5.0, 10, verdict="delete"),
+            ],
+            set(),
+        )
+        self.assertEqual(ranked[0][0], "sharp")
 
     def test_tier_benchmark(self):
         self.analyze()

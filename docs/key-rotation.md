@@ -307,7 +307,8 @@ Photo-triage uses two Immich keys owned by the main user, both stored only in
 argv):
 
 - `photo-triage-immich-read-key` — exactly `asset.read`, `asset.view`,
-  `album.read`, `duplicate.read`. The scorer holds this for the whole run.
+  `album.read`, `duplicate.read`, `stack.read`. The scorer holds this for the
+  whole run; `stack.read` feeds the stack/primary import during the scan.
 - `photo-triage-immich-album-key` — exactly `album.read`, `album.create`,
   `albumAsset.create`, `albumAsset.delete`. Only `photo-triage-albums` loads it.
 

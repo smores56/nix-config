@@ -26,6 +26,9 @@ class DecisionTests(unittest.TestCase):
         self.database = Database(Path(self._tmp.name, "triage.db"))
         self.scan_id = self.database.start_scan({})
         self.database.finish_scan(self.scan_id, "complete")
+        self._stack_primaries: list[str] = []
+        self.database.mark_stack_primaries(self.scan_id, [])
+        self.database.commit()
 
     def tearDown(self):
         self.database.close()
@@ -56,6 +59,7 @@ class DecisionTests(unittest.TestCase):
         score=True,
         scan_state="scored",
         asset_type="IMAGE",
+        stack_primary=False,
     ):
         preview = preview_sha or f"preview-{asset_id}"
         self.database.upsert_asset(
@@ -75,6 +79,8 @@ class DecisionTests(unittest.TestCase):
             }
         )
         self.database.add_scan_asset(self.scan_id, asset_id, scan_state, None)
+        if stack_primary:
+            self._stack_primaries.append(asset_id)
         self.database.record_preview(
             asset_id,
             state="ready",
@@ -130,6 +136,8 @@ class DecisionTests(unittest.TestCase):
         self.database.finish_analysis(scan_id, generation)
 
     def decide(self, **kwargs):
+        self.database.mark_stack_primaries(self.scan_id, self._stack_primaries)
+        self.database.commit()
         self.mark_analysis()
         return decide_scan(self.database, self.scan_id, **kwargs)
 
@@ -456,6 +464,72 @@ class DecisionTests(unittest.TestCase):
         self.assertEqual(reasons["hidden"], "protected_visibility")
         self.assertEqual(reasons["trashed"], "protected_trashed")
 
+    def test_stack_primary_is_kept_in_a_group(self):
+        self.add_asset("keeper", preview_sha="shared", checksum="checksum-exact")
+        self.add_asset(
+            "primary", preview_sha="shared", checksum="checksum-exact", stack_primary=True
+        )
+        self.add_group(
+            "exact:1", "exact", "exact", [("keeper", 0.0, 0), ("primary", 0.0, 1)]
+        )
+        self.decide()
+        self.assertEqual(self.decisions()["primary"], "keep")
+        self.assertEqual(self.reasons()["primary"], "protected_stack_primary")
+
+    def test_stack_primary_is_kept_standing_alone(self):
+        self.add_asset(
+            "primary",
+            verdict="delete",
+            confidence=0.9,
+            defects=("blur",),
+            lap=10.0,
+            stack_primary=True,
+        )
+        self.decide()
+        self.assertEqual(self.decisions()["primary"], "keep")
+        self.assertEqual(self.reasons()["primary"], "protected_stack_primary")
+
+    def test_review_only_primary_is_routed_to_review(self):
+        self.add_asset(
+            "primary",
+            verdict="delete",
+            confidence=0.99,
+            defects=("screenshot",),
+            stack_primary=True,
+        )
+        self.decide()
+        self.assertEqual(self.decisions()["primary"], "review")
+        self.assertEqual(self.reasons()["primary"], "screenshot")
+
+    def test_untrusted_primary_does_not_block_group_deletes(self):
+        self.add_asset("keeper", verdict="keep", lap=300.0)
+        self.add_asset(
+            "primary", verdict="delete", confidence=0.9, defects=("blur",), lap=10.0,
+            stack_primary=True,
+        )
+        self.add_asset("copy", verdict="delete", confidence=0.9, defects=("blur",), lap=10.0)
+        self.add_group(
+            "near:1",
+            "near",
+            "near",
+            [("keeper", 2.0, 0), ("primary", 2.0, 1), ("copy", 2.0, 2)],
+        )
+        self.decide()
+        self.assertEqual(self.decisions()["keeper"], "keep")
+        self.assertEqual(self.decisions()["primary"], "keep")
+        self.assertEqual(self.reasons()["primary"], "protected_stack_primary")
+        self.assertEqual(self.decisions()["copy"], "delete")
+
+    def test_decide_requires_a_stack_import(self):
+        self.add_asset("a")
+        self.database.connection.execute(
+            "UPDATE scans SET stacks_imported = 0 WHERE id = ?", (self.scan_id,)
+        )
+        self.database.commit()
+        self.mark_analysis()
+        with self.assertRaises(ValueError):
+            decide_scan(self.database, self.scan_id)
+
     def test_null_keep_rank_is_review(self):
         self.add_asset("keeper", preview_sha="shared", checksum="checksum-exact")
         self.add_asset("copy", preview_sha="shared", checksum="checksum-exact")
@@ -541,6 +615,8 @@ class DecisionTests(unittest.TestCase):
     def test_partial_scan_requires_opt_in_and_never_allows_failed(self):
         partial = self.database.start_scan({})
         self.database.finish_scan(partial, "partial")
+        self.database.mark_stack_primaries(partial, [])
+        self.database.commit()
         self.mark_analysis(partial)
         with self.assertRaises(ValueError):
             decide_scan(self.database, partial)
@@ -678,7 +754,7 @@ class DecisionTests(unittest.TestCase):
                 database.connection.execute(
                     "SELECT value FROM schema_meta WHERE key = 'schema_version'"
                 ).fetchone()["value"],
-                "8",
+                "9",
             )
             self.assertIn("metrics_sha256", database._columns("previews"))
             self.assertEqual(
@@ -691,6 +767,34 @@ class DecisionTests(unittest.TestCase):
                 "SELECT asset_id, scan_id, decision FROM decisions"
             ).fetchone()
             self.assertEqual(tuple(row), ("asset", 7, "review"))
+        finally:
+            database.close()
+
+    def test_schema_v8_adds_stack_columns(self):
+        path = Path(self._tmp.name, "v8.db")
+        raw = sqlite3.connect(path)
+        raw.executescript(
+            """
+            CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            INSERT INTO schema_meta(key, value) VALUES ('schema_version', '8');
+            CREATE TABLE scans (id INTEGER PRIMARY KEY, as_of TEXT NOT NULL,
+                filters_json TEXT NOT NULL, state TEXT NOT NULL);
+            CREATE TABLE scan_assets (scan_id INTEGER NOT NULL, asset_id TEXT NOT NULL,
+                state TEXT NOT NULL, reason TEXT, PRIMARY KEY (scan_id, asset_id));
+            """
+        )
+        raw.commit()
+        raw.close()
+        database = Database(path)
+        try:
+            self.assertIn("stack_primary", database._columns("scan_assets"))
+            self.assertIn("stacks_imported", database._columns("scans"))
+            self.assertEqual(
+                database.connection.execute(
+                    "SELECT value FROM schema_meta WHERE key = 'schema_version'"
+                ).fetchone()["value"],
+                "9",
+            )
         finally:
             database.close()
 

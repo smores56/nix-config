@@ -45,17 +45,25 @@ def _group_key(item: dict[str, Any]) -> str:
     return "|".join(groups) if groups else str(item["asset_id"])
 
 
+def _sample_order(item: dict[str, Any]) -> tuple[int, str, str]:
+    return (
+        0 if item.get("decision") == "delete" else 1,
+        _digest(item["asset_id"]),
+        item["asset_id"],
+    )
+
+
 def _unique_decisions(decisions: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Keep one asset per duplicate group; copies are not independent samples."""
+    """Keep one asset per duplicate group; copies are not independent samples.
+
+    A group's delete members are the evidence the calibration gate exists to
+    check, so prefer one of them over the keeper when a group has any.
+    """
     unique: dict[str, dict[str, Any]] = {}
     for item in decisions:
         key = _group_key(item)
         current = unique.get(key)
-        order = (_digest(item["asset_id"]), item["asset_id"])
-        if current is None or order < (
-            _digest(current["asset_id"]),
-            current["asset_id"],
-        ):
+        if current is None or _sample_order(item) < _sample_order(current):
             unique[key] = dict(item)
     return list(unique.values())
 
@@ -73,26 +81,14 @@ def build_sample(
     for item in items:
         groups.setdefault(str(item["cluster"]), []).append(item)
     for cluster in groups:
-        groups[cluster].sort(
-            key=lambda item: (
-                0 if item["decision"] == "delete" else 1,
-                _digest(item["asset_id"]),
-                item["asset_id"],
-            )
-        )
+        groups[cluster].sort(key=_sample_order)
     target = max(total, min_per_cluster * len(groups))
     selected: list[dict[str, Any]] = []
     for cluster in sorted(groups):
         selected.extend(groups[cluster][:min_per_cluster])
     chosen = {item["asset_id"] for item in selected}
     remaining = [item for item in items if item["asset_id"] not in chosen]
-    remaining.sort(
-        key=lambda item: (
-            0 if item["decision"] == "delete" else 1,
-            _digest(item["asset_id"]),
-            item["asset_id"],
-        )
-    )
+    remaining.sort(key=_sample_order)
     selected.extend(remaining[: max(0, target - len(selected))])
     return selected
 

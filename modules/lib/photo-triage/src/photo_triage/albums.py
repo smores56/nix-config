@@ -10,7 +10,10 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .db import Database
+from .decisions import POLICY_VERSION
+from .duplicates import HEURISTICS_VERSION
 from .immich import ImmichClient, ImmichError
+from .score import PREVIEW_GENERATOR
 
 ALBUM_NAMES = {
     "delete": "triage-delete",
@@ -108,6 +111,14 @@ def verify_export(
         raise AlbumError("export is not marked safe_to_delete")
     if manifest_digest(export) != export["manifest_sha256"]:
         raise AlbumError("export manifest hash does not match its contents")
+    if export["policy_version"] != POLICY_VERSION:
+        raise AlbumError("export was decided under another policy; decide again")
+    if export["heuristics_version"] != HEURISTICS_VERSION:
+        raise AlbumError("export was analyzed under another heuristics version; analyze again")
+    if export["generator_id"] != PREVIEW_GENERATOR:
+        raise AlbumError("export was analyzed by another preview generator; analyze again")
+    if not database.scan_stacks_imported(export["scan_id"]):
+        raise AlbumError("export's scan has no stack import; rescan and decide again")
 
     buckets = {
         name: {str(asset_id) for asset_id in export[name]}

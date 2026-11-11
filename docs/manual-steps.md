@@ -1014,7 +1014,8 @@ Two Immich API keys owned by the main user, stored in
 `secrets/smortress.yaml` and loaded only through `LoadCredential`:
 
 - `photo-triage-immich-read-key`: exactly `asset.read`, `asset.view`,
-  `album.read`, `duplicate.read`. The scorer holds it for the whole run.
+  `album.read`, `duplicate.read`, `stack.read`. The scorer holds it for the
+  whole run; `stack.read` feeds the stack/primary import during the scan.
 - `photo-triage-immich-album-key`: exactly `album.read`, `album.create`,
   `albumAsset.create`, `albumAsset.delete`. Only the album and calibration
   publisher commands load it.

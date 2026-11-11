@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = "8"
+SCHEMA_VERSION = "9"
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_meta (
     key TEXT PRIMARY KEY,
@@ -27,13 +27,15 @@ CREATE TABLE IF NOT EXISTS scans (
     id INTEGER PRIMARY KEY,
     as_of TEXT NOT NULL,
     filters_json TEXT NOT NULL,
-    state TEXT NOT NULL
+    state TEXT NOT NULL,
+    stacks_imported INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS scan_assets (
     scan_id INTEGER NOT NULL,
     asset_id TEXT NOT NULL,
     state TEXT NOT NULL,
     reason TEXT,
+    stack_primary INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (scan_id, asset_id)
 );
 CREATE TABLE IF NOT EXISTS scan_analysis (
@@ -239,6 +241,18 @@ class Database:
                         "scan_id INTEGER NOT NULL DEFAULT 0"
                     )
                 current = 8
+            if current < 9:
+                if "stack_primary" not in self._columns("scan_assets"):
+                    self.connection.execute(
+                        "ALTER TABLE scan_assets ADD COLUMN "
+                        "stack_primary INTEGER NOT NULL DEFAULT 0"
+                    )
+                if "stacks_imported" not in self._columns("scans"):
+                    self.connection.execute(
+                        "ALTER TABLE scans ADD COLUMN "
+                        "stacks_imported INTEGER NOT NULL DEFAULT 0"
+                    )
+                current = 9
             self._write_schema_version(target)
             self.connection.commit()
         except BaseException:
@@ -363,6 +377,40 @@ class Database:
                 asset.get("updatedAt"),
             ),
         )
+
+    def mark_stack_primaries(self, scan_id: int, asset_ids: list[str]) -> int:
+        """Record a scan's stack primaries and that its stack import happened.
+
+        Flags live on `scan_assets`, so a new generation starts from zero and an
+        older generation keeps the flags it was decided with. The caller commits;
+        `scan_library` relies on `finish_scan` to do it.
+        """
+        for start in range(0, len(asset_ids), 500):
+            chunk = asset_ids[start : start + 500]
+            placeholders = ",".join("?" for _ in chunk)
+            self.connection.execute(
+                f"UPDATE scan_assets SET stack_primary = 1 "
+                f"WHERE scan_id = ? AND asset_id IN ({placeholders})",
+                [scan_id, *chunk],
+            )
+        self.connection.execute(
+            "UPDATE scans SET stacks_imported = 1 WHERE id = ?", (scan_id,)
+        )
+        return len(asset_ids)
+
+    def stack_primary_count(self, scan_id: int) -> int:
+        row = self.connection.execute(
+            "SELECT count(*) AS count FROM scan_assets "
+            "WHERE scan_id = ? AND stack_primary = 1",
+            (scan_id,),
+        ).fetchone()
+        return int(row["count"])
+
+    def scan_stacks_imported(self, scan_id: int) -> bool:
+        row = self.connection.execute(
+            "SELECT stacks_imported FROM scans WHERE id = ?", (scan_id,)
+        ).fetchone()
+        return bool(row is not None and int(row["stacks_imported"]) == 1)
 
     def add_scan_asset(self, scan_id: int, asset_id: str, state: str, reason: str | None) -> None:
         self.connection.execute(
@@ -689,12 +737,18 @@ class Database:
             ),
         )
 
-    def asset_metrics(self, asset_id: str) -> sqlite3.Row | None:
+    def asset_metrics(self, scan_id: int, asset_id: str) -> sqlite3.Row | None:
         return self.connection.execute(
             "SELECT a.id, a.width, a.height, a.file_size, a.taken_at, a.is_favorite, "
-            "a.is_archived, a.is_trashed, a.visibility, p.lap_var, p.mean_luma, p.hi_clip "
-            "FROM assets a LEFT JOIN previews p ON p.asset_id = a.id WHERE a.id = ?",
-            (asset_id,),
+            "a.is_archived, a.is_trashed, a.visibility, sa.stack_primary, "
+            "p.lap_var, p.mean_luma, p.hi_clip, s.verdict AS verdict "
+            "FROM scan_assets sa JOIN assets a ON a.id = sa.asset_id "
+            "LEFT JOIN previews p ON p.asset_id = sa.asset_id "
+            "LEFT JOIN scores s ON s.id = (SELECT id FROM scores "
+            "WHERE asset_id = sa.asset_id AND is_active = 1 "
+            "AND preview_sha256 = p.bytes_sha256 ORDER BY id DESC LIMIT 1) "
+            "WHERE sa.scan_id = ? AND sa.asset_id = ?",
+            (scan_id, asset_id),
         ).fetchone()
 
     def clear_generated_groups(self, scan_id: int) -> None:
@@ -786,6 +840,7 @@ class Database:
             "a.checksum AS checksum, a.updated_at AS asset_updated_at, "
             "a.is_favorite AS is_favorite, a.is_archived AS is_archived, "
             "a.is_trashed AS is_trashed, a.visibility AS visibility, "
+            "sa.stack_primary AS stack_primary, "
             "p.state AS preview_state, p.generator_id AS preview_generator, "
             "p.heuristics_version AS preview_heuristics_version, "
             "p.bytes_sha256 AS preview_sha256, p.asset_checksum AS preview_asset_checksum, "
