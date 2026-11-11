@@ -395,9 +395,8 @@ only exists in the kanbei LUKS volume. Design, device steps and verification:
    `modules/hosts/smortress/secrets.nix` is gated on `kanbeiVm.enable`, so a host with
    the guest off never asks sops for a key that is not in the yaml (that failed every
    switch before). Add the encrypted key before the first switch with
-   `kanbeiVm.enable = true`. No `secret/phone-folder-password` anchor exists yet because
-   anchors are derived from yaml keys (the `kanbei-recovery-key` precedent); add it here
-   in the same commit that encrypts the key.
+   `kanbeiVm.enable = true`; the `secret/phone-folder-password` anchor below is kept in
+   sync with the committed yaml key.
 2. **Phone side.** Set the folder at `/storage/emulated/0/Sync/phone` with folder ID
    `phone`, share it to this host with that password, and grant Syncthing-Fork the
    battery exemption. Install SMS Import/Export and the forked health exporter, then
@@ -1203,6 +1202,22 @@ A new recipient in a creation rule does not re-wrap an existing file. After
 adding `&smoreswork` to the common rule, run
 `sops updatekeys secrets/common.yaml` (one admin prompt) and commit the result,
 or the Mac cannot decrypt that file.
+
+### phone-folder-password
+
+<!-- manual-step: secret/phone-folder-password -->
+
+The password for the phone's Syncthing receive-encrypted folder. It is created
+on the phone when the untrusted folder is set up, must equal the password typed
+there, and is never stored anywhere else in plaintext: the host keeps only this
+sops value, and the guest stages it into the LUKS volume for the hourly
+`syncthing-decrypt` run.
+
+Rotate it by creating a new folder password on the phone, saving it here
+(`sops secrets/smortress.yaml`), and restarting `kanbei-phone-password.service`
+and `syncthing-decrypt.service` on smortress. If the phone is lost, revoke its
+Syncthing device and share the new folder password only with the replacement
+device.
 
 ### cloudflare-api-token
 
