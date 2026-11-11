@@ -5,7 +5,9 @@ Each guest has one tap, one read-only secret block device and one vsock channel;
 the host writer age-encrypts every batch to Kanbei's published recipient. No
 guest has a route to the LAN or the internet: the only reachable services are the
 host's allowlist proxy and resolver on that tap's host address, and the per-tap
-forward chain drops everything else.
+forward chain drops everything else. The `search` guest also serves Kanbei's
+capped query API on a second vsock listener; see
+[`docs/kanbei-search.md`](kanbei-search.md).
 
 Sources, allowlists, windows, taps and ports live in one table:
 `modules/lib/ingest-vm.nix`. Host and guest rendering is
@@ -20,7 +22,7 @@ Sources, allowlists, windows, taps and ports live in one table:
 | `ingest-finance` | `finance` | `vm-i-finance` | `10.77.11.0/30` | `02:00:0a:4d:0b:02` | 1 / 192 MiB | 11 / 7011 | `/run/secrets/ingest-finance-env` | `bridge.simplefin.org` (+ `production.plaid.com` when enabled) | 129600 s |
 | `ingest-brave` | `brave` | `vm-i-brave` | `10.77.12.0/30` | `02:00:0a:4d:0c:02` | 1 / 1024 MiB | 12 / 7012 | `/run/secrets/ingest-brave-env` | `sync-v2.brave.com` | 86400 s |
 | `ingest-immich` | `immich` | `vm-i-immich` | `10.77.13.0/30` | `02:00:0a:4d:0d:02` | 1 / 128 MiB | 13 / 7013 | `/run/secrets/ingest-immich-env` | `immich.sammohr.dev` | 21600 s |
-| `search` | `search` | `vm-search` | `10.77.14.0/30` | `02:00:0a:4d:0e:02` | 2 / 2048 MiB | 14 / 7014 | `/run/secrets/ingest-search-env` | (none) | 86400 s |
+| `search` | `search` | `vm-search` | `10.77.14.0/30` | `02:00:0a:4d:0e:02` | 2 / 2560 MiB | 14 / 7014 (query 7024) | `/run/secrets/ingest-search-env` | `api.search.tinyfish.ai` | 86400 s |
 
 Each guest is Firecracker (`microvm.hypervisor = "firecracker"`), has a mandatory
 `microvm.socket` at `/var/lib/microvms/<guest>/firecracker.sock`, exactly one
@@ -28,6 +30,13 @@ Each guest is Firecracker (`microvm.hypervisor = "firecracker"`), has a mandator
 is the Firecracker squashfs store disk, not a share. Heartbeat windows are
 defaults in the table; the verifier's `search` guest has no production emitter
 yet (see below), so its window is only a backstop.
+
+The `search` guest is the one exception to the single-volume rule: it mounts the
+secret image at `/run/ingest-secret` and the Guardian model image at
+`/run/search-model`, both read-only, plus a small writable image at
+`/var/lib/search` for the persisted limiter (the guest root is tmpfs). Its batch
+port 7014 still feeds the verifier; the query API listens on 7024 because one
+vsock port cannot carry two protocols.
 
 Tap names are shorter than the guest names because Linux caps interface names at
 15 bytes.
@@ -52,6 +61,16 @@ store disk is `vda`) and reads `/run/ingest-secret/env`. Only the source's own
 credentials go in that file. Missing contract files fail the unit and keep that
 guest down; the other guests and the host are unaffected. Steps are in
 `docs/manual-steps.md`.
+
+`ingest-search-env` carries exactly one line, `TINYFISH_API_KEY=<key>`: Kanbei's
+own key, never the host's or nanobot's. The search guest adds two images:
+`/var/lib/microvms/search-model/guardian.img` (`0440 root:kvm`), built by
+`search-vm-model.service` from the operator-fetched, hash-checked Guardian GGUF
+(`modules/lib/search-models.json`) and mounted read-only at `/run/search-model`
+(`/dev/vdc`); and `/var/lib/microvms/search-state/state.img` (`0660 root:kvm`),
+created once by `search-vm-state.service` and mounted read-write at
+`/var/lib/search` (`/dev/vdd`) so the rate/budget counters survive a restart.
+Without the model or secret image the guest does not start.
 
 ## Writer protocol
 
@@ -111,6 +130,26 @@ state directory and `/var/lib/ingest/outbox`, and keeps dedupe state across
 restarts. Finance is the only source whose allowlist has an optional second
 host: `production.plaid.com` enters the policy only with
 `ingestVm.financePlaid.enable`.
+
+## Search guest
+
+The `search` guest is the only egress for Kanbei's capped queries (#594). Its
+query API is one JSON line in and one JSON line out on vsock cid 14, port 7024.
+Kanbei dials host CID 2 on port 7101; `search-relay.service` listens on
+`/var/lib/microvms/kanbei/notify.vsock_7101` as `root:kvm`, dials the guest's
+`notify.vsock` with `CONNECT 7024` and pipes bytes. A dead guest closes Kanbei's
+connection rather than returning an empty result. The relay logs connection
+metadata and byte counts to `/var/log/kanbei-ingest/search-relay.log`; it never
+parses or logs payload.
+
+Inside the guest, `searchd` runs the fixed ladder: DLP scan, ~100-character cap,
+persisted per-minute rate and daily budget, then the Granite Guardian judge,
+whose CPU `llama-server` listens on loopback. Any failure blocks. Only the
+admitted query leaves through the host proxy to `api.search.tinyfish.ai`; results
+return as stripped, bounded plain text. The guest holds exactly one credential,
+the `TINYFISH_API_KEY` line in `/run/ingest-secret/env`, and the Guardian weights
+as a read-only block device. Gate details, the wire schema, thresholds and the
+planted suite are in [`docs/kanbei-search.md`](kanbei-search.md).
 
 ## Age key publication
 
@@ -226,8 +265,10 @@ rate limit follows the same value.
 
 Every ingest unit writes a root-only file log under `/var/log/kanbei-ingest/`
 (0700 root) in addition to the journal; guest consoles are the
-`microvm@<guest>` journal, which is root-only. The viewer is a script, not a
-daemon:
+`microvm@<guest>` journal, which is root-only. The search guest adds
+`search-relay.log` and its own `search.log`/`judge.log` inside the guest, whose
+`searchd` output reaches the `microvm@search` journal. The viewer is a script, not
+a daemon:
 
 ```
 /run/wrappers/bin/sudo /run/current-system/sw/bin/kanbei-logs
@@ -244,13 +285,15 @@ The eval checks and unit tests run anywhere:
 
 ```sh
 nix build .#checks.x86_64-linux.kanbei-ingest-guards \
+          .#checks.x86_64-linux.kanbei-search-suite \
           .#checks.x86_64-linux.unit-tests \
           .#checks.x86_64-linux.manual-steps-sync \
           .#checks.x86_64-linux.eval-nixos-smortress \
           .#checks.x86_64-linux.format \
           .#checks.x86_64-linux.statix \
           .#checks.x86_64-linux.deadnix
-nix run nixpkgs#python3 -- -m unittest tests.test_ingest tests.test_ingest_tuta tests.test_ingest_finance tests.test_ingest_brave tests.test_ingest_immich
+nix run nixpkgs#python3 -- -m unittest tests.test_ingest tests.test_ingest_tuta tests.test_ingest_finance tests.test_ingest_brave tests.test_ingest_immich tests.test_search_gates tests.test_search_service tests.test_search_suite
+nix run nixpkgs#python3 -- tests/search/run_suite.py
 ```
 
 The hardware-gated proof runs only as root on smortress (it stops the production

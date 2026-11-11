@@ -1,6 +1,8 @@
 # The ingest plane's shared facts and policy (smores56/sdlc#588, part of #509). One guest per
 # source, each a Firecracker microVM with exactly one tap, one vsock channel and one read-only
 # secret volume; all egress goes through the host proxy and resolver on that tap's host address.
+# The `search` guest is the exception by design: it also carries a read-only Guardian model
+# volume and a second vsock listener for Kanbei's query API (#594).
 #
 # Host and guest are generated from this one table so the tap names, /30s, vsock CIDs, ports and
 # allowlists cannot drift. The validators are pure: the module asserts they are empty and the
@@ -17,6 +19,9 @@ let
     # Kanbei publishes its age recipient through this port on its Firecracker vsock. The guest
     # dials host CID 2, so Firecracker listens on <uds>_<port> in the guest's state directory.
     ageKeyPort = 7100;
+    # Kanbei's search queries dial host CID 2 on this port; the host relay pipes each
+    # connection to the search guest's own query port.
+    searchQueryPort = 7101;
     proxyPort = 3128;
     dnsPort = 53;
     protocolVersion = 1;
@@ -45,7 +50,8 @@ let
     ];
     brave = [ "sync-v2.brave.com" ];
     immich = [ "immich.sammohr.dev" ];
-    search = [ ];
+    # The search guest is the only egress for Kanbei's capped queries; Kanbei holds no NIC.
+    search = [ "api.search.tinyfish.ai" ];
   };
 
   plaidHost = "production.plaid.com";
@@ -63,6 +69,8 @@ let
       vsockPort = 7010;
       vcpu = 1;
       mem = 256;
+      # One read-only volume: the secret image.
+      volumes = 1;
       # TutaBridge holds an IMAP IDLE session; half an hour without a batch is already wrong.
       windowSeconds = 1800;
       allow = permitted.tuta;
@@ -75,6 +83,7 @@ let
       vsockPort = 7011;
       vcpu = 1;
       mem = 192;
+      volumes = 1;
       # SimpleFIN is polled daily; 36 h covers one missed run plus a retry.
       windowSeconds = 129600;
       allow = financeAllow false;
@@ -87,6 +96,7 @@ let
       vsockPort = 7012;
       vcpu = 1;
       mem = 1024;
+      volumes = 1;
       # Sync is pulled once a day by the headful Xvfb paste session.
       windowSeconds = 86400;
       allow = permitted.brave;
@@ -99,6 +109,7 @@ let
       vsockPort = 7013;
       vcpu = 1;
       mem = 128;
+      volumes = 1;
       # Triage/export batches run several times a day.
       windowSeconds = 21600;
       allow = permitted.immich;
@@ -108,9 +119,15 @@ let
       tap = "vm-search";
       index = 14;
       vsockCid = 14;
+      # The batch port carries the verifier's seeded batch to the host writer.
       vsockPort = 7014;
+      # The query API is a second listener; one port cannot serve both protocols.
+      queryPort = 7024;
       vcpu = 2;
-      mem = 2048;
+      # 1.44 GiB of mmapped Guardian weights plus the judge runtime and the guest userland.
+      mem = 2560;
+      # Secret image, the read-only Guardian model image, and the writable limiter volume.
+      volumes = 3;
       # The search guest has no production emitter yet; its test emitter feeds the verifier.
       windowSeconds = 86400;
       allow = permitted.search;
@@ -226,6 +243,12 @@ let
         s.vsockPort < 1024 || s.vsockPort >= 1073741824
       ) "source ${id}: vsock port must be an unprivileged port outside the Firecracker host range"
       ++ lib.optional (s.mem < 128) "source ${id}: mem must be at least 128 MiB"
+      ++ lib.optional (
+        !(builtins.isInt s.volumes) || s.volumes < 1 || s.volumes > 3
+      ) "source ${id}: volumes must be 1..3"
+      ++ lib.optional (
+        s ? queryPort && (s.queryPort < 1024 || s.queryPort >= 1073741824 || s.queryPort == s.vsockPort)
+      ) "source ${id}: queryPort must be a distinct unprivileged port"
       ++ lib.optional (s.windowSeconds <= 0) "source ${id}: window must be positive"
     ) (builtins.attrNames tbl);
 
@@ -252,7 +275,14 @@ let
     in
     dupes (id: (factsOf tbl id).tap) "tap"
     ++ dupes (id: (factsOf tbl id).stateDir) "stateDir"
-    ++ dupes (id: toString tbl.${id}.vsockCid) "vsock cid";
+    ++ dupes (id: toString tbl.${id}.vsockCid) "vsock cid"
+    ++ dupes (id: toString tbl.${id}.vsockPort) "vsock port"
+    ++ lib.optional (
+      let
+        queryPorts = map (id: tbl.${id}.queryPort) (builtins.filter (id: tbl.${id} ? queryPort) ids);
+      in
+      lib.length (lib.unique queryPorts) != lib.length queryPorts
+    ) "query port values are not unique";
 
   # Every rule must be one this table generates. An ACCEPT in the forward chain other than
   # conntrack, or any mention of a foreign tap, is an extra egress path and fails eval.

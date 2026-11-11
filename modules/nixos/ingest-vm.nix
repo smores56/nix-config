@@ -62,6 +62,68 @@ let
   braveSync = mkTool "ingest-brave-sync" "brave_sync" [ ] "";
   immichTool = mkTool "ingest-immich" "immich" [ ] "";
 
+  # The search guest's stdlib Python: the gate ladder, the vsock service, the host relay.
+  # One directory so `searchd` imports its siblings exactly like the ingest tools do.
+  searchTools = pkgs.runCommand "kanbei-search-tools" { } ''
+    mkdir -p $out/lib/kanbei-search
+    cp ${../lib/search}/*.py $out/lib/kanbei-search/
+  '';
+
+  searchRelay = pkgs.writeShellApplication {
+    name = "search-relay";
+    runtimeInputs = [ pkgs.python3 ];
+    text = ''
+      exec ${pkgs.python3}/bin/python3 ${searchTools}/lib/kanbei-search/search_relay.py "$@"
+    '';
+  };
+
+  # CPU-only llama.cpp for the Judge lane. The CUDA fork in ../lib/llama-cpp-models.nix
+  # is for the 3090; the search guest has no GPU and must not pull CUDA into its closure.
+  searchLlamaCpp = pkgs.llama-cpp.override { cudaSupport = false; };
+
+  # The Guardian weights are data, like Kanbei's models: fetched by the operator,
+  # hash-checked here, and staged as a read-only block device (#594).
+  searchModelManifest = builtins.fromJSON (builtins.readFile ../lib/search-models.json);
+  searchModel = searchModelManifest.models.guardian;
+  searchModelSource = "${searchModelManifest.destination}/${searchModel.file}";
+  searchModelImageDir = "/var/lib/microvms/search-model";
+  searchModelImage = "${searchModelImageDir}/guardian.img";
+  # The guest root is tmpfs, so the limiter lives on a small writable volume that
+  # survives a guest restart instead of a file in the ephemeral root.
+  searchStateImageDir = "/var/lib/microvms/search-state";
+  searchStateImage = "${searchStateImageDir}/state.img";
+  searchGuestModelDir = "/run/search-model";
+  searchGuestStateDir = "/var/lib/search";
+  searchQueryPort = sources.search.queryPort;
+  searchRelayPort = constants.searchQueryPort;
+  searchUds = "/var/lib/microvms/kanbei/notify.vsock_${toString searchRelayPort}";
+
+  searchGuestConfig = {
+    version = 1;
+    gates = {
+      max_query_chars = cfg.searchMaxQueryChars;
+      per_minute = cfg.searchPerMinute;
+      daily_budget = cfg.searchDailyBudget;
+    };
+    judge = {
+      url = "http://127.0.0.1:8091/completion";
+      timeout_s = cfg.searchJudgeTimeoutSeconds;
+    };
+    search = {
+      url = "https://api.search.tinyfish.ai/";
+      secret = "/run/ingest-secret/env";
+      timeout_s = 15;
+    };
+    results = {
+      max_results = 5;
+      max_bytes = 4096;
+    };
+    state = "/var/lib/search/limits.json";
+    # Query logs stay on the tmpfs guest root and reach the root-only host journal
+    # through the console; only the counters take the writable volume.
+    log = "/var/log/search/search.log";
+  };
+
   kanbeiLogs = pkgs.writeShellApplication {
     name = "kanbei-logs";
     runtimeInputs = [
@@ -172,6 +234,38 @@ let
   '';
 
   # The guest side: one tap, one secret volume, vsock, and no route other than the host.
+  # The search guest adds a read-only Guardian model and a writable limiter volume.
+  volumesFor =
+    id:
+    [
+      {
+        image = "/var/lib/microvms/ingest-secrets/${id}.img";
+        mountPoint = "/run/ingest-secret";
+        fsType = "ext4";
+        readOnly = true;
+        autoCreate = false;
+        size = 4;
+      }
+    ]
+    ++ lib.optional (id == "search") {
+      image = searchModelImage;
+      mountPoint = searchGuestModelDir;
+      fsType = "ext4";
+      readOnly = true;
+      autoCreate = false;
+      # The host unit sizes the image from the manifest; the value keeps eval complete.
+      size = 1536;
+    }
+    ++ lib.optional (id == "search") {
+      image = searchStateImage;
+      mountPoint = searchGuestStateDir;
+      fsType = "ext4";
+      readOnly = false;
+      autoCreate = false;
+      # The host unit builds the image; the size keeps the option complete for eval.
+      size = 8;
+    };
+
   guestFor =
     id:
     let
@@ -212,17 +306,9 @@ let
             }
           ];
           vsock.cid = s.vsockCid;
-          # One read-only block device, built by the host prep unit from /run/secrets/<id>-env.
-          # It is the only volume, so the store disk takes vda and this one vdb.
-          volumes = [
-            {
-              image = "/var/lib/microvms/ingest-secrets/${id}.img";
-              mountPoint = "/run/ingest-secret";
-              fsType = "ext4";
-              readOnly = true;
-              autoCreate = false;
-            }
-          ];
+          # Read-only block devices. The store disk takes vda; the secret image is vdb and
+          # (search only) the Guardian model is vdc.
+          volumes = volumesFor id;
         };
 
         networking = {
@@ -619,6 +705,76 @@ let
             echo "INGEST-EGRESS-DROPPED" > /dev/console
           '';
         };
+
+        # The query service (#594): DLP -> cap -> rate/budget -> Guardian -> TinyFish.
+        # The judge is a loopback llama.cpp server; every stage blocks on failure.
+        environment.systemPackages = [
+          searchLlamaCpp
+          pkgs.curl
+        ];
+        systemd.tmpfiles.rules = [
+          "d /var/log/search 0700 root root -"
+          "d /run/search-model 0555 root root -"
+        ];
+        environment.etc."kanbei-search/search.json" = {
+          mode = "0600";
+          text = builtins.toJSON searchGuestConfig;
+        };
+
+        systemd.services.search-judge = {
+          description = "Granite Guardian exfiltration judge on CPU";
+          wantedBy = [ "multi-user.target" ];
+          requires = [ "run-search-model.mount" ];
+          after = [
+            "run-search-model.mount"
+            "systemd-tmpfiles-setup.service"
+          ];
+          restartIfChanged = false;
+          serviceConfig = {
+            Type = "simple";
+            Restart = "always";
+            RestartSec = "10s";
+            UMask = "0077";
+            # Weights are mmapped; the caps leave room for the guest userland in 2560 MiB.
+            MemoryHigh = "1600M";
+            MemoryMax = "2100M";
+            ExecStart = "${searchLlamaCpp}/bin/llama-server --model ${searchGuestModelDir}/${searchModel.file} --host 127.0.0.1 --port 8091 --ctx-size 2048 --threads 2 --n-gpu-layers 0 --parallel 1 --no-warmup --no-webui";
+            StandardOutput = "append:/var/log/search/judge.log";
+            StandardError = "append:/var/log/search/judge.log";
+          };
+        };
+
+        systemd.services.searchd = {
+          description = "Capped search query API on vsock";
+          wantedBy = [ "multi-user.target" ];
+          requires = [
+            "run-ingest-secret.mount"
+            "run-search-model.mount"
+            "var-lib-search.mount"
+          ];
+          wants = [ "search-judge.service" ];
+          after = [
+            "run-ingest-secret.mount"
+            "run-search-model.mount"
+            "var-lib-search.mount"
+            "search-judge.service"
+            "systemd-tmpfiles-setup.service"
+          ];
+          restartIfChanged = false;
+          serviceConfig = {
+            Type = "simple";
+            Restart = "always";
+            RestartSec = "5s";
+            UMask = "0077";
+            MemoryHigh = "96M";
+            MemoryMax = "160M";
+            ExecStart = "${pkgs.python3}/bin/python3 ${searchTools}/lib/kanbei-search/searchd.py --config /etc/kanbei-search/search.json --port ${toString searchQueryPort}";
+            # The guest journal is not forwarded; the console copy is what reaches the
+            # root-only `microvm@search` journal on the host behind `kanbei-logs`.
+            StandardOutput = "journal+console";
+            StandardError = "journal+console";
+          };
+        };
       })
     ];
 
@@ -632,6 +788,82 @@ let
     # Firecracker runs as microvm:kvm and must read the secret image; the directory stays out
     # of the guest-reachable 0700 state root so the group can traverse it.
     install -d -m 0750 -o root -g kvm /var/lib/microvms/ingest-secrets
+  '';
+
+  # The Guardian image is built once from the operator-fetched file and hash-checked
+  # against the manifest; an unchanged image is left alone, and a running guest is
+  # never replaced underneath.
+  searchModelScript = pkgs.writeShellScript "search-vm-model" ''
+    set -euo pipefail
+    export PATH=${
+      lib.makeBinPath [
+        pkgs.coreutils
+        pkgs.e2fsprogs
+      ]
+    }
+    src=${lib.escapeShellArg searchModelSource}
+    image=${lib.escapeShellArg searchModelImage}
+    dir=${lib.escapeShellArg searchModelImageDir}
+    name=${lib.escapeShellArg searchModel.file}
+    want=${searchModel.sha256}
+    size=${toString searchModel.size}
+    if [ ! -r "$src" ]; then
+      echo "search-vm-model: missing $src; fetch it with modules/lib/kanbei-fetch-models.py (docs/manual-steps.md)" >&2
+      exit 1
+    fi
+    actual_size=$(stat -c %s "$src")
+    if [ "$actual_size" != "$size" ]; then
+      echo "search-vm-model: $src is $actual_size bytes, the manifest says $size" >&2
+      exit 1
+    fi
+    sum="$image.sha256"
+    if [ -s "$sum" ] && [ "$(cat "$sum")" = "$want" ] && [ -e "$image" ]; then
+      exit 0
+    fi
+    actual=$(sha256sum "$src" | cut -d' ' -f1)
+    if [ "$actual" != "$want" ]; then
+      echo "search-vm-model: $src sha256 $actual, the manifest says $want" >&2
+      exit 1
+    fi
+    if ${config.systemd.package}/bin/systemctl is-active --quiet microvm@${sources.search.guest}.service; then
+      echo "search-vm-model: refusing to replace the image under a running guest" >&2
+      exit 1
+    fi
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' EXIT
+    root="$tmp/root"
+    install -d -m 0755 "$root"
+    install -m 0444 "$src" "$root/$name"
+    truncate -s "$((actual_size + 33554432))" "$tmp/image"
+    mkfs.ext4 -q -F -L search-model -d "$root" "$tmp/image"
+    install -d -m 0750 -o root -g kvm "$dir"
+    install -m 0440 -o root -g kvm "$tmp/image" "$image"
+    printf '%s\n' "$want" > "$sum"
+    chmod 0400 "$sum"
+  '';
+
+  # A tiny writable ext4 image for the limiter. It is created once and never
+  # reformatted, so the counters survive a guest restart; deleting the image is
+  # the deliberate budget reset.
+  searchStateScript = pkgs.writeShellScript "search-vm-state" ''
+    set -euo pipefail
+    export PATH=${
+      lib.makeBinPath [
+        pkgs.coreutils
+        pkgs.e2fsprogs
+      ]
+    }
+    image=${lib.escapeShellArg searchStateImage}
+    dir=${lib.escapeShellArg searchStateImageDir}
+    if [ -e "$image" ]; then
+      exit 0
+    fi
+    install -d -m 0750 -o root -g kvm "$dir"
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' EXIT
+    truncate -s 8M "$tmp/image"
+    mkfs.ext4 -q -F -L search-state "$tmp/image"
+    install -m 0660 -o root -g kvm "$tmp/image" "$image"
   '';
 
   secretScript =
@@ -709,6 +941,33 @@ in
   options.ingestVm.enable = lib.mkEnableOption "the Firecracker ingest plane and its host writer, proxy and resolver";
 
   options.ingestVm.financePlaid.enable = lib.mkEnableOption "the Plaid fallback for institutions SimpleFIN cannot reach";
+
+  options.ingestVm.searchMaxQueryChars = lib.mkOption {
+    type = lib.types.ints.between 1 320;
+    default = 100;
+    description = ''
+      Hard cap on a normalised search query, in characters. The gate's code-level
+      ceiling is 320 (`gates.MAX_QUERY_CHARS_HARD`); the default is ~100.
+    '';
+  };
+
+  options.ingestVm.searchPerMinute = lib.mkOption {
+    type = lib.types.ints.between 1 10000;
+    default = 20;
+    description = "Sliding per-minute limit on admitted search queries, persisted in the guest.";
+  };
+
+  options.ingestVm.searchDailyBudget = lib.mkOption {
+    type = lib.types.ints.between 1 1000000;
+    default = 300;
+    description = "UTC-day budget for admitted search queries, persisted in the guest.";
+  };
+
+  options.ingestVm.searchJudgeTimeoutSeconds = lib.mkOption {
+    type = lib.types.ints.between 1 120;
+    default = 20;
+    description = "Timeout for one Granite Guardian call; a timeout blocks the query.";
+  };
 
   config = lib.mkIf cfg.enable {
     microvm.vms = builtins.listToAttrs (
@@ -850,6 +1109,73 @@ in
             ExecStart = "${ingestDigest}/bin/ingest-digest --source cluster-digest --file ${digestFile} --recipient-file ${recipientFile} --inbox ${constants.inboxDir} --state-dir ${constants.stateRoot}/state --window ${toString digestWindowSeconds} --max-bytes 65536";
             StandardOutput = "append:${constants.logDir}/ingest-writer-cluster-digest.log";
             StandardError = "append:${constants.logDir}/ingest-writer-cluster-digest.log";
+          };
+        };
+
+        # The search guest's model volume (#594). It is staged before the guest
+        # starts and never replaced while it runs.
+        search-vm-model = {
+          description = "Stage the read-only Granite Guardian model image for the search guest";
+          after = [
+            "ingest-vm-prep.service"
+            "local-fs.target"
+          ];
+          before = [ "microvm@${sources.search.guest}.service" ];
+          requiredBy = [ "microvm@${sources.search.guest}.service" ];
+          restartIfChanged = false;
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+            UMask = "0077";
+            ExecStart = searchModelScript;
+          };
+        };
+
+        # The limiter volume: created once, never reformatted.
+        search-vm-state = {
+          description = "Create the search guest's writable limiter image";
+          after = [
+            "ingest-vm-prep.service"
+            "local-fs.target"
+          ];
+          before = [ "microvm@${sources.search.guest}.service" ];
+          requiredBy = [ "microvm@${sources.search.guest}.service" ];
+          restartIfChanged = false;
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+            UMask = "0077";
+            ExecStart = searchStateScript;
+          };
+        };
+
+        # Kanbei dials host CID 2 : 7101; this listener pipes the connection to the
+        # search guest's query port. It carries bytes only and logs metadata.
+        search-relay = {
+          description = "Pipe Kanbei's vsock search port to the search guest";
+          wantedBy = [
+            "multi-user.target"
+            "microvm@kanbei.service"
+          ];
+          after = [
+            "microvm@kanbei.service"
+            "ingest-vm-prep.service"
+          ];
+          wants = [
+            "microvm@kanbei.service"
+            "ingest-vm-prep.service"
+          ];
+          bindsTo = [ "microvm@kanbei.service" ];
+          restartIfChanged = false;
+          serviceConfig = serviceSandbox // {
+            Type = "simple";
+            Restart = "always";
+            RestartSec = "2s";
+            UMask = "0077";
+            ExecStart = "${searchRelay}/bin/search-relay --uds ${searchUds} --vsock /var/lib/microvms/${sources.search.guest}/notify.vsock --port ${toString searchQueryPort} --group kvm";
+            StandardOutput = "append:${constants.logDir}/search-relay.log";
+            StandardError = "append:${constants.logDir}/search-relay.log";
+            ReadWritePaths = [ "/var/lib/microvms/kanbei" ] ++ serviceSandbox.ReadWritePaths;
           };
         };
       }
@@ -1030,13 +1356,28 @@ in
             && m.shares == [ ]
             && m.devices == [ ]
             && builtins.length m.interfaces == 1
-            && builtins.length m.volumes == 1
-            && (builtins.head m.volumes).readOnly;
-          message = "ingest-vm: ${s.guest} needs a socket, one tap and only a read-only secret volume (no shares, no devices)";
+            && builtins.length m.volumes == s.volumes
+            && lib.all (v: v.readOnly || v.mountPoint == searchGuestStateDir) m.volumes;
+          message = "ingest-vm: ${s.guest} needs a socket, one tap and read-only volumes (the search limiter volume is the one writable exception)";
         }
         {
           assertion = m.vsock.cid == s.vsockCid;
           message = "ingest-vm: ${s.guest} vsock cid drifted from the shared table";
+        }
+        {
+          assertion =
+            s ? queryPort
+            -> (
+              guest.systemd.services ? searchd
+              && builtins.length m.volumes == 3
+              && (lib.elemAt m.volumes 1).image == searchModelImage
+              && (lib.elemAt m.volumes 1).mountPoint == searchGuestModelDir
+              && (lib.elemAt m.volumes 1).readOnly
+              && (lib.elemAt m.volumes 2).image == searchStateImage
+              && (lib.elemAt m.volumes 2).mountPoint == searchGuestStateDir
+              && !(lib.elemAt m.volumes 2).readOnly
+            );
+          message = "ingest-vm: the search guest needs the query service, the read-only Guardian model and the writable limiter volume";
         }
         {
           assertion =
@@ -1189,6 +1530,55 @@ in
           in
           guest.systemd.services ? ingest-immich && guest.systemd.timers ? ingest-immich;
         message = "ingest-vm: the immich guest needs the metadata collector and its timer";
+      }
+      # Search (#594): one egress name, one query port, a loopback judge and a
+      # persisted limiter. Any drift here silently widens the capped channel.
+      {
+        assertion =
+          sources.search.allow == [ "api.search.tinyfish.ai" ]
+          && policy.sources.search.allow == [ "api.search.tinyfish.ai" ]
+          && searchQueryPort != sources.search.vsockPort;
+        message = "ingest-vm: the search guest may only reach api.search.tinyfish.ai on a distinct query port";
+      }
+      {
+        assertion =
+          let
+            guest = config.microvm.vms.${sources.search.guest}.config.config;
+            rendered = builtins.fromJSON guest.environment.etc."kanbei-search/search.json".text;
+            judge = guest.systemd.services.search-judge;
+            query = guest.systemd.services.searchd;
+          in
+          guest.systemd.services ? searchd
+          && guest.systemd.services ? search-judge
+          && guest.environment.etc."kanbei-search/search.json".mode == "0600"
+          &&
+            rendered.gates == {
+              max_query_chars = cfg.searchMaxQueryChars;
+              per_minute = cfg.searchPerMinute;
+              daily_budget = cfg.searchDailyBudget;
+            }
+          && rendered.state == "/var/lib/search/limits.json"
+          && lib.hasInfix "--host 127.0.0.1 --port 8091" judge.serviceConfig.ExecStart
+          && lib.hasInfix "--port ${toString searchQueryPort}" query.serviceConfig.ExecStart;
+        message = "ingest-vm: the search guest needs the judge, the query service and the rendered gate config";
+      }
+      {
+        assertion =
+          config.systemd.services.search-vm-model.restartIfChanged == false
+          && config.systemd.services.search-vm-state.restartIfChanged == false
+          && config.systemd.services.search-relay.restartIfChanged == false
+          && lib.hasInfix "append:${constants.logDir}/" (
+            config.systemd.services.search-relay.serviceConfig.StandardOutput or ""
+          )
+          && config.systemd.services.search-relay.bindsTo == [ "microvm@kanbei.service" ];
+        message = "ingest-vm: the search model stage and relay must not restart on a switch and the relay log stays root-only";
+      }
+      {
+        assertion =
+          builtins.match "[0-9a-f]{64}" searchModel.sha256 != null
+          && builtins.match "[a-z0-9.-]+/[A-Za-z0-9._-]+" searchModel.repo != null
+          && searchModel.size > 0;
+        message = "ingest-vm: the Guardian model manifest needs a repo, a positive size and a sha256";
       }
       {
         assertion = lib.all (id: lib.hasAttr id policy.sources) sourceIds;

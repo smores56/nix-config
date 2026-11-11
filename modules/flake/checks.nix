@@ -474,6 +474,28 @@ in
               ];
             assert ingest.sources.brave.allow == [ "sync-v2.brave.com" ];
             assert ingest.sources.immich.allow == [ "immich.sammohr.dev" ];
+            # The search guest's one egress name and its distinct query port (#594).
+            assert ingest.sources.search.allow == [ "api.search.tinyfish.ai" ];
+            assert ingest.sources.search.queryPort != ingest.sources.search.vsockPort;
+            assert
+              ingest.validateSources (
+                ingest.sources
+                // {
+                  search = ingest.sources.search // {
+                    queryPort = ingest.sources.search.vsockPort;
+                  };
+                }
+              ) != [ ];
+            assert
+              ingest.validateSources (
+                ingest.sources
+                // {
+                  search = ingest.sources.search // {
+                    queryPort = 80;
+                  };
+                }
+              ) != [ ];
+            assert ingest.sources.search.volumes == 3;
             assert ingest.validateHostSources ingest.hostSources == [ ];
             assert
               ingest.validateHostSources (
@@ -1075,6 +1097,20 @@ in
           ${(pkgs.callPackage ../lib/photo-triage/package.nix { })}/bin/photo-triage --version
           touch $out
         '';
+
+        # The planted exfiltration suite and its unit tests, built as the runner
+        # itself runs: DLP alone and DLP plus a deterministic judge double (#594).
+        kanbei-search-suite =
+          pkgs.runCommand "kanbei-search-suite"
+            {
+              nativeBuildInputs = [ pkgs.python3 ];
+            }
+            ''
+              cd ${src}
+              python -m unittest tests.test_search_gates tests.test_search_service tests.test_search_suite
+              python tests/search/run_suite.py
+              touch $out
+            '';
 
         bootstrap =
           pkgs.runCommand "bootstrap-check"

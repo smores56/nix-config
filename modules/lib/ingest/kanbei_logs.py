@@ -30,6 +30,9 @@ JOURNAL_UNITS = [
     "ingest-resolver.service",
     "ingest-heartbeat.service",
     "ingest-writer-cluster-digest.service",
+    "search-vm-model.service",
+    "search-vm-state.service",
+    "search-relay.service",
     "kanbei-swtpm.service",
 ]
 TAIL = 80

@@ -520,6 +520,41 @@ The five ingest guests and their host writer/proxy/resolver are behind
     refuses every byte endpoint. Steps:
     [`docs/kanbei-ingest-immich.md`](kanbei-ingest-immich.md).
 
+11. **Search guest: Kanbei's search key and the Guardian model.** The `search`
+    guest holds Kanbei's only TinyFish key and the Granite Guardian judge.
+    Mint a key dedicated to Kanbei (never the host's `tinyfish-api-key`) and
+    stage the contract, which is exactly one line:
+
+    ```sh
+    umask 077
+    printf 'TINYFISH_API_KEY=%s\n' '<kanbei search key>' > search-env
+    sudo install -m 0400 -o root -g root search-env /run/secrets/ingest-search-env
+    shred -u search-env
+    ```
+
+    The weights are data, not store content; fetch them on the host with the
+    manifest that pins size and sha256:
+
+    ```sh
+    sudo nix shell nixpkgs#python3 -c \
+      python3 modules/lib/kanbei-fetch-models.py \
+        --manifest modules/lib/search-models.json \
+        --dest /var/lib/search-model --uid 0 --gid 0
+    sudo systemctl status search-vm-model search-vm-state search-relay microvm@search
+    sudo iptables -S ingest-search-in ingest-search-fwd
+    ```
+
+    `search-vm-model.service` verifies the hash before building the read-only
+    image; a missing key or model keeps the guest down instead of starting a
+    permissive service. `search-vm-state.service` creates the 8 MiB writable
+    image behind `/var/lib/search` once, so the rate/budget counters survive a
+    restart; stop `microvm@search` and delete
+    `/var/lib/microvms/search-state/state.img` to reset the budget on purpose.
+    Every query and decision is root-only; read it through
+    the touch gate with `kanbei-logs search`. The gate order, defaults, wire
+    schema, measured suite thresholds and the real-model measurement procedure
+    are in [`docs/kanbei-search.md`](kanbei-search.md).
+
 ### smorespro
 
 <!-- manual-step: host/smorespro -->

@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "destination": "/var/lib/search-model",
+  "models": {
+    "guardian": {
+      "repo": "mrutkows/granite-guardian-3.1-2b-GGUF",
+      "file": "granite-guardian-3.1-2b-Q4_K_M.gguf",
+      "size": 1545303040,
+      "sha256": "c3c5373be0cf0de73ded2033e922c33bb77021a9953d2a81be0b978880a763da",
+      "quant": "Q4_K_M",
+      "note": "The 2B guardian fits the search guest's 2560 MiB on CPU: 1.44 GiB of mmapped weights plus a small compute buffer. Same prompt/score shape as 3.2-3b-a800m."
+    }
+  }
+}
