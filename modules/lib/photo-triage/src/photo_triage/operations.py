@@ -198,6 +198,7 @@ def status(database: Database) -> dict[str, Any]:
         "pending": pending,
         "coverage": coverage["states"],
         "skipped_reasons": coverage["reasons"],
+        "skipped_details": coverage["details"],
         "previews": database.preview_count(),
         "analysis": {
             "ready": database.analysis_ready(
@@ -210,7 +211,11 @@ def status(database: Database) -> dict[str, Any]:
         "decide_run_id": decide_run,
         "calibration": {
             "state": report["state"] if report is not None else None,
-            "passed": bool(report_stats.get("go_no_go", {}).get("passed")),
+            "decide_run_id": report_stats.get("decide_run_id"),
+            # A report for an older decide run is no longer a sign-off.
+            "passed": bool(report_stats.get("go_no_go", {}).get("passed"))
+            and decide_run is not None
+            and report_stats.get("decide_run_id") == decide_run,
         },
         "albums": album_status(database),
         "eta_seconds": {

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = "9"
+SCHEMA_VERSION = "10"
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_meta (
     key TEXT PRIMARY KEY,
@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS scan_assets (
     state TEXT NOT NULL,
     reason TEXT,
     stack_primary INTEGER NOT NULL DEFAULT 0,
+    detail TEXT,
     PRIMARY KEY (scan_id, asset_id)
 );
 CREATE TABLE IF NOT EXISTS scan_analysis (
@@ -162,6 +163,19 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
+DETAIL_BUCKETS = 10
+
+
+def _top_details(bucket: dict[str, int]) -> dict[str, int]:
+    """Keep the histogram readable: the commonest buckets plus one rollup."""
+    ranked = sorted(bucket.items(), key=lambda item: (-item[1], item[0]))
+    kept = dict(ranked[:DETAIL_BUCKETS])
+    rest = sum(count for _, count in ranked[DETAIL_BUCKETS:])
+    if rest:
+        kept["(other)"] = kept.get("(other)", 0) + rest
+    return kept
+
+
 class Database:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
@@ -253,6 +267,12 @@ class Database:
                         "stacks_imported INTEGER NOT NULL DEFAULT 0"
                     )
                 current = 9
+            if current < 10:
+                if "detail" not in self._columns("scan_assets"):
+                    self.connection.execute(
+                        "ALTER TABLE scan_assets ADD COLUMN detail TEXT"
+                    )
+                current = 10
             self._write_schema_version(target)
             self.connection.commit()
         except BaseException:
@@ -412,20 +432,29 @@ class Database:
         ).fetchone()
         return bool(row is not None and int(row["stacks_imported"]) == 1)
 
-    def add_scan_asset(self, scan_id: int, asset_id: str, state: str, reason: str | None) -> None:
+    def add_scan_asset(
+        self,
+        scan_id: int,
+        asset_id: str,
+        state: str,
+        reason: str | None,
+        detail: str | None = None,
+    ) -> None:
         self.connection.execute(
-            "INSERT OR IGNORE INTO scan_assets(scan_id, asset_id, state, reason) VALUES (?, ?, ?, ?)",
-            (scan_id, asset_id, state, reason),
+            "INSERT OR IGNORE INTO scan_assets(scan_id, asset_id, state, reason, detail) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (scan_id, asset_id, state, reason, detail),
         )
 
     def coverage(self, scan_id: int) -> dict[str, Any]:
         rows = self.connection.execute(
-            "SELECT state, reason, count(*) AS count FROM scan_assets "
-            "WHERE scan_id = ? GROUP BY state, reason",
+            "SELECT state, reason, detail, count(*) AS count FROM scan_assets "
+            "WHERE scan_id = ? GROUP BY state, reason, detail",
             (scan_id,),
         ).fetchall()
         states: dict[str, int] = {}
         reasons: dict[str, int] = {}
+        details: dict[str, dict[str, int]] = {}
         total = 0
         for row in rows:
             count = int(row["count"])
@@ -435,24 +464,36 @@ class Database:
             if state == "skipped":
                 reason = row["reason"] or "unknown"
                 reasons[reason] = reasons.get(reason, 0) + count
+                detail = row["detail"] or "unknown"
+                bucket = details.setdefault(reason, {})
+                bucket[detail] = bucket.get(detail, 0) + count
         return {
             "scan_id": scan_id,
             "state": self.scan_state(scan_id),
             "total": total,
             "states": states,
             "reasons": reasons,
+            "details": {reason: _top_details(bucket) for reason, bucket in details.items()},
         }
 
     def requeue(self, scan_id: int, reason: str | None = None) -> int:
         statement = (
-            "UPDATE scan_assets SET state = 'pending', reason = NULL "
-            "WHERE scan_id = ? AND state = 'skipped'"
+            "UPDATE scan_assets SET state = 'pending', reason = NULL, detail = NULL "
+            "WHERE scan_id = ? AND state = 'skipped' "
+            "AND asset_id IN (SELECT id FROM assets WHERE type = 'IMAGE')"
         )
         parameters: list[Any] = [scan_id]
         if reason is not None:
             statement += " AND reason = ?"
             parameters.append(reason)
         cursor = self.connection.execute(statement, parameters)
+        if cursor.rowcount > 0:
+            # Stale heuristics would leave requeued previews decidably review-only,
+            # so force the next analyze pass to rebuild metrics and groups. Keep
+            # the generation row so the counter never repeats.
+            self.connection.execute(
+                "UPDATE scan_analysis SET groups_built = 0 WHERE scan_id = ?", (scan_id,)
+            )
         self.connection.execute(
             "UPDATE previews SET state = NULL, reason = NULL, phash = NULL, "
             "lap_var = NULL, mean_luma = NULL, hi_clip = NULL, heuristics_version = NULL "
@@ -624,11 +665,17 @@ class Database:
         )
 
     def mark_scan_asset(
-        self, scan_id: int, asset_id: str, state: str, reason: str | None = None
+        self,
+        scan_id: int,
+        asset_id: str,
+        state: str,
+        reason: str | None = None,
+        detail: str | None = None,
     ) -> None:
         self.connection.execute(
-            "UPDATE scan_assets SET state = ?, reason = ? WHERE scan_id = ? AND asset_id = ?",
-            (state, reason, scan_id, asset_id),
+            "UPDATE scan_assets SET state = ?, reason = ?, detail = ? "
+            "WHERE scan_id = ? AND asset_id = ?",
+            (state, reason, detail, scan_id, asset_id),
         )
 
     def active_score(

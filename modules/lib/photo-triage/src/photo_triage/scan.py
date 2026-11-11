@@ -95,7 +95,13 @@ def scan_library(
                 if asset.get("type") == "IMAGE":
                     database.add_scan_asset(scan_id, str(asset["id"]), "pending", None)
                 else:
-                    database.add_scan_asset(scan_id, str(asset["id"]), "skipped", "type")
+                    database.add_scan_asset(
+                        scan_id,
+                        str(asset["id"]),
+                        "skipped",
+                        "type",
+                        str(asset.get("type") or "unknown").lower(),
+                    )
             seen += len(page_data["items"])
             database.commit()
             next_page = page_data.get("nextPage")

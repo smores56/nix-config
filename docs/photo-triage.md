@@ -65,6 +65,52 @@ restores `llama-cpp.service` on stop or failure; if three starts fail inside
 24 hours, run `systemctl reset-failed photo-triage.service` before retrying.
 The unit is bounded by `RuntimeMaxSec=7 days`.
 
+## Skipped assets
+
+An asset that cannot be scored is skipped for that scan generation with a
+`reason` and a short structural `detail`. `photo-triage-admin status` reports
+`skipped_reasons` (counts per reason) and `skipped_details` (reason, then detail,
+then count). Each reason keeps its ten commonest details and rolls the rest into
+`(other)`; skips recorded before this schema read `detail=unknown` until they
+are retried. When a scoring run skips anything it ends with one aggregate
+`photo-triage skips` warning carrying per-generation totals, not per-asset lines.
+
+The detail never carries the model's prose or the server's response body.
+Zero-status model errors are the client's own text (for example
+`hit max_tokens (max_tokens=300, completion_tokens=300)`); a peer-controlled
+transport error reads `model http=0 class=transport`.
+
+- `model`: the server rejected the request (non-transient errors skip at once),
+  with `model http=<status> class=<name>` where name is `context-overflow`,
+  `image`, `template`, `grammar` or `other`; or the reply stopped at
+  `max_tokens`.
+- `schema`: the reply was not the verdict JSON after three attempts; the detail
+  separates a short prose reply (`len=1-63, braces=none`) from a truncated one
+  (`braces=unbalanced`).
+- `preview`: Immich did not return a thumbnail (three attempts for transient
+  errors; `immich http=<status>` or `immich transport`), or the bytes did not
+  decode (`preview too-large` / `preview decode`).
+- `type`: videos, which v1 never scores. They carry the Immich type as the
+  detail and are excluded from requeue.
+
+A new scan generation retries every previously skipped asset, because skip state
+is per generation and only completed scores survive. To retry inside an existing
+generation, fix the cause first, then requeue and rerun with the generation
+pinned:
+
+```
+photo-triage-admin requeue --scan-id <scan> --reason model
+photo-triage-admin orchestrate --scan-id <scan>
+```
+
+`orchestrate --scan-id` refuses a partial scan; finish it or start a new
+generation instead. Requeue clears the detail and marks the generation's
+analysis stale (a requeue that matches nothing leaves it alone), so the rerun
+recomputes preview metrics and duplicate groups before deciding. Deciding again
+creates a new decide run, which invalidates any existing calibration sign-off:
+`status.calibration.passed` turns false and the report must be redone before
+syncing albums.
+
 ## Review and sign-off
 
 1. Inspect the export's `delete`, `review`, `keep` and per-cluster counts:

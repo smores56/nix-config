@@ -185,10 +185,12 @@ class ScanTests(unittest.TestCase):
 
     def test_requeue_reopens_skipped_assets(self):
         scan_id = scan_library(self.client, self.database, page_size=3, sleep=lambda _: None)
-        self.assertEqual(self.database.requeue(scan_id, "type"), 1)
+        # Videos are skipped with reason "type" and are never scoring work.
+        self.assertEqual(self.database.requeue(scan_id, "type"), 0)
         coverage = self.database.coverage(scan_id)
-        self.assertEqual(coverage["reasons"], {})
-        self.assertEqual(coverage["states"]["pending"], self.scanned)
+        self.assertEqual(coverage["reasons"]["type"], 1)
+        self.assertEqual(coverage["details"]["type"], {"video": 1})
+        self.assertEqual(coverage["states"]["pending"], self.scanned - 1)
 
     def test_transient_failure_is_retried(self):
         self.fake.queue_failure(503, method="POST", path_prefix="/api/search/metadata")

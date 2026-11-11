@@ -15,12 +15,13 @@ from photo_triage_fixtures import assets_for, generate_corpus  # noqa: E402
 sys.path.insert(0, str(Path(__file__).parents[1] / "modules/lib/photo-triage/src"))
 
 from photo_triage.cli import main  # noqa: E402
-from photo_triage.db import Database  # noqa: E402
+from photo_triage.db import DETAIL_BUCKETS, Database  # noqa: E402
 from photo_triage.immich import READ_PERMISSIONS, ImmichClient  # noqa: E402
 from photo_triage.model import LLMClient  # noqa: E402
 from photo_triage.scan import scan_library  # noqa: E402
 from photo_triage.score import (  # noqa: E402
     PREVIEW_GENERATOR,
+    PreviewError,
     SCHEMA,
     ScoreSchemaError,
     ScorerError,
@@ -149,7 +150,9 @@ class ScoreTests(unittest.TestCase):
                 client, self.model, database, scan_id, sleep=lambda _: None
             )
             self.assertEqual(stats["skipped"], 1)
-            self.assertEqual(database.coverage(scan_id)["reasons"]["preview"], 1)
+            coverage = database.coverage(scan_id)
+            self.assertEqual(coverage["reasons"]["preview"], 1)
+            self.assertIn("404", next(iter(coverage["details"]["preview"])))
             database.close()
 
     def test_schema_failure_is_skipped_after_retries(self):
@@ -157,9 +160,130 @@ class ScoreTests(unittest.TestCase):
         stats = self.score()
         self.assertEqual(stats["skipped"], self.scanned)
         self.assertEqual(stats["model_calls"], self.scanned * 3)
-        self.assertEqual(
-            self.database.coverage(self.scan_id)["reasons"]["schema"], self.scanned
+        coverage = self.database.coverage(self.scan_id)
+        self.assertEqual(coverage["reasons"]["schema"], self.scanned)
+        detail = next(iter(coverage["details"]["schema"]))
+        self.assertIn("not JSON", detail)
+        self.assertIn("len=1-63", detail)
+        self.assertIn("braces=none", detail)
+        self.assertNotIn("not json", detail)  # model prose never reaches the database
+
+    def test_model_skip_records_the_error_detail(self):
+        self.fake_llm.fail_status = 400
+        stats = self.score()
+        self.assertEqual(stats["scored"], 0)
+        coverage = self.database.coverage(self.scan_id)
+        self.assertEqual(coverage["reasons"]["model"], self.scanned)
+        detail = next(iter(coverage["details"]["model"]))
+        self.assertIn("http=400", detail)
+        # The server's body is arbitrary text; only the class is persisted.
+        self.assertNotIn("injected failure", detail)
+
+    def test_detail_is_bounded_and_printable(self):
+        from photo_triage.score import DETAIL_MAX_CHARS, _detail
+
+        noisy = "bad\x1b[2J\x1b[31mrequest\x00" + "x" * 500
+        detail = _detail(noisy)
+        self.assertLessEqual(len(detail), DETAIL_MAX_CHARS)
+        self.assertTrue(detail.isprintable())
+        self.assertNotIn("\x1b", detail)
+
+    def test_max_tokens_skip_records_the_finish_reason(self):
+        self.fake_llm.finish_reason = "length"
+        stats = self.score()
+        self.assertEqual(stats["scored"], 0)
+        coverage = self.database.coverage(self.scan_id)
+        self.assertEqual(coverage["reasons"]["model"], self.scanned)
+        detail = next(iter(coverage["details"]["model"]))
+        self.assertIn("hit max_tokens", detail)
+        self.assertIn("completion_tokens=1", detail)
+
+    def test_requeue_clears_skip_detail(self):
+        self.fake_llm.content = "not json"
+        self.score()
+        self.database.requeue(self.scan_id, "schema")
+        row = self.database.connection.execute(
+            "SELECT state, reason, detail FROM scan_assets WHERE scan_id = ? LIMIT 1",
+            (self.scan_id,),
+        ).fetchone()
+        self.assertEqual((row["state"], row["reason"], row["detail"]), ("pending", None, None))
+
+    def test_coverage_rolls_up_excess_detail_buckets(self):
+        self.database.connection.execute(
+            "DELETE FROM scan_assets WHERE scan_id = ?", (self.scan_id,)
         )
+        for index in range(12):
+            self.database.add_scan_asset(
+                self.scan_id, f"asset-{index}", "skipped", "schema", f"detail-{index}"
+            )
+        details = self.database.coverage(self.scan_id)["details"]["schema"]
+        self.assertEqual(len(details), DETAIL_BUCKETS + 1)
+        self.assertEqual(details["(other)"], 2)
+
+    def test_coverage_rollup_cannot_absorb_a_real_bucket(self):
+        self.database.connection.execute(
+            "DELETE FROM scan_assets WHERE scan_id = ?", (self.scan_id,)
+        )
+        for index in range(11):
+            self.database.add_scan_asset(
+                self.scan_id, f"asset-{index}", "skipped", "schema", f"detail-{index}"
+            )
+        self.database.add_scan_asset(
+            self.scan_id, "asset-other", "skipped", "schema", "(other)"
+        )
+        details = self.database.coverage(self.scan_id)["details"]["schema"]
+        self.assertEqual(sum(details.values()), 12)
+
+    def test_requeue_invalidates_analysis(self):
+        self.database.connection.execute(
+            "INSERT INTO scan_analysis(scan_id, generation, generator_id, "
+            "heuristics_version, groups_built, completed_at) VALUES (?, 3, 'g', 'h', 1, 'now')",
+            (self.scan_id,),
+        )
+        self.database.connection.execute(
+            "UPDATE scan_assets SET state = 'skipped', reason = 'schema' WHERE scan_id = ?",
+            (self.scan_id,),
+        )
+        self.database.requeue(self.scan_id, "schema")
+        row = self.database.connection.execute(
+            "SELECT generation, groups_built FROM scan_analysis WHERE scan_id = ?",
+            (self.scan_id,),
+        ).fetchone()
+        self.assertEqual((row["generation"], row["groups_built"]), (3, 0))
+
+    def test_empty_requeue_keeps_the_analysis(self):
+        self.database.connection.execute(
+            "INSERT INTO scan_analysis(scan_id, generation, generator_id, "
+            "heuristics_version, groups_built, completed_at) VALUES (?, 3, 'g', 'h', 1, 'now')",
+            (self.scan_id,),
+        )
+        self.assertEqual(self.database.requeue(self.scan_id, "type"), 0)
+        groups = self.database.connection.execute(
+            "SELECT groups_built FROM scan_analysis WHERE scan_id = ?", (self.scan_id,)
+        ).fetchone()["groups_built"]
+        self.assertEqual(groups, 1)
+
+    def test_normalize_preview_rejects_bad_bytes_with_a_code(self):
+        from photo_triage.score import normalize_preview
+
+        with self.assertRaises(PreviewError) as raised:
+            normalize_preview(b"not an image")
+        self.assertEqual(str(raised.exception), "decode")
+
+    def test_model_failure_detail_never_carries_the_body(self):
+        from photo_triage.model import LLMError
+        from photo_triage.score import _model_failure_detail
+
+        contextual = LLMError(
+            'scoring model returned 400: {"error":"the request exceeds the '
+            'available context size"}',
+            status=400,
+        )
+        self.assertEqual(
+            _model_failure_detail(contextual), "model http=400 class=context-overflow"
+        )
+        foreign = LLMError("scoring model request failed: BadStatusLine('\\x00secret')")
+        self.assertEqual(_model_failure_detail(foreign), "model http=0 class=transport")
 
     def test_transient_model_error_is_retried(self):
         self.fake_llm.queue_failure(503)
