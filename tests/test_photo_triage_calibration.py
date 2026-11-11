@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "modules/lib/photo-triage/src
 from fake_immich import FakeImmich  # noqa: E402
 from photo_triage import calibration  # noqa: E402
 from photo_triage.cli import main  # noqa: E402
-from photo_triage.db import Database  # noqa: E402
+from photo_triage.db import SCHEMA_VERSION, Database  # noqa: E402
 from photo_triage.immich import ALBUM_PERMISSIONS, ImmichClient  # noqa: E402
 
 
@@ -284,7 +284,7 @@ class CalibrationTests(unittest.TestCase):
                 database.connection.execute(
                     "SELECT value FROM schema_meta WHERE key = 'schema_version'"
                 ).fetchone()["value"],
-                "9",
+                SCHEMA_VERSION,
             )
             database.record_sample("scan-1", self.scan_id, [("asset", "dev")])
             self.assertEqual(len(database.sample_assets("scan-1")), 1)

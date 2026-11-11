@@ -107,6 +107,7 @@ class OperationTests(unittest.TestCase):
         self.assertIsNotNone(status["decide_run_id"])
         self.assertTrue(status["resume_safe"])
         self.assertIn("albums", status)
+        self.assertEqual(status["skipped_details"], {})
 
     def test_benchmark_scores_a_bounded_batch(self):
         scan_id = scan_library(

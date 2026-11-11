@@ -18,6 +18,14 @@ MODEL_ALIAS = "photo-triage"
 TRANSIENT_STATUS = frozenset({408, 429, 500, 502, 503, 504})
 
 
+def _token_count(value: object) -> int | str:
+    """Server-supplied usage field; never let it abort a run."""
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        return "unknown"
+
+
 class LLMError(Exception):
     def __init__(self, message: str, *, status: int = 0, transient: bool = False) -> None:
         super().__init__(message)
@@ -98,7 +106,7 @@ class LLMClient:
         self,
         messages: list[dict[str, Any]],
         *,
-        max_tokens: int = 300,
+        max_tokens: int = 512,
         response_format: dict[str, Any] | None = None,
         temperature: float = 0,
     ) -> dict[str, Any]:
@@ -121,7 +129,12 @@ class LLMClient:
         if not isinstance(choice, dict):
             raise LLMError("scoring model choice is not an object")
         if choice.get("finish_reason") == "length":
-            raise LLMError("scoring model hit max_tokens")
+            usage = response.get("usage")
+            completion = usage.get("completion_tokens") if isinstance(usage, dict) else None
+            raise LLMError(
+                f"scoring model hit max_tokens (max_tokens={max_tokens}, "
+                f"completion_tokens={_token_count(completion)})"
+            )
         message = choice.get("message")
         content = message.get("content") if isinstance(message, dict) else None
         if not isinstance(content, str) or not content.strip():
@@ -134,7 +147,8 @@ class LLMClient:
 
     def _prompt_tokens(self, response: dict[str, Any]) -> int:
         usage = response.get("usage")
-        return int(usage.get("prompt_tokens", 0)) if isinstance(usage, dict) else 0
+        tokens = _token_count(usage.get("prompt_tokens")) if isinstance(usage, dict) else 0
+        return tokens if isinstance(tokens, int) else 0
 
     def vision_self_test(self) -> None:
         if self.model not in self.models():

@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1] / "modules/lib/photo-triage/src"))
 
 from photo_triage.cli import main  # noqa: E402
-from photo_triage.db import Database  # noqa: E402
+from photo_triage.db import SCHEMA_VERSION, Database  # noqa: E402
 from photo_triage.decisions import POLICY, POLICY_VERSION, decide_scan  # noqa: E402
 from photo_triage.duplicates import HEURISTICS_VERSION  # noqa: E402
 from photo_triage.score import PREVIEW_GENERATOR  # noqa: E402
@@ -754,7 +754,7 @@ class DecisionTests(unittest.TestCase):
                 database.connection.execute(
                     "SELECT value FROM schema_meta WHERE key = 'schema_version'"
                 ).fetchone()["value"],
-                "9",
+                SCHEMA_VERSION,
             )
             self.assertIn("metrics_sha256", database._columns("previews"))
             self.assertEqual(
@@ -789,11 +789,12 @@ class DecisionTests(unittest.TestCase):
         try:
             self.assertIn("stack_primary", database._columns("scan_assets"))
             self.assertIn("stacks_imported", database._columns("scans"))
+            self.assertIn("detail", database._columns("scan_assets"))
             self.assertEqual(
                 database.connection.execute(
                     "SELECT value FROM schema_meta WHERE key = 'schema_version'"
                 ).fetchone()["value"],
-                "9",
+                SCHEMA_VERSION,
             )
         finally:
             database.close()
