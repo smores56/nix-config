@@ -30,6 +30,8 @@ in
     ../../nixos/todo-daemon.nix
     # Host-local: the k3s guest and its tap/firewall plumbing are smortress-only.
     ../../nixos/cluster-vm.nix
+    # The private-data guest; inert until `kanbeiVm.enable` (docs/kanbei-vm.md cutover).
+    ../../nixos/kanbei-vm.nix
   ];
   homeModules = [
     ../../features/todo.nix
@@ -45,6 +47,9 @@ in
 
   nixosOptions = {
     hostHardening.enable = true;
+    # Deliberately off until the one-time GPU cutover (docs/kanbei-vm.md); Immich triage still
+    # owns the 3090 and enabling this stops nvidia/llm/photo-triage on the host.
+    kanbeiVm.enable = false;
     vaultSync.device = "smortress";
     # The assistant gateway binds loopback in the guest; the host proxies it to the tunnel.
     agentVm.ingressPorts = [

@@ -170,6 +170,92 @@ before trusting user services. What the hardening cannot stop — most
 importantly a planted `sudo` that runs on the owner's next touch — is recorded
 in [`docs/kanbei-split.md`](kanbei-split.md).
 
+#### Kanbei private-data VM
+
+`kanbeiVm.enable` (default off) boots the NIC-less `kanbei` guest with the RTX
+3090 passed through by VFIO, a LUKS2 data volume, and a per-VM swtpm. Design
+and state map: [`docs/kanbei-vm.md`](kanbei-vm.md). The four steps below are
+one-time or emergency operator actions; none of them is exercised by a build.
+
+**1. Cutover.** Do this with the machine reachable and a console session open
+(the switch stops Immich and photo-triage, so the GPU is free but the guest may
+need a second boot):
+
+```sh
+# Drain the GPU: stop the triage window and the interactive model first.
+sudo systemctl stop photo-triage-maintenance.service llama-cpp.service || true
+# Flip the gate, then switch. This is the only edit the cutover needs.
+#   modules/hosts/smortress/default.nix -> kanbeiVm.enable = true;
+just verify-nixos smortress
+sudo nixos-rebuild switch
+```
+
+A reboot is required for the kernel to claim both functions with
+`vfio-pci.ids=10de:2204,10de:1aef`; until then the previous boot's `nvidia`
+still owns them and the guest's `pci-setup` fails. Reboot, then:
+
+```sh
+sudo systemctl status microvm@kanbei.service kanbei-swtpm.service
+sudo kanbei-vm-verify            # vfio-pci bound, group 16 clean, state 0700
+```
+
+**2. GPU unbind / rollback.** To go back to host Immich/photo-triage (or when
+the guest must not run), undo in this order: set `kanbeiVm.enable = false`,
+`sudo systemctl stop microvm@kanbei.service kanbei-swtpm.service`,
+`sudo nixos-rebuild switch`, and reboot once so `nvidia` can claim the GPU
+again (`vfio-pci` keeps it otherwise). Nothing on disk is destroyed: the LUKS
+image and the swtpm state stay under `/var/lib/kanbei-vm` and
+`/var/lib/microvms/kanbei`. Never unbind by hand while QEMU is running.
+
+**3. Recovery key.** The first boot prints the key to the guest console, which
+lands in `/var/lib/kanbei-vm/console/console.log` (root-only), and escrows it at
+`/var/lib/kanbei-vm/enroll/recovery.key` (0600 root). Read it once:
+
+```sh
+sudo cat /var/lib/kanbei-vm/console/console.log   # "Recovery key: ..."
+```
+
+Store it in the password manager, then delete the escrow
+(`sudo rm /var/lib/kanbei-vm/enroll/recovery.key`). A stable key instead of the
+generated one: add a `kanbei-recovery-key` entry to `secrets/smortress.yaml`
+with `sops secrets/smortress.yaml`, declare it in
+`modules/hosts/smortress/secrets.nix`, and add the `secret/kanbei-recovery-key`
+anchor to this file (the check requires one per yaml key). The host
+prep unit copies it to the guest as a read-only contract; without the yaml key
+no anchor exists and the check passes. Losing both the swtpm state and this key
+loses the volume.
+
+**4. Backup restore.** `restic-backups-kanbei-{r2,local}` stop the guest, snapshot
+only the ciphertext image, then restart it. To restore: stop the guest, restore
+`/var/lib/microvms/kanbei/data.img` (0600 `microvm:kvm`), then check the volume
+from the host with the recovery key — no TPM needed:
+
+```sh
+sudo cryptsetup open --key-file /var/lib/kanbei-vm/enroll/recovery.key \
+  /var/lib/microvms/kanbei/data.img kanbei-data
+sudo mount /dev/mapper/kanbei-data /mnt && ls /mnt
+sudo umount /mnt && sudo cryptsetup close kanbei-data
+```
+
+Start the guest next. If `/var/lib/kanbei-vm/swtpm` was lost, the TPM unlock
+fails and the volume stays locked until you re-enroll in an interactive guest
+console (`docs/kanbei-vm.md` has the runner command and the
+`systemd-cryptenroll --wipe-slot=tpm2 ...` step). These units carry no
+`cloudflare-email@` alert on purpose; watch
+`journalctl -u restic-backups-kanbei-r2`.
+
+**5. IOMMU check.** After any kernel, firmware or slot change:
+
+```sh
+for d in 0000:08:00.0 0000:08:00.1; do basename "$(readlink -f /sys/bus/pci/devices/$d/driver)"; done
+ls /sys/kernel/iommu_groups/16/devices   # exactly those two paths
+sudo dmesg | grep -i -e 'IOMMU' -e 'ACS' # no "not viable", no ACS override
+lsmod | grep nvidia                      # empty while the guest owns the GPU
+```
+
+If the group gained a device, stop the guest and re-record the pair in
+`modules/nixos/kanbei-vm.nix` rather than widening the passthrough.
+
 ### smorespro
 
 <!-- manual-step: host/smorespro -->

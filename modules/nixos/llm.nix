@@ -1,4 +1,6 @@
 {
+  config,
+  lib,
   pkgs,
   aiProviders,
   ...
@@ -10,7 +12,8 @@ let
 
 in
 {
-  config = {
+  # Inert while the kanbei guest owns the GPU (modules/nixos/kanbei-vm.nix); T9 deletes the file.
+  config = lib.mkIf (!(config.kanbeiVm.enable or false)) {
     # The host serves the model around the clock, so it must never suspend.
     systemd.sleep.settings.Sleep = {
       AllowSuspend = false;

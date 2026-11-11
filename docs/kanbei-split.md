@@ -141,6 +141,32 @@ relay, and evaluation asserts that no generated rule names a Kanbei tap.
 4. **Boot.** Ring 0 only: no nested-KVM or VFIO need. The guest needs the tap,
    15 GiB RAM and a 64 GiB `var.img` on the host.
 
+## The `kanbei` guest
+
+`modules/nixos/kanbei-vm.nix` (smortress only, gated by `kanbeiVm.enable`,
+default off) runs the private-data guest and owns the host side: operator steps
+in `docs/manual-steps.md`, design and recovery flow in
+[`docs/kanbei-vm.md`](kanbei-vm.md).
+
+- Both functions of the 3090 (`0000:08:00.0` `10de:2204`, `0000:08:00.1`
+  `10de:1aef`) are bound to `vfio-pci` and passed through. They sit alone in
+  IOMMU group 16, so no ACS override is needed; `kanbei-vm-verify` re-checks the
+  binding, the group contents and that no `nvidia` module is loaded.
+- The guest has no NIC. `vault` (ro) and `todo` (rw) are virtiofs shares with
+  the cluster guest's uid translation, so guest root maps to host `nobody` and
+  the guest payload uid 1000 maps to the host `vault` user (981).
+- `/var/lib/microvms/kanbei/data.img` is a LUKS2 container. Restic snapshots
+  only that ciphertext, after a hook that stops the guest (a dirty image is not
+  snapshotted) and restarts it. The swtpm state, the console log, the recovery
+  escrow and `inbox` are never in a snapshot (asserted for the swtpm).
+- The seal binds to the per-VM swtpm's state and no PCR policy: the guest boots
+  with `-kernel` and no firmware, so a kernel rebuild never strands the unlock.
+  Losing `/var/lib/kanbei-vm/swtpm` does — the recovery key then opens the image
+  from the host with `cryptsetup`.
+- The guest console goes to a root-only file, the swtpm state and the console
+  directory are 0700 root, and `kanbei` units deliberately carry no
+  `cloudflare-email@` failure hook.
+
 ## Accepted residuals
 
 ### A later human touch runs whatever the unattended maki planted

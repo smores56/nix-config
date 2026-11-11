@@ -1,0 +1,251 @@
+# The `kanbei` private-data VM
+
+Smortress's third microVM (`smores56/sdlc#584`, part of #509). It is NIC-less,
+gets the RTX 3090 by VFIO passthrough, keeps its state on a LUKS2 volume inside
+the guest image, and is sealed to a per-VM software TPM. Host-side operator
+steps are in [`docs/manual-steps.md`](manual-steps.md) (`host/smortress`, under
+"Kanbei private-data VM"); the threat model is in
+[`docs/kanbei-split.md`](kanbei-split.md).
+
+Everything is behind `kanbeiVm.enable` (default `false` in
+`modules/hosts/smortress/default.nix`). While it is off the host still runs
+Immich/photo-triage on the GPU and this module adds nothing but the option. With
+it on, `nvidia.nix`, `llm.nix` and `photo-triage.nix` become inert
+(`lib.mkIf (!config.kanbeiVm.enable)`) — the files stay until T9 deletes them,
+but nothing loads the driver, runs `llama-cpp`, or starts a triage unit. An
+assertion fails evaluation if the enabled host would still load `nvidia` or
+run `llama-cpp`.
+
+## Hardware facts (discovered, not guessed)
+
+| Function | PCI path | ID | IOMMU group |
+|---|---|---|---|
+| RTX 3090 | `0000:08:00.0` | `10de:2204` | 16 |
+| GA102 HDA (HDMI audio) | `0000:08:00.1` | `10de:1aef` | 16 |
+
+Both functions are alone in group 16, so no `pci-stub` and no ACS override are
+needed. `modules/nixos/kanbei-vm.nix` records this as `pci`; evaluation asserts
+the VFIO id list matches it exactly, so a moved card has to be re-discovered
+rather than silently half-passed.
+
+Host binding, only while enabled:
+
+```nix
+boot.kernelParams = [ "amd_iommu=on" "iommu=pt" "vfio-pci.ids=10de:2204,10de:1aef" ];
+boot.initrd.kernelModules = [ "vfio" "vfio_iommu_type1" "vfio_pci" ];
+boot.extraModprobeConfig = "softdep snd_hda_intel pre: vfio-pci";
+```
+
+The microvm runner also unbinds and re-probes both functions (`pci-setup`) and
+hands `/dev/vfio/16` to `microvm:kvm` before QEMU starts.
+
+Runtime check on the host (also `kanbei-vm-verify`, a oneshot that runs after
+the guest starts):
+
+```sh
+for d in 0000:08:00.0 0000:08:00.1; do basename "$(readlink -f /sys/bus/pci/devices/$d/driver)"; done
+ls /sys/kernel/iommu_groups/16/devices     # exactly the two paths above
+sudo dmesg | grep -i -e iommu -e vfio      # no ACS override, no "group is not viable"
+lsmod | grep nvidia                        # empty
+```
+
+## The guest
+
+| | |
+|---|---|
+| runner | qemu, `microvm` machine, `pcie=on` |
+| cpu/mem | 8 vcpu, 8192 MiB |
+| network | none — `microvm.interfaces = [ ]`, no tap, no firewall rules |
+| vsock | cid 4 (asserted unique across guests); the relay socket contract is T11's |
+| disk | one raw image `data.img` (`serial=kanbei-data`, 64 GiB, created by `preStart`), `/dev/disk/by-id/virtio-kanbei-data` |
+| console | guest serial on QEMU stdio → `StandardOutput=append:` a root-only file |
+| host store | `/nix/store` virtiofs, read-only, `registerClosure = false` |
+
+Shares (virtiofs):
+
+| tag | host source | guest | mode |
+|---|---|---|---|
+| `ro-store` | `/nix/store` | `/nix/store` | ro |
+| `inbox` | `/var/lib/kanbei-vm/inbox` | `/mnt/kanbei/inbox` | ro |
+| `vault` | `/var/lib/data/vault` | `/mnt/kanbei/vault` | ro |
+| `todo` | `/var/lib/data/todo` | `/mnt/kanbei/todo` | rw |
+| `kanbei-secrets` | `/var/lib/kanbei-vm/secrets` | `/run/kanbei-secrets` | ro |
+| `kanbei-enroll` | `/var/lib/kanbei-vm/enroll` | `/mnt/kanbei-enroll` | rw |
+
+`vault` and `todo` use the cluster guest's translation: guest root maps to host
+`nobody`, and the guest payload uid 1000 maps to the host `vault` user (981),
+which owns both trees. The T11 service must therefore run as uid 1000 in the
+guest. `inbox` is root-owned 0755 and the guest's payload user reads batch files, so
+dropped payloads must be 0644 (the content is age ciphertext; readability is
+not confidentiality), and `kanbei-enroll` is the guest's one host-writable path
+(root-only 0700, nothing on the host reads it except the operator).
+
+## vTPM and what the seal binds to
+
+microvm.nix has no TPM option. `kanbei-swtpm.service` runs
+`swtpm socket --tpm2 --tpmstate dir=/var/lib/kanbei-vm/swtpm` as root with the
+state a 0700 root directory, a control socket, and a data socket in
+`/run/kanbei-vm` (0750 `root:kvm`, socket 0660) so the `microvm` user cannot
+read the NVRAM but can connect. QEMU attaches it from `microvm.qemu.extraArgs`:
+
+```
+-chardev socket,id=chrtpm,path=/run/kanbei-vm/swtpm.sock
+-tpmdev emulator,id=tpm0,chardev=chrtpm
+-device tpm-crb,tpmdev=tpm0
+```
+
+`microvm.preStart` refuses to start the guest if that socket is missing, so a
+dead swtpm can never boot a guest that will then fail its unlock. The state
+survives reboots and unit restarts and is never in a restic path (asserted).
+
+The guest boots with `-kernel`/`-append` (no firmware), so there is no secure
+boot and no measured boot, and the TPM2 token is enrolled with **no PCR
+policy** (systemd 261's default). What the seal binds to is only the swtpm's
+state — its endorsement/SRK material and the systemd token in the LUKS header:
+
+- The swtpm state is preserved → a kernel, initrd or NixOS generation change
+  does not touch the seal, so a rebuild never strands the unlock.
+- The swtpm state is lost, replaced or restored from a different instance → the
+  TPM will not unseal, and only the recovery key opens the volume.
+
+An unbound token also means a *copy* of the image plus `/var/lib/kanbei-vm/swtpm`
+unlocks elsewhere. Both are root-only host artifacts, and host root already
+reads every guest disk (`docs/kanbei-split.md`), so this does not widen the
+threat model; it is the price of "a kernel rebuild never strands the unlock".
+
+Restoring an image backup therefore needs the recovery key when the swtpm state
+is also lost; with both the image and `/var/lib/kanbei-vm/swtpm` recovered, the
+TPM unlock works again.
+
+## In-guest disk and first-boot enrollment
+
+`environment.etc.crypttab` opens the volume in stage 2:
+
+```
+kanbei-data /dev/disk/by-id/virtio-kanbei-data none luks,tpm2-device=auto
+```
+
+and `/var/lib/kanbei` is mounted from `/dev/mapper/kanbei-data` (ext4,
+`nodev,nosuid,noatime`, ordered `x-systemd.before=kanbei.service`).
+`kanbei-data-init.service` is `RequiredBy=systemd-cryptsetup@kanbei-data.service`
+and `Before=` it and `kanbei.service`, so on first boot it runs before the
+unlock attempt.
+
+First boot (`modules/nixos/kanbei-vm.nix`, `guestInit`):
+
+1. Waits for the virtio-blk device; exits if it is already a LUKS volume.
+2. Picks the recovery credential **before** formatting: the sops contract
+   `/run/secrets/kanbei-recovery-key` when present (copied by
+   `kanbei-vm-prep`), else an escrowed key at
+   `/var/lib/kanbei-vm/enroll/recovery.key` (0600, root-only) created first, or
+   reused from a previous partial run.
+3. `cryptsetup luksFormat --type luks2 --label KANBEI --key-file <recovery>`.
+4. `systemd-cryptenroll --tpm2-device=auto` (no PCR policy) with
+   `--unlock-key-file=<recovery>`; without a contract key it also enrolls
+   `--recovery-key`, and the printed key goes to the guest console (i.e. the
+   root-only console file) as well as the escrow file.
+5. `mkfs.ext4` through a temporary mapping.
+
+Because the recovery credential exists before the format, a crash anywhere in
+that sequence is recoverable with it — the volume is never formatted under a
+key nobody kept.
+
+`/run/secrets/kanbei-recovery-key` is a **contract**, not a registered sops key
+yet: `secrets/smortress.yaml` has no such key (it cannot be encrypted from this
+checkout), so `docs/manual-steps.md` carries no `secret/kanbei-recovery-key`
+anchor and the host prep unit simply skips the copy. Registering the key is a
+manual step: add it with `sops secrets/smortress.yaml`, declare it in
+`modules/hosts/smortress/secrets.nix`, and add the anchor.
+
+After the first successful TPM boot, delete
+`/var/lib/kanbei-vm/enroll/recovery.key` once the key is in the password
+manager; a re-format is then impossible without that key, which is the point.
+
+## Console
+
+`microvm@kanbei.service` writes QEMU's stdio (the guest serial console) to
+`/var/lib/kanbei-vm/console/console.log` via `StandardOutput=append:`. systemd
+opens it as root, the parent is 0700 root, and `-monitor none` keeps the guest
+away from the QEMU monitor. Nothing else on the host reads it.
+
+## Backup and restore
+
+`services.restic.backups.kanbei-r2` and `kanbei-local` snapshot only
+`/var/lib/microvms/kanbei/data.img` — the LUKS2 ciphertext — nightly at 02:30
+and 02:40. Both run `backupPrepareCommand` first: it stops
+`microvm@kanbei.service` (via `microvm-shutdown`, a graceful ACPI powerdown) and
+fails if the unit is still active, so a dirty filesystem is never snapshotted.
+`backupCleanupCommand` restarts the guest if the hook stopped it. The swtpm
+state, the console log, the inbox and the escrow are excluded (the swtpm
+exclusion is asserted).
+
+Restore:
+
+1. Stop the guest: `sudo systemctl stop microvm@kanbei.service`.
+2. Restore the image from restic (any repo) to
+   `/var/lib/microvms/kanbei/data.img`, owned `microvm:kvm`, mode 0600.
+3. Restore `/var/lib/kanbei-vm/swtpm` only if you archived it by hand (it is
+   deliberately not in any backup). Without it the TPM unlock fails.
+4. Start the guest and read the console; with a lost or mismatched swtpm the
+   volume stays locked, so unlock it with the recovery key as below.
+
+`kanbei` units deliberately carry no `onFailure = [ "cloudflare-email@%n" ]`:
+the alert template is a host service on smortress and the split must not make
+the private-data guest depend on the host's tunnel or mail path. A failed
+backup is visible in the journal (`journalctl -u restic-backups-kanbei-r2`)
+until kanbei gets its own alerting; evaluation asserts no `kanbei*` unit has
+that `onFailure`.
+
+## Recovery procedures
+
+The image is a LUKS2 container over a plain file, so the primary recovery path
+runs on the **host** with the guest stopped and needs no TPM and no guest
+console:
+
+```sh
+sudo systemctl stop microvm@kanbei.service
+sudo cryptsetup open --key-file /var/lib/kanbei-vm/enroll/recovery.key \
+  /var/lib/microvms/kanbei/data.img kanbei-data
+sudo mount /dev/mapper/kanbei-data /mnt            # inspect / repair
+
+sudo umount /mnt
+sudo cryptsetup close kanbei-data
+```
+
+With the contract key (or a printed `--recovery-key`) instead of the escrow
+file, omit `--key-file` and paste it at the prompt. The swtpm is not involved,
+so this works even when the TPM state is gone.
+
+An interactive guest console is only needed to re-enroll the TPM. The unit
+sends the serial console to a write-only root-only file, so run the same runner
+by hand as the VM user (the virtiofs daemons must be up; `swtpm` is already):
+
+```sh
+sudo systemctl stop microvm@kanbei.service
+sudo systemctl start kanbei-swtpm.service microvm-virtiofsd@kanbei.service
+sudo -u microvm bash -c 'cd /var/lib/microvms/kanbei && exec ./current/bin/microvm-run'
+# The monitor is disabled, so leave with `poweroff` in the guest shell; otherwise
+# `sudo pkill -u microvm qemu-system-x86_64` from another terminal.
+```
+
+Re-enroll the TPM after a swtpm state loss (in that guest shell, volume
+unlocked with the recovery key) so the next boot is unattended again:
+
+```sh
+systemd-cryptenroll --wipe-slot=tpm2 --tpm2-device=auto \
+  --unlock-key-file=/run/kanbei-secrets/kanbei-recovery-key \
+  /dev/disk/by-id/virtio-kanbei-data
+```
+
+Keep a header backup off the image after the first boot (`cryptsetup
+luksHeaderBackup ... --header-backup-file`): the LUKS2 header lives at the start
+of `data.img`, so a truncated or corrupted image is recovered by restoring that
+header first.
+
+## Cutover (one-time, hardware-gated)
+
+The full procedure is in `docs/manual-steps.md` ("Kanbei private-data VM").
+It is a single switch that: stops Immich + photo-triage, unbinds `nvidia`, lets
+the kernel claim both functions for `vfio-pci`, and boots the guest. Nothing
+above is exercised by an eval or a build, so it must be done with the operator
+present and the recovery key in hand.

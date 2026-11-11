@@ -211,7 +211,8 @@ in
     };
   };
 
-  config = {
+  # Inert while the kanbei guest owns the GPU (modules/nixos/kanbei-vm.nix); T9 deletes the file.
+  config = lib.mkIf (!(config.kanbeiVm.enable or false)) {
     warnings =
       lib.optionals (cfg.readKeyFile == null) [
         "photo-triage: photoTriage.readKeyFile is not configured; scan and analyze will fail at runtime"
