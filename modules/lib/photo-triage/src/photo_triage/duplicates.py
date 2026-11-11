@@ -165,6 +165,7 @@ def _rank(rows: list[Any], suggested: set[str]) -> list[tuple[str, int]]:
         return (
             0 if row["id"] in suggested else 1,
             0 if row["is_favorite"] else 1,
+            0 if row["stack_primary"] and row["verdict"] == "keep" else 1,
             1 if row["is_archived"] else 0,
             1 if row["is_trashed"] else 0,
             0 if (row["visibility"] or "timeline") == "timeline" else 1,
@@ -282,7 +283,7 @@ def analyze_scan(
             exact_ids: set[str] = set()
             for checksum, members in database.exact_duplicate_groups(scan_id):
                 exact_ids.update(members)
-                rows = [database.asset_metrics(asset_id) for asset_id in members]
+                rows = [database.asset_metrics(scan_id, asset_id) for asset_id in members]
                 rows = [row for row in rows if row is not None]
                 database.insert_duplicate_group(
                     scan_id,
@@ -321,7 +322,7 @@ def analyze_scan(
                 ]
                 if len(component) < 2:
                     continue
-                rows = [database.asset_metrics(asset_id) for asset_id in component]
+                rows = [database.asset_metrics(scan_id, asset_id) for asset_id in component]
                 rows = [row for row in rows if row is not None]
                 database.insert_duplicate_group(
                     scan_id,
@@ -352,7 +353,7 @@ def analyze_scan(
                         (scan_id, group["group_id"]),
                     ).fetchall()
                 ]
-                rows = [database.asset_metrics(asset_id) for asset_id in member_ids]
+                rows = [database.asset_metrics(scan_id, asset_id) for asset_id in member_ids]
                 rows = [row for row in rows if row is not None]
                 database.update_duplicate_keep_ranks(
                     scan_id, group["group_id"], _rank(rows, suggested)

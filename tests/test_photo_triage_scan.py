@@ -37,6 +37,7 @@ class ScanTests(unittest.TestCase):
         stack_primary = dict(cls.images[2])
         stack_primary["id"] = "asset-stack-primary"
         stack_primary["stackId"] = "stack-1"
+        stack_primary["stackPrimary"] = True
         stack_member = dict(cls.images[3])
         stack_member["id"] = "asset-stack-member"
         stack_member["stackId"] = "stack-1"
@@ -85,6 +86,16 @@ class ScanTests(unittest.TestCase):
         self.assertEqual(self.database.duplicates_summary(scan_id), {"groups": 1, "members": 2})
         self.assertEqual(self.database.latest_scan(), scan_id)
 
+    def _scan_flags(self, scan_id):
+        return {
+            row["asset_id"]: row["stack_primary"]
+            for row in self.database.connection.execute(
+                "SELECT asset_id, stack_primary FROM scan_assets "
+                "WHERE scan_id = ? AND asset_id LIKE 'asset-stack-%'",
+                (scan_id,),
+            ).fetchall()
+        }
+
     def _asset_ids(self):
         return {
             row["id"]
@@ -100,6 +111,13 @@ class ScanTests(unittest.TestCase):
         self.assertIn("asset-stack-primary", self._asset_ids())
         self.assertIn("asset-stack-member", self._asset_ids())
         self.assertEqual(self.database.coverage(scan_id)["states"]["pending"], self.pending)
+        flags = self._scan_flags(scan_id)
+        self.assertEqual(flags["asset-stack-primary"], 1)
+        self.assertEqual(flags["asset-stack-member"], 0)
+        self.assertTrue(self.database.scan_stacks_imported(scan_id))
+        self.assertTrue(
+            any(record.path == "/api/stacks" for record in self.fake.requests)
+        )
         searches = [
             json.loads(record.body)
             for record in self.fake.requests
@@ -107,6 +125,49 @@ class ScanTests(unittest.TestCase):
         ]
         self.assertTrue(searches)
         self.assertTrue(all(body.get("withStacked") is True for body in searches))
+
+    def test_rescan_does_not_inherit_stack_primaries(self):
+        first = scan_library(self.client, self.database, page_size=3, sleep=lambda _: None)
+        for asset_id in ("asset-stack-primary", "asset-stack-member"):
+            self.fake.assets[asset_id]["stackId"] = None
+        second = scan_library(self.client, self.database, page_size=3, sleep=lambda _: None)
+        self.assertEqual(self._scan_flags(first)["asset-stack-primary"], 1)
+        self.assertEqual(self._scan_flags(second)["asset-stack-primary"], 0)
+
+    def test_missing_stack_primary_protects_every_member(self):
+        self.fake.stacks_override = [
+            {
+                "id": "stack-1",
+                "primaryAssetId": None,
+                "assets": [{"id": "asset-stack-primary"}, {"id": "asset-stack-member"}],
+            }
+        ]
+        scan_id = scan_library(self.client, self.database, page_size=3, sleep=lambda _: None)
+        self.assertEqual(
+            self._scan_flags(scan_id),
+            {"asset-stack-primary": 1, "asset-stack-member": 1},
+        )
+
+    def test_malformed_stack_payload_fails_the_scan(self):
+        self.fake.stacks_override = [
+            {"id": "stack-1", "primaryAssetId": "asset-stack-primary", "assets": "nope"}
+        ]
+        with self.assertRaises(ImmichError):
+            scan_library(self.client, self.database, page_size=3, sleep=lambda _: None)
+        scan_id = self.database.connection.execute("SELECT max(id) AS id FROM scans").fetchone()["id"]
+        self.assertEqual(self.database.scan_state(scan_id), "failed")
+
+    def test_trashed_stack_primary_protects_visible_members(self):
+        self.fake.assets["asset-stack-primary"]["isTrashed"] = True
+        scan_id = scan_library(self.client, self.database, page_size=3, sleep=lambda _: None)
+        self.assertEqual(self._scan_flags(scan_id).get("asset-stack-member"), 1)
+
+    def test_failed_rescan_keeps_the_previous_generation_flags(self):
+        first = scan_library(self.client, self.database, page_size=3, sleep=lambda _: None)
+        self.fake.queue_failure(500, count=3, method="GET", path_prefix="/api/stacks")
+        with self.assertRaises(ImmichError):
+            scan_library(self.client, self.database, page_size=3, sleep=lambda _: None)
+        self.assertEqual(self._scan_flags(first)["asset-stack-primary"], 1)
 
     def test_generations_are_separate(self):
         first = scan_library(self.client, self.database, page_size=3, sleep=lambda _: None)

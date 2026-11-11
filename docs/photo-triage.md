@@ -34,12 +34,23 @@ drops stack primaries too, so the scan sends `withStacked: true`. Archived,
 hidden and locked assets stay out of the scan through those Immich filters; the
 client does not re-check visibility locally.
 
-Stack members are scored and grouped like any other duplicate. A grouped member
-is proposed for `triage-delete` only when its group keeper is scored, current and
-trustworthy; byte-identical copies additionally need matching checksums and
-previews, and near duplicates additionally need the model to call the member
-defective. A stack gets no special protection: a burst frame the model flags on
-its own can still reach `triage-delete`, so review the album as usual.
+The scan also reads Immich's stack list (`GET /api/stacks`, so the read key needs
+`stack.read`) and marks each stack's primary. Flags are stored per scan
+generation, so unsticking a photo clears its protection downstream while an
+older generation keeps the flags it was analyzed with. The export reports
+`counts.stack_primaries`. A primary is
+preferred as keeper while its own verdict is `keep`, and it is never proposed for
+`triage-delete`, even when the model flags it; a primary without a `keep` verdict
+stays protected and the group falls back to a trusted keeper. `decide` refuses a
+scan that never imported stacks, so a pre-upgrade generation cannot be decided
+without protection.
+
+Non-primary stack members are scored and grouped like any other duplicate. A
+grouped member is proposed for `triage-delete` only when its group keeper is
+scored, current and trustworthy; byte-identical copies additionally need matching
+checksums and previews, and near duplicates additionally need the model to call
+the member defective. A non-primary frame the model flags on its own still reaches
+`triage-delete`, so review the album as usual.
 
 Downtime during the window: maki, Open WebUI, secret-sweep, and the LLM tunnel.
 The scoring server owns the GPU; `llama-cpp.service` has

@@ -32,6 +32,7 @@ POLICY = {
     "blur_var": 80.0,
     "low_res_edge": 256,
     "near_distance": 10,
+    "protect_stack_primary": True,
 }
 POLICY_VERSION = hashlib.sha256(json.dumps(POLICY, sort_keys=True).encode("utf-8")).hexdigest()[
     :12
@@ -295,6 +296,8 @@ def _classify(
     if any(_rank_of(groups[group_id], asset_id) is None for group_id in group_ids):
         tier = min((groups[group_id].tier for group_id in group_ids), key=_tier_order)
         return "review", "unranked", tier, cluster
+    if POLICY["protect_stack_primary"] and bool(row["stack_primary"]):
+        return "keep", "protected_stack_primary", None, cluster
     if group_ids:
         decision, reason, tier = _group_decision(
             row, group_ids, groups, rows_by_id, completed_at
@@ -376,6 +379,10 @@ def decide_scan(
     ):
         raise ValueError(
             f"scan {scan_id} has no completed analyze run for this generator/heuristics"
+        )
+    if not database.scan_stacks_imported(scan_id):
+        raise ValueError(
+            f"scan {scan_id} has no stack import; rescan before deciding"
         )
     limit = POLICY["delete_cap"] if cap is None else int(cap)
     if not 0 <= limit <= POLICY["delete_cap"]:
@@ -484,6 +491,7 @@ def decide_scan(
             "undecided": len(undecided),
             "universe": len(decisions) + len(undecided),
             "images": len(database.scan_image_assets(scan_id)),
+            "stack_primaries": database.stack_primary_count(scan_id),
         }
         if counts["decided"] == 0 and counts["universe"] > 0:
             raise ValueError("no scored assets in the scan; run the scorer first")

@@ -13,7 +13,9 @@ from urllib.parse import quote
 
 from .transport import UnixHTTPConnection
 
-READ_PERMISSIONS = frozenset({"asset.read", "asset.view", "album.read", "duplicate.read"})
+READ_PERMISSIONS = frozenset(
+    {"asset.read", "asset.view", "album.read", "duplicate.read", "stack.read"}
+)
 ALBUM_PERMISSIONS = frozenset(
     {"album.read", "album.create", "albumAsset.create", "albumAsset.delete"}
 )
@@ -144,6 +146,12 @@ class ImmichClient:
         payload = self._json("GET", "/api/duplicates")
         if not isinstance(payload, list):
             raise ImmichError(0, "duplicates response is not a list", transient=False)
+        return payload
+
+    def stacks(self) -> list[dict[str, Any]]:
+        payload = self._json("GET", "/api/stacks")
+        if not isinstance(payload, list):
+            raise ImmichError(0, "stacks response is not a list", transient=False)
         return payload
 
     def assert_album_permissions(self) -> None:

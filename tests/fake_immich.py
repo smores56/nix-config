@@ -44,6 +44,7 @@ class FakeImmich:
         self,
         assets: list[dict[str, Any]],
         duplicates: list[dict[str, Any]] | None = None,
+        stacks: list[dict[str, Any]] | None = None,
         albums: list[dict[str, Any]] | None = None,
         keys: dict[str, list[str]] | None = None,
         api_key: str = "test-key",
@@ -61,6 +62,7 @@ class FakeImmich:
         self.require_auth = require_auth
         self.assets = {asset["id"]: dict(asset) for asset in assets}
         self.duplicates = [dict(group) for group in (duplicates or ())]
+        self.stacks_override = stacks
         self.albums: dict[str, dict[str, Any]] = {}
         for album in albums or ():
             self.albums[album["id"]] = {
@@ -185,7 +187,11 @@ class FakeImmich:
         return None
 
     def _public_asset(self, asset: dict[str, Any]) -> dict[str, Any]:
-        result = {key: value for key, value in asset.items() if key != "preview"}
+        result = {
+            key: value
+            for key, value in asset.items()
+            if key not in {"preview", "stackId", "stackPrimary"}
+        }
         timestamp = result.get("localDateTime", DEFAULT_TIME)
         defaults = {
             "type": "IMAGE",
@@ -342,6 +348,39 @@ class FakeImmich:
                         }
                     )
             self._send_json(request, 200, groups)
+            return
+        if path == "/api/stacks":
+            if not self._permitted(key, "stack.read"):
+                self._send_forbidden(request)
+                return
+            if self.stacks_override is not None:
+                self._send_json(request, 200, self.stacks_override)
+                return
+            grouped: dict[str, list[dict[str, Any]]] = {}
+            with self._lock:
+                for asset in self.assets.values():
+                    stack_id = asset.get("stackId")
+                    if not stack_id or asset.get("isTrashed"):
+                        continue
+                    # Immich returns archive and timeline members, not hidden/locked.
+                    if asset.get("visibility") in ("hidden", "locked"):
+                        continue
+                    grouped.setdefault(str(stack_id), []).append(asset)
+            payload = []
+            for stack_id in sorted(grouped):
+                members = sorted(grouped[stack_id], key=lambda item: str(item["id"]))
+                primary = next(
+                    (str(item["id"]) for item in members if item.get("stackPrimary")),
+                    str(members[0]["id"]),
+                )
+                payload.append(
+                    {
+                        "id": stack_id,
+                        "primaryAssetId": primary,
+                        "assets": [self._public_asset(item) for item in members],
+                    }
+                )
+            self._send_json(request, 200, payload)
             return
         if path == "/api/albums":
             if not self._permitted(key, "album.read"):

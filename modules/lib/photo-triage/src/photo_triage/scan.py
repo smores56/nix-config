@@ -28,6 +28,31 @@ def retry(call: Callable[[], Any], sleep: Callable[[float], None], attempts: int
     raise AssertionError("unreachable")
 
 
+def _stack_primaries(stacks: list[dict[str, Any]]) -> list[str]:
+    for stack in stacks:
+        if not isinstance(stack, dict):
+            raise ImmichError(0, "stacks response has a non-object entry", transient=False)
+        members = stack.get("assets")
+        if not isinstance(members, list):
+            raise ImmichError(0, "stack has no asset list", transient=False)
+        if any(not isinstance(member, dict) for member in members):
+            raise ImmichError(0, "stack has a non-object member", transient=False)
+    primaries: list[str] = []
+    for stack in stacks:
+        members = [str(member["id"]) for member in stack["assets"] if member.get("id")]
+        if not members:
+            continue
+        primary = stack.get("primaryAssetId")
+        if primary and str(primary) in members:
+            primaries.append(str(primary))
+        else:
+            # Immich filters trashed and hidden members out of the stack payload,
+            # so a primary can legitimately be absent. Protect the listed members
+            # instead of guessing.
+            primaries.extend(members)
+    return primaries
+
+
 def scan_library(
     client: ImmichClient,
     database: Database,
@@ -87,10 +112,12 @@ def scan_library(
                 raise ImmichError(0, "pagination did not advance", transient=False)
             page = next_int
         database.import_duplicates(scan_id, retry(client.duplicates, sleep))
+        database.mark_stack_primaries(scan_id, _stack_primaries(retry(client.stacks, sleep)))
         database.finish_scan(scan_id, "partial" if partial else "complete")
         return scan_id
     except BaseException:
         try:
+            database.rollback()
             database.finish_scan(scan_id, "failed")
         except Exception:
             pass

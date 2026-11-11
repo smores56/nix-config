@@ -74,6 +74,16 @@ class CalibrationTests(unittest.TestCase):
             [item["asset_id"] for item in again],
         )
 
+    def test_sample_prefers_a_delete_member_over_the_keeper(self):
+        ids = sorted((f"asset-{index}" for index in range(20)), key=calibration._digest)
+        keeper, member = ids[0], ids[1]
+        decisions = [
+            {"asset_id": keeper, "cluster": "near", "decision": "keep", "groups": ["g1"]},
+            {"asset_id": member, "cluster": "near", "decision": "delete", "groups": ["g1"]},
+        ]
+        sample = calibration.build_sample(decisions, min_per_cluster=1, total=10)
+        self.assertEqual([item["asset_id"] for item in sample], [member])
+
     def test_split_is_per_cluster_and_deterministic(self):
         sample = [
             {"asset_id": f"{cluster}-{index:02d}", "cluster": cluster}
@@ -274,7 +284,7 @@ class CalibrationTests(unittest.TestCase):
                 database.connection.execute(
                     "SELECT value FROM schema_meta WHERE key = 'schema_version'"
                 ).fetchone()["value"],
-                "8",
+                "9",
             )
             database.record_sample("scan-1", self.scan_id, [("asset", "dev")])
             self.assertEqual(len(database.sample_assets("scan-1")), 1)
