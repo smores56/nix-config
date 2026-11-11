@@ -56,6 +56,11 @@ let
   tutaSession = mkTool "tuta-session" "tuta_session" [ ] "";
   tutaMail = mkTool "ingest-tuta-mail" "tuta_mail" [ ] "";
   tutaIcs = mkTool "ingest-tuta-ics" "tuta_ics" [ ] "";
+  financeTool = mkTool "ingest-finance" "finance" [ ] "";
+  plaidTool = mkTool "ingest-finance-plaid" "plaid" [ ] "";
+  braveHistory = mkTool "ingest-brave-history" "brave_history" [ ] "";
+  braveSync = mkTool "ingest-brave-sync" "brave_sync" [ ] "";
+  immichTool = mkTool "ingest-immich" "immich" [ ] "";
 
   kanbeiLogs = pkgs.writeShellApplication {
     name = "kanbei-logs";
@@ -110,6 +115,61 @@ let
   };
 
   # Every tap address and state path is derived once, in the shared table.
+  # The Plaid fallback is off by default; enabling it is the only way
+  # production.plaid.com enters the finance guest's allowlist (#590).
+  effectiveSources = sources // {
+    finance = sources.finance // {
+      allow = ingest.financeAllow cfg.financePlaid.enable;
+    };
+  };
+  policy = ingest.mkPolicy effectiveSources;
+
+  # Brave (#591): the profile is seeded with `--password-store=basic`, so the
+  # fixed OSCrypt key opens the planted `brave_sync.v2.seed`. Chromium takes the
+  # proxy from a flag; the resolver allowlist still bounds every other name.
+  braveFacts = ingest.factsFor "brave";
+  braveProxy = "http://${braveFacts.hostAddr}:${toString constants.proxyPort}";
+  braveHome = "/var/lib/brave";
+  braveProfile = "${braveHome}/profile";
+  braveSyncPull = pkgs.writeShellScript "brave-sync-pull" ''
+    set -u
+    export HOME=${braveHome}
+    export XDG_CONFIG_HOME=${braveHome}/config
+    export XDG_CACHE_HOME=${braveHome}/cache
+    code=0
+    ${pkgs.coreutils}/bin/timeout --signal=TERM 180 ${pkgs.brave}/bin/brave \
+      --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage \
+      --password-store=basic --user-data-dir=${braveProfile} \
+      --proxy-server=${braveProxy} --no-first-run --no-default-browser-check \
+      about:blank || code=$?
+    # 124/137: the bounded pull was terminated on purpose.
+    if [ "$code" -ne 0 ] && [ "$code" -ne 124 ] && [ "$code" -ne 137 ]; then
+      exit "$code"
+    fi
+  '';
+  braveJoinScript = pkgs.writeShellScript "brave-sync-join" ''
+    set -eu
+    export HOME=${braveHome}
+    export XDG_CONFIG_HOME=${braveHome}/config
+    export XDG_CACHE_HOME=${braveHome}/cache
+    export DISPLAY=:99
+    ${pkgs.xvfb}/bin/Xvfb :99 -screen 0 1280x800x24 -nolisten tcp &
+    xvfb=$!
+    trap 'kill "$xvfb" 2>/dev/null || true' EXIT
+    sleep 2
+    # If the owner staged the 25-word code, type it into the setup page.
+    if [ -s /run/brave/sync-code ]; then
+      (
+        sleep 12
+        ${pkgs.xdotool}/bin/xdotool search --sync --onlyvisible --name Brave \
+          windowactivate --sync type --delay 80 "$(${pkgs.coreutils}/bin/cat /run/brave/sync-code)" || true
+      ) &
+    fi
+    ${pkgs.brave}/bin/brave \
+      --user-data-dir=${braveProfile} --password-store=basic --no-sandbox \
+      --disable-gpu --proxy-server=${braveProxy} --no-first-run \
+      "brave://settings/braveSync/setup" || true
+  '';
 
   # The guest side: one tap, one secret volume, vsock, and no route other than the host.
   guestFor =
@@ -132,6 +192,8 @@ let
         https_proxy = "http://${f.hostAddr}:${toString constants.proxyPort}";
         no_proxy = "localhost,127.0.0.1";
       };
+      # Brave reads the proxy from its own flag, not the environment. The
+      # resolver allowlist and the tap firewall still bound every other name.
     in
     lib.mkMerge [
       {
@@ -353,6 +415,168 @@ let
           };
         };
       })
+      (lib.mkIf (id == "finance") {
+        # SimpleFIN is one GET per day; Plaid only when the owner enables it.
+        systemd.tmpfiles.rules = [ "d /var/lib/finance 0700 root root -" ];
+        systemd.services.ingest-finance = {
+          description = "Collect SimpleFIN accounts and render hledger journals";
+          after = [
+            "ingest-emit.service"
+            "run-ingest-secret.mount"
+            "systemd-tmpfiles-setup.service"
+          ];
+          requires = [ "run-ingest-secret.mount" ];
+          environment = proxyEnv;
+          restartIfChanged = false;
+          unitConfig = {
+            StartLimitBurst = 5;
+            StartLimitIntervalSec = 300;
+          };
+          serviceConfig = {
+            Type = "oneshot";
+            UMask = "0077";
+            TimeoutStartSec = 300;
+            MemoryHigh = "96M";
+            MemoryMax = "160M";
+            ExecStart = "${financeTool}/bin/ingest-finance --env /run/ingest-secret/env --outbox /var/lib/ingest/outbox --state /var/lib/finance/state.json";
+          };
+        };
+        systemd.timers.ingest-finance = {
+          wantedBy = [ "timers.target" ];
+          timerConfig = {
+            OnCalendar = "*-*-* 06:17:00";
+            RandomizedDelaySec = "1800";
+            Persistent = true;
+          };
+        };
+      })
+      (lib.mkIf (id == "brave") {
+        # Headless Brave joined to the owner's Sync chain. The one headful
+        # session is the manual `brave-sync-join` unit; the timer only runs
+        # `--headless=new` for a bounded pull and then reads History.
+        environment.systemPackages = [
+          pkgs.brave
+          pkgs.xvfb
+          pkgs.xdotool
+        ];
+        systemd.tmpfiles.rules = [
+          "d /var/lib/brave 0700 root root -"
+          "d /var/lib/brave/profile 0700 root root -"
+          "d /var/lib/brave/work 0700 root root -"
+          "d /var/lib/brave/config 0700 root root -"
+          "d /var/lib/brave/cache 0700 root root -"
+          "d /run/brave 0700 root root -"
+        ];
+        environment.variables = {
+          HOME = "/var/lib/brave";
+          XDG_CONFIG_HOME = "/var/lib/brave/config";
+          XDG_CACHE_HOME = "/var/lib/brave/cache";
+        };
+
+        systemd.services.ingest-brave-sync = {
+          description = "Seed the Brave profile and pull the Sync chain headlessly";
+          after = [
+            "run-ingest-secret.mount"
+            "systemd-tmpfiles-setup.service"
+          ];
+          requires = [ "run-ingest-secret.mount" ];
+          restartIfChanged = false;
+          unitConfig = {
+            StartLimitBurst = 5;
+            StartLimitIntervalSec = 300;
+          };
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = false;
+            UMask = "0077";
+            TimeoutStartSec = 360;
+            MemoryHigh = "640M";
+            MemoryMax = "800M";
+            ExecStartPre = "${braveSync}/bin/ingest-brave-sync --env /run/ingest-secret/env --prefs ${braveProfile}/Default/Preferences --code-out /run/brave/sync-code";
+            ExecStart = braveSyncPull;
+          };
+        };
+
+        systemd.services.ingest-brave-history = {
+          description = "Read new History visits into the ingest outbox";
+          wantedBy = [ "multi-user.target" ];
+          wants = [ "ingest-brave-sync.service" ];
+          after = [
+            "ingest-brave-sync.service"
+            "ingest-emit.service"
+            "systemd-tmpfiles-setup.service"
+          ];
+          restartIfChanged = false;
+          serviceConfig = {
+            Type = "oneshot";
+            UMask = "0077";
+            TimeoutStartSec = 300;
+            MemoryHigh = "96M";
+            MemoryMax = "128M";
+            ExecStart = "${braveHistory}/bin/ingest-brave-history --profile ${braveProfile} --state /var/lib/brave/state.json --outbox /var/lib/ingest/outbox --workdir /var/lib/brave/work --lookback-hours 24";
+          };
+        };
+        systemd.timers.ingest-brave-history = {
+          wantedBy = [ "timers.target" ];
+          timerConfig = {
+            OnCalendar = "*-*-* 04:37:00";
+            RandomizedDelaySec = "3600";
+            Persistent = true;
+          };
+        };
+
+        # Manually started once (docs/kanbei-ingest-brave.md): a real X window
+        # under Xvfb is the only way to drive Brave's Sync setup page. The
+        # supported unattended path is the planted `brave_sync.v2.seed`.
+        systemd.services.brave-sync-join = {
+          description = "One-time Brave Sync chain join under Xvfb (manual)";
+          after = [ "run-ingest-secret.mount" ];
+          requires = [ "run-ingest-secret.mount" ];
+          restartIfChanged = false;
+          serviceConfig = {
+            Type = "oneshot";
+            TimeoutStartSec = "infinity";
+            MemoryHigh = "640M";
+            MemoryMax = "800M";
+            ExecStart = braveJoinScript;
+          };
+        };
+      })
+      (lib.mkIf (id == "immich") {
+        # Metadata only: the client refuses every byte endpoint before dialling.
+        systemd.tmpfiles.rules = [ "d /var/lib/immich 0700 root root -" ];
+        systemd.services.ingest-immich = {
+          description = "Collect Immich asset, EXIF, place, people and album metadata";
+          after = [
+            "ingest-emit.service"
+            "run-ingest-secret.mount"
+            "systemd-tmpfiles-setup.service"
+          ];
+          requires = [ "run-ingest-secret.mount" ];
+          environment = proxyEnv;
+          restartIfChanged = false;
+          unitConfig = {
+            StartLimitBurst = 5;
+            StartLimitIntervalSec = 300;
+          };
+          serviceConfig = {
+            Type = "oneshot";
+            UMask = "0077";
+            TimeoutStartSec = 300;
+            MemoryHigh = "80M";
+            MemoryMax = "112M";
+            ExecStart = "${immichTool}/bin/ingest-immich --env /run/ingest-secret/env --outbox /var/lib/ingest/outbox --state /var/lib/immich/state.json";
+          };
+        };
+        systemd.timers.ingest-immich = {
+          wantedBy = [ "timers.target" ];
+          timerConfig = {
+            OnCalendar = "*-*-* 03:23:00";
+            RandomizedDelaySec = "900";
+            Persistent = true;
+          };
+        };
+      })
       (lib.mkIf (id == "search") {
         # The verifier's guest: one deterministic batch and a direct-egress probe. T15 replaces
         # both when the search service ships its own emitter.
@@ -483,6 +707,8 @@ in
   imports = [ inputs.microvm.nixosModules.host ];
 
   options.ingestVm.enable = lib.mkEnableOption "the Firecracker ingest plane and its host writer, proxy and resolver";
+
+  options.ingestVm.financePlaid.enable = lib.mkEnableOption "the Plaid fallback for institutions SimpleFIN cannot reach";
 
   config = lib.mkIf cfg.enable {
     microvm.vms = builtins.listToAttrs (
@@ -719,7 +945,7 @@ in
 
     environment.etc."kanbei-ingest/policy.json" = {
       mode = "0600";
-      text = builtins.toJSON ingest.policy;
+      text = builtins.toJSON policy;
     };
     # `firewallUp` restores this exact text; the check asserts it is only the generated rules.
     environment.etc."kanbei-ingest/rules.v4" = {
@@ -746,6 +972,7 @@ in
       kanbeiIngestVerify
       ingestWriter
       ingestDigest
+      plaidTool
     ];
 
     assertions = [
@@ -758,8 +985,8 @@ in
         message = "ingest-vm: the writer encrypts to Kanbei's published key; enable kanbeiVm first";
       }
       {
-        assertion = ingest.validateSources sources == [ ];
-        message = "ingest-vm: a configured hostname is outside a source's permit table: ${lib.concatStringsSep "; " (ingest.validateSources sources)}";
+        assertion = ingest.validateSources effectiveSources == [ ];
+        message = "ingest-vm: a configured hostname is outside a source's permit table: ${lib.concatStringsSep "; " (ingest.validateSources effectiveSources)}";
       }
       {
         assertion = ingest.validateHostSources ingest.hostSources == [ ];
@@ -906,6 +1133,66 @@ in
           && !(builtins.elem constants.tutaBridge.smtpPort guest.networking.firewall.allowedTCPPorts)
           && !(builtins.elem constants.tutaBridge.imapPort guest.networking.firewall.allowedTCPPorts);
         message = "ingest-vm: the tuta guest needs the bridge, session, mail and ICS units, and no inbound port for 1143/1025";
+      }
+      # Finance (#590): one SimpleFIN host, Plaid only behind the option, and a
+      # daily timer with a memory cap.
+      {
+        assertion =
+          effectiveSources.finance.allow == ingest.financeAllow cfg.financePlaid.enable
+          && lib.elem ingest.plaidHost policy.sources.finance.allow == cfg.financePlaid.enable
+          && policy == ingest.mkPolicy effectiveSources;
+        message = "ingest-vm: the Plaid host may only enter the finance policy when ingestVm.financePlaid.enable is on";
+      }
+      {
+        assertion =
+          let
+            guest = config.microvm.vms.${sources.finance.guest}.config.config;
+          in
+          guest.systemd.services ? ingest-finance
+          && guest.systemd.timers ? ingest-finance
+          && guest.systemd.services.ingest-finance.serviceConfig.Type == "oneshot";
+        message = "ingest-vm: the finance guest needs the collector service and its daily timer";
+      }
+      # Brave (#591): History only, one sync host, and no byte or LAN path.
+      {
+        assertion =
+          sources.brave.allow == [ "sync-v2.brave.com" ]
+          && policy.sources.brave.allow == [ "sync-v2.brave.com" ];
+        message = "ingest-vm: the brave guest may only reach sync-v2.brave.com";
+      }
+      {
+        assertion =
+          let
+            guest = config.microvm.vms.${sources.brave.guest}.config.config;
+            sync = guest.systemd.services.ingest-brave-sync;
+          in
+          guest.systemd.services ? ingest-brave-sync
+          && guest.systemd.services ? ingest-brave-history
+          && guest.systemd.services ? brave-sync-join
+          && guest.systemd.timers ? ingest-brave-history
+          && lib.hasInfix "--headless=new" (builtins.readFile braveSyncPull)
+          && lib.hasInfix "ingest-brave-sync" sync.serviceConfig.ExecStartPre
+          && lib.hasInfix "--password-store=basic" (builtins.readFile braveJoinScript);
+        message = "ingest-vm: the brave guest needs the seed step, headless pull, History collector and manual join unit";
+      }
+      # Immich (#592): metadata endpoints only; the host allowlist is one name.
+      {
+        assertion =
+          sources.immich.allow == [ "immich.sammohr.dev" ]
+          && policy.sources.immich.allow == [ "immich.sammohr.dev" ];
+        message = "ingest-vm: the immich guest may only reach immich.sammohr.dev";
+      }
+      {
+        assertion =
+          let
+            guest = config.microvm.vms.${sources.immich.guest}.config.config;
+          in
+          guest.systemd.services ? ingest-immich && guest.systemd.timers ? ingest-immich;
+        message = "ingest-vm: the immich guest needs the metadata collector and its timer";
+      }
+      {
+        assertion = lib.all (id: lib.hasAttr id policy.sources) sourceIds;
+        message = "ingest-vm: every guest source needs a policy portal entry";
       }
     ];
   };

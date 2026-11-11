@@ -36,11 +36,23 @@ let
   # anything outside this table fails `validateSources`.
   permitted = {
     tuta = [ "app.tuta.com" ];
-    finance = [ "bridge.simplefin.org" ];
+    # The Plaid host is permitted by the table but reaches a guest's allowlist
+    # only through `financeAllow`, which the module drives from its off-by-default
+    # option (#590).
+    finance = [
+      "bridge.simplefin.org"
+      "production.plaid.com"
+    ];
     brave = [ "sync-v2.brave.com" ];
     immich = [ "immich.sammohr.dev" ];
     search = [ ];
   };
+
+  plaidHost = "production.plaid.com";
+
+  # The finance guest's effective allowlist: SimpleFIN always, Plaid only when
+  # the owner enables the fallback.
+  financeAllow = plaid: [ "bridge.simplefin.org" ] ++ lib.optional plaid plaidHost;
 
   sources = {
     tuta = {
@@ -65,7 +77,7 @@ let
       mem = 192;
       # SimpleFIN is polled daily; 36 h covers one missed run plus a retry.
       windowSeconds = 129600;
-      allow = permitted.finance;
+      allow = financeAllow false;
     };
     brave = {
       guest = "ingest-brave";
@@ -305,26 +317,30 @@ let
     );
 
   # The policy file every host service reads. Names only; no secret material.
-  policy = {
+  # `sources` is the table to render, so the module can flip the Plaid host
+  # without a second copy of the allowlist.
+  mkPolicy = tbl: {
     inherit constants permitted hostSources;
     sources = builtins.listToAttrs (
       map (id: {
         name = id;
         value = {
-          inherit (sources.${id})
+          inherit (tbl.${id})
             guest
             allow
             windowSeconds
             vsockPort
             ;
-          alert = sources.${id}.alert or true;
-          inherit (factsFor id) tap;
-          gateway = (factsFor id).hostAddr;
-          client = (factsFor id).guestAddr;
+          alert = tbl.${id}.alert or true;
+          inherit (factsOf tbl id) tap;
+          gateway = (factsOf tbl id).hostAddr;
+          client = (factsOf tbl id).guestAddr;
         };
-      }) sourceIds
+      }) (builtins.attrNames tbl)
     );
   };
+
+  policy = mkPolicy sources;
 in
 constants
 // {
@@ -347,6 +363,9 @@ constants
     validateHostSources
     validateFacts
     validateFirewall
+    plaidHost
+    financeAllow
+    mkPolicy
     policy
     ;
 }

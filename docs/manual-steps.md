@@ -476,6 +476,50 @@ The five ingest guests and their host writer/proxy/resolver are behind
    /run/wrappers/bin/sudo /run/current-system/sw/bin/kanbei-logs writer-tuta
    ```
 
+8. **Finance (Schwab and Chase).** Claim the SimpleFIN Access URL once, then
+   stage it as `ingest-finance-env`:
+
+   ```sh
+   token='<base64 SimpleFIN token>'
+   curl -X POST "$(printf '%s' "$token" | base64 -d)"   # prints the Access URL once
+   umask 077
+   printf 'SIMPLEFIN_ACCESS_URL=%s\n' "$access_url" > finance-env
+   sudo install -m 0400 -o root -g root finance-env /run/secrets/ingest-finance-env
+   sudo systemctl stop microvm@ingest-finance
+   sudo systemctl start ingest-vm-secret-finance microvm@ingest-finance
+   ```
+
+   The Access URL embeds the SimpleFIN credentials; never paste it into a
+   ticket or log. Both institutions are reached through MX, so an
+   `act.missingdata` or `con.auth` alert means retry the institution in the
+   Bridge, not a local bug. Plaid is off by default: to use it, set
+   `ingestVm.financePlaid.enable = true`, add `PLAID_CLIENT_ID`,
+   `PLAID_SECRET` and `PLAID_ITEMS_JSON` to the contract, then run
+   `ingest-finance-plaid --env <env> --link-token` with the owner present to
+   complete Plaid Link (Chase/Schwab OAuth is Production-only). Trial allows 10
+   production Items, one approval per OAuth institution. Steps and keys:
+   [`docs/kanbei-ingest-finance.md`](kanbei-ingest-finance.md).
+
+9. **Brave Sync chain.** The guest profile needs one seed. Preferred: on a
+   workstation already in the chain, close Brave and export
+   `jq -r '."brave_sync"."v2"."seed"' ~/.config/BraveSoftware/Brave-Browser/Default/Preferences`,
+   store it as `BRAVE_SYNC_SEED` in `ingest-brave-env`, and re-stage. Fallback:
+   put the 25-word code in `BRAVE_SYNC_CODE`, start `brave-sync-join` inside the
+   guest, and clear the code after it joins. Set a custom chain passphrase and
+   store it in Bitwarden before relying on the chain; the 25-word code rotates
+   daily. Do not add passwords or bookmarks to the chain — the accepted residual
+   is that a compromised guest or stolen seed can copy every synced type to an
+   attacker chain. Procedure: [`docs/kanbei-ingest-brave.md`](kanbei-ingest-brave.md).
+
+10. **Immich metadata key.** Create a dedicated Immich API key with only
+    `asset.read`, `album.read` and `person.read`, and stage
+    `ingest-immich-env` with `IMMICH_API_KEY` (the base URL is pinned to
+    `https://immich.sammohr.dev`). The guest can reach only that name through
+    the host proxy/resolver; no cluster address is allowed. Confirm the first
+    run pages the library once and later runs are incremental; the collector
+    refuses every byte endpoint. Steps:
+    [`docs/kanbei-ingest-immich.md`](kanbei-ingest-immich.md).
+
 ### smorespro
 
 <!-- manual-step: host/smorespro -->

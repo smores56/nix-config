@@ -441,6 +441,39 @@ in
             # The tuta guest holds a send-capable session: its allowlist is one
             # host and the digest is the one host-written source.
             assert ingest.sources.tuta.allow == [ "app.tuta.com" ];
+            # The finance fallback is the table's only optional host: SimpleFIN
+            # alone by default, Plaid only through `financeAllow true` (#590).
+            assert ingest.sources.finance.allow == [ "bridge.simplefin.org" ];
+            assert ingest.financeAllow false == [ "bridge.simplefin.org" ];
+            assert
+              ingest.financeAllow true == [
+                "bridge.simplefin.org"
+                "production.plaid.com"
+              ];
+            assert
+              ingest.validateSources (
+                ingest.sources
+                // {
+                  finance = ingest.sources.finance // {
+                    allow = ingest.financeAllow true;
+                  };
+                }
+              ) == [ ];
+            assert (ingest.mkPolicy ingest.sources).sources.finance.allow == [ "bridge.simplefin.org" ];
+            assert
+              (ingest.mkPolicy (
+                ingest.sources
+                // {
+                  finance = ingest.sources.finance // {
+                    allow = ingest.financeAllow true;
+                  };
+                }
+              )).sources.finance.allow == [
+                "bridge.simplefin.org"
+                "production.plaid.com"
+              ];
+            assert ingest.sources.brave.allow == [ "sync-v2.brave.com" ];
+            assert ingest.sources.immich.allow == [ "immich.sammohr.dev" ];
             assert ingest.validateHostSources ingest.hostSources == [ ];
             assert
               ingest.validateHostSources (

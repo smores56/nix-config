@@ -17,10 +17,10 @@ Sources, allowlists, windows, taps and ports live in one table:
 | guest | source | tap | tap /30 | guest MAC | vcpu / mem | vsock cid / port | secret contract | allowlist | window |
 |---|---|---|---|---|---|---|---|---|---|
 | `ingest-tuta` | `tuta` | `vm-i-tuta` | `10.77.10.0/30` | `02:00:0a:4d:0a:02` | 1 / 256 MiB | 10 / 7010 | `/run/secrets/ingest-tuta-env` | `app.tuta.com` | 1800 s |
-| `ingest-finance` | `finance` | `vm-i-finance` | `10.77.11.0/30` | `02:00:0a:4d:0b:02` | 1 / 192 MiB | 11 / 7011 | `/run/secrets/finance-env` | `bridge.simplefin.org` | 129600 s |
-| `ingest-brave` | `brave` | `vm-i-brave` | `10.77.12.0/30` | `02:00:0a:4d:0c:02` | 1 / 1024 MiB | 12 / 7012 | `/run/secrets/brave-env` | `sync-v2.brave.com` | 86400 s |
-| `ingest-immich` | `immich` | `vm-i-immich` | `10.77.13.0/30` | `02:00:0a:4d:0d:02` | 1 / 128 MiB | 13 / 7013 | `/run/secrets/immich-env` | `immich.sammohr.dev` | 21600 s |
-| `search` | `search` | `vm-search` | `10.77.14.0/30` | `02:00:0a:4d:0e:02` | 2 / 2048 MiB | 14 / 7014 | `/run/secrets/search-env` | (none) | 86400 s |
+| `ingest-finance` | `finance` | `vm-i-finance` | `10.77.11.0/30` | `02:00:0a:4d:0b:02` | 1 / 192 MiB | 11 / 7011 | `/run/secrets/ingest-finance-env` | `bridge.simplefin.org` (+ `production.plaid.com` when enabled) | 129600 s |
+| `ingest-brave` | `brave` | `vm-i-brave` | `10.77.12.0/30` | `02:00:0a:4d:0c:02` | 1 / 1024 MiB | 12 / 7012 | `/run/secrets/ingest-brave-env` | `sync-v2.brave.com` | 86400 s |
+| `ingest-immich` | `immich` | `vm-i-immich` | `10.77.13.0/30` | `02:00:0a:4d:0d:02` | 1 / 128 MiB | 13 / 7013 | `/run/secrets/ingest-immich-env` | `immich.sammohr.dev` | 21600 s |
+| `search` | `search` | `vm-search` | `10.77.14.0/30` | `02:00:0a:4d:0e:02` | 2 / 2048 MiB | 14 / 7014 | `/run/secrets/ingest-search-env` | (none) | 86400 s |
 
 Each guest is Firecracker (`microvm.hypervisor = "firecracker"`), has a mandatory
 `microvm.socket` at `/var/lib/microvms/<guest>/firecracker.sock`, exactly one
@@ -97,6 +97,20 @@ The `ingest-tuta` guest adds its own units on top of `ingest-emit`:
 `tutabridge-session.service`, `tutabridge.service` (loopback IMAP/SMTP),
 `ingest-tuta-mail.service` and `ingest-tuta-ics.timer`; see
 [`docs/kanbei-ingest-tuta.md`](kanbei-ingest-tuta.md).
+
+The three data sources each add one collector timer and keep their own state:
+
+| guest | units | state | docs |
+|---|---|---|---|
+| `ingest-finance` | `ingest-finance.service`, `ingest-finance.timer` (daily) | `/var/lib/finance/state.json` | [`docs/kanbei-ingest-finance.md`](kanbei-ingest-finance.md) |
+| `ingest-brave` | `ingest-brave-sync.service` (seed + headless pull), `ingest-brave-history.service`, `ingest-brave-history.timer` (daily), manual `brave-sync-join.service` | `/var/lib/brave/{state.json,profile}` | [`docs/kanbei-ingest-brave.md`](kanbei-ingest-brave.md) |
+| `ingest-immich` | `ingest-immich.service`, `ingest-immich.timer` (6 h) | `/var/lib/immich/state.json` | [`docs/kanbei-ingest-immich.md`](kanbei-ingest-immich.md) |
+
+Every collector caps memory (`MemoryHigh`/`MemoryMax`), writes only to its own
+state directory and `/var/lib/ingest/outbox`, and keeps dedupe state across
+restarts. Finance is the only source whose allowlist has an optional second
+host: `production.plaid.com` enters the policy only with
+`ingestVm.financePlaid.enable`.
 
 ## Age key publication
 
@@ -236,7 +250,7 @@ nix build .#checks.x86_64-linux.kanbei-ingest-guards \
           .#checks.x86_64-linux.format \
           .#checks.x86_64-linux.statix \
           .#checks.x86_64-linux.deadnix
-nix run nixpkgs#python3 -- tests/test_ingest.py tests/test_ingest_tuta.py
+nix run nixpkgs#python3 -- -m unittest tests.test_ingest tests.test_ingest_tuta tests.test_ingest_finance tests.test_ingest_brave tests.test_ingest_immich
 ```
 
 The hardware-gated proof runs only as root on smortress (it stops the production

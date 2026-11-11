@@ -231,6 +231,50 @@ saved session, once per day per reason. Calendar changes come from
 read-only SDK fetcher. The session bootstrap, bump procedure and limits are in
 [`docs/kanbei-ingest-tuta.md`](kanbei-ingest-tuta.md).
 
+### ingest-finance (T16)
+
+`ingest-finance` holds one read-only SimpleFIN Access URL (a bearer credential
+stored only on the read-only secret device) and polls `/accounts` daily; both
+Schwab and Chase come through the Bridge's MX connections, with their known
+reliability caveats surfaced as alert batches rather than silent gaps. The
+collector parses protocol v2 (`connections[]`, `errlist`) and falls back to v1
+(`errors[]`, `org`), keeps an epoch cursor with a three-day overlap, dedupes on
+account+posted+amount+description, and renders deterministic hledger journals
+(`assets:bank:<connection>:<account>` plus a balancing income/expense posting)
+with balances every run. Plaid is a disabled-by-default fallback behind
+`ingestVm.financePlaid.enable`: `/link/token/create` is human-gated, the
+`/transactions/sync` cursor is persisted per Item, and
+`production.plaid.com` is the only host the option adds. Details and the
+one-time claim are in [`docs/kanbei-ingest-finance.md`](kanbei-ingest-finance.md).
+
+### ingest-brave (T17)
+
+`ingest-brave` is a Brave profile joined to the owner's Sync chain. The profile
+seed (`Preferences` `brave_sync.v2.seed`) is planted from the read-only secret
+device and every Brave run uses `--password-store=basic`, so the fixed OSCrypt
+key opens it; the one headful join runs under Xvfb with a real window and is a
+manual unit, with the seed-export path as the supported alternative. A daily
+`--headless=new` pull is followed by a History-only collector that snapshots the
+SQLite database, cursors on `(visit_time, visit_id)`, strips fragments and
+userinfo, drops non-web schemes, and dedupes on URL+timestamp. Egress is
+`sync-v2.brave.com` only. The chain carries no passwords (Bitwarden), and the
+accepted residual is in [`docs/kanbei-ingest-brave.md`](kanbei-ingest-brave.md):
+a compromised VM or a stolen seed can copy every synced type to an attacker
+chain on Brave's servers (decision 49).
+
+### ingest-immich (T18)
+
+`ingest-immich` reads only Immich metadata: asset fields, EXIF, places, people
+and album membership. The client's endpoint allowlist is
+`/api/search/metadata`, `/api/albums` and `/api/people`; every `/original`,
+`/thumbnail`, `/download`, `/video` and generic `/api/assets` path is refused
+before dialling, responses must be JSON and are size-capped. Pagination follows
+`nextPage`/`nextCursor`, the cursor is `(updatedAt, id)`, and album/people joins
+are fetched only when their `updatedAt` moves. The only egress is the host proxy
+and resolver for `immich.sammohr.dev`: no cluster address is reachable, and the
+platform side stays unchanged. The scoped key, endpoint and manual steps are in
+[`docs/kanbei-ingest-immich.md`](kanbei-ingest-immich.md).
+
 ### Cluster digest (T21)
 
 The platform CronJob writes `latest.json` into the `cluster-digest` share every
