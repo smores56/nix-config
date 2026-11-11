@@ -165,6 +165,31 @@ class FakeImmichTests(unittest.TestCase):
         self.assertEqual(timeline["assets"]["count"], len(self.assets))
         self.assertEqual(timeline_deleted["assets"]["count"], len(self.assets) + 1)
 
+    def test_search_with_stacked_filter(self):
+        primary = dict(self.keep)
+        primary["id"] = "asset-stack-primary"
+        primary["stackId"] = "stack-1"
+        member = dict(self.keep)
+        member["id"] = "asset-stack-member"
+        member["stackId"] = "stack-1"
+        with FakeImmich(
+            assets=self.assets + [primary, member], keys=KEYS, api_key="read-key"
+        ) as immich:
+            _, unstacked = _request(
+                immich.base_url,
+                "POST",
+                "/api/search/metadata",
+                {"page": 1, "size": 100, "withStacked": False},
+            )
+            _, stacked = _request(
+                immich.base_url,
+                "POST",
+                "/api/search/metadata",
+                {"page": 1, "size": 100, "withStacked": True},
+            )
+        self.assertEqual(unstacked["assets"]["count"], len(self.assets))
+        self.assertEqual(stacked["assets"]["count"], len(self.assets) + 2)
+
     def test_thumbnail_and_missing_preview(self):
         status, payload = _request(
             self.immich.base_url, "GET", "/api/assets/asset-keep/thumbnail?size=preview"

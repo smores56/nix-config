@@ -34,8 +34,15 @@ class ScanTests(unittest.TestCase):
         archived["id"] = "asset-archived"
         archived["visibility"] = "archive"
         archived["isArchived"] = True
-        cls.assets = cls.images + [video, archived]
-        cls.scanned = len(cls.images) + 1
+        stack_primary = dict(cls.images[2])
+        stack_primary["id"] = "asset-stack-primary"
+        stack_primary["stackId"] = "stack-1"
+        stack_member = dict(cls.images[3])
+        stack_member["id"] = "asset-stack-member"
+        stack_member["stackId"] = "stack-1"
+        cls.assets = cls.images + [video, archived, stack_primary, stack_member]
+        cls.scanned = len(cls.images) + 3
+        cls.pending = len(cls.images) + 2
         cls.duplicates = [
             {
                 "duplicateId": "dup-1",
@@ -73,18 +80,33 @@ class ScanTests(unittest.TestCase):
         coverage = self.database.coverage(scan_id)
         self.assertEqual(coverage["state"], "complete")
         self.assertEqual(coverage["total"], self.scanned)
-        self.assertEqual(coverage["states"]["pending"], len(self.images))
+        self.assertEqual(coverage["states"]["pending"], self.pending)
         self.assertEqual(coverage["reasons"]["type"], 1)
         self.assertEqual(self.database.duplicates_summary(scan_id), {"groups": 1, "members": 2})
         self.assertEqual(self.database.latest_scan(), scan_id)
 
-    def test_archived_assets_are_not_scanned(self):
-        scan_library(self.client, self.database, page_size=3, sleep=lambda _: None)
-        ids = {
+    def _asset_ids(self):
+        return {
             row["id"]
             for row in self.database.connection.execute("SELECT id FROM assets").fetchall()
         }
-        self.assertNotIn("asset-archived", ids)
+
+    def test_archived_assets_are_not_scanned(self):
+        scan_library(self.client, self.database, page_size=3, sleep=lambda _: None)
+        self.assertNotIn("asset-archived", self._asset_ids())
+
+    def test_stacked_assets_are_scanned(self):
+        scan_id = scan_library(self.client, self.database, page_size=3, sleep=lambda _: None)
+        self.assertIn("asset-stack-primary", self._asset_ids())
+        self.assertIn("asset-stack-member", self._asset_ids())
+        self.assertEqual(self.database.coverage(scan_id)["states"]["pending"], self.pending)
+        searches = [
+            json.loads(record.body)
+            for record in self.fake.requests
+            if record.path == "/api/search/metadata"
+        ]
+        self.assertTrue(searches)
+        self.assertTrue(all(body.get("withStacked") is True for body in searches))
 
     def test_generations_are_separate(self):
         first = scan_library(self.client, self.database, page_size=3, sleep=lambda _: None)

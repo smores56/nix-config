@@ -28,6 +28,19 @@ groups, and writes
 `/var/lib/photo-triage/triage-membership-<scan>.json`. It stops after `decide`;
 albums are never written automatically.
 
+The scan covers timeline-visible, non-trashed images **including every member of
+a stack**: Immich compiles `withStacked: false` to `asset.stackId IS NULL`, which
+drops stack primaries too, so the scan sends `withStacked: true`. Archived,
+hidden and locked assets stay out of the scan through those Immich filters; the
+client does not re-check visibility locally.
+
+Stack members are scored and grouped like any other duplicate. A grouped member
+is proposed for `triage-delete` only when its group keeper is scored, current and
+trustworthy; byte-identical copies additionally need matching checksums and
+previews, and near duplicates additionally need the model to call the member
+defective. A stack gets no special protection: a burst frame the model flags on
+its own can still reach `triage-delete`, so review the album as usual.
+
 Downtime during the window: maki, Open WebUI, secret-sweep, and the LLM tunnel.
 The scoring server owns the GPU; `llama-cpp.service` has
 `ConditionPathExists=!` on `/run/photo-triage/maintenance` and cannot start.
