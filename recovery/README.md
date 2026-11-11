@@ -37,11 +37,10 @@ loader, and plain HTTP from a LAN address will disable unlock.
 
 `deno task blob` and `deno task blob --check-only` walk R2 -> restic and read
 `var/lib/data/vault/Documents/sentinel.txt` (`src/sentinel.ts`). Create it once
-with `sudo vault` open, in a normal shell (not the root shell):
+as `vault`:
 
 ```sh
-mkdir -p ~/.local/share/vault/Documents
-echo "sentinel: 6f1c2a7e" > ~/.local/share/vault/Documents/sentinel.txt
+v bash -c 'mkdir -p Documents && echo "sentinel: 6f1c2a7e" > Documents/sentinel.txt'
 ```
 
 then let a restic run pick it up.

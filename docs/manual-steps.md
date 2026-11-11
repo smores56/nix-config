@@ -1489,15 +1489,23 @@ Pairing a device:
 Opening the vault:
 
 ```sh
-sudo vault          # mount ~/.local/share/vault, hold until Ctrl-C
-sudo vault yazi     # mount, run one command, unmount on exit
+v                   # yazi as `vault`, in /var/lib/data/vault
+v yazi .            # the same, with a tool named explicitly
+v bash              # a shell as `vault`, with the store as the working directory
 ```
 
-`sudo vault` mounts the store with bindfs, which maps the `vault` user to you, so
-`~/.local/share/vault` behaves like a normal folder while it is open. On the
-NixOS hosts root means the YubiKey touch. The wrapper detaches a stale mount when it next runs,
-and `v` opens Yazi in the vault (`sudo vault yazi`) on the Linux hosts; on the
-work Mac `v` runs that command over SSH on smortress. Nothing is reachable between sessions.
+`v` expands to `/run/wrappers/bin/sudo -H -u vault
+/run/current-system/sw/bin/vault`. That wrapper enters the store and execs the
+command as `vault` with `PATH` limited to the system profile (yazi is installed
+there as the no-argument default). Home-manager binaries are deliberately
+unreachable: the vault user cannot traverse the owner's 0700 home, and a
+user-owned `PATH` entry would let an unattended session plant the tool that runs
+as `vault`. Nothing is mounted and no uid is mapped, so every path the tool
+opens carries the store's real permissions and no view of the tree outlives the
+process. On the NixOS hosts root means the YubiKey touch. `-H` keeps tool config
+and state in vault's own home, which the owner cannot read. On the work Mac `v`
+runs the same command over SSH on smortress. Nothing is reachable between
+sessions.
 
 **Version history** is Syncthing staggered versioning at
 `/var/lib/syncthing-versions/vault` on smortress — outside `/var/lib/data`, so
@@ -1659,8 +1667,9 @@ standard user: `sudo` asks for the smartcard PIN and then fails at `sam is not
 in the sudoers file`; do not use it. `home-manager switch` and user Nix builds
 work. `nix upgrade-nix`, daemon changes, admin-requiring Brew casks, and
 `sc_auth pair`/`unpair` need IT. Only YubiKey k2 is paired; ask IT to pair or
-replace the others. The vault is remote-only: `v` runs `ssh -t smortress sudo
-vault yazi` (the NixOS hosts still have local `sudo vault`). Use
+replace the others. The vault is remote-only: `v` runs
+`ssh -t smortress /run/wrappers/bin/sudo -H -u vault /run/current-system/sw/bin/vault yazi`
+(the NixOS hosts run local `v [tool]`). Use
 `key-backup --no-host-key` on this Mac; the default host-key read needs root.
 Removing the retired root Syncthing daemon and `/var/lib/data/vault` is an IT
 action (`launchctl` system domain), after confirming smortress has the data.
@@ -1730,50 +1739,70 @@ else (CI, teammates) uses them.
 
 ### todo.txt
 
-`/var/lib/data/todo/todo.txt` is the single list, carried by the vault
-Syncthing daemon alongside the vault and bindfs-mounted at
-`~/.local/share/todo` for everything that reads it by path. The same daemon and
-the same device identity serve both folders on smortress and smorespro; there is
-no separate todo daemon. `td` edits the store as `vault`
-(`/run/wrappers/bin/sudo -H -u vault tuxedo /var/lib/data/todo/todo.txt`, with
-the wrapper and the tuxedo binary both absolute), so one YubiKey touch opens
-the list and no process of the owner writes it; a `sudo` planted on `PATH`
-never receives the touch. The bindfs mount stays until the vault/todo split
-(`smores56/sdlc#587`) drops it; tuxedo then keeps its config and cache in
-vault's own home rather than the owner's.
+`/var/lib/data/todo/todo.txt` is the single list. The tree is its own
+size-capped filesystem: `/var/lib/todo.img` is a 256 MiB ext4 image (the file is
+created by tmpfiles, formatted by `todo-image.service`), mounted at
+`/var/lib/data/todo` by `var-lib-data-todo.mount` and owned `vault:vault` 0700.
+The cap bounds a runaway capture, and the mount hides the empty plain directory
+an unmounted image leaves behind. Syncthing and `td` both require it: the daemon
+carries `RequiresMountsFor=/var/lib/data/todo`, and `todo-open` refuses to start
+when `mountpoint -q /var/lib/data/todo` fails.
 
-The common module is [`modules/features/todo.nix`](../modules/features/todo.nix).
-The shared folder and mount are
+The vault Syncthing daemon — the same daemon and device identity as the vault,
+there is no separate todo daemon — syncs the `todo` folder from that path on both
+hosts, and the daemon GUI at `http://127.0.0.1:8384` shows both folders. The
+folder starts only after the vault migration marker `/var/lib/vault-migrated`
+exists.
+
+`td` opens the list as `vault`:
+`/run/wrappers/bin/sudo -u vault /run/current-system/sw/bin/todo-open`. One
+YubiKey touch opens the list and no process of the owner writes it; a `sudo`
+planted on `PATH` never receives the touch. `todo-open` refuses when the tree is
+not mounted, or when `todo.txt`, `done.txt` or `inbox.txt` is a symlink (tuxedo
+would follow it, so the vault user's write could land outside the store), then
+execs tuxedo. Both paths are absolute, so the caller's `PATH` cannot supply
+either binary.
+
+tuxedo's config is `/var/lib/syncthing/.config/tuxedo/config.toml`, owned
+`vault` and reinstalled on every activation (`theme = Terminal`); its cache is
+`/var/lib/syncthing/.cache`. Both live in vault's home, outside the synced tree.
+
+The common module is [`modules/features/todo.nix`](../modules/features/todo.nix);
+the filesystem, Syncthing folder and `todo-open` wrapper are
 [`modules/nixos/todo-daemon.nix`](../modules/nixos/todo-daemon.nix), imported by
-both hosts. The vault daemon GUI at `http://127.0.0.1:8384` shows both folders.
+both hosts.
 
-The folder rides the vault daemon, so it starts only after the vault migration
-marker `/var/lib/vault-migrated` exists.
+First activation on a host that still has a plain todo directory:
 
-Migrating smorespro from the old user-level todo daemon:
+1. Stop the daemon so the seeding copy is not racing a sync:
+   `sudo systemctl stop syncthing`.
+2. Rebuild (`just switch smortress`; on smorespro:
+   `home-manager switch --flake .#smores@smorespro` then
+   `sudo nixos-rebuild switch --flake .#smorespro`). Starting the mount runs
+   `todo-image.service`, which formats the image and copies the current plain
+   `/var/lib/data/todo` in, so the mount never hides the only copy of the tree.
+3. `sudo systemctl start syncthing`, then check the folder in the UI. With
+   `kanbeiVm.enable` on, `/mnt/kanbei/todo` in the guest must show the same list.
 
-```sh
-systemctl --user stop syncthing
-sudo install -d -o vault -g vault -m 0700 /var/lib/data/todo
-sudo mv ~/.local/share/todo/* /var/lib/data/todo/
-sudo chown -R vault:vault /var/lib/data/todo
-rm -rf ~/.local/state/syncthing-todo
-rm -rf ~/.local/share/todo
-```
-
-If the list is still in `~/Tasks`, move that path instead. Then apply both
-planes on smorespro:
-
-```sh
-home-manager switch --flake .#smores@smorespro
-sudo nixos-rebuild switch --flake .#smorespro
-```
-
-On smortress:
+The old plain directory still sits underneath the mount. After a restic run and
+a page restore have proven the image, move the shadow aside (it is vault-owned
+0700 and never synced):
 
 ```sh
-just switch smortress
+sudo systemctl stop syncthing
+sudo systemctl stop var-lib-data-todo.mount
+sudo findmnt --mountpoint /var/lib/data/todo    # must print nothing
+sudo mv /var/lib/data/todo /var/lib/data/todo.old
+sudo systemctl start var-lib-data-todo.mount
+sudo systemctl start syncthing
 ```
+
+Delete `/var/lib/data/todo.old` after those checks.
+
+`~/Tasks/todo.txt` on smorespro is retired: nothing in the configuration creates
+or links it. If an old copy, or the old `~/.local/share/todo` tree, is still
+there, move it into `/var/lib/data/todo` before step 2 and then delete the
+leftovers (`rm -rf ~/Tasks ~/.local/share/todo ~/.local/state/syncthing-todo`).
 
 The phone reuses the existing `smorespro` vault device (`HYVRSZX-...`) for the
 `Todo` folder; the old `FADK72N`/`smorespro-todo` device is retired. Remove it
@@ -1785,6 +1814,19 @@ Edit on one device at a time. A concurrent edit leaves
 hand from the 30-day version set under `/var/lib/syncthing-versions/todo`.
 
 The work Mac is out of scope.
+
+The loop mount is exercised on the first real switch, not in CI (the repo has no
+NixOS VM test for it). To test the pieces on a scratch host:
+
+```sh
+truncate -s 256M /tmp/todo-test.img
+mkfs.ext4 -q -F -L todo-test /tmp/todo-test.img
+sudo mkdir -p /tmp/todo-test
+sudo mount -o loop,noatime,nosuid,nodev /tmp/todo-test.img /tmp/todo-test
+sudo chown vault:vault /tmp/todo-test && sudo chmod 0700 /tmp/todo-test
+sudo umount /tmp/todo-test
+```
+
 ## Public services
 
 Services come from `webProxy.services` on each NixOS host. Each becomes
@@ -2277,9 +2319,9 @@ from `/etc/ssh/ssh_host_ed25519_key`. From a laptop with the admin identity, add
 the replacement host recipient to `.sops.yaml` and run
 `sops updatekeys secrets/smortress.yaml`.
 
-**Recovery page (what the family opens).** With `sudo vault` open, in a normal shell (not
-the root shell) create `~/.local/share/vault/Documents/sentinel.txt` with any canary text
-(`sentinel: 6f1c2a7e`), edit on one
+**Recovery page (what the family opens).** Create
+`/var/lib/data/vault/Documents/sentinel.txt` as `vault`, for example
+`v bash -c 'printf "sentinel: 6f1c2a7e\n" > Documents/sentinel.txt'`. Edit on one
 device only, let Syncthing settle and let the nightly restic run so the newest
 snapshot contains it. Then `nix run .#cloudflare-apply` creates the Pages project,
 `recovery.sammohr.dev` and its CNAME (run it twice if the domain is still

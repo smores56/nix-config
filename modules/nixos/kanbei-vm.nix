@@ -64,7 +64,7 @@ let
   # The guest's payload user (T11 runs the service as it) so the rw shares land as `vault` on
   # the host instead of host root. Guest root maps to `nobody`, like the cluster guest.
   guestUid = 1000;
-  vaultId = 981;
+  vaultId = config.users.users.vault.uid;
   dataTranslation = [
     "--translate-uid=guest:0:65534:1"
     "--translate-uid=guest:${toString guestUid}:${toString vaultId}:1"
@@ -452,6 +452,9 @@ in
       partOf = [ "microvm@${facts.name}.service" ];
       restartIfChanged = false;
       after = [ "local-fs.target" ];
+      # virtiofsd must serve the mounted todo tree, not the plain directory the
+      # size-capped image hides when it is not mounted.
+      unitConfig.RequiresMountsFor = [ "/var/lib/data/todo" ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;

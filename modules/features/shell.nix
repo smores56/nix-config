@@ -118,8 +118,9 @@ in
       ns = "sudo nixos-rebuild --flake ~/.config/home-manager switch --upgrade";
     })
     (lib.mkIf pkgs.stdenv.hostPlatform.isDarwin {
-      # The work Mac has no local vault or sudo; open it where sudo still exists.
-      v = "ssh -t smortress sudo vault yazi";
+      # The work Mac has no local vault or sudo; run the tool where the store and
+      # the YubiKey-gated sudo live.
+      v = "ssh -t smortress /run/wrappers/bin/sudo -H -u vault /run/current-system/sw/bin/vault yazi";
     })
   ];
 

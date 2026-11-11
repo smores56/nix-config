@@ -1,38 +1,15 @@
-# `sudo vault`: open the vault for one foreground session.
+# `v [cmd]`: run one tool as the `vault` user, in the vault store.
 #
-# The store is owned by the `vault` user and the human's uid has no access to it at rest (see
-# modules/nixos/vault-sync.nix). bindfs maps that user to the caller and mounts
-# the tree at ~/.local/share/vault, so editors and file managers work normally
-# for the session. Root is required, which on the NixOS hosts means the
-# YubiKey-gated sudo, and the mount lives exactly as long as the foreground process.
-{
-  pkgs,
-  ...
-}:
-let
-  script =
-    builtins.replaceStrings
-      [ "@STORE@" "@PLATFORM@" ]
-      [ "/var/lib/data/vault" (builtins.readFile ./vault-linux.sh) ]
-      (builtins.readFile ./vault.sh);
-
-  vault = pkgs.writeShellApplication {
-    name = "vault";
-    runtimeInputs = [
-      pkgs.bindfs
-      pkgs.coreutils
-      pkgs.glibc.bin # getent, for home_of
-      pkgs.sudo
-      pkgs.util-linux
-    ];
-    text = script;
-  };
-in
-{
-  home.packages = [ vault ];
-
+# The store is owned by the `vault` user and the human's uid has no access to it
+# at rest (see modules/nixos/vault-sync.nix). Nothing is mounted and no uid is
+# mapped: the tool itself runs as `vault`, so every path it opens carries the
+# store's owner-only permissions, and no view of the tree outlives the process.
+#
+# The `vault` binary lives in the system profile (modules/nixos/vault-sync.nix)
+# so both this abbreviation and the work Mac's SSH command reach it by a stable
+# path; `-H` keeps tool config and state in vault's own home.
+_: {
   # Absolute sudo: a `sudo` planted earlier on PATH (an rc file, ~/.local/bin)
-  # must never be the one that gets the YubiKey touch. Absolute vault too, so
-  # sudo's PATH cannot pick a different one.
-  user.shellAbbrs.v = "/run/wrappers/bin/sudo ${vault}/bin/vault yazi";
+  # must never be the one that gets the YubiKey touch.
+  user.shellAbbrs.v = "/run/wrappers/bin/sudo -H -u vault /run/current-system/sw/bin/vault";
 }

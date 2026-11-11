@@ -100,7 +100,6 @@ in
       "memory-mcp"
     ])
     (group todo [ "tuxedo" ])
-    (group noVault [ "vault" ])
     (group harvest [ "harvest" ])
     (group "inherent: steam is a brew cask on the Mac" [ "steam" ])
     (group "inherent: Linux runs the free Brave Origin nix package; the Mac uses the Brave brew cask" [

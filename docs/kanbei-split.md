@@ -154,7 +154,11 @@ in `docs/manual-steps.md`, design and recovery flow in
   binding, the group contents and that no `nvidia` module is loaded.
 - The guest has no NIC. `vault` (ro) and `todo` (rw) are virtiofs shares with
   the cluster guest's uid translation, so guest root maps to host `nobody` and
-  the guest payload uid 1000 maps to the host `vault` user (981).
+  the guest payload uid 1000 maps to the host `vault` user (981). On the host,
+  `todo` is a size-capped ext4 image (`/var/lib/todo.img`, 256 MiB) mounted at
+  `/var/lib/data/todo`; the virtiofsd unit is ordered after that mount, so the
+  guest sees the mounted tree, never the plain directory an unmounted image
+  would leave behind.
 - `/var/lib/microvms/kanbei/data.img` is a LUKS2 container. Restic snapshots
   only that ciphertext, after a hook that stops the guest (a dirty image is not
   snapshotted) and restarts it. The swtpm state, the console log, the recovery
@@ -202,12 +206,12 @@ working; removing it needs a systemd version that no longer reads other users'
 `/proc` entries. A monitoring agent added to the group deliberately widens it
 further.
 
-### Same-UID capture while `td` or a vault session is open
+### Same-UID capture while `td` or a `v` session is open
 
-`v` mounts the vault for one foreground session as root-assisted bindfs, and
-`td` runs tuxedo as `vault`. Any other process of `smores` can read the
-terminal (pty, scrollback) while either is open; `hidepid` does not hide
-terminals of the same UID. The window is the session's lifetime by design.
+`v <cmd>` runs the tool itself as `vault` (no mount, no uid mapping) and `td`
+runs tuxedo as `vault`. Any other process of `smores` can read the terminal
+(pty, scrollback) while either is open; `hidepid` does not hide terminals of the
+same UID. The window is the process's lifetime by design.
 
 ### Exfiltration channels that remain
 
@@ -218,3 +222,66 @@ terminals of the same UID. The window is the session's lifetime by design.
 - Prompt-injected model output reaches the owner's browser only through the
   CSP-locked, JSON-only UI shell; a browser or terminal escape from another
   window is out of scope.
+
+## Data apps on the `cluster` guest (T6)
+
+Immich, Navidrome, Calibre and Graphiti move from host services into the guest,
+one namespace and one virtiofs share each. The platform manifests are in
+`smores56/homelabs-platform` (`clusters/homelab/data/`, `platform/storage/`,
+`platform/network/`, `ingress/`); this repository keeps the share, the storage
+paths and the cutover switch.
+
+- **Shares are the existing trees.** The guest mounts `/var/lib/data/{immich,music,books,graphiti}`
+  at `/mnt/data/<share>` with the uid translation described above, so the pods
+  write the same inodes the host's restic job walks. Each namespace is
+  pre-bound to one share by a static PV (`local.path: /mnt/data/<share>`,
+  `claimRef`, node affinity `kubernetes.io/hostname: cluster`). The node name is
+  the guest hostname, not discovered at runtime; confirm with
+  `cluster-kubectl get nodes -o wide`.
+- **Two new admission policies** (`data-pvc-scope`, `data-pvc-storage`) keep a
+  data pod on its own namespace's claim, which is what stops Immich from
+  mounting the music or books library after a compromise.
+- **Dumps before restic.** The platform CronJobs run at 02:45 Europe/Berlin and
+  are capped at 30 minutes, so `immich.dump` and `graphiti.rdb` are complete
+  before this host's restic units start at 03:30 (+ up to 15 minutes of random
+  delay). They write inside the shares, so restic needs no hook. That replaces
+  `systemd.services.restic-db-dump` here; disabling it is part of the switch
+  below.
+- **Tunnel split.** The host's tunnel (`web-proxy.nix`, tunnel `smortress`) keeps
+  `ssh`, `llm`, `chat`, `agent` and `memory` and is untouched. The cluster's
+  `cloudflared` is a second, separate tunnel in the `ingress` namespace of the
+  guest, with its own token from a SOPS contract; the Cloudflare objects (tunnel,
+  DNS, Access) are T7.
+
+### The cutover switch
+
+`modules/nixos/cluster-data-apps.nix` holds `clusterDataApps.enable`, default
+`false`. While it is off the module is inert, so it can be wired before the
+cluster serves anything. Turning it on:
+
+- forces `services.immich.enable` and `services.navidrome.enable` off;
+- empties `virtualisation.oci-containers.containers` (the `memory` stack);
+- disables `memory-{falkordb,graphiti-mcp,llm-proxy,mcp,export}.service` and the
+  `memory-export` timer;
+- disables `restic-db-dump.service`, whose dump the platform CronJob replaces;
+- asserts the above and that the `cluster` guest exists.
+
+It does **not** delete the native modules, the `memory` user and group, the
+`/var/lib/data/memory-export` tmpfiles entry, calibre's home-manager unit
+(`modules/features/calibre.nix`, another plane) or the trigger for the memory
+route. Those are the live-gated remainder of `smores56/sdlc#580`: delete
+`modules/nixos/{immich,navidrome,memory}.nix` (and their server-profile entries,
+the `memory` user/group and the host podman stack) only after every app has
+served from the cluster and the memory wrapper has moved. `disabledModules`
+cannot carry that for us: it is read while the module list is collected, before
+any option has a value.
+
+Exact wiring, in `modules/hosts/smortress/default.nix`:
+
+```nix
+nixosModules = [ ... ./cluster-data-apps.nix ];   # once, inert at the default
+nixosOptions.clusterDataApps.enable = true;       # the cutover
+```
+
+The second line alone is the switch; the first is what makes the option exist
+on that host.

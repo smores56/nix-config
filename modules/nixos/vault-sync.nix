@@ -1,5 +1,6 @@
 # The vault: one plaintext tree, owned by the `vault` user and synced as plaintext between the
-# hosts that hold it. Nothing reads it directly; `sudo vault` mounts it for one foreground session.
+# hosts that hold it. Nothing reads it directly; `v <cmd>` runs the tool as `vault` for the life
+# of that one process.
 #
 # Syncthing runs as `vault` (a system service, not the human's user unit), so the daemon can only
 # write its own tree and the human's uid has no access at rest. Device IDs live in
@@ -19,8 +20,9 @@
 let
   devices = import ../syncthing-devices.nix;
 
-  # Pinned so ownership and the bindfs mapping stay stable across rebuilds. 1000 is the human,
-  # 982 is the memory service.
+  # Pinned so ownership stays stable across rebuilds; the todo image init and the
+  # guest's virtiofs uid translation both name this id. 1000 is the human, 982 is
+  # the memory service.
   id = 981;
 
   store = "/var/lib/data/vault";
@@ -32,6 +34,23 @@ let
   versions = "/var/lib/syncthing-versions/vault";
   oldState = "/home/${config.machine.username}/.local/state/syncthing";
   home = "/home/${config.machine.username}";
+
+  # `v [cmd]`: run as `vault`, in the store, with only immutable paths. The
+  # human's home is 0700, so the vault user can neither traverse it nor execute a
+  # home-manager binary; the system profile (plus the baked-in yazi) is the whole
+  # toolbox. Installed system-wide so the work Mac's SSH command reaches it by a
+  # stable path.
+  vaultExec = pkgs.writeShellApplication {
+    name = "vault";
+    text = ''
+      cd ${store} || exit 1
+      export PATH=/run/current-system/sw/bin
+      if [ "$#" -eq 0 ]; then
+        set -- ${lib.getExe pkgs.yazi}
+      fi
+      exec "$@"
+    '';
+  };
 in
 {
   options.vaultSync.device = lib.mkOption {
@@ -40,6 +59,13 @@ in
   };
 
   config = {
+    # `v yazi` must resolve under the vault user, which cannot reach a home
+    # profile; keep the default tool in the system profile.
+    environment.systemPackages = [
+      vaultExec
+      pkgs.yazi
+    ];
+
     assertions = [
       {
         assertion = builtins.hasAttr config.vaultSync.device devices;
@@ -95,7 +121,7 @@ in
         options.relaysEnabled = true;
         devices = lib.mapAttrs (name: value: {
           id = value;
-          name = name;
+          inherit name;
         }) devices;
         folders.vault = {
           id = "vault";

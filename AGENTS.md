@@ -53,8 +53,8 @@ adds its greeter as a host-local module.
 | `modules/home.nix` | home-manager base (fonts, nix.conf, darwin helpers) |
 | `modules/features/` | cross-platform home-manager modules (shell, editor, git, packages, theme, ai) |
 | `modules/nixos/vault-sync.nix`, `modules/syncthing-devices.nix` | The vault: one plaintext tree synced between the hosts that hold it, owned and synced by the `vault` user; the device table is a plain attrset of public device IDs |
-| `modules/features/todo.nix`, `modules/nixos/todo-daemon.nix` | `todo.txt` in `~/.local/share/todo`: shared config plus the vault-daemon folder and always-on bindfs on both NixOS hosts |
-| `modules/features/vault.nix` (`vault.sh`) | `sudo vault [cmd]`: bindfs-mount the vault at `~/.local/share/vault` for one foreground session |
+| `modules/features/todo.nix`, `modules/nixos/todo-daemon.nix` | `todo.txt` on a size-capped ext4 image mounted at `/var/lib/data/todo`: the vault-daemon folder, the `todo-open` wrapper and `td` on both NixOS hosts |
+| `modules/features/vault.nix` | `v <cmd>`: run a tool as the `vault` user against `/var/lib/data/vault`; no mount or uid mapping |
 | `modules/features/brew.nix` | the work Mac's Brewfile (`just brew-bundle` applies it) |
 | `modules/desktop/` | desktop-environment modules (niri, aerospace) |
 | `modules/nixos/` | NixOS system modules (base, desktop, networking, ssh, etc.) |

@@ -512,16 +512,13 @@ in
                 + 17;
               nonNixosHomes = lib.filterAttrs (_: h: !h.config.machine.nixos) config.flake.homeConfigurations;
               nixosHomes = lib.filterAttrs (_: h: h.config.machine.nixos) config.flake.homeConfigurations;
+              allHomes = pred: homes: lib.all pred (lib.attrValues homes);
+              gc = allHomes (h: h.config.nix.gc.automatic);
+              expire = allHomes (h: h.config.services.home-manager.autoExpire.enable);
             in
-            ensure (lib.all (h: h.config.nix.gc.automatic) (lib.attrValues nonNixosHomes)) (
-              "every non-NixOS home collects garbage"
-            )
-            && ensure (lib.all (h: h.config.nix.gc.automatic) (
-              lib.attrValues config.flake.nixosConfigurations
-            )) "every NixOS host collects garbage"
-            && ensure (lib.all (h: h.config.services.home-manager.autoExpire.enable) (
-              lib.attrValues nixosHomes
-            )) "every NixOS home expires old generations"
+            ensure (gc nonNixosHomes) "every non-NixOS home collects garbage"
+            && ensure (gc config.flake.nixosConfigurations) "every NixOS host collects garbage"
+            && ensure (expire nixosHomes) "every NixOS home expires old generations"
             && ensure (mux.ControlMaster == "auto") "the Mac multiplexes SSH connections"
             && ensure (socketBytes <= 104) "the control socket path is ${toString socketBytes} bytes"
           )

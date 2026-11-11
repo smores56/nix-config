@@ -886,7 +886,7 @@ let
                 posixAcl = false;
               }
             )
-            ([
+            [
               {
                 tag = "ro-store";
                 source = "/nix/store";
@@ -904,7 +904,7 @@ let
                 mountPoint = "/run/secrets";
                 readOnly = true;
               }
-            ]);
+            ];
         # Builds stay in the guest: the host daemon would run fixed-output fetches on the host's
         # own network, past the firewall below.
         writableStoreOverlay = "/nix/.rw-store";
@@ -1279,83 +1279,81 @@ in
         guestWritable = [ ".config/maki/pack-lock.json.lock" ];
       }
       // {
-        capabilities = (
-          {
-            neuralwatt = {
-              type = "http";
-              upstream = "https://api.neuralwatt.com";
-              secret = "neuralwatt-api-key";
-              guestPort = ports.agentNeuralwatt;
-              allow = [
-                "POST /v1/chat/completions"
-                "GET /v1/models"
-              ];
+        capabilities = {
+          neuralwatt = {
+            type = "http";
+            upstream = "https://api.neuralwatt.com";
+            secret = "neuralwatt-api-key";
+            guestPort = ports.agentNeuralwatt;
+            allow = [
+              "POST /v1/chat/completions"
+              "GET /v1/models"
+            ];
 
-              auth.kind = "bearer";
+            auth.kind = "bearer";
+          };
+          tinyfish = {
+            type = "http";
+            upstream = "https://api.search.tinyfish.ai";
+            secret = "tinyfish-api-key";
+            guestPort = ports.agentTinyfish;
+            allow = [ "GET /" ];
+            env.TINYFISH_BASE_URL = "http://127.0.0.1:${toString ports.agentTinyfish}";
+            auth = {
+              kind = "header";
+              header = "X-API-Key";
             };
-            tinyfish = {
-              type = "http";
-              upstream = "https://api.search.tinyfish.ai";
-              secret = "tinyfish-api-key";
-              guestPort = ports.agentTinyfish;
-              allow = [ "GET /" ];
-              env.TINYFISH_BASE_URL = "http://127.0.0.1:${toString ports.agentTinyfish}";
-              auth = {
-                kind = "header";
-                header = "X-API-Key";
-              };
+          };
+          calibre = {
+            type = "http";
+            upstream =
+              if isServer then "http://127.0.0.1:${toString ports.calibre}" else "https://calibre.sammohr.dev";
+            secret = "calibre-password";
+            guestPort = ports.calibre;
+            brokerPort = ports.agentBrokerCalibre;
+            env.CALIBRE_LIBRARY_URL = "http://127.0.0.1:${toString ports.calibre}/#books";
+            # Calibre is a writable management capability by design: the broker injects
+            # the human's basic-auth credential, so the Content server is not a boundary
+            # against the guest. Every method the old empty list admitted (minus TRACE and
+            # CONNECT) is listed here explicitly now that an empty list is rejected.
+            allow = [
+              "GET /*"
+              "HEAD /*"
+              "OPTIONS /*"
+              "POST /*"
+              "PUT /*"
+              "PATCH /*"
+              "DELETE /*"
+            ];
+            auth = {
+              kind = "basic";
+              username = "smores56";
             };
-            calibre = {
-              type = "http";
-              upstream =
-                if isServer then "http://127.0.0.1:${toString ports.calibre}" else "https://calibre.sammohr.dev";
-              secret = "calibre-password";
-              guestPort = ports.calibre;
-              brokerPort = ports.agentBrokerCalibre;
-              env.CALIBRE_LIBRARY_URL = "http://127.0.0.1:${toString ports.calibre}/#books";
-              # Calibre is a writable management capability by design: the broker injects
-              # the human's basic-auth credential, so the Content server is not a boundary
-              # against the guest. Every method the old empty list admitted (minus TRACE and
-              # CONNECT) is listed here explicitly now that an empty list is rejected.
-              allow = [
-                "GET /*"
-                "HEAD /*"
-                "OPTIONS /*"
-                "POST /*"
-                "PUT /*"
-                "PATCH /*"
-                "DELETE /*"
-              ];
-              auth = {
-                kind = "basic";
-                username = "smores56";
-              };
-            };
-          }
-          // lib.optionalAttrs (!isServer) {
-            smortress-ssh = {
-              type = "tcp";
-              secret = "cloudflare-access-ssh-token";
-              guestPort = ports.agentSshRelay;
-              command = "${cloudflaredAccess}/bin/cloudflared-access-host tcp --hostname ssh.sammohr.dev --url 127.0.0.1:%PORT%";
-            };
-          }
-          // lib.optionalAttrs isServer {
-            memory = {
-              type = "http";
-              upstream = "http://127.0.0.1:${toString ports.memoryMcp}";
-              secret = "memory-mcp-token";
-              guestPort = ports.memoryMcp;
-              brokerPort = ports.agentBrokerMemory;
-              allow = [
-                "GET /mcp"
-                "POST /mcp"
-                "DELETE /mcp"
-              ];
-              auth.kind = "bearer";
-            };
-          }
-        );
+          };
+        }
+        // lib.optionalAttrs (!isServer) {
+          smortress-ssh = {
+            type = "tcp";
+            secret = "cloudflare-access-ssh-token";
+            guestPort = ports.agentSshRelay;
+            command = "${cloudflaredAccess}/bin/cloudflared-access-host tcp --hostname ssh.sammohr.dev --url 127.0.0.1:%PORT%";
+          };
+        }
+        // lib.optionalAttrs isServer {
+          memory = {
+            type = "http";
+            upstream = "http://127.0.0.1:${toString ports.memoryMcp}";
+            secret = "memory-mcp-token";
+            guestPort = ports.memoryMcp;
+            brokerPort = ports.agentBrokerMemory;
+            allow = [
+              "GET /mcp"
+              "POST /mcp"
+              "DELETE /mcp"
+            ];
+            auth.kind = "bearer";
+          };
+        };
       };
 
     microvm.vms.${name} = {
