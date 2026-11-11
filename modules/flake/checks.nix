@@ -522,6 +522,31 @@ in
           )
         );
 
+        # Phone pipeline contract (smores #593): the host folder is receive-encrypted,
+        # owner-only, shared with the phone alone, the password contract is declared, and
+        # no restic job names the guest's plaintext tree. The guest-side share assertion
+        # runs in the kanbei-enabled eval (docs/kanbei-phone.md).
+        phone-pipeline = evalCheck "phone-pipeline" (
+          toString (
+            let
+              host = config.flake.nixosConfigurations.smortress.config;
+              phone = import ../lib/phone-pipeline.nix;
+              folder = host.services.syncthing.settings.folders.${phone.folderId};
+              backups = lib.attrValues host.services.restic.backups;
+            in
+            assert folder.id == "phone";
+            assert folder.path == "/var/lib/data/phone-untrusted";
+            assert folder.type == "receiveencrypted";
+            assert folder.devices == [ "phone" ];
+            assert lib.elem "d /var/lib/data/phone-untrusted 0700 vault vault -" host.systemd.tmpfiles.rules;
+            assert host.services.syncthing.user == "vault";
+            assert lib.any (b: lib.any (p: lib.hasPrefix "/var/lib/data" p) b.paths) backups;
+            assert lib.all (b: !lib.any (p: lib.hasPrefix phone.plaintextDir p) b.paths) backups;
+            assert host.sops.secrets ? phone-folder-password;
+            assert host.sops.secrets.phone-folder-password.path == phone.passwordContract;
+            "ok"
+          )
+        );
         desktop-bindings = evalCheck "desktop-bindings" (
           toString (
             import ../../tests/shared_desktop_bindings.nix {

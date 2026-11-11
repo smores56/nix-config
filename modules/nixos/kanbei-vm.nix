@@ -41,6 +41,17 @@ let
   # The ingest writer drops age-encrypted batches here; T14 owns the path, this share reads it.
   inboxDir = (import ../lib/ingest-vm.nix { inherit lib; }).constants.inboxDir;
 
+  # The phone's receive-encrypted Syncthing folder and the password contract, both owned
+  # by the host side of the pipeline (`docs/kanbei-phone.md`).
+  phone = import ../lib/phone-pipeline.nix;
+  phoneTranslation = [
+    # Guest root is the decrypt user. On this share only, map it to `vault` so the
+    # ciphertext (0700 vault) is readable; the share is read-only, so root gains no write.
+    "--translate-uid=guest:0:${toString vaultId}:1"
+    "--translate-gid=guest:0:${toString vaultId}:1"
+    "--modcaps=-mknod"
+  ];
+
   # Discovered from the running host (`lspci -nn`, /sys/bus/pci/devices):
   # 0000:08:00.0 10de:2204 = RTX 3090, 0000:08:00.1 10de:1aef = its HDA function.
   # Both sit alone in IOMMU group 16, so no ACS override is needed.
@@ -100,6 +111,16 @@ let
       extraArgs = dataTranslation;
     }
   ];
+
+  phoneShare = {
+    inherit (phone) tag;
+    source = phone.hostFolder;
+    mountPoint = phone.guestMount;
+    proto = "virtiofs";
+    readOnly = true;
+    posixAcl = false;
+    extraArgs = phoneTranslation;
+  };
 
   hostStoreShare = {
     tag = "ro-store";
@@ -258,6 +279,7 @@ let
       imports = [
         ./kanbei-inference.nix
         ./kanbei-guest-access.nix
+        ./kanbei-phone.nix
       ];
 
       microvm = {
@@ -297,7 +319,8 @@ let
             proto = "virtiofs";
           }
         ]
-        ++ vaultShares;
+        ++ vaultShares
+        ++ [ phoneShare ];
         # The raw image is created by preStart (no mkfs: LUKS2 owns it).
         volumes = [
           {
@@ -487,6 +510,30 @@ in
       '';
     };
 
+    # The phone folder password reaches the guest as a read-only file on the
+    # `kanbei-secrets` share. Its own unit (not kanbei-vm-prep, which is PartOf the VM) so
+    # a sops rotation only re-stages the file; the guest's decrypt timer copies it into
+    # the LUKS volume on its next run.
+    systemd.services.kanbei-phone-password = {
+      description = "Stage the phone folder password into the kanbei guest's secret share";
+      wantedBy = [ "multi-user.target" ];
+      before = [ "microvm-virtiofsd@${facts.name}.service" ];
+      after = [ "kanbei-vm-prep.service" ];
+      requires = [ "kanbei-vm-prep.service" ];
+      restartIfChanged = false;
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        UMask = "0077";
+      };
+      script = ''
+        set -euo pipefail
+        if [ -r ${phone.passwordContract} ]; then
+          install -m 0400 -o root -g root ${phone.passwordContract} ${secretDir}/phone-folder-password
+        fi
+      '';
+    };
+
     # microvm.nix has no vTPM option: swtpm owns the persistent state, QEMU connects to the
     # socket in extraArgs above. Running it as root keeps the NVRAM out of the VM user's reach.
     systemd.services.kanbei-swtpm = {
@@ -646,6 +693,30 @@ in
           lib.attrValues config.services.restic.backups
         );
         message = "kanbei-vm: the swtpm state must never enter a restic snapshot";
+      }
+      {
+        # The phone folder holds ciphertext and must be readable only by the vault user
+        # and the read-only guest share; the guest mounts it read-only.
+        assertion =
+          phoneShare.readOnly == true
+          && phoneShare.source == "/var/lib/data/phone-untrusted"
+          && phoneShare.mountPoint == "/mnt/kanbei/phone-untrusted";
+        message = "kanbei-vm: the phone-untrusted share must be read-only at /mnt/kanbei/phone-untrusted";
+      }
+      {
+        # The decrypted tree lives only inside the guest's LUKS image; no host restic job
+        # may name it (the image is what restic backs up, as ciphertext).
+        assertion = lib.all (b: !lib.any (p: lib.hasPrefix "/var/lib/kanbei/phone" p) b.paths) (
+          lib.attrValues config.services.restic.backups
+        );
+        message = "kanbei-vm: the decrypted phone tree must never enter a host restic snapshot";
+      }
+      {
+        # The ciphertext copy is under /var/lib/data, which the host jobs already cover.
+        assertion = lib.any (b: lib.any (p: lib.hasPrefix "/var/lib/data" p) b.paths) (
+          lib.attrValues config.services.restic.backups
+        );
+        message = "kanbei-vm: the phone ciphertext folder must be covered by a restic job (ciphertext backup is intended)";
       }
     ];
 

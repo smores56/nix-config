@@ -369,6 +369,59 @@ another machine.
 via `openssl s_client`, Access allow with TLS inspection off, and the offline planted-output
 Chromium test.
 
+#### Phone pipeline (SMS, calls, contacts, health)
+
+The phone writes its exports into a Syncthing folder shared to this host as **receive
+encrypted**, so `/var/lib/data/phone-untrusted` is ciphertext at rest and the password
+only exists in the kanbei LUKS volume. Design, device steps and verification:
+[`docs/kanbei-phone.md`](kanbei-phone.md). Phone app settings:
+[`mobile/sms-ie/SETTINGS.md`](../mobile/sms-ie/SETTINGS.md) and
+[`mobile/healthconnect-export/FORK.md`](../mobile/healthconnect-export/FORK.md).
+
+1. **Folder password.** Generate it once (`openssl rand -base64 32`), store it in the
+   password manager, add it to `secrets/smortress.yaml` as `phone-folder-password`
+   (`sops secrets/smortress.yaml`), and keep the declaration in
+   `modules/hosts/smortress/secrets.nix`. Until the yaml key exists a switch fails in
+   the sops unit; no `secret/phone-folder-password` anchor exists yet because anchors
+   are derived from yaml keys (the `kanbei-recovery-key` precedent). Once the key is
+   encrypted, add the anchor here in the same commit.
+2. **Phone side.** Set the folder at `/storage/emulated/0/Sync/phone` with folder ID
+   `phone`, share it to this host with that password, and grant Syncthing-Fork the
+   battery exemption. Install SMS Import/Export and the forked health exporter, then
+   apply `mobile/sms-ie/SETTINGS.md` and point the health exporter at the same folder.
+3. **First sync.** With the host reachable, the ciphertext lands in
+   `/var/lib/data/phone-untrusted` (0700 `vault`). Confirm the share is live:
+
+   ```sh
+   sudo -u vault syncthing cli config folders list
+   sudo ls -la /var/lib/data/phone-untrusted | head
+   sudo test ! -r /var/lib/data/phone-untrusted && echo 'not readable as root outside vault'
+   ```
+
+   The host prep unit copies `/run/secrets/phone-folder-password` into the guest's
+   read-only `/run/kanbei-secrets` share; `systemctl restart microvm@kanbei.service` once
+   if the guest booted before the yaml key existed.
+4. **Guest decrypt.** The timer runs hourly; the first run prints nothing on success but
+   writes the manifest and batch:
+
+   ```sh
+   # inside the guest console
+   systemctl list-timers 'syncthing-decrypt*'
+   systemctl start syncthing-decrypt.service
+   journalctl -u syncthing-decrypt -n 40 --no-pager
+   ls -l /var/lib/kanbei/phone/{manifest.json,sms,health,contacts}
+   ls -l /var/lib/kanbei/phone-state/batches
+   ```
+
+   Exit codes are documented in `docs/kanbei-phone.md`; a missing or wrong password
+   leaves the existing tree untouched and writes an `alert` batch plus an error
+   heartbeat.
+5. **Rotation.** Change the folder password on the phone and in
+   `secrets/smortress.yaml` in the same window. The sops unit restarts
+   `kanbei-phone-password.service`, which re-stages the contract; the guest's next
+   decrypt stages it into the LUKS volume. Syncthing on the phone re-encrypts the
+   folder when the password changes, so expect a full ciphertext re-sync.
+
 #### Ingest plane (Firecracker)
 
 The five ingest guests and their host writer/proxy/resolver are behind

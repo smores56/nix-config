@@ -18,6 +18,13 @@
     # Photo-triage: read/score key and album-writer key (see docs/key-rotation.md).
     photo-triage-immich-read-key = { };
     photo-triage-immich-album-key = { };
+
+    # The phone's Syncthing folder password. The phone sets the same value when it
+    # shares the folder to this host; kanbei stages it into its LUKS volume. 0400 root,
+    # never readable by `smores` (docs/kanbei-phone.md).
+    phone-folder-password = {
+      restartUnits = [ "kanbei-phone-password.service" ];
+    };
   };
 
   photoTriage = {

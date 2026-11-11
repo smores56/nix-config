@@ -7,6 +7,13 @@
 # `modules/syncthing-devices.nix`; the folder keeps the id `vault`, is shared with every device in
 # that table, and versions land outside both the synced tree and restic's source path.
 #
+# The instance also receives the phone's exports as a second, *receive-encrypted* folder
+# (`modules/lib/phone-pipeline.nix`). The phone is the trusted peer: it sets a folder password when
+# sharing to this host, so only ciphertext lands in `/var/lib/data/phone-untrusted`. The password
+# lives in the kanbei guest's LUKS volume, never here. The ciphertext is under `/var/lib/data`, so
+# restic backs it up as ciphertext; the decrypted tree never exists on the host
+# (`docs/kanbei-phone.md`).
+#
 # Activate this only together with the migration. The rule below moves the tree to the `vault` user,
 # and the one-time Cryptomator conversion needs the human's own access to the ciphertext first. A
 # premature activation stops sync rather than losing data (the daemon cannot write a tree it does not
@@ -19,6 +26,7 @@
 }:
 let
   devices = import ../syncthing-devices.nix;
+  phone = import ../lib/phone-pipeline.nix;
 
   # Pinned so ownership stays stable across rebuilds; the todo image init and the
   # guest's virtiofs uid translation both name this id. 1000 is the human, 982 is
@@ -26,6 +34,9 @@ let
   id = 981;
 
   store = "/var/lib/data/vault";
+  # Ciphertext only: the phone encrypts every file before this host sees it. 0700 `vault`
+  # is the "not readable by smores at rest" requirement; the guest share is read-only.
+  phoneStore = phone.hostFolder;
   # Per host: written once that host's store is in its final shape - after the one-time
   # migration on smortress, or next to an empty directory on a host that will pull its copy.
   # Until it exists the daemon does not start (docs/manual-steps.md).
@@ -71,6 +82,10 @@ in
         assertion = builtins.hasAttr config.vaultSync.device devices;
         message = "vaultSync.device (${config.vaultSync.device}) needs its ID in modules/syncthing-devices.nix before Syncthing can run here; the local device is part of the config Syncthing writes.";
       }
+      {
+        assertion = builtins.hasAttr "phone" devices;
+        message = "vault-sync: the phone-untrusted folder is shared with the `phone` device, which is missing from modules/syncthing-devices.nix";
+      }
     ];
 
     users.groups.vault.gid = id;
@@ -88,6 +103,9 @@ in
       "d ${stateDir} 0700 vault vault -"
       "d /var/lib/syncthing-versions 0700 vault vault -"
       "d ${versions} 0700 vault vault -"
+      # Owner-only: the human uid and every other login user must not traverse the
+      # ciphertext tree. Syncthing runs as `vault`, so it still gets in.
+      "d ${phoneStore} 0700 vault vault -"
     ];
 
     # The device ID is the hash of cert.pem and those IDs are committed, so the move from the
@@ -142,6 +160,24 @@ in
             };
             fsPath = versions;
           };
+        };
+
+        # The phone's exports, encrypted. This host is the *untrusted* peer: the phone
+        # holds the folder password and sets it when sharing, so `receiveencrypted` is the
+        # only type that can read what arrives. Sharing is one-way in practice (the phone
+        # writes, this host stores ciphertext); no other device in the table may see it.
+        folders.${phone.folderId} = {
+          id = phone.folderId;
+          label = "Phone exports (untrusted)";
+          path = phoneStore;
+          type = "receiveencrypted";
+          devices = [ "phone" ];
+          fsWatcherEnabled = true;
+          rescanIntervalS = 3600;
+          ignorePerms = true;
+          # No versioning: encrypted blocks are not reusable between files, so a versioner
+          # would keep a second full ciphertext copy per change. The kanbei guest's LUKS
+          # volume is the archive; restic covers the single copy on the host.
         };
       };
     };

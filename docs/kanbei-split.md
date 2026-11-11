@@ -284,6 +284,31 @@ inbox, and records the document epoch for the T14 heartbeat, which now carries
 host sources alongside guests. A stale digest pages exactly like a stale guest,
 using the shared marker so the writer and the heartbeat never double-page.
 
+## The phone pipeline (T19)
+
+The phone is the one ingest source without a VM. SMS Import/Export and a
+source-built, INTERNET-less fork of `healthconnect-export` write their daily
+exports into one Syncthing folder (`sms/`, `health/`, `contacts/`), which the
+phone shares to the host `vault` Syncthing as **receive encrypted**. The host
+stores only ciphertext at `/var/lib/data/phone-untrusted` (0700 `vault`); the
+folder password lives in `secrets/smortress.yaml`, reaches the guest through the
+read-only `kanbei-secrets` share, and is staged 0400 inside the LUKS volume.
+
+The guest's `syncthing-decrypt.timer` runs hourly: it refuses a missing password
+(exit 10) or a non-receive-encrypted folder (exit 11), decrypts to a temp tree,
+merges additively with content-hash dedupe and a 16 MiB per-file cap, then
+atomically exchanges the staging tree with `/var/lib/kanbei/phone`. Each run
+writes `manifest.json` plus a heartbeat, and newly consumed files produce a
+`source=phone` batch envelope in `phone-state/batches/` for the inbox reader
+(#600). Host restic backs up the ciphertext tree and the LUKS image, never the
+plaintext tree.
+
+Device setup, password custody, the exact SMS Import/Export settings, the fork
+patch and its manifest/permission gate, schedules and verification are in
+[`docs/kanbei-phone.md`](kanbei-phone.md). Accepted residual: blocked numbers
+(needs the default SMS/phone app) and MMS binary payloads are not in the daily
+export; the size cap rejects them if the toggles are re-enabled.
+
 ## Accepted residuals
 
 ### A later human touch runs whatever the unattended maki planted
