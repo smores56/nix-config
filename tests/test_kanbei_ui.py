@@ -15,6 +15,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -34,6 +35,7 @@ PLANTED = (
 
 
 def load_server():
+    sys.path.insert(0, str(UI_DIR.parent))
     spec = importlib.util.spec_from_file_location("kanbei_ui_server", UI_DIR / "server.py")
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -60,6 +62,14 @@ class ServerCase(unittest.TestCase):
         self.host, self.port = self.server.server_address[:2]
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
+
+    def session(self):
+        _status, _headers, body = self.request("POST", "/api/passkey/auth/options", {})
+        challenge = json.loads(body)["challenge"]
+        _status, _headers, body = self.request(
+            "POST", "/api/passkey/auth/verify", {"challenge": challenge}
+        )
+        return json.loads(body)["session"]
 
     def request(self, method, path, body=None, content_type="application/json", headers=None):
         connection = http.client.HTTPConnection(self.host, self.port, timeout=10)
@@ -123,8 +133,17 @@ class CspAndStaticTests(ServerCase):
 
 
 class ChatTests(ServerCase):
-    def test_stub_keeps_planted_output_as_plain_json_string(self):
+    def chat(self, body, session=None):
+        headers = {"Authorization": f"Bearer {session or self.session()}"}
+        return self.request("POST", "/api/chat", body, headers=headers)
+
+    def test_chat_without_a_passkey_session_is_refused(self):
         status, headers, body = self.request("POST", "/api/chat", {"message": "hello"})
+        self.assertEqual(status, 401)
+        self.assertIn("passkey session", json.loads(body)["error"])
+
+    def test_stub_keeps_planted_output_as_plain_json_string(self):
+        status, headers, body = self.chat({"message": "hello"})
         self.assertEqual(status, 200)
         self.assertIn("application/json", headers["Content-Type"])
         payload = json.loads(body)
@@ -135,18 +154,20 @@ class ChatTests(ServerCase):
         self.assertNotIn("<", payload["reply"])
 
     def test_rejects_wrong_media_type_and_bad_bodies(self):
+        session = self.session()
+        headers = {"Authorization": f"Bearer {session}"}
         statuses = [
-            self.request("POST", "/api/chat", b"hi", content_type="text/plain")[0],
-            self.request("POST", "/api/chat", b"not json")[0],
-            self.request("POST", "/api/chat", b"[]")[0],
-            self.request("POST", "/api/chat", {})[0],
-            self.request("POST", "/api/chat", {"message": "x" * 9000})[0],
+            self.request("POST", "/api/chat", b"hi", content_type="text/plain", headers=headers)[0],
+            self.request("POST", "/api/chat", b"not json", headers=headers)[0],
+            self.request("POST", "/api/chat", b"[]", headers=headers)[0],
+            self.request("POST", "/api/chat", {}, headers=headers)[0],
+            self.request("POST", "/api/chat", {"message": "x" * 9000}, headers=headers)[0],
         ]
         self.assertEqual(statuses, [415, 400, 400, 400, 413])
 
     def test_missing_lane_is_a_json_error(self):
         self.server.config.chat_upstream = "http://127.0.0.1:1"
-        status, headers, body = self.request("POST", "/api/chat", {"message": "hello"})
+        status, headers, body = self.chat({"message": "hello"})
         self.assertEqual(status, 502)
         self.assertIn("application/json", headers["Content-Type"])
         self.assertIn("error", json.loads(body))

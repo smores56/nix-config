@@ -69,9 +69,10 @@ sudo -v; sudo -v                # each prompts for a fresh touch
 facts (tap, `/30`, MAC, state paths) come from `modules/lib/vm-host.nix`; the
 `agent` guest keeps its own constants.
 
-- Addons Flux owns are disabled: `traefik`, `servicelb`, `local-storage`,
-  `metrics-server`. CoreDNS stays: Flux's Git sources need cluster DNS and no
-  platform manifest declares it yet.
+- Addons Flux owns are disabled: `traefik`, `servicelb`, `metrics-server`.
+  CoreDNS and the `local-storage` addon stay: Flux's Git sources need cluster DNS,
+  and the platform's `local-path` StorageClass is k3s's built-in provisioner, so
+  every PVC depends on it; Flux does not own that addon.
 - gVisor is registered through `services.k3s.containerdConfigTemplate`
   (`io.containerd.runsc.v1`) with `pkgs.gvisor` on the k3s unit's `PATH`. The
   template extends k3s's own `base` (the legacy v2 template the NixOS module
@@ -94,6 +95,12 @@ static PV. The host paths and their restic coverage are unchanged.
 | `/var/lib/data/books` | `/mnt/data/books` | `books-data` |
 | `/var/lib/data/graphiti` | `/mnt/data/graphiti` | `graphiti-data` |
 
+The one-way **cluster digest** is not in that table: `/var/lib/data/cluster-digest`
+is 0770 `kanbei-digest:kanbei-digest` (uid/gid 983), the CronJob reaches it
+through its own `--translate-uid`/`--translate-gid` mapping of guest 0/1000 onto
+983, and `smores` can neither read nor write it. It is a feed into Kanbei, not
+app data, so it gets no static PV and no restic exclusion.
+
 The PVs are `hostPath` (the mount is node-local and single-node); T6 declares
 them in `homelabs-platform`. Every data share uses an explicit virtiofsd
 translation, never the agent VM's squash to `smores`: guest root maps to host
@@ -102,7 +109,9 @@ to host `users` (100). Files an app writes therefore land as `smores:users`,
 and guest root cannot plant host-root-owned files. Pods must run as uid 1000
 (PSA `restricted` requires non-root anyway); a pod running as root can read the
 trees but only writes as `nobody`. `--modcaps=-mknod` keeps guest root from
-creating device nodes in the mount.
+creating device nodes in the mount. The cluster-digest share is the exception:
+both guest 0 and 1000 map to the dedicated `kanbei-digest` uid (983), so nothing
+the cluster writes is owned by, or readable by, the human account.
 
 ### Firewall and the Kanbei boundary
 
@@ -200,9 +209,10 @@ are in [`docs/kanbei-ingest.md`](kanbei-ingest.md).
   only over one vsock channel.
 - The writer validates the batch schema and source, caps frames at 1 MiB,
   age-encrypts with `age -r` to Kanbei's published recipient, and drops the
-  ciphertext in `/var/lib/data/inbox` (the read-only `inbox` share into the
-  Kanbei guest). Kanbei publishes its recipient on the schema-locked vsock port
-  `7100`; writers block until the file exists.
+  ciphertext (0600 root, inbox 0750 root) into `/var/lib/data/inbox` (the
+  read-only `inbox` share into the Kanbei guest). Kanbei dials host CID 2 port
+  `7100`; the host listener requires peer CID 4 and a first-line token, and
+  writers block until the recipient file exists.
 - Egress is a hostname/SNI proxy and an allowlist resolver on each tap's host
   address. The generated per-tap iptables chains admit only those two services
   and end the forward chain in DROP; no ingest tap is NATed. The guest repeats

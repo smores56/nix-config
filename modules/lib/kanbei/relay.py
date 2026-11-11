@@ -8,6 +8,10 @@ parses HTTP, holds no key material, and runs as the unprivileged ``kanbei-relay`
 
 The systemd socket unit performs the privileged bind and hands the listening descriptor in
 ``LISTEN_FDS``; ``--listen`` exists for tests and manual debugging only.
+
+The first bytes written to the guest are the relay token line (``KANBEI-AUTH 1 <token>``,
+read from a root-only systemd credential) before any client byte, so the guest's TLS
+listener can require it on the raw stream and a bare vsock connection gets nothing.
 """
 
 from __future__ import annotations
@@ -19,6 +23,8 @@ import selectors
 import socket
 import sys
 import threading
+
+import relay_auth
 
 CHUNK = 64 * 1024
 VMADDR_CID_HOST = 2
@@ -86,7 +92,7 @@ def pipe(left: socket.socket, right: socket.socket) -> None:
         selector.close()
 
 
-def handle(conn: socket.socket, connect) -> None:
+def handle(conn: socket.socket, connect, token: bytes | None = None) -> None:
     try:
         upstream = connect()
     except OSError as exc:
@@ -94,6 +100,10 @@ def handle(conn: socket.socket, connect) -> None:
         conn.close()
         return
     try:
+        if token is not None:
+            # First bytes on the guest stream, before any client byte: the guest's
+            # TLS listener consumes this line from the raw socket.
+            upstream.sendall(relay_auth.encode(token))
         pipe(conn, upstream)
     finally:
         for sock in (conn, upstream):
@@ -103,7 +113,12 @@ def handle(conn: socket.socket, connect) -> None:
                 pass
 
 
-def serve(listener: socket.socket, connect, stop: threading.Event | None = None) -> None:
+def serve(
+    listener: socket.socket,
+    connect,
+    stop: threading.Event | None = None,
+    token: bytes | None = None,
+) -> None:
     listener.settimeout(0.5)
     while stop is None or not stop.is_set():
         try:
@@ -115,7 +130,7 @@ def serve(listener: socket.socket, connect, stop: threading.Event | None = None)
                 return
             raise
         conn.settimeout(None)
-        threading.Thread(target=handle, args=(conn, connect), daemon=True).start()
+        threading.Thread(target=handle, args=(conn, connect, token), daemon=True).start()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -123,9 +138,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--vsock-cid", type=int, default=4, help="guest CID (2 = host)")
     parser.add_argument("--vsock-port", type=int, required=True)
     parser.add_argument("--listen", help="host:port for a manual listener instead of systemd")
+    parser.add_argument("--token-file", help="root-only relay token credential")
     args = parser.parse_args(argv)
 
     listener = systemd_listener()
+    token = None
+    if args.token_file:
+        try:
+            token = relay_auth.read_token(args.token_file)
+        except relay_auth.AuthError as exc:
+            print(f"kanbei-relay: {exc}", file=sys.stderr)
+            return 2
+    # Socket activation means production: never splice an unauthenticated stream to the guest.
+    if listener is not None and token is None:
+        print("kanbei-relay: --token-file is required under socket activation", file=sys.stderr)
+        return 2
     if listener is None:
         if not args.listen:
             print("kanbei-relay: no socket activation and no --listen", file=sys.stderr)
@@ -137,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
         f"kanbei-relay: forwarding to vsock {args.vsock_cid}:{args.vsock_port}",
         file=sys.stderr,
     )
-    serve(listener, connect)
+    serve(listener, connect, token=token)
     return 0
 
 

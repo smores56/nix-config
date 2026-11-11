@@ -31,15 +31,25 @@
     transcript.appendChild(article);
   }
 
+  // Minted only by a completed passkey ceremony; /api/chat has no bypass.
+  let session = "";
+
   async function sendMessage(message) {
+    if (!session) {
+      throw new Error("Unlock with the passkey button before chatting");
+    }
     const response = await fetch("/api/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + session,
+      },
       body: JSON.stringify({ message: message }),
       credentials: "same-origin",
       redirect: "error",
     });
     if (!response.ok) {
+      if (response.status === 401) session = "";
       throw new Error("Kanbei returned " + response.status);
     }
     const data = await response.json();
@@ -93,6 +103,43 @@
     return response.json();
   }
 
+  async function unlock() {
+    if (!window.PublicKeyCredential || !navigator.credentials) {
+      setStatus("This browser cannot use a passkey; chat stays locked.");
+      return;
+    }
+    const options = await postJson("/api/passkey/auth/options", {});
+    const assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge: base64urlToBytes(options.challenge),
+        rpId: options.rpId,
+        allowCredentials: options.allowCredentials,
+        userVerification: options.userVerification,
+        timeout: options.timeout,
+      },
+    });
+    const verified = await postJson("/api/passkey/auth/verify", {
+      challenge: options.challenge,
+      credential: {
+        id: assertion.id,
+        type: assertion.type,
+        clientDataJSON: bytesToBase64url(assertion.response.clientDataJSON),
+      },
+    });
+    if (verified && typeof verified.session === "string") {
+      session = verified.session;
+      setStatus("Unlocked.");
+    } else {
+      setStatus("Passkey assertion was refused.");
+    }
+  }
+
+  // A resident passkey answers silently on load; anything else leaves chat locked.
+  unlock().catch(() => {
+    session = "";
+    setStatus("Locked: use the Passkey button to unlock chat.");
+  });
+
   if (passkeyButton) {
     passkeyButton.addEventListener("click", async () => {
       setStatus("Requesting a passkey challenge...");
@@ -125,12 +172,17 @@
             clientDataJSON: bytesToBase64url(credential.response.clientDataJSON),
           },
         });
-        setStatus(verified.ok ? "Passkey stored (server-side stub)." : "Passkey was refused.");
+        if (!verified.ok) {
+          setStatus("Passkey was refused.");
+          return;
+        }
+        setStatus("Passkey stored (server-side stub); unlocking...");
+        await unlock();
       } catch (error) {
         setStatus(String(error && error.message ? error.message : error));
       }
     });
   }
 
-  window.KanbeiShell = { appendMessage: appendMessage, setStatus: setStatus };
+  window.KanbeiShell = { appendMessage: appendMessage, setStatus: setStatus, unlock: unlock };
 })();

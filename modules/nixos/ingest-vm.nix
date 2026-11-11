@@ -30,6 +30,8 @@ let
   ingestTools = pkgs.runCommand "kanbei-ingest-tools" { } ''
     mkdir -p $out/lib/kanbei-ingest
     cp ${../lib/ingest}/*.py $out/lib/kanbei-ingest/
+    # The token handshake is shared with the kanbei channels (relay_auth.py).
+    cp ${../lib/kanbei/relay_auth.py} $out/lib/kanbei-ingest/
   '';
 
   mkTool =
@@ -67,6 +69,8 @@ let
   searchTools = pkgs.runCommand "kanbei-search-tools" { } ''
     mkdir -p $out/lib/kanbei-search
     cp ${../lib/search}/*.py $out/lib/kanbei-search/
+    # The token handshake is shared with the kanbei channels (relay_auth.py).
+    cp ${../lib/kanbei/relay_auth.py} $out/lib/kanbei-search/
   '';
 
   searchRelay = pkgs.writeShellApplication {
@@ -96,7 +100,10 @@ let
   searchGuestStateDir = "/var/lib/search";
   searchQueryPort = sources.search.queryPort;
   searchRelayPort = constants.searchQueryPort;
-  searchUds = "/var/lib/microvms/kanbei/notify.vsock_${toString searchRelayPort}";
+  # Every guest-facing listener authenticates with this root-only token. kanbei-vm's prep unit
+  # generates it; the Kanbei guest reads the same file from its read-only secret share.
+  relayTokenFile = "/var/lib/kanbei-vm/secrets/relay-token";
+  kanbeiCid = 4;
 
   searchGuestConfig = {
     version = 1;
@@ -154,9 +161,6 @@ let
     '';
   };
 
-  # Kanbei's vsock port is host-initiated lookups inverted: the guest dials host CID 2, so
-  # Firecracker accepts on `<uds>_<port>` beside its own control socket.
-  kanbeiUds = "/var/lib/microvms/kanbei/notify.vsock_${toString constants.ageKeyPort}";
   recipientFile = "${constants.stateRoot}/age-recipient";
   # The cluster CronJob's share and the one file the host writer watches.
   digestShare = "/var/lib/data/cluster-digest";
@@ -784,7 +788,7 @@ let
     install -d -m 0700 ${constants.stateRoot}
     install -d -m 0700 ${constants.stateRoot}/state
     install -d -m 0700 ${constants.logDir}
-    install -d -m 0755 -o root -g root ${constants.inboxDir}
+    install -d -m 0750 -o root -g root ${constants.inboxDir}
     # Firecracker runs as microvm:kvm and must read the secret image; the directory stays out
     # of the guest-reachable 0700 state root so the group can traverse it.
     install -d -m 0750 -o root -g kvm /var/lib/microvms/ingest-secrets
@@ -1021,10 +1025,12 @@ in
             Restart = "always";
             RestartSec = "2s";
             UMask = "0077";
-            ExecStart = "${ingestAgeKey}/bin/ingest-age-key --uds ${kanbeiUds} --out ${recipientFile}";
+            LoadCredential = [ "relay-token:${relayTokenFile}" ];
+            # Host AF_VSOCK: the kanbei guest is qemu, so there is no Firecracker UDS. The
+            # listener accepts only peer CID 4 and only after the token line.
+            ExecStart = "${ingestAgeKey}/bin/ingest-age-key --port ${toString constants.ageKeyPort} --out ${recipientFile} --token-file %d/relay-token --peer-cid ${toString kanbeiCid}";
             StandardOutput = "append:${constants.logDir}/ingest-age-key.log";
             StandardError = "append:${constants.logDir}/ingest-age-key.log";
-            ReadWritePaths = [ "/var/lib/microvms/kanbei" ] ++ serviceSandbox.ReadWritePaths;
           };
         };
 
@@ -1149,8 +1155,9 @@ in
           };
         };
 
-        # Kanbei dials host CID 2 : 7101; this listener pipes the connection to the
-        # search guest's query port. It carries bytes only and logs metadata.
+        # Kanbei dials host CID 2 : 7101; this host AF_VSOCK listener (peer CID 4 only, token
+        # first) pipes the connection to the search guest's query port. It carries bytes only
+        # and logs metadata.
         search-relay = {
           description = "Pipe Kanbei's vsock search port to the search guest";
           wantedBy = [
@@ -1172,10 +1179,10 @@ in
             Restart = "always";
             RestartSec = "2s";
             UMask = "0077";
-            ExecStart = "${searchRelay}/bin/search-relay --uds ${searchUds} --vsock /var/lib/microvms/${sources.search.guest}/notify.vsock --port ${toString searchQueryPort} --group kvm";
+            LoadCredential = [ "relay-token:${relayTokenFile}" ];
+            ExecStart = "${searchRelay}/bin/search-relay --port ${toString searchRelayPort} --vsock /var/lib/microvms/${sources.search.guest}/notify.vsock --guest-port ${toString searchQueryPort} --token-file %d/relay-token --peer-cid ${toString kanbeiCid}";
             StandardOutput = "append:${constants.logDir}/search-relay.log";
             StandardError = "append:${constants.logDir}/search-relay.log";
-            ReadWritePaths = [ "/var/lib/microvms/kanbei" ] ++ serviceSandbox.ReadWritePaths;
           };
         };
       }
@@ -1225,6 +1232,17 @@ in
             };
           }
         ) sourceIds
+      ))
+      # The guest's Firecracker notify.vsock is the only UDS left in this plane; UMask 0077
+      # keeps it out of every non-owner traversable mode (production listeners are AF_VSOCK).
+      (builtins.listToAttrs (
+        map (id: {
+          name = "microvm@${sources.${id}.guest}";
+          value = {
+            overrideStrategy = "asDropin";
+            serviceConfig.UMask = "0077";
+          };
+        }) sourceIds
       ))
       (builtins.listToAttrs (
         lib.concatMap (
@@ -1283,7 +1301,7 @@ in
       "d ${constants.stateRoot} 0700 root root -"
       "d ${constants.stateRoot}/state 0700 root root -"
       "d ${constants.logDir} 0700 root root -"
-      "d ${constants.inboxDir} 0755 root root -"
+      "d ${constants.inboxDir} 0750 root root -"
       "d /var/lib/microvms/ingest-secrets 0750 root kvm -"
     ];
 
@@ -1572,6 +1590,53 @@ in
           )
           && config.systemd.services.search-relay.bindsTo == [ "microvm@kanbei.service" ];
         message = "ingest-vm: the search model stage and relay must not restart on a switch and the relay log stays root-only";
+      }
+      # Both guest-facing listeners are host AF_VSOCK sockets that demand the kanbei CID and
+      # the root-only token; a Firecracker UDS path here would accept any local dialler.
+      {
+        assertion =
+          let
+            age = config.systemd.services.ingest-age-key;
+            relay = config.systemd.services.search-relay;
+          in
+          lib.hasInfix "--port ${toString constants.ageKeyPort}" age.serviceConfig.ExecStart
+          && lib.hasInfix "--token-file %d/relay-token" age.serviceConfig.ExecStart
+          && lib.hasInfix "--peer-cid ${toString kanbeiCid}" age.serviceConfig.ExecStart
+          && lib.elem "relay-token:${relayTokenFile}" age.serviceConfig.LoadCredential
+          && lib.hasInfix "--port ${toString searchRelayPort}" relay.serviceConfig.ExecStart
+          && lib.hasInfix "--guest-port ${toString searchQueryPort}" relay.serviceConfig.ExecStart
+          && lib.hasInfix "--token-file %d/relay-token" relay.serviceConfig.ExecStart
+          && lib.hasInfix "--peer-cid ${toString kanbeiCid}" relay.serviceConfig.ExecStart
+          && lib.elem "relay-token:${relayTokenFile}" relay.serviceConfig.LoadCredential
+          && !(lib.hasInfix "--uds" age.serviceConfig.ExecStart)
+          && !(lib.hasInfix "--uds" relay.serviceConfig.ExecStart);
+        message = "ingest-vm: the age-key and search listeners must be AF_VSOCK, peer-CID-gated and token-authenticated";
+      }
+      {
+        assertion =
+          lib.elem "d ${constants.inboxDir} 0750 root root -" config.systemd.tmpfiles.rules
+          && lib.hasInfix "install -d -m 0750 -o root -g root ${constants.inboxDir}" (
+            builtins.readFile prepScript
+          );
+        message = "ingest-vm: the inbox directory must be 0750 root (batches are 0600 root)";
+      }
+      {
+        # The cluster digest share belongs to the dedicated digest uid, never to the human:
+        # guest 0/1000 are translated onto it and `smores` keeps no access.
+        assertion =
+          let
+            share = lib.findFirst (
+              s: s.tag == "data-cluster-digest"
+            ) null config.microvm.vms.cluster.config.config.microvm.shares;
+            rules = config.systemd.tmpfiles.rules;
+          in
+          !(config.microvm.vms ? cluster)
+          || (
+            share != null
+            && lib.any (a: lib.hasInfix "guest:0:${toString ingest.constants.digestUid}:1" a) share.extraArgs
+            && lib.elem "d ${digestShare} 0770 ${ingest.constants.digestUser} ${ingest.constants.digestUser} -" rules
+          );
+        message = "ingest-vm: the cluster digest tree must be owned by the digest uid at 0770 and reached through its uid mapping";
       }
       {
         assertion =

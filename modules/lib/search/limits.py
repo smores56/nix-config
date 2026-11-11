@@ -2,8 +2,14 @@
 
 The state lives in one root-only JSON file and is replaced atomically, so a
 restart (or a power cut between writes) never resets the counters: the file the
-next boot reads is either the previous complete state or nothing, and a missing
-or malformed file fails closed in `searchd` rather than granting a fresh budget.
+next boot reads is either the previous complete state or nothing.
+
+A missing file is a first run only once: `load` drops a 0600 ``<state>.initialized``
+marker beside it. From then on a missing state file is a `LimitError` (the volume was
+lost, the file was deleted, or someone is trying to reset the budget), so `searchd`
+blocks every query and logs the reason instead of granting a fresh budget. Recovery is
+an explicit operator action: delete the marker together with the state (documented in
+`docs/kanbei-search.md`).
 """
 
 from __future__ import annotations
@@ -43,12 +49,32 @@ def _day(now: float) -> str:
     return datetime.fromtimestamp(now, timezone.utc).date().isoformat()
 
 
+def marker_path(path: str) -> str:
+    return f"{path}.initialized"
+
+
+def _write_marker(path: str) -> None:
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        return
+    except OSError as exc:
+        raise LimitError(f"cannot create first-run marker {path}: {exc}") from exc
+    os.close(fd)
+
+
 def load(path: str, now: float) -> State:
-    """Read the state file; a missing file is a first run, anything else is strict."""
+    """Read the state file; a *first* run is empty, anything later missing fails closed."""
     try:
         with open(path, encoding="utf-8") as handle:
             data = json.load(handle)
     except FileNotFoundError:
+        marker = marker_path(path)
+        if os.path.exists(marker):
+            raise LimitError(
+                f"state {path} is missing after first run (marker {marker}); refusing a fresh budget"
+            )
+        _write_marker(marker)
         return empty(now)
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise LimitError(f"state {path} is unreadable: {exc}") from exc

@@ -13,6 +13,11 @@ let
   # Every path the host writer and the heartbeat share. Quoted in docs/kanbei-ingest.md.
   constants = {
     inboxDir = "/var/lib/data/inbox";
+    # The cluster digest writer's dedicated host identity. Guest root and guest uid 1000 are
+    # translated onto it for that share only, so `smores` (1000) has no access at all and a
+    # compromised cluster workload cannot inject into a tree Kanbei trusts.
+    digestUser = "kanbei-digest";
+    digestUid = 983;
     stateRoot = "/var/lib/kanbei-ingest";
     logDir = "/var/log/kanbei-ingest";
     policyFile = "/etc/kanbei-ingest/policy.json";

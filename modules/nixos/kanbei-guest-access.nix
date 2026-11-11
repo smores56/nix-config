@@ -68,7 +68,7 @@ in
       Type = "oneshot";
       User = "root";
       Group = "root";
-      ExecStart = "${python} ${tools}/cert_guest.py --state-dir ${access.guestTlsDir} --host-vsock-cid ${toString access.hostVsockCid} --host-vsock-port ${toString access.certVsockPort} --openssl ${pkgs.openssl}/bin/openssl --reload-unit ${access.guestUiUnit}.service";
+      ExecStart = "${python} ${tools}/cert_guest.py --state-dir ${access.guestTlsDir} --host-vsock-cid ${toString access.hostVsockCid} --host-vsock-port ${toString access.certVsockPort} --token-file /run/kanbei-secrets/relay-token --openssl ${pkgs.openssl}/bin/openssl --reload-unit ${access.guestUiUnit}.service";
       # The LUKS volume is writable for this unit only; ProtectSystem=strict covers the rest.
       ReadWritePaths = [ "/var/lib/kanbei" ];
       Restart = "on-failure";
@@ -102,8 +102,11 @@ in
       LoadCredential = [
         "tls-cert:${access.guestTlsDir}/cert.pem"
         "tls-key:${access.guestTlsDir}/key.pem"
+        # The host relay writes this token as the first bytes of every connection; the UI
+        # closes a connection that does not present it, before TLS starts.
+        "relay-token:/run/kanbei-secrets/relay-token"
       ];
-      ExecStart = "${python} ${tools}/ui/server.py --ui-dir ${tools}/ui --vsock-port ${toString access.chatVsockPort} --tls-cert %d/tls-cert --tls-key %d/tls-key --chat-upstream http://127.0.0.1:${toString chatPort}";
+      ExecStart = "${python} ${tools}/ui/server.py --ui-dir ${tools}/ui --vsock-port ${toString access.chatVsockPort} --tls-cert %d/tls-cert --tls-key %d/tls-key --auth-token-file %d/relay-token --chat-upstream http://127.0.0.1:${toString chatPort}";
       Restart = "always";
       RestartSec = "5s";
       RestrictAddressFamilies = [
@@ -118,6 +121,16 @@ in
     {
       assertion = access.chatVsockPort != access.certVsockPort;
       message = "kanbei-guest-access: the chat and certificate vsock ports must differ";
+    }
+    {
+      assertion =
+        lib.hasInfix "--auth-token-file %d/relay-token"
+          config.systemd.services.${access.guestUiUnit}.serviceConfig.ExecStart
+        &&
+          lib.elem "relay-token:/run/kanbei-secrets/relay-token"
+            config.systemd.services.${access.guestUiUnit}.serviceConfig.LoadCredential
+        && lib.hasInfix "--token-file /run/kanbei-secrets/relay-token" config.systemd.services.kanbei-cert.serviceConfig.ExecStart;
+      message = "kanbei-guest-access: the UI and certificate client must present the host relay token";
     }
   ];
 

@@ -33,8 +33,9 @@ Defined once in `modules/lib/phone-pipeline.nix`; the host and guest modules imp
 | Host password contract | `/run/secrets/phone-folder-password` (sops, 0400) |
 | Guest contract | `/run/kanbei-secrets/phone-folder-password` (read-only share) |
 | Staged password | `/var/lib/kanbei/secrets/phone-folder-password` (0400 root, LUKS) |
-| Decrypted tree | `/var/lib/kanbei/phone` (`manifest.json`, `sms/`, `contacts/`, `health/`) |
-| Service state | `/var/lib/kanbei/phone-state/{index.json,heartbeat.json,batches/}` |
+| Decrypted tree | `/var/lib/kanbei/phone` (0750 root:kanbei; `manifest.json`, `sms/`, `contacts/`, `health/`) |
+| Service state | `/var/lib/kanbei/phone-state/{index.json,heartbeat.json,batches/}` (0750 root:kanbei) |
+| Staged-secret parent | `/var/lib/kanbei/secrets` (0700 root; the password itself 0400) |
 | Per-file cap | 16 MiB |
 
 Canonical decrypted layout:
@@ -82,7 +83,10 @@ Renaming the id later means re-sharing.
 
 1. Generate once: `openssl rand -base64 32`. Store it in the password manager.
 2. `sops secrets/smortress.yaml` → add `phone-folder-password: <value>`.
-3. `modules/hosts/smortress/secrets.nix` declares it (already committed); sops-nix
+3. `modules/hosts/smortress/secrets.nix` declares it **behind `kanbeiVm.enable`**
+   (`lib.mkIf`); with the guest off the secret does not exist and the pipeline does not
+   exist either, so a host whose yaml lacks the key still switches. Flip the guest on
+   only after the key is encrypted (operator step in `docs/manual-steps.md`). sops-nix
    installs it 0400 root at `/run/secrets/phone-folder-password`.
 4. `kanbei-phone-password.service` copies it to the read-only `kanbei-secrets` share
    (`/run/kanbei-secrets/phone-folder-password`, 0400). `sops.secrets.phone-folder-password`
@@ -169,10 +173,20 @@ Drive/webhook dependency fails it.
    `/var/lib/kanbei/phone` (`renameat2(RENAME_EXCHANGE)`; two renames only if the kernel
    or filesystem refuses, leaving a sub-millisecond window).
 6. Newly consumed files produce one or more batch envelopes in
-   `phone-state/batches/phone-<utc>-<seq>.json` in the inbox contract
-   (`v`,`source=phone`,`kind=batch`,`seq`,`sent_at`,`items`), chunked at 500 items.
-   `phone-state/heartbeat.json` is rewritten on every run (status, file count, bytes,
-   sequence, consumed count); failures write an `alert` batch and an error heartbeat.
+   `phone-state/batches/phone-<utc>-<seq>.json`, chunked at 500 items. The envelope
+   matches the ingest plane's wire schema —
+   `modules/lib/ingest/policy.py::validate_batch` accepts exactly
+   `v`,`source=phone`,`kind` (`batch`/`alert`),`seq`,`sent_at`,`items` — but it is **not**
+   the `IngestBatchManifest` type from the kanbei repo: the items are file references
+   (`kind`,`path`,`sha256`,`bytes`), not provider payloads. Translating one into the other
+   is the T25 inbox-reader task; until then nothing in the kanbei guest consumes these
+   files.
+7. `phone-state/heartbeat.json` is rewritten on every run: status, file count, bytes,
+   sequence, consumed count, and the phone's own export time
+   (`source_export_epoch`/`source_export_at`, from the newest accepted file's date in its
+   name or its mtime) plus `source_age_s`. A phone that stopped exporting therefore reads
+   as stale even though the hourly decrypt keeps succeeding. Failures write an `alert`
+   batch and an error heartbeat.
 
 Exit codes: `10` no password, `11` not a receive-encrypted folder, `12` `syncthing decrypt`
 failed, `13` password contract (empty, wrong mode, unreadable). The timer retries hourly;
@@ -183,9 +197,10 @@ the journal carries the message.
 Host:
 
 ```sh
-sudo -u vault syncthing cli config folders list        # phone-untrusted, type receiveencrypted
+sudo -u vault syncthing cli -C /var/lib/syncthing -D /var/lib/syncthing config folders list
+#   ^ the daemon's home is /var/lib/syncthing; without -C/-D the CLI reads the wrong config
 sudo ls -ld /var/lib/data/phone-untrusted              # 0700 vault vault
-sudo -u smores test -r /var/lib/data/phone-untrusted   # must fail
+sudo -u smores test -r /var/lib/data/phone-untrusted   # must fail (exit 1)
 sudo systemctl status kanbei-phone-password.service
 sudo ls -l /var/lib/kanbei-vm/secrets/phone-folder-password   # 0400 root
 ```
@@ -224,4 +239,5 @@ positive/negative manifest fixtures.
   rejects them if the toggles are turned back on.
 - Blocked numbers are not exported daily (default-app requirement).
 - The phone's exports are only as fresh as the phone's battery/network; the guest
-  heartbeat makes a stale source visible once Kanbei's inbox reader surfaces it (#600).
+  heartbeat records the newest export time (`source_export_at`), so a silent phone shows
+  as stale once Kanbei's inbox reader surfaces it (#600/T25).

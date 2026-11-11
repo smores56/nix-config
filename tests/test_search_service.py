@@ -91,6 +91,21 @@ class LimitStateTests(unittest.TestCase):
         state = limits.load(self.path, NOW)
         self.assertEqual(state.day_count, 0)
         self.assertEqual(state.hits, ())
+        marker = limits.marker_path(self.path)
+        self.assertTrue(os.path.exists(marker))
+        self.assertEqual(os.stat(marker).st_mode & 0o777, 0o600)
+
+    def test_a_lost_state_after_the_first_run_fails_closed(self):
+        limits.load(self.path, NOW)  # first run: marker only
+        with self.assertRaises(limits.LimitError) as raised:
+            limits.load(self.path, NOW + 1)
+        self.assertIn("refusing a fresh budget", str(raised.exception))
+
+    def test_deleting_state_and_marker_restores_a_first_run(self):
+        limits.load(self.path, NOW)
+        os.unlink(limits.marker_path(self.path))
+        state = limits.load(self.path, NOW + 1)
+        self.assertEqual(state.day_count, 0)
 
     def test_rate_limit_and_round_trip(self):
         state = limits.load(self.path, NOW)

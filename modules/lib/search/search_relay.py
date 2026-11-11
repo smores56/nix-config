@@ -1,18 +1,19 @@
 """Host-side relay from Kanbei's vsock port to the search guest's query port.
 
-Kanbei dials host CID 2 on port 7101; Firecracker forwards that connection to this
-AF_UNIX listener, which opens a second connection to the search guest's
-Firecracker `notify.vsock` (`CONNECT 7024`) and pipes bytes both ways. The relay
-never parses or logs payload; it logs connection metadata and byte counts only.
+Kanbei dials host CID 2 on port 7101; this unit listens on host AF_VSOCK directly. A
+connection must come from the kanbei guest CID and its first line must carry the shared
+root-only relay token, so a bare vsock dial gets `ERR` and nothing else. The relay then
+opens a second connection to the search guest's Firecracker `notify.vsock`
+(`CONNECT 7024`) and pipes bytes both ways. It never parses or logs payload; it logs
+connection metadata and byte counts only.
 
-A failed upstream dial closes Kanbei's connection without a response, so a dead
-search guest reads to the client as a broken channel rather than an empty result.
+A failed upstream dial closes Kanbei's connection without a response, so a dead search
+guest reads to the client as a broken channel rather than an empty result.
 """
 
 from __future__ import annotations
 
 import argparse
-import grp
 import json
 import os
 import selectors
@@ -21,9 +22,13 @@ import sys
 import time
 from datetime import datetime, timezone
 
+import relay_auth
+
 CONNECT_TIMEOUT = 30.0
 PIPE_TIMEOUT = 120.0
 CHUNK = 65536
+VMADDR_CID_ANY = 0xFFFFFFFF
+KANBEI_CID = 4
 
 
 def log(event: str, **fields: object) -> None:
@@ -94,47 +99,74 @@ def pipe(left: socket.socket, right: socket.socket) -> tuple[int, int]:
         selector.close()
 
 
-def serve(uds: str, vsock: str, port: int, group: str = "kvm") -> None:
-    directory = os.path.dirname(uds)
-    if not os.path.isdir(directory):
-        raise SystemExit(f"search-relay: {directory} is missing; the Kanbei guest is not installed")
+def handle(
+    conn: socket.socket,
+    vsock: str,
+    port: int,
+    token: bytes,
+    expected_cid: int | None = None,
+) -> None:
+    """Serve one connection: peer gate, token gate, then splice to the search guest."""
+    conn.settimeout(CONNECT_TIMEOUT)
     try:
-        os.unlink(uds)
-    except FileNotFoundError:
-        pass
-    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    server.bind(uds)
-    # Firecracker (microvm:kvm) dials this socket to forward the guest connection.
-    os.chmod(uds, 0o660)
-    if group:
-        os.chown(uds, 0, grp.getgrnam(group).gr_gid)
+        if expected_cid is not None:
+            relay_auth.require_peer(conn, expected_cid)
+        relay_auth.verify(conn, token)
+    except relay_auth.AuthError as exc:
+        log("reject", reason=str(exc))
+        try:
+            conn.sendall(b"ERR\n")
+        except OSError:
+            pass
+        return
+    try:
+        upstream = connect_vsock(vsock, port)
+    except (ConnectionError, OSError, TimeoutError) as exc:
+        log("upstream-error", reason=str(exc))
+        return
+    with upstream:
+        try:
+            forward, backward = pipe(conn, upstream)
+        except OSError as exc:
+            log("pipe-error", reason=str(exc))
+            return
+        log("closed", forward=forward, backward=backward)
+
+
+def serve(
+    port: int,
+    vsock: str,
+    guest_port: int,
+    token: bytes,
+    expected_cid: int = KANBEI_CID,
+) -> None:
+    server = socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM)
+    server.bind((VMADDR_CID_ANY, port))
     server.listen(4)
-    log("listen", path=uds, vsock=vsock, port=port)
+    log("listen", port=port, vsock=vsock, guest_port=guest_port, peer_cid=expected_cid)
     while True:
-        conn, _ = server.accept()
+        conn, peer = server.accept()
         with conn:
-            try:
-                upstream = connect_vsock(vsock, port)
-            except (ConnectionError, OSError, TimeoutError) as exc:
-                log("upstream-error", reason=str(exc))
-                continue
-            with upstream:
-                try:
-                    forward, backward = pipe(conn, upstream)
-                except OSError as exc:
-                    log("pipe-error", reason=str(exc))
-                    continue
-                log("closed", forward=forward, backward=backward)
+            log("connection", peer_cid=peer[0])
+            handle(conn, vsock, guest_port, token, expected_cid)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="search-relay")
-    parser.add_argument("--uds", required=True)
+    parser.add_argument("--port", type=int, required=True, help="host AF_VSOCK port")
     parser.add_argument("--vsock", required=True, help="search guest notify.vsock path")
-    parser.add_argument("--port", type=int, required=True, help="search guest query port")
-    parser.add_argument("--group", default="kvm", help="group allowed to connect (Firecracker)")
+    parser.add_argument("--guest-port", type=int, required=True, help="search guest query port")
+    parser.add_argument("--token-file", required=True, help="root-only relay token")
+    parser.add_argument(
+        "--peer-cid", type=int, default=KANBEI_CID, help="the only guest CID allowed"
+    )
     args = parser.parse_args(argv)
-    serve(args.uds, args.vsock, args.port, args.group)
+    try:
+        token = relay_auth.read_token(args.token_file)
+    except relay_auth.AuthError as exc:
+        print(f"search-relay: {exc}", file=sys.stderr)
+        return 2
+    serve(args.port, args.vsock, args.guest_port, token, args.peer_cid)
     return 0
 
 

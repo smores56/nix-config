@@ -10,6 +10,11 @@ returns the chain. No private key is ever created or stored on the host.
 Lego is invoked with ``--csr`` so it signs the guest's key instead of making its own; only
 the account lives under ``--state-dir`` (the previous certificate file is removed first so
 Lego always issues for the new CSR).
+
+Two gates protect the responder: the connection must come from the kanbei guest CID and its
+first line must carry the shared root-only relay token (``relay_auth``), and issuance is
+rate-limited to one certificate per ``--min-interval`` (default 6 h) through a persistent
+marker in the state directory, so a compromised guest cannot fan out ACME requests.
 """
 
 from __future__ import annotations
@@ -21,11 +26,45 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 
+import relay_auth
 import vsock
 
 VMADDR_CID_ANY = 0xFFFFFFFF
 HOST_VSOCK_PORT = 10001
+KANBEI_CID = 4
+MIN_ISSUE_INTERVAL = 6 * 3600
+
+
+def marker_epoch(path: str) -> int:
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            return int(handle.read().strip())
+    except (FileNotFoundError, OSError, ValueError):
+        return 0
+
+
+def rate_limited(path: str, now: int, min_interval: int = MIN_ISSUE_INTERVAL) -> bool:
+    """True while the last successful issuance is newer than ``min_interval``."""
+    last = marker_epoch(path)
+    return last > 0 and 0 <= now - last < min_interval
+
+
+def record_issue(path: str, now: int) -> None:
+    directory = os.path.dirname(path)
+    fd, tmp = tempfile.mkstemp(dir=directory, prefix=".issue-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(f"{now}\n")
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+        raise
 
 
 class Signer:
@@ -38,6 +77,8 @@ class Signer:
         email: str,
         token_file: str,
         server: str = "https://acme-v02.api.letsencrypt.org/directory",
+        min_interval: int = MIN_ISSUE_INTERVAL,
+        clock=time.time,
     ) -> None:
         self.lego = lego
         self.openssl = openssl
@@ -45,6 +86,9 @@ class Signer:
         self.email = email
         self.token_file = token_file
         self.server = server
+        self.min_interval = min_interval
+        self.clock = clock
+        self.marker = os.path.join(state_dir, "last-issue")
         self.lock = threading.Lock()
 
     def _token(self) -> str:
@@ -71,6 +115,11 @@ class Signer:
         certificates = os.path.join(lego_path, "certificates")
         os.makedirs(certificates, mode=0o700, exist_ok=True)
         with self.lock, tempfile.TemporaryDirectory(dir=self.state_dir) as work:
+            now = int(self.clock())
+            if rate_limited(self.marker, now, self.min_interval):
+                raise RuntimeError(
+                    f"issuance rate limited: one certificate per {self.min_interval} s"
+                )
             csr_path = os.path.join(work, "request.csr")
             with open(csr_path, "w", encoding="utf-8") as handle:
                 handle.write(csr_pem.strip() + "\n")
@@ -115,6 +164,7 @@ class Signer:
                 chain = handle.read()
 
         info = vsock.validate_cert(vsock.split_chain(chain)[0], expected_spki=expected)
+        record_issue(self.marker, now)
         return vsock.success(chain, info["not_after"])
 
 
@@ -129,11 +179,20 @@ def respond(signer: Signer, obj: dict) -> dict:
         return vsock.error(str(exc))
 
 
-def handle_connection(conn: socket.socket, signer: Signer) -> None:
+def handle_connection(
+    conn: socket.socket, signer: Signer, token: bytes, expected_cid: int = KANBEI_CID
+) -> None:
     try:
         conn.settimeout(120)
+        relay_auth.require_peer(conn, expected_cid)
+        relay_auth.verify(conn, token)
         request = vsock.read_frame(conn)
         vsock.write_frame(conn, respond(signer, request))
+    except relay_auth.AuthError as exc:
+        try:
+            vsock.write_frame(conn, vsock.error(f"channel error: {exc}"))
+        except OSError:
+            pass
     except (vsock.FrameError, OSError) as exc:
         try:
             vsock.write_frame(conn, vsock.error(f"channel error: {exc}"))
@@ -146,7 +205,13 @@ def handle_connection(conn: socket.socket, signer: Signer) -> None:
             pass
 
 
-def serve(signer: Signer, port: int, stop: threading.Event | None = None) -> None:
+def serve(
+    signer: Signer,
+    port: int,
+    token: bytes,
+    expected_cid: int = KANBEI_CID,
+    stop: threading.Event | None = None,
+) -> None:
     listener = socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM)
     listener.bind((VMADDR_CID_ANY, port))
     listener.listen(8)
@@ -163,7 +228,7 @@ def serve(signer: Signer, port: int, stop: threading.Event | None = None) -> Non
                 raise
             # One issuance at a time: the signer's lock serialises the ACME client anyway, and a
             # short queue keeps a compromised guest from fanning out ACME requests.
-            handle_connection(conn, signer)
+            handle_connection(conn, signer, token, expected_cid)
     finally:
         listener.close()
 
@@ -175,21 +240,32 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--email", required=True)
     parser.add_argument("--lego", required=True)
     parser.add_argument("--openssl", required=True)
-    parser.add_argument("--token-file", required=True)
+    parser.add_argument("--token-file", required=True, help="shared root-only relay token")
+    parser.add_argument(
+        "--dns-token-file", required=True, help="Cloudflare DNS-01 API token credential"
+    )
+    parser.add_argument("--peer-cid", type=int, default=KANBEI_CID)
+    parser.add_argument("--min-interval", type=int, default=MIN_ISSUE_INTERVAL)
     parser.add_argument("--server", default="https://acme-v02.api.letsencrypt.org/directory")
     args = parser.parse_args(argv)
 
     os.makedirs(args.state_dir, mode=0o700, exist_ok=True)
+    try:
+        token = relay_auth.read_token(args.token_file)
+    except relay_auth.AuthError as exc:
+        print(f"kanbei-acme: {exc}", file=sys.stderr)
+        return 2
     signer = Signer(
         lego=args.lego,
         openssl=args.openssl,
         state_dir=args.state_dir,
         email=args.email,
-        token_file=args.token_file,
+        token_file=args.dns_token_file,
         server=args.server,
+        min_interval=args.min_interval,
     )
     print(f"kanbei-acme: listening on vsock port {args.port}", file=sys.stderr)
-    serve(signer, args.port)
+    serve(signer, args.port, token, args.peer_cid)
     return 0
 
 

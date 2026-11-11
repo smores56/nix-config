@@ -17,6 +17,7 @@ let
   };
   # Read only to assert the tap, address and state paths never collide with the agent guest.
   agentFacts = import ../lib/agent-vm.nix { inherit pkgs lib; };
+  ingest = import ../lib/ingest-vm.nix { inherit lib; };
 
   user = config.machine.username;
 
@@ -27,12 +28,24 @@ let
     "music"
     "books"
     "graphiti"
-    # The platform CronJob publishes cluster health and nanobot activity here
-    # (#595); the host ingest writer at `/var/lib/data/cluster-digest` encrypts
-    # each new document into Kanbei's inbox. Read-write because the job owns the
-    # tree and prunes its own snapshots.
-    "cluster-digest"
   ];
+
+  # The platform CronJob publishes cluster health and nanobot activity here (#595); the
+  # host ingest writer encrypts each new document into Kanbei's inbox. It is *not* a
+  # human-owned data share: the tree belongs to the dedicated digest uid at 0770, so a
+  # compromised cluster workload cannot inject into a tree Kanbei reads, and `smores` can
+  # neither read nor write it. The guest reaches it through an explicit uid mapping.
+  digestName = "cluster-digest";
+  digestDir = "/var/lib/data/${digestName}";
+  digestTranslation = [
+    "--translate-uid=guest:0:${toString ingest.constants.digestUid}:1"
+    "--translate-uid=guest:1000:${toString ingest.constants.digestUid}:1"
+    "--translate-gid=guest:0:${toString ingest.constants.digestUid}:1"
+    "--translate-gid=guest:1000:${toString ingest.constants.digestUid}:1"
+    "--modcaps=-mknod"
+  ];
+  # Every share the k3s guest mounts under /mnt/data.
+  mountShares = dataShares ++ [ digestName ];
 
   # Explicit translation, never the agent VM's squash-to-`smores`: guest root writes as the
   # host's `nobody`, so a compromised workload cannot plant host-root-owned files across the
@@ -223,6 +236,16 @@ let
         }) dataShares
         ++ [
           {
+            tag = "data-${digestName}";
+            source = digestDir;
+            mountPoint = "/mnt/data/${digestName}";
+            proto = "virtiofs";
+            posixAcl = false;
+            extraArgs = digestTranslation;
+          }
+        ]
+        ++ [
+          {
             tag = "k3s-token";
             source = "${facts.stateDir}/secrets";
             mountPoint = "/run/secrets";
@@ -277,12 +300,13 @@ let
         enable = true;
         role = "server";
         inherit tokenFile;
-        # Flux owns every addon that can be reinstalled declaratively. CoreDNS stays: Flux's
-        # own Git sources resolve service names, and no tenant manifest declares it yet.
+        # Flux owns every addon that can be reinstalled declaratively. CoreDNS and the
+        # local-storage addon stay: Flux's own Git sources resolve service names, and the
+        # platform's `local-path` StorageClass is k3s's built-in provisioner (the manifests
+        # reference it, so disabling the addon would strand every PVC).
         disable = [
           "traefik"
           "servicelb"
-          "local-storage"
           "metrics-server"
         ];
         # gVisor: the shim (containerd-shim-runsc-v1) must be on the service PATH. The v2
@@ -300,7 +324,7 @@ let
       systemd.services.k3s = {
         path = [ pkgs.gvisor ];
         # The token and the hostPath PV trees must be mounted before the API and kubelet start.
-        unitConfig.RequiresMountsFor = [ "/run/secrets" ] ++ map (name: "/mnt/data/${name}") dataShares;
+        unitConfig.RequiresMountsFor = [ "/run/secrets" ] ++ map (name: "/mnt/data/${name}") mountShares;
       };
 
       # The host drives the API as root, but /etc/rancher/k3s/k3s.yaml points at loopback.
@@ -350,9 +374,20 @@ in
   };
 
   # The shares' host paths must exist before virtiofsd starts. immich/graphiti are empty until
-  # T6 moves the apps; music and books already exist from the host's own tmpfiles; cluster-digest
-  # is owned by the platform CronJob and only read by the host ingest writer.
-  systemd.tmpfiles.rules = map (name: "d /var/lib/data/${name} 0775 ${user} users -") dataShares;
+  # T6 moves the apps; music and books already exist from the host's own tmpfiles. The digest
+  # tree is the one share the human does not own: 0770 on a dedicated uid, so neither `smores`
+  # nor a guest mapped onto it can be read or written by the human account.
+  systemd.tmpfiles.rules = map (name: "d /var/lib/data/${name} 0775 ${user} users -") dataShares ++ [
+    "d ${digestDir} 0770 ${ingest.constants.digestUser} ${ingest.constants.digestUser} -"
+  ];
+
+  users.groups.${ingest.constants.digestUser}.gid = ingest.constants.digestUid;
+  users.users.${ingest.constants.digestUser} = {
+    isSystemUser = true;
+    uid = ingest.constants.digestUid;
+    group = ingest.constants.digestUser;
+    description = "cluster digest writer (the cluster guest's one-way feed to Kanbei)";
+  };
 
   systemd.services = {
     cluster-vm-prep = {
@@ -376,6 +411,13 @@ in
         RuntimeDirectory = "cluster-vm";
         RuntimeDirectoryMode = "0700";
       };
+    };
+
+    # Firecracker's notify.vsock is unused by this guest today; the umask keeps any future
+    # socket in the state directory owner-only.
+    "microvm@${facts.name}" = {
+      overrideStrategy = "asDropin";
+      serviceConfig.UMask = "0077";
     };
 
     cluster-vm-net = {
@@ -421,10 +463,23 @@ in
       message = "cluster-vm: the cluster guest must not share a tap or a state path with the agent guest";
     }
     {
-      # The digest writer (#595) reads this share through the ingest module; a
-      # rename here would silently stop the one-way cluster feed.
-      assertion = builtins.elem "cluster-digest" dataShares;
-      message = "cluster-vm: the cluster-digest share feeds the Kanbei ingest writer";
+      # The digest writer (#595) reads this share through the ingest module; a rename here
+      # would silently stop the one-way cluster feed, and dropping back to a human-owned
+      # data share would let maki inject content into Kanbei's inbox.
+      assertion =
+        let
+          guest = config.microvm.vms.${facts.name}.config.config;
+          share = lib.findFirst (s: s.tag == "data-${digestName}") null guest.microvm.shares;
+        in
+        !(builtins.elem digestName dataShares)
+        && share != null
+        && share.source == digestDir
+        && share.mountPoint == "/mnt/data/${digestName}"
+        && !(share.readOnly or false)
+        && lib.any (a: lib.hasInfix "guest:1000:${toString ingest.constants.digestUid}:1" a) share.extraArgs
+        && lib.elem "d ${digestDir} 0770 ${ingest.constants.digestUser} ${ingest.constants.digestUser} -" config.systemd.tmpfiles.rules
+        && ingest.constants.digestUid != config.users.users.${user}.uid;
+      message = "cluster-vm: the cluster-digest tree must be 0770 on the dedicated digest uid, mapped explicitly for the guest, and never owned by ${user}";
     }
     {
       assertion =

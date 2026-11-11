@@ -36,7 +36,7 @@ sent to TinyFish until all four gates passed.
 |---|---|---|---|
 | 1 | DLP scan | `dlp` | whitespace-normalised query, pattern id only |
 | 2 | length cap | `length` | `ingestVm.searchMaxQueryChars` (default 100, hard ceiling 320) |
-| 3 | rate + budget | `rate`, `budget`, `state` | sliding minute and UTC-day counters, persisted |
+| 3 | rate + budget | `rate`, `budget`, `state` | sliding minute and UTC-day counters, persisted; a lost state file after the first run blocks |
 | 4 | Guardian judge | `judge` | loopback llama.cpp; any error, timeout or missing verdict blocks |
 
 After the gates, a TinyFish error or an unusable result document is `upstream`
@@ -160,15 +160,27 @@ the response cap is 8 KiB.
 {"v":1,"op":"search","decision":"block","reason":"dlp|length|state|rate|budget|judge|upstream|request","results":[],"truncated":false}
 ```
 
-Kanbei dials host CID 2, port 7101, from inside its Firecracker VM. Firecracker
-forwards that to `/var/lib/microvms/kanbei/notify.vsock_7101`, where
-`search-relay.service` listens as `root:kvm`; the relay dials the search guest's
-`/var/lib/microvms/search/notify.vsock` (`CONNECT 7024`) and pipes bytes both
-ways. If the guest is down, the relay closes Kanbei's connection: a broken
-channel, never an empty result. The batch port 7014 stays the verifier's ingest
-path; the query API has its own port.
+Kanbei dials host CID 2, port 7101, from inside its qemu VM. `search-relay.service`
+binds that host AF_VSOCK port itself; the connection must come from peer CID 4 and
+its first line must be `KANBEI-AUTH 1 <token>`, the shared root-only relay token
+(`/var/lib/kanbei-vm/secrets/relay-token`, read by the guest from its read-only
+`kanbei-secrets` share). A wrong CID or token gets `ERR\n` and never reaches the
+search guest. After the gate the relay dials the search guest's
+`/var/lib/microvms/search/notify.vsock` (`CONNECT 7024`) and pipes bytes both ways.
+If the guest is down, the relay closes Kanbei's connection: a broken channel, never
+an empty result. The batch port 7014 stays the verifier's ingest path; the query
+API has its own port.
 
 ## Logs and viewer
+
+The limiter's state is `/var/lib/search/limits.json` (0600) on the writable volume.
+The first `load` drops a `limits.json.initialized` marker beside it; from then on a
+missing state file is a `LimitError`, so `searchd` blocks every query (`reason:
+state`) and logs loudly instead of granting a fresh per-minute/daily budget. That
+covers a deleted file, a replaced volume or an attempt to reset the budget. To
+recover deliberately, stop `searchd`, delete **both** `limits.json` and
+`limits.json.initialized`, and start it again (one first run, then the marker
+returns).
 
 The guest's `searchd` writes one JSON line per request to
 `/var/log/search/search.log` (0600, tmpfs, rotated at 1 MiB) and to `journal+console`.

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.util
 import socket
+import sys
 import threading
 import unittest
 from pathlib import Path
@@ -17,6 +18,7 @@ from pathlib import Path
 
 def load_module():
     path = Path(__file__).parents[1] / "modules/lib/kanbei/relay.py"
+    sys.path.insert(0, str(path.parent))
     spec = importlib.util.spec_from_file_location("kanbei_relay", path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -107,6 +109,38 @@ class ServeTests(unittest.TestCase):
         self.assertEqual(client.recv(16), b"")
         self.stop.set()
         worker.join(timeout=5)
+
+    def test_the_token_line_precedes_every_client_byte(self):
+        guest, guest_peer = socket.socketpair()
+        self.addCleanup(guest.close)
+        self.addCleanup(guest_peer.close)
+        token = b"t" * 64
+        worker = threading.Thread(
+            target=self.relay.serve,
+            args=(self.listener, lambda: guest, self.stop),
+            kwargs={"token": token},
+            daemon=True,
+        )
+        worker.start()
+        client = socket.create_connection(self.listener.getsockname(), timeout=5)
+        self.addCleanup(client.close)
+        client.sendall(b"GET / HTTP/1.1\r\n\r\n")
+        received = b""
+        guest_peer.settimeout(5)
+        while b"GET / HTTP/1.1\r\n\r\n" not in received:
+            chunk = guest_peer.recv(256)
+            self.assertTrue(chunk)
+            received += chunk
+        self.assertEqual(
+            received, b"KANBEI-AUTH 1 " + token + b"\nGET / HTTP/1.1\r\n\r\n"
+        )
+        self.stop.set()
+        worker.join(timeout=5)
+
+    def test_a_missing_token_file_fails_closed(self):
+        self.assertEqual(
+            self.relay.main(["--vsock-port", "1", "--token-file", "/nonexistent/token"]), 2
+        )
 
     def test_systemd_listener_is_none_without_socket_activation(self):
         self.assertIsNone(self.relay.systemd_listener())

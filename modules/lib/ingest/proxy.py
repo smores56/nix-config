@@ -161,6 +161,11 @@ class Proxy:
         started: float,
     ) -> None:
         host, port, path = policy.parse_absolute_form(target)
+        # Only the two web ports: an absolute-form request must not turn the proxy into a
+        # generic port forward (CONNECT already refuses anything but 443).
+        if port not in (80, 443):
+            log("deny", source=source, action="http", host=host, port=port, reason="port")
+            raise policy.PolicyError("absolute-form requests are limited to ports 80 and 443")
         if host not in self.allowlist(source):
             log("deny", source=source, action="http", host=host, port=port, reason="not_allowlisted")
             raise policy.PolicyError(f"{host} is not allowlisted for {source}")

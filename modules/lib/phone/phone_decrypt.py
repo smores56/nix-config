@@ -34,6 +34,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -43,6 +44,9 @@ PASSWORD_MODE = 0o400
 MAX_PASSWORD_BYTES = 4096
 MAX_BATCH_ITEMS = 500
 INTERNAL_NAMES = {".stfolder", ".stignore", ".stversions"}
+# The export date embedded in the documented filenames (messages-YYYY-MM-DD.zip,
+# health_YYYY-MM-DD.json); fall back to the file mtime when a name has no date.
+EXPORT_DATE = re.compile(r"(?<!\d)(\d{4})-(\d{2})-(\d{2})(?!\d)")
 TOKEN_NAME = "syncthing-encryption_password_token"
 TOKEN_REL = Path(".stfolder") / TOKEN_NAME
 
@@ -219,8 +223,29 @@ def collect(work: Path, max_bytes: int, patterns: dict[str, list[re.Pattern[str]
             if info.st_size > max_bytes:
                 rejected.append({"path": str(relative), "reason": "size-cap", "bytes": info.st_size})
                 continue
-            accepted.append((kind, path, name, info.st_size))
+            accepted.append((kind, path, name, info.st_size, info.st_mtime))
     return accepted, rejected
+
+
+def export_epoch(name: str, mtime: float) -> int:
+    """The phone's own export time for one accepted file (date in the name, else mtime)."""
+    match = EXPORT_DATE.search(name)
+    if match is not None:
+        try:
+            moment = datetime(
+                int(match.group(1)), int(match.group(2)), int(match.group(3)), tzinfo=timezone.utc
+            )
+        except ValueError:
+            return int(mtime)
+        return int(moment.timestamp())
+    return int(mtime)
+
+
+def newest_export(accepted: list[tuple]) -> int | None:
+    """The newest export time across accepted files, or None when nothing was accepted."""
+    if not accepted:
+        return None
+    return max(export_epoch(entry[2], entry[4]) for entry in accepted)
 
 
 def merge_tree(source: Path, target: Path) -> None:
@@ -351,7 +376,7 @@ def run(
             merge_tree(target, stage)
 
         consumed: list[dict[str, object]] = []
-        for kind, path, name, size in accepted:
+        for kind, path, name, size, _mtime in accepted:
             digest = sha256_file(path)
             relative = f"{kind}/{name}"
             if digest in known and (stage / relative).is_file():
@@ -383,6 +408,9 @@ def run(
         swap_dirs(stage, target)
 
         total_bytes = sum(int(entry.get("bytes", 0)) for entry in files.values())
+        # The phone's own export time, not this run's clock: a phone that stopped
+        # exporting shows up as stale even though the decrypt timer keeps succeeding.
+        export_at = newest_export(accepted)
         heartbeat = {
             "v": VERSION,
             "source": SOURCE,
@@ -392,6 +420,17 @@ def run(
             "files": len(files),
             "bytes": total_bytes,
             "consumed": len(consumed),
+            "source_export_epoch": export_at,
+            "source_export_at": (
+                None
+                if export_at is None
+                else datetime.fromtimestamp(export_at, timezone.utc).isoformat(timespec="seconds")
+            ),
+            "source_age_s": (
+                None
+                if export_at is None
+                else max(0, int(time.time()) - export_at)
+            ),
         }
         if consumed:
             state["seq"] = write_batches(batch_dir, int(state["seq"]), consumed, "batch", stamp)

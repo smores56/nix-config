@@ -496,6 +496,15 @@ in
                 }
               ) != [ ];
             assert ingest.sources.search.volumes == 3;
+            # The host-side channels are AF_VSOCK listeners on the shared port table; a
+            # UDS path or a moved port silently orphans Kanbei's dialers.
+            assert ingest.constants.ageKeyPort == 7100;
+            assert ingest.constants.searchQueryPort == 7101;
+            assert ingest.constants.ageKeyPort != ingest.sources.search.queryPort;
+            # The digest tree has its own identity; mapping it to the human or to root is
+            # the injection the 0770 share exists to stop.
+            assert ingest.constants.digestUser == "kanbei-digest";
+            assert ingest.constants.digestUid != 0 && ingest.constants.digestUid != 1000;
             assert ingest.validateHostSources ingest.hostSources == [ ];
             assert
               ingest.validateHostSources (
@@ -523,9 +532,11 @@ in
         );
 
         # Phone pipeline contract (smores #593): the host folder is receive-encrypted,
-        # owner-only, shared with the phone alone, the password contract is declared, and
-        # no restic job names the guest's plaintext tree. The guest-side share assertion
-        # runs in the kanbei-enabled eval (docs/kanbei-phone.md).
+        # owner-only, shared with the phone alone, and no restic job names the guest's
+        # plaintext tree. The password contract is declared only while `kanbeiVm.enable`
+        # is set: the key is not in `secrets/smortress.yaml`, so an unconditional
+        # declaration fails every switch. The guest-side share assertion runs in the
+        # kanbei-enabled eval (docs/kanbei-phone.md).
         phone-pipeline = evalCheck "phone-pipeline" (
           toString (
             let
@@ -542,8 +553,11 @@ in
             assert host.services.syncthing.user == "vault";
             assert lib.any (b: lib.any (p: lib.hasPrefix "/var/lib/data" p) b.paths) backups;
             assert lib.all (b: !lib.any (p: lib.hasPrefix phone.plaintextDir p) b.paths) backups;
-            assert host.sops.secrets ? phone-folder-password;
-            assert host.sops.secrets.phone-folder-password.path == phone.passwordContract;
+            assert host.kanbeiVm.enable == false;
+            # The gate, not the declaration: with the guest off the secret must not exist.
+            assert !(host.sops.secrets ? phone-folder-password);
+            assert
+              !(lib.any (unit: unit == "kanbei-phone-password.service") (lib.attrNames host.systemd.services));
             "ok"
           )
         );

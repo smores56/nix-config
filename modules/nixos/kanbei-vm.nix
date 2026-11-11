@@ -40,6 +40,10 @@ let
   enrollDir = "${stateDir}/enroll";
   # The ingest writer drops age-encrypted batches here; T14 owns the path, this share reads it.
   inboxDir = (import ../lib/ingest-vm.nix { inherit lib; }).constants.inboxDir;
+  # Shared by every host listener the guest dials (chat relay, ACME responder, age-recipient
+  # and search relay) and read by the guest from its read-only `kanbei-secrets` share. It is
+  # generated here, root-only, so no sops key is needed and no unauthenticated channel exists.
+  relayTokenFile = "${secretDir}/relay-token";
 
   # The phone's receive-encrypted Syncthing folder and the password contract, both owned
   # by the host side of the pipeline (`docs/kanbei-phone.md`).
@@ -192,31 +196,20 @@ let
     fi
   '';
 
-  freezeScript = pkgs.writeShellScript "kanbei-vm-freeze" ''
-    set -euo pipefail
-    export PATH=${lib.makeBinPath [ pkgs.coreutils ]}
-    systemctl=${config.systemd.package}/bin/systemctl
-    # A dirty image would restore an inconsistent LUKS filesystem, so refuse to snapshot a
-    # running guest. Only restart what this hook stopped.
-    if "$systemctl" is-active --quiet microvm@kanbei.service; then
-      install -m 0600 /dev/null ${runDir}/backup-was-active
-      "$systemctl" stop microvm@kanbei.service
-    fi
-    if "$systemctl" is-active --quiet microvm@kanbei.service; then
-      echo "kanbei-vm-freeze: microvm@kanbei.service is still running" >&2
-      exit 1
-    fi
-  '';
-
-  thawScript = pkgs.writeShellScript "kanbei-vm-thaw" ''
-    set -euo pipefail
-    export PATH=${lib.makeBinPath [ pkgs.coreutils ]}
-    systemctl=${config.systemd.package}/bin/systemctl
-    if [ -e ${runDir}/backup-was-active ]; then
-      rm -f ${runDir}/backup-was-active
-      "$systemctl" start microvm@kanbei.service || true
-    fi
-  '';
+  # Both restic jobs snapshot the same image. The helper refcounts jobs under a flock so the
+  # guest stops for the first job and starts only after the last cleanup (`freeze.py`).
+  freezeTool = pkgs.writeShellApplication {
+    name = "kanbei-freeze";
+    runtimeInputs = [ pkgs.python3 ];
+    text = ''
+      # State lives in the durable host state directory, not /run/kanbei-vm: RESTIC stops
+      # swtpm, whose RuntimeDirectory disappears with its unit, and the refcount must
+      # survive that stop for the cleanup half to read it.
+      exec ${pkgs.python3}/bin/python3 ${../lib/kanbei/freeze.py} \
+        --run-dir ${stateDir}/backup --systemctl ${config.systemd.package}/bin/systemctl "$@"
+    '';
+  };
+  freezeHook = job: action: "${freezeTool}/bin/kanbei-freeze --job ${job} --${action}";
 
   # Runtime half of the "clean IOMMU group" check: evaluation only sees the recorded facts.
   # writeShellScriptBin: environment.systemPackages needs a directory to merge.
@@ -250,12 +243,16 @@ let
       echo "FAIL: an nvidia module is loaded while the guest owns the GPU" >&2
       fail=1
     fi
-    for p in ${swtpmDir} ${consoleDir}; do
+    for p in ${swtpmDir} ${consoleDir} ${secretDir}; do
       if [ "$(${pkgs.coreutils}/bin/stat -c %a "$p")" != "700" ]; then
         echo "FAIL: $p is not 0700" >&2
         fail=1
       fi
     done
+    if [ "$(${pkgs.coreutils}/bin/stat -c %a:%U:%G ${relayTokenFile})" != "400:root:root" ]; then
+      echo "FAIL: ${relayTokenFile} is not 0400 root:root; every relay authenticates with it" >&2
+      fail=1
+    fi
     if [ ! -S ${swtpmSock} ]; then
       echo "FAIL: ${swtpmSock} is missing" >&2
       fail=1
@@ -400,8 +397,10 @@ let
         ];
       };
 
+      # 0750 root:kanbei: guest uid 1000 (kanbei) must traverse the LUKS mount; secrets stay
+      # 0700 root inside it.
       systemd.tmpfiles.rules = [
-        "d /var/lib/kanbei 0700 root root -"
+        "d /var/lib/kanbei 0750 root kanbei -"
         "d /run/kanbei-secrets 0755 root root -"
       ];
 
@@ -472,13 +471,19 @@ in
     # the inbox. The microvm.nix state dir holds the ciphertext image; it is 0700 `microvm` so no
     # login user can read it (documented residual: `microvm` is a nologin system account).
     systemd.tmpfiles.rules = [
-      "d ${stateDir} 0700 root root -"
+      "d ${stateDir} 0750 root root -"
       "d ${swtpmDir} 0700 root root -"
       "d ${consoleDir} 0700 root root -"
       "d ${secretDir} 0700 root root -"
       "d ${enrollDir} 0700 root root -"
-      "d ${inboxDir} 0755 root root -"
+      "d ${inboxDir} 0750 root root -"
     ];
+
+    # Upstream udev leaves /dev/vhost-vsock 0666. QEMU only needs the device as microvm:kvm, so
+    # the rule narrows it to 0660 root:kvm; kanbei-vm-verify asserts the result.
+    services.udev.extraRules = ''
+      KERNEL=="vhost-vsock", GROUP="kvm", MODE="0660"
+    '';
 
     systemd.services.kanbei-vm-prep = {
       description = "Create the kanbei guest's root-only state and escrow directories";
@@ -500,13 +505,21 @@ in
       };
       script = ''
         set -euo pipefail
-        install -d -m 0700 -o root -g root ${stateDir} ${swtpmDir} ${consoleDir} ${secretDir} ${enrollDir}
-        install -d -m 0755 -o root -g root ${inboxDir}
+        install -d -m 0750 -o root -g root ${stateDir}
+        install -d -m 0700 -o root -g root ${swtpmDir} ${consoleDir} ${secretDir} ${enrollDir} ${stateDir}/backup
+        install -d -m 0750 -o root -g root ${inboxDir}
         install -d -m 0700 -o microvm -g kvm ${vmStateDir}
         # sops contract: the operator's own recovery credential, not the generated one.
         if [ -r ${recoveryKeyFile} ]; then
           install -m 0400 -o root -g root ${recoveryKeyFile} ${secretDir}/kanbei-recovery-key
         fi
+        # Shared relay token: every host listener and the guest read this one file.
+        if [ ! -s ${relayTokenFile} ]; then
+          umask 077
+          ${pkgs.openssl}/bin/openssl rand -hex 32 > ${relayTokenFile}
+        fi
+        ${pkgs.coreutils}/bin/chmod 0400 ${relayTokenFile}
+        ${pkgs.coreutils}/bin/chown root:root ${relayTokenFile}
       '';
     };
 
@@ -562,6 +575,9 @@ in
     # readable when the guest is not. systemd opens the file as root before dropping to `microvm`
     # and the 0700 parent keeps every other login user out.
     systemd.services."microvm@${facts.name}" = {
+      # The instance unit is generated by microvm.nix; without asDropin this declaration
+      # replaces it (and drops its ExecStart).
+      overrideStrategy = "asDropin";
       requires = [
         "kanbei-swtpm.service"
         "kanbei-vm-prep.service"
@@ -602,8 +618,8 @@ in
         initialize = true;
         paths = [ image ];
         exclude = [ swtpmDir ];
-        backupPrepareCommand = "${freezeScript}";
-        backupCleanupCommand = "${thawScript}";
+        backupPrepareCommand = freezeHook "kanbei-r2" "prepare";
+        backupCleanupCommand = freezeHook "kanbei-r2" "cleanup";
         passwordFile = config.sops.secrets.restic-password.path;
         pruneOpts = [
           "--keep-daily 7"
@@ -620,8 +636,8 @@ in
         repository = "/var/backup/restic";
         paths = [ image ];
         exclude = [ swtpmDir ];
-        backupPrepareCommand = "${freezeScript}";
-        backupCleanupCommand = "${thawScript}";
+        backupPrepareCommand = freezeHook "kanbei-local" "prepare";
+        backupCleanupCommand = freezeHook "kanbei-local" "cleanup";
         passwordFile = config.sops.secrets.restic-password.path;
         pruneOpts = [
           "--keep-daily 7"
@@ -695,13 +711,53 @@ in
         message = "kanbei-vm: the swtpm state must never enter a restic snapshot";
       }
       {
-        # The phone folder holds ciphertext and must be readable only by the vault user
-        # and the read-only guest share; the guest mounts it read-only.
+        # Evaluated guest config, not the let-binding: the share the guest actually mounts must
+        # be the read-only phone-untrusted tree.
         assertion =
-          phoneShare.readOnly == true
-          && phoneShare.source == "/var/lib/data/phone-untrusted"
-          && phoneShare.mountPoint == "/mnt/kanbei/phone-untrusted";
-        message = "kanbei-vm: the phone-untrusted share must be read-only at /mnt/kanbei/phone-untrusted";
+          let
+            shares = config.microvm.vms.${facts.name}.config.config.microvm.shares;
+            share = lib.findFirst (s: s.tag == phone.tag) null shares;
+          in
+          share != null
+          && share.readOnly == true
+          && share.source == phone.hostFolder
+          && share.mountPoint == phone.guestMount;
+        message = "kanbei-vm: the phone-untrusted share must be read-only at ${phone.guestMount}";
+      }
+      {
+        # The relay token lives on the root-only secret share and nowhere else; every host
+        # listener loads it as a systemd credential.
+        assertion =
+          lib.hasPrefix "${secretDir}/" relayTokenFile
+          && lib.elem "d ${secretDir} 0700 root root -" config.systemd.tmpfiles.rules;
+        message = "kanbei-vm: the relay token must live in the root-only secret directory";
+      }
+      {
+        # microvm.nix generates microvm@<name>.service; a plain declaration would replace it.
+        assertion = config.systemd.services."microvm@${facts.name}".overrideStrategy == "asDropin";
+        message = "kanbei-vm: the microvm@${facts.name} override must be an asDropin";
+      }
+      {
+        # Guest uid 1000 must traverse the LUKS mount; secrets inside it stay root-only.
+        assertion =
+          lib.elem "d /var/lib/kanbei 0750 root kanbei -"
+            config.microvm.vms.${facts.name}.config.config.systemd.tmpfiles.rules;
+        message = "kanbei-vm: /var/lib/kanbei must be 0750 root:kanbei for the guest payload user";
+      }
+      {
+        # The freeze hook is shared by both jobs and keyed by job, so neither can start the
+        # guest while the other still snapshots (freeze.py refcount).
+        assertion =
+          let
+            jobs = [
+              config.services.restic.backups.kanbei-r2
+              config.services.restic.backups.kanbei-local
+            ];
+            hooks = map (b: toString b.backupPrepareCommand) jobs;
+          in
+          lib.all (h: lib.hasInfix "--prepare" h && lib.hasInfix "--job kanbei-" h) hooks
+          && lib.all (b: !(lib.hasInfix "backup-was-active" (toString b.backupPrepareCommand))) jobs;
+        message = "kanbei-vm: both restic jobs must use the refcounted kanbei-freeze helper";
       }
       {
         # The decrypted tree lives only inside the guest's LUKS image; no host restic job

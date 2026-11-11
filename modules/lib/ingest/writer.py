@@ -119,7 +119,9 @@ def write_batch(inbox: str, source: str, seq: int, recipient: str, payload: byte
     name = f"{source}-{stamp}-{seq:06d}.age"
     tmp = encrypt_to(recipient, payload, inbox)
     target = os.path.join(inbox, name)
-    os.chmod(tmp, 0o644)
+    # 0600 root: only Kanbei's inbox reader (guest root, via the read-only share) may read
+    # a batch; the inbox directory is 0750 root.
+    os.chmod(tmp, 0o600)
     os.replace(tmp, target)
     return target
 

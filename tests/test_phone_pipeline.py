@@ -273,6 +273,11 @@ class EndToEndTests(unittest.TestCase):
 
         self.assertEqual(1, json.loads(self.state.read_text())["seq"])
         self.assertEqual(0o400, stat.S_IMODE(self.staged.stat().st_mode))
+        # The heartbeat carries the phone's export date, so a silent phone is visible as
+        # stale even while the hourly decrypt keeps succeeding.
+        self.assertEqual("2026-11-10T00:00:00+00:00", heartbeat["source_export_at"])
+        self.assertIsNotNone(heartbeat["source_export_epoch"])
+        self.assertIsNotNone(heartbeat["source_age_s"])
 
     def test_second_run_dedupes_and_emits_no_batch(self):
         self.run_once()
@@ -311,6 +316,34 @@ class EndToEndTests(unittest.TestCase):
         self.assertEqual("alert", envelope["kind"])
         self.assertEqual("boom", envelope["items"][0]["error"])
         self.assertEqual("error", json.loads(self.heartbeat.read_text())["status"])
+
+
+class ExportTimeTests(unittest.TestCase):
+    def setUp(self):
+        self.decrypt = load(PHONE, "phone_decrypt")
+
+    def iso(self, epoch: int) -> str:
+        return self.decrypt.datetime.fromtimestamp(
+            epoch, self.decrypt.timezone.utc
+        ).isoformat()
+
+    def test_the_date_in_the_name_wins(self):
+        epoch = self.decrypt.export_epoch("messages-2026-11-10.zip", 1_700_000_000)
+        self.assertEqual("2026-11-10T00:00:00+00:00", self.iso(epoch))
+
+    def test_a_name_without_a_date_uses_the_mtime(self):
+        self.assertEqual(
+            self.decrypt.export_epoch("calls-latest.json", 1_700_000_000), 1_700_000_000
+        )
+
+    def test_the_newest_accepted_export_wins(self):
+        accepted = [
+            ("sms", Path("/x/messages-2026-11-09.zip"), "messages-2026-11-09.zip", 1, 0),
+            ("health", Path("/x/health_2026-11-10.json"), "health_2026-11-10.json", 1, 0),
+        ]
+        newest = self.decrypt.newest_export(accepted)
+        self.assertEqual("2026-11-10T00:00:00+00:00", self.iso(newest))
+        self.assertIsNone(self.decrypt.newest_export([]))
 
 
 class SmsValidatorTests(unittest.TestCase):

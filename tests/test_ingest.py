@@ -158,6 +158,15 @@ class AllowlistTests(unittest.TestCase):
             self.p.parse_absolute_form("https://app.tuta.com/")
         with self.assertRaises(self.p.PolicyError):
             self.p.parse_absolute_form("http://1.2.3.4/")
+        # Non-web ports are refused, like CONNECT's HTTPS-only rule.
+        for target in ("http://app.tuta.com:8080/x", "http://app.tuta.com:443/x"):
+            with self.subTest(target=target):
+                self.assertEqual(
+                    self.p.parse_absolute_form("http://app.tuta.com:443/x"),
+                    ("app.tuta.com", 443, "/x"),
+                )
+                with self.assertRaises(self.p.PolicyError):
+                    self.p.parse_absolute_form("http://app.tuta.com:8080/x")
 
 
 class SniTests(unittest.TestCase):

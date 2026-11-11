@@ -97,6 +97,10 @@ def parse_absolute_form(target: str) -> tuple[str, int, str]:
         raise PolicyError(f"absolute-form scheme {scheme!r} refused")
     authority, slash, path = rest.partition("/")
     host, port = parse_authority(authority, default_port=80)
+    # The proxy forwards absolute-form requests to the web ports only; anything else would
+    # make it a generic forwarder around the CONNECT port policy.
+    if port not in (80, 443):
+        raise PolicyError("absolute-form requests are limited to ports 80 and 443")
     return host, port, "/" + path if slash else "/"
 
 

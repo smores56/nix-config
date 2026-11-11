@@ -95,7 +95,8 @@ Host unit: `ingest-writer-<source>.service` (one per source, `Restart=always`,
    raises (a new Sent item, a Tuta client rejection).
 5. Encrypt the frame with `age --encrypt -r <recipient>` and atomically install
    it in `/var/lib/data/inbox` as `<source>-<UTCYYYYMMDDTHHMMSS.ffffffZ>-<seq>.age`
-   (mode `0644`, so the guest payload user can read it through the share).
+   (mode `0600` root; the inbox directory is `0750` root, so only guest root reads the
+   batches through the read-only share — no world-readable copy exists).
 6. Record freshness in `/var/lib/kanbei-ingest/state/<source>.last-ok`
    (`0600` root) and acknowledge with one `{"ack": <seq>}\n` line. The guest
    moves the outbox file to `sent/` only after that acknowledgement.
@@ -135,12 +136,16 @@ host: `production.plaid.com` enters the policy only with
 
 The `search` guest is the only egress for Kanbei's capped queries (#594). Its
 query API is one JSON line in and one JSON line out on vsock cid 14, port 7024.
-Kanbei dials host CID 2 on port 7101; `search-relay.service` listens on
-`/var/lib/microvms/kanbei/notify.vsock_7101` as `root:kvm`, dials the guest's
-`notify.vsock` with `CONNECT 7024` and pipes bytes. A dead guest closes Kanbei's
-connection rather than returning an empty result. The relay logs connection
-metadata and byte counts to `/var/log/kanbei-ingest/search-relay.log`; it never
-parses or logs payload.
+Kanbei dials **host CID 2, port 7101**; `search-relay.service` binds that host
+AF_VSOCK port itself (there is no Firecracker UDS: the caller is the qemu kanbei
+guest). The connection must come from peer CID 4 and its first line must be
+`KANBEI-AUTH 1 <token>` — the token comes from a root-only systemd credential
+(`/var/lib/kanbei-vm/secrets/relay-token`, the same file the Kanbei guest reads from
+its read-only secret share) and is compared in constant time. Only then does the
+relay dial the search guest's `notify.vsock` (`CONNECT 7024`) and pipe bytes. A
+wrong CID, a wrong token, or a dead guest closes Kanbei's connection rather than
+returning an empty result. The relay logs connection metadata and byte counts to
+`/var/log/kanbei-ingest/search-relay.log`; it never parses or logs payload.
 
 Inside the guest, `searchd` runs the fixed ladder: DLP scan, ~100-character cap,
 persisted per-minute rate and daily budget, then the Granite Guardian judge,
@@ -154,19 +159,22 @@ planted suite are in [`docs/kanbei-search.md`](kanbei-search.md).
 ## Age key publication
 
 Kanbei owns the private key; only the recipient crosses the boundary. The host
-unit `ingest-age-key.service` listens on the AF_UNIX path Firecracker exposes for
-guest-initiated vsock:
+unit `ingest-age-key.service` binds **host AF_VSOCK port 7100** directly (the kanbei
+guest is qemu, so there is no Firecracker `notify.vsock_7100` to forward through).
+
+Kanbei dials host CID 2 on port 7100 and sends:
 
 ```
-/var/lib/microvms/kanbei/notify.vsock_7100
+KANBEI-AUTH 1 <token>\n
+age1...\n
 ```
 
-Kanbei dials host CID 2 on port 7100 and writes exactly one `age1...` line. The
-listener validates the recipient shape (62 characters, bech32 charset), writes it
-atomically to `/var/lib/kanbei-ingest/age-recipient` (`0400` root) and replies
-`OK\n`; any other line gets `ERR\n` and leaves the previous recipient in place.
-Writers block on the file, so starting an ingest guest before Kanbei only delays
-the first batch.
+The listener requires peer CID 4, compares the token in constant time against the
+root-only credential, then validates the recipient shape (62 characters, bech32
+charset), writes it atomically to `/var/lib/kanbei-ingest/age-recipient` (`0400`
+root) and replies `OK\n`; any other line (or a missing/wrong token) gets `ERR\n`
+and leaves the previous recipient in place. Writers block on the file, so starting
+an ingest guest before Kanbei only delays the first batch.
 
 ## Egress control
 
@@ -233,10 +241,16 @@ the host tree `/var/lib/data/cluster-digest` into the guest, and
   `generated_at` is older than `hostSources.cluster-digest.windowSeconds` (3600 s)
   using the shared `<source>.alerted` marker.
 
-The digest share is read-write for the guest, because the CronJob owns the tree
-and prunes its own snapshots; the host writer only reads it. The share assertion
-in `cluster-vm.nix` and the writer assertion in `ingest-vm.nix` fail evaluation
-if either side is renamed.
+The digest tree is **not** a human-owned data share. It is
+`/var/lib/data/cluster-digest`, mode `0770`, owned by the dedicated
+`kanbei-digest` uid (983) — never `smores`. The cluster guest reaches it through an
+explicit `--translate-uid`/`--translate-gid` mapping for guest 0 and 1000 onto that
+uid, so the CronJob's writes land as `kanbei-digest`, a compromised workload cannot
+write as the human, and the host writer (root) is the only reader. `smores` can
+neither read nor write the directory or its contents; `kanbei-ingest-verify` proves
+it with `runuser -u smores -- test -r/-w`. The share assertion in `cluster-vm.nix`
+and the writer assertion in `ingest-vm.nix` fail evaluation if either side is renamed
+or the mapping drops back to a human uid.
 
 ## Freshness heartbeats
 
@@ -245,8 +259,9 @@ if either side is renamed.
 - reads `/var/lib/kanbei-ingest/state/<source>.last-ok` for every guest source
   and every `hostSources` entry (today `cluster-digest`);
 - writes one aggregate, age-encrypted envelope to
-  `/var/lib/data/inbox/heartbeat-<epoch>.age` with per-source `stale`, `host`,
-  `window_s`, `last_ok` and `age_s`, plus the `host_sources` list;
+  `/var/lib/data/inbox/heartbeat-<epoch>.age` (`0600` root, like every inbox file)
+  with per-source `stale`, `host`, `window_s`, `last_ok` and `age_s`, plus the
+  `host_sources` list;
 - when a source exceeds its window, starts
   `cloudflare-email@ingest-writer-<source>.service` at most once per window, so a
   dead source raises a host alert without a mail storm;

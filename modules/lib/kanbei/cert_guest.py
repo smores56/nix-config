@@ -8,7 +8,9 @@ sends the CSR to the host's ACME responder over AF_VSOCK, validates the returned
 CN/SAN and the same public key), writes the key and certificate 0400 root, and restarts the
 TLS frontend so the new certificate is served.
 
-Only the CSR crosses the boundary. The private key is generated here and never leaves.
+Only the CSR crosses the boundary. The private key is generated here and never leaves. The
+first line on the channel is the shared relay token from the guest's read-only
+``kanbei-secrets`` share; the host responder refuses the connection without it.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ import subprocess
 import sys
 import tempfile
 
+import relay_auth
 import vsock
 
 VMADDR_CID_HOST = 2
@@ -82,10 +85,11 @@ def make_csr(openssl: str, directory: str) -> tuple[str, str]:
     return key, csr
 
 
-def exchange(cid: int, port: int, csr: str) -> dict:
+def exchange(cid: int, port: int, csr: str, token: bytes) -> dict:
     with socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM) as conn:
         conn.settimeout(900)
         conn.connect((cid, port))
+        conn.sendall(relay_auth.encode(token))
         vsock.write_frame(conn, {"v": vsock.PROTOCOL_VERSION, "cn": vsock.FIXED_CN, "csr": csr})
         return vsock.parse_response(vsock.read_frame(conn))
 
@@ -112,8 +116,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--renew-days", type=int, default=30)
     parser.add_argument("--openssl", required=True)
     parser.add_argument("--reload-unit", default="kanbei-ui.service")
+    parser.add_argument(
+        "--token-file",
+        default="/run/kanbei-secrets/relay-token",
+        help="shared relay token on the read-only kanbei-secrets share",
+    )
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args(argv)
+
+    try:
+        token = relay_auth.read_token(args.token_file)
+    except relay_auth.AuthError as exc:
+        print(f"kanbei-cert: {exc}", file=sys.stderr)
+        return 1
 
     cert_path = os.path.join(args.state_dir, "cert.pem")
     if not args.force and certificate_is_fresh(cert_path, args.openssl, args.renew_days):
@@ -127,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
         shutil.rmtree(scratch, ignore_errors=True)
 
     try:
-        response = exchange(args.host_vsock_cid, args.host_vsock_port, csr)
+        response = exchange(args.host_vsock_cid, args.host_vsock_port, csr, token)
         vsock.validate_cert(
             vsock.split_chain(response["chain"])[0],
             expected_spki=vsock.csr_spki(csr),

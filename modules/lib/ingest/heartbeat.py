@@ -7,8 +7,7 @@ past its per-source window raises the host alert through the existing
 `cloudflare-email@` template, rate-limited to once per window.
 
 The batch state file is `state/<source>.last-ok` (0600 root); the heartbeat
-envelope is `heartbeat-<epoch>.age` (0644 root, readable by the read-only
-inbox share).
+envelope is `heartbeat-<epoch>.age` (0600 root; the inbox share is read by guest root only).
 """
 
 from __future__ import annotations
@@ -160,7 +159,7 @@ def main(argv: list[str] | None = None) -> int:
     payload = json.dumps(envelope, sort_keys=True).encode()
     tmp = encrypt(recipient, payload, args.inbox)
     target = os.path.join(args.inbox, f"heartbeat-{now}.age")
-    os.chmod(tmp, 0o644)
+    os.chmod(tmp, 0o600)
     os.replace(tmp, target)
 
     alerted = [

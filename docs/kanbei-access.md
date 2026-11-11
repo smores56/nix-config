@@ -18,7 +18,7 @@ browser (WARP) → Cloudflare Gateway (DNS + L4 hostname route, Access)
   → cloudflared (tunnel `smortress`)
   → 127.0.0.1:443 on the host (systemd socket, group kanbei-tunnel only)
   → kanbei-chat-relay (uid kanbei-relay, TCP → AF_VSOCK 4:10000)
-  → guest `kanbei-ui` (TLS terminates here, static shell + JSON API)
+  → guest `kanbei-ui` (token line, then TLS; static shell + JSON API)
 ```
 
 - The route is Layer 4. Gateway resolves the hostname through the tunnel, returns an
@@ -35,10 +35,22 @@ browser (WARP) → Cloudflare Gateway (DNS + L4 hostname route, Access)
   a DynamicUser and joins that group as a supplementary group. The iptables chain
   `kanbei-relay-in` opens exactly that loopback port and contains no forwarding rule. The
   guest has no NIC, so the cluster and ingest VMs have no route to the relay.
+- **Every channel is authenticated.** The relay writes
+  `KANBEI-AUTH 1 <token>\n` as the first bytes of the vsock stream, from the root-only
+  credential `/var/lib/kanbei-vm/secrets/relay-token` (`LoadCredential`). The guest's TLS
+  server consumes that line from the raw socket and compares it in constant time before it
+  accepts the TLS handshake; a connection without it (or with a wrong token) is closed and
+  never produces an HTTP response. `/api/*` requires that authenticated connection, and
+  `/api/chat` additionally requires a session token minted only by a completed WebAuthn
+  assertion — there is no lane-less stub bypass. The token file is generated once by
+  `kanbei-vm-prep` and shared with the guest through the read-only `kanbei-secrets` share;
+  deleting it and restarting the relay/ACME/UI units rotates it.
 - The guest's vsock listeners are kernel endpoints, not filesystem paths. QEMU's
-  `/dev/vhost-vsock` stays root/kvm-only; the relay unit runs with `PrivateDevices=true` and
-  never sees it. The host state directories (`/var/lib/kanbei-vm`,
-  `/var/lib/kanbei-acme`) are 0700 root (or the dedicated ACME user).
+  `/dev/vhost-vsock` stays root/kvm-only (a udev rule sets `0660 root:kvm`; upstream leaves
+  it `0666` and `kanbei-vm-verify` asserts the rule's result); the relay unit runs with
+  `PrivateDevices=true` and never sees it. The host state directories
+  (`/var/lib/kanbei-vm`, `/var/lib/kanbei-acme`) are 0700 root (or the dedicated ACME
+  user).
 
 ## OpenTofu fragment
 
@@ -137,7 +149,12 @@ systemd credentials. Nothing on the host can read it, and the relay only splices
 ### Certificate request (`kanbei-cert` channel)
 
 Schema, both directions: a 4-byte big-endian length followed by one UTF-8 JSON object on
-AF_VSOCK. Guest → host CID 2, port 10001.
+AF_VSOCK. Guest → host CID 2, port 10001. The guest's first line is the shared relay
+token; the responder also requires the peer CID to be 4.
+
+```
+KANBEI-AUTH 1 <token>\n
+```
 
 ```json
 {"v": 1, "cn": "kanbei.sammohr.dev", "csr": "-----BEGIN CERTIFICATE REQUEST-----\n..."}
@@ -169,7 +186,12 @@ The host runs `lego --csr` with the `cloudflare` DNS-01 provider. The Cloudflare
 passed as a systemd credential (`LoadCredential=dns-api-token:…cloudflare-api-token…`) and
 exported as `CLOUDFLARE_DNS_API_TOKEN` only to the Lego process. Only the account and
 Lego's work directories live in `/var/lib/kanbei-acme`; no private key is created or stored
-on the host. One issuance runs at a time.
+on the host. One issuance runs at a time, and issuance is rate-limited to **one certificate
+per 6 hours** through the persistent marker `/var/lib/kanbei-acme/last-issue` (0600): a
+request inside the window gets `{"v":1,"error":"issuance rate limited…"}` before Lego is
+invoked. A guest that cannot present the token or comes from another CID gets no response
+body at all. The daily renewal timer is far slower than the window, so normal renewals are
+unaffected; the marker survives a responder restart (the rate limit is not per-process).
 
 ### Issuance and renewal
 
@@ -202,9 +224,15 @@ Content-Security-Policy: default-src 'none'; connect-src 'self'; img-src 'self' 
   `javascript:`, `data:`, `file:`, `blob:`, protocol-relative and plain-HTTP URLs, and
   accepts only `https:` or a site-relative path; it is the gate for any future dynamic
   href (there is none today).
-- `/api/chat` forwards to the guest's local chat lane when one is configured and returns
-  `{"reply": "…", "lane": "local"}`; without a lane it returns a deterministic stub
-  (`lane: "stub"`). Upstream failures are JSON 502s.
+- Every `/api/*` request requires the relay-token handshake described above (the token is
+  the first line of the connection, before TLS). `/api/chat` additionally requires
+  `Authorization: Bearer <session>`, where the session is minted only by
+  `/api/passkey/auth/verify`; without it the answer is a 401 and **no** chat turn runs, stub
+  or local. The shell unlocks silently with a resident passkey on load and prompts for one
+  otherwise.
+- With a session, `/api/chat` forwards to the guest's local chat lane when one is configured
+  and returns `{"reply": "…", "lane": "local"}`; without a lane it returns a deterministic
+  stub (`lane: "stub"`). Upstream failures are JSON 502s.
 - Passkey is a stub with real challenge handling: `/api/passkey/{register,auth}/options`
   issue a server-side, single-use, purpose-bound 5-minute challenge; the `/verify` calls
   consume it and refuse replays, cross-purpose use, and expiry. Cryptographic
@@ -248,7 +276,12 @@ The code bar covers the offline half; the live half needs the route and enrolled
 - `tests/test_kanbei_ui.py`: exact CSP on every response, self-contained shell, JSON-only
   API, passkey challenge lifecycle, source-level renderer invariants, and the Node-driven
   renderer test (skips honestly without Node).
-- `tests/test_kanbei_relay.py`: bidirectional splice, half-close, failed vsock connect.
+- `tests/test_kanbei_relay.py`: bidirectional splice, half-close, failed vsock connect,
+  and the token line as the first bytes on the guest stream.
+- `tests/test_kanbei_auth.py`: the token file contract, the constant-time handshake, the
+  peer-CID gate, the ACME 6-hour marker, the age-key and search-relay gates, the UI
+  connection gate and the passkey-session requirement for chat.
+- `tests/test_kanbei_freeze.py`: the restic freeze refcount (one stop, last cleanup starts).
 - `tests/kanbei_browser.py`: the headless-Chromium spike above.
 
 Run the Python suites with `just test` (the `unit-tests` check) and the browser script

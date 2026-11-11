@@ -40,6 +40,9 @@ VSOCK = "/var/lib/microvms/search/notify.vsock"
 POLICY = "/etc/kanbei-ingest/policy.json"
 INBOX = "/var/lib/data/inbox"
 CHAIN = "ingest-search-fwd"
+DIGEST = "/var/lib/data/cluster-digest"
+DIGEST_USER = "kanbei-digest"
+HUMAN = "smores"
 
 
 def say(message: str) -> None:
@@ -336,6 +339,28 @@ def check_secret(since: str) -> None:
     say("PASS secret: guest sees the staged env at mode 0400")
 
 
+def check_digest_share() -> None:
+    """The digest tree is 0770 on its own uid; the human can neither read nor write it."""
+    try:
+        info = os.stat(DIGEST)
+    except FileNotFoundError:
+        fail(f"{DIGEST} is missing; the cluster guest is not installed")
+    if info.st_mode & 0o777 != 0o770:
+        fail(f"{DIGEST} is {info.st_mode & 0o777:o}, expected 0770")
+    want = run(["id", "-u", DIGEST_USER]).stdout.strip()
+    if want and str(info.st_uid) != want:
+        fail(f"{DIGEST} is owned by uid {info.st_uid}, expected {DIGEST_USER} ({want})")
+    human = run(["id", "-u", HUMAN]).stdout.strip()
+    if human and str(info.st_uid) == human:
+        fail(f"{DIGEST} is owned by {HUMAN}; the digest share must not be human-owned")
+    shell = shutil.which("bash") or "/run/current-system/sw/bin/bash"
+    for flag, word in (("-r", "read"), ("-w", "write")):
+        probe = run(["runuser", "-u", HUMAN, "--", shell, "-c", f"test {flag} {DIGEST}"])
+        if probe.returncode == 0:
+            fail(f"{HUMAN} can {word} {DIGEST}; the digest share must be private")
+    say(f"PASS digest: {DIGEST} is 0770 {DIGEST_USER}, unreadable and unwritable by {HUMAN}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="kanbei-ingest-verify")
     parser.parse_args(argv)
@@ -357,6 +382,7 @@ def main(argv: list[str] | None = None) -> int:
         check_dns(env)
         check_sni(env)
         check_egress(env, since)
+        check_digest_share()
     finally:
         run(["systemctl", "start", f"ingest-writer-{SOURCE}.service"])
     say("PASS all ingest-plane proofs")

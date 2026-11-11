@@ -27,8 +27,10 @@ in
     # guest's payload user; its parent is root-only, so the share into Kanbei's control
     # plane is a T24 wiring detail.
     "d ${phone.plaintextDir} 0750 root kanbei -"
-    "d ${stateDir} 0700 root root -"
-    "d ${stateDir}/secrets 0700 root root -"
+    "d ${stateDir} 0750 root kanbei -"
+    # The staged password tree is /var/lib/kanbei/secrets (phone-pipeline.nix), not
+    # phone-state/secrets: one canonical root-only directory under the LUKS mount.
+    "d /var/lib/kanbei/secrets 0700 root root -"
     "d ${batchDir} 0750 root kanbei -"
     "d /run/kanbei-secrets 0755 root root -"
   ];
@@ -89,16 +91,26 @@ in
 
   assertions = [
     {
-      assertion = phone.maxFileBytes > 0;
-      message = "kanbei-phone: the per-file size cap must be positive";
-    }
-    {
-      assertion = phone.plaintextDir == "/var/lib/kanbei/phone";
-      message = "kanbei-phone: the decrypted tree must stay at /var/lib/kanbei/phone (the documented path contract)";
-    }
-    {
-      assertion = phone.stagedPassword == "/var/lib/kanbei/secrets/phone-folder-password";
-      message = "kanbei-phone: the staged password must stay inside the LUKS volume";
+      # Everything here reads the evaluated unit, not the imported constants, so a rename in
+      # phone-pipeline.nix that the service does not follow fails evaluation.
+      assertion =
+        let
+          service = config.systemd.services.syncthing-decrypt.serviceConfig.ExecStart;
+          rules = config.systemd.tmpfiles.rules;
+          shares = config.microvm.shares or [ ];
+          share = lib.findFirst (s: s.tag == phone.tag) null shares;
+          batchDir = "${phone.stateDir}/batches";
+        in
+        lib.hasInfix "--to ${phone.plaintextDir} " service
+        && lib.hasInfix "--staged ${phone.stagedPassword} " service
+        && lib.hasInfix "--heartbeat ${phone.stateDir}/heartbeat.json" service
+        && lib.hasInfix "--batch-dir ${batchDir} " service
+        && lib.hasInfix "--max-file-bytes ${toString phone.maxFileBytes}" service
+        && lib.elem "d ${phone.plaintextDir} 0750 root kanbei -" rules
+        && lib.elem "d ${phone.stateDir} 0750 root kanbei -" rules
+        && lib.elem "d ${batchDir} 0750 root kanbei -" rules
+        && lib.elem "d /var/lib/kanbei/secrets 0700 root root -" rules;
+      message = "kanbei-phone: the decrypt unit and its tmpfiles must follow the phone-pipeline path contract";
     }
     {
       # The phone folder is the only host path the guest reads for this pipeline, and it
@@ -107,7 +119,10 @@ in
         let
           share = lib.findFirst (s: s.tag == phone.tag) null (config.microvm.shares or [ ]);
         in
-        share != null && share.readOnly == true && share.mountPoint == phone.guestMount;
+        share != null
+        && share.readOnly == true
+        && share.mountPoint == phone.guestMount
+        && share.source == phone.hostFolder;
       message = "kanbei-phone: the phone-untrusted virtiofs share must exist, mount at ${phone.guestMount} and be read-only";
     }
   ];

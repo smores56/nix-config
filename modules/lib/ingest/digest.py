@@ -207,7 +207,7 @@ def emit(
     """Encrypt one document and rename it into the inbox under its digest stamp."""
     tmp = (encrypt or writer.encrypt_to)(recipient, payload, inbox)
     target = os.path.join(inbox, f"{SOURCE}-{stamp}.age")
-    os.chmod(tmp, 0o644)
+    os.chmod(tmp, 0o600)
     os.replace(tmp, target)
     return target
 
