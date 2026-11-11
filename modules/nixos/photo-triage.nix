@@ -268,6 +268,9 @@ in
       startLimitIntervalSec = 3600;
       startLimitBurst = 10;
       serviceConfig = base // {
+        # llama-server does not unlink a stale socket and RuntimeDirectoryPreserve
+        # keeps the shared directory, so clear the path the previous run left.
+        ExecStartPre = "${pkgs.coreutils}/bin/rm -f ${llmSocket}";
         ExecStart = scoringExec;
         # ProtectSystem=strict would otherwise make the socket bind fail.
         RuntimeDirectory = "photo-triage";
