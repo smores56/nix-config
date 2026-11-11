@@ -173,10 +173,18 @@ in `docs/manual-steps.md`, design and recovery flow in
 - The inference lanes (T11) are one GPU `llama-server` (unified q8_0 KV pool,
   160k tokens, four slots) and two CPU servers (embeddings, reranking), all bound
   to `127.0.0.1`. Weights are data on the LUKS volume with a sha256 manifest,
-  never in the store. No host relay exists yet, so prompt text cannot cross the
-  guest boundary even to the host; the vsock relay is T14's. The pool math,
-  eval protocol and the `q8_0`/`--kv-unified-per-slot` residuals are in
+  never in the store. The pool math, eval protocol and the
+  `q8_0`/`--kv-unified-per-slot` residuals are in
   [`docs/kanbei-inference.md`](kanbei-inference.md).
+- The access path (T12) is a private hostname route, not a public service:
+  `kanbei.sammohr.dev` reaches the guest only through WARP, cloudflared's
+  Layer-4 hostname route, a loopback TCP→vsock relay under its own
+  `kanbei-relay` uid, and TLS terminated **in the guest**. The relay parses
+  nothing; prompt text crosses the host as ciphertext. The guest UI is a static
+  human-owned bundle under a strict CSP, Kanbei returns JSON only, model output
+  is rendered as text nodes and never auto-linked, and the passkey is a
+  server-challenged stub. Details, the exact OpenTofu fragment and the spikes
+  are in [`docs/kanbei-access.md`](kanbei-access.md).
 
 ## Accepted residuals
 
@@ -213,6 +221,24 @@ working; removing it needs a systemd version that no longer reads other users'
 `/proc` entries. A monitoring agent added to the group deliberately widens it
 further.
 
+### The public wildcard still resolves `kanbei.sammohr.dev`
+
+`*.sammohr.dev` is a proxied CNAME, so the name has a public DNS answer even
+though it is a private hostname route. Nothing serves it publicly: cloudflared
+has no ingress rule for the name (the tunnel's `http_status:404` catch-all
+answers), and the Access application denies the request before cloudflared. The
+host module asserts `webProxy.services.kanbei` stays unset and
+`modules/nixos/kanbei-access.nix` creates no DNS record; the OpenTofu fragment
+creates only the hostname route and the Access app. Replacing the wildcard with
+per-host records is the upgrade path if the public answer itself is a concern.
+
+### Kanbei's passkey verifier is a stub
+
+The guest stores WebAuthn challenges server-side, single-use, purpose-bound and
+expiring; the browser flow and RP/origin binding are real. Attestation and
+assertion signature verification is not implemented yet, so the passkey does
+not yet authenticate a session. Access over WARP is the current gate.
+
 ### Same-UID capture while `td` or a `v` session is open
 
 `v <cmd>` runs the tool itself as `vault` (no mount, no uid mapping) and `td`
@@ -228,7 +254,14 @@ same UID. The window is the process's lifetime by design.
   Graphiti's extraction inputs go to Neuralwatt under a no-training policy.
 - Prompt-injected model output reaches the owner's browser only through the
   CSP-locked, JSON-only UI shell; a browser or terminal escape from another
-  window is out of scope.
+  window is out of scope. The shell has no remote resource, no auto-linking and
+  no markdown HTML path, so a `![](https://…)` or `[label](https://…)` in model
+  output is inert text (proven by `tests/kanbei_browser.py`).
+- Kanbei prompt text now crosses the host boundary as TLS ciphertext. The relay
+  and cloudflared handle only bytes; the guest holds the only key. Host root can
+  read the guest's memory and disk and is outside the bar, and Cloudflare sees
+  the request routing (SNI/hostname) but not the payload while Gateway TLS
+  inspection stays off.
 
 ## Data apps on the `cluster` guest (T6)
 

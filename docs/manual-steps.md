@@ -299,6 +299,77 @@ sudo journalctl -u kanbei-inference-gpu -u kanbei-chat -n 40 --no-pager
 `docs/kanbei-inference.md` has the eval thresholds and the f16 reference-server
 command for the quality sample.
 
+**7. WARP devices.** Install the Cloudflare One client on the phone and the laptop and
+enroll both in the account. In *Settings → WARP client → Device settings* (or a device
+profile), keep **Traffic and DNS** mode and send DNS to Gateway; in *Split Tunnels →
+Include* add the private-hostname initial resolved IPs `100.80.0.0/16` and
+`2606:4700:0cf1:4000::/64`, and make sure neither is excluded. Delete `dev` from *Local
+Domain Fallback* so Gateway resolves `kanbei.sammohr.dev`. Turn on the Gateway proxy
+(*Traffic controls → Traffic settings → Proxy and inspection*: TCP, plus UDP for DNS);
+private hostname routes are Layer 4. Leave TLS inspection off for this name: Access still
+gates it, and the browser must see the guest's certificate.
+`docs/kanbei-access.md` has the full matrix and why each setting is required.
+
+**8. Private route and Access.** `kanbei.sammohr.dev` has no DNS record of its own. Apply
+the fragment in [`docs/kanbei-access.md`](kanbei-access.md) to the platform repo's
+`tofu/` (resource `cloudflare_zero_trust_network_hostname_route.kanbei` plus
+`cloudflare_zero_trust_access_application.kanbei`, reusing the existing email and
+service-auth policies). From that repo:
+
+```sh
+tofu -chdir=tofu plan   # expect exactly the two kanbei resources
+tofu -chdir=tofu apply
+```
+
+There must be no `cloudflare_dns_record` for `kanbei` and no tunnel ingress rule; the host
+module asserts the service is absent from `webProxy.services`, and `cloudflared` has no
+rule for the name, so the public wildcard answer only reaches the tunnel's 404 fallback.
+
+**9. ACME account and token.** The responder runs as `kanbei-acme` and reuses the
+`cloudflare-api-token` sops key; DNS-01 needs `Zone:DNS:Edit` on `sammohr.dev` in addition
+to the token's existing scopes. Verify or extend the token in the dashboard. Lego creates
+its ACME account under `/var/lib/kanbei-acme/lego/accounts` on the first issuance; that
+state is disposable (a new account is registered if it is lost). The service is
+`kanbei-acme.service`:
+
+```sh
+sudo systemctl status kanbei-acme.service
+sudo journalctl -u kanbei-acme -n 40 --no-pager
+sudo ls -ld /var/lib/kanbei-acme   # 0700 kanbei-acme
+```
+
+**10. Certificate issuance.** The guest asks on boot and daily; the host signs only a CSR
+for the fixed CN (`kanbei.sammohr.dev`). Watch both sides:
+
+```sh
+sudo systemctl status kanbei-cert.service kanbei-cert.timer kanbei-ui.service
+sudo journalctl -u kanbei-cert -n 40 --no-pager          # guest console / host journal
+sudo ls -l /var/lib/kanbei/tls                           # 0700 root; key/cert 0400 root
+```
+
+Force a renewal after a CA or token change (in the guest console or via
+`sudo systemctl start kanbei-cert.service`), then confirm `kanbei-ui` restarted and serves
+the new dates. The private key never leaves the guest: the host ACME state has no key and
+Lego is invoked with `--csr`.
+
+**11. Relay checks.** The host listener is loopback-only and group-restricted:
+
+```sh
+ss -lntp 'sport = :443'                     # 127.0.0.1:443, kanbei-chat-relay
+sudo iptables -S kanbei-relay-in            # one lo/dport 443 accept, no FORWARD rule
+getent hosts kanbei.sammohr.dev             # 127.0.0.1 (the host's own resolver)
+sudo systemctl status kanbei-chat-relay.socket kanbei-chat-relay.service
+```
+
+From an owner device with WARP on, `https://kanbei.sammohr.dev` should show the guest
+certificate; with WARP off, Access denies and no listener on the host is reachable from
+another machine.
+
+**12. Spikes.** Run the three checks in
+[`docs/kanbei-access.md`](kanbei-access.md#spikes-and-how-to-run-them): origin certificate
+via `openssl s_client`, Access allow with TLS inspection off, and the offline planted-output
+Chromium test.
+
 ### smorespro
 
 <!-- manual-step: host/smorespro -->

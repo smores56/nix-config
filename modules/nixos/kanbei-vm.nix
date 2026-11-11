@@ -240,6 +240,10 @@ let
     if [ ! -c /dev/vhost-vsock ]; then
       echo "FAIL: /dev/vhost-vsock is missing; vhost_vsock is not loaded" >&2
       fail=1
+    elif [ "$(${pkgs.coreutils}/bin/stat -c %a:%U:%G /dev/vhost-vsock)" != "660:root:kvm" ]; then
+      # The vsock control surface is root:kvm only; the chat relay has no device access.
+      echo "FAIL: /dev/vhost-vsock is $(${pkgs.coreutils}/bin/stat -c %a:%U:%G /dev/vhost-vsock), expected 660:root:kvm" >&2
+      fail=1
     fi
     exit "$fail"
   '';
@@ -249,7 +253,10 @@ let
     {
       # T11: the llama.cpp chat/embeddings/rerank lanes. A guest module, so it only evaluates
       # while this guest exists (kanbeiVm.enable).
-      imports = [ ./kanbei-inference.nix ];
+      imports = [
+        ./kanbei-inference.nix
+        ./kanbei-guest-access.nix
+      ];
 
       microvm = {
         hypervisor = "qemu";
@@ -402,7 +409,10 @@ let
     };
 in
 {
-  imports = [ inputs.microvm.nixosModules.host ];
+  imports = [
+    inputs.microvm.nixosModules.host
+    ./kanbei-access.nix
+  ];
 
   options.kanbeiVm.enable = lib.mkEnableOption "the kanbei private-data guest (VFIO GPU, LUKS data volume, software TPM)";
 

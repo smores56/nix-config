@@ -89,4 +89,7 @@ home-manager switch --flake .#<user>@<host> --no-write-lock-file
   `manual-steps-sync` check keeps it in step with the configuration.
 - [`docs/key-rotation.md`](docs/key-rotation.md): YubiKey and credential rotation.
 - [`docs/desktop-parity.md`](docs/desktop-parity.md): shared Niri/AeroSpace bindings.
+- [`docs/kanbei-access.md`](docs/kanbei-access.md): Kanbei's private WARP route,
+  in-guest TLS and the CSP-locked JSON shell; residuals in
+  [`docs/kanbei-split.md`](docs/kanbei-split.md).
 - [`AGENTS.md`](AGENTS.md): conventions for agents working in this repo.

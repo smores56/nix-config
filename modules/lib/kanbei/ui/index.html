@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kanbei</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script src="/render.js" defer></script>
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <h1>Kanbei</h1>
+      <p class="lede">
+        Private chat. Replies are shown as plain text: links and images in model output stay
+        literal and are never fetched or opened.
+      </p>
+      </p>
+      <form id="chat-form" action="/api/chat" method="post" autocomplete="off">
+        <label for="message">Message</label>
+        <textarea id="message" name="message" rows="4" maxlength="8000" required></textarea>
+        <button type="submit">Send</button>
+      </form>
+      <section id="transcript" aria-live="polite" aria-label="Conversation"></section>
+      <section class="passkey">
+        <button id="passkey" type="button">Set up a passkey</button>
+        <p id="status" class="status" role="status"></p>
+      </section>
+    </main>
+  </body>
+</html>

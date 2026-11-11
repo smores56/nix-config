@@ -978,9 +978,13 @@ in
               nativeBuildInputs = [
                 unitTestsPython
                 pkgs.git
+                # The Kanbei renderer runs in the browser; its unit test drives render.js
+                # through Node and skips honestly when the binary is absent.
+                pkgs.nodejs
               ];
               # harvest tests pin TZ=America/New_York; without zoneinfo the sandbox falls back to UTC.
               TZDIR = "${pkgs.tzdata}/share/zoneinfo";
+              NODE = "${pkgs.nodejs}/bin/node";
             }
             ''
               cp -R --no-preserve=mode,ownership ${src} source

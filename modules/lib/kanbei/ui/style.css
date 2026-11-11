@@ -1,0 +1,132 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f7f6f3;
+  --fg: #17161a;
+  --muted: #5d5a66;
+  --line: #d8d4cc;
+  --accent: #2f5d50;
+  --panel: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141316;
+    --fg: #f2f0eb;
+    --muted: #a5a0ad;
+    --line: #33313a;
+    --accent: #7fc7ae;
+    --panel: #1c1b20;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+main {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 4rem;
+}
+
+h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.6rem;
+}
+
+.lede {
+  margin: 0 0 1.75rem;
+  color: var(--muted);
+}
+
+form {
+  display: grid;
+  gap: 0.5rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--panel);
+}
+
+label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+textarea {
+  width: 100%;
+  resize: vertical;
+  padding: 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+}
+
+button {
+  justify-self: start;
+  padding: 0.5rem 1rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: var(--accent);
+  color: var(--bg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#transcript {
+  margin: 1.75rem 0;
+  display: grid;
+  gap: 1rem;
+}
+
+.message {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--panel);
+}
+
+.message-user {
+  border-color: var(--accent);
+}
+
+.who {
+  margin: 0 0 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.body p {
+  margin: 0 0 0.5rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.body p:last-child {
+  margin-bottom: 0;
+}
+
+.passkey {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.status {
+  min-height: 1.5em;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}

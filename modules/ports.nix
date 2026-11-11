@@ -24,4 +24,8 @@
   agentBrokerCalibre = 8187;
   filesMcp = 8185;
   openWebui = 3210;
+  # The Kanbei chat relay: the private hostname route is Layer 4 and preserves the browser's
+  # destination port, so cloudflared reaches this loopback listener on 443. systemd's socket
+  # unit does the privileged bind; the relay itself runs unprivileged.
+  kanbei = 443;
 }
