@@ -77,8 +77,15 @@ are retried. When a scoring run skips anything it ends with one aggregate
 
 The detail never carries the model's prose or the server's response body.
 Zero-status model errors are the client's own text (for example
-`hit max_tokens (max_tokens=300, completion_tokens=300)`); a peer-controlled
+`hit max_tokens (max_tokens=512, completion_tokens=512)`); a peer-controlled
 transport error reads `model http=0 class=transport`.
+
+Two model habits are repaired instead of skipped. A repeated defect entry is
+de-duplicated. A confidence outside 0-1, or exactly 1 (certainty and 1% on a
+0-100 scale are indistinguishable), is recorded as 0 and the reply is routed to
+`review`, so a repaired number can never justify a delete. Runs report
+`repaired_defects` and `repaired_confidence`; duplicate JSON keys are rejected
+outright.
 
 - `model`: the server rejected the request (non-transient errors skip at once),
   with `model http=<status> class=<name>` where name is `context-overflow`,
@@ -86,7 +93,7 @@ transport error reads `model http=0 class=transport`.
   `max_tokens`.
 - `schema`: the reply was not the verdict JSON after three attempts; the detail
   separates a short prose reply (`len=1-63, braces=none`) from a truncated one
-  (`braces=unbalanced`).
+  (`braces=unbalanced`). Only the replies that are not repairable land here.
 - `preview`: Immich did not return a thumbnail (three attempts for transient
   errors; `immich http=<status>` or `immich transport`), or the bytes did not
   decode (`preview too-large` / `preview decode`).

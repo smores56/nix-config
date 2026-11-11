@@ -106,7 +106,7 @@ class LLMClient:
         self,
         messages: list[dict[str, Any]],
         *,
-        max_tokens: int = 300,
+        max_tokens: int = 512,
         response_format: dict[str, Any] | None = None,
         temperature: float = 0,
     ) -> dict[str, Any]:

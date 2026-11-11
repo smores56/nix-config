@@ -22,7 +22,9 @@ from photo_triage.scan import scan_library  # noqa: E402
 from photo_triage.score import (  # noqa: E402
     PREVIEW_GENERATOR,
     PreviewError,
+    MAX_REPLY_CHARS,
     SCHEMA,
+    SCORE_MAX_TOKENS,
     ScoreSchemaError,
     ScorerError,
     parse_score,
@@ -125,6 +127,7 @@ class ScoreTests(unittest.TestCase):
         )
         payload = request[2]
         self.assertEqual(payload["response_format"], SCHEMA)
+        self.assertEqual(payload["max_tokens"], SCORE_MAX_TOKENS)
         self.assertEqual(payload["temperature"], 0)
         self.assertEqual(payload["chat_template_kwargs"], {"enable_thinking": False})
         self.assertIn("Never describe or judge", payload["messages"][0]["content"])
@@ -313,17 +316,59 @@ class ScoreTests(unittest.TestCase):
             "[]",
             json.dumps({**valid, "extra": 1}),
             json.dumps({**valid, "interest": 9}),
-            json.dumps({**valid, "confidence": 2}),
             json.dumps({**valid, "verdict": "maybe"}),
             json.dumps({**valid, "defects": ["bogus"]}),
-            json.dumps({**valid, "defects": ["blur", "blur"]}),
             json.dumps({**valid, "interest": 2.5}),
             json.dumps({**valid, "confidence": float("nan")}),
+            "x" * (MAX_REPLY_CHARS + 1),
         ]
         for payload in bad:
             with self.subTest(payload=payload):
                 with self.assertRaises(ScoreSchemaError):
                     parse_score(payload)
+
+    def test_parse_score_tolerates_model_quirks(self):
+        duplicated = parse_score(
+            json.dumps({**VERDICT, "defects": ["blur", "blur", "dark", "blur"]})
+        )
+        self.assertEqual(duplicated["defects"], ["blur", "dark"])
+        self.assertEqual(duplicated.pop("_repairs"), ["defects"])
+        self.assertEqual(duplicated["verdict"], "review")
+        # An off-scale confidence is distrusted, never rescaled into a delete.
+        # 1 is ambiguous (certainty or 1% on the 0-100 scale) and is distrusted.
+        for confidence in (85, 1.5, 100.5, -1, 1, 10**400):
+            parsed = parse_score(
+                json.dumps({**VERDICT, "verdict": "delete", "confidence": confidence})
+            )
+            self.assertEqual(parsed["confidence"], 0.0)
+            self.assertEqual(parsed["verdict"], "review")
+            self.assertEqual(parsed.pop("_repairs"), ["confidence"])
+        exact = parse_score(json.dumps({**VERDICT, "confidence": 0.75}))
+        self.assertEqual((exact["confidence"], exact.pop("_repairs")), (0.75, []))
+
+    def test_parse_score_rejects_duplicate_json_keys(self):
+        payload = (
+            '{"verdict": "keep", "verdict": "delete", "defects": [], '
+            '"interest": 3, "confidence": 0.9}'
+        )
+        with self.assertRaises(ScoreSchemaError):
+            parse_score(payload)
+
+    def test_quirky_reply_is_scored(self):
+        self.fake_llm.content = json.dumps(
+            {**VERDICT, "defects": ["blur", "blur"], "confidence": 80}
+        )
+        stats = self.score()
+        self.assertEqual(stats["scored"], self.scanned)
+        self.assertEqual(stats["repaired_defects"], self.scanned)
+        self.assertEqual(stats["repaired_confidence"], self.scanned)
+        row = self.database.connection.execute(
+            "SELECT verdict, defects_json, confidence FROM scores LIMIT 1"
+        ).fetchone()
+        self.assertEqual(
+            (row["verdict"], row["defects_json"], row["confidence"]),
+            ("review", '["blur"]', 0.0),
+        )
 
     def test_changed_preview_is_rescored(self):
         self.score()

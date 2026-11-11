@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import logging
+import math
 import os
 import time
 from typing import Any, Callable
@@ -23,6 +24,10 @@ PREVIEW_GENERATOR = f"immich-preview-v1-{PREVIEW_MAX_EDGE}-{PREVIEW_QUALITY}"
 PREVIEW_MAX_BYTES = 32 * 1024 * 1024
 Image.MAX_IMAGE_PIXELS = 50_000_000
 MAX_MODEL_ATTEMPTS = 3
+# The verdict JSON is tiny, but a degenerate reply repeats defect entries; the
+# old 300 cut valid replies off mid-object.
+SCORE_MAX_TOKENS = 512
+MAX_REPLY_CHARS = 4096
 DETAIL_MAX_CHARS = 120
 # llama.cpp phrases we can name without persisting its response body.
 MODEL_FAILURE_CLASSES = (
@@ -59,6 +64,8 @@ DEFECTS = (
     "low_res",
 )
 
+# The server's grammar enforces types and enums but not uniqueItems or the
+# numeric bounds, so parse_score repairs those instead of trusting them.
 SCHEMA = {
     "type": "json_schema",
     "json_schema": {
@@ -121,9 +128,20 @@ def normalize_preview(data: bytes) -> tuple[bytes, str]:
     return normalized, hashlib.sha256(normalized).hexdigest()
 
 
+def _unique_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Reject duplicate JSON keys; last-wins would let a reply rewrite its verdict."""
+
+    data = dict(pairs)
+    if len(data) != len(pairs):
+        raise ScoreSchemaError("model content has duplicate keys")
+    return data
+
+
 def parse_score(content: str) -> dict[str, Any]:
+    if len(content) > MAX_REPLY_CHARS:
+        raise ScoreSchemaError(f"model content is too large (len={len(content)})")
     try:
-        data = json.loads(content)
+        data = json.loads(content, object_pairs_hook=_unique_keys)
     except (TypeError, json.JSONDecodeError) as error:
         # Structural only: the model's prose is about the photo. Length and
         # brace balance separate a truncated reply from prose or an error.
@@ -149,17 +167,41 @@ def parse_score(content: str) -> dict[str, Any]:
     defects = data["defects"]
     if not isinstance(defects, list) or any(defect not in DEFECTS for defect in defects):
         raise ScoreSchemaError("invalid defects")
-    if len(set(defects)) != len(defects):
-        raise ScoreSchemaError("duplicate defects")
+    # The llama.cpp grammar does not enforce uniqueItems; a repeated defect is
+    # the same fact, so keep the first occurrence.
+    deduped = list(dict.fromkeys(defects))
+    repairs = ["defects"] if len(deduped) != len(defects) else []
+    defects = deduped
     interest = data["interest"]
     if isinstance(interest, bool) or not isinstance(interest, int) or not 1 <= interest <= 5:
         raise ScoreSchemaError("invalid interest")
     confidence = data["confidence"]
     if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
         raise ScoreSchemaError("invalid confidence")
-    if not 0 <= float(confidence) <= 1:
-        raise ScoreSchemaError("confidence out of range")
-    return data
+    try:
+        value = float(confidence)
+    except OverflowError:
+        value = 0.0
+        repairs.append("confidence")
+    else:
+        if math.isnan(value) or math.isinf(value):
+            raise ScoreSchemaError("confidence is not finite")
+        if not 0 <= value < 1:
+            # The model sometimes answers on a 0-100 scale, where 1 means 1%.
+            # Certainty and a percentage are indistinguishable at the boundary,
+            # so distrust both: repair to zero and route to human review. A
+            # repaired number must never clear a delete threshold.
+            value = 0.0
+            repairs.append("confidence")
+    if "confidence" in repairs:
+        verdict = "review"
+    return {
+        **data,
+        "verdict": verdict,
+        "defects": defects,
+        "confidence": value,
+        "_repairs": repairs,
+    }
 
 
 def _fetch_preview(
@@ -253,7 +295,15 @@ def score_library(
         "PHOTO_TRIAGE_MMPROJ_SHA256", "unknown"
     )
     run_id = database.start_run("score", scan_id)
-    stats = {"pending": 0, "scored": 0, "skipped": 0, "reused": 0, "model_calls": 0}
+    stats = {
+        "pending": 0,
+        "scored": 0,
+        "skipped": 0,
+        "reused": 0,
+        "model_calls": 0,
+        "repaired_defects": 0,
+        "repaired_confidence": 0,
+    }
     try:
         asset_ids = database.pending_assets(scan_id, max_assets)
         stats["pending"] = len(asset_ids)
@@ -344,10 +394,12 @@ def score_library(
                     stats["model_calls"] += 1
                     try:
                         response = model.chat(
-                            messages, response_format=SCHEMA, max_tokens=300
+                            messages, response_format=SCHEMA, max_tokens=SCORE_MAX_TOKENS
                         )
                         content = model.content(response)
                         score = parse_score(content)
+                        for repair in score.pop("_repairs", ()):
+                            stats[f"repaired_{repair}"] += 1
                         raw_sha = hashlib.sha256(content.encode("utf-8")).hexdigest()
                         break
                     except ScoreSchemaError:
@@ -390,10 +442,13 @@ def score_library(
             # Totals are per generation, so a bounded benchmark repeats them.
             coverage = database.coverage(scan_id)
             logger.warning(
-                "photo-triage skips scan=%s reasons=%s details=%s",
+                "photo-triage skips scan=%s reasons=%s details=%s repaired_defects=%s "
+                "repaired_confidence=%s",
                 scan_id,
                 json.dumps(coverage["reasons"], sort_keys=True),
                 json.dumps(coverage["details"], sort_keys=True),
+                stats["repaired_defects"],
+                stats["repaired_confidence"],
             )
         state = "complete" if stats["scored"] + stats["reused"] > 0 else "failed"
         database.finish_run(run_id, state, stats)
