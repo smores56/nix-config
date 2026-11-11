@@ -14,6 +14,9 @@ let
   # keys keep normal interactive shells.
   agentVm = import ../lib/agent-vm.nix { inherit pkgs lib; };
   agentLoginShell = agentVm.agentLoginShell user;
+  # After the cutover the forced command has no guest to land in; sshd keeps the
+  # ordinary fish shell and the PIV keys only.
+  cutover = config.kanbeiSplit.cutover.enable or false;
   forcedKey =
     k:
     ''command="${agentVm.agentSsh user}/bin/agent-ssh",no-user-rc,no-port-forwarding,no-agent-forwarding,no-X11-forwarding ${k.pubkey}'';
@@ -23,6 +26,7 @@ let
   authorizedKeys = map (k: k.pubkey) yubikeyKeys.piv ++ [
     (forcedKey { pubkey = signingKeys.personal; })
   ];
+  authorizedKeysAtCutover = map (k: k.pubkey) yubikeyKeys.piv;
 in
 {
   options.exposeSsh.enable = lib.mkEnableOption "sshd bound to loopback for Cloudflare Tunnel access";
@@ -96,12 +100,12 @@ in
       # executed by the login shell; the wrapper skips fish's user config for
       # exactly that command and runs fish normally everywhere else.
       users.users.${user} = {
-        shell = lib.mkForce agentLoginShell;
-        openssh.authorizedKeys.keys = authorizedKeys;
+        shell = lib.mkForce (if cutover then pkgs.fish else agentLoginShell);
+        openssh.authorizedKeys.keys = if cutover then authorizedKeysAtCutover else authorizedKeys;
       };
       # pam_shells/chsh read this; the shell also lands in systemPackages via
       # users-groups.nix, which creates /run/current-system/sw/bin/<name>.
-      environment.shells = [ agentLoginShell ];
+      environment.shells = if cutover then [ pkgs.fish ] else [ agentLoginShell ];
     })
 
     # A server's ticket covers reaching for the password manager; the laptop
@@ -156,6 +160,7 @@ in
         {
           assertion =
             !config.exposeSsh.enable
+            || cutover
             || (
               builtins.any (p: (p.name or "") == "agent-login-shell") config.environment.systemPackages
               && builtins.any (p: (p.name or "") == "agent-login-shell") config.environment.shells

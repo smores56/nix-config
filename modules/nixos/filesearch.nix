@@ -27,7 +27,9 @@ in
     };
   };
 
-  config = {
+  # Retired by kanbeiSplit.cutover (T9): files-mcp only served Open WebUI. The
+  # module file stays until the follow-up deletion.
+  config = lib.mkIf (!(config.kanbeiSplit.cutover.enable or false)) {
     assertions = [
       {
         assertion = cfg.roots != [ ];

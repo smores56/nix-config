@@ -355,3 +355,63 @@ nixosOptions.clusterDataApps.enable = true;       # the cutover
 
 The second line alone is the switch; the first is what makes the option exist
 on that host.
+
+## Retirement table (T9)
+
+`kanbeiSplit.cutover.enable` (`modules/kanbei-split.nix`, assertions in
+`modules/nixos/kanbei-cutover.nix`) is the single switch. It defaults to
+`false`, so the host keeps serving nanobot, Letta and Open WebUI exactly as it
+does today; a switch on the default generation is byte-identical in behavior.
+Flipping it removes the units below but **keeps every module file** until the
+follow-up deletion commit. The option is shared by both planes so the laptop
+chat proxies read the same value as the server.
+
+| Component | Owned by | At `cutover = true` | Deleted in the follow-up commit | Operator/credential step |
+|---|---|---|---|---|
+| `agent` microVM | `modules/nixos/agent-vm.nix`, `modules/lib/agent-vm*.{nix,sh,py}`, `modules/features/agent-vm/` | no `microvm.vms.agent`, no `microvm@agent`, tap/broker/ingress units or timers | whole files plus the `maki` profile's `nixos` entry and `agentVm.*` host options | none |
+| nanobot in the guest | `agent-assistant`, `nanobotConfig`, `pkgs/nanobot` | gone with the guest; the cluster pod is the only runtime | `pkgs/nanobot/` and its overlay entry, the guest `nanobot-assistant` unit and state paths | the cluster app owns its config (`homelabs-apps`) |
+| Letta App Server | `agentLetta`, `letta-assistant`, `pkgs/letta`, MemFS state | gone with the guest | `pkgs/letta/` and its overlay entry, `agentLetta`, the state and restic paths, the `letta-package` check | delete the retired MemFS tree after the last export |
+| Open WebUI | `modules/nixos/open-webui.nix` | unit gone; `/var/lib/data/open-webui` is no longer served | file, `server` profile entry, `webProxy.services.agent`, `ports.openWebui` | delete the `agent` Access app and its hostname route in the follow-up (`tofu`) |
+| files-mcp | `modules/nixos/filesearch.nix` | unit gone | file, `server` profile entry, `filesearch` host options, `ports.filesMcp` | none; it was never registered as a client tool |
+| laptop chat proxy | `modules/features/chat-proxy.nix` | no user unit/launchd agent on smorespro or smoreswork | file and the two `homeModules` entries | keep `cloudflare-access-ssh-token`: cloudflared still uses it |
+| GitHub mirror | was `modules/nixos/github-backup.nix` | removed now; the platform CronJob runs it | `modules/features/backup/` helpers and their checks after the platform copies land | delete the yaml key and revoke the classic PAT (manual, encrypted file) |
+| secret-sweep review | `secret-sweep --review` | removed now; gitleaks only | none further | none |
+| nanobot local fallback | `nanobotConfigAttrs` | removed now; no `smortress` provider or `local` preset | none further | none |
+| `a` alias | `modules/features/ai/maki/default.nix`, `modules/features/agent-vm/default.nix` | removed now: `maki` on personal hosts, `claude` on smoreswork | none further | none |
+| `jupyter-token` | encrypted `secrets/smortress.yaml` only | declaration already gone | no code; delete the yaml key by hand | `sops secrets/smortress.yaml` |
+| Radicale htpasswd | already deleted in `906a1b5e` | nothing to do | none | none |
+
+### Follow-up deletion list
+
+Run only after a live `cutover = true` generation has served every consumer and
+the cluster owns the assistant. Files and directories:
+
+```
+modules/nixos/agent-vm.nix
+modules/lib/agent-vm.nix
+modules/lib/agent-vm-linux.sh
+modules/lib/agent-vm-update.sh
+modules/lib/agent-vm-verify.sh
+modules/lib/agent_view.py
+modules/lib/share_planner.py
+modules/lib/agent-broker/
+modules/features/agent-vm/
+modules/nixos/open-webui.nix
+modules/nixos/filesearch.nix
+modules/features/chat-proxy.nix
+pkgs/letta/
+pkgs/nanobot/
+```
+
+Also in that commit: drop the `nanobot`/`letta` overlay entries
+(`pkgs/overlays.nix`), the `maki` profile's `../nixos/agent-vm.nix` entry, the
+`server` profile's open-webui/filesearch entries, `agentVm.*` and
+`filesearch.*` host options, the `cloudflare-access-ssh-token` reads in
+`modules/nixos/ssh.nix`, the `assistantState`/`lettaState` branch in
+`modules/nixos/restic-backup.nix`, `ports.{agent,letta,openWebui,filesMcp}`,
+the `webProxy.services.{agent,nanobot}` entries, the `agent-vm-*` and
+`letta-package` checks, and `tests/{agent-vm,test_agent_broker,test_agent_view,test_share_planner}*`.
+The `modules/features/backup/` helpers leave once the platform repo carries
+them; until then they remain tested but unrun. Keep
+`modules/nixos/kanbei-cutover.nix` until these deletions land, then fold its
+assertions into the host module or delete it with the option.

@@ -12,10 +12,8 @@
     r2-access-key-id = { };
     r2-secret-access-key = { };
 
-    # Read only by the root GitHub-backup service.
-    github-repo-pat = {
-      mode = "0400";
-    };
+    # The GitHub mirror PAT moved to homelabs-platform (T9). Its encrypted yaml key
+    # is still in secrets/smortress.yaml; delete it by hand (docs/manual-steps.md).
 
     # Photo-triage: read/score key and album-writer key (see docs/key-rotation.md).
     photo-triage-immich-read-key = { };

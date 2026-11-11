@@ -1,5 +1,6 @@
 # The Linux agent boundary (sdlc #386): `agent-sandbox maki` runs maki in the microvm guest that
-# modules/nixos/agent-vm.nix declares. Plain `maki` on the host stays the deliberate opt-out.
+# modules/nixos/agent-vm.nix declares. T9 makes plain `maki` the `a` default; this launcher and
+# its check disappear once kanbeiSplit.cutover.enable flips.
 {
   config,
   lib,
@@ -60,10 +61,12 @@ let
   };
 in
 {
-  config = lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
-    home.packages = [
-      launcher
-      agentVmCheck
-    ];
-  };
+  config =
+    lib.mkIf (pkgs.stdenv.hostPlatform.isLinux && !(config.kanbeiSplit.cutover.enable or false))
+      {
+        home.packages = [
+          launcher
+          agentVmCheck
+        ];
+      };
 }

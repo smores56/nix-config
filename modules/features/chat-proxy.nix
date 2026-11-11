@@ -65,21 +65,23 @@ let
   };
 in
 {
-  systemd.user.services."chat-proxy" = lib.mkIf (!isDarwin) {
-    Unit = {
-      Description = "Loopback Caddy that adds this device's Cloudflare Access token for agent.sammohr.dev";
-      After = [ "network-online.target" ];
-      Wants = [ "network-online.target" ];
-    };
-    Service = {
-      ExecStart = "${chatProxy}/bin/chat-proxy";
-      Restart = "on-failure";
-      RestartSec = 5;
-    };
-    Install.WantedBy = [ "default.target" ];
-  };
+  systemd.user.services."chat-proxy" =
+    lib.mkIf (!(config.kanbeiSplit.cutover.enable or false) && !isDarwin)
+      {
+        Unit = {
+          Description = "Loopback Caddy that adds this device's Cloudflare Access token for agent.sammohr.dev";
+          After = [ "network-online.target" ];
+          Wants = [ "network-online.target" ];
+        };
+        Service = {
+          ExecStart = "${chatProxy}/bin/chat-proxy";
+          Restart = "on-failure";
+          RestartSec = 5;
+        };
+        Install.WantedBy = [ "default.target" ];
+      };
 
-  launchd.agents."chat-proxy" = lib.mkIf isDarwin {
+  launchd.agents."chat-proxy" = lib.mkIf (!(config.kanbeiSplit.cutover.enable or false) && isDarwin) {
     enable = true;
     config = {
       ProgramArguments = [ "${chatProxy}/bin/chat-proxy" ];

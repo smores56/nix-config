@@ -20,7 +20,6 @@
     ../nixos/backup.nix
     ../nixos/restic-backup.nix
     ../nixos/vault-sync.nix
-    ../nixos/github-backup.nix
     ../nixos/alerting.nix
   ];
 }

@@ -28,7 +28,7 @@ the file free of `TODO`/`TBD`.
 
 Credential rotation lives in `docs/key-rotation.md`: the YubiKey and machine
 lifecycle, and per-secret procedures for the sops signing keys, restic, R2, the
-memory/Jupyter tokens and the cloudflared tunnel.
+memory token and the cloudflared tunnel.
 
 The `justfile` is the command index. Point users at `just --list` instead of
 duplicating commands in prose; add a recipe there when an operation becomes a
@@ -58,13 +58,13 @@ adds its greeter as a host-local module.
 | `modules/features/brew.nix` | the work Mac's Brewfile (`just brew-bundle` applies it) |
 | `modules/desktop/` | desktop-environment modules (niri, aerospace) |
 | `modules/nixos/` | NixOS system modules (base, desktop, networking, ssh, etc.) |
-| `modules/nixos/open-webui.nix`, `navidrome.nix` | public tunnel apps with their own auth: chat, music |
+| `modules/nixos/open-webui.nix`, `navidrome.nix` | tunnel apps with their own auth: music; Open WebUI is live only until `kanbeiSplit.cutover.enable` (T9) |
 | `modules/nixos/restic-backup.nix` | restic repos, schedule, retention and the Immich db dump |
 | `modules/flake/` | flake-parts modules: configurations, checks, apps (`apps.nix`, `apps/`), formatter, nixpkgs |
-| `modules/lib/` | helpers: the share planner and agent-VM view/launcher, the Jupyter bwrap sandbox, key tables, `secret-path.nix`, `hardening.nix`, the photo-triage package |
+| `modules/lib/` | helpers: the share planner and agent-VM view/launcher, key tables, `secret-path.nix`, `hardening.nix`, the photo-triage package |
 | `modules/ports.nix` | loopback port table shared by services and the tunnel |
-| `pkgs/overlays.nix`, `pkgs/nanobot/`, `pkgs/letta/` | nixpkgs overlays: pins and local package derivations; the uv2nix-built nanobot and Letta environments |
-| `modules/nixos/agent-vm.nix`, `modules/features/agent-vm/` | the agent VMs: Linux microvm guest (host module, view, firewall) and its launcher; the Mac Tart launcher. Shared facts in `modules/lib/agent-vm.nix`, planner in `modules/lib/share_planner.py` and the host-side verifier in `modules/lib/agent-vm-verify.sh` |
+| `pkgs/overlays.nix`, `pkgs/nanobot/`, `pkgs/letta/` | nixpkgs overlays: pins and local package derivations; nanobot and Letta stay for the pre-cutover host only (T9 deletes them) |
+| `modules/nixos/agent-vm.nix`, `modules/features/agent-vm/` | the legacy agent VMs behind `kanbeiSplit.cutover.enable` (default off): Linux microvm guest (host module, view, firewall) and its launcher; the Mac Tart launcher. `a` is plain `maki`/`claude`; shared facts in `modules/lib/agent-vm.nix`, planner in `modules/lib/share_planner.py` and the host-side verifier in `modules/lib/agent-vm-verify.sh`. Deleted in the T9 follow-up |
 | `modules/nixos/cluster-vm.nix`, `modules/lib/vm-host.nix` | the smortress-only k3s guest: qemu microVM, gVisor containerd runtime, virtiofs data shares and the host's tap/firewall/token staging; shared per-guest facts live in `modules/lib/vm-host.nix` |
 | `modules/nixos/kanbei-vm.nix` | the smortress-only private-data guest: qemu microVM with the 3090 by VFIO, a LUKS2 data volume sealed to a per-VM swtpm, root-only host state and a freeze-then-snapshot backup; behind `kanbeiVm.enable` (`docs/kanbei-vm.md`) |
 | `modules/nixos/kanbei-inference.nix`, `modules/lib/kanbei-inference.nix` | the kanbei guest's llama.cpp lanes: one GPU chat server on a unified q8_0 KV pool, CPU embeddings/rerank servers, the lane/VRAM math in one attrset and its manifest + fetch tool; eval harness in `tests/inference/` (`docs/kanbei-inference.md`) |
@@ -74,7 +74,7 @@ adds its greeter as a host-local module.
 | `modules/features/tv/`, `modules/features/repos/` | Television repository and worktree cables; the `repos`/`worktrees` CLIs they call |
 | `tofu/` | minimal Cloudflare DNS/Access/notification objects plus the `recovery` Pages project and its DNS record; run via the `cloudflare-*` flake apps |
 | `recovery/` | the public recovery page (Deno, plain ESM) and its operator scripts: blob builder, sentinel, smoke; published by `.github/workflows/recovery.yml` |
-| `modules/features/backup/` | Operator README, GitHub-mirror helpers and the metadata verifier |
+| `modules/features/backup/` | Operator README and the retired GitHub-mirror helpers; the live mirror is the `homelabs-platform` CronJob |
 | `modules/desktop/aerospace/` | AeroSpace config + `aerospace-layout` |
 | `tests/` | Python unit tests and shell/module checks for the repo's tools (all run via flake checks) |
 
@@ -187,7 +187,7 @@ nix eval --json .#checks.x86_64-linux --apply builtins.attrNames
 
 Some checks are Linux-only (`manual-steps-sync`, `pam-auth-gates`,
 `sshd-settings`, `github-metadata`, `memory-export-restore`, `ssh-askpass`,
-`agent-vm-linux-static`, `jupyter-sandbox-static`, `eval-nixos-*`); build the one that matches
+`agent-vm-linux-static`, `eval-nixos-*`); build the one that matches
 what you touched, e.g. `nix build .#checks.aarch64-darwin.git-work-routing`.
 
 Run `manual-steps-sync` after touching hosts, sops keys, `tofu/`, `webProxy`

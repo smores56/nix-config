@@ -16,6 +16,10 @@
     ./memory.nix
     ../../features/chat-proxy.nix
   ];
+  homeOptions = {
+    # #509 retirement: off keeps the Mac chat proxy until the cutover.
+    kanbeiSplit.cutover.enable = false;
+  };
 
   user.aiProfile = "work";
 }

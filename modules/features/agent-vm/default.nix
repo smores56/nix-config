@@ -1,6 +1,6 @@
 # The Mac agent boundary (sdlc #427): `agent-sandbox claude` runs Claude in a headless Tart macOS
 # guest that sees only the `allowRw` tree at identical paths, so it has no host USB (YubiKey), host
-# GUI dialogs or host sockets. Plain `claude` on the host stays the deliberate opt-out.
+# GUI dialogs or host sockets. T9 makes plain `claude` the `a` default on smoreswork.
 {
   lib,
   pkgs,
@@ -82,6 +82,7 @@ in
 {
   config = lib.mkIf pkgs.stdenv.hostPlatform.isDarwin {
     home.packages = [ agentSandbox ];
-    user.shellAbbrs.a = "agent-sandbox claude";
+    # T9: the work host runs plain Claude; the Tart sandbox is opt-in, not the `a` alias.
+    user.shellAbbrs.a = "claude";
   };
 }

@@ -43,11 +43,11 @@ Cross-cutting values flow through `config.machine.*` and `config.user.*`, not
   sops signing key, chosen by repo owner; the work account exists only on
   smoreswork. `user.aiProfile` (`personal` or `work`) decides which model
   providers agents may use.
-- **Agent VMs.** `a` runs the agent in a VM that cannot reach host sudo,
-  polkit or the YubiKey: `agent-sandbox maki` in a microvm.nix guest on Linux
-  (`modules/nixos/agent-vm.nix`), `agent-sandbox claude` in a Tart macOS guest
-  on smoreswork (`modules/features/agent-vm`). Plain `maki`/`claude` is the
-  unsandboxed opt-out.
+- **Agents.** `a` runs `maki` on personal hosts and plain `claude` on
+  smoreswork. The sandboxed path (`agent-sandbox maki` in a microvm guest,
+  `agent-sandbox claude` in a Tart guest) remains only until
+  `kanbeiSplit.cutover.enable` flips; see `docs/kanbei-split.md` for the
+  retirement table and the follow-up deletion.
 - **Private chat.** `mp` (`maki-private`) runs the local smortress qwen with
   its own XDG config: no MCP or memory, no project config, and only read-only
   tools plus TinyFish search. State, data, cache, and logs live in tmpfs and

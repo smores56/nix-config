@@ -7,7 +7,7 @@ repo is encrypted client-side.
 | --- | --- |
 | Repo targets, schedule, retention | [`modules/nixos/restic-backup.nix`](../../nixos/restic-backup.nix) |
 | The local encrypted disk (mount + LUKS) | [`modules/nixos/backup.nix`](../../nixos/backup.nix) |
-| GitHub mirror units and scripts | [`modules/nixos/github-backup.nix`](../../nixos/github-backup.nix) |
+| GitHub mirror helpers (retired; platform CronJob) | this directory |
 | Failure email | [`modules/nixos/alerting.nix`](../../nixos/alerting.nix) |
 | Operator steps (disk format, secrets, restore drill) | [`docs/manual-steps.md`](../../../docs/manual-steps.md) |
 
@@ -68,7 +68,13 @@ sudo systemctl start restic-backups-local.service
 
 ## GitHub mirror and metadata
 
-`githubBackup` (smortress only) keeps a mirror of this host's GitHub
+The live mirror is the `homelabs-platform` CronJob with its own fine-grained,
+read-only PAT. T9 removed the `githubBackup` option, the
+`modules/nixos/github-backup.nix` module and its `github-repo-pat` declaration
+from this repo. The helpers below are kept for the platform migration (and for
+their checks); nothing in nix-config schedules them.
+
+The retired nix-config design kept a mirror of this host's GitHub
 repos and the metadata GitHub holds outside git. GitHub remains the
 authoritative copy; the mirror lives inside `/var/lib/data`, so restic carries
 it with everything else and there is no separate offsite leg.
@@ -81,10 +87,10 @@ Layout under `/var/lib/data/github-mirrors`:
 | `meta/repositories/<repo>/` | pgb JSON: `issues/<n>.json`, `pulls/<n>.json`, comments/events/reviews/commits, labels, milestones, discussions, releases+assets, attachments, security advisories, plus per-resource `last_update` checkpoints |
 | `manifests/<date>/` | `repos.txt` (repo sets), `counts.json` (repo/issue/PR counts, mismatches, fsck sample), `run.log` |
 
-Units the module owns:
+Retired units (for reference; `homelabs-platform` owns the CronJob):
 
-- **`github-mirror.service` + `.timer`** — nightly at `schedule` (`modules/nixos/github-backup.nix`)
-  (00:30, `Persistent=true`), one oneshot. It runs the chain
+- **`github-mirror.service` + `.timer`** — the retired nix-config schedule was
+  00:30 (`Persistent=true`), one oneshot. The platform CronJob runs the chain
   [`github-mirror.sh`](./github-mirror.sh) →
   [`github-metadata.sh`](./github-metadata.sh) →
   [`github-verify.sh`](./github-verify.sh) under [`gitconfig`](./gitconfig)
@@ -122,14 +128,12 @@ users' reach.
   that run's marker, or a sample (`GITHUB_FSCK_SAMPLE`, default 5) of mirrors
   fails `git fsck --full`. Evidence lands in `manifests/<date>/` even on
   failure.
-- **Token.** Read at runtime from `tokenFile` (`modules/nixos/github-backup.nix`)
-  (`/run/secrets/github-repo-pat`, a classic `repo`-scoped sops secret,
-  root-owned). ghorg embeds it in the `git clone`/`remote set-url` URL, so it is
-  visible in root argv during a run; pgb and gh receive it as a file path and an
-  environment variable. It is never placed in the Nix store.
-- **Private-repo guard.** `githubBackup.probeRepo` names a known-private repo;
-  the run fails unless that repo was refreshed in the current run (its
-  `FETCH_HEAD` mtime is newer than a marker taken before ghorg ran). A token
+- **Token.** The platform CronJob reads its own fine-grained PAT. The retired
+  nix-config token was `/run/secrets/github-repo-pat`, a classic `repo`-scoped
+  sops secret; the encrypted key remains until removed by hand
+  (`docs/manual-steps.md`).
+- **Private-repo guard.** The retired `githubBackup.probeRepo` named a
+  known-private repo; the platform CronJob carries the same probe. A token
   that lost `repo` scope still lists public repos and exits 0, and ghorg never
   prunes earlier mirrors, so an existence check would pass forever.
 

@@ -30,6 +30,9 @@ let
   lettaState = "/home/${user}/.local/state/letta";
   user = config.machine.username;
   home = "/home/${user}";
+  # After the #509 cutover the agent VM and its state are gone, so restic must not
+  # try to dump or walk them.
+  cutover = config.kanbeiSplit.cutover.enable or false;
 
   # The sessions database lives on the virtiofs share, and only the guest may
   # open it: a host process bypasses the guest's WAL locks and breaks the live
@@ -40,14 +43,16 @@ let
   common = {
     paths = [
       "/var/lib/data"
-      # The assistant's sessions, workspace and pairing; its logs, run files,
-      # live databases, WebUI token and re-pairable gh config are excluded.
+    ]
+    # The assistant's sessions, workspace and pairing; its logs, run files,
+    # live databases, WebUI token and re-pairable gh config are excluded.
+    ++ lib.optionals (!cutover) [
       assistantState
       # Letta's state is JSONL and git, which restic reads directly: no dump step and
       # no excludes, unlike the SQLite sessions above.
       lettaState
     ];
-    exclude = [
+    exclude = lib.optionals (!cutover) [
       "${assistantState}/home/.nanobot/logs"
       "${assistantState}/home/.nanobot/run"
       "${assistantState}/home/.nanobot/media"
@@ -60,7 +65,7 @@ let
     # A missing state tree (the user removed it) must not fail the whole backup.
     # The dump runs in the guest; a failure keeps the previous copy and still
     # backs up the durable tree.
-    backupPrepareCommand = ''
+    backupPrepareCommand = lib.optionalString (!cutover) ''
       ${pkgs.coreutils}/bin/install -d -m 0700 -o ${user} -g users ${lib.escapeShellArg assistantState}
       cd ${lib.escapeShellArg home}
       ${pkgs.util-linux}/bin/runuser -u ${user} -- ${pkgs.coreutils}/bin/env HOME=${lib.escapeShellArg home} \

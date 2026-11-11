@@ -52,10 +52,9 @@ generated hardware config, then run `nix run .#bootstrap`.
   (see [Recovery](#recovery)).
 - **Out-of-band access**: the physical console. There is no inbound SSH port;
   SSH is tunnel-only.
-- **Agent VM**: `a` runs maki in the microvm guest. The guest sees only the
-  allowlisted home trees; `/var/lib/data` (music, books, photos) and the vault
-  are never shared. Calibre changes go through its Content server API. See
-  [Agent VMs](#agent-vms).
+- **Agent VM**: `a` runs maki directly on the host (T9). The legacy microvm
+  sandbox is still present until `kanbeiSplit.cutover.enable` flips, but it is
+  no longer the default path. See [Agent VMs](#agent-vms).
 - **Maki signing**: commits inside the agent VM sign with the sops key for the
   repo owner's account (`user.signingkey`, `gpg.format=ssh`) and
   `commit.gpgsign = true`. That is config, not enforcement: `--no-gpg-sign`
@@ -1119,19 +1118,23 @@ the old value; a token deleted in the dashboard is rejected by the edge at once.
 
 <!-- manual-step: secret/github-repo-pat -->
 
-Classic `repo`-scoped token, root-only, read by the GitHub mirror and metadata
-units (`tokenFile` in `modules/nixos/github-backup.nix`): ghorg, `python-github-backup`, and the
-verifier (`gh`, via `GH_TOKEN` in its environment). ghorg embeds it in git's
-argv, so it is visible in `/proc/<pid>/cmdline` during a run; the backup guide
-records that accepted window. pgb receives it as a `file://` path, so it stays
-out of argv. Fine-grained tokens cannot read wikis, so `--clone-wiki` would
-silently omit them. Mint at GitHub → Settings → Developer settings → Personal
-access tokens.
+Retired with the nix-config mirror (T9): the nightly ghorg/python-github-backup
+units are gone, and the `homelabs-platform` CronJob owns GitHub mirroring with
+its own fine-grained, read-only PAT. This repository declares no
+`github-repo-pat` sops secret; `modules/nixos/kanbei-cutover.nix` fails
+evaluation if a mirror unit or the declaration comes back.
 
-The mirror's probe repo (`sdlc`) must be refreshed on every run; a token
-that is valid but has lost `repo` scope fails the run. The verifier also fails
-when the token's repo listing no longer matches the mirror, so a scope loss is
-caught the same night.
+The encrypted key is still in `secrets/smortress.yaml` because a sops edit
+needs the YubiKey age key. On the next secrets session:
+
+```sh
+sops secrets/smortress.yaml          # delete the github-repo-pat key
+sops updatekeys secrets/smortress.yaml
+```
+
+Then revoke the classic `repo`-scoped PAT at GitHub → Settings → Developer
+settings → Personal access tokens. Until both steps run, the value is inert:
+nothing reads `/run/secrets/github-repo-pat` and no unit declares it.
 
 ### calibre-password
 
@@ -1329,9 +1332,14 @@ Rotation is in `docs/key-rotation.md`.
 
 <!-- manual-step: secret/jupyter-token -->
 
-Retired with the Open WebUI code interpreter. The value is still in
-`secrets/smortress.yaml` and nothing declares it; delete it on the next sops
-edit.
+Retired with the Open WebUI code interpreter. No module declares it; the
+encrypted value is still in `secrets/smortress.yaml`. Delete it in the same
+secrets session as the GitHub mirror PAT:
+
+```sh
+sops secrets/smortress.yaml          # delete the jupyter-token key
+sops updatekeys secrets/smortress.yaml
+```
 
 ### Memory MCP token
 
@@ -1365,16 +1373,10 @@ unit restart is needed.
 
 #### github-repo-pat
 
-Mint a new classic `repo` token (web). Then replace the secret, rebuild, and
-prove it with a mirror run — a valid token that lost `repo` fails the run:
-
-```sh
-sudo systemctl start github-mirror.service
-journalctl -u github-mirror.service -n 50
-```
-
-Revoke the old token. The mirror keeps the old value until the next run, so the
-run above is the proof.
+Retired (T9). The mirror is the `homelabs-platform` CronJob's; rotate its
+read-only PAT there. For this repo the only remaining action is the one-time
+cleanup above: delete the encrypted key, then revoke the classic PAT. There is
+no mirror unit to restart.
 
 #### calibre-password
 
@@ -1747,10 +1749,12 @@ the new service refuses to start until `/var/lib/vault-migrated` exists, and
 ## Agent VMs
 
 Agents run inside a VM on every host, so nothing they do can reach the host's
-sudo, polkit, YubiKey, PIN or admin prompts. `a` starts one: `agent-sandbox
-maki` on Linux, `agent-sandbox claude` on smoreswork. Plain `maki` or `claude`
-on the host is the deliberate unsandboxed opt-out. The design and its accepted
-risks are on smores56/sdlc#427.
+sudo, polkit, YubiKey, PIN or admin prompts. T9 changes the default: `a` runs
+`maki` on personal hosts and plain `claude` on smoreswork, with no sandbox.
+`agent-sandbox maki` / `agent-sandbox claude` remain available (and `ms` uses
+the sandbox) only while `kanbeiSplit.cutover.enable` is false; the cutover
+removes the sandbox entirely. The design, the accepted residuals and the
+retirement table are on smores56/sdlc#427 and `docs/kanbei-split.md`.
 
 Each guest sees an explicit allowlist, not the whole home. `agentVm.allow` and
 `agentVm.allowRw` (`modules/nixos/agent-vm.nix`) and the arrays in
@@ -2263,6 +2267,10 @@ calls, and work repos are accepted there (`MEMORY_WORK_POLICY=allow`, from
 
 <!-- manual-step: service/smortress/agent -->
 
+Retired by `kanbeiSplit.cutover.enable` (T9). Until the switch flips, the text
+below describes the live Open WebUI/Letta pair; on the cluster generation the
+unit and its tunnel entry are removed in the follow-up deletion commit.
+
 `agent.sammohr.dev` → the loopback Open WebUI server (`ports.openWebui`), HTTP
 behind Access plus Open WebUI's own email/password login. It is the phone PWA
 and the desktop web app for the Letta agent; SQLite, uploads and the workspace
@@ -2387,6 +2395,10 @@ There is no dedicated assistant key and no new `agentVm.secrets` name.
 
 <!-- manual-step: service/smortress/nanobot -->
 
+Retired by `kanbeiSplit.cutover.enable` (T9): nanobot runs as the unsandboxed
+pod in `homelabs-apps`, not in the host microVM. Until the switch flips, the
+text below describes the live guest; the host relay goes with the guest.
+
 `nanobot.sammohr.dev` → the host loopback relay
 `agent-vm-ingress-42700.socket`, which forwards to the guest relay of the same
 name; the guest relay listens on the tap address and forwards to the runtime on
@@ -2421,10 +2433,10 @@ status` and `sudo agent-vm-update` manage the guest update state.
 ### Phone file search
 
 `files-mcp` is a read-only file-search MCP on loopback `ports.filesMcp` over
-`/home/smores/{code,Documents,Downloads,dev}`. Nothing registers it as a tool
-connection any more: Open WebUI's tool servers went with the raw-model
-playground, and the Letta agent has its own file tools. The service still runs,
-unregistered, for any MCP client that wants it.
+`/home/smores/{repos,Documents,Downloads,dev}`. T9 retires it with Open WebUI:
+`kanbeiSplit.cutover.enable` removes the unit, and the follow-up commit deletes
+the module and its port. Nothing registers it as a tool connection any more.
+While the switch is off it still runs, unregistered, for any MCP client.
 
 Tools: `file_search` (file names and contents), `file_read` (one file, with
 line numbers), and `file_list`. Paths outside the roots, secret-like files
@@ -2765,3 +2777,74 @@ own SPF (`cf-bounce.send.sammohr.dev`). Tuta is receive-only for this host.
 `git log -1 --format=%G?` must print `G`. If it does not, check
 `/run/secrets/github-personal-signing-key` (mode `0400`, owned by the user) and
 `~/.config/ssh/allowed_signers`.
+
+## Kanbei retirement cutover (T9)
+
+The switch is `kanbeiSplit.cutover.enable` (`modules/kanbei-split.nix`), default
+`false`. On the default generation nothing changes: the agent microVM, Letta,
+Open WebUI, files-mcp and both laptop chat proxies are live. The table in
+`docs/kanbei-split.md` lists every component and its follow-up deletion.
+
+Do not flip it until the cluster serves the assistant end to end and the
+private-data cutover has happened. Then, in order:
+
+1. **Stop the legacy runtimes.** This is a normal `nixos-rebuild switch` on the
+   next generation, but stop the guest first so its state is quiesced:
+
+   ```sh
+   sudo systemctl stop microvm@agent.service || true
+   sudo systemctl stop open-webui.service files-mcp.service || true
+   ```
+
+2. **Flip the option.** Set `kanbeiSplit.cutover.enable = true` in
+   `modules/hosts/smortress/default.nix` (`nixosOptions`) and in
+   `modules/hosts/smorespro/default.nix` (`nixosOptions` and `homeOptions`);
+   smoreswork sets it in `homeOptions`. Rebuild the server, then each laptop:
+
+   ```sh
+   just switch smortress
+   just switch smorespro
+   just home-switch sam smoreswork
+   ```
+
+   The switch removes `microvm@agent`, the broker/ingress/tap units, the
+   `agent-vm-*` timers and sockets, `open-webui`, `files-mcp`, and the
+   `chat-proxy` user unit/launchd agent. It also restores the ordinary fish
+   login shell and drops the forced agent key on smortress, and stops restic
+   from walking the retired assistant/Letta state paths.
+
+3. **Verify the retirement.** Evaluation fails if anything survives; on the
+   live host:
+
+   ```sh
+   systemctl status microvm@agent open-webui files-mcp    # each: not found
+   systemctl --user status chat-proxy                     # smorespro: not found
+   nix eval --raw .#nixosConfigurations.smortress.config.system.build.toplevel.drvPath
+   ```
+
+4. **Delete the code in a follow-up commit.** Use the exact file list in
+   `docs/kanbei-split.md` ("Follow-up deletion list"). Keep
+   `modules/nixos/kanbei-cutover.nix` until that commit lands, then remove the
+   option and its assertions with the rest.
+
+5. **Delete the encrypted keys.** With the YubiKey present:
+
+   ```sh
+   sops secrets/smortress.yaml          # delete github-repo-pat and jupyter-token
+   sops updatekeys secrets/smortress.yaml
+   ```
+
+   `manual-steps-sync` keeps both `secret/*` anchors while the keys remain in
+   the file; delete the anchors in the same commit that removes the keys.
+
+6. **Revoke the credentials.** Delete the classic `repo`-scoped GitHub PAT
+   (Settings → Developer settings → Personal access tokens); the platform
+   CronJob uses its own fine-grained read-only token. Rotate or revoke the
+   Cloudflare Access service tokens only if the laptop chat proxies are no
+   longer wanted; `cloudflared` on each laptop still needs
+   `cloudflare-access-ssh-token`.
+
+7. **Clean the data.** `/var/lib/data/open-webui` and the assistant/Letta state
+   under `~/.local/state/` are plain restorable data; take one final backup,
+   then remove them. The `agent` Access application and hostname route are
+   deleted with the `tofu` follow-up in the retirement table.

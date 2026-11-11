@@ -145,104 +145,92 @@ let
     call fails or returns no results, fall back to the built-in `web_search`.
   '';
 
-  nanobotConfig = pkgs.writeText "nanobot-config.json" (
-    builtins.toJSON {
-      providers = {
-        custom = {
-          apiKey = "none";
-          apiBase = "http://127.0.0.1:${toString ports.agentNeuralwatt}/v1";
-        };
-        smortress = {
-          apiKey = null;
-          apiBase = aiProviders.smortress.baseUrl;
-        };
+  nanobotConfigAttrs = {
+    providers = {
+      custom = {
+        apiKey = "none";
+        apiBase = "http://127.0.0.1:${toString ports.agentNeuralwatt}/v1";
       };
-      modelPresets = {
-        neuralwatt = {
-          provider = "custom";
-          model = aiProviders.neuralwatt.models.deepseekFlash.id;
-          maxTokens = aiProviders.neuralwatt.models.deepseekFlash.max_output_tokens;
-          contextWindowTokens = aiProviders.neuralwatt.models.deepseekFlash.context_window;
-        };
-        # The outage fallback. The windows stay small so a prompt does not try to
-        # fill the local model's full 200k context on a shared machine.
-        local = {
-          provider = "smortress";
-          model = aiProviders.smortress.models.qwen38.id;
-          maxTokens = 8192;
-          contextWindowTokens = 32768;
-        };
+    };
+    modelPresets = {
+      neuralwatt = {
+        provider = "custom";
+        model = aiProviders.neuralwatt.models.deepseekFlash.id;
+        maxTokens = aiProviders.neuralwatt.models.deepseekFlash.max_output_tokens;
+        contextWindowTokens = aiProviders.neuralwatt.models.deepseekFlash.context_window;
       };
-      agents.defaults = {
-        modelPreset = "neuralwatt";
-        disabled_skills = [
-          "summarize"
-          "tmux"
-          "clawhub"
-          "image-generation"
-          "memory"
-        ];
-        dream = {
-          enabled = false;
-        };
-      };
-      channels.websocket = {
-        enabled = true;
-        host = "127.0.0.1";
-        port = ports.agent;
-        tokenIssueSecret = "\${NANOBOT_WEB_TOKEN}";
-        websocketRequiresToken = true;
-      };
-      transcription = {
+    };
+    agents.defaults = {
+      modelPreset = "neuralwatt";
+      disabled_skills = [
+        "summarize"
+        "tmux"
+        "clawhub"
+        "image-generation"
+        "memory"
+      ];
+      dream = {
         enabled = false;
       };
-      tools = {
-        restrict_to_workspace = false;
-        web = {
-          search = {
-            provider = "duckduckgo";
-            max_results = 5;
-          };
-          fetch = {
-            # Fetch directly from the sandbox rather than through r.jina.ai, which
-            # would see every URL the agent reads.
-            use_jina_reader = false;
-          };
+    };
+    channels.websocket = {
+      enabled = true;
+      host = "127.0.0.1";
+      port = ports.agent;
+      tokenIssueSecret = "\${NANOBOT_WEB_TOKEN}";
+      websocketRequiresToken = true;
+    };
+    transcription = {
+      enabled = false;
+    };
+    tools = {
+      restrict_to_workspace = false;
+      web = {
+        search = {
+          provider = "duckduckgo";
+          max_results = 5;
         };
-        exec = {
-          path_prepend = "/run/current-system/sw/bin:/run/wrappers/bin";
-          allowed_env_keys = [
-            "GH_TOKEN"
-            "TINYFISH_BASE_URL"
-            "SDLC_REPO"
-            "GH_CONFIG_DIR"
-            "GIT_CONFIG_GLOBAL"
-          ];
-        };
-        cli_apps = {
-          enable = false;
-        };
-        image_generation = {
-          enabled = false;
-        };
-        ssrf_whitelist = [
-          # The capability brokers and the memory MCP listen on the guest's loopback.
-          "127.0.0.1/32"
-        ];
-        mcp_servers.memory = {
-          type = "streamableHttp";
-          url = "http://127.0.0.1:${toString ports.memoryMcp}/mcp";
-          headers = {
-            "X-Memory-Group" = "global";
-            "X-Memory-Cwd" = home;
-            "X-Memory-Actor" = "nanobot";
-            "X-Memory-Machine" = "smortress";
-          };
-          tool_timeout = 30;
+        fetch = {
+          # Fetch directly from the sandbox rather than through r.jina.ai, which
+          # would see every URL the agent reads.
+          use_jina_reader = false;
         };
       };
-    }
-  );
+      exec = {
+        path_prepend = "/run/current-system/sw/bin:/run/wrappers/bin";
+        allowed_env_keys = [
+          "GH_TOKEN"
+          "TINYFISH_BASE_URL"
+          "SDLC_REPO"
+          "GH_CONFIG_DIR"
+          "GIT_CONFIG_GLOBAL"
+        ];
+      };
+      cli_apps = {
+        enable = false;
+      };
+      image_generation = {
+        enabled = false;
+      };
+      ssrf_whitelist = [
+        # The capability brokers and the memory MCP listen on the guest's loopback.
+        "127.0.0.1/32"
+      ];
+      mcp_servers.memory = {
+        type = "streamableHttp";
+        url = "http://127.0.0.1:${toString ports.memoryMcp}/mcp";
+        headers = {
+          "X-Memory-Group" = "global";
+          "X-Memory-Cwd" = home;
+          "X-Memory-Actor" = "nanobot";
+          "X-Memory-Machine" = "smortress";
+        };
+        tool_timeout = 30;
+      };
+    };
+  };
+
+  nanobotConfig = pkgs.writeText "nanobot-config.json" (builtins.toJSON nanobotConfigAttrs);
 
   agentAssistant = pkgs.writeShellApplication {
     name = "agent-assistant";
@@ -1247,260 +1235,270 @@ in
     };
   };
 
-  config = {
-    agentVm =
-      lib.mapAttrs (_: lib.mkDefault) {
-        allow = [
-          # Skills discovery for maki; symlinks into the shared store.
-          ".agents"
-          # The real tool config, shared read-only; maki's pack lock is bound over separately.
-          ".config/maki"
-          ".config/git"
-          # The manually installed maki binary; no Nix package exists yet.
-          ".local/bin"
-        ];
-        allowRw = [
-          "repos"
-          "wip"
-          # Shared maki sessions and logs: the host and the guest resume each other's sessions.
-          ".local/state/maki"
-          ".local/logs/maki"
-        ]
-        # nanobot sessions, pairing and the generated WebUI token; server-only.
-        ++ lib.optional isServer ".local/state/agent-assistant"
-        # Letta's MemFS, transcripts and provider record; server-only.
-        ++ lib.optional isServer ".local/state/letta";
-        # Only values that cannot be mediated stay here; every capability holds its own secret on
-        # the host (see `capabilities`).
-        secrets = [
-          "github-personal-pat"
-          "github-personal-signing-key"
-        ];
-        guestWritable = [ ".config/maki/pack-lock.json.lock" ];
-      }
-      // {
-        capabilities = {
-          neuralwatt = {
-            type = "http";
-            upstream = "https://api.neuralwatt.com";
-            secret = "neuralwatt-api-key";
-            guestPort = ports.agentNeuralwatt;
-            allow = [
-              "POST /v1/chat/completions"
-              "GET /v1/models"
-            ];
-
-            auth.kind = "bearer";
-          };
-          tinyfish = {
-            type = "http";
-            upstream = "https://api.search.tinyfish.ai";
-            secret = "tinyfish-api-key";
-            guestPort = ports.agentTinyfish;
-            allow = [ "GET /" ];
-            env.TINYFISH_BASE_URL = "http://127.0.0.1:${toString ports.agentTinyfish}";
-            auth = {
-              kind = "header";
-              header = "X-API-Key";
-            };
-          };
-          calibre = {
-            type = "http";
-            upstream =
-              if isServer then "http://127.0.0.1:${toString ports.calibre}" else "https://calibre.sammohr.dev";
-            secret = "calibre-password";
-            guestPort = ports.calibre;
-            brokerPort = ports.agentBrokerCalibre;
-            env.CALIBRE_LIBRARY_URL = "http://127.0.0.1:${toString ports.calibre}/#books";
-            # Calibre is a writable management capability by design: the broker injects
-            # the human's basic-auth credential, so the Content server is not a boundary
-            # against the guest. Every method the old empty list admitted (minus TRACE and
-            # CONNECT) is listed here explicitly now that an empty list is rejected.
-            allow = [
-              "GET /*"
-              "HEAD /*"
-              "OPTIONS /*"
-              "POST /*"
-              "PUT /*"
-              "PATCH /*"
-              "DELETE /*"
-            ];
-            auth = {
-              kind = "basic";
-              username = "smores56";
-            };
-          };
+  config = lib.mkMerge [
+    {
+      assertions = [
+        {
+          assertion = !(nanobotConfigAttrs.modelPresets ? local);
+          message = "agent-vm: nanobot must not fall back to the host llama model; it runs in the cluster";
         }
-        // lib.optionalAttrs (!isServer) {
-          smortress-ssh = {
-            type = "tcp";
-            secret = "cloudflare-access-ssh-token";
-            guestPort = ports.agentSshRelay;
-            command = "${cloudflaredAccess}/bin/cloudflared-access-host tcp --hostname ssh.sammohr.dev --url 127.0.0.1:%PORT%";
-          };
-        }
-        // lib.optionalAttrs isServer {
-          memory = {
-            type = "http";
-            upstream = "http://127.0.0.1:${toString ports.memoryMcp}";
-            secret = "memory-mcp-token";
-            guestPort = ports.memoryMcp;
-            brokerPort = ports.agentBrokerMemory;
-            allow = [
-              "GET /mcp"
-              "POST /mcp"
-              "DELETE /mcp"
-            ];
-            auth.kind = "bearer";
-          };
-        };
-      };
-
-    microvm.vms.${name} = {
-      autostart = true;
-      # A host switch must not kill running agent sessions; `agent-sandbox restart` says how to
-      # pick up a changed guest.
-      restartIfChanged = false;
-      config = guest;
-    };
-
-    # Also the manual entry point; the unit logs a failing assertion after every prep.
-    environment.systemPackages = [
-      verifyScript
-      updateScript
-    ];
-    # Apply allowlist additions to a running guest on switch; the script no-ops when the VM is
-    # down and removals are deferred to the next start.
-    system.activationScripts.agent-vm-reconcile = {
-      deps = [ "specialfs" ];
-      text = ''
-        ${prepScript} --reconcile >/dev/null 2>&1 || true
-      '';
-    };
-    systemd.services = {
-      agent-vm-prep = {
-        description = "Assemble the agent VM's home view and hand-in secrets";
-        before = [
-          "microvm-virtiofsd@${name}.service"
-          "microvm@${name}.service"
-        ];
-        requiredBy = [ "microvm-virtiofsd@${name}.service" ];
-        partOf = [ "microvm@${name}.service" ];
-        # virtiofsd and the VM require this unit, so a restart here propagates to the VM and
-        # drops every agent-sandbox session. The prep script is stable across host switches;
-        # `agent-sandbox restart` / `sudo systemctl restart microvm@agent.service` is the
-        # explicit way to re-plan the view.
-        restartIfChanged = false;
-        after = [ "local-fs.target" ];
-        serviceConfig = {
-          Type = "oneshot";
-          RemainAfterExit = true;
-          ExecStart = prepScript;
-          ExecStop = "-${pkgs.util-linux}/bin/umount -R ${view}";
-        };
-      };
-      agent-vm-staleness = {
-        description = "Log whether the agent guest is behind its expected closure";
-        after = [
-          "agent-vm-prep.service"
-          "agent-vm-net.service"
-        ];
-        serviceConfig = {
-          Type = "oneshot";
-          ExecStart = "${updateScript}/bin/agent-vm-update --check";
-        };
-      };
-      agent-vm-verify = {
-        description = "Verify the agent VM's view, shares, secrets and firewall from the host";
-        after = [
-          "agent-vm-prep.service"
-          "agent-vm-net.service"
-          "firewall.service"
-        ];
-        requires = [ "agent-vm-prep.service" ];
-        wants = [
-          "agent-vm-net.service"
-          "firewall.service"
-        ];
-        # partOf makes a prep restart re-run the assertion; the oneshot has no timer.
-        partOf = [ "agent-vm-prep.service" ];
-        wantedBy = [ "multi-user.target" ];
-        serviceConfig = {
-          Type = "oneshot";
-          ExecStart = "${verifyScript}/bin/agent-vm-verify";
-        };
-      };
-      agent-vm-net = {
-        description = "Address the agent VM's tap";
-        after = [ "microvm-tap-interfaces@${name}.service" ];
-        bindsTo = [ "microvm-tap-interfaces@${name}.service" ];
-        before = [ "microvm@${name}.service" ];
-        requiredBy = [ "microvm@${name}.service" ];
-        # Same propagation: the VM requires this unit, so a host-switch restart would stop the
-        # guest. The tap address is stable; `microvm@agent` restart re-applies it.
-        restartIfChanged = false;
-        serviceConfig = {
-          Type = "oneshot";
-          RemainAfterExit = true;
-          ExecStart = netScript;
-        };
-      };
+      ];
     }
-    // lib.mapAttrs (_: v: v.service) hostProxies
-    // brokerServices;
-    systemd.timers."agent-vm-staleness" = {
-      wantedBy = [ "timers.target" ];
-      timerConfig = {
-        OnBootSec = "10min";
-        OnUnitActiveSec = "15min";
-      };
-    };
-    systemd.sockets = lib.mapAttrs (_: v: v.socket) hostProxies;
+    (lib.mkIf (!(config.kanbeiSplit.cutover.enable or false)) {
+      agentVm =
+        lib.mapAttrs (_: lib.mkDefault) {
+          allow = [
+            # Skills discovery for maki; symlinks into the shared store.
+            ".agents"
+            # The real tool config, shared read-only; maki's pack lock is bound over separately.
+            ".config/maki"
+            ".config/git"
+            # The manually installed maki binary; no Nix package exists yet.
+            ".local/bin"
+          ];
+          allowRw = [
+            "repos"
+            "wip"
+            # Shared maki sessions and logs: the host and the guest resume each other's sessions.
+            ".local/state/maki"
+            ".local/logs/maki"
+          ]
+          # nanobot sessions, pairing and the generated WebUI token; server-only.
+          ++ lib.optional isServer ".local/state/agent-assistant"
+          # Letta's MemFS, transcripts and provider record; server-only.
+          ++ lib.optional isServer ".local/state/letta";
+          # Only values that cannot be mediated stay here; every capability holds its own secret on
+          # the host (see `capabilities`).
+          secrets = [
+            "github-personal-pat"
+            "github-personal-signing-key"
+          ];
+          guestWritable = [ ".config/maki/pack-lock.json.lock" ];
+        }
+        // {
+          capabilities = {
+            neuralwatt = {
+              type = "http";
+              upstream = "https://api.neuralwatt.com";
+              secret = "neuralwatt-api-key";
+              guestPort = ports.agentNeuralwatt;
+              allow = [
+                "POST /v1/chat/completions"
+                "GET /v1/models"
+              ];
 
-    assertions = [
-      {
-        assertion = config.networking.firewall.enable && !config.networking.nftables.enable;
-        message = "agent-vm isolates the tap with iptables firewall extraCommands";
-      }
-      {
-        assertion = lib.all (
-          pair: lib.elem (lib.removePrefix "/run/secrets/" (lib.last (lib.splitString "|" pair))) cfg.secrets
-        ) vmLib.secretEnv;
-        message = "agent-vm: every secret the launcher exports must be in agentVm.secrets";
-      }
-      {
-        assertion =
-          config.systemd.services."agent-vm-prep".restartIfChanged == false
-          && config.systemd.services."agent-vm-net".restartIfChanged == false;
-        message = "agent-vm: prep/net must not restart on host switch; they are requiredBy the VM and would drop every session";
-      }
-      {
-        # Only `nanobot` is a guest listener. `agent` is Open WebUI on the host, so it has
-        # no guest relay to agree with; `ports.letta` stays in `ingressPorts` because the
-        # host relay is now Open WebUI's route into the guest rather than the tunnel's.
-        assertion =
-          !(config ? webProxy && config.webProxy.services ? nanobot)
-          || lib.elem config.webProxy.services.nanobot.port cfg.ingressPorts;
-        message = "agent-vm: webProxy.services.nanobot.port must be in agentVm.ingressPorts, or the tunnel points at a port with no guest relay";
-      }
-      {
-        assertion = lib.all (c: c.type != "http" || c.allow != [ ]) (lib.attrValues cfg.capabilities);
-        message = "agent-vm: every http capability needs a non-empty allow list";
-      }
-    ];
+              auth.kind = "bearer";
+            };
+            tinyfish = {
+              type = "http";
+              upstream = "https://api.search.tinyfish.ai";
+              secret = "tinyfish-api-key";
+              guestPort = ports.agentTinyfish;
+              allow = [ "GET /" ];
+              env.TINYFISH_BASE_URL = "http://127.0.0.1:${toString ports.agentTinyfish}";
+              auth = {
+                kind = "header";
+                header = "X-API-Key";
+              };
+            };
+            calibre = {
+              type = "http";
+              upstream =
+                if isServer then "http://127.0.0.1:${toString ports.calibre}" else "https://calibre.sammohr.dev";
+              secret = "calibre-password";
+              guestPort = ports.calibre;
+              brokerPort = ports.agentBrokerCalibre;
+              env.CALIBRE_LIBRARY_URL = "http://127.0.0.1:${toString ports.calibre}/#books";
+              # Calibre is a writable management capability by design: the broker injects
+              # the human's basic-auth credential, so the Content server is not a boundary
+              # against the guest. Every method the old empty list admitted (minus TRACE and
+              # CONNECT) is listed here explicitly now that an empty list is rejected.
+              allow = [
+                "GET /*"
+                "HEAD /*"
+                "OPTIONS /*"
+                "POST /*"
+                "PUT /*"
+                "PATCH /*"
+                "DELETE /*"
+              ];
+              auth = {
+                kind = "basic";
+                username = "smores56";
+              };
+            };
+          }
+          // lib.optionalAttrs (!isServer) {
+            smortress-ssh = {
+              type = "tcp";
+              secret = "cloudflare-access-ssh-token";
+              guestPort = ports.agentSshRelay;
+              command = "${cloudflaredAccess}/bin/cloudflared-access-host tcp --hostname ssh.sammohr.dev --url 127.0.0.1:%PORT%";
+            };
+          }
+          // lib.optionalAttrs isServer {
+            memory = {
+              type = "http";
+              upstream = "http://127.0.0.1:${toString ports.memoryMcp}";
+              secret = "memory-mcp-token";
+              guestPort = ports.memoryMcp;
+              brokerPort = ports.agentBrokerMemory;
+              allow = [
+                "GET /mcp"
+                "POST /mcp"
+                "DELETE /mcp"
+              ];
+              auth.kind = "bearer";
+            };
+          };
+        };
 
-    # microvm.nix allows qemu-bridge-helper onto every bridge; this VM uses a plain tap.
-    environment.etc."qemu/bridge.conf".text = "deny all\n";
+      microvm.vms.${name} = {
+        autostart = true;
+        # A host switch must not kill running agent sessions; `agent-sandbox restart` says how to
+        # pick up a changed guest.
+        restartIfChanged = false;
+        config = guest;
+      };
 
-    networking = {
-      nat = {
-        enable = true;
-        internalInterfaces = [ tap ];
+      # Also the manual entry point; the unit logs a failing assertion after every prep.
+      environment.systemPackages = [
+        verifyScript
+        updateScript
+      ];
+      # Apply allowlist additions to a running guest on switch; the script no-ops when the VM is
+      # down and removals are deferred to the next start.
+      system.activationScripts.agent-vm-reconcile = {
+        deps = [ "specialfs" ];
+        text = ''
+          ${prepScript} --reconcile >/dev/null 2>&1 || true
+        '';
       };
-      networkmanager.unmanaged = [ tap ];
-      firewall = {
-        extraCommands = firewallUp;
+      systemd.services = {
+        agent-vm-prep = {
+          description = "Assemble the agent VM's home view and hand-in secrets";
+          before = [
+            "microvm-virtiofsd@${name}.service"
+            "microvm@${name}.service"
+          ];
+          requiredBy = [ "microvm-virtiofsd@${name}.service" ];
+          partOf = [ "microvm@${name}.service" ];
+          # virtiofsd and the VM require this unit, so a restart here propagates to the VM and
+          # drops every agent-sandbox session. The prep script is stable across host switches;
+          # `agent-sandbox restart` / `sudo systemctl restart microvm@agent.service` is the
+          # explicit way to re-plan the view.
+          restartIfChanged = false;
+          after = [ "local-fs.target" ];
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+            ExecStart = prepScript;
+            ExecStop = "-${pkgs.util-linux}/bin/umount -R ${view}";
+          };
+        };
+        agent-vm-staleness = {
+          description = "Log whether the agent guest is behind its expected closure";
+          after = [
+            "agent-vm-prep.service"
+            "agent-vm-net.service"
+          ];
+          serviceConfig = {
+            Type = "oneshot";
+            ExecStart = "${updateScript}/bin/agent-vm-update --check";
+          };
+        };
+        agent-vm-verify = {
+          description = "Verify the agent VM's view, shares, secrets and firewall from the host";
+          after = [
+            "agent-vm-prep.service"
+            "agent-vm-net.service"
+            "firewall.service"
+          ];
+          requires = [ "agent-vm-prep.service" ];
+          wants = [
+            "agent-vm-net.service"
+            "firewall.service"
+          ];
+          # partOf makes a prep restart re-run the assertion; the oneshot has no timer.
+          partOf = [ "agent-vm-prep.service" ];
+          wantedBy = [ "multi-user.target" ];
+          serviceConfig = {
+            Type = "oneshot";
+            ExecStart = "${verifyScript}/bin/agent-vm-verify";
+          };
+        };
+        agent-vm-net = {
+          description = "Address the agent VM's tap";
+          after = [ "microvm-tap-interfaces@${name}.service" ];
+          bindsTo = [ "microvm-tap-interfaces@${name}.service" ];
+          before = [ "microvm@${name}.service" ];
+          requiredBy = [ "microvm@${name}.service" ];
+          # Same propagation: the VM requires this unit, so a host-switch restart would stop the
+          # guest. The tap address is stable; `microvm@agent` restart re-applies it.
+          restartIfChanged = false;
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+            ExecStart = netScript;
+          };
+        };
+      }
+      // lib.mapAttrs (_: v: v.service) hostProxies
+      // brokerServices;
+      systemd.timers."agent-vm-staleness" = {
+        wantedBy = [ "timers.target" ];
+        timerConfig = {
+          OnBootSec = "10min";
+          OnUnitActiveSec = "15min";
+        };
       };
-    };
-  };
+      systemd.sockets = lib.mapAttrs (_: v: v.socket) hostProxies;
+
+      assertions = [
+        {
+          assertion = config.networking.firewall.enable && !config.networking.nftables.enable;
+          message = "agent-vm isolates the tap with iptables firewall extraCommands";
+        }
+        {
+          assertion = lib.all (
+            pair: lib.elem (lib.removePrefix "/run/secrets/" (lib.last (lib.splitString "|" pair))) cfg.secrets
+          ) vmLib.secretEnv;
+          message = "agent-vm: every secret the launcher exports must be in agentVm.secrets";
+        }
+        {
+          assertion =
+            config.systemd.services."agent-vm-prep".restartIfChanged == false
+            && config.systemd.services."agent-vm-net".restartIfChanged == false;
+          message = "agent-vm: prep/net must not restart on host switch; they are requiredBy the VM and would drop every session";
+        }
+        {
+          # Only `nanobot` is a guest listener. `agent` is Open WebUI on the host, so it has
+          # no guest relay to agree with; `ports.letta` stays in `ingressPorts` because the
+          # host relay is now Open WebUI's route into the guest rather than the tunnel's.
+          assertion =
+            !(config ? webProxy && config.webProxy.services ? nanobot)
+            || lib.elem config.webProxy.services.nanobot.port cfg.ingressPorts;
+          message = "agent-vm: webProxy.services.nanobot.port must be in agentVm.ingressPorts, or the tunnel points at a port with no guest relay";
+        }
+        {
+          assertion = lib.all (c: c.type != "http" || c.allow != [ ]) (lib.attrValues cfg.capabilities);
+          message = "agent-vm: every http capability needs a non-empty allow list";
+        }
+      ];
+
+      # microvm.nix allows qemu-bridge-helper onto every bridge; this VM uses a plain tap.
+      environment.etc."qemu/bridge.conf".text = "deny all\n";
+
+      networking = {
+        nat = {
+          enable = true;
+          internalInterfaces = [ tap ];
+        };
+        networkmanager.unmanaged = [ tap ];
+        firewall = {
+          extraCommands = firewallUp;
+        };
+      };
+    })
+  ];
 }

@@ -222,7 +222,7 @@ One key per GitHub account: `github-personal-signing-key` in
 in `modules/lib/signing-keys.nix`, which is what writes
 `~/.config/ssh/allowed_signers`, names the private half in `user.signingkey`,
 and lets smortress trust it for the forced `agent-ssh` login (which lands in
-smortress's agent VM). Per account:
+smortress's agent VM only while `kanbeiSplit.cutover.enable` is false). Per account:
 
 1. Mint a new pair: `ssh-keygen -t ed25519 -N '' -C
    github-personal-signing-key -f /tmp/signing`.
@@ -275,6 +275,14 @@ sops-rendered `restic-r2.env`. Delete the old token only after that run. R2
 cannot rotate a token in place, so there are always two live credentials during
 the swap — both write the same bucket, which is harmless for one restic client.
 
+### GitHub mirror PAT (retired)
+
+The classic `repo`-scoped `github-repo-pat` belonged to the nix-config mirror
+that T9 removed. Mirroring and its fine-grained, read-only PAT now live in
+`homelabs-platform`; rotate that token there. Here, delete the encrypted key
+with the Jupyter token and revoke the classic PAT once no laptop or script uses
+it.
+
 ### Memory MCP token
 
 `memory-mcp-token` in `secrets/common.yaml`, user-readable, presented as
@@ -285,9 +293,10 @@ per session, so it needs a restart too.
 
 ### Jupyter token
 
-Retired with the Open WebUI code interpreter. The value is still in
-`secrets/smortress.yaml` and nothing declares it; delete it on the next sops
-edit.
+Retired with the Open WebUI code interpreter (T9). Nothing declares it; the
+encrypted value remains in `secrets/smortress.yaml`. Delete it with the GitHub
+mirror PAT in the same sops session (`sops secrets/smortress.yaml`, then
+`sops updatekeys secrets/smortress.yaml`).
 
 ### cloudflared credentials
 
@@ -360,3 +369,8 @@ credential, so rotating one is: update the sops entry, then
 `sudo systemctl restart agent-broker-<name>`. The guest keeps a dummy value and
 no restart or new session is needed. The GitHub PAT and the commit-signing key
 still travel in `agentVm.secrets` and rotate with the usual hand-in flow.
+
+Both the brokers and the hand-in copies retire with `kanbeiSplit.cutover.enable`
+(T9). After the cutover the PAT and signing key are read only by the host's own
+tools (`~/.config/sops`, `git`), so rotate them exactly as on any other host.
+Maki runs unsandboxed and reads them from the user's normal sops paths.

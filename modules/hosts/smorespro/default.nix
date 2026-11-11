@@ -19,11 +19,16 @@
     ./nymvpn.nix
     ./secrets.nix
     ../../nixos/todo-daemon.nix
+    ../../nixos/kanbei-cutover.nix
   ];
   homeModules = [
     ../../features/chat-proxy.nix
     ../../features/todo.nix
   ];
+  homeOptions = {
+    # #509 retirement: off keeps the laptop chat proxy until the cutover.
+    kanbeiSplit.cutover.enable = false;
+  };
   user = {
     shellAbbrs = {
       nv = "sudo nym-vpnc";
@@ -36,5 +41,6 @@
     # YubiKey sudo without an sshd: pam_rssh dials the local fido2-agent.
     sudoKey.enable = true;
     vaultSync.device = "smorespro";
+    kanbeiSplit.cutover.enable = false;
   };
 }

@@ -28,6 +28,8 @@ let
   };
 in
 {
+  imports = [ ./kanbei-split.nix ];
+
   options.machine = {
     system = lib.mkOption {
       type = lib.types.enum [

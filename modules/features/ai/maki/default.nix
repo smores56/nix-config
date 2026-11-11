@@ -388,9 +388,13 @@ in
 
     # Sessions live in the shared ~/.local/state/maki, so the host and the guest resume each
     # other's; the sandbox launcher keeps an agent session inside the VM while it runs.
-    user.shellAbbrs.ms = "agent-sandbox pick maki-sessions maki-session-resume";
-    # Plain `maki` stays the unsandboxed binary on the host.
-    user.shellAbbrs.a = "agent-sandbox maki";
+    user.shellAbbrs.ms =
+      if config.kanbeiSplit.cutover.enable or false then
+        "pick maki-sessions maki-session-resume"
+      else
+        "agent-sandbox pick maki-sessions maki-session-resume";
+    # T9: maki runs directly on the host; no agent VM wraps it.
+    user.shellAbbrs.a = "maki";
     # Local qwen chat: no memory, no MCP, no tools that write or run, RAM-only transcripts.
     user.shellAbbrs.mp = "maki-private";
   };

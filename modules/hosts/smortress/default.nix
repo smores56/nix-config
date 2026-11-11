@@ -35,6 +35,8 @@ in
     ../../nixos/kanbei-vm.nix
     # The Firecracker ingest plane and its host writer/proxy/resolver; needs Kanbei's key.
     ../../nixos/ingest-vm.nix
+    # #509 retirement assertions; inert until the cutover switch below is flipped.
+    ../../nixos/kanbei-cutover.nix
   ];
   homeModules = [
     ../../features/todo.nix
@@ -58,6 +60,8 @@ in
     # The ingest plane starts five Firecracker guests and needs the Kanbei key; off until the
     # same cutover (docs/kanbei-ingest.md).
     ingestVm.enable = false;
+    # #509 retirement: off keeps the live agent VM/Open WebUI/files-mcp until the cutover.
+    kanbeiSplit.cutover.enable = false;
     vaultSync.device = "smortress";
     # The assistant gateway binds loopback in the guest; the host proxies it to the tunnel.
     agentVm.ingressPorts = [
@@ -137,7 +141,5 @@ in
     alerting = {
       accountId = "385f7d47e2e8438fbda5d6f76d760434";
     };
-    # The probe repo must refresh every run, catching a token that lost `repo` scope.
-    githubBackup.probeRepo = "sdlc";
   };
 }
