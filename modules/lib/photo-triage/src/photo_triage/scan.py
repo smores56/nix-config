@@ -45,7 +45,10 @@ def scan_library(
     filters = {
         "withDeleted": False,
         "withExif": True,
-        "withStacked": False,
+        # Immich compiles withStacked=false to `asset.stackId IS NULL`, which also
+        # drops stack primaries: burst frames would never be triaged. Duplicate
+        # grouping and the keeper policy handle stacked members.
+        "withStacked": True,
         "visibility": "timeline",
         "createdBefore": as_of,
     }

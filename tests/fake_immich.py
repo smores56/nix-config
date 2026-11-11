@@ -431,6 +431,7 @@ class FakeImmich:
         with_deleted = bool(data.get("withDeleted", False))
         requested_type = data.get("type")
         requested_visibility = data.get("visibility")
+        with_stacked = data.get("withStacked")
         created_before = data.get("createdBefore")
         assets = []
         for asset in self.assets.values():
@@ -439,6 +440,10 @@ class FakeImmich:
             if requested_type and asset.get("type") != requested_type:
                 continue
             if requested_visibility and asset.get("visibility", "timeline") != requested_visibility:
+                continue
+            # Immich 3.x compiles withStacked=false to `asset.stackId IS NULL`,
+            # which also drops stack primaries.
+            if with_stacked is False and asset.get("stackId") is not None:
                 continue
             if asset.get("visibility") == "locked":
                 continue
