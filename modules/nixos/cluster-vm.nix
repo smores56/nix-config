@@ -27,6 +27,11 @@ let
     "music"
     "books"
     "graphiti"
+    # The platform CronJob publishes cluster health and nanobot activity here
+    # (#595); the host ingest writer at `/var/lib/data/cluster-digest` encrypts
+    # each new document into Kanbei's inbox. Read-write because the job owns the
+    # tree and prunes its own snapshots.
+    "cluster-digest"
   ];
 
   # Explicit translation, never the agent VM's squash-to-`smores`: guest root writes as the
@@ -345,7 +350,8 @@ in
   };
 
   # The shares' host paths must exist before virtiofsd starts. immich/graphiti are empty until
-  # T6 moves the apps; music and books already exist from the host's own tmpfiles.
+  # T6 moves the apps; music and books already exist from the host's own tmpfiles; cluster-digest
+  # is owned by the platform CronJob and only read by the host ingest writer.
   systemd.tmpfiles.rules = map (name: "d /var/lib/data/${name} 0775 ${user} users -") dataShares;
 
   systemd.services = {
@@ -413,6 +419,12 @@ in
         && facts.stateDir != agentFacts.stateDir
         && facts.vmStateDir != agentFacts.vmStateDir;
       message = "cluster-vm: the cluster guest must not share a tap or a state path with the agent guest";
+    }
+    {
+      # The digest writer (#595) reads this share through the ingest module; a
+      # rename here would silently stop the one-way cluster feed.
+      assertion = builtins.elem "cluster-digest" dataShares;
+      message = "cluster-vm: the cluster-digest share feeds the Kanbei ingest writer";
     }
     {
       assertion =

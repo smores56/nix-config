@@ -77,7 +77,7 @@ def alert(state_dir: str, source: str, window: int, now: int, enabled: bool) -> 
             last = int(handle.read().strip())
     except (FileNotFoundError, ValueError):
         last = 0
-    if now - last < window:
+    if last and now - last < window:
         return False
     log("alert", source=source, window_s=window, last_alert=last)
     if enabled:
@@ -128,15 +128,20 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     now = int(time.time())
+    # Host-written sources (the cluster digest) share the state shape and the
+    # alert path with the guests; only the emitter differs.
+    host_sources: dict[str, dict] = data.get("hostSources", {})
+    all_sources = {**data["sources"], **host_sources}
     statuses: dict[str, dict] = {}
     stale_sources: list[tuple[str, int]] = []
-    for source, entry in sorted(data["sources"].items()):
+    for source, entry in sorted(all_sources.items()):
         window = int(entry["windowSeconds"])
         state = read_state(args.state_dir, source)
         last_epoch = int(state["epoch"]) if state else None
         stale = last_epoch is None or now - last_epoch > window
         statuses[source] = {
             "stale": stale,
+            "host": source in host_sources,
             "window_s": window,
             "last_ok": state["last_ok"] if state else None,
             "age_s": None if last_epoch is None else now - last_epoch,
@@ -149,6 +154,7 @@ def main(argv: list[str] | None = None) -> int:
         "kind": "heartbeat",
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "sources": statuses,
+        "host_sources": sorted(host_sources),
     }
     policy.validate_heartbeat(envelope)
     payload = json.dumps(envelope, sort_keys=True).encode()
@@ -160,7 +166,7 @@ def main(argv: list[str] | None = None) -> int:
     alerted = [
         source
         for source, window in stale_sources
-        if data["sources"][source].get("alert", True)
+        if all_sources[source].get("alert", True)
         and alert(args.state_dir, source, window, now, not args.no_alert)
     ]
     removed = prune(args.inbox, args.retain_hours, now)

@@ -29,6 +29,7 @@ JOURNAL_UNITS = [
     "ingest-proxy.service",
     "ingest-resolver.service",
     "ingest-heartbeat.service",
+    "ingest-writer-cluster-digest.service",
     "kanbei-swtpm.service",
 ]
 TAIL = 80

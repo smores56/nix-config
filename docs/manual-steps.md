@@ -393,6 +393,14 @@ The five ingest guests and their host writer/proxy/resolver are behind
    image, so `sudo systemctl stop microvm@<guest>` then
    `sudo systemctl start ingest-vm-secret-<source> microvm@<guest>`.
 
+   `ingest-tuta-env` is not a password file: it carries the base64 TutaBridge
+   session (`gnupg/`, `pass/`, `config/`) plus the Tuta address and the bridge
+   password. Do the one-time login first, then write the file:
+   [`docs/kanbei-ingest-tuta.md`](kanbei-ingest-tuta.md#session-bootstrap-one-time-human)
+   has the exact commands (`tutabridge init`, tar, base64, `umask 077`). The
+   Tuta account password is never stored; only the encrypted session and the
+   no-passphrase GPG key that opens it.
+
 2. **Firecracker TAP prerequisites.** Firecracker needs `/dev/kvm`,
    `/dev/net/tun` and `/dev/vhost-vsock`, plus the `tun` and `vhost_vsock` kernel
    modules (the microvm host module loads the first two; `kanbei-vm.nix` loads
@@ -427,7 +435,29 @@ The five ingest guests and their host writer/proxy/resolver are behind
    expected until Kanbei has booted and published its key. A missing secret is the
    only reason a guest does not start.
 
-4. **Verification.** The hardware-gated proof stops the production search writer
+4. **Tuta session and client bumps.** A `minimum-client` alert (or a
+   `session-rejected` alert) is the owner's cue. For a bump, update `version`
+   and `hash` in `pkgs/tutabridge.nix` from the release's `SHA256SUMS`, rebuild,
+   then `sudo systemctl restart microvm@ingest-tuta`. For a rejected session,
+   repeat the one-time login and re-stage `ingest-tuta-env`. Both are in
+   [`docs/kanbei-ingest-tuta.md`](kanbei-ingest-tuta.md#tuta-client-bumps).
+
+5. **Cluster digest.** `cluster-vm.nix` creates and shares
+   `/var/lib/data/cluster-digest`; the platform CronJob writes `latest.json`
+   there every 15 minutes. With the ingest plane on, confirm the one-way feed:
+
+   ```sh
+   sudo systemctl status ingest-writer-cluster-digest
+   sudo ls -l /var/lib/data/cluster-digest/latest.json
+   sudo cat /var/lib/kanbei-ingest/state/cluster-digest.last-ok
+   sudo ls -l /var/lib/data/inbox/cluster-digest-*.age
+   ```
+
+   A stale digest pages through `cloudflare-email@ingest-writer-cluster-digest`
+   once per hour window. The writer never restarts the cluster; it waits for the
+   next document.
+
+6. **Verification.** The hardware-gated proof stops the production search writer
    for the duration, reboots the `search` guest, and restores the writer:
 
    ```sh
@@ -437,7 +467,7 @@ The five ingest guests and their host writer/proxy/resolver are behind
    It must print `PASS round-trip`, `PASS secret`, `PASS dns`, `PASS sni`,
    `PASS egress`. Record the exact guest console lines if it fails.
 
-5. **Logs.** Root-only file logs live in `/var/log/kanbei-ingest/`; guest consoles
+7. **Logs.** Root-only file logs live in `/var/log/kanbei-ingest/`; guest consoles
    are the `microvm@<guest>` journal. Read them through the touch-gated sudo
    wrapper:
 

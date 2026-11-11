@@ -18,6 +18,7 @@ import sys
 import tempfile
 import time
 from datetime import datetime, timezone
+from typing import Callable
 
 import policy
 
@@ -105,6 +106,14 @@ def encrypt_to(recipient: str, payload: bytes, tmpdir: str) -> str:
         raise
 
 
+def page(source: str, run: Callable[..., object] = subprocess.run) -> None:
+    """Start the source's failure-email unit for an `alert` batch."""
+    run(
+        ["systemctl", "start", "--no-block", f"cloudflare-email@ingest-writer-{source}.service"],
+        check=False,
+    )
+
+
 def write_batch(inbox: str, source: str, seq: int, recipient: str, payload: bytes) -> str:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
     name = f"{source}-{stamp}-{seq:06d}.age"
@@ -131,7 +140,7 @@ def record_state(state_dir: str, source: str, count: int, target: str) -> None:
     os.replace(tmp, os.path.join(state_dir, f"{source}.last-ok"))
 
 
-def session(args: argparse.Namespace, recipient: str) -> int:
+def session(args: argparse.Namespace, recipient: str, run: Callable[..., object] = subprocess.run) -> int:
     sock = connect_vsock(args.vsock, args.guest_port)
     decoder = policy.FrameDecoder(policy.MAX_BATCH_BYTES)
     batches = 0
@@ -149,6 +158,11 @@ def session(args: argparse.Namespace, recipient: str) -> int:
                 seq = int(batch.get("seq", batches))
                 target = write_batch(args.inbox, args.source, seq, recipient, payload)
                 record_state(args.state_dir, args.source, batches + 1, target)
+                if batch["kind"] == "alert":
+                    # The guest owns no mail path; the host turns the alert batch
+                    # into the same page a failed unit raises.
+                    page(args.source, run)
+                    log("alert", source=args.source, seq=seq, items=len(batch["items"]))
                 sock.sendall(json.dumps({"ack": seq}).encode() + b"\n")
                 batches += 1
                 log("batch", source=args.source, seq=seq, bytes=len(payload), file=os.path.basename(target))

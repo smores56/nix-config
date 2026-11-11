@@ -54,6 +54,14 @@ system: [
 
     letta = final.callPackage ./letta { inherit inputs; };
 
+    # The `ingest-tuta` guest's local IMAP/SMTP bridge, pinned to one release
+    # binary (docs/kanbei-ingest-tuta.md explains the bump procedure).
+    tutabridge = final.callPackage ./tutabridge.nix { };
+
+    # Read-only Tuta calendar -> ICS core; the SDK fetcher is a documented
+    # `passthru.sdk` build that needs TutaBridge's prepared SDK.
+    tuta-ics = final.callPackage ./tuta-ics { };
+
     # Fixes CVE-2026-87766 (setup-time symlink traversal).
     bubblewrap = inputs.nixpkgs-unstable.legacyPackages.${system}.bubblewrap;
 

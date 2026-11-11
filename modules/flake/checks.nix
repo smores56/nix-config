@@ -438,6 +438,19 @@ in
               };
             in
             assert ingest.validateSources ingest.sources == [ ];
+            # The tuta guest holds a send-capable session: its allowlist is one
+            # host and the digest is the one host-written source.
+            assert ingest.sources.tuta.allow == [ "app.tuta.com" ];
+            assert ingest.validateHostSources ingest.hostSources == [ ];
+            assert
+              ingest.validateHostSources (
+                ingest.hostSources
+                // {
+                  cluster-digest = ingest.hostSources.cluster-digest // {
+                    windowSeconds = 0;
+                  };
+                }
+              ) != [ ];
             assert ingest.validateFacts ingest.sources == [ ];
             assert
               ingest.validateFirewall {

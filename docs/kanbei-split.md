@@ -216,6 +216,30 @@ are in [`docs/kanbei-ingest.md`](kanbei-ingest.md).
   directly. `kanbei-ingest-guards` fails evaluation on a hostname outside a
   source's permit table or on an extra egress rule.
 
+### ingest-tuta (T15)
+
+`ingest-tuta` is the only guest holding a send-capable Tuta session. TutaBridge
+runs on loopback (IMAP 1143, SMTP 1025, SMTP never exposed) over a session
+staged from the one read-only secret device, with `app.tuta.com` as the only
+allowed egress. A stdlib IMAP collector (`BODY.PEEK`, UID plus UIDVALIDITY
+dedupe, size caps, IDLE with a UID SEARCH fallback) emits new mail and any new
+Sent item; the Sent item is also an `alert` batch, which the host writer turns
+into the same failure mail a broken unit raises. The collector watches the
+bridge's own log and pages on a Tuta minimum-client rejection or a rejected
+saved session, once per day per reason. Calendar changes come from
+`pkgs/tuta-ics`: a strict, unit-tested RFC 5545 renderer with a feature-gated,
+read-only SDK fetcher. The session bootstrap, bump procedure and limits are in
+[`docs/kanbei-ingest-tuta.md`](kanbei-ingest-tuta.md).
+
+### Cluster digest (T21)
+
+The platform CronJob writes `latest.json` into the `cluster-digest` share every
+15 minutes. The host ingest writer watches it with a stat-before/stat-after
+stable read, dedupes on `generated_at`, age-encrypts each new document into the
+inbox, and records the document epoch for the T14 heartbeat, which now carries
+host sources alongside guests. A stale digest pages exactly like a stale guest,
+using the shared marker so the writer and the heartbeat never double-page.
+
 ## Accepted residuals
 
 ### A later human touch runs whatever the unattended maki planted
@@ -261,6 +285,17 @@ host module asserts `webProxy.services.kanbei` stays unset and
 `modules/nixos/kanbei-access.nix` creates no DNS record; the OpenTofu fragment
 creates only the hostname route and the Access app. Replacing the wildcard with
 per-host records is the upgrade path if the public answer itself is a concern.
+
+### The Tuta calendar fetcher is not built
+
+`pkgs/tuta-ics` ships and tests the parser/renderer, but its SDK fetcher needs
+TutaBridge's prepared `tutanota` checkout (a pinned submodule plus the patch
+series that adds the AEAD reads calendar bodies need) and bindgen, none of which
+this repository or the Nix sandbox has. The guest's ICS timer therefore emits a
+daily `calendar-unavailable` alert and renders a manually exported event JSON,
+instead of claiming an empty calendar. Mail is unaffected: it arrives through
+IMAP, not the SDK. Revisit when the prepared SDK is vendored or published; the
+switch is a fetcher binary plus an `events.json`, with no unit change.
 
 ### Kanbei's passkey verifier is a stub
 

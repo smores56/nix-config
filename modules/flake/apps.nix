@@ -309,12 +309,20 @@
           '';
         };
 
+      # The read-only Tuta calendar core (#589), buildable on any host: the SDK
+      # feature is a documented `passthru.sdk` build that needs TutaBridge's
+      # prepared SDK (pkgs/tuta-ics/default.nix).
+      tuta-ics = pkgs.callPackage ../../pkgs/tuta-ics { };
+
       cloudflarePlan = cloudflareTofu "cloudflare-plan" "plan";
       cloudflareApply = cloudflareTofu "cloudflare-apply" "apply";
       cloudflareCommand = cloudflareTofu "cloudflare-tofu" "";
 
     in
     {
+      packages.tuta-ics = tuta-ics;
+      # Documented broken build: the SDK is not vendored (pkgs/tuta-ics/default.nix).
+      packages.tuta-ics-sdk = tuta-ics.passthru.sdk;
       packages.bootstrap = bootstrap;
       packages.install = install;
       packages.host-key = host-key;

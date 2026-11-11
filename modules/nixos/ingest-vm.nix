@@ -52,6 +52,10 @@ let
   ingestProxy = mkTool "ingest-proxy" "proxy" [ ] "";
   ingestResolver = mkTool "ingest-resolver" "resolver" [ ] "";
   ingestHeartbeat = mkTool "ingest-heartbeat" "heartbeat" [ ] "";
+  ingestDigest = mkTool "ingest-digest" "digest" [ ] "";
+  tutaSession = mkTool "tuta-session" "tuta_session" [ ] "";
+  tutaMail = mkTool "ingest-tuta-mail" "tuta_mail" [ ] "";
+  tutaIcs = mkTool "ingest-tuta-ics" "tuta_ics" [ ] "";
 
   kanbeiLogs = pkgs.writeShellApplication {
     name = "kanbei-logs";
@@ -87,6 +91,23 @@ let
   # Firecracker accepts on `<uds>_<port>` beside its own control socket.
   kanbeiUds = "/var/lib/microvms/kanbei/notify.vsock_${toString constants.ageKeyPort}";
   recipientFile = "${constants.stateRoot}/age-recipient";
+  # The cluster CronJob's share and the one file the host writer watches.
+  digestShare = "/var/lib/data/cluster-digest";
+  digestFile = "${digestShare}/latest.json";
+  digestWindowSeconds = ingest.hostSources.cluster-digest.windowSeconds;
+
+  # TutaBridge's loopback session and cache, all tmpfs in the guest and seeded
+  # from the read-only secret device at every boot.
+  tutaRoot = "/var/lib/tutabridge";
+  tutaBridgeEnv = {
+    HOME = tutaRoot;
+    XDG_CONFIG_HOME = "${tutaRoot}/config";
+    XDG_CACHE_HOME = "${tutaRoot}/cache";
+    GNUPGHOME = "${tutaRoot}/gnupg";
+    PASSWORD_STORE_DIR = "${tutaRoot}/pass";
+    PASSWORD_STORE_GPG_OPTS = "--batch --pinentry-mode error";
+    TUTABRIDGE_RUNTIME_DIR = "/run/tutabridge";
+  };
 
   # Every tap address and state path is derived once, in the shared table.
 
@@ -207,6 +228,131 @@ let
 
         system.stateVersion = "26.05";
       }
+      (lib.mkIf (id == "tuta") {
+        environment.systemPackages = [
+          pkgs.gnupg
+          pkgs.pass
+          pkgs.tutabridge
+        ];
+        systemd.tmpfiles.rules = [
+          "d ${tutaRoot} 0700 root root -"
+          "d ${tutaRoot}/config 0700 root root -"
+          "d ${tutaRoot}/cache 0700 root root -"
+          "d ${tutaRoot}/gnupg 0700 root root -"
+          "d ${tutaRoot}/pass 0700 root root -"
+          "d ${tutaRoot}/calendar 0700 root root -"
+          "d /run/tutabridge 0700 root root -"
+        ];
+
+        # 1. Seed gnupg/pass/config from the secret image; write the loopback
+        #    address and bridge password under /run at 0600. The env file is
+        #    parsed by the tool, never by an EnvironmentFile (that would expose
+        #    values through `systemctl show`).
+        systemd.services.tutabridge-session = {
+          description = "Stage the TutaBridge session from the read-only secret device";
+          wantedBy = [ "multi-user.target" ];
+          requires = [ "run-ingest-secret.mount" ];
+          after = [
+            "run-ingest-secret.mount"
+            "systemd-tmpfiles-setup.service"
+          ];
+          before = [
+            "tutabridge.service"
+            "ingest-tuta-mail.service"
+          ];
+          unitConfig = {
+            StartLimitBurst = 5;
+            StartLimitIntervalSec = 300;
+          };
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+            UMask = "0077";
+            TimeoutStartSec = 120;
+            ExecStart = "${tutaSession}/bin/tuta-session --env /run/ingest-secret/env --root ${tutaRoot} --runtime-dir /run/tutabridge --imap-port ${toString constants.tutaBridge.imapPort} --smtp-port ${toString constants.tutaBridge.smtpPort}";
+          };
+        };
+
+        # 2. The bridge itself. `run --wait` keeps retrying while the session is
+        #    rejected; the mail collector reads manifest state, not the exit code.
+        systemd.services.tutabridge = {
+          description = "TutaBridge IMAP/SMTP bridge on loopback";
+          wantedBy = [ "multi-user.target" ];
+          requires = [ "tutabridge-session.service" ];
+          after = [
+            "tutabridge-session.service"
+            "network.target"
+          ];
+          environment = tutaBridgeEnv;
+          serviceConfig = {
+            Type = "simple";
+            Restart = "always";
+            RestartSec = "10s";
+            UMask = "0077";
+            TimeoutStopSec = 20;
+            # The bridge's own log names folders and the address; keep it root-only
+            # and let the collector scan it for Tuta client-version rejections.
+            StandardOutput = "append:${tutaRoot}/bridge.log";
+            StandardError = "append:${tutaRoot}/bridge.log";
+            ExecStartPre = "${pkgs.gnupg}/bin/gpgconf --launch gpg-agent";
+            ExecStart = "${pkgs.tutabridge}/bin/tutabridge run --wait";
+            # A mailbox keeps its encrypted cache in this tmpfs; cap it so a
+            # runaway sync cannot take the guest down.
+            MemoryHigh = "180M";
+            MemoryMax = "240M";
+          };
+        };
+
+        # 3. Mail collector: IDLE plus UID SEARCH, one NDJSON batch per chunk.
+        systemd.services.ingest-tuta-mail = {
+          description = "Collect new Tuta mail and Sent items into the ingest outbox";
+          wantedBy = [ "multi-user.target" ];
+          requires = [ "tutabridge.service" ];
+          after = [
+            "tutabridge.service"
+            "tutabridge-session.service"
+            "ingest-emit.service"
+            "systemd-tmpfiles-setup.service"
+          ];
+          environment = proxyEnv;
+          unitConfig = {
+            StartLimitBurst = 10;
+            StartLimitIntervalSec = 300;
+          };
+          serviceConfig = {
+            Type = "simple";
+            Restart = "always";
+            RestartSec = "15s";
+            UMask = "0077";
+            TimeoutStopSec = 15;
+            ExecStart = "${tutaMail}/bin/ingest-tuta-mail --host ${constants.tutaBridge.bindAddr} --port ${toString constants.tutaBridge.imapPort} --address-file /run/tutabridge/address --password-file /run/tutabridge/bridge-password --outbox /var/lib/ingest/outbox --state ${tutaRoot}/mail-state.json --bridge-log ${tutaRoot}/bridge.log";
+          };
+        };
+
+        # 4. Calendar: the ICS renderer core runs on a timer. Until the SDK
+        #    fetcher builds, it emits a daily `calendar-unavailable` alert so the
+        #    gap is visible; a fetcher that writes events.json switches it to
+        #    real ICS deltas with no unit change.
+        systemd.services.ingest-tuta-ics = {
+          description = "Render Tuta calendar changes as ICS batches";
+          wantedBy = [ "multi-user.target" ];
+          after = [ "systemd-tmpfiles-setup.service" ];
+          serviceConfig = {
+            Type = "oneshot";
+            UMask = "0077";
+            TimeoutStartSec = 120;
+            ExecStart = "${tutaIcs}/bin/ingest-tuta-ics --binary ${pkgs.tuta-ics}/bin/tuta-ics --events ${tutaRoot}/calendar/events.json --out ${tutaRoot}/calendar/current.ics --state ${tutaRoot}/calendar-state.json --outbox /var/lib/ingest/outbox";
+          };
+        };
+        systemd.timers.ingest-tuta-ics = {
+          wantedBy = [ "timers.target" ];
+          timerConfig = {
+            OnCalendar = "*:0/30";
+            RandomizedDelaySec = "120";
+            Persistent = false;
+          };
+        };
+      })
       (lib.mkIf (id == "search") {
         # The verifier's guest: one deterministic batch and a direct-egress probe. T15 replaces
         # both when the search service ships its own emitter.
@@ -447,6 +593,39 @@ in
             StandardError = "append:${constants.logDir}/ingest-heartbeat.log";
           };
         };
+
+        # The cluster digest is the one host-written source: the platform
+        # CronJob writes latest.json into the data share, and this watcher
+        # age-encrypts each new `generated_at` into the inbox. It does not bind
+        # to microvm@cluster: the writer must survive a cluster restart and just
+        # wait for the next document.
+        ingest-writer-cluster-digest = {
+          description = "Age-encrypt the cluster digest into Kanbei's inbox";
+          after = [
+            "ingest-vm-prep.service"
+            "ingest-age-key.service"
+          ];
+          wants = [
+            "ingest-age-key.service"
+            "ingest-vm-prep.service"
+          ];
+          wantedBy = [ "multi-user.target" ];
+          onFailure = [ "cloudflare-email@%n.service" ];
+          restartIfChanged = false;
+          unitConfig = {
+            StartLimitBurst = 5;
+            StartLimitIntervalSec = 300;
+          };
+          serviceConfig = serviceSandbox // {
+            Type = "simple";
+            Restart = "always";
+            RestartSec = "5s";
+            UMask = "0077";
+            ExecStart = "${ingestDigest}/bin/ingest-digest --source cluster-digest --file ${digestFile} --recipient-file ${recipientFile} --inbox ${constants.inboxDir} --state-dir ${constants.stateRoot}/state --window ${toString digestWindowSeconds} --max-bytes 65536";
+            StandardOutput = "append:${constants.logDir}/ingest-writer-cluster-digest.log";
+            StandardError = "append:${constants.logDir}/ingest-writer-cluster-digest.log";
+          };
+        };
       }
       (builtins.listToAttrs (
         map (
@@ -566,6 +745,7 @@ in
       kanbeiLogs
       kanbeiIngestVerify
       ingestWriter
+      ingestDigest
     ];
 
     assertions = [
@@ -580,6 +760,10 @@ in
       {
         assertion = ingest.validateSources sources == [ ];
         message = "ingest-vm: a configured hostname is outside a source's permit table: ${lib.concatStringsSep "; " (ingest.validateSources sources)}";
+      }
+      {
+        assertion = ingest.validateHostSources ingest.hostSources == [ ];
+        message = "ingest-vm: a host source is misconfigured: ${lib.concatStringsSep "; " (ingest.validateHostSources ingest.hostSources)}";
       }
       {
         assertion = ingest.validateFacts sources == [ ];
@@ -676,6 +860,52 @@ in
       {
         assertion = builtins.elem kanbeiLogs config.environment.systemPackages;
         message = "ingest-vm: the touch-gated kanbei-logs viewer must be installed";
+      }
+      # The digest writer watches a real share: cluster-vm.nix must mount the
+      # same host tree into the guest, or the feed silently stops.
+      {
+        assertion =
+          !(config.microvm.vms ? cluster)
+          || lib.any (
+            share:
+            (share.mountPoint or null) == "/mnt/data/cluster-digest" && (share.source or null) == digestShare
+          ) config.microvm.vms.cluster.config.config.microvm.shares;
+        message = "ingest-vm: the cluster guest must share ${digestShare} at /mnt/data/cluster-digest";
+      }
+      {
+        assertion =
+          config.systemd.services.ingest-writer-cluster-digest.restartIfChanged == false
+          && lib.hasInfix "append:${constants.logDir}/" (
+            config.systemd.services.ingest-writer-cluster-digest.serviceConfig.StandardOutput or ""
+          );
+        message = "ingest-vm: the digest writer must not restart on a host switch and must log root-only";
+      }
+      # TutaBridge is a send-capable session: the local servers stay on loopback
+      # and the guest's egress remains the single allowlisted Tuta host.
+      {
+        assertion =
+          constants.tutaBridge.bindAddr == "127.0.0.1"
+          && constants.tutaBridge.smtpPort == 1025
+          && constants.tutaBridge.imapPort == 1143;
+        message = "ingest-vm: TutaBridge must stay on loopback with the documented ports";
+      }
+      {
+        assertion = sources.tuta.allow == [ "app.tuta.com" ];
+        message = "ingest-vm: the tuta guest may only reach app.tuta.com";
+      }
+      {
+        assertion =
+          let
+            guest = config.microvm.vms.${sources.tuta.guest}.config.config;
+          in
+          guest.systemd.services ? tutabridge
+          && guest.systemd.services ? tutabridge-session
+          && guest.systemd.services ? ingest-tuta-mail
+          && guest.systemd.services ? ingest-tuta-ics
+          && guest.systemd.timers ? ingest-tuta-ics
+          && !(builtins.elem constants.tutaBridge.smtpPort guest.networking.firewall.allowedTCPPorts)
+          && !(builtins.elem constants.tutaBridge.imapPort guest.networking.firewall.allowedTCPPorts);
+        message = "ingest-vm: the tuta guest needs the bridge, session, mail and ICS units, and no inbound port for 1143/1025";
       }
     ];
   };

@@ -1,0 +1,28 @@
+[package]
+name = "tuta-ics"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+description = "Read-only Tuta calendar to ICS renderer for the Kanbei ingest plane"
+license = "GPL-3.0-or-later"
+
+# No dependencies on purpose. The Tuta SDK feature is declared but the crate
+# carries no SDK path, so the lockfile stays vendorable in a sandbox; a build
+# with `--features sdk` must add the prepared SDK to this manifest first (see
+# `docs/kanbei-ingest-tuta.md` and `src/sdk.rs`).
+[features]
+default = []
+sdk = []
+
+[lib]
+name = "tuta_ics"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tuta-ics"
+path = "src/main.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"

@@ -23,6 +23,10 @@ AGE_RECIPIENT_RE = re.compile(r"^age1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{58}$")
 HOST_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$")
 
 BATCH_KEYS = {"v", "source", "kind", "seq", "sent_at", "items"}
+# `batch` is ordinary source data; `alert` is the same envelope the host writer
+# turns into the existing cloudflare-email@ page (a new Sent item, a Tuta client
+# rejection). Both carry the same schema so one validator guards the wire.
+BATCH_KINDS = {"batch", "alert"}
 
 
 class PolicyError(ValueError):
@@ -252,7 +256,7 @@ def validate_batch(payload: bytes, source: str) -> dict:
         raise PolicyError(f"batch is missing keys: {sorted(missing)}")
     if batch["v"] != PROTOCOL_VERSION:
         raise PolicyError(f"unsupported batch version {batch['v']!r}")
-    if batch["kind"] != "batch":
+    if batch["kind"] not in BATCH_KINDS:
         raise PolicyError(f"unsupported batch kind {batch['kind']!r}")
     if batch["source"] != source:
         raise PolicyError(f"batch source {batch['source']!r} is not {source!r}")

@@ -23,6 +23,13 @@ let
     maxBatchBytes = 1048576;
     heartbeatIntervalSeconds = 300;
     heartbeatRetainHours = 168;
+    # TutaBridge's local servers. SMTP stays on loopback: the guest never
+    # exposes a send path to the tap, and the collector only reads IMAP.
+    tutaBridge = {
+      imapPort = 1143;
+      smtpPort = 1025;
+      bindAddr = "127.0.0.1";
+    };
   };
 
   # The maximum each source may ever be allowed to reach. A per-source `allow` that names
@@ -97,6 +104,19 @@ let
       allow = permitted.search;
       # The test emitter only feeds kanbei-ingest-verify; staleness is visible but does not page.
       alert = false;
+    };
+  };
+
+  # Sources the host itself writes into the plane (no guest, no tap, no
+  # allowlist): the cluster digest lands on a data share, and the host writer
+  # encrypts it exactly like a guest batch. The heartbeat treats them as
+  # sources for freshness and alerting.
+  hostSources = {
+    cluster-digest = {
+      windowSeconds = 3600;
+      # The CronJob runs every 15 minutes; the writer pages on staleness with
+      # the same marker, so the heartbeat and the writer never double-page.
+      alert = true;
     };
   };
 
@@ -197,6 +217,17 @@ let
       ++ lib.optional (s.windowSeconds <= 0) "source ${id}: window must be positive"
     ) (builtins.attrNames tbl);
 
+  validateHostSources =
+    tbl:
+    lib.concatMap (
+      id:
+      let
+        s = tbl.${id};
+      in
+      lib.optional (builtins.elem id sourceIds) "host source ${id} collides with a guest source"
+      ++ lib.optional (s.windowSeconds <= 0) "host source ${id}: window must be positive"
+    ) (builtins.attrNames tbl);
+
   # Catches two guests sharing a tap, state path, vsock cid or vsock port.
   validateFacts =
     tbl:
@@ -275,7 +306,7 @@ let
 
   # The policy file every host service reads. Names only; no secret material.
   policy = {
-    inherit constants permitted;
+    inherit constants permitted hostSources;
     sources = builtins.listToAttrs (
       map (id: {
         name = id;
@@ -301,6 +332,7 @@ constants
     constants
     permitted
     sources
+    hostSources
     sourceIds
     entries
     factsFor
@@ -312,6 +344,7 @@ constants
     firewallUp
     hostnameOk
     validateSources
+    validateHostSources
     validateFacts
     validateFirewall
     policy

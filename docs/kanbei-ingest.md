@@ -16,7 +16,7 @@ Sources, allowlists, windows, taps and ports live in one table:
 
 | guest | source | tap | tap /30 | guest MAC | vcpu / mem | vsock cid / port | secret contract | allowlist | window |
 |---|---|---|---|---|---|---|---|---|---|
-| `ingest-tuta` | `tuta` | `vm-i-tuta` | `10.77.10.0/30` | `02:00:0a:4d:0a:02` | 1 / 256 MiB | 10 / 7010 | `/run/secrets/tuta-env` | `app.tuta.com` | 1800 s |
+| `ingest-tuta` | `tuta` | `vm-i-tuta` | `10.77.10.0/30` | `02:00:0a:4d:0a:02` | 1 / 256 MiB | 10 / 7010 | `/run/secrets/ingest-tuta-env` | `app.tuta.com` | 1800 s |
 | `ingest-finance` | `finance` | `vm-i-finance` | `10.77.11.0/30` | `02:00:0a:4d:0b:02` | 1 / 192 MiB | 11 / 7011 | `/run/secrets/finance-env` | `bridge.simplefin.org` | 129600 s |
 | `ingest-brave` | `brave` | `vm-i-brave` | `10.77.12.0/30` | `02:00:0a:4d:0c:02` | 1 / 1024 MiB | 12 / 7012 | `/run/secrets/brave-env` | `sync-v2.brave.com` | 86400 s |
 | `ingest-immich` | `immich` | `vm-i-immich` | `10.77.13.0/30` | `02:00:0a:4d:0d:02` | 1 / 128 MiB | 13 / 7013 | `/run/secrets/immich-env` | `immich.sammohr.dev` | 21600 s |
@@ -66,10 +66,14 @@ Host unit: `ingest-writer-<source>.service` (one per source, `Restart=always`,
 3. Read frames: a 4-byte big-endian length followed by that many UTF-8 bytes of
    JSON. The cap is 1 MiB per frame; zero-length and larger frames are refused.
 4. Validate the batch schema: exactly the keys `v`, `source`, `kind`, `seq`,
-   `sent_at`, `items`; `v == 1`; `kind == "batch"`; `source` equals the writer's
-   configured source; `items` is a list; `seq` a non-negative integer. Anything
-   else closes the connection, logs a refusal, and exits `65` (the failure email
-   carries the unit journal).
+   `sent_at`, `items`; `v == 1`; `kind` is `batch` or `alert`; `source` equals
+   the writer's configured source; `items` is a list; `seq` a non-negative
+   integer. Anything else closes the connection, logs a refusal, and exits `65`
+   (the failure email carries the unit journal). An `alert` batch is encrypted
+   like any other, and the writer additionally starts
+   `cloudflare-email@ingest-writer-<source>.service`: the guest has no mail path
+   of its own, so the host turns the alert into the same page a failed unit
+   raises (a new Sent item, a Tuta client rejection).
 5. Encrypt the frame with `age --encrypt -r <recipient>` and atomically install
    it in `/var/lib/data/inbox` as `<source>-<UTCYYYYMMDDTHHMMSS.ffffffZ>-<seq>.age`
    (mode `0644`, so the guest payload user can read it through the share).
@@ -77,7 +81,7 @@ Host unit: `ingest-writer-<source>.service` (one per source, `Restart=always`,
    (`0600` root) and acknowledge with one `{"ack": <seq>}\n` line. The guest
    moves the outbox file to `sent/` only after that acknowledgement.
 
-Guest unit: `ingest-emit.service` in every ingest guest listens on AF_VSOCK port
+Guest units per source: `ingest-emit.service` in every ingest guest listens on AF_VSOCK port
 `<vsock port>`, ships every `*.json` file from `/var/lib/ingest/outbox`, and
 moves invalid files to `rejected/` without touching the wire. Collectors write
 batch files there and must run with the guest proxy variables (`environment.variables`
@@ -86,8 +90,13 @@ deterministic probe batch (items `[{"probe":"kanbei-ingest-verify"}]`) for the
 verifier.
 
 Files the writer never accepts: a frame over 1 MiB, a heartbeat envelope on the
-batch port, a batch whose `source` is another VM's, unknown JSON keys, and a
-non-integer `seq`.
+batch port, a batch whose `source` is another VM's, unknown JSON keys, a
+non-integer `seq`, and an unknown `kind`.
+
+The `ingest-tuta` guest adds its own units on top of `ingest-emit`:
+`tutabridge-session.service`, `tutabridge.service` (loopback IMAP/SMTP),
+`ingest-tuta-mail.service` and `ingest-tuta-ics.timer`; see
+[`docs/kanbei-ingest-tuta.md`](kanbei-ingest-tuta.md).
 
 ## Age key publication
 
@@ -149,22 +158,53 @@ grants more than that (`ingest.validateFirewall`), and
 `checks.x86_64-linux.kanbei-ingest-guards` mutates the table and rules to prove
 both a non-allowlisted hostname and an extra egress rule are rejected.
 
+## Cluster digest (host-written source)
+
+The `cluster` guest's platform CronJob rewrites
+`/mnt/data/cluster-digest/latest.json` every 15 minutes
+(`homelabs-platform`, `platform/digest/`). `modules/nixos/cluster-vm.nix` shares
+the host tree `/var/lib/data/cluster-digest` into the guest, and
+`ingest-writer-cluster-digest.service` reads it from the host side:
+
+- `read_stable` stats before and after the read and retries when inode, size or
+  mtime moved, so a rename or a virtiofs update is never read half-written;
+- the document must be `schema_version` `1` with `generated_at`, `cluster` and
+  `nanobot_activity`; anything else exits `65` and pages (the platform contract
+  changed, which is not something to truncate here);
+- `generated_at` is the cursor (`state/cluster-digest.cursor`), so a restart or a
+  replayed `latest.json` never re-emits; an older document is logged as a replay;
+- each new document is age-encrypted to Kanbei's recipient and installed as
+  `cluster-digest-<UTC>.age` (the source id is already in the file name);
+- the writer records `state/cluster-digest.last-ok` with the document's epoch so
+  the heartbeat sees digest freshness, and pages once per window when the newest
+  `generated_at` is older than `hostSources.cluster-digest.windowSeconds` (3600 s)
+  using the shared `<source>.alerted` marker.
+
+The digest share is read-write for the guest, because the CronJob owns the tree
+and prunes its own snapshots; the host writer only reads it. The share assertion
+in `cluster-vm.nix` and the writer assertion in `ingest-vm.nix` fail evaluation
+if either side is renamed.
+
 ## Freshness heartbeats
 
 `ingest-heartbeat.timer` runs `ingest-heartbeat.service` every 300 s. The service:
 
-- reads `/var/lib/kanbei-ingest/state/<source>.last-ok` for every source;
+- reads `/var/lib/kanbei-ingest/state/<source>.last-ok` for every guest source
+  and every `hostSources` entry (today `cluster-digest`);
 - writes one aggregate, age-encrypted envelope to
-  `/var/lib/data/inbox/heartbeat-<epoch>.age` with per-source `stale`,
-  `window_s`, `last_ok` and `age_s`;
+  `/var/lib/data/inbox/heartbeat-<epoch>.age` with per-source `stale`, `host`,
+  `window_s`, `last_ok` and `age_s`, plus the `host_sources` list;
 - when a source exceeds its window, starts
   `cloudflare-email@ingest-writer-<source>.service` at most once per window, so a
   dead source raises a host alert without a mail storm;
 - prunes heartbeat files older than 168 h; batch files are never pruned.
 
 Defaults are the `windowSeconds` column above: Tuta 30 min, finance 36 h, Brave
-24 h, Immich 6 h, search 24 h. The `search` source has `alert = false`: its test emitter is not a
-production feed, so staleness is still visible in the envelope but never pages.
+24 h, Immich 6 h, search 24 h, and the host-written cluster digest 60 min. The
+`search` source has `alert = false`: its test emitter is not a production feed,
+so staleness is still visible in the envelope but never pages. The digest
+writer pages on its own timer and shares the heartbeat's marker file, so the two
+never double-page.
 Change a window in `modules/lib/ingest-vm.nix` (and its row here); the alert
 rate limit follows the same value.
 
@@ -191,10 +231,12 @@ The eval checks and unit tests run anywhere:
 ```sh
 nix build .#checks.x86_64-linux.kanbei-ingest-guards \
           .#checks.x86_64-linux.unit-tests \
+          .#checks.x86_64-linux.manual-steps-sync \
+          .#checks.x86_64-linux.eval-nixos-smortress \
           .#checks.x86_64-linux.format \
           .#checks.x86_64-linux.statix \
           .#checks.x86_64-linux.deadnix
-nix run nixpkgs#python3 -- tests/test_ingest.py
+nix run nixpkgs#python3 -- tests/test_ingest.py tests/test_ingest_tuta.py
 ```
 
 The hardware-gated proof runs only as root on smortress (it stops the production
@@ -214,7 +256,10 @@ It asserts:
 - **SNI**: a CONNECT for a non-allowlisted host is refused, and a ClientHello
   whose SNI differs from an allowlisted CONNECT host is refused before dialling;
 - **egress**: the guest's own probe logs `INGEST-EGRESS-DROPPED`, and
-  `iptables -S ingest-search-fwd` ends in DROP with no non-conntrack ACCEPT.
+  `iptables -S ingest-search-fwd` ends in DROP with no non-conntrack ACCEPT;
+- **digest**: the workspace check asserts the cluster share, the writer's state
+  files and the heartbeat's host-source entry; the writer itself is proven by
+  `tests/test_ingest_tuta.py` (stable read, cursor dedupe, staleness alert).
 
 The age identity in the round-trip is a temporary test key written under `/run`;
 production batches are encrypted to Kanbei's published recipient and only the
