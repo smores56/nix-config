@@ -1,0 +1,319 @@
+# The ingest plane's shared facts and policy (smores56/sdlc#588, part of #509). One guest per
+# source, each a Firecracker microVM with exactly one tap, one vsock channel and one read-only
+# secret volume; all egress goes through the host proxy and resolver on that tap's host address.
+#
+# Host and guest are generated from this one table so the tap names, /30s, vsock CIDs, ports and
+# allowlists cannot drift. The validators are pure: the module asserts they are empty and the
+# `kanbei-ingest-guards` check mutates the table to prove a non-allowlisted hostname or an extra
+# egress rule fails evaluation.
+{ lib }:
+let
+  # Every path the host writer and the heartbeat share. Quoted in docs/kanbei-ingest.md.
+  constants = {
+    inboxDir = "/var/lib/data/inbox";
+    stateRoot = "/var/lib/kanbei-ingest";
+    logDir = "/var/log/kanbei-ingest";
+    policyFile = "/etc/kanbei-ingest/policy.json";
+    # Kanbei publishes its age recipient through this port on its Firecracker vsock. The guest
+    # dials host CID 2, so Firecracker listens on <uds>_<port> in the guest's state directory.
+    ageKeyPort = 7100;
+    proxyPort = 3128;
+    dnsPort = 53;
+    protocolVersion = 1;
+    maxBatchBytes = 1048576;
+    heartbeatIntervalSeconds = 300;
+    heartbeatRetainHours = 168;
+  };
+
+  # The maximum each source may ever be allowed to reach. A per-source `allow` that names
+  # anything outside this table fails `validateSources`.
+  permitted = {
+    tuta = [ "app.tuta.com" ];
+    finance = [ "bridge.simplefin.org" ];
+    brave = [ "sync-v2.brave.com" ];
+    immich = [ "immich.sammohr.dev" ];
+    search = [ ];
+  };
+
+  sources = {
+    tuta = {
+      guest = "ingest-tuta";
+      tap = "vm-i-tuta";
+      index = 10;
+      vsockCid = 10;
+      vsockPort = 7010;
+      vcpu = 1;
+      mem = 256;
+      # TutaBridge holds an IMAP IDLE session; half an hour without a batch is already wrong.
+      windowSeconds = 1800;
+      allow = permitted.tuta;
+    };
+    finance = {
+      guest = "ingest-finance";
+      tap = "vm-i-finance";
+      index = 11;
+      vsockCid = 11;
+      vsockPort = 7011;
+      vcpu = 1;
+      mem = 192;
+      # SimpleFIN is polled daily; 36 h covers one missed run plus a retry.
+      windowSeconds = 129600;
+      allow = permitted.finance;
+    };
+    brave = {
+      guest = "ingest-brave";
+      tap = "vm-i-brave";
+      index = 12;
+      vsockCid = 12;
+      vsockPort = 7012;
+      vcpu = 1;
+      mem = 1024;
+      # Sync is pulled once a day by the headful Xvfb paste session.
+      windowSeconds = 86400;
+      allow = permitted.brave;
+    };
+    immich = {
+      guest = "ingest-immich";
+      tap = "vm-i-immich";
+      index = 13;
+      vsockCid = 13;
+      vsockPort = 7013;
+      vcpu = 1;
+      mem = 128;
+      # Triage/export batches run several times a day.
+      windowSeconds = 21600;
+      allow = permitted.immich;
+    };
+    search = {
+      guest = "search";
+      tap = "vm-search";
+      index = 14;
+      vsockCid = 14;
+      vsockPort = 7014;
+      vcpu = 2;
+      mem = 2048;
+      # The search guest has no production emitter yet; its test emitter feeds the verifier.
+      windowSeconds = 86400;
+      allow = permitted.search;
+      # The test emitter only feeds kanbei-ingest-verify; staleness is visible but does not page.
+      alert = false;
+    };
+  };
+
+  sourceIds = builtins.attrNames sources;
+
+  factsOf =
+    tbl: id:
+    import ./vm-host.nix {
+      name = tbl.${id}.guest;
+      inherit (tbl.${id}) index vsockCid;
+      tapName = tbl.${id}.tap;
+    };
+
+  factsFor = factsOf sources;
+
+  entries = map (
+    id:
+    sources.${id}
+    // {
+      inherit id;
+      facts = factsFor id;
+    }
+  ) sourceIds;
+
+  # Per-tap iptables chains. The INPUT chain only admits the proxy and resolver on the tap's
+  # host address; the FORWARD chain has no ACCEPT other than conntrack, so a guest can never
+  # route to the LAN, the internet or another tap.
+  chainIn = id: "ingest-${id}-in";
+  chainFwd = id: "ingest-${id}-fwd";
+
+  firewallRulesFor =
+    id:
+    let
+      f = factsFor id;
+    in
+    [
+      "-A ${chainIn id} -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT"
+      "-A ${chainIn id} -p tcp -d ${f.hostAddr} --dport ${toString constants.proxyPort} -j ACCEPT"
+      "-A ${chainIn id} -p udp -d ${f.hostAddr} --dport ${toString constants.dnsPort} -j ACCEPT"
+      "-A ${chainIn id} -j DROP"
+      "-A ${chainFwd id} -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT"
+      "-A ${chainFwd id} -i ${f.tap} -o vm-+ -j DROP"
+      "-A ${chainFwd id} -o ${f.tap} -i vm-+ -j DROP"
+      "-A ${chainFwd id} -j DROP"
+    ];
+
+  firewallRules = lib.concatMap firewallRulesFor sourceIds;
+
+  firewallTable = lib.concatStringsSep "\n" (
+    [
+      "*filter"
+    ]
+    ++ lib.concatMap (id: [
+      ":${chainIn id} - [0:0]"
+      ":${chainFwd id} - [0:0]"
+    ]) sourceIds
+    ++ firewallRules
+    ++ [ "COMMIT" ]
+  );
+
+  firewallUp = lib.concatStringsSep "\n" (
+    [ "iptables-restore -w --noflush /etc/kanbei-ingest/rules.v4" ]
+    ++ lib.concatMap (id: [
+      "iptables -w -C INPUT -i ${(factsFor id).tap} -j ${chainIn id} 2>/dev/null || iptables -w -I INPUT 1 -i ${(factsFor id).tap} -j ${chainIn id}"
+      "iptables -w -C FORWARD -i ${(factsFor id).tap} -j ${chainFwd id} 2>/dev/null || iptables -w -I FORWARD 1 -i ${(factsFor id).tap} -j ${chainFwd id}"
+      "iptables -w -C FORWARD -o ${(factsFor id).tap} -j ${chainFwd id} 2>/dev/null || iptables -w -I FORWARD 1 -o ${(factsFor id).tap} -j ${chainFwd id}"
+    ]) sourceIds
+  );
+
+  # Hostname grammar: lowercase DNS labels, at least one dot, no scheme/port/path, never an IP
+  # literal. Matching is exact (no wildcards) so a resolver answer cannot widen the allowlist.
+  hostnameOk =
+    h:
+    builtins.isString h
+    && builtins.match "[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+" h != null
+    && builtins.match "[0-9.]+" h == null
+    && builtins.match ".*\\.\\." h == null;
+
+  validateSources =
+    tbl:
+    lib.concatMap (
+      id:
+      let
+        s = tbl.${id};
+        badAllow = builtins.filter (a: !(hostnameOk a) || !(lib.elem a (permitted.${id} or [ ]))) s.allow;
+      in
+      lib.optional (builtins.match "[a-z][a-z0-9-]*" id == null) "source id ${id} is not a lowercase slug"
+      ++ lib.optional (
+        !(builtins.isString s.guest) || builtins.match "[a-z][a-z0-9-]*" s.guest == null
+      ) "source ${id}: guest name ${toString s.guest} is not a lowercase slug"
+      ++ map (a: "source ${id}: hostname ${a} is not allowlisted") badAllow
+      ++ lib.optional (s.index <= 0 || s.index >= 256) "source ${id}: index must be 1..255"
+      ++ lib.optional (s.vsockCid <= 2) "source ${id}: vsock cid must be > 2"
+      ++ lib.optional (
+        s.vsockPort < 1024 || s.vsockPort >= 1073741824
+      ) "source ${id}: vsock port must be an unprivileged port outside the Firecracker host range"
+      ++ lib.optional (s.mem < 128) "source ${id}: mem must be at least 128 MiB"
+      ++ lib.optional (s.windowSeconds <= 0) "source ${id}: window must be positive"
+    ) (builtins.attrNames tbl);
+
+  # Catches two guests sharing a tap, state path, vsock cid or vsock port.
+  validateFacts =
+    tbl:
+    let
+      ids = builtins.attrNames tbl;
+      field = f: map f ids;
+      dupes =
+        f: name:
+        lib.optional (lib.length (lib.unique (field f)) != lib.length ids) "${name} values are not unique";
+    in
+    dupes (id: (factsOf tbl id).tap) "tap"
+    ++ dupes (id: (factsOf tbl id).stateDir) "stateDir"
+    ++ dupes (id: toString tbl.${id}.vsockCid) "vsock cid";
+
+  # Every rule must be one this table generates. An ACCEPT in the forward chain other than
+  # conntrack, or any mention of a foreign tap, is an extra egress path and fails eval.
+  validateFirewall =
+    {
+      tbl,
+      rules,
+    }:
+    let
+      lines = builtins.filter (l: l != "") (lib.splitString "\n" rules);
+      ids = builtins.attrNames tbl;
+      otherTaps =
+        id: builtins.filter (t: t != (factsOf tbl id).tap) (map (other: (factsOf tbl other).tap) ids);
+      chainOf = prefix: id: "${prefix}-${id}";
+      fwdLines = id: builtins.filter (l: lib.hasPrefix "-A ${chainOf "ingest" id}-fwd " l) lines;
+      inLines = id: builtins.filter (l: lib.hasPrefix "-A ${chainOf "ingest" id}-in " l) lines;
+      hostAddr = id: (factsOf tbl id).hostAddr;
+      fwdOk =
+        id:
+        let
+          ls = fwdLines id;
+        in
+        map (
+          l:
+          if lib.hasInfix "conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT" l then
+            null
+          else if lib.hasSuffix "-j DROP" l then
+            null
+          else
+            "source ${id}: forward rule grants egress: ${l}"
+        ) ls
+        ++ lib.optional (
+          !(lib.any (l: lib.hasSuffix "-j DROP" l) ls)
+        ) "source ${id}: forward chain has no final DROP";
+      inOk =
+        id:
+        map (
+          l:
+          if lib.hasInfix "conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT" l then
+            null
+          else if
+            lib.hasInfix "-p tcp -d ${hostAddr id} --dport ${toString constants.proxyPort} -j ACCEPT" l
+            || lib.hasInfix "-p udp -d ${hostAddr id} --dport ${toString constants.dnsPort} -j ACCEPT" l
+            || lib.hasSuffix "-j DROP" l
+          then
+            null
+          else
+            "source ${id}: input rule is not the proxy/resolver: ${l}"
+        ) (inLines id);
+      foreign =
+        id:
+        map (t: "source ${id}: rules mention foreign tap ${t}") (
+          builtins.filter (t: lib.any (l: lib.hasInfix t l) (fwdLines id ++ inLines id)) (otherTaps id)
+        );
+    in
+    lib.filter (e: e != null) (
+      lib.concatMap (id: fwdOk id ++ inOk id ++ foreign id) ids
+      ++ lib.optional (lib.any (l: lib.hasPrefix "*nat" l) lines) "firewall text contains a nat table"
+      ++ lib.optional (
+        builtins.length (builtins.filter (l: lib.hasPrefix "-A " l) lines) != builtins.length firewallRules
+      ) "firewall text is not exactly the generated rule set"
+    );
+
+  # The policy file every host service reads. Names only; no secret material.
+  policy = {
+    inherit constants permitted;
+    sources = builtins.listToAttrs (
+      map (id: {
+        name = id;
+        value = {
+          inherit (sources.${id})
+            guest
+            allow
+            windowSeconds
+            vsockPort
+            ;
+          alert = sources.${id}.alert or true;
+          inherit (factsFor id) tap;
+          gateway = (factsFor id).hostAddr;
+          client = (factsFor id).guestAddr;
+        };
+      }) sourceIds
+    );
+  };
+in
+constants
+// {
+  inherit
+    constants
+    permitted
+    sources
+    sourceIds
+    entries
+    factsFor
+    chainIn
+    chainFwd
+    firewallRulesFor
+    firewallRules
+    firewallTable
+    firewallUp
+    hostnameOk
+    validateSources
+    validateFacts
+    validateFirewall
+    policy
+    ;
+}

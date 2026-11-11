@@ -422,6 +422,38 @@ in
             )
           );
 
+        # The ingest table is the single source of truth for taps, allowlists and chains.
+        # Mutating it (or a rule set) must fail evaluation, not silently widen egress.
+        kanbei-ingest-guards = evalCheck "kanbei-ingest-guards" (
+          toString (
+            let
+              ingest = import ../lib/ingest-vm.nix { inherit lib; };
+              clean = ingest.firewallTable;
+              extraRule =
+                clean + "\n-A ingest-tuta-fwd -i ${(ingest.factsFor "tuta").tap} -p tcp --dport 443 -j ACCEPT\n";
+              badAllow = ingest.sources // {
+                tuta = ingest.sources.tuta // {
+                  allow = ingest.sources.tuta.allow ++ [ "evil.example" ];
+                };
+              };
+            in
+            assert ingest.validateSources ingest.sources == [ ];
+            assert ingest.validateFacts ingest.sources == [ ];
+            assert
+              ingest.validateFirewall {
+                tbl = ingest.sources;
+                rules = clean;
+              } == [ ];
+            assert ingest.validateSources badAllow != [ ];
+            assert
+              ingest.validateFirewall {
+                tbl = ingest.sources;
+                rules = extraRule;
+              } != [ ];
+            "ok"
+          )
+        );
+
         desktop-bindings = evalCheck "desktop-bindings" (
           toString (
             import ../../tests/shared_desktop_bindings.nix {

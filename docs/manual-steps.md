@@ -370,6 +370,83 @@ another machine.
 via `openssl s_client`, Access allow with TLS inspection off, and the offline planted-output
 Chromium test.
 
+#### Ingest plane (Firecracker)
+
+The five ingest guests and their host writer/proxy/resolver are behind
+`ingestVm.enable`, which also requires `kanbeiVm.enable`. The operator surface is
+`docs/kanbei-ingest.md`; these are the steps that need a human.
+
+1. **Secret files.** Each source has a `/run/secrets/<source>-env` contract:
+   `ingest-tuta-env`, `ingest-finance-env`, `ingest-brave-env`,
+   `ingest-immich-env`, `ingest-search-env`. They are sops keys of the same name
+   under `/run/secrets`; the encrypted YAML is not in this repo yet, so stage
+   them out of band at mode `0400 root:root` before enabling a guest:
+
+   ```sh
+   sudo install -m 0400 -o root -g root /path/to/tuta-env /run/secrets/ingest-tuta-env
+   sudo stat -c '%a %U:%G %n' /run/secrets/ingest-*-env
+   ```
+
+   The secret host unit (`ingest-vm-secret-<source>.service`) copies the file into
+   a 4 MiB ext4 image at `/var/lib/microvms/ingest-secrets/<source>.img`; without
+   the file that guest stays down and the other sources are unaffected. Changing
+   a secret requires stopping the guest first: the unit refuses to replace a live
+   image, so `sudo systemctl stop microvm@<guest>` then
+   `sudo systemctl start ingest-vm-secret-<source> microvm@<guest>`.
+
+2. **Firecracker TAP prerequisites.** Firecracker needs `/dev/kvm`,
+   `/dev/net/tun` and `/dev/vhost-vsock`, plus the `tun` and `vhost_vsock` kernel
+   modules (the microvm host module loads the first two; `kanbei-vm.nix` loads
+   `vhost_vsock`). Confirm:
+
+   ```sh
+   ls -l /dev/kvm /dev/net/tun /dev/vhost-vsock
+   lsmod | grep -E '^(tun|vhost_vsock)'
+   ```
+
+   Tap creation is the root `microvm-tap-interfaces@<guest>.service`; each tap is
+   named `vm-i-<source>` (or `vm-search`) so it fits the 15-byte interface limit.
+   The host firewall is iptables (`networking.nftables.enable` stays off): the
+   per-tap chains are restored from `/etc/kanbei-ingest/rules.v4` and jumped to
+   from INPUT/FORWARD by `networking.firewall.extraCommands`. No ingest tap is
+   NATed.
+
+3. **First boot.** With the Kanbei VM already enabled, flip `ingestVm.enable`
+   in `modules/hosts/smortress/default.nix` (it is pinned off), `nixos-rebuild
+   switch`, then:
+
+   ```sh
+   sudo systemctl status ingest-vm-prep ingest-proxy ingest-resolver ingest-age-key
+   sudo systemctl status microvm@ingest-tuta microvm@ingest-finance microvm@ingest-brave microvm@ingest-immich microvm@search
+   sudo systemctl list-timers ingest-heartbeat.timer
+   sudo ls -ld /var/lib/kanbei-ingest /var/lib/kanbei-ingest/state /var/log/kanbei-ingest /var/lib/data/inbox
+   sudo iptables -S ingest-tuta-in ingest-tuta-fwd
+   sudo cat /var/lib/kanbei-ingest/age-recipient        # age1… published by Kanbei
+   ```
+
+   The writers block until the recipient exists, so a logged `waiting` event is
+   expected until Kanbei has booted and published its key. A missing secret is the
+   only reason a guest does not start.
+
+4. **Verification.** The hardware-gated proof stops the production search writer
+   for the duration, reboots the `search` guest, and restores the writer:
+
+   ```sh
+   /run/wrappers/bin/sudo /run/current-system/sw/bin/kanbei-ingest-verify
+   ```
+
+   It must print `PASS round-trip`, `PASS secret`, `PASS dns`, `PASS sni`,
+   `PASS egress`. Record the exact guest console lines if it fails.
+
+5. **Logs.** Root-only file logs live in `/var/log/kanbei-ingest/`; guest consoles
+   are the `microvm@<guest>` journal. Read them through the touch-gated sudo
+   wrapper:
+
+   ```sh
+   /run/wrappers/bin/sudo /run/current-system/sw/bin/kanbei-logs
+   /run/wrappers/bin/sudo /run/current-system/sw/bin/kanbei-logs writer-tuta
+   ```
+
 ### smorespro
 
 <!-- manual-step: host/smorespro -->

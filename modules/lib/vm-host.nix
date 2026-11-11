@@ -8,8 +8,11 @@
   name,
   index,
   vsockCid ? null,
+  # Linux caps interface names at 15 bytes (IFNAMSIZ - 1); the default works for short names.
+  tapName ? "vm-${name}",
 }:
 assert index > 0 && index < 256;
+assert builtins.stringLength tapName <= 15;
 let
   digits = "0123456789abcdef";
   hexByte =
@@ -18,7 +21,7 @@ let
 in
 {
   inherit name vsockCid;
-  tap = "vm-${name}";
+  tap = tapName;
   network = "10.77.${octet}.0/30";
   hostAddr = "10.77.${octet}.1";
   guestAddr = "10.77.${octet}.2";

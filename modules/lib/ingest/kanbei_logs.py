@@ -1,0 +1,81 @@
+"""Touch-gated log viewer for the Kanbei-side units.
+
+Not a daemon: an operator runs it through the absolute sudo wrapper, so the
+YubiKey touch (or the host's sudo policy) is the gate:
+
+    /run/wrappers/bin/sudo /run/current-system/sw/bin/kanbei-logs [unit]
+
+It refuses to run without root or outside sudo, then tails the root-only file
+logs under /var/log/kanbei-ingest and the journal for the ingest and Kanbei
+units (console output included).
+"""
+
+from __future__ import annotations
+
+import glob
+import os
+import subprocess
+import sys
+
+LOG_DIR = "/var/log/kanbei-ingest"
+JOURNAL_UNITS = [
+    "microvm@kanbei.service",
+    "microvm@ingest-tuta.service",
+    "microvm@ingest-finance.service",
+    "microvm@ingest-brave.service",
+    "microvm@ingest-immich.service",
+    "microvm@search.service",
+    "ingest-age-key.service",
+    "ingest-proxy.service",
+    "ingest-resolver.service",
+    "ingest-heartbeat.service",
+    "kanbei-swtpm.service",
+]
+TAIL = 80
+
+
+def journal(unit: str) -> None:
+    print(f"===== journal: {unit} =====")
+    subprocess.run(
+        ["journalctl", "-u", unit, "-n", str(TAIL), "--no-pager", "-o", "short-iso"],
+        check=False,
+    )
+
+
+def file_tail(path: str) -> None:
+    print(f"===== log: {path} =====")
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            lines = handle.readlines()
+    except OSError as exc:
+        print(f"cannot read {path}: {exc}")
+        return
+    sys.stdout.writelines(lines[-TAIL:])
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
+    if os.geteuid() != 0:
+        print("kanbei-logs: root required; run /run/wrappers/bin/sudo /run/current-system/sw/bin/kanbei-logs", file=sys.stderr)
+        return 2
+    if not os.environ.get("SUDO_USER"):
+        print("kanbei-logs: run through /run/wrappers/bin/sudo so the touch-gated sudo policy applies", file=sys.stderr)
+        return 2
+
+    wanted = set(args)
+    logs = sorted(glob.glob(os.path.join(LOG_DIR, "*.log")))
+    if wanted:
+        logs = [path for path in logs if any(token in os.path.basename(path) for token in wanted)]
+        units = [unit for unit in JOURNAL_UNITS if any(token in unit for token in wanted)]
+    else:
+        units = JOURNAL_UNITS
+    for path in logs:
+        file_tail(path)
+    for unit in units:
+        journal(unit)
+    print(f"kanbei-logs: {len(logs)} file logs, {len(units)} journal units")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

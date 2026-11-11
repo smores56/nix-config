@@ -38,7 +38,8 @@ let
   # The guest writes the first-boot recovery key here before it formats the volume; root-only,
   # never part of a backup.
   enrollDir = "${stateDir}/enroll";
-  inboxDir = "${stateDir}/inbox";
+  # The ingest writer drops age-encrypted batches here; T14 owns the path, this share reads it.
+  inboxDir = (import ../lib/ingest-vm.nix { inherit lib; }).constants.inboxDir;
 
   # Discovered from the running host (`lspci -nn`, /sys/bus/pci/devices):
   # 0000:08:00.0 10de:2204 = RTX 3090, 0000:08:00.1 10de:1aef = its HDA function.
@@ -197,7 +198,8 @@ let
   '';
 
   # Runtime half of the "clean IOMMU group" check: evaluation only sees the recorded facts.
-  verifyScript = pkgs.writeShellScript "kanbei-vm-verify" ''
+  # writeShellScriptBin: environment.systemPackages needs a directory to merge.
+  verifyScript = pkgs.writeShellScriptBin "kanbei-vm-verify" ''
     set -eu
     # The unit runs without the login PATH; the script also works from a root shell.
     export PATH=${

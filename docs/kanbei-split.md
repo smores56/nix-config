@@ -186,6 +186,36 @@ in `docs/manual-steps.md`, design and recovery flow in
   server-challenged stub. Details, the exact OpenTofu fragment and the spikes
   are in [`docs/kanbei-access.md`](kanbei-access.md).
 
+## The ingest plane (T14)
+
+`modules/nixos/ingest-vm.nix` (smortress only, gated by `ingestVm.enable`, which
+requires `kanbeiVm.enable`) runs five Firecracker guests — `ingest-tuta`,
+`ingest-finance`, `ingest-brave`, `ingest-immich` and `search` — and the host
+writer, proxy, resolver and heartbeat. Table, protocol, allowlists and defaults
+are in [`docs/kanbei-ingest.md`](kanbei-ingest.md).
+
+- Firecracker has no shares and no PCI passthrough: each guest reads its store
+  from the read-only store disk, gets its credentials from one read-only ext4
+  block device staged from `/run/secrets/<source>-env`, and talks to the host
+  only over one vsock channel.
+- The writer validates the batch schema and source, caps frames at 1 MiB,
+  age-encrypts with `age -r` to Kanbei's published recipient, and drops the
+  ciphertext in `/var/lib/data/inbox` (the read-only `inbox` share into the
+  Kanbei guest). Kanbei publishes its recipient on the schema-locked vsock port
+  `7100`; writers block until the file exists.
+- Egress is a hostname/SNI proxy and an allowlist resolver on each tap's host
+  address. The generated per-tap iptables chains admit only those two services
+  and end the forward chain in DROP; no ingest tap is NATed. The guest repeats
+  the restriction on its own OUTPUT chain.
+- A 5-minute timer writes an age-encrypted heartbeat envelope into the inbox and
+  raises `cloudflare-email@ingest-writer-<source>` once per window when a source
+  is stale. Logs are root-only files plus the journal; `kanbei-logs` is a
+  sudo-run viewer, not a daemon.
+- `kanbei-ingest-verify` (root only) proves a batch round-trips, a
+  non-allowlisted DNS name and SNI are refused, and the guest cannot egress
+  directly. `kanbei-ingest-guards` fails evaluation on a hostname outside a
+  source's permit table or on an extra egress rule.
+
 ## Accepted residuals
 
 ### A later human touch runs whatever the unattended maki planted

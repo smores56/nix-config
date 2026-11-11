@@ -66,7 +66,7 @@ Shares (virtiofs):
 | tag | host source | guest | mode |
 |---|---|---|---|
 | `ro-store` | `/nix/store` | `/nix/store` | ro |
-| `inbox` | `/var/lib/kanbei-vm/inbox` | `/mnt/kanbei/inbox` | ro |
+| `inbox` | `/var/lib/data/inbox` | `/mnt/kanbei/inbox` | ro |
 | `vault` | `/var/lib/data/vault` | `/mnt/kanbei/vault` | ro |
 | `todo` | `/var/lib/data/todo` | `/mnt/kanbei/todo` | rw |
 | `kanbei-secrets` | `/var/lib/kanbei-vm/secrets` | `/run/kanbei-secrets` | ro |
