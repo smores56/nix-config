@@ -27,10 +27,6 @@ in
     github-personal-pat = userOwned;
     github-personal-signing-key = userOwned;
 
-    # Handed into both agent VMs (agentVm.secrets on Linux, handIn on the Mac) for calibredb
-    # against the Content server; the server itself reads it on smortress.
-    calibre-password = userOwned;
-
     # Every personal host's shim/CLI presents it, so it lives in common.yaml. Where the
     # listener runs, `memory` needs read access or every call returns 503.
     memory-mcp-token = userOwned // {

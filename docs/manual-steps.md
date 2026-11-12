@@ -1334,17 +1334,6 @@ Then revoke the classic `repo`-scoped PAT at GitHub → Settings → Developer
 settings → Personal access tokens. Until both steps run, the value is inert:
 nothing reads `/run/secrets/github-repo-pat` and no unit declares it.
 
-### calibre-password
-
-<!-- manual-step: secret/calibre-password -->
-
-OPDS password for the single `smores56` user, user-readable, from
-`secrets/common.yaml`. The service re-applies it on every start, and the
-agent VM hands it in as `/run/secrets/calibre-password` for `calibredb`
-against the Content server. Rotating is: edit this key, rebuild,
-`systemctl --user restart calibre-server` (a rebuild does not restart a user
-unit whose definition is unchanged), then refresh OPDS and agent clients.
-
 ### smores-password-hash
 
 <!-- manual-step: secret/smores-password-hash -->
@@ -1505,19 +1494,6 @@ A second token, scoped Object Read only, backs read-side consumers. Put its id
 and secret in `secrets/smortress.yaml` as `r2-access-key-id-readonly` and
 `r2-secret-access-key-readonly`.
 
-### Jupyter token
-
-<!-- manual-step: secret/jupyter-token -->
-
-Retired with the Open WebUI code interpreter. No module declares it; the
-encrypted value is still in `secrets/smortress.yaml`. Delete it in the same
-secrets session as the GitHub mirror PAT:
-
-```sh
-sops secrets/smortress.yaml          # delete the jupyter-token key
-sops updatekeys secrets/smortress.yaml
-```
-
 ### Memory MCP token
 
 <!-- manual-step: secret/memory-mcp-token -->
@@ -1554,22 +1530,6 @@ Retired (T9). The mirror is the `homelabs-platform` CronJob's; rotate its
 read-only PAT there. For this repo the only remaining action is the one-time
 cleanup above: delete the encrypted key, then revoke the classic PAT. There is
 no mirror unit to restart.
-
-#### calibre-password
-
-The single `smores56` OPDS account, in `secrets/common.yaml` and declared in
-`modules/nixos/secrets-common.nix`.
-`modules/features/calibre.nix` re-applies the password in `ExecStartPre` on
-every start of the user unit `calibre-server`, and a rebuild does not restart
-a user unit whose definition did not change:
-
-```sh
-sops secrets/common.yaml          # replace calibre-password
-sudo nixos-rebuild switch            # redeploys /run/secrets/calibre-password
-systemctl --user restart calibre-server
-```
-
-Refresh the OPDS clients' saved credentials.
 
 #### neuralwatt-api-key
 
@@ -2065,8 +2025,8 @@ Once per Mac:
 directories, so `claude --resume` sees host and guest sessions alike. Claude's
 config and `~/.claude.json` stay host-only; the guest keeps its own login and
 config, and does not read the host's `history.jsonl`. The
-`github-{personal,work}-{pat,signing-key}` and `calibre-password` secrets are
-handed in as files on each launch; the rest stay on the host. The guest gets
+`github-{personal,work}-{pat,signing-key}` secrets are handed in as files on
+each launch; the rest stay on the host. The guest gets
 guest-local copies of gh, gcloud, git, and kube config, with `GH_CONFIG_DIR`,
 `GIT_CONFIG_GLOBAL`, `KUBECONFIG`, and `CLOUDSDK_CONFIG` pointed at the copies,
 Docker comes from the host's Docker Desktop
@@ -3001,15 +2961,16 @@ private-data cutover has happened. Then, in order:
    `modules/nixos/kanbei-cutover.nix` until that commit lands, then remove the
    option and its assertions with the rest.
 
-5. **Delete the encrypted keys.** With the YubiKey present:
+5. **Delete the encrypted key.** With the YubiKey present (`jupyter-token` was
+   already deleted with the Open WebUI retirement):
 
    ```sh
-   sops secrets/smortress.yaml          # delete github-repo-pat and jupyter-token
+   sops secrets/smortress.yaml          # delete github-repo-pat
    sops updatekeys secrets/smortress.yaml
    ```
 
-   `manual-steps-sync` keeps both `secret/*` anchors while the keys remain in
-   the file; delete the anchors in the same commit that removes the keys.
+   `manual-steps-sync` keeps a `secret/*` anchor while the key remains in the
+   file; delete the anchor in the same commit that removes the key.
 
 6. **Revoke the credentials.** Delete the classic `repo`-scoped GitHub PAT
    (Settings → Developer settings → Personal access tokens); the platform

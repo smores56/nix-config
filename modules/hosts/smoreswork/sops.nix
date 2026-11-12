@@ -18,7 +18,6 @@ in
       cloudflare-access-ssh-token = { };
       github-personal-pat.sopsFile = commonSecretsFile;
       github-personal-signing-key.sopsFile = commonSecretsFile;
-      calibre-password.sopsFile = commonSecretsFile;
       # The work account's bundle exists only on this machine.
       github-work-pat = { };
       github-work-signing-key = { };

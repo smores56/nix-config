@@ -506,7 +506,8 @@ chat proxies read the same value as the server.
 | secret-sweep review | `secret-sweep --review` | removed now; gitleaks only | none further | none |
 | nanobot local fallback | `nanobotConfigAttrs` | removed now; no `smortress` provider or `local` preset | none further | none |
 | `a` alias | `modules/features/ai/maki/default.nix`, `modules/features/agent-vm/default.nix` | removed now: `maki` on personal hosts, `claude` on smoreswork | none further | none |
-| `jupyter-token` | encrypted `secrets/smortress.yaml` only | declaration already gone | no code; delete the yaml key by hand | `sops secrets/smortress.yaml` |
+| `jupyter-token` | encrypted `secrets/smortress.yaml` only | deleted now, with its anchor | none | none |
+| `calibre-password` | `secrets/common.yaml`, `secrets-common.nix`, the work Mac's `sops.nix` mapping | deleted now; the host keeps only the Calibre CLI and OPDShelf reads its own secret | none | none |
 | Radicale htpasswd | already deleted in `906a1b5e` | nothing to do | none | none |
 
 ### Follow-up deletion list
