@@ -336,6 +336,16 @@ class ReadinessTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(await probes.failures()), 2)
 
+    async def test_an_empty_gateway_url_disables_the_model_gate(self):
+        # In-cluster the wrapper has no key-holding gateway of its own: Graphiti
+        # owns the provider call, so there is nothing here to probe or gate on.
+        seen = []
+        probes = HealthProbes(llm_url="", embed_model="m", transport=transport(record=seen))
+
+        self.assertEqual(await probes.failures(), [])
+        await probes.require_search()
+        self.assertEqual(seen, [])
+
 
 if __name__ == "__main__":
     unittest.main()

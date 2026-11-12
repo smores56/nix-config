@@ -53,6 +53,10 @@ class HealthProbes:
         return response.status_code == 200
 
     async def failures(self) -> list[str]:
+        # Empty llm_url: this instance has no gateway of its own (in-cluster, Graphiti
+        # owns the provider call), so there is no model endpoint to gate on here.
+        if not self.llm_url.strip():
+            return []
         async with self._client() as client:
             chat = await self._probe(client, f"{self.llm_url.rstrip('/')}/v1/models")
             embedder = await self._embedder_ready(client)
@@ -64,6 +68,8 @@ class HealthProbes:
         return failed
 
     async def require_search(self) -> None:
+        if not self.llm_url.strip():
+            return
         async with self._client() as client:
             embedder = await self._embedder_ready(client)
         if not embedder:

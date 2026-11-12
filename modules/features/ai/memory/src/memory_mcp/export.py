@@ -984,8 +984,9 @@ def add_restore_parser(subparsers: Any) -> argparse.ArgumentParser:
         "--no-stop",
         action="store_true",
         help=(
-            "With --dry-run only: print the plan without the systemctl stop a real "
-            "restore performs; any real restore stops the services"
+            "Skip the systemctl stop. The caller guarantees the services are down "
+            "(in-cluster: scale the Deployment to 0 first); with --dry-run only, "
+            "print the plan without the stop a real restore performs."
         ),
     )
     parser.add_argument(
@@ -1016,10 +1017,10 @@ def export_command(args: argparse.Namespace) -> int:
 
 
 def restore_command(args: argparse.Namespace) -> int:
-    if args.no_stop and not args.dry_run:
+    if args.no_stop and args.start:
         raise ExportError(
-            "--no-stop would swap the registry and graph under running services; "
-            "it is only accepted with --dry-run, which writes nothing"
+            "--start contradicts --no-stop: with no service manager to start, "
+            "the caller brings the services back (scale the Deployment up)"
         )
     report = restore(
         RestoreConfig(

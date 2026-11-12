@@ -611,6 +611,40 @@ class RestoreTests(unittest.TestCase):
             remaining = sorted(path.name for path in (root / "restored").iterdir())
         self.assertEqual(remaining, ["registry.sqlite"])
 
+    def test_the_cli_restores_when_the_caller_already_stopped_services(self):
+        # In-cluster there is no systemd to stop: the Deployment is scaled to 0
+        # first, so the CLI must not refuse a real restore under --no-stop.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = export_with_graph(root, [make_entry(1)])
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                code = cli.main(
+                    [
+                        "restore",
+                        str(result.directory),
+                        "--state-dir",
+                        str(root / "restored"),
+                        "--graph-dir",
+                        str(root / "graph"),
+                        "--owner",
+                        "",
+                        "--no-stop",
+                    ]
+                )
+            self.assertEqual(code, 0, err.getvalue())
+            self.assertTrue((root / "restored" / "registry.sqlite").is_file())
+
+    def test_no_stop_refuses_to_start_services_itself(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = export_with_graph(root, [make_entry(1)])
+            err = io.StringIO()
+            with redirect_stderr(err):
+                code = cli.main(["restore", str(result.directory), "--no-stop", "--start"])
+            self.assertEqual(code, 1)
+            self.assertIn("--start", err.getvalue())
+
     def test_a_missing_registry_is_refused(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -929,19 +963,29 @@ class CliTests(unittest.TestCase):
                 ["stop memory-mcp memory-graphiti-mcp memory-llm-proxy memory-falkordb"],
             )
 
-    def test_no_stop_without_dry_run_is_refused(self):
-        """A real restore stops the services; only a dry run may skip them."""
+    def test_no_stop_runs_no_service_manager_commands(self):
+        """In-cluster the caller stops the services; the CLI must not touch systemctl."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             exported = run_export(
                 ExportConfig(state_dir=state_with(root, [make_entry(1)]), root=root / "exports")
             ).directory
-            code, _, err = self.run_cli(
-                ["restore", str(exported), "--state-dir", str(root / "restored"), "--no-stop"]
-            )
-            self.assertEqual(code, 1)
-            self.assertIn("--no-stop", err)
-            self.assertFalse((root / "restored").exists())
+            binary, log = self.fake_systemctl(root)
+            with mock.patch.dict(os.environ, {"PATH": f"{binary}:{os.environ['PATH']}"}):
+                code, _, err = self.run_cli(
+                    [
+                        "restore",
+                        str(exported),
+                        "--state-dir",
+                        str(root / "restored"),
+                        "--owner",
+                        "",
+                        "--no-stop",
+                    ]
+                )
+            self.assertEqual(code, 0, err)
+            self.assertFalse(log.exists())
+            self.assertTrue((root / "restored" / "registry.sqlite").is_file())
 
     def test_a_failed_graph_snapshot_makes_the_export_exit_one(self):
         """The registry export stands, but the timer must see the failure."""

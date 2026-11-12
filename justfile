@@ -98,6 +98,18 @@ memory-export:
     sudo systemctl start memory-export.service
     journalctl -u memory-export.service -n 20 --no-pager
 
+# Publish the memory wrapper image to GHCR and print the digest to pin in
+# smores56/homelabs-platform. Needs GHCR_TOKEN with write:packages, and the
+# package must be public after the first push (manual-steps, memory section).
+publish-memory-image tag:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    archive=$(nix build --no-link --print-out-paths .#memory-mcp-image)
+    printf '%s' "${GHCR_TOKEN:?set GHCR_TOKEN to a PAT with write:packages}" \
+      | nix run nixpkgs#skopeo -- login ghcr.io -u smores56 --password-stdin
+    nix run nixpkgs#skopeo -- copy "docker-archive:${archive}" "docker://ghcr.io/smores56/nix-config/memory-mcp:{{tag}}"
+    nix run nixpkgs#crane -- digest "ghcr.io/smores56/nix-config/memory-mcp:{{tag}}"
+
 # Verify and restore one memory export (stops the memory services on smortress).
 memory-restore dir:
     sudo memory restore {{dir}}
