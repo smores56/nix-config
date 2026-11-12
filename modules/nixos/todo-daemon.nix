@@ -48,7 +48,9 @@ let
     }
     img=${image}
     if [ -s "$img" ]; then
-      if blkid -o value -s TYPE "$img" | grep -qx ext4; then
+      # No grep here: the unit's PATH holds only coreutils/e2fsprogs/util-linux, so a
+      # pipeline into grep failed with 127 and every switch rejected a valid image.
+      if [ "$(blkid -o value -s TYPE "$img" 2>/dev/null || true)" = "ext4" ]; then
         exit 0
       fi
       echo "todo-image: $img is not an ext4 image; refusing to reformat it" >&2
