@@ -109,9 +109,13 @@ in
     };
   };
 
-  systemd.tmpfiles.rules = [ "d ${dbDir} 0700 postgres postgres -" ];
+  # The host database exists only while the native Immich runs; the cluster
+  # backs up its own copy from the dump CronJob (#509).
+  systemd.tmpfiles.rules = lib.mkIf config.services.postgresql.enable [
+    "d ${dbDir} 0700 postgres postgres -"
+  ];
 
-  systemd.services.restic-db-dump = {
+  systemd.services.restic-db-dump = lib.mkIf config.services.postgresql.enable {
     description = "Dump the Immich database into the durable tree";
     after = [ "postgresql.service" ];
     requires = [ "postgresql.service" ];
@@ -142,8 +146,8 @@ in
   # database still lets the tree back up.
   systemd.services."restic-backups-r2" = {
     onFailure = [ "cloudflare-email@%n.service" ];
-    wants = [ "restic-db-dump.service" ];
-    after = [ "restic-db-dump.service" ];
+    wants = lib.optional config.services.postgresql.enable "restic-db-dump.service";
+    after = lib.optional config.services.postgresql.enable "restic-db-dump.service";
   };
 
   # The local repo lives on the backup disk: wait for that mount, or a missing
@@ -151,7 +155,7 @@ in
   systemd.services."restic-backups-local" = {
     onFailure = [ "cloudflare-email@%n.service" ];
     unitConfig.RequiresMountsFor = [ "/var/backup" ];
-    wants = [ "restic-db-dump.service" ];
-    after = [ "restic-db-dump.service" ];
+    wants = lib.optional config.services.postgresql.enable "restic-db-dump.service";
+    after = lib.optional config.services.postgresql.enable "restic-db-dump.service";
   };
 }

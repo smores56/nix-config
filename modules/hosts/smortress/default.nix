@@ -39,6 +39,8 @@ in
     ../../nixos/kanbei-cutover.nix
     # The agent book shelf: ~/wip/books -> the books library share.
     ./books-shelf.nix
+    # The cluster serves the data apps; keep the host copies off (#509).
+    ./retired-host-apps.nix
   ];
   homeModules = [
     ../../features/todo.nix
