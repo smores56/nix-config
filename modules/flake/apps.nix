@@ -269,38 +269,21 @@
 
             state="''${CLOUDFLARE_TOFU_DIR:-/var/lib/cloudflare-tofu}"
             token_file="''${CLOUDFLARE_API_TOKEN_FILE:-/run/secrets/cloudflare-api-token}"
-            creds="''${CLOUDFLARE_TUNNEL_CREDENTIALS:-/run/secrets/cloudflared-credentials}"
 
-            for f in "$token_file" "$creds"; do
-              [ -r "$f" ] || { echo "${name}: cannot read $f" >&2; exit 1; }
-            done
+            [ -r "$token_file" ] || { echo "${name}: cannot read $token_file" >&2; exit 1; }
 
             install -d -m 0700 "$state"
             rm -f "$state"/*.tf
             cp ${../../tofu}/*.tf "$state"/
+            cp ${../../tofu}/terraform.tfvars "$state"/
             cp ${../../tofu}/.terraform.lock.hcl "$state"/
-            chmod 0600 "$state"/*.tf "$state"/.terraform.lock.hcl
+            chmod 0600 "$state"/*.tf "$state"/terraform.tfvars "$state"/.terraform.lock.hcl
 
+            # Every zone identifier comes from the copied terraform.tfvars, so no
+            # TF_VAR_ exports are needed; the provider credential is the only
+            # environment input.
             export CLOUDFLARE_API_TOKEN
             CLOUDFLARE_API_TOKEN=$(tr -d '[:space:]' < "$token_file")
-            # An empty account id is not a plan-time error: the API rejects account-scoped resources mid-apply
-            # after others changed. The tunnel credentials carry the same account tag, so they cover it.
-            account_id="''${CLOUDFLARE_ACCOUNT_ID:-}"
-            if [ -z "$account_id" ] && [ -r /etc/cloudflare-tofu/account-id ]; then
-              account_id=$(cat /etc/cloudflare-tofu/account-id)
-            fi
-            if [ -z "$account_id" ]; then
-              account_id=$(jq -er '.AccountTag' "$creds")
-            fi
-            [ -n "$account_id" ] || {
-              echo "${name}: no Cloudflare account id; set CLOUDFLARE_ACCOUNT_ID" >&2
-              exit 1
-            }
-            export TF_VAR_account_id="$account_id"
-            export TF_VAR_domain="''${CLOUDFLARE_DOMAIN:-sammohr.dev}"
-            export TF_VAR_email="''${CLOUDFLARE_ALERT_EMAIL:-sam@sammohr.dev}"
-            export TF_VAR_tunnel_id
-            TF_VAR_tunnel_id=$(jq -er '.TunnelID' "$creds")
 
             cd "$state"
             # Always init: a lockfile change needs it, and a warm .terraform makes it a no-op.
