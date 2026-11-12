@@ -1505,16 +1505,6 @@ A second token, scoped Object Read only, backs read-side consumers. Put its id
 and secret in `secrets/smortress.yaml` as `r2-access-key-id-readonly` and
 `r2-secret-access-key-readonly`.
 
-### Retired photo-triage keys
-
-<!-- manual-step: secret/photo-triage-immich-read-key -->
-<!-- manual-step: secret/photo-triage-immich-album-key -->
-
-Retired with the photo-triage feature. Revoke both Immich API keys in the Immich
-UI. Their ciphertext stays in `secrets/smortress.yaml` until a sops session
-removes it: delete both keys, then delete this section and its anchors in the
-same commit.
-
 ### Jupyter token
 
 <!-- manual-step: secret/jupyter-token -->
