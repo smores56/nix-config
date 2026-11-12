@@ -42,29 +42,6 @@ let
     ]) cfg.allowRw
   );
 
-  calibredbWrapper = pkgs.writeShellScriptBin "calibredb" ''
-    for a in "$@"; do
-      case "$a" in
-        --with-library | --with-library=* | -w | -w=*) exec ${pkgs.calibre}/bin/calibredb "$@";;
-      esac
-    done
-    if [ -n "''${CALIBRE_LIBRARY_URL:-}" ]; then
-      exec ${pkgs.calibre}/bin/calibredb --with-library "$CALIBRE_LIBRARY_URL" "$@"
-    fi
-    exec ${pkgs.calibre}/bin/calibredb "$@"
-  '';
-  # calibre's other binaries plus the broker-aware calibredb; one package so the profile has no
-  # duplicate bin/calibredb.
-  guestCalibre = pkgs.runCommandLocal "calibre-agent" { } ''
-    mkdir -p $out/bin
-    for b in ${pkgs.calibre}/bin/*; do
-      n=$(basename "$b")
-      if [ "$n" = calibredb ]; then continue; fi
-      ln -s "$b" "$out/bin/$n"
-    done
-    ln -s ${calibredbWrapper}/bin/calibredb "$out/bin/calibredb"
-  '';
-
   # Holds the Access token on the host; the guest only dials the relay.
   cloudflaredAccess = pkgs.writeShellApplication {
     name = "cloudflared-access-host";
@@ -773,16 +750,14 @@ let
         slow_down_sleep_time:1
       '';
 
-      # One step for agents: download into a scratch directory, add or replace each book through
-      # the broker-backed calibredb wrapper, then set the library cover from the EPUB's cover.
+      # One step for agents: download into a scratch directory, then drop each EPUB on the
+      # shelf the host moves into the library. OPDShelf reads the folder tree, so there is no
+      # metadata database and no content-server API in this path.
       fanficfareDownload = pkgs.writeShellApplication {
         name = "fanficfare-download";
         runtimeInputs = [
           pkgs.coreutils
           pkgs.fanficfare
-          pkgs.gnugrep
-          pkgs.gnused
-          pkgs.unzip
         ];
         text = ''
           set -euo pipefail
@@ -791,6 +766,9 @@ let
             echo "usage: fanficfare-download <story-url>..." >&2
             exit 2
           fi
+
+          shelf="''${BOOK_SHELF:-$HOME/wip/books}"
+          mkdir -p "$shelf"
 
           work=$(mktemp -d)
           trap 'rm -rf "$work"' EXIT
@@ -804,33 +782,13 @@ let
             exit 1
           fi
 
+          # Write under a temporary name and rename, so the host's watcher only ever
+          # sees complete files; it moves them into the library share.
           for epub in "''${epubs[@]}"; do
-            out=$(${guestCalibre}/bin/calibredb add --automerge overwrite "$epub")
-            printf '%s\n' "$out"
-            id=$(printf '%s\n' "$out" | sed -n 's/.*book ids: \([0-9][0-9]*\).*/\1/p')
-            if [ -z "$id" ]; then
-              echo "fanficfare-download: could not read the book id for $epub" >&2
-              continue
-            fi
-
-            cover=$(unzip -Z1 "$epub" | grep -m1 '^OEBPS/images/cover\.' || true)
-            if [ -z "$cover" ]; then
-              continue
-            fi
-            ext="''${cover##*.}"
-            unzip -p "$epub" "$cover" > "$work/cover.$ext"
-            case "$ext" in
-              jpg|jpeg|png) coverfile="$work/cover.$ext" ;;
-              *)
-                coverfile="$work/cover.jpg"
-                if ! ${guestCalibre}/bin/calibre-debug -c "from PIL import Image; Image.open('$work/cover.$ext').convert('RGB').save('$coverfile', 'JPEG', quality=90)" >/dev/null 2>&1; then
-                  echo "fanficfare-download: cover conversion failed for $epub" >&2
-                  continue
-                fi
-                ;;
-            esac
-            ${guestCalibre}/bin/calibredb set_metadata "$id" --field "cover:$coverfile" >/dev/null || \
-              echo "fanficfare-download: cover update failed for book $id" >&2
+            dest="$shelf/$(basename "$epub")"
+            install -m 0644 "$epub" "$dest.tmp"
+            mv "$dest.tmp" "$dest"
+            printf '%s\n' "$dest"
           done
         '';
       };
@@ -979,7 +937,7 @@ let
       };
       environment.systemPackages = [
         guestSsh
-        guestCalibre
+        pkgs.calibre
         fanficfareDownload
         sdlcGuest
         tinyfishSearch
@@ -1299,32 +1257,6 @@ in
               auth = {
                 kind = "header";
                 header = "X-API-Key";
-              };
-            };
-            calibre = {
-              type = "http";
-              upstream =
-                if isServer then "http://127.0.0.1:${toString ports.calibre}" else "https://calibre.sammohr.dev";
-              secret = "calibre-password";
-              guestPort = ports.calibre;
-              brokerPort = ports.agentBrokerCalibre;
-              env.CALIBRE_LIBRARY_URL = "http://127.0.0.1:${toString ports.calibre}/#books";
-              # Calibre is a writable management capability by design: the broker injects
-              # the human's basic-auth credential, so the Content server is not a boundary
-              # against the guest. Every method the old empty list admitted (minus TRACE and
-              # CONNECT) is listed here explicitly now that an empty list is rejected.
-              allow = [
-                "GET /*"
-                "HEAD /*"
-                "OPTIONS /*"
-                "POST /*"
-                "PUT /*"
-                "PATCH /*"
-                "DELETE /*"
-              ];
-              auth = {
-                kind = "basic";
-                username = "smores56";
               };
             };
           }

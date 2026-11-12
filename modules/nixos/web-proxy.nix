@@ -9,7 +9,7 @@
 let
   cfg = config.webProxy;
 
-  # Apex domain whose subdomains are exposed (e.g. calibre.<domain>).
+  # Apex domain whose subdomains are exposed (e.g. agent.<domain>).
   domain = "sammohr.dev";
 
   # A typo that clears `access.enable` would publish sshd, the LLM, the

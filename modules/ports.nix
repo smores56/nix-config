@@ -1,6 +1,6 @@
 # Loopback ports shared by more than one file (a listener and its tunnel ingress, or a service
 # and a client default); single-module ports live with that module. Ssh/llm/memory/chat/agent
-# require Access; calibre and immich are public with their own app auth. A plain attrset outside
+# require Access; the data apps are served by the cluster, not here. A plain attrset outside
 # modules/{features,desktop,nixos} so import-tree skips it; modules import it by relative path.
 {
   llm = 8081;
@@ -8,7 +8,6 @@
   agent = 42700;
   # The Letta App Server: same shape, a second guest listener and host relay.
   letta = 42701;
-  calibre = 8181;
   immich = 2283;
   navidrome = 4533;
   ssh = 22;
@@ -21,7 +20,6 @@
   agentTinyfish = 8084;
   agentSshRelay = 8085;
   agentBrokerMemory = 8186;
-  agentBrokerCalibre = 8187;
   filesMcp = 8185;
   openWebui = 3210;
   # The Kanbei chat relay: the private hostname route is Layer 4 and preserves the browser's

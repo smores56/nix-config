@@ -38,7 +38,6 @@ let
     "github-personal-signing-key"
     "github-work-pat"
     "github-work-signing-key"
-    "calibre-password"
   ];
 
   substitutions = {

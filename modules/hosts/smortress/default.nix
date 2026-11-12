@@ -37,18 +37,12 @@ in
     ../../nixos/ingest-vm.nix
     # #509 retirement assertions; inert until the cutover switch below is flipped.
     ../../nixos/kanbei-cutover.nix
+    # The agent book shelf: ~/wip/books -> the books library share.
+    ./books-shelf.nix
   ];
   homeModules = [
     ../../features/todo.nix
   ];
-
-  homeOptions = {
-    calibre = {
-      passwordFile = "/run/secrets/calibre-password";
-      # On the media dataset so it is backed up and the ingest queue can write it.
-      library = "/var/lib/data/books";
-    };
-  };
 
   nixosOptions = {
     hostHardening.enable = true;
@@ -92,7 +86,6 @@ in
     webProxy = {
       tunnelName = "smortress";
       services = {
-        calibre.port = ports.calibre;
         navidrome.port = ports.navidrome;
         # Reachable only through the tunnel; must never lose Access (web-proxy.nix asserts it).
         ssh = {

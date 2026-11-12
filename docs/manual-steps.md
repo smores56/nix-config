@@ -2204,30 +2204,25 @@ sudo umount /tmp/todo-test
 Services come from `webProxy.services` on each NixOS host. Each becomes
 `<name>.<domain>` through the tunnel. `ssh`, `llm`, `memory`, `chat`, and
 `agent` have Cloudflare Access applications (hand-written in `tofu/`);
-`access.enable` on any other service fails evaluation. Calibre and Immich are
-public and rely on their own app auth.
+`access.enable` on any other service fails evaluation. The data apps are served
+by the cluster — `photos.sammohr.dev`, `music.sammohr.dev`,
+`opds.sammohr.dev` — with their own app auth and the zone rate limit.
 
-### smortress/calibre
+### Books (OPDShelf, in the cluster)
 
-<!-- manual-step: service/smortress/calibre -->
+Neither this host nor the tunnel serves the library: OPDShelf runs in the
+`calibre` namespace over the same `/var/lib/data/books` share, and
+`opds.sammohr.dev` is its hostname (`docs/data-migration.md` in
+`smores56/homelabs-platform`). OPDS clients and the web panel authenticate as
+`smores56`; the password is the cluster Secret `opdshelf-admin-password-sops`,
+created from `~/secrets/homelabs-platform/opdshelf-admin-password.yaml`.
 
-`calibre.sammohr.dev` → loopback `ports.calibre`, HTTP, public (no Access).
-OPDS clients authenticate as `smores56` with `calibre-password`. Agents reach
-the same library through the Content server API, never a share:
-
-```sh
-calibredb list --with-library 'https://calibre.sammohr.dev/#books' \
-  --username smores56 --password '<f:/run/secrets/calibre-password>'
-```
-
-`add`, `set_metadata`, `add_format`, `remove`, `remove_format`, and
-`embed_metadata` run server-side; the account must be writable (the
-provisioning step clears a read-only flag). An upload larger than 100 MB is
-rejected at Cloudflare.
+Agents never talk to the server. `fanficfare-download` writes the EPUB to
+`~/wip/books`, and `books-shelf.service` (`modules/hosts/smortress/books-shelf.nix`)
+copies finished files into `imported/` inside the library share. The folder is
+the catalog, so nothing else runs. Drop a file in by hand the same way.
 
 ### smortress/immich
-
-<!-- manual-step: service/smortress/immich -->
 
 `photos.sammohr.dev` is served by the cluster since the cutover; this host
 service's own tunnel route is retired, so only the LAN URL below reaches it.
