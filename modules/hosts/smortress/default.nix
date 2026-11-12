@@ -93,7 +93,6 @@ in
       tunnelName = "smortress";
       services = {
         calibre.port = ports.calibre;
-        immich.port = ports.immich;
         navidrome.port = ports.navidrome;
         # Reachable only through the tunnel; must never lose Access (web-proxy.nix asserts it).
         ssh = {

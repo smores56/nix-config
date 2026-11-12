@@ -470,7 +470,7 @@ in
                 "production.plaid.com"
               ];
             assert ingest.sources.brave.allow == [ "sync-v2.brave.com" ];
-            assert ingest.sources.immich.allow == [ "immich.sammohr.dev" ];
+            assert ingest.sources.immich.allow == [ "photos.sammohr.dev" ];
             # The search guest's one egress name and its distinct query port (#594).
             assert ingest.sources.search.allow == [ "api.search.tinyfish.ai" ];
             assert ingest.sources.search.queryPort != ingest.sources.search.vsockPort;

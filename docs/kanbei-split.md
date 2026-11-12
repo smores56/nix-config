@@ -291,7 +291,7 @@ and album membership. The client's endpoint allowlist is
 before dialling, responses must be JSON and are size-capped. Pagination follows
 `nextPage`/`nextCursor`, the cursor is `(updatedAt, id)`, and album/people joins
 are fetched only when their `updatedAt` moves. The only egress is the host proxy
-and resolver for `immich.sammohr.dev`: no cluster address is reachable, and the
+and resolver for `photos.sammohr.dev`: no cluster address is reachable, and the
 platform side stays unchanged. The scoped key, endpoint and manual steps are in
 [`docs/kanbei-ingest-immich.md`](kanbei-ingest-immich.md).
 

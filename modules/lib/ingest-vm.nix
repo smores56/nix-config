@@ -60,7 +60,7 @@ let
       "production.plaid.com"
     ];
     brave = [ "sync-v2.brave.com" ];
-    immich = [ "immich.sammohr.dev" ];
+    immich = [ "photos.sammohr.dev" ];
     # The search guest is the only egress for Kanbei's capped queries; Kanbei holds no NIC.
     search = [ "api.search.tinyfish.ai" ];
   };

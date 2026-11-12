@@ -587,7 +587,7 @@ The five ingest guests and their host writer/proxy/resolver are behind
 10. **Immich metadata key.** Create a dedicated Immich API key with only
     `asset.read`, `album.read` and `person.read`, and stage
     `ingest-immich-env` with `IMMICH_API_KEY` (the base URL is pinned to
-    `https://immich.sammohr.dev`). The guest can reach only that name through
+    `https://photos.sammohr.dev`). The guest can reach only that name through
     the host proxy/resolver; no cluster address is allowed. Confirm the first
     run pages the library once and later runs are incremental; the collector
     refuses every byte endpoint. Steps:
@@ -2229,10 +2229,12 @@ rejected at Cloudflare.
 
 <!-- manual-step: service/smortress/immich -->
 
-`immich.sammohr.dev`, public (no Access) and protected by Immich's own login.
-The first user to register becomes the admin, so register it immediately after
-the first start — anyone who reaches the instance first takes the account.
-Phones also use the LAN URL
+`photos.sammohr.dev` is served by the cluster since the cutover; this host
+service's own tunnel route is retired, so only the LAN URL below reaches it.
+The cluster app is public (no Access) and protected by Immich's own login; the
+first user to register becomes the admin, so register it immediately after the
+first start — anyone who reaches the instance first takes the account. Phones
+also use the LAN URL
 `http://<lan-ip>:2283` (`immich.lanSources`) because Cloudflare caps a single
 upload at 100 MB and Immich neither chunks nor resumes. Configure both URLs in
 the mobile app.

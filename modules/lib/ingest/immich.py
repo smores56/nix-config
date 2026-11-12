@@ -31,7 +31,7 @@ from urllib import request as urllib_request
 SOURCE = "immich"
 STATE_VERSION = 1
 PROTOCOL_VERSION = 1
-BASE_HOST = "immich.sammohr.dev"
+BASE_HOST = "photos.sammohr.dev"
 BASE_URL = f"https://{BASE_HOST}"
 ENV_KEYS = {"IMMICH_BASE_URL", "IMMICH_API_KEY", "IMMICH_PAGE_SIZE"}
 DEFAULT_PAGE_SIZE = 1000

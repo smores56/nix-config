@@ -1538,9 +1538,9 @@ in
       # Immich (#592): metadata endpoints only; the host allowlist is one name.
       {
         assertion =
-          sources.immich.allow == [ "immich.sammohr.dev" ]
-          && policy.sources.immich.allow == [ "immich.sammohr.dev" ];
-        message = "ingest-vm: the immich guest may only reach immich.sammohr.dev";
+          sources.immich.allow == [ "photos.sammohr.dev" ]
+          && policy.sources.immich.allow == [ "photos.sammohr.dev" ];
+        message = "ingest-vm: the immich guest may only reach photos.sammohr.dev";
       }
       {
         assertion =

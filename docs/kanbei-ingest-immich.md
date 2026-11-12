@@ -3,7 +3,7 @@
 The `ingest-immich` guest reads the Immich library's **metadata only**: asset
 fields, EXIF, places, people and album membership. It never requests image,
 thumbnail, video or archive bytes, and it can reach exactly one name through the
-host proxy: `immich.sammohr.dev`.
+host proxy: `photos.sammohr.dev`.
 
 Module: `modules/nixos/ingest-vm.nix` (guest block `lib.mkIf (id == "immich")`).
 Table entry: `modules/lib/ingest-vm.nix`. Tool:
@@ -31,7 +31,7 @@ or share permissions. The key is a bearer credential; it lives only in
 | key | required | meaning |
 |---|---|---|
 | `IMMICH_API_KEY` | yes | scoped read-only key |
-| `IMMICH_BASE_URL` | no | must be `https://immich.sammohr.dev` (the default) |
+| `IMMICH_BASE_URL` | no | must be `https://photos.sammohr.dev` (the default) |
 | `IMMICH_PAGE_SIZE` | no | 1..1000, default 250 in the request, 1000 in this collector |
 
 A URL with another host, a path, HTTP, userinfo or a query is refused before any
@@ -41,14 +41,14 @@ own contract.
 ## One egress flow
 
 ```
-ingest-immich (10.77.13.2) → host proxy 10.77.13.1:3128 → https://immich.sammohr.dev:443
+ingest-immich (10.77.13.2) → host proxy 10.77.13.1:3128 → https://photos.sammohr.dev:443
                               host resolver 10.77.13.1:53 (exact name only)
 ```
 
 There is no direct nftables flow from the guest to the cluster. The per-tap
 forward chain has no ACCEPT other than conntrack and ends in DROP; the input
 chain admits only the proxy and resolver; the resolver answers A/AAAA for
-`immich.sammohr.dev` and REFUSES every other name. No cluster address, pod IP,
+`photos.sammohr.dev` and REFUSES every other name. No cluster address, pod IP,
 service IP or LAN range is reachable, and `kanbei-ingest-guards` fails
 evaluation if the table's allowlist is widened. The proxy also requires the TLS
 SNI to equal the CONNECT host, so a compromised guest cannot tunnel to another
@@ -57,7 +57,7 @@ service through the same allowance.
 This replaces the design note's direct `ingest-immich` → cluster-port rule: the
 T14 plane puts every source behind the host's hostname/SNI proxy, one name per
 source. The Immich app still listens on its cluster port (2283); the guest never
-addresses that port or a cluster IP, only `immich.sammohr.dev:443` through the
+addresses that port or a cluster IP, only `photos.sammohr.dev:443` through the
 tunnel and proxy, so the destination is the same Immich service while the
 enforcement point is the host, not a cluster-side nftables rule.
 
@@ -145,6 +145,6 @@ Hardware/credential gated (root on smortress, a scoped key):
    changed assets/albums/people (`journalctl -u ingest-immich` shows counts).
 3. Confirm `immich-*.age` batches appear in `/var/lib/data/inbox` and Kanbei
    shows names, places, albums and people, with no image data.
-4. Prove the egress scope from the guest: `immich.sammohr.dev` resolves, every
+4. Prove the egress scope from the guest: `photos.sammohr.dev` resolves, every
    other name is REFUSED, `1.1.1.1` is unreachable, and a curl to
    `/api/assets/<id>/original` is refused by the client before dialling.

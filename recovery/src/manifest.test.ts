@@ -23,7 +23,7 @@ const manifest: RecoveryManifest = {
         },
         {
           title: "Immich (photo library)",
-          url: "https://immich.sammohr.dev",
+          url: "https://photos.sammohr.dev",
         },
       ],
     },

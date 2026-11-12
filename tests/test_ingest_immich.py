@@ -114,12 +114,12 @@ class EnvTests(unittest.TestCase):
 
     def test_defaults_and_strict_env(self):
         session = self.immich.session_of({"IMMICH_API_KEY": KEY})
-        self.assertEqual(session["base_url"], "https://immich.sammohr.dev")
+        self.assertEqual(session["base_url"], "https://photos.sammohr.dev")
         self.assertEqual(session["page_size"], 1000)
         for env in (
-            {"IMMICH_API_KEY": KEY, "IMMICH_BASE_URL": "http://immich.sammohr.dev"},
+            {"IMMICH_API_KEY": KEY, "IMMICH_BASE_URL": "http://photos.sammohr.dev"},
             {"IMMICH_API_KEY": KEY, "IMMICH_BASE_URL": "https://evil.test"},
-            {"IMMICH_API_KEY": KEY, "IMMICH_BASE_URL": "https://immich.sammohr.dev/api"},
+            {"IMMICH_API_KEY": KEY, "IMMICH_BASE_URL": "https://photos.sammohr.dev/api"},
             {"IMMICH_API_KEY": KEY, "IMMICH_EXTRA": "1"},
             {"IMMICH_API_KEY": ""},
         ):
@@ -165,14 +165,14 @@ class EndpointTests(unittest.TestCase):
 
     def test_client_refuses_before_dialling(self):
         opener = RouteOpener([])
-        client = self.immich.ImmichClient("https://immich.sammohr.dev", KEY, opener=opener)
+        client = self.immich.ImmichClient("https://photos.sammohr.dev", KEY, opener=opener)
         with self.assertRaises(self.immich.ImmichError):
             client.request(f"/api/assets/{UUID}/original")
         self.assertEqual(opener.requests, [])
 
     def test_non_json_response_is_refused(self):
         opener = RouteOpener([], albums={"items": []}, content_type="image/jpeg")
-        client = self.immich.ImmichClient("https://immich.sammohr.dev", KEY, opener=opener)
+        client = self.immich.ImmichClient("https://photos.sammohr.dev", KEY, opener=opener)
         with self.assertRaises(self.immich.ImmichError):
             client.request("/api/albums")
 
@@ -196,7 +196,7 @@ class PaginationTests(unittest.TestCase):
                 {"items": [asset("c")], "nextPage": None},
             ]
         )
-        client = self.immich.ImmichClient("https://immich.sammohr.dev", KEY, opener=opener)
+        client = self.immich.ImmichClient("https://photos.sammohr.dev", KEY, opener=opener)
         items = self.immich.search_assets(client, after=None, page_size=2)
         self.assertEqual([item["id"] for item in items], ["a", "b", "c"])
         bodies = [json.loads(request.data) for request in opener.requests]
@@ -211,7 +211,7 @@ class PaginationTests(unittest.TestCase):
                 {"items": [asset("b")], "nextCursor": None},
             ]
         )
-        client = self.immich.ImmichClient("https://immich.sammohr.dev", KEY, opener=opener)
+        client = self.immich.ImmichClient("https://photos.sammohr.dev", KEY, opener=opener)
         items = self.immich.search_assets(client, after="2025-01-01T00:00:00Z", page_size=1)
         self.assertEqual([item["id"] for item in items], ["a", "b"])
         self.assertEqual(json.loads(opener.requests[0].data)["updatedAfter"], "2025-01-01T00:00:00Z")
@@ -225,7 +225,7 @@ class PaginationTests(unittest.TestCase):
                 {"items": [{"id": "b"}], "nextCursor": None},
             ],
         )
-        client = self.immich.ImmichClient("https://immich.sammohr.dev", KEY, opener=opener)
+        client = self.immich.ImmichClient("https://photos.sammohr.dev", KEY, opener=opener)
         self.assertEqual(self.immich.album_asset_ids(client, UUID, 1), ["a", "b"])
         self.assertEqual(json.loads(opener.requests[1].data)["cursor"], "cur")
 
@@ -237,7 +237,7 @@ class PaginationTests(unittest.TestCase):
                 {"people": [{"id": "p2", "name": "Bob"}], "hasNextPage": False},
             ],
         )
-        client = self.immich.ImmichClient("https://immich.sammohr.dev", KEY, opener=opener)
+        client = self.immich.ImmichClient("https://photos.sammohr.dev", KEY, opener=opener)
         people = self.immich.people(client, 100)
         self.assertEqual([person["id"] for person in people], ["p1", "p2"])
         self.assertIn("page=2", opener.requests[1].full_url)
@@ -312,7 +312,7 @@ class CollectTests(unittest.TestCase):
             types = sorted(item["type"] for item in items)
             self.assertEqual(types, ["immich-album", "immich-album-assets", "immich-asset", "immich-person"])
             # Every request stayed on the metadata allowlist.
-            paths = {request.full_url.split("immich.sammohr.dev")[1].split("?")[0] for request in opener.requests}
+            paths = {request.full_url.split("photos.sammohr.dev")[1].split("?")[0] for request in opener.requests}
             self.assertEqual(paths, {"/api/search/metadata", "/api/albums", "/api/people"})
 
             # A second pass with unchanged server state emits nothing.
