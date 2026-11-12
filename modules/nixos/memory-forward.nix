@@ -23,46 +23,65 @@ let
 in
 {
   options.memoryForward.enable = lib.mkEnableOption ''
-    forwarding 127.0.0.1:8182 to the cluster's memory wrapper NodePort. Enable it
-    in the same change that stops the host's `memory-mcp` unit, never before: both
-    would bind the same loopback port
+    forwarding 127.0.0.1:8182 to the cluster's memory wrapper NodePort. Enabling it
+    also disables the host memory units, since the forward and `memory-mcp` bind
+    the same loopback port
   '';
 
   config = lib.mkIf cfg.enable {
-    systemd.services.memory-forward = {
-      description = "Forward host loopback memory MCP to the cluster wrapper";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "network-online.target" ];
-      wants = [ "network-online.target" ];
-      unitConfig = {
-        StartLimitIntervalSec = "1h";
-        StartLimitBurst = 10;
+    # The forward replaces the host writer: enabling it retires the whole host
+    # memory stack in the same generation, so a reboot cannot resurrect the frozen
+    # registry on 8182 (the forward would then lose the bind and die).
+    systemd.timers.memory-export.enable = lib.mkForce false;
+
+    systemd.services =
+      lib.genAttrs
+        [
+          "memory-mcp"
+          "memory-graphiti-mcp"
+          "memory-llm-proxy"
+          "memory-falkordb"
+          "memory-export"
+        ]
+        (_: {
+          enable = lib.mkForce false;
+        })
+      // {
+        memory-forward = {
+          description = "Forward host loopback memory MCP to the cluster wrapper";
+          wantedBy = [ "multi-user.target" ];
+          after = [ "network-online.target" ];
+          wants = [ "network-online.target" ];
+          unitConfig = {
+            StartLimitIntervalSec = "1h";
+            StartLimitBurst = 10;
+          };
+          serviceConfig = {
+            ExecStart = lib.escapeShellArgs [
+              "${pkgs.socat}/bin/socat"
+              "TCP-LISTEN:${toString ports.memoryMcp},fork,reuseaddr,bind=127.0.0.1"
+              "TCP:${facts.guestAddr}:${toString ports.memoryNodePort}"
+            ];
+            DynamicUser = true;
+            Restart = "always";
+            RestartSec = "5s";
+            MemoryMax = "64M";
+            PrivateDevices = true;
+            PrivateTmp = true;
+            NoNewPrivileges = true;
+            ProtectSystem = "strict";
+            ProtectHome = true;
+            RestrictAddressFamilies = [
+              "AF_INET"
+              "AF_INET6"
+            ];
+            # Only the guest may be dialed; the listener is loopback-only.
+            IPAddressAllow = "127.0.0.1 ${facts.guestAddr}";
+            IPAddressDeny = "any";
+          };
+          # A forward that dies silently takes this agent's memory tools with it.
+          onFailure = [ "cloudflare-email@%n.service" ];
+        };
       };
-      serviceConfig = {
-        ExecStart = lib.escapeShellArgs [
-          "${pkgs.socat}/bin/socat"
-          "TCP-LISTEN:${toString ports.memoryMcp},fork,reuseaddr,bind=127.0.0.1"
-          "TCP:${facts.guestAddr}:${toString ports.memoryNodePort}"
-        ];
-        DynamicUser = true;
-        Restart = "always";
-        RestartSec = "5s";
-        MemoryMax = "64M";
-        PrivateDevices = true;
-        PrivateTmp = true;
-        NoNewPrivileges = true;
-        ProtectSystem = "strict";
-        ProtectHome = true;
-        RestrictAddressFamilies = [
-          "AF_INET"
-          "AF_INET6"
-        ];
-        # Only the guest may be dialed; the listener is loopback-only.
-        IPAddressAllow = "127.0.0.1 ${facts.guestAddr}";
-        IPAddressDeny = "any";
-      };
-      # A forward that dies silently takes this agent's memory tools with it.
-      onFailure = [ "cloudflare-email@%n.service" ];
-    };
   };
 }

@@ -26,7 +26,10 @@ pkgs.dockerTools.buildLayeredImage {
 
   config = {
     Entrypoint = [ "${memory}/bin/memory-mcp" ];
-    WorkingDirectory = "/var/lib/memory";
+    # No WORKDIR: the pod sets its own writable path, and a cwd that does not exist
+    # in the image makes runc fail before the process starts (readOnlyRootFilesystem
+    # cannot create it either).
+    WorkingDirectory = "/";
     Env = [
       "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
       "PYTHONUNBUFFERED=1"
