@@ -64,6 +64,7 @@ class AlbumTests(unittest.TestCase):
         safe=True,
         run_state="complete",
         calibration=True,
+        undecided=(),
     ):
         assets = {}
         for asset_id in delete:
@@ -86,7 +87,7 @@ class AlbumTests(unittest.TestCase):
             "delete": sorted(delete),
             "review": sorted(review),
             "keep": sorted(keep),
-            "undecided": [],
+            "undecided": sorted(undecided),
             "assets": assets,
             "counts": {
                 "delete": len(delete),
@@ -94,8 +95,8 @@ class AlbumTests(unittest.TestCase):
                 "keep": len(keep),
                 "capped": 0,
                 "decided": len(assets),
-                "undecided": 0,
-                "universe": len(assets),
+                "undecided": len(undecided),
+                "universe": len(assets) + len(undecided),
             },
             "safe_to_delete": safe,
         }
@@ -145,6 +146,45 @@ class AlbumTests(unittest.TestCase):
         )
         with self.assertRaises(AlbumError):
             load_export(self.database, path)
+
+    def test_review_only_sync_accepts_a_partial_uncalibrated_export(self):
+        export, path = self.export(
+            safe=False, calibration=False, undecided=("u1", "u2")
+        )
+        reports = sync_export(
+            self.database,
+            self.client,
+            export,
+            path=path,
+            kinds=("review",),
+            reconcile=True,
+        )
+        self.assertEqual([report.kind for report in reports], ["review"])
+        review_id = self.database.album("review")["immich_album_id"]
+        self.assertEqual(self.fake.album_asset_ids(review_id), ["r1"])
+        self.assertIsNone(self.database.album("delete"))
+
+    def test_delete_sync_still_requires_safe_to_delete(self):
+        export, path = self.export(safe=False, undecided=("u1",))
+        with self.assertRaises(AlbumError):
+            sync_export(
+                self.database,
+                self.client,
+                export,
+                path=path,
+                kinds=("delete",),
+            )
+
+    def test_unknown_album_kind_is_refused(self):
+        export, path = self.export()
+        for kinds in (("bogus",), ("calibration-dev",), (), "review"):
+            with self.subTest(kinds=kinds):
+                with self.assertRaises(AlbumError):
+                    sync_export(
+                        self.database, self.client, export, path=path, kinds=kinds
+                    )
+        with self.assertRaises(AlbumError):
+            load_export(self.database, path, kinds=())
 
     def test_verify_accepts_a_matching_artifact(self):
         export, path = self.export()

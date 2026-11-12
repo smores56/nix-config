@@ -137,6 +137,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="re-read album counts after writing (default: on)",
     )
     sync.add_argument("--chunk", type=chunk_size, default=100)
+    sync.add_argument(
+        "--kind",
+        choices=("both", "delete", "review"),
+        default="both",
+        help="write one album only (review is safe for a partial run)",
+    )
     probe = album_commands.add_parser(
         "preflight", help="prove the album key's scopes with a probe asset"
     )
@@ -445,7 +451,10 @@ def albums_command(args: argparse.Namespace) -> int:
                 print("photo-triage: no completed scan in the database", file=sys.stderr)
                 return 1
             path = data_dir() / f"triage-membership-{scan_id}.json"
-        export = load_export(database, path)
+        kinds = (
+            ("delete", "review") if args.kind == "both" else (str(args.kind),)
+        )
+        export = load_export(database, path, kinds=kinds)
         if args.scan_id is not None and export["scan_id"] != args.scan_id:
             raise AlbumError(
                 f"export belongs to scan {export['scan_id']}, not {args.scan_id}"
@@ -465,6 +474,7 @@ def albums_command(args: argparse.Namespace) -> int:
                 dry_run=args.dry_run,
                 reconcile=args.reconcile,
                 chunk=args.chunk,
+                kinds=kinds,
             )
         except BaseException as error:
             if run_id is not None:

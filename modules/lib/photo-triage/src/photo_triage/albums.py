@@ -63,7 +63,25 @@ def manifest_digest(export: dict[str, Any]) -> str:
     return hashlib.sha256(_canonical(payload)).hexdigest()
 
 
-def load_export(database: Database, path: str | Path) -> dict[str, Any]:
+WRITABLE_KINDS = ("delete", "review")
+
+
+def _checked_kinds(kinds: tuple[str, ...]) -> tuple[str, ...]:
+    if isinstance(kinds, str) or not kinds:
+        raise AlbumError("no album kinds requested")
+    unknown = sorted(set(kinds) - set(WRITABLE_KINDS))
+    if unknown:
+        raise AlbumError(f"unknown album kinds: {unknown}")
+    return tuple(dict.fromkeys(kinds))
+
+
+def load_export(
+    database: Database,
+    path: str | Path,
+    *,
+    kinds: tuple[str, ...] = WRITABLE_KINDS,
+) -> dict[str, Any]:
+    kinds = _checked_kinds(kinds)
     path = Path(path)
     try:
         export = json.loads(path.read_text())
@@ -71,7 +89,7 @@ def load_export(database: Database, path: str | Path) -> dict[str, Any]:
         raise AlbumError(f"cannot read export {path}: {error}") from error
     if not isinstance(export, dict):
         raise AlbumError(f"export {path} is not a JSON object")
-    verify_export(database, export, path=path)
+    verify_export(database, export, path=path, kinds=kinds)
     return export
 
 
@@ -81,8 +99,14 @@ def verify_export(
     *,
     path: str | Path | None = None,
     require_calibration: bool = True,
+    kinds: tuple[str, ...] = WRITABLE_KINDS,
 ) -> None:
-    """Refuse any export that is not the latest complete decide artifact."""
+    """Refuse any export that is not the latest complete decide artifact.
+
+    `kinds` narrows the run to one album. Only the delete album needs a complete
+    universe and a passed calibration; a review-only sync of a partial run is
+    safe because it never proposes a deletion.
+    """
     required = {
         "scan_id",
         "scan_state",
@@ -107,7 +131,7 @@ def verify_export(
         raise AlbumError(f"export is missing fields: {missing}")
     if export["scan_state"] != "complete":
         raise AlbumError(f"export scan state is {export['scan_state']}, not complete")
-    if export["safe_to_delete"] is not True:
+    if "delete" in kinds and export["safe_to_delete"] is not True:
         raise AlbumError("export is not marked safe_to_delete")
     if manifest_digest(export) != export["manifest_sha256"]:
         raise AlbumError("export manifest hash does not match its contents")
@@ -177,7 +201,7 @@ def verify_export(
         raise AlbumError(
             f"scan {export['scan_id']} is not the latest complete scan; rescan and decide first"
         )
-    if require_calibration:
+    if require_calibration and "delete" in kinds:
         report_row = database.latest_calibration_report(export["scan_id"])
         if report_row is None or report_row["state"] != "complete":
             raise AlbumError(
@@ -394,16 +418,18 @@ def sync_export(
     dry_run: bool = False,
     reconcile: bool = True,
     chunk: int = 100,
+    kinds: tuple[str, ...] = WRITABLE_KINDS,
     sleep: Callable[[float], None] = time.sleep,
 ) -> list[AlbumReport]:
-    verify_export(database, export, path=path)
+    kinds = _checked_kinds(kinds)
+    verify_export(database, export, path=path, kinds=kinds)
     generation = int(export["run_id"])
     if not dry_run:
         if client is None:
             raise AlbumError("a live album sync needs an Immich client")
         client.assert_album_permissions()
     reports: list[AlbumReport] = []
-    for kind in ("delete", "review"):
+    for kind in kinds:
         assert client is not None or dry_run
         reports.append(
             sync_album(

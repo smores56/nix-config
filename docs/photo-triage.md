@@ -140,6 +140,14 @@ syncing albums.
 5. Only a passing report for the same decide run and policy fingerprint lets
    `photo-triage-albums sync` write the albums:
    `photo-triage-albums sync --scan-id <scan> --dry-run`, then `sync`.
+   A run you stop before scoring finishes (its scan is complete) can still
+   publish the human queue: `photo-triage-albums sync --scan-id <scan>
+   --kind review` skips the `safe_to_delete` and calibration gates because a
+   review album proposes no deletion. Run `analyze` then `decide` first.
+   Undecided images stay out of both albums, so a photo missing from
+   `triage-review` may simply be unscored, and review-only never refreshes an
+   older `triage-delete`; that album still holds the previous decide run's
+   members until a full sync.
 6. Delete in the Immich UI from `triage-delete`; use `triage-review` to feed
    labels back into the next run.
 
