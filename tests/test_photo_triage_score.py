@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from contextlib import redirect_stdout
 from pathlib import Path
 
@@ -119,6 +120,22 @@ class ScoreTests(unittest.TestCase):
         self.assertEqual(stats["scored"], 0)
         self.assertEqual(stats["model_calls"], 0)
         self.assertEqual(len(self.fake_llm.requests), model_requests)
+
+    def test_reuse_marks_commit_in_batches(self):
+        self.score()
+        second_scan = scan_library(
+            self.immich, self.database, page_size=100, sleep=lambda _: None
+        )
+        with unittest.mock.patch("photo_triage.score.REUSE_COMMIT_EVERY", 2):
+            stats = self.score(second_scan)
+        self.assertEqual(stats["reused"], self.scanned)
+        states = [
+            str(row["state"])
+            for row in self.database.connection.execute(
+                "SELECT state FROM scan_assets WHERE scan_id = ?", (second_scan,)
+            )
+        ]
+        self.assertEqual(states, ["reused"] * self.scanned)
 
     def test_prompt_and_schema(self):
         self.score()

@@ -29,6 +29,10 @@ MAX_MODEL_ATTEMPTS = 3
 # old 300 cut valid replies off mid-object.
 SCORE_MAX_TOKENS = 512
 MAX_REPLY_CHARS = 4096
+# A reuse mark is cheap to redo, so commit them in batches; a fsync per asset
+# dominated the wall clock of a full-library walk. Model results still commit
+# immediately because they cost a GPU call.
+REUSE_COMMIT_EVERY = 200
 DETAIL_MAX_CHARS = 120
 # llama.cpp phrases we can name without persisting its response body.
 MODEL_FAILURE_CLASSES = (
@@ -332,6 +336,7 @@ def score_library(
     try:
         asset_ids = database.pending_assets(scan_id, max_assets)
         stats["pending"] = len(asset_ids)
+        reused_pending = 0
         for asset_id in asset_ids:
             revision = database.asset_revision(asset_id)
             cached = database.preview(asset_id)
@@ -351,8 +356,11 @@ def score_library(
                     prompt_version,
                 ):
                     database.mark_scan_asset(scan_id, asset_id, "reused")
-                    database.commit()
                     stats["reused"] += 1
+                    reused_pending += 1
+                    if reused_pending >= REUSE_COMMIT_EVERY:
+                        database.commit()
+                        reused_pending = 0
                     continue
             raw, preview_status = _fetch_preview(immich, asset_id, sleep)
             if raw is None:
@@ -408,8 +416,11 @@ def score_library(
                 asset_id, digest, resolved_model, resolved_mmproj, prompt_version
             ):
                 database.mark_scan_asset(scan_id, asset_id, "reused")
-                database.commit()
                 stats["reused"] += 1
+                reused_pending += 1
+                if reused_pending >= REUSE_COMMIT_EVERY:
+                    database.commit()
+                    reused_pending = 0
                 continue
             messages = _messages(normalized)
             score = None
@@ -485,6 +496,7 @@ def score_library(
                 stats["repaired_confidence"],
                 stats["repaired_truncated"],
             )
+        database.commit()
         state = "complete" if stats["scored"] + stats["reused"] > 0 else "failed"
         database.finish_run(run_id, state, stats)
         return stats
