@@ -41,6 +41,8 @@ in
     ./books-shelf.nix
     # The cluster serves the data apps; keep the host copies off (#509).
     ./retired-host-apps.nix
+    # Loopback -> cluster wrapper hop; inert until the wrapper moves.
+    ../../nixos/memory-forward.nix
   ];
   homeModules = [
     ../../features/todo.nix
@@ -50,6 +52,8 @@ in
     hostHardening.enable = true;
     # Flip only after the cluster serves every data app; stops the native services.
     clusterDataApps.enable = false;
+    # On in the same change that stops the host `memory-mcp` (both bind loopback:8182).
+    memoryForward.enable = false;
     # Deliberately off until the one-time GPU cutover (docs/kanbei-vm.md); Immich triage still
     # owns the 3090 and enabling this stops nvidia/llm on the host.
     kanbeiVm.enable = false;

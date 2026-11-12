@@ -13,6 +13,9 @@
   ssh = 22;
   # Read by the wrapper's listener, its tunnel ingress and the generated Maki `mcp.toml`; the shim and CLI keep a matching default.
   memoryMcp = 8182;
+  # The cluster's NodePort for the in-cluster wrapper: `memory-forward` dials it and the
+  # platform's Service manifest must name the same literal (tests/policies/check.sh asserts it).
+  memoryNodePort = 30082;
   # The memory-LLM gateway: Graphiti's extraction and embedding route.
   memoryLlmProxy = 8082;
   # Agent-VM capability brokers: guest-facing ports and the host broker ports they reach.

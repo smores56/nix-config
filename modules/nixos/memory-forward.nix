@@ -7,7 +7,12 @@
 # private host-to-guest path, never published to Cloudflare. The wrapper still
 # authenticates every request with the bearer token, and the platform's
 # NetworkPolicy admits only the tap addresses.
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
   cfg = config.memoryForward;
   ports = import ../ports.nix;

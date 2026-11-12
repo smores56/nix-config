@@ -15,6 +15,7 @@ let
     name = "cluster";
     index = 1;
   };
+  ports = import ../ports.nix;
   # Read only to assert the tap, address and state paths never collide with the agent guest.
   agentFacts = import ../lib/agent-vm.nix { inherit pkgs lib; };
   ingest = import ../lib/ingest-vm.nix { inherit lib; };
@@ -299,6 +300,9 @@ let
         firewall.allowedTCPPorts = [
           6443
           10250
+          # The memory wrapper's NodePort: the host's `memory-forward` dials it. The
+          # platform NetworkPolicy admits only the tap addresses; this only opens the node.
+          ports.memoryNodePort
         ];
       };
       systemd.network.networks."10-tap" = {

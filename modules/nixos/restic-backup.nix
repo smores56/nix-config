@@ -52,16 +52,23 @@ let
       # no excludes, unlike the SQLite sessions above.
       lettaState
     ];
-    exclude = lib.optionals (!cutover) [
-      "${assistantState}/home/.nanobot/logs"
-      "${assistantState}/home/.nanobot/run"
-      "${assistantState}/home/.nanobot/media"
-      "${assistantState}/home/.nanobot/llm_usage.sqlite3*"
-      "${assistantState}/home/.nanobot/sessions/*/sessions.sqlite3*"
-      "${assistantState}/home/.nanobot/sessions/sessions.sqlite3*"
-      "${assistantState}/home/.nanobot/web-token"
-      "${assistantState}/gh"
-    ];
+    exclude =
+      lib.optionals (!cutover) [
+        "${assistantState}/home/.nanobot/logs"
+        "${assistantState}/home/.nanobot/run"
+        "${assistantState}/home/.nanobot/media"
+        "${assistantState}/home/.nanobot/llm_usage.sqlite3*"
+        "${assistantState}/home/.nanobot/sessions/*/sessions.sqlite3*"
+        "${assistantState}/home/.nanobot/sessions/sessions.sqlite3*"
+        "${assistantState}/home/.nanobot/web-token"
+        "${assistantState}/gh"
+      ]
+      # The memory wrapper's live SQLite now lives on the graphiti share; a host-side
+      # walk copies a torn WAL set. The consistent artefact is the cluster's nightly
+      # export under `graphiti/db-dumps`, which restic picks up with the share.
+      ++ [
+        "/var/lib/data/graphiti/memory/registry.sqlite*"
+      ];
     # A missing state tree (the user removed it) must not fail the whole backup.
     # The dump runs in the guest; a failure keeps the previous copy and still
     # backs up the durable tree.
