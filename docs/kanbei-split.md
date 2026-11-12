@@ -129,8 +129,8 @@ too. One mechanism filters every tap: dedicated `cluster-vm-in` and
 atomically by `iptables-restore --noflush`, and never unjumped. The forward
 policy is default-deny: no `vm-*` to `vm-*` forwarding at all (the `vm-+`
 wildcard covers future taps, including a Kanbei relay tap), private networks
-are dropped, and the only new-connection flows are TCP 80/443, DNS (53) and
-NTP (123). The host input chain accepts replies only; nothing on the host is
+are dropped, and the only new-connection flows are TCP 80/443, the cloudflared
+tunnel's TCP/UDP 7844, DNS (53) and NTP (123). The host input chain accepts replies only; nothing on the host is
 reachable from the guest. The cluster has no route to and no rule for a Kanbei
 relay, and evaluation asserts that no generated rule names a Kanbei tap.
 

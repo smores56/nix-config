@@ -87,10 +87,14 @@ let
     "224.0.0.0/3"
   ];
 
-  # The cluster's only new-connection egress: image pulls and Flux over HTTPS, DNS, NTP.
-  # Anything else, including every host/LAN/VM address and every other VM tap, is dropped.
+  # The cluster's only new-connection egress: image pulls and Flux over HTTPS, DNS, NTP,
+  # and the cloudflared tunnel edge. The tunnel's control connection is TCP/UDP 7844
+  # (QUIC, falling back to HTTP/2); without it the ingress connector retries forever
+  # instead of ever becoming Ready, so the allowlist has to name that port explicitly.
   egressFlows = [
     "-A cluster-vm-fwd -i ${facts.tap} -p tcp -m multiport --dports 80,443 -j ACCEPT"
+    "-A cluster-vm-fwd -i ${facts.tap} -p tcp --dport 7844 -j ACCEPT"
+    "-A cluster-vm-fwd -i ${facts.tap} -p udp --dport 7844 -j ACCEPT"
     "-A cluster-vm-fwd -i ${facts.tap} -p udp --dport 53 -j ACCEPT"
     "-A cluster-vm-fwd -i ${facts.tap} -p tcp --dport 53 -j ACCEPT"
     "-A cluster-vm-fwd -i ${facts.tap} -p udp --dport 123 -j ACCEPT"
