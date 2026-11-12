@@ -52,6 +52,13 @@
       url = "github:microvm-nix/microvm.nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # The kanbei control-plane agent, installed in the guest (modules/nixos/kanbei-agent.nix).
+    # The repo is private, so the input is fetched over SSH and the lock pins the revision;
+    # it pins the same nixpkgs rev as this flake, hence `follows`.
+    kanbei = {
+      url = "git+ssh://git@github.com/smores56/kanbei";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     # nanobot's Python environment: uv2nix builds the locked wheel set.
     pyproject-nix = {
       url = "github:pyproject-nix/pyproject.nix";
