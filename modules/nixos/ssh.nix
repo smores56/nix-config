@@ -140,7 +140,8 @@ in
           # agent directly.
           ssh_agent_addr = "/run/user/${toString config.users.users.${user}.uid}/fido2-agent";
           # pam_rssh signs with each authorized handle in turn; without a cue
-          # the touch wait looks like a hung sudo.
+          # the touch wait looks like a hung sudo. The module's SIGINT patch
+          # turns Ctrl-C during that wait into the password fallback below.
           cue = true;
         };
       };

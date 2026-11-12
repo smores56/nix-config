@@ -1,0 +1,463 @@
+diff -ruN base/Cargo.lock patched/Cargo.lock
+--- base/Cargo.lock	2026-11-12 00:54:03.241920068 -0500
++++ patched/Cargo.lock	2026-11-12 01:02:40.362097174 -0500
+@@ -300,6 +300,7 @@
+ dependencies = [
+  "base64",
+  "byteorder",
++ "libc",
+  "libsyslog",
+  "log",
+  "multisock",
+diff -ruN base/Cargo.toml patched/Cargo.toml
+--- base/Cargo.toml	2026-11-12 00:54:03.241951978 -0500
++++ patched/Cargo.toml	2026-11-12 01:02:40.362043834 -0500
+@@ -13,6 +13,7 @@
+ ssh-agent = { path = "./dep/ssh-agent.rs" }
+ multisock = "^1.0.0"
+ byteorder = "1.5.0"
++libc = "^0.2"
+ base64 = "^0.22.1"
+ openssl-sys = "^0.9"
+ openssl = "^0.10"
+diff -ruN base/src/error.rs patched/src/error.rs
+--- base/src/error.rs	2026-11-12 00:54:03.243201559 -0500
++++ patched/src/error.rs	2026-11-12 01:02:40.360217987 -0500
+@@ -22,6 +22,7 @@
+     OptValEmptyErr(String),
+     OptVarErr(String),
+     SendPromptErr,
++    Interrupted,
+ }
+ 
+ impl RsshErr {
+@@ -57,6 +58,7 @@
+             RsshErr::OptValEmptyErr(name) => format!("Value of option `{}` is empty", name),
+             RsshErr::OptVarErr(name) => format!("Failed to evaluate variables in option `{}`", name),
+             RsshErr::SendPromptErr => S!("Failed to send prompt message"),
++            RsshErr::Interrupted => S!("Interrupted while waiting for the device"),
+         };
+         f.write_str(&msg)
+     }
+diff -ruN base/src/interrupt.rs patched/src/interrupt.rs
+--- base/src/interrupt.rs	1969-12-31 19:00:00.000000000 -0500
++++ patched/src/interrupt.rs	2026-11-12 01:03:09.198013106 -0500
+@@ -0,0 +1,91 @@
++//! Cancellable waits around the agent signature request.
++//!
++//! sudo treats PAM authentication as a critical section: it blocks SIGINT and
++//! SIGQUIT for the whole stack and only unblocks them around its own password
++//! prompt.  A touch request inside an auth module therefore cannot be
++//! cancelled.  This guard unblocks SIGINT for the duration of the signature
++//! request only, catches it, and exposes the flag to the agent client, which
++//! aborts the read and drops the pending ssh-sk-helper.
++
++use log::*;
++use std::sync::atomic::{AtomicBool, Ordering};
++use std::time::Duration;
++
++/// How long a blocking agent read may wait before re-checking the flag.
++pub const READ_POLL: Duration = Duration::from_millis(100);
++
++static INSTALLED: AtomicBool = AtomicBool::new(false);
++static INTERRUPTED: AtomicBool = AtomicBool::new(false);
++
++extern "C" fn handle_sigint(_: libc::c_int) {
++    INTERRUPTED.store(true, Ordering::SeqCst);
++}
++
++pub struct SigintGuard {
++    old_action: libc::sigaction,
++    old_mask: libc::sigset_t,
++    active: bool,
++}
++
++impl SigintGuard {
++    pub fn install() -> SigintGuard {
++        let mut guard = SigintGuard {
++            old_action: unsafe { std::mem::zeroed() },
++            old_mask: unsafe { std::mem::zeroed() },
++            active: false,
++        };
++        INTERRUPTED.store(false, Ordering::SeqCst);
++        unsafe {
++            let mut action: libc::sigaction = std::mem::zeroed();
++            let handler: extern "C" fn(libc::c_int) = handle_sigint;
++            action.sa_sigaction = handler as *const () as libc::sighandler_t;
++            action.sa_flags = 0;
++            libc::sigemptyset(&mut action.sa_mask);
++            if libc::sigaction(libc::SIGINT, &action, &mut guard.old_action) != 0 {
++                warn!(
++                    "Failed to install SIGINT handler: {}",
++                    std::io::Error::last_os_error()
++                );
++                return guard;
++            }
++            let mut set: libc::sigset_t = std::mem::zeroed();
++            libc::sigemptyset(&mut set);
++            libc::sigaddset(&mut set, libc::SIGINT);
++            if libc::sigprocmask(libc::SIG_UNBLOCK, &set, &mut guard.old_mask) != 0 {
++                warn!(
++                    "Failed to unblock SIGINT: {}",
++                    std::io::Error::last_os_error()
++                );
++                libc::sigaction(libc::SIGINT, &guard.old_action, std::ptr::null_mut());
++                return guard;
++            }
++            guard.active = true;
++            INSTALLED.store(true, Ordering::SeqCst);
++        }
++        guard
++    }
++}
++
++impl Drop for SigintGuard {
++    fn drop(&mut self) {
++        if !self.active {
++            return;
++        }
++        unsafe {
++            // Re-block before returning the handler to sudo so an interrupt
++            // cannot be delivered to, and swallowed by, sudo's own handler.
++            libc::sigprocmask(libc::SIG_SETMASK, &self.old_mask, std::ptr::null_mut());
++            libc::sigaction(libc::SIGINT, &self.old_action, std::ptr::null_mut());
++        }
++        INSTALLED.store(false, Ordering::SeqCst);
++    }
++}
++
++pub fn interrupted() -> bool {
++    INSTALLED.load(Ordering::SeqCst) && INTERRUPTED.load(Ordering::SeqCst)
++}
++
++/// Whether a guard is active, i.e. whether an interrupt is being watched for.
++pub fn armed() -> bool {
++    INSTALLED.load(Ordering::SeqCst)
++}
+diff -ruN base/src/lib.rs patched/src/lib.rs
+--- base/src/lib.rs	2026-11-12 00:54:03.243224059 -0500
++++ patched/src/lib.rs	2026-11-12 01:02:40.360048916 -0500
+@@ -5,6 +5,7 @@
+ mod error;
+ mod logger;
+ mod sign_verify;
++mod interrupt;
+ mod ssh_agent_auth;
+ mod pam_items;
+ 
+@@ -216,6 +217,10 @@
+             Ok(())
+         };
+ 
++        // sudo blocks SIGINT for the whole PAM stack; hold the guard across the
++        // agent round trip so both the identity list and the touch wait can
++        // be cancelled.
++        let _guard = interrupt::SigintGuard::install();
+         let mut agent = ssh_agent_auth::AgentClient::new(ssh_agent_addr.as_str());
+         let result = agent.list_identities().map(|client_keys| {
+             debug!("SSH-Agent reports {} keys", client_keys.len());
+@@ -234,6 +239,10 @@
+                         return true;
+                     }
+                     Err(e) => {
++                        if matches!(e.downcast_ref::<RsshErr>(), Some(RsshErr::Interrupted)) {
++                            warn!("{}", e);
++                            return false;
++                        }
+                         warn!("Failed to authenticate key {}: {}", i, e);
+                         continue; // try next key
+                     }
+diff -ruN base/src/ssh_agent_auth.rs patched/src/ssh_agent_auth.rs
+--- base/src/ssh_agent_auth.rs	2026-11-12 00:54:03.243323290 -0500
++++ patched/src/ssh_agent_auth.rs	2026-11-12 01:02:40.360167937 -0500
+@@ -1,4 +1,3 @@
+-use byteorder::{BigEndian, ReadBytesExt};
+ use log::*;
+ use multisock::{SocketAddr, Stream};
+ use ssh_agent::proto;
+@@ -6,11 +5,12 @@
+ use ssh_agent::proto::signature;
+ use ssh_agent::proto::{from_bytes, to_bytes, Message};
+ 
+-use std::io::{Read, Write};
++use std::io::{self, Read, Write};
+ // use std::mem::size_of;
+ use std::net::Shutdown;
+ 
+ use super::error::RsshErr;
++use super::interrupt;
+ 
+ type ErrType = Box<dyn std::error::Error>;
+ 
+@@ -36,16 +36,150 @@
+     Ok(length)
+ }
+ 
++/// Read exactly `buf.len()` bytes, giving up as soon as SIGINT was caught.
++/// The read timeout keeps the flag observable even when a signal does not
++/// interrupt this thread's blocking read.
++fn read_exact_interruptible(stream: &mut Stream, buf: &mut [u8]) -> Result<(), ErrType> {
++    let mut filled = 0;
++    while filled < buf.len() {
++        if interrupt::interrupted() {
++            return Err(RsshErr::Interrupted.into_ptr());
++        }
++        match stream.read(&mut buf[filled..]) {
++            Ok(0) => {
++                return Err(io::Error::new(
++                    io::ErrorKind::UnexpectedEof,
++                    "SSH-agent closed the connection",
++                )
++                .into())
++            }
++            Ok(n) => filled += n,
++            Err(e) => match e.kind() {
++                // The guard sets a short read timeout so an interrupt stored
++                // by the handler becomes visible on the next pass.  Without
++                // it, a timeout is the original blocking error.
++                io::ErrorKind::Interrupted | io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut => {
++                    if !interrupt::armed() && e.kind() != io::ErrorKind::Interrupted {
++                        return Err(e.into());
++                    }
++                }
++                _ => return Err(e.into()),
++            },
++        }
++    }
++    Ok(())
++}
++
++/// The agent process and its uid behind a UNIX socket.  None for a TCP agent
++/// and for a forwarded agent, where the touch happens on another host.
++#[cfg(target_os = "linux")]
++fn peer_cred(stream: &Stream) -> Option<(libc::pid_t, libc::uid_t)> {
++    use std::os::unix::io::AsRawFd;
++
++    if let Stream::Unix(sock) = stream {
++        let mut cred: libc::ucred = unsafe { std::mem::zeroed() };
++        let mut len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
++        let rc = unsafe {
++            libc::getsockopt(
++                sock.as_raw_fd(),
++                libc::SOL_SOCKET,
++                libc::SO_PEERCRED,
++                &mut cred as *mut _ as *mut libc::c_void,
++                &mut len,
++            )
++        };
++        if rc == 0 && cred.pid > 0 {
++            return Some((cred.pid, cred.uid));
++        }
++    }
++    None
++}
++
++#[cfg(not(target_os = "linux"))]
++fn peer_cred(_: &Stream) -> Option<(libc::pid_t, libc::uid_t)> {
++    None
++}
++
++/// ssh-sk-helper processes currently waiting under `agent_pid` as `uid`.
++#[cfg(target_os = "linux")]
++fn pending_helpers(agent_pid: libc::pid_t, uid: libc::uid_t) -> Vec<libc::pid_t> {
++    let mut pids = Vec::new();
++    let entries = match std::fs::read_dir("/proc") {
++        Ok(entries) => entries,
++        Err(e) => {
++            warn!("Failed to scan /proc for ssh-sk-helper: {}", e);
++            return pids;
++        }
++    };
++    for entry in entries.flatten() {
++        let pid: libc::pid_t = match entry.file_name().to_str().and_then(|n| n.parse().ok()) {
++            Some(pid) => pid,
++            None => continue,
++        };
++        let status = match std::fs::read_to_string(format!("/proc/{}/status", pid)) {
++            Ok(status) => status,
++            Err(_) => continue,
++        };
++        if helper_matches(&status, agent_pid, uid) {
++            pids.push(pid);
++        }
++    }
++    pids
++}
++
++#[cfg(not(target_os = "linux"))]
++fn pending_helpers(_: libc::pid_t, _: libc::uid_t) -> Vec<libc::pid_t> {
++    Vec::new()
++}
++
++#[cfg(target_os = "linux")]
++fn helper_matches(status: &str, agent_pid: libc::pid_t, uid: libc::uid_t) -> bool {
++    let name = status.lines().find_map(|l| l.strip_prefix("Name:\t"));
++    let ppid = status
++        .lines()
++        .find_map(|l| l.strip_prefix("PPid:\t"))
++        .and_then(|v| v.trim().parse::<libc::pid_t>().ok());
++    let owner = status
++        .lines()
++        .find_map(|l| l.strip_prefix("Uid:\t"))
++        .and_then(|v| v.split_whitespace().next())
++        .and_then(|v| v.parse::<libc::uid_t>().ok());
++    name == Some("ssh-sk-helper") && ppid == Some(agent_pid) && owner == Some(uid)
++}
++
++/// ssh-agent signs synchronously, so an abandoned request keeps the agent in
++/// waitpid and unresponsive.  Kill only the helper started for this request:
++/// the agent serves one client at a time, so anything already waiting under it
++/// belongs to a concurrent request.  SIGKILL cannot send the CTAP cancel, so
++/// the key may want one more tap before accepting a fresh assertion.
++#[cfg(target_os = "linux")]
++fn kill_pending_helpers(agent_pid: libc::pid_t, uid: libc::uid_t, existing: &[libc::pid_t]) {
++    for pid in pending_helpers(agent_pid, uid) {
++        if existing.contains(&pid) {
++            continue;
++        }
++        debug!("Killing pending ssh-sk-helper {}", pid);
++        unsafe {
++            libc::kill(pid, libc::SIGKILL);
++        }
++    }
++}
++
++#[cfg(not(target_os = "linux"))]
++fn kill_pending_helpers(_: libc::pid_t, _: libc::uid_t, _: &[libc::pid_t]) {}
++
+ impl<'a> AgentClient<'a> {
+     pub fn new(addr: &str) -> AgentClient<'_> {
+         AgentClient { addr, stream: None }
+     }
+ 
+     fn read_message(stream: &mut Stream) -> Result<Message, ErrType> {
+-        let length = checked_message_len(stream.read_u32::<BigEndian>()?)?;
++        let mut length_buf = [0u8; 4];
++        read_exact_interruptible(stream, &mut length_buf)?;
++        let length = checked_message_len(u32::from_be_bytes(length_buf))?;
+         debug!("read_message len={}", length);
+-        let mut buffer: Vec<u8> = vec![0; length as usize];
+-        stream.read_exact(buffer.as_mut_slice())?;
++        let mut buffer: Vec<u8> = vec![0; length];
++        read_exact_interruptible(stream, buffer.as_mut_slice())?;
+         trace!("Read {} bytes: {:02X?}", buffer.len(), buffer);
+         let msg: Message = from_bytes(buffer.as_slice())?;
+         Ok(msg)
+@@ -58,6 +192,13 @@
+         Ok(())
+     }
+ 
++    fn disconnect(&mut self) {
++        if let Some(ref mut s) = self.stream {
++            let _ = s.shutdown(Shutdown::Both);
++        }
++        self.stream = None;
++    }
++
+     fn connect(&mut self) -> Result<(), ErrType> {
+         let addr = if self.addr.starts_with('/') {
+             String::from("unix:") + self.addr
+@@ -65,10 +206,7 @@
+             String::from(self.addr)
+         };
+         let sockaddr: SocketAddr = addr.parse()?;
+-        if let Some(ref mut s) = self.stream {
+-            let _ = s.shutdown(Shutdown::Both);
+-            self.stream = None;
+-        }
++        self.disconnect();
+         self.stream = Some(Stream::connect(&sockaddr)?);
+         info!("Connected to {:?}", sockaddr);
+         Ok(())
+@@ -79,6 +217,9 @@
+             self.connect()?;
+         }
+         let sock = self.stream.as_mut().unwrap();
++        if interrupt::armed() {
++            sock.set_read_timeout(Some(interrupt::READ_POLL))?;
++        }
+         Self::write_message(sock, cmd)?;
+         Self::read_message(sock)
+     }
+@@ -86,6 +227,9 @@
+     fn call_agent(&mut self, cmd: &Message, retry: u32) -> Result<Message, ErrType> {
+         let mut ret: Result<Message, ErrType> = Err(RsshErr::RetryLT1Err.into_ptr());
+         for _i in 0..retry {
++            if interrupt::interrupted() {
++                break;
++            }
+             ret = self.call_agent_once(cmd);
+             if let Ok(val) = ret {
+                 return Ok(val);
+@@ -131,7 +275,40 @@
+             data: data.to_vec(),
+             flags,
+         };
+-        let msg = self.call_agent(&Message::SignRequest(args), NET_RETRY_CNT)?;
++        // The guard installed in sm_authenticate unblocks SIGINT for the whole
++        // agent round trip; here a cancelled request must also stop the key
++        // loop and drop the waiting helper.
++        if self.stream.is_none() {
++            if let Err(e) = self.connect() {
++                if interrupt::interrupted() {
++                    return Err(RsshErr::Interrupted.into_ptr());
++                }
++                return Err(e);
++            }
++        }
++        let cred = self.stream.as_ref().and_then(peer_cred);
++        let existing = cred
++            .map(|(agent_pid, uid)| pending_helpers(agent_pid, uid))
++            .unwrap_or_default();
++        let msg = match self.call_agent(&Message::SignRequest(args), NET_RETRY_CNT) {
++            Ok(msg) => {
++                if interrupt::interrupted() {
++                    self.disconnect();
++                    return Err(RsshErr::Interrupted.into_ptr());
++                }
++                msg
++            }
++            Err(e) => {
++                if interrupt::interrupted() {
++                    if let Some((agent_pid, uid)) = cred {
++                        kill_pending_helpers(agent_pid, uid, &existing);
++                    }
++                    self.disconnect();
++                    return Err(RsshErr::Interrupted.into_ptr());
++                }
++                return Err(e);
++            }
++        };
+         if let Message::Failure = msg {
+             return Err(RsshErr::AgentFailureErr.into_ptr());
+         }
+@@ -157,3 +334,29 @@
+         assert!(checked_message_len((MAX_AGENT_MESSAGE_LEN as u32) + 1).is_err());
+     }
+ }
++
++#[cfg(all(test, unix))]
++mod interrupt_tests {
++    use super::*;
++    use std::os::unix::net::UnixStream;
++
++    #[test]
++    fn sigint_aborts_agent_read() {
++        let (side, _peer) = UnixStream::pair().unwrap();
++        side.set_read_timeout(Some(interrupt::READ_POLL)).unwrap();
++        let mut stream = Stream::from(side);
++        let guard = interrupt::SigintGuard::install();
++        unsafe {
++            libc::raise(libc::SIGINT);
++        }
++        assert!(interrupt::interrupted());
++        let mut buf = [0u8; 4];
++        let err = read_exact_interruptible(&mut stream, &mut buf).unwrap_err();
++        assert!(matches!(
++            err.downcast_ref::<RsshErr>(),
++            Some(RsshErr::Interrupted)
++        ));
++        drop(guard);
++        assert!(!interrupt::interrupted());
++    }
++}

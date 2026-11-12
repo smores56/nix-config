@@ -211,18 +211,25 @@ system: [
     };
 
     # Adds the user-presence check so sudo rejects a touchless signature even from a compromised
-    # agent. Full buildRustPackage: overrideAttrs can't recompute cargoDeps after cargoHash changes.
+    # agent, and lets Ctrl-C cancel the touch wait (sudo blocks SIGINT while PAM runs; see the
+    # patch). Full buildRustPackage: overrideAttrs can't recompute cargoDeps after cargoHash changes.
     pam_rssh = prev.rustPlatform.buildRustPackage (finalAttrs: {
       pname = "pam_rssh";
       version = "unstable-2026-10-28";
-      src = prev.fetchFromGitHub {
-        owner = "doccstat";
-        repo = "pam_rssh";
-        rev = "116992cdae05728abf19ea0d81f264d50dd0910e";
-        hash = "sha256-v9/WuYAlSXGrQ+c7K+pdFr3BhG9ZtprvYYJL540EbDA=";
-        fetchSubmodules = false;
+      # Patches go on the source, not in `patches`: cargoDeps' vendor staging
+      # reads the unpatched tree's Cargo.lock and would reject the added libc.
+      src = prev.applyPatches {
+        name = "pam_rssh-src";
+        src = prev.fetchFromGitHub {
+          owner = "z4yx";
+          repo = "pam_rssh";
+          rev = "116992cdae05728abf19ea0d81f264d50dd0910e";
+          hash = "sha256-v9/WuYAlSXGrQ+c7K+pdFr3BhG9ZtprvYYJL540EbDA=";
+          fetchSubmodules = false;
+        };
+        patches = [ ./pam_rssh-sigint.patch ];
       };
-      cargoHash = "sha256-gph4kAScKjFg1KsPb98dDg3uDeHBagM5PqkhGYkIVvg=";
+      cargoHash = "sha256-P+Z9nZ6dz/eIfxtvCDPu4EmowWkcMWBo6WgMEagI+8Y=";
 
       postPatch = ''
         substituteInPlace src/auth_keys.rs \
