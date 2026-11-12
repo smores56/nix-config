@@ -12,8 +12,8 @@ itself is `smores56/sdlc#509`.
 - Host root reads everything: every guest disk, `/dev/vfio`, swtpm state,
   relay sockets and `kanbei`'s logs. Root on the host is outside the bar.
 - `maki` runs unsandboxed as `smores`, who is in `wheel`. A touch of the
-  YubiKey is the human authorization for sudo, and one touch grants root for
-  that command.
+  YubiKey is the human authorization for sudo; the ticket lasts 15 minutes on
+  that TTY (the owner reverted the zero-ticket default).
 - Guests that escape their VM (or a kernel/hypervisor 0-day) reach the host and
   therefore everything. Physical separation is the upgrade path.
 
@@ -21,10 +21,11 @@ itself is `smores56/sdlc#509`.
 
 `modules/nixos/host-hardening.nix`, enabled only on `smortress`:
 
-- `Defaults timestamp_timeout=0,use_pty`: every sudo spends its own touch, and
-  the command runs on a fresh pty so a process left in the caller's terminal
-  cannot type into it. Without this a single touch bought 15 minutes
-  (`modules/nixos/ssh.nix`).
+- `Defaults timestamp_timeout=15,tty_tickets,use_pty`: a touch buys a 15-minute
+  ticket scoped to that TTY, and the command runs on a fresh pty so a process
+  left in the caller's terminal cannot type into it. The owner reverted the
+  original zero-ticket default on 2026-11-12; the shorter window was part of the
+  design, and the wider ticket is an accepted residual.
 - `kernel.yama.ptrace_scope=2`: only a parent or `CAP_SYS_PTRACE` may attach,
   so one process of `smores` cannot read another's memory or environment.
 - `/proc` remounted `hidepid=2,gid=proc`: other users' process entries (and
@@ -58,7 +59,7 @@ Verify on the host after a switch:
 ```sh
 cat /proc/1/cmdline >/dev/null && echo "hidepid not active"
 ps -eo user,pid,args            # as smores: no other user's processes
-sudo -v; sudo -v                # each prompts for a fresh touch
+sudo -v                       # one touch; the next sudo in this TTY should not prompt
 ```
 
 ## The `cluster` guest
@@ -349,8 +350,10 @@ Why accepted: the alternative is a separate UID or command-bound authorization
 for maki (a `sudo` rule per command, or a privileged helper that only accepts
 an allow-list). The owner chose the touch residual over running maki as its own
 user, and the restated goal is "unattended maki cannot reach Kanbei **without a
-later human touch**". Revisit if maki ever gets a separate UID or sudo gains a
-command-bound approval flow.
+later human touch**". The 15-minute per-TTY ticket widens this window: once the
+owner authenticates, any process on that TTY can use the ticket until it
+expires. Revisit if maki ever gets a separate UID or sudo gains a command-bound
+approval flow.
 
 ### Proc-group members keep a wider process view
 

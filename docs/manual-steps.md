@@ -154,7 +154,7 @@ into a host an unattended assistant cannot quietly escalate on. After the first
 switch that enables it, confirm all three on the machine:
 
 ```sh
-sudo -v; sudo -v                 # each invocation asks for a fresh touch
+sudo -v                          # one touch; the next sudo in this TTY should not prompt
 cat /proc/1/cmdline              # as smores: Permission denied
 cat /sys/kernel/yama/ptrace_scope  # 2
 systemctl status proc-hidepid    # active (exited); /proc has hidepid=2,gid=proc

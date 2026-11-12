@@ -164,6 +164,10 @@ in
 
       interactiveShellInit = lib.mkMerge [
         ''
+          # pure probes /proc/1/cgroup to detect containers, but hidepid=2 hides
+          # it from smores, so every prompt printed two warnings. Nothing on this
+          # host runs the shell inside a container.
+          set -g pure_enable_container_detection false
           source ${zoxideFish}
           pfetch
           for p in $NIX_PROFILES

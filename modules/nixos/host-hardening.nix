@@ -1,6 +1,6 @@
-# Hardening for a host where an unattended assistant runs as the owner: no
-# sudo ticket for a later command to ride, no cross-process ptrace, and no
-# other users' processes in /proc. What it cannot fix is in docs/kanbei-split.md.
+# Hardening for a host where an unattended assistant runs as the owner: a
+# short per-TTY sudo ticket, no cross-process ptrace, and no other users'
+# processes in /proc. What it cannot fix is in docs/kanbei-split.md.
 {
   config,
   lib,
@@ -11,16 +11,17 @@ let
   cfg = config.hostHardening;
 in
 {
-  options.hostHardening.enable = lib.mkEnableOption "Kanbei host hardening (no sudo ticket, no ptrace, hidden processes)";
+  options.hostHardening.enable = lib.mkEnableOption "Kanbei host hardening (per-TTY sudo ticket, no ptrace, hidden processes)";
 
   config = lib.mkIf cfg.enable {
     # One writer per Defaults option: ssh.nix renders the single
     # `Defaults timestamp_timeout` line from its own option, and this module
-    # sets that option to 0 (one touch per command, not a 15-minute ticket) and
-    # adds `use_pty`, so a process left behind in the caller's terminal cannot
+    # sets that option to 15 (the owner reverted the zero-ticket default: a
+    # touch buys a 15-minute ticket on that TTY) and adds `use_pty` plus
+    # `tty_tickets`, so a process left behind in the caller's terminal cannot
     # feed keystrokes to the root command.
-    sudoTicketTimeout = 0;
-    security.sudo.extraConfig = "Defaults use_pty";
+    sudoTicketTimeout = 15;
+    security.sudo.extraConfig = "Defaults use_pty\nDefaults tty_tickets";
 
     # Yama's default (1) lets any same-uid process attach; 2 restricts ptrace
     # to a parent or CAP_SYS_PTRACE.
