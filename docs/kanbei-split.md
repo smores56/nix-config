@@ -168,13 +168,16 @@ in `docs/manual-steps.md`, design and recovery flow in
   `10de:1aef`) are bound to `vfio-pci` and passed through. They sit alone in
   IOMMU group 16, so no ACS override is needed; `kanbei-vm-verify` re-checks the
   binding, the group contents and that no `nvidia` module is loaded.
-- The guest has no NIC. `vault` (ro) and `todo` (rw) are virtiofs shares with
-  the cluster guest's uid translation, so guest root maps to host `nobody` and
-  the guest payload uid 1000 maps to the host `vault` user (981). On the host,
-  `todo` is a size-capped ext4 image (`/var/lib/todo.img`, 256 MiB) mounted at
-  `/var/lib/data/todo`; the virtiofsd unit is ordered after that mount, so the
-  guest sees the mounted tree, never the plain directory an unmounted image
-  would leave behind.
+- The guest has no NIC. `vault` (ro) and `todo` (rw) are virtiofs shares whose
+  uid translation maps the payload uid 1000 and the trusted kernel uid 1001 to the
+  host `vault` user (981); guest root maps to `nobody`. The inbox share is
+  root-owned and read-only, and only the kernel uid is translated to host root,
+  so the payload uid and every other non-root uid cannot read a batch. (Guest
+  root can assume the kernel uid; the mapping keeps the payload identity out,
+  not a privileged one.) On the host, `todo` is a size-capped ext4 image
+  (`/var/lib/todo.img`, 256 MiB) mounted at `/var/lib/data/todo`; the virtiofsd
+  unit is ordered after that mount, so the guest sees the mounted tree, never
+  the plain directory an unmounted image would leave behind.
 - `/var/lib/microvms/kanbei/data.img` is a LUKS2 container. Restic snapshots
   only that ciphertext, after a hook that stops the guest (a dirty image is not
   snapshotted) and restarts it. The swtpm state, the console log, the recovery

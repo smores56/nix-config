@@ -24,6 +24,9 @@ let
     vsockCid = 4;
   };
 
+  # Shared guest-agent facts: the trusted kernel uid and the payload uid.
+  agentFacts = import ../lib/kanbei-agent.nix;
+
   inherit (facts) stateDir vmStateDir;
   # Root-only: swtpm NVRAM is the seal for the guest disk.
   swtpmDir = "${stateDir}/swtpm";
@@ -78,14 +81,27 @@ let
   vfioParam = "vfio-pci.ids=${vfioIds}";
 
   # The guest's payload user (T11 runs the service as it) so the rw shares land as `vault` on
-  # the host instead of host root. Guest root maps to `nobody`, like the cluster guest.
+  # the host instead of host root. The trusted agent kernel has its own uid (`agentFacts`) and
+  # maps there too; guest root keeps mapping to `nobody`.
   guestUid = 1000;
   vaultId = config.users.users.vault.uid;
   dataTranslation = [
     "--translate-uid=guest:0:65534:1"
     "--translate-uid=guest:${toString guestUid}:${toString vaultId}:1"
+    "--translate-uid=guest:${toString agentFacts.coreUid}:${toString vaultId}:1"
     "--translate-gid=guest:0:65534:1"
     "--translate-gid=guest:${toString guestUid}:${toString vaultId}:1"
+    "--translate-gid=guest:${toString agentFacts.coreUid}:${toString vaultId}:1"
+    "--modcaps=-mknod"
+  ];
+  # The inbox batches are 0600 root and the tree is 0750 root. Only the trusted kernel uid is
+  # mapped to host root on this read-only share; guest root maps to `nobody`, and the payload
+  # uid 1000 keeps its own identity (and so cannot read a batch).
+  inboxTranslation = [
+    "--translate-uid=guest:0:65534:1"
+    "--translate-uid=guest:${toString agentFacts.coreUid}:0:1"
+    "--translate-gid=guest:0:65534:1"
+    "--translate-gid=guest:${toString agentFacts.coreUid}:0:1"
     "--modcaps=-mknod"
   ];
 
@@ -268,15 +284,21 @@ let
     exit "$fail"
   '';
 
+  # The guest submodule is evaluated by microvm.nix in its own module system, which does not
+  # inherit the host's specialArgs; hand the input package over as a module argument.
+  kanbeiInput = inputs.kanbei.packages.${pkgs.stdenv.hostPlatform.system}.default;
+
   guest =
     { lib, ... }:
     {
+      _module.args.kanbeiInput = kanbeiInput;
       # T11: the llama.cpp chat/embeddings/rerank lanes. A guest module, so it only evaluates
       # while this guest exists (kanbeiVm.enable).
       imports = [
         ./kanbei-inference.nix
         ./kanbei-guest-access.nix
         ./kanbei-phone.nix
+        ./kanbei-agent.nix
       ];
 
       microvm = {
@@ -301,6 +323,8 @@ let
             mountPoint = "/mnt/kanbei/inbox";
             proto = "virtiofs";
             readOnly = true;
+            posixAcl = false;
+            extraArgs = inboxTranslation;
           }
           {
             tag = "kanbei-secrets";

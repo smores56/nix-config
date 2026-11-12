@@ -33,6 +33,7 @@ JOURNAL_UNITS = [
     "search-vm-model.service",
     "search-vm-state.service",
     "search-relay.service",
+    "kanbei.service",
     "kanbei-swtpm.service",
 ]
 TAIL = 80

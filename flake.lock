@@ -302,6 +302,26 @@
         "type": "github"
       }
     },
+    "kanbei": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1794453173,
+        "narHash": "sha256-TnEor3L0hQkfCPaPIQmEMUdH1Vh6d6F3/7/F8qTwfWc=",
+        "ref": "refs/heads/main",
+        "rev": "3664d3d358f459f45d4b44830c4f2ddac8668004",
+        "revCount": 54,
+        "type": "git",
+        "url": "ssh://git@github.com/smores56/kanbei"
+      },
+      "original": {
+        "type": "git",
+        "url": "ssh://git@github.com/smores56/kanbei"
+      }
+    },
     "lanzaboote": {
       "inputs": {
         "crane": "crane_2",
@@ -625,6 +645,7 @@
         "flake-parts": "flake-parts",
         "home-manager": "home-manager",
         "import-tree": "import-tree",
+        "kanbei": "kanbei",
         "lanzaboote": "lanzaboote",
         "microvm": "microvm",
         "niri": "niri",

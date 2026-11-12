@@ -532,7 +532,38 @@ in
           )
         );
 
-        # Phone pipeline contract (smores #593): the host folder is receive-encrypted,
+        # The guest agent is behind `kanbeiVm.enable = false` on the host, so the eval-*
+        # checks never see it. Force it on and prove the service is actually runnable: the
+        # identity unit has an ExecStart, the kernel runs as its own uid with the relay
+        # credential, and the inbox grant is limited to that uid.
+        kanbei-agent-guards = evalCheck "kanbei-agent-guards" (
+          toString (
+            let
+              host =
+                (config.flake.nixosConfigurations.smortress.extendModules {
+                  modules = [
+                    ({ lib, ... }: {
+                      kanbeiVm.enable = lib.mkForce true;
+                    })
+                  ];
+                }).config;
+              guest = host.microvm.vms.kanbei.config.config;
+              agent = guest.systemd.services.kanbei;
+              identity = guest.systemd.services.kanbei-age-identity;
+              inbox = lib.findFirst (s: s.tag == "inbox") null guest.microvm.shares;
+            in
+            assert host.kanbeiVm.enable;
+            assert agent.serviceConfig.User == "kanbei-core";
+            assert identity.script != "" && identity.path != [ ];
+            assert builtins.elem "relay-token:/run/kanbei-secrets/relay-token"
+              agent.serviceConfig.LoadCredential;
+            assert
+              inbox != null && inbox.readOnly && builtins.elem "--translate-uid=guest:1001:0:1" inbox.extraArgs;
+            assert guest.environment.etc."kanbei/manifest.json".text != "";
+            guest.system.build.toplevel.drvPath
+          )
+        );
+
         # owner-only, shared with the phone alone, and no restic job names the guest's
         # plaintext tree. The password contract is declared only while `kanbeiVm.enable`
         # is set: the key is not in `secrets/smortress.yaml`, so an unconditional
