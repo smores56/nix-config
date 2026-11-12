@@ -59,6 +59,7 @@ Verify on the host after a switch:
 ```sh
 cat /proc/1/cmdline >/dev/null && echo "hidepid not active"
 ps -eo user,pid,args            # as smores: no other user's processes
+cat /proc/sys/kernel/yama/ptrace_scope   # 2
 sudo -v                       # one touch; the next sudo in this TTY should not prompt
 ```
 

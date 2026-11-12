@@ -156,7 +156,7 @@ switch that enables it, confirm all three on the machine:
 ```sh
 sudo -v                          # one touch; the next sudo in this TTY should not prompt
 cat /proc/1/cmdline              # as smores: Permission denied
-cat /sys/kernel/yama/ptrace_scope  # 2
+cat /proc/sys/kernel/yama/ptrace_scope   # 2 (or: sysctl kernel.yama.ptrace_scope)
 systemctl status proc-hidepid    # active (exited); /proc has hidepid=2,gid=proc
 ```
 
