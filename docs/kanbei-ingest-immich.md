@@ -11,8 +11,8 @@ Table entry: `modules/lib/ingest-vm.nix`. Tool:
 
 ## API key (one-time, human)
 
-Create a dedicated key in Immich (Account Settings → API Keys) — not the
-photo-triage keys — with exactly these permissions:
+Create a dedicated key in Immich (Account Settings → API Keys) with exactly
+these permissions:
 
 | permission | why |
 |---|---|

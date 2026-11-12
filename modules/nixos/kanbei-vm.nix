@@ -4,8 +4,8 @@
 # plumbing (VFIO binding, swtpm, console, backup).
 #
 # Everything is behind `kanbeiVm.enable` (default false). Until the one-time cutover in
-# docs/kanbei-vm.md the host still runs Immich/photo-triage on the 3090, so enabling is a
-# deliberate operator action; with it enabled the nvidia/llm/photo-triage modules go inert
+# docs/kanbei-vm.md the host still runs Immich and llama-cpp on the 3090, so enabling is
+# a deliberate operator action; with it enabled the nvidia/llm modules go inert
 # (T9 deletes the files, this module only switches them off).
 {
   config,
@@ -672,7 +672,7 @@ in
           && !(lib.elem "nvidia" config.services.xserver.videoDrivers)
           && !(config.systemd.services ? nvidia-uvm)
           && !(config.systemd.services ? llama-cpp);
-        message = "kanbei-vm: the enabled host must not load nvidia or run llama-cpp; nvidia.nix/llm.nix/photo-triage.nix must stay inert while the guest owns the GPU";
+        message = "kanbei-vm: the enabled host must not load nvidia or run llama-cpp; nvidia.nix/llm.nix must stay inert while the guest owns the GPU";
       }
       {
         assertion =
@@ -777,7 +777,7 @@ in
     ];
 
     warnings = [
-      "kanbeiVm.enable stops nvidia.nix, llm.nix and photo-triage.nix on this host and passes the 3090 to the kanbei guest; the guest only uses it after the fast-boot cutover in docs/kanbei-vm.md"
+      "kanbeiVm.enable stops nvidia.nix and llm.nix on this host and passes the 3090 to the kanbei guest; the guest only uses it after the fast-boot cutover in docs/kanbei-vm.md"
     ];
   };
 }

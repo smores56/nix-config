@@ -177,12 +177,12 @@ and state map: [`docs/kanbei-vm.md`](kanbei-vm.md). The four steps below are
 one-time or emergency operator actions; none of them is exercised by a build.
 
 **1. Cutover.** Do this with the machine reachable and a console session open
-(the switch stops Immich and photo-triage, so the GPU is free but the guest may
+(the switch stops Immich and `llama-cpp`, so the GPU is free but the guest may
 need a second boot):
 
 ```sh
 # Drain the GPU: stop the triage window and the interactive model first.
-sudo systemctl stop photo-triage-maintenance.service llama-cpp.service || true
+sudo systemctl stop llama-cpp.service || true
 # Flip the gate, then switch. This is the only edit the cutover needs.
 #   modules/hosts/smortress/default.nix -> kanbeiVm.enable = true;
 just verify-nixos smortress
@@ -198,7 +198,7 @@ sudo systemctl status microvm@kanbei.service kanbei-swtpm.service
 sudo kanbei-vm-verify            # vfio-pci bound, group 16 clean, state 0700
 ```
 
-**2. GPU unbind / rollback.** To go back to host Immich/photo-triage (or when
+**2. GPU unbind / rollback.** To go back to host Immich (or when
 the guest must not run), undo in this order: set `kanbeiVm.enable = false`,
 `sudo systemctl stop microvm@kanbei.service kanbei-swtpm.service`,
 `sudo nixos-rebuild switch`, and reboot once so `nvidia` can claim the GPU
@@ -1505,26 +1505,15 @@ A second token, scoped Object Read only, backs read-side consumers. Put its id
 and secret in `secrets/smortress.yaml` as `r2-access-key-id-readonly` and
 `r2-secret-access-key-readonly`.
 
-### photo-triage Immich API keys
+### Retired photo-triage keys
 
 <!-- manual-step: secret/photo-triage-immich-read-key -->
 <!-- manual-step: secret/photo-triage-immich-album-key -->
 
-Two Immich API keys owned by the main user, stored in
-`secrets/smortress.yaml` and loaded only through `LoadCredential`:
-
-- `photo-triage-immich-read-key`: exactly `asset.read`, `asset.view`,
-  `album.read`, `duplicate.read`, `stack.read`. The scorer holds it for the
-  whole run; `stack.read` feeds the stack/primary import during the scan.
-- `photo-triage-immich-album-key`: exactly `album.read`, `album.create`,
-  `albumAsset.create`, `albumAsset.delete`. Only the album and calibration
-  publisher commands load it.
-
-Immich compares the permission set for equality and rejects any extra
-permission (including an `all` key). Host wiring:
-`photoTriage.readKeyFile = "/run/secrets/photo-triage-immich-read-key"` and
-`photoTriage.albumKeyFile = "/run/secrets/photo-triage-immich-album-key"`.
-Rotation is in `docs/key-rotation.md`.
+Retired with the photo-triage feature. Revoke both Immich API keys in the Immich
+UI. Their ciphertext stays in `secrets/smortress.yaml` until a sops session
+removes it: delete both keys, then delete this section and its anchors in the
+same commit.
 
 ### Jupyter token
 

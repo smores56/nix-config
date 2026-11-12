@@ -36,13 +36,10 @@ in
 
       src = inputs.self;
 
-      # One env for the unit suite's imports (mcp brings the rest transitively);
-      # the photo-triage fixtures render synthetic images with Pillow.
+      # One env for the unit suite's imports (mcp brings the rest transitively).
       unitTestsPython = pkgs.python3.withPackages (ps: [
         ps.mcp
         ps.redis
-        ps.pillow
-        ps.numpy
       ]);
 
       mkEvalChecks =
@@ -1137,11 +1134,6 @@ in
               python -m unittest discover -s tests -p 'test_*.py'
               touch $out
             '';
-
-        photo-triage-package = pkgs.runCommand "photo-triage-package" { } ''
-          ${(pkgs.callPackage ../lib/photo-triage/package.nix { })}/bin/photo-triage --version
-          touch $out
-        '';
 
         # The planted exfiltration suite and its unit tests, built as the runner
         # itself runs: DLP alone and DLP plus a deterministic judge double (#594).

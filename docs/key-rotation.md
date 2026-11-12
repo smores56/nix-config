@@ -309,29 +309,6 @@ changed), restart `cloudflared-tunnel-smortress`, confirm SSH and the public
 hostnames, then delete the old tunnel. The step-by-step is under "Rotation
 checklist → cloudflared-credentials" in `docs/manual-steps.md`.
 
-### Immich API keys for photo-triage
-
-Photo-triage uses two Immich keys owned by the main user, both stored only in
-`secrets/smortress.yaml` and loaded with `LoadCredential` (never environment or
-argv):
-
-- `photo-triage-immich-read-key` — exactly `asset.read`, `asset.view`,
-  `album.read`, `duplicate.read`, `stack.read`. The scorer holds this for the
-  whole run; `stack.read` feeds the stack/primary import during the scan.
-- `photo-triage-immich-album-key` — exactly `album.read`, `album.create`,
-  `albumAsset.create`, `albumAsset.delete`. Only `photo-triage-albums` loads it.
-
-Create each key in Immich with exactly those permissions; startup compares the
-set for equality and fails closed on any extra permission (in particular, an
-`all` key is rejected). Set `photoTriage.readKeyFile` and
-`photoTriage.albumKeyFile` to the corresponding `/run/secrets/...` paths in the
-host configuration. Until they are set, the wrappers fall back to plain
-`sudo -u photo-triage` and any command that needs a key fails with an explicit
-`CREDENTIALS_DIRECTORY` error; the build prints a warning for each unset file.
-Rotating either key is: create the replacement with the same permission set,
-update the sops value, rebuild, then revoke the old key. The album key must never
-be granted `asset.read`, `asset.download`, or any delete permission.
-
 ### Cloudflare Pages token (GitHub Actions)
 
 The recovery workflow (`.github/workflows/recovery.yml`) publishes

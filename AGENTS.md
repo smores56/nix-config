@@ -61,7 +61,7 @@ adds its greeter as a host-local module.
 | `modules/nixos/open-webui.nix`, `navidrome.nix` | tunnel apps with their own auth: music; Open WebUI is live only until `kanbeiSplit.cutover.enable` (T9) |
 | `modules/nixos/restic-backup.nix` | restic repos, schedule, retention and the Immich db dump |
 | `modules/flake/` | flake-parts modules: configurations, checks, apps (`apps.nix`, `apps/`), formatter, nixpkgs |
-| `modules/lib/` | helpers: the share planner and agent-VM view/launcher, key tables, `secret-path.nix`, `hardening.nix`, the photo-triage package |
+| `modules/lib/` | helpers: the share planner and agent-VM view/launcher, key tables, `secret-path.nix`, `hardening.nix` |
 | `modules/ports.nix` | loopback port table shared by services and the tunnel |
 | `pkgs/overlays.nix`, `pkgs/nanobot/`, `pkgs/letta/`, `pkgs/tutabridge.nix`, `pkgs/tuta-ics/` | nixpkgs overlays: pins and local package derivations; nanobot and Letta stay for the pre-cutover host only (T9 deletes them); tutabridge is the pinned Tuta bridge CLI and tuta-ics the read-only calendar renderer for `ingest-tuta` |
 | `modules/nixos/agent-vm.nix`, `modules/features/agent-vm/` | the legacy agent VMs behind `kanbeiSplit.cutover.enable` (default off): Linux microvm guest (host module, view, firewall) and its launcher; the Mac Tart launcher. `a` is plain `maki`/`claude`; shared facts in `modules/lib/agent-vm.nix`, planner in `modules/lib/share_planner.py` and the host-side verifier in `modules/lib/agent-vm-verify.sh`. Deleted in the T9 follow-up |
@@ -175,7 +175,7 @@ just verify-nixos smortress         # also smorespro
 ```
 
 `just test` runs the Python unit suite (the `unit-tests` check) after touching
-`modules/features/ai/`, photo-triage, or maki session search; `just check-build`
+`modules/features/ai/` or maki session search; `just check-build`
 builds every check for the current system.
 
 Checks are organised in `modules/flake/checks.nix`: `scriptChecks` runs each

@@ -13,7 +13,6 @@
     ../nixos/navidrome.nix
     ../nixos/open-webui.nix
     ../nixos/llm.nix
-    ../nixos/photo-triage.nix
     ../nixos/memory.nix
     ../nixos/filesearch.nix
     ../nixos/nvidia.nix

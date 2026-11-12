@@ -53,9 +53,6 @@ in
       requires = [ "nvidia-uvm.service" ];
       after = [ "nvidia-uvm.service" ];
       restartIfChanged = false;
-      # The photo-triage maintenance window holds this marker so a rebuild or
-      # restart cannot bring the interactive model back mid-batch.
-      unitConfig.ConditionPathExists = "!/run/photo-triage/maintenance";
       serviceConfig.TimeoutStartSec = "1h";
     };
   };

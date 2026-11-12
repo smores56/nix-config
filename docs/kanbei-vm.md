@@ -9,10 +9,10 @@ steps are in [`docs/manual-steps.md`](manual-steps.md) (`host/smortress`, under
 
 Everything is behind `kanbeiVm.enable` (default `false` in
 `modules/hosts/smortress/default.nix`). While it is off the host still runs
-Immich/photo-triage on the GPU and this module adds nothing but the option. With
-it on, `nvidia.nix`, `llm.nix` and `photo-triage.nix` become inert
+Immich and `llama-cpp` on the GPU and this module adds nothing but the option.
+With it on, `nvidia.nix` and `llm.nix` become inert
 (`lib.mkIf (!config.kanbeiVm.enable)`) — the files stay until T9 deletes them,
-but nothing loads the driver, runs `llama-cpp`, or starts a triage unit. An
+but nothing loads the driver or runs `llama-cpp`. An
 assertion fails evaluation if the enabled host would still load `nvidia` or
 run `llama-cpp`.
 
@@ -263,7 +263,7 @@ header first.
 ## Cutover (one-time, hardware-gated)
 
 The full procedure is in `docs/manual-steps.md` ("Kanbei private-data VM").
-It is a single switch that: stops Immich + photo-triage, unbinds `nvidia`, lets
+It is a single switch that: stops Immich and `llama-cpp`, unbinds `nvidia`, lets
 the kernel claim both functions for `vfio-pci`, and boots the guest. Nothing
 above is exercised by an eval or a build, so it must be done with the operator
 present and the recovery key in hand.
