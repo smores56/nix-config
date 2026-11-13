@@ -1574,12 +1574,26 @@ and secret in `secrets/smortress.yaml` as `r2-access-key-id-readonly` and
 
 Random 32 bytes in `secrets/common.yaml`, user-readable 0400. Presented as
 `Authorization: Bearer` by Maki and the memory CLI/shim. Rotation requires
-restarting `memory-mcp` and Maki. The same clients also send the Cloudflare
-Access service token — `memory-access-client-id` and
-`memory-access-client-secret` in `secrets/common.yaml`, user-readable 0440 at
-`/run/secrets/memory-access-client-*` — because `memory.sammohr.dev` is behind
-the service-auth Access application; add both to the sops file together, each
-with its own `secret/` anchor here.
+restarting `memory-mcp` and Maki.
+
+### Memory Access service token
+
+<!-- manual-step: secret/memory-access-client-id -->
+<!-- manual-step: secret/memory-access-client-secret -->
+
+`memory.sammohr.dev` resolves to the cluster tunnel and sits behind the
+service-auth Access application, so the host's clients must satisfy Access
+before the wrapper ever sees the bearer. Create the token in the dashboard under
+Zero Trust → Access controls → Service credentials → Service tokens
+(`memory-host`), and store the pair in `secrets/common.yaml` as
+`memory-access-client-id` / `memory-access-client-secret`; sops-nix renders them
+at `/run/secrets/memory-access-client-*` (0440, owner `smores`). Maki and the
+memory CLI send them as `CF-Access-Client-Id` / `CF-Access-Client-Secret`; a
+half-configured pair is refused at start rather than failing as a 403 at the
+edge. Rotate by minting a replacement, updating both values together,
+`home-manager switch`, and deleting the old token. The `service auth` policy
+accepts any valid service token, so it also satisfies the `ssh` application's
+Access layer; the token alone never authenticates to sshd.
 
 ### Rotation checklist
 
