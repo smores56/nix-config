@@ -864,8 +864,10 @@ let
     root="$tmp/root"
     install -d -m 0755 "$root"
     install -m 0444 "$src" "$root/$name"
-    truncate -s "$((actual_size + 33554432))" "$tmp/image"
-    mkfs.ext4 -q -F -L search-model -d "$root" "$tmp/image"
+    # Read-only image, so no journal and no reserved blocks: a journal alone is
+    # 128 MiB and made the previous file+32 MiB size fail at mkfs time.
+    truncate -s "$((actual_size + 67108864))" "$tmp/image"
+    mkfs.ext4 -q -F -L search-model -O '^has_journal' -m 0 -d "$root" "$tmp/image"
     install -d -m 0750 -o root -g kvm "$dir"
     install -m 0440 -o root -g kvm "$tmp/image" "$image"
     printf '%s\n' "$want" > "$sum"
