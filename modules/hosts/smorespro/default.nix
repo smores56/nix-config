@@ -18,6 +18,7 @@
     ./fprintd.nix
     ./nymvpn.nix
     ./secrets.nix
+    ./warp.nix
     ../../nixos/todo-daemon.nix
     ../../nixos/kanbei-cutover.nix
   ];
