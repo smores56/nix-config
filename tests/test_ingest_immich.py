@@ -8,6 +8,7 @@ refusal and API-key redaction. No Immich instance is contacted.
 
 from __future__ import annotations
 
+import http.client
 import importlib
 import io
 import json
@@ -361,6 +362,44 @@ class CollectTests(unittest.TestCase):
             summary = self.run_collect(opener, state, directory, now=1700000100)
             self.assertEqual((summary["assets"], summary["albums"], summary["people"]), (0, 0, 0))
 
+    def test_first_pass_keeps_assets_the_capture_order_puts_after_page_one(self):
+        # Immich orders /api/search/metadata by capture time, not updatedAt, so an
+        # unfinished first pass that advanced the cursor mid-pass dropped every
+        # asset sorting before the page-1 maximum (1000 of 17,559 on the real box).
+        opener = RouteOpener(
+            [
+                {"items": [asset(asset_id="new", updated="2026-02-01T00:00:00.000Z")], "nextPage": "2"},
+                {"items": [asset(asset_id="old", updated="2026-01-01T00:00:00.000Z")], "nextPage": None},
+            ],
+            albums=[],
+            people=[{"people": [], "hasNextPage": False}],
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            state = self.immich.load_state(os.path.join(directory, "state.json"))
+            summary = self.run_collect(opener, state, directory)
+            self.assertEqual(summary["assets"], 2)
+            ids = {item["id"] for payload in self.payloads(directory) for item in payload["items"]}
+            self.assertEqual(ids, {"new", "old"})
+            self.assertEqual(state["assets"], {"updated_at": "2026-02-01T00:00:00.000Z", "id": "new"})
+
+    def test_completed_pass_filters_by_the_stored_cursor(self):
+        opener = RouteOpener(
+            [
+                {"items": [asset(asset_id="new", updated="2026-02-01T00:00:00.000Z")], "nextPage": "2"},
+                {"items": [asset(asset_id="old", updated="2026-01-01T00:00:00.000Z")], "nextPage": None},
+            ],
+            albums=[],
+            people=[{"people": [], "hasNextPage": False}],
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            state = self.immich.load_state(os.path.join(directory, "state.json"))
+            state["synced_at"] = 1700000000
+            state["assets"] = {"updated_at": "2026-01-15T00:00:00.000Z", "id": ""}
+            summary = self.run_collect(opener, state, directory)
+            self.assertEqual(summary["assets"], 1)
+            ids = {item["id"] for payload in self.payloads(directory) for item in payload["items"]}
+            self.assertEqual(ids, {"new"})
+
     def test_removed_album_and_person(self):
         with tempfile.TemporaryDirectory() as directory:
             state = self.immich.load_state(os.path.join(directory, "state.json"))
@@ -372,6 +411,29 @@ class CollectTests(unittest.TestCase):
             self.assertEqual(summary["people"], 1)
             items = [item for payload in self.payloads(directory) for item in payload["items"]]
             self.assertTrue(all(item["type"] == "immich-removed" for item in items))
+
+
+class TruncatedResponse(FakeResponse):
+    def read(self, size: int = -1) -> bytes:
+        raise http.client.IncompleteRead(b"partial")
+
+
+class TruncationTests(unittest.TestCase):
+    def test_a_truncated_response_is_a_clean_error(self):
+        # The tap proxy closes a tunnel whose upstream stalls; http.client then raises
+        # IncompleteRead, which is not an OSError and escaped as a bare traceback.
+        immich = load()
+        session = immich.session_of({"IMMICH_API_KEY": KEY})
+
+        class Opener:
+            def open(self, request, timeout=None):
+                return TruncatedResponse({})
+
+        client = immich.ImmichClient(session["base_url"], session["api_key"], opener=Opener())
+        with self.assertRaises(immich.ImmichError) as raised:
+            client.request("/api/albums")
+        self.assertIn("Immich request failed", str(raised.exception))
+        self.assertNotIn(KEY, str(raised.exception))
 
 
 if __name__ == "__main__":

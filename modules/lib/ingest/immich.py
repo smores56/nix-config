@@ -17,6 +17,7 @@ the read-only secret device; it is never logged.
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
 import re
@@ -221,6 +222,11 @@ class ImmichClient:
                 raise ImmichError(f"Immich refused the API key ({exc.code})") from None
             raise ImmichError(f"Immich returned HTTP {exc.code} for {allowed}") from None
         except (urllib_error.URLError, OSError, ValueError) as exc:
+            raise ImmichError(f"Immich request failed: {exc}") from None
+        except http.client.HTTPException as exc:
+            # A truncated chunked body (IncompleteRead, RemoteDisconnected) is an
+            # HTTPException, not an OSError, so it escaped as a bare traceback and
+            # skipped both the state write and the `error` event.
             raise ImmichError(f"Immich request failed: {exc}") from None
         if len(raw) > MAX_RESPONSE_BYTES:
             raise ImmichError("Immich response exceeds the size cap")
@@ -565,8 +571,13 @@ def collect(
     now = int(now if now is not None else time.time())
     client = ImmichClient(session["base_url"], session["api_key"], opener=opener)
     page_size = int(session.get("page_size") or DEFAULT_PAGE_SIZE)
-    cursor = state.get("assets") or {}
+    cursor = dict(state.get("assets") or {})
     after = cursor.get("updated_at") or None
+    # Immich orders search results by capture time, so the page stream is not sorted
+    # by updatedAt. A cursor advanced mid-pass therefore dropped every asset that
+    # sorted before the page-1 maximum (1,000 of 17,559 on the real library), so the
+    # stored cursor is only trusted once a whole pass has completed.
+    incremental = bool(state.get("synced_at"))
 
     items: list[dict] = []
     emitted_assets = 0
@@ -580,12 +591,13 @@ def collect(
             if item is None:
                 skipped_assets += 1
                 continue
-            if not cursor_after(item["updated_at"], item["id"], cursor):
+            if incremental and not cursor_after(item["updated_at"], item["id"], cursor):
                 skipped_assets += 1
                 continue
             items.append(item)
             emitted_assets += 1
-            cursor = {"updated_at": item["updated_at"], "id": item["id"]}
+            if (item["updated_at"], item["id"]) > (cursor.get("updated_at", ""), cursor.get("id", "")):
+                cursor = {"updated_at": item["updated_at"], "id": item["id"]}
         state["assets"] = cursor
         if len(items) >= MAX_ITEMS_PER_BATCH:
             for batch in chunk(items):
