@@ -128,23 +128,32 @@ class Proxy:
         if host not in self.allowlist(source):
             log("deny", source=source, action="connect", host=host, port=port, reason="not_allowlisted")
             raise policy.PolicyError(f"{host} is not allowlisted for {source}")
-        # The SNI is verified before any upstream connection exists, so a mismatched
-        # ClientHello never reaches the internet.
-        hello = self._read_client_hello(conn, rest)
-        sni = policy.parse_client_hello_sni(hello)
-        if sni != host:
-            log(
-                "deny",
-                source=source,
-                action="connect",
-                host=host,
-                sni=sni,
-                reason="sni_mismatch",
-            )
+        # A client starts TLS only after this reply, so it must come before the
+        # ClientHello is read. Waiting for the hello first deadlocks until the read
+        # times out, and the client then reports the 403 as a failed tunnel.
+        conn.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")
+        try:
+            hello = self._read_client_hello(conn, rest)
+            sni = policy.parse_client_hello_sni(hello)
+            if sni != host:
+                log(
+                    "deny",
+                    source=source,
+                    action="connect",
+                    host=host,
+                    sni=sni,
+                    reason="sni_mismatch",
+                )
+                conn.close()
+                return
+            # Still before any upstream connection exists, so a mismatched hello never
+            # reaches the internet.
+            upstream = self._dial(host, port)
+        except (policy.PolicyError, socket.timeout, OSError) as exc:
+            # The 200 is already on the wire, so close rather than send a second response.
+            log("deny", source=source, action="connect", host=host, port=port, reason=str(exc))
             conn.close()
             return
-        upstream = self._dial(host, port)
-        conn.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")
         log("allow", source=source, action="connect", host=host, port=port, sni=sni)
         upstream.sendall(hello)
         self._splice(conn, upstream, source, host, port, started)

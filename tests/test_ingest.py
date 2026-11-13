@@ -9,8 +9,11 @@ around these functions.
 from __future__ import annotations
 
 import importlib.util
+import socket
 import ssl
 import struct
+import sys
+import threading
 import unittest
 from pathlib import Path
 
@@ -20,6 +23,18 @@ VALID_RECIPIENT = "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8
 
 def load_policy():
     spec = importlib.util.spec_from_file_location("ingest_policy", POLICY)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_tool(name: str):
+    """Load a module that imports its siblings (`policy`) from beside itself."""
+    tools = POLICY.parent
+    if str(tools) not in sys.path:
+        sys.path.insert(0, str(tools))
+    spec = importlib.util.spec_from_file_location(f"ingest_{name}", tools / f"{name}.py")
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
@@ -215,6 +230,53 @@ class DnsTests(unittest.TestCase):
         response = self.p.build_dns_response(ident, question, qtype, [], rcode=5)
         self.assertEqual(struct.unpack(">H", response[6:8])[0], 0)
         self.assertEqual(struct.unpack(">H", response[2:4])[0] & 0xF, 5)
+
+
+class ProxyConnectTests(unittest.TestCase):
+    """CONNECT ordering: the reply must precede the ClientHello.
+
+    A client starts TLS only once it has the `200 Connection established`, so a proxy
+    that reads the ClientHello first deadlocks and then answers 403 — which the guest
+    reports as a failed tunnel rather than a refusal.
+    """
+
+    def setUp(self):
+        self.p = load_tool("proxy")
+        data = {
+            "sources": {
+                "immich": {
+                    "gateway": "10.77.13.1",
+                    "client": "10.77.13.2",
+                    "allow": ["photos.sammohr.dev"],
+                }
+            }
+        }
+        self.proxy = self.p.Proxy(data, "immich", [], 3128)
+
+    def test_replies_before_waiting_for_the_client_hello(self):
+        client, server = socket.socketpair()
+        upstream, upstream_peer = socket.socketpair()
+        self.proxy._dial = lambda host, port: upstream
+        handler = threading.Thread(
+            target=self.proxy.handle,
+            args=(server, ("10.77.13.2", 40000), ("10.77.13.1", 3128)),
+            daemon=True,
+        )
+        handler.start()
+        try:
+            client.settimeout(3)
+            client.sendall(b"CONNECT photos.sammohr.dev:443 HTTP/1.1\r\nHost: photos.sammohr.dev:443\r\n\r\n")
+            # No ClientHello yet: the 200 must arrive anyway.
+            self.assertIn(b"200", client.recv(64))
+            client.sendall(client_hello("photos.sammohr.dev"))
+            # The handshake record reaches the upstream only after the SNI check.
+            self.assertEqual(upstream_peer.recv(5)[:1], b"\x16")
+        finally:
+            client.close()
+            server.close()
+            upstream.close()
+            upstream_peer.close()
+            handler.join(timeout=3)
 
 
 if __name__ == "__main__":
