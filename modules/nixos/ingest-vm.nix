@@ -1152,7 +1152,8 @@ in
           restartIfChanged = false;
           serviceConfig = {
             Type = "oneshot";
-            RemainAfterExit = true;
+            # Unlatched so a changed GGUF is re-staged on the next guest start; the
+            # script compares the manifest hash and leaves an unchanged image alone.
             UMask = "0077";
             ExecStart = searchModelScript;
           };
@@ -1170,7 +1171,7 @@ in
           restartIfChanged = false;
           serviceConfig = {
             Type = "oneshot";
-            RemainAfterExit = true;
+            # Unlatched so deleting the image really is a budget reset.
             UMask = "0077";
             ExecStart = searchStateScript;
           };
@@ -1282,7 +1283,9 @@ in
                 restartIfChanged = false;
                 serviceConfig = {
                   Type = "oneshot";
-                  RemainAfterExit = true;
+                  # Unlatched on purpose: a latched oneshot stays active forever, so a
+                  # rotated contract never reached the image — the digest check only runs
+                  # when the unit starts, and every guest start starts it.
                   ExecStart = secretScript id;
                 };
               };
