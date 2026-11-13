@@ -651,6 +651,9 @@ PY
         systemd.tmpfiles.rules = [ "d /var/lib/immich 0700 root root -" ];
         systemd.services.ingest-immich = {
           description = "Collect Immich asset, EXIF, place, people and album metadata";
+          # A restarted guest loses /var/lib/immich with its tmpfs root, so it must collect
+          # once at boot; the timer carries the four-a-day cadence after that.
+          wantedBy = [ "multi-user.target" ];
           after = [
             "ingest-emit.service"
             "run-ingest-secret.mount"
@@ -675,9 +678,8 @@ PY
         systemd.timers.ingest-immich = {
           wantedBy = [ "timers.target" ];
           timerConfig = {
-            # The guest root is tmpfs, so the Persistent stamp never survives a restart:
-            # collect once shortly after boot, then four times a day.
-            OnBootSec = "2min";
+            # Four times a day; the boot run comes from the service's wantedBy because
+            # the tmpfs root loses the Persistent stamp and OnBootSec alone did not fire.
             OnCalendar = "*-*-* 03,09,15,21:23:00";
             RandomizedDelaySec = "900";
             Persistent = true;
