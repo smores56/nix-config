@@ -1,0 +1,55 @@
+# GitHub Packages refuses GitHub App tokens, so the credential is this job's
+# own token with packages: write; the agent never holds a package credential.
+# Publishing links the package to this repository, which is also where the
+# image is built.
+name: publish-nanobot
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "pkgs/nanobot/**"
+      - ".github/workflows/publish-nanobot.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-nanobot
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Build, push, and print the digest
+        env:
+          IMAGE: ghcr.io/smores56/nix-config/nanobot
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="sha-${GITHUB_SHA::12}"
+          image=$(nix build --no-link --print-out-paths .#nanobot-image)
+          work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
+          gzip -dc "$image" >"$work/image.tar"
+          export DOCKER_CONFIG=$work/docker
+          printf '%s' "$GH_TOKEN" | nix run nixpkgs#crane -- auth login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          nix run nixpkgs#crane -- push "$work/image.tar" "$IMAGE:$tag"
+          digest=$(nix run nixpkgs#crane -- digest "$IMAGE:$tag")
+          [[ $digest =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "no digest"; exit 1; }
+          {
+            echo "### nanobot image"
+            echo
+            echo "- \`$IMAGE:$tag\`"
+            echo "- \`$IMAGE@$digest\`"
+          } >>"$GITHUB_STEP_SUMMARY"
+          echo "pin: $IMAGE@$digest"

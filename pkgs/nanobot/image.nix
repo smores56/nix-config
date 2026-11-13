@@ -29,7 +29,7 @@ pkgs.dockerTools.buildLayeredImage {
     WorkingDirectory = "/";
     # A CLI push links the GHCR package to this repository only when the image
     # carries the source label.
-    Labels."org.opencontainers.image.source" = "https://github.com/smores56/homelabs-apps";
+    Labels."org.opencontainers.image.source" = "https://github.com/smores56/nix-config";
     Env = [
       "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
       "PYTHONUNBUFFERED=1"
