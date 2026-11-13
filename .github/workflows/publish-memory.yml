@@ -51,3 +51,6 @@ jobs:
             echo "- \`$IMAGE@$digest\`"
           } >>"$GITHUB_STEP_SUMMARY"
           echo "pin: $IMAGE@$digest"
+          # The step summary is web-UI only. An annotation is readable through
+          # the API, which is how the agent learns the digest it must pin.
+          echo "::notice title=memory wrapper image::pin: $IMAGE@$digest"
