@@ -29,6 +29,7 @@ import json
 import os
 import secrets
 import socket
+import socketserver
 import ssl
 import sys
 import threading
@@ -413,6 +414,13 @@ class KanbeiServer(ThreadingHTTPServer):
         # socket.socket has __slots__, so the per-connection flag lives on the thread.
         self.auth_state = threading.local()
         super().__init__(address, handler)
+
+    def server_bind(self) -> None:
+        # HTTPServer.server_bind names the server with socket.getfqdn(host), which expects a
+        # string; on AF_VSOCK the host is an integer CID.
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = "kanbei"
+        self.server_port = self.server_address[1]
 
     def finish_request(self, request, client_address) -> None:
         request.settimeout(AUTH_TIMEOUT)
