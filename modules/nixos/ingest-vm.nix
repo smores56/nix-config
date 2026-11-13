@@ -388,6 +388,10 @@ PY
             Restart = "always";
             RestartSec = "5s";
             UMask = "0077";
+            # The guest journal dies with the guest; the serial console is the only log the
+            # host keeps, so every guest service writes there too.
+            StandardOutput = "journal+console";
+            StandardError = "journal+console";
             ExecStart = "${emitter}/bin/ingest-emit --source ${id} --port ${toString s.vsockPort} --outbox /var/lib/ingest/outbox --secret /run/ingest-secret/env";
           };
         };
