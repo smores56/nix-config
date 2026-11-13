@@ -156,8 +156,8 @@ exists unless the option and the contract are both set.
 
 | unit | purpose |
 |---|---|
-| `ingest-finance.service` | one `/accounts` poll, journal/balance batches, alert batch |
-| `ingest-finance.timer` | daily at 06:17 with up to 30 min jitter, `Persistent=true` |
+| `ingest-finance.service` | one `/accounts` poll, journal/balance batches, alert batch; also runs at boot because the guest's state is tmpfs |
+| `ingest-finance.timer` | daily at 06:17 with up to 30 min jitter, `Persistent=true` (a fresh guest makes up nothing, hence the boot run) |
 
 `MemoryHigh=96M`, `MemoryMax=160M`; the guest is 256 MiB (the boot floor — the
 68 MiB initramfs does not fit in less). The timer is

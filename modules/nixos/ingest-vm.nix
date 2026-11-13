@@ -531,6 +531,11 @@ let
         systemd.tmpfiles.rules = [ "d /var/lib/finance 0700 root root -" ];
         systemd.services.ingest-finance = {
           description = "Collect SimpleFIN accounts and render hledger journals";
+          # /var/lib/finance is tmpfs, so a fresh guest has no state and the daily
+          # timer's Persistent stamp makes up nothing: without a boot run a rebooted
+          # guest sits empty until 06:17. One extra GET per boot is far inside
+          # SimpleFIN's daily allowance.
+          wantedBy = [ "multi-user.target" ];
           after = [
             "ingest-emit.service"
             "systemd-tmpfiles-setup.service"
