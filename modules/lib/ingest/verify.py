@@ -25,6 +25,7 @@ import argparse
 import glob
 import json
 import os
+import re
 import shutil
 import socket
 import ssl
@@ -329,6 +330,19 @@ def check_sni(env: dict) -> None:
     say("PASS sni: CONNECT example.com and a mismatched SNI are refused")
 
 
+CONNTRACK_STATES = {"ESTABLISHED", "RELATED"}
+
+
+def granted_states(rule: str) -> set[str] | None:
+    """The ctstate set of a conntrack rule, or None when the rule is not one.
+
+    iptables normalises the set alphabetically (`RELATED,ESTABLISHED`), so compare
+    sets instead of one spelling of the states.
+    """
+    match = re.search(r"--ctstate\s+([A-Z,]+)", rule)
+    return set(match.group(1).split(",")) if match else None
+
+
 def check_egress(env: dict, since: str) -> None:
     out = journal(f"microvm@{GUEST}", since)
     if "INGEST-EGRESS-DROPPED" not in out:
@@ -344,7 +358,7 @@ def check_egress(env: dict, since: str) -> None:
     for line in lines:
         if line == lines[-1]:
             continue
-        if "-j ACCEPT" in line and "conntrack --ctstate ESTABLISHED,RELATED" not in line:
+        if "-j ACCEPT" in line and granted_states(line) != CONNTRACK_STATES:
             fail(f"{CHAIN} grants egress: {line}")
     say(f"PASS egress: guest probe dropped and {CHAIN} only accepts conntrack")
 

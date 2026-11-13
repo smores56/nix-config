@@ -368,3 +368,28 @@ class WriterHandshakeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VerifierRuleTests(unittest.TestCase):
+    """The egress proof must accept iptables' own spelling of the conntrack states.
+
+    `iptables -S` prints `--ctstate RELATED,ESTABLISHED`, but the verifier matched one
+    hardcoded `ESTABLISHED,RELATED`, so a correct chain read as "grants egress".
+    """
+
+    def setUp(self):
+        self.verify = load_tool("verify")
+
+    def test_conntrack_accept_in_either_order(self):
+        for rule in (
+            "-A ingest-search-fwd -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT",
+            "-A ingest-search-fwd -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
+        ):
+            self.assertEqual(self.verify.granted_states(rule), self.verify.CONNTRACK_STATES)
+
+    def test_other_accepts_are_not_conntrack(self):
+        self.assertIsNone(self.verify.granted_states("-A ingest-search-fwd -j ACCEPT -d 1.1.1.1/32 -p tcp --dport 443"))
+        self.assertNotEqual(
+            self.verify.granted_states("-A ingest-search-fwd -m conntrack --ctstate NEW -j ACCEPT"),
+            self.verify.CONNTRACK_STATES,
+        )
