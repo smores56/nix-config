@@ -1574,7 +1574,12 @@ and secret in `secrets/smortress.yaml` as `r2-access-key-id-readonly` and
 
 Random 32 bytes in `secrets/common.yaml`, user-readable 0400. Presented as
 `Authorization: Bearer` by Maki and the memory CLI/shim. Rotation requires
-restarting `memory-mcp` and Maki.
+restarting `memory-mcp` and Maki. The same clients also send the Cloudflare
+Access service token — `memory-access-client-id` and
+`memory-access-client-secret` in `secrets/common.yaml`, user-readable 0440 at
+`/run/secrets/memory-access-client-*` — because `memory.sammohr.dev` is behind
+the service-auth Access application; add both to the sops file together, each
+with its own `secret/` anchor here.
 
 ### Rotation checklist
 

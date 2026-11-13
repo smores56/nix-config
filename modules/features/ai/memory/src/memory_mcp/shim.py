@@ -22,7 +22,7 @@ from mcp.types import CallToolResult, Prompt, TextContent, Tool
 from . import client
 from .client import ClientConfig, ToolResult, UpstreamError
 from .groups import GroupRefused, derive_group, local_machine
-from .mcp_auth import TokenMissingError, read_token
+from .mcp_auth import TokenMissingError, access_headers, read_token
 from .schema import FALLBACK_TOOLS
 
 DEFAULT_URL = "https://memory.sammohr.dev/mcp"
@@ -54,6 +54,9 @@ class ShimConfig:
         )
         if self.token:
             headers = headers + (("Authorization", f"Bearer {self.token}"),)
+        # Access is the edge gate on the tunnel hostname; the bearer above is the
+        # wrapper's own. No files means a loopback upstream that has no edge gate.
+        headers = headers + access_headers()
         return ClientConfig(
             url=self.url,
             headers=headers,
@@ -146,6 +149,10 @@ def main(argv: list[str] | None = None) -> int:
         timeout=float(os.environ.get("MEMORY_TIMEOUT", str(DEFAULT_TIMEOUT))),
         token=token,
     )
-    server = build_server(config)
+    try:
+        server = build_server(config)
+    except TokenMissingError as exc:
+        print(f"memory-mcp-shim: {exc}", file=sys.stderr)
+        return 2
     anyio.run(_serve, server)
     return 0

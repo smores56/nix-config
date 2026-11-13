@@ -35,6 +35,17 @@ in
       restartUnits = lib.optional (config.systemd.services ? memory-mcp) "memory-mcp.service";
     };
 
+    # The Cloudflare Access service token for the public memory hostname: the edge
+    # gate in front of the tunnel, separate from the wrapper's bearer above. Only
+    # the user's shim and CLI read it, so it needs no service group; clients refuse
+    # a half-configured pair, so add both or neither.
+    memory-access-client-id = userOwned // {
+      mode = "0440";
+    };
+    memory-access-client-secret = userOwned // {
+      mode = "0440";
+    };
+
     # maki's hosted-inference key. The fish init exports it from this path, so
     # the user must be able to read it on every personal host.
     neuralwatt-api-key = userOwned // {

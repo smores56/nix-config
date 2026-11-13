@@ -23,7 +23,7 @@ from .export import (
 )
 from .export import dispatch as export_dispatch
 from .groups import GroupRefused, derive_group, local_machine, validate_group
-from .mcp_auth import TokenMissingError, authorization
+from .mcp_auth import TokenMissingError, access_headers, authorization
 
 DEFAULT_URL = "https://memory.sammohr.dev/mcp"
 DEFAULT_TIMEOUT = 75.0
@@ -126,15 +126,17 @@ async def _invoke(args: argparse.Namespace, group: str, cwd: str) -> tuple[str, 
     else:
         arguments = {}
 
+    # Access answers the edge gate on the tunnel hostname; `authorization()` answers the wrapper.
+    headers = (
+        ("X-Memory-Group", group),
+        ("X-Memory-Cwd", cwd),
+        ("X-Memory-Actor", "cli"),
+        ("X-Memory-Machine", local_machine()),
+        authorization(),
+    ) + access_headers()
     config = ClientConfig(
         url=args.url,
-        headers=(
-            ("X-Memory-Group", group),
-            ("X-Memory-Cwd", cwd),
-            ("X-Memory-Actor", "cli"),
-            ("X-Memory-Machine", local_machine()),
-            authorization(),
-        ),
+        headers=headers,
         timeout=float(os.environ.get("MEMORY_TIMEOUT", str(DEFAULT_TIMEOUT))),
     )
     result = await call_tool(config, tool, arguments)
