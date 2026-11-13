@@ -64,14 +64,14 @@ guest down; the other guests and the host are unaffected. Steps are in
 `docs/manual-steps.md`.
 
 `/run/secrets` is a sops-nix generation directory: each activation rebuilds it
-and removes every file it does not manage, so a hand-staged contract survives
-only until the next `nixos-rebuild switch`. Stage it after the activation and
-start the unit in the same session, or make it a declared sops key. The image
-under `/var/lib/microvms/ingest-secrets/` is the copy the guest reads: when the
-contract is gone and the image is already staged, the unit keeps the image and
-exits 0 (`… is absent; keeping the staged image`). A contract that reappears
-with a different digest replaces the image, which still requires the guest to be
-stopped.
+and removes every file it does not manage. The five contracts are declared in
+`modules/hosts/smortress/secrets.nix` behind `ingestVm.enable`, so sops-nix
+writes them from `secrets/smortress.yaml` on every switch and nothing prunes
+them; how to mint each value is in `docs/manual-steps.md`. The image under
+`/var/lib/microvms/ingest-secrets/` stays the copy the guest reads: if a key is
+removed later the unit keeps the existing image and exits 0
+(`… is absent; keeping the staged image`), and a contract whose digest changed
+replaces the image, which still requires the guest to be stopped.
 
 `ingest-search-env` carries exactly one line, `TINYFISH_API_KEY=<key>`: Kanbei's
 own key, never the host's or nanobot's. The search guest adds two images:

@@ -28,6 +28,18 @@
         restartUnits = [ "kanbei-phone-password.service" ];
       };
     })
+
+    # The five ingest source contracts (docs/kanbei-ingest.md). sops-nix owns
+    # /run/secrets and prunes every file it does not manage there, so the staging
+    # units depend on these declarations and not on a file a human dropped in.
+    # Root-only 0400 is the default, which is what the units read.
+    (lib.mkIf (config.ingestVm.enable or false) {
+      ingest-tuta-env = { };
+      ingest-finance-env = { };
+      ingest-brave-env = { };
+      ingest-immich-env = { };
+      ingest-search-env = { };
+    })
   ];
 
   webProxy.credentialsFile = config.sops.secrets.cloudflared-credentials.path;

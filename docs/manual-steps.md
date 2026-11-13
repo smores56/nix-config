@@ -1264,6 +1264,23 @@ the only egress for Kanbei's capped queries and its budget must be its own. The
 guest also needs the Guardian weights staged at `/var/lib/search-model` before it
 starts; see [`docs/kanbei-search.md`](kanbei-search.md).
 
+### ingest-brave-env
+
+<!-- manual-step: secret/ingest-brave-env -->
+
+`BRAVE_SYNC_SEED=v10<base64>`, the OSCrypt blob that opens the Sync chain, and
+optionally `BRAVE_SYNC_CODE` only for the one-time Xvfb join. The guest replants
+the seed into a fresh profile at every boot, so this one value is all it needs.
+
+Mint it from a profile that joined the chain with `--password-store=basic`; a
+keyring-backed profile's blob will not decrypt in a guest with no keyring. Brave
+stores it at `Preferences` `brave_sync_v2.seed` as base64 of the raw blob, so
+convert on export: `jq -r '.brave_sync_v2.seed' <Preferences> | base64 -d |
+tail -c +4 | base64 -w0`, prefix the result with `v10`, and confirm it decrypts
+with the "peanuts" key (AES-128-CBC under
+`PBKDF2("peanuts","saltysalt",1)`) before trusting it. Steps in
+[`docs/kanbei-ingest-brave.md`](kanbei-ingest-brave.md#profile-and-seed).
+
 ### phone-folder-password
 
 <!-- manual-step: secret/phone-folder-password -->
