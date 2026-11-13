@@ -670,6 +670,10 @@ PY
             Type = "oneshot";
             UMask = "0077";
             TimeoutStartSec = 300;
+            # The guest journal is on tmpfs and dies with the guest; the serial console is
+            # the only log that reaches the host (microvm@<guest>), so write there too.
+            StandardOutput = "journal+console";
+            StandardError = "journal+console";
             MemoryHigh = "80M";
             MemoryMax = "112M";
             ExecStart = "${immichTool}/bin/ingest-immich --env /run/ingest-secret/env --outbox /var/lib/ingest/outbox --state /var/lib/immich/state.json";
