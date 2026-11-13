@@ -231,6 +231,10 @@ let
     if [ "$code" -ne 0 ] && [ "$code" -ne 124 ] && [ "$code" -ne 137 ]; then
       exit "$code"
     fi
+    # What Brave left behind after the pull (booleans and key names, never the seed):
+    # Chromium rewrites Preferences on shutdown, so this shows whether the planted
+    # sync request survived and which sync keys the engine itself uses.
+    ${braveSync}/bin/ingest-brave-sync --status --prefs ${braveProfile}/Default/Preferences || true
   '';
   braveJoinScript = pkgs.writeShellScript "brave-sync-join" ''
     set -eu

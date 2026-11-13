@@ -240,11 +240,22 @@ def stage(env_path: str, prefs_path: str, code_out: str | None = None) -> dict:
 
 
 def status(prefs_path: str) -> dict:
+    """Report presence and the sync flags, never the seed or any URL."""
     prefs = load_preferences(prefs_path)
     seed = seed_of(prefs)
     if seed is None:
         seed = value_at(prefs, LEGACY_SEED_PATH)
-    return {"seed_present": isinstance(seed, str) and bool(seed), "seed_shape": "oscrypt" if looks_oscrypt(seed) else "other"}
+    sync = prefs.get("sync")
+    sync = sync if isinstance(sync, dict) else {}
+    return {
+        "seed_present": isinstance(seed, str) and bool(seed),
+        "seed_shape": "oscrypt" if looks_oscrypt(seed) else "other",
+        "sync_requested": sync.get("requested") if isinstance(sync.get("requested"), bool) else None,
+        "sync_everything": sync.get("keep_everything_synced")
+        if isinstance(sync.get("keep_everything_synced"), bool)
+        else None,
+        "sync_keys": sorted(key for key in sync if isinstance(key, str))[:24],
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
