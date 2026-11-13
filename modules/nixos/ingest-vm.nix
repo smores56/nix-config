@@ -35,11 +35,7 @@ let
     # relay_auth` would fail at run time, not here.
     cp ${../lib/kanbei/relay_auth.py} $out/lib/kanbei-ingest/relay_auth.py
     # Import every module once so a missing or misnamed sibling fails this build.
-    PYTHONPATH=$out/lib/kanbei-ingest ${pkgs.python3}/bin/python3 - $out/lib/kanbei-ingest <<'PY'
-import importlib, pathlib, sys
-for path in sorted(pathlib.Path(sys.argv[1]).glob("*.py")):
-    importlib.import_module(path.stem)
-PY
+    ${pkgs.python3}/bin/python3 ${../lib/check_imports.py} $out/lib/kanbei-ingest
   '';
 
   mkTool =
@@ -79,11 +75,7 @@ PY
     cp ${../lib/search}/*.py $out/lib/kanbei-search/
     # Named destination: a single-file store path is `<hash>-relay_auth.py`.
     cp ${../lib/kanbei/relay_auth.py} $out/lib/kanbei-search/relay_auth.py
-    PYTHONPATH=$out/lib/kanbei-search ${pkgs.python3}/bin/python3 - $out/lib/kanbei-search <<'PY'
-import importlib, pathlib, sys
-for path in sorted(pathlib.Path(sys.argv[1]).glob("*.py")):
-    importlib.import_module(path.stem)
-PY
+    ${pkgs.python3}/bin/python3 ${../lib/check_imports.py} $out/lib/kanbei-search
   '';
 
   searchRelay = pkgs.writeShellApplication {
@@ -192,6 +184,13 @@ PY
     PASSWORD_STORE_DIR = "${tutaRoot}/pass";
     PASSWORD_STORE_GPG_OPTS = "--batch --pinentry-mode error";
     TUTABRIDGE_RUNTIME_DIR = "/run/tutabridge";
+    # The guest has no session bus, so the default keyring backend fails at start
+    # ("Platform secure storage failure: DBus error"). Container mode selects the
+    # pass+GPG backend the session image is seeded into, and reads its volume lock
+    # and helper scripts from the data dir and assets the package ships.
+    TUTABRIDGE_CONTAINER = "1";
+    TUTABRIDGE_DATA_DIR = tutaRoot;
+    TUTABRIDGE_ASSETS = "${pkgs.tutabridge}/lib/tutabridge";
   };
 
   # Every tap address and state path is derived once, in the shared table.

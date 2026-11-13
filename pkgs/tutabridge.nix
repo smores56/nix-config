@@ -28,6 +28,22 @@ stdenv.mkDerivation (finalAttrs: {
     hash = "sha256-r5Ez46jUYBCngxnBjSRHfadffSEMxzVLsDRZEbslyME=";
   };
 
+  # Container mode shells out to `$TUTABRIDGE_ASSETS/bootstrap.sh`, which in turn
+  # reads its key parameters and config template from beside itself. The release
+  # asset is only the binary, so take the three helpers from the tagged source.
+  bootstrap = fetchurl {
+    url = "https://raw.githubusercontent.com/spartanz51/tutabridge/v${finalAttrs.version}/docker/bootstrap.sh";
+    hash = "sha256-Mqf5MkvJsfs6YB6FnK1IkGQ4pFx1nbC4i7EkpsVChlI=";
+  };
+  gpgKeyParameters = fetchurl {
+    url = "https://raw.githubusercontent.com/spartanz51/tutabridge/v${finalAttrs.version}/docker/gpg-key-parameters";
+    hash = "sha256-1HqzAh3BJCYtTPvfqEz+xZ/cnBlbV3sD0whehGg/XUI=";
+  };
+  configTemplate = fetchurl {
+    url = "https://raw.githubusercontent.com/spartanz51/tutabridge/v${finalAttrs.version}/docker/config.toml";
+    hash = "sha256-175gTVozvfoz9PGNGZ3xzY2Sr288hficPzRpcKEY2Hc=";
+  };
+
   # The release asset is a single executable, not an archive.
   dontUnpack = true;
 
@@ -41,6 +57,9 @@ stdenv.mkDerivation (finalAttrs: {
   installPhase = ''
     runHook preInstall
     install -Dm755 ${finalAttrs.src} $out/bin/tutabridge
+    install -Dm755 ${finalAttrs.bootstrap} $out/lib/tutabridge/bootstrap.sh
+    install -Dm644 ${finalAttrs.gpgKeyParameters} $out/lib/tutabridge/gpg-key-parameters
+    install -Dm644 ${finalAttrs.configTemplate} $out/lib/tutabridge/config.toml
     runHook postInstall
   '';
 
