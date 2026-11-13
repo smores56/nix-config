@@ -408,11 +408,13 @@ let
           };
           script = ''
             set -x
+            systemctl show ingest-emit.service -p LoadState -p UnitFileState -p WantedBy -p RequiredBy -p ActiveState || true
+            ls -l /etc/systemd/system/multi-user.target.wants/ | grep -i ingest || echo "selfcheck: no ingest wants links"
+            systemctl --failed --no-pager --no-legend || true
+            systemctl start ingest-emit.service || echo "selfcheck: manual start returned non-zero"
+            sleep 2
             systemctl --no-pager status ingest-emit.service || true
             journalctl --no-pager -u ingest-emit.service -n 20 || true
-            ls -l /run/ingest-secret/ || true
-            grep -i vsock /proc/modules || echo "selfcheck: no vsock module loaded"
-            ${pkgs.python3}/bin/python3 -c 'import socket; s = socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM); s.bind((0xFFFFFFFF, 7099)); s.listen(1); print("selfcheck: AF_VSOCK bind ok")' || echo "selfcheck: AF_VSOCK bind failed"
           '';
         };
 
