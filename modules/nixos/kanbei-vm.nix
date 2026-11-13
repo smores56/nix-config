@@ -402,6 +402,11 @@ let
             exit 1
           fi
         '';
+        # The qemu `microvm` machine emits XSDT/FACP/DSDT/APIC only: no TPM2 ACPI table, so
+        # the guest kernel never binds tpm_crb and /dev/tpm0 does not exist (verified by
+        # booting this kernel on both machines). q35 emits the TPM2 table and the same
+        # `tpm-crb` device works, so the seal needs a machine with real ACPI.
+        qemu.machine = "q35";
         # microvm.nix has no vTPM option: the host unit owns swtpm and this connects QEMU to
         # its --ctrl socket, the one channel the emulator backend uses. Pointing it at a
         # --server data socket makes QEMU block in its first read before any CPU starts.
