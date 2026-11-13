@@ -168,43 +168,56 @@ let
       ]
     }
     dev=${dataDevice}
+    # Every decision goes to the serial console: the guest journal is volatile, so this is
+    # the only trace a failed first boot leaves on the host.
+    say() { echo "kanbei-data-open: $*" > /dev/console; }
     for _ in $(seq 1 120); do
       [ -e "$dev" ] && break
       sleep 0.5
     done
     if [ ! -e "$dev" ]; then
-      echo "kanbei-data-open: $dev did not appear" >&2
+      say "$dev did not appear"
       exit 1
     fi
 
     if cryptsetup isLuks "$dev"; then
+      say "$dev already holds LUKS; opening with the TPM token"
       # Later boots: the TPM2 token in the LUKS2 header opens the volume; the escrowed
       # recovery key is the fallback when the swtpm state was lost or replaced.
       if [ ! -e /dev/mapper/kanbei-data ]; then
-        cryptsetup open --token-only --tpm2-device=auto "$dev" kanbei-data \
-          || cryptsetup open --key-file /mnt/kanbei-enroll/recovery.key "$dev" kanbei-data
+        if ! cryptsetup open --token-only --tpm2-device=auto "$dev" kanbei-data; then
+          say "TPM unlock failed; trying the escrowed recovery key"
+          cryptsetup open --key-file /mnt/kanbei-enroll/recovery.key "$dev" kanbei-data \
+            || { say "no usable key for an already-formatted volume"; exit 1; }
+        fi
       fi
+      say "mapping open"
       exit 0
     fi
 
     umask 077
     contract=/run/kanbei-secrets/kanbei-recovery-key
     if [ -r "$contract" ]; then
+      say "using the sops recovery-key contract"
       install -m 0400 "$contract" /run/kanbei-recovery.key
       generated=0
     elif [ -r /mnt/kanbei-enroll/recovery.key ]; then
+      say "reusing the escrowed recovery key"
       # A previous boot formatted but never finished enrolling.
       install -m 0400 /mnt/kanbei-enroll/recovery.key /run/kanbei-recovery.key
       generated=0
     else
+      say "generating a recovery key and escrowing it before the format"
       head -c 64 /dev/urandom > /run/kanbei-recovery.key
       # Escrow before formatting so a failed enrollment is always recoverable.
       install -m 0600 /run/kanbei-recovery.key /mnt/kanbei-enroll/recovery.key
       generated=1
     fi
 
+    say "formatting LUKS2"
     cryptsetup luksFormat --type luks2 --batch-mode --label KANBEI \
       --key-file /run/kanbei-recovery.key "$dev"
+    say "enrolling the TPM2 token"
     # TPM2 token plus, when no contract key exists, systemd's generated recovery key.
     if [ "$generated" = 1 ]; then
       systemd-cryptenroll --tpm2-device=auto --recovery-key \
@@ -213,9 +226,11 @@ let
       systemd-cryptenroll --tpm2-device=auto \
         --unlock-key-file=/run/kanbei-recovery.key "$dev"
     fi
-
+    say "opening the new mapping"
     cryptsetup open --key-file /run/kanbei-recovery.key "$dev" kanbei-data
+    say "making the ext4 filesystem"
     ${pkgs.e2fsprogs}/bin/mkfs.ext4 -q -L kanbei-data -m 1 /dev/mapper/kanbei-data
+    say "volume ready"
 
     if [ "$generated" = 1 ]; then
       echo "kanbei: recovery key is in /var/lib/kanbei-vm/enroll/recovery.key (root-only) and was printed to the console; store it off-host and delete the escrow file" > /dev/console
