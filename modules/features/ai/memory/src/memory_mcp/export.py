@@ -60,7 +60,10 @@ MEMORY_UNITS = ("memory-mcp", "memory-graphiti-mcp", "memory-llm-proxy", GRAPH_U
 DEFAULT_OWNER = "memory:memory"
 # Written first by restore; an export refuses to snapshot a registry being swapped.
 RESTORE_LOCK = ".restore-in-progress"
-# FalkorDB runs `appendonly yes` and Redis prefers the AOF, so a restored `dump.rdb` needs the old AOF moved away.
+# FalkorDB runs `appendonly yes`, and Redis does not fall back to `dump.rdb`
+# when the AOF is absent: it starts empty. Moving the old AOF away is necessary;
+# the first start after restoring a snapshot must also run with `appendonly no`
+# and then `CONFIG SET appendonly yes` (docs/manual-steps.md, Restore).
 AOF_NAMES = ("appendonlydir", "appendonly.aof")
 BGSAVE_POLL_INTERVAL = 0.5
 

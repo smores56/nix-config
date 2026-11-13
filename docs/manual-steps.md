@@ -2285,8 +2285,8 @@ where the directory holds a restic-restored or live export:
    installs the export's with an atomic rename, fixing ownership first so a
    failed `chown` leaves the old registry in place;
 4. restores `graph.rdb` when present: the old `appendonlydir` is renamed to
-   `appendonlydir.pre-restore-<timestamp>` (Redis prefers the AOF) and FalkorDB
-   restarts. Otherwise the registry is restored alone.
+   `appendonlydir.pre-restore-<timestamp>` and FalkorDB restarts. Otherwise the
+   registry is restored alone.
 
 Delete the `*.pre-restore-*` files once `GRAPH.LIST` and a search confirm the
 result. Flags: `--dry-run` verifies and prints the plan; `--no-stop` is accepted
@@ -2296,6 +2296,17 @@ user:group` (default `memory:memory`, empty skips). A restore holds
 exists; a failed restore leaves it, so remove it after reconciling.
 `tests/memory_export_restore.sh` runs the same procedure against temp
 directories.
+
+**A restored graph snapshot needs one start with the AOF off.** Redis with
+`appendonly yes` starts empty when no AOF exists; it does not fall back to
+`dump.rdb`. Moving the old AOF away is necessary but not sufficient. Start
+FalkorDB once with `REDIS_ARGS='--appendonly no --save ""'` on the same image
+and data directory, confirm `GRAPH.QUERY <group> "MATCH (n) RETURN count(n)"`
+is non-empty, run `redis-cli CONFIG SET appendonly yes` (which rewrites the AOF
+from the loaded snapshot), then hand the store back to the unit. In the cluster
+the same sequence is the `REDIS_ARGS` patch in `homelabs-platform`'s restore
+runbook. Skipping this leaves an empty graph, and only `memory reindex --all`
+recovers it.
 
 When the graph snapshot is missing, `just memory-reindex --all`
 (`memory reindex`) is the replay path: it requeues active rows with no matching
