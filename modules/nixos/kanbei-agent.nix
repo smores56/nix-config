@@ -268,7 +268,7 @@ in
     };
     script = ''
       set -euo pipefail
-      install -d -m 0700 -o ${user} -g ${group} ${stateDir}
+      install -d -m 0700 -o ${user} -g ${group} ${stateDir} ${identityDir}
     '';
   };
 

@@ -209,14 +209,16 @@ let
 
     if cryptsetup isLuks "$dev"; then
       say "$dev already holds LUKS"
-      if cryptsetup open --token-only --tpm2-device="$tpm" "$dev" kanbei-data 2>/dev/null; then
+      # cryptsetup(8) has no --tpm2-device option; the token handler lives in
+      # systemd-cryptsetup, which is what a crypttab entry would have used.
+      if systemd-cryptsetup attach kanbei-data "$dev" - tpm2-device=auto 2>/dev/null; then
         say "opened with the TPM token"
       else
         [ -r "$escrow" ] || { say "no token works and no escrowed key exists"; exit 1; }
         enroll_token "$escrow"
-        cryptsetup open --token-only --tpm2-device="$tpm" "$dev" kanbei-data \
+        systemd-cryptsetup attach kanbei-data "$dev" - tpm2-device=auto \
           || cryptsetup open --key-file "$escrow" "$dev" kanbei-data
-        say "opened with the escrowed recovery key"
+        say "opened after enrolling the token"
       fi
     else
       umask 077
