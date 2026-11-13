@@ -19,7 +19,7 @@ Sources, allowlists, windows, taps and ports live in one table:
 | guest | source | tap | tap /30 | guest MAC | vcpu / mem | vsock cid / port | secret contract | allowlist | window |
 |---|---|---|---|---|---|---|---|---|---|
 | `ingest-tuta` | `tuta` | `vm-i-tuta` | `10.77.10.0/30` | `02:00:0a:4d:0a:02` | 1 / 256 MiB | 10 / 7010 | `/run/secrets/ingest-tuta-env` | `app.tuta.com` | 43200 s |
-| `ingest-finance` | `finance` | `vm-i-finance` | `10.77.11.0/30` | `02:00:0a:4d:0b:02` | 1 / 256 MiB | 11 / 7011 | `/run/secrets/ingest-finance-env` | `bridge.simplefin.org` (+ `production.plaid.com` when enabled) | 129600 s |
+| `ingest-finance` | `finance` | `vm-i-finance` | `10.77.11.0/30` | `02:00:0a:4d:0b:02` | 1 / 256 MiB | 11 / 7011 | `/run/secrets/ingest-finance-env` | `bridge.simplefin.org`, `beta-bridge.simplefin.org` (+ `production.plaid.com` when enabled) | 129600 s |
 | `ingest-brave` | `brave` | `vm-i-brave` | `10.77.12.0/30` | `02:00:0a:4d:0c:02` | 1 / 1024 MiB | 12 / 7012 | `/run/secrets/ingest-brave-env` | `sync-v2.brave.com` | 86400 s |
 | `ingest-immich` | `immich` | `vm-i-immich` | `10.77.13.0/30` | `02:00:0a:4d:0d:02` | 1 / 256 MiB | 13 / 7013 | `/run/secrets/ingest-immich-env` | `photos.sammohr.dev` | 64800 s |
 | `search` | `search` | `vm-search` | `10.77.14.0/30` | `02:00:0a:4d:0e:02` | 2 / 2560 MiB | 14 / 7014 (query 7024) | `/run/secrets/ingest-search-env` | `api.search.tinyfish.ai` | 86400 s |

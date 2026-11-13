@@ -20,6 +20,7 @@ default, and its item setup needs the owner.
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -189,28 +190,55 @@ def session_of(env: dict[str, str]) -> dict:
     return session
 
 
+def credential_free_netloc(parts: urllib_parse.SplitResult) -> str:
+    host = parts.hostname or ""
+    return f"{host}:{parts.port}" if parts.port else host
+
+
+def auth_header(access_url: str) -> str:
+    """The claim's Basic credentials as a header.
+
+    urllib hands the URL's userinfo to the proxy tunnel, which parses it as a
+    `host:port` and dies with `InvalidURL: nonnumeric port` — the access URL always
+    carries credentials, so they have to travel as a header instead.
+    """
+    parts = urllib_parse.urlsplit(access_url)
+    user = urllib_parse.unquote(parts.username or "")
+    password = urllib_parse.unquote(parts.password or "")
+    token = base64.b64encode(f"{user}:{password}".encode("utf-8")).decode("ascii")
+    return f"Basic {token}"
+
+
 def accounts_url(access_url: str, start_date: int | None, version: int = 2) -> str:
     parts = urllib_parse.urlsplit(access_url)
     query = {"version": str(version)}
     if start_date is not None:
         query["start-date"] = str(int(start_date))
     return urllib_parse.urlunsplit(
-        (parts.scheme, parts.netloc, parts.path.rstrip("/") + "/accounts", urllib_parse.urlencode(query), "")
+        (
+            parts.scheme,
+            credential_free_netloc(parts),
+            parts.path.rstrip("/") + "/accounts",
+            urllib_parse.urlencode(query),
+            "",
+        )
     )
 
 
 def http_json(
     url: str,
     *,
+    auth: str | None = None,
     opener: urllib_request.OpenerDirector | None = None,
     timeout: float = 60.0,
     max_bytes: int = MAX_RESPONSE_BYTES,
 ) -> object:
     """GET one JSON document; errors never echo the URL's credentials."""
     open_url: Callable[..., object] = (opener or urllib_request.build_opener()).open
-    request = urllib_request.Request(
-        url, headers={"Accept": "application/json", "User-Agent": policy.USER_AGENT}
-    )
+    headers = {"Accept": "application/json", "User-Agent": policy.USER_AGENT}
+    if auth:
+        headers["Authorization"] = auth
+    request = urllib_request.Request(url, headers=headers)
     try:
         with open_url(request, timeout=timeout) as response:
             body = response.read(max_bytes + 1)
@@ -659,7 +687,7 @@ def collect(
     else:
         start = now - int(session.get("lookback_days", DEFAULT_LOOKBACK_DAYS)) * 86400
     url = accounts_url(session["access_url"], start)
-    document = http_json(url, opener=opener)
+    document = http_json(url, auth=auth_header(session["access_url"]), opener=opener)
     parsed = parse_account_set(document)
     state["protocol"] = parsed["version"]
     log("accounts", protocol=parsed["version"], count=len(parsed["accounts"]), host=redact_url(url))

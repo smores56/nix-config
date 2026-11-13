@@ -440,11 +440,19 @@ in
             assert ingest.sources.tuta.allow == [ "app.tuta.com" ];
             # The finance fallback is the table's only optional host: SimpleFIN
             # alone by default, Plaid only through `financeAllow true` (#590).
-            assert ingest.sources.finance.allow == [ "bridge.simplefin.org" ];
-            assert ingest.financeAllow false == [ "bridge.simplefin.org" ];
+            assert ingest.sources.finance.allow == [
+              "bridge.simplefin.org"
+              "beta-bridge.simplefin.org"
+            ];
+            assert
+              ingest.financeAllow false == [
+                "bridge.simplefin.org"
+                "beta-bridge.simplefin.org"
+              ];
             assert
               ingest.financeAllow true == [
                 "bridge.simplefin.org"
+                "beta-bridge.simplefin.org"
                 "production.plaid.com"
               ];
             assert
@@ -456,7 +464,11 @@ in
                   };
                 }
               ) == [ ];
-            assert (ingest.mkPolicy ingest.sources).sources.finance.allow == [ "bridge.simplefin.org" ];
+            assert
+              (ingest.mkPolicy ingest.sources).sources.finance.allow == [
+                "bridge.simplefin.org"
+                "beta-bridge.simplefin.org"
+              ];
             assert
               (ingest.mkPolicy (
                 ingest.sources
@@ -467,6 +479,7 @@ in
                 }
               )).sources.finance.allow == [
                 "bridge.simplefin.org"
+                "beta-bridge.simplefin.org"
                 "production.plaid.com"
               ];
             assert ingest.sources.brave.allow == [ "sync-v2.brave.com" ];

@@ -132,7 +132,8 @@ Plaid exists for an institution SimpleFIN lacks. It is disabled unless
 `ingestVm.financePlaid.enable = true`; that option is the only switch that adds
 `production.plaid.com` to the finance allowlist
 (`ingest.financeAllow` in the shared table). With it off, the guest's allowlist
-is exactly `bridge.simplefin.org`.
+is exactly `bridge.simplefin.org` and `beta-bridge.simplefin.org` (beta
+accounts are served by the beta bridge; same API, same first party).
 
 The client implements two endpoints:
 

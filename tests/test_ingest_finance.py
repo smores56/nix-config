@@ -8,6 +8,7 @@ socket is opened: every HTTP call goes through a fake opener.
 
 from __future__ import annotations
 
+import base64
 import importlib
 import io
 import json
@@ -54,6 +55,10 @@ class FakeOpener:
         self.requests.append(request)
         document = self.documents.pop(0)
         return FakeResponse(json.dumps(document).encode())
+
+
+def auth(pair: str) -> str:
+    return "Basic " + base64.b64encode(pair.encode()).decode()
 
 
 def v2_document(transactions=None, errlist=None):
@@ -126,6 +131,26 @@ class EnvTests(unittest.TestCase):
         self.assertNotIn("s3cret", self.finance.redact_text(f"failed {ACCESS}"))
         self.assertNotIn("owner", self.finance.redact_text("https://owner:pw@bridge.simplefin.org/x"))
 
+
+class CredentialTests(unittest.TestCase):
+    def setUp(self):
+        self.finance = load("finance")
+
+    def test_the_access_url_reaches_the_proxy_without_userinfo(self):
+        self.assertEqual(
+            self.finance.accounts_url(ACCESS, None),
+            "https://bridge.simplefin.org/simplefin/accounts?version=2",
+        )
+        self.assertEqual(self.finance.auth_header(ACCESS), auth("owner:s3cret"))
+
+    def test_credentials_are_percent_decoded(self):
+        url = "https://o%3Awn:p%40ss@beta-bridge.simplefin.org/simplefin"
+        self.assertEqual(self.finance.auth_header(url), auth("o:wn:p@ss"))
+        self.assertEqual(
+            self.finance.accounts_url(url, None),
+            "https://beta-bridge.simplefin.org/simplefin/accounts?version=2",
+        )
+        self.assertIsNotNone(self.finance.session_of({"SIMPLEFIN_ACCESS_URL": url}))
 
 class ProtocolTests(unittest.TestCase):
     def setUp(self):
@@ -259,7 +284,12 @@ class CollectTests(unittest.TestCase):
             summary = self.run_collect(opener, state, directory)
             self.assertEqual(summary["transactions"], 1)
             self.assertEqual(state["cursor"], 1700000500)
-            self.assertEqual(opener.requests[0].full_url.split("?")[0], ACCESS + "/accounts")
+            request = opener.requests[0]
+            # The claim's credentials travel as a header: a URL userinfo reaches the
+            # proxy tunnel and dies as `InvalidURL: nonnumeric port`.
+            self.assertEqual(request.full_url.split("?")[0], "https://bridge.simplefin.org/simplefin/accounts")
+            self.assertNotIn("s3cret", request.full_url)
+            self.assertEqual(request.get_header("Authorization"), auth("owner:s3cret"))
             self.assertIn("start-date=", opener.requests[0].full_url)
             # A replay inside the overlap re-fetches but emits nothing new.
             opener = FakeOpener([v2_document([txn()])])

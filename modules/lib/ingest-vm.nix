@@ -57,6 +57,8 @@ let
     # option (#590).
     finance = [
       "bridge.simplefin.org"
+      # SimpleFIN hands beta accounts the beta bridge; same first party, same API.
+      "beta-bridge.simplefin.org"
       "production.plaid.com"
     ];
     brave = [ "sync-v2.brave.com" ];
@@ -69,7 +71,7 @@ let
 
   # The finance guest's effective allowlist: SimpleFIN always, Plaid only when
   # the owner enables the fallback.
-  financeAllow = plaid: [ "bridge.simplefin.org" ] ++ lib.optional plaid plaidHost;
+  financeAllow = plaid: [ "bridge.simplefin.org" "beta-bridge.simplefin.org" ] ++ lib.optional plaid plaidHost;
 
   sources = {
     tuta = {
