@@ -30,8 +30,16 @@ let
   ingestTools = pkgs.runCommand "kanbei-ingest-tools" { } ''
     mkdir -p $out/lib/kanbei-ingest
     cp ${../lib/ingest}/*.py $out/lib/kanbei-ingest/
-    # The token handshake is shared with the kanbei channels (relay_auth.py).
-    cp ${../lib/kanbei/relay_auth.py} $out/lib/kanbei-ingest/
+    # The token handshake is shared with the kanbei channels (relay_auth.py). Name the
+    # destination: a single-file store path is `<hash>-relay_auth.py`, and `import
+    # relay_auth` would fail at run time, not here.
+    cp ${../lib/kanbei/relay_auth.py} $out/lib/kanbei-ingest/relay_auth.py
+    # Import every module once so a missing or misnamed sibling fails this build.
+    PYTHONPATH=$out/lib/kanbei-ingest ${pkgs.python3}/bin/python3 - $out/lib/kanbei-ingest <<'PY'
+import importlib, pathlib, sys
+for path in sorted(pathlib.Path(sys.argv[1]).glob("*.py")):
+    importlib.import_module(path.stem)
+PY
   '';
 
   mkTool =
@@ -69,8 +77,13 @@ let
   searchTools = pkgs.runCommand "kanbei-search-tools" { } ''
     mkdir -p $out/lib/kanbei-search
     cp ${../lib/search}/*.py $out/lib/kanbei-search/
-    # The token handshake is shared with the kanbei channels (relay_auth.py).
-    cp ${../lib/kanbei/relay_auth.py} $out/lib/kanbei-search/
+    # Named destination: a single-file store path is `<hash>-relay_auth.py`.
+    cp ${../lib/kanbei/relay_auth.py} $out/lib/kanbei-search/relay_auth.py
+    PYTHONPATH=$out/lib/kanbei-search ${pkgs.python3}/bin/python3 - $out/lib/kanbei-search <<'PY'
+import importlib, pathlib, sys
+for path in sorted(pathlib.Path(sys.argv[1]).glob("*.py")):
+    importlib.import_module(path.stem)
+PY
   '';
 
   searchRelay = pkgs.writeShellApplication {
@@ -1287,6 +1300,16 @@ in
         ) sourceIds
       ))
     ];
+
+    # The heartbeat is a oneshot; nothing else starts it, so the timer is the only trigger.
+    systemd.timers.ingest-heartbeat = {
+      description = "Publish ingest freshness every five minutes";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnBootSec = "5min";
+        OnUnitActiveSec = "5min";
+      };
+    };
 
     environment.etc."kanbei-ingest/policy.json" = {
       mode = "0600";
