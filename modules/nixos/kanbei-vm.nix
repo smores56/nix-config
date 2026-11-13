@@ -93,6 +93,10 @@ let
     "--translate-gid=guest:0:65534:1"
     "--translate-gid=guest:${toString guestUid}:${toString vaultId}:1"
     "--translate-gid=guest:${toString agentFacts.coreUid}:${toString vaultId}:1"
+    # `guest:` only maps request credentials; without the `host:` direction the guest sees
+    # the host owner (vault) and the agent, running as its own uid, cannot read the tree.
+    "--translate-uid=host:${toString vaultId}:${toString agentFacts.coreUid}:1"
+    "--translate-gid=host:${toString vaultId}:${toString agentFacts.coreUid}:1"
     "--modcaps=-mknod"
   ];
   # The inbox batches are 0600 root and the tree is 0750 root. Only the trusted kernel uid is
@@ -103,6 +107,10 @@ let
     "--translate-uid=guest:${toString agentFacts.coreUid}:0:1"
     "--translate-gid=guest:0:65534:1"
     "--translate-gid=guest:${toString agentFacts.coreUid}:0:1"
+    # Presentation: the guest sees root-owned batch files as the kernel uid, which is the
+    # only reader on this share.
+    "--translate-uid=host:0:${toString agentFacts.coreUid}:1"
+    "--translate-gid=host:0:${toString agentFacts.coreUid}:1"
     "--modcaps=-mknod"
   ];
 
