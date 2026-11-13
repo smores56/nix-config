@@ -54,12 +54,11 @@ in
     clusterDataApps.enable = false;
     # On in the same change that stops the host `memory-mcp` (both bind loopback:8182).
     memoryForward.enable = true;
-    # Deliberately off until the one-time GPU cutover (docs/kanbei-vm.md); Immich triage still
-    # owns the 3090 and enabling this stops nvidia/llm on the host.
+    # The 3090 is on VFIO since the Phase B cutover (docs/kanbei-vm.md).
     kanbeiVm.enable = true;
-    # The ingest plane starts five Firecracker guests and needs the Kanbei key; off until the
-    # same cutover (docs/kanbei-ingest.md).
-    ingestVm.enable = false;
+    # Five Firecracker ingest guests plus the host writer/proxy/resolver; the writers need the
+    # Kanbei guest's age recipient (docs/kanbei-ingest.md).
+    ingestVm.enable = true;
     # #509 retirement: off keeps the live agent VM/Open WebUI/files-mcp until the cutover.
     kanbeiSplit.cutover.enable = false;
     vaultSync.device = "smortress";

@@ -493,9 +493,9 @@ The five ingest guests and their host writer/proxy/resolver are behind
    from INPUT/FORWARD by `networking.firewall.extraCommands`. No ingest tap is
    NATed.
 
-3. **First boot.** With the Kanbei VM already enabled, flip `ingestVm.enable`
-   in `modules/hosts/smortress/default.nix` (it is pinned off), `nixos-rebuild
-   switch`, then:
+3. **First boot.** With the Kanbei VM already enabled, `ingestVm.enable` in
+   `modules/hosts/smortress/default.nix` is on (since the T14–T21 bring-up; set
+   it back to `false` to roll the plane out). `nixos-rebuild switch`, then:
 
    ```sh
    sudo systemctl status ingest-vm-prep ingest-proxy ingest-resolver ingest-age-key
