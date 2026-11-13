@@ -1367,12 +1367,12 @@ password-manager fallback.
 A NixOS declaration must hand the user access (`owner`/`mode`), because the
 proxy runs as the user; `modules/hosts/smorespro/secrets.nix` is the example.
 
-Mint one token per client machine under Zero Trust → Access → Service Auth, then
+Mint one token per client machine under Zero Trust → Access controls → Service credentials → Service tokens, then
 paste both lines as `cloudflare-access-ssh-token` in that host's file
 (`secrets/smorespro.yaml`, `secrets/smoreswork.yaml`). That single token makes
 the machine blessed: `cloudflared` and the chat proxy both read it, so the
 browser opens `http://127.0.0.1:8787` on that device. To revoke one machine,
-delete its token in Zero Trust → Access → Service Auth; its cloudflared forwards
+delete its token in Zero Trust → Access controls → Service credentials → Service tokens; its cloudflared forwards
 and chat proxy then fail closed (the email OTP policy still serves humans). The
 `service_auth` policy accepts any valid service token, so minting a token needs
 no `cloudflare-apply` (the chat application's own policy change does); the
