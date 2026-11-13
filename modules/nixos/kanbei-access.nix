@@ -7,9 +7,10 @@
 #    tunnel's group may connect. The relay never parses TLS; the guest terminates it.
 # 2. The ACME responder: the guest sends a fixed-CN CSR over AF_VSOCK and gets a Certbot
 #    DNS-01 chain back. The private key never leaves the guest.
-# 3. The private hostname: `kanbei.sammohr.dev` resolves to loopback *on this host only*, so
-#    cloudflared's hostname route reaches the relay without an ingress rule. No public
-#    hostname is declared here; the OpenTofu fragment is in docs/kanbei-access.md.
+# 3. The public hostname: `webProxy.services.kanbei` publishes the relay through the tunnel
+#    with Cloudflare Access in front (OpenTofu owns the application). cloudflared dials
+#    127.0.0.1:443 and presents the public name as SNI, so the guest's public certificate
+#    verifies. Nothing here resolves the name.
 {
   config,
   lib,
@@ -45,8 +46,8 @@ let
   relayTokenFile = "${facts.stateDir}/secrets/relay-token";
 
   relayPort = ports.kanbei;
-  # The private hostname route is Layer 4: the client's destination port is preserved, so a
-  # browser's https://kanbei.sammohr.dev reaches the loopback listener on 443.
+  # cloudflared reaches the relay over loopback on the public port; the ingress rule in
+  # web-proxy.nix maps kanbei.<domain> to https://127.0.0.1:443 with the public name as SNI.
   expectedPort = 443;
 
   firewallChain = "kanbei-relay-in";
@@ -90,11 +91,6 @@ in
       "d /var/lib/${access.relayUser} 0700 ${access.relayUser} ${access.relayUser} -"
       "d ${access.acmeStateDir} 0700 kanbei-acme kanbei-acme -"
     ];
-
-    # The private hostname route makes cloudflared resolve the name on its own host. Loopback
-    # is the only answer, so neither a public A/AAAA record nor the wildcard CNAME can point
-    # the tunnel anywhere else.
-    networking.hosts."127.0.0.1" = [ access.hostname ];
 
     # cloudflared runs as a DynamicUser, so a named supplementary group is how its uid gets
     # the socket. The socket is loopback-only and 0660; no other local user can connect.
@@ -202,14 +198,15 @@ in
     assertions = [
       (assertion (
         relayPort == expectedPort
-      ) "kanbei-access: the private hostname route preserves port 443; ports.kanbei must be 443")
+      ) "kanbei-access: the public URL and the guest certificate use port 443; ports.kanbei must be 443")
       (assertion (lib.hasInfix "127.0.0.1:${toString relayPort}" config.systemd.sockets.kanbei-chat-relay.socketConfig.ListenStream) "kanbei-access: the relay socket must bind loopback only")
       (assertion (
         config.webProxy.tunnelName != ""
       ) "kanbei-access: kanbei needs the host's cloudflared tunnel; webProxy.tunnelName is empty")
       (assertion (
-        !(config.webProxy.services ? kanbei)
-      ) "kanbei-access: kanbei must not be a webProxy service; that would create a public ingress rule")
+        let s = config.webProxy.services.kanbei or null; in
+        s != null && s.protocol == "https" && s.access.enable
+      ) "kanbei-access: kanbei must be a webProxy https service with Access on; the ingress rule is what publishes it")
       (assertion (
         config.systemd.services.kanbei-chat-relay.restartIfChanged == false
         && config.systemd.services.kanbei-acme.restartIfChanged == false
@@ -229,10 +226,6 @@ in
       (assertion (
         config.users.groups ? ${access.tunnelGroup}
       ) "kanbei-access: the tunnel group must exist before cloudflared joins it")
-      (assertion (
-        (config.networking.hosts ? "127.0.0.1")
-        && lib.elem access.hostname config.networking.hosts."127.0.0.1"
-      ) "kanbei-access: the host must resolve ${access.hostname} to loopback for cloudflared")
     ];
   };
 }

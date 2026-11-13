@@ -564,6 +564,37 @@ in
           )
         );
 
+        # These host and guest units only meet at activation, so a wrong ExecStart or a
+        # socket on the wrong side of the swtpm protocol reaches the operator as a failed
+        # switch or a guest that never starts. Assert the shapes that broke cutover one:
+        # the verify unit needs the file inside the writeShellScriptBin directory, swtpm
+        # serves one channel on --ctrl, and QEMU's TPM chardev must be that ctrl socket
+        # (a --server data socket blocks QEMU in its first read, before any CPU starts).
+        kanbei-host-units = evalCheck "kanbei-host-units" (
+          toString (
+            let
+              host =
+                (config.flake.nixosConfigurations.smortress.extendModules {
+                  modules = [
+                    ({ lib, ... }: {
+                      kanbeiVm.enable = lib.mkForce true;
+                    })
+                  ];
+                }).config;
+              swtpm = toString host.systemd.services.kanbei-swtpm.serviceConfig.ExecStart;
+              verify = toString host.systemd.services.kanbei-vm-verify.serviceConfig.ExecStart;
+              qemuArgs = lib.concatStringsSep " " host.microvm.vms.kanbei.config.config.microvm.qemu.extraArgs;
+            in
+            assert lib.hasInfix "--ctrl type=unixio" swtpm;
+            assert !(lib.hasInfix "--server " swtpm);
+            assert !(lib.hasInfix "--socket " swtpm);
+            assert lib.hasSuffix "/bin/kanbei-vm-verify" verify;
+            assert lib.hasInfix "socket,id=chrtpm,path=/run/kanbei-vm/swtpm.ctrl" qemuArgs;
+            assert !(lib.hasInfix "swtpm.sock" qemuArgs);
+            host.system.build.toplevel.drvPath
+          )
+        );
+
         # owner-only, shared with the phone alone, and no restic job names the guest's
         # plaintext tree. The password contract is declared only while `kanbeiVm.enable`
         # is set: the key is not in `secrets/smortress.yaml`, so an unconditional

@@ -142,8 +142,6 @@ class Signer:
                 lego_path,
                 "--dns",
                 "cloudflare",
-                "--domains",
-                vsock.FIXED_CN,
                 "--csr",
                 csr_path,
                 "run",

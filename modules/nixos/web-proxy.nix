@@ -13,15 +13,16 @@ let
   domain = "sammohr.dev";
 
   # A typo that clears `access.enable` would publish sshd, the LLM, the
-  # memory MCP, or the assistant to the internet. OpenTofu owns those apps and
-  # their policies; this assertion stops the mistake before the tunnel ingress
-  # is applied.
+  # memory MCP, the assistant, or the Kanbei UI to the internet. OpenTofu owns
+  # those apps and their policies; this assertion stops the mistake before the
+  # tunnel ingress is applied.
   protected = [
     "ssh"
     "llm"
     "memory"
     "agent"
     "nanobot"
+    "kanbei"
   ];
 in
 {
@@ -32,6 +33,14 @@ in
           type = lib.types.str;
           default = "smortress";
           description = "Stable human label for the tunnel. NOT the UUID: cloudflared resolves the real UUID from credentialsFile at runtime, and OpenTofu reads it back out of that file. Empty leaves the tunnel daemon off.";
+        };
+        logLevel = lib.mkOption {
+          type = lib.types.enum [
+            "info"
+            "debug"
+          ];
+          default = "info";
+          description = "cloudflared log level. `debug` names each accepted stream, which the journal then keeps while diagnosing an ingress rule.";
         };
         credentialsFile = lib.mkOption {
           type = lib.types.path;
@@ -49,11 +58,12 @@ in
                 protocol = lib.mkOption {
                   type = lib.types.enum [
                     "http"
+                    "https"
                     "tcp"
                     "ssh"
                   ];
                   default = "http";
-                  description = "Origin scheme cloudflared proxies to. Non-HTTP schemes (tcp/ssh) are reached from clients via `cloudflared access <tcp|ssh>`, not a browser. An HTTP service reached only by unattended clients may also use tcp, so the client forward can inject the Access token (e.g. memory).";
+                  description = "Origin scheme cloudflared proxies to. Non-HTTP schemes (tcp/ssh) are reached from clients via `cloudflared access <tcp|ssh>`, not a browser. An HTTP service reached only by unattended clients may also use tcp, so the client forward can inject the Access token (e.g. memory). `https` is for an origin that terminates TLS itself (Kanbei's guest): cloudflared re-encrypts to loopback and verifies the origin certificate against the public hostname.";
                 };
                 access = {
                   enable = lib.mkEnableOption "Cloudflare Access in front of this endpoint (account IdP, shared allow-list)";
@@ -65,7 +75,7 @@ in
             }
           );
           default = { };
-          description = "Services to expose, keyed by subdomain: each becomes a connector ingress rule <sub>.<domain> -> <protocol>://127.0.0.1:<port>. No DNS is written here: OpenTofu owns the single proxied wildcard CNAME that fronts the tunnel (tofu/main.tf), so every subdomain resolves through it.";
+          description = "Services to expose, keyed by subdomain: each becomes a connector ingress rule <sub>.<domain> -> <protocol>://127.0.0.1:<port> (an `https` rule also sets originServerName to <sub>.<domain>, so a loopback origin's public certificate verifies). No DNS is written here: OpenTofu owns the single proxied wildcard CNAME that fronts the tunnel (tofu/main.tf), so every subdomain resolves through it.";
         };
       };
     };
@@ -99,8 +109,29 @@ in
         inherit (cfg) credentialsFile;
         default = "http_status:404";
         ingress = lib.mapAttrs' (
-          sub: s: lib.nameValuePair "${sub}.${domain}" "${s.protocol}://127.0.0.1:${toString s.port}"
+          sub: s:
+          lib.nameValuePair "${sub}.${domain}" (
+            # cloudflared's default origin SNI is the service URL's host, so an
+            # https origin on 127.0.0.1 would be verified against "127.0.0.1" and
+            # fail. Name the public hostname instead; the origin certificate is
+            # for that name.
+            if s.protocol == "https" then
+              {
+                service = "https://127.0.0.1:${toString s.port}";
+                originRequest.originServerName = "${sub}.${domain}";
+              }
+            else
+              "${s.protocol}://127.0.0.1:${toString s.port}"
+          )
         ) cfg.services;
+      };
+    };
+
+    # cloudflared reads TUNNEL_LOGLEVEL from the environment; the NixOS module has no
+    # log-level option of its own.
+    systemd.services = lib.mkIf (cfg.logLevel == "debug") {
+      "cloudflared-tunnel-${cfg.tunnelName}".environment = {
+        TUNNEL_LOGLEVEL = "debug";
       };
     };
   };

@@ -151,12 +151,15 @@ separate decision.
 
 microvm.nix has no TPM option. `kanbei-swtpm.service` runs
 `swtpm socket --tpm2 --tpmstate dir=/var/lib/kanbei-vm/swtpm` as root with the
-state a 0700 root directory, a control socket, and a data socket in
-`/run/kanbei-vm` (0750 `root:kvm`, socket 0660) so the `microvm` user cannot
-read the NVRAM but can connect. QEMU attaches it from `microvm.qemu.extraArgs`:
+state a 0700 root directory and one control socket in `/run/kanbei-vm` (0750
+`root:kvm`, socket 0660) so the `microvm` user cannot read the NVRAM but can
+connect. QEMU's emulator backend speaks the whole swtpm protocol (control and
+TPM traffic) on that `--ctrl` channel; give it a `--server` data socket instead
+and QEMU blocks in its first read before any CPU starts. It attaches from
+`microvm.qemu.extraArgs`:
 
 ```
--chardev socket,id=chrtpm,path=/run/kanbei-vm/swtpm.sock
+-chardev socket,id=chrtpm,path=/run/kanbei-vm/swtpm.ctrl
 -tpmdev emulator,id=tpm0,chardev=chrtpm
 -device tpm-crb,tpmdev=tpm0
 ```
@@ -186,32 +189,37 @@ TPM unlock works again.
 
 ## In-guest disk and first-boot enrollment
 
-`environment.etc.crypttab` opens the volume in stage 2:
+`kanbei-data-open.service` opens the volume in stage 2: on first boot it
+formats the virtio-blk device as LUKS2, enrolls the vTPM token, opens the
+mapping and makes the ext4 filesystem; on later boots it opens the mapping with
+the TPM2 token and falls back to the escrowed recovery key when the swtpm state
+is gone.
 
-```
-kanbei-data /dev/disk/by-id/virtio-kanbei-data none luks,tpm2-device=auto
-```
-
-and `/var/lib/kanbei` is mounted from `/dev/mapper/kanbei-data` (ext4,
-`nodev,nosuid,noatime`, ordered `x-systemd.before=kanbei.service`).
-`kanbei-data-init.service` is `RequiredBy=systemd-cryptsetup@kanbei-data.service`
-and `Before=` it and `kanbei.service`, so on first boot it runs before the
-unlock attempt.
+`/etc/crypttab` is deliberately empty and `/var/lib/kanbei` is declared as a
+`systemd.mounts` entry rather than a `fileSystems` entry. A crypttab volume and
+every `.mount` unit are ordered before `local-fs.target`, while the recovery
+contract and escrow live on virtiofs shares that systemd mounts after it;
+putting the unlock in the early boot deadlocks the first boot. The mount is
+ordered `After=kanbei-data-open.service` and `Before=kanbei.service`.
 
 First boot (`modules/nixos/kanbei-vm.nix`, `guestInit`):
 
-1. Waits for the virtio-blk device; exits if it is already a LUKS volume.
-2. Picks the recovery credential **before** formatting: the sops contract
-   `/run/secrets/kanbei-recovery-key` when present (copied by
+1. Waits for the virtio-blk device. If it already carries a LUKS header it
+   enrolls the TPM2 token from the escrowed key when the token is missing, then
+   opens the mapping with the token (escrow as fallback).
+2. Otherwise it picks the recovery credential **before** formatting: the sops
+   contract `/run/secrets/kanbei-recovery-key` when present (copied by
    `kanbei-vm-prep`), else an escrowed key at
    `/var/lib/kanbei-vm/enroll/recovery.key` (0600, root-only) created first, or
    reused from a previous partial run.
 3. `cryptsetup luksFormat --type luks2 --label KANBEI --key-file <recovery>`.
-4. `systemd-cryptenroll --tpm2-device=auto` (no PCR policy) with
-   `--unlock-key-file=<recovery>`; without a contract key it also enrolls
-   `--recovery-key`, and the printed key goes to the guest console (i.e. the
-   root-only console file) as well as the escrow file.
-5. `mkfs.ext4` through a temporary mapping.
+4. `systemd-cryptenroll --tpm2-device=/dev/tpm0` (no PCR policy) with
+   `--unlock-key-file=<recovery>`; the escrowed key is the recovery credential,
+   so no separate systemd-generated one is enrolled. The command runs under a
+   timeout with stdin closed, and every step is echoed to the serial console
+   (the guest journal is volatile).
+5. Opens the mapping and runs `mkfs.ext4` only if the mapping has no ext4
+   signature yet.
 
 Because the recovery credential exists before the format, a crash anywhere in
 that sequence is recoverable with it — the volume is never formatted under a

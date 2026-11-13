@@ -249,6 +249,29 @@ in
     "d ${runDir} 0700 ${user} ${group} -"
   ];
 
+  # The LUKS volume root is root-owned, and every service that writes into it runs as
+  # kanbei-core. Create its state directory as root once the mount is up; the age unit then
+  # creates its own 0700 subdirectory underneath.
+  systemd.services.kanbei-agent-state = {
+    description = "Create the kanbei agent state directory on the LUKS volume";
+    wantedBy = [ "multi-user.target" ];
+    unitConfig.RequiresMountsFor = [ "/var/lib/kanbei" ];
+    before = [
+      "kanbei-age-identity.service"
+      "kanbei.service"
+    ];
+    restartIfChanged = false;
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      UMask = "0077";
+    };
+    script = ''
+      set -euo pipefail
+      install -d -m 0700 -o ${user} -g ${group} ${stateDir} ${identityDir}
+    '';
+  };
+
   # The identity lives on the LUKS volume: a regenerated key would make every batch the host
   # already encrypted to the previous recipient undecryptable.
   systemd.services.kanbei-age-identity = {

@@ -56,7 +56,7 @@ in
     memoryForward.enable = true;
     # Deliberately off until the one-time GPU cutover (docs/kanbei-vm.md); Immich triage still
     # owns the 3090 and enabling this stops nvidia/llm on the host.
-    kanbeiVm.enable = false;
+    kanbeiVm.enable = true;
     # The ingest plane starts five Firecracker guests and needs the Kanbei key; off until the
     # same cutover (docs/kanbei-ingest.md).
     ingestVm.enable = false;
@@ -120,6 +120,13 @@ in
         };
         nanobot = {
           port = ports.agent;
+          access.enable = true;
+        };
+        # Kanbei terminates TLS in the guest, so the origin is https on loopback and the
+        # ingress rule presents the public name as SNI for certificate verification.
+        kanbei = {
+          port = ports.kanbei;
+          protocol = "https";
           access.enable = true;
         };
       };

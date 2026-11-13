@@ -31,8 +31,9 @@ let
   # Root-only: swtpm NVRAM is the seal for the guest disk.
   swtpmDir = "${stateDir}/swtpm";
   # qemu runs as `microvm:kvm`, so the socket directory is group-traversable but not world.
+  # QEMU's TPM emulator backend speaks the swtpm protocol (control commands and TPM traffic)
+  # on the --ctrl channel only; a separate data socket is never used.
   runDir = "/run/kanbei-vm";
-  swtpmSock = "${runDir}/swtpm.sock";
   swtpmCtrl = "${runDir}/swtpm.ctrl";
   # systemd opens these as root before dropping to `microvm`; the parent is 0700 root.
   consoleDir = "${stateDir}/console";
@@ -92,6 +93,10 @@ let
     "--translate-gid=guest:0:65534:1"
     "--translate-gid=guest:${toString guestUid}:${toString vaultId}:1"
     "--translate-gid=guest:${toString agentFacts.coreUid}:${toString vaultId}:1"
+    # `guest:` only maps request credentials; without the `host:` direction the guest sees
+    # the host owner (vault) and the agent, running as its own uid, cannot read the tree.
+    "--translate-uid=host:${toString vaultId}:${toString agentFacts.coreUid}:1"
+    "--translate-gid=host:${toString vaultId}:${toString agentFacts.coreUid}:1"
     "--modcaps=-mknod"
   ];
   # The inbox batches are 0600 root and the tree is 0750 root. Only the trusted kernel uid is
@@ -102,6 +107,10 @@ let
     "--translate-uid=guest:${toString agentFacts.coreUid}:0:1"
     "--translate-gid=guest:0:65534:1"
     "--translate-gid=guest:${toString agentFacts.coreUid}:0:1"
+    # Presentation: the guest sees root-owned batch files as the kernel uid, which is the
+    # only reader on this share.
+    "--translate-uid=host:0:${toString agentFacts.coreUid}:1"
+    "--translate-gid=host:0:${toString agentFacts.coreUid}:1"
     "--modcaps=-mknod"
   ];
 
@@ -153,63 +162,97 @@ let
   # First boot: the volume has no LUKS header, so the recovery credential is created *before*
   # the format and escrowed on the host (contract file when sops provides one). A crash between
   # format and enrollment therefore never strands the volume.
-  guestInit = pkgs.writeShellScript "kanbei-data-init" ''
+  # The mapping is opened here, not from /etc/crypttab: the credential and escrow live on
+  # virtiofs shares that systemd mounts after local-fs.target, so an early crypttab unlock
+  # (and anything ordered before it) can never see them on first boot.
+  guestInit = pkgs.writeShellScript "kanbei-data-open" ''
     set -euo pipefail
     export PATH=${
       lib.makeBinPath [
         pkgs.coreutils
         pkgs.cryptsetup
+        pkgs.e2fsprogs
         pkgs.systemd
         pkgs.tpm2-tools
+        pkgs.util-linux
       ]
     }
     dev=${dataDevice}
+    key=/run/kanbei-recovery.key
+    escrow=/mnt/kanbei-enroll/recovery.key
+    contract=/run/kanbei-secrets/kanbei-recovery-key
+    # The guest journal is volatile, so the serial console is the only trace a failed
+    # first boot leaves on the host. Say every decision and never wait on input.
+    say() { echo "kanbei-data-open: $*" > /dev/console; }
+    tpm=/dev/tpm0
+    [ -e "$tpm" ] || tpm=auto
+
     for _ in $(seq 1 120); do
       [ -e "$dev" ] && break
       sleep 0.5
     done
-    if [ ! -e "$dev" ]; then
-      echo "kanbei-data-init: $dev did not appear" >&2
-      exit 1
-    fi
+    [ -e "$dev" ] || { say "$dev did not appear"; exit 1; }
+    say "tpm devices: $(ls /dev/tpm* 2>/dev/null | tr '\n' ' ')"
+    say "tpm2-setup: $(systemctl show -p ActiveState -p Result systemd-tpm2-setup.service 2>/dev/null | tr '\n' ' ')"
+    # Independent of LUKS: prove the emulated TPM answers before blaming the enrollment.
+    for node in /dev/tpmrm0 /dev/tpm0; do
+      [ -e "$node" ] || continue
+      set +e
+      timeout 20 tpm2_getrandom -T "device:$node" --hex 8 >/tmp/kanbei-tpm.out 2>&1
+      tpmrc=$?
+      set -e
+      say "tpm smoke $node: exit $tpmrc $(head -c 200 /tmp/kanbei-tpm.out | tr '\n' ' ')"
+    done
+
+    enroll_token() {
+      say "enrolling the TPM2 token from $1 (device $tpm)"
+      set +e
+      timeout 150 systemd-cryptenroll --tpm2-device="$tpm" \
+        --unlock-key-file="$1" "$dev" </dev/null >/dev/console 2>&1
+      rc=$?
+      set -e
+      [ "$rc" -eq 0 ] || { say "TPM enrollment failed or timed out (exit $rc)"; exit 1; }
+      say "TPM token enrolled"
+    }
+
     if cryptsetup isLuks "$dev"; then
-      exit 0
-    fi
-
-    umask 077
-    contract=/run/kanbei-secrets/kanbei-recovery-key
-    if [ -r "$contract" ]; then
-      install -m 0400 "$contract" /run/kanbei-recovery.key
-      generated=0
-    elif [ -r /mnt/kanbei-enroll/recovery.key ]; then
-      # A previous boot formatted but never finished enrolling.
-      install -m 0400 /mnt/kanbei-enroll/recovery.key /run/kanbei-recovery.key
-      generated=0
+      say "$dev already holds LUKS"
+      # cryptsetup(8) has no --tpm2-device option; the token handler lives in
+      # systemd-cryptsetup, which is what a crypttab entry would have used.
+      if systemd-cryptsetup attach kanbei-data "$dev" - tpm2-device=auto 2>/dev/null; then
+        say "opened with the TPM token"
+      else
+        [ -r "$escrow" ] || { say "no token works and no escrowed key exists"; exit 1; }
+        enroll_token "$escrow"
+        systemd-cryptsetup attach kanbei-data "$dev" - tpm2-device=auto \
+          || cryptsetup open --key-file "$escrow" "$dev" kanbei-data
+        say "opened after enrolling the token"
+      fi
     else
-      head -c 64 /dev/urandom > /run/kanbei-recovery.key
-      # Escrow before formatting so a failed enrollment is always recoverable.
-      install -m 0600 /run/kanbei-recovery.key /mnt/kanbei-enroll/recovery.key
-      generated=1
+      umask 077
+      if [ -r "$contract" ]; then
+        say "using the sops recovery-key contract"
+        install -m 0400 "$contract" "$key"
+      elif [ -r "$escrow" ]; then
+        say "reusing the escrowed recovery key"
+        install -m 0400 "$escrow" "$key"
+      else
+        say "generating a recovery key and escrowing it before the format"
+        head -c 64 /dev/urandom > "$key"
+        install -m 0600 "$key" "$escrow"
+      fi
+      say "formatting LUKS2"
+      cryptsetup luksFormat --type luks2 --batch-mode --label KANBEI --key-file "$key" "$dev"
+      enroll_token "$key"
+      say "opening the new mapping"
+      cryptsetup open --key-file "$key" "$dev" kanbei-data
     fi
 
-    cryptsetup luksFormat --type luks2 --batch-mode --label KANBEI \
-      --key-file /run/kanbei-recovery.key "$dev"
-    # TPM2 token plus, when no contract key exists, systemd's generated recovery key.
-    if [ "$generated" = 1 ]; then
-      systemd-cryptenroll --tpm2-device=auto --recovery-key \
-        --unlock-key-file=/run/kanbei-recovery.key "$dev" > /dev/console
-    else
-      systemd-cryptenroll --tpm2-device=auto \
-        --unlock-key-file=/run/kanbei-recovery.key "$dev"
+    if [ "$(blkid -o value -s TYPE /dev/mapper/kanbei-data 2>/dev/null)" != "ext4" ]; then
+      say "making the ext4 filesystem"
+      mkfs.ext4 -q -L kanbei-data -m 1 /dev/mapper/kanbei-data
     fi
-
-    cryptsetup open --key-file /run/kanbei-recovery.key "$dev" kanbei-data-init
-    ${pkgs.e2fsprogs}/bin/mkfs.ext4 -q -L kanbei-data -m 1 /dev/mapper/kanbei-data-init
-    cryptsetup close kanbei-data-init
-
-    if [ "$generated" = 1 ]; then
-      echo "kanbei: recovery key is in /var/lib/kanbei-vm/enroll/recovery.key (root-only) and was printed to the console; store it off-host and delete the escrow file" > /dev/console
-    fi
+    say "volume ready"
   '';
 
   # Both restic jobs snapshot the same image. The helper refcounts jobs under a flock so the
@@ -269,8 +312,8 @@ let
       echo "FAIL: ${relayTokenFile} is not 0400 root:root; every relay authenticates with it" >&2
       fail=1
     fi
-    if [ ! -S ${swtpmSock} ]; then
-      echo "FAIL: ${swtpmSock} is missing" >&2
+    if [ ! -S ${swtpmCtrl} ]; then
+      echo "FAIL: ${swtpmCtrl} is missing" >&2
       fail=1
     fi
     if [ ! -c /dev/vhost-vsock ]; then
@@ -360,20 +403,27 @@ let
           fi
           i=0
           while [ "$i" -lt 150 ]; do
-            [ -S ${swtpmSock} ] && break
+            [ -S ${swtpmCtrl} ] && break
             ${pkgs.coreutils}/bin/sleep 0.2
             i=$((i + 1))
           done
-          if [ ! -S ${swtpmSock} ]; then
-            echo "kanbei: ${swtpmSock} is missing; refusing to boot without the vTPM" >&2
+          if [ ! -S ${swtpmCtrl} ]; then
+            echo "kanbei: ${swtpmCtrl} is missing; refusing to boot without the vTPM" >&2
             exit 1
           fi
         '';
-        # microvm.nix has no vTPM option: the host unit owns swtpm and this connects QEMU to it.
+        # The qemu `microvm` machine emits XSDT/FACP/DSDT/APIC only: no TPM2 ACPI table, so
+        # the guest kernel never binds tpm_crb and /dev/tpm0 does not exist (verified by
+        # booting this kernel on both machines). q35 emits the TPM2 table and the same
+        # `tpm-crb` device works, so the seal needs a machine with real ACPI.
+        qemu.machine = "q35";
+        # microvm.nix has no vTPM option: the host unit owns swtpm and this connects QEMU to
+        # its --ctrl socket, the one channel the emulator backend uses. Pointing it at a
+        # --server data socket makes QEMU block in its first read before any CPU starts.
         # `-monitor none` keeps the guest from ever reaching the QEMU monitor.
         qemu.extraArgs = [
           "-chardev"
-          "socket,id=chrtpm,path=${swtpmSock}"
+          "socket,id=chrtpm,path=${swtpmCtrl}"
           "-tpmdev"
           "emulator,id=tpm0,chardev=chrtpm"
           "-device"
@@ -407,19 +457,32 @@ let
         pkgs.tpm2-tools
       ];
 
-      environment.etc.crypttab.text = ''
-        kanbei-data ${dataDevice} none luks,tpm2-device=auto
-      '';
-      fileSystems."/var/lib/kanbei" = {
-        device = "/dev/mapper/kanbei-data";
-        fsType = "ext4";
-        options = [
-          "nodev"
-          "nosuid"
-          "noatime"
-          "x-systemd.before=kanbei.service"
-        ];
-      };
+      # The volume is opened by kanbei-data-open.service, not from /etc/crypttab: a crypttab
+      # entry is ordered before local-fs.target, but the recovery material lives on virtiofs
+      # shares that are mounted later, so the first boot deadlocks. The mount is declared
+      # here rather than in `fileSystems` for the same reason: a .mount unit is implicitly
+      # ordered before local-fs.target, which would order it before the service that
+      # creates its device.
+      systemd.mounts = [
+        {
+          what = "/dev/mapper/kanbei-data";
+          where = "/var/lib/kanbei";
+          type = "ext4";
+          options = "nodev,nosuid,noatime";
+          wantedBy = [ "multi-user.target" ];
+          unitConfig.DefaultDependencies = false;
+          conflicts = [ "umount.target" ];
+          before = [
+            "umount.target"
+            "kanbei.service"
+          ];
+          after = [
+            "local-fs.target"
+            "kanbei-data-open.service"
+          ];
+          requires = [ "kanbei-data-open.service" ];
+        }
+      ];
 
       # 0750 root:kanbei: guest uid 1000 (kanbei) must traverse the LUKS mount; secrets stay
       # 0700 root inside it.
@@ -428,22 +491,16 @@ let
         "d /run/kanbei-secrets 0755 root root -"
       ];
 
-      systemd.services.kanbei-data-init = {
-        description = "Format and enroll the kanbei data volume on first boot";
-        wantedBy = [ ];
-        # The .device unit binds systemd-cryptsetup; this must win the race on first boot.
-        requiredBy = [ "systemd-cryptsetup@kanbei-data.service" ];
-        before = [
-          "systemd-cryptsetup@kanbei-data.service"
-          "kanbei.service"
-        ];
-        after = [ "systemd-udevd.service" ];
-        # The escrow and the recovery-key contract are virtiofs shares; without them the
-        # first-boot format has nowhere to put the credential, so fail instead of formatting.
+      systemd.services.kanbei-data-open = {
+        description = "Open the kanbei data volume (first boot: format, enroll, mkfs)";
+        wantedBy = [ "multi-user.target" ];
+        # Both are virtiofs shares that systemd mounts after local-fs.target; this unit is
+        # an ordinary late service, so waiting for them cannot cycle.
         unitConfig.RequiresMountsFor = [
           "/mnt/kanbei-enroll"
           "/run/kanbei-secrets"
         ];
+        after = [ "systemd-udevd.service" ];
         restartIfChanged = false;
         serviceConfig = {
           Type = "oneshot";
@@ -451,6 +508,38 @@ let
           UMask = "0077";
           ExecStart = guestInit;
         };
+      };
+
+      # The guest journal is volatile and there is no login on that root, so a failed unit
+      # leaves nothing behind. Dump the failure summary to the serial console, which the host
+      # keeps at /var/lib/kanbei-vm/console/console.log (root-only).
+      systemd.services.kanbei-boot-report = {
+        description = "Report failing kanbei units on the serial console";
+        wantedBy = [ "multi-user.target" ];
+        after = [
+          "kanbei-age-identity.service"
+          "kanbei-cert.service"
+          "kanbei-ui.service"
+          "kanbei.service"
+        ];
+        restartIfChanged = false;
+        serviceConfig = {
+          Type = "oneshot";
+        };
+        script = ''
+          sleep 20
+          {
+            ${pkgs.systemd}/bin/systemctl --failed --no-pager
+            ${pkgs.coreutils}/bin/id kanbei-core || true
+            ${pkgs.coreutils}/bin/stat -c '%a %u:%g %n' \
+              /mnt/kanbei/inbox /mnt/kanbei/vault /mnt/kanbei/todo \
+              /var/lib/kanbei /var/lib/kanbei/agent /run/kanbei-secrets 2>&1 || true
+            ${pkgs.systemd}/bin/journalctl -b --no-pager -n 120 \
+              -u kanbei-data-open.service -u kanbei-age-identity.service \
+              -u kanbei-age-publish.service -u kanbei-cert.service \
+              -u kanbei-ui.service -u kanbei.service
+          } > /dev/console 2>&1 || true
+        '';
       };
 
       system.stateVersion = "26.05";
@@ -544,6 +633,14 @@ in
         fi
         ${pkgs.coreutils}/bin/chmod 0400 ${relayTokenFile}
         ${pkgs.coreutils}/bin/chown root:root ${relayTokenFile}
+        # A modules-load restart (every switch) recreates the vsock device with upstream's
+        # 0666; the udev rule only covers coldplug. Load it here and re-assert the narrowing
+        # before qemu opens it, so the relay never gains the device.
+        ${pkgs.kmod}/bin/modprobe -q vhost_vsock || true
+        if [ -c /dev/vhost-vsock ]; then
+          ${pkgs.coreutils}/bin/chgrp kvm /dev/vhost-vsock
+          ${pkgs.coreutils}/bin/chmod 0660 /dev/vhost-vsock
+        fi
       '';
     };
 
@@ -587,7 +684,7 @@ in
         RuntimeDirectory = "kanbei-vm";
         RuntimeDirectoryMode = "0750";
         RuntimeDirectoryPreserve = "restart";
-        ExecStart = "${pkgs.swtpm}/bin/swtpm socket --tpm2 --tpmstate dir=${swtpmDir} --ctrl type=unixio,path=${swtpmCtrl},mode=0660 --socket type=unixio,path=${swtpmSock},mode=0660";
+        ExecStart = "${pkgs.swtpm}/bin/swtpm socket --tpm2 --tpmstate dir=${swtpmDir} --ctrl type=unixio,path=${swtpmCtrl},mode=0660";
         # One client, but a restart must leave the state (and the seal) intact.
         Restart = "always";
         RestartSec = "2s";
@@ -629,7 +726,8 @@ in
       restartIfChanged = false;
       serviceConfig = {
         Type = "oneshot";
-        ExecStart = verifyScript;
+        # writeShellScriptBin is a directory; the unit needs the file inside it.
+        ExecStart = "${verifyScript}/bin/kanbei-vm-verify";
       };
     };
 

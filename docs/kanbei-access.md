@@ -1,35 +1,40 @@
-# Kanbei access: private route, in-VM TLS, and the locked-down shell
+# Kanbei access: public hostname behind Access, in-VM TLS, and the locked-down shell
 
-`kanbei.sammohr.dev` is reachable only from owner devices running the Cloudflare One
-(WARP) client. It is a **private hostname route** on the host's existing tunnel: there is
-no public hostname, no DNS record created for it, and no ingress rule that could serve an
-unauthenticated request. TLS terminates inside the `kanbei` guest, so the browser sees the
-guest's certificate end to end and Cloudflare Gateway does not decrypt the stream.
+`kanbei.sammohr.dev` is published on the host's existing Cloudflare tunnel and gated by a
+Cloudflare Access application (owner email only). There is no DNS record specific to the
+name: the `*.sammohr.dev` wildcard CNAME already resolves to the tunnel, and the tunnel's
+ingress rule maps the name to the guest's relay. TLS terminates inside the `kanbei` guest,
+so cloudflared verifies the guest's public certificate between the connector and the
+origin; a browser sees the Cloudflare edge certificate, as with every tunnel hostname.
+
+A **private hostname route** (WARP, Gateway L4 rewrite, initial-resolved IPs) was tried
+first and retired on 2026-11-13: Gateway handed both owner devices an initial-resolved IP,
+but neither connection was rewritten into the tunnel, so every request reached the edge as
+a public hostname. A public hostname behind Access needs no client component.
 
 Code: `modules/nixos/kanbei-access.nix` (host), `modules/nixos/kanbei-guest-access.nix`
 (guest), shared constants in `modules/lib/kanbei-access.nix`, Python in
-`modules/lib/kanbei/`. The VM itself is `docs/kanbei-vm.md`; the threat model and accepted
-residuals are `docs/kanbei-split.md`.
+`modules/lib/kanbei/`. The ingress rule is `webProxy.services.kanbei` in the host config.
+The VM itself is `docs/kanbei-vm.md`; the threat model and accepted residuals are
+`docs/kanbei-split.md`.
 
 ## Path
 
 ```
-browser (WARP) → Cloudflare Gateway (DNS + L4 hostname route, Access)
-  → cloudflared (tunnel `smortress`)
+browser → Cloudflare edge (Access: owner email)
+  → cloudflared (tunnel `smortress`; ingress kanbei.<domain> → https://127.0.0.1:443)
   → 127.0.0.1:443 on the host (systemd socket, group kanbei-tunnel only)
   → kanbei-chat-relay (uid kanbei-relay, TCP → AF_VSOCK 4:10000)
   → guest `kanbei-ui` (token line, then TLS; static shell + JSON API)
 ```
 
-- The route is Layer 4. Gateway resolves the hostname through the tunnel, returns an
-  initial resolved IP, and forwards the client's TCP stream with the original port; a
-  browser's `https://kanbei.sammohr.dev` therefore arrives at loopback port 443. That is
-  why `ports.kanbei` is 443 rather than a high port: nothing re-maps the destination.
-- The host resolves `kanbei.sammohr.dev` to `127.0.0.1` (`networking.hosts`) so
-  cloudflared's private-hostname resolver reaches the relay. No public A/AAAA record is
-  added. The existing `*.sammohr.dev` CNAME does resolve publicly, but cloudflared has no
-  ingress rule for this name, so a request that bypasses WARP gets the tunnel's
-  `http_status:404` catch-all, and the Access application denies it first.
+- The ingress rule uses the `https` protocol variant. cloudflared opens a fresh TLS
+  connection to loopback, and because the service address is `127.0.0.1`, `web-proxy.nix`
+  sets `originRequest.originServerName` to the public hostname so the guest's certificate
+  verifies. `ports.kanbei` stays 443, matching the certificate and the public URL.
+- Access is the only gate: the application allows the owner email and nothing else. A
+  device that happens to run the Cloudflare One client can pass with its WARP identity
+  (`allow_authenticate_via_warp`), but WARP is not required and no client-side setting is.
 - The relay is a byte pipe. It never parses HTTP or TLS and holds no key material. Its
   systemd socket is `127.0.0.1:443`, mode `0660`, group `kanbei-tunnel`; cloudflared runs as
   a DynamicUser and joins that group as a supplementary group. The iptables chain
@@ -54,43 +59,31 @@ browser (WARP) → Cloudflare Gateway (DNS + L4 hostname route, Access)
 
 ## OpenTofu fragment
 
-This is the exact fragment for `smores56/homelabs-platform`'s `tofu/` (the repo split moves
-`tofu/` there). It is **not** applied from this checkout; copy it into the platform repo and
-run that repo's `tofu apply`. It creates exactly two objects: the private hostname route and
-the Access application. Deliberately **no** `cloudflare_dns_record`: adding one would make
-the name a public hostname.
+The application lives in `smores56/homelabs-platform`'s `tofu/kanbei.tf` (the repo split
+moved `tofu/` there); it is applied from that repo, not from this checkout. It creates one
+object, the Access application, and deliberately **no** `cloudflare_dns_record` and **no**
+hostname route: the wildcard CNAME resolves the name, and the tunnel ingress is declared
+here.
 
 ```hcl
-# Private hostname route: kanbei.sammohr.dev is reachable only through this tunnel from
-# WARP clients. TLS terminates in the guest, so Gateway must not inspect this name.
-resource "cloudflare_zero_trust_network_hostname_route" "kanbei" {
-  account_id = var.account_id
-  hostname   = "kanbei.${var.domain}"
-  tunnel_id  = var.tunnel_id
-  comment    = "Kanbei chat: private hostname route (WARP only); TLS terminates in the guest"
-}
-
-# Access still gates the route. `allow_authenticate_via_warp` lets an enrolled device pass
-# with its WARP identity instead of a browser redirect; the service-token policy admits an
-# unattended client that presents a token, and the owner's email remains the human fallback.
 resource "cloudflare_zero_trust_access_application" "kanbei" {
   account_id                  = var.account_id
   name                        = "kanbei"
-  domain                      = "kanbei.${var.domain}"
   type                        = "self_hosted"
   session_duration            = "720h"
   allow_authenticate_via_warp = true
   skip_interstitial           = true
   app_launcher_visible        = false
 
+  destinations = [{
+    type = "public"
+    uri  = "kanbei.${var.domain}"
+  }]
+
   policies = [
     {
       id         = cloudflare_zero_trust_access_policy.email.id
       precedence = 1
-    },
-    {
-      id         = cloudflare_zero_trust_access_policy.service_auth.id
-      precedence = 2
     },
   ]
 
@@ -100,44 +93,26 @@ resource "cloudflare_zero_trust_access_application" "kanbei" {
 }
 ```
 
-`var.account_id`, `var.domain` (`sammohr.dev`), `var.tunnel_id` and the two policy resources
-already exist in `tofu/main.tf`; the fragment adds no provider or variable. It does not
-create a service token: mint one in the dashboard for an unattended client
-(`docs/manual-steps.md`, `service/smortress/agent` has the existing shape) or rely on the
-WARP identity alone.
+`var.account_id`, `var.domain` (`sammohr.dev`) and the email policy already exist in
+`tofu/`. The account-wide `service_auth` policy is deliberately not attached: it accepts
+any valid service token in the account, including the agent's. An unattended client that
+must reach Kanbei needs its own Access decision and a reviewed terraform change.
 
-## WARP client requirements
+## Access requirements and failure modes
 
-Owner devices: the phone and the laptop. Both must run the Cloudflare One client:
+Nothing is required on the client. The owner signs in with the email on the policy; any
+other identity is denied at the edge.
 
-| Platform | Minimum version | Notes |
-|---|---|---|
-| Windows / macOS / Linux | 2025.4.929.0 | Traffic and DNS mode |
-| iOS | 1.11 | Traffic and DNS mode |
-| Android | 2.4.2 | Traffic and DNS mode |
-
-Configure in the Zero Trust dashboard (none of this is in `tofu/` today, so it is a manual
-step):
-
-1. **Gateway proxy on.** Traffic controls → Traffic settings → Proxy and inspection:
-   enable *Allow Secure Web Gateway to proxy traffic* with **TCP** (and UDP for DNS).
-   Private hostname routes are L4; without the proxy they do not work. The API equivalent
-   is `cloudflare_zero_trust_device_settings.gateway_proxy_enabled = true`.
-2. **Split tunnel include** the initial resolved IP ranges. Gateway hands the client an
-   address from `100.80.0.0/16` (IPv4) or `2606:4700:0cf1:4000::/64` (IPv6); that packet
-   must reach Cloudflare, not the local LAN. In *Split Tunnels → Include*, add both ranges
-   (and make sure neither is in *Exclude*; the default exclude `100.64.0.0/10` does not
-   cover them, but a custom exclude might).
-3. **DNS through Gateway.** The client must send DNS queries for the private hostname to
-   Gateway. Delete `dev` from *Local Domain Fallback* (it must not resolve
-   `kanbei.sammohr.dev` locally), and keep DNS in Traffic-and-DNS mode.
-4. **No TLS inspection.** Gateway must not decrypt this hostname: keep *TLS decryption* off
-   for the destination (the default) or add `kanbei.sammohr.dev` to its do-not-inspect
-   list. With decryption off, Access evaluates the request from WARP identity and the
-   ClientHello/SNI; the browser's certificate stays the guest's.
-
-WARP identity and posture are evaluated before the stream enters the tunnel. A device that
-is not enrolled, or that fails the Access policy, never reaches cloudflared.
+- `curl -sS -o /dev/null -D - https://kanbei.sammohr.dev/` → `302` to
+  `<team>.cloudflareaccess.com`. A `404` instead means the tunnel ingress rule is missing
+  (cloudflared fell through to its `http_status:404` catch-all).
+- After login, the browser certificate is `CN=sammohr.dev` (the edge), not the guest's.
+  That is expected for a public hostname; the guest certificate is only used between
+  cloudflared and the origin. If the connector cannot verify it, the tunnel log shows a
+  TLS error for `127.0.0.1:443` and the browser gets `502`.
+- `dig +short kanbei.sammohr.dev` returns Cloudflare edge addresses. An address from the
+  Gateway initial-resolved range (`172.64.128.0/20`, `2606:4700:0cf1:4000::/64`) means a
+  private hostname route still exists somewhere in the account; it must be deleted.
 
 ## TLS in the guest
 
@@ -245,21 +220,22 @@ Content-Security-Policy: default-src 'none'; connect-src 'self'; img-src 'self' 
 
 ## Spikes and how to run them
 
-The code bar covers the offline half; the live half needs the route and enrolled devices.
+The code bar covers the offline half; the live half needs the ingress rule and the Access
+application.
 
-1. **The browser sees the origin certificate.** On a WARP device:
+1. **The edge serves the name; the guest serves the origin.** From any device:
 
    ```sh
-   openssl s_client -connect kanbei.sammohr.dev:443 -servername kanbei.sammohr.dev </dev/null \
-     | openssl x509 -noout -subject -issuer -dates
-   # subject=CN = kanbei.sammohr.dev, issuer=Let's Encrypt (or the ACME CA in use)
+   curl -sS -o /dev/null -D - https://kanbei.sammohr.dev/ | head -3
+   # HTTP/2 302 to <team>.cloudflareaccess.com
    ```
 
-   In the browser, the padlock must show that issuer, not a Cloudflare edge certificate.
-2. **Access gates without TLS decryption.** With WARP paused/unenrolled, the request must
-   be denied by Access (or resolve nowhere); with WARP on and Gateway TLS inspection off,
-   it succeeds and the certificate chain above is unchanged. Check *Logs → Access* for the
-   allow, and that *Gateway → TLS inspection* shows this hostname as not inspected.
+   After signing in, the browser certificate is `CN=sammohr.dev` (the edge). The guest
+   certificate is only presented to cloudflared on `127.0.0.1:443`; the tunnel log names
+   that stream, and a verification failure there surfaces as `502`.
+2. **Access is the only gate.** Without a session the request is denied at the edge and
+   never reaches the relay; with a session it loads and the tunnel log shows the stream.
+   Check *Logs → Access* for the allow.
 3. **Planted output causes no network request.** Offline, against the real shell:
 
    ```sh
@@ -292,11 +268,11 @@ separately; it needs a Chromium binary, which the unit-test sandbox does not car
 
 ## Accepted residual risks
 
-- **The wildcard still resolves.** `*.sammohr.dev` is a proxied CNAME, so
-  `kanbei.sammohr.dev` has a public answer. There is no ingress rule for the name (the
-  tunnel returns its 404 fallback) and the Access application denies first; a future change
-  that adds a public DNS record or an ingress rule would reopen the path, and the host
-  module asserts `webProxy.services.kanbei` stays unset.
+- **The wildcard resolves the name.** `*.sammohr.dev` is a proxied CNAME and the ingress
+  rule publishes `kanbei.sammohr.dev`, so it has a public answer. The Access application is
+  the only gate: owner email, no bypass, no account-wide service-auth. A future change that
+  removes Access from the ingress service would publish the UI; the host module asserts
+  `webProxy.services.kanbei` is an `https` service with `access.enable`.
 - **ACME token scope.** The responder reuses the existing `cloudflare-api-token` sops key;
   DNS-01 needs `Zone:DNS:Edit` on `sammohr.dev`. If that token is narrowed later, mint a
   scoped token and point `LoadCredential` at it.

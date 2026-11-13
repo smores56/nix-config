@@ -298,31 +298,28 @@ sudo journalctl -u kanbei-inference-gpu -u kanbei-chat -n 40 --no-pager
 `docs/kanbei-inference.md` has the eval thresholds and the f16 reference-server
 command for the quality sample.
 
-**7. WARP devices.** Install the Cloudflare One client on the phone and the laptop and
-enroll both in the account. In *Settings → WARP client → Device settings* (or a device
-profile), keep **Traffic and DNS** mode and send DNS to Gateway; in *Split Tunnels →
-Include* add the private-hostname initial resolved IPs `100.80.0.0/16` and
-`2606:4700:0cf1:4000::/64`, and make sure neither is excluded. Delete `dev` from *Local
-Domain Fallback* so Gateway resolves `kanbei.sammohr.dev`. Turn on the Gateway proxy
-(*Traffic controls → Traffic settings → Proxy and inspection*: TCP, plus UDP for DNS);
-private hostname routes are Layer 4. Leave TLS inspection off for this name: Access still
-gates it, and the browser must see the guest's certificate.
-`docs/kanbei-access.md` has the full matrix and why each setting is required.
-
-**8. Private route and Access.** `kanbei.sammohr.dev` has no DNS record of its own. Apply
-the fragment in [`docs/kanbei-access.md`](kanbei-access.md) to the platform repo's
-`tofu/` (resource `cloudflare_zero_trust_network_hostname_route.kanbei` plus
-`cloudflare_zero_trust_access_application.kanbei`, reusing the existing email and
-service-auth policies). From that repo:
+**7. Publish and gate.** The host publishes the name through the tunnel ingress
+(`webProxy.services.kanbei` -> `https://127.0.0.1:443`, in the same generation that
+enables `kanbeiVm`). The platform repo's `tofu/kanbei.tf` creates the Access application: a
+public destination for `kanbei.sammohr.dev` with the owner email policy and nothing else.
+From that repo:
 
 ```sh
-tofu -chdir=tofu plan   # expect exactly the two kanbei resources
+tests/tofu/check.sh
+tofu -chdir=tofu plan   # expect only the kanbei application (plus the route destroy, step 8)
 tofu -chdir=tofu apply
 ```
 
-There must be no `cloudflare_dns_record` for `kanbei` and no tunnel ingress rule; the host
-module asserts the service is absent from `webProxy.services`, and `cloudflared` has no
-rule for the name, so the public wildcard answer only reaches the tunnel's 404 fallback.
+An unauthenticated request now gets `302` to the Access login; a `404` means the ingress
+rule is missing. Nothing is required on the client.
+
+**8. Retire the private route.** If the account still holds the old
+`cloudflare_zero_trust_network_hostname_route.kanbei` (or any private route for the name),
+delete it: WARP clients would otherwise keep resolving the name to a Gateway
+initial-resolved IP instead of the edge. The platform change does this in two applies,
+because `prevent_destroy` blocks a destroy until a prior change drops the guard; the exact
+sequence is step 21 of that repo's `docs/manual-steps.md`. Verify with
+`dig +short kanbei.sammohr.dev` — Cloudflare edge addresses, never `172.64.128.0/20`.
 
 **9. ACME account and token.** The responder runs as `kanbei-acme` and reuses the
 `cloudflare-api-token` sops key; DNS-01 needs `Zone:DNS:Edit` on `sammohr.dev` in addition
@@ -367,13 +364,12 @@ plus `microvm@kanbei.service`; no sops key is involved.
 ```sh
 ss -lntp 'sport = :443'                     # 127.0.0.1:443, kanbei-chat-relay
 sudo iptables -S kanbei-relay-in            # one lo/dport 443 accept, no FORWARD rule
-getent hosts kanbei.sammohr.dev             # 127.0.0.1 (the host's own resolver)
+getent hosts kanbei.sammohr.dev             # Cloudflare edge addresses (no hosts entry)
 sudo systemctl status kanbei-chat-relay.socket kanbei-chat-relay.service
 ```
 
-From an owner device with WARP on, `https://kanbei.sammohr.dev` should show the guest
-certificate; with WARP off, Access denies and no listener on the host is reachable from
-another machine.
+From any device, `https://kanbei.sammohr.dev` shows the Access login; after signing in the
+UI loads. Without a session Access denies at the edge and nothing reaches the relay.
 
 **12. Spikes.** Run the three checks in
 [`docs/kanbei-access.md`](kanbei-access.md#spikes-and-how-to-run-them): origin certificate
