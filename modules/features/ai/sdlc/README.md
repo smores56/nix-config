@@ -6,6 +6,13 @@ stateless CLI over it. There is no local checkout and no state directory.
 `gh` is the backend; `sdlc ui` uses `tv` when present, and `sdlc review` needs
 `revdiff`.
 
+## Source
+
+The CLI is upstream `smores56/sdlc` (`sdlc_issues.py` and its `pyproject.toml`), built here
+with `buildPythonApplication` (`package.nix`). The repo is private, so the build uses the
+pinned vendored copy rather than a fetch; `sync.sh <rev>` (also `just sdlc-sync <rev>`)
+re-vendors it and records the rev in `UPSTREAM_REV`. Never edit the vendored source by hand.
+
 ## Lifecycle
 
 ```
