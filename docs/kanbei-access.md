@@ -119,15 +119,19 @@ Owner devices: the phone and the laptop. Both must run the Cloudflare One client
 Configure in the Zero Trust dashboard (none of this is in `tofu/` today, so it is a manual
 step):
 
-1. **Gateway proxy on.** Traffic controls → Traffic settings → Proxy and inspection:
-   enable *Allow Secure Web Gateway to proxy traffic* with **TCP** (and UDP for DNS).
-   Private hostname routes are L4; without the proxy they do not work. The API equivalent
-   is `cloudflare_zero_trust_device_settings.gateway_proxy_enabled = true`.
-2. **Split tunnel include** the initial resolved IP ranges. Gateway hands the client an
-   address from `100.80.0.0/16` (IPv4) or `2606:4700:0cf1:4000::/64` (IPv6); that packet
-   must reach Cloudflare, not the local LAN. In *Split Tunnels → Include*, add both ranges
-   (and make sure neither is in *Exclude*; the default exclude `100.64.0.0/10` does not
-   cover them, but a custom exclude might).
+1. **Gateway proxy on.** Zero Trust → Traffic controls (older dashboards: Traffic
+   policies) → Traffic settings → Proxy and inspection: enable *Allow Secure Web Gateway
+   to proxy traffic* with **TCP** (and UDP for DNS). This is account-level, not a device
+   profile setting. Private hostname routes are L4; without the proxy the connection
+   reaches the edge and Access answers with a login redirect and `is_warp: false` in the
+   session metadata. The API equivalent is
+   `cloudflare_zero_trust_device_settings.gateway_proxy_enabled = true`.
+2. **Split tunnels need no entry.** The client automatically includes the
+   initial-resolved ranges at runtime (`172.64.128.0/20` IPv4, `2606:4700:0cf1::/48`
+   IPv6, which also covers device and Cloudflare source IPs) and removes them from any
+   exclusion; adding them by hand is only a diagnostic step. Add the range only if the
+   account uses a custom initial-resolved range. Profile path: Zero Trust → Team &
+   Resources → Devices → Device profiles → General profiles → (profile) → Configure.
 3. **DNS through Gateway.** The client must send DNS queries for the private hostname to
    Gateway. Delete `dev` from *Local Domain Fallback* (it must not resolve
    `kanbei.sammohr.dev` locally), and keep DNS in Traffic-and-DNS mode.
