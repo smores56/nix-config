@@ -277,6 +277,19 @@ def plan_visits(state: dict, visits: list[dict], *, now: int) -> tuple[list[dict
     return items, accepted
 
 
+def database_visits(database: sqlite3.Connection) -> int:
+    """Rows in the whole History database, so a zero-emission run is diagnosable.
+
+    The cursor only reports what came after it; without the total, an empty profile
+    and a cursor past every visit look identical in the log.
+    """
+    try:
+        row = database.execute("SELECT COUNT(*) FROM visits").fetchone()
+    except sqlite3.Error:
+        return 0
+    return int(row[0] or 0) if row else 0
+
+
 def collect(
     history: str,
     state: dict,
@@ -294,6 +307,7 @@ def collect(
         state["visit_time"] = started
         state["visit_id"] = 0
     database = open_history(snapshot_database(history, os.path.join(workdir, "History")))
+    db_visits = database_visits(database)
     try:
         scanned = 0
         accepted_count = 0
@@ -317,8 +331,8 @@ def collect(
     finally:
         database.close()
     state["scanned_at"] = now
-    log("done", scans=scanned, emitted=accepted_count, batches=batches)
-    return {"scanned": scanned, "emitted": accepted_count, "batches": batches}
+    log("done", scans=scanned, emitted=accepted_count, batches=batches, db_visits=db_visits)
+    return {"scanned": scanned, "emitted": accepted_count, "batches": batches, "db_visits": db_visits}
 
 
 def main(argv: list[str] | None = None) -> int:

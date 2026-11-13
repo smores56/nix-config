@@ -80,6 +80,9 @@ class HistoryTests(unittest.TestCase):
                 lookback_hours=96,
             )
             self.assertEqual(summary["scanned"], 3)
+            # The whole-database count separates an empty profile from a cursor that
+            # is simply past every visit.
+            self.assertEqual(summary["db_visits"], 3)
             # chrome:// is scanned (the cursor still advances) but not emitted.
             self.assertEqual(summary["emitted"], 2)
             self.assertEqual(state["visit_time"], self.brave.epoch_to_webkit(1700000000) + 3)

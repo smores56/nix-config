@@ -118,7 +118,8 @@ The collector:
   chunks at 400 items / 350 KiB per batch.
 
 Items are `{"type":"browse","url","title","visited_at","visit_id"}`. Logs carry
-counts, ids and a UTC timestamp only; titles and URLs appear only inside the
+counts (including the whole-database `db_visits`, so a zero-emission run is
+diagnosable), ids and a UTC timestamp only; titles and URLs appear only inside the
 encrypted batch. Only History is read: no passwords, bookmarks or open tabs are
 collected by this revision.
 
