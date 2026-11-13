@@ -41,8 +41,6 @@ in
     ./books-shelf.nix
     # The cluster serves the data apps; keep the host copies off (#509).
     ./retired-host-apps.nix
-    # Loopback -> cluster wrapper hop; inert until the wrapper moves.
-    ../../nixos/memory-forward.nix
   ];
   homeModules = [
     ../../features/todo.nix
@@ -52,8 +50,8 @@ in
     hostHardening.enable = true;
     # Flip only after the cluster serves every data app; stops the native services.
     clusterDataApps.enable = false;
-    # On in the same change that stops the host `memory-mcp` (both bind loopback:8182).
-    memoryForward.enable = true;
+    # The host memory stack renders from modules/nixos/memory.nix; its retirement is the
+    # live-gated #618. Host clients dial https://memory.sammohr.dev, not loopback.
     # The 3090 is on VFIO since the Phase B cutover (docs/kanbei-vm.md).
     kanbeiVm.enable = true;
     # Five Firecracker ingest guests plus the host writer/proxy/resolver; the writers need the

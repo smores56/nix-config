@@ -53,7 +53,7 @@ Cross-cutting values flow through `config.machine.*` and `config.user.*`, not
   tools plus TinyFish search. State, data, cache, and logs live in tmpfs and
   are removed on exit (`modules/features/ai/maki/default.nix`).
 - **Memory.** smortress runs a typed SQLite registry, FalkorDB and Graphiti,
-  reached over the tunnel through `memory-mcp-shim`. Extraction and embeddings
+  reached at `https://memory.sammohr.dev` through `memory-mcp-shim`. Extraction and embeddings
   go through a loopback Neuralwatt gateway. The `memory` CLI: `write search get
   retry promote reindex status tombstone export restore`. One service description
   (`modules/features/ai/memory/service.nix`) is rendered by `modules/nixos/memory.nix`

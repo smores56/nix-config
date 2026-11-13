@@ -50,8 +50,8 @@ async def open_session(config: ClientConfig) -> AsyncIterator[ClientSession]:
         async with httpx.AsyncClient(
             headers=config.header_dict(),
             timeout=timeout,
-            # The only memory endpoint is a loopback port behind a tunnel; a
-            # redirect would escape that boundary and is never legitimate.
+            # The only memory endpoint is the tunnel hostname in front of the
+            # wrapper; a redirect would escape that boundary and is never legitimate.
             follow_redirects=False,
         ) as client:
             async with streamable_http_client(config.url, http_client=client) as (read, write, _):

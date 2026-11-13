@@ -173,9 +173,9 @@ let
   # restart stdio children). 90s stays above the wrapper's 60s tool deadline and under
   # Cloudflare's ~100s origin timeout.
   mcpEnvironment = {
-    MEMORY_MCP_URL = "http://127.0.0.1:${toString ports.memoryMcp}/mcp";
-    # The listener demands the bearer token even on loopback: the tunnel makes
-    # remote clients look local. The shim reads the file itself.
+    MEMORY_MCP_URL = "https://memory.sammohr.dev/mcp";
+    # Every request carries the bearer token, whichever path it took to the
+    # wrapper; the shim reads the file itself.
     MEMORY_MCP_TOKEN_FILE = "/run/secrets/memory-mcp-token";
     MEMORY_WORK_EMAIL = config.user.work.email;
     MEMORY_WORK_OWNER_GLOB = lib.concatStringsSep "," config.user.work.githubOwners;
