@@ -467,8 +467,10 @@ The five ingest guests and their host writer/proxy/resolver are behind
    activation; sops-install-secrets removes every file it does not manage (the
    log line is `removing secret: ingest-immich-env`). A contract staged before a
    `nixos-rebuild switch` is gone by the time the unit runs, so stage it after
-   the switch and start the unit in the same session. The durable form is a key
-   in `secrets/smortress.yaml` plus a `sops.secrets` entry in
+   the switch and start the unit in the same session. A missing contract is not
+   fatal once the image exists: the unit logs `… is absent; keeping the staged
+   image` and leaves it untouched. The durable form is a key in
+   `secrets/smortress.yaml` plus a `sops.secrets` entry in
    `modules/hosts/smortress/secrets.nix` — declare it only once the key exists,
    because a declared-but-absent key fails the whole activation.
 

@@ -900,13 +900,20 @@ PY
       src=${ingest.secretPath id}
       image=/var/lib/microvms/ingest-secrets/${id}.img
       sum="$image.sha256"
-      if [ ! -r "$src" ]; then
+      if [ -r "$src" ]; then
+        want=$(sha256sum "$src" | cut -d' ' -f1)
+        if [ -s "$sum" ] && [ "$(cat "$sum")" = "$want" ] && [ -e "$image" ]; then
+          exit 0
+        fi
+      elif [ -e "$image" ] && [ -s "$sum" ]; then
+        # The contract lives in /run/secrets, which sops-nix rebuilds on every activation
+        # and prunes of undeclared files. The staged image is the copy the guest reads:
+        # keep it rather than wedging every guest whose contract is not a sops key yet.
+        echo "ingest-vm-secret-${id}: $src is absent; keeping the staged image" >&2
+        exit 0
+      else
         echo "ingest-vm-secret-${id}: missing $src; stage the ${id} secret (docs/manual-steps.md)" >&2
         exit 1
-      fi
-      want=$(sha256sum "$src" | cut -d' ' -f1)
-      if [ -s "$sum" ] && [ "$(cat "$sum")" = "$want" ] && [ -e "$image" ]; then
-        exit 0
       fi
       if ${config.systemd.package}/bin/systemctl is-active --quiet microvm@${guest}.service; then
         echo "ingest-vm-secret-${id}: refusing to replace the image under a running guest" >&2

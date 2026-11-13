@@ -19,9 +19,9 @@ Sources, allowlists, windows, taps and ports live in one table:
 | guest | source | tap | tap /30 | guest MAC | vcpu / mem | vsock cid / port | secret contract | allowlist | window |
 |---|---|---|---|---|---|---|---|---|---|
 | `ingest-tuta` | `tuta` | `vm-i-tuta` | `10.77.10.0/30` | `02:00:0a:4d:0a:02` | 1 / 256 MiB | 10 / 7010 | `/run/secrets/ingest-tuta-env` | `app.tuta.com` | 1800 s |
-| `ingest-finance` | `finance` | `vm-i-finance` | `10.77.11.0/30` | `02:00:0a:4d:0b:02` | 1 / 192 MiB | 11 / 7011 | `/run/secrets/ingest-finance-env` | `bridge.simplefin.org` (+ `production.plaid.com` when enabled) | 129600 s |
+| `ingest-finance` | `finance` | `vm-i-finance` | `10.77.11.0/30` | `02:00:0a:4d:0b:02` | 1 / 256 MiB | 11 / 7011 | `/run/secrets/ingest-finance-env` | `bridge.simplefin.org` (+ `production.plaid.com` when enabled) | 129600 s |
 | `ingest-brave` | `brave` | `vm-i-brave` | `10.77.12.0/30` | `02:00:0a:4d:0c:02` | 1 / 1024 MiB | 12 / 7012 | `/run/secrets/ingest-brave-env` | `sync-v2.brave.com` | 86400 s |
-| `ingest-immich` | `immich` | `vm-i-immich` | `10.77.13.0/30` | `02:00:0a:4d:0d:02` | 1 / 128 MiB | 13 / 7013 | `/run/secrets/ingest-immich-env` | `photos.sammohr.dev` | 21600 s |
+| `ingest-immich` | `immich` | `vm-i-immich` | `10.77.13.0/30` | `02:00:0a:4d:0d:02` | 1 / 256 MiB | 13 / 7013 | `/run/secrets/ingest-immich-env` | `photos.sammohr.dev` | 21600 s |
 | `search` | `search` | `vm-search` | `10.77.14.0/30` | `02:00:0a:4d:0e:02` | 2 / 2560 MiB | 14 / 7014 (query 7024) | `/run/secrets/ingest-search-env` | `api.search.tinyfish.ai` | 86400 s |
 
 Each guest is Firecracker (`microvm.hypervisor = "firecracker"`), has a mandatory
@@ -66,9 +66,12 @@ guest down; the other guests and the host are unaffected. Steps are in
 `/run/secrets` is a sops-nix generation directory: each activation rebuilds it
 and removes every file it does not manage, so a hand-staged contract survives
 only until the next `nixos-rebuild switch`. Stage it after the activation and
-start the unit in the same session, or make it a declared sops key; the image
-under `/var/lib/microvms/ingest-secrets/` is what the guest reads, so pruning
-the contract later leaves a running guest alone.
+start the unit in the same session, or make it a declared sops key. The image
+under `/var/lib/microvms/ingest-secrets/` is the copy the guest reads: when the
+contract is gone and the image is already staged, the unit keeps the image and
+exits 0 (`… is absent; keeping the staged image`). A contract that reappears
+with a different digest replaces the image, which still requires the guest to be
+stopped.
 
 `ingest-search-env` carries exactly one line, `TINYFISH_API_KEY=<key>`: Kanbei's
 own key, never the host's or nanobot's. The search guest adds two images:

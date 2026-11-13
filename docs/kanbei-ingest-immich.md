@@ -124,7 +124,9 @@ State lives in `/var/lib/immich/state.json` (`0600`):
 | `ingest-immich.service` | one metadata pass: assets, albums, people |
 | `ingest-immich.timer` | every 6 h at 03:23/09:23/15:23/21:23 with 15 min jitter, `Persistent=true` |
 
-`MemoryHigh=80M`, `MemoryMax=112M`; the guest is 128 MiB. The table's 6 h window
+`MemoryHigh=80M`, `MemoryMax=112M`; the guest is 256 MiB, the boot floor: the
+initramfs unpacks to 68 MiB and a 128 MiB guest deadlocks on memory in
+`unpack_to_rootfs`. The table's 6 h window
 matches the timer: two missed passes are silent, three page. No image bytes are
 ever transferred, so the guest's memory and disk stay proportional to the
 metadata, not the library.

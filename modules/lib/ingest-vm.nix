@@ -93,7 +93,8 @@ let
       vsockCid = 11;
       vsockPort = 7011;
       vcpu = 1;
-      mem = 192;
+      # 256 is the boot floor: the initramfs unpacks to 68 MiB and 192 MiB panics.
+      mem = 256;
       volumes = 1;
       # SimpleFIN is polled daily; 36 h covers one missed run plus a retry.
       windowSeconds = 129600;
@@ -119,7 +120,8 @@ let
       vsockCid = 13;
       vsockPort = 7013;
       vcpu = 1;
-      mem = 128;
+      # 256 is the boot floor: the initramfs unpacks to 68 MiB and 128 MiB panics.
+      mem = 256;
       volumes = 1;
       # Triage/export batches run several times a day.
       windowSeconds = 21600;
@@ -257,7 +259,10 @@ let
       ++ lib.optional (
         s.vsockPort < 1024 || s.vsockPort >= 1073741824
       ) "source ${id}: vsock port must be an unprivileged port outside the Firecracker host range"
-      ++ lib.optional (s.mem < 128) "source ${id}: mem must be at least 128 MiB"
+      ++ lib.optional (s.mem < 256) (
+        "source ${id}: mem must be at least 256 MiB; the 68 MiB initramfs plus the kernel"
+        + " deadlocks the guest on memory in unpack_to_rootfs below that"
+      )
       ++ lib.optional (
         !(builtins.isInt s.volumes) || s.volumes < 1 || s.volumes > 3
       ) "source ${id}: volumes must be 1..3"

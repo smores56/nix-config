@@ -159,7 +159,8 @@ exists unless the option and the contract are both set.
 | `ingest-finance.service` | one `/accounts` poll, journal/balance batches, alert batch |
 | `ingest-finance.timer` | daily at 06:17 with up to 30 min jitter, `Persistent=true` |
 
-`MemoryHigh=96M`, `MemoryMax=160M`; the guest is 192 MiB. The timer is
+`MemoryHigh=96M`, `MemoryMax=160M`; the guest is 256 MiB (the boot floor — the
+68 MiB initramfs does not fit in less). The timer is
 `Restart`-free by design (a failed run waits for the next day or the manual
 `systemctl start`). Freshness is the table's 36 h window: one missed daily run
 plus a retry is silent, two are a page.
