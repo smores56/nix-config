@@ -261,7 +261,13 @@ def search_page(document: dict) -> dict:
     return document
 
 
-def search_assets(client: ImmichClient, *, after: str | None, page_size: int) -> list[dict]:
+def asset_pages(client: ImmichClient, *, after: str | None, page_size: int):
+    """Yield one page of raw assets at a time.
+
+    Streaming matters at this size: the guest holds 256 MiB and the collector runs
+    under a 112 MiB cgroup cap, so materialising a whole library before batching is
+    what got the unit killed instead of reporting anything.
+    """
     body: dict = {
         "size": page_size,
         "withExif": True,
@@ -270,7 +276,6 @@ def search_assets(client: ImmichClient, *, after: str | None, page_size: int) ->
     }
     if after:
         body["updatedAfter"] = after
-    items: list[dict] = []
     page = 1
     cursor: str | None = None
     for _ in range(MAX_PAGES):
@@ -286,7 +291,7 @@ def search_assets(client: ImmichClient, *, after: str | None, page_size: int) ->
         page_items = page_document.get("items")
         if not isinstance(page_items, list):
             raise ImmichError("search/metadata response has no items list")
-        items.extend(raw for raw in page_items if isinstance(raw, dict))
+        yield [raw for raw in page_items if isinstance(raw, dict)]
         next_cursor = page_document.get("nextCursor")
         if isinstance(next_cursor, str) and next_cursor:
             cursor = next_cursor
@@ -300,7 +305,10 @@ def search_assets(client: ImmichClient, *, after: str | None, page_size: int) ->
         if len(page_items) < page_size:
             break
         page += 1
-    return items
+
+
+def search_assets(client: ImmichClient, *, after: str | None, page_size: int) -> list[dict]:
+    return [raw for page in asset_pages(client, after=after, page_size=page_size) for raw in page]
 
 
 def albums(client: ImmichClient) -> list[dict]:
@@ -555,20 +563,27 @@ def collect(
     cursor = state.get("assets") or {}
     after = cursor.get("updated_at") or None
 
-    assets = search_assets(client, after=after, page_size=page_size)
-    assets.sort(key=lambda raw: (str(raw.get("updatedAt") or ""), str(raw.get("id") or "")))
     items: list[dict] = []
     emitted_assets = 0
-    for raw in assets:
-        item = asset_item(raw)
-        if item is None:
-            continue
-        if not cursor_after(item["updated_at"], item["id"], cursor):
-            continue
-        items.append(item)
-        emitted_assets += 1
-        cursor = {"updated_at": item["updated_at"], "id": item["id"]}
-    state["assets"] = cursor
+    batches = 0
+    # Assets are the only unbounded source, so they are batched page by page: keep
+    # at most one page plus one partial batch in memory.
+    for page in asset_pages(client, after=after, page_size=page_size):
+        for raw in sorted(page, key=lambda raw: (str(raw.get("updatedAt") or ""), str(raw.get("id") or ""))):
+            item = asset_item(raw)
+            if item is None:
+                continue
+            if not cursor_after(item["updated_at"], item["id"], cursor):
+                continue
+            items.append(item)
+            emitted_assets += 1
+            cursor = {"updated_at": item["updated_at"], "id": item["id"]}
+        state["assets"] = cursor
+        if len(items) >= MAX_ITEMS_PER_BATCH:
+            for batch in chunk(items):
+                write_batch(outbox, state, batch)
+                batches += 1
+            items = []
 
     album_state = state.setdefault("albums", {})
     album_items: list[dict] = []
@@ -615,7 +630,6 @@ def collect(
 
     items.extend(album_items)
     items.extend(person_items)
-    batches = 0
     for batch in chunk(items):
         write_batch(outbox, state, batch)
         batches += 1
