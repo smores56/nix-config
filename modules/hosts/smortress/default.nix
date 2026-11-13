@@ -56,7 +56,7 @@ in
     memoryForward.enable = false;
     # Deliberately off until the one-time GPU cutover (docs/kanbei-vm.md); Immich triage still
     # owns the 3090 and enabling this stops nvidia/llm on the host.
-    kanbeiVm.enable = false;
+    kanbeiVm.enable = true;
     # The ingest plane starts five Firecracker guests and needs the Kanbei key; off until the
     # same cutover (docs/kanbei-ingest.md).
     ingestVm.enable = false;
