@@ -1,13 +1,14 @@
 """Unit tests for the Brave ingest path (smores56/sdlc#591).
 
 Covers the History snapshot/cursor/dedupe/batching logic, URL hygiene and
-timestamp conversion, plus the profile seed contract (`brave_sync.v2.seed`
-planting, `Preferences` preservation, code staging and redaction). No Brave
-binary, Xvfb or Sync account is needed.
+timestamp conversion, plus the profile seed contract (`brave_sync_v2.seed`
+planting in Brave's base64-of-the-blob form, `Preferences` preservation, code
+staging and redaction). No Brave binary, Xvfb or Sync account is needed.
 """
 
 from __future__ import annotations
 
+import base64
 import importlib
 import io
 import json
@@ -175,19 +176,35 @@ class SyncTests(unittest.TestCase):
         self.sync = load("brave_sync")
 
     def test_seed_planting_preserves_preferences(self):
+        inner = base64.b64encode(bytes(16) + b"ciphertext").decode()
+        seed = "v10" + inner
         with tempfile.TemporaryDirectory() as directory:
             prefs = os.path.join(directory, "Preferences")
             with open(prefs, "w", encoding="utf-8") as handle:
-                json.dump({"profile": {"name": "owner"}, "brave_sync": {"v2": {"other": 1}}}, handle)
+                json.dump({"profile": {"name": "owner"}, "brave_sync_v2": {"other": 1}}, handle)
             document = self.sync.load_preferences(prefs)
-            self.sync.plant(document, "v10encrypted")
+            self.sync.plant(document, seed)
             self.sync.write_preferences(prefs, document)
             reloaded = self.sync.load_preferences(prefs)
-            self.assertEqual(reloaded["brave_sync"]["v2"]["seed"], "v10encrypted")
-            self.assertEqual(reloaded["brave_sync"]["v2"]["other"], 1)
+            # Brave stores base64 of the raw blob, not the v10… text.
+            stored = base64.b64encode(b"v10" + base64.b64decode(inner)).decode()
+            self.assertEqual(reloaded["brave_sync_v2"]["seed"], stored)
+            self.assertEqual(reloaded["brave_sync_v2"]["other"], 1)
             self.assertEqual(reloaded["profile"]["name"], "owner")
             self.assertEqual(oct(os.stat(prefs).st_mode & 0o777), "0o600")
             self.assertEqual(self.sync.status(prefs)["seed_present"], True)
+            self.assertEqual(self.sync.status(prefs)["seed_shape"], "oscrypt")
+
+    def test_status_reads_the_legacy_location(self):
+        with tempfile.TemporaryDirectory() as directory:
+            prefs = os.path.join(directory, "Preferences")
+            with open(prefs, "w", encoding="utf-8") as handle:
+                json.dump({"brave_sync": {"v2": {"seed": "v10abc"}}}, handle)
+            self.assertEqual(self.sync.status(prefs)["seed_present"], True)
+
+    def test_plant_refuses_a_non_blob_seed(self):
+        with self.assertRaises(self.sync.SyncError):
+            self.sync.plant({}, "v10not-base64!!")
 
     def test_seed_validation(self):
         self.assertEqual(self.sync.validate_seed('"quoted"'), "quoted")
@@ -203,8 +220,9 @@ class SyncTests(unittest.TestCase):
             env = os.path.join(directory, "env")
             prefs = os.path.join(directory, "Preferences")
             code = os.path.join(directory, "run", "sync-code")
+            blob = "v10" + base64.b64encode(bytes(16) + b"ciphertext").decode()
             with open(env, "w", encoding="utf-8") as handle:
-                handle.write("BRAVE_SYNC_SEED=v10seed\nBRAVE_SYNC_CODE=one two three\n")
+                handle.write(f"BRAVE_SYNC_SEED={blob}\nBRAVE_SYNC_CODE=one two three\n")
             summary = self.sync.stage(env, prefs, code)
             self.assertTrue(summary["planted"])
             self.assertTrue(summary["code_staged"])

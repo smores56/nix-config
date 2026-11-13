@@ -452,44 +452,21 @@ The five ingest guests and their host writer/proxy/resolver are behind
 `ingestVm.enable`, which also requires `kanbeiVm.enable`. The operator surface is
 `docs/kanbei-ingest.md`; these are the steps that need a human.
 
-1. **Secret files.** Each source has a `/run/secrets/ingest-<source>-env`
-   contract: `ingest-tuta-env`, `ingest-finance-env`, `ingest-brave-env`,
-   `ingest-immich-env`, `ingest-search-env`. They are sops keys of the same name,
-   but the encrypted YAML does not carry them yet, so they are staged out of band
-   at mode `0400 root:root` — **after** the activation, not before:
+1. **Secret contracts.** Each source has a `/run/secrets/ingest-<source>-env`
+   contract, and each is a sops key of the same name in
+   `secrets/smortress.yaml`: `ingest-tuta-env`, `ingest-finance-env`,
+   `ingest-brave-env`, `ingest-immich-env`, `ingest-search-env`. They are
+   declared in `modules/hosts/smortress/secrets.nix`, so sops-nix writes them on
+   every activation and nothing prunes them. How to mint each value is in
+   [the ingest contracts](#ingest-tuta-env) below.
 
-   ```sh
-   sudo install -m 0400 -o root -g root /path/to/tuta-env /run/secrets/ingest-tuta-env
-   sudo stat -c '%a %U:%G %n' /run/secrets/ingest-*-env
-   ```
-
-   `/run/secrets` is a sops-nix generation directory, rebuilt on every
-   activation; sops-install-secrets removes every file it does not manage (the
-   log line is `removing secret: ingest-immich-env`). A contract staged before a
-   `nixos-rebuild switch` is gone by the time the unit runs, so stage it after
-   the switch and start the unit in the same session. A missing contract is not
-   fatal once the image exists: the unit logs `… is absent; keeping the staged
-   image` and leaves it untouched. The durable form is a key in
-   `secrets/smortress.yaml` plus a `sops.secrets` entry in
-   `modules/hosts/smortress/secrets.nix` — declare it only once the key exists,
-   because a declared-but-absent key fails the whole activation.
-
-   The secret host unit (`ingest-vm-secret-<source>.service`) copies the file into
-   a 4 MiB ext4 image at `/var/lib/microvms/ingest-secrets/<source>.img`; without
-   the file that guest stays down and the other sources are unaffected. The image
-   is what the guest reads, so a later activation that prunes the contract leaves
-   a running guest untouched. Changing a secret requires stopping the guest first:
-   the unit refuses to replace a live image, so
-   `sudo systemctl stop microvm@<guest>` then
+   The secret host unit (`ingest-vm-secret-<source>.service`) copies the contract
+   into a 4 MiB ext4 image at `/var/lib/microvms/ingest-secrets/<source>.img`;
+   without the file that guest stays down and the other sources are unaffected.
+   The image is what the guest reads, so removing a key later leaves a running
+   guest untouched. Changing a secret requires stopping the guest first: the unit
+   refuses to replace a live image, so `sudo systemctl stop microvm@<guest>` then
    `sudo systemctl start ingest-vm-secret-<source> microvm@<guest>`.
-
-   `ingest-tuta-env` is not a password file: it carries the base64 TutaBridge
-   session (`gnupg/`, `pass/`, `config/`) plus the Tuta address and the bridge
-   password. Do the one-time login first, then write the file:
-   [`docs/kanbei-ingest-tuta.md`](kanbei-ingest-tuta.md#session-bootstrap-one-time-human)
-   has the exact commands (`tutabridge init`, tar, base64, `umask 077`). The
-   Tuta account password is never stored; only the encrypted session and the
-   no-passphrase GPG key that opens it.
 
 2. **Firecracker TAP prerequisites.** Firecracker needs `/dev/kvm`,
    `/dev/net/tun` and `/dev/vhost-vsock`, plus the `tun` and `vhost_vsock` kernel
@@ -598,9 +575,10 @@ The five ingest guests and their host writer/proxy/resolver are behind
    [`docs/kanbei-ingest-finance.md`](kanbei-ingest-finance.md).
 
 9. **Brave Sync chain.** The guest profile needs one seed. Preferred: on a
-   workstation already in the chain, close Brave and export
-   `jq -r '."brave_sync"."v2"."seed"' ~/.config/BraveSoftware/Brave-Browser/Default/Preferences`,
-   store it as `BRAVE_SYNC_SEED` in `ingest-brave-env`, and re-stage. Fallback:
+   workstation already in the chain, close Brave and convert
+   `jq -r '.brave_sync_v2.seed' ~/.config/BraveSoftware/Brave-Browser/Default/Preferences | base64 -d | tail -c +4 | base64 -w0`
+   — prefix the result with `v10` — store that as `BRAVE_SYNC_SEED` in
+   `ingest-brave-env`, and re-stage. Fallback:
    put the 25-word code in `BRAVE_SYNC_CODE`, start `brave-sync-join` inside the
    guest, and clear the code after it joins. Set a custom chain passphrase and
    store it in Bitwarden before relying on the chain; the 25-word code rotates
@@ -1230,6 +1208,61 @@ A new recipient in a creation rule does not re-wrap an existing file. After
 adding `&smoreswork` to the common rule, run
 `sops updatekeys secrets/common.yaml` (one admin prompt) and commit the result,
 or the Mac cannot decrypt that file.
+
+### ingest-tuta-env
+
+<!-- manual-step: secret/ingest-tuta-env -->
+
+The TutaBridge session as one base64 archive plus the address and bridge
+password: `TUTA_ADDRESS`, `TUTA_SESSION_B64` (base64 of a tar holding `gnupg/`,
+`pass/` and `config/`), `TUTA_BRIDGE_PASSWORD`, and optionally `TUTA_PASS_PATH`
+(only when the store entry is not at `tuta/bridge`) and `TUTA_TOTP_SECRET` (for
+the next one-time login). The account password is never stored.
+
+Mint it with a one-time `tutabridge init` outside the guest, in container mode so
+it uses the pass+GPG backend instead of the desktop keyring, then tar, base64
+and stage the result. The exact commands, including the `TUTABRIDGE_CONTAINER`,
+`TUTABRIDGE_DATA_DIR` and `TUTABRIDGE_ASSETS` the binary needs, are in
+[`docs/kanbei-ingest-tuta.md`](kanbei-ingest-tuta.md#session-bootstrap-one-time-human).
+Rotate by repeating that login, stopping `microvm@ingest-tuta`, and restarting
+`ingest-vm-secret-tuta` then the guest.
+
+### ingest-finance-env
+
+<!-- manual-step: secret/ingest-finance-env -->
+
+`SIMPLEFIN_ACCESS_URL=https://<user>:<password>@bridge.simplefin.org/simplefin`,
+optionally with `SIMPLEFIN_LOOKBACK_DAYS` or `SIMPLEFIN_START_DATE`. The Plaid
+keys (`PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ITEMS_JSON`, `PLAID_ENV`,
+`PLAID_ENABLED`) belong in the same contract only while `ingestVm.financePlaid`
+is enabled.
+
+Mint it in the SimpleFIN Bridge: connect the banks, create a SimpleFIN Token,
+then claim it once with `curl -X POST "$(printf '%s' "$token" | base64 -d)"` on a
+machine with a terminal; the response is the Access URL. A 403 means the claim
+token was already used, so create a new one. Steps and the store's format are in
+[`docs/kanbei-ingest-finance.md`](kanbei-ingest-finance.md#access-url-one-time-human).
+
+### ingest-immich-env
+
+<!-- manual-step: secret/ingest-immich-env -->
+
+`IMMICH_API_KEY=<key>` with exactly `asset.read`, `album.read` and `person.read`
+on the Immich account, plus optionally `IMMICH_BASE_URL` (must stay
+`https://photos.sammohr.dev`) and `IMMICH_PAGE_SIZE`. Any other permission is
+unnecessary: the client never requests image bytes and refuses every byte
+endpoint. Details in
+[`docs/kanbei-ingest-immich.md`](kanbei-ingest-immich.md#api-key-one-time-human).
+
+### ingest-search-env
+
+<!-- manual-step: secret/ingest-search-env -->
+
+`TINYFISH_API_KEY=<key>`, and nothing else. Mint a key for Kanbei specifically:
+never reuse maki's `tinyfish-api-key` or nanobot's, because the search guest is
+the only egress for Kanbei's capped queries and its budget must be its own. The
+guest also needs the Guardian weights staged at `/var/lib/search-model` before it
+starts; see [`docs/kanbei-search.md`](kanbei-search.md).
 
 ### phone-folder-password
 

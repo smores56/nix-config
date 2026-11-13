@@ -1,12 +1,14 @@
 """Brave Sync profile seeding for the `ingest-brave` guest (smores56/sdlc#591).
 
 Brave has no CLI to join a Sync chain. The reliable unattended path is to plant
-the OSCrypt blob from `Preferences` `brave_sync.v2.seed` and run every Brave
-instance with `--password-store=basic`, so the fixed "peanuts" key decrypts the
-seed. The seed comes from one human join: either the owner exports it from a
-workstation profile, or the guest's `brave-sync-join` unit runs Brave headful
-under Xvfb and the code is typed with `xdotool` (documented in
-`docs/kanbei-ingest-brave.md`).
+the OSCrypt blob that `Preferences` keeps at `brave_sync_v2.seed` and run every
+Brave instance with `--password-store=basic`, so the fixed "peanuts" key
+decrypts the seed. Brave stores it as base64 of the raw blob (`v10` + IV +
+ciphertext); the contract carries the same blob as the `v10<base64>` string the
+rest of the tools speak, and this module converts. The seed comes from one human
+join: either the owner exports it from a workstation profile, or the guest's
+`brave-sync-join` unit runs Brave headful under Xvfb and the code is typed with
+`xdotool` (documented in `docs/kanbei-ingest-brave.md`).
 
 This tool never prints the seed or the 25-word code. The code, when the join
 path uses it, is written to a `0600` runtime file for `xdotool` only.
@@ -15,6 +17,8 @@ path uses it, is written to a `0600` runtime file for `xdotool` only.
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import json
 import os
 import re
@@ -22,7 +26,9 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 
-SEED_PATH = ("brave_sync", "v2", "seed")
+SEED_PATH = ("brave_sync_v2", "seed")
+# Only `status` reads the legacy location, so an older profile still reports.
+LEGACY_SEED_PATH = ("brave_sync", "v2", "seed")
 ENV_KEYS = {"BRAVE_SYNC_SEED", "BRAVE_SYNC_CODE"}
 MAX_SEED_BYTES = 65536
 MAX_CODE_BYTES = 4096
@@ -120,13 +126,42 @@ def write_preferences(path: str, prefs: dict) -> None:
         raise
 
 
-def seed_of(prefs: dict) -> object:
+def value_at(prefs: dict, path: tuple[str, ...]) -> object:
     node: object = prefs
-    for part in SEED_PATH:
+    for part in path:
         if not isinstance(node, dict):
             return None
         node = node.get(part)
     return node
+
+
+def seed_of(prefs: dict) -> object:
+    return value_at(prefs, SEED_PATH)
+
+
+def stored_seed_value(seed: str) -> str:
+    """Encode the contract's `v10<base64>` blob the way Brave stores it.
+
+    Brave base64-encodes the raw `v10` + IV + ciphertext bytes; the contract
+    keeps the blob as text so it survives a `.env` line and `sops`.
+    """
+    try:
+        raw = b"v10" + base64.b64decode(seed[3:], validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise SyncError(f"BRAVE_SYNC_SEED is not a v10 base64 blob: {exc}") from None
+    return base64.b64encode(raw).decode("ascii")
+
+
+def looks_oscrypt(value: object) -> bool:
+    """True for either storage form: the blob string or Brave's base64 of it."""
+    if not isinstance(value, str) or not value:
+        return False
+    if value.startswith("v10"):
+        return True
+    try:
+        return base64.b64decode(value, validate=True)[:3] == b"v10"
+    except (binascii.Error, ValueError):
+        return False
 
 
 def plant(prefs: dict, seed: str) -> dict:
@@ -137,7 +172,7 @@ def plant(prefs: dict, seed: str) -> dict:
             child = {}
             node[part] = child
         node = child
-    node[SEED_PATH[-1]] = seed
+    node[SEED_PATH[-1]] = stored_seed_value(seed)
     return prefs
 
 
@@ -190,7 +225,7 @@ def stage(env_path: str, prefs_path: str, code_out: str | None = None) -> dict:
     return {
         "seed_present": bool(seed),
         "planted": planted,
-        "seed_shape": "oscrypt" if str(seed).startswith("v10") else "other",
+        "seed_shape": "oscrypt" if looks_oscrypt(seed) else "other",
         "code_staged": code_staged,
     }
 
@@ -198,7 +233,9 @@ def stage(env_path: str, prefs_path: str, code_out: str | None = None) -> dict:
 def status(prefs_path: str) -> dict:
     prefs = load_preferences(prefs_path)
     seed = seed_of(prefs)
-    return {"seed_present": isinstance(seed, str) and bool(seed), "seed_shape": "oscrypt" if str(seed).startswith("v10") else "other"}
+    if seed is None:
+        seed = value_at(prefs, LEGACY_SEED_PATH)
+    return {"seed_present": isinstance(seed, str) and bool(seed), "seed_shape": "oscrypt" if looks_oscrypt(seed) else "other"}
 
 
 def main(argv: list[str] | None = None) -> int:

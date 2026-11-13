@@ -22,12 +22,16 @@ below is the fallback.
 
 ## Profile and seed
 
-Brave's OSCrypt encrypts `Preferences` `brave_sync.v2.seed`. On Linux the
-default keyring may be unavailable under Xvfb, so every Brave invocation in this
-guest passes `--password-store=basic`: the fixed "peanuts" key then decrypts the
-seed, and a seed exported from another basic-store profile is portable. The
-guest never logs the seed; `brave_sync.py` reports only `seed_present` and
-whether the blob looks like OSCrypt (`v10…`).
+Brave's OSCrypt encrypts the sync seed held at `Preferences`
+`brave_sync_v2.seed` — a flat key, not `brave_sync.v2.seed` — and stores it as
+**base64 of the raw blob** (`v10` + IV + ciphertext), so a `v10<base64>` string
+lifted straight out of the file is not what Brave reads. On Linux the default
+keyring may be unavailable under Xvfb, so every Brave invocation in this guest
+passes `--password-store=basic`: the fixed "peanuts" key then decrypts the seed,
+and a seed from another basic-store profile is portable. The contract carries
+the blob as the `v10<base64>` text and `brave_sync.py` converts it when planting.
+The guest never logs the seed; it reports only `seed_present` and whether the
+value looks like OSCrypt.
 
 `ingest-brave-sync.service`'s seed step runs before each pull and:
 
@@ -47,11 +51,12 @@ Brave profile is already in the chain, with Brave closed:
 
 ```sh
 prefs="$HOME/.config/BraveSoftware/Brave-Browser/Default/Preferences"
-jq -r '."brave_sync"."v2"."seed"' "$prefs"
+# stored: base64(b"v10" + IV + ciphertext); contract: "v10" + base64(IV + ciphertext)
+jq -r '.brave_sync_v2.seed' "$prefs" | base64 -d | tail -c +4 | base64 -w0
 ```
 
-Put the value in the secret contract as `BRAVE_SYNC_SEED=<value>` and re-stage
-`ingest-brave-env`. The blob is portable because both profiles use
+Prefix that output with `v10` and put it in the secret contract as
+`BRAVE_SYNC_SEED=v10<output>`, then re-stage `ingest-brave-env`. The blob is portable because both profiles use
 `--password-store=basic`; a keyring-encrypted seed is not.
 
 **Fallback: Xvfb paste.** Put the 25-word code in the secret as

@@ -271,7 +271,7 @@ one-time claim are in [`docs/kanbei-ingest-finance.md`](kanbei-ingest-finance.md
 ### ingest-brave (T17)
 
 `ingest-brave` is a Brave profile joined to the owner's Sync chain. The profile
-seed (`Preferences` `brave_sync.v2.seed`) is planted from the read-only secret
+seed (`Preferences` `brave_sync_v2.seed`) is planted from the read-only secret
 device and every Brave run uses `--password-store=basic`, so the fixed OSCrypt
 key opens it; the one headful join runs under Xvfb with a real window and is a
 manual unit, with the seed-export path as the supported alternative. A daily
