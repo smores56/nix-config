@@ -553,6 +553,10 @@ let
             TimeoutStartSec = 300;
             MemoryHigh = "96M";
             MemoryMax = "160M";
+            # The guest journal is tmpfs: without the console, a failed run is invisible
+            # from the host (only a generic "Failed to start" line reaches it).
+            StandardOutput = "journal+console";
+            StandardError = "journal+console";
             ExecStart = "${financeTool}/bin/ingest-finance --env /run/ingest-secret/env --outbox /var/lib/ingest/outbox --state /var/lib/finance/state.json";
           };
         };
@@ -604,6 +608,10 @@ let
             TimeoutStartSec = 360;
             MemoryHigh = "640M";
             MemoryMax = "800M";
+            # Guest journal is tmpfs; the seed status and pull events have to reach the
+            # host console or a stuck pull is indistinguishable from an empty one.
+            StandardOutput = "journal+console";
+            StandardError = "journal+console";
             ExecStartPre = "${braveSync}/bin/ingest-brave-sync --env /run/ingest-secret/env --prefs ${braveProfile}/Default/Preferences --code-out /run/brave/sync-code";
             ExecStart = braveSyncPull;
           };
@@ -625,6 +633,8 @@ let
             TimeoutStartSec = 300;
             MemoryHigh = "96M";
             MemoryMax = "128M";
+            StandardOutput = "journal+console";
+            StandardError = "journal+console";
             ExecStart = "${braveHistory}/bin/ingest-brave-history --profile ${braveProfile} --state /var/lib/brave/state.json --outbox /var/lib/ingest/outbox --workdir /var/lib/brave/work --lookback-hours 24";
           };
         };
