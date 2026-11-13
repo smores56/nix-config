@@ -37,9 +37,6 @@ in
     ../../nixos/ingest-vm.nix
     # #509 retirement assertions; inert until the cutover switch below is flipped.
     ../../nixos/kanbei-cutover.nix
-    # The agent book shelf: ~/wip/books -> the books library share. The queue has no
-    # writer since #635 (nanobot writes the library); #636 deletes the module.
-    ./books-shelf.nix
     # The cluster serves the data apps; keep the host copies off (#509).
     ./retired-host-apps.nix
   ];

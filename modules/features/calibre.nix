@@ -6,7 +6,8 @@
 # Agents write the library directly: nanobot mounts /var/lib/data/books as its
 # `nanobot-books` claim (#635), so there is no queue and no import step, and
 # OPDShelf reads the folder tree as the catalog. The legacy books-shelf unit
-# still watches ~/wip/books until #636 removes it; nothing writes that path.
+# is gone (#636): nanobot writes /var/lib/data/books directly, and nothing
+# stages through ~/wip/books anymore.
 #
 # Upstream: https://github.com/JimmXinu/FanFicFare
 { pkgs, ... }:

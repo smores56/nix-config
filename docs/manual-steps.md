@@ -2254,9 +2254,9 @@ created from `~/secrets/homelabs-platform/opdshelf-admin-password.yaml`.
 Agents write the library directly: nanobot mounts `/var/lib/data/books` through
 its `nanobot-books` claim and downloads EPUBs into it as `smores:users`, so the
 host keeps no queue and the folder is the catalog. Nothing else runs; drop a
-file in by hand the same way. The legacy `books-shelf.service`
-(`modules/hosts/smortress/books-shelf.nix`) and its `~/wip/books` watch path
-remain until #636 removes them; the agent VM no longer writes that queue.
+file in by hand the same way. The legacy `books-shelf.service` and its
+`~/wip/books` watch path were removed in #636; there is no queue and no
+import step.
 
 ### smortress/immich
 
