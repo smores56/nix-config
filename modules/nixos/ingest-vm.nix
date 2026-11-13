@@ -375,11 +375,12 @@ let
         systemd.services.ingest-emit = {
           description = "Ship ${id} NDJSON batches to the host writer over vsock";
           wantedBy = [ "multi-user.target" ];
-          requires = [ "run-ingest-secret.mount" ];
-          after = [
-            "run-ingest-secret.mount"
-            "systemd-tmpfiles-setup.service"
-          ];
+          # RequiresMountsFor derives the unit name, and that matters: systemd
+          # escapes the hyphen in /run/ingest-secret to run-ingest\x2dsecret.mount,
+          # so a hand-written `run-ingest-secret.mount` is not found and the start
+          # fails without ever running the service.
+          unitConfig.RequiresMountsFor = [ "/run/ingest-secret" ];
+          after = [ "systemd-tmpfiles-setup.service" ];
           restartIfChanged = false;
           environment = proxyEnv;
           serviceConfig = {
@@ -393,31 +394,6 @@ let
             StandardError = "journal+console";
             ExecStart = "${emitter}/bin/ingest-emit --source ${id} --port ${toString s.vsockPort} --outbox /var/lib/ingest/outbox --secret /run/ingest-secret/env";
           };
-        };
-
-        # TEMPORARY diagnostic: the guest journal is on tmpfs, so this is the only way
-        # to see why ingest-emit is or is not listening. Remove after the bring-up.
-        systemd.services.ingest-selfcheck = {
-          description = "Report ingest-emit and vsock state to the serial console";
-          wantedBy = [ "multi-user.target" ];
-          after = [ "ingest-emit.service" ];
-          serviceConfig = {
-            Type = "oneshot";
-            StandardOutput = "journal+console";
-            StandardError = "journal+console";
-          };
-          script = ''
-            set -x
-            systemctl show ingest-emit.service -p LoadState -p UnitFileState -p WantedBy -p RequiredBy -p ActiveState -p ConditionResult -p Result || true
-            systemctl list-units 'run-ingest*' --all --no-pager --no-legend || echo "selfcheck: no run-ingest units"
-            systemctl show run-ingest-secret.mount -p LoadState -p ActiveState || true
-            systemd-analyze verify /etc/systemd/system/ingest-emit.service 2>&1 || true
-            out=$(systemctl start ingest-emit.service 2>&1) && rc=0 || rc=$?
-            echo "selfcheck: start rc=$rc out=[$out]"
-            sleep 2
-            systemctl show ingest-emit.service -p ActiveState -p Result -p ExecMainStatus -p ExecMainCode || true
-            journalctl --no-pager -u ingest-emit.service -n 20 2>&1 || true
-          '';
         };
 
         system.stateVersion = "26.05";
@@ -445,16 +421,13 @@ let
         systemd.services.tutabridge-session = {
           description = "Stage the TutaBridge session from the read-only secret device";
           wantedBy = [ "multi-user.target" ];
-          requires = [ "run-ingest-secret.mount" ];
-          after = [
-            "run-ingest-secret.mount"
-            "systemd-tmpfiles-setup.service"
-          ];
+          after = [ "systemd-tmpfiles-setup.service" ];
           before = [
             "tutabridge.service"
             "ingest-tuta-mail.service"
           ];
           unitConfig = {
+            RequiresMountsFor = [ "/run/ingest-secret" ];
             StartLimitBurst = 5;
             StartLimitIntervalSec = 300;
           };
@@ -554,13 +527,12 @@ let
           description = "Collect SimpleFIN accounts and render hledger journals";
           after = [
             "ingest-emit.service"
-            "run-ingest-secret.mount"
             "systemd-tmpfiles-setup.service"
           ];
-          requires = [ "run-ingest-secret.mount" ];
           environment = proxyEnv;
           restartIfChanged = false;
           unitConfig = {
+            RequiresMountsFor = [ "/run/ingest-secret" ];
             StartLimitBurst = 5;
             StartLimitIntervalSec = 300;
           };
@@ -607,13 +579,10 @@ let
 
         systemd.services.ingest-brave-sync = {
           description = "Seed the Brave profile and pull the Sync chain headlessly";
-          after = [
-            "run-ingest-secret.mount"
-            "systemd-tmpfiles-setup.service"
-          ];
-          requires = [ "run-ingest-secret.mount" ];
+          after = [ "systemd-tmpfiles-setup.service" ];
           restartIfChanged = false;
           unitConfig = {
+            RequiresMountsFor = [ "/run/ingest-secret" ];
             StartLimitBurst = 5;
             StartLimitIntervalSec = 300;
           };
@@ -662,8 +631,7 @@ let
         # supported unattended path is the planted `brave_sync.v2.seed`.
         systemd.services.brave-sync-join = {
           description = "One-time Brave Sync chain join under Xvfb (manual)";
-          after = [ "run-ingest-secret.mount" ];
-          requires = [ "run-ingest-secret.mount" ];
+          unitConfig.RequiresMountsFor = [ "/run/ingest-secret" ];
           restartIfChanged = false;
           serviceConfig = {
             Type = "oneshot";
@@ -684,13 +652,12 @@ let
           wantedBy = [ "multi-user.target" ];
           after = [
             "ingest-emit.service"
-            "run-ingest-secret.mount"
             "systemd-tmpfiles-setup.service"
           ];
-          requires = [ "run-ingest-secret.mount" ];
           environment = proxyEnv;
           restartIfChanged = false;
           unitConfig = {
+            RequiresMountsFor = [ "/run/ingest-secret" ];
             StartLimitBurst = 5;
             StartLimitIntervalSec = 300;
           };
@@ -779,11 +746,8 @@ let
         systemd.services.search-judge = {
           description = "Granite Guardian exfiltration judge on CPU";
           wantedBy = [ "multi-user.target" ];
-          requires = [ "run-search-model.mount" ];
-          after = [
-            "run-search-model.mount"
-            "systemd-tmpfiles-setup.service"
-          ];
+          unitConfig.RequiresMountsFor = [ "/run/search-model" ];
+          after = [ "systemd-tmpfiles-setup.service" ];
           restartIfChanged = false;
           serviceConfig = {
             Type = "simple";
@@ -802,16 +766,13 @@ let
         systemd.services.searchd = {
           description = "Capped search query API on vsock";
           wantedBy = [ "multi-user.target" ];
-          requires = [
-            "run-ingest-secret.mount"
-            "run-search-model.mount"
-            "var-lib-search.mount"
+          unitConfig.RequiresMountsFor = [
+            "/run/ingest-secret"
+            "/run/search-model"
+            "/var/lib/search"
           ];
           wants = [ "search-judge.service" ];
           after = [
-            "run-ingest-secret.mount"
-            "run-search-model.mount"
-            "var-lib-search.mount"
             "search-judge.service"
             "systemd-tmpfiles-setup.service"
           ];
