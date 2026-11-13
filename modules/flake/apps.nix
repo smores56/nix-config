@@ -306,6 +306,8 @@
       packages.tuta-ics = tuta-ics;
       # The in-cluster memory wrapper image (publish: `just publish-memory-image`).
       packages.memory-mcp-image = pkgs.callPackage ../../modules/features/ai/memory/image.nix { };
+      # The in-cluster agent image (publish: docs/manual-steps.md, agent image).
+      packages.nanobot-image = pkgs.callPackage ../../pkgs/nanobot/image.nix { inherit inputs; };
       # Documented broken build: the SDK is not vendored (pkgs/tuta-ics/default.nix).
       packages.tuta-ics-sdk = tuta-ics.passthru.sdk;
       packages.bootstrap = bootstrap;
