@@ -214,6 +214,18 @@ class PaginationTests(unittest.TestCase):
         self.assertEqual(bodies[1]["page"], 2)
         self.assertTrue(bodies[0]["withExif"])
 
+    def test_nested_search_page_is_accepted(self):
+        # Immich wraps search results in `albums`, which the flat readers missed.
+        opener = RouteOpener(
+            [
+                {"albums": {"items": [asset("a"), asset("b")], "nextPage": "2"}},
+                {"albums": {"items": [asset("c")], "nextPage": None}},
+            ]
+        )
+        client = self.immich.ImmichClient("https://photos.sammohr.dev", KEY, opener=opener)
+        items = self.immich.search_assets(client, after=None, page_size=2)
+        self.assertEqual([item["id"] for item in items], ["a", "b", "c"])
+
     def test_next_cursor(self):
         opener = RouteOpener(
             [

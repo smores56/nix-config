@@ -245,6 +245,17 @@ def cursor_after(updated_at: str, item_id: str, cursor: dict) -> bool:
     return key > stored
 
 
+def search_page(document: dict) -> dict:
+    """Return the page object of a search/metadata response.
+
+    Immich wraps asset results in `albums` (`{"albums": {"items": …,
+    "nextPage": …}}`) whatever the search is about, and older builds answered
+    with the page at the top level, so accept both.
+    """
+    inner = document.get("albums")
+    return inner if isinstance(inner, dict) else document
+
+
 def search_assets(client: ImmichClient, *, after: str | None, page_size: int) -> list[dict]:
     body: dict = {
         "size": page_size,
@@ -266,19 +277,20 @@ def search_assets(client: ImmichClient, *, after: str | None, page_size: int) ->
         document = client.request("/api/search/metadata", request_body, method="POST")
         if not isinstance(document, dict):
             raise ImmichError("search/metadata response is not an object")
-        page_items = document.get("items")
+        page_document = search_page(document)
+        page_items = page_document.get("items")
         if not isinstance(page_items, list):
             raise ImmichError("search/metadata response has no items list")
         items.extend(raw for raw in page_items if isinstance(raw, dict))
-        next_cursor = document.get("nextCursor")
+        next_cursor = page_document.get("nextCursor")
         if isinstance(next_cursor, str) and next_cursor:
             cursor = next_cursor
             continue
-        next_page = document.get("nextPage")
+        next_page = page_document.get("nextPage")
         if isinstance(next_page, str) and next_page:
             page = int(next_page) if next_page.isdigit() else page + 1
             continue
-        if "nextPage" in document or "nextCursor" in document:
+        if "nextPage" in page_document or "nextCursor" in page_document:
             break
         if len(page_items) < page_size:
             break
@@ -331,18 +343,19 @@ def album_asset_ids(client: ImmichClient, album_id: str, page_size: int) -> list
         document = client.request("/api/search/metadata", request_body, method="POST")
         if not isinstance(document, dict):
             raise ImmichError("search/metadata album response is not an object")
-        entries = document.get("items")
+        page_document = search_page(document)
+        entries = page_document.get("items")
         if not isinstance(entries, list):
             raise ImmichError("search/metadata album response has no items list")
         for raw in entries:
             if isinstance(raw, dict) and raw.get("id") and str(raw["id"]) not in seen:
                 seen.add(str(raw["id"]))
                 ids.append(str(raw["id"]))
-        next_cursor = document.get("nextCursor")
+        next_cursor = page_document.get("nextCursor")
         if isinstance(next_cursor, str) and next_cursor:
             cursor = next_cursor
             continue
-        next_page = document.get("nextPage")
+        next_page = page_document.get("nextPage")
         if isinstance(next_page, str) and next_page:
             page = int(next_page) if next_page.isdigit() else page + 1
             continue
