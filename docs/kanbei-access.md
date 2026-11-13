@@ -76,7 +76,17 @@ resource "cloudflare_zero_trust_network_hostname_route" "kanbei" {
 resource "cloudflare_zero_trust_access_application" "kanbei" {
   account_id                  = var.account_id
   name                        = "kanbei"
-  domain                      = "kanbei.${var.domain}"
+  # A *private* destination, not `domain =`: a plain domain makes the app public, and Access
+  # then answers the request at the edge with a browser-login redirect. The private form is
+  # what a "self-hosted and private" app gets from the dashboard (hostname + port).
+  destinations = [
+    {
+      type        = "private"
+      hostname    = "kanbei.${var.domain}"
+      port_range  = "443"
+      l4_protocol = "tcp"
+    },
+  ]
   type                        = "self_hosted"
   session_duration            = "720h"
   allow_authenticate_via_warp = true
