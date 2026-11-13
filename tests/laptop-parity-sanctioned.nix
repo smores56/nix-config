@@ -172,7 +172,6 @@ in
       "memory-llm-proxy"
       "memory-mcp"
       "cloudflared-llm"
-      "cloudflared-memory"
     ])
   ];
 

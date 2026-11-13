@@ -824,7 +824,8 @@ in
         );
 
         # The memory service is the only agent memory: Claude's own is off wherever it is configured,
-        # maki's bundled one is off wherever maki is, and the personal laptop reaches smortress's store.
+        # maki's bundled one is off wherever maki is, and no host keeps a loopback forward to it
+        # (the clients dial https://memory.sammohr.dev).
         single-memory = evalCheck "single-memory" (
           let
             ensure = cond: msg: lib.assertMsg cond "single-memory: ${msg}";
@@ -841,7 +842,9 @@ in
               && ensure (lib.all (
                 h: lib.hasInfix "memory = { enabled = false }" h.config.home.file.".config/maki/init.lua".text
               ) makiHomes) "maki's bundled memory is on somewhere"
-              && ensure (pro.systemd.user.services ? cloudflared-memory) "smorespro has no memory tunnel forward";
+              && ensure (
+                !(pro.systemd.user.services ? cloudflared-memory)
+              ) "smorespro still runs a loopback memory forward";
             "ok"
           )
         );

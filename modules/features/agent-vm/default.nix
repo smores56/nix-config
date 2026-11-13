@@ -15,6 +15,7 @@ let
   allowRw = [
     "Blitzy"
     "repos"
+    # Working tree only; the book queue that used to live in `wip/books` is gone (#635).
     "wip"
     ".claude/file-history"
     ".claude/plans"

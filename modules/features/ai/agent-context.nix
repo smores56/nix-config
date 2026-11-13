@@ -46,7 +46,6 @@ let
 
     # Tools
     - Never run anything that needs superuser rights (`sudo`, `su`, `doas`, polkit actions); ask the human to run it and wait for their answer
-    - Story downloads in the Linux agent VM: `fanficfare-download <url> ...` (no calibre plugin)
 
     # Style
     - Prefer functional style: pure functions, immutability, composition over inheritance; single-purpose functions; structured types over untyped maps

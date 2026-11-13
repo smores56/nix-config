@@ -22,6 +22,10 @@ agent-vm-verify:
 test:
     nix build --no-link .#checks.$(nix eval --impure --raw --expr builtins.currentSystem).unit-tests
 
+# Re-vendor the pinned smores56/sdlc CLI source (private repo; needs gh auth).
+sdlc-sync rev:
+    bash modules/features/ai/sdlc/sync.sh {{rev}}
+
 # Evaluate the kanbei inference lanes (lane fit, 128k recall, q8_0 vs f16); skips without a live endpoint.
 inference-eval *args:
     nix shell nixpkgs#python3 -c python3 tests/inference/run_all.py {{args}}

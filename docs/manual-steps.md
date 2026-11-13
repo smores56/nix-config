@@ -2201,10 +2201,12 @@ Neither this host nor the tunnel serves the library: OPDShelf runs in the
 `smores56`; the password is the cluster Secret `opdshelf-admin-password-sops`,
 created from `~/secrets/homelabs-platform/opdshelf-admin-password.yaml`.
 
-Agents never talk to the server. `fanficfare-download` writes the EPUB to
-`~/wip/books`, and `books-shelf.service` (`modules/hosts/smortress/books-shelf.nix`)
-copies finished files into `imported/` inside the library share. The folder is
-the catalog, so nothing else runs. Drop a file in by hand the same way.
+Agents write the library directly: nanobot mounts `/var/lib/data/books` through
+its `nanobot-books` claim and downloads EPUBs into it as `smores:users`, so the
+host keeps no queue and the folder is the catalog. Nothing else runs; drop a
+file in by hand the same way. The legacy `books-shelf.service`
+(`modules/hosts/smortress/books-shelf.nix`) and its `~/wip/books` watch path
+remain until #636 removes them; the agent VM no longer writes that queue.
 
 ### smortress/immich
 

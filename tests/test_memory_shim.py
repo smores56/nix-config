@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "modules/features/ai/memory/s
 from mcp.shared.memory import create_connected_server_and_client_session  # noqa: E402
 from mcp.types import Tool  # noqa: E402
 
-from memory_mcp import shim  # noqa: E402
+from memory_mcp import cli, shim  # noqa: E402
 from memory_mcp.groups import sanitize_machine  # noqa: E402
 from memory_mcp.client import ToolResult, UpstreamError  # noqa: E402
 from memory_mcp.schema import FALLBACK_TOOLS, FALLBACK_TOOL_NAMES  # noqa: E402
@@ -26,7 +26,7 @@ class ShimProxyTests(unittest.IsolatedAsyncioTestCase):
         values = {
             "group": "owner--repo",
             "cwd": "/home/smores/code/example",
-            "url": "http://127.0.0.1:8182/mcp",
+            "url": "https://memory.sammohr.dev/mcp",
             "machine": "smorespro",
         }
         values.update(overrides)
@@ -120,6 +120,13 @@ class ShimProxyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(prompts.prompts, [])
 
 
+class DefaultEndpointTests(unittest.TestCase):
+    def test_the_clients_default_to_the_tunnel_hostname(self):
+        self.assertEqual(shim.DEFAULT_URL, "https://memory.sammohr.dev/mcp")
+        self.assertEqual(cli.DEFAULT_URL, "https://memory.sammohr.dev/mcp")
+        self.assertEqual(shim.ShimConfig(group="owner--repo", cwd=".").url, shim.DEFAULT_URL)
+
+
 class ShimMainTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -204,7 +211,7 @@ class OpenSessionTests(unittest.IsolatedAsyncioTestCase):
             mock.patch.object(client, "streamable_http_client", fake_stream),
             self.assertRaises(UpstreamError),
         ):
-            async with client.open_session(ClientConfig(url="http://127.0.0.1:8182/mcp")):
+            async with client.open_session(ClientConfig(url="https://memory.sammohr.dev/mcp")):
                 pass
         self.assertFalse(captured["follow_redirects"])
 

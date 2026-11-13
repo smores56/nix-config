@@ -12,7 +12,6 @@ let
   aiProfile = config.user.aiProfile;
   domain = "sammohr.dev";
   isServer = builtins.elem "server" config.machine.profiles;
-  ports = import ../ports.nix;
   piv = import ../lib/piv.nix { inherit config lib pkgs; };
   inherit (aiProviders) smortress;
 
@@ -86,9 +85,6 @@ in
   systemd.user.services = lib.mkMerge [
     (lib.mkIf (aiProfile == "personal" && !isServer) {
       cloudflared-llm = forward "llm" smortress.port;
-      # The memory wrapper is an HTTP MCP server behind Access; the shim adds group headers and the
-      # forward injects the service token, so mcp.toml carries no secret. On smortress the shim dials loopback.
-      cloudflared-memory = forward "memory" ports.memoryMcp;
     })
   ];
 }

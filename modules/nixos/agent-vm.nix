@@ -738,60 +738,6 @@ let
           target = p;
         }) cfg.ingressPorts
       );
-
-      # Site warning lists are metadata, not story content. This drops them from the
-      # generated title page; FanFicFare never put them in calibre tags.
-      fanficfareIni = pkgs.writeText "fanficfare-personal.ini" ''
-        [defaults]
-        titlepage_entries: seriesHTML,category,genre,language,characters,ships,status,datePublished,dateUpdated,dateCreated,rating,numChapters,numWords,publisher,description
-        include_images: coveronly
-
-        [www.royalroad.com]
-        slow_down_sleep_time:1
-      '';
-
-      # One step for agents: download into a scratch directory, then drop each EPUB on the
-      # shelf the host moves into the library. OPDShelf reads the folder tree, so there is no
-      # metadata database and no content-server API in this path.
-      fanficfareDownload = pkgs.writeShellApplication {
-        name = "fanficfare-download";
-        runtimeInputs = [
-          pkgs.coreutils
-          pkgs.fanficfare
-        ];
-        text = ''
-          set -euo pipefail
-
-          if [ $# -eq 0 ]; then
-            echo "usage: fanficfare-download <story-url>..." >&2
-            exit 2
-          fi
-
-          shelf="''${BOOK_SHELF:-$HOME/wip/books}"
-          mkdir -p "$shelf"
-
-          work=$(mktemp -d)
-          trap 'rm -rf "$work"' EXIT
-
-          ( cd "$work" && fanficfare --non-interactive -c ${fanficfareIni} "$@" )
-
-          shopt -s nullglob
-          epubs=("$work"/*.epub)
-          if [ ''${#epubs[@]} -eq 0 ]; then
-            echo "fanficfare-download: no EPUB written" >&2
-            exit 1
-          fi
-
-          # Write under a temporary name and rename, so the host's watcher only ever
-          # sees complete files; it moves them into the library share.
-          for epub in "''${epubs[@]}"; do
-            dest="$shelf/$(basename "$epub")"
-            install -m 0644 "$epub" "$dest.tmp"
-            mv "$dest.tmp" "$dest"
-            printf '%s\n' "$dest"
-          done
-        '';
-      };
     in
     {
       microvm = {
@@ -938,7 +884,6 @@ let
       environment.systemPackages = [
         guestSsh
         pkgs.calibre
-        fanficfareDownload
         sdlcGuest
         tinyfishSearch
         pkgs.gh
@@ -1216,6 +1161,7 @@ in
           ];
           allowRw = [
             "repos"
+            # Working tree only; the book queue that used to live in `wip/books` is gone (#635).
             "wip"
             # Shared maki sessions and logs: the host and the guest resume each other's sessions.
             ".local/state/maki"

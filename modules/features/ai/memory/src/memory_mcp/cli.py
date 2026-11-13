@@ -1,8 +1,8 @@
 """`memory` CLI: write, search, get, retry, promote, reindex, status, tombstone, export, restore.
 
-Uses the same headers as the shim, so it works on a client through the loopback
-forward and on smortress directly. `--group` is an explicit override and is
-validated with the same work refusal as the header path.
+Uses the same headers as the shim and dials the Access-fronted tunnel hostname,
+so it works from any host without a local forward. `--group` is an explicit
+override and is validated with the same work refusal as the header path.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from .export import dispatch as export_dispatch
 from .groups import GroupRefused, derive_group, local_machine, validate_group
 from .mcp_auth import TokenMissingError, authorization
 
-DEFAULT_URL = "http://127.0.0.1:8182/mcp"
+DEFAULT_URL = "https://memory.sammohr.dev/mcp"
 DEFAULT_TIMEOUT = 75.0
 
 

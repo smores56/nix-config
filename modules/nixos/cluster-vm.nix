@@ -88,17 +88,18 @@ let
     "224.0.0.0/3"
   ];
 
-  # The cluster's only new-connection egress: image pulls and Flux over HTTPS, DNS, NTP,
-  # and the cloudflared tunnel edge. The tunnel's control connection is TCP/UDP 7844
-  # (QUIC, falling back to HTTP/2); without it the ingress connector retries forever
-  # instead of ever becoming Ready, so the allowlist has to name that port explicitly.
+  # The tenant reaches the public internet directly (#625): image pulls, Flux, the
+  # cloudflared tunnel edge on TCP/UDP 7844 (without it the ingress connector retries
+  # forever instead of ever becoming Ready), package managers and any destination an
+  # agent names. This is cluster safety, not DLP: the `privateNets` denies stay because
+  # RFC1918, CGNAT, loopback, link-local (the metadata endpoint), multicast and the
+  # reserved tail are not "the internet", and the k3s API, the data services and this
+  # host's LAN neighbours are not part of the tenant's egress. There is no proxy, no
+  # rate cap and no log; the tenant NetworkPolicy carries the same set and has to change
+  # in the same revision (smores56/homelabs-platform).
   egressFlows = [
-    "-A cluster-vm-fwd -i ${facts.tap} -p tcp -m multiport --dports 80,443 -j ACCEPT"
-    "-A cluster-vm-fwd -i ${facts.tap} -p tcp --dport 7844 -j ACCEPT"
-    "-A cluster-vm-fwd -i ${facts.tap} -p udp --dport 7844 -j ACCEPT"
-    "-A cluster-vm-fwd -i ${facts.tap} -p udp --dport 53 -j ACCEPT"
-    "-A cluster-vm-fwd -i ${facts.tap} -p tcp --dport 53 -j ACCEPT"
-    "-A cluster-vm-fwd -i ${facts.tap} -p udp --dport 123 -j ACCEPT"
+    "-A cluster-vm-fwd -i ${facts.tap} -p tcp -j ACCEPT"
+    "-A cluster-vm-fwd -i ${facts.tap} -p udp -j ACCEPT"
   ];
 
   # Dedicated chains jumped to from the top of INPUT/FORWARD, ahead of nixos-fw and netavark.
@@ -300,8 +301,8 @@ let
         firewall.allowedTCPPorts = [
           6443
           10250
-          # The memory wrapper's NodePort: the host's `memory-forward` dials it. The
-          # platform NetworkPolicy admits only the tap addresses; this only opens the node.
+          # The memory wrapper's NodePort; the platform's Service manifest must name the
+          # same literal, and its NetworkPolicy admits only the tap addresses.
           ports.memoryNodePort
         ];
       };
@@ -504,6 +505,24 @@ in
         && lib.hasPrefix "${ingest.constants.stateRoot}/" digestDir
         && ingest.constants.digestUid != config.users.users.${user}.uid;
       message = "cluster-vm: the cluster-digest tree must be 0770 on the dedicated digest uid under a root-only parent (never /var/lib/data, which ${user} owns), mapped explicitly for the guest, and never owned by ${user}";
+    }
+    {
+      # #635: nanobot mounts the books tree and writes it directly as uid 1000; the share
+      # maps that onto the host's `smores:users`, the ownership the library and restic
+      # already use. A translation change would silently make the pods write as nobody.
+      assertion =
+        let
+          guest = config.microvm.vms.${facts.name}.config.config;
+          share = lib.findFirst (s: s.tag == "data-books") null guest.microvm.shares;
+        in
+        lib.elem "books" dataShares
+        && share != null
+        && share.source == "/var/lib/data/books"
+        && share.mountPoint == "/mnt/data/books"
+        && !(share.readOnly or false)
+        && lib.elem "--translate-uid=guest:1000:${toString config.users.users.${user}.uid}:1" share.extraArgs
+        && lib.elem "--translate-gid=guest:1000:${toString config.users.groups.users.gid}:1" share.extraArgs;
+      message = "cluster-vm: the books share must map guest 1000 onto ${user}:users, because nanobot writes the library as uid 1000";
     }
     {
       assertion =

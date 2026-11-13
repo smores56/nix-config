@@ -11,10 +11,11 @@
   immich = 2283;
   navidrome = 4533;
   ssh = 22;
-  # Read by the wrapper's listener, its tunnel ingress and the generated Maki `mcp.toml`; the shim and CLI keep a matching default.
+  # Read by the wrapper's listener and the host tunnel ingress; the shim and CLI dial
+  # https://memory.sammohr.dev.
   memoryMcp = 8182;
-  # The cluster's NodePort for the in-cluster wrapper: `memory-forward` dials it and the
-  # platform's Service manifest must name the same literal (tests/policies/check.sh asserts it).
+  # The cluster's NodePort for the in-cluster wrapper: the platform's Service manifest
+  # must name the same literal (tests/policies/check.sh asserts it).
   memoryNodePort = 30082;
   # The memory-LLM gateway: Graphiti's extraction and embedding route.
   memoryLlmProxy = 8082;

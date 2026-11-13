@@ -25,7 +25,7 @@ from .groups import GroupRefused, derive_group, local_machine
 from .mcp_auth import TokenMissingError, read_token
 from .schema import FALLBACK_TOOLS
 
-DEFAULT_URL = "http://127.0.0.1:8182/mcp"
+DEFAULT_URL = "https://memory.sammohr.dev/mcp"
 DEFAULT_TIMEOUT = 75.0
 
 ListToolsFn = Callable[[ClientConfig], Awaitable[list[Tool]]]
@@ -41,8 +41,8 @@ class ShimConfig:
     actor: str = "maki"
     machine: str = field(default_factory=local_machine)
     timeout: float = DEFAULT_TIMEOUT
-    # The MCP listener refuses loopback clients without this, because the
-    # tunnel makes every remote client look local too.
+    # The wrapper refuses every request without this; cloudflared makes remote
+    # clients look like the host's loopback, so the port is not the authority.
     token: str | None = None
 
     def client_config(self) -> ClientConfig:
