@@ -248,12 +248,17 @@ def cursor_after(updated_at: str, item_id: str, cursor: dict) -> bool:
 def search_page(document: dict) -> dict:
     """Return the page object of a search/metadata response.
 
-    Immich wraps asset results in `albums` (`{"albums": {"items": …,
-    "nextPage": …}}`) whatever the search is about, and older builds answered
-    with the page at the top level, so accept both.
+    Immich answers with two page objects: `assets` holds the assets that matched
+    (also for the album-membership search) and `albums` holds album hits, which
+    are empty for an asset query. Older builds wrapped the assets in `albums`
+    under the same `items`/`nextPage` shape, and some answered at the top level,
+    so try each in turn.
     """
-    inner = document.get("albums")
-    return inner if isinstance(inner, dict) else document
+    for key in ("assets", "albums"):
+        inner = document.get(key)
+        if isinstance(inner, dict):
+            return inner
+    return document
 
 
 def search_assets(client: ImmichClient, *, after: str | None, page_size: int) -> list[dict]:
