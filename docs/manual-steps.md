@@ -450,22 +450,33 @@ The five ingest guests and their host writer/proxy/resolver are behind
 `ingestVm.enable`, which also requires `kanbeiVm.enable`. The operator surface is
 `docs/kanbei-ingest.md`; these are the steps that need a human.
 
-1. **Secret files.** Each source has a `/run/secrets/<source>-env` contract:
-   `ingest-tuta-env`, `ingest-finance-env`, `ingest-brave-env`,
-   `ingest-immich-env`, `ingest-search-env`. They are sops keys of the same name
-   under `/run/secrets`; the encrypted YAML is not in this repo yet, so stage
-   them out of band at mode `0400 root:root` before enabling a guest:
+1. **Secret files.** Each source has a `/run/secrets/ingest-<source>-env`
+   contract: `ingest-tuta-env`, `ingest-finance-env`, `ingest-brave-env`,
+   `ingest-immich-env`, `ingest-search-env`. They are sops keys of the same name,
+   but the encrypted YAML does not carry them yet, so they are staged out of band
+   at mode `0400 root:root` — **after** the activation, not before:
 
    ```sh
    sudo install -m 0400 -o root -g root /path/to/tuta-env /run/secrets/ingest-tuta-env
    sudo stat -c '%a %U:%G %n' /run/secrets/ingest-*-env
    ```
 
+   `/run/secrets` is a sops-nix generation directory, rebuilt on every
+   activation; sops-install-secrets removes every file it does not manage (the
+   log line is `removing secret: ingest-immich-env`). A contract staged before a
+   `nixos-rebuild switch` is gone by the time the unit runs, so stage it after
+   the switch and start the unit in the same session. The durable form is a key
+   in `secrets/smortress.yaml` plus a `sops.secrets` entry in
+   `modules/hosts/smortress/secrets.nix` — declare it only once the key exists,
+   because a declared-but-absent key fails the whole activation.
+
    The secret host unit (`ingest-vm-secret-<source>.service`) copies the file into
    a 4 MiB ext4 image at `/var/lib/microvms/ingest-secrets/<source>.img`; without
-   the file that guest stays down and the other sources are unaffected. Changing
-   a secret requires stopping the guest first: the unit refuses to replace a live
-   image, so `sudo systemctl stop microvm@<guest>` then
+   the file that guest stays down and the other sources are unaffected. The image
+   is what the guest reads, so a later activation that prunes the contract leaves
+   a running guest untouched. Changing a secret requires stopping the guest first:
+   the unit refuses to replace a live image, so
+   `sudo systemctl stop microvm@<guest>` then
    `sudo systemctl start ingest-vm-secret-<source> microvm@<guest>`.
 
    `ingest-tuta-env` is not a password file: it carries the base64 TutaBridge

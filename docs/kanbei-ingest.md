@@ -63,6 +63,13 @@ credentials go in that file. Missing contract files fail the unit and keep that
 guest down; the other guests and the host are unaffected. Steps are in
 `docs/manual-steps.md`.
 
+`/run/secrets` is a sops-nix generation directory: each activation rebuilds it
+and removes every file it does not manage, so a hand-staged contract survives
+only until the next `nixos-rebuild switch`. Stage it after the activation and
+start the unit in the same session, or make it a declared sops key; the image
+under `/var/lib/microvms/ingest-secrets/` is what the guest reads, so pruning
+the contract later leaves a running guest alone.
+
 `ingest-search-env` carries exactly one line, `TINYFISH_API_KEY=<key>`: Kanbei's
 own key, never the host's or nanobot's. The search guest adds two images:
 `/var/lib/microvms/search-model/guardian.img` (`0440 root:kvm`), built by
