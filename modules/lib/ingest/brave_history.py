@@ -277,14 +277,17 @@ def plan_visits(state: dict, visits: list[dict], *, now: int) -> tuple[list[dict
     return items, accepted
 
 
-def database_visits(database: sqlite3.Connection) -> int:
-    """Rows in the whole History database, so a zero-emission run is diagnosable.
+def database_rows(database: sqlite3.Connection, table: str) -> int:
+    """Row count of one known History table, so a zero-emission run is diagnosable.
 
-    The cursor only reports what came after it; without the total, an empty profile
-    and a cursor past every visit look identical in the log.
+    The cursor only reports what came after it, and Chromium's HISTORY sync fills
+    `urls` (typed URLs) without creating `visits` rows, so both counts are needed to
+    tell an empty profile from a synced-but-visitless one.
     """
+    if table not in {"visits", "urls"}:
+        raise ValueError(f"unexpected table {table}")
     try:
-        row = database.execute("SELECT COUNT(*) FROM visits").fetchone()
+        row = database.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
     except sqlite3.Error:
         return 0
     return int(row[0] or 0) if row else 0
@@ -307,7 +310,8 @@ def collect(
         state["visit_time"] = started
         state["visit_id"] = 0
     database = open_history(snapshot_database(history, os.path.join(workdir, "History")))
-    db_visits = database_visits(database)
+    db_visits = database_rows(database, "visits")
+    db_urls = database_rows(database, "urls")
     try:
         scanned = 0
         accepted_count = 0
@@ -331,8 +335,21 @@ def collect(
     finally:
         database.close()
     state["scanned_at"] = now
-    log("done", scans=scanned, emitted=accepted_count, batches=batches, db_visits=db_visits)
-    return {"scanned": scanned, "emitted": accepted_count, "batches": batches, "db_visits": db_visits}
+    log(
+        "done",
+        scans=scanned,
+        emitted=accepted_count,
+        batches=batches,
+        db_visits=db_visits,
+        db_urls=db_urls,
+    )
+    return {
+        "scanned": scanned,
+        "emitted": accepted_count,
+        "batches": batches,
+        "db_visits": db_visits,
+        "db_urls": db_urls,
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
