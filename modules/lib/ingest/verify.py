@@ -315,8 +315,15 @@ def check_sni(env: dict) -> None:
     time.sleep(0.7)
     hello = client_hello("example.com")
     response, lines = connect_lines(proc, port, "app.tuta.com:443", hello)
-    if b"200" in response:
+    # The CONNECT reply precedes the ClientHello by design, so a refusal is that reply
+    # followed by a close: nothing from an upstream ever arrives, and the proxy logs the
+    # mismatch. A ServerHello record (0x16 0x03) would mean it dialled.
+    if not response.startswith(b"HTTP/1.1 200"):
+        fail(f"expected the CONNECT reply before the SNI check: {response!r}")
+    if b"\x16\x03" in response:
         fail("proxy accepted a ClientHello whose SNI does not match the CONNECT host")
+    if any('"event": "allow"' in line for line in lines):
+        fail("proxy dialled upstream for a mismatched SNI")
     if not any('"reason": "sni_mismatch"' in line for line in lines):
         fail(f"proxy did not log the SNI mismatch: {lines[-4:]}")
     say("PASS sni: CONNECT example.com and a mismatched SNI are refused")
