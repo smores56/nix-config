@@ -368,10 +368,20 @@ def check_egress(env: dict, since: str) -> None:
     say(f"PASS egress: guest probe dropped and {CHAIN} only accepts conntrack")
 
 
-def check_secret(since: str) -> None:
+def secret_reported(since: str) -> bool:
     out = journal(f"microvm@{GUEST}", since)
-    if '"event": "secret"' not in out or '"mode": "0o400"' not in out:
-        fail("the guest did not report a 0400 secret file on its read-only block device")
+    return '"event": "secret"' in out and '"mode": "0o400"' in out
+
+
+def check_secret(since: str) -> None:
+    # The emitter stages the secret a few seconds into boot and the egress probe can
+    # log first, so waiting for the egress line alone raced the secret line and failed
+    # a healthy guest.
+    if not wait_for(lambda: secret_reported(since), 60):
+        out = journal(f"microvm@{GUEST}", since)
+        if '"event": "secret"' not in out:
+            fail("the guest did not report a secret file on its read-only block device")
+        fail("the guest's staged secret is not mode 0400")
     say("PASS secret: guest sees the staged env at mode 0400")
 
 

@@ -419,3 +419,16 @@ class VerifierRuleTests(unittest.TestCase):
     def test_a_group_writable_parent_is_still_refused(self):
         self.assertIn("private", self.verify.permission_problem("parent", "/p", 0o770, 0, "", "1000"))
         self.assertIsNone(self.verify.permission_problem("parent", "/p", 0o750, 0, "", "1000"))
+
+    def test_the_secret_proof_waits_for_the_emitter_line(self):
+        # The egress probe logs about a second before the emitter stages the secret;
+        # checking only for the egress line failed a healthy boot.
+        original = self.verify.journal
+        lines: list[str] = []
+        self.verify.journal = lambda unit, since: "".join(lines)
+        try:
+            self.assertFalse(self.verify.secret_reported("since"))
+            lines.append('{"event": "secret", "mode": "0o400", "present": true}\n')
+            self.assertTrue(self.verify.secret_reported("since"))
+        finally:
+            self.verify.journal = original
