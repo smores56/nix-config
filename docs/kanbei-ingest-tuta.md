@@ -209,12 +209,14 @@ A session from an older bridge usually still decrypts; when it does not, the
 
 ## Freshness
 
-Mail is a normal ingest source with a 1800 s window
-(`modules/lib/ingest-vm.nix`): `ingest-heartbeat.timer` reads
-`state/tuta.last-ok` and pages at most once per window when no batch arrives.
-A quiet mailbox is not staleness — the collector emits a batch for every new
-message, and the ICS timer emits calendar batches; adjust the window in the
-shared table if a genuinely idle mailbox should not page.
+Mail is an ingest source with a 12 h window (`modules/lib/ingest-vm.nix`):
+`ingest-heartbeat.timer` reads `state/tuta.last-ok` and pages at most once per
+window when no batch arrives. A quiet mailbox is not staleness — the collector
+emits a batch for every new message, and the ICS renderer emits its
+`calendar-unavailable` alert only once per boot because it dedupes through
+`calendar-state.json`. A bridge session that dies is caught by its own
+`session-rejected` / `minimum-client` alert, so the freshness window only has to
+catch a feed that stopped for a day.
 
 ## Verification
 

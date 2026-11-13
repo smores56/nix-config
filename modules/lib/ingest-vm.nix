@@ -82,8 +82,12 @@ let
       mem = 256;
       # One read-only volume: the secret image.
       volumes = 1;
-      # TutaBridge holds an IMAP IDLE session; half an hour without a batch is already wrong.
-      windowSeconds = 1800;
+      # A quiet mailbox is not staleness: the bridge holds an IMAP IDLE session and the
+      # ICS renderer dedupes its calendar-unavailable alert, so nothing refreshes the
+      # marker on a quiet day. A dead session is caught by its own session-rejected /
+      # minimum-client alert, so freshness only has to catch a feed that stopped for a
+      # day.
+      windowSeconds = 43200;
       allow = permitted.tuta;
     };
     finance = {
