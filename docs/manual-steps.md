@@ -311,6 +311,8 @@ sudo journalctl -u kanbei-inference-gpu -u kanbei-chat -n 40 --no-pager
 `docs/kanbei-inference.md` has the eval thresholds and the f16 reference-server
 command for the quality sample.
 
+<!-- manual-step: service/smortress/kanbei -->
+
 **7. Publish and gate.** The host publishes the name through the tunnel ingress
 (`webProxy.services.kanbei` -> `https://127.0.0.1:443`, in the same generation that
 enables `kanbeiVm`). The platform repo's `tofu/kanbei.tf` creates the Access application: a
