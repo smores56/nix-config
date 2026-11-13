@@ -66,7 +66,12 @@ def fail(message: str) -> None:
 
 
 def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, check=False, capture_output=True, text=True, **kwargs)
+    """Run a helper, reporting a missing binary as a FAIL instead of a traceback."""
+    try:
+        return subprocess.run(cmd, check=False, capture_output=True, text=True, **kwargs)
+    except FileNotFoundError:
+        fail(f"{cmd[0]} is not on PATH")
+        raise AssertionError("unreachable")
 
 
 def require_root() -> None:

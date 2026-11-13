@@ -9,6 +9,7 @@ around these functions.
 from __future__ import annotations
 
 import importlib.util
+import io
 import os
 import socket
 import ssl
@@ -16,6 +17,7 @@ import struct
 import sys
 import tempfile
 import threading
+from contextlib import redirect_stderr
 import time
 import unittest
 from pathlib import Path
@@ -393,3 +395,12 @@ class VerifierRuleTests(unittest.TestCase):
             self.verify.granted_states("-A ingest-search-fwd -m conntrack --ctstate NEW -j ACCEPT"),
             self.verify.CONNTRACK_STATES,
         )
+
+    def test_a_missing_helper_is_a_clean_failure(self):
+        # runuser comes from util-linux; before it was on the wrapper's PATH the
+        # digest proof died with a FileNotFoundError traceback instead of a FAIL.
+        stderr = io.StringIO()
+        with redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+            self.verify.run(["kanbei-no-such-binary"])
+        self.assertEqual(raised.exception.code, 1)
+        self.assertIn("kanbei-no-such-binary is not on PATH", stderr.getvalue())

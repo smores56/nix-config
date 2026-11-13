@@ -164,6 +164,8 @@ let
       # proofs, so they have to be on its PATH like ingest-writer is.
       ingestProxy
       ingestResolver
+      # The digest proof runs `runuser` as the human to show the share is private.
+      pkgs.util-linux
     ];
     text = ''
       exec ${pkgs.python3}/bin/python3 ${../lib/ingest/verify.py} "$@"
