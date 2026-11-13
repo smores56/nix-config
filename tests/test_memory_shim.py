@@ -1,9 +1,11 @@
+import io
 import os
 import socket
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
 from unittest import mock
 
@@ -12,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "modules/features/ai/memory/s
 from mcp.shared.memory import create_connected_server_and_client_session  # noqa: E402
 from mcp.types import Tool  # noqa: E402
 
-from memory_mcp import cli, shim  # noqa: E402
+from memory_mcp import cli, mcp_auth, shim  # noqa: E402
 from memory_mcp.groups import sanitize_machine  # noqa: E402
 from memory_mcp.client import ToolResult, UpstreamError  # noqa: E402
 from memory_mcp.schema import FALLBACK_TOOLS, FALLBACK_TOOL_NAMES  # noqa: E402
@@ -21,7 +23,30 @@ from memory_mcp import client  # noqa: E402
 from memory_mcp.client import ClientConfig  # noqa: E402
 
 
-class ShimProxyTests(unittest.IsolatedAsyncioTestCase):
+class AccessFilesMixin:
+    """Point the Access secret env vars at temp paths, never the host's /run/secrets."""
+
+    def use_access_files(self, client_id, client_secret):
+        patcher = mock.patch.dict(
+            os.environ,
+            {
+                "MEMORY_ACCESS_CLIENT_ID_FILE": str(client_id),
+                "MEMORY_ACCESS_CLIENT_SECRET_FILE": str(client_secret),
+            },
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def no_access_files(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.use_access_files(Path(tmp.name) / "access-id", Path(tmp.name) / "access-secret")
+
+
+class ShimProxyTests(AccessFilesMixin, unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.no_access_files()
+
     def config(self, **overrides):
         values = {
             "group": "owner--repo",
@@ -120,6 +145,52 @@ class ShimProxyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(prompts.prompts, [])
 
 
+class ShimAccessHeaderTests(AccessFilesMixin, unittest.TestCase):
+    def setUp(self):
+        self.no_access_files()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.id_file = self.root / "access-id"
+        self.secret_file = self.root / "access-secret"
+        self.use_access_files(self.id_file, self.secret_file)
+
+    def config(self, **overrides):
+        values = {"group": "owner--repo", "cwd": "/home/smores/code/example", "token": "bearer-token"}
+        values.update(overrides)
+        return shim.ShimConfig(**values)
+
+    def test_both_access_files_are_sent_alongside_the_bearer(self):
+        self.id_file.write_text("access-id-value")
+        self.secret_file.write_text("access-secret-value")
+        headers = dict(self.config().client_config().headers)
+        self.assertEqual(headers["CF-Access-Client-Id"], "access-id-value")
+        self.assertEqual(headers["CF-Access-Client-Secret"], "access-secret-value")
+        self.assertEqual(headers["Authorization"], "Bearer bearer-token")
+
+    def test_no_access_files_sends_only_the_bearer(self):
+        headers = dict(self.config().client_config().headers)
+        self.assertNotIn("CF-Access-Client-Id", headers)
+        self.assertNotIn("CF-Access-Client-Secret", headers)
+        self.assertEqual(headers["Authorization"], "Bearer bearer-token")
+
+    def test_a_half_configured_pair_is_refused(self):
+        self.id_file.write_text("access-id-value")
+        with self.assertRaises(mcp_auth.TokenMissingError):
+            self.config().client_config()
+
+    def test_main_refuses_a_half_configured_pair_with_exit_two(self):
+        self.id_file.write_text("access-id-value")
+        stderr = io.StringIO()
+        with (
+            mock.patch.object(shim, "read_token", lambda: "bearer-token"),
+            redirect_stderr(stderr),
+        ):
+            code = shim.main(["--cwd", os.path.abspath(self.root)])
+        self.assertEqual(code, 2)
+        self.assertIn("access", stderr.getvalue())
+
+
 class DefaultEndpointTests(unittest.TestCase):
     def test_the_clients_default_to_the_tunnel_hostname(self):
         self.assertEqual(shim.DEFAULT_URL, "https://memory.sammohr.dev/mcp")
@@ -144,6 +215,11 @@ class ShimMainTests(unittest.TestCase):
         self.env["MEMORY_MCP_TOKEN_FILE"] = str(self.token)
         os.environ["MEMORY_MCP_TOKEN_FILE"] = str(self.token)
         self.addCleanup(os.environ.pop, "MEMORY_MCP_TOKEN_FILE", None)
+        # Absent Access files: the default paths are host state, not test state.
+        for name in ("MEMORY_ACCESS_CLIENT_ID_FILE", "MEMORY_ACCESS_CLIENT_SECRET_FILE"):
+            self.env[name] = str(self.root / name.lower())
+            os.environ[name] = self.env[name]
+            self.addCleanup(os.environ.pop, name, None)
 
     def tearDown(self):
         self.tmp.cleanup()

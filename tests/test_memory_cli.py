@@ -16,6 +16,23 @@ from memory_mcp.groups import GroupRefused  # noqa: E402
 
 
 class CliContextTests(unittest.TestCase):
+    def setUp(self):
+        self.no_access_files()
+
+    def no_access_files(self):
+        """Keep the Access env vars off the host's /run/secrets in every test."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        patcher = mock.patch.dict(
+            os.environ,
+            {
+                "MEMORY_ACCESS_CLIENT_ID_FILE": str(Path(tmp.name) / "access-id"),
+                "MEMORY_ACCESS_CLIENT_SECRET_FILE": str(Path(tmp.name) / "access-secret"),
+            },
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def parser(self):
         return cli.build_parser()
 
@@ -53,6 +70,20 @@ class CliOutputTests(unittest.TestCase):
         os.environ["MEMORY_MCP_TOKEN_FILE"] = self.token.name
         self.addCleanup(os.unlink, self.token.name)
         self.addCleanup(os.environ.pop, "MEMORY_MCP_TOKEN_FILE", None)
+        self.no_access_files()
+
+    def no_access_files(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        patcher = mock.patch.dict(
+            os.environ,
+            {
+                "MEMORY_ACCESS_CLIENT_ID_FILE": str(Path(tmp.name) / "access-id"),
+                "MEMORY_ACCESS_CLIENT_SECRET_FILE": str(Path(tmp.name) / "access-secret"),
+            },
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def run_cli(self, argv, result):
         async def fake_call(_config, _tool, _arguments):
@@ -172,6 +203,62 @@ class CliOutputTests(unittest.TestCase):
             self.assertEqual(cli.main(["--group", "global", "get", "ref-1"]), 0)
             self.assertEqual(cli.main(["--group", "global", "retry", "ref-2"]), 0)
         self.assertEqual(seen, [("memory_get", {"ref": "ref-1"}), ("memory_retry", {"ref": "ref-2"})])
+
+
+class CliAccessHeaderTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.id_file = self.root / "access-id"
+        self.secret_file = self.root / "access-secret"
+        token = self.root / "token"
+        token.write_text("test-token")
+        patcher = mock.patch.dict(
+            os.environ,
+            {
+                "MEMORY_MCP_TOKEN_FILE": str(token),
+                "MEMORY_ACCESS_CLIENT_ID_FILE": str(self.id_file),
+                "MEMORY_ACCESS_CLIENT_SECRET_FILE": str(self.secret_file),
+            },
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def run_cli(self, argv):
+        seen = []
+
+        async def fake_call(config, _tool, _arguments):
+            seen.append(dict(config.headers))
+            return ToolResult(text="ok", is_error=False)
+
+        with mock.patch.object(cli, "call_tool", fake_call), redirect_stdout(io.StringIO()):
+            code = cli.main(argv)
+        return code, seen
+
+    def test_access_headers_are_sent_alongside_the_bearer(self):
+        self.id_file.write_text("access-id-value")
+        self.secret_file.write_text("access-secret-value")
+        code, seen = self.run_cli(["--group", "global", "status"])
+        self.assertEqual(code, 0)
+        self.assertEqual(seen[0]["CF-Access-Client-Id"], "access-id-value")
+        self.assertEqual(seen[0]["CF-Access-Client-Secret"], "access-secret-value")
+        self.assertEqual(seen[0]["Authorization"], "Bearer test-token")
+
+    def test_no_access_files_sends_only_the_bearer(self):
+        code, seen = self.run_cli(["--group", "global", "status"])
+        self.assertEqual(code, 0)
+        self.assertNotIn("CF-Access-Client-Id", seen[0])
+        self.assertNotIn("CF-Access-Client-Secret", seen[0])
+        self.assertEqual(seen[0]["Authorization"], "Bearer test-token")
+
+    def test_a_half_configured_pair_is_exit_one_with_a_message(self):
+        self.secret_file.write_text("access-secret-value")
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            code, _seen = self.run_cli(["--group", "global", "status"])
+        self.assertEqual(code, 1)
+        self.assertIn("memory-access-client-id", stderr.getvalue())
 
 
 if __name__ == "__main__":

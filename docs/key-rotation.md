@@ -299,6 +299,19 @@ it.
 secret's `restartUnits` restarts `memory-mcp`) and every laptop. Maki caches it
 per session, so it needs a restart too.
 
+The same endpoint has a second credential. `memory.sammohr.dev` sits behind the
+Cloudflare Access application, so those two clients also send a service token:
+`memory-access-client-id` and `memory-access-client-secret` in
+`secrets/common.yaml`, read at call time from
+`/run/secrets/memory-access-client-*`. To rotate: mint a new service token in
+the Access application's dashboard (OpenTofu only references tokens, it never
+creates them), replace both SOPS values in one `sops secrets/common.yaml`
+session, `home-manager switch --flake .#smores@<host>` on each host that runs
+Maki or `memory`, prove a call, then delete the old token. No unit restart is
+involved. Add both keys or neither: the clients fail every call when only one
+file is present. Add a `secret/` anchor for each to `docs/manual-steps.md` in
+the same change, which `manual-steps-sync` enforces.
+
 ### Jupyter token
 
 Retired with the Open WebUI code interpreter (T9). Nothing declares it; the

@@ -23,6 +23,10 @@ let
   # The shim keeps a matching default so it also works standalone.
   ports = import ../../../ports.nix;
 
+  # sops secrets rendered by the NixOS plane land in /run/secrets; the helper keeps
+  # that fallback for a home config that declares none itself.
+  secretPath = name: import ../../../lib/secret-path.nix config name;
+
   # bash is off by default in maki; the coding-agent toolset needs it.
   initLua = ''
     -- Managed by home-manager (modules/features/ai/maki). Manual edits are clobbered.
@@ -176,7 +180,11 @@ let
     MEMORY_MCP_URL = "https://memory.sammohr.dev/mcp";
     # Every request carries the bearer token, whichever path it took to the
     # wrapper; the shim reads the file itself.
-    MEMORY_MCP_TOKEN_FILE = "/run/secrets/memory-mcp-token";
+    MEMORY_MCP_TOKEN_FILE = secretPath "memory-mcp-token";
+    # ...and the Access service token, which the edge in front of the tunnel
+    # requires. Absent files mean an upstream that has no edge (a loopback run).
+    MEMORY_ACCESS_CLIENT_ID_FILE = secretPath "memory-access-client-id";
+    MEMORY_ACCESS_CLIENT_SECRET_FILE = secretPath "memory-access-client-secret";
     MEMORY_WORK_EMAIL = config.user.work.email;
     MEMORY_WORK_OWNER_GLOB = lib.concatStringsSep "," config.user.work.githubOwners;
     MEMORY_WORK_FLOW = config.user.work.flow;

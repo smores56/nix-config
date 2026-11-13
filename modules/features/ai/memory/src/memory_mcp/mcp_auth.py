@@ -15,6 +15,16 @@ request, so re-deploying the secret takes effect without a rebuild.
 `/health` is exempt: it answers a static `{"status": "ok", "service":
 "memory-mcp"}` with no state, no data, and no token-derived information, which
 is what systemd and the readiness probes need from an unauthenticated caller.
+
+Clients carry a second credential, and it answers a different gate: the public
+hostname sits behind a Cloudflare Access application, so the edge only lets a
+request through when it also presents the service-token pair
+`CF-Access-Client-Id`/`CF-Access-Client-Secret`. `access_headers()` reads that
+pair from the `memory-access-client-id`/`memory-access-client-secret` sops
+secrets (rendered at `/run/secrets/memory-access-client-*`). Absent files mean
+an upstream that is not behind Access — a loopback wrapper — and send nothing.
+A half-configured pair raises instead, because sending one header would surface
+as an opaque Access 403 long after the mistake.
 """
 
 from __future__ import annotations
@@ -31,12 +41,16 @@ from starlette.datastructures import Headers
 
 DEFAULT_TOKEN_FILE = "/run/secrets/memory-mcp-token"
 TOKEN_FILE_ENV = "MEMORY_MCP_TOKEN_FILE"
+DEFAULT_ACCESS_ID_FILE = "/run/secrets/memory-access-client-id"
+ACCESS_ID_FILE_ENV = "MEMORY_ACCESS_CLIENT_ID_FILE"
+DEFAULT_ACCESS_SECRET_FILE = "/run/secrets/memory-access-client-secret"
+ACCESS_SECRET_FILE_ENV = "MEMORY_ACCESS_CLIENT_SECRET_FILE"
 EXEMPT_PATHS = frozenset({"/health"})
 CHALLENGE = 'Bearer realm="memory-mcp"'
 
 
 class TokenMissingError(RuntimeError):
-    """The MCP bearer token file is missing, unreadable, or empty."""
+    """A credential file the memory client needs is missing, unreadable, or empty."""
 
 
 def token_path(path: str | os.PathLike[str] | None = None) -> Path:
@@ -61,6 +75,52 @@ def read_token(path: str | os.PathLike[str] | None = None) -> str:
 def authorization(path: str | os.PathLike[str] | None = None) -> tuple[str, str]:
     """The header a client sends for the token at `path` (default: the secret)."""
     return ("Authorization", f"Bearer {read_token(path)}")
+
+
+def access_id_path(path: str | os.PathLike[str] | None = None) -> Path:
+    return Path(path or os.environ.get(ACCESS_ID_FILE_ENV) or DEFAULT_ACCESS_ID_FILE).expanduser()
+
+
+def access_secret_path(path: str | os.PathLike[str] | None = None) -> Path:
+    return Path(
+        path or os.environ.get(ACCESS_SECRET_FILE_ENV) or DEFAULT_ACCESS_SECRET_FILE
+    ).expanduser()
+
+
+def _optional_file(path: Path, label: str) -> str | None:
+    """The stripped value at `path`, or None when the file is absent."""
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise TokenMissingError(
+            f"cannot read the Cloudflare Access {label} at {path}: {exc}; "
+            "the caller must be able to read the memory-access-client-* sops secrets"
+        ) from exc
+
+
+def access_headers(
+    client_id: str | os.PathLike[str] | None = None,
+    client_secret: str | os.PathLike[str] | None = None,
+) -> tuple[tuple[str, str], ...]:
+    """The Cloudflare Access service-token headers, or `()` when none is configured."""
+    id_path = access_id_path(client_id)
+    secret_path = access_secret_path(client_secret)
+    value_id = _optional_file(id_path, "client id")
+    value_secret = _optional_file(secret_path, "client secret")
+    if value_id is None and value_secret is None:
+        return ()
+    if not value_id or not value_secret:
+        raise TokenMissingError(
+            f"the Cloudflare Access service token is half-configured: {id_path} and "
+            f"{secret_path} must both exist and be non-empty; add memory-access-client-id "
+            "and memory-access-client-secret together to the common sops file"
+        )
+    return (
+        ("CF-Access-Client-Id", value_id),
+        ("CF-Access-Client-Secret", value_secret),
+    )
 
 
 def bearer_ok(header: str | None, token: str | None) -> bool:
