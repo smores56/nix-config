@@ -26,6 +26,7 @@ import policy
 
 MAX_HEADER_BYTES = 16384
 MAX_HELLO_BYTES = 16384
+MAX_PENDING_BYTES = 8 << 20
 
 
 def log(event: str, **fields: object) -> None:
@@ -241,31 +242,66 @@ class Proxy:
         client.setblocking(False)
         upstream.setblocking(False)
         sent = received = 0
-        socks = [client, upstream]
-        while socks:
-            readable, _, errored = select.select(socks, [], socks, 30)
+        # Bytes read from a side but not yet accepted by the other side. A single
+        # sendall on a non-blocking socket raises BlockingIOError as soon as the
+        # peer's receive window fills — treating that as a dead peer truncated every
+        # response bigger than one socket buffer (a 1 MiB Immich album page arrived as
+        # 64 KiB and `IncompleteRead`).
+        pending: dict[socket.socket, bytearray] = {client: bytearray(), upstream: bytearray()}
+        peer = {client: upstream, upstream: client}
+        reading = [client, upstream]
+        reason = "eof"
+        while reading or any(pending.values()):
+            # Watch the destinations, not the sources: buffered bytes wait on the
+            # peer's window, and a source that already hit EOF is gone from `reading`
+            # while its tail is still owed to the other side.
+            writing = [peer[sock] for sock, buffer in pending.items() if buffer]
+            try:
+                ready, can_write, errored = select.select(reading, writing, reading, 30)
+            except OSError:
+                reason = "select"
+                break
             if errored:
+                reason = "error"
                 break
-            if not readable:
+            if not ready and not can_write:
+                reason = "idle"
                 break
-            for sock in readable:
-                other = upstream if sock is client else client
+            for sock in ready:
                 try:
                     data = sock.recv(65536)
                 except BlockingIOError:
                     continue
+                except OSError:
+                    reason = "reset"
+                    data = b""
                 if not data:
-                    socks = []
-                    break
+                    reading.remove(sock)
+                    continue
                 if sock is client:
                     sent += len(data)
                 else:
                     received += len(data)
+                pending[sock] += data
+            for sock, buffer in pending.items():
+                if not buffer:
+                    continue
                 try:
-                    other.sendall(data)
+                    written = peer[sock].send(buffer)
+                except BlockingIOError:
+                    continue
                 except OSError:
-                    socks = []
-                    break
+                    reason = "reset"
+                    reading = []
+                    pending[sock].clear()
+                    continue
+                del buffer[:written]
+                # Unbounded buffering would let a peer that never reads grow the
+                # proxy without limit; every response is size-capped upstream.
+                if len(buffer) > MAX_PENDING_BYTES:
+                    reason = "backlog"
+                    reading = []
+                    pending[sock].clear()
         for sock in (client, upstream):
             try:
                 sock.close()
@@ -279,6 +315,7 @@ class Proxy:
             bytes_in=sent,
             bytes_out=received,
             ms=int((time.monotonic() - started) * 1000),
+            reason=reason,
         )
 
     def serve(self, bind: tuple[str, int] | None) -> None:

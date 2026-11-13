@@ -9,11 +9,13 @@ around these functions.
 from __future__ import annotations
 
 import importlib.util
+import os
 import socket
 import ssl
 import struct
 import sys
 import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -277,6 +279,56 @@ class ProxyConnectTests(unittest.TestCase):
             upstream.close()
             upstream_peer.close()
             handler.join(timeout=3)
+
+
+class ProxyRelayTests(unittest.TestCase):
+    """The relay must survive backpressure.
+
+    A 1 MiB album response overflows the guest's socket buffers, so a relay that calls
+    sendall once on a non-blocking socket gets BlockingIOError, treats it as a dead
+    peer and tears the tunnel down mid-body — which the collector sees as
+    `IncompleteRead` after exactly one buffer's worth of bytes.
+    """
+
+    def test_backpressure_does_not_truncate_the_stream(self):
+        p = load_tool("proxy")
+        client, server = socket.socketpair()
+        upstream, upstream_peer = socket.socketpair()
+        try:
+            for sock in (server, upstream):
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)
+            client.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+            payload = os.urandom(1 << 20)
+
+            def feed():
+                upstream_peer.sendall(payload)
+                upstream_peer.shutdown(socket.SHUT_WR)
+
+            relay = threading.Thread(
+                target=p.Proxy._splice,
+                args=(server, upstream, "immich", "photos.sammohr.dev", 443, time.monotonic()),
+                daemon=True,
+            )
+            relay.start()
+            threading.Thread(target=feed, daemon=True).start()
+            received = bytearray()
+            client.settimeout(5)
+            while len(received) < len(payload):
+                chunk = client.recv(65536)
+                if not chunk:
+                    break
+                received += chunk
+            self.assertEqual(len(received), len(payload))
+            self.assertEqual(bytes(received), payload)
+            # Closing the far ends EOFs the relay; join before interpreter shutdown,
+            # or the daemon thread dies mid-select and crashes finalization.
+            client.close()
+            upstream_peer.close()
+            relay.join(timeout=5)
+            self.assertFalse(relay.is_alive())
+        finally:
+            for sock in (client, server, upstream, upstream_peer):
+                sock.close()
 
 
 if __name__ == "__main__":

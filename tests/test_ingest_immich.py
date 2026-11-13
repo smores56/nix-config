@@ -61,7 +61,7 @@ class RouteOpener:
         url = request.full_url
         payload = json.loads(request.data) if request.data else {}
         if "/api/search/metadata" in url:
-            queue = self.membership if "filter" in payload else self.search
+            queue = self.membership if {"albumIds", "filter"} & set(payload) else self.search
             return FakeResponse(queue.pop(0), self.content_type)
         if "/api/albums" in url:
             return FakeResponse(self.albums, self.content_type)
@@ -255,17 +255,37 @@ class PaginationTests(unittest.TestCase):
         self.assertEqual(json.loads(opener.requests[0].data)["updatedAfter"], "2025-01-01T00:00:00Z")
         self.assertEqual(json.loads(opener.requests[1].data)["cursor"], "cur")
 
-    def test_album_membership_cursor(self):
+    def test_album_membership_filters_server_side(self):
+        # Immich v3's MetadataSearchDto takes a top-level `albumIds` array and has no
+        # `filter` object: the old body was accepted and stripped, so every album
+        # query answered with the same first page of the whole library (825,891 B per
+        # album, identical for all 37).
+        immich = load()
+        session = immich.session_of({"IMMICH_API_KEY": KEY})
+        album_id = "a8e7ea52-37cc-42c3-9855-589b3d560c3a"
+        opener = RouteOpener([{"items": [], "nextPage": None}], membership=[{"items": [{"id": UUID}], "nextPage": None}])
+        client = immich.ImmichClient(session["base_url"], session["api_key"], opener=opener)
+        self.assertEqual(immich.album_asset_ids(client, album_id, 1000), [UUID])
+        body = json.loads(opener.requests[-1].data)
+        self.assertEqual(body["albumIds"], [album_id])
+        self.assertNotIn("filter", body)
+
+    def test_album_membership_stops_on_the_empty_page(self):
+        # Immich keeps returning nextPage after the last match, so the membership
+        # loop must break on the empty page instead of walking MAX_PAGES.
+        immich = load()
+        session = immich.session_of({"IMMICH_API_KEY": KEY})
+        album_id = "a8e7ea52-37cc-42c3-9855-589b3d560c3a"
         opener = RouteOpener(
             [],
             membership=[
-                {"items": [{"id": "a"}], "nextCursor": "cur"},
-                {"items": [{"id": "b"}], "nextCursor": None},
+                {"items": [{"id": UUID}], "nextPage": "2"},
+                {"items": [], "nextPage": "3"},
             ],
         )
-        client = self.immich.ImmichClient("https://photos.sammohr.dev", KEY, opener=opener)
-        self.assertEqual(self.immich.album_asset_ids(client, UUID, 1), ["a", "b"])
-        self.assertEqual(json.loads(opener.requests[1].data)["cursor"], "cur")
+        client = immich.ImmichClient(session["base_url"], session["api_key"], opener=opener)
+        self.assertEqual(immich.album_asset_ids(client, album_id, 1000), [UUID])
+        self.assertEqual(len(opener.requests), 2)
 
     def test_people_pagination(self):
         opener = RouteOpener(

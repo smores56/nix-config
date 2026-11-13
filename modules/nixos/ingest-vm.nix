@@ -664,7 +664,9 @@ let
           serviceConfig = {
             Type = "oneshot";
             UMask = "0077";
-            TimeoutStartSec = 300;
+            # The first pass streams ~90 asset batches and then one membership search
+            # per album; five minutes cut it off before the state file was written.
+            TimeoutStartSec = 900;
             # The guest journal is on tmpfs and dies with the guest; the serial console is
             # the only log that reaches the host (microvm@<guest>), so write there too.
             StandardOutput = "journal+console";

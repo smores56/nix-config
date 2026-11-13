@@ -352,7 +352,11 @@ def album_asset_ids(client: ImmichClient, album_id: str, page_size: int) -> list
         "size": page_size,
         "withExif": False,
         "withPeople": False,
-        "filter": {"albumIds": {"ids": [album_id]}},
+        # Immich v3 MetadataSearchDto: a top-level `albumIds` array. The `filter`
+        # object this used to send is not part of the schema, so zod stripped it and
+        # every album answered with the same first page of the whole library.
+        "albumIds": [album_id],
+        "order": "asc",
     }
     ids: list[str] = []
     seen: set[str] = set()
@@ -375,6 +379,10 @@ def album_asset_ids(client: ImmichClient, album_id: str, page_size: int) -> list
             if isinstance(raw, dict) and raw.get("id") and str(raw["id"]) not in seen:
                 seen.add(str(raw["id"]))
                 ids.append(str(raw["id"]))
+        # Same trailing-token trap as the asset pass: Immich keeps handing out a
+        # nextPage after the last match, so stop on the empty page instead.
+        if not entries:
+            break
         next_cursor = page_document.get("nextCursor")
         if isinstance(next_cursor, str) and next_cursor:
             cursor = next_cursor
@@ -383,7 +391,7 @@ def album_asset_ids(client: ImmichClient, album_id: str, page_size: int) -> list
         if isinstance(next_page, str) and next_page:
             page = int(next_page) if next_page.isdigit() else page + 1
             continue
-        if "nextPage" in document or "nextCursor" in document:
+        if "nextPage" in page_document or "nextCursor" in page_document:
             break
         if len(entries) < page_size:
             break
