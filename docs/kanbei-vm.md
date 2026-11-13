@@ -189,17 +189,18 @@ TPM unlock works again.
 
 ## In-guest disk and first-boot enrollment
 
-`environment.etc.crypttab` opens the volume in stage 2:
+`kanbei-data-open.service` opens the volume in stage 2: on first boot it
+formats the virtio-blk device as LUKS2, enrolls the vTPM token, opens the
+mapping and makes the ext4 filesystem; on later boots it opens the mapping with
+the TPM2 token and falls back to the escrowed recovery key when the swtpm state
+is gone.
 
-```
-kanbei-data /dev/disk/by-id/virtio-kanbei-data none luks,tpm2-device=auto
-```
-
-and `/var/lib/kanbei` is mounted from `/dev/mapper/kanbei-data` (ext4,
-`nodev,nosuid,noatime`, ordered `x-systemd.before=kanbei.service`).
-`kanbei-data-init.service` is `RequiredBy=systemd-cryptsetup@kanbei-data.service`
-and `Before=` it and `kanbei.service`, so on first boot it runs before the
-unlock attempt.
+`/etc/crypttab` is deliberately empty and `/var/lib/kanbei` is declared as a
+`systemd.mounts` entry rather than a `fileSystems` entry. A crypttab volume and
+every `.mount` unit are ordered before `local-fs.target`, while the recovery
+contract and escrow live on virtiofs shares that systemd mounts after it;
+putting the unlock in the early boot deadlocks the first boot. The mount is
+ordered `After=kanbei-data-open.service` and `Before=kanbei.service`.
 
 First boot (`modules/nixos/kanbei-vm.nix`, `guestInit`):
 

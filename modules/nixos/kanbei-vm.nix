@@ -154,7 +154,10 @@ let
   # First boot: the volume has no LUKS header, so the recovery credential is created *before*
   # the format and escrowed on the host (contract file when sops provides one). A crash between
   # format and enrollment therefore never strands the volume.
-  guestInit = pkgs.writeShellScript "kanbei-data-init" ''
+  # The mapping is opened here, not from /etc/crypttab: the credential and escrow live on
+  # virtiofs shares that systemd mounts after local-fs.target, so an early crypttab unlock
+  # (and anything ordered before it) can never see them on first boot.
+  guestInit = pkgs.writeShellScript "kanbei-data-open" ''
     set -euo pipefail
     export PATH=${
       lib.makeBinPath [
@@ -170,10 +173,17 @@ let
       sleep 0.5
     done
     if [ ! -e "$dev" ]; then
-      echo "kanbei-data-init: $dev did not appear" >&2
+      echo "kanbei-data-open: $dev did not appear" >&2
       exit 1
     fi
+
     if cryptsetup isLuks "$dev"; then
+      # Later boots: the TPM2 token in the LUKS2 header opens the volume; the escrowed
+      # recovery key is the fallback when the swtpm state was lost or replaced.
+      if [ ! -e /dev/mapper/kanbei-data ]; then
+        cryptsetup open --token-only --tpm2-device=auto "$dev" kanbei-data \
+          || cryptsetup open --key-file /mnt/kanbei-enroll/recovery.key "$dev" kanbei-data
+      fi
       exit 0
     fi
 
@@ -204,9 +214,8 @@ let
         --unlock-key-file=/run/kanbei-recovery.key "$dev"
     fi
 
-    cryptsetup open --key-file /run/kanbei-recovery.key "$dev" kanbei-data-init
-    ${pkgs.e2fsprogs}/bin/mkfs.ext4 -q -L kanbei-data -m 1 /dev/mapper/kanbei-data-init
-    cryptsetup close kanbei-data-init
+    cryptsetup open --key-file /run/kanbei-recovery.key "$dev" kanbei-data
+    ${pkgs.e2fsprogs}/bin/mkfs.ext4 -q -L kanbei-data -m 1 /dev/mapper/kanbei-data
 
     if [ "$generated" = 1 ]; then
       echo "kanbei: recovery key is in /var/lib/kanbei-vm/enroll/recovery.key (root-only) and was printed to the console; store it off-host and delete the escrow file" > /dev/console
@@ -410,19 +419,32 @@ let
         pkgs.tpm2-tools
       ];
 
-      environment.etc.crypttab.text = ''
-        kanbei-data ${dataDevice} none luks,tpm2-device=auto
-      '';
-      fileSystems."/var/lib/kanbei" = {
-        device = "/dev/mapper/kanbei-data";
-        fsType = "ext4";
-        options = [
-          "nodev"
-          "nosuid"
-          "noatime"
-          "x-systemd.before=kanbei.service"
-        ];
-      };
+      # The volume is opened by kanbei-data-open.service, not from /etc/crypttab: a crypttab
+      # entry is ordered before local-fs.target, but the recovery material lives on virtiofs
+      # shares that are mounted later, so the first boot deadlocks. The mount is declared
+      # here rather than in `fileSystems` for the same reason: a .mount unit is implicitly
+      # ordered before local-fs.target, which would order it before the service that
+      # creates its device.
+      systemd.mounts = [
+        {
+          what = "/dev/mapper/kanbei-data";
+          where = "/var/lib/kanbei";
+          type = "ext4";
+          options = "nodev,nosuid,noatime";
+          wantedBy = [ "multi-user.target" ];
+          unitConfig.DefaultDependencies = false;
+          conflicts = [ "umount.target" ];
+          before = [
+            "umount.target"
+            "kanbei.service"
+          ];
+          after = [
+            "local-fs.target"
+            "kanbei-data-open.service"
+          ];
+          requires = [ "kanbei-data-open.service" ];
+        }
+      ];
 
       # 0750 root:kanbei: guest uid 1000 (kanbei) must traverse the LUKS mount; secrets stay
       # 0700 root inside it.
@@ -431,22 +453,16 @@ let
         "d /run/kanbei-secrets 0755 root root -"
       ];
 
-      systemd.services.kanbei-data-init = {
-        description = "Format and enroll the kanbei data volume on first boot";
-        wantedBy = [ ];
-        # The .device unit binds systemd-cryptsetup; this must win the race on first boot.
-        requiredBy = [ "systemd-cryptsetup@kanbei-data.service" ];
-        before = [
-          "systemd-cryptsetup@kanbei-data.service"
-          "kanbei.service"
-        ];
-        after = [ "systemd-udevd.service" ];
-        # The escrow and the recovery-key contract are virtiofs shares; without them the
-        # first-boot format has nowhere to put the credential, so fail instead of formatting.
+      systemd.services.kanbei-data-open = {
+        description = "Open the kanbei data volume (first boot: format, enroll, mkfs)";
+        wantedBy = [ "multi-user.target" ];
+        # Both are virtiofs shares that systemd mounts after local-fs.target; this unit is
+        # an ordinary late service, so waiting for them cannot cycle.
         unitConfig.RequiresMountsFor = [
           "/mnt/kanbei-enroll"
           "/run/kanbei-secrets"
         ];
+        after = [ "systemd-udevd.service" ];
         restartIfChanged = false;
         serviceConfig = {
           Type = "oneshot";
@@ -547,6 +563,14 @@ in
         fi
         ${pkgs.coreutils}/bin/chmod 0400 ${relayTokenFile}
         ${pkgs.coreutils}/bin/chown root:root ${relayTokenFile}
+        # A modules-load restart (every switch) recreates the vsock device with upstream's
+        # 0666; the udev rule only covers coldplug. Load it here and re-assert the narrowing
+        # before qemu opens it, so the relay never gains the device.
+        ${pkgs.kmod}/bin/modprobe -q vhost_vsock || true
+        if [ -c /dev/vhost-vsock ]; then
+          ${pkgs.coreutils}/bin/chgrp kvm /dev/vhost-vsock
+          ${pkgs.coreutils}/bin/chmod 0660 /dev/vhost-vsock
+        fi
       '';
     };
 
