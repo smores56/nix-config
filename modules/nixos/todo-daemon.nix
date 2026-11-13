@@ -193,6 +193,15 @@ in
       type = "ext4";
       options = "loop,noatime,nosuid,nodev";
       wantedBy = [ "multi-user.target" ];
+      # A .mount unit is ordered before local-fs.target by default, but this one must
+      # wait for todo-image.service, which runs after systemd-tmpfiles-setup. That is
+      # an ordering cycle, and systemd breaks it by deleting a required job (in the
+      # cutover boot it deleted systemd-tmpfiles-setup), so the mount, the vault's
+      # todo folder, Syncthing and the kanbei prep that serves the tree stay down.
+      # Drop the implicit ordering and keep the shutdown contract by hand.
+      unitConfig.DefaultDependencies = false;
+      conflicts = [ "umount.target" ];
+      before = [ "umount.target" ];
       requires = [ "todo-image.service" ];
       after = [
         "local-fs.target"
