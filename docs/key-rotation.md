@@ -277,11 +277,11 @@ the swap — both write the same bucket, which is harmless for one restic client
 
 The OpenTofu state pair is separate and smaller: `r2-state-access-key-id` /
 `r2-state-secret-access-key`, a token scoped to `homelabs-tofu-state` alone.
-It exists so a leaked backup key can lose backups but never rewrite the object
-that decides the next apply. Rotate it the same way (new pair into
-`secrets/smortress.yaml`, `scripts/tofu-cloudflare.sh state list` to prove it,
-then delete the old token and replace the `cloudflare` environment secrets
-`R2_STATE_*`), and never widen the restic token to that bucket.
+It lives in `homelabs-platform`'s operator store (`secrets/cloudflare.yaml`),
+next to the zone token the same script reads, and never here: the tofu concern
+is not host config. Rotate it there (`docs/secrets.md` in that repository),
+replace the `cloudflare` environment secrets `R2_STATE_*`, and never widen the
+restic token to that bucket.
 
 ### GitHub mirror PAT (retired)
 
