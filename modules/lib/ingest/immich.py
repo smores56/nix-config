@@ -291,7 +291,12 @@ def asset_pages(client: ImmichClient, *, after: str | None, page_size: int):
         page_items = page_document.get("items")
         if not isinstance(page_items, list):
             raise ImmichError("search/metadata response has no items list")
+        log("page", page=page, items=len(page_items), next=page_document.get("nextPage"))
         yield [raw for raw in page_items if isinstance(raw, dict)]
+        # An empty page is the end regardless of the token: Immich keeps returning a
+        # nextPage past the last asset, and following it walked MAX_PAGES pages.
+        if not page_items:
+            break
         next_cursor = page_document.get("nextCursor")
         if isinstance(next_cursor, str) and next_cursor:
             cursor = next_cursor
@@ -565,6 +570,7 @@ def collect(
 
     items: list[dict] = []
     emitted_assets = 0
+    skipped_assets = 0
     batches = 0
     # Assets are the only unbounded source, so they are batched page by page: keep
     # at most one page plus one partial batch in memory.
@@ -572,8 +578,10 @@ def collect(
         for raw in sorted(page, key=lambda raw: (str(raw.get("updatedAt") or ""), str(raw.get("id") or ""))):
             item = asset_item(raw)
             if item is None:
+                skipped_assets += 1
                 continue
             if not cursor_after(item["updated_at"], item["id"], cursor):
+                skipped_assets += 1
                 continue
             items.append(item)
             emitted_assets += 1
@@ -637,6 +645,7 @@ def collect(
     log(
         "done",
         assets=emitted_assets,
+        skipped=skipped_assets,
         albums=len(album_items),
         people=len(person_items),
         batches=batches,
