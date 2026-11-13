@@ -689,9 +689,9 @@ def main(argv: list[str] | None = None) -> int:
         with open(args.env, encoding="utf-8") as handle:
             session = session_of(parse_env(handle.read()))
         state = load_state(args.state)
-        summary = collect(session, state, args.outbox)
+        collect(session, state, args.outbox)
         write_state(args.state, state)
-        log("done", **summary)
+        return 0
         return 0
     except (OSError, ImmichError) as exc:
         log("error", reason=str(exc))
