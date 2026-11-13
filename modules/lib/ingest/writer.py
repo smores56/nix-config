@@ -51,6 +51,24 @@ def wait_for_recipient(path: str, poll: float = 2.0) -> str:
             raise SystemExit(fail(f"invalid age recipient in {path}: {exc}"))
 
 
+def read_reply_line(sock: socket.socket, max_line: int = 64) -> str:
+    """Read exactly the `OK <port>` line, never a byte of the frame behind it.
+
+    A guest with a queued batch writes the handshake and the first frame back to
+    back; one recv() coalesces them, and reading 64 bytes then judging the whole
+    buffer as "the reply" rejected a valid handshake.
+    """
+    line = bytearray()
+    while len(line) < max_line:
+        chunk = sock.recv(1)
+        if not chunk:
+            break
+        if chunk == b"\n":
+            return bytes(line).decode("ascii", "replace")
+        line += chunk
+    raise ConnectionError(f"vsock reply line is longer than {max_line} bytes")
+
+
 def connect_vsock(uds_path: str, port: int, timeout: float = 30.0) -> socket.socket:
     deadline = time.monotonic() + timeout
     while True:
@@ -60,13 +78,11 @@ def connect_vsock(uds_path: str, port: int, timeout: float = 30.0) -> socket.soc
                 sock.settimeout(30)
                 sock.connect(uds_path)
                 sock.sendall(f"CONNECT {port}\n".encode())
-                reply = b""
-                while not reply.endswith(b"\n") and len(reply) < 64:
-                    chunk = sock.recv(64)
-                    if not chunk:
-                        break
-                    reply += chunk
-                text = reply.decode("ascii", "replace").strip()
+                try:
+                    text = read_reply_line(sock)
+                except ConnectionError:
+                    sock.close()
+                    raise
                 if not text.startswith("OK ") or not text[3:].strip().isdigit():
                     sock.close()
                     raise ConnectionError(f"vsock handshake refused: {text!r}")

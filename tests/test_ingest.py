@@ -14,6 +14,7 @@ import socket
 import ssl
 import struct
 import sys
+import tempfile
 import threading
 import time
 import unittest
@@ -329,6 +330,40 @@ class ProxyRelayTests(unittest.TestCase):
         finally:
             for sock in (client, server, upstream, upstream_peer):
                 sock.close()
+
+
+class WriterHandshakeTests(unittest.TestCase):
+    """The `OK <port>` reply and the first frame can share one read.
+
+    A guest with a queued batch answers CONNECT and immediately writes the first
+    frame; one recv() coalesces them. Judging the coalesced buffer as the reply
+    rejected a valid handshake, which is what `kanbei-ingest-verify` hit.
+    """
+
+    def test_the_handshake_keeps_the_first_frame(self):
+        writer = load_tool("writer")
+        policy = load_policy()
+        frame = policy.encode_frame(b'{"v":1,"source":"search","kind":"batch","seq":1,"items":[]}')
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "notify.vsock")
+            server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            server.bind(path)
+            server.listen(1)
+            try:
+                def answer():
+                    conn, _ = server.accept()
+                    with conn:
+                        conn.recv(64)
+                        conn.sendall(b"OK 1073741827\n" + frame)
+
+                threading.Thread(target=answer, daemon=True).start()
+                sock = writer.connect_vsock(path, 7014, timeout=5)
+                try:
+                    self.assertEqual(sock.recv(len(frame)), frame)
+                finally:
+                    sock.close()
+            finally:
+                server.close()
 
 
 if __name__ == "__main__":
