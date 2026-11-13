@@ -408,13 +408,15 @@ let
           };
           script = ''
             set -x
-            systemctl show ingest-emit.service -p LoadState -p UnitFileState -p WantedBy -p RequiredBy -p ActiveState || true
-            ls -l /etc/systemd/system/multi-user.target.wants/ | grep -i ingest || echo "selfcheck: no ingest wants links"
-            systemctl --failed --no-pager --no-legend || true
-            systemctl start ingest-emit.service || echo "selfcheck: manual start returned non-zero"
+            systemctl show ingest-emit.service -p LoadState -p UnitFileState -p WantedBy -p RequiredBy -p ActiveState -p ConditionResult -p Result || true
+            systemctl list-units 'run-ingest*' --all --no-pager --no-legend || echo "selfcheck: no run-ingest units"
+            systemctl show run-ingest-secret.mount -p LoadState -p ActiveState || true
+            systemd-analyze verify /etc/systemd/system/ingest-emit.service 2>&1 || true
+            out=$(systemctl start ingest-emit.service 2>&1) && rc=0 || rc=$?
+            echo "selfcheck: start rc=$rc out=[$out]"
             sleep 2
-            systemctl --no-pager status ingest-emit.service || true
-            journalctl --no-pager -u ingest-emit.service -n 20 || true
+            systemctl show ingest-emit.service -p ActiveState -p Result -p ExecMainStatus -p ExecMainCode || true
+            journalctl --no-pager -u ingest-emit.service -n 20 2>&1 || true
           '';
         };
 
