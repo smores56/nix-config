@@ -522,9 +522,14 @@ let
           sleep 20
           {
             ${pkgs.systemd}/bin/systemctl --failed --no-pager
+            ${pkgs.coreutils}/bin/id kanbei-core || true
+            ${pkgs.coreutils}/bin/stat -c '%a %u:%g %n' \
+              /mnt/kanbei/inbox /mnt/kanbei/vault /mnt/kanbei/todo \
+              /var/lib/kanbei /var/lib/kanbei/agent /run/kanbei-secrets 2>&1 || true
             ${pkgs.systemd}/bin/journalctl -b --no-pager -n 120 \
               -u kanbei-data-open.service -u kanbei-age-identity.service \
-              -u kanbei-cert.service -u kanbei-ui.service -u kanbei.service
+              -u kanbei-age-publish.service -u kanbei-cert.service \
+              -u kanbei-ui.service -u kanbei.service
           } > /dev/console 2>&1 || true
         '';
       };
