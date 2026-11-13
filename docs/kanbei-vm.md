@@ -204,18 +204,22 @@ ordered `After=kanbei-data-open.service` and `Before=kanbei.service`.
 
 First boot (`modules/nixos/kanbei-vm.nix`, `guestInit`):
 
-1. Waits for the virtio-blk device; exits if it is already a LUKS volume.
-2. Picks the recovery credential **before** formatting: the sops contract
-   `/run/secrets/kanbei-recovery-key` when present (copied by
+1. Waits for the virtio-blk device. If it already carries a LUKS header it
+   enrolls the TPM2 token from the escrowed key when the token is missing, then
+   opens the mapping with the token (escrow as fallback).
+2. Otherwise it picks the recovery credential **before** formatting: the sops
+   contract `/run/secrets/kanbei-recovery-key` when present (copied by
    `kanbei-vm-prep`), else an escrowed key at
    `/var/lib/kanbei-vm/enroll/recovery.key` (0600, root-only) created first, or
    reused from a previous partial run.
 3. `cryptsetup luksFormat --type luks2 --label KANBEI --key-file <recovery>`.
-4. `systemd-cryptenroll --tpm2-device=auto` (no PCR policy) with
-   `--unlock-key-file=<recovery>`; without a contract key it also enrolls
-   `--recovery-key`, and the printed key goes to the guest console (i.e. the
-   root-only console file) as well as the escrow file.
-5. `mkfs.ext4` through a temporary mapping.
+4. `systemd-cryptenroll --tpm2-device=/dev/tpm0` (no PCR policy) with
+   `--unlock-key-file=<recovery>`; the escrowed key is the recovery credential,
+   so no separate systemd-generated one is enrolled. The command runs under a
+   timeout with stdin closed, and every step is echoed to the serial console
+   (the guest journal is volatile).
+5. Opens the mapping and runs `mkfs.ext4` only if the mapping has no ext4
+   signature yet.
 
 Because the recovery credential exists before the format, a crash anywhere in
 that sequence is recoverable with it — the volume is never formatted under a
