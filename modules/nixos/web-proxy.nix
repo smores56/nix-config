@@ -33,6 +33,14 @@ in
           default = "smortress";
           description = "Stable human label for the tunnel. NOT the UUID: cloudflared resolves the real UUID from credentialsFile at runtime, and OpenTofu reads it back out of that file. Empty leaves the tunnel daemon off.";
         };
+        logLevel = lib.mkOption {
+          type = lib.types.enum [
+            "info"
+            "debug"
+          ];
+          default = "info";
+          description = "cloudflared log level. `debug` names each accepted stream and its resolution, which the journal then keeps for a private-hostname diagnosis.";
+        };
         credentialsFile = lib.mkOption {
           type = lib.types.path;
           default = "/var/lib/cloudflared/credentials.json";
@@ -101,6 +109,14 @@ in
         ingress = lib.mapAttrs' (
           sub: s: lib.nameValuePair "${sub}.${domain}" "${s.protocol}://127.0.0.1:${toString s.port}"
         ) cfg.services;
+      };
+    };
+
+    # cloudflared reads TUNNEL_LOGLEVEL from the environment; the NixOS module has no
+    # log-level option of its own.
+    systemd.services = lib.mkIf (cfg.logLevel == "debug") {
+      "cloudflared-tunnel-${cfg.tunnelName}".environment = {
+        TUNNEL_LOGLEVEL = "debug";
       };
     };
   };

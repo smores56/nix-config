@@ -91,6 +91,8 @@ in
     };
     webProxy = {
       tunnelName = "smortress";
+      # Temporary: diagnose the private hostname route (revert after).
+      logLevel = "debug";
       services = {
         navidrome.port = ports.navidrome;
         # Reachable only through the tunnel; must never lose Access (web-proxy.nix asserts it).
