@@ -186,6 +186,15 @@ let
     [ -e "$dev" ] || { say "$dev did not appear"; exit 1; }
     say "tpm devices: $(ls /dev/tpm* 2>/dev/null | tr '\n' ' ')"
     say "tpm2-setup: $(systemctl show -p ActiveState -p Result systemd-tpm2-setup.service 2>/dev/null | tr '\n' ' ')"
+    # Independent of LUKS: prove the emulated TPM answers before blaming the enrollment.
+    for node in /dev/tpmrm0 /dev/tpm0; do
+      [ -e "$node" ] || continue
+      set +e
+      timeout 20 tpm2_getrandom -T "device:$node" --hex 8 >/tmp/kanbei-tpm.out 2>&1
+      tpmrc=$?
+      set -e
+      say "tpm smoke $node: exit $tpmrc $(head -c 200 /tmp/kanbei-tpm.out | tr '\n' ' ')"
+    done
 
     enroll_token() {
       say "enrolling the TPM2 token from $1 (device $tpm)"
