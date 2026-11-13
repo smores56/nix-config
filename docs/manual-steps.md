@@ -206,34 +206,41 @@ again (`vfio-pci` keeps it otherwise). Nothing on disk is destroyed: the LUKS
 image and the swtpm state stay under `/var/lib/kanbei-vm` and
 `/var/lib/microvms/kanbei`. Never unbind by hand while QEMU is running.
 
-**3. Recovery key.** The first boot prints the key to the guest console, which
-lands in `/var/lib/kanbei-vm/console/console.log` (root-only), and escrows it at
-`/var/lib/kanbei-vm/enroll/recovery.key` (0600 root). Read it once:
+**3. Recovery key.** The first boot generates 64 random bytes and escrows them
+at `/var/lib/kanbei-vm/enroll/recovery.key` (0600 root) *before* formatting, so
+the volume is never formatted under a key nobody kept. The guest does not print
+it (the console path is volatile); harvest it once, in base64:
 
 ```sh
-sudo cat /var/lib/kanbei-vm/console/console.log   # "Recovery key: ..."
+sudo base64 -w0 /var/lib/kanbei-vm/enroll/recovery.key; echo
 ```
 
-Store it in the password manager, then delete the escrow
-(`sudo rm /var/lib/kanbei-vm/enroll/recovery.key`). A stable key instead of the
-generated one: add a `kanbei-recovery-key` entry to `secrets/smortress.yaml`
-with `sops secrets/smortress.yaml`, declare it in
-`modules/hosts/smortress/secrets.nix`, and add the `secret/kanbei-recovery-key`
-anchor to this file (the check requires one per yaml key). The host
-prep unit copies it to the guest as a read-only contract; without the yaml key
-no anchor exists and the check passes. Losing both the swtpm state and this key
-loses the volume.
+Store that **base64** string in the password manager — the file itself is raw
+bytes, so the encoding is part of what has to be remembered. Then delete the
+escrow (`sudo rm /var/lib/kanbei-vm/enroll/recovery.key`); after that no copy
+exists on the machine and losing both the swtpm state and this string loses the
+volume. A stable key instead of the generated one: add a `kanbei-recovery-key`
+entry to `secrets/smortress.yaml` with `sops secrets/smortress.yaml`, declare it
+in `modules/hosts/smortress/secrets.nix`, and add the
+`secret/kanbei-recovery-key` anchor to this file (the check requires one per yaml
+key). The host prep unit copies it to the guest as a read-only contract; without
+the yaml key no anchor exists and the check passes.
 
 **4. Backup restore.** `restic-backups-kanbei-{r2,local}` stop the guest, snapshot
 only the ciphertext image, then restart it. To restore: stop the guest, restore
 `/var/lib/microvms/kanbei/data.img` (0600 `microvm:kvm`), then check the volume
-from the host with the recovery key — no TPM needed:
+from the host with the stored recovery key — no TPM needed. Paste the base64
+string on stdin so it stays out of the shell history:
 
 ```sh
-sudo cryptsetup open --key-file /var/lib/kanbei-vm/enroll/recovery.key \
+sudo systemctl stop microvm@kanbei.service
+sudo sh -c 'umask 077; base64 -d > /run/kanbei-recovery.key'
+# paste the stored base64 string, then Ctrl-D
+sudo cryptsetup open --key-file /run/kanbei-recovery.key \
   /var/lib/microvms/kanbei/data.img kanbei-data
 sudo mount /dev/mapper/kanbei-data /mnt && ls /mnt
 sudo umount /mnt && sudo cryptsetup close kanbei-data
+sudo rm -f /run/kanbei-recovery.key
 ```
 
 Start the guest next. If `/var/lib/kanbei-vm/swtpm` was lost, the TPM unlock
@@ -260,32 +267,38 @@ fetched on the host into the locked volume. The manifest is the contract
 (`modules/lib/kanbei-models.json`, installed in the guest as
 `/var/lib/kanbei/models/llama-models.json`); the tool refuses a size or sha256
 mismatch and never installs a partial file. The volume is 64 GiB and the three
-files are ~14.4 GiB, so check free space first.
+files are 16.36 GB (15.24 GiB), so check free space first — and unlock with the
+stored recovery key, because the escrow was deleted after the first TPM boot:
 
 ```sh
 sudo systemctl stop microvm@kanbei.service
-sudo cryptsetup open --key-file /var/lib/kanbei-vm/enroll/recovery.key \
+sudo sh -c 'umask 077; base64 -d > /run/kanbei-recovery.key'
+# paste the stored base64 string, then Ctrl-D
+sudo cryptsetup open --key-file /run/kanbei-recovery.key \
   /var/lib/microvms/kanbei/data.img kanbei-data
-sudo mount /dev/mapper/kanbei-data /mnt
-df -h /mnt                                   # >= 16 GiB free
+sudo mkdir -p /mnt/kanbei-data
+sudo mount /dev/mapper/kanbei-data /mnt/kanbei-data
+df -h /mnt/kanbei-data                        # >= 17 GiB free
 
 # Fetch, hash-check, install as root:kanbei (guest uid/gid 1000) 0640.
 sudo nix shell nixpkgs#python3 -c python3 modules/lib/kanbei-fetch-models.py \
-  --dest /mnt/models --uid 1000 --gid 1000
+  --dest /mnt/kanbei-data/models --uid 1000 --gid 1000
 
 # Re-verify without the network (this is the check to repeat after any copy).
 sudo nix shell nixpkgs#python3 -c python3 modules/lib/kanbei-fetch-models.py \
-  --check --dest /mnt/models
+  --check --dest /mnt/kanbei-data/models
 
-sudo umount /mnt && sudo cryptsetup close kanbei-data
+sudo umount /mnt/kanbei-data && sudo cryptsetup close kanbei-data
+sudo rm -f /run/kanbei-recovery.key
 sudo systemctl start microvm@kanbei.service
 ```
 
-The tool prints `ok <name>: <path> (<bytes> bytes, sha256 verified)` per model;
-`--check` exits 2 on a mismatch. A workstation copy is moved in the same way
-(mount the image on the host, copy into `/mnt/models`, then `--check`). Staging
-through the read-only `inbox` share also works, but the copy then happens in the
-guest console as root and the same `--check` must pass.
+The tool is idempotent and prints `ok <name>: <path> (<bytes> bytes, sha256
+verified)` per model; `--check` exits 2 on a mismatch. A workstation copy is
+moved in the same way (mount the image on the host, copy into
+`/mnt/kanbei-data/models`, then `--check`). The read-only `inbox` share is **not**
+a route for this: the guest's uid 0 appears there as host `nobody`, so the guest
+console cannot read a root-owned batch.
 
 Verify the guest picked the files up:
 

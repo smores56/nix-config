@@ -232,9 +232,11 @@ anchor and the host prep unit simply skips the copy. Registering the key is a
 manual step: add it with `sops secrets/smortress.yaml`, declare it in
 `modules/hosts/smortress/secrets.nix`, and add the anchor.
 
-After the first successful TPM boot, delete
-`/var/lib/kanbei-vm/enroll/recovery.key` once the key is in the password
-manager; a re-format is then impossible without that key, which is the point.
+After the first successful TPM boot, store
+`sudo base64 -w0 /var/lib/kanbei-vm/enroll/recovery.key` in the password manager
+(the escrow holds raw bytes, so the stored form is base64) and delete the escrow;
+a re-format is then impossible without that key, which is the point.
+`docs/manual-steps.md` steps 3, 4 and 6 decode it back for host-side unlocks.
 
 ## Console
 
