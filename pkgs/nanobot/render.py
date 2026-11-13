@@ -131,6 +131,14 @@ def main() -> int:
             for key in ("name", "schedule", "prompt"):
                 if not isinstance(spec.get(key), str) or not spec[key].strip():
                     fail(f"{path}: {key} is required")
+            declared = spec.get("model")
+            if not isinstance(declared, str) or declared not in catalog:
+                fail(f"{path}: model must name a catalog model")
+            if declared != default:
+                fail(
+                    f"{path}: nanobot 0.4.1 runs cron turns on the default model "
+                    f"({default}); {declared} cannot be honored"
+                )
             message = spec["prompt"]
             delivery = spec.get("delivery") or {"kind": "file"}
             if not isinstance(delivery, dict) or delivery.get("kind") != "file":
