@@ -395,6 +395,27 @@ let
           };
         };
 
+        # TEMPORARY diagnostic: the guest journal is on tmpfs, so this is the only way
+        # to see why ingest-emit is or is not listening. Remove after the bring-up.
+        systemd.services.ingest-selfcheck = {
+          description = "Report ingest-emit and vsock state to the serial console";
+          wantedBy = [ "multi-user.target" ];
+          after = [ "ingest-emit.service" ];
+          serviceConfig = {
+            Type = "oneshot";
+            StandardOutput = "journal+console";
+            StandardError = "journal+console";
+          };
+          script = ''
+            set -x
+            systemctl --no-pager status ingest-emit.service || true
+            journalctl --no-pager -u ingest-emit.service -n 20 || true
+            ls -l /run/ingest-secret/ || true
+            grep -i vsock /proc/modules || echo "selfcheck: no vsock module loaded"
+            ${pkgs.python3}/bin/python3 -c 'import socket; s = socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM); s.bind((0xFFFFFFFF, 7099)); s.listen(1); print("selfcheck: AF_VSOCK bind ok")' || echo "selfcheck: AF_VSOCK bind failed"
+          '';
+        };
+
         system.stateVersion = "26.05";
       }
       (lib.mkIf (id == "tuta") {
