@@ -31,6 +31,8 @@ from decimal import Decimal
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
+import policy
+
 BASE_URL = "https://production.plaid.com"
 ENV_KEYS = {"PLAID_ENABLED", "PLAID_ENV", "PLAID_CLIENT_ID", "PLAID_SECRET", "PLAID_ITEMS_JSON"}
 MAX_RESPONSE_BYTES = 16 << 20
@@ -92,6 +94,7 @@ def request(
         headers={
             "Content-Type": "application/json",
             "Accept": "application/json",
+            "User-Agent": policy.USER_AGENT,
             "PLAID-CLIENT-ID": session["client_id"],
             "PLAID-SECRET": session["secret"],
         },

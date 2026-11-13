@@ -28,6 +28,8 @@ from urllib import error as urllib_error
 from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
+import policy
+
 SOURCE = "immich"
 STATE_VERSION = 1
 PROTOCOL_VERSION = 1
@@ -202,7 +204,11 @@ class ImmichClient:
         """Return the decoded JSON (object or array); never image bytes."""
         allowed = assert_endpoint(path, method)
         body = json.dumps(payload).encode("utf-8") if payload is not None else None
-        headers = {"Accept": "application/json", "x-api-key": self.api_key}
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": policy.USER_AGENT,
+            "x-api-key": self.api_key,
+        }
         if body is not None:
             headers["Content-Type"] = "application/json"
         request = urllib_request.Request(self.base_url + allowed, data=body, headers=headers, method=method)

@@ -68,7 +68,12 @@ def search(
     url = request_url(base, query)
     request = urllib.request.Request(
         url,
-        headers={"X-API-Key": api_key, "Accept": "application/json"},
+        headers={
+            "X-API-Key": api_key,
+            "Accept": "application/json",
+            # Same reason as the ingest collectors: a default urllib agent is refused.
+            "User-Agent": "kanbei-search/1 (+https://kanbei.sammohr.dev)",
+        },
         method="GET",
     )
     try:

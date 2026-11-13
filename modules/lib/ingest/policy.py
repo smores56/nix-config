@@ -15,6 +15,10 @@ import struct
 # 1 MiB. The decoder rejects a frame before allocating past this bound.
 MAX_BATCH_BYTES = 1 << 20
 PROTOCOL_VERSION = 1
+# Every collector identifies itself: Cloudflare in front of Immich answers 403 to
+# urllib's default `Python-urllib/x.y` agent, and a normal agent also lets a WAF
+# rule allow this plane deliberately instead of by accident.
+USER_AGENT = "kanbei-ingest/1 (+https://kanbei.sammohr.dev)"
 
 # An age X25519 recipient is `age1` plus 58 bech32 characters (52 data + 6 checksum).
 AGE_RECIPIENT_RE = re.compile(r"^age1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{58}$")

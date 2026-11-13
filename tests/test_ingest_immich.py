@@ -170,6 +170,16 @@ class EndpointTests(unittest.TestCase):
             client.request(f"/api/assets/{UUID}/original")
         self.assertEqual(opener.requests, [])
 
+    def test_requests_identify_the_collector(self):
+        # Cloudflare in front of Immich answers 403 to urllib's default agent, so every
+        # request must carry the shared one.
+        opener = RouteOpener([], albums={"items": []})
+        client = self.immich.ImmichClient("https://photos.sammohr.dev", KEY, opener=opener)
+        client.request("/api/albums")
+        self.assertEqual(len(opener.requests), 1)
+        headers = {k.lower(): v for k, v in opener.requests[0].header_items()}
+        self.assertEqual(headers.get("user-agent"), self.immich.policy.USER_AGENT)
+
     def test_non_json_response_is_refused(self):
         opener = RouteOpener([], albums={"items": []}, content_type="image/jpeg")
         client = self.immich.ImmichClient("https://photos.sammohr.dev", KEY, opener=opener)

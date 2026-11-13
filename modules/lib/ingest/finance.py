@@ -35,6 +35,8 @@ from urllib import error as urllib_error
 from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
+import policy
+
 import plaid
 
 SOURCE = "finance"
@@ -206,7 +208,9 @@ def http_json(
 ) -> object:
     """GET one JSON document; errors never echo the URL's credentials."""
     open_url: Callable[..., object] = (opener or urllib_request.build_opener()).open
-    request = urllib_request.Request(url, headers={"Accept": "application/json"})
+    request = urllib_request.Request(
+        url, headers={"Accept": "application/json", "User-Agent": policy.USER_AGENT}
+    )
     try:
         with open_url(request, timeout=timeout) as response:
             body = response.read(max_bytes + 1)
