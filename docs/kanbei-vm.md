@@ -151,12 +151,15 @@ separate decision.
 
 microvm.nix has no TPM option. `kanbei-swtpm.service` runs
 `swtpm socket --tpm2 --tpmstate dir=/var/lib/kanbei-vm/swtpm` as root with the
-state a 0700 root directory, a control socket, and a data socket in
-`/run/kanbei-vm` (0750 `root:kvm`, socket 0660) so the `microvm` user cannot
-read the NVRAM but can connect. QEMU attaches it from `microvm.qemu.extraArgs`:
+state a 0700 root directory and one control socket in `/run/kanbei-vm` (0750
+`root:kvm`, socket 0660) so the `microvm` user cannot read the NVRAM but can
+connect. QEMU's emulator backend speaks the whole swtpm protocol (control and
+TPM traffic) on that `--ctrl` channel; give it a `--server` data socket instead
+and QEMU blocks in its first read before any CPU starts. It attaches from
+`microvm.qemu.extraArgs`:
 
 ```
--chardev socket,id=chrtpm,path=/run/kanbei-vm/swtpm.sock
+-chardev socket,id=chrtpm,path=/run/kanbei-vm/swtpm.ctrl
 -tpmdev emulator,id=tpm0,chardev=chrtpm
 -device tpm-crb,tpmdev=tpm0
 ```

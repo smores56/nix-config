@@ -31,8 +31,9 @@ let
   # Root-only: swtpm NVRAM is the seal for the guest disk.
   swtpmDir = "${stateDir}/swtpm";
   # qemu runs as `microvm:kvm`, so the socket directory is group-traversable but not world.
+  # QEMU's TPM emulator backend speaks the swtpm protocol (control commands and TPM traffic)
+  # on the --ctrl channel only; a separate data socket is never used.
   runDir = "/run/kanbei-vm";
-  swtpmSock = "${runDir}/swtpm.sock";
   swtpmCtrl = "${runDir}/swtpm.ctrl";
   # systemd opens these as root before dropping to `microvm`; the parent is 0700 root.
   consoleDir = "${stateDir}/console";
@@ -269,8 +270,8 @@ let
       echo "FAIL: ${relayTokenFile} is not 0400 root:root; every relay authenticates with it" >&2
       fail=1
     fi
-    if [ ! -S ${swtpmSock} ]; then
-      echo "FAIL: ${swtpmSock} is missing" >&2
+    if [ ! -S ${swtpmCtrl} ]; then
+      echo "FAIL: ${swtpmCtrl} is missing" >&2
       fail=1
     fi
     if [ ! -c /dev/vhost-vsock ]; then
@@ -360,20 +361,22 @@ let
           fi
           i=0
           while [ "$i" -lt 150 ]; do
-            [ -S ${swtpmSock} ] && break
+            [ -S ${swtpmCtrl} ] && break
             ${pkgs.coreutils}/bin/sleep 0.2
             i=$((i + 1))
           done
-          if [ ! -S ${swtpmSock} ]; then
-            echo "kanbei: ${swtpmSock} is missing; refusing to boot without the vTPM" >&2
+          if [ ! -S ${swtpmCtrl} ]; then
+            echo "kanbei: ${swtpmCtrl} is missing; refusing to boot without the vTPM" >&2
             exit 1
           fi
         '';
-        # microvm.nix has no vTPM option: the host unit owns swtpm and this connects QEMU to it.
+        # microvm.nix has no vTPM option: the host unit owns swtpm and this connects QEMU to
+        # its --ctrl socket, the one channel the emulator backend uses. Pointing it at a
+        # --server data socket makes QEMU block in its first read before any CPU starts.
         # `-monitor none` keeps the guest from ever reaching the QEMU monitor.
         qemu.extraArgs = [
           "-chardev"
-          "socket,id=chrtpm,path=${swtpmSock}"
+          "socket,id=chrtpm,path=${swtpmCtrl}"
           "-tpmdev"
           "emulator,id=tpm0,chardev=chrtpm"
           "-device"
@@ -587,7 +590,7 @@ in
         RuntimeDirectory = "kanbei-vm";
         RuntimeDirectoryMode = "0750";
         RuntimeDirectoryPreserve = "restart";
-        ExecStart = "${pkgs.swtpm}/bin/swtpm socket --tpm2 --tpmstate dir=${swtpmDir} --ctrl type=unixio,path=${swtpmCtrl},mode=0660 --server type=unixio,path=${swtpmSock},mode=0660";
+        ExecStart = "${pkgs.swtpm}/bin/swtpm socket --tpm2 --tpmstate dir=${swtpmDir} --ctrl type=unixio,path=${swtpmCtrl},mode=0660";
         # One client, but a restart must leave the state (and the seal) intact.
         Restart = "always";
         RestartSec = "2s";
