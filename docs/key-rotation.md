@@ -275,6 +275,14 @@ sops-rendered `restic-r2.env`. Delete the old token only after that run. R2
 cannot rotate a token in place, so there are always two live credentials during
 the swap — both write the same bucket, which is harmless for one restic client.
 
+The OpenTofu state pair is separate and smaller: `r2-state-access-key-id` /
+`r2-state-secret-access-key`, a token scoped to `homelabs-tofu-state` alone.
+It exists so a leaked backup key can lose backups but never rewrite the object
+that decides the next apply. Rotate it the same way (new pair into
+`secrets/smortress.yaml`, `scripts/tofu-cloudflare.sh state list` to prove it,
+then delete the old token and replace the `cloudflare` environment secrets
+`R2_STATE_*`), and never widen the restic token to that bucket.
+
 ### GitHub mirror PAT (retired)
 
 The classic `repo`-scoped `github-repo-pat` belonged to the nix-config mirror
