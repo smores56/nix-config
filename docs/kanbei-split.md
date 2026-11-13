@@ -195,11 +195,12 @@ in `docs/manual-steps.md`, design and recovery flow in
   never in the store. The pool math, eval protocol and the
   `q8_0`/`--kv-unified-per-slot` residuals are in
   [`docs/kanbei-inference.md`](kanbei-inference.md).
-- The access path (T12) is a private hostname route, not a public service:
-  `kanbei.sammohr.dev` reaches the guest only through WARP, cloudflared's
-  Layer-4 hostname route, a loopback TCP→vsock relay under its own
-  `kanbei-relay` uid, and TLS terminated **in the guest**. The relay parses
-  nothing; prompt text crosses the host as ciphertext. The guest UI is a static
+- The access path (T12) is a public hostname behind Cloudflare Access:
+  `kanbei.sammohr.dev` is published by the host tunnel's ingress, gated by an
+  Access application with the owner email policy, and reaches the guest through a
+  loopback TCP→vsock relay under its own `kanbei-relay` uid, with TLS terminated
+  **in the guest**. The relay parses nothing; prompt text crosses the host as
+  ciphertext. The guest UI is a static
   human-owned bundle under a strict CSP, Kanbei returns JSON only, model output
   is rendered as text nodes and never auto-linked, and the passkey is a
   server-challenged stub. Details, the exact OpenTofu fragment and the spikes
@@ -368,16 +369,15 @@ working; removing it needs a systemd version that no longer reads other users'
 `/proc` entries. A monitoring agent added to the group deliberately widens it
 further.
 
-### The public wildcard still resolves `kanbei.sammohr.dev`
+### The public wildcard resolves `kanbei.sammohr.dev`
 
-`*.sammohr.dev` is a proxied CNAME, so the name has a public DNS answer even
-though it is a private hostname route. Nothing serves it publicly: cloudflared
-has no ingress rule for the name (the tunnel's `http_status:404` catch-all
-answers), and the Access application denies the request before cloudflared. The
-host module asserts `webProxy.services.kanbei` stays unset and
-`modules/nixos/kanbei-access.nix` creates no DNS record; the OpenTofu fragment
-creates only the hostname route and the Access app. Replacing the wildcard with
-per-host records is the upgrade path if the public answer itself is a concern.
+`*.sammohr.dev` is a proxied CNAME and the tunnel's ingress publishes the name,
+so it has a public answer by design. The Access application is the only gate:
+the owner email policy, no bypass, and no account-wide service-auth decision.
+Behind the connector the guest still terminates TLS and the relay stays
+loopback-only. A private hostname route (WARP, Gateway L4 rewrite) was tried
+first and retired on 2026-11-13 because no client connection was ever rewritten
+into the tunnel; see `docs/kanbei-access.md`.
 
 ### The Tuta calendar fetcher is not built
 
@@ -395,7 +395,7 @@ switch is a fetcher binary plus an `events.json`, with no unit change.
 The guest stores WebAuthn challenges server-side, single-use, purpose-bound and
 expiring; the browser flow and RP/origin binding are real. Attestation and
 assertion signature verification is not implemented yet, so the passkey does
-not yet authenticate a session. Access over WARP is the current gate.
+not yet authenticate a session. Access is the current gate.
 
 ### Same-UID capture while `td` or a `v` session is open
 

@@ -91,8 +91,6 @@ in
     };
     webProxy = {
       tunnelName = "smortress";
-      # Temporary: diagnose the private hostname route (revert after).
-      logLevel = "debug";
       services = {
         navidrome.port = ports.navidrome;
         # Reachable only through the tunnel; must never lose Access (web-proxy.nix asserts it).
@@ -122,6 +120,13 @@ in
         };
         nanobot = {
           port = ports.agent;
+          access.enable = true;
+        };
+        # Kanbei terminates TLS in the guest, so the origin is https on loopback and the
+        # ingress rule presents the public name as SNI for certificate verification.
+        kanbei = {
+          port = ports.kanbei;
+          protocol = "https";
           access.enable = true;
         };
       };
