@@ -187,6 +187,10 @@ let
   chainIn = id: "ingest-${id}-in";
   chainFwd = id: "ingest-${id}-fwd";
 
+  # The operator-staged contract for a source, named for its sops key. One definition:
+  # the staging unit and docs/manual-steps.md must agree on it exactly.
+  secretPath = id: "/run/secrets/ingest-${id}-env";
+
   firewallRulesFor =
     id:
     let
@@ -395,6 +399,7 @@ constants
     factsFor
     chainIn
     chainFwd
+    secretPath
     firewallRulesFor
     firewallRules
     firewallTable

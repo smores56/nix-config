@@ -216,7 +216,7 @@ are in [`docs/kanbei-ingest.md`](kanbei-ingest.md).
 
 - Firecracker has no shares and no PCI passthrough: each guest reads its store
   from the read-only store disk, gets its credentials from one read-only ext4
-  block device staged from `/run/secrets/<source>-env`, and talks to the host
+  block device staged from `/run/secrets/ingest-<source>-env`, and talks to the host
   only over one vsock channel.
 - The writer validates the batch schema and source, caps frames at 1 MiB,
   age-encrypts with `age -r` to Kanbei's published recipient, and drops the

@@ -43,9 +43,10 @@ Tap names are shorter than the guest names because Linux caps interface names at
 
 ## Secret staging
 
-Every source has one `/run/secrets/<source>-env` contract (sops key names:
-`ingest-tuta-env`, `ingest-finance-env`, `ingest-brave-env`, `ingest-immich-env`,
-`ingest-search-env`). The host unit `ingest-vm-secret-<source>.service`:
+Every source has one `/run/secrets/ingest-<source>-env` contract, named for its
+sops key (`ingest-tuta-env`, `ingest-finance-env`, `ingest-brave-env`,
+`ingest-immich-env`, `ingest-search-env`). The host unit
+`ingest-vm-secret-<source>.service`:
 
 1. copies the contract file to a private staging directory at mode `0400`;
 2. builds a 4 MiB ext4 image around it (`/env`, mode `0400 root:root`) with

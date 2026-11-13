@@ -897,7 +897,7 @@ PY
           pkgs.e2fsprogs
         ]
       }
-      src=/run/secrets/${id}-env
+      src=${ingest.secretPath id}
       image=/var/lib/microvms/ingest-secrets/${id}.img
       sum="$image.sha256"
       if [ ! -r "$src" ]; then
@@ -1268,7 +1268,7 @@ in
             {
               name = "ingest-vm-secret-${id}";
               value = {
-                description = "Stage the ${id} secret block device from /run/secrets/${id}-env";
+                description = "Stage the ${id} secret block device from ${ingest.secretPath id}";
                 after = [ "ingest-vm-prep.service" ];
                 before = [ "microvm@${s.guest}.service" ];
                 requiredBy = [ "microvm@${s.guest}.service" ];
