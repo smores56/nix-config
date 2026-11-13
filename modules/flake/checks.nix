@@ -564,6 +564,31 @@ in
           )
         );
 
+        # These host units only start at activation, so a bad ExecStart reaches the
+        # operator as a failed switch instead of an eval error. Assert the two shapes
+        # that broke the first cutover: the verify unit needs the file inside the
+        # writeShellScriptBin directory, and swtpm takes its unix socket on --server.
+        kanbei-host-units = evalCheck "kanbei-host-units" (
+          toString (
+            let
+              host =
+                (config.flake.nixosConfigurations.smortress.extendModules {
+                  modules = [
+                    ({ lib, ... }: {
+                      kanbeiVm.enable = lib.mkForce true;
+                    })
+                  ];
+                }).config;
+              swtpm = toString host.systemd.services.kanbei-swtpm.serviceConfig.ExecStart;
+              verify = toString host.systemd.services.kanbei-vm-verify.serviceConfig.ExecStart;
+            in
+            assert lib.hasInfix "--server type=unixio" swtpm;
+            assert !(lib.hasInfix "--socket " swtpm);
+            assert lib.hasSuffix "/bin/kanbei-vm-verify" verify;
+            host.system.build.toplevel.drvPath
+          )
+        );
+
         # owner-only, shared with the phone alone, and no restic job names the guest's
         # plaintext tree. The password contract is declared only while `kanbeiVm.enable`
         # is set: the key is not in `secrets/smortress.yaml`, so an unconditional

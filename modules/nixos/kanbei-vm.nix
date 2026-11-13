@@ -587,7 +587,7 @@ in
         RuntimeDirectory = "kanbei-vm";
         RuntimeDirectoryMode = "0750";
         RuntimeDirectoryPreserve = "restart";
-        ExecStart = "${pkgs.swtpm}/bin/swtpm socket --tpm2 --tpmstate dir=${swtpmDir} --ctrl type=unixio,path=${swtpmCtrl},mode=0660 --socket type=unixio,path=${swtpmSock},mode=0660";
+        ExecStart = "${pkgs.swtpm}/bin/swtpm socket --tpm2 --tpmstate dir=${swtpmDir} --ctrl type=unixio,path=${swtpmCtrl},mode=0660 --server type=unixio,path=${swtpmSock},mode=0660";
         # One client, but a restart must leave the state (and the seal) intact.
         Restart = "always";
         RestartSec = "2s";
@@ -629,7 +629,8 @@ in
       restartIfChanged = false;
       serviceConfig = {
         Type = "oneshot";
-        ExecStart = verifyScript;
+        # writeShellScriptBin is a directory; the unit needs the file inside it.
+        ExecStart = "${verifyScript}/bin/kanbei-vm-verify";
       };
     };
 
