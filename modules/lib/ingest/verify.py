@@ -375,37 +375,59 @@ def check_secret(since: str) -> None:
     say("PASS secret: guest sees the staged env at mode 0400")
 
 
+def permission_problem(
+    role: str, path: str, mode: int, owner_uid: int, want_uid: str, human_uid: str
+) -> str | None:
+    """Why `path` breaks its role's permission rule, or None when it holds.
+
+    A digest share is 0770 on its own uid: the group-write bit is the design, bounded
+    by the exact mode and the owner. Only the parents must be closed to group and
+    other writes — applying the parent rule to the share rejected a correct tree.
+    """
+    if human_uid and str(owner_uid) == human_uid:
+        return f"{path} is owned by {HUMAN}; must be root- or {DIGEST_USER}-owned"
+    if role == "share":
+        if mode != 0o770:
+            return f"{path} is {mode:o}, expected 0770"
+        if want_uid and str(owner_uid) != want_uid:
+            return f"{path} is owned by uid {owner_uid}, expected {DIGEST_USER} ({want_uid})"
+        return None
+    if mode & 0o022:
+        return f"{path} is group/other writable ({mode:o}); the digest parent chain must be private"
+    return None
+
+
 def check_digest_share() -> None:
     """The digest tree is 0770 on its own uid inside a root-only parent chain."""
     try:
         info = os.stat(DIGEST)
     except FileNotFoundError:
         fail(f"{DIGEST} is missing; the cluster guest is not installed")
-    if info.st_mode & 0o777 != 0o770:
-        fail(f"{DIGEST} is {info.st_mode & 0o777:o}, expected 0770")
     want = run(["id", "-u", DIGEST_USER]).stdout.strip()
-    if want and str(info.st_uid) != want:
-        fail(f"{DIGEST} is owned by uid {info.st_uid}, expected {DIGEST_USER} ({want})")
     human = run(["id", "-u", HUMAN]).stdout.strip()
     if not human:
         fail(f"{HUMAN} does not exist; cannot prove the digest share is private")
-    if str(info.st_uid) == human:
-        fail(f"{DIGEST} is owned by {HUMAN}; the digest share must not be human-owned")
+    problem = permission_problem("share", DIGEST, info.st_mode & 0o777, info.st_uid, want, human)
+    if problem:
+        fail(problem)
     shell = shutil.which("bash") or "/run/current-system/sw/bin/bash"
 
-    def denies(path: str, flags: tuple[tuple[str, str], ...]) -> None:
-        probe = os.stat(path)
-        if str(probe.st_uid) == human:
-            fail(f"{path} is owned by {HUMAN}; the digest parent chain must be root-owned")
-        if probe.st_mode & 0o022:
-            fail(f"{path} is group/other writable ({probe.st_mode & 0o777:o}); the digest parent chain must be private")
+    def human_denied(path: str, flags: tuple[tuple[str, str], ...]) -> None:
         for flag, word in flags:
             result = run(["runuser", "-u", HUMAN, "--", shell, "-c", f"test {flag} {path}"])
             if result.returncode == 0:
                 fail(f"{HUMAN} can {word} {path}; the digest share must be private")
 
-    # Read and write on the tree and its private chain; write alone above it.
-    denies(DIGEST, (("-r", "read"), ("-w", "write")))
+    def denies(path: str, flags: tuple[tuple[str, str], ...]) -> None:
+        probe = os.stat(path)
+        problem = permission_problem("parent", path, probe.st_mode & 0o777, probe.st_uid, "", human)
+        if problem:
+            fail(problem)
+        human_denied(path, flags)
+
+    # Read and write on the tree and its private chain; write alone above it. The
+    # share's own mode and owner are the share rule, not the parent rule.
+    human_denied(DIGEST, (("-r", "read"), ("-w", "write")))
     for parent in DIGEST_PRIVATE_PARENTS:
         denies(parent, (("-r", "read"), ("-w", "write")))
     for parent in DIGEST_SHARED_PARENTS:

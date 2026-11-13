@@ -404,3 +404,18 @@ class VerifierRuleTests(unittest.TestCase):
             self.verify.run(["kanbei-no-such-binary"])
         self.assertEqual(raised.exception.code, 1)
         self.assertIn("kanbei-no-such-binary is not on PATH", stderr.getvalue())
+
+    def test_a_0770_share_is_the_design_not_a_violation(self):
+        # The share's group-write bit is how the digest uid writes; the verifier used
+        # to run the parent-chain rule over it too and failed a correct tree.
+        self.assertIsNone(
+            self.verify.permission_problem("share", "/s", 0o770, 900, "900", "1000")
+        )
+        self.assertIn("expected 0770", self.verify.permission_problem("share", "/s", 0o775, 900, "900", "1000"))
+        self.assertIn("expected 0770", self.verify.permission_problem("share", "/s", 0o750, 900, "900", "1000"))
+        self.assertIn("expected kanbei-digest", self.verify.permission_problem("share", "/s", 0o770, 0, "900", "1000"))
+        self.assertIn("owned by smores", self.verify.permission_problem("share", "/s", 0o770, 1000, "1000", "1000"))
+
+    def test_a_group_writable_parent_is_still_refused(self):
+        self.assertIn("private", self.verify.permission_problem("parent", "/p", 0o770, 0, "", "1000"))
+        self.assertIsNone(self.verify.permission_problem("parent", "/p", 0o750, 0, "", "1000"))
