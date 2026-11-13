@@ -160,6 +160,10 @@ let
       pkgs.coreutils
       pkgs.gnugrep
       pkgs.curl
+      # verify.py drives the real resolver and proxy binaries for the DNS and SNI
+      # proofs, so they have to be on its PATH like ingest-writer is.
+      ingestProxy
+      ingestResolver
     ];
     text = ''
       exec ${pkgs.python3}/bin/python3 ${../lib/ingest/verify.py} "$@"
