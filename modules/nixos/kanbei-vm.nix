@@ -500,6 +500,33 @@ let
         };
       };
 
+      # The guest journal is volatile and there is no login on that root, so a failed unit
+      # leaves nothing behind. Dump the failure summary to the serial console, which the host
+      # keeps at /var/lib/kanbei-vm/console/console.log (root-only).
+      systemd.services.kanbei-boot-report = {
+        description = "Report failing kanbei units on the serial console";
+        wantedBy = [ "multi-user.target" ];
+        after = [
+          "kanbei-age-identity.service"
+          "kanbei-cert.service"
+          "kanbei-ui.service"
+          "kanbei.service"
+        ];
+        restartIfChanged = false;
+        serviceConfig = {
+          Type = "oneshot";
+        };
+        script = ''
+          sleep 20
+          {
+            ${pkgs.systemd}/bin/systemctl --failed --no-pager
+            ${pkgs.systemd}/bin/journalctl -b --no-pager -n 120 \
+              -u kanbei-data-open.service -u kanbei-age-identity.service \
+              -u kanbei-cert.service -u kanbei-ui.service -u kanbei.service
+          } > /dev/console 2>&1 || true
+        '';
+      };
+
       system.stateVersion = "26.05";
     };
 in
