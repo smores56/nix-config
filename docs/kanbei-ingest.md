@@ -21,7 +21,7 @@ Sources, allowlists, windows, taps and ports live in one table:
 | `ingest-tuta` | `tuta` | `vm-i-tuta` | `10.77.10.0/30` | `02:00:0a:4d:0a:02` | 1 / 256 MiB | 10 / 7010 | `/run/secrets/ingest-tuta-env` | `app.tuta.com` | 1800 s |
 | `ingest-finance` | `finance` | `vm-i-finance` | `10.77.11.0/30` | `02:00:0a:4d:0b:02` | 1 / 256 MiB | 11 / 7011 | `/run/secrets/ingest-finance-env` | `bridge.simplefin.org` (+ `production.plaid.com` when enabled) | 129600 s |
 | `ingest-brave` | `brave` | `vm-i-brave` | `10.77.12.0/30` | `02:00:0a:4d:0c:02` | 1 / 1024 MiB | 12 / 7012 | `/run/secrets/ingest-brave-env` | `sync-v2.brave.com` | 86400 s |
-| `ingest-immich` | `immich` | `vm-i-immich` | `10.77.13.0/30` | `02:00:0a:4d:0d:02` | 1 / 256 MiB | 13 / 7013 | `/run/secrets/ingest-immich-env` | `photos.sammohr.dev` | 21600 s |
+| `ingest-immich` | `immich` | `vm-i-immich` | `10.77.13.0/30` | `02:00:0a:4d:0d:02` | 1 / 256 MiB | 13 / 7013 | `/run/secrets/ingest-immich-env` | `photos.sammohr.dev` | 64800 s |
 | `search` | `search` | `vm-search` | `10.77.14.0/30` | `02:00:0a:4d:0e:02` | 2 / 2560 MiB | 14 / 7014 (query 7024) | `/run/secrets/ingest-search-env` | `api.search.tinyfish.ai` | 86400 s |
 
 Each guest is Firecracker (`microvm.hypervisor = "firecracker"`), has a mandatory
@@ -287,7 +287,7 @@ PV contract (`cluster-digest-data`) is unchanged.
 - prunes heartbeat files older than 168 h; batch files are never pruned.
 
 Defaults are the `windowSeconds` column above: Tuta 30 min, finance 36 h, Brave
-24 h, Immich 6 h, search 24 h, and the host-written cluster digest 60 min. The
+24 h, Immich 18 h, search 24 h, and the host-written cluster digest 60 min. The
 `search` source has `alert = false`: its test emitter is not a production feed,
 so staleness is still visible in the envelope but never pages. The digest
 writer pages on its own timer and shares the heartbeat's marker file, so the two

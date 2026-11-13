@@ -126,10 +126,10 @@ State lives in `/var/lib/immich/state.json` (`0600`):
 
 `MemoryHigh=80M`, `MemoryMax=112M`; the guest is 256 MiB, the boot floor: the
 initramfs unpacks to 68 MiB and a 128 MiB guest deadlocks on memory in
-`unpack_to_rootfs`. The table's 6 h window
-matches the timer: two missed passes are silent, three page. No image bytes are
-ever transferred, so the guest's memory and disk stay proportional to the
-metadata, not the library.
+`unpack_to_rootfs`. The table's 18 h window covers three 6 h periods: one
+missed pass is silent, two page, and the 15 min jitter cannot trip it. No image
+bytes are ever transferred, so the guest's memory and disk stay proportional to
+the metadata, not the library.
 
 ## Verification
 

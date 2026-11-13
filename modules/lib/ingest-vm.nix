@@ -123,8 +123,9 @@ let
       # 256 is the boot floor: the initramfs unpacks to 68 MiB and 128 MiB panics.
       mem = 256;
       volumes = 1;
-      # Triage/export batches run several times a day.
-      windowSeconds = 21600;
+      # The timer runs four times a day; an 18 h window makes one missed pass silent
+      # and two a page, without letting the 15 min jitter trip it.
+      windowSeconds = 64800;
       allow = permitted.immich;
     };
     search = {

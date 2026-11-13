@@ -675,7 +675,10 @@ PY
         systemd.timers.ingest-immich = {
           wantedBy = [ "timers.target" ];
           timerConfig = {
-            OnCalendar = "*-*-* 03:23:00";
+            # The guest root is tmpfs, so the Persistent stamp never survives a restart:
+            # collect once shortly after boot, then four times a day.
+            OnBootSec = "2min";
+            OnCalendar = "*-*-* 03,09,15,21:23:00";
             RandomizedDelaySec = "900";
             Persistent = true;
           };
