@@ -173,6 +173,15 @@ def plant(prefs: dict, seed: str) -> dict:
             node[part] = child
         node = child
     node[SEED_PATH[-1]] = stored_seed_value(seed)
+    # A seed alone gives Brave the key but not the instruction to sync: Chromium's
+    # SyncService only starts for a profile whose prefs ask for it. The join UI writes
+    # these two, and this profile never runs the join UI.
+    sync = prefs.get("sync")
+    if not isinstance(sync, dict):
+        sync = {}
+        prefs["sync"] = sync
+    sync["requested"] = True
+    sync["keep_everything_synced"] = True
     return prefs
 
 

@@ -197,6 +197,8 @@ class SyncTests(unittest.TestCase):
             self.assertEqual(oct(os.stat(prefs).st_mode & 0o777), "0o600")
             self.assertEqual(self.sync.status(prefs)["seed_present"], True)
             self.assertEqual(self.sync.status(prefs)["seed_shape"], "oscrypt")
+            # The seed is the key; Chromium only syncs when the profile asks it to.
+            self.assertEqual(reloaded["sync"], {"requested": True, "keep_everything_synced": True})
 
     def test_status_reads_the_legacy_location(self):
         with tempfile.TemporaryDirectory() as directory:
