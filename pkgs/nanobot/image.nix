@@ -14,27 +14,10 @@ let
   # nanobot ships the docker bootstrap that writes exactly that (plus the web
   # token). Run it once per HOME, then exec the CLI unchanged so the pod's args
   # stay `gateway --foreground --port 8080`.
-  configure = pkgs.writeText "nanobot-configure.py" ''
-    import json
-    import sys
-    from pathlib import Path
-
-    path = Path(sys.argv[1])
-    if not path.exists():
-        from nanobot.cli.docker_bootstrap import initialize_config
-        initialize_config(path)
-    config = json.loads(path.read_text())
-    # The gateway and the websocket channel default to loopback; the pod is
-    # reached through the tunnel, so both must listen on every interface.
-    config.setdefault("gateway", {})["host"] = "0.0.0.0"
-    websocket = config.setdefault("channels", {}).setdefault("websocket", {})
-    websocket["host"] = "0.0.0.0"
-    path.write_text(json.dumps(config, indent=2) + "\n")
-  '';
   entrypoint = pkgs.writeShellScript "nanobot-entrypoint" ''
     set -eu
     home="''${HOME:-/data/home}"
-    ${nanobot}/bin/python ${configure} "$home/.nanobot/config.json"
+    ${nanobot}/bin/python ${./render.py}
     exec ${nanobot}/bin/nanobot "$@"
   '';
 in
@@ -47,6 +30,7 @@ pkgs.dockerTools.buildLayeredImage {
     pkgs.cacert
     pkgs.bashInteractive
     pkgs.coreutils
+    pkgs.gnugrep
     pkgs.git
     pkgs.curl
   ];
@@ -64,6 +48,7 @@ pkgs.dockerTools.buildLayeredImage {
         lib.makeBinPath [
           nanobot
           pkgs.coreutils
+          pkgs.gnugrep
           pkgs.git
           pkgs.curl
           pkgs.bashInteractive
