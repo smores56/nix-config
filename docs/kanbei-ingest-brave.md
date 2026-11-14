@@ -37,10 +37,12 @@ value looks like OSCrypt.
 
 1. reads `/run/ingest-secret/env` (only `BRAVE_SYNC_SEED` and, for the join
    fallback, `BRAVE_SYNC_CODE` are accepted keys);
-2. writes the seed at the dotted key and sets `sync.requested` and
-   `sync.keep_everything_synced` (the join UI is what normally writes them, and
-   a seed alone leaves Chromium's SyncService idle), preserving every other
-   `Preferences` value and the file mode `0600`;
+2. writes the seed at the dotted key and sets `sync.requested`,
+   `sync.keep_everything_synced` and `sync.has_setup_completed` — the three the
+   join UI normally writes. Without them Chromium's SyncService never starts;
+   with only the first two the profile registers on the chain (gaia_id,
+   transport state) but never runs the initial download. Every other
+   `Preferences` value and the file mode `0600` are preserved;
 3. stages the 25-word code at `/run/brave/sync-code` (`0600`) when present.
 
 Without a seed the profile stays unseeded and the pull logs that; the manual
