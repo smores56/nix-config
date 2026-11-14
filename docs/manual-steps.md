@@ -1596,6 +1596,25 @@ edge. Rotate by minting a replacement, updating both values together,
 accepts any valid service token, so it also satisfies the `ssh` application's
 Access layer; the token alone never authenticates to sshd.
 
+### ntfy publisher token
+
+<!-- manual-step: secret/ntfy-token -->
+
+The bus's `publisher` user (`alerts:wo`), root-only 0400 in
+`secrets/smortress.yaml`. `ntfy-publish@` presents it as `Authorization: Bearer`
+to `https://ntfy.sammohr.dev/alerts`. It is one of the five tokens step 24 of
+`homelabs-platform`'s `docs/manual-steps.md` generates; the value must match the
+`publisher` entry in `ntfy-auth-sops` or every publish is a 403.
+
+### ntfy reader token
+
+<!-- manual-step: secret/ntfy-reader-token -->
+
+The bus's `reader` user (`alerts:ro`, `agent:ro`), owner `smores` 0400 in
+`secrets/smorespro.yaml`. The laptop's `ntfy-subscribe` exports it as
+`NTFY_TOKEN`. Use the `tk_laptop` value from step 24, not `tk_phone`: the two
+are separate tokens for the same user so a lost device is revoked alone.
+
 ### Rotation checklist
 
 The retired admin key could read every value here, so re-encryption alone is
@@ -2957,17 +2976,10 @@ one per failed run. The template reads the token from `/run/secrets/ntfy-token`
 (the `publisher` user, `alerts:wo` only) and hardcodes the topic: `%i` is the
 full unit name, which contains a dot and would miss the user's ACL.
 
-`ntfy-token` is not in `secrets/smortress.yaml` yet. Add it before the first
-switch that declares it, or the unit fails closed with
-`ntfy-publish: cannot read /run/secrets/ntfy-token`:
-
-```sh
-sops secrets/smortress.yaml   # add ntfy-token: tk_… (the publisher token)
-```
-
-Then declare it in `modules/hosts/smortress/secrets.nix` and add the
-`secret/ntfy-token` anchor to this document; `manual-steps-sync` fails until
-both exist.
+The token is `ntfy-token` in `secrets/smortress.yaml`, declared in
+`modules/hosts/smortress/secrets.nix` and documented under
+[ntfy publisher token](#ntfy-publisher-token). If it is missing the unit fails
+closed with `ntfy-publish: cannot read /run/secrets/ntfy-token`.
 
 ### Laptop subscription
 
@@ -2979,14 +2991,11 @@ to `notify-send` with urgency from the priority. It reads the `reader` token
 exports it as `NTFY_TOKEN`; the subscription list is a store-safe config file
 with no secret in it.
 
-`ntfy-reader-token` is not in `secrets/smorespro.yaml` yet. Add it, declare it
-in `modules/hosts/smorespro/secrets.nix` (owner `smores`, mode `0400`) and add
-the `secret/ntfy-reader-token` anchor, or the service fails closed with
-`ntfy-subscribe: cannot read /run/secrets/ntfy-reader-token`:
-
-```sh
-sops secrets/smorespro.yaml   # add ntfy-reader-token: tk_… (the reader token)
-```
+The token is `ntfy-reader-token` in `secrets/smorespro.yaml`, declared in
+`modules/hosts/smorespro/secrets.nix` (owner `smores`, mode `0400`) and
+documented under [ntfy reader token](#ntfy-reader-token). If it is missing the
+service fails closed with `ntfy-subscribe: cannot read
+/run/secrets/ntfy-reader-token`.
 
 `journalctl --user -u ntfy-subscribe` shows the connection; the web app at the
 same hostname is the history view.
