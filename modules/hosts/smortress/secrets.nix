@@ -9,6 +9,9 @@
       # Shared by OpenTofu and the recovery tooling.
       cloudflare-api-token = { };
       cloudflared-credentials = { };
+      # The `publisher` user's token, `alerts:wo` only. `ntfy-publish@` reads it
+      # from /run/secrets/ntfy-token (docs/manual-steps.md, `secret/ntfy-token`).
+      ntfy-token = { };
       restic-password = { };
       r2-access-key-id = { };
       r2-secret-access-key = { };
