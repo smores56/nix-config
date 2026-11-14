@@ -106,6 +106,12 @@ other identity is denied at the edge.
 - `curl -sS -o /dev/null -D - https://kanbei.sammohr.dev/` → `302` to
   `<team>.cloudflareaccess.com`. A `404` instead means the tunnel ingress rule is missing
   (cloudflared fell through to its `http_status:404` catch-all).
+- A `404` **after** login, while the managed connector's log shows no request at all, is a
+  second connector on the same tunnel: the edge pins a client connection to one connector,
+  so a hand-started `cloudflared` with a stale config answers every request it receives
+  with its own catch-all. `pgrep -a -f cloudflared` must show only the unit's
+  `--no-autoupdate` process; kill anything else and the name comes back without touching
+  the managed side.
 - After login, the browser certificate is `CN=sammohr.dev` (the edge), not the guest's.
   That is expected for a public hostname; the guest certificate is only used between
   cloudflared and the origin. If the connector cannot verify it, the tunnel log shows a
