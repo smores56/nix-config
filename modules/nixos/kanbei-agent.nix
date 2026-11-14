@@ -436,6 +436,11 @@ in
         "/mnt/kanbei/todo"
       ];
       ExecStart = "${kanbeiPackage}/bin/kanbei";
+      # The guest journal dies with the guest, and this kernel is the only place the
+      # inbox verdicts and a boot refusal exist. The serial console is the host-kept
+      # trace; `kanbei-logs` reads it.
+      StandardOutput = "journal+console";
+      StandardError = "journal+console";
     };
   };
 

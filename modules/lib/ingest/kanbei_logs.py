@@ -18,6 +18,10 @@ import subprocess
 import sys
 
 LOG_DIR = "/var/log/kanbei-ingest"
+# The guest's journal is volatile and never reaches the host; the serial console is
+# the only place `inbox poll` and a boot refusal are visible. microvm@kanbei appends
+# it here, root-only, so this viewer is the sanctioned reader.
+CONSOLE_FILE = "/var/lib/kanbei-vm/console/console.log"
 JOURNAL_UNITS = [
     "microvm@kanbei.service",
     "microvm@ingest-tuta.service",
@@ -58,6 +62,17 @@ def file_tail(path: str) -> None:
     sys.stdout.writelines(lines[-TAIL:])
 
 
+def select_logs(wanted: set[str]) -> list[str]:
+    """File logs to tail: the ingest plane's, plus the guest console.
+
+    The filter matches the whole path, so `kanbei` also selects the console while
+    a source name such as `finance` does not.
+    """
+    paths = sorted(glob.glob(os.path.join(LOG_DIR, "*.log")))
+    paths.append(CONSOLE_FILE)
+    return [path for path in paths if not wanted or any(token in path for token in wanted)]
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if os.geteuid() != 0:
@@ -68,9 +83,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     wanted = set(args)
-    logs = sorted(glob.glob(os.path.join(LOG_DIR, "*.log")))
+    logs = select_logs(wanted)
     if wanted:
-        logs = [path for path in logs if any(token in os.path.basename(path) for token in wanted)]
         units = [unit for unit in JOURNAL_UNITS if any(token in unit for token in wanted)]
     else:
         units = JOURNAL_UNITS
