@@ -105,7 +105,11 @@ let
       install -d -m 0700 "$HOME" ${instanceDir} ${instanceDir}/workspace
       # Nix owns the config. The WebUI's Settings page appears to save, but the next start
       # restores what the module declares, so a provider or skill added there is lost.
-      install -m 0600 ${configFile} ${instanceDir}/config.json
+      # Write beside it and rename: `install` opens a new destination with O_EXCL, so the
+      # gateway and the probe racing here is a lost `File exists`, not a bad config.
+      config_tmp=$(mktemp ${instanceDir}/config.json.XXXXXX)
+      install -m 0600 ${configFile} "$config_tmp"
+      mv -f "$config_tmp" ${instanceDir}/config.json
       case "''${1:-gateway}" in
         gateway)
           exec nanobot gateway --foreground --port ${toString ports.gatewayPort}
