@@ -2969,6 +2969,28 @@ Then declare it in `modules/hosts/smortress/secrets.nix` and add the
 `secret/ntfy-token` anchor to this document; `manual-steps-sync` fails until
 both exist.
 
+### Laptop subscription
+
+`smorespro` runs `ntfy-subscribe` as a systemd user service
+(`modules/features/notify.nix`): `ntfy subscribe --from-config` against
+`https://ntfy.sammohr.dev` for topics `alerts` and `agent`, piping each message
+to `notify-send` with urgency from the priority. It reads the `reader` token
+(`alerts:ro`, `agent:ro`) from `/run/secrets/ntfy-reader-token` at start and
+exports it as `NTFY_TOKEN`; the subscription list is a store-safe config file
+with no secret in it.
+
+`ntfy-reader-token` is not in `secrets/smorespro.yaml` yet. Add it, declare it
+in `modules/hosts/smorespro/secrets.nix` (owner `smores`, mode `0400`) and add
+the `secret/ntfy-reader-token` anchor, or the service fails closed with
+`ntfy-subscribe: cannot read /run/secrets/ntfy-reader-token`:
+
+```sh
+sops secrets/smorespro.yaml   # add ntfy-reader-token: tk_… (the reader token)
+```
+
+`journalctl --user -u ntfy-subscribe` shows the connection; the web app at the
+same hostname is the history view.
+
 ### tunnel-health
 
 <!-- manual-step: alert/tunnel-health -->
