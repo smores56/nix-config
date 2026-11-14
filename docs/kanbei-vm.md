@@ -143,8 +143,9 @@ the LUKS volume; `kanbei-nanobot-state.service` creates the directory, because
 the volume root is root-owned and the payload uid cannot create its own home
 there. Nix renders the config and the unit reinstalls it on every start, so the
 WebUI's Settings page cannot persist a provider or a skill. No builtin skill is
-loaded and `tools.exec`/`tools.web` are off until T4 installs the five ledger
-skills; the gateway has no provider until T3 adds the local llama.cpp lane.
+loaded, the heartbeat cron is off, and `tools.exec`/`tools.web` are off until T4
+installs the five ledger skills; the gateway has no provider until T3 adds the
+local llama.cpp lane.
 
 **Decision (deferred):** `kanbei-ui` still posts chat straight to the local
 llama.cpp lane on `127.0.0.1:8090`; it does not route through the agent chat

@@ -29,6 +29,9 @@ let
     gateway = {
       host = "127.0.0.1";
       port = ports.gatewayPort;
+      # The heartbeat is a cron job that wakes the agent every 30 minutes. In the guest
+      # that is a model turn against the only GPU, and the owner never asked for one.
+      heartbeat.enabled = false;
     };
     channels.websocket = {
       enabled = true;
@@ -174,8 +177,11 @@ in
       message = "kanbei-nanobot: the guest has no NIC and Access fronts the terminator, so nanobot must bind loopback on the port T5 proxies";
     }
     {
-      assertion = !nanobotConfig.tools.exec.enable && !nanobotConfig.tools.web.enable;
-      message = "kanbei-nanobot: no code execution or network fetch in the guest; a task that needs the exec tool must change this config first";
+      assertion =
+        !nanobotConfig.tools.exec.enable
+        && !nanobotConfig.tools.web.enable
+        && !nanobotConfig.gateway.heartbeat.enabled;
+      message = "kanbei-nanobot: no code execution, network fetch or background heartbeat in the guest; a task that needs one must change this config first";
     }
     {
       assertion = config.users.users.${user}.uid == 1000;
