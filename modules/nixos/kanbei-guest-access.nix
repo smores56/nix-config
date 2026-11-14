@@ -12,7 +12,7 @@
 }:
 let
   access = import ../lib/kanbei-access.nix;
-  inference = import ../lib/kanbei-inference.nix { inherit lib; };
+  nanobotPorts = import ../lib/kanbei-nanobot.nix;
 
   tools = pkgs.runCommandLocal "kanbei-tools" { } ''
     mkdir -p $out
@@ -23,7 +23,9 @@ let
   '';
 
   python = "${pkgs.python3}/bin/python3";
-  chatPort = inference.ports.chat;
+  # The WebUI the terminator fronts is nanobot's, on loopback; T5 replaced the static
+  # shell (kept as `ui/legacy_shell.py`, unreferenced).
+  webPort = nanobotPorts.webPort;
 
   uiSandbox = {
     PrivateDevices = true;
@@ -87,10 +89,12 @@ in
     };
   };
 
-  # Static shell + JSON API on AF_VSOCK 10000, TLS with the guest's certificate. The key is
-  # root-only at rest and handed to the service through systemd credentials.
+  # TLS terminator and reverse proxy on AF_VSOCK 10000: the certificate, the relay-token
+  # gate, and nothing else. Every request — including the WebSocket upgrade nanobot's
+  # WebUI chats over — goes to the loopback WebUI. The key is root-only at rest and handed
+  # to the service through systemd credentials.
   systemd.services.${access.guestUiUnit} = {
-    description = "Kanbei UI shell and JSON API (TLS on vsock 10000)";
+    description = "Kanbei TLS terminator for nanobot's WebUI (vsock 10000)";
     wantedBy = [ "multi-user.target" ];
     requires = [ "kanbei-cert.service" ];
     after = [ "kanbei-cert.service" ];
@@ -106,7 +110,7 @@ in
         # closes a connection that does not present it, before TLS starts.
         "relay-token:/run/kanbei-secrets/relay-token"
       ];
-      ExecStart = "${python} ${tools}/ui/server.py --ui-dir ${tools}/ui --vsock-port ${toString access.chatVsockPort} --tls-cert %d/tls-cert --tls-key %d/tls-key --auth-token-file %d/relay-token --chat-upstream http://127.0.0.1:${toString chatPort}";
+      ExecStart = "${python} ${tools}/ui/server.py --vsock-port ${toString access.chatVsockPort} --tls-cert %d/tls-cert --tls-key %d/tls-key --auth-token-file %d/relay-token --upstream http://127.0.0.1:${toString webPort}";
       Restart = "always";
       RestartSec = "5s";
       RestrictAddressFamilies = [
@@ -131,6 +135,12 @@ in
             config.systemd.services.${access.guestUiUnit}.serviceConfig.LoadCredential
         && lib.hasInfix "--token-file /run/kanbei-secrets/relay-token" config.systemd.services.kanbei-cert.serviceConfig.ExecStart;
       message = "kanbei-guest-access: the UI and certificate client must present the host relay token";
+    }
+    {
+      assertion =
+        lib.hasInfix "--upstream http://127.0.0.1:${toString webPort}"
+          config.systemd.services.${access.guestUiUnit}.serviceConfig.ExecStart;
+      message = "kanbei-guest-access: the terminator must proxy the guest's loopback WebUI and nothing else";
     }
   ];
 

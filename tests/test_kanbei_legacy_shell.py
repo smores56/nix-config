@@ -1,4 +1,8 @@
-"""Unit tests for the Kanbei UI shell.
+"""Unit tests for the retired Kanbei UI shell.
+
+`ui/legacy_shell.py` is no longer served (T5 of `smores56/sdlc#642` points the terminator
+at nanobot's WebUI), but it stays in the repository with its bundle, so its response
+contract, passkey challenge lifecycle and renderer policy stay tested rather than rotting.
 
 Covers the response contract (exact CSP, JSON only), the passkey challenge lifecycle, and the
 renderer policy. The renderer runs in the browser, so its DOM behaviour is exercised through
@@ -36,7 +40,7 @@ PLANTED = (
 
 def load_server():
     sys.path.insert(0, str(UI_DIR.parent))
-    spec = importlib.util.spec_from_file_location("kanbei_ui_server", UI_DIR / "server.py")
+    spec = importlib.util.spec_from_file_location("kanbei_ui_server", UI_DIR / "legacy_shell.py")
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)

@@ -1,8 +1,8 @@
 # nanobot in the kanbei guest (smores56/sdlc#642, T2): the owner's WebUI and the agent
 # loop the later tasks point at read-only ledger tools (T4). It is a second,
 # capability-free instance of the wheel the cluster agent runs: no broker, no operator
-# skills, no MCP server, and every listener on loopback. `kanbei-ui` stays the TLS
-# terminator until T5 repoints it here.
+# skills, no MCP server, and every listener on loopback. `kanbei-ui` terminates TLS and
+# proxies every request to `webPort` (T5); it serves no bundle of its own.
 #
 # Imported by the guest config in `modules/nixos/kanbei-vm.nix`, so it only evaluates
 # while `kanbeiVm.enable` is set.
@@ -97,7 +97,6 @@ let
     runtimeInputs = [
       pkgs.nanobot
       pkgs.coreutils
-      pkgs.curl
     ];
     text = ''
       set -eu
@@ -109,34 +108,12 @@ let
       install -d -m 0700 "$HOME" ${instanceDir} ${instanceDir}/workspace
       # Nix owns the config. The WebUI's Settings page appears to save, but the next start
       # restores what the module declares, so a provider or skill added there is lost.
-      # Write beside it and rename: `install` opens a new destination with O_EXCL, so the
-      # gateway and the probe racing here is a lost `File exists`, not a bad config.
+      # Write beside it and rename: `install` opens a new destination with O_EXCL, so two
+      # starts racing here is a lost `File exists`, not a bad config.
       config_tmp=$(mktemp ${instanceDir}/config.json.XXXXXX)
       install -m 0600 ${configFile} "$config_tmp"
       mv -f "$config_tmp" ${instanceDir}/config.json
-      case "''${1:-gateway}" in
-        gateway)
-          exec nanobot gateway --foreground --port ${toString ports.gatewayPort}
-          ;;
-        # One agent turn for the boot probe: llama-server is loading the 27B, so wait for
-        # the health endpoint instead of failing the first request.
-        probe)
-          shift
-          for _ in $(seq 1 120); do
-            curl -fsS "http://127.0.0.1:${toString inference.ports.chat}/health" >/dev/null 2>&1 && break
-            sleep 5
-          done
-          # A fresh session per boot: history from an earlier probe would let the model
-          # answer from context instead of calling a tool. `--logs` is what prints the
-          # progress hook's `Tool call: <name>(<args>)` lines.
-          exec nanobot agent --classic --logs --no-markdown \
-            --session "probe-$(cat /proc/sys/kernel/random/boot_id)" "$@"
-          ;;
-        *)
-          echo "usage: kanbei-nanobot [gateway|probe -m MESSAGE]" >&2
-          exit 2
-          ;;
-      esac
+      exec nanobot gateway --foreground --port ${toString ports.gatewayPort}
     '';
   };
 
@@ -200,39 +177,6 @@ in
       ReadWritePaths = [ stateDir ];
       # The guest journal dies with the guest, and a failed start is otherwise only
       # visible to someone inside it. The serial console is the host-kept trace.
-      StandardOutput = "journal+console";
-      StandardError = "journal+console";
-    };
-  };
-
-  # T3's spike. Nothing in the guest can be driven from the host until T5 repoints the
-  # terminator at the WebUI, so this is the only way to see whether the IQ4_XS checkpoint
-  # actually emits tool calls through the Jinja template: one agent turn per boot, with a
-  # prompt that cannot be answered without a tool, printed to the serial console. Remove
-  # it once the UI lane is live.
-  systemd.services.kanbei-nanobot-probe = {
-    description = "Prove the nanobot tool-call lane once per boot";
-    wantedBy = [ "multi-user.target" ];
-    requires = [
-      "kanbei-nanobot.service"
-      "kanbei-chat.service"
-    ];
-    after = [
-      "kanbei-nanobot.service"
-      "kanbei-chat.service"
-    ];
-    unitConfig = {
-      RequiresMountsFor = [ "/var/lib/kanbei" ];
-      # A boot that never finishes loading the 27B must not hold the probe for an hour.
-      TimeoutStartSec = "15min";
-    };
-    restartIfChanged = false;
-    serviceConfig = sandbox // {
-      Type = "oneshot";
-      User = user;
-      Group = group;
-      ExecStart = ''${runner}/bin/kanbei-nanobot probe --message "List the files in your workspace with the tool available to you, then reply with just the file names."'';
-      ReadWritePaths = [ stateDir ];
       StandardOutput = "journal+console";
       StandardError = "journal+console";
     };

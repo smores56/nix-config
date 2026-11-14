@@ -542,7 +542,7 @@ let
               -u kanbei-data-open.service -u kanbei-age-identity.service \
               -u kanbei-age-publish.service -u kanbei-cert.service \
               -u kanbei-ui.service -u kanbei-nanobot.service \
-              -u kanbei-nanobot-probe.service -u kanbei.service
+              -u kanbei.service
           } > /dev/console 2>&1 || true
         '';
       };

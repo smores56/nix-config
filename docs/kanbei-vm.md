@@ -133,8 +133,8 @@ inference owns 8090-8092).
 `modules/nixos/kanbei-nanobot.nix` (T2 of `smores56/sdlc#642`) runs a second,
 capability-free nanobot instance as `kanbei-nanobot.service` under the payload
 uid 1000. It serves the WebUI and its websocket channel from one loopback server
-on `8080` — the port the TLS terminator will proxy in T5 — and its `/health`
-surface on `8082`. `modules/lib/kanbei-nanobot.nix` holds those ports and the
+on `8080` — the port `kanbei-ui` terminates TLS for and proxies every request
+to, WebSocket upgrade included (T5) — and its `/health` surface on `8082`. `modules/lib/kanbei-nanobot.nix` holds those ports and the
 kernel's, so a drift trips an assertion instead of an EADDRINUSE boot failure
 whose only trace is the serial console.
 
@@ -153,11 +153,9 @@ The only provider is the guest's own chat lane: `providers.custom` points at
 `http://127.0.0.1:8090/v1` and the `kanbei` preset names llama-server's
 `--alias kanbei-chat`, with the preset's context window pinned to the pool's
 per-slot ceiling. `--jinja` in `chatArgs` is what makes the checkpoint's own
-template emit tool-call tokens. Until T5 repoints the terminator there is no way
-to drive the WebUI from the host, so `kanbei-nanobot-probe.service` runs one
-agent turn per boot — a prompt that cannot be answered without a tool — and
-prints it to the serial console. That unit is the T3 spike and goes away once
-the UI lane is live.
+template emit tool-call tokens. T3 proved a tool call with a boot-time probe
+(`list_dir` in 13.7 s); T5 removed that unit, because the WebUI is now reachable
+through the terminator and the same turn can be driven by hand.
 
 **Decision (deferred):** `kanbei-ui` still posts chat straight to the local
 llama.cpp lane on `127.0.0.1:8090`; it does not route through the agent chat

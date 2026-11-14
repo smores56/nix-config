@@ -9,6 +9,8 @@ handshake over socket pairs, so a regression to "accept anything" fails here.
 from __future__ import annotations
 
 import http.client
+import http.server
+import socketserver
 import importlib.util
 import json
 import os
@@ -234,29 +236,97 @@ class SearchRelayGateTests(unittest.TestCase):
         self.assertEqual(self.upstreams, [])
 
 
-class UiAuthTests(unittest.TestCase):
+class EchoUpstream(http.server.BaseHTTPRequestHandler):
+    """A tiny stand-in for nanobot's WebUI: echoes what it received."""
+
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, fmt, *args):
+        pass
+
+    def _reply(self):
+        length = int(self.headers.get("Content-Length") or "0")
+        body = self.rfile.read(length) if length else b""
+        payload = json.dumps(
+            {
+                "method": self.command,
+                "path": self.path,
+                "host": self.headers.get("Host"),
+                "forwarded_proto": self.headers.get("X-Forwarded-Proto"),
+                "forwarded_host": self.headers.get("X-Forwarded-Host"),
+                "body": body.decode("utf-8", "replace"),
+            }
+        ).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    do_GET = _reply
+    do_POST = _reply
+
+
+class WebSocketUpstream(socketserver.ThreadingTCPServer):
+    """Accepts one upgrade, answers 101, then uppercases everything it receives."""
+
+    allow_reuse_address = True
+
+    def __init__(self):
+        super().__init__(("127.0.0.1", 0), WebSocketHandler)
+
+
+class WebSocketHandler(socketserver.BaseRequestHandler):
+    def handle(self):
+        head = b""
+        while b"\r\n\r\n" not in head:
+            chunk = self.request.recv(4096)
+            if not chunk:
+                return
+            head += chunk
+        self.request.sendall(
+            b"HTTP/1.1 101 Switching Protocols\r\n"
+            b"Upgrade: websocket\r\n"
+            b"Connection: Upgrade\r\n\r\n"
+        )
+        while True:
+            data = self.request.recv(4096)
+            if not data:
+                return
+            self.request.sendall(data.upper())
+
+
+class UiProxyTests(unittest.TestCase):
     def setUp(self):
+        self.upstream = http.server.ThreadingHTTPServer(("127.0.0.1", 0), EchoUpstream)
+        self.upstream.daemon_threads = True
+        threading.Thread(target=self.upstream.serve_forever, daemon=True).start()
+        self.addCleanup(self.upstream.server_close)
+        self.addCleanup(self.upstream.shutdown)
         self.server_module = load("server", UI_DIR)
+        self.serve(self.upstream.server_address[1], auth_token=TOKEN.encode())
+
+    def serve(self, upstream_port, auth_token):
         config = self.server_module.Config(
-            ui_dir=str(UI_DIR), stub_reply="stub", auth_token=TOKEN.encode()
+            upstream_port=upstream_port, auth_token=auth_token
         )
         self.server = self.server_module.make_server(config, listen=("127.0.0.1", 0))
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
-        self.thread.start()
-        self.host, self.port = self.server.server_address[:2]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
+        self.host, self.port = self.server.server_address[:2]
 
     def connect(self):
-        return http.client.HTTPConnection(self.host, self.port, timeout=10)
+        connection = http.client.HTTPConnection(self.host, self.port, timeout=10)
+        connection.connect()
+        return connection
 
     def request(self, method, path, body=None, headers=None, authenticated=True):
         connection = self.connect()
-        connection.connect()
         if authenticated:
             connection.sock.sendall(b"KANBEI-AUTH 1 " + TOKEN.encode() + b"\n")
-        payload = None
         merged = dict(headers or {})
+        payload = None
         if body is not None:
             payload = json.dumps(body).encode()
             merged.setdefault("Content-Type", "application/json")
@@ -270,53 +340,76 @@ class UiAuthTests(unittest.TestCase):
     def test_every_connection_without_the_token_is_closed_before_http(self):
         for preamble in (b"", b"KANBEI-AUTH 1 " + b"b" * 64 + b"\n"):
             connection = self.connect()
-            connection.connect()
-            connection.sock.sendall(preamble + b"GET /api/health HTTP/1.1\r\n\r\n")
+            connection.sock.sendall(preamble + b"GET / HTTP/1.1\r\n\r\n")
             self.assertEqual(connection.sock.recv(64), b"", preamble)
             connection.close()
 
-    def test_authenticated_health_succeeds(self):
-        status, _headers, body = self.request("GET", "/api/health")
-        self.assertEqual(status, 200)
-        self.assertEqual(json.loads(body), {"ok": True})
-
-    def session(self) -> str:
-        _status, _headers, body = self.request("POST", "/api/passkey/auth/options", {})
-        challenge = json.loads(body)["challenge"]
-        _status, _headers, body = self.request(
-            "POST", "/api/passkey/auth/verify", {"challenge": challenge}
+    def test_a_request_is_proxied_with_forwarding_headers(self):
+        status, headers, body = self.request(
+            "GET", "/api/health?x=1", headers={"Host": "kanbei.sammohr.dev"}
         )
-        return json.loads(body)["session"]
+        self.assertEqual(status, 200)
+        seen = json.loads(body)
+        self.assertEqual(seen["method"], "GET")
+        self.assertEqual(seen["path"], "/api/health?x=1")
+        self.assertEqual(seen["host"], "kanbei.sammohr.dev")
+        self.assertEqual(seen["forwarded_proto"], "https")
+        self.assertEqual(seen["forwarded_host"], "kanbei.sammohr.dev")
+        self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
+        self.assertIn("frame-ancestors 'none'", headers["Content-Security-Policy"])
+        self.assertIn("no-referrer", headers["Referrer-Policy"])
 
-    def test_chat_requires_a_passkey_session(self):
+    def test_a_post_body_reaches_the_webui(self):
         status, _headers, body = self.request("POST", "/api/chat", {"message": "hi"})
-        self.assertEqual(status, 401)
-        self.assertIn("passkey session", json.loads(body)["error"])
-
-        token = self.session()
-        status, _headers, body = self.request(
-            "POST",
-            "/api/chat",
-            {"message": "hi"},
-            headers={"Authorization": f"Bearer {token}"},
-        )
         self.assertEqual(status, 200)
-        self.assertEqual(json.loads(body)["reply"], "stub")
+        seen = json.loads(body)
+        self.assertEqual(seen["method"], "POST")
+        self.assertEqual(json.loads(seen["body"]), {"message": "hi"})
 
-    def test_a_made_up_session_is_refused(self):
-        status, _headers, _body = self.request(
-            "POST", "/api/chat", {"message": "hi"}, headers={"Authorization": "Bearer nope"}
+    def test_a_downstream_outage_is_a_502(self):
+        self.server_module = load("server", UI_DIR)
+        closed = socket.socket()
+        closed.bind(("127.0.0.1", 0))
+        dead_port = closed.getsockname()[1]
+        closed.close()
+        self.serve(dead_port, auth_token=TOKEN.encode())
+        status, _headers, body = self.request("GET", "/")
+        self.assertEqual(status, 502)
+        self.assertIn(b"not reachable", body)
+
+    def test_a_websocket_upgrade_is_spliced(self):
+        upstream = WebSocketUpstream()
+        threading.Thread(target=upstream.serve_forever, daemon=True).start()
+        self.addCleanup(upstream.server_close)
+        self.addCleanup(upstream.shutdown)
+        self.serve(upstream.server_address[1], auth_token=TOKEN.encode())
+        client = self.connect()
+        client.sock.sendall(b"KANBEI-AUTH 1 " + TOKEN.encode() + b"\n")
+        client.sock.sendall(
+            b"GET /ws HTTP/1.1\r\nHost: kanbei.sammohr.dev\r\n"
+            b"Upgrade: websocket\r\nConnection: Upgrade\r\n"
+            b"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+            b"Sec-WebSocket-Version: 13\r\n\r\n"
         )
-        self.assertEqual(status, 401)
+        response = client.sock.recv(4096)
+        self.assertIn(b"101 Switching Protocols", response)
+        client.sock.sendall(b"ping")
+        self.assertEqual(client.sock.recv(4096), b"PING")
+        client.close()
 
-    def test_sessions_expire(self):
-        clock = [1000.0]
-        store = self.server_module.SessionStore(ttl=60, clock=lambda: clock[0])
-        token = store.issue()
-        self.assertTrue(store.validate(token))
-        clock[0] += 61
-        self.assertFalse(store.validate(token))
-        self.assertFalse(store.validate(None))
+    def test_the_upstream_must_be_loopback(self):
+        self.assertEqual(
+            self.server_module.main(
+                ["--auth-token-file", self.token_file(), "--upstream", "http://10.0.0.1:8080"]
+            ),
+            2,
+        )
+
+    def token_file(self):
+        path = os.path.join(tempfile.mkdtemp(), "token")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(TOKEN + "\n")
+        return path
 
 
 if __name__ == "__main__":

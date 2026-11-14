@@ -25,7 +25,7 @@ browser → Cloudflare edge (Access: owner email)
   → cloudflared (tunnel `smortress`; ingress kanbei.<domain> → https://127.0.0.1:443)
   → 127.0.0.1:443 on the host (systemd socket, group kanbei-tunnel only)
   → kanbei-chat-relay (uid kanbei-relay, TCP → AF_VSOCK 4:10000)
-  → guest `kanbei-ui` (token line, then TLS; static shell + JSON API)
+  → guest `kanbei-ui` (token line, then TLS; reverse proxy to nanobot's WebUI)
 ```
 
 - The ingress rule uses the `https` protocol variant. cloudflared opens a fresh TLS
@@ -186,43 +186,30 @@ unaffected; the marker survives a responder restart (the rate limit is not per-p
   credentials. A guest whose certificate cannot be issued has no TLS listener; the relay
   connection then closes rather than serving plaintext.
 
-## The UI shell
+## The served UI
 
-`modules/lib/kanbei/ui/` is a human-owned static bundle: `index.html`, `app.js`,
-`render.js`, `style.css`. There is no framework build step and no remote resource. The
-server (`server.py`) serves only those four names plus the JSON API.
+`kanbei-ui` is a TLS terminator and reverse proxy. It listens on AF_VSOCK 10000 with the
+guest certificate, consumes the relay token from the raw stream before TLS, and forwards
+every request — including the WebSocket upgrade the chat lane needs — to nanobot's WebUI on
+`127.0.0.1:8080` (`modules/lib/kanbei/ui/server.py`). The proxy rewrites nothing except the
+hop headers; it forwards the client's `Host`, adds `X-Forwarded-Proto: https` (nanobot
+derives the public `wss://` URL from it), and adds three response headers that cannot
+constrain the app: `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, and a
+CSP fragment with only `frame-ancestors 'none'; base-uri 'none'`.
 
-Response header on every path, including errors:
-
-```
-Content-Security-Policy: default-src 'none'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'
-```
-
-- Kanbei returns JSON only (`application/json`) for `/api/*`; unknown paths are JSON 404s.
-- The renderer creates one `<p>` per line and one `createTextNode` per line. It never parses
-  HTML, never creates an `<a>` or `<img>`, and never auto-links a URL. `![](https://…)` and
-  `[click](https://…)` are shown literally. `render.js` exports `safeHref`, which refuses
-  `javascript:`, `data:`, `file:`, `blob:`, protocol-relative and plain-HTTP URLs, and
-  accepts only `https:` or a site-relative path; it is the gate for any future dynamic
-  href (there is none today).
-- Every `/api/*` request requires the relay-token handshake described above (the token is
-  the first line of the connection, before TLS). `/api/chat` additionally requires
-  `Authorization: Bearer <session>`, where the session is minted only by
-  `/api/passkey/auth/verify`; without it the answer is a 401 and **no** chat turn runs, stub
-  or local. On load the shell requests an assertion with
-  `mediation: "conditional"`, so the browser offers only a passkey that already exists
-  (autofill) and never prompts when there is none; the explicit **Passkey** button still
-  runs the modal assertion and the registration ceremony.
-- With a session, `/api/chat` forwards to the guest's local chat lane when one is configured
-  and returns `{"reply": "…", "lane": "local"}`; without a lane it returns a deterministic
-  stub (`lane: "stub"`). Upstream failures are JSON 502s.
-- Passkey is a stub with real challenge handling: `/api/passkey/{register,auth}/options`
-  issue a server-side, single-use, purpose-bound 5-minute challenge; the `/verify` calls
-  consume it and refuse replays, cross-purpose use, and expiry. Cryptographic
-  attestation/assertion verification is **not** implemented yet; `/verify` returns
-  `{"ok": true, "stub": true}` after the lifecycle checks. WebAuthn RP ID/origin are
-  `kanbei.sammohr.dev` / `https://kanbei.sammohr.dev`. The exact remaining work is in
-  [Accepted residual risks](#accepted-residual-risks).
+- The old static shell and its JSON/passkey API are `modules/lib/kanbei/ui/legacy_shell.py`
+  plus the bundle beside it: kept in the repository, referenced by nothing. Its
+  "set up a passkey" prompt, its 31-line page and its unauthenticated chat lane are gone
+  with it.
+- Authentication is Access in front and the relay-token handshake at the connection level.
+  The WebUI runs with `websocket_requires_token = false` because the guest is NIC-less and
+  every connection already crossed Access and the relay; the open question is recorded on
+  `smores56/sdlc#642` in case a second login turns out to be wanted.
+- Model text now renders in nanobot's WebUI, which is third-party prebuilt JavaScript
+  inside the trust boundary (an accepted risk in the feature design). The old shell's
+  "no anchors, no images, no remote resource" property does not carry over; what still
+  holds is that nothing leaves the VM except the model's own text and whatever the owner
+  types.
 
 ## Spikes and how to run them
 

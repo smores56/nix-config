@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Headless-Chromium proof for the Kanbei shell's no-network rendering rule.
 
-Loads the real shell from the guest server with a planted model reply containing
+Loads the retired static shell (`ui/legacy_shell.py`, no longer served) with a planted
+model reply containing
 ``![](https://example.com/x.png)`` and ``[click](https://example.com)``, drives the form,
 and fails if Chromium tries to fetch anything outside the loopback origin or if the rendered
 DOM contains an anchor/image. Traffic is additionally forced to fail DNS for every host but
@@ -44,7 +45,7 @@ PLANTED = (
 def load_server_module():
     import importlib.util
 
-    spec = importlib.util.spec_from_file_location("kanbei_ui_server", UI_DIR / "server.py")
+    spec = importlib.util.spec_from_file_location("kanbei_ui_server", UI_DIR / "legacy_shell.py")
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
