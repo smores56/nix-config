@@ -153,6 +153,10 @@ let
       allow = permitted.search;
       # The test emitter only feeds kanbei-ingest-verify; staleness is visible but does not page.
       alert = false;
+      # `search` is a query channel, not an ingest source: Kanbei has no consumer
+      # for it, and publishing it left every heartbeat envelope quarantined as
+      # `source_not_allowed`.
+      heartbeat = false;
     };
   };
 
@@ -389,6 +393,7 @@ let
             vsockPort
             ;
           alert = tbl.${id}.alert or true;
+          heartbeat = tbl.${id}.heartbeat or true;
           inherit (factsOf tbl id) tap;
           gateway = (factsOf tbl id).hostAddr;
           client = (factsOf tbl id).guestAddr;

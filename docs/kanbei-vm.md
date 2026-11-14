@@ -134,12 +134,12 @@ the consent/session path before that surface exists. The kernel is nonetheless
 given `KANBEI_CHAT_UPSTREAM` at the same lane so the agent chat channel answers
 when exercised directly. Reconcile the UI path in a follow-up.
 
-**Known residual:** `KANBEI_ORIGINS` is the kernel's `OriginId` set
-(`tuta-mail,tuta-calendar,finance,brave,immich,phone,cluster-digest`). The host
-writers currently emit the source id `tuta` for both mail and calendar, so those
-batches quarantine as `source_not_allowed`; `finance`, `brave`, `immich`,
-`phone` and `cluster-digest` already match. Renaming the writer side is a
-separate change.
+**Tuta is one origin.** `KANBEI_ORIGINS` is the kernel's `OriginId` set
+(`tuta,tuta-mail,tuta-calendar,finance,brave,immich,phone,cluster-digest`). The
+host writers emit `tuta` for both mail and calendar — one bridge, one secret —
+and the kernel accepts it alongside the unused split ids. The kernel also ignores
+an unknown key inside a heartbeat instead of quarantining the envelope, so one
+stray id can no longer leave every source `unknown`.
 
 The `kanbei` flake input is a private repository fetched over SSH. Flake inputs
 are resolved even when `kanbeiVm.enable` is off, so every evaluation of this

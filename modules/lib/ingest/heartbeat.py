@@ -30,6 +30,19 @@ def log(event: str, **fields: object) -> None:
     print(json.dumps(record, sort_keys=True), flush=True)
 
 
+def freshness_sources(data: dict) -> dict[str, dict]:
+    """Sources Kanbei consumes.
+
+    A query channel (`search`) shares the source table but has no guest
+    consumer; publishing it in the envelope quarantined the whole heartbeat,
+    so the guest never saw a verdict for any source.
+    """
+    merged = {**data["sources"], **data.get("hostSources", {})}
+    return {
+        name: entry for name, entry in merged.items() if entry.get("heartbeat", True)
+    }
+
+
 def read_state(state_dir: str, source: str) -> dict | None:
     try:
         with open(os.path.join(state_dir, f"{source}.last-ok"), encoding="utf-8") as handle:
@@ -130,7 +143,7 @@ def main(argv: list[str] | None = None) -> int:
     # Host-written sources (the cluster digest) share the state shape and the
     # alert path with the guests; only the emitter differs.
     host_sources: dict[str, dict] = data.get("hostSources", {})
-    all_sources = {**data["sources"], **host_sources}
+    all_sources = freshness_sources(data)
     statuses: dict[str, dict] = {}
     stale_sources: list[tuple[str, int]] = []
     for source, entry in sorted(all_sources.items()):
@@ -153,7 +166,7 @@ def main(argv: list[str] | None = None) -> int:
         "kind": "heartbeat",
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "sources": statuses,
-        "host_sources": sorted(host_sources),
+        "host_sources": sorted(name for name in host_sources if name in all_sources),
     }
     policy.validate_heartbeat(envelope)
     payload = json.dumps(envelope, sort_keys=True).encode()

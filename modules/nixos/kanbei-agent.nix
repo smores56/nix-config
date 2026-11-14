@@ -140,7 +140,7 @@ let
     "KANBEI_CHAT_LISTEN=127.0.0.1:${toString chatPort}"
     "KANBEI_STATUS_LISTEN=127.0.0.1:${toString statusPort}"
     "KANBEI_EPOCH=${epoch}"
-    "KANBEI_ORIGINS=tuta-mail,tuta-calendar,finance,brave,immich,phone,cluster-digest"
+    "KANBEI_ORIGINS=tuta,tuta-mail,tuta-calendar,finance,brave,immich,phone,cluster-digest"
     "KANBEI_FRESHNESS_WINDOW_MS=3600000"
     "KANBEI_MAX_BATCHES_PER_POLL=20"
     "KANBEI_CHAT_UPSTREAM=http://127.0.0.1:${toString inference.ports.chat}/"

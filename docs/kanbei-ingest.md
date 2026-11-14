@@ -276,7 +276,8 @@ PV contract (`cluster-digest-data`) is unchanged.
 `ingest-heartbeat.timer` runs `ingest-heartbeat.service` every 300 s. The service:
 
 - reads `/var/lib/kanbei-ingest/state/<source>.last-ok` for every guest source
-  and every `hostSources` entry (today `cluster-digest`);
+  and every `hostSources` entry (today `cluster-digest`), skipping sources with
+  `heartbeat = false`;
 - writes one aggregate, age-encrypted envelope to
   `/var/lib/data/inbox/heartbeat-<epoch>.age` (`0600` root, like every inbox file)
   with per-source `stale`, `host`, `window_s`, `last_ok` and `age_s`, plus the
@@ -288,8 +289,9 @@ PV contract (`cluster-digest-data`) is unchanged.
 
 Defaults are the `windowSeconds` column above: Tuta 12 h, finance 36 h, Brave
 24 h, Immich 18 h, search 24 h, and the host-written cluster digest 60 min. The
-`search` source has `alert = false`: its test emitter is not a production feed,
-so staleness is still visible in the envelope but never pages. The digest
+`search` source has `alert = false` and `heartbeat = false`: it is a query
+channel with no production emitter, so it is neither paged nor published, and a
+stale marker for it cannot quarantine the envelope in the guest. The digest
 writer pages on its own timer and shares the heartbeat's marker file, so the two
 never double-page.
 Change a window in `modules/lib/ingest-vm.nix` (and its row here); the alert

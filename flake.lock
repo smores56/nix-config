@@ -309,11 +309,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1794453173,
-        "narHash": "sha256-TnEor3L0hQkfCPaPIQmEMUdH1Vh6d6F3/7/F8qTwfWc=",
+        "lastModified": 1794620733,
+        "narHash": "sha256-wBLITmcYUUtVZUwUhvfSnqYB1gYmBG+FoR3uFvm+R2s=",
         "ref": "refs/heads/main",
-        "rev": "3664d3d358f459f45d4b44830c4f2ddac8668004",
-        "revCount": 54,
+        "rev": "f1f06f7a4e9cc43c8b3d3ea3e88c966a38822f79",
+        "revCount": 55,
         "type": "git",
         "url": "ssh://git@github.com/smores56/kanbei"
       },
