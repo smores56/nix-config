@@ -56,6 +56,10 @@ in
       Group = "root";
       UMask = "0027";
       ExecStart = "${python} ${../lib/phone/phone_decrypt.py} --source ${phone.guestMount} --to ${phone.plaintextDir} --contract ${phone.guestContract} --staged ${phone.stagedPassword} --state ${stateDir}/index.json --batch-dir ${batchDir} --heartbeat ${stateDir}/heartbeat.json --manifest ${phone.manifestName} --max-file-bytes ${toString phone.maxFileBytes} --syncthing ${pkgs.syncthing}/bin/syncthing --patterns ${patterns}";
+      # The guest journal dies with the guest, and this is the only trace of a refused
+      # password, an empty folder or a rejected export. The serial console is host-kept.
+      StandardOutput = "journal+console";
+      StandardError = "journal+console";
       # The LUKS volume is the only writable path; the work and staging trees live there
       # so the final swap is a same-filesystem rename.
       ReadWritePaths = [ "/var/lib/kanbei" ];
