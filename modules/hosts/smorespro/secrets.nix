@@ -8,4 +8,10 @@
     owner = config.machine.username;
     mode = "0400";
   };
+  # The `reader` user's token (`alerts:ro`, `agent:ro`), exported as NTFY_TOKEN
+  # by `ntfy-subscribe` (docs/manual-steps.md, `secret/ntfy-reader-token`).
+  sops.secrets.ntfy-reader-token = {
+    owner = config.machine.username;
+    mode = "0400";
+  };
 }
