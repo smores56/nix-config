@@ -53,7 +53,7 @@ in
         StartLimitIntervalSec = "1h";
         StartLimitBurst = 10;
       };
-      onFailure = [ "cloudflare-email@%n.service" ];
+      onFailure = [ "ntfy-publish@%n.service" ];
       serviceConfig = hardening // {
         ExecStart = "${memoryPackage}/bin/memory-file-mcp";
         # The roots live under the human's 0700 home, so the service runs as

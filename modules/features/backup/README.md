@@ -38,7 +38,7 @@ Two repos, same snapshots, one source path:
   the dump has to exist inside the tree. Both repos `wants` it rather than
   `requires`, so a stopped database delays no backup but still alerts.
 - **Failure alerting:** both generated units (`restic-backups-r2`,
-  `restic-backups-local`) carry `onFailure = cloudflare-email@%n.service`, so a failed nightly run mails its own journal. There
+  `restic-backups-local`) carry `onFailure = ntfy-publish@%n.service`, so a failed nightly run publishes its own journal to the notification bus. There
   is no independent freshness timer, so a silent host or a stopped timer is not
   alerted on.
 

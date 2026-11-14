@@ -827,9 +827,9 @@ in
       {
         # Ticket #584: the Kanbei units are excluded from the host's alert template on purpose.
         assertion = lib.all (
-          s: !lib.any (dep: lib.hasPrefix "cloudflare-email@" dep) (s.onFailure or [ ])
+          s: !lib.any (dep: lib.hasPrefix "ntfy-publish@" dep) (s.onFailure or [ ])
         ) (lib.attrValues (lib.filterAttrs (n: _: lib.hasPrefix "kanbei" n) config.systemd.services));
-        message = "kanbei-vm: kanbei units must not depend on the host's cloudflare-email@ template";
+        message = "kanbei-vm: kanbei units must not depend on the host's ntfy-publish@ template";
       }
       {
         assertion = lib.all (b: !lib.any (p: lib.hasPrefix swtpmDir p) b.paths) (

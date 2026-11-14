@@ -1,4 +1,12 @@
-# Failure alerts via Cloudflare Email Service; every backup unit's OnFailure targets the template.
+# Failure alerts to the self-hosted ntfy bus; every backup unit's OnFailure
+# targets the template.
+#
+# The bus is the cluster's one notification path (smores56/sdlc#649). The host
+# publishes to the public hostname because that is the only route it has: the
+# Service is in-cluster and the host is the tunnel's origin, so the request goes
+# out to Cloudflare and back through the tunnel it may be reporting on. The
+# cluster's own alerts do not take that path -- `notifyrelay` posts to the
+# Service -- so a tunnel outage still delivers Prometheus and Flux failures.
 {
   config,
   lib,
@@ -7,69 +15,65 @@
 }:
 let
   hardening = import ../lib/hardening.nix;
-  cfg = config.alerting;
-  # Plain-text Cloudflare API token, root-only.
-  secretFile = "/run/secrets/cloudflare-api-token";
-  # On the onboarded Email Service sending domain; the recipient is verified.
-  from = "alerts@send.sammohr.dev";
-  to = "sam@sammohr.dev";
+  # Plain-text ntfy access token for the `publisher` user, root-only. That user
+  # holds `alerts:wo` and nothing else, so a leaked host token cannot read the
+  # bus or page the agent's topic.
+  secretFile = "/run/secrets/ntfy-token";
+  # The topic is fixed, not derived from the unit name: `%i` is the full unit
+  # name (`restic-backups-r2.service`), which contains a dot, fails the broker's
+  # path regex and misses `publisher`'s ACL.
+  url = "https://ntfy.sammohr.dev/alerts";
+  # ntfy rejects a message over `message-size-limit` (16k) with a 413, which
+  # would lose the alert entirely. A 50-line journal with long lines can reach
+  # that, so the body is capped below it.
+  maxBodyBytes = 12000;
 
-  # JSON secret shape:
-  #   {"token":"...","account_id":"...","from":"alerts@send.sammohr.dev","to":"sam@sammohr.dev"}
-  # Use a sending subdomain (send.<domain>) so its DMARC/SPF/DKIM do not interact
-  # with apex mail records. The token needs Email Sending: Edit; `from` must be on an
-  # onboarded domain and `to` verified.
-  cloudflareEmail = pkgs.writeShellApplication {
-    name = "cloudflare-email";
+  ntfyPublish = pkgs.writeShellApplication {
+    name = "ntfy-publish";
     runtimeInputs = [
       pkgs.curl
-      pkgs.jq
       pkgs.coreutils
     ];
     text = ''
       set -euo pipefail
-      secret="''${CLOUDFLARE_API_TOKEN_FILE:-${secretFile}}"
+      secret="''${NTFY_TOKEN_FILE:-${secretFile}}"
       if [ ! -r "$secret" ]; then
-        echo "cloudflare-email: cannot read $secret" >&2
+        echo "ntfy-publish: cannot read $secret" >&2
         exit 1
       fi
       token=$(tr -d '[:space:]' < "$secret")
-      account=${lib.escapeShellArg cfg.accountId}
-      from=${lib.escapeShellArg from}
-      to=${lib.escapeShellArg to}
-      subject="''${1:?subject required}"
+      title="''${1:?title required}"
       body="''${2:-}"
-
-      payload=$(jq -n \
-        --arg to "$to" \
-        --arg from "$from" \
-        --arg subject "$subject" \
-        --arg text "$body" \
-        '{to:$to,from:$from,subject:$subject,text:$text}')
+      priority="''${3:-default}"
 
       # Keep the bearer token out of argv (visible in ps); curl reads the
-      # headers from a 0600 temp file instead.
+      # headers from a 0600 temp file instead. Title and priority travel as
+      # headers too, so neither has to be URL-encoded into the path.
       headers=$(mktemp)
-      response=$(mktemp)
-      trap 'rm -f "$headers" "$response"' EXIT
+      payload=$(mktemp)
+      truncated=$(mktemp)
+      trap 'rm -f "$headers" "$payload" "$truncated"' EXIT
       chmod 600 "$headers"
-      printf '%s\n' "Authorization: Bearer $token" "Content-Type: application/json" > "$headers"
+      printf '%s\n' \
+        "Authorization: Bearer $token" \
+        "Title: $title" \
+        "Priority: $priority" \
+        "Content-Type: text/plain; charset=utf-8" > "$headers"
+
+      # `head` reads a file, not a pipe: on a pipe the writer dies of SIGPIPE and
+      # `pipefail` would turn a successful publish into a failed unit.
+      printf '%s' "$body" > "$payload"
+      head -c ${toString maxBodyBytes} "$payload" > "$truncated"
 
       curl --fail --silent --show-error --retry 3 --retry-delay 5 --max-time 30 \
-        --url "https://api.cloudflare.com/client/v4/accounts/$account/email/sending/send" \
+        --url ${lib.escapeShellArg url} \
         --header @"$headers" \
-        --data "$payload" >"$response"
-      # Cloudflare can return HTTP 200 with success:false; only a successful
-      # API result counts as delivered.
-      if ! jq -e '.success == true' >/dev/null 2>&1 <"$response"; then
-        echo "cloudflare-email: send failed: $(cat "$response")" >&2
-        exit 1
-      fi
+        --data-binary @"$truncated"
     '';
   };
 
   onFailure = pkgs.writeShellApplication {
-    name = "cloudflare-email-onfailure";
+    name = "ntfy-publish-onfailure";
     runtimeInputs = [
       pkgs.systemd
       pkgs.coreutils
@@ -84,7 +88,7 @@ let
           journalctl -u "$unit" -n 50 --no-pager || true
         } 2>&1
       )
-      exec ${cloudflareEmail}/bin/cloudflare-email "[${config.networking.hostName}] $unit failed" "$body"
+      exec ${ntfyPublish}/bin/ntfy-publish "[${config.networking.hostName}] $unit failed" "$body" high
     '';
   };
 
@@ -110,21 +114,21 @@ in
       options = {
         accountId = lib.mkOption {
           type = lib.types.str;
-          description = "Cloudflare account ID that owns the Email Service domain.";
+          description = "Cloudflare account ID that owns the R2 bucket and the tunnel.";
         };
       };
     };
-    description = "Send unit-failure email through Cloudflare Email Service.";
+    description = "Publish unit failures to the self-hosted ntfy bus.";
   };
 
   config = {
-    systemd.services."cloudflare-email@" = {
-      description = "Email the failure of %i through Cloudflare";
+    systemd.services."ntfy-publish@" = {
+      description = "Publish the failure of %i to the ntfy bus";
       serviceConfig = sandbox // {
         Type = "oneshot";
         User = "root";
-        ExecStart = "${onFailure}/bin/cloudflare-email-onfailure %i";
-        Environment = [ "CLOUDFLARE_API_TOKEN_FILE=${secretFile}" ];
+        ExecStart = "${onFailure}/bin/ntfy-publish-onfailure %i";
+        Environment = [ "NTFY_TOKEN_FILE=${secretFile}" ];
         TimeoutStartSec = "2m";
       };
     };

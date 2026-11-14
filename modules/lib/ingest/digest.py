@@ -15,7 +15,7 @@ advances. `generated_at` is the dedupe key, so restarting the writer never
 re-emits a document and a replayed `latest.json` is skipped.
 
 Freshness: the writer records `state/cluster-digest.last-ok` in the shape the
-T14 heartbeat reads, and raises the same `cloudflare-email@` alert once per
+T14 heartbeat reads, and raises the same `ntfy-publish@` alert once per
 window when the newest `generated_at` is older than the window (or when no
 digest has ever arrived). The heartbeat envelope also carries the digest as a
 host source, so staleness is visible in Kanbei as well as paged.
@@ -276,7 +276,7 @@ def alert(
     log("alert", source=SOURCE, window_s=window, age_s=now - last_epoch, last_alert=last)
     if enabled:
         run(
-            ["systemctl", "start", "--no-block", f"cloudflare-email@ingest-writer-{SOURCE}.service"],
+            ["systemctl", "start", "--no-block", f"ntfy-publish@ingest-writer-{SOURCE}.service"],
             check=False,
         )
         write_atomic(marker, f"{now}\n".encode(), 0o600)

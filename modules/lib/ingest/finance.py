@@ -773,7 +773,7 @@ def main(argv: list[str] | None = None) -> int:
         write_state(args.state, state)
         log("done", **summary)
         # A fatal `gen.*` refusal also fails the unit; the alert batch already
-        # started the failure mail, so the journal carries the exact code.
+        # started the failure notification, so the journal carries the exact code.
         return 2 if summary.get("fatal") else 0
     except (OSError, FinanceError, plaid.PlaidError) as exc:
         log("error", reason=str(exc))

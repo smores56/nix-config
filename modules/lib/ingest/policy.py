@@ -28,7 +28,7 @@ HOST_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{
 
 BATCH_KEYS = {"v", "source", "kind", "seq", "sent_at", "items"}
 # `batch` is ordinary source data; `alert` is the same envelope the host writer
-# turns into the existing cloudflare-email@ page (a new Sent item, a Tuta client
+# turns into the existing ntfy-publish@ page (a new Sent item, a Tuta client
 # rejection). Both carry the same schema so one validator guards the wire.
 BATCH_KINDS = {"batch", "alert"}
 

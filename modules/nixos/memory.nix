@@ -154,7 +154,7 @@ in
         StartLimitBurst = 10;
       };
       serviceConfig = restartPolicy;
-      onFailure = [ "cloudflare-email@%n.service" ];
+      onFailure = [ "ntfy-publish@%n.service" ];
     };
 
     systemd.services.memory-graphiti-mcp = {
@@ -176,7 +176,7 @@ in
         StartLimitBurst = 10;
       };
       serviceConfig = restartPolicy;
-      onFailure = [ "cloudflare-email@%n.service" ];
+      onFailure = [ "ntfy-publish@%n.service" ];
       preStart = service.graphitiReady;
     };
 
@@ -190,7 +190,7 @@ in
         StartLimitIntervalSec = "1h";
         StartLimitBurst = 10;
       };
-      onFailure = [ "cloudflare-email@%n.service" ];
+      onFailure = [ "ntfy-publish@%n.service" ];
       serviceConfig = hardening // {
         DynamicUser = true;
         ExecStart = "${memoryPackage}/bin/memory-llm-proxy";
@@ -231,7 +231,7 @@ in
         StartLimitIntervalSec = "1h";
         StartLimitBurst = 10;
       };
-      onFailure = [ "cloudflare-email@%n.service" ];
+      onFailure = [ "ntfy-publish@%n.service" ];
       serviceConfig = hardening // {
         User = "memory";
         Group = "memory";
@@ -280,7 +280,7 @@ in
         StartLimitIntervalSec = "1h";
         StartLimitBurst = 3;
       };
-      onFailure = [ "cloudflare-email@%n.service" ];
+      onFailure = [ "ntfy-publish@%n.service" ];
       serviceConfig = {
         Type = "oneshot";
         ExecStart = lib.escapeShellArgs (

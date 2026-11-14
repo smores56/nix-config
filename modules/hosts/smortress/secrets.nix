@@ -6,7 +6,7 @@
   # Root-owned 0400 unless noted.
   sops.secrets = lib.mkMerge [
     {
-      # Shared by OpenTofu and the email alert sender.
+      # Shared by OpenTofu and the recovery tooling.
       cloudflare-api-token = { };
       cloudflared-credentials = { };
       restic-password = { };
