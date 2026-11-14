@@ -178,13 +178,14 @@ let
       "--n-gpu-layers"
       "all"
       # Hybrid prefix reuse: checkpoints of the state that cannot be rolled back, at most 8 per
-      # slot and at least 8k apart. The RAM prompt cache keeps idle slots for the next request.
+      # slot and at least 8k apart. The RAM prompt cache keeps idle slots for the next request;
+      # 1 GiB caps what four idle slots may pin now that the guest has 6 GiB of RAM.
       "--ctx-checkpoints"
       "8"
       "--checkpoint-min-step"
       "8192"
       "--cache-ram"
-      "4096"
+      "1024"
       "--cache-idle-slots"
       "--slot-save-path"
       slotSavePath

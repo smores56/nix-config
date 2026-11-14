@@ -222,7 +222,9 @@ let
       microvm = {
         hypervisor = "qemu";
         vcpu = 8;
-        mem = 15360;
+        # Measured working set is ~5 GiB (3.7 GiB pods + ~0.5 GiB k3s/kernel); the rest of the
+        # old 15 GiB was guest page cache the guest reclaims on demand.
+        mem = 10240;
         # The guest reads /nix/store through the share; registering the closure would let a
         # guest `nix store gc` unlink host paths it never owned.
         registerClosure = false;

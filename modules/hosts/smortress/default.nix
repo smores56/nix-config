@@ -31,6 +31,8 @@ in
     ../../nixos/todo-daemon.nix
     # Host-local: the k3s guest and its tap/firewall plumbing are smortress-only.
     ../../nixos/cluster-vm.nix
+    # Disk swap tier under zram; smortress has the memory pressure and the disk to spare.
+    ../../nixos/host-swap.nix
     # The private-data guest; inert until `kanbeiVm.enable` (docs/kanbei-vm.md cutover).
     ../../nixos/kanbei-vm.nix
     # The Firecracker ingest plane and its host writer/proxy/resolver; needs Kanbei's key.

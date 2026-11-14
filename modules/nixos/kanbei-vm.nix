@@ -348,7 +348,9 @@ let
       microvm = {
         hypervisor = "qemu";
         vcpu = 8;
-        mem = 8192;
+        # Weights are GPU-resident; the guest only holds the (reduced) prompt cache, the CPU
+        # embedding/rerank lanes and userspace.
+        mem = 6144;
         # The guest reads /nix/store through the share; registering the closure would let a
         # guest `nix store gc` unlink host paths it never owned.
         registerClosure = false;
