@@ -439,9 +439,19 @@ in
 
     # Firecracker's notify.vsock is unused by this guest today; the umask keeps any future
     # socket in the state directory owner-only.
+    #
+    # The host OOM killer takes this VM last. Guest RAM is qemu anon-rss, which the host
+    # cannot reclaim — only the guest can — so under pressure the kernel picks a 10 GiB
+    # qemu every time and the whole cluster (apps, dumps, restic) dies with it. At -1000 a
+    # spike kills a build or a stray process instead. `restartIfChanged = false` keeps a
+    # host switch from bouncing the cluster just to replace this drop-in.
     "microvm@${facts.name}" = {
       overrideStrategy = "asDropin";
-      serviceConfig.UMask = "0077";
+      restartIfChanged = false;
+      serviceConfig = {
+        UMask = "0077";
+        OOMScoreAdjust = lib.mkDefault (-1000);
+      };
     };
 
     cluster-vm-net = {
