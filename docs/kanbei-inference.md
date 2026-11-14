@@ -142,6 +142,7 @@ Chat lane (`chatArgs` in `modules/lib/kanbei-inference.nix`):
 | `-cram 4096 --cache-idle-slots` | keep idle slots (KV + recurrent state) in RAM for the next request |
 | `--slot-save-path /var/lib/kanbei/kv-cache` | explicit slot spill; needs `/slots`, so the endpoint stays enabled |
 | `--no-context-shift` | a full pool queues; it never silently drops the head of a 128k prompt |
+| `--jinja` | tool calling: nanobot sends a `tools` array and only the checkpoint's own Jinja template emits the tool-call tokens the server parses back into `tool_calls` |
 | no `--spec-*` | MTP is off: the file is the MTP-free quant and no speculative state is allocated |
 | `--host 127.0.0.1 --port 8090` | no NIC in the guest; loopback only |
 | `--metrics` | the eval reads `llamacpp:kv_cache_usage_ratio` and `requests_processing` |

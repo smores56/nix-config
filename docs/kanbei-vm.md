@@ -144,8 +144,17 @@ the volume root is root-owned and the payload uid cannot create its own home
 there. Nix renders the config and the unit reinstalls it on every start, so the
 WebUI's Settings page cannot persist a provider or a skill. No builtin skill is
 loaded, the heartbeat cron is off, and `tools.exec`/`tools.web` are off until T4
-installs the five ledger skills; the gateway has no provider until T3 adds the
-local llama.cpp lane.
+installs the five ledger skills.
+
+The only provider is the guest's own chat lane: `providers.custom` points at
+`http://127.0.0.1:8090/v1` and the `kanbei` preset names llama-server's
+`--alias kanbei-chat`, with the preset's context window pinned to the pool's
+per-slot ceiling. `--jinja` in `chatArgs` is what makes the checkpoint's own
+template emit tool-call tokens. Until T5 repoints the terminator there is no way
+to drive the WebUI from the host, so `kanbei-nanobot-probe.service` runs one
+agent turn per boot — a prompt that cannot be answered without a tool — and
+prints it to the serial console. That unit is the T3 spike and goes away once
+the UI lane is live.
 
 **Decision (deferred):** `kanbei-ui` still posts chat straight to the local
 llama.cpp lane on `127.0.0.1:8090`; it does not route through the agent chat

@@ -154,6 +154,9 @@ let
       modelPath
       "--alias"
       "kanbei-chat"
+      # Tool calling: nanobot sends a `tools` array, and only the checkpoint's own Jinja
+      # template emits the tool-call tokens the server can parse back into `tool_calls`.
+      "--jinja"
       # No NIC in the guest: loopback is the only listener, and the future vsock relay is the
       # only way to reach it from the host.
       "--host"
