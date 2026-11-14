@@ -58,6 +58,10 @@ system: [
     # binary (docs/kanbei-ingest-tuta.md explains the bump procedure).
     tutabridge = final.callPackage ./tutabridge.nix { };
 
+    # The ntfy client, pinned to the bus's server version: the pinned nixpkgs
+    # carries 2.26.0 against a 2.37.2 server.
+    ntfy = final.callPackage ./ntfy.nix { };
+
     # Read-only Tuta calendar -> ICS core; the SDK fetcher is a documented
     # `passthru.sdk` build that needs TutaBridge's prepared SDK.
     tuta-ics = final.callPackage ./tuta-ics { };

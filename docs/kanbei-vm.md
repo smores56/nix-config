@@ -299,7 +299,7 @@ Restore:
 4. Start the guest and read the console; with a lost or mismatched swtpm the
    volume stays locked, so unlock it with the recovery key as below.
 
-`kanbei` units deliberately carry no `onFailure = [ "cloudflare-email@%n" ]`:
+`kanbei` units deliberately carry no `onFailure = [ "ntfy-publish@%n" ]`:
 the alert template is a host service on smortress and the split must not make
 the private-data guest depend on the host's tunnel or mail path. A failed
 backup is visible in the journal (`journalctl -u restic-backups-kanbei-r2`)

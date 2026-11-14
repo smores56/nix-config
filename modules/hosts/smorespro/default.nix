@@ -24,6 +24,7 @@
   ];
   homeModules = [
     ../../features/chat-proxy.nix
+    ../../features/notify.nix
     ../../features/todo.nix
   ];
   homeOptions = {

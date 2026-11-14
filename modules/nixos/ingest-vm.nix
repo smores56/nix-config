@@ -1149,7 +1149,7 @@ in
             "ingest-vm-prep.service"
           ];
           wantedBy = [ "multi-user.target" ];
-          onFailure = [ "cloudflare-email@%n.service" ];
+          onFailure = [ "ntfy-publish@%n.service" ];
           restartIfChanged = false;
           unitConfig = {
             StartLimitBurst = 5;
@@ -1262,7 +1262,7 @@ in
               ];
               bindsTo = [ "microvm@${s.guest}.service" ];
               # A rejected batch or a vanished guest fails the unit; the alert path surfaces it.
-              onFailure = [ "cloudflare-email@%n.service" ];
+              onFailure = [ "ntfy-publish@%n.service" ];
               restartIfChanged = false;
               # A rejected batch exits 65; do not hammer the guest or the mail path.
               unitConfig = {

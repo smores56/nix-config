@@ -146,6 +146,7 @@ in
   services = merge [
     (group linux [
       "noctalia"
+      "ntfy-subscribe"
       "voxtype"
     ])
     (group "inherent: the Linux sudo/login agent is fido2-agent; the Mac's is sudo-agent" [

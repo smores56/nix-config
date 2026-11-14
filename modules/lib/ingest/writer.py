@@ -123,9 +123,9 @@ def encrypt_to(recipient: str, payload: bytes, tmpdir: str) -> str:
 
 
 def page(source: str, run: Callable[..., object] = subprocess.run) -> None:
-    """Start the source's failure-email unit for an `alert` batch."""
+    """Start the source's failure-notification unit for an `alert` batch."""
     run(
-        ["systemctl", "start", "--no-block", f"cloudflare-email@ingest-writer-{source}.service"],
+        ["systemctl", "start", "--no-block", f"ntfy-publish@ingest-writer-{source}.service"],
         check=False,
     )
 

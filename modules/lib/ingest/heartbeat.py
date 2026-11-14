@@ -4,7 +4,7 @@ Runs every 5 minutes (ingest-heartbeat.timer). It reads each source's last
 successful batch from root-only state and writes one age-encrypted heartbeat
 envelope into the inbox, so Kanbei sees both freshness and staleness. A source
 past its per-source window raises the host alert through the existing
-`cloudflare-email@` template, rate-limited to once per window.
+`ntfy-publish@` template, rate-limited to once per window.
 
 The batch state file is `state/<source>.last-ok` (0600 root); the heartbeat
 envelope is `heartbeat-<epoch>.age` (0600 root; the inbox share is read by guest root only).
@@ -94,7 +94,7 @@ def alert(state_dir: str, source: str, window: int, now: int, enabled: bool) -> 
     log("alert", source=source, window_s=window, last_alert=last)
     if enabled:
         subprocess.run(
-            ["systemctl", "start", "--no-block", f"cloudflare-email@ingest-writer-{source}.service"],
+            ["systemctl", "start", "--no-block", f"ntfy-publish@ingest-writer-{source}.service"],
             check=False,
         )
         write_atomic(marker, f"{now}\n".encode(), 0o600)

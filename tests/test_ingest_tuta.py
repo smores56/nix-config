@@ -562,7 +562,7 @@ class DigestTests(unittest.TestCase):
             self.assertFalse(self.digest.alert(tmp, window=3600, now=2000, last_epoch=0, run=run))
             self.assertTrue(self.digest.alert(tmp, window=3600, now=5000, last_epoch=0, run=run))
             self.assertEqual(len(calls), 2)
-            self.assertEqual(calls[0], ["systemctl", "start", "--no-block", "cloudflare-email@ingest-writer-cluster-digest.service"])
+            self.assertEqual(calls[0], ["systemctl", "start", "--no-block", "ntfy-publish@ingest-writer-cluster-digest.service"])
 
 
 class CalendarTests(unittest.TestCase):

@@ -370,7 +370,7 @@ in
           );
           alerts = sortedUnique (
             lib.concatMap (
-              n: lib.optional (n.config.systemd.services ? "cloudflare-email@") "unit-failure"
+              n: lib.optional (n.config.systemd.services ? "ntfy-publish@") "unit-failure"
             ) nixos
           );
         }

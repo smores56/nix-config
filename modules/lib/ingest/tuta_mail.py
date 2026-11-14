@@ -11,7 +11,7 @@ seen for the first time is baselined without emitting, so the first boot does
 not dump the whole mailbox into Kanbei.
 
 Two conditions page the owner, both as an `alert` batch the host writer turns
-into the existing `cloudflare-email@` unit:
+into the existing `ntfy-publish@` unit:
 
 * any new message in the Sent folder (the session is send-capable, so a new Sent
   item is the tamper signal);
