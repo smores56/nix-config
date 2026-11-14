@@ -182,6 +182,9 @@ def plant(prefs: dict, seed: str) -> dict:
         prefs["sync"] = sync
     sync["requested"] = True
     sync["keep_everything_synced"] = True
+    # Also written by the join UI: without it the engine registers but never runs the
+    # initial download (the guest got a gaia_id and transport state, and no data).
+    sync["has_setup_completed"] = True
     return prefs
 
 
