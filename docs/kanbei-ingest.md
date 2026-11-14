@@ -295,6 +295,29 @@ never double-page.
 Change a window in `modules/lib/ingest-vm.nix` (and its row here); the alert
 rate limit follows the same value.
 
+## Operating traps
+
+- **A switch does not reload policy.** `ingest-proxy` and `ingest-resolver` read
+  `/etc/kanbei-ingest/policy.json` once at startup and every host ingest unit is
+  `restartIfChanged = false`, so after changing an allowlist in
+  `modules/lib/ingest-vm.nix` run
+  `systemctl restart ingest-proxy ingest-resolver`. A guest-side change needs a
+  `microvm@<guest>` restart, because the collectors live in the microvm image.
+- **Guest state is tmpfs.** `/var/lib/<source>` dies with the guest, so a collector
+  that only has a daily timer must also be `wantedBy = multi-user.target`
+  (immich, finance, brave history). Without that a rebooted guest sits empty until
+  the next window — `Persistent = true` makes up nothing on a fresh root.
+- **Rotating a secret.** Stop the guest, restart `ingest-vm-secret-<source>`, then
+  start the guest: the staging unit refuses to replace a secret image under a
+  running guest.
+- **Writer logs `waiting`.** No `/var/lib/kanbei-ingest/age-recipient` yet; Kanbei
+  publishes it on boot.
+- **Guest is up, no batches.** Almost always a proxy or resolver refusal — the
+  source's log under `/var/log/kanbei-ingest/` names the host that was denied.
+- **`search-vm-model` fails.** The Guardian GGUF is not staged.
+- **Tuta `session-rejected` / `minimum-client`.** Re-stage the bridge session
+  (`docs/kanbei-ingest-tuta.md#tuta-client-bumps`).
+
 ## Logs and viewer
 
 Every ingest unit writes a root-only file log under `/var/log/kanbei-ingest/`
