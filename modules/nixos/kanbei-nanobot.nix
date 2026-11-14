@@ -77,6 +77,10 @@ let
     };
     transcription.enabled = false;
     tools = {
+      # The guest mounts the vault and the todo tree, and the payload uid is the one the
+      # shares translate to the host `vault` user — so an unrestricted file tool hands the
+      # model the owner's private files. This pin confines read/write to the workspace.
+      restrict_to_workspace = true;
       # No code execution, network fetch, cli apps or image generation in the guest. T4
       # brings the exec tool back only as far as the five ledger scripts need it.
       exec.enable = false;
@@ -251,6 +255,10 @@ in
         && nanobotConfig.channels.websocket.host == "127.0.0.1"
         && nanobotConfig.channels.websocket.port == ports.webPort;
       message = "kanbei-nanobot: the guest has no NIC and Access fronts the terminator, so nanobot must bind loopback on the port T5 proxies";
+    }
+    {
+      assertion = nanobotConfig.tools.restrict_to_workspace;
+      message = "kanbei-nanobot: the payload uid is the host vault's translation target on the shares, so the file tools must stay inside the workspace";
     }
     {
       assertion =

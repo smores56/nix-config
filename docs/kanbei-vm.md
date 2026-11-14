@@ -142,9 +142,12 @@ whose only trace is the serial console.
 the LUKS volume; `kanbei-nanobot-state.service` creates the directory, because
 the volume root is root-owned and the payload uid cannot create its own home
 there. Nix renders the config and the unit reinstalls it on every start, so the
-WebUI's Settings page cannot persist a provider or a skill. No builtin skill is
-loaded, the heartbeat cron is off, and `tools.exec`/`tools.web` are off until T4
-installs the five ledger skills.
+WebUI's Settings page cannot persist a provider or a skill. The file tools are
+pinned to the workspace: the payload uid is what the vault and todo shares
+translate to the host `vault` user, so unrestricted file access would hand the
+model the owner's private files. No builtin skill is loaded, the heartbeat cron
+is off, and `tools.exec`/`tools.web` are off until T4 installs the five ledger
+skills.
 
 The only provider is the guest's own chat lane: `providers.custom` points at
 `http://127.0.0.1:8090/v1` and the `kanbei` preset names llama-server's
