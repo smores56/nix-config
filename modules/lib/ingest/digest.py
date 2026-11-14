@@ -100,6 +100,37 @@ def is_newer(cursor_epoch: int | None, epoch: int) -> bool:
     return cursor_epoch is None or epoch > cursor_epoch
 
 
+def read_seq(state_dir: str, source: str = SOURCE) -> int:
+    """The last sequence this writer emitted; 0 before the first document."""
+    try:
+        with open(os.path.join(state_dir, f"{source}.cursor"), encoding="utf-8") as handle:
+            record = json.load(handle)
+        return max(0, int(record.get("seq", 0)))
+    except (FileNotFoundError, ValueError, KeyError, TypeError):
+        return 0
+
+
+def wire_envelope(document: bytes, seq: int) -> bytes:
+    """Wrap the digest document in the ingest wire envelope.
+
+    Every other producer ships `{v, source, kind, seq, sent_at, items}` and the
+    guest's inbox reader parses nothing else, so the raw document was never
+    ingestible: it quarantined as `parse_failed` on every new digest.
+    """
+    parsed = json.loads(bytes(document).decode("utf-8"))
+    envelope = {
+        "v": policy.PROTOCOL_VERSION,
+        "source": SOURCE,
+        "kind": "batch",
+        "seq": seq,
+        "sent_at": parsed["generated_at"],
+        "items": [parsed],
+    }
+    payload = json.dumps(envelope, sort_keys=True).encode("utf-8")
+    policy.validate_batch(payload, SOURCE)
+    return payload
+
+
 def read_stable(
     path: str,
     *,
@@ -170,6 +201,7 @@ def record_state(
     epoch: int,
     target: str,
     batches: int,
+    seq: int = 0,
 ) -> None:
     """Advance the cursor and the heartbeat's last-ok in that order.
 
@@ -177,7 +209,7 @@ def record_state(
     atomically, so a crash between them re-emits one document at worst.
     """
     generated = datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat(timespec="seconds")
-    cursor = {"generated_at": generated, "epoch": epoch, "file": os.path.basename(target)}
+    cursor = {"generated_at": generated, "epoch": epoch, "file": os.path.basename(target), "seq": seq}
     write_atomic(
         os.path.join(state_dir, f"{SOURCE}.cursor"),
         json.dumps(cursor, sort_keys=True).encode(),
@@ -283,18 +315,22 @@ def cycle(
         if recipient is None:
             log("waiting", reason="recipient missing", path=args.recipient_file)
         else:
-            target = emit(args.inbox, recipient, payload, stamp=stamp_of(epoch))
+            seq = read_seq(args.state_dir) + 1
+            wire = wire_envelope(payload, seq)
+            target = emit(args.inbox, recipient, wire, stamp=stamp_of(epoch))
             record_state(
                 args.state_dir,
                 epoch=epoch,
                 target=target,
                 batches=batches + 1,
+                seq=seq,
             )
             batches += 1
             log(
                 "digest",
                 generated_at=document["generated_at"],
-                bytes=len(payload),
+                bytes=len(wire),
+                seq=seq,
                 file=os.path.basename(target),
             )
             now = int(time.time())

@@ -511,12 +511,37 @@ class DigestTests(unittest.TestCase):
             args = self.args(tmp)
             self.assertEqual(self.digest.cycle(args, batches=0, started=0), 0)
 
+    def test_the_emitted_payload_is_the_ingest_wire_envelope(self):
+        document = json.dumps({
+            "schema_version": "1",
+            "generated_at": "2026-11-14T03:00:04Z",
+            "cluster": {"nodes": []},
+            "nanobot_activity": {"window": "24h", "items": []},
+        }).encode()
+        payload = self.digest.wire_envelope(document, 7)
+        batch = self.digest.policy.validate_batch(payload, "cluster-digest")
+        self.assertEqual(batch["v"], 1)
+        self.assertEqual(batch["source"], "cluster-digest")
+        self.assertEqual(batch["kind"], "batch")
+        self.assertEqual(batch["seq"], 7)
+        self.assertEqual(batch["sent_at"], "2026-11-14T03:00:04Z")
+        self.assertEqual(len(batch["items"]), 1)
+        self.assertEqual(batch["items"][0]["schema_version"], "1")
+
+    def test_the_sequence_advances_and_survives_a_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self.digest.read_seq(tmp), 0)
+            self.digest.record_state(
+                tmp, epoch=1767225600, target="/inbox/cluster-digest-a.age", batches=1, seq=3
+            )
+            self.assertEqual(self.digest.read_seq(tmp), 3)
+
     def test_state_files_and_heartbeat_shape(self):
         with tempfile.TemporaryDirectory() as tmp:
             args = self.args(tmp)
             target = os.path.join(args.inbox, "cluster-digest-20260101T000000Z.age")
             self.write_digest(target, b"ciphertext")
-            self.digest.record_state(args.state_dir, epoch=1767225600, target=target, batches=1)
+            self.digest.record_state(args.state_dir, epoch=1767225600, target=target, batches=1, seq=1)
             self.assertEqual(self.digest.read_cursor(args.state_dir), 1767225600)
             with open(os.path.join(args.state_dir, "cluster-digest.last-ok"), encoding="utf-8") as handle:
                 last_ok = json.load(handle)

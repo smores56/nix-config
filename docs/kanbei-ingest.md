@@ -245,8 +245,13 @@ the host tree `/var/lib/kanbei-ingest/shares/cluster-digest` into the guest, and
   changed, which is not something to truncate here);
 - `generated_at` is the cursor (`state/cluster-digest.cursor`), so a restart or a
   replayed `latest.json` never re-emits; an older document is logged as a replay;
-- each new document is age-encrypted to Kanbei's recipient and installed as
-  `cluster-digest-<UTC>.age` (the source id is already in the file name);
+- each new document is wrapped in the same wire envelope every producer sends
+  (`{v, source: "cluster-digest", kind: "batch", seq, sent_at, items: [document]}`),
+  age-encrypted to Kanbei's recipient and installed as
+  `cluster-digest-<UTC>.age`. The raw document is not ingestible: the guest
+  reader recognises only the envelope, and a bare document quarantined as
+  `parse_failed`. `seq` is the cursor's own counter, so a restart cannot reuse
+  one;
 - the writer records `state/cluster-digest.last-ok` with the document's epoch so
   the heartbeat sees digest freshness, and pages once per window when the newest
   `generated_at` is older than `hostSources.cluster-digest.windowSeconds` (3600 s)
