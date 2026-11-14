@@ -86,8 +86,6 @@ in
     };
     webProxy = {
       tunnelName = "smortress";
-      # Temporary: name each accepted stream while chasing the kanbei 404.
-      logLevel = "debug";
       services = {
         navidrome.port = ports.navidrome;
         # Reachable only through the tunnel; must never lose Access (web-proxy.nix asserts it).
