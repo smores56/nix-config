@@ -291,6 +291,20 @@ that T9 removed. Mirroring and its fine-grained, read-only PAT now live in
 with the Jupyter token and revoke the classic PAT once no laptop or script uses
 it.
 
+### ntfy token
+
+`ntfy-token` in `secrets/smortress.yaml`, root-only, presented as
+`Authorization: Bearer` by `ntfy-publish@` to `https://ntfy.sammohr.dev/alerts`.
+It is the bus's `publisher` user, which holds `alerts:wo` and nothing else, so a
+leaked host token cannot read the bus or page the agent's topic. Mint a new
+token for that user in the bus's web UI (Settings → Users → `publisher`), replace
+the sops value, rebuild smortress, prove it with
+`sudo systemctl start ntfy-publish@restic-backups-r2.service`, then delete the
+old token in the UI. The unit reads the file at run time, so no restart is
+needed after the rebuild. The same user's token is also the cluster relay's
+(`notify-relay-sops` in `homelabs-platform`); rotate both or neither, or the
+relay starts failing while the host still works.
+
 ### Memory MCP token
 
 `memory-mcp-token` in `secrets/common.yaml`, user-readable, presented as

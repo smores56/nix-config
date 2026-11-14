@@ -247,7 +247,7 @@ Start the guest next. If `/var/lib/kanbei-vm/swtpm` was lost, the TPM unlock
 fails and the volume stays locked until you re-enroll in an interactive guest
 console (`docs/kanbei-vm.md` has the runner command and the
 `systemd-cryptenroll --wipe-slot=tpm2 ...` step). These units carry no
-`cloudflare-email@` alert on purpose; watch
+`ntfy-publish@` alert on purpose; watch
 `journalctl -u restic-backups-kanbei-r2`.
 
 **5. IOMMU check.** After any kernel, firmware or slot change:
@@ -527,7 +527,7 @@ The five ingest guests and their host writer/proxy/resolver are behind
    sudo ls -l /var/lib/data/inbox/cluster-digest-*.age
    ```
 
-   A stale digest pages through `cloudflare-email@ingest-writer-cluster-digest`
+   A stale digest pages through `ntfy-publish@ingest-writer-cluster-digest`
    once per hour window. The writer never restarts the cluster; it waits for the
    next document.
 
@@ -1301,7 +1301,7 @@ device.
 
 <!-- manual-step: secret/cloudflare-api-token -->
 
-One root-only token shared by OpenTofu and the email alert sender. Mint it at
+One root-only token shared by OpenTofu and the recovery tooling. Mint it at
 <https://dash.cloudflare.com> → My Profile → API Tokens with:
 
 - Zone:DNS:Edit for `sammohr.dev`;
@@ -1313,8 +1313,9 @@ One root-only token shared by OpenTofu and the email alert sender. Mint it at
   bucket policy the recovery page needs; without it the apply fails with
   `403 Forbidden` / `Authentication error` on `PUT .../r2/buckets/*/cors`).
 
-Readers: `nix run .#cloudflare-*` and the `cloudflare-email` unit. Rotate in the
-dashboard, update this key, rebuild, and prove it with
+Readers: `nix run .#cloudflare-*`. `Email Sending:Edit` is unused now that the
+alert path is the ntfy bus; revoke it in the same session as the cutover. Rotate
+in the dashboard, update this key, rebuild, and prove it with
 `sudo nix run .#cloudflare-plan`.
 
 ### cloudflared-credentials
@@ -1614,7 +1615,7 @@ sudo nixos-rebuild switch            # redeploys /run/secrets/cloudflare-api-tok
 sudo nix run .#cloudflare-plan       # proves the new token
 ```
 
-Delete the old token row. `cloudflare-email@` reads the file at run time, so no
+Delete the old token row. `ntfy-publish@` reads the file at run time, so no
 unit restart is needed.
 
 #### github-repo-pat
@@ -1777,7 +1778,7 @@ Nightly at 03:30 with up to 15 minutes of delay,
 every run. Only the `r2` repo passes `initialize = true` (a fresh bucket is
 expected); the `local` repo is created once by hand, so an empty-but-mounted
 `/var/backup` fails the first run and mails instead of quietly starting a new
-repo. Both units start `cloudflare-email@%n.service` on failure. The
+repo. Both units start `ntfy-publish@%n.service` on failure. The
 password is the `restic-password` secret (same for both repos); the R2
 credentials come from the sops-rendered `restic-r2.env`.
 
@@ -2931,26 +2932,42 @@ directory, for `import`, `state list`, `state rm`, and recovery.
 
 ## Alert paths
 
-Alert paths come from `tofu/main.tf` (notification policies) and from the
-`alerting` module (`cloudflare-email@`). All of them email `sam@sammohr.dev`
-through Cloudflare Email Service; no listener runs on the host. A Cloudflare
-outage silences email and the tunnel together — the console is the fallback.
+Two paths, and they fail independently. The `alerting` module publishes unit
+failures to the self-hosted ntfy bus (`ntfy-publish@`), which is the cluster's
+one notification path; `tofu/main.tf` keeps two provider-side notification
+policies on email because they detect the tunnel the bus is reached through.
+The host publishes to `https://ntfy.sammohr.dev/alerts` as the `publisher` user,
+so a Cloudflare outage silences the bus and the tunnel together — the console is
+the fallback.
 
 ### unit-failure
 
 <!-- manual-step: alert/unit-failure -->
 
-Every backup unit's `OnFailure` starts `cloudflare-email@%n.service`, which
-emails the unit's status and last 50 journal lines. Test the path without
-breaking a backup:
+Every backup unit's `OnFailure` starts `ntfy-publish@%n.service`, which
+publishes the unit's status and last 50 journal lines to topic `alerts` at
+priority `high`. Test the path without breaking a backup:
 
 ```sh
-sudo systemctl start cloudflare-email@restic-backups-r2.service
+sudo systemctl start ntfy-publish@restic-backups-r2.service
 ```
 
-That sends one email about the (successful) unit; a real failure sends one per
-failed run. The template reads the token from
-`/run/secrets/cloudflare-api-token`.
+That sends one notification about the (successful) unit; a real failure sends
+one per failed run. The template reads the token from `/run/secrets/ntfy-token`
+(the `publisher` user, `alerts:wo` only) and hardcodes the topic: `%i` is the
+full unit name, which contains a dot and would miss the user's ACL.
+
+`ntfy-token` is not in `secrets/smortress.yaml` yet. Add it before the first
+switch that declares it, or the unit fails closed with
+`ntfy-publish: cannot read /run/secrets/ntfy-token`:
+
+```sh
+sops secrets/smortress.yaml   # add ntfy-token: tk_… (the publisher token)
+```
+
+Then declare it in `modules/hosts/smortress/secrets.nix` and add the
+`secret/ntfy-token` anchor to this document; `manual-steps-sync` fails until
+both exist.
 
 ### tunnel-health
 

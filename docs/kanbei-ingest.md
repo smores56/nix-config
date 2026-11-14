@@ -86,7 +86,7 @@ Without the model or secret image the guest does not start.
 ## Writer protocol
 
 Host unit: `ingest-writer-<source>.service` (one per source, `Restart=always`,
-`OnFailure=cloudflare-email@%n.service`).
+`OnFailure=ntfy-publish@%n.service`).
 
 1. Block until `/var/lib/kanbei-ingest/age-recipient` exists and validates; a
    malformed file exits non-zero instead of waiting.
@@ -101,7 +101,7 @@ Host unit: `ingest-writer-<source>.service` (one per source, `Restart=always`,
    integer. Anything else closes the connection, logs a refusal, and exits `65`
    (the failure email carries the unit journal). An `alert` batch is encrypted
    like any other, and the writer additionally starts
-   `cloudflare-email@ingest-writer-<source>.service`: the guest has no mail path
+   `ntfy-publish@ingest-writer-<source>.service`: the guest has no mail path
    of its own, so the host turns the alert into the same page a failed unit
    raises (a new Sent item, a Tuta client rejection).
 5. Encrypt the frame with `age --encrypt -r <recipient>` and atomically install
@@ -288,7 +288,7 @@ PV contract (`cluster-digest-data`) is unchanged.
   with per-source `stale`, `host`, `window_s`, `last_ok` and `age_s`, plus the
   `host_sources` list;
 - when a source exceeds its window, starts
-  `cloudflare-email@ingest-writer-<source>.service` at most once per window, so a
+  `ntfy-publish@ingest-writer-<source>.service` at most once per window, so a
   dead source raises a host alert without a mail storm;
 - prunes heartbeat files older than 168 h; batch files are never pruned.
 

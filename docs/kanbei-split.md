@@ -188,7 +188,7 @@ in `docs/manual-steps.md`, design and recovery flow in
   from the host with `cryptsetup`.
 - The guest console goes to a root-only file, the swtpm state and the console
   directory are 0700 root, and `kanbei` units deliberately carry no
-  `cloudflare-email@` failure hook.
+  `ntfy-publish@` failure hook.
 - The inference lanes (T11) are one GPU `llama-server` (unified q8_0 KV pool,
   160k tokens, four slots) and two CPU servers (embeddings, reranking), all bound
   to `127.0.0.1`. Weights are data on the LUKS volume with a sha256 manifest,
@@ -229,7 +229,7 @@ are in [`docs/kanbei-ingest.md`](kanbei-ingest.md).
   and end the forward chain in DROP; no ingest tap is NATed. The guest repeats
   the restriction on its own OUTPUT chain.
 - A 5-minute timer writes an age-encrypted heartbeat envelope into the inbox and
-  raises `cloudflare-email@ingest-writer-<source>` once per window when a source
+  raises `ntfy-publish@ingest-writer-<source>` once per window when a source
   is stale. Logs are root-only files plus the journal; `kanbei-logs` is a
   sudo-run viewer, not a daemon.
 - `kanbei-ingest-verify` (root only) proves a batch round-trips, a

@@ -132,7 +132,7 @@ password or address in any log line.
 
 Two signals are sent as `kind = "alert"` batches. The host writer validates the
 same schema, encrypts them like any batch, and starts
-`cloudflare-email@ingest-writer-tuta.service`, which is the same failure mail
+`ntfy-publish@ingest-writer-tuta.service`, which is the same failure mail
 path a broken unit uses.
 
 - **New Sent item.** Every message that appears in the Sent folder produces one
