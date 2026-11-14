@@ -436,6 +436,11 @@ in
         "/mnt/kanbei/todo"
       ];
       ExecStart = "${kanbeiPackage}/bin/kanbei";
+      # A crashed instance leaves the single-writer lock file behind, and the
+      # kernel's grants (`--allow-run=age`, scoped reads) give it no way to tell a
+      # dead owner from a live one, so every restart would fail on the same lock.
+      # systemd runs one instance, so a lock present at unit start is always stale.
+      ExecStartPre = "${pkgs.coreutils}/bin/rm -f ${stateDir}/ledger.jsonl.lock";
       # The guest journal dies with the guest, and this kernel is the only place the
       # inbox verdicts and a boot refusal exist. The serial console is the host-kept
       # trace; `kanbei-logs` reads it.
