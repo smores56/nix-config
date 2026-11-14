@@ -202,9 +202,16 @@ CSP fragment with only `frame-ancestors 'none'; base-uri 'none'`.
   "set up a passkey" prompt, its 31-line page and its unauthenticated chat lane are gone
   with it.
 - Authentication is Access in front and the relay-token handshake at the connection level.
-  The WebUI runs with `websocket_requires_token = false` because the guest is NIC-less and
-  every connection already crossed Access and the relay; the open question is recorded on
-  `smores56/sdlc#642` in case a second login turns out to be wanted.
+  There is no WebUI password. The WebUI runs with `websocket_requires_token = false`
+  because the guest is NIC-less and every connection already crossed Access and the relay;
+  the open question is recorded on `smores56/sdlc#642` in case a second login turns out to
+  be wanted.
+- nanobot refuses `/webui/bootstrap` — and every `/api/*` route — to a request that does
+  not look like a local browser, which a proxied one never does. Its
+  `channels.websocket.trusted_proxy_auth` therefore trusts exactly the loopback peer and
+  the `X-Kanbei-Proxy` header, and the terminator sets that header on every upstream
+  request after stripping any client-supplied copy. The proxy assertion is the second
+  gate, not a bypass: a request without the relay token never reaches the proxy.
 - Model text now renders in nanobot's WebUI, which is third-party prebuilt JavaScript
   inside the trust boundary (an accepted risk in the feature design). The old shell's
   "no anchors, no images, no remote resource" property does not carry over; what still

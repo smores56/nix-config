@@ -41,6 +41,14 @@ let
       # Access fronts the terminator and the guest has no NIC, so a second password would
       # be a token the owner must read out of the LUKS volume, not a second barrier.
       websocket_requires_token = false;
+      # The WebUI refuses `/webui/bootstrap` to anything that is not a local browser, and
+      # every request here arrives through the terminator. Trust exactly its assertion,
+      # from the loopback peer it is: the request already crossed the relay token and
+      # Access, so this is the second gate, not a bypass of the first.
+      trusted_proxy_auth = {
+        trusted_peer_cidrs = [ "127.0.0.1/32" ];
+        assertion_header = "X-Kanbei-Proxy";
+      };
     };
     # The guest's only model endpoint. llama.cpp speaks the OpenAI schema at /v1 and
     # `--alias kanbei-chat` is the id it answers to, so no discovery call is needed.
@@ -199,6 +207,11 @@ in
         && nanobotConfig.channels.websocket.host == "127.0.0.1"
         && nanobotConfig.channels.websocket.port == ports.webPort;
       message = "kanbei-nanobot: the guest has no NIC and Access fronts the terminator, so nanobot must bind loopback on the port T5 proxies";
+    }
+    {
+      assertion =
+        nanobotConfig.channels.websocket.trusted_proxy_auth.trusted_peer_cidrs == [ "127.0.0.1/32" ];
+      message = "kanbei-nanobot: only the loopback terminator may assert the proxy header; a wider CIDR would let any peer claim it";
     }
     {
       assertion = nanobotConfig.tools.restrict_to_workspace;

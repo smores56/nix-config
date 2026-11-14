@@ -44,7 +44,13 @@ AUTH_TIMEOUT = 10.0
 REQUEST_TIMEOUT = 120.0
 CONNECT_TIMEOUT = 10.0
 VMADDR_CID_ANY = 0xFFFFFFFF
-PROXY_HEADER = b"X-Forwarded-Proto: https\r\n"
+PROXY_HEADER = "X-Forwarded-Proto: https"
+# nanobot refuses `/webui/bootstrap` to anything that does not look like the local
+# browser, which a proxied request never does. `trusted_proxy_auth` in its config names
+# this header and the loopback peer, so the terminator's assertion is what authorises the
+# WebUI handshake: the request already crossed the relay token and Access.
+ASSERTION_HEADER = "X-Kanbei-Proxy"
+ASSERTION_VALUE = "relay-authenticated"
 RELAYED_HEADERS = [
     b"X-Content-Type-Options: nosniff",
     b"Referrer-Policy: no-referrer",
@@ -114,13 +120,14 @@ class KanbeiHandler(BaseHTTPRequestHandler):
         for name, value in self.headers.items():
             if name.lower() in HOP_BY_HOP or name.lower() in ("host", "content-length"):
                 continue
-            if name.lower().startswith("x-forwarded-"):
+            if name.lower().startswith("x-forwarded-") or name.lower() == ASSERTION_HEADER.lower():
                 continue
             lines.append(f"{name}: {value}")
         if host:
             lines.append(f"X-Forwarded-Host: {host}")
         lines.append(f"X-Forwarded-For: {peer}")
-        lines.append(PROXY_HEADER.decode().rstrip())
+        lines.append(PROXY_HEADER)
+        lines.append(f"{ASSERTION_HEADER}: {ASSERTION_VALUE}")
         length = self.headers.get("Content-Length")
         if length is not None:
             lines.append(f"Content-Length: {length}")

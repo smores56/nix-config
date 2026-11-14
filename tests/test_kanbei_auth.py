@@ -254,6 +254,7 @@ class EchoUpstream(http.server.BaseHTTPRequestHandler):
                 "host": self.headers.get("Host"),
                 "forwarded_proto": self.headers.get("X-Forwarded-Proto"),
                 "forwarded_host": self.headers.get("X-Forwarded-Host"),
+                "assertion": self.headers.get("X-Kanbei-Proxy"),
                 "body": body.decode("utf-8", "replace"),
             }
         ).encode()
@@ -346,7 +347,9 @@ class UiProxyTests(unittest.TestCase):
 
     def test_a_request_is_proxied_with_forwarding_headers(self):
         status, headers, body = self.request(
-            "GET", "/api/health?x=1", headers={"Host": "kanbei.sammohr.dev"}
+            "GET",
+            "/api/health?x=1",
+            headers={"Host": "kanbei.sammohr.dev", "X-Kanbei-Proxy": "spoofed"},
         )
         self.assertEqual(status, 200)
         seen = json.loads(body)
@@ -355,6 +358,8 @@ class UiProxyTests(unittest.TestCase):
         self.assertEqual(seen["host"], "kanbei.sammohr.dev")
         self.assertEqual(seen["forwarded_proto"], "https")
         self.assertEqual(seen["forwarded_host"], "kanbei.sammohr.dev")
+        # The terminator's own assertion replaces anything the client tried to claim.
+        self.assertEqual(seen["assertion"], "relay-authenticated")
         self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
         self.assertIn("frame-ancestors 'none'", headers["Content-Security-Policy"])
         self.assertIn("no-referrer", headers["Referrer-Policy"])
