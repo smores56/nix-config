@@ -20,6 +20,7 @@ let
   agentFacts = import ../lib/kanbei-agent.nix;
   ingest = import ../lib/ingest-vm.nix { inherit lib; };
   inference = import ../lib/kanbei-inference.nix { inherit lib; };
+  nanobotPorts = import ../lib/kanbei-nanobot.nix;
   hardening = import ../lib/hardening.nix;
 
   user = agentFacts.coreUser;
@@ -40,9 +41,10 @@ let
   csrSocket = "${runDir}/csr.sock";
   searchSocket = "${runDir}/search.sock";
 
-  # The inference lanes own 8090-8092; these are the kernel's own loopback listeners.
-  chatPort = 8080;
-  statusPort = 8081;
+  # The inference lanes own 8090-8092 and nanobot's WebUI and gateway own 8080/8082
+  # (`../lib/kanbei-nanobot.nix`); these are the kernel's own loopback listeners.
+  chatPort = nanobotPorts.kernelChatPort;
+  statusPort = nanobotPorts.kernelStatusPort;
 
   generation = "kanbei-1";
   epoch = "1";

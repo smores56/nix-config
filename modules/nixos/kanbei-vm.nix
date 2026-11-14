@@ -342,6 +342,7 @@ let
         ./kanbei-guest-access.nix
         ./kanbei-phone.nix
         ./kanbei-agent.nix
+        ./kanbei-nanobot.nix
       ];
 
       microvm = {
@@ -520,6 +521,7 @@ let
           "kanbei-age-identity.service"
           "kanbei-cert.service"
           "kanbei-ui.service"
+          "kanbei-nanobot.service"
           "kanbei.service"
         ];
         restartIfChanged = false;
@@ -537,7 +539,7 @@ let
             ${pkgs.systemd}/bin/journalctl -b --no-pager -n 120 \
               -u kanbei-data-open.service -u kanbei-age-identity.service \
               -u kanbei-age-publish.service -u kanbei-cert.service \
-              -u kanbei-ui.service -u kanbei.service
+              -u kanbei-ui.service -u kanbei-nanobot.service -u kanbei.service
           } > /dev/console 2>&1 || true
         '';
       };

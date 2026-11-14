@@ -108,7 +108,8 @@ steps above.
 same nixpkgs rev, `inputs.nixpkgs.follows = "nixpkgs"`) and runs it as
 `kanbei.service` under the dedicated `kanbei-core` uid 1001. The unit carries the
 whole `KANBEI_*` boot contract from `kanbei/src/main.ts:171-256`; the two
-loopback listeners are chat `8080` and status `8081` (inference owns 8090-8092).
+loopback listeners are chat `8083` and status `8081` (nanobot owns `8080`/`8082`,
+inference owns 8090-8092).
 
 - `/etc/kanbei/manifest.json` and `/etc/kanbei/posture.json` are generated from one
   Nix attrset. The posture is `addresses = ["lo"]`, `enforcement = none`, and the
@@ -126,6 +127,24 @@ loopback listeners are chat `8080` and status `8081` (inference owns 8090-8092).
   kernel uid and bind 0600 sockets in a 0700 `/run/kanbei` before the kernel
   starts, so only the trusted kernel can reach a host channel.
 - `kanbei-logs` includes `kanbei.service` in its journal inventory.
+
+### nanobot in the guest
+
+`modules/nixos/kanbei-nanobot.nix` (T2 of `smores56/sdlc#642`) runs a second,
+capability-free nanobot instance as `kanbei-nanobot.service` under the payload
+uid 1000. It serves the WebUI and its websocket channel from one loopback server
+on `8080` — the port the TLS terminator will proxy in T5 — and its `/health`
+surface on `8082`. `modules/lib/kanbei-nanobot.nix` holds those ports and the
+kernel's, so a drift trips an assertion instead of an EADDRINUSE boot failure
+whose only trace is the serial console.
+
+`HOME` and the SQLite session store live at `/var/lib/kanbei/nanobot` (0700) on
+the LUKS volume; `kanbei-nanobot-state.service` creates the directory, because
+the volume root is root-owned and the payload uid cannot create its own home
+there. Nix renders the config and the unit reinstalls it on every start, so the
+WebUI's Settings page cannot persist a provider or a skill. No builtin skill is
+loaded and `tools.exec`/`tools.web` are off until T4 installs the five ledger
+skills; the gateway has no provider until T3 adds the local llama.cpp lane.
 
 **Decision (deferred):** `kanbei-ui` still posts chat straight to the local
 llama.cpp lane on `127.0.0.1:8090`; it does not route through the agent chat
