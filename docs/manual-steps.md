@@ -644,47 +644,58 @@ is in `secrets/hosts/smortress/`. Both volumes take the recovery passphrase and
 prompt at boot; there is no Tang/TPM binding, because the committed `root.jwe`
 belongs to the 980's header.
 
-1. While the 980 still runs, archive the identity and the Secure Boot keys. The
-   firmware has these `db` keys enrolled, so a fallback signed with any other
-   bundle would not boot.
+1. On the 980, archive the identity and the Secure Boot keys while it still
+   runs. The firmware has these `db` keys enrolled, so a fallback signed with
+   any other bundle would not boot.
 
    ```sh
    nix run .#key-backup -- --allow-incomplete     # host key + YubiKey handles
-   nix run .#key-restore -- <bundle>.tar.gz --host-key
    sudo tar -C / -czf /tmp/sbctl.tgz var/lib/sbctl
    ```
 
-2. Build the passphrase-free extra-file tree: `secrets/hosts/smortress/` plus
-   the extracted `var/lib/sbctl`, laid out as it must appear under `/`.
+   Upload both to Bitwarden, then on the install machine restore the host key
+   into the checkout: `nix run .#key-restore -- <bundle>.tar.gz --host-key`.
 
-3. Write the recovery passphrase to a `0600` file, build both store paths, and
+2. Build the extra-file tree, laid out as it must appear under `/`: the
+   restored `secrets/hosts/smortress/` plus the extracted `var/lib/sbctl`.
+
+3. Boot a NixOS installer USB on the machine. The 980's own `sshd` is loopback
+   only (tunnel access), so `nixos-anywhere` cannot dial it; at the installer
+   console put the install machine's public key in `/root/.ssh/authorized_keys`,
+   `systemctl start sshd`, and note the address.
+
+4. Write the recovery passphrase into a `0600` file, build both store paths, and
    install from them. `--store-paths` skips the target's flake evaluation, so
    the private flake inputs never have to be fetched by the installer:
 
    ```sh
-   nix build --no-link --print-out-paths \
-     .#nixosConfigurations.smortress-rollback.config.system.build.diskoScript \
-     .#nixosConfigurations.smortress-rollback.config.system.build.toplevel
-   nixos-anywhere --store-paths <disko-script> <toplevel> \
-     --target-host root@10.0.0.125 \
+   disko=$(nix build --no-link --print-out-paths \
+     .#nixosConfigurations.smortress-rollback.config.system.build.diskoScript)
+   system=$(nix build --no-link --print-out-paths \
+     .#nixosConfigurations.smortress-rollback.config.system.build.toplevel)
+   nixos-anywhere --store-paths "$disko" "$system" \
+     --target-host root@<installer-ip> \
      --extra-files <tree-from-step-2> \
      --disk-encryption-keys /tmp/rollback-pass <passphrase-file>
    ```
 
    The disko layout clears only
-   `/dev/disk/by-id/nvme-Samsung_SSD_970_EVO_1TB_S5H9NS0NA57329Z`; the 980 is
-   untouched but the machine reboots into the installer. Delete the passphrase
-   file afterwards.
+   `/dev/disk/by-id/nvme-Samsung_SSD_970_EVO_1TB_S5H9NS0NA57329Z`. Delete the
+   passphrase file afterwards.
 
-4. The install reboots into the fallback. Select its boot entry once
+5. The install reboots into the fallback. Select its boot entry once
    (`efibootmgr` or the firmware menu) and keep the 980's entry as the default.
    Secure Boot loads the fallback's UKI only when `var/lib/sbctl` was delivered
    in step 2: `sbctl status` must report the host's keys enrolled.
 
-5. Verify: the console prompts once per LUKS volume, `hostname` is `smortress`,
-   `/var/backups/primary` is mounted, `systemctl --failed` is quiet, and
-   `systemctl cat restic-backups-local` exists. Reboot back into the 980 and
-   confirm the old system boots unchanged.
+6. At the console, because the fallback's `sshd` is loopback only: both volumes
+   prompt for the passphrase, the system reaches multi-user, `hostname` is
+   `smortress`, and `/var/backups/primary` is mounted. Data services and restic
+   jobs fail here by design — their data is on the 980's root, which the
+   fallback never mounts — so the gate is the *unit definitions*
+   (`systemctl cat restic-backups-local`) and a booting, reachable host, not an
+   empty `systemctl --failed`. Reboot back into the 980 and confirm the old
+   system comes up unchanged.
 
 ### smorespro
 
