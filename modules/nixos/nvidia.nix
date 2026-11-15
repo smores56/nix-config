@@ -5,8 +5,9 @@
   ...
 }:
 {
-  # Inert while the kanbei guest owns the GPU (modules/nixos/kanbei-vm.nix); T9 deletes the file.
-  config = lib.mkIf (!(config.kanbeiVm.enable or false)) {
+  # Inert while the kanbei guest owns the GPU (modules/nixos/kanbei-vm.nix) or the
+  # host is built without one; T9 deletes the file.
+  config = lib.mkIf (config.machine.gpu && !(config.kanbeiVm.enable or false)) {
     boot.kernelModules = [ "nvidia_uvm" ];
 
     hardware.nvidia = {

@@ -49,6 +49,11 @@ in
       default = false;
       description = "Host is NixOS (as opposed to a user-managed OS such as macOS).";
     };
+    gpu = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Host drives its NVIDIA GPU: `modules/nixos/nvidia.nix` and the local llama-cpp server, with its model weights. Off for a host built as a fallback, which has no signing chain for the module and no GPU workload.";
+    };
     profiles = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];

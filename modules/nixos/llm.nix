@@ -12,8 +12,9 @@ let
 
 in
 {
-  # Inert while the kanbei guest owns the GPU (modules/nixos/kanbei-vm.nix); T9 deletes the file.
-  config = lib.mkIf (!(config.kanbeiVm.enable or false)) {
+  # Inert while the kanbei guest owns the GPU (modules/nixos/kanbei-vm.nix) or the
+  # host is built without one; T9 deletes the file.
+  config = lib.mkIf (config.machine.gpu && !(config.kanbeiVm.enable or false)) {
     # The host serves the model around the clock, so it must never suspend.
     systemd.sleep.settings.Sleep = {
       AllowSuspend = false;
@@ -49,7 +50,9 @@ in
       };
     };
 
-    systemd.services.llama-cpp = {
+    # Only extends the unit the module creates; without the gate a disabled
+    # `services.llama-cpp` leaves a unit with settings and no ExecStart behind.
+    systemd.services.llama-cpp = lib.mkIf config.services.llama-cpp.enable {
       requires = [ "nvidia-uvm.service" ];
       after = [ "nvidia-uvm.service" ];
       restartIfChanged = false;

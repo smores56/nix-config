@@ -47,7 +47,10 @@
           };
         };
         # Sized for the projected 170-200G repository with churn room; it grows to
-        # the whole disk when the rollback partition is retired.
+        # the whole disk when the rollback partition is retired. Formatted but not
+        # mounted here: this system's own restic repository stays on the HDD, and a
+        # rescue boot must never wait on (or be blocked by) an empty volume. Open it
+        # by hand for a restore; the Ubuntu host mounts it as its primary.
         primary = {
           size = "250G";
           label = "rollback-primary";
@@ -58,10 +61,10 @@
             settings = {
               allowDiscards = true;
             };
+            initrdUnlock = false;
             content = {
               type = "filesystem";
               format = "ext4";
-              mountpoint = "/var/backups/primary";
             };
           };
         };

@@ -635,14 +635,15 @@ The five ingest guests and their host writer/proxy/resolver are behind
 <!-- manual-step: host/smortress-rollback -->
 
 The second NVMe (970 EVO) as smortress's bootable fallback, plus the 250G
-`luks-backup-primary` volume that holds the primary restic repository until
-`retire_old` (homelab-platform#680, T6.2). It is smortress's own configuration
-with the disk layout, the Clevis binding and the AI plane swapped out
-(`modules/hosts/smortress-rollback/rollback.nix`), and it keeps the
-`smortress` hostname and sops identity: install it only after the live host key
-is in `secrets/hosts/smortress/`. Both volumes take the recovery passphrase and
-prompt at boot; there is no Tang/TPM binding, because the committed `root.jwe`
-belongs to the 980's header.
+`luks-backup-primary` volume the Ubuntu host uses as its primary repository
+until `retire_old` (homelab-platform#680, T6.2). It is smortress's own
+configuration with the disk layout, the Clevis binding, the GPU/AI plane and the
+backup jobs swapped out (`modules/hosts/smortress-rollback/rollback.nix`), and
+it keeps the `smortress` hostname and sops identity: install it only after the
+live host key is in `secrets/hosts/smortress/`. Only the root volume prompts at
+boot (with the recovery passphrase); there is no Tang/TPM binding, because the
+committed `root.jwe` belongs to the 980's header, and the primary volume is
+formatted but never mounted here.
 
 1. On the 980, archive the identity and the Secure Boot keys while it still
    runs. The firmware has these `db` keys enrolled, so a fallback signed with
@@ -656,8 +657,12 @@ belongs to the 980's header.
    Upload both to Bitwarden, then on the install machine restore the host key
    into the checkout: `nix run .#key-restore -- <bundle>.tar.gz --host-key`.
 
-2. Build the extra-file tree, laid out as it must appear under `/`: the
-   restored `secrets/hosts/smortress/` plus the extracted `var/lib/sbctl`.
+2. Build the extra-file tree. It is copied to `/` as-is, so it must mirror the
+   paths: `etc/ssh/ssh_host_ed25519_key` (the contents of the restored
+   `secrets/hosts/smortress/`), `var/lib/sbctl/…` from the archive, and
+   `etc/luks/backup.key` (the HDD keyfile is hand-made and lives only on the
+   980; without it `/var/backup` never mounts and the local repository is
+   unreachable from the machine built to restore it). All `0400`, root-owned.
 
 3. Boot a NixOS installer USB on the machine. The 980's own `sshd` is loopback
    only (tunnel access), so `nixos-anywhere` cannot dial it; at the installer
@@ -666,7 +671,8 @@ belongs to the 980's header.
 
 4. Write the recovery passphrase into a `0600` file, build both store paths, and
    install from them. `--store-paths` skips the target's flake evaluation, so
-   the private flake inputs never have to be fetched by the installer:
+   the private flake inputs never have to be fetched by the installer; it does
+   not generate `hardware.nix` either, hence the committed copy.
 
    ```sh
    disko=$(nix build --no-link --print-out-paths \
@@ -683,19 +689,34 @@ belongs to the 980's header.
    `/dev/disk/by-id/nvme-Samsung_SSD_970_EVO_1TB_S5H9NS0NA57329Z`. Delete the
    passphrase file afterwards.
 
-5. The install reboots into the fallback. Select its boot entry once
-   (`efibootmgr` or the firmware menu) and keep the 980's entry as the default.
-   Secure Boot loads the fallback's UKI only when `var/lib/sbctl` was delivered
-   in step 2: `sbctl status` must report the host's keys enrolled.
+5. The install reboots into the fallback. lanzaboote writes to the ESP but not a
+   firmware entry, so none may exist: check `efibootmgr -v`, and create one for
+   the 970's ESP if it is absent, recording it in Bitwarden next to the 980's
+   original entry, which stays first in `BootOrder`.
 
-6. At the console, because the fallback's `sshd` is loopback only: both volumes
-   prompt for the passphrase, the system reaches multi-user, `hostname` is
-   `smortress`, and `/var/backups/primary` is mounted. Data services and restic
-   jobs fail here by design — their data is on the 980's root, which the
-   fallback never mounts — so the gate is the *unit definitions*
-   (`systemctl cat restic-backups-local`) and a booting, reachable host, not an
-   empty `systemctl --failed`. Reboot back into the 980 and confirm the old
-   system comes up unchanged.
+   ```sh
+   sudo efibootmgr -c -d /dev/disk/by-id/nvme-Samsung_SSD_970_EVO_1TB_S5H9NS0NA57329Z \
+     -p 1 -L rollback -l '\EFI\systemd\systemd-bootx64.efi'
+   ```
+
+   Prove it with a cold boot into that entry before trusting it. Secure Boot
+   loads the fallback's UKI only when `var/lib/sbctl` was delivered in step 2:
+   `sbctl status` must report the host's keys enrolled.
+
+6. At the console, because the fallback's `sshd` is loopback only: the root
+   volume prompts for the passphrase, the system reaches multi-user, and
+   `hostname` is `smortress`. Data services fail here by design — their data is
+   on the 980's root, which the fallback never mounts. There are no backup
+   timers: an empty snapshot shares the `host,paths` group with the real ones,
+   so a prune would delete the restore points this host exists to use. Restores
+   are manual, with the primary volume opened by hand:
+
+   ```sh
+   sudo cryptsetup open /dev/disk/by-partlabel/rollback-primary backup-primary
+   sudo mount /dev/mapper/backup-primary /var/backups/primary
+   ```
+
+   Reboot back into the 980 and confirm the old system comes up unchanged.
 
 ### smorespro
 
