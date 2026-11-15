@@ -33,14 +33,14 @@ in
       message = "kanbeiSplit.cutover: the agent-VM ingress/broker sockets must be gone";
     }
     {
-      # The platform CronJob (homelabs-platform) owns the mirror and its read-only PAT.
+      # The platform CronJob (homelab-platform) owns the mirror and its read-only PAT.
       # This guards the deletion: a reintroduced nix-config module would fail here.
       assertion = !(units ? github-mirror) && !(units ? github-metadata-full);
-      message = "GitHub mirroring moved to the homelabs-platform CronJob; do not re-add a nix-config unit";
+      message = "GitHub mirroring moved to the homelab-platform CronJob; do not re-add a nix-config unit";
     }
     {
       assertion = !((config.sops.secrets or { }) ? github-repo-pat);
-      message = "the GitHub mirror PAT belongs to homelabs-platform; do not declare github-repo-pat here";
+      message = "the GitHub mirror PAT belongs to homelab-platform; do not declare github-repo-pat here";
     }
   ];
 }

@@ -76,7 +76,7 @@ adds its greeter as a host-local module.
 | `modules/features/tv/`, `modules/features/repos/` | Television repository and worktree cables; the `repos`/`worktrees` CLIs they call |
 | `tofu/` | minimal Cloudflare DNS/Access/notification objects plus the `recovery` Pages project and its DNS record; run via the `cloudflare-*` flake apps |
 | `recovery/` | the public recovery page (Deno, plain ESM) and its operator scripts: blob builder, sentinel, smoke; published by `.github/workflows/recovery.yml` |
-| `modules/features/backup/` | Operator README and the retired GitHub-mirror helpers; the live mirror is the `homelabs-platform` CronJob |
+| `modules/features/backup/` | Operator README and the retired GitHub-mirror helpers; the live mirror is the `homelab-platform` CronJob |
 | `modules/desktop/aerospace/` | AeroSpace config + `aerospace-layout` |
 | `tests/` | Python unit tests and shell/module checks for the repo's tools (all run via flake checks) |
 

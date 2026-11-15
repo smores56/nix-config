@@ -59,7 +59,7 @@ browser → Cloudflare edge (Access: owner email)
 
 ## OpenTofu fragment
 
-The application lives in `smores56/homelabs-platform`'s `tofu/kanbei.tf` (the repo split
+The application lives in `smores56/homelab-platform`'s `tofu/kanbei.tf` (the repo split
 moved `tofu/` there); it is applied from that repo, not from this checkout. It creates one
 object, the Access application, and deliberately **no** `cloudflare_dns_record` and **no**
 hostname route: the wildcard CNAME resolves the name, and the tunnel ingress is declared

@@ -68,7 +68,7 @@ sudo systemctl start restic-backups-local.service
 
 ## GitHub mirror and metadata
 
-The live mirror is the `homelabs-platform` CronJob with its own fine-grained,
+The live mirror is the `homelab-platform` CronJob with its own fine-grained,
 read-only PAT. T9 removed the `githubBackup` option, the
 `modules/nixos/github-backup.nix` module and its `github-repo-pat` declaration
 from this repo. The helpers below are kept for the platform migration (and for
@@ -87,7 +87,7 @@ Layout under `/var/lib/data/github-mirrors`:
 | `meta/repositories/<repo>/` | pgb JSON: `issues/<n>.json`, `pulls/<n>.json`, comments/events/reviews/commits, labels, milestones, discussions, releases+assets, attachments, security advisories, plus per-resource `last_update` checkpoints |
 | `manifests/<date>/` | `repos.txt` (repo sets), `counts.json` (repo/issue/PR counts, mismatches, fsck sample), `run.log` |
 
-Retired units (for reference; `homelabs-platform` owns the CronJob):
+Retired units (for reference; `homelab-platform` owns the CronJob):
 
 - **`github-mirror.service` + `.timer`** — the retired nix-config schedule was
   00:30 (`Persistent=true`), one oneshot. The platform CronJob runs the chain

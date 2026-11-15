@@ -3,7 +3,7 @@
 # state dir and cluster DNS names in its environment.
 #
 # Publish with `just publish-memory-image <tag>`; the printed digest is the only
-# thing that enters smores56/homelabs-platform. The tag inside this archive is
+# thing that enters smores56/homelab-platform. The tag inside this archive is
 # irrelevant — skopeo renames it at push time.
 {
   pkgs,

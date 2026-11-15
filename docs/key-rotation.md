@@ -277,7 +277,7 @@ the swap — both write the same bucket, which is harmless for one restic client
 
 The OpenTofu state pair is separate and smaller: `r2-state-access-key-id` /
 `r2-state-secret-access-key`, a token scoped to `homelabs-tofu-state` alone.
-It lives in `homelabs-platform`'s operator store (`secrets/cloudflare.yaml`),
+It lives in `homelab-platform`'s operator store (`secrets/cloudflare.yaml`),
 next to the zone token the same script reads, and never here: the tofu concern
 is not host config. Rotate it there (`docs/secrets.md` in that repository),
 replace the `cloudflare` environment secrets `R2_STATE_*`, and never widen the
@@ -287,7 +287,7 @@ restic token to that bucket.
 
 The classic `repo`-scoped `github-repo-pat` belonged to the nix-config mirror
 that T9 removed. Mirroring and its fine-grained, read-only PAT now live in
-`homelabs-platform`; rotate that token there. Here, delete the encrypted key
+`homelab-platform`; rotate that token there. Here, delete the encrypted key
 with the Jupyter token and revoke the classic PAT once no laptop or script uses
 it.
 
@@ -307,7 +307,7 @@ Users → the user), replace the sops value, rebuild the host, prove it
 `journalctl --user -u ntfy-subscribe` on smorespro), then delete the old token in
 the UI. Both units read the file at run time, so no restart is needed after the
 rebuild. The `publisher` token is also the cluster relay's (`notify-relay-sops`
-in `homelabs-platform`); rotate both or neither, or the relay starts failing
+in `homelab-platform`); rotate both or neither, or the relay starts failing
 while the host still works.
 
 ### Memory MCP token

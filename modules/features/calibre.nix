@@ -1,6 +1,6 @@
 # calibre + the FanFicFare CLI (headless story downloads). The library itself is
 # served by the cluster at https://opds.sammohr.dev (docs/data-migration.md in
-# smores56/homelabs-platform); the host keeps only the CLI so a story can be
+# smores56/homelab-platform); the host keeps only the CLI so a story can be
 # built and its metadata read by hand.
 #
 # Agents write the library directly: nanobot mounts /var/lib/data/books as its

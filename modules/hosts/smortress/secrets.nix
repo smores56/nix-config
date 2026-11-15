@@ -16,7 +16,7 @@
       r2-access-key-id = { };
       r2-secret-access-key = { };
 
-      # The GitHub mirror PAT moved to homelabs-platform (T9). Its encrypted yaml key
+      # The GitHub mirror PAT moved to homelab-platform (T9). Its encrypted yaml key
       # is still in secrets/smortress.yaml; delete it by hand (docs/manual-steps.md).
 
     }

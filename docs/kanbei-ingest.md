@@ -234,7 +234,7 @@ both a non-allowlisted hostname and an extra egress rule are rejected.
 
 The `cluster` guest's platform CronJob rewrites
 `/mnt/data/cluster-digest/latest.json` every 15 minutes
-(`homelabs-platform`, `platform/digest/`). `modules/nixos/cluster-vm.nix` shares
+(`homelab-platform`, `platform/digest/`). `modules/nixos/cluster-vm.nix` shares
 the host tree `/var/lib/kanbei-ingest/shares/cluster-digest` into the guest, and
 `ingest-writer-cluster-digest.service` reads it from the host side:
 

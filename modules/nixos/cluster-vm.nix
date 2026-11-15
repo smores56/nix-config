@@ -96,7 +96,7 @@ let
   # reserved tail are not "the internet", and the k3s API, the data services and this
   # host's LAN neighbours are not part of the tenant's egress. There is no proxy, no
   # rate cap and no log; the tenant NetworkPolicy carries the same set and has to change
-  # in the same revision (smores56/homelabs-platform).
+  # in the same revision (smores56/homelab-platform).
   egressFlows = [
     "-A cluster-vm-fwd -i ${facts.tap} -p tcp -j ACCEPT"
     "-A cluster-vm-fwd -i ${facts.tap} -p udp -j ACCEPT"

@@ -105,11 +105,11 @@ the CronJob reaches it through its own `--translate-uid`/`--translate-gid` mappi
 of guest 0/1000 onto 983, and `smores` can neither read nor write it. The guest
 mount is unchanged at `/mnt/data/cluster-digest`, which is what the platform's
 `cluster-digest-data` PV references, so the host move is invisible to
-`homelabs-platform`. It is a feed into Kanbei, not app data, so it needs no restic
+`homelab-platform`. It is a feed into Kanbei, not app data, so it needs no restic
 coverage.
 
 The PVs are `hostPath` (the mount is node-local and single-node); T6 declares
-them in `homelabs-platform`. Every data share uses an explicit virtiofsd
+them in `homelab-platform`. Every data share uses an explicit virtiofsd
 translation, never the agent VM's squash to `smores`: guest root maps to host
 `nobody` (65534), guest uid 1000 keeps its identity, and guest gid 0/1000 map
 to host `users` (100). Files an app writes therefore land as `smores:users`,
@@ -425,7 +425,7 @@ same UID. The window is the process's lifetime by design.
 
 Immich, Navidrome, Calibre and Graphiti move from host services into the guest,
 one namespace and one virtiofs share each. The platform manifests are in
-`smores56/homelabs-platform` (`clusters/homelab/data/`, `platform/storage/`,
+`smores56/homelab-platform` (`clusters/homelab/data/`, `platform/storage/`,
 `platform/network/`, `ingress/`); this repository keeps the share, the storage
 paths and the cutover switch.
 
@@ -497,7 +497,7 @@ chat proxies read the same value as the server.
 | Component | Owned by | At `cutover = true` | Deleted in the follow-up commit | Operator/credential step |
 |---|---|---|---|---|
 | `agent` microVM | `modules/nixos/agent-vm.nix`, `modules/lib/agent-vm*.{nix,sh,py}`, `modules/features/agent-vm/` | no `microvm.vms.agent`, no `microvm@agent`, tap/broker/ingress units or timers | whole files plus the `maki` profile's `nixos` entry and `agentVm.*` host options | none |
-| nanobot in the guest | `agent-assistant`, `nanobotConfig`, `pkgs/nanobot` | gone with the guest; the cluster pod is the only runtime | `pkgs/nanobot/` and its overlay entry, the guest `nanobot-assistant` unit and state paths | the cluster app owns its config (`homelabs-apps`) |
+| nanobot in the guest | `agent-assistant`, `nanobotConfig`, `pkgs/nanobot` | gone with the guest; the cluster pod is the only runtime | `pkgs/nanobot/` and its overlay entry, the guest `nanobot-assistant` unit and state paths | the cluster app owns its config (`homelab-apps`) |
 | Letta App Server | `agentLetta`, `letta-assistant`, `pkgs/letta`, MemFS state | gone with the guest | `pkgs/letta/` and its overlay entry, `agentLetta`, the state and restic paths, the `letta-package` check | delete the retired MemFS tree after the last export |
 | Open WebUI | `modules/nixos/open-webui.nix` | unit gone; `/var/lib/data/open-webui` is no longer served | file, `server` profile entry, `webProxy.services.agent`, `ports.openWebui` | delete the `agent` Access app and its hostname route in the follow-up (`tofu`) |
 | files-mcp | `modules/nixos/filesearch.nix` | unit gone | file, `server` profile entry, `filesearch` host options, `ports.filesMcp` | none; it was never registered as a client tool |

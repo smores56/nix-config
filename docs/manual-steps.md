@@ -1392,7 +1392,7 @@ the old value; a token deleted in the dashboard is rejected by the edge at once.
 <!-- manual-step: secret/github-repo-pat -->
 
 Retired with the nix-config mirror (T9): the nightly ghorg/python-github-backup
-units are gone, and the `homelabs-platform` CronJob owns GitHub mirroring with
+units are gone, and the `homelab-platform` CronJob owns GitHub mirroring with
 its own fine-grained, read-only PAT. This repository declares no
 `github-repo-pat` sops secret; `modules/nixos/kanbei-cutover.nix` fails
 evaluation if a mirror unit or the declaration comes back.
@@ -1603,7 +1603,7 @@ Access layer; the token alone never authenticates to sshd.
 The bus's `publisher` user (`alerts:wo`), root-only 0400 in
 `secrets/smortress.yaml`. `ntfy-publish@` presents it as `Authorization: Bearer`
 to `https://ntfy.sammohr.dev/alerts`. It is one of the five tokens step 24 of
-`homelabs-platform`'s `docs/manual-steps.md` generates; the value must match the
+`homelab-platform`'s `docs/manual-steps.md` generates; the value must match the
 `publisher` entry in `ntfy-auth-sops` or every publish is a 403.
 
 ### ntfy reader token
@@ -1639,7 +1639,7 @@ unit restart is needed.
 
 #### github-repo-pat
 
-Retired (T9). The mirror is the `homelabs-platform` CronJob's; rotate its
+Retired (T9). The mirror is the `homelab-platform` CronJob's; rotate its
 read-only PAT there. For this repo the only remaining action is the one-time
 cleanup above: delete the encrypted key, then revoke the classic PAT. There is
 no mirror unit to restart.
@@ -2286,9 +2286,9 @@ by the cluster — `photos.sammohr.dev`, `music.sammohr.dev`,
 Neither this host nor the tunnel serves the library: OPDShelf runs in the
 `calibre` namespace over the same `/var/lib/data/books` share, and
 `opds.sammohr.dev` is its hostname (`docs/data-migration.md` in
-`smores56/homelabs-platform`). OPDS clients and the web panel authenticate as
+`smores56/homelab-platform`). OPDS clients and the web panel authenticate as
 `smores56`; the password is the cluster Secret `opdshelf-admin-password-sops`,
-created from `~/secrets/homelabs-platform/opdshelf-admin-password.yaml`.
+created from `~/secrets/homelab-platform/opdshelf-admin-password.yaml`.
 
 Agents write the library directly: nanobot mounts `/var/lib/data/books` through
 its `nanobot-books` claim and downloads EPUBs into it as `smores:users`, so the
@@ -2419,7 +2419,7 @@ FalkorDB once with `REDIS_ARGS='--appendonly no --save ""'` on the same image
 and data directory, confirm `GRAPH.QUERY <group> "MATCH (n) RETURN count(n)"`
 is non-empty, run `redis-cli CONFIG SET appendonly yes` (which rewrites the AOF
 from the loaded snapshot), then hand the store back to the unit. In the cluster
-the same sequence is the `REDIS_ARGS` patch in `homelabs-platform`'s restore
+the same sequence is the `REDIS_ARGS` patch in `homelab-platform`'s restore
 runbook. Skipping this leaves an empty graph, and only `memory reindex --all`
 recovers it.
 
@@ -2656,7 +2656,7 @@ There is no dedicated assistant key and no new `agentVm.secrets` name.
 <!-- manual-step: service/smortress/nanobot -->
 
 Retired by `kanbeiSplit.cutover.enable` (T9): nanobot runs as the unsandboxed
-pod in `homelabs-apps`, not in the host microVM. Until the switch flips, the
+pod in `homelab-apps`, not in the host microVM. Until the switch flips, the
 text below describes the live guest; the host relay goes with the guest.
 
 `nanobot.sammohr.dev` → the host loopback relay

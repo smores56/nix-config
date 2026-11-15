@@ -103,7 +103,7 @@ memory-export:
     journalctl -u memory-export.service -n 20 --no-pager
 
 # Publish the memory wrapper image to GHCR and print the digest to pin in
-# smores56/homelabs-platform. Needs GHCR_TOKEN with write:packages, and the
+# smores56/homelab-platform. Needs GHCR_TOKEN with write:packages, and the
 # package must be public after the first push (manual-steps, memory section).
 publish-memory-image tag:
     #!/usr/bin/env bash
