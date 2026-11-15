@@ -3,6 +3,7 @@
 # `autoGenerateKeys` is off so a missing key bundle fails the install instead of
 # writing artifacts the firmware will not trust.
 {
+  config,
   inputs,
   lib,
   pkgs,
@@ -42,7 +43,13 @@
   };
 
   # clevis's curl has no overall timeout; a wedged Tang must reach the passphrase prompt.
-  boot.initrd.systemd.services.cryptsetup-clevis-root.serviceConfig.TimeoutStartSec = "30s";
+  # Gated on the binding: touching the unit's attributes creates it, and a host that
+  # does not bind root (the rollback copy) would otherwise carry a unit with no ExecStart.
+  boot.initrd.systemd.services.cryptsetup-clevis-root =
+    lib.mkIf (config.boot.initrd.clevis.devices ? root)
+      {
+        serviceConfig.TimeoutStartSec = "30s";
+      };
   # Otherwise the initrd's static address survives switch-root and NetworkManager
   # reports "connected (externally)" without running DHCP.
   boot.initrd.network.flushBeforeStage2 = true;
