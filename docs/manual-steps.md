@@ -630,6 +630,62 @@ The five ingest guests and their host writer/proxy/resolver are behind
     schema, measured suite thresholds and the real-model measurement procedure
     are in [`docs/kanbei-search.md`](kanbei-search.md).
 
+### smortress-rollback
+
+<!-- manual-step: host/smortress-rollback -->
+
+The second NVMe (970 EVO) as smortress's bootable fallback, plus the 250G
+`luks-backup-primary` volume that holds the primary restic repository until
+`retire_old` (homelab-platform#680, T6.2). It is smortress's own configuration
+with the disk layout, the Clevis binding and the AI plane swapped out
+(`modules/hosts/smortress-rollback/rollback.nix`), and it keeps the
+`smortress` hostname and sops identity: install it only after the live host key
+is in `secrets/hosts/smortress/`. Both volumes take the recovery passphrase and
+prompt at boot; there is no Tang/TPM binding, because the committed `root.jwe`
+belongs to the 980's header.
+
+1. While the 980 still runs, archive the identity and the Secure Boot keys. The
+   firmware has these `db` keys enrolled, so a fallback signed with any other
+   bundle would not boot.
+
+   ```sh
+   nix run .#key-backup -- --allow-incomplete     # host key + YubiKey handles
+   nix run .#key-restore -- <bundle>.tar.gz --host-key
+   sudo tar -C / -czf /tmp/sbctl.tgz var/lib/sbctl
+   ```
+
+2. Build the passphrase-free extra-file tree: `secrets/hosts/smortress/` plus
+   the extracted `var/lib/sbctl`, laid out as it must appear under `/`.
+
+3. Write the recovery passphrase to a `0600` file, build both store paths, and
+   install from them. `--store-paths` skips the target's flake evaluation, so
+   the private flake inputs never have to be fetched by the installer:
+
+   ```sh
+   nix build --no-link --print-out-paths \
+     .#nixosConfigurations.smortress-rollback.config.system.build.diskoScript \
+     .#nixosConfigurations.smortress-rollback.config.system.build.toplevel
+   nixos-anywhere --store-paths <disko-script> <toplevel> \
+     --target-host root@10.0.0.125 \
+     --extra-files <tree-from-step-2> \
+     --disk-encryption-keys /tmp/rollback-pass <passphrase-file>
+   ```
+
+   The disko layout clears only
+   `/dev/disk/by-id/nvme-Samsung_SSD_970_EVO_1TB_S5H9NS0NA57329Z`; the 980 is
+   untouched but the machine reboots into the installer. Delete the passphrase
+   file afterwards.
+
+4. The install reboots into the fallback. Select its boot entry once
+   (`efibootmgr` or the firmware menu) and keep the 980's entry as the default.
+   Secure Boot loads the fallback's UKI only when `var/lib/sbctl` was delivered
+   in step 2: `sbctl status` must report the host's keys enrolled.
+
+5. Verify: the console prompts once per LUKS volume, `hostname` is `smortress`,
+   `/var/backups/primary` is mounted, `systemctl --failed` is quiet, and
+   `systemctl cat restic-backups-local` exists. Reboot back into the 980 and
+   confirm the old system boots unchanged.
+
 ### smorespro
 
 <!-- manual-step: host/smorespro -->
