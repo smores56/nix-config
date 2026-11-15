@@ -44,7 +44,7 @@
 
   # clevis's curl has no overall timeout; a wedged Tang must reach the passphrase prompt.
   # Gated on the binding: touching the unit's attributes creates it, and a host that
-  # does not bind root (the rollback copy) would otherwise carry a unit with no ExecStart.
+  # does not bind root would otherwise carry a unit with no ExecStart.
   boot.initrd.systemd.services.cryptsetup-clevis-root =
     lib.mkIf (config.boot.initrd.clevis.devices ? root)
       {

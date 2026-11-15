@@ -52,7 +52,7 @@ in
     gpu = lib.mkOption {
       type = lib.types.bool;
       default = true;
-      description = "Host drives its NVIDIA GPU: `modules/nixos/nvidia.nix` and the local llama-cpp server, with its model weights. Off for a host built as a fallback, which has no signing chain for the module and no GPU workload.";
+      description = "Host drives its NVIDIA GPU: `modules/nixos/nvidia.nix` and the local llama-cpp server, with its model weights. Off on a host that does not drive it, where loading the unsigned module under Secure Boot would fail and the model would bloat the closure.";
     };
     profiles = lib.mkOption {
       type = lib.types.listOf lib.types.str;
