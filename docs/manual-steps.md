@@ -311,13 +311,12 @@ sudo journalctl -u kanbei-inference-gpu -u kanbei-chat -n 40 --no-pager
 `docs/kanbei-inference.md` has the eval thresholds and the f16 reference-server
 command for the quality sample.
 
-<!-- manual-step: service/smortress/kanbei -->
-
-**7. Publish and gate.** The host publishes the name through the tunnel ingress
-(`webProxy.services.kanbei` -> `https://127.0.0.1:443`, in the same generation that
-enables `kanbeiVm`). The platform repo's `tofu/kanbei.tf` creates the Access application: a
-public destination for `kanbei.sammohr.dev` with the owner email policy and nothing else.
-From that repo:
+**7. Publish and gate (retired with the AI plane, #660).** The host published the
+name through the tunnel ingress (`webProxy.services.kanbei`, `https://127.0.0.1:443`
+in the generation that enabled `kanbeiVm`), with the platform repo's `tofu/kanbei.tf`
+creating the Access application. Both are gone: the route is no longer in
+`webProxy.services` and `kanbeiVm.enable` is false. The commands below are kept as
+the history of that deployment.
 
 ```sh
 tests/tofu/check.sh
@@ -2399,17 +2398,16 @@ the mobile app.
 
 ### smortress/llm
 
-<!-- manual-step: service/smortress/llm -->
-
-`llm.sammohr.dev`, TCP to llama.cpp, with the service-auth policy so maki can
-call it unattended. `api_key = "none"`; the tunnel and Access are the boundary.
+Retired with the AI plane (#660): there is no `llm` route and no local
+llama-cpp. The `memory` wrapper keeps the same service-auth policy on
+`memory.sammohr.dev`.
 
 ### smortress/memory
 
 <!-- manual-step: service/smortress/memory -->
 
 `memory.sammohr.dev` is TCP to the loopback memory wrapper (`ports.memoryMcp`),
-behind the same service-auth policy as `llm`. The wrapper validates the scope
+behind the same service-auth policy as the `ssh` route. The wrapper validates the scope
 headers the Maki shim sends (group, cwd, actor, machine), refuses work groups,
 enforces a 60 s deadline per tool call, and is the only tunnel target. Searches
 read every allowed project plus `global` and label each result with its group

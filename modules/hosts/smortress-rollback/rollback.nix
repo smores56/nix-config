@@ -21,7 +21,7 @@
 # manual `restic` invocations against the HDD repository.
 { lib, ... }:
 {
-  machine.gpu = false;
+  machine.gpu = lib.mkForce false;
 
   boot.initrd.clevis = {
     enable = lib.mkForce false;

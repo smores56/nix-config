@@ -41,6 +41,8 @@ in
     ../../nixos/kanbei-cutover.nix
     # The cluster serves the data apps; keep the host copies off (#509).
     ./retired-host-apps.nix
+    # The AI plane is retired; the 3090 stays idle (#660).
+    ./ai-retired.nix
   ];
   homeModules = [
     ../../features/todo.nix
@@ -52,11 +54,13 @@ in
     clusterDataApps.enable = false;
     # The host memory stack renders from modules/nixos/memory.nix; its retirement is the
     # live-gated #618. Host clients dial https://memory.sammohr.dev, not loopback.
-    # The 3090 is on VFIO since the Phase B cutover (docs/kanbei-vm.md).
-    kanbeiVm.enable = true;
+    # Retired with the rest of the AI plane (#660): `kanbei` cannot be rebuilt from
+    # source and its volume was never migrated. The modules stay imported and inert,
+    # and `./ai-retired.nix` keeps the GPU stack off, so restoring is flipping these.
+    kanbeiVm.enable = false;
     # Five Firecracker ingest guests plus the host writer/proxy/resolver; the writers need the
     # Kanbei guest's age recipient (docs/kanbei-ingest.md).
-    ingestVm.enable = true;
+    ingestVm.enable = false;
     # #509 retirement: off keeps the live agent VM/Open WebUI/files-mcp until the cutover.
     kanbeiSplit.cutover.enable = false;
     vaultSync.device = "smortress";
@@ -96,11 +100,6 @@ in
           protocol = "ssh";
           access = serviceAuth;
         };
-        llm = {
-          port = ports.llm;
-          protocol = "tcp";
-          access = serviceAuth;
-        };
         # No auth of its own, so Access is the only route; tcp because `cloudflared access
         # tcp` cannot dial an http ingress.
         memory = {
@@ -117,13 +116,6 @@ in
         };
         nanobot = {
           port = ports.agent;
-          access.enable = true;
-        };
-        # Kanbei terminates TLS in the guest, so the origin is https on loopback and the
-        # ingress rule presents the public name as SNI for certificate verification.
-        kanbei = {
-          port = ports.kanbei;
-          protocol = "https";
           access.enable = true;
         };
       };
