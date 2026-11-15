@@ -276,7 +276,7 @@ cannot rotate a token in place, so there are always two live credentials during
 the swap — both write the same bucket, which is harmless for one restic client.
 
 The OpenTofu state pair is separate and smaller: `r2-state-access-key-id` /
-`r2-state-secret-access-key`, a token scoped to `homelabs-tofu-state` alone.
+`r2-state-secret-access-key`, a token scoped to `homelab-tofu-state` alone.
 It lives in `homelab-platform`'s operator store (`secrets/cloudflare.yaml`),
 next to the zone token the same script reads, and never here: the tofu concern
 is not host config. Rotate it there (`docs/secrets.md` in that repository),
