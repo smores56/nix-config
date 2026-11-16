@@ -49,6 +49,8 @@ in
   home.packages = [
     mdStructure
   ]
+  # Binary stays on the nix profile (EDITOR=hx); only the config moves.
+  ++ lib.optional (builtins.elem "helix" config.user.dotfilesOwns) pkgs.helix
   ++ (with pkgs; [
     nixd
     ruff

@@ -71,7 +71,10 @@ in
       );
       scriptHome = lib.findFirst (_: true) null homesHere;
       # zsh only renders on work hosts.
-      zshHome = lib.findFirst (home: home.config.programs.zsh.enable) null homesHere;
+      # smoreswork is evaluated with nothing handed over, so these checks keep running once zsh is.
+      zshHome = lib.findFirst (home: home.config.programs.zsh.enable) null (
+        map (home: home.extendModules { modules = [ { user.dotfilesOwns = lib.mkForce [ ]; } ]; }) homesHere
+      );
       # wallpapers only renders on graphical hosts; pick by package, not attribute order.
       wallpapersHome = lib.findFirst (
         home: builtins.any (p: lib.getName p == "wallpapers") home.config.home.packages
@@ -369,7 +372,9 @@ in
             lib.concatMap (system: lib.attrNames config.flake.apps.${system}) (lib.attrNames config.flake.apps)
           );
           alerts = sortedUnique (
-            lib.concatMap (n: lib.optional (n.config.systemd.services ? "ntfy-publish@") "unit-failure") nixos
+            lib.concatMap (
+              n: lib.optional (n.config.systemd.services ? "ntfy-publish@") "unit-failure"
+            ) nixos
           );
         }
       );
@@ -438,11 +443,10 @@ in
             assert ingest.sources.tuta.allow == [ "app.tuta.com" ];
             # The finance fallback is the table's only optional host: SimpleFIN
             # alone by default, Plaid only through `financeAllow true` (#590).
-            assert
-              ingest.sources.finance.allow == [
-                "bridge.simplefin.org"
-                "beta-bridge.simplefin.org"
-              ];
+            assert ingest.sources.finance.allow == [
+              "bridge.simplefin.org"
+              "beta-bridge.simplefin.org"
+            ];
             assert
               ingest.financeAllow false == [
                 "bridge.simplefin.org"
@@ -712,6 +716,24 @@ in
                     sanctioned
                     handedOver
                     ;
+                } == "ok";
+              # A stale exemption in handed-over.nix only shows with every piece actually handed over.
+              assert
+                parity {
+                  inherit
+                    lib
+                    pro
+                    sanctioned
+                    handedOver
+                    ;
+                  work =
+                    (config.flake.homeConfigurations."sam@smoreswork".extendModules {
+                      modules = [
+                        {
+                          user.dotfilesOwns = lib.mkForce (builtins.attrNames handedOver);
+                        }
+                      ];
+                    }).config;
                 } == "ok";
               assert lib.all (mutation: !passes { pro = lib.recursiveUpdate pro mutation; }) [
                 { home.packages = pro.home.packages ++ [ pkgs.hello ]; }

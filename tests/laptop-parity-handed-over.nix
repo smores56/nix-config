@@ -5,24 +5,19 @@
 {
   zsh = [
     "packages/zellij-tab-rename"
-    "packages/zsh"
     "packages/nix-zsh-completions"
     "programs/zsh"
   ];
   helix = [
-    "packages/helix"
     "programs/helix"
   ];
   zellij = [
-    "packages/zellij"
     "programs/zellij"
   ];
   yazi = [
-    "packages/yazi"
     "programs/yazi"
   ];
   lazygit = [
-    "packages/lazygit"
     "programs/lazygit"
   ];
   television = [ ];

@@ -70,7 +70,9 @@ in
       pkgs.pfetch-rs
       pkgs.trash-cli
     ]
-    ++ lib.optional (!zshHandedOver) zellijTabRename;
+    ++ lib.optional (!zshHandedOver) zellijTabRename
+    # The login shell is ~/.nix-profile/bin/zsh; only its config moves.
+    ++ lib.optional zshHandedOver pkgs.zsh;
 
     sessionVariables = lib.mkIf isFish {
       async_prompt_functions = "_pure_prompt_git";

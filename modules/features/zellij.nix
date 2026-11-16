@@ -1,5 +1,13 @@
-{ config, lib, ... }:
 {
+  config,
+  lib,
+  pkgs,
+  ...
+}:
+{
+  # Binaries stay on the nix profile (EDITOR, launchd, GUI, agents); only the config moves.
+  home.packages = lib.optional (builtins.elem "zellij" config.user.dotfilesOwns) pkgs.zellij;
+
   programs.zellij = lib.mkIf (!builtins.elem "zellij" config.user.dotfilesOwns) {
     enable = true;
 

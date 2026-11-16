@@ -48,6 +48,21 @@ let
   after = written handed.config;
   owned = lib.concatMap (piece: files.${piece}) all;
 
+  # Nothing but the owned files may disappear.
+  disappeared = lib.subtractLists after baseline;
+  unexpectedlyGone = lib.subtractLists owned disappeared;
+  # Binaries and wrappers other contexts resolve from the profile (login shell, EDITOR, launchd, agents).
+  kept = [
+    "zsh"
+    "helix"
+    "zellij"
+    "yazi"
+    "lazygit"
+    "gh"
+  ];
+  packagesAfter = map lib.getName handed.config.home.packages;
+  packagesLost = lib.filter (n: !(lib.elem n packagesAfter)) kept;
+
   missingFromBaseline = lib.filter (f: !(lib.elem f baseline)) owned;
   stillWritten = lib.filter (f: lib.elem f after) owned;
   untabled = lib.filter (piece: !(files ? ${piece})) all;
@@ -58,6 +73,12 @@ assert lib.assertMsg (
 assert lib.assertMsg (
   builtins.length (builtins.attrNames files) == builtins.length all
 ) "tests/dotfiles_handoff.nix lists pieces the option does not have";
+assert lib.assertMsg (
+  unexpectedlyGone == [ ]
+) "files disappeared that no handed-over piece owns: ${toString unexpectedlyGone}";
+assert lib.assertMsg (
+  packagesLost == [ ]
+) "packages missing once every piece is handed over: ${toString packagesLost}";
 assert lib.assertMsg (
   missingFromBaseline == [ ]
 ) "listed files home-manager does not write at baseline: ${toString missingFromBaseline}";

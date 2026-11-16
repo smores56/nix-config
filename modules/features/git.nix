@@ -107,10 +107,14 @@ let
 
 in
 {
-  home.packages = with pkgs; [
-    delta
-    git-lfs
-  ];
+  home.packages =
+    with pkgs;
+    [
+      delta
+      git-lfs
+    ]
+    # Binary stays on the nix profile; only the config moves.
+    ++ lib.optional (owns "lazygit") lazygit;
 
   # Inside the allowlisted ~/.config/git so the agent guest sees the same excludes file.
   home.file.".config/git/ignore".text = ''
