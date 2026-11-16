@@ -30,6 +30,7 @@ let
   secretPath = import ../lib/secret-path.nix config;
 
   inherit (cfg) work;
+  owns = piece: builtins.elem piece cfg.dotfilesOwns;
 
   # Each GitHub account signs with its own sops key (modules/lib/signing-keys.nix): plain files,
   # so no agent, wrapper or PIN, and a host signs whether or not anyone is connected.
@@ -119,7 +120,9 @@ in
 
   programs = {
     gh = {
-      enable = true;
+      # home-manager always writes config.yml when enabled; handing it over drops the module, and
+      # github-credentials installs the wrapped gh itself.
+      enable = !owns "gh";
       settings = {
         aliases = {
           co = "pr checkout";
@@ -187,6 +190,6 @@ in
     # comes last so a mixed personal/work repo is a work repo.
     git.includes = personalIncludes ++ workIncludes;
 
-    lazygit.enable = true;
+    lazygit.enable = !owns "lazygit";
   };
 }

@@ -70,7 +70,7 @@ in
     vscode-langservers-extracted
   ]);
 
-  programs.helix = {
+  programs.helix = lib.mkIf (!builtins.elem "helix" config.user.dotfilesOwns) {
     enable = true;
 
     settings = {

@@ -163,6 +163,22 @@ in
       default = "personal";
       description = "Which model providers Maki may use. 'work' keeps Maki on OpenAI only, without the personal providers.";
     };
+    dotfilesOwns = lib.mkOption {
+      type = lib.types.listOf (
+        lib.types.enum [
+          "zsh"
+          "helix"
+          "zellij"
+          "yazi"
+          "lazygit"
+          "television"
+          "gh"
+          "aerospace"
+        ]
+      );
+      default = [ ];
+      description = "Pieces of this host's configuration handed over to the separate mise-managed dotfiles repo. Home-manager stops writing a listed piece's files so the dotfiles repo can own them; packages other modules need stay. Only the work Mac sets it (modules/hosts/smoreswork/default.nix).";
+    };
     shellAbbrs = lib.mkOption {
       type = lib.types.attrsOf lib.types.str;
       default = { };

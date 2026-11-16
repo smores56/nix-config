@@ -265,7 +265,9 @@ in
       tokenFile
       ghWithPat
       credentialHelper
-    ];
+    ]
+    # programs.gh would install it, but is off once the dotfiles repo owns gh's config.
+    ++ lib.optional (builtins.elem "gh" config.user.dotfilesOwns) ghAlias;
     programs.gh = {
       package = ghAlias;
       # gh's own helper answers with whatever GH_TOKEN the wrapper chose for the

@@ -105,74 +105,77 @@ let
 
 in
 {
-  home.packages = [ aerospaceLayout ];
+  # Handed over to the dotfiles repo: no config file, no layout helper (the brew cask stays).
+  config = lib.mkIf (!builtins.elem "aerospace" config.user.dotfilesOwns) {
+    home.packages = [ aerospaceLayout ];
 
-  # home-manager forces start-at-login = false into the file and asserts against true unless it also
-  # runs the launchd agent, which needs a nix package. The brew AeroSpace registers its own login item,
-  # so write the file with it on.
-  home.file.".aerospace.toml".source = lib.mkForce (
-    (pkgs.formats.toml { }).generate "aerospace" (
-      lib.filterAttrsRecursive (_: v: v != null) (
-        config.programs.aerospace.settings
-        // {
-          start-at-login = true;
-          after-login-command = [ ];
-        }
+    # home-manager forces start-at-login = false into the file and asserts against true unless it also
+    # runs the launchd agent, which needs a nix package. The brew AeroSpace registers its own login item,
+    # so write the file with it on.
+    home.file.".aerospace.toml".source = lib.mkForce (
+      (pkgs.formats.toml { }).generate "aerospace" (
+        lib.filterAttrsRecursive (_: v: v != null) (
+          config.programs.aerospace.settings
+          // {
+            start-at-login = true;
+            after-login-command = [ ];
+          }
+        )
       )
-    )
-  );
+    );
 
-  programs.aerospace = {
-    enable = true;
-    package = null;
+    programs.aerospace = {
+      enable = true;
+      package = null;
 
-    settings = {
-      config-version = 2;
-      # Version 2 no longer infers persistent workspaces from bindings; keep 1-9 so empty pinned ones stay on their monitors.
-      persistent-workspaces = map toString (lib.range 1 9);
-      # Replacing PATH drops AeroSpace's Homebrew default, so keep it; the nix profile lets bare tools resolve.
-      exec = {
-        env-vars.PATH = "${config.home.profileDirectory}/bin:/opt/homebrew/bin:/opt/homebrew/sbin:\${PATH}";
-      };
-      default-root-container-layout = "tiles";
-      default-root-container-orientation = "auto";
-      after-startup-command = [
-        "layout tiles"
-        applyLayout
-      ];
-
-      workspace-to-monitor-force-assignment = pinnedWorkspaces;
-
-      # The layout pass would place these on workspace 1 anyway; this covers windows opened later.
-      on-window-detected =
-        map
-          (app: {
-            "if".app-id = app;
-            run = "move-node-to-workspace ${workspaces.work}";
-          })
-          [
-            apps.kitty
-            apps.brave
-          ];
-
-      gaps = {
-        inner = {
-          horizontal = gapsConfig;
-          vertical = gapsConfig;
+      settings = {
+        config-version = 2;
+        # Version 2 no longer infers persistent workspaces from bindings; keep 1-9 so empty pinned ones stay on their monitors.
+        persistent-workspaces = map toString (lib.range 1 9);
+        # Replacing PATH drops AeroSpace's Homebrew default, so keep it; the nix profile lets bare tools resolve.
+        exec = {
+          env-vars.PATH = "${config.home.profileDirectory}/bin:/opt/homebrew/bin:/opt/homebrew/sbin:\${PATH}";
         };
-        outer = {
-          left = gapsConfig;
-          right = gapsConfig;
-          top = gapsConfig;
-          bottom = gapsConfig;
-        };
-      };
+        default-root-container-layout = "tiles";
+        default-root-container-orientation = "auto";
+        after-startup-command = [
+          "layout tiles"
+          applyLayout
+        ];
 
-      mode = {
-        main.binding = {
-          cmd-ctrl-l = applyLayout;
-        }
-        // sharedBindings;
+        workspace-to-monitor-force-assignment = pinnedWorkspaces;
+
+        # The layout pass would place these on workspace 1 anyway; this covers windows opened later.
+        on-window-detected =
+          map
+            (app: {
+              "if".app-id = app;
+              run = "move-node-to-workspace ${workspaces.work}";
+            })
+            [
+              apps.kitty
+              apps.brave
+            ];
+
+        gaps = {
+          inner = {
+            horizontal = gapsConfig;
+            vertical = gapsConfig;
+          };
+          outer = {
+            left = gapsConfig;
+            right = gapsConfig;
+            top = gapsConfig;
+            bottom = gapsConfig;
+          };
+        };
+
+        mode = {
+          main.binding = {
+            cmd-ctrl-l = applyLayout;
+          }
+          // sharedBindings;
+        };
       };
     };
   };

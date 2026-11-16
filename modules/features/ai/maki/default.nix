@@ -354,7 +354,6 @@ in
         '';
       };
 
-      ".config/television/cable/maki-sessions.toml".source = makiSessionCable;
       ".config/maki/lua/websearch_owned.lua" = {
         force = true;
         source = ./lua/websearch_owned.lua;
@@ -384,6 +383,9 @@ in
         force = true;
         source = ./lua/websearch_owned.lua;
       };
+    }
+    // lib.optionalAttrs (!builtins.elem "television" config.user.dotfilesOwns) {
+      ".config/television/cable/maki-sessions.toml".source = makiSessionCable;
     };
 
     home.packages = [

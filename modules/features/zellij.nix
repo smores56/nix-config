@@ -1,5 +1,6 @@
-_: {
-  programs.zellij = {
+{ config, lib, ... }:
+{
+  programs.zellij = lib.mkIf (!builtins.elem "zellij" config.user.dotfilesOwns) {
     enable = true;
 
     settings = {

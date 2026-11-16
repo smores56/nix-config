@@ -369,9 +369,7 @@ in
             lib.concatMap (system: lib.attrNames config.flake.apps.${system}) (lib.attrNames config.flake.apps)
           );
           alerts = sortedUnique (
-            lib.concatMap (
-              n: lib.optional (n.config.systemd.services ? "ntfy-publish@") "unit-failure"
-            ) nixos
+            lib.concatMap (n: lib.optional (n.config.systemd.services ? "ntfy-publish@") "unit-failure") nixos
           );
         }
       );
@@ -440,10 +438,11 @@ in
             assert ingest.sources.tuta.allow == [ "app.tuta.com" ];
             # The finance fallback is the table's only optional host: SimpleFIN
             # alone by default, Plaid only through `financeAllow true` (#590).
-            assert ingest.sources.finance.allow == [
-              "bridge.simplefin.org"
-              "beta-bridge.simplefin.org"
-            ];
+            assert
+              ingest.sources.finance.allow == [
+                "bridge.simplefin.org"
+                "beta-bridge.simplefin.org"
+              ];
             assert
               ingest.financeAllow false == [
                 "bridge.simplefin.org"
@@ -639,17 +638,42 @@ in
             "ok"
           )
         );
+        # Skipped once the dotfiles repo owns aerospace: there are no bindings left to compare.
         desktop-bindings = evalCheck "desktop-bindings" (
-          toString (
-            import ../../tests/shared_desktop_bindings.nix {
-              inherit lib;
-              niriBindings =
-                config.flake.homeConfigurations."smores@smorespro".config.programs.niri.settings.binds;
-              aerospaceBindings =
-                config.flake.homeConfigurations."sam@smoreswork".config.programs.aerospace.settings.mode.main.binding;
-            }
-          )
+          if
+            builtins.elem "aerospace" config.flake.homeConfigurations."sam@smoreswork".config.user.dotfilesOwns
+          then
+            "aerospace handed over"
+          else
+            toString (
+              import ../../tests/shared_desktop_bindings.nix {
+                inherit lib;
+                niriBindings =
+                  config.flake.homeConfigurations."smores@smorespro".config.programs.niri.settings.binds;
+                aerospaceBindings =
+                  config.flake.homeConfigurations."sam@smoreswork".config.programs.aerospace.settings.mode.main.binding;
+              }
+            )
         );
+
+        # With every piece handed over, smoreswork must still evaluate and stop writing the listed files;
+        # with none handed over, each listed file must exist (so the table cannot go stale).
+        dotfiles-handoff =
+          let
+            work = config.flake.homeConfigurations."sam@smoreswork";
+            all = work.options.user.dotfilesOwns.type.nestedTypes.elemType.functor.payload.values;
+            handed = work.extendModules { modules = [ { user.dotfilesOwns = lib.mkForce all; } ]; };
+          in
+          evalCheck "dotfiles-handoff" (
+            toString (
+              import ../../tests/dotfiles_handoff.nix {
+                inherit lib all;
+                # Both ends are forced, so the check holds whatever the host currently hands over.
+                base = work.extendModules { modules = [ { user.dotfilesOwns = lib.mkForce [ ]; } ]; };
+                inherit handed;
+              }
+            )
+          );
 
         # The laptops differ only where tests/laptop-parity-sanctioned.nix says so. Both homes evaluate
         # from any system, so this runs everywhere. The mutations prove it still catches drift.
@@ -659,6 +683,7 @@ in
             pro = config.flake.homeConfigurations."smores@smorespro".config;
             sanctioned = import ../../tests/laptop-parity-sanctioned.nix { inherit lib; };
             parity = import ../../tests/laptop_parity.nix;
+            handedOver = import ../../tests/laptop-parity-handed-over.nix;
             passes =
               args:
               (builtins.tryEval (
@@ -669,6 +694,7 @@ in
                       work
                       pro
                       sanctioned
+                      handedOver
                       ;
                   }
                   // args
@@ -684,6 +710,7 @@ in
                     work
                     pro
                     sanctioned
+                    handedOver
                     ;
                 } == "ok";
               assert lib.all (mutation: !passes { pro = lib.recursiveUpdate pro mutation; }) [

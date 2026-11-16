@@ -1,5 +1,6 @@
 {
   config,
+  lib,
   pkgs,
   ...
 }:
@@ -15,7 +16,7 @@ in
     workflow.worktrees
   ];
 
-  home.file = {
+  home.file = lib.mkIf (!builtins.elem "television" config.user.dotfilesOwns) {
     ".config/television/cable/repos.toml".source = ./repos.toml;
     ".config/television/cable/worktrees.toml".source = ./worktrees.toml;
   };

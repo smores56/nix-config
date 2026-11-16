@@ -9,6 +9,8 @@ let
   isFish = shell == "fish";
   isZsh = shell == "zsh";
   isServer = builtins.elem "server" config.machine.profiles;
+  # The dotfiles repo owns the zsh files; nothing here feeds a shell nobody configures.
+  zshHandedOver = isZsh && builtins.elem "zsh" config.user.dotfilesOwns;
 
   # Keeps the command in scrollback before the YubiKey touch. On the session PATH, not
   # home.packages, so Maki's sandbox PATH never sees it.
@@ -67,8 +69,8 @@ in
       pkgs.osc
       pkgs.pfetch-rs
       pkgs.trash-cli
-      zellijTabRename
-    ];
+    ]
+    ++ lib.optional (!zshHandedOver) zellijTabRename;
 
     sessionVariables = lib.mkIf isFish {
       async_prompt_functions = "_pure_prompt_git";
@@ -258,7 +260,7 @@ in
           ];
     };
 
-    zsh = lib.mkIf isZsh {
+    zsh = lib.mkIf (isZsh && !zshHandedOver) {
       enable = true;
       # HM owns $ZDOTDIR; ~/.zshrc stays a plain file for tools that append their own blocks.
       dotDir = "${config.xdg.configHome}/zsh";

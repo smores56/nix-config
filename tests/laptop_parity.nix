@@ -6,6 +6,8 @@
   work,
   pro,
   sanctioned,
+  # piece -> keys that differ only while that piece is in work.user.dotfilesOwns.
+  handedOver ? { },
 }:
 let
   # Store hashes, package versions and the platform's home directory are not differences.
@@ -81,8 +83,10 @@ let
   render = v: if v == null then "<absent>" else lib.strings.substring 0 60 v;
   line = k: "  ${k}: work=${render (wf.${k} or null)} pro=${render (pf.${k} or null)}";
 
-  unsanctioned = lib.filter (k: !(allowed ? ${k})) differing;
-  stale = lib.filter (k: !(lib.elem k differing)) (lib.attrNames allowed);
+  exempt = lib.concatMap (piece: handedOver.${piece} or [ ]) work.user.dotfilesOwns;
+
+  unsanctioned = lib.filter (k: !(allowed ? ${k}) && !(lib.elem k exempt)) differing;
+  stale = lib.filter (k: !(lib.elem k differing) && !(lib.elem k exempt)) (lib.attrNames allowed);
   badReason = lib.filter (k: builtins.match "(inherent|work-policy): .+" reasons.${k} == null) (
     lib.attrNames reasons
   );

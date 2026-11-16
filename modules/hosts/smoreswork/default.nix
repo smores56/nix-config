@@ -21,5 +21,9 @@
     kanbeiSplit.cutover.enable = false;
   };
 
-  user.aiProfile = "work";
+  user = {
+    aiProfile = "work";
+    # Pieces the dotfiles repo owns: home-manager stops writing their files (user.dotfilesOwns).
+    dotfilesOwns = [ ];
+  };
 }
