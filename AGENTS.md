@@ -80,6 +80,8 @@ adds its greeter as a host-local module.
 | `modules/desktop/aerospace/` | AeroSpace config + `aerospace-layout` |
 | `tests/` | Python unit tests and shell/module checks for the repo's tools (all run via flake checks) |
 
+`user.dotfilesOwns` (set in `modules/hosts/smoreswork/default.nix`) hands pieces of the work Mac (zsh, helix, zellij, yazi, lazygit, television, gh, aerospace) to the separate dotfiles repo: a listed piece's files stop being written. A new file under one of those pieces must be gated on it and listed in `tests/dotfiles_handoff.nix`; its parity differences go in `tests/laptop-parity-handed-over.nix`.
+
 Feature options live in the module that owns them (`webProxy` in
 `modules/nixos/web-proxy.nix`, `backup` in `modules/nixos/backup.nix`,
 `dictation` in `modules/features/dictation/`, …). A module's presence in a
